@@ -1,18 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ASK_AGAIN_MS, CLOSE_ENOUGH_MS, errorOf, makeClock, serverTimeOf } from '../src/lib/clock.ts';
+import { CLOSE_ENOUGH_MS, GIVE_UP_MS, RETRY_MS, errorOf, makeClock, serverTimeOf } from '../src/lib/clock.ts';
 
 const HOUR = 3_600_000;
 const T = Date.parse('2026-10-11T12:00:00Z');
 const reply = (date: string | null, init: ResponseInit = {}) => new Response(null, { ...init, headers: date ? { date } : {} });
+const at = (t: number) => reply(new Date(t).toUTCString());
 
 test("a plain reply from the site says the server's time; an error, a redirect or no header says nothing", () => {
-  assert.equal(serverTimeOf(reply(new Date(T).toUTCString())), T);
+  assert.equal(serverTimeOf(at(T)), T);
   assert.equal(serverTimeOf(reply(new Date(T).toUTCString(), { status: 404 })), null);
   assert.equal(serverTimeOf(reply(null)), null);
   assert.equal(serverTimeOf(reply('not a date')), null);
   // A login page in the way: followed to another address.
-  const moved = reply(new Date(T).toUTCString());
+  const moved = at(T);
   Object.defineProperty(moved, 'redirected', { value: true });
   assert.equal(serverTimeOf(moved), null);
 });
@@ -25,25 +26,40 @@ test("the device clock's error is taken halfway through the request, and a clock
   assert.notEqual(errorOf(T, T - CLOSE_ENOUGH_MS - 1000, T - CLOSE_ENOUGH_MS - 1000), 0);
 });
 
-/** A clock whose device time is `dev.t` and whose server answers with `answer`. */
-function rig(answer: () => Promise<Response>) {
-  const dev = { t: T - 10 * HOUR, asked: 0 };
-  const clock = makeClock(() => {
-    dev.asked++;
-    return answer();
-  }, () => dev.t);
-  return { dev, clock };
+/**
+ * A clock on a device whose own clock reads `dev.wall` (ten hours slow) and
+ * whose steady clock reads `dev.steady`; the server answers with `answer`.
+ */
+function rig(answer: (signal: AbortSignal) => Promise<Response>) {
+  const dev = { wall: T - 10 * HOUR, steady: 0, asked: 0, server: T };
+  const clock = makeClock(
+    (signal) => {
+      dev.asked++;
+      return answer(signal);
+    },
+    () => dev.wall,
+    () => dev.steady,
+  );
+  /** Time passes for both of the device's clocks (and the server's). */
+  const pass = (ms: number) => {
+    dev.wall += ms;
+    dev.steady += ms;
+    dev.server += ms;
+  };
+  return { dev, clock, pass };
 }
 
-test("the time is the device's own until the server says, then the server's, and stays so as the device's moves", async () => {
-  const { dev, clock } = rig(async () => reply(new Date(T).toUTCString()));
+test("the time is the device's own until the server says, then the server's, and stays so as time passes", async () => {
+  const { dev, clock, pass } = rig(async () => at(T));
   assert.equal(clock.now(), T - 10 * HOUR);
   assert.equal(clock.known(), false);
   await clock.sync();
   assert.equal(clock.known(), true);
+  assert.equal(clock.trusted(), true);
   assert.ok(Math.abs(clock.now() - T) <= 1000);
-  dev.t += HOUR;
+  pass(HOUR);
   assert.ok(Math.abs(clock.now() - (T + HOUR)) <= 1000);
+  assert.equal(dev.asked, 1);
 });
 
 test("no answer (offline, blocked, a request that can't be made) leaves the device's clock", async () => {
@@ -51,26 +67,54 @@ test("no answer (offline, blocked, a request that can't be made) leaves the devi
     const { dev, clock } = rig(answer as () => Promise<Response>);
     await clock.sync();
     assert.equal(clock.known(), true);
-    assert.equal(clock.now(), dev.t);
+    assert.equal(clock.trusted(), false);
+    assert.equal(clock.now(), dev.wall);
   }
 });
 
-test('asked once at a time, and again only once the answer is old', async () => {
-  const { dev, clock } = rig(async () => reply(new Date(T).toUTCString()));
-  await Promise.all([clock.sync(), clock.sync()]);
-  assert.equal(dev.asked, 1);
-  assert.equal(clock.syncIfOld(), undefined);
-  dev.t += ASK_AGAIN_MS;
-  await clock.syncIfOld();
+test('a request with no reply is given up, and asked again later', async () => {
+  let signal: AbortSignal | undefined;
+  const { dev, clock } = rig((s) => {
+    signal = s;
+    return new Promise((_, fail) => s.addEventListener('abort', () => fail(new Error('aborted'))));
+  });
+  const t0 = performance.now();
+  await clock.sync();
+  assert.ok(signal?.aborted);
+  assert.ok(performance.now() - t0 >= GIVE_UP_MS - 50);
+  assert.equal(clock.known(), true);
+  assert.equal(clock.trusted(), false);
+  // Not again at once, but a minute on.
+  assert.equal(clock.refresh(), undefined);
+  dev.steady += RETRY_MS;
+  dev.wall += RETRY_MS;
+  assert.notEqual(clock.refresh(), undefined);
+  await Promise.resolve();
   assert.equal(dev.asked, 2);
-  // The device's clock set back a day: old too.
-  dev.t -= 24 * HOUR;
-  await clock.syncIfOld();
+});
+
+test('asked once at a time, and again only when the device clock jumps (set by hand, or the device slept)', async () => {
+  const { dev, clock, pass } = rig(async () => at(dev.server));
+  await Promise.all([clock.sync(), clock.sync(), clock.refresh()]);
+  assert.equal(dev.asked, 1);
+  // Time passing as it does: nothing to ask.
+  pass(5 * HOUR);
+  assert.equal(clock.refresh(), undefined);
+  // Its clock set right meanwhile: the error known is wrong now, and asked again.
+  dev.wall += 10 * HOUR;
+  await clock.refresh();
+  assert.equal(dev.asked, 2);
+  assert.ok(Math.abs(clock.now() - dev.server) <= 1000);
+  // Asleep for the night (its steady clock stood): asked again too.
+  dev.wall += 8 * HOUR;
+  dev.server += 8 * HOUR;
+  await clock.refresh();
   assert.equal(dev.asked, 3);
+  assert.ok(Math.abs(clock.now() - dev.server) <= 1000);
 });
 
 test('an answer waits for the server no longer than it is told', async () => {
-  const { clock } = rig(() => new Promise<Response>(() => {}));
+  const { clock } = rig((s) => new Promise((_, fail) => s.addEventListener('abort', () => fail(new Error('aborted')))));
   const t0 = performance.now();
   await clock.ready(30);
   assert.ok(performance.now() - t0 < 1000);

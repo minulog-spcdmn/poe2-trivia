@@ -10,8 +10,10 @@
 
 /** A device clock this close to the server's is left as it is: the reply's whole seconds and the way there and back are noise. */
 export const CLOSE_ENOUGH_MS = 60_000;
-/** Asked again after this long, as the device's clock may have been set meanwhile. */
-export const ASK_AGAIN_MS = 30 * 60_000;
+/** A request with no reply by then counts as none. */
+export const GIVE_UP_MS = 5000;
+/** After no reply, asked again no sooner than this. */
+export const RETRY_MS = 60_000;
 
 /** The server's time a reply says: only a plain one from the site itself (not a redirect to a login page, not an error). */
 export function serverTimeOf(res: Response): number | null {
@@ -33,35 +35,60 @@ export function errorOf(server: number, sentAt: number, gotAt: number): number {
 export interface Clock {
   /** The time now, as the server has it (the device's own until it has said). */
   now(): number;
-  /** Asks the server (once at a time); settles when it has answered or couldn't. */
+  /** Asks the server (once at a time); settles when it has answered, couldn't, or gave up. */
   sync(): Promise<void>;
-  /** Asks again if the last answer is old (settles as sync does; undefined when it isn't old). */
-  syncIfOld(): Promise<void> | undefined;
-  /** Whether the server has answered, or couldn't. */
+  /**
+   * Asks again when it is worth it: never asked yet, the last ask had no
+   * reply (a minute on), or the device's clock has jumped since the server
+   * answered (set by hand, or the device slept). Undefined when not.
+   */
+  refresh(): Promise<void> | undefined;
+  /** Whether an ask has settled, answered or not. */
   known(): boolean;
-  /** Settles once the server has answered or couldn't, or after `ms` at most. */
+  /** Whether the server has answered: the day is its day. */
+  trusted(): boolean;
+  /** Settles once the first ask has, or after `ms` at most. */
   ready(ms: number): Promise<void>;
 }
 
-export function makeClock(ask: () => Promise<Response>, device: () => number = Date.now): Clock {
+/**
+ * A clock asking `ask` for the server's time. `device` is the device's
+ * clock, which may be set; `steady` a clock that only runs on (the page's
+ * own, performance.now): the two drifting apart says the device's was set,
+ * or the device slept.
+ */
+export function makeClock(
+  ask: (signal: AbortSignal) => Promise<Response>,
+  device: () => number = Date.now,
+  steady: () => number = () => performance.now(),
+): Clock {
   let error = 0;
-  let askedAt = -Infinity;
+  /** When the server last answered, by both clocks (null before it has). */
+  let answered: { wall: number; steady: number } | null = null;
+  let triedAt = -Infinity;
   let asking: Promise<void> | null = null;
   let first: Promise<void> | null = null;
   let known = false;
+  const jumped = () => !!answered && Math.abs(device() - answered.wall - (steady() - answered.steady)) >= CLOSE_ENOUGH_MS;
   const sync = () => {
     if (asking) return asking;
+    triedAt = steady();
     const sentAt = device();
-    askedAt = sentAt;
+    const stop = new AbortController();
+    const timer = setTimeout(() => stop.abort(), GIVE_UP_MS);
     // (Asked from a promise, so a request that can't even be made counts as no answer.)
     asking = Promise.resolve()
-      .then(ask)
+      .then(() => ask(stop.signal))
       .then((res) => {
         const server = serverTimeOf(res);
-        if (server !== null) error = errorOf(server, sentAt, device());
+        if (server === null) return;
+        const gotAt = device();
+        error = errorOf(server, sentAt, gotAt);
+        answered = { wall: gotAt, steady: steady() };
       })
       .catch(() => {})
       .finally(() => {
+        clearTimeout(timer);
         asking = null;
         known = true;
       });
@@ -71,11 +98,16 @@ export function makeClock(ask: () => Promise<Response>, device: () => number = D
   return {
     now: () => device() + error,
     sync,
-    syncIfOld: () => (Math.abs(device() - askedAt) >= ASK_AGAIN_MS ? sync() : undefined),
+    refresh: () => {
+      if (asking) return asking;
+      if (answered ? jumped() : steady() - triedAt >= RETRY_MS) return sync();
+      return undefined;
+    },
     known: () => known,
+    trusted: () => !!answered,
     ready: (ms) => Promise.race([first ?? sync(), new Promise<void>((done) => setTimeout(done, ms))]),
   };
 }
 
 /** The site's clock: asks the page's own address, for its headers alone. */
-export const clock = makeClock(() => fetch(new URL(import.meta.env.BASE_URL, document.baseURI), { method: 'HEAD', cache: 'no-store' }));
+export const clock = makeClock((signal) => fetch(new URL(import.meta.env.BASE_URL, document.baseURI), { method: 'HEAD', cache: 'no-store', signal }));

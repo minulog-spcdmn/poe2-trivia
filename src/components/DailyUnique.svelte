@@ -14,7 +14,7 @@
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
-  import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
+  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -27,22 +27,31 @@
 
   // The clock moves on (the hours left, and past midnight UTC a new day):
   // every minute, and at once when the tab is looked at again (a tab in the
-  // background ticks seldom). The server's time where it can say (lib/clock),
-  // asked again now and then, as this device's clock may be set meanwhile.
+  // background ticks seldom). The server's time where it can say (lib/clock:
+  // asked once, and again only when it had no reply, or this device's clock
+  // has jumped since), and at once when the device is back online.
   let now = $state(clock.now());
+  let alive = true;
   onMount(() => {
-    const tick = () => (now = clock.now());
+    const tick = () => {
+      now = clock.now();
+      mendClockAhead();
+    };
     const refresh = () => {
       tick();
-      void clock.syncIfOld()?.then(tick);
+      void clock.refresh()?.then(tick);
     };
-    void clock.sync().then(tick);
+    refresh();
     const t = setInterval(refresh, 60_000);
     const seen = () => document.visibilityState === 'visible' && refresh();
+    const online = () => void clock.sync().then(tick);
     document.addEventListener('visibilitychange', seen);
+    addEventListener('online', online);
     return () => {
+      alive = false;
       clearInterval(t);
       document.removeEventListener('visibilitychange', seen);
+      removeEventListener('online', online);
     };
   });
   const today = $derived(utcDay(now));
@@ -91,24 +100,45 @@
 
   /** How long an answer waits at most for the server to say the time. */
   const CLOCK_WAIT_MS = 1500;
-  /** An answer to today's held until the server has said what day it is (or not for long). */
-  let holding = false;
+  /**
+   * Once the server has said what day it is, a record from a day still to
+   * come was made on a clock running ahead: it stands as yesterday's, so
+   * today's can be answered (lib/daily fromClockAhead).
+   */
+  function mendClockAhead() {
+    if (!clock.trusted()) return;
+    const mended = fromClockAhead(loadDaily(), utcDay(now));
+    if (!mended) return;
+    rec = mended;
+    saveDaily(mended);
+  }
+
+  /** An answer to today's held until the server has said what day it is (or not for long): the option picked, the last one tapped. */
+  let held = $state<number | null>(null);
   async function pick(i: number) {
-    if (answered || disabled || holding) return;
+    if (answered || disabled) return;
+    if (held !== null) {
+      held = i;
+      return;
+    }
     /** The day whose question was there to pick from. */
     const shown = today;
     // Answered as the page comes up: the day is the server's, once it has
     // said (a device with a wrong clock may be showing another day's).
     if (!practice && !clock.known()) {
-      holding = true;
+      held = i;
       await clock.ready(CLOCK_WAIT_MS);
-      holding = false;
-      if (answered || disabled || practice) return;
+      i = held ?? i;
+      held = null;
+      if (!alive || answered || disabled || practice) return;
     }
     // Past midnight UTC since the clock last moved (or the server's day isn't
-    // the one shown): that was another day's question. Today's comes up instead.
+    // the one shown): that was another day's question. Today's comes up
+    // instead, and the tap says so.
     if (!practice && (utcDay(clock.now()) !== shown || today !== shown)) {
       now = clock.now();
+      mendClockAhead();
+      toasts.show("That question was another day's. Here is today's.", 'info', { title: "Today's unique" });
       return;
     }
     // Another tab may have answered today's meanwhile: that answer stands.
@@ -128,11 +158,13 @@
     // answer today: nothing is recorded, so nothing plays as if it were, and
     // the tap says why.
     const next = practice ? null : answerDaily(rec, today, i, good);
+    // (Only while the server hasn't said: once it has, such a record is mended, mendClockAhead.)
     if (next && next === rec) {
       toasts.show("This device's clock is behind the day you last answered on. Set it right to play today's unique.", 'info', { title: 'Clock behind' });
       return;
     }
-    const at = Date.now();
+    // (The codex's time by the same clock as the day.)
+    const at = clock.now();
     settled = false;
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => (settled = true), SETTLE_MS);
@@ -258,6 +290,8 @@
       {@const fake = answered && isFake(q.options[i])}
       <button
         class="option {st}"
+        class:held={held === i}
+        aria-busy={held === i || undefined}
         bind:this={optEls[i]}
         data-sfx="none"
         disabled={answered || disabled}
@@ -490,6 +524,15 @@
      :is(:hover, :focus-visible) would take the keyboard's focus light with it. */
   .option:not(:disabled):hover,
   .option:not(:disabled):focus-visible {
+    border-color: var(--gold);
+    background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
+    box-shadow:
+      inset 0 0 0 1px rgba(241, 217, 155, 0.1),
+      0 0 26px rgba(224, 138, 68, 0.2);
+  }
+  /* Picked while the day is being made sure of (a moment, at most 1.5 s): it
+     stays lit as hovered, so the tap shows it was taken. */
+  .option.held {
     border-color: var(--gold);
     background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
     box-shadow:
