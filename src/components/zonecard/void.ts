@@ -35,13 +35,14 @@ export const voidFamily: FamilyMotion = {
         { at: c.tl.starts[i], ms: c.tl.letterMs },
       );
       // Its ghosts, in split colours, closing in on it as it comes and gone as the name locks.
+      const ch = c.inner[i].textContent;
       for (const [side, colour] of [
         [-1, a],
         [1, b],
       ] as const) {
         const g = document.createElement('span');
         g.className = 'ghost';
-        g.textContent = c.inner[i].textContent;
+        g.textContent = ch;
         g.style.cssText = `position:absolute;left:0;top:0;color:${colour};mix-blend-mode:screen;pointer-events:none`;
         c.inner[i].style.position = 'relative';
         c.inner[i].append(g);
