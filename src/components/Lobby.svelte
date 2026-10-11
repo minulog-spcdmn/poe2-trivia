@@ -29,7 +29,8 @@
   import { pinnedOut } from '../lib/stage';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
-  import { STANDING_TEXT, namesList, notReady } from '../lib/presence';
+  import { missingNote, notReady, type Missing } from '../lib/presence';
+  import StandingMark from './StandingMark.svelte';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
@@ -231,8 +232,15 @@
   const lockout = $derived(rulesFor(s.settings).lockout);
   /** Online: how each player stands, when not simply ready (lib/presence.ts: away, idle, or lagging). */
   const standing = (id: string) => (local ? undefined : session.standing[id]);
-  /** Online: the players the game would begin without (offline, away or idle). */
-  const unready = $derived(local ? [] : s.players.filter((p) => !p.connected || notReady(standing(p.id))));
+  /** Online: the players the game would begin without (offline, away or idle), and why. */
+  const unready = $derived(
+    local
+      ? []
+      : s.players.flatMap((p): { name: string; why: Missing }[] => {
+          const st = standing(p.id);
+          return !p.connected ? [{ name: p.name, why: 'offline' }] : st === 'away' || st === 'idle' ? [{ name: p.name, why: st }] : [];
+        }),
+  );
   const hostAway = $derived(!isHost && notReady(standing(s.hostId ?? '')));
 </script>
 
@@ -249,7 +257,7 @@
       <!-- A lone player knows they're here: Begin stands by itself. With a party, whether everyone is
            really there (lib/presence.ts): their game on screen and in use, or who it would begin without. -->
       {#if unready.length}
-        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of {s.players.length} ready; waiting on {namesList(unready.map((p) => p.name))}</p>
+        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of {s.players.length} ready; {missingNote(unready)}</p>
       {:else}
         <p class="go-note all-ready">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>
@@ -393,7 +401,7 @@
         <!-- The same chips the game shows along its top, two to a row. -->
         <ul class="chips">
           {#each s.players as p, i (p.id)}
-            {@const st = p.connected ? standing(p.id) : undefined}
+            {@const st = p.connected ? standing(p.id) : 'offline'}
             <li
               data-cursor="row:{i}"
               use:arriving={p.name}
@@ -402,13 +410,12 @@
               out:kickOut
               data-id={p.id}
               class:armed={confirming === p.id}
-              class:absent={notReady(st)}
+              class:absent={st === 'offline' || notReady(st)}
               style:--c={playerColor(p.hue)}
             >
               <Avatar name={p.name} hue={p.hue} size={32} />
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
-              {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>
-              {:else if st}<span class="tag {st}" title={STANDING_TEXT[st].title}>{STANDING_TEXT[st].tag}</span>{/if}
+              {#if st}<StandingMark standing={st} />{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
               {#if p.id === s.hostId && !local}<HostMark />{/if}
               {#if isHost && (local || p.id !== s.hostId)}
@@ -908,26 +915,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tag {
-    font-family: var(--font-display);
-    font-size: 0.62rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    padding: 0.2em 0.6em;
-    border-radius: 2px;
-    border: 1px solid var(--gold-lo);
-    color: var(--gold);
-  }
-  /* Away or idle (lib/presence.ts): their tag goes quiet, their chip dims; lagging warms red. */
-  .tag.away,
-  .tag.idle {
-    border-color: var(--line);
-    color: var(--muted);
-  }
-  .tag.slow {
-    border-color: rgba(224, 85, 63, 0.45);
-    color: #eab3a3;
-  }
+  /* Away, idle or offline (lib/presence.ts, StandingMark): their chip dims. */
   .chips li.absent :global(.avatar),
   .chips li.absent .name {
     opacity: 0.55;

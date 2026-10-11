@@ -54,6 +54,21 @@ export const STANDING_TEXT: Record<Standing, { tag: string; title: string }> = {
 /** A standing that means the player isn't ready to play (one lagging is still there, only late). */
 export const notReady = (s: Standing | null | undefined) => s === 'away' || s === 'idle';
 
+/** Why a player isn't ready: their game away or idle, or their link gone. */
+export type Missing = 'away' | 'idle' | 'offline';
+
+/**
+ * Who the game would begin without, for a sentence after "3 of 4 ready;":
+ * "Kai is away", "Kai and Mira are idle", or with reasons that differ,
+ * "waiting on Kai, Mira and 1 more".
+ */
+export function missingNote(who: { name: string; why: Missing }[]): string {
+  const names = namesList(who.map((w) => w.name));
+  const why = who[0]?.why;
+  if (!why || who.some((w) => w.why !== why)) return `waiting on ${names}`;
+  return `${names} ${who.length > 1 ? 'are' : 'is'} ${why}`;
+}
+
 /** Names joined for a sentence: "Ana", "Ana and Bo", "Ana, Bo and 2 more". */
 export function namesList(names: string[], most = 2): string {
   if (names.length <= 1) return names[0] ?? '';

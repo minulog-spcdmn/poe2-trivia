@@ -606,15 +606,19 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
-  - **Who's ready:** in the lobby, a player whose game isn't on their
-    screen (another tab or app, or the screen off, for more than a couple of
-    seconds) is marked **Away**, one who hasn't touched it for two minutes
-    **Idle**, and one whose game answers the host's pings slowly (a smoothed
-    round trip over 800 ms, or none for 7 s) **Lagging**. Beside Begin the
-    host sees "All 4 exiles here and ready" with a tick, or who the game
-    would begin without ("3 of 4 ready; waiting on Kai"); a guest waiting on
-    an away host is told so. Each device tells the host its own presence as
-    it changes, and the host tells the room (`src/lib/presence.ts`).
+  - **Who's ready:** in the lobby, a player's chip carries a mark, where the
+    host has their banner, when they aren't simply there
+    (`src/components/StandingMark.svelte`): a crescent moon when their game
+    isn't on their screen (another tab or app, or the screen off, for more
+    than a couple of seconds), a closed eye when they haven't touched it for
+    two minutes, signal bars with two lit when their game answers the host's
+    pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
+    unlit bars with a cross when they're offline. Away, idle and offline
+    chips dim. Beside Begin the host sees "All 4 exiles here and ready" with
+    a tick, or who the game would begin without and why ("3 of 4 ready; Kai
+    is away"); a guest waiting on an away host is told so. Each device tells
+    the host its own presence as it changes, and the host tells the room
+    (`src/lib/presence.ts`).
   - **Live pointers:** in the lobby, in turns mode and Delve together, and
     on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
     with their name; a tap on a phone shows where it landed, as the
