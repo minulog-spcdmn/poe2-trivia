@@ -163,19 +163,21 @@ function pressedFor(el: Element): string | null {
 }
 
 /**
- * Elements holding more than this many: pressed on them (bare page, a long
- * list's ground), the pointer stays as it is. A cursor is inherited, so a
- * change on them restyles all they hold: the stall this is here to avoid.
+ * Elements holding more than this many (bare page, a long list's ground)
+ * aren't dressed themselves: a cursor is inherited, so a change on them
+ * restyles all they hold. The sunk dart goes on <html> instead, as a plain
+ * cursor: that restyles the page once a press too, but takes a fraction of
+ * what changing the variables there did (they hold every look's images).
  */
 const DRESS_MOST = 150;
 
 /** Shows the pressed pointer on `el` (the element under it), and only there. */
-function dress(el: EventTarget | null) {
+function dress(target: EventTarget | null) {
+  if (applied === 'forced' || !(target instanceof HTMLElement || target instanceof SVGElement)) return undress();
+  const el = target.getElementsByTagName('*').length > DRESS_MOST ? document.documentElement : target;
   if (dressed?.el === el) return;
   undress();
-  if (applied === 'forced' || !(el instanceof HTMLElement || el instanceof SVGElement)) return;
-  if (el.getElementsByTagName('*').length > DRESS_MOST) return;
-  const v = pressedFor(el);
+  const v = pressedFor(target);
   if (!v) return;
   dressed = { el, was: el.style.getPropertyValue('cursor'), priority: el.style.getPropertyPriority('cursor') };
   el.style.setProperty('cursor', v, 'important');
