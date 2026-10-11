@@ -8,6 +8,7 @@ import { cornerOnScreen } from '../corner';
 import { opacityOf } from '../opacity';
 import { after, boxOf, budget, currentFrame, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
 import { zoomOf } from '../stage';
+import { switchedOff } from '../switchedOff';
 
 // ---------- palette ----------
 
@@ -402,7 +403,11 @@ const silhouettes = new WeakMap<Element, { frame: number; sil: Silhouette }>();
  * picture put together from pieces (veiled art), an element whose canvases
  * marked `data-shape` make it up, each laid out over its own part of it.
  */
+/** Beta: effects light a picture's box rather than its outline (lib/switchedOff.ts). */
+const silhouettesOff = switchedOff('silhouette');
+
 function isPicture(el: Element): el is HTMLElement {
+  if (silhouettesOff) return false;
   return el instanceof HTMLImageElement || (el instanceof HTMLElement && !!el.querySelector('canvas[data-shape]'));
 }
 

@@ -23,6 +23,7 @@ import { dialogBox, openDialog } from '../behindDialog';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
+import { switchedOff, type Switch } from '../switchedOff';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -305,7 +306,7 @@ function waited(): number {
 }
 
 export function particle(p: ParticleSpec) {
-  if (!fxActive() || hidden) return;
+  if (!fxActive() || hidden || particlesOff) return;
   const late = waited();
   const spec = behindNow && !p.behind ? { ...p, behind: true } : p;
   pool!.spawn(late ? { ...spec, delay: (spec.delay ?? 0) + late } : spec, onPage(p), groupNow);
@@ -367,8 +368,20 @@ function leastNeeded(): number {
   return fading >= 0 ? fading : finite;
 }
 
+/** Beta: the kinds of shape switched off, to find which makes a moment slow (lib/switchedOff.ts). */
+const SHAPE_SWITCHES: [Switch, number[]][] = [
+  ['rays', [ShapeType.Rays]],
+  ['flare', [ShapeType.Flare]],
+  ['outline', [ShapeType.RectGlow, ShapeType.QuadGlow]],
+  ['ring', [ShapeType.Ring]],
+  ['flash', [ShapeType.Flash]],
+];
+const shapesOff = new Set(SHAPE_SWITCHES.flatMap(([name, types]) => (switchedOff(name) ? types : [])));
+const shapeOff = (type: number) => shapesOff.size > 0 && shapesOff.has(type);
+const particlesOff = switchedOff('particles');
+
 export function shape(spec: ShapeSpec): ShapeHandle {
-  if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life))) return NOOP;
+  if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life)) || shapeOff(spec.type)) return NOOP;
   if (shapes.length >= MAX_SHAPES) {
     const i = leastNeeded();
     if (i < 0) return NOOP;
@@ -1069,6 +1082,7 @@ function build(c: HTMLCanvasElement) {
 /** Takes the renderer made on `c` and follows its size; whatever waited for it plays. */
 function setup(c: HTMLCanvasElement, r: FxRenderer) {
   renderer = r;
+  if (switchedOff('bloom')) r.bloom = false;
   pool ??= new ParticlePool(coarse?.matches ? 2000 : 5000);
   ro?.disconnect();
   ro = new ResizeObserver(([entry]) => {
