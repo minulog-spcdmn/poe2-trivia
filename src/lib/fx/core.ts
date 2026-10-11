@@ -91,6 +91,8 @@ export type ShapeSpec = {
 };
 
 type LiveShape = ShapeSpec & {
+  /** The group it was made in (see fxGroup), 0 for none. */
+  group: number;
   age: number;
   seed: number;
   box: Box;
@@ -128,7 +130,8 @@ export type TaskOptions = {
   keep?: boolean;
 };
 
-type LiveTask = { fn: Task; age: number; life: number; keep: boolean };
+/** `group`, `behind`: the group it was made in and whether that was from behind the UI, in force again as it runs (see fxGroup). */
+type LiveTask = { fn: Task; age: number; life: number; keep: boolean; group: number; behind: boolean };
 
 // ---------- state ----------
 
@@ -301,7 +304,8 @@ function waited(): number {
 export function particle(p: ParticleSpec) {
   if (!fxActive() || hidden) return;
   const late = waited();
-  pool!.spawn(late ? { ...p, delay: (p.delay ?? 0) + late } : p, onPage(p));
+  const spec = behindNow && !p.behind ? { ...p, behind: true } : p;
+  pool!.spawn(late ? { ...spec, delay: (spec.delay ?? 0) + late } : spec, onPage(p), groupNow);
   wake();
 }
 
@@ -369,6 +373,8 @@ export function shape(spec: ShapeSpec): ShapeHandle {
   }
   const s: LiveShape = {
     ...spec,
+    behind: spec.behind || behindNow,
+    group: groupNow,
     age: -(spec.delay ?? 0) - waited(),
     seed: Math.random() * 100,
     box: boxOf(spec.at),
@@ -405,12 +411,71 @@ export function shape(spec: ShapeSpec): ShapeHandle {
  */
 export function task(fn: Task, { life = Infinity, keep = false }: TaskOptions = {}): Handle {
   if (!fxActive() || (hidden && !keep)) return NOOP;
-  const t: LiveTask = { fn, age: -waited(), life, keep };
+  const t: LiveTask = { fn, age: -waited(), life, keep, group: groupNow, behind: behindNow };
   tasks.push(t);
   wake();
   return {
     stop() {
       tasks = tasks.filter((x) => x !== t);
+    },
+  };
+}
+
+// ---------- groups ----------
+
+/** The group effects made now belong to (see fxGroup), 0 for none; and whether they shine from behind the UI. */
+let groupNow = 0;
+let behindNow = false;
+let groupsMade = 0;
+
+function inGroup<T>(group: number, behind: boolean, fn: () => T): T {
+  const was = groupNow;
+  const wasBehind = behindNow;
+  groupNow = group;
+  behindNow = behind;
+  try {
+    return fn();
+  } finally {
+    groupNow = was;
+    behindNow = wasBehind;
+  }
+}
+
+/**
+ * Effects that belong together, a screen's (the category cards'): what is
+ * made inside `run` is in the group, and so is all that its emitters and
+ * delayed steps go on to make. `stop` ends the group's effects together,
+ * fading them over `fadeSeconds`, so they don't play on over the screen that
+ * takes its place. With `behind`, what `run` makes shines from behind the UI
+ * (see cover). A run inside another group's belongs to the inner group.
+ */
+export type FxGroup = {
+  run<T>(fn: () => T, o?: { behind?: boolean }): T;
+  stop(fadeSeconds?: number): void;
+};
+
+export function fxGroup(): FxGroup {
+  const id = ++groupsMade;
+  return {
+    run: (fn, o) => inGroup(id, !!o?.behind, fn),
+    stop(fadeSeconds = 0.2) {
+      tasks = tasks.filter((t) => t.group !== id);
+      // (Away, nothing fades: it goes at once, as a stopped shape does.)
+      shapes = shapes.filter((s) => {
+        if (s.group !== id) return true;
+        if (hidden || s.age < 0) return false;
+        const fade = Math.max(0.001, fadeSeconds);
+        if (!s.stopped) {
+          s.stopped = true;
+          s.fade = s.fadeTotal = fade;
+        } else if (s.fade > fade) {
+          // (Already fading, slower: on from as bright as it is now.)
+          s.fadeTotal *= fade / s.fade;
+          s.fade = fade;
+        }
+        return true;
+      });
+      pool?.fadeGroup(id, hidden ? 0 : fadeSeconds);
     },
   };
 }
@@ -681,11 +746,17 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     const t = tasks[i];
     t.age += dt;
     let keep = false;
+    // (What it makes belongs to the group it was made in.)
+    groupNow = t.group;
+    behindNow = t.behind;
     try {
       // (It ends by its life however it's written, so dropping it unseen while the tab is away loses nothing that would still run.)
       keep = t.fn(dt, t.age) && t.age < t.life;
     } catch (e) {
       console.warn('FX task failed', e);
+    } finally {
+      groupNow = 0;
+      behindNow = false;
     }
     if (keep) i++;
     else tasks.splice(i, 1);
@@ -694,6 +765,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
+  let anchorsMoved = false;
   opacities.clear();
   shapes = shapes.filter((s) => {
     s.age += dt;
@@ -703,11 +775,14 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       if (s.fade <= 0) return false;
     }
     if (Number.isFinite(s.life) && s.age >= s.life) return false;
+    let moved = false;
     if (s.at instanceof Element) {
       // Follow the element; once it's gone (the screen moved on), fade out
       // where it was.
       if (s.at.isConnected) {
-        s.box = boxOf(s.at);
+        const b = boxOf(s.at);
+        moved = Math.abs(b.x - s.box.x) + Math.abs(b.y - s.box.y) > 0.25;
+        s.box = b;
         if (s.followOpacity) s.opacity = opacityOf(s.at, opacities);
       } else if (!s.stopped) {
         s.stopped = true;
@@ -716,7 +791,10 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     }
     const t = Number.isFinite(s.life) ? s.age / s.life : 0;
     s.update(s.f, t, s.age, s.box);
-    if (s.f.k > 0) visible.push([s, t]);
+    if (s.f.k > 0) {
+      visible.push([s, t]);
+      if (moved) anchorsMoved = true;
+    }
     return true;
   });
   // (Let go of the elements: they may leave the page before the next pass.)
@@ -741,7 +819,10 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   }
 
   const nParticles = pool.step(dt);
-  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
+  // (A calm shape on an element that moves isn't calm: drawn at half the rate
+  // while the page scrolls, or a phone's toolbars slide, it would trail its
+  // element, jumping after it every other frame.)
+  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && !anchorsMoved && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
 
   // Shake: trauma decays; the offset follows two noise curves.
   if (shake.trauma > 0) {
@@ -753,7 +834,8 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   }
 
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
-  if (!render) return busy;
+  // (Drawn now if it has just begun to move, rather than a frame behind.)
+  if (!render && !(anchorsMoved && manualClock === null)) return busy;
   if (nParticles > 0 || nShapes > 0) {
     setCovers(renderer);
     renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);

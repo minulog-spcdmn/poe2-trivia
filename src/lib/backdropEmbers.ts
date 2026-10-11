@@ -11,11 +11,10 @@
 // down in the Mines, embers rising on the magma's heat, snow falling, motes
 // drawn into the abyss's eddies, ...). Through a stratum's handover a
 // growing share of them burns in the next one's colour and moves its way
-// (emberTurn: one in twenty at the zone's 6th depth, nineteen in twenty
-// as the next is announced, all of them at its 2nd, eased), each taking
-// both as it starts a new life. Each new
-// depth carries them, and the glints with the walls, up past you as the
-// scene sinks (`rise`).
+// (emberTurn: one in ten at the zone's 7th depth, two in three at its 10th,
+// the last third as the next is announced, eased), each taking both as it
+// starts a new life. Each new depth carries them, and the glints with the
+// walls, up past you as the scene sinks (`rise`).
 
 import { emberTurn, hallTurn, lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 import { backdropsVersion } from './backdrops.ts';

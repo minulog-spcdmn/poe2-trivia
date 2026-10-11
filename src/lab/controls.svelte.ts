@@ -32,15 +32,17 @@ import {
   inventoryOf,
   isGroupRun,
   livesOf,
+  opensZone,
   standingIds,
   tileVeilSize,
   veilSeconds,
   veinWindowMs,
+  ZONE_DESCENT_MS,
   type FindKind,
   type Inventory,
   type ItemKind,
 } from '../lib/delve';
-import { milestoneAt } from '../lib/descent';
+import { milestoneAt, snapDescent } from '../lib/descent';
 import * as descentModule from '../lib/descent';
 import { resetRecords } from '../lib/delveRecord';
 
@@ -122,7 +124,11 @@ function put(change: (s: GameState) => void, quiet = false) {
   if (!prev) return;
   const s = structuredClone(prev);
   change(s);
-  if (quiet && s.delve) s.delve.startedAt = Math.max(Date.now(), prev.delve!.startedAt + 1);
+  if (quiet && s.delve) {
+    s.delve.startedAt = Math.max(Date.now(), prev.delve!.startedAt + 1);
+    // Set up afresh: no new zone's cards still on their way.
+    delete s.delve.dealAt;
+  }
   s.version = prev.version + 1;
   if (lab.paused && s.question?.askedAt !== lab.paused.askedAt) lab.paused = null;
   session.labSetState(s);
@@ -188,6 +194,7 @@ function deal(s: GameState) {
       opts.cardFind2 !== 'none' && opts.cardFind2 !== opts.cardFind && s.offered.length > 1 ? [{ category: s.offered[0], kind: opts.cardFind2 }] : [];
     s.delve.finds = [...first, ...second];
     delete s.delve.find;
+    delete s.delve.dealAt;
   }
 }
 
@@ -255,7 +262,7 @@ export function boot() {
 export function newRun(n: number, depth: number) {
   const s = freshRun(n, depth, null);
   place(s, true);
-  // Seen starting, as a run from the lobby is: at depth 1 it opens with the first zone's gate (Game.svelte).
+  // Seen starting, as a run from the lobby is: at depth 1 a screen reader is told the first zone's name (Game.svelte).
   session.runStarted = s.delve!.startedAt;
   note(`New run: ${n === 1 ? 'alone' : `${n} players together`} at depth ${depth}.`);
 }
@@ -303,11 +310,19 @@ function invSet(s: GameState, id: string, change: (inv: Inventory) => void) {
   (s.delve!.inventory ??= {})[id] = capShards(inv);
 }
 
-/** A player's streak of right answers, as if they had answered `n` in a row (the streak chip and the scoreboard's fire at any tier). */
+/**
+ * A player's streak of right answers, as if they had answered `n` in a row
+ * (the streak chip and the scoreboard's fire at any tier); together, the
+ * team's too (what the verdict's chip burns with there).
+ */
 export function setStreak(id: string, n: number) {
   put((s) => {
     const p = s.players.find((x) => x.id === id);
     if (p) p.streak = n;
+    if (s.delve && isGroupRun(s)) {
+      if (n) s.delve.teamStreak = n;
+      else delete s.delve.teamStreak;
+    }
   });
 }
 
@@ -723,17 +738,26 @@ export const othersPerish = () =>
     }
   });
 
-/** One depth deeper, built as the engine does it at the end of a round, so the mark for it plays. */
+/**
+ * One depth deeper, built as the engine does it at the end of a round, so the
+ * game screen takes it as one: into a new zone, its cards dealt as the plunge
+ * lands (dealAt), as the engine deals them.
+ */
 function stepDown() {
   put((s) => {
     s.round++;
     s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
     s.turnCount++;
     deal(s);
+    if (s.delve && opensZone(s.round)) s.delve.dealAt = session.hostNow() + ZONE_DESCENT_MS;
   });
 }
 
-/** At depth `d` with cards dealt (a fresh run id), seen by the game screen, then one deeper. */
+/**
+ * At depth `d` with cards dealt (a fresh run id), seen by the game screen,
+ * then one deeper. `before` runs once it is set up: a fresh run reads this
+ * device's best from its records again (session.bestAtStart).
+ */
 async function stepInto(d: number, before?: () => void) {
   put((s) => {
     const lives = new Map(s.players.map((p) => [p.id, livesOf(s, p.id)]));
@@ -743,27 +767,30 @@ async function stepInto(d: number, before?: () => void) {
     deal(s);
   }, true);
   before?.();
-  // The screen notes the depth it is at, so the next one counts as deeper.
+  // The screen notes the depth it is at, so the next one counts as deeper; the
+  // scene settles there, as a run's has by the time it steps down (not still
+  // easing or fading from the last play), so the step into a zone plays whole.
   await sleep(350);
+  snapDescent();
   stepDown();
 }
 
-/** Into the zone `d` is in (its first depth), or the next one from the Mines. */
-export const zoneEnter = (d = depthOf()) =>
+/** Into the zone `d` is in (its first depth), or the next one from the Mines; `before`: as stepInto's. */
+export const zoneEnter = (d = depthOf(), before?: () => void) =>
   event('Zone change', async () => {
     let start = Math.floor((Math.max(1, d) - 1) / 10) * 10 + 1;
     if (!milestoneAt(start)) start = 11;
-    await stepInto(start);
+    await stepInto(start, before);
   });
 
 export const nextZone = () => zoneEnter(Math.floor((depthOf() - 1) / 10) * 10 + 11);
 
-/** Past this device's best alone ("Deeper than ever"): the best is set to the depth just left. */
+/** Past this device's best alone ("Deeper than ever", on the line over the banner): the best is set to the depth just left. */
 export const deeperThanEver = () =>
   event('Deeper than ever', async () => {
     if ((run()?.players.length ?? 1) > 1) setPlayers(1);
     let d = depthOf() + 1;
-    // A zone's own name takes the gate on its first depth.
+    // Not a zone's first depth, where its title card says it instead.
     if (milestoneAt(d)) d++;
     await stepInto(d, () => (session.bestAtStart = d - 1));
   });
@@ -776,11 +803,11 @@ export const descend = () =>
     next();
   });
 
-/** The plunge the scene takes as a card is picked (src/lib/descent.ts), if this build has it. */
-export function plunge(): boolean {
+/** The plunge the scene takes as a card is picked (src/lib/descent.ts), if this build has it; `zone`: into a new zone's, deeper and longer. */
+export function plunge(zone = false): boolean {
   const f = (descentModule as Record<string, unknown>).plunge;
   if (typeof f !== 'function') return false;
-  (f as () => void)();
+  (f as (zone: boolean) => void)(zone);
   return true;
 }
 

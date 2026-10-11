@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageZoom, unzoomPin } from '../src/lib/stage.ts';
+import { stageZoom, unzoomPin, zoomOf } from '../src/lib/stage.ts';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
@@ -40,4 +40,14 @@ test("a leaving list item's pin, measured on screen, is scaled back to its own p
   const none = item('', 2);
   unzoomPin(none);
   assert.equal(none.style.transform, '');
+});
+
+test("a Delve zone's title card, outside the shell, carries the stage's zoom too, for a browser that doesn't say (measured on it)", () => {
+  Object.assign(globalThis, { innerWidth: 2560, innerHeight: 1440, document: { documentElement: { style: { getPropertyValue: () => '1.469' } } } });
+  const card = { offsetWidth: 1743, getBoundingClientRect: () => ({ width: 2560 }) };
+  const inCard = (sel: string) => (sel.split(',').some((s) => s.trim() === '.zc') ? card : null);
+  const letter = { closest: inCard } as unknown as Element;
+  assert.equal(zoomOf(letter), 1.469);
+  const said = { currentCSSZoom: 1.469, closest: () => null } as unknown as Element;
+  assert.equal(zoomOf(said), 1.469, 'a browser that says is taken at its word');
 });

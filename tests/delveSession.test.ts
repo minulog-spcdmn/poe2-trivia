@@ -257,7 +257,7 @@ test("the fuse sounds again once a Detonate's sound the host turned down has end
   assert.equal(fuseHeard(null, 100, 1000), false);
 });
 
-test('a run only opens with its gate on a screen that saw it start, never after a reload or a rejoin', () => {
+test("a run's start is only told on a screen that saw it start, never after a reload or a rejoin", () => {
   const lobby = run({ phase: 'lobby' });
   const choosing = run();
   assert.equal(runSeenStarting(lobby, choosing), 5);

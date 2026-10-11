@@ -169,9 +169,10 @@ export const toneGain = (tone: Tone, i: number) => toneLuma(tone, i) / toneLuma(
 
 /**
  * The handover's curve, 0 to 1 as `x` goes from 0 to 1: eased in and out
- * (smoothstep), so a stratum begins to turn slowly, turns fastest half way
- * (half as fast again as a straight ramp, no more: the light has to keep
- * pace with it) and settles slowly, never with a jump or a kink.
+ * (smoothstep), so a share of the scene (the embers', the hall's) begins to
+ * turn slowly, turns fastest half way (half as fast again as a straight
+ * ramp, no more) and settles slowly, never with a jump or a kink. How far
+ * the turn it follows has come at each depth is TURN_AT's.
  */
 export function easeTurn(x: number): number {
   const t = Math.min(1, Math.max(0, x));
@@ -179,30 +180,47 @@ export function easeTurn(x: number): number {
 }
 /**
  * How many depths a stratum's turn into the next takes (lib/descent.ts,
- * strataAt): seven, from the zone's 5th depth to the next one's 2nd, so the
- * next zone has all but arrived as it is announced at its first depth and
- * shows alone once its first question is answered.
+ * strataAt): five, from the zone's 6th depth to the next one's 1st, so the
+ * next zone has arrived as it is announced at its first depth (its title
+ * card, components/zonecard) and shows alone from there.
  */
-export const TURN_DEPTHS = 7;
+export const TURN_DEPTHS = 5;
+/**
+ * How far a stratum's turn into the next has come (0 to 1) at each of its
+ * depths, from the zone's 6th to the next one's 1st: a fifth a depth to the
+ * zone's 8th, a tenth a depth to its 10th (which so looks as its 9th did
+ * when the turn went a fifth a depth all the way), and the last two fifths
+ * at once, into the next zone. So the next zone creeps in over the zone's
+ * last depths, and the step into it is by far the turn's largest (twice
+ * any before it, at least, in the look as a whole): it reads as a new
+ * place, not one that has all but arrived already.
+ */
+export const TURN_AT: readonly number[] = [0, 0.2, 0.4, 0.5, 0.6, 1];
+/** How far a stratum's turn has come `into` depths in (0 to TURN_DEPTHS): TURN_AT, straight between whole depths. */
+export function turnAt(into: number): number {
+  const x = Math.min(TURN_DEPTHS, Math.max(0, into));
+  const i = Math.min(TURN_DEPTHS - 1, Math.floor(x));
+  return TURN_AT[i] + (TURN_AT[i + 1] - TURN_AT[i]) * (x - i);
+}
 /**
  * How far into a stratum's turn the next one's light, smoke and features
- * begin to creep in: one depth in (a seventh of the way), at the zone's 6th
+ * begin to creep in: one depth in (TURN_AT's first step), at the zone's 7th
  * depth, a depth after the embers.
  */
-export const HALL_FROM = 1 / TURN_DEPTHS;
+export const HALL_FROM = TURN_AT[1];
 /**
  * How far the next stratum's light, smoke and features have come at `turn`:
- * eased (easeTurn) from HALL_FROM to the end of the turn, six depths in
- * all: barely there at the zone's 7th depth (under a tenth), half way at
- * its 9th, nine tenths as the next is announced, and all there at its 2nd.
+ * eased (easeTurn) from HALL_FROM to the end of the turn, four depths in
+ * all: a sixth there at the zone's 8th depth, a third at its 9th, half way
+ * at its 10th, and the other half as the next is announced.
  */
 export const hallTurn = (turn: number) => easeTurn((turn - HALL_FROM) / (1 - HALL_FROM));
 /**
  * How many of the embers burn in the next stratum at `turn` (0 to 1): eased
- * over the whole turn, seven depths: one in twenty at the zone's 6th depth,
- * two in five at its 8th, three in five at its 9th, nineteen in twenty as the
- * next zone is announced. A depth ahead of the hall, as the embers drift up
- * from what lies below.
+ * over the whole turn, five depths: one in ten at the zone's 7th depth, a
+ * third at its 8th, half at its 9th, two in three at its 10th, all of them
+ * as the next zone is announced. A depth ahead of the hall, as the embers
+ * drift up from what lies below.
  */
 export const emberTurn = (turn: number) => easeTurn(turn);
 
@@ -424,7 +442,7 @@ export function settingsErrors(s: unknown, where = 'settings'): string[] {
 /**
  * What is wrong with a whole backdrops file (nothing: an empty list).
  * `zoneNames`: the zones it must hold, in order (their names never change:
- * the zone gate's sigils and the codex go by them).
+ * the title cards' sigils and motions, and the codex, go by them).
  */
 export function backdropsErrors(data: unknown, zoneNames: readonly string[], profiles: readonly string[]): string[] {
   if (!data || typeof data !== 'object') return ['not an object'];

@@ -112,7 +112,7 @@ const MORE = [
   'room', 'code', 'invite', 'hide', 'access', 'public', 'lock', 'party', 'watch', 'coop',
   'settings', 'modes', 'about', 'target', 'difficulty', 'time', 'rules', 'descent', 'start', 'begin',
   // A game: its banner, the scoreboard, the choice of cards, a question and the row under it.
-  'banner', 'duel', 'skip', 'board', 'ask', 'watching',
+  'banner', 'duel', 'skip', 'board', 'ask',
   'prompt', 'cards', 'notes', 'vote', 'note',
   'task', 'timer', 'item', 'plate', 'options', 'footer', 'result', 'verdict', 'outcome', 'blast', 'hint',
   // The end: the headline, the standings, what's next.

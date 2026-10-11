@@ -5,6 +5,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
@@ -26,6 +27,7 @@
     lifeHeld,
     lifeLost,
     lostPoint,
+    newFlame,
     shardFound,
     turnsBlue,
     wardBlocked,
@@ -34,7 +36,7 @@
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { flareStrike } from '../lib/flareBurn';
-  import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
+  import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
   import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
@@ -42,7 +44,8 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
-  import WatchToggle from './WatchToggle.svelte';
+  import Gallery from './Gallery.svelte';
+  import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
 
   /** Shown at the end of the row (the timer, on phones). */
@@ -54,9 +57,6 @@
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
-  const spectators = $derived(s.spectators ?? []);
-  /** Those of them who take a seat in the next game (the rest just watch). */
-  const joining = $derived(spectators.filter((o) => !o.stay));
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
@@ -547,7 +547,7 @@
               filling[p.id] = false;
               shown[p.id] = barShown[p.id] = latest(p.id, score);
               // A streak's fire grows as the number ticks up.
-              heat[p.id] = heatOf(streakOf(session.state?.players.find((x) => x.id === p.id)), !!session.state?.delve);
+              burning[p.id] = streakOf(session.state?.players.find((x) => x.id === p.id));
             },
           ],
         ]);
@@ -567,43 +567,52 @@
 
   // Players on a streak burn. The fire grows with the score, as the number
   // ticks up (the award's last step above); a broken streak puts it out at once.
-  let heat = $state<Record<string, number>>({});
+  // The streak as the fire shows it, per player.
+  let burning = $state<Record<string, number>>({});
   $effect(() => {
     const here = new Set<string>();
     for (const p of s.players) {
       here.add(p.id);
-      const h = heatOf(streakOf(p), !!s.delve);
-      const was = untrack(() => heat[p.id] ?? 0);
-      if (h > was && awards.has(p.id)) continue;
-      if (h !== was) heat[p.id] = h;
+      const n = streakOf(p);
+      const was = untrack(() => burning[p.id] ?? 0);
+      if (n > was && awards.has(p.id)) continue;
+      if (n !== was) burning[p.id] = n;
     }
     // Players who left take their fire with them.
-    for (const id of Object.keys(untrack(() => heat))) if (!here.has(id)) delete heat[id];
+    for (const id of Object.keys(untrack(() => burning))) if (!here.has(id)) delete burning[id];
   });
   $effect(() => () => {
     for (const id of [...awards.keys()]) cancel(awards, id);
   });
 
-  /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. `delve`: the long scale (lib/fx/streaks). */
-  function burn(node: HTMLElement, o: { h: number; delve: boolean }) {
+  /**
+   * Svelte action: sets a row burning for a streak of `n`, re-lit as its heat
+   * or colour changes. `delve`: the long scale and the colours past blue
+   * (lib/fx/streaks). Reaching a new colour, it bursts in it.
+   */
+  function burn(node: HTMLElement, o: { n: number; delve: boolean }) {
     let fire: Handle | null = null;
-    let lit = 0;
-    let delve = o.delve;
-    const set = ({ h: next, delve: long }: { h: number; delve: boolean }) => {
-      delve = long;
-      if (next === lit) return;
-      fire?.stop(0.5);
-      fire = next > 0 ? ablaze(node, next, burnsBlue(next, delve)) : null;
-      if (lit > 0 && next === 0) doused(node);
-      if (lit > 0 && !burnsBlue(lit, delve) && burnsBlue(next, delve)) turnsBlue(node);
+    let lit = { heat: 0, flame: flameOf(0) };
+    const light = () => (fire = lit.heat > 0 ? ablaze(node, lit.heat, lit.flame.blue, lit.flame.tint) : null);
+    const set = ({ n, delve }: { n: number; delve: boolean }) => {
+      const next = { heat: heatOf(n, delve), flame: flameOf(n, delve) };
+      if (next.heat === lit.heat && (next.heat === 0 || next.flame === lit.flame)) return;
+      const was = lit;
       lit = next;
+      fire?.stop(0.5);
+      light();
+      if (was.heat > 0 && next.heat === 0) doused(node);
+      if (was.heat > 0 && next.heat > 0 && next.flame !== was.flame) {
+        if (next.flame.blue) turnsBlue(node);
+        else if (next.flame.tint) newFlame(node, next.flame.tint);
+      }
     };
     set(o);
     // Effects switched off and on, or the GL context lost and restored, wipe
     // every shape: light it again on the new one.
     const relight = onFxChange(() => {
       fire?.stop(0);
-      fire = lit > 0 ? ablaze(node, lit, burnsBlue(lit, delve)) : null;
+      light();
     });
     return {
       update: set,
@@ -687,7 +696,7 @@
     if (asking) (e.preventDefault(), closeAsk());
     else kicker.disarm();
   }}
-  onpointerdown={(e) => !(e.target as Element).closest?.('.kick.confirm, .kick-inline.confirm') && kicker.disarm()}
+  onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
 />
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
@@ -702,7 +711,8 @@
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
       {@const score = scoreOf(p.id, p.score)}
-      {@const fire = heat[p.id] ?? 0}
+      {@const streakShown = burning[p.id] ?? 0}
+      {@const fire = heatOf(streakShown, !!run)}
       {@const lives = run ? livesOf(s, p.id) : 0}
       {@const fell = run && !(p.id in hit) && !(p.id in held) ? fellAt(s, p.id) : null}
       {@const shownLives = held[p.id] ?? lives}
@@ -714,10 +724,10 @@
         data-cursor="row:{i}"
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
-        use:burn={{ h: fire, delve: !!run }}
+        use:burn={{ n: streakShown, delve: !!run }}
         class:ablaze={fire > 0}
         style:--heat={fire}
-        style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
+        style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
@@ -756,17 +766,11 @@
         {/if}
         {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
         {#if canKick && p.id !== s.hostId}
-          <button
-            class="kick"
-            class:confirm={confirming === p.id}
-            onclick={() => kick(p.id)}
-            title="Remove {p.name} from the game"
-            aria-label="Remove {p.name}"
-          >
-            {confirming === p.id ? 'Kick' : '×'}
-          </button>
+          <span class="kick-at" class:armed={confirming === p.id}>
+            <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
+          </span>
         {/if}
-        {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
+        {#if out}<span class="x" title="Answered wrong"><DrawnMark /></span>{/if}
         {#if reviveOk}
           <!-- Delve together: revive them with one of your lives. A heart of
                light in the entry, beating as the phial's lives do. -->
@@ -783,6 +787,8 @@
     {/each}
   </ol>
   {@render aside?.()}
+  <!-- Who's watching hangs under the strip, so nothing moves when someone comes in to watch. Not while the offer to give a life hangs there. -->
+  {#if !asking && !session.spectating}<Gallery hang />{/if}
   {#if asking && askingName && me}
     <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
@@ -801,32 +807,8 @@
     </div>
   {/if}
 </div>
-{#if spectators.length}
-  <p class="watching" data-cursor="watching">
-    <span class="eye" aria-hidden="true">👁</span>
-    Watching:
-    {#each spectators as o (o.id)}
-      <span class="spectator"
-        >{o.name}{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}{#if canKick}<button
-            class="kick-inline"
-            class:confirm={confirming === o.id}
-            onclick={() => kick(o.id)}
-            title="Remove {o.name}"
-            aria-label="Remove {o.name}">{confirming === o.id ? 'Kick' : '×'}</button
-          >{/if}</span
-      >
-    {/each}
-    {#if joining.length === spectators.length}
-      <span class="hint">· joining next game</span>
-    {:else if joining.length}
-      <span class="hint">· {joining.map((o) => o.name).join(', ')} {joining.length === 1 ? 'joins' : 'join'} next game</span>
-    {/if}
-    {#if session.spectating}
-      <!-- Your own choice: take a seat when the next game starts, or keep watching. -->
-      <WatchToggle />
-    {/if}
-  </p>
-{/if}
+<!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
+{#if session.spectating}<Gallery />{/if}
 
 <style>
   .board {
@@ -871,8 +853,8 @@
   }
   /* On a streak: the entry smoulders under its flames (and still glows with effects off). */
   li.ablaze {
-    /* Orange, and blue at the top of a streak. */
-    --flame: color-mix(in srgb, rgb(70, 140, 255) calc(var(--blue) * 100%), rgb(255, 110, 30));
+    /* Orange, blue at the top of a streak, and in Delve on up the daily's colours (lib/fx/streaks). */
+    --flame: rgb(var(--flame-rgb, 255, 110, 30));
   }
   /* Borders that say something (whose turn, answered wrong, a duelist) win over the fire's. */
   li.ablaze:not(.active, .out, .duelist) {
@@ -905,66 +887,26 @@
     border: 5px solid transparent;
     border-top-color: var(--c);
   }
-  /* The kick, as the lobby's: a quiet × on the entry's corner; pointed at, a
-     thin red ring round it and the entry's edge warms red; armed, the ring
-     grows sideways into a pill and the × gives way to Kick, while the entry
-     takes the wrong-answer colours. Same ring, same red, only longer. */
-  .kick {
+  /* The kick, as the lobby's (KickButton): a small seal on the entry's
+     corner, shown while the entry is pointed at; pointed at itself, it and
+     the entry's edge warm red; armed, it grows sideways into a pill reading
+     Kick, while the entry takes the wrong-answer colours. */
+  .kick-at {
     position: absolute;
     top: -8px;
     left: -6px;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: #140d0a;
-    color: var(--muted);
-    font-size: 0.95rem;
-    line-height: 1;
-    cursor: pointer;
+    display: flex;
+    --kick-size: 20px;
+    --kick-armed: 50px;
     opacity: 0;
-    transition:
-      opacity 0.2s,
-      width 0.22s var(--ease-out),
-      color 0.2s,
-      border-color 0.2s,
-      background-color 0.2s,
-      box-shadow 0.2s;
+    transition: opacity 0.2s;
   }
-  li:hover .kick,
-  .kick:focus-visible,
-  .kick.confirm {
+  li:hover .kick-at,
+  .kick-at:focus-within,
+  .kick-at.armed {
     opacity: 1;
   }
-  .kick:hover {
-    color: var(--bad);
-    border-color: rgba(224, 85, 63, 0.6);
-  }
-  .kick:focus-visible {
-    outline: 1px solid var(--gold-hi);
-    outline-offset: 2px;
-  }
-  .kick.confirm {
-    width: 50px;
-    border-color: rgba(224, 85, 63, 0.75);
-    background-color: #2a120d;
-    color: #ff9c86;
-    font-family: var(--font-display);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    box-shadow: 0 0 10px rgba(224, 85, 63, 0.25);
-  }
-  .kick.confirm:hover {
-    color: #ffd2c6;
-    border-color: #e0553f;
-    background-color: #3a170f;
-  }
-  li:has(.kick:hover) {
+  li:has(:global(.kick:hover)) {
     border-color: rgba(224, 85, 63, 0.45);
   }
   /* Armed: the whole entry asks, in the wrong-answer colours, the avatar dimmed. */
@@ -979,7 +921,7 @@
     color: #eab3a3;
   }
   @media (hover: none) {
-    .kick {
+    .kick-at {
       opacity: 0.8;
     }
   }
@@ -1088,7 +1030,7 @@
     filter: none;
   }
   /* (Not the remove button, which keeps its own showing: on hover only.) */
-  li.fallen.revivable > :not(.revive, .kick) {
+  li.fallen.revivable > :not(.revive, .kick-at) {
     opacity: 0.45;
     filter: grayscale(0.85);
   }
@@ -1281,8 +1223,8 @@
     height: 18px;
     display: grid;
     place-items: center;
-    font-size: 0.7rem;
-    font-weight: 700;
+    --mark-size: 7px;
+    --mark-stroke: 1.5px;
     color: #fff;
     background: var(--bad);
     border-radius: 50%;
@@ -1414,54 +1356,6 @@
     font-size: 0.8rem;
   }
 
-  .watching {
-    margin: -0.2rem 0 0;
-    text-align: center;
-    font-size: 0.88rem;
-    color: var(--muted);
-  }
-  .watching em,
-  .watching .hint {
-    font-size: 0.9em;
-    font-style: italic;
-  }
-  .spectator {
-    color: var(--text);
-    margin-left: 0.5em;
-  }
-  /* A spectator's kick, in the line of names: the same ring into a pill. */
-  .kick-inline {
-    margin-left: 0.25em;
-    min-width: 1.5em;
-    padding: 0 0.35em;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #140d0a;
-    color: var(--muted);
-    font-size: 0.8rem;
-    line-height: 1.3;
-    cursor: pointer;
-    transition:
-      color 0.2s,
-      border-color 0.2s,
-      background-color 0.2s;
-  }
-  .kick-inline:hover {
-    color: var(--bad);
-    border-color: rgba(224, 85, 63, 0.6);
-  }
-  .kick-inline.confirm {
-    border-color: rgba(224, 85, 63, 0.75);
-    background-color: #2a120d;
-    color: #ff9c86;
-    font-family: var(--font-display);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-style: normal;
-  }
-
   @media (max-width: 640px) {
     /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
        row of avatars and scores, with the name and progress of whoever's turn
@@ -1488,6 +1382,11 @@
       background-color: var(--pinned-bg);
       border-bottom: var(--pinned-line);
       box-shadow: 0 8px var(--pinned-shadow);
+    }
+    /* Who's watching stays at the top of the page; pinned, the strip goes without it. */
+    .strip.stuck :global(.gallery) {
+      opacity: 0;
+      visibility: hidden;
     }
     /* One row while it fits (the name of whoever's turn it is gives way first). */
     .board {

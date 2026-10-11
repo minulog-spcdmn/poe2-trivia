@@ -11,6 +11,7 @@
 // Pages that don't call installCursor keep the system's cursors.
 
 import { ART, type Art, type ArtName } from './pointerArt';
+import { whenIdle } from './idle';
 
 /** The circle's old gold (docs/arcane-style.md). */
 const GOLD = '#d9a45a';
@@ -97,6 +98,8 @@ function setSyntax() {
 }
 
 const made = new Map<string, string>();
+/** Each look's own image (its 1x data URL), to tell which look an element shows: made with it. */
+const imageOf = new Map<string, string>();
 
 /** A cursor value for `name` drawn `look`, in `color`, falling back to the system's `fallback`. */
 function cursorValue(name: ArtName, look: Look, color: string, fallback: string) {
@@ -105,6 +108,7 @@ function cursorValue(name: ArtName, look: Look, color: string, fallback: string)
   if (v) return v;
   const art: Art = ART[name];
   const one = draw(art, color, look, 1);
+  if (one) imageOf.set(key, one);
   const sharp = setSyntax();
   v = !one
     ? fallback
@@ -116,8 +120,14 @@ function cursorValue(name: ArtName, look: Look, color: string, fallback: string)
 }
 
 let color = GOLD;
-let pressed = false;
 let applied = '';
+/**
+ * Pressed, the pointer changes on the element under it alone (an inline
+ * cursor, put back on release), never through the variables on <html>:
+ * changing those restyles the whole page, a stall on a long one (the
+ * codex's every tile) twice a click.
+ */
+let dressed: { el: HTMLElement | SVGElement; was: string; priority: string } | null = null;
 /** Windows' high contrast and the like: the system's own cursors, which follow the user's settings. */
 const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: active)') : null;
 const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text'];
@@ -125,24 +135,101 @@ const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-tex
 function apply() {
   if (typeof document === 'undefined') return;
   const root = document.documentElement.style;
-  const key = forced?.matches ? 'forced' : `${color}:${pressed}`;
+  const key = forced?.matches ? 'forced' : color;
   if (key === applied) return;
   applied = key;
+  undress();
   if (key === 'forced') {
     for (const v of VARS) root.removeProperty(v);
     return;
   }
-  // Over something that can be clicked, the hand; pressed, the dart sinks a little, the hand's finger pushes in.
-  root.setProperty('--cursor', pressed ? cursorValue('sink', 'sunk', color, 'default') : cursorValue('rest', 'rest', color, 'default'));
-  root.setProperty('--cursor-pointer', pressed ? cursorValue('press', 'press', color, 'pointer') : cursorValue('hover', 'lit', color, 'pointer'));
+  // Over something that can be clicked, the hand (pressed, its finger pushes in: dress, below).
+  root.setProperty('--cursor', cursorValue('rest', 'rest', color, 'default'));
+  root.setProperty('--cursor-pointer', cursorValue('hover', 'lit', color, 'pointer'));
   root.setProperty('--cursor-disabled', cursorValue('disabled', 'dull', color, 'not-allowed'));
   root.setProperty('--cursor-text', cursorValue('text', 'rest', color, 'text'));
+}
+
+/** The pressed look for what `el` shows: the hand's finger pushed in over something to click, the dart sunk a little elsewhere; null for the rest (text, disabled, a page's own). */
+function pressedFor(el: Element): string | null {
+  const shown = getComputedStyle(el).cursor;
+  const is = (key: string) => {
+    const image = imageOf.get(`${key}:${color}`);
+    return !!image && shown.includes(image);
+  };
+  if (is('hover:lit')) return cursorValue('press', 'press', color, 'pointer');
+  if (is('rest:rest')) return cursorValue('sink', 'sunk', color, 'default');
+  return null;
+}
+
+/**
+ * Elements holding more than this many (bare page, a long list's ground)
+ * aren't dressed themselves: a cursor is inherited, so a change on them
+ * restyles all they hold, the stall this is here to avoid. Pressed on one,
+ * a speck (`pin`) is put under the pointer inside it instead, wearing the
+ * pressed look: the browser shows the cursor of what is under the pointer,
+ * and one tiny element costs nothing to style.
+ */
+const DRESS_MOST = 150;
+/** The speck's size, CSS px: the pointer's tip stays on it through a click's slight wobble. */
+const PIN = 8;
+let pin: HTMLElement | null = null;
+/** Counts the speck's placings, so one taken away late never takes away a later one. */
+let pinned = 0;
+
+/**
+ * Shows the pressed pointer on `target` (the element under it), and only
+ * there; on a large one, pressed at (x, y), a speck under the pointer. Only
+ * as the press begins (`pinning`): moved on while held, it never follows
+ * (under the pointer all the while, it would stop a drag from selecting text).
+ */
+function dress(target: EventTarget | null, x: number, y: number, pinning: boolean) {
+  if (target === pin) return;
+  if (applied === 'forced' || !(target instanceof HTMLElement || target instanceof SVGElement)) return undress();
+  if (dressed?.el === target) return;
+  undress();
+  const v = pressedFor(target);
+  if (!v) return;
+  if (target.getElementsByTagName('*').length <= DRESS_MOST) {
+    dressed = { el: target, was: target.style.getPropertyValue('cursor'), priority: target.style.getPropertyPriority('cursor') };
+    target.style.setProperty('cursor', v, 'important');
+    return;
+  }
+  if (!pinning) return;
+  // (Inside what was pressed, so the click still lands on it: a click goes to
+  // what both the press and the release were on, and the release is on the speck.)
+  const into = target === document.documentElement ? document.body : target;
+  if (!(into instanceof HTMLElement)) return;
+  // (Its class keeps it out of what the other players' pointers are anchored to: lib/pointerAnchor.ts.)
+  pin ??= Object.assign(document.createElement('i'), { ariaHidden: 'true', className: 'press-pin' });
+  pin.style.cssText = `position:fixed;left:0;top:0;width:${PIN}px;height:${PIN}px;margin:0;padding:0;border:0;z-index:2147483647;contain:strict;cursor:${v}`;
+  into.append(pin);
+  pinned++;
+  // Where it landed (a zoomed or turned ancestor moves what is fixed), and onto the pointer's tip from there.
+  const r = pin.getBoundingClientRect();
+  const z = r.width / PIN || 1;
+  pin.style.left = `${(x - r.left) / z - PIN / 2}px`;
+  pin.style.top = `${(y - r.top) / z - PIN / 2}px`;
+}
+
+/** Gives the pressed element its own cursor back, and takes the speck away (after the click it may take part in). */
+function undress() {
+  if (pin?.isConnected) {
+    const at = pinned;
+    setTimeout(() => at === pinned && pin?.remove());
+  }
+  if (!dressed) return;
+  const { el, was, priority } = dressed;
+  dressed = null;
+  if (was) el.style.setProperty('cursor', was, priority);
+  else el.style.removeProperty('cursor');
 }
 
 /** Shows the pointer in `color` from now on (old gold when none). */
 export function setCursorColor(c: string = GOLD) {
   color = c;
   apply();
+  whenIdle(predraw, { timeout: 3000 });
 }
 
 /** The colour the pointer is drawn in now. */
@@ -158,15 +245,41 @@ export const scrollCursor = (way: 'up' | 'down' | 'still') => cursorValue(way, '
 export function installCursor() {
   apply();
   forced?.addEventListener('change', apply);
-  const press = (on: boolean) => {
-    if (pressed === on) return;
-    pressed = on;
-    apply();
+  // The pressed looks drawn ahead, so the first press doesn't wait on them.
+  whenIdle(predraw, { timeout: 3000 });
+  let pressed = false;
+  const release = () => {
+    pressed = false;
+    undress();
   };
-  addEventListener('pointerdown', (e) => e.pointerType === 'mouse' && e.button === 0 && press(true), { capture: true, passive: true });
-  addEventListener('pointerup', (e) => e.pointerType === 'mouse' && e.button === 0 && press(false), { capture: true, passive: true });
-  // Released outside the window, or never heard: let go at the next sign of it.
-  addEventListener('pointermove', (e) => pressed && e.pointerType === 'mouse' && !(e.buttons & 1) && press(false), { passive: true });
-  addEventListener('blur', () => press(false));
-  addEventListener('dragend', () => press(false));
+  addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      pressed = true;
+      dress(e.target, e.clientX, e.clientY, true);
+    },
+    { capture: true, passive: true },
+  );
+  addEventListener('pointerup', (e) => e.pointerType === 'mouse' && e.button === 0 && release(), { capture: true, passive: true });
+  addEventListener(
+    'pointermove',
+    (e) => {
+      if (!pressed || e.pointerType !== 'mouse') return;
+      // Released outside the window, or never heard: let go at the next sign of it.
+      if (!(e.buttons & 1)) release();
+      // Held and moved on: the pressed pointer goes with it, onto what is under it now.
+      else dress(e.target, e.clientX, e.clientY, false);
+    },
+    { passive: true },
+  );
+  addEventListener('blur', release);
+  addEventListener('dragend', release);
+}
+
+/** Draws the pressed looks in the pointer's colour now, ahead of the first press. */
+function predraw() {
+  if (typeof document === 'undefined' || applied === 'forced') return;
+  cursorValue('press', 'press', color, 'pointer');
+  cursorValue('sink', 'sunk', color, 'default');
 }

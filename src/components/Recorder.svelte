@@ -4,6 +4,7 @@
   // A small badge in the corner says it's on, and saves the file.
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
+  import { dealing } from '../lib/dealing.svelte';
   import { portal } from '../lib/portal';
   import { MOUSE } from '../lib/cursors';
   import { anchorAt } from '../lib/pointerAnchor';
@@ -48,6 +49,10 @@
   $effect(() => {
     const s = session.state;
     if (s && rec.scene(sceneOf(s, session.myPlayerId, Math.round(since())))) lookSoon();
+  });
+  // A new zone's cards dealt (nothing in the game changes then): looked at again as they come in.
+  $effect(() => {
+    if (!dealing.held) lookSoon();
   });
 
   function save() {

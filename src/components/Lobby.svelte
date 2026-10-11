@@ -1,6 +1,6 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
   import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
@@ -12,6 +12,9 @@
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
+  import KickButton from './KickButton.svelte';
+  import OnlookerMark from './OnlookerMark.svelte';
+  import WatchEye from './WatchEye.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { kickConfirm } from '../lib/kick';
@@ -120,7 +123,7 @@
   }
   /** A press anywhere but the armed Kick takes it back too. */
   function disarmOutside(e: PointerEvent) {
-    if (!(e.target as Element).closest?.('.remove.confirm')) kicker.disarm();
+    if (!(e.target as Element).closest?.('.kick.armed')) kicker.disarm();
   }
   /** Phones hand the link to the share sheet instead of the clipboard (see copy), so the button says so. */
   const canShare = typeof navigator !== 'undefined' && !!navigator.share && matchMedia('(pointer: coarse)').matches;
@@ -221,7 +224,6 @@
   const waiting = $derived((s.spectators ?? []).filter((o) => !o.stay));
   /** Spectators who chose to watch rather than play. */
   const watching = $derived((s.spectators ?? []).filter((o) => o.stay));
-  const you = (o: Spectator) => o.name + (o.id === session.myPlayerId ? ' (you)' : '');
   const race = $derived(s.settings.mode === 'race');
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
@@ -237,8 +239,9 @@
       <p class="go-note">Add the first exile to begin.</p>
     {:else if !local && s.players.length < 2}
       <p class="go-note">You can begin alone, or wait for your party.</p>
-    {:else}
-      <p class="go-note"><b class="num">{s.players.length}</b> {s.players.length === 1 ? 'exile' : 'exiles'} ready</p>
+    {:else if s.players.length > 1}
+      <!-- A lone player knows they're here: Begin stands by itself. -->
+      <p class="go-note"><b class="num">{s.players.length}</b> exiles ready</p>
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
@@ -392,33 +395,30 @@
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
               {#if p.id === s.hostId && !local}<HostMark />{/if}
               {#if isHost && (local || p.id !== s.hostId)}
-                <button
-                  class="remove"
-                  class:confirm={confirming === p.id}
-                  title="Remove {p.name}"
-                  aria-label="Remove {p.name}"
-                  onclick={() => removePlayer(p.id)}
-                  >{confirming === p.id ? 'Kick' : '×'}</button
-                >
+                <KickButton name={p.name} armed={confirming === p.id} onclick={() => removePlayer(p.id)} />
               {/if}
             </li>
           {/each}
         </ul>
-        {#snippet onlookers(list: Spectator[])}
-          {#each list as o, i (o.id)}{i ? ', ' : ''}{you(o)}{#if isHost}<button
-                class="remove inline"
-                class:confirm={confirming === o.id}
-                title="Remove {o.name}"
-                aria-label="Remove {o.name}"
-                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{confirming === o.id ? 'Kick' : '×'}</button
-              >{/if}{/each}
+        <!-- Those in the room without a seat, under the party: smaller, darker chips, each an empty ring where a player has their colour. -->
+        {#snippet gallery(label: string, list: Spectator[])}
+          <div class="gallery" transition:slide={{ duration: 250 }}>
+            <h3><WatchEye />{label}</h3>
+            <ul class="onlookers">
+              {#each list as o (o.id)}
+                <li data-id={o.id} class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:fly={{ y: 6, duration: 300 }} out:kickOut>
+                  <OnlookerMark name={o.name} size={24} />
+                  <span class="name" title={o.name}><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
+                  {#if isHost}
+                    <KickButton name={o.name} armed={confirming === o.id} onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))} />
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          </div>
         {/snippet}
-        {#if waiting.length}
-          <p class="hint">Waiting for a free seat: {@render onlookers(waiting)}</p>
-        {/if}
-        {#if watching.length}
-          <p class="hint">Just watching: {@render onlookers(watching)}</p>
-        {/if}
+        {#if waiting.length}{@render gallery('Waiting for a seat', waiting)}{/if}
+        {#if watching.length}{@render gallery('Watching', watching)}{/if}
         {#if !local && !isHost && session.myPlayerId}
           <!-- A guest can sit the games out and watch, and take a seat again. -->
           <p class="watch-choice" data-cursor="watch"><WatchToggle /></p>
@@ -901,68 +901,85 @@
     border: 1px solid var(--gold-lo);
     color: var(--gold);
   }
-  .remove {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border-radius: 13px;
-    border: 1px solid transparent;
-    background: none;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 1.2rem;
-    line-height: 1;
+  /* Pointing at the kick: the chip it would remove warms red, so it is clear whose it is. */
+  .chips li:has(:global(.kick:hover)),
+  .onlookers li:has(:global(.kick:hover)) {
+    border-color: rgba(224, 85, 63, 0.45);
   }
-  /* Armed: the ring the × shows under the pointer grows sideways into a pill
-     and the × gives way to Kick. Same ring, same red, only longer. */
-  .remove {
-    overflow: hidden;
-    white-space: nowrap;
-    transition:
-      width 0.22s var(--ease-out),
-      color 0.2s,
-      border-color 0.2s,
-      background-color 0.2s,
-      box-shadow 0.2s;
+  .chips li {
+    --kick-size: 26px;
+    --kick-armed: 58px;
   }
-  .remove.confirm {
-    width: 58px;
-    border-color: rgba(224, 85, 63, 0.75);
-    background-color: rgba(224, 85, 63, 0.1);
-    color: #ff9c86;
+
+  /* Who's in the room without a seat: a label with a fine rule running off it, then their chips. */
+  .gallery {
+    margin-top: 1rem;
+  }
+  .gallery h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem;
     font-family: var(--font-display);
     font-size: 0.64rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
+    font-weight: 400;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    box-shadow: 0 0 10px rgba(224, 85, 63, 0.25);
+    color: #ab9d88;
   }
-  .remove.confirm:hover {
-    color: #ffd2c6;
-    border-color: #e0553f;
-    background-color: rgba(224, 85, 63, 0.22);
+  .gallery h3 :global(.eye) {
+    --eye-size: 16px;
+    color: var(--gold);
   }
-  .remove.inline {
-    width: 22px;
-    height: 22px;
-    font-size: 1rem;
+  .gallery h3::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--line), transparent);
   }
-  /* A spectator's kick, in the line of names: the same ring into a pill. */
-  .remove.inline.confirm {
-    width: 58px;
-    font-size: 0.64rem;
+  .onlookers {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
-  .remove:hover {
-    color: var(--bad);
-    border-color: rgba(224, 85, 63, 0.4);
+  .onlookers li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.25rem 0.3rem 0.25rem 0.3rem;
+    border-radius: 999px;
+    background: rgba(12, 10, 8, 0.5);
+    border: 1px solid rgba(125, 99, 51, 0.35);
+    transition: border-color 0.25s;
+    --kick-size: 22px;
+    --kick-armed: 52px;
   }
-  .remove:focus-visible {
-    outline: 1px solid var(--gold-hi);
-    outline-offset: 2px;
+  /* Without a kick, the name keeps the room it would have taken. */
+  .onlookers li:not(:has(:global(.kick))) {
+    padding-right: 0.8rem;
   }
-  /* Pointing at the ×: the chip it would remove warms red, so it is clear whose it is. */
-  .chips li:has(.remove:hover) {
-    border-color: rgba(224, 85, 63, 0.45);
+  .onlookers .name {
+    flex: 0 1 auto;
+    font-size: 0.92rem;
+    line-height: 1.1;
+    padding-bottom: 0.15em;
+    margin-bottom: -0.15em;
+  }
+  .onlookers .name em {
+    color: var(--muted);
+    font-size: 0.85em;
+  }
+  .onlookers li.armed {
+    border-color: #8e4434;
+    background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
+  }
+  .onlookers li.armed .name {
+    color: #eab3a3;
   }
   /* Armed: the whole chip asks, in the game's wrong-answer colours, the avatar dimmed, and
      no timer drawn: after 3 s it quietly goes back to rest. A second
@@ -1396,20 +1413,14 @@
     .lock {
       min-height: 44px;
     }
-    .remove.confirm {
-      min-width: 44px;
-      border-radius: 22px;
+    .chips li,
+    .onlookers li {
+      --kick-size: 44px;
     }
-    .remove,
     .room-tool,
     .stepper button {
       width: 44px;
       height: 44px;
-    }
-    /* Within a line of names: as big as the line allows. */
-    .remove.inline {
-      width: 32px;
-      height: 32px;
     }
   }
   @media (max-width: 760px) {

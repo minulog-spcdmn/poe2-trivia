@@ -5,13 +5,17 @@
   // screen, or, where this screen hasn't that one, on the next one round it
   // that it has; and glides between the updates (ten a second) so it moves
   // smoothly. A tap on a phone shows where it landed, as the dart pressed, for a moment.
+  // While a new zone's cards are on their way (its title card over the game,
+  // lib/dealing.svelte.ts) nobody points: this one isn't sent, and the
+  // others' fade out, to come back where they are as the cards are dealt.
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
+  import { dealing } from '../lib/dealing.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
   import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
-  import { anchorAt, clickableAt } from '../lib/pointerAnchor';
+  import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /**
@@ -47,8 +51,8 @@
   const s = $derived(session.state!);
   const me = $derived(session.myPlayerId);
   const live = $derived(session.status === 'ready' && cursorsLive(s));
-  /** Only players point (a spectator could hint the answer). */
-  const pointing = $derived(live && !!me && s.players.some((p) => p.id === me));
+  /** Only players point (a spectator could hint the answer), and nobody while a new zone's cards are on their way. */
+  const pointing = $derived(live && !!me && s.players.some((p) => p.id === me) && !dealing.held);
   const shown = $derived(
     live
       ? peerCursors.keys.flatMap((key) => {
@@ -189,11 +193,11 @@
   }
 
   /** Where a pointer at `at` is on this screen: on the first of its anchors this screen has (cursors.ts); null when it has none. */
-  function placeOf(at: CursorAt, cache: Map<number, DOMRect | null>): { code: number; x: number; y: number } | null {
+  function placeOf(at: CursorAt, cache: Map<number, DOMRect | null>, screenH: number): { code: number; x: number; y: number } | null {
     for (const [code, x, y] of hopsOf(at)) {
       const r = boxOf(code, cache);
       if (r) {
-        const [px, py] = fromAnchor(code, x, y, r, innerHeight);
+        const [px, py] = fromAnchor(code, x, y, r, screenH);
         return { code, x: px, y: py };
       }
     }
@@ -214,6 +218,7 @@
       const step = 1 - Math.exp(-dt / GLIDE_MS);
       last = now;
       const boxes = new Map<number, DOMRect | null>();
+      const screenH = screenHeight();
       for (const c of list) {
         const el = els[c.key];
         const p = peerCursors.at.get(c.key);
@@ -225,7 +230,7 @@
           peerCursors.set(c.key, null);
           continue;
         }
-        const place = placeOf(p.at, boxes);
+        const place = placeOf(p.at, boxes, screenH);
         // Pressed as the pointer drawn behind gets there, not before; and once pressed, long enough to see.
         const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
         const dueKind = due?.at[3] ?? kind;
@@ -249,7 +254,7 @@
         const ps: [number, number][] = [];
         const ts: number[] = [];
         for (const { at, t } of p.trail) {
-          const q = placeOf(at, boxes);
+          const q = placeOf(at, boxes, screenH);
           if (!q) continue;
           ps.push([q.x, q.y]);
           ts.push(t);
@@ -301,7 +306,7 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
+<div class="cursors" class:veiled={dealing.held} use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
@@ -340,6 +345,14 @@
     z-index: 80;
     pointer-events: none;
     overflow: hidden;
+    transition: opacity 0.3s;
+  }
+  /* Over a new zone's title card (z-index 60): out of sight at once, till the cards are dealt. Nobody points
+     meanwhile (pointing, above), so each of the others' pointers goes once its player's screen stops sending it;
+     one heard from a screen that reaches the deal sooner stays out of sight till this one does. */
+  .cursors.veiled {
+    opacity: 0;
+    transition: none;
   }
   .cursor {
     position: absolute;

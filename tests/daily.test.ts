@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Engine, isFake, type Item } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, TOO_THIN, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -122,4 +122,16 @@ test("a record from a day still to come (a clock that ran ahead) stands as yeste
   // Nothing to mend in a record from today or before.
   assert.equal(fromClockAhead({ ...ahead, day: 100 }, 100), null);
   assert.equal(fromClockAhead(null, 100), null);
+});
+
+test("the legend names the item's kind with its article, by the sound, and none for the pairs", () => {
+  assert.equal(aTopic('Shield'), 'A shield');
+  assert.equal(aTopic('One-Handed Weapon'), 'A one-handed weapon');
+  assert.equal(aTopic('Amulet or Belt'), 'An amulet or belt');
+  assert.equal(aTopic('Off-Hand'), 'An off-hand');
+  assert.equal(aTopic('Flask, Charm, Jewel, Relic or Tablet'), 'A flask, charm, jewel, relic or tablet');
+  assert.equal(aTopic('Gloves'), 'Gloves');
+  assert.equal(aTopic('Boots'), 'Boots');
+  assert.equal(aTopic('Gloves or Boots'), 'Gloves or boots');
+  assert.equal(aTopic('Helmet'), 'A helmet');
 });

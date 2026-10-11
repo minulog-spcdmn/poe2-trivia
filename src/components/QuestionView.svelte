@@ -26,9 +26,10 @@
     veilHandoff,
     type VerdictTone,
     ablaze,
+    doused,
   } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
-  import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
+  import { flameOf, heatOf, streakOf, type Flame } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
@@ -572,29 +573,36 @@
   // the scorer's streak), so the chip renders once, already saying it.
   // Taken once as the reveal arrives (before the DOM shows it) and kept to
   // the next question, whoever comes or goes meanwhile.
-  let streakAt = $state<{ at: number; by: string | null; n: number }>({ at: 0, by: null, n: 0 });
+  // Delve together: the team's streak (depths cleared in a row with nobody
+  // missing), for everyone; each player's own is on their avatar. `lost`:
+  // the team's streak this reveal ended.
+  let streakAt = $state<{ at: number; by: string | null; n: number; lost: number }>({ at: 0, by: null, n: 0, lost: 0 });
   $effect.pre(() => {
     const r = reveal;
     if (!r || untrack(() => streakAt.at) === q.askedAt) return;
     const by = race || coop ? (r.winnerId ?? null) : r.correct ? active.id : null;
-    streakAt = { at: q.askedAt, by, n: by ? streakOf(untrack(() => s.players).find((p) => p.id === by)) : 0 };
+    if (coop) streakAt = { at: q.askedAt, by, n: r.teamStreak ?? 0, lost: r.teamLost ?? 0 };
+    else streakAt = { at: q.askedAt, by, n: by ? streakOf(untrack(() => s.players).find((p) => p.id === by)) : 0, lost: 0 };
   });
   const streakBy = $derived(reveal && streakAt.at === q.askedAt ? streakAt.by : null);
   const streak = $derived(reveal && streakAt.at === q.askedAt ? streakAt.n : 0);
+  const streakLost = $derived(reveal && streakAt.at === q.askedAt ? streakAt.lost : 0);
   /**
    * The streak is told in the verdict's chip when the chip speaks for its
-   * owner: the turn's answer (turns, Delve alone), or your own win in a race
-   * or together. Someone else's streak (a race won by another, a teammate's
-   * find) is said in the sentence about them.
+   * owner: the turn's answer (turns, Delve alone), your own win in a race,
+   * or the team's clear together. Someone else's streak (a race won by
+   * another) is said in the sentence about them.
    */
-  const streakInChip = $derived(streak >= 2 && verdict?.tone === 'good' && ((!race && !coop) || (!!me && streakBy === me)));
+  const streakInChip = $derived(streak >= 2 && verdict?.tone === 'good' && (!race || (!!me && streakBy === me)));
   /**
    * From the fire's first tier (lib/fx/streaks: three in a row), the chip
    * says the streak instead of its word and burns as the scorer's entry on
    * the scoreboard does, at the same heat and in the same colours.
    */
   const chipHeat = $derived(streakInChip ? heatOf(streak, !!s.delve) : 0);
-  const chipBlue = $derived(chipHeat > 0 && burnsBlue(chipHeat, !!s.delve));
+  const chipFlame = $derived(flameOf(streak, !!s.delve));
+  /** Together, a team's streak that burnt and this reveal ended: its fire on the chip goes out as it lands. */
+  const chipOut = $derived(coop && heatOf(streakLost, true) > 0 ? { heat: heatOf(streakLost, true), flame: flameOf(streakLost, true) } : null);
 
   /**
    * Svelte action: the streak chip catches fire as it lands (the chip comes
@@ -603,21 +611,36 @@
    */
   /** The question whose chip has caught fire: moved (the phone's dock coming or going), it burns on without catching again. */
   let caughtAt = 0;
-  function chipFire(node: HTMLElement, o: { heat: number; blue: boolean }) {
+  function chipFire(node: HTMLElement, o: { heat: number; flame: Flame; out: { heat: number; flame: Flame } | null }) {
     let fire: Handle | null = null;
     let t: ReturnType<typeof setTimeout> | null = null;
-    let lit = { heat: 0, blue: false };
-    const set = (n: { heat: number; blue: boolean }) => {
-      if (n.heat === lit.heat && n.blue === lit.blue) return;
+    let lit: { heat: number; flame: Flame | null; out: { heat: number; flame: Flame } | null } = { heat: 0, flame: null, out: null };
+    const set = (n: { heat: number; flame: Flame; out: { heat: number; flame: Flame } | null }) => {
+      if (n.heat === lit.heat && n.flame === lit.flame && n.out === lit.out) return;
       lit = n;
       if (t) clearTimeout(t);
       fire?.stop(0.3);
       fire = null;
+      // A team's streak ended: the chip lands still burning with it, and its fire goes out in smoke (once a question).
+      const out = n.out;
+      if (out && n.heat <= 0) {
+        if (caughtAt === q.askedAt || motion.still) return;
+        caughtAt = q.askedAt;
+        t = setTimeout(() => {
+          fire = ablaze(node, out.heat, out.flame.blue, out.flame.tint);
+          t = setTimeout(() => {
+            fire?.stop(0.25);
+            fire = null;
+            doused(node);
+          }, 700);
+        }, 450);
+        return;
+      }
       // (The streak is known a moment after the chip is: it lands with it.)
       if (n.heat <= 0) return;
       const catching = caughtAt !== q.askedAt;
       caughtAt = q.askedAt;
-      t = setTimeout(() => (fire = ablaze(node, n.heat, n.blue, undefined, catching)), motion.still || !catching ? 0 : 600);
+      t = setTimeout(() => (fire = ablaze(node, n.heat, n.flame.blue, n.flame.tint, catching)), motion.still || !catching ? 0 : 600);
     };
     set(o);
     return {
@@ -792,7 +815,7 @@
 <!-- The verdict at the reveal: it leads the result line, in the row under the answers. -->
 {#snippet verdictBadge()}
   {#if verdict}
-    <div class="verdict {verdict.tone}" data-cursor="verdict" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, blue: chipBlue }}>
+    <div class="verdict {verdict.tone}" data-cursor="verdict" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, flame: chipFlame, out: chipOut }}>
       <span class="glyph" aria-hidden="true">
         <svg viewBox="0 0 20 20">
           {#if verdict.icon === 'check'}
@@ -808,7 +831,7 @@
       </span>
       {#if chipHeat > 0}
         <!-- The streak instead of the word, in the fire's colour. -->
-        <span class="word count" class:blue={chipBlue} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
+        <span class="word count" class:blue={chipFlame.blue} class:tinted={!!chipFlame.tint} style:--flame-rgb={chipFlame.css} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
       {:else}
         <span class="word">{verdict.word}</span>
       {/if}
@@ -1304,7 +1327,9 @@
     {/if}
   </div>
   <!-- The verdict, read out as it lands. -->
-  <p class="sr" aria-live="polite">{verdict ? (chipHeat > 0 ? `${verdict.word}, ${streak} in a row` : verdict.word) : ''}</p>
+  <p class="sr" aria-live="polite">
+    {verdict ? (chipHeat > 0 ? `${verdict.word}, ${streak} in a row` : chipOut ? `${verdict.word}, the team's streak of ${streakLost} lost` : verdict.word) : ''}
+  </p>
 </div>
 
 <style>
@@ -2486,6 +2511,13 @@
     text-shadow:
       0 0 calc(4px + 14px * var(--heat)) rgba(110, 160, 255, calc(0.3 + 0.7 * var(--heat))),
       0 0 calc(1px + 3px * var(--heat)) rgba(110, 160, 255, calc(0.4 + 0.5 * var(--heat)));
+  }
+  /* Past blue (Delve's long runs), in the colour of its step on the ladder (lib/fx/streaks DELVE_FLAMES). */
+  .verdict .count.tinted {
+    color: color-mix(in srgb, rgb(var(--flame-rgb)) 45%, #fff);
+    text-shadow:
+      0 0 calc(4px + 14px * var(--heat)) rgba(var(--flame-rgb), calc(0.3 + 0.7 * var(--heat))),
+      0 0 calc(1px + 3px * var(--heat)) rgba(var(--flame-rgb), calc(0.4 + 0.5 * var(--heat)));
   }
   .verdict .count b {
     font-family: var(--font-body);

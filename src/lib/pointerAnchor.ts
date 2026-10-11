@@ -1,7 +1,15 @@
 import { MAX_HOPS, anchorCode, cursorAt, toAnchor, type CursorAt, type Hop, type PointerKind } from './cursors.ts';
 
-/** The page under a spot, through the covers that aren't the page (middle-button scrolling's, the recorder's badge). */
-const under = (px: number, py: number) => document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll, .recorder'));
+/**
+ * The screen height the game anchor's positions go by (cursors.ts toAnchor):
+ * the page's own viewport, which keeps its height while a phone's toolbars
+ * slide in and out (innerHeight follows them, and a pointer placed by it
+ * would slide up and down the page as they do).
+ */
+export const screenHeight = () => document.documentElement.clientHeight || innerHeight;
+
+/** The page under a spot, through the covers that aren't the page (middle-button scrolling's, the recorder's badge, the pressed pointer's speck: lib/ownCursor.ts). */
+const under = (px: number, py: number) => document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll, .recorder, .press-pin'));
 
 /**
  * Whether this player's own cursor is the hand at a spot: something they can
@@ -80,6 +88,6 @@ export function anchorAt(px: number, py: number, kind: PointerKind): CursorAt | 
   }
   // The innermost, what holds it, and the outermost: whatever a screen has of them, the pointer lands near where it is.
   if (chain.length > MAX_HOPS) chain = [...chain.slice(0, MAX_HOPS - 1), chain.at(-1)!];
-  const hops = chain.map(({ code, r }): Hop => [code, ...toAnchor(code, px, py, r, innerHeight)]);
+  const hops = chain.map(({ code, r }): Hop => [code, ...toAnchor(code, px, py, r, screenHeight())]);
   return cursorAt(hops, kind);
 }

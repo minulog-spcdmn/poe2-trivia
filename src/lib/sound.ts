@@ -65,7 +65,21 @@ export type Sfx =
   /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
   | 'caveIn'
   /** Delve: a Dynamite Cache answered wrong; its blast destroys something the player carries. */
-  | 'itemBlown';
+  | 'itemBlown'
+  /** Delve: a new zone's title card (components/zonecard): a soft tick as each letter of its name lands. */
+  | 'zoneTick'
+  /** Delve: the zone's name locks in, on its sound's second swell: a whoosh, a low thump and a ring. */
+  | 'zoneLock'
+  /** Delve: the chime over the zone's name, on its sound's loudest note. */
+  | 'zoneSting'
+  /** Delve: the zone's name leaves, as its place has it: burning away, */
+  | 'zoneBurn'
+  /** ...shattering like ice, */
+  | 'zoneShatter'
+  /** ...drifting off on the air, */
+  | 'zoneDrift'
+  /** ...or pulled into the void. */
+  | 'zoneVoid';
 
 let muted = (() => {
   return readStored('muted') === '1';
@@ -411,14 +425,16 @@ function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q =
  * One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then
  * level and reverb send. Returns its source and level, to stop it early (see sfx).
  * `hold` (s): the layer lasts that long from the moment's start, looped
- * should its recording run out sooner, and then fades out.
+ * should its recording run out sooner, and then fades out. `at` (s): the
+ * moment starts that long from now, on the audio clock.
  */
-function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number) {
+function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number, at = 0) {
   const { ac } = b;
   const src = ac.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = l.rate * pitch;
-  const start = ac.currentTime + l.delay / 1000;
+  const begin = ac.currentTime + at;
+  const start = begin + l.delay / 1000;
   if (hold !== undefined && buf.duration / src.playbackRate.value < hold - l.delay / 1000) {
     // Too short to last: it loops, round its middle (the onset and the tail left out).
     src.loop = true;
@@ -438,12 +454,24 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
   g.connect(send).connect(b.wet);
   src.start(start);
   if (hold !== undefined) {
-    const end = Math.max(start, ac.currentTime + hold);
+    const end = Math.max(start, begin + hold);
     g.gain.setValueAtTime(g.gain.value, end);
     g.gain.linearRampToValueAtTime(0, end + STOP_FADE);
     src.stop(end + STOP_FADE);
   }
   return { src, gain: g };
+}
+
+/**
+ * How far behind the page the speakers are (ms, at most 150): what a
+ * picture timed to a sound waits, so the two land together (a zone's name
+ * locking on its swell, heard through a Bluetooth headset). 0 before any
+ * sound has started.
+ */
+export function audioLead(): number {
+  const ac = bus?.ac;
+  if (!ac) return 0;
+  return Math.round(Math.min(0.15, Math.max(0, ac.outputLatency || ac.baseLatency || 0)) * 1000);
 }
 
 /** How long (s) a sound stopped early takes to fade out (see sfx). */
@@ -465,9 +493,11 @@ const lastPlayed = new Map<Sfx, number>();
  * (muted, out of sight, too soon after the last, or before the first
  * click). `holdMs`: the sound lasts that long and then fades out, each
  * layer looped should its recording be shorter (a fuse burning for as long
- * as it has left).
+ * as it has left). `inMs`: it starts that long from now, timed on the audio
+ * clock rather than a timer (a row of ticks keeps its spacing however busy
+ * the page is).
  */
-export function sfx(name: Sfx, opts: { holdMs?: number } = {}): (() => void) | undefined {
+export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number } = {}): (() => void) | undefined {
   // Out of sight (a co-op tab in the background) nothing plays: a sound
   // would wake the audio context that rest() put to sleep, and keep it running.
   if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
@@ -487,7 +517,10 @@ export function sfx(name: Sfx, opts: { holdMs?: number } = {}): (() => void) | u
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
-    if (buf) layers.push(playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000));
+    if (buf)
+      layers.push(
+        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, Math.max(0, opts.inMs ?? 0) / 1000),
+      );
   }
   // One that failed to load as sound started (offline for a moment) is tried
   // again for next time, once its wait is over (see load).
@@ -563,7 +596,8 @@ export function bedOf(place: string): Bed {
 /**
  * Delve: whose beds sound at depth `d` and how much, as the mix board has
  * them. The place the scene is turning from (strataAt) and the one it is
- * turning into, on the curve of the backdrop's hall (hallTurn), equal power:
+ * turning into, on the curve of the backdrop's hall (hallTurn: half way at
+ * a zone's 10th depth, the rest of the way into the next zone), equal power:
  * cos and sin of its quarter turn, so their squares always add up to 1. A
  * settled depth is one place alone. `fire` is how much of AMBIENCE's level
  * stays lit: each place's share of its bed's fire (0 where none has any),
@@ -599,7 +633,8 @@ let hearth = 1;
  * each): those sounding now as they are wanted (updateLoop; one that loads
  * late joins then, fading in), and the next place's when the page has a
  * moment to spare, from the first depth of the zone before it. Its turn into
- * the next begins at the 5th, and is heard from the 7th.
+ * the next begins at the 6th, and is heard from the 8th, most of it as the
+ * next zone arrives.
  */
 function prefetchBeds(b: Bus) {
   for (const { file } of nextBed().layers) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));

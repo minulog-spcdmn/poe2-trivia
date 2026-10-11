@@ -40,6 +40,10 @@ import {
   veilSeconds,
   voteClosesAt,
   voteDone,
+  opensZone,
+  ZONE_DESCENT_MS,
+  dealIn,
+  DEAL_SLACK_MS,
   unaskedCards,
   waitingIds,
   SECOND_FIND,
@@ -442,6 +446,25 @@ export interface Delve {
   asked?: string[];
   /** Questions dynamite blasted away in this run (missing for none, and in older saves). */
   blasts?: number;
+  /**
+   * Co-op: depths the team cleared in a row with nobody missing (a wrong
+   * answer breaks it even when a ward took the loss, and so does a time-out
+   * or an answer given to a question blasted away). Missing for none, in
+   * solo runs and in older saves.
+   */
+  teamStreak?: number;
+  /** Co-op: the longest `teamStreak` this run (missing for none). */
+  bestTeamStreak?: number;
+  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone at the next depth. */
+  missedHere?: true;
+  /**
+   * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
+   * after the run moved on to it, as the plunge into it lands. Every screen
+   * shows them then. A pick sooner is refused; a vote sooner is kept, but
+   * opens its window no sooner, nor closes the vote (delve.ts voteDone).
+   * Missing for any other depth, and in older saves.
+   */
+  dealAt?: number;
 }
 
 /** Delve: everything a question can change, taken as its card is picked (see Delve.snapshot). */
@@ -715,6 +738,13 @@ export interface Reveal {
   forged?: boolean;
   /** Delve: Azurite Wards took this answer's whole loss, so no life was lost. */
   warded?: boolean;
+  /**
+   * Delve co-op: the team's streak (Delve.teamStreak) as this reveal leaves
+   * it, and `teamLost`, the one it ended (missing when none ended). What the
+   * verdict's chip burns with, for everyone.
+   */
+  teamStreak?: number;
+  teamLost?: number;
   /**
    * Delve: a wrong answer (or a time-out) to an Azurite Vein, which caves in
    * for two losses (delve.ts findLosses). Lost a life on the last one: just that.
@@ -1001,11 +1031,20 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
  * going or loses it. Race: the winner's goes on and everyone else's breaks,
  * whether they guessed wrong or just weren't first. Delve co-op: whoever
  * cleared the depth keeps theirs going; a loss already broke anyone's it hit.
+ * The team's goes on with a depth cleared with nobody missing on it.
  */
 function countStreaks(s: GameState, r: Reveal) {
   if (s.delve && isGroupRun(s)) {
     const winner = s.players.find((p) => p.id === r.winnerId);
     if (winner) winner.streak = (winner.streak ?? 0) + 1;
+    const dm = s.delve;
+    const was = dm.teamStreak ?? 0;
+    const n = r.correct && !dm.missedHere && !r.hits?.length ? was + 1 : 0;
+    if (n) dm.teamStreak = n;
+    else delete dm.teamStreak;
+    if (n > (dm.bestTeamStreak ?? 0)) dm.bestTeamStreak = n;
+    r.teamStreak = n;
+    if (!n && was) r.teamLost = was;
     return;
   }
   if (s.settings.mode === 'race') {
@@ -1266,6 +1305,9 @@ export class Engine {
         if (s.phase !== 'choosing') throw new ActionError("It's not time to pick a category.");
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
+        // A new zone's cards are still on their way (no screen shows them yet): a pick sooner is dropped quietly
+        // (not one a screen whose guess at this clock runs a little ahead showed them for).
+        if (from !== null && dealIn(s, this.now()) > DEAL_SLACK_MS) throw new ActionError('Too early.', true);
         if (coop) this.closeVote(s, action.category);
         else this.takePick(s, active, action.category);
         break;
@@ -1279,7 +1321,7 @@ export class Engine {
         if (livesOf(s, from) <= 0) throw new ActionError('Only players still standing can vote.');
         if (typeof action.category !== 'string' || !s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         (dm.votes ??= {})[from] = action.category;
-        dm.voteFrom ??= this.now();
+        dm.voteFrom ??= Math.max(this.now(), dm.dealAt ?? 0);
         // Voting is what ends being idle.
         (dm.missed ??= {})[from] = 0;
         this.coopCarryOn(s);
@@ -1501,9 +1543,10 @@ export class Engine {
       case 'expire': {
         if (from !== null) throw new ActionError('Not allowed.');
         // Co-op: the vote's window ran out, or everyone it waits for has voted.
-        // Without a vote it never runs out: nobody's card is picked for them.
+        // Without a vote it never runs out: nobody's card is picked for them;
+        // nor before a new zone's cards are dealt, however soon it is due.
         const closes = voteClosesAt(s);
-        if (!s.delve || !isGroupRun(s) || s.phase !== 'choosing') break;
+        if (!s.delve || !isGroupRun(s) || s.phase !== 'choosing' || dealIn(s, this.now()) > 0) break;
         if (voteDone(s, this.now()) || (closes !== null && this.now() >= closes - 250)) this.closeVote(s);
         break;
       }
@@ -1554,6 +1597,8 @@ export class Engine {
               else delete packs[p.id];
               if (Object.hasOwn(snap.streaks, p.id)) p.streak = snap.streaks[p.id];
             }
+            // Nobody has missed at this depth, as at the pick (the team's streak only moves at a reveal).
+            delete dm.missedHere;
             // Back on their feet, those cut off among them get the grace too.
             dm.excused = cutOff();
           } else {
@@ -1959,7 +2004,7 @@ export class Engine {
     }
     if (wrapped) s.round++;
     s.turn = next;
-    this.beginTurn(s, false);
+    this.beginTurn(s, false, wrapped);
   }
 
   // ---- delve co-op --------------------------------------------------------
@@ -1971,9 +2016,10 @@ export class Engine {
 
   /**
    * Co-op: what a change of who is here (or seated, or voted) settles. A vote
-   * is in once everyone it waits for has voted; a question is over once
-   * nobody standing is left to answer it; with nobody standing at all
-   * between questions, the run is over.
+   * is in once everyone it waits for has voted (and the cards are dealt: a
+   * new zone's vote in sooner is closed by the host's 'expire' as they are);
+   * a question is over once nobody standing is left to answer it; with
+   * nobody standing at all between questions, the run is over.
    */
   private coopCarryOn(s: GameState) {
     if (s.phase === 'choosing') {
@@ -2065,6 +2111,7 @@ export class Engine {
     }
     const took = this.hit(s, from);
     struck.push({ index, by: from, at: now, ...took });
+    s.delve!.missedHere = true;
     const chosenId = q.options[index];
     if (isFake(chosenId) && !s.used.includes(chosenId)) s.used.push(chosenId);
     this.coopCarryOn(s);
@@ -2152,12 +2199,13 @@ export class Engine {
       return;
     }
     s.round++;
-    this.beginTurn(s, false);
+    this.beginTurn(s, false, true);
   }
 
   // ---- turns mode -------------------------------------------------------
 
-  private beginTurn(s: GameState, first: boolean) {
+  /** `deeper`: the run just went a depth deeper (a new zone's cards are dealt as the plunge into it lands, dealAt). */
+  private beginTurn(s: GameState, first: boolean, deeper = false) {
     if (!first) s.turnCount++;
     s.phase = 'choosing';
     s.question = null;
@@ -2178,6 +2226,9 @@ export class Engine {
       s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
       delete s.delve.find;
       delete s.delve.asked;
+      delete s.delve.missedHere;
+      if (deeper && opensZone(s.round)) s.delve.dealAt = this.now() + ZONE_DESCENT_MS;
+      else delete s.delve.dealAt;
     }
   }
 
@@ -2189,6 +2240,7 @@ export class Engine {
       delete s.delve.snapshot;
       delete s.delve.picksBefore;
       delete s.delve.asked;
+      delete s.delve.dealAt;
     }
     s.phase = 'over';
     s.winners = winners;
