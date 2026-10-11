@@ -993,6 +993,7 @@
       <button
         class="btn blast"
         class:gone={!canBlast}
+        class:out={!mine}
         data-sfx="none"
         disabled={!canBlast}
         aria-hidden={!canBlast}
@@ -2272,11 +2273,14 @@
     .tooltip.wide .iname {
       font-size: 1.35rem;
     }
-    /* (On the phone's plate, as tall as its lines, the same room round them.) */
+    /* (On the phone's plate, as tall as its lines, the same room round them;
+       a name that wraps even at its least makes the plate, and so its ends,
+       larger, and keeps clear of them, as the name question's plate does.) */
     .tooltip.wide .head {
       height: auto;
       min-height: 62px;
       padding-bottom: calc(0.3rem + 3px);
+      padding-inline: max(4rem, min(5.2rem, calc(var(--plate-scale, 0) * 3.45rem)));
     }
   }
   .tiles {
@@ -2739,6 +2743,12 @@
     .dock .result p {
       font-size: 1rem;
     }
+    /* Out of this question (struck out, together), the bar keeps its place
+       but not Detonate's: what befell you takes the whole width, so the bar
+       grows as little as it can over the answers. */
+    .dock .btn.blast.out {
+      display: none;
+    }
     /* The docked row has the width of a phone: the verdict is its disc alone
        (its word still read out), the sentence beside it says the rest. */
     .dock .verdict {
@@ -2776,15 +2786,16 @@
     .task {
       margin-bottom: 0.6rem;
     }
-    /* The plate as tall as its two lines (only a name long enough to wrap
-       makes it grow). */
-    /* Its ends are drawn to its height (NamePlate's `fit`: 54 / 64 at
-       least), and the name keeps clear of them: a name long enough to wrap
-       makes the plate, and so its ends, larger. */
+    /* The plate as tall as its two lines; its ends are drawn to its height
+       (NamePlate's `fit`: 54 / 64 at least), and the name keeps clear of
+       them: a name long enough to wrap makes the plate, and so its ends,
+       larger. */
     .head {
       height: auto;
       min-height: 54px;
-      padding: 0.3rem max(2.9rem, calc(var(--plate-scale, 0) * 3.45rem));
+      /* (At most as for three lines: the room it takes wraps the name further,
+         and the plate grows again; past that it would never settle.) */
+      padding: 0.3rem max(2.9rem, min(5.2rem, calc(var(--plate-scale, 0) * 3.45rem)));
     }
     .art {
       height: clamp(180px, 32svh, 230px);

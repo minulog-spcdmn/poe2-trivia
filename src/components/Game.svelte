@@ -741,7 +741,7 @@
   }
 
   /* Short desktop windows: less room over the scoreboard, so the question and Next fit.
-     (From 641px, wider than lib/layout.ts `short`'s 761: every screen above a
+     (From 641px, below lib/layout.ts `short`'s 761: every screen above a
      phone's has the game's top padding, while the question's own tightening
      waits for the art and answers to stand side by side.) */
   @media (min-width: 641px) and (max-height: 820px) {

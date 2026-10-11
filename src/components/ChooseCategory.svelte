@@ -450,7 +450,7 @@
             <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              <span class="find-tag">{FIND_TEXT[kind].name}</span>
+              <span class="find-tag" data-zoom>{FIND_TEXT[kind].name}</span>
             {/if}
             <span class="icon">
               <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>

@@ -17,6 +17,7 @@
   import { RUBY } from '../lib/palette';
   import { CREATOR, CREATOR_TITLE } from '../lib/site';
   import { showTip } from '../lib/fullscreenTip';
+  import { ABLAZE_FROM, ABLAZE_FULL, BLUE_FROM, DELVE_ABLAZE_FULL, DELVE_BLUE_FROM } from '../lib/fx/streaks';
 
   const s = $derived(session.state);
 
@@ -54,6 +55,10 @@
     for (const t of [...toasts.list]) toasts.dismiss(t.id);
   }
   const run = $derived(s?.delve ? s : null);
+  /** A streak one short of each of the fire's tiers (lit, blue, full; a Delve's own), so the next right answer reaches it. */
+  const streakSteps = $derived(
+    run ? [0, ABLAZE_FROM - 1, 10, DELVE_BLUE_FROM - 1, DELVE_ABLAZE_FULL - 1] : [0, ABLAZE_FROM - 1, BLUE_FROM - 1, ABLAZE_FULL - 1],
+  );
   const depth = $derived(run?.round ?? 1);
   const players = $derived(run?.players ?? []);
   const group = $derived(!!run && isGroupRun(run));
@@ -217,10 +222,10 @@
               <span class="lbl">Lives</span>
               {@render seg([0, 1, 2, 3].slice(0, DELVE_LIVES + 1), run ? livesOf(run, p.id) : 0, (n) => L.setLives(p.id, n), 'Lives')}
             </div>
-            <!-- Right answers in a row (the fire's tiers: from 3, blue from 21, full at 25): the next right answer's chip says one more. -->
+            <!-- Right answers in a row, one short of each of the fire's tiers: the next right answer's chip says one more. -->
             <div class="line">
               <span class="lbl">Streak</span>
-              {@render seg([0, 2, 10, 20, 24], p.streak ?? 0, (n) => L.setStreak(p.id, n), 'Streak')}
+              {@render seg(streakSteps, p.streak ?? 0, (n) => L.setStreak(p.id, n), 'Streak')}
             </div>
             <div class="items">
               {#each ITEMS as it (it.item)}

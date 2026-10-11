@@ -15,7 +15,7 @@ export function stageZoom(w: number, h: number): number {
  * What carries the stage's zoom: the app's shell, and what sits outside it
  * at the page's scale (the deathmatch intro, the toasts, dialogs' backdrops
  * and the blast layer, the last two zoomed inline), and within the stage
- * what is zoomed again (marked data-zoom: the category cards).
+ * what is zoomed again (marked data-zoom: the category cards, their finds' tags).
  */
 const ZOOMED = '.shell, .dm-intro, .toasts, [style*="zoom"], [data-zoom]';
 
