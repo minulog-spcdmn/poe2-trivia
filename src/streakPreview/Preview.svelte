@@ -5,10 +5,12 @@
   // right" plays what the start page plays when today's answer is right: the
   // badge comes in burning for yesterday's run and grows into today's,
   // bursting when it reaches a new colour. "Miss" ends the run in a puff of
-  // smoke. Every step also burns side by side below. The address can set the
-  // run too: streak.html?days=30.
+  // smoke. Every step also burns side by side below. Three looks to compare:
+  // the daily's own pill, and the game's streak chip with its check and
+  // without. The address can set the run and the look too:
+  // streak.html?days=30&look=plain.
   import { onDestroy } from 'svelte';
-  import DailyStreak, { BADGE_IN_MS } from '../components/DailyStreak.svelte';
+  import DailyStreak, { BADGE_IN_MS, type StreakLook } from '../components/DailyStreak.svelte';
   import FxLayer from '../components/FxLayer.svelte';
   import { doused } from '../lib/fx/moments';
   import { DAILY_LADDER, dailyFlameOf, dailyHeatOf } from '../lib/fx/streaks';
@@ -17,6 +19,14 @@
   const MAX = 730;
   const query = new URLSearchParams(location.search);
   const asked = Number(query.get('days'));
+
+  const LOOKS: { look: StreakLook; name: string }[] = [
+    { look: 'pill', name: 'Original' },
+    { look: 'chip', name: 'Game chip, with check' },
+    { look: 'plain', name: 'Game chip, no check' },
+  ];
+  const askedLook = query.get('look');
+  let look = $state<StreakLook>(LOOKS.find((l) => l.look === askedLook)?.look ?? 'pill');
 
   /** The run the badge counts (0: none). */
   let days = $state(query.has('days') && Number.isFinite(asked) ? Math.max(0, Math.min(9999, Math.floor(asked))) : 1);
@@ -93,6 +103,12 @@
       {/each}
     </div>
     <div class="row">
+      <span class="what">Look</span>
+      {#each LOOKS as l (l.look)}
+        <button class:on={look === l.look} onclick={() => ((look = l.look), replay++)}>{l.name}</button>
+      {/each}
+    </div>
+    <div class="row">
       <span class="what">Today</span>
       <button class="go" onclick={right}>Answer right <span class="from">+1 day</span></button>
       <button onclick={miss} disabled={days < 1}>Miss</button>
@@ -109,7 +125,7 @@
       {#key replay}
         <p class="tally">
           {#if days >= 1}
-            <DailyStreak {days} {burning} />
+            <DailyStreak {days} {burning} {look} />
           {:else if ended >= 1}
             <span use:douse>Streak ended at <span class="n">{ended}</span> {ended === 1 ? 'day' : 'days'}</span>
           {:else}
@@ -118,6 +134,21 @@
           <span aria-hidden="true">·</span>
           <span>{nextIn(Date.now())}</span>
         </p>
+        <button class="btn small practice">Practice more</button>
+      {/key}
+    </div>
+  </section>
+
+  <section>
+    <span class="size">The three looks side by side, for this run</span>
+    <div class="ladder">
+      {#key replay}
+        {#each LOOKS as l (l.look)}
+          <div class="rung">
+            {#if days >= 1}<DailyStreak {days} {burning} look={l.look} />{:else}<span class="hint">no run</span>{/if}
+            <span class="hint">{l.name}</span>
+          </div>
+        {/each}
       {/key}
     </div>
   </section>
@@ -127,7 +158,7 @@
     <div class="ladder">
       {#each DAILY_LADDER as f (f.name)}
         <div class="rung">
-          <DailyStreak days={f.from} />
+          <DailyStreak days={f.from} {look} />
           <span class="hint">{f.name}, from day {f.from}</span>
         </div>
       {/each}
@@ -240,7 +271,7 @@
   }
   /* A mock of Today's unique: the answers' row, then the tally as it sits under them. */
   .page {
-    width: min(760px, 100%);
+    width: min(510px, 100%);
     margin: 3rem auto 0;
   }
   .answers {
@@ -254,11 +285,22 @@
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.02);
   }
+  /* As on the start page: the tally, and Practice more at the row's end. */
   .after {
     display: flex;
-    justify-content: center;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    flex-wrap: wrap;
     min-height: 62px;
-    padding-top: 26px;
+    padding-top: 6px;
+  }
+  .after .practice {
+    padding: 0.4rem 0.8rem;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   /* Today's unique's .tally. */
   .tally {
