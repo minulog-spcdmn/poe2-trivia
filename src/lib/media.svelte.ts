@@ -100,10 +100,12 @@ export type ArtSizes = ReadonlyMap<string, { w: number; h: number }>;
 /**
  * At most how many pixels per art pixel a picture goes out with. The art to
  * name is shown big and alone, so it keeps all the file has (4 for items up
- * to 2 x 2: artScale); veiled patches (lossless, and only until the full
- * art takes over at the reveal) and the small tiles of a "find the art"
- * question with many options go out at 2, which keeps what every guest is
- * sent near what it was before the art went to 4.
+ * to 2 x 2: artScale), veiled or not: a large screen draws it at up to about
+ * 4 pixels per art pixel, where veiled patches at 2 burnt in blurry (a small
+ * item's patches, lossless, come to about 500 KB at 4, 160 KB at 2). The
+ * small tiles of a "find the art" question with many options, and veiled
+ * tiles, go out at 2, which keeps what every guest is sent near what it was
+ * before the art went to 4.
  */
 const SHARP = 4;
 const LIGHT = 2;
@@ -193,7 +195,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
     else out.options = await Promise.all(pictures.map(async (p) => ({ w: p.canvas.width / p.scale, h: p.canvas.height / p.scale, data: await encode(p.canvas) })));
     return out;
   }
-  const picture = await alteredCanvas(q.itemId, art(q.itemId), q.veil ? LIGHT : SHARP, grayscale === 'all', !!q.mirrored?.[0]);
+  const picture = await alteredCanvas(q.itemId, art(q.itemId), SHARP, grayscale === 'all', !!q.mirrored?.[0]);
   if (!q.veil) {
     out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(picture.canvas) };
     return out;
