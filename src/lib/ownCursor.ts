@@ -80,7 +80,23 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
     if (l.solid) g.fill(new Path2D(l.d));
     if (l.w) stroke(l.d, l.w);
   }
-  return canvas.toDataURL('image/png');
+  return linkTo(canvas.toDataURL('image/png'));
+}
+
+/**
+ * A picture as a short link (blob:) rather than its data written out: the
+ * cursor values the page's styles carry stay a few dozen characters, where
+ * three resolutions of data made each several kilobytes, read again by every
+ * restyle on every click; and the browser decodes each picture once.
+ */
+function linkTo(dataUrl: string): string {
+  if (typeof URL.createObjectURL !== 'function') return dataUrl;
+  try {
+    const bytes = Uint8Array.from(atob(dataUrl.slice(dataUrl.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+    return URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+  } catch {
+    return dataUrl;
+  }
 }
 
 /** `a` taken `t` of the way to `b` (both #rrggbb). */
