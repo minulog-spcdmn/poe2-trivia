@@ -58,9 +58,16 @@
   $effect(() => () => fx.stop());
 
   let cardsEl = $state<HTMLElement>();
+  /**
+   * How far a seal's cover reaches past its box, px: the avatar's rings (3px
+   * round it), and the cover's soft edge (a mask at a quarter of the view,
+   * blurred), which would otherwise let the light through over the seal's rim.
+   */
+  const SEAL_PAD = 10;
   function* seals(): Iterable<CoverBox> {
     for (const el of cardsEl?.querySelectorAll('.votes > *') ?? []) {
-      const box = el.getBoundingClientRect();
+      const b = el.getBoundingClientRect();
+      const box = new DOMRect(b.left - SEAL_PAD, b.top - SEAL_PAD, b.width + 2 * SEAL_PAD, b.height + 2 * SEAL_PAD);
       const r = box.height / 2;
       yield { box, radii: [r, r, r, r] };
     }
@@ -120,6 +127,9 @@
     const i = s.offered.indexOf(category);
     if (!canVote || !faceUp(i) || myVote === category) return;
     sfx('vote');
+    // The card's hover fire goes out: it stands lit as yours now (.voted).
+    burning?.stop();
+    burning = null;
     const frame = cardEls[i]?.querySelector('.frame');
     if (frame && fxActive()) onCards(() => outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 }));
     session.dispatch({ type: 'vote', category });
@@ -369,7 +379,8 @@
   }
   function ignite(i: number) {
     waiting = null;
-    if (!mine || picked) return;
+    // (Not the card you voted for: it stands lit as yours.)
+    if (!mine || picked || (coop && myVote === s.offered[i])) return;
     burning?.stop();
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
