@@ -486,13 +486,51 @@ void main() {
     v = swirl + rim * 1.2 + exp(-rr * rr * 7.0) * 0.8;
     hot = exp(-rr * rr * 16.0) * 0.9 + rim * 0.2;
   } else if (type == 5) {
-    // Screen edge glow. q: width (px), noise.
-    vec2 e = vHalf - abs(vP);
-    float d = min(e.x, e.y);
-    float g = exp(-d / vQ.x);
-    if (g > 0.004) {
-      float n = fbm(vP * 0.004 + vec2(seed, time * 0.35));
-      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y);
+    // Screen edge glow. q: width (px), noise, smoke, the smoke's pattern.
+    // r: heat (the smoke's thickest threads, and a line along the very
+    // edge), the smoke's clock (s), its evenness (0-1), its body (0-1).
+    // s: the countdown's grading (0-1), deeper red where thin, warmer where thick.
+    vec2 e = max(vHalf - abs(vP), 0.0);
+    // Each edge's light, joined as light adds up: brighter into the corners,
+    // and round there, with no seam along the diagonal. Read back as a
+    // distance (d), that is the distance in from a frame with round corners.
+    vec2 ge = exp(-e / vQ.x);
+    float g = 1.0 - (1.0 - ge.x) * (1.0 - ge.y);
+    float d = -log(max(g, 1e-6)) * vQ.x;
+    // The smoke hugs the edges, and fades out fast past its width (fall, by
+    // distance alone; reach, with how much smoke there is).
+    float fall = exp(-pow(d / vQ.x, 1.6));
+    float reach = fall * vQ.z;
+    bool smoky = vQ.z > 0.0 && fall > 0.01;
+    if (g > 0.004 || smoky) {
+      // (Its patches scale with the width: about 250 px at 60.)
+      float n = fbm(vP * (0.25 / vQ.x) + vec2(seed, time * 0.35));
+      v = g * mix(1.0, 0.3 + 1.4 * n, vQ.y) * (1.0 - 0.6 * min(vQ.z, 1.0));
+      // (Further out it wouldn't show: its noise is skipped there, and it
+      // fades out on the way rather than stopping at an edge.)
+      if (smoky) {
+        // Smoke along the edges, drifting on its own clock (the same for
+        // every beat of one countdown, so they all show one smoke): broad
+        // slow billows, and finer threads curling over them where it is
+        // thick. Graded (s.x), thin it is a deeper red and thick, warmer.
+        float tt = vR.y;
+        vec2 P = vP / (vQ.x * 0.8) + vQ.w * 7.0;
+        vec2 w = vec2(fbm(P * 0.45 + vec2(0.0, tt * 0.25)), fbm(P * 0.45 + vec2(5.2, 1.3 - tt * 0.2)));
+        // Its density, soft (never solid, even where thick) and, with
+        // evenness (r.z), spread round the edges rather than in patches.
+        float raw = fbm(P * 0.55 + 1.6 * w + vec2(tt * 0.05, 0.0));
+        // Its body (r.w, 0-1) thins it toward see-through, and back.
+        float billow = pow(smoothstep(0.22, 0.95, raw), mix(1.8, 1.3, vR.w));
+        billow = mix(billow, 0.3 + 0.45 * raw, vR.z);
+        float ridge = 1.0 - abs(2.0 * fbm(P * 1.1 + 2.4 * w + vec2(0.0, -tt * 0.12)) - 1.0);
+        float thread = pow(ridge, 6.0) * smoothstep(0.15, 0.6, billow);
+        float dens = (billow * 0.5 + thread * 0.6) * reach * mix(0.75, 1.15, vR.w) * smoothstep(0.01, 0.03, fall);
+        v += dens;
+        col *= mix(vec3(1.0), mix(vec3(0.75, 0.55, 0.6), vec3(1.05, 1.2, 1.12), clamp(dens * 1.5, 0.0, 1.0)), clamp(reach * 3.0, 0.0, 1.0) * vS.x);
+        hot = pow(ridge, 20.0) * billow * reach * vR.x;
+      }
+      // A hot line along the very edge.
+      hot += exp(-d / (vQ.x * 0.08)) * 0.5 * vR.x;
     }
   } else if (type == 6) {
     // Soft radial flash. q: radius.
@@ -612,13 +650,17 @@ void main() {
         // hottest; the tone map takes the brightest roots toward yellow-white.
         vec3 orange = vec3(1.0, 0.18 + 0.42 * T * T, 0.03 + 0.12 * T * T * T);
         vec3 blue = vec3(0.06 + 0.4 * T * T, 0.22 + 0.5 * T * T, 1.0);
-        col = vC * mix(orange, blue, vR.x) * I;
+        // A tinted fire (r.z): the tint at the tips, heating toward white at the
+        // roots (as bright as the tint's brightest channel, so it fades with it).
+        vec3 tinted = mix(vC * (0.4 + 0.6 * T), mix(vC, vec3(max(max(vC.r, vC.g), vC.b)), 0.55), T * T);
+        col = (vR.z > 0.5 ? tinted : vC * mix(orange, blue, vR.x)) * I;
         v = 1.0;
       }
     }
     // A faint heat halo hugging the outline.
     float halo = exp(-abs(d) / (5.0 + H * 0.1)) * smoothstep(-6.0, 0.0, d) * 0.25;
-    vec3 haloCol = mix(vec3(0.5, 0.1, 0.02), vec3(0.04, 0.12, 0.5), vR.x);
+    // (A tinted one's is the tint: vC is applied once, below.)
+    vec3 haloCol = vR.z > 0.5 ? vec3(0.45) : mix(vec3(0.5, 0.1, 0.02), vec3(0.04, 0.12, 0.5), vR.x);
     col = v > 0.0 ? col + vC * haloCol * halo : vC * haloCol;
     v = v > 0.0 ? 1.0 : halo;
   } else if (type == 11) {
@@ -826,10 +868,12 @@ void main() {
     float sdf = dialogSdf(vec2(vUv.x, 1.0 - vUv.y) * uView);
     c *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDim * clamp(sdf + 0.5, 0.0, 1.0);
   }
-  // TPDF dither, only where there is light, so empty pixels stay exactly 0.
-  float peak = max(max(c.r, c.g), c.b);
+  // TPDF dither, per channel and never deeper than the channel's own light:
+  // an empty channel (or pixel) stays exactly 0, nothing is clipped at 0 (so
+  // faint light keeps its level and colour, no grey creeping in), and a wide
+  // faint glow's last few levels dither rather than band.
   float n = hash(gl_FragCoord.xy) + hash(gl_FragCoord.xy + 71.3) - 1.0;
-  c = max(c + n * smoothstep(0.0, 3.0 / 255.0, peak) / 255.0, 0.0);
+  c += n * min(c, vec3(1.0 / 255.0));
   // Premultiplied: alpha as high as the brightest channel keeps the colour
   // valid; plus-lighter then adds it to the page.
   o = vec4(c, max(max(c.r, c.g), c.b));

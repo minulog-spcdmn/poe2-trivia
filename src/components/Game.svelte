@@ -37,8 +37,8 @@
   const depth = $derived(delveDepth(s));
   const group = $derived(isGroupRun(s));
   // The question's timer: in the scoreboard pinned to the top on phones, in
-  // view while they scroll down to the answers, and beside the question's
-  // topic otherwise. Only ever one, so its ticks never double.
+  // view while they scroll down to the answers, and at the right end of the
+  // question's task line otherwise. Only ever one, so its ticks never double.
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.
@@ -317,7 +317,8 @@
   {/if}
 {/snippet}
 
-<div class="game">
+<!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular. -->
+<div class="game" data-cursor="game">
   <p class="sr" aria-live="polite">{zone?.label ?? ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
@@ -547,6 +548,8 @@
     animation: arrive 0.9s var(--ease-out) both;
     text-align: center;
     white-space: nowrap;
+    /* One line, so no leading over and under it: the space round the banner is its margins. */
+    line-height: 1.15;
   }
   .rule {
     flex: 0 1 140px;
@@ -649,6 +652,7 @@
   }
 
   .dm-intro {
+    zoom: var(--stage-zoom, 1);
     position: fixed;
     inset: 0;
     z-index: 70;
@@ -733,6 +737,16 @@
     }
     .skip {
       margin-top: 1rem;
+    }
+  }
+
+  /* Short desktop windows: less room over the scoreboard, so the question and Next fit.
+     (From 641px, below lib/layout.ts `short`'s 761: every screen above a
+     phone's has the game's top padding, while the question's own tightening
+     waits for the art and answers to stand side by side.) */
+  @media (min-width: 641px) and (max-height: 820px) {
+    .game {
+      padding-top: clamp(4px, 1vh, 16px);
     }
   }
 </style>

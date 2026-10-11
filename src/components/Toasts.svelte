@@ -10,6 +10,10 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
+  import { pinnedOut } from '../lib/stage';
+
+  /** A notice going fades where it stood, under the stage's zoom too. */
+  const fadeOut = pinnedOut(fade);
 
   /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
   let { headerHeight = 0 }: { headerHeight?: number } = $props();
@@ -90,7 +94,7 @@
       use:sparkle={{ kind: t.kind, herald: t.herald }}
       animate:flip={{ duration: 260 }}
       in:fly={enter}
-      out:fade={{ duration: 200 }}
+      out:fadeOut={{ duration: 200 }}
       onpointerenter={() => toasts.hold(t.id)}
       onpointerleave={() => toasts.release(t.id)}
     >
@@ -123,7 +127,9 @@
 </div>
 
 <style>
+  /* Scaled with the page on large windows (lib/stage.ts). */
   .toasts {
+    zoom: var(--stage-zoom, 1);
     position: fixed;
     right: max(22px, env(safe-area-inset-right));
     bottom: max(22px, env(safe-area-inset-bottom));

@@ -424,7 +424,11 @@ accuracy, at least 2 answers), mix-ups (what you picked for what), made-up
 names you fell for, streaks and answer times. Every question revealed on your
 screen counts as seen; only your own answers count toward accuracy (your turn,
 or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
-answers only count when one person plays alone. Undiscovered items show as
+answers only count when one person plays alone. Today's unique on the start
+page counts as seen, but its answer doesn't count toward accuracy; its practice
+questions find nothing and count only toward a Practice accuracy of their own
+(endless as they are, they'd otherwise fill the codex without a game).
+Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 
@@ -513,6 +517,18 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   ([PeerJS](https://peerjs.com/)). The host's browser runs the game and
   everyone else sees the same state live. Only the free PeerJS cloud is used,
   to introduce the players to each other.
+  - An invite link (`?room=CODE`) carries only the room's code. Opened by
+    someone who has never played, the start page shows it with the choice
+    made: "Join <host>'s room" with a name field, and the room as the
+    lobby will show it (its code, the host's chip, theirs filling in as they
+    type). Whose room it is, how many are in and whether it can be joined
+    (locked, full, playing, gone, another version) the room says itself:
+    the screen asks it on opening, as the room list asks public rooms
+    (`probeRoom`, answered by `ProbeDesk` in `src/lib/probeDesk.ts`), so
+    no link can name a host it doesn't have. Asking connects to the host,
+    as the room list does (see Privacy below).
+    Anyone with a saved name joins straight away; if the room is gone or
+    full they stay on the start page with the code in Join a room.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.
@@ -526,6 +542,39 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
+  - **Live pointers:** in the lobby, in turns mode and Delve together, and
+    on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
+    with their name; a tap on a phone shows where it landed, as the
+    pointer pressed, for a moment. Every pointer, your own included, is the same engraved dart
+    (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
+    yours in old gold, or in your colour once you have a seat in an online
+    room (the lobby included), shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
+    It has its states, the others' included: over anything that can be
+    clicked, a demon's clawed hand pointing, seen a little from the side;
+    while the button is held, the dart sinks a little, lit a little, its
+    hatched side struck solid, and the hand pushes its finger into the page; on
+    something disabled (another player's answers and cards), dull lead with
+    a saltire. Another's pointer is the hand whenever their own cursor is:
+    each player's screen sends that with the pointer. A still pointer dims;
+    it's hidden only once its player leaves the page. Text fields get an
+    engraved I-beam. With Windows' high contrast on, the system's own
+    cursors come back. Text fields don't offer autofill, and a right click
+    brings no browser menu (but in a text field), since both show the
+    system's cursor. Scrolling with the middle
+    button (Windows and Linux, where browsers do it) is the game's own
+    (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
+    began, with the ways left to go, and a dart pointing the way it scrolls.
+    Spectators see them but don't show their own. A pointer is sent as a
+    spot on the element under it (an answer, a category card, a scoreboard
+    row, the art, the button that moves on; at the end, the winner's circle
+    and the standings' rows; the game as a whole otherwise, measured down it by screen
+    heights so it holds still as cards are dealt), so it lands on the same
+    thing on every screen, a phone's included. A click is always seen:
+    the press goes out even when it's over before the next update, and a
+    pointer whose element goes with the click (a card picked) stays where
+    it was a moment. Never in a race, nor while
+    deathmatch duelists answer, where it would give answers away. See
+    `src/lib/cursors.ts`.
   - The room code stays in the header during the game, unless the host
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
@@ -570,8 +619,13 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
   the few actions a guest may take: pick a category, answer, continue, and
-  in Delve together vote for a card or give a teammate a life. Guests
-  are rate-limited to about 10 messages per second, and the raw data they
+  in Delve together vote for a card or give a teammate a life (and where
+  their pointer is). Guests
+  are rate-limited to about 10 messages per second (their pointer has a
+  budget of its own, so moving it never uses up the one for playing, and
+  the host keeps it out of the game state and passes it on in batches,
+  never more than ten a second, whose sending holds back while a link is
+  busy with pictures), and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
   or freeze its tab). A connection that doesn't introduce itself
@@ -633,10 +687,10 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Room codes** are 6 characters (about a billion combinations).
 
 **Privacy:** guests connect directly to the host (WebRTC), also briefly
-while browsing the open rooms list, so the host and guests can see each
-other's IP address (unless the connection runs through a TURN relay).
-Guests never connect to each other. The privacy policy says so; the game
-itself doesn't show a notice.
+while browsing the open rooms list or on opening an invite link, so the
+host and guests can see each other's IP address (unless the connection
+runs through a TURN relay). Guests never connect to each other. The
+privacy policy says so; the game itself doesn't show a notice.
 
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
@@ -821,25 +875,48 @@ doesn't reveal the answer.
 
 poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
 ring) and lossy, and the game draws it bigger than that. The site serves
-copies upscaled with Real-ESRGAN (x4plus, scaled down to 2× and mixed with
-the smoothly enlarged original, which beat other models and mixes in blind
-tests: 75% of the model for one-cell items, which are drawn the most
-enlarged, except precursor tablets at 50%, whose stone it smooths too much;
-40% up to 2 × 2 and 30% for larger ones) from `public/items/`, as AVIF (a third smaller than WebP, and
-closer to the unencoded picture). Small spots load smaller copies:
-`public/items/128/` for thumbnails, and `128/` or `256/` by screen sharpness
-for the codex's tiles and the start page (`itemThumb`, `itemSrcset` in
-`src/lib/ui-paths.ts`); only the question and the codex's item page load the
-full size. For new items, run `scripts/upscale-art.py` (its header has the
-one-time setup: a Python venv with torch for the CPU and the model file). It
-only does the items that have no upscaled copies yet. All sizes in the code
-stay in the original art's pixels (`ART_SCALE` in `src/lib/ui-paths.ts`), and
-`tests/itemArt.test.ts` checks every item has its copies.
+copies upscaled with Real-ESRGAN (x4plus) from `public/items/`, as AVIF (a
+third smaller than WebP, and closer to the unencoded picture):
+
+- **Resolution.** 4 pixels per art pixel for items up to 2 × 2 cells, which
+  are drawn the most enlarged (on a phone, or on a big screen under the
+  stage's zoom), and 2 for larger ones (`artScale` in `src/lib/ui-paths.ts`).
+  `items.json` keeps each item's art size (`w`, `h`), so the code works in
+  art pixels and only the bitmaps are finer.
+- **Mix.** Each picture is mixed with the smoothly enlarged original, which
+  beat other models and mixes in blind tests: 75% of the model for one-cell
+  items, except precursor tablets at 50%, whose stone it smooths too much;
+  50% up to 2 × 2 and 30% for larger ones.
+- **Smaller copies.** Small spots load `public/items/128/` for thumbnails,
+  and `128/` or `256/` by screen sharpness for the codex's tiles and the
+  start page (`itemThumb`, `itemSrcset`); only the question and the codex's
+  item page load the full size.
+
+For new items, run `scripts/upscale-art.py` (its header has the one-time
+setup: a Python venv with torch for the CPU and the model file). It only does
+the items that have no upscaled copies yet, and `tests/itemArt.test.ts`
+checks every item has its copies.
 
 After the art changes, rebuild the look-alike table (needs ffmpeg):
 
 ```sh
 npm run looks
+```
+
+Then measure which items are too thin for Today's unique on the start page:
+the day's item is the page's eye-catcher, drawn big in the arcane circle,
+and a bare stick leaves the circle all but empty. `scripts/daily-art.py`
+measures how much of the art box each item's opaque pixels cover at the
+size the page draws it, and writes those under 9.5% (28 staves, spears and
+quarterstaves, and the slimmest bows and wands) to
+`src/data/dailyArt.json`; the daily and its practice questions never ask
+them, though their names can still be decoys. Wide items (belts, some
+relics) are drawn bigger there than a box would let them: the picture may
+reach past the box's sides into the circle round its centre (ArtImage's
+`round` fit).
+
+```sh
+python3 scripts/daily-art.py
 ```
 
 It writes `src/data/looks.json`: for every item, the fourteen items of its
@@ -903,6 +980,31 @@ it apart from the live game:
   other modules off storage); only the creator unlock is shared
 - it says Beta on the start page, in the header and in the tab title, and
   asks search engines not to index it
+- adding `&first` to an invite link (`?room=CODE&first`) shows the invite
+  screen as a first visit sees it, with a name saved (the dev server too):
+  the saved name is set aside for that visit, not erased
+
+### Recording a hand
+
+On the beta and the dev server, `?record` in the address (for example
+**poe2.quest/beta/?record**) records how this player plays, for the room
+bots' hands to move by: the pointer about 120 times
+a second, what it was over (the anchors the pointer sync uses), clicks,
+scrolls and keys pressed outside text fields, where everything was on the
+screen, and what the game showed (phase, question, clock, reveal, lives).
+Nothing typed and no names. A badge in the bottom left corner shows it's on;
+**Save** downloads the file (nothing leaves the device otherwise), **Stop**
+ends it. It stays on for the tab until stopped or `?record=off`
+(`src/lib/recorder.ts`, `src/components/Recorder.svelte`).
+
+The bots' hands replay what was recorded: `node scripts/bot-motion.mjs
+one.json two.json …` cuts recordings into stretches (picking a card,
+answering, pressing Next, waiting through someone else's turn, the lobby),
+kept relative to what was on screen, into `src/data/botMotion.json` (the
+recordings themselves stay out of the repo). A bot replays one that fits
+the moment, its pauses fitted to how long it takes to make up its mind and
+its last reach steered onto its own pick (`src/bot/motion.ts`, `hand.ts`).
+More players' recordings make for more kinds of hands.
 
 ### The lab
 
@@ -1022,6 +1124,25 @@ by side.
   deeper every 180 ms.
 - **Open it:** `npm run dev`, then `http://localhost:5173/descent.html`; on
   the beta, **poe2.quest/beta/descent.html**. The live build leaves it out.
+
+### The daily streak's test page
+
+`streak.html` (`src/streakPreview/`) shows the daily's streak badge
+(`src/components/DailyStreak.svelte`) under a mock of Today's unique's
+answers, burning for any run of days, and every step of its ladder of
+colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
+
+- **Days in a row:** a slider from 0 to 730 and a box for any run; the hint
+  names the colour, the fire's heat and the days to the next colour.
+- **Steps** shows a step's first day; the numbers after them show the day
+  before a step, to answer right and see it turn.
+- **Answer right** plays what the start page plays for a right answer: the
+  badge comes in at yesterday's run and grows into today's, bursting when it
+  reaches a new colour. **Miss** ends the run in a puff of smoke;
+  **Replay entrance** brings the badge in again.
+- `streak.html?days=30` opens it at a run of 30 days.
+- **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
+  the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
 
 ---
 

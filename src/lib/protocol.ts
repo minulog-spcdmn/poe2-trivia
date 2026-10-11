@@ -3,8 +3,9 @@
 // sender disconnected: a real client never sends malformed messages.
 
 import type { Action, GameState } from './game';
+import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 21;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -28,7 +29,9 @@ export type ClientMsg =
    */
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
   | { t: 'action'; action: Action }
-  | { t: 'pong'; n: number };
+  | { t: 'pong'; n: number }
+  /** Where this player's pointer is (cursors.ts), or null when it left the page. */
+  | { t: 'cursor'; at: CursorAt | null };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
@@ -46,6 +49,8 @@ export type HostMsg =
   /** Not now (too many joins): this connection is dropped, try again in a moment. */
   | { t: 'busy'; message: string }
   | { t: 'ping'; n: number }
+  /** Other players' pointers that moved since the last batch (cursors.ts). */
+  | { t: 'cursors'; c: CursorEntry[] }
   | MediaMsg;
 
 export type MediaMsg =
@@ -53,7 +58,8 @@ export type MediaMsg =
   /** `tile`: a veiled "find the art" picture (Delve), by option; missing for the art of a name question. */
   | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number] }
   | { t: 'patch'; qid: number; tile?: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
-  | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
+  /** `w`, `h`: its size in art pixels (the picture is finer, by the item's artScale). */
+  | { t: 'option'; qid: number; index: number; w: number; h: number; data: ArrayBuffer };
 
 /** A patch's edges: (x, y, patch) triples of 16-bit numbers, a few thousand at most. */
 const MAX_EDGE_BYTES = 6 * 16384;
@@ -92,6 +98,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
+    case 'cursor': {
+      const at = parseCursorAt(raw.at);
+      return at === undefined ? null : { t: 'cursor', at };
+    }
     case 'action': {
       const a = raw.action;
       if (!isObj(a)) return null;
@@ -152,6 +162,10 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return raw as HostMsg;
     case 'ping':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? (raw as HostMsg) : null;
+    case 'cursors': {
+      const c = parseCursorBatch(raw.c);
+      return c ? { t: 'cursors', c } : null;
+    }
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'veil':
@@ -167,7 +181,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
         ? (raw as HostMsg)
         : null;
     case 'option':
-      return qid && bin(raw.data) && isInt(raw.index, 0, 16) ? (raw as HostMsg) : null;
+      return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     default:
       return null;
   }

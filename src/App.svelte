@@ -2,6 +2,7 @@
   import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { shownDepth } from './lib/delve';
+  import { stageZoom } from './lib/stage';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -21,12 +22,23 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
+  import { setCursorColor } from './lib/ownCursor';
+  import PeerCursors from './components/PeerCursors.svelte';
+  import Recorder from './components/Recorder.svelte';
+  import { wantsRecording } from './lib/recorder';
+  import { playerColor } from './lib/ui';
 
+  // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
+  let recording = $state(wantsRecording());
   let muted = $state(isMuted());
   let volume = $state(getVolume());
   const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
+  // With a seat in an online room, lobby included, this device's own pointer takes its
+  // player's colour, as the others see it (lib/ownCursor.ts); otherwise it's old gold.
+  const seat = $derived(session.mode === 'host' || session.mode === 'client' ? session.state?.players.find((p) => p.id === session.myPlayerId) : undefined);
+  $effect(() => setCursorColor(seat ? playerColor(seat.hue) : undefined));
   // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
   $effect(() => {
     document.documentElement.toggleAttribute('data-still', !fxOn);
@@ -141,15 +153,51 @@
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
   /**
-   * The header comes and goes with the start page, but only once the
-   * outgoing screen has faded: in the meantime it would push that screen
-   * down (or let it jump up) by its own height.
+   * While screens swap, the outgoing one fades over the incoming one in the
+   * same grid cell, and neither sizes the page: both fill the window (below
+   * the header, which comes or goes in the meantime) and what is longer is
+   * cut off there, out of sight anyway. Nor does a bar docked to the bottom
+   * (lib/layout.ts) pad the page meanwhile: the lobby's arrives as it
+   * mounts, and would lift the start page's centred content as it fades.
+   * So the swap never moves, stretches or scrolls either screen. Once in,
+   * the screen sizes the page again (screenIn's end).
+   */
+  let swapping = $state(false);
+  function hold(node: HTMLElement, on: boolean) {
+    node.style.contain = on ? 'size' : '';
+    node.style.overflow = on ? 'clip' : '';
+  }
+  function screenOut(node: HTMLElement) {
+    swapping = true;
+    hold(node, true);
+    return fade(node, { duration: SCREEN_OUT_MS });
+  }
+  function screenIn(node: HTMLElement) {
+    hold(node, true);
+    return fade(node, { duration: 350, delay: SCREEN_OUT_MS });
+  }
+  /**
+   * Every screen is scaled up alike on large windows (lib/stage.ts), header
+   * and all, so moving between them never changes the scale. Set on the root,
+   * for the shell and for what sits outside it (dialogs, toasts, overlays).
+   */
+  let winW = $state(innerWidth);
+  let winH = $state(innerHeight);
+  const zoom = $derived(stageZoom(winW, winH));
+  $effect(() => document.documentElement.style.setProperty('--stage-zoom', String(zoom)));
+  /**
+   * The header and the legal links under the screen (the start page has
+   * its own) come and go with the start page, but only once the outgoing
+   * screen has faded: in the meantime they would squeeze or stretch it, and
+   * the start page's centred content would move. Its fade's end sets them
+   * (the .screen's outroend), not a timer, which a busy first frame of the
+   * new screen can beat; the timer is only a fallback.
    */
   let headerOn = $state(untrack(() => screen !== 'home'));
+  const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
-    const want = screen !== 'home';
-    if (want === untrack(() => headerOn)) return;
-    const t = setTimeout(() => (headerOn = want), SCREEN_OUT_MS);
+    if (screen !== 'home' === untrack(() => headerOn)) return;
+    const t = setTimeout(showHeader, SCREEN_OUT_MS + 500);
     return () => clearTimeout(t);
   });
 
@@ -208,7 +256,9 @@
 <!-- Delve: the light shrinking at the screen's edges as a question's clock runs down. -->
 <Darkness active={!!gs?.delve && screen === 'game'} />
 
-<div class="shell" data-behind-dialog bind:this={shell}>
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+
+<div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
     <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
@@ -326,8 +376,20 @@
   {/if}
 
   <main>
+    <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
+    {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
+    {#if recording}<Recorder onstop={() => (recording = false)} />{/if}
     {#key screen}
-      <div class="screen" in:fade={{ duration: 350, delay: SCREEN_OUT_MS }} out:fade={{ duration: SCREEN_OUT_MS }}>
+      <div
+        class="screen"
+        in:screenIn
+        out:screenOut
+        onintroend={(e) => {
+          hold(e.currentTarget, false);
+          swapping = false;
+        }}
+        onoutroend={showHeader}
+      >
         {#if screen === 'home'}
           <Home />
         {:else if screen === 'lobby'}
@@ -346,7 +408,7 @@
     {/key}
   </main>
 
-  {#if screen !== 'home'}
+  {#if headerOn}
     <nav class="legal">
       <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
       <span aria-hidden="true">·</span>
@@ -399,14 +461,19 @@
     user-select: all;
     cursor: text;
   }
+  /* Scaled up on large windows (lib/stage.ts): the window's height in its zoomed pixels. */
   .shell {
+    zoom: var(--stage-zoom, 1);
     position: relative;
     z-index: 1;
-    min-height: 100dvh;
+    min-height: calc(100dvh / var(--stage-zoom, 1));
     display: flex;
     flex-direction: column;
     /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
     padding-bottom: var(--dock, 0px);
+  }
+  .shell.swapping {
+    padding-bottom: 0;
   }
 
   header {
@@ -665,6 +732,12 @@
   .screen {
     grid-area: 1 / 1;
     min-width: 0;
+  }
+  /* The start page fills the height below the header, not the window's:
+     while the header is still up behind it, it must not overflow. */
+  .screen:has(> :global(.home)) {
+    display: flex;
+    flex-direction: column;
   }
 
   .legal {

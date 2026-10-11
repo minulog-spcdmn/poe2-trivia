@@ -3,7 +3,7 @@
 // opened, carries them.
 
 import type { Difficulty, Item, QuestionMode } from './game.ts';
-import { RECENT, answerLives, answerWards, livesCost, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
+import { RECENT, add, answerLives, answerWards, livesCost, noTally, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
 import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
 import { MAX_DEPTH, bestKey, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
 import { biomeAt } from './backdrops.ts';
@@ -11,9 +11,6 @@ import { stratumName } from './descent.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
 export const NEMESIS_MIN = 2;
-
-const noTally = (): Tally => ({ n: 0, ok: 0 });
-const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
 
 export const tallyOf = (e: ItemEntry): Tally => ({ n: e.name.n + e.art.n, ok: e.name.ok + e.art.ok });
 /** Share of right answers, or null without any. */

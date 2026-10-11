@@ -6,6 +6,7 @@
   import { FINDS_FROM, FINDS_IN_ORDER, shownDepth, type FindKind } from '../lib/delve';
   import { descentPlate, f, KEY_R, ZONES, type Box, type CalloutShape, type Layout, type Target } from '../lib/descentPlate';
   import { FIND_TEXT } from '../lib/difficultyText';
+  import { unzoomRect, zoomOf } from '../lib/stage';
   import ItemGlyph from './ItemGlyph.svelte';
 
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
@@ -106,9 +107,13 @@
    */
   function measure() {
     if (!fig) return;
-    const r = fig.getBoundingClientRect();
-    const rel = (b: { left: number; top: number; right: number; bottom: number }): Box =>
-      [b.left - r.left, b.top - r.top, b.right - r.left, b.bottom - r.top].map((v) => Math.round(v * 4) / 4) as Box;
+    // On screen, under the stage's zoom (lib/stage.ts): back in the plate's own pixels.
+    const z = zoomOf(fig);
+    const r = unzoomRect(fig.getBoundingClientRect(), z);
+    const rel = (onScreen: DOMRect): Box => {
+      const b = unzoomRect(onScreen, z);
+      return [b.left - r.left, b.top - r.top, b.right - r.left, b.bottom - r.top].map((v) => Math.round(v * 4) / 4) as Box;
+    };
     let c: Box | null = null;
     if (caption) {
       // The caption's words, not its whole line.
@@ -137,9 +142,9 @@
         const b = el.getBoundingClientRect();
         const inner = (e: Element): Box => {
           const x = e.getBoundingClientRect();
-          return [x.left - b.left, x.top - b.top, x.right - b.left, x.bottom - b.top].map((v) => Math.round(v * 4) / 4) as Box;
+          return [x.left - b.left, x.top - b.top, x.right - b.left, x.bottom - b.top].map((v) => Math.round((v / z) * 4) / 4) as Box;
         };
-        nextShapes[kind] = { x: rel(b)[0], w: b.width, h: b.height, icon: inner(g), name: inner(n) };
+        nextShapes[kind] = { x: rel(b)[0], w: b.width / z, h: b.height / z, icon: inner(g), name: inner(n) };
       }
     }
     // The names as the plate sets them: the display face's capitals at 11 px, spaced 0.06 em.

@@ -12,6 +12,9 @@ import {
   parseCodex,
   record,
   recordEncounter,
+  loadPractice,
+  recordPractice,
+  recordSeen,
   resetCodex,
   serializeCodex,
   type Codex,
@@ -481,4 +484,67 @@ test('two players of one browser in one room: each Delve answer says whose it wa
   x = record(x, delveEnc(2, b.id, false, { who: 'p1' }));
   x = record(x, delveEnc(3, c.id, false));
   assert.deepEqual(parseCodex(serializeCodex(x))!.log.map((l) => l.who), ['p0', 'p1', undefined]);
+});
+
+test("practice answers count only in their own tally, kept apart from the codex", () => {
+  recordPractice(true);
+  recordPractice(false);
+  recordPractice(true);
+  assert.deepEqual(loadPractice(), { n: 3, ok: 2 });
+  // The codex itself is untouched (none was even written).
+  const c = loadCodex();
+  assert.deepEqual([c.items, c.log, c.byDifficulty, c.streak], [{}, [], {}, 0]);
+  assert.equal(store.has(CODEX_KEY), false);
+  // A codex written over by a build that knows nothing of practice keeps it.
+  store.set(CODEX_KEY, serializeCodex(emptyCodex()));
+  assert.deepEqual(loadPractice(), { n: 3, ok: 2 });
+  // Erasing the codex erases it with it.
+  resetCodex();
+  assert.deepEqual(loadPractice(), { n: 0, ok: 0 });
+});
+
+test("today's unique is seen, with a wrong art pick the reveal names; no answer counted", () => {
+  const [a, b] = [items[0].id, items[1].id];
+  recordSeen(1000, 'art', [a, b]);
+  const c = loadCodex();
+  assert.deepEqual([c.items[a].seen, c.items[b].seen], [1, 1]);
+  assert.deepEqual([c.items[a].art, c.items[b].art], [{ n: 0, ok: 0 }, { n: 0, ok: 0 }]);
+  assert.deepEqual([c.log, c.byDifficulty, c.streak], [[], {}, 0]);
+});
+
+test('a practice tally that reads wrong is kept aside, not written over unseen; one that can\'t be read isn\'t touched', () => {
+  const key = storeKey('practice');
+  store.set(key, 'not a tally');
+  recordPractice(true);
+  assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
+  assert.equal(store.get(storeKey('practice.unread')), 'not a tally');
+  // A storage that throws on reading: nothing written.
+  const get = (globalThis as { localStorage: { getItem: (k: string) => string | null } }).localStorage;
+  const real = get.getItem;
+  get.getItem = (k: string) => {
+    if (k === key) throw new Error('SecurityError');
+    return real(k);
+  };
+  try {
+    recordPractice(false);
+  } finally {
+    get.getItem = real;
+  }
+  assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
+});
+
+test("only this build's practice tally is read: another shape is kept aside, a newer build's is left as it is", () => {
+  const key = storeKey('practice');
+  // Any object isn't a tally: without its version, or with more right than asked, it is kept aside.
+  store.set(key, JSON.stringify({ n: 5, ok: 9 }));
+  assert.deepEqual(loadPractice(), { n: 0, ok: 0 });
+  recordPractice(true);
+  assert.deepEqual(loadPractice(), { n: 1, ok: 1 });
+  assert.equal(store.get(storeKey('practice.unread')), JSON.stringify({ n: 5, ok: 9 }));
+  assert.deepEqual(JSON.parse(store.get(key)!), { v: 1, n: 1, ok: 1 });
+  // A newer build's: never written over.
+  const newer = JSON.stringify({ v: 2, n: 40, ok: 30, streak: 3 });
+  store.set(key, newer);
+  recordPractice(false);
+  assert.equal(store.get(key), newer);
 });

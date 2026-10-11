@@ -9,7 +9,7 @@
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { tick, untrack, type Snippet } from 'svelte';
+  import { onDestroy, tick, untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
   import {
     FILL_SPAN,
@@ -36,12 +36,14 @@
   import { flareStrike } from '../lib/flareBurn';
   import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
+  import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
   import WatchToggle from './WatchToggle.svelte';
+  import { zoomOf } from '../lib/stage';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -612,18 +614,13 @@
     };
   }
 
-  // Kicking takes two clicks so a stray tap doesn't remove anyone.
+  // Kicking takes two clicks (lib/kick), so neither a stray tap nor a double
+  // click removes anyone.
   let confirming = $state<string | null>(null);
-  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  const kicker = kickConfirm((id) => (confirming = id));
+  onDestroy(kicker.dispose);
   function kick(id: string) {
-    if (confirming !== id) {
-      confirming = id;
-      if (confirmTimer) clearTimeout(confirmTimer);
-      confirmTimer = setTimeout(() => (confirming = null), 3000);
-      return;
-    }
-    confirming = null;
-    session.kick(id);
+    if (kicker.click(id)) session.kick(id);
   }
 
   /**
@@ -632,9 +629,11 @@
    * shrinks between turns on phones. It moves them with `translate`, so the
    * active entry's own transform stays.
    */
-  function glide(_node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
-    const dx = from.left - to.left;
-    const dy = from.top - to.top;
+  function glide(node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    // Measured on screen: in the entry's own px under the stage's zoom.
+    const z = zoomOf(node);
+    const dx = (from.left - to.left) / z;
+    const dy = (from.top - to.top) / z;
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
@@ -681,7 +680,15 @@
 {/snippet}
 
 <!-- While the offer to give a life is open, Escape closes it and hands focus back to its heart. -->
-<svelte:window onkeydown={(e) => asking && e.key === 'Escape' && (e.preventDefault(), closeAsk())} />
+<!-- Escape closes the revive question, or takes an armed kick back; a press anywhere but the armed Kick takes it back too. -->
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key !== 'Escape') return;
+    if (asking) (e.preventDefault(), closeAsk());
+    else kicker.disarm();
+  }}
+  onpointerdown={(e) => !(e.target as Element).closest?.('.kick.confirm, .kick-inline.confirm') && kicker.disarm()}
+/>
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
@@ -703,12 +710,14 @@
       {@const expect = expecting[p.id] ?? null}
       {@const reviveOk = fell !== null && canRevive(p.id)}
       <li
+        data-cursor="row:{i}"
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
         use:burn={{ h: fire, delve: !!run }}
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
+        class:armed={confirming === p.id}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
@@ -753,7 +762,7 @@
             title="Remove {p.name} from the game"
             aria-label="Remove {p.name}"
           >
-            {confirming === p.id ? 'Kick?' : '×'}
+            {confirming === p.id ? 'Kick' : '×'}
           </button>
         {/if}
         {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
@@ -801,7 +810,7 @@
             class:confirm={confirming === o.id}
             onclick={() => kick(o.id)}
             title="Remove {o.name}"
-            aria-label="Remove {o.name}">{confirming === o.id ? 'Kick?' : '×'}</button
+            aria-label="Remove {o.name}">{confirming === o.id ? 'Kick' : '×'}</button
           >{/if}</span
       >
     {/each}
@@ -894,33 +903,78 @@
     border: 5px solid transparent;
     border-top-color: var(--c);
   }
+  /* The kick, as the lobby's: a quiet × on the entry's corner; pointed at, a
+     thin red ring round it and the entry's edge warms red; armed, the ring
+     grows sideways into a pill and the × gives way to Kick, while the entry
+     takes the wrong-answer colours. Same ring, same red, only longer. */
   .kick {
     position: absolute;
     top: -8px;
     left: -6px;
-    min-width: 20px;
+    width: 20px;
     height: 20px;
-    padding: 0 0.35em;
+    padding: 0;
+    overflow: hidden;
+    white-space: nowrap;
     border-radius: 10px;
-    border: 1px solid rgba(224, 85, 63, 0.5);
-    background: #1c0f0b;
-    color: #ff9c86;
-    font-family: var(--font-display);
-    font-size: 0.7rem;
-    font-weight: 700;
+    border: 1px solid var(--line);
+    background: #140d0a;
+    color: var(--muted);
+    font-size: 0.95rem;
     line-height: 1;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.2s;
+    transition:
+      opacity 0.2s,
+      width 0.22s var(--ease-out),
+      color 0.2s,
+      border-color 0.2s,
+      background-color 0.2s,
+      box-shadow 0.2s;
   }
   li:hover .kick,
   .kick:focus-visible,
   .kick.confirm {
     opacity: 1;
   }
+  .kick:hover {
+    color: var(--bad);
+    border-color: rgba(224, 85, 63, 0.6);
+  }
+  .kick:focus-visible {
+    outline: 1px solid var(--gold-hi);
+    outline-offset: 2px;
+  }
   .kick.confirm {
-    background: var(--bad);
-    color: #fff;
+    width: 50px;
+    border-color: rgba(224, 85, 63, 0.75);
+    background-color: #2a120d;
+    color: #ff9c86;
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    box-shadow: 0 0 10px rgba(224, 85, 63, 0.25);
+  }
+  .kick.confirm:hover {
+    color: #ffd2c6;
+    border-color: #e0553f;
+    background-color: #3a170f;
+  }
+  li:has(.kick:hover) {
+    border-color: rgba(224, 85, 63, 0.45);
+  }
+  /* Armed: the whole entry asks, in the wrong-answer colours, the avatar dimmed. */
+  li.armed {
+    border-color: #8e4434;
+    background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
+  }
+  li.armed :global(.avatar) {
+    filter: saturate(0.4) brightness(0.75);
+  }
+  li.armed .name {
+    color: #eab3a3;
   }
   @media (hover: none) {
     .kick {
@@ -1373,20 +1427,37 @@
     color: var(--text);
     margin-left: 0.5em;
   }
+  /* A spectator's kick, in the line of names: the same ring into a pill. */
   .kick-inline {
     margin-left: 0.25em;
+    min-width: 1.5em;
     padding: 0 0.35em;
-    border: 1px solid rgba(224, 85, 63, 0.5);
+    border: 1px solid var(--line);
     border-radius: 8px;
-    background: #1c0f0b;
-    color: #ff9c86;
-    font-size: 0.7rem;
+    background: #140d0a;
+    color: var(--muted);
+    font-size: 0.8rem;
     line-height: 1.3;
     cursor: pointer;
+    transition:
+      color 0.2s,
+      border-color 0.2s,
+      background-color 0.2s;
+  }
+  .kick-inline:hover {
+    color: var(--bad);
+    border-color: rgba(224, 85, 63, 0.6);
   }
   .kick-inline.confirm {
-    background: var(--bad);
-    color: #fff;
+    border-color: rgba(224, 85, 63, 0.75);
+    background-color: #2a120d;
+    color: #ff9c86;
+    font-family: var(--font-display);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-style: normal;
   }
 
   @media (max-width: 640px) {
@@ -1519,8 +1590,9 @@
     li.wide .info :global(.vessel) {
       height: 9px;
     }
-    /* The timer at the end of the row, smaller than beside the question. */
-    .strip :global(.timer) {
+    /* The timer at the end of the row, smaller than on the task line on wider screens. */
+    /* (.timer twice, to outweigh TimerRing's own size whatever the bundle's order.) */
+    .strip :global(.timer.timer) {
       flex: none;
       width: 44px;
       height: 44px;

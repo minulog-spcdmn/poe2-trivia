@@ -1,11 +1,11 @@
 <script lang="ts">
   import { playerColor } from '../lib/ui';
-  import { isHeldName } from '../lib/names';
+  import { initialOf, isHeldName } from '../lib/names';
   import { arcaneAura } from '../lib/fx/aura';
   import { CREATOR_TITLE } from '../lib/site';
 
   let { name, hue, size = 36, dim = false }: { name: string; hue: number; size?: number; dim?: boolean } = $props();
-  const initial = $derived(name.trim().charAt(0).toUpperCase() || '?');
+  const initial = $derived(initialOf(name) || '?');
   // A's thin apex and wide base make it look low when its cap height is
   // centered, so lift it slightly.
   const dy = $derived(initial === 'A' ? '0.31em' : '0.35em');

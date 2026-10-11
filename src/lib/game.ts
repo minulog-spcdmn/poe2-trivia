@@ -63,6 +63,9 @@ export interface Item {
   /** Broad category offered to players. */
   category: string;
   kind: 'unique' | 'gem';
+  /** Its art's size, in art pixels (poe2db's, about 104 per inventory cell); its picture is artScale times that (ui-paths.ts). */
+  w: number;
+  h: number;
 }
 
 /** The three ready-made difficulties. */
@@ -565,6 +568,16 @@ export interface Question {
    * missing in older saves.
    */
   groups?: string[];
+  /**
+   * Art questions whose every picture stands at least about twice as tall as
+   * wide (TALL_ART_GROUPS): wide screens show them in one row of tall tiles.
+   * Says nothing about the answer. Missing from older hosts (two rows).
+   * Kept in Delve's copy before the clock runs (publicView), unlike the
+   * groups: the pictures' layout must not change as they arrive, and all it
+   * tells is that every option is a staff, spear, wand, flask, bow, crossbow
+   * or two-handed mace.
+   */
+  tall?: boolean;
   mode: QuestionMode;
   /** The answer. Empty in the copy guests receive until the reveal. */
   itemId: string;
@@ -2578,9 +2591,18 @@ export class Engine {
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
     // Delve: the art in grayscale or not, rolled for each question.
     const gray = rules.grayChance ? { gray: this.rng() < rules.grayChance } : {};
-    return { category, groups, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
+    const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
+    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
   }
 }
+
+/**
+ * Groups whose art is at least about twice as tall as wide, measured from the
+ * pictures (height over width): spears, staves and quarterstaves 3.9, wands
+ * 2.9, flasks 2.0, bows, crossbows and two-handed maces 2.0. (Body armours,
+ * quivers, sceptres and one-handed maces are 1.5; talismans are square.)
+ */
+export const TALL_ART_GROUPS = new Set(['Spears', 'Staves', 'Quarterstaves', 'Wands', 'Flasks', 'Bows', 'Crossbows', 'Two-Handed Maces']);
 
 /** Whose art lean a question counts toward: the player answering it, or the whole room in a race or a co-op run. */
 function artKey(s: GameState): string {

@@ -30,3 +30,30 @@ test('in Delve the fire grows over a long run, and only burns blue deep down', a
   assert.equal(burnsBlue(heatOf(BLUE_FROM, true), true), false, 'not blue at seven');
   // A streak can't be longer than the depth: blue fire never comes before depth 21.
 });
+
+test('a run of daily answers burns from the first day and grows every day, quickly at first', async () => {
+  const { DAILY_FULL, dailyHeatOf } = await import('../src/lib/fx/streaks.ts');
+  assert.equal(dailyHeatOf(0), 0);
+  assert.ok(dailyHeatOf(1) > 0.1, 'lit on day one');
+  for (let d = 1; d < DAILY_FULL; d++) assert.ok(dailyHeatOf(d + 1) > dailyHeatOf(d), `grows from day ${d} to ${d + 1}`);
+  assert.ok(dailyHeatOf(7) - dailyHeatOf(1) > dailyHeatOf(100) - dailyHeatOf(30), 'the first week grows more than days 30 to 100');
+  assert.equal(dailyHeatOf(DAILY_FULL), 1);
+  assert.equal(dailyHeatOf(1000), 1, 'never past full');
+});
+
+test('the daily fire changes colour at each milestone, orange then blue as in the game, gold after a year', async () => {
+  const { DAILY_FULL, DAILY_LADDER, dailyFlameOf } = await import('../src/lib/fx/streaks.ts');
+  assert.deepEqual(
+    DAILY_LADDER.map((f) => [f.from, f.name]),
+    [[1, 'orange'], [BLUE_FROM, 'blue'], [14, 'ice'], [30, 'chaos'], [60, 'violet'], [100, 'crimson'], [DAILY_FULL, 'gold']],
+  );
+  for (let i = 1; i < DAILY_LADDER.length; i++) assert.ok(DAILY_LADDER[i].from > DAILY_LADDER[i - 1].from, 'in order');
+  assert.equal(dailyFlameOf(1).name, 'orange');
+  assert.equal(dailyFlameOf(BLUE_FROM - 1).name, 'orange');
+  assert.equal(dailyFlameOf(BLUE_FROM).name, 'blue');
+  assert.equal(dailyFlameOf(BLUE_FROM).blue, true, "the game's own blue fire");
+  assert.equal(dailyFlameOf(99).name, 'violet');
+  assert.equal(dailyFlameOf(DAILY_FULL).name, 'gold');
+  assert.equal(dailyFlameOf(2000).name, 'gold');
+  for (const f of DAILY_LADDER) assert.ok(f.blue || !f.tint || f.tint.every((v) => v >= 0 && v <= 1), `${f.name} has a usable tint`);
+});

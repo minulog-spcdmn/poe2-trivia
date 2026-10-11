@@ -179,6 +179,23 @@ const hoverOnlyWhereHoverable = {
 };
 
 /**
+ * The app's own mouse pointer (src/lib/ownCursor.ts): every `cursor: pointer`,
+ * `default`, `not-allowed` and `text` reads its picture from a variable, falling back to
+ * the system's own where it isn't set (pages that don't draw one).
+ */
+const CURSOR_VARS: Record<string, string> = { pointer: '--cursor-pointer', default: '--cursor', 'not-allowed': '--cursor-disabled', text: '--cursor-text' };
+
+const themedCursors = {
+  postcssPlugin: 'themed-cursors',
+  Declaration: {
+    cursor(decl: { value: string }) {
+      const name = CURSOR_VARS[decl.value.trim()];
+      if (name) decl.value = `var(${name}, ${decl.value.trim()})`;
+    },
+  },
+};
+
+/**
  * This machine (and user), for the local channel's room names
  * (src/lib/channel.ts): the dev server and the room bot's --localhost
  * build here share them; anyone else's local rooms stay apart.
@@ -202,7 +219,7 @@ export default defineConfig(({ command, mode }) => {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
     plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
-    css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
+    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     build: {
       rollupOptions: {
         // Legal pages are plain static pages so they work without JavaScript.
@@ -211,10 +228,11 @@ export default defineConfig(({ command, mode }) => {
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool),
-          // the zone gate's tuning page (src/zonebanner) and the descent's
-          // test page (src/descentPreview): the dev server serves them by
-          // itself; of the builds only the beta has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html' } : {}),
+          // the zone gate's tuning page (src/zonebanner), the descent's test
+          // page (src/descentPreview) and the daily streak's (src/streakPreview):
+          // the dev server serves them by itself; of the builds only the beta
+          // has them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },
