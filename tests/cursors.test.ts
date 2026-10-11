@@ -13,6 +13,8 @@ import {
   MAX_ANCHOR,
   SCALE,
   SEND_EVERY_MS,
+  POINTER_BURST,
+  POINTER_RATE,
   anchorCode,
   anchorName,
   cursorAt,
@@ -35,7 +37,7 @@ import {
 } from '../src/lib/cursors.ts';
 import { createGame, MAX_PLAYERS } from '../src/lib/game.ts';
 import { FrameGuard, plausiblePack } from '../src/lib/guard.ts';
-import { parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
+import { RateLimit, parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
 import { ART, type Art } from '../src/lib/pointerArt.ts';
 
 const bytes = (m: unknown) => {
@@ -205,12 +207,18 @@ test('a full room of moving pointers stays small, and within the frame budget', 
   const batch = bytes({ t: 'cursors', c: Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => [cursorKey(`player${i}abcd`), ...far]) });
   assert.ok(batch.length <= 520, `${batch.length} bytes`);
 
-  // A pointer at full speed beside a key held down, for a minute: never a flood.
+  // A pointer at full speed, clicking ten times a second beside a key held down, for a minute:
+  // never a flood, and no press or release dropped.
   let t = 0;
   const g = new FrameGuard(() => t);
+  const pointer = new RateLimit(POINTER_RATE, POINTER_BURST, () => t);
   const answer = bytes({ t: 'action', action: { type: 'answer', index: 1, askedAt: 1 } });
-  for (; t < 60_000; t += SEND_EVERY_MS) {
-    assert.equal(g.check(one), 'ok');
+  for (let i = 0; t < 60_000; t += SEND_EVERY_MS, i++) {
+    const sent = i % 2 ? [one] : [one, one, one];
+    for (const m of sent) {
+      assert.equal(g.check(m), 'ok');
+      assert.ok(pointer.take(), `pointer at ${t} ms`);
+    }
     assert.equal(g.check(answer), 'ok');
   }
 });

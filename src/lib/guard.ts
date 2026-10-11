@@ -78,10 +78,10 @@ export class FrameGuard {
   private bytes: RateLimit;
 
   constructor(now: () => number = Date.now) {
-    // Looser than the message limits (10/s, and 20/s for the pointer,
+    // Looser than the message limits (10/s, and 40/s for the pointer,
     // cursors.ts), so only abuse ever hits it.
-    this.frames = new RateLimit(60, 60, now);
-    this.bytes = new RateLimit(2048, 16 * 1024, now);
+    this.frames = new RateLimit(80, 80, now);
+    this.bytes = new RateLimit(3072, 16 * 1024, now);
   }
 
   check(data: unknown): FrameVerdict {

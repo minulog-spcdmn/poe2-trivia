@@ -93,6 +93,14 @@ export function fromAnchor(anchor: number, x: number, y: number, r: AnchorBox, s
 /** A guest sends its pointer at most this often (ms), and the host its batches. */
 export const SEND_EVERY_MS = 50;
 export const FLUSH_EVERY_MS = 50;
+/**
+ * How many pointer messages a host takes from each guest a second, and at
+ * once: one every SEND_EVERY_MS, and besides them a press and a release
+ * for each click, which go at once (PeerCursors.svelte), ten clicks a
+ * second. Past that a message is dropped, its click lost on the others' screens.
+ */
+export const POINTER_RATE = 1000 / SEND_EVERY_MS + 20;
+export const POINTER_BURST = 40;
 
 /** Anchors that come in lists (by index, the same on every screen) take the codes from their base up. */
 const LISTS = { opt: 16, card: 32, row: 48 } as const;

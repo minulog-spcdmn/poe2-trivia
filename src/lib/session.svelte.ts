@@ -69,7 +69,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
-import { CursorOutbox, FLUSH_EVERY_MS, PRESSED, SEND_EVERY_MS, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
+import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 
@@ -646,8 +646,7 @@ class Session {
     const guest: Guest = {
       playerId: null,
       limit: new RateLimit(10, 20),
-      // A real client sends one every SEND_EVERY_MS at most, and a press and its release at once besides.
-      pointer: new RateLimit(1000 / SEND_EVERY_MS + 8, 20),
+      pointer: new RateLimit(POINTER_RATE, POINTER_BURST),
       rtt: 150,
       lastPong: Date.now(),
       pings: new Map(),
