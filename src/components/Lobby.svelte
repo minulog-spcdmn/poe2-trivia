@@ -393,7 +393,7 @@
                   title="Remove {p.name}"
                   aria-label="Remove {p.name}"
                   onclick={() => removePlayer(p.id)}
-                  >{confirming === p.id ? 'Kick' : '×'}</button
+                  >{#if confirming === p.id}Kick{:else}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1 1 9" /></svg>{/if}</button
                 >
               {/if}
             </li>
@@ -405,7 +405,7 @@
                 class:confirm={confirming === o.id}
                 title="Remove {o.name}"
                 aria-label="Remove {o.name}"
-                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{confirming === o.id ? 'Kick' : '×'}</button
+                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{#if confirming === o.id}Kick{:else}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1 1 9" /></svg>{/if}</button
               >{/if}{/each}
         {/snippet}
         {#if waiting.length}
@@ -905,12 +905,18 @@
     background: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: 1.2rem;
     line-height: 1;
+    display: inline-grid;
+    place-items: center;
   }
-  /* Garamond's × rides above the middle of its line: let it down onto the ring's centre. */
-  .remove:not(.confirm) {
-    padding-top: 0.1em;
+  /* The × is drawn, not set: a glyph sits wherever its font puts it on the line, off the ring's centre. */
+  .remove svg {
+    width: 8px;
+    height: 8px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    stroke-linecap: round;
   }
   /* Armed: the ring the × shows under the pointer grows sideways into a pill
      and the × gives way to Kick. Same ring, same red, only longer. */
@@ -944,7 +950,12 @@
   .remove.inline {
     width: 22px;
     height: 22px;
-    font-size: 1rem;
+    vertical-align: middle;
+  }
+  .remove.inline svg {
+    width: 7px;
+    height: 7px;
+    stroke-width: 1.3;
   }
   /* A spectator's kick, in the line of names: the same ring into a pill. */
   .remove.inline.confirm {
