@@ -96,10 +96,18 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
   return q;
 }
 
+/**
+ * The first day whose question keeps twins apart (game.ts TWINS). Earlier
+ * days are dealt as before, so no day's question changes once it may have
+ * been asked (tests/daily.test.ts pins them): a change to how questions are
+ * dealt starts on a day still to come, after it has gone live.
+ */
+export const DAILY_TWINS_FROM = utcDay(Date.UTC(2026, 9, 19));
+
 /** The day's question, the same everywhere for the same items, made-up names and day. */
 export function dailyQuestion(items: Item[], fakes: Record<string, string[]>, day: number): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
-  const engine = new Engine(items, { rng, fakes, now: () => day * DAY_MS });
+  const engine = new Engine(items, { rng, fakes, now: () => day * DAY_MS, twins: day >= DAILY_TWINS_FROM });
   return askOne(engine, dailyGame(), rng);
 }
 

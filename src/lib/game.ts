@@ -1102,8 +1102,10 @@ export class Engine {
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
    * `looks`: the look-alike table, if at hand already (else see setLooks).
+   * `twins`: false lets twins (TWINS) meet anywhere, as they did before
+   * there were any (Today's unique, on the days it was dealt so).
    */
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null } = {}) {
+  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean } = {}) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
     this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
@@ -1118,7 +1120,7 @@ export class Engine {
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     const byName = new Map(items.map((it) => [it.name, it]));
-    this.twins = TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
+    this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
 
   /**
@@ -2489,10 +2491,10 @@ export class Engine {
    * all but the answer, or, the answer being none of them, all but one of
    * those in `unused` (the category's unseen items), picked at random.
    */
-  private benchTwins(answer: Item, apart: Item[][], unused: Item[]): Set<string> {
+  private benchTwins(answer: Item, apart: Item[][], unused: ReadonlySet<Item>): Set<string> {
     const out = new Set<string>();
     for (const set of apart) {
-      const open = set.filter((it) => unused.includes(it));
+      const open = set.filter((it) => unused.has(it));
       const keep = set.includes(answer) ? answer : open.length > 1 ? open[Math.floor(this.rng() * open.length)] : (open[0] ?? set[0]);
       for (const it of set) if (it !== keep) out.add(it.id);
     }
@@ -2612,9 +2614,10 @@ export class Engine {
     // none can be asked, the category starts over, except for its latest
     // answer.
     const answerable = (unused: Item[]) => {
-      const roomy = shareable(unused, fakes);
+      const roomy = shareable(unused, fakes, mode);
       if (roomy.length || !fakes) return roomy;
-      const any = shareable(unused, 0);
+      // Counted as the picture question it would turn into, its twins kept apart as there.
+      const any = shareable(unused, 0, rules.artChance > 0 ? 'art' : mode);
       if (any.length && rules.artChance > 0) {
         this.tallyMode(s, mode, -1);
         this.tallyMode(s, (mode = 'art'), 1);
@@ -2624,15 +2627,19 @@ export class Engine {
     };
     // Delve: the art in grayscale or not, rolled for each question.
     const grayRoll = rules.grayChance ? this.rng() < rules.grayChance : undefined;
-    // Twins that may not meet yet: all but one of each set sit out, so they
-    // don't count. Which ones can follow the mode (a name question may still
-    // turn into a picture one, and "find the art" may be the art in grayscale).
-    const apart = () => this.apartTwins(rules, grayRoll ?? (rules.grayscale === 'all' || (rules.grayscale === 'art' && mode === 'art')));
-    const shareable = (unused: Item[], fakes: number) => {
+    // Twins that may not meet yet, as a name or a picture question ("find the
+    // art" may be in grayscale where the art to name isn't): all but one of
+    // each set sit out, so they don't count.
+    const apart: Record<QuestionMode, Item[][]> = {
+      name: this.apartTwins(rules, grayRoll ?? rules.grayscale === 'all'),
+      art: this.apartTwins(rules, grayRoll ?? rules.grayscale !== 'off'),
+    };
+    const shareable = (unused: Item[], fakes: number, as: QuestionMode) => {
       const left = new Map<string, number>();
       for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
-      for (const set of apart()) {
-        const n = set.filter((it) => unused.includes(it)).length;
+      const open = apart[as].length ? new Set(unused) : null;
+      for (const set of apart[as]) {
+        const n = set.filter((it) => open!.has(it)).length;
         if (n > 1) left.set(set[0].group, left.get(set[0].group)! - (n - 1));
       }
       const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
@@ -2656,7 +2663,7 @@ export class Engine {
     const need = count - 1;
     fakes = Math.min(fakes, maxFakes(count));
 
-    const benched = this.benchTwins(answer, apart(), unused);
+    const benched = this.benchTwins(answer, apart[mode], new Set(unused));
     const fits = (it: Item) => !benched.has(it.id);
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group && fits(it));
     // Decoys come from the answer's own group (all rings, all bows…): a flask

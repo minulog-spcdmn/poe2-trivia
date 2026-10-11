@@ -21,7 +21,7 @@ export const DELVE_LIVES = 3;
  * Delve opens with, frozen from its public release: every change to them
  * after that bumps it.
  */
-export const DELVE_RULESET = 1;
+export const DELVE_RULESET = 2;
 
 /** Ten categories, three on offer: a lockout of seven still leaves three to pick from. */
 export const DELVE_MAX_LOCKOUT = 7;

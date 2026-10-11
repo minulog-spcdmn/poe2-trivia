@@ -81,6 +81,22 @@ test('on Eternal, every set of twins meets, but those told apart by colour alone
   assert.ok(gray.some((q) => met(q).some((t) => !t.colour)), 'the others still meet');
 });
 
+test('with twins sitting out, a question that mixes groups still shows each as often as the others', () => {
+  // Eternal turns a name question with no room for its made-up names into a
+  // picture one, whose art is in grayscale: it is counted with the Guiding
+  // Palms apart, as it is dealt.
+  for (const settings of [{ difficulty: 'eternal' }, { difficulty: 'merciless' }] as Partial<Settings>[]) {
+    for (const q of twinQuestions(settings, 8)) {
+      const counts = new Map<string, number>();
+      for (const id of q.options) {
+        const group = items.find((it) => it.id === (isFake(id) ? id.split(':')[1] : id))!.group;
+        counts.set(group, (counts.get(group) ?? 0) + 1);
+      }
+      assert.equal(new Set(counts.values()).size, 1, `${q.category}: ${[...counts]}`);
+    }
+  }
+});
+
 test('in Delve, twins meet from their depth on (a find from its deeper one)', () => {
   const engine = new Engine(items, { rng: seeded(6), fakes, looks });
   let base = createGame(null, { targetScore: 10, timer: 0, difficulty: 'eternal', mode: 'delve', public: false, locked: false });

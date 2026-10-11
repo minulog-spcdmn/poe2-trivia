@@ -28,7 +28,7 @@ function run(over: Partial<GameState> = {}): GameState {
   const s = createGame('a');
   s.players = ['a', 'b'].map((id, hue) => ({ id, name: id, score: 0, recent: [], connected: true, hue }));
   s.phase = 'choosing';
-  s.delve = { entrants: ['a', 'b'], losses: {}, ruleset: 1, startedAt: 5, excused: [], graceUntil: 0, votes: {}, voteFrom: null, missed: {}, revives: [] };
+  s.delve = { entrants: ['a', 'b'], losses: {}, ruleset: DELVE_RULESET, startedAt: 5, excused: [], graceUntil: 0, votes: {}, voteFrom: null, missed: {}, revives: [] };
   return { ...s, ...over };
 }
 

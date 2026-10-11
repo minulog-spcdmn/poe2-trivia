@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, isFake, type Item } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { createHash } from 'node:crypto';
+import { Engine, TWINS, isFake, type Item } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, DAILY_TWINS_FROM, TOO_THIN, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -41,6 +42,41 @@ test("the day's question is the same every time it is dealt", () => {
     assert.deepEqual(a.options, b.options);
     assert.deepEqual(a.labels, b.labels);
   }
+});
+
+/** A day's question, in short. */
+const dealt = (day: number) => {
+  const q = dailyQuestion(items, fakes, day);
+  return createHash('sha256').update(JSON.stringify([q.itemId, q.options, q.labels])).digest('hex').slice(0, 8);
+};
+
+test("a day's question never changes: a change to how questions are dealt starts on a day still to come", () => {
+  const first = utcDay(DAILY_LAUNCH);
+  // The days before twins were kept apart, each as it was first dealt.
+  assert.deepEqual(
+    Array.from({ length: DAILY_TWINS_FROM - first }, (_, i) => dealt(first + i)),
+    ['347681dc', '78744393', '465e9520', '2984179e', '1047b3ed', 'f2e9b134', '2745aead', '1f161d80', 'f4a2593c', '61422f7b'],
+  );
+  // And the year from launch: changing this hash changes days to come, so put the change off past a new DAILY_TWINS_FROM like it.
+  const year = createHash('sha256')
+    .update(Array.from({ length: 366 }, (_, i) => dealt(first + i)).join())
+    .digest('hex')
+    .slice(0, 16);
+  assert.equal(year, DAILY_PINNED);
+});
+
+const DAILY_PINNED = 'a0f3eb028f4d871b';
+
+test('from DAILY_TWINS_FROM, twins never meet in the daily', () => {
+  const byName = new Map(items.map((it) => [it.name, it.id]));
+  let met = 0;
+  for (let d = DAILY_TWINS_FROM - 400; d < DAILY_TWINS_FROM + 1500; d++) {
+    const q = dailyQuestion(items, fakes, d);
+    const meets = TWINS.some((t) => t.names.filter((n) => q.options.includes(byName.get(n)!)).length > 1);
+    if (d >= DAILY_TWINS_FROM) assert.ok(!meets, `day ${d}`);
+    else if (meets) met++;
+  }
+  assert.ok(met > 0, 'they met before');
 });
 
 test('each day asks a named item among four names, one of them made up, never a gem', () => {

@@ -52,11 +52,11 @@ function run(losses: Record<string, number[]>, over: Partial<GameState> = {}, se
   const s = createGame('a');
   s.players = seats.map((id, hue) => ({ id, name: id, score: 0, recent: [], connected: true, hue }));
   s.phase = 'choosing';
-  s.delve = { entrants: seats, losses, ruleset: 1, startedAt: 500, excused: [], graceUntil: 0, ...(revives.length ? { revives } : {}) };
+  s.delve = { entrants: seats, losses, ruleset: DELVE_RULESET, startedAt: 500, excused: [], graceUntil: 0, ...(revives.length ? { revives } : {}) };
   return { ...s, ...over };
 }
 
-const r = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: 1, mixed: false, ...o });
+const r = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: DELVE_RULESET, mixed: false, ...o });
 /** A run together, as this player had it. */
 const t = (o: Partial<DelveRun>): DelveRun => r({ players: 3, perished: [], ...o });
 /** A revive: `by` gave `to`, who perished at `fell`, a life at depth `depth`. */
@@ -67,7 +67,7 @@ test('alone, a run is recorded when its player falls, not before, and once', () 
   const fallen = run({ a: [2, 5, 9] });
   assert.equal(runEvent(null, standing, 'a'), null);
   const e = runEvent(standing, fallen, 'a')!;
-  assert.deepEqual([e.id, e.depth, e.players, e.ruleset, e.who, e.losses], [500, 9, 1, 1, 'a', [2, 5, 9]]);
+  assert.deepEqual([e.id, e.depth, e.players, e.ruleset, e.who, e.losses], [500, 9, 1, DELVE_RULESET, 'a', [2, 5, 9]]);
   assert.equal('won' in e, false, 'no winners any more');
   assert.equal(runEvent(fallen, { ...fallen, version: 9 }, 'a'), null, 'not again for the same fall');
   assert.equal(runEvent(standing, fallen, 'someone else'), null);
@@ -207,18 +207,18 @@ test('group runs from before co-op are dropped as the records are read, solo kep
       { ...r({ id: 8, at: 80, depth: 13, players: 3 }), won: false, hot: true },
       t({ id: 9, at: 90, depth: 20 }),
     ],
-    bests: { '1:solo': { ...r({ id: 5, at: 50, depth: 7 }), won: false }, '1:group': { ...r({ id: 6, at: 60, depth: 11, players: 2 }), won: true } },
-    climbs: { '1:solo': [{ depth: 7, at: 50 }], '1:group': [{ depth: 11, at: 60 }] },
-    tallies: { '1:solo': { wins: 0, ends: { 7: 1 }, lost: {} }, '1:group': { wins: 1, ends: { 11: 1 }, lost: {} } },
+    bests: { [`${DELVE_RULESET}:solo`]: { ...r({ id: 5, at: 50, depth: 7 }), won: false }, [`${DELVE_RULESET}:group`]: { ...r({ id: 6, at: 60, depth: 11, players: 2 }), won: true } },
+    climbs: { [`${DELVE_RULESET}:solo`]: [{ depth: 7, at: 50 }], [`${DELVE_RULESET}:group`]: [{ depth: 11, at: 60 }] },
+    tallies: { [`${DELVE_RULESET}:solo`]: { wins: 0, ends: { 7: 1 }, lost: {} }, [`${DELVE_RULESET}:group`]: { wins: 1, ends: { 11: 1 }, lost: {} } },
     frontier: [{ depth: 7, at: 50 }, { depth: 11, at: 60 }, { depth: 13, at: 80 }, { depth: 20, at: 90 }],
   };
   const rec = parseRecords(JSON.stringify(old))!;
   assert.deepEqual(rec.frontier, [{ depth: 7, at: 50 }, { depth: 20, at: 90 }], 'nor the group runs\' steps deeper');
   assert.deepEqual(rec.runs.map((x) => x.id), [5, 9]);
-  assert.deepEqual(Object.keys(rec.bests), ['1:solo']);
-  assert.deepEqual(Object.keys(rec.tallies), ['1:solo']);
-  assert.deepEqual(rec.tallies['1:solo'], { ends: { 7: 1 }, lost: {} }, 'wins are gone');
-  assert.deepEqual(Object.keys(rec.climbs), ['1:solo']);
+  assert.deepEqual(Object.keys(rec.bests), [`${DELVE_RULESET}:solo`]);
+  assert.deepEqual(Object.keys(rec.tallies), [`${DELVE_RULESET}:solo`]);
+  assert.deepEqual(rec.tallies[`${DELVE_RULESET}:solo`], { ends: { 7: 1 }, lost: {} }, 'wins are gone');
+  assert.deepEqual(Object.keys(rec.climbs), [`${DELVE_RULESET}:solo`]);
   // The first run together after them is the first.
   const next = addRun(rec, t({ id: 10, at: 100, depth: 9 }));
   assert.deepEqual([next.best, next.previousBest, bestOf(next.records, false)!.id], [true, null, 10]);
@@ -239,10 +239,10 @@ test('bests are kept per ruleset, alone and together apart; older rules and mixe
   assert.deepEqual([out.previousBest, out.best], [null, true], 'the first run together is measured against none alone');
   rec = out.records;
   rec = addRun(rec, r({ id: 5, at: 5, depth: 99, mixed: true })).records;
-  rec = addRun(rec, r({ id: 6, at: 6, depth: 70, ruleset: 2 })).records;
+  rec = addRun(rec, r({ id: 6, at: 6, depth: 70, ruleset: DELVE_RULESET + 1 })).records;
   assert.equal(bestOf(rec, true)!.depth, 20);
   assert.equal(bestOf(rec, false)!.depth, 40);
-  assert.equal(bestOf(rec, true, 2)!.depth, 70);
+  assert.equal(bestOf(rec, true, DELVE_RULESET + 1)!.depth, 70);
 });
 
 test('reloading the end screen after a new best measures it against the best before it, not itself', () => {
@@ -295,7 +295,7 @@ test('stored records round-trip, and anything malformed is dropped', () => {
   assert.deepEqual(parseRecords(serializeRecords(rec)), rec);
   assert.equal(parseRecords('not json'), null);
   assert.equal(parseRecords(JSON.stringify({ v: 99, runs: [] })), null);
-  const odd = parseRecords(JSON.stringify({ v: 1, runs: [{ id: 'x' }, r({ depth: 0 }), r({ id: 8 })], bests: { nonsense: r({}), '1:solo': r({ mixed: true }) } }))!;
+  const odd = parseRecords(JSON.stringify({ v: 1, runs: [{ id: 'x' }, r({ depth: 0 }), r({ id: 8 })], bests: { nonsense: r({}), [`${DELVE_RULESET}:solo`]: r({ mixed: true }) } }))!;
   assert.deepEqual(odd.runs.map((x) => x.id), [8]);
   assert.deepEqual(odd.bests, {});
 });
@@ -458,7 +458,7 @@ test('records stored before tallies, losses and the frontier are read whole, bes
   const old = {
     v: 1,
     runs: [r({ id: 5, at: 50, depth: 7 }), r({ id: 7, at: 70, depth: 4, mixed: true })],
-    bests: { '1:solo': r({ id: 1, at: 10, depth: 23 }) },
+    bests: { [`${DELVE_RULESET}:solo`]: r({ id: 1, at: 10, depth: 23 }) },
   };
   const rec = parseRecords(JSON.stringify(old))!;
   assert.equal(bestOf(rec, true)!.depth, 23);
@@ -493,8 +493,8 @@ test('new fields that make no sense are dropped, the rest kept', () => {
       ],
       bests: {},
       tallies: {
-        '1:solo': { wins: 5, ends: { 9: 2, x: 1, 0: 4, 3: -1 }, lost: { 2: 1.5, 4: 1 }, warded: 'x' },
-        '1:together': { ends: { 9: 1 }, lost: {}, perished: { 9: 1, 0: 2 }, given: 2, revived: -4 },
+        [`${DELVE_RULESET}:solo`]: { wins: 5, ends: { 9: 2, x: 1, 0: 4, 3: -1 }, lost: { 2: 1.5, 4: 1 }, warded: 'x' },
+        [`${DELVE_RULESET}:together`]: { ends: { 9: 1 }, lost: {}, perished: { 9: 1, 0: 2 }, given: 2, revived: -4 },
         junk: { ends: {}, lost: {} },
       },
       frontier: [{ depth: 9, at: 1 }, { depth: 3, at: 2 }, 'x'],
@@ -502,7 +502,7 @@ test('new fields that make no sense are dropped, the rest kept', () => {
   )!;
   assert.deepEqual(rec.runs.map((x) => x.losses), [[2, 5, 9], undefined, undefined, undefined, undefined]);
   assert.equal(rec.runs[4].wards, undefined);
-  assert.deepEqual(rec.tallies, { '1:solo': { ends: { 9: 2 }, lost: { 4: 1 } }, '1:together': { ends: { 9: 1 }, lost: {}, perished: { 9: 1 }, given: 2 } });
+  assert.deepEqual(rec.tallies, { [`${DELVE_RULESET}:solo`]: { ends: { 9: 2 }, lost: { 4: 1 } }, [`${DELVE_RULESET}:together`]: { ends: { 9: 1 }, lost: {}, perished: { 9: 1 }, given: 2 } });
   assert.deepEqual(rec.frontier, [{ depth: 9, at: 1 }]);
 });
 
@@ -543,13 +543,13 @@ test('each best is kept as a climb, rebuilt for records written before it was', 
     { depth: 12, at: 30 },
     { depth: 20, at: 50 },
   ]);
-  const old = parseRecords(JSON.stringify({ v: 1, runs: [r({ id: 5, at: 50, depth: 7 }), r({ id: 6, at: 60, depth: 11 })], bests: { '1:solo': r({ id: 1, at: 10, depth: 23 }) } }))!;
+  const old = parseRecords(JSON.stringify({ v: 1, runs: [r({ id: 5, at: 50, depth: 7 }), r({ id: 6, at: 60, depth: 11 })], bests: { [`${DELVE_RULESET}:solo`]: r({ id: 1, at: 10, depth: 23 }) } }))!;
   assert.deepEqual(climbOf(old, true), [{ depth: 23, at: 10 }]);
   // Never past the best, never a step that doesn't go deeper.
   const odd = parseRecords(
-    JSON.stringify({ v: 1, runs: [], bests: { '1:solo': r({ id: 1, at: 10, depth: 23 }) }, climbs: { '1:solo': [{ depth: 30, at: 5 }, { depth: 9, at: 1 }, { depth: 4, at: 2 }], nonsense: [] } }),
+    JSON.stringify({ v: 1, runs: [], bests: { [`${DELVE_RULESET}:solo`]: r({ id: 1, at: 10, depth: 23 }) }, climbs: { [`${DELVE_RULESET}:solo`]: [{ depth: 30, at: 5 }, { depth: 9, at: 1 }, { depth: 4, at: 2 }], nonsense: [] } }),
   )!;
-  assert.deepEqual(odd.climbs, { '1:solo': [{ depth: 9, at: 1 }, { depth: 23, at: 10 }] });
+  assert.deepEqual(odd.climbs, { [`${DELVE_RULESET}:solo`]: [{ depth: 9, at: 1 }, { depth: 23, at: 10 }] });
 });
 
 test('depths and counts no run could reach are dropped or capped, so nothing is endless', () => {
@@ -557,14 +557,14 @@ test('depths and counts no run could reach are dropped or capped, so nothing is 
     JSON.stringify({
       v: 1,
       runs: [r({ id: 1, depth: MAX_DEPTH + 1 }), r({ id: 2, depth: 20000, losses: [19990, 19995, 20000] }), r({ id: 3, depth: MAX_DEPTH })],
-      bests: { '1:solo': r({ id: 2, depth: 1e6 }) },
-      tallies: { '1:solo': { ends: { 5: Number.MAX_SAFE_INTEGER, 20000: 1 }, lost: { 4: 2e9 }, left: { 3: 1e12 }, warded: 1e15 } },
+      bests: { [`${DELVE_RULESET}:solo`]: r({ id: 2, depth: 1e6 }) },
+      tallies: { [`${DELVE_RULESET}:solo`]: { ends: { 5: Number.MAX_SAFE_INTEGER, 20000: 1 }, lost: { 4: 2e9 }, left: { 3: 1e12 }, warded: 1e15 } },
       frontier: [{ depth: 1e6, at: 1 }],
     }),
   )!;
   assert.deepEqual(rec.runs.map((x) => x.id), [3]);
   assert.deepEqual(rec.bests, {});
-  assert.deepEqual(rec.tallies['1:solo'], { ends: { 5: MAX_COUNT }, lost: { 4: MAX_COUNT }, left: { 3: MAX_COUNT }, warded: MAX_COUNT });
+  assert.deepEqual(rec.tallies[`${DELVE_RULESET}:solo`], { ends: { 5: MAX_COUNT }, lost: { 4: MAX_COUNT }, left: { 3: MAX_COUNT }, warded: MAX_COUNT });
   assert.equal(deepestEver(rec), MAX_DEPTH);
   // A run from the game deeper than that is held at it.
   assert.equal(runEvent(run({ a: [2, 5] }), run({ a: [2, 5, 5000] }), 'a')!.depth, MAX_DEPTH);
