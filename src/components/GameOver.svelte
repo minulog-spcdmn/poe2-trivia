@@ -6,7 +6,7 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
-  import { CREATOR, DONATE_URL, SITE_URL } from '../lib/site';
+  import { CREATOR, CREATOR_URL, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
@@ -245,10 +245,11 @@
      would be redone every frame. -->
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
-<div class="over" class:delve={!!run} class:deeper>
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the winner's circle, each player's row. -->
+<div class="over" class:delve={!!run} class:deeper data-cursor="game">
   <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
-    <div class="crown" class:fallen={!!run} bind:this={crown} in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
+    <div class="crown" class:fallen={!!run} bind:this={crown} data-cursor="art" in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
       <ArcaneCircle
         size="212px"
@@ -285,7 +286,7 @@
   <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       {@const row = team?.players.find((r) => r.id === p.id)}
-      <li class:first={!team && rank[i] === 1} class:delver={!!row} in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
+      <li class:first={!team && rank[i] === 1} class:delver={!!row} data-cursor="row:{s.players.findIndex((o) => o.id === p.id)}" in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
         {#if !team}<span class="rank">{rank[i]}</span>{/if}
         <Avatar name={p.name} hue={p.hue} size={30} />
         {#if row}
@@ -349,7 +350,7 @@
 
   <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
     <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
-    <a class="maker" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title="Support {CREATOR}">{CREATOR}</a>
+    <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a>
     · <a class="tip" href={DONATE_URL} target="_blank" rel="noopener noreferrer">♥ support the project</a>
   </p>
 </div>

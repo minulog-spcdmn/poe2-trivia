@@ -47,9 +47,10 @@
   --font-body: 'EB Garamond', Garamond, Georgia, serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
-  /* Bars pinned over the page on phones (the scoreboard at the top, the
-     reveal's Next bar at the bottom): nearly opaque dark glass, a gold
-     hairline on the edge facing the page, and a shadow cast onto it. No
+  /* Bars pinned over the page on phones (the scoreboard at the top): nearly
+     opaque dark glass, a gold hairline on the edge facing the page, and a
+     shadow cast onto it. (The bar docked at the bottom with Next or
+     Detonate keeps the hairline and shadow but is solid: QuestionView.) No
      backdrop blur: under it the backdrop canvas changes every frame, so the
      blur would be worked out again every frame, a steady cost on phones for
      the tenth of the page that shows through. */
@@ -93,8 +94,12 @@ body {
   background: var(--bg);
 }
 
-/* Reserve the scrollbar's space so screens that need one don't shift sideways. */
+/* Reserve the scrollbar's space so screens that need one don't shift sideways.
+   The app's own pointer everywhere (lib/ownCursor.ts; vite.config.ts makes
+   `default` and `pointer` read it), links and text fields included, which
+   the browser would otherwise give its own. */
 html {
+  cursor: default;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }
@@ -106,6 +111,62 @@ html[data-fullscreen] {
 }
 html[data-fullscreen]::-webkit-scrollbar {
   display: none;
+}
+
+a:any-link {
+  cursor: pointer;
+}
+:where(input:not([type]), input[type='text'], input[type='search'], textarea) {
+  cursor: text;
+}
+
+/* Middle-button scrolling (lib/autoscroll.ts): a cover over everything while
+   it runs, holding the cursor, and the seal stamped where it began. */
+.autoscroll {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+}
+.autoscroll-seal {
+  position: absolute;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 12;
+  translate: -50% -50%;
+  animation: seal-stamp 0.2s var(--ease-out) both;
+}
+@keyframes seal-stamp {
+  from {
+    opacity: 0;
+    scale: 1.6;
+  }
+}
+.autoscroll-seal .ground {
+  fill: rgba(10, 9, 8, 0.82);
+  stroke: none;
+}
+.autoscroll-seal .glow {
+  stroke-width: 2;
+  opacity: 0.25;
+  filter: blur(1px);
+}
+.autoscroll-seal .dot {
+  fill: currentColor;
+  stroke: none;
+}
+.autoscroll-seal .fine {
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.autoscroll-seal .way {
+  transition: opacity 0.2s;
+}
+/* No room left that way: its dart fades, as the browsers' own do. */
+.autoscroll-seal.no-up .up,
+.autoscroll-seal.no-down .down {
+  opacity: 0.25;
 }
 
 :focus-visible {
@@ -482,6 +543,9 @@ input {
 .art-slot {
   position: relative;
   display: grid;
+  /* One fixed cell, so a picture wider than it (a round fit) spills out
+     evenly on both sides instead of stretching the cell to the right. */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   width: 100%;
   height: 100%;
@@ -493,6 +557,15 @@ input {
   display: block;
   width: min(100cqw, 100cqh * var(--w) / var(--h), var(--w) * var(--s) * 1px);
   height: min(100cqh, 100cqw * var(--h) / var(--w), var(--h) * var(--s) * 1px);
+}
+/* A round fit (ArtImage's `round`): the bigger of the box's fit and a fit in
+   the circle round its centre, --round times its width across. A square or a
+   tall item comes out as in the box; a wide one (a belt) as big as the
+   circle holds it, past the box's sides. */
+.art-fit.round {
+  --diag: sqrt(var(--w) * var(--w) + var(--h) * var(--h));
+  width: min(var(--w) * var(--s) * 1px, max(min(100cqw, 100cqh * var(--w) / var(--h)), var(--round, 1) * 100cqw * var(--w) / var(--diag)));
+  height: min(var(--h) * var(--s) * 1px, max(min(100cqh, 100cqw * var(--h) / var(--w)), var(--round, 1) * 100cqw * var(--h) / var(--diag)));
 }
 .art-fit > img {
   display: block;

@@ -5,6 +5,8 @@
 import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game.ts';
 import { cleanName } from './names.ts';
 import { PROTOCOL_VERSION } from './protocol.ts';
+import { DIFFICULTY_NAMES } from './difficultyText.ts';
+import { shownDepth } from './delve.ts';
 
 export interface RoomInfo {
   code: string;
@@ -65,4 +67,47 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     ...(delve && int(r.depth, 1, 9999) ? { depth: r.depth } : {}),
     ...(int(r.v, 0, 1e6) ? { v: r.v } : {}),
   };
+}
+
+const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve' } as const;
+
+/**
+ * A listed room's line under its host: "Turns · Cruel · 3/12" while it
+ * gathers, "Turns · in a game · 4/12" once it plays, and for a Delve run
+ * under way the depth it has reached ("Delve · depth 14 · 4/12"). A locked
+ * room may be either (the listing only says it is locked), so it gives its
+ * settings and claims neither.
+ */
+export function roomMeta(r: RoomInfo): string {
+  const gathering = r.phase === 'lobby' || r.phase === 'locked';
+  let how: string | null;
+  if (r.mode === 'delve' && r.depth && r.phase !== 'lobby') {
+    // A finished run that never left the entrance still reads as its depth, not as one waiting there.
+    how = shownDepth(r.depth) > 0 || r.phase === 'over' ? `depth ${Math.max(0, shownDepth(r.depth))}` : 'at the entrance';
+  } else if (gathering) how = r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty];
+  else how = 'in a game';
+  return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
+}
+
+/** What an invite link's room said when asked (lib/rooms.ts probeRoom): its info, 'gone', null for no answer, undefined while asking. */
+export type InviteAnswer = RoomInfo | 'gone' | null | undefined;
+
+/**
+ * The invite screen's line under the party, from what the room said: how
+ * it stands, and whether joining can work. `warn` when it can't (or not as
+ * a player straight away).
+ */
+export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; waiting?: boolean } {
+  if (a === undefined) return { text: 'Asking the room…', warn: false, waiting: true };
+  if (a === 'gone') return { text: 'No room has this code now; the host may have closed it.', warn: true };
+  if (a === null) return { text: 'The rest of the party shows once you are in.', warn: false };
+  const v = a.v ?? 0;
+  if (v < PROTOCOL_VERSION) return { text: 'The host is on an older version of the game; they need to reload before you can join.', warn: true };
+  if (v > PROTOCOL_VERSION) return { text: 'This room is on a newer version of the game; reload this page to join.', warn: true };
+  if (a.phase === 'locked') return { text: 'The room is locked; nobody new can join it now.', warn: true };
+  if (a.phase !== 'lobby') return { text: 'A game is under way; you watch it, and play in the next.', warn: true };
+  if (a.players >= a.maxPlayers) return { text: 'Every seat is taken; you watch until one is free.', warn: true };
+  const others = a.players - 1;
+  if (others < 1) return { text: 'Nobody else is in yet.', warn: false };
+  return { text: `${others} more ${others === 1 ? 'exile is' : 'exiles are'} in; you see them once you are in.`, warn: false };
 }

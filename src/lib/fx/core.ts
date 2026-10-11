@@ -69,6 +69,8 @@ export type ShapeFrame = {
    * picture at a time: the first shape's; shapes naming another get none.
    */
   silhouette?: Silhouette | null;
+  /** This frame, whether it's calm (ShapeSpec's `calm`), when that changes as it goes. */
+  calm?: boolean;
 };
 
 export type ShapeSpec = {
@@ -104,7 +106,9 @@ type LiveShape = ShapeSpec & {
 };
 
 export type Handle = { stop: (fadeSeconds?: number) => void };
-const NOOP: Handle = { stop() {} };
+/** A shape's handle, which can also say whether it's still there (not stopped, ended, or dropped as the tab went away). */
+export type ShapeHandle = Handle & { alive: () => boolean };
+const NOOP: ShapeHandle = { stop() {}, alive: () => false };
 
 /** Whether `h` is something actually running, rather than the stand-in for one that never started. */
 export function isLive(h: Handle) {
@@ -356,7 +360,7 @@ function leastNeeded(): number {
   return fading >= 0 ? fading : finite;
 }
 
-export function shape(spec: ShapeSpec): Handle {
+export function shape(spec: ShapeSpec): ShapeHandle {
   if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life))) return NOOP;
   if (shapes.length >= MAX_SHAPES) {
     const i = leastNeeded();
@@ -388,6 +392,7 @@ export function shape(spec: ShapeSpec): Handle {
       s.stopped = true;
       s.fade = s.fadeTotal = Math.max(0.001, fadeSeconds);
     },
+    alive: () => !s.stopped && shapes.includes(s),
   };
 }
 
@@ -730,7 +735,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       if (silhouette && s.f.silhouette?.pic === silhouette.pic) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
       nShapes++;
       if (crisp) nCrisp++;
-      if (!s.calm) shapesCalm = false;
+      if (!(s.f.calm ?? s.calm)) shapesCalm = false;
       if (Number.isFinite(s.life)) shapesEndless = false;
     }
   }

@@ -463,11 +463,12 @@ ${delve ? DELVE_SMOKE : ''}  // The stratum's light, set so the scene's average 
   // bright one (fire, gold) is balanced by darker surroundings.
   col *= uLight;
 
-${delve ? DELVE_DARK : ''}  // The start page: god rays falling from high above the centre, each beam
-  // slowly waxing and waning in place, and a royal glow behind the title.
+${delve ? DELVE_DARK : ''}  // The start page: god rays falling from high above the title (the centre
+  // without one), each beam slowly waxing and waning in place, and a royal
+  // glow behind the title.
   if (uHome.x > 0.0) {
     float ht = uHome.z;
-    vec2 src = vec2(0.5 * W, -0.32 * H);
+    vec2 src = vec2(uTitle.z > 0.0 ? uTitle.x : 0.5 * W, -0.32 * H);
     vec2 dr = p - src;
     float ang = atan(dr.x, dr.y); // 0 is straight down
     float r = length(dr);

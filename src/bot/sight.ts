@@ -196,7 +196,7 @@ export const sight: Eyes = async (s: GameState, q: Question) => {
       if (!target) return null;
       for (let i = 0; i < q.labels.length; i++) {
         const tile = shown.tileVeils[i];
-        const url = shown.options[i];
+        const url = shown.options[i]?.url;
         const seen = tile ? await seenVeiled(tile, shown.tilePatches[i] ?? {}) : url ? await seenWhole(url).catch(() => null) : null;
         scores.push(seen ? await match(seen, target, flips) : -1);
       }

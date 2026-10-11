@@ -34,6 +34,9 @@ export function cleanName(raw: unknown): string {
   return s;
 }
 
+/** A name's first letter, capitalised, for its avatar ('' for none). */
+export const initialOf = (name: string) => (Array.from(name.trim())[0] ?? '').toUpperCase();
+
 /** What a name "looks like": lowercase ASCII-ish letters only. */
 export function nameSkeleton(name: string): string {
   const folded = Array.from(name.normalize('NFKD').toLowerCase())

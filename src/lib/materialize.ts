@@ -10,7 +10,7 @@
 
 import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
-import { ART_SCALE } from './ui-paths';
+import { zoomOf } from './stage';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
 export const FINALE_MS = 400;
@@ -78,6 +78,9 @@ function chamfer(d: Float32Array, W: number, H: number) {
 
 export interface BurnParams {
   url: string;
+  /** The patch's size in art pixels (its picture is finer, by the item's artScale). */
+  w: number;
+  h: number;
   /** The patch's edges: (x, y, patch) triples (see RawPatch.edges). */
   edges: Uint16Array;
   /** Patches already there when this one arrived: the magic spreads in from them. */
@@ -299,12 +302,13 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   img.src = params.url;
   const begin = () => {
     if (stopped) return;
-    // Screen resolution, but no more than the picture's own: it has no finer
-    // detail, and every pixel costs work on each frame. Its size in art pixels
-    // places the burn.
-    const aw = img.naturalWidth / ART_SCALE;
-    const ah = img.naturalHeight / ART_SCALE;
-    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * (window.devicePixelRatio || 1), img.naturalWidth)));
+    // Screen resolution (the canvas's own px times the stage's zoom, lib/stage.ts,
+    // times the screen's density), but no more than the picture's own: it has
+    // no finer detail, and every pixel costs work on each frame. Its size in
+    // art pixels places the burn.
+    const aw = params.w;
+    const ah = params.h;
+    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), img.naturalWidth)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;

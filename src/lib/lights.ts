@@ -227,7 +227,9 @@ export function stepHomeScene(dt: number, a: Float32Array, b: Float32Array): boo
     const r = scene.title.getBoundingClientRect();
     scene.x = r.left + r.width / 2;
     scene.y = r.top + r.height / 2;
-    scene.w = r.width / 2;
+    // The glow is as wide as a title with its rules either side, so the
+    // start page's (bare, left-aligned) title gets the same golden halo.
+    scene.w = Math.max(r.width / 2, r.height * 2.8);
     scene.h = r.height / 2;
   }
   const next = [scene.rays, scene.glow, scene.x, scene.y, scene.w, scene.h].map(Math.fround);

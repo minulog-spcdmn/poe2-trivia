@@ -9,7 +9,8 @@
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
 
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile, readdir, unlink, access } from 'node:fs/promises';
+import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
+import { webpSize } from './webp-size.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -161,6 +162,7 @@ async function main() {
         const file = path.join(IMG_DIR, `${it.id}.webp`);
         if (await exists(file)) continue;
         const buf = Buffer.from(await (await fetchRetry(it.src)).arrayBuffer());
+        webpSize(buf, it.src); // only a whole WebP file is kept
         await writeFile(file, buf);
         downloaded++;
       }
@@ -180,7 +182,13 @@ async function main() {
 
   quiz.sort((a, b) => a.name.localeCompare(b.name));
   await mkdir(path.dirname(DATA_FILE), { recursive: true });
-  const out = quiz.map(({ id, name, base, group, category, kind }) => ({ id, name, base, group, category, kind }));
+  // Each item's art size (px of the original art): the site's pictures are
+  // a whole number of times larger (artScale in src/lib/ui-paths.ts).
+  const out = [];
+  for (const { id, name, base, group, category, kind } of quiz) {
+    const [w, h] = webpSize(await readFile(path.join(IMG_DIR, `${id}.webp`)), `${id}.webp`);
+    out.push({ id, name, base, group, category, kind, w, h });
+  }
   await writeFile(DATA_FILE, JSON.stringify(out, null, 1) + '\n');
 
   const perCat = {};

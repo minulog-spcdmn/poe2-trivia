@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HOST_ODDS, answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
+import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
 import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, nextRole, wanted } from '../src/bot/wanted.ts';
@@ -17,7 +18,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5 };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -415,7 +416,9 @@ test('picking a card mostly takes seconds, now and then a while longer, never pa
   const times = Array.from({ length: 4000 }, () => pickDelay({ ...plain, pace: 1.35 }, rng));
   assert.ok(Math.max(...times) < 30000, `${Math.max(...times)}`);
   const long = times.filter((t) => t > 5200).length / times.length;
-  assert.ok(long > 0.08 && long < 0.25, `${long}`);
+  assert.ok(long > 0.08 && long < 0.25, `${long}`);  // A single card (a deathmatch's): taken straight away.
+  const one = Array.from({ length: 400 }, () => pickDelay(plain, rng, 1));
+  assert.ok(Math.max(...one) <= 1100 && Math.min(...one) >= 400);
 });
 
 test('misclicks are rare, likelier for the hasty', () => {

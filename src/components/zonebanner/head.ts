@@ -4,6 +4,8 @@
 // works its geometry out from this, so it keeps to its box and never reaches
 // the cards, the question or the player list.
 
+import { unzoomRect, zoomOf } from '../../lib/stage';
+
 export type Head = {
   /** The head's size. */
   w: number;
@@ -30,20 +32,23 @@ export type Head = {
 export function measureHead(head: Element): Head | null {
   const h2 = head.querySelector('.banner h2');
   if (!h2) return null;
-  const box = head.getBoundingClientRect();
+  // Boxes on screen, undone of the stage's zoom (lib/stage.ts): the gate is drawn in the head's own px.
+  const z = zoomOf(head);
+  const rect = (el: Element) => unzoomRect(el.getBoundingClientRect(), z);
+  const box = rect(head);
   const kicker = head.querySelector('.kicker');
   const rules = head.querySelectorAll('.banner .rule');
-  const hb = h2.getBoundingClientRect();
+  const hb = rect(h2);
   const size = parseFloat(getComputedStyle(h2).fontSize) || 24;
-  const kb = kicker?.getBoundingClientRect();
+  const kb = kicker ? rect(kicker) : undefined;
   const line = kicker ? parseFloat(getComputedStyle(kicker).lineHeight) || 17 : 17;
   const ky = kb ? kb.top - box.top + Math.min(kb.height, line) / 2 : hb.top - box.top - 10;
   // The heading's text is centred in its box (it may be wider than the text).
   const textW = Math.min(hb.width, (h2 as HTMLElement).scrollWidth);
   const cx = hb.left - box.left + hb.width / 2;
   const mid = hb.top - box.top + hb.height / 2;
-  const l = rules[0]?.getBoundingClientRect();
-  const r = rules[1]?.getBoundingClientRect();
+  const l = rules[0] ? rect(rules[0]) : undefined;
+  const r = rules[1] ? rect(rules[1]) : undefined;
   return {
     w: box.width,
     h: box.height,

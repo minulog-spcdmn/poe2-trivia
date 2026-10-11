@@ -2,7 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
-  import { timerTick } from '../lib/fx/moments';
+  import { timerGone, timerTick } from '../lib/fx/moments';
   import { FLARE_MS, clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
   import { claimPressure, endHold, flareEase, flarePressure, pressureOf, resolveDark, type Pressure } from '../lib/darkness';
@@ -167,6 +167,11 @@
     wasStopped = now;
   });
   onDestroy(() => endHold());
+  /** What the countdown's effects were started on (el may be gone by teardown): they end with this ring. */
+  let tickedOn: Element | null = null;
+  onDestroy(() => {
+    if (tickedOn) timerGone(tickedOn);
+  });
 
   $effect(() => {
     if (deadline === null) {
@@ -214,7 +219,7 @@
         lastSecs = secs;
         if (crossed && secs <= warn && secs > 0) {
           sfx('tick');
-          if (el) timerTick(el, secs, !delve);
+          if (el) timerTick((tickedOn = el), secs, !delve);
         }
       }
       if (left > 0) raf = requestAnimationFrame(loop);

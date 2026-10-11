@@ -20,8 +20,9 @@
 // 'blur' only blurs (content inside a 'dim' layer). use:portal sets it on
 // every overlay it moves, so a new one is dimmed without asking.
 
-import { cornerPx } from './corner';
+import { cornerOnScreen } from './corner';
 import { opacityOf } from './opacity';
+import { zoomOf } from './stage';
 
 /** How much the page darkens (as an rgba(0, 0, 0, 0.65) layer over it would). */
 export const DIALOG_DIM = 0.65;
@@ -30,9 +31,12 @@ export const DIALOG_BLUR = 3;
 
 const backdrops: HTMLElement[] = [];
 
-/** Svelte action for a dialog's backdrop: moves it to the end of <body> and dims the page while it's there. */
+/** Svelte action for a dialog's backdrop: moves it to the end of <body>, at the page's scale, and dims the page while it's there. */
 export function dialogBackdrop(node: HTMLElement) {
   document.body.append(node);
+  // Out of the app's shell, so scaled here as the shell is on large windows
+  // (lib/stage.ts): every dialog at the page's scale, whoever writes it.
+  node.style.zoom = 'var(--stage-zoom, 1)';
   backdrops.push(node);
   changed();
   return {
@@ -85,7 +89,9 @@ export function dialogBox(): { rect: DOMRect; radius: number } | null {
   if (box === undefined) {
     const dialog = open.backdrop?.querySelector<HTMLElement>('[role="dialog"]');
     const rect = dialog?.getBoundingClientRect();
-    box = dialog && rect ? { rect, radius: cornerPx(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height) } : null;
+    // Its radius is in its own px, the box on screen: the stage's zoom (lib/stage.ts) between them.
+    const z = dialog ? zoomOf(dialog) : 1;
+    box = dialog && rect ? { rect, radius: cornerOnScreen(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height, z) } : null;
   }
   return box;
 }
