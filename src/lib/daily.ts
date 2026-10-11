@@ -106,7 +106,7 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
 export const DAILY_DEALINGS: readonly { from: number; dealing: number }[] = [
   { from: utcDay(DAILY_LAUNCH), dealing: 1 },
   // Twins kept apart.
-  { from: utcDay(Date.UTC(2026, 9, 19)), dealing: 2 },
+  { from: utcDay(Date.UTC(2026, 9, 26)), dealing: 2 },
 ];
 
 /** How day `day`'s question is dealt. */

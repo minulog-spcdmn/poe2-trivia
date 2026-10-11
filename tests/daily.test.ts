@@ -66,7 +66,7 @@ test("a day's question never changes: a change to how questions are dealt starts
   // The days before twins were kept apart, each as it was first dealt.
   assert.deepEqual(
     Array.from({ length: TWINS_FROM - first }, (_, i) => dealt(first + i)),
-    ['347681dc', '78744393', '465e9520', '2984179e', '1047b3ed', 'f2e9b134', '2745aead', '1f161d80', 'f4a2593c', '61422f7b'],
+    ['347681dc', '78744393', '465e9520', '2984179e', '1047b3ed', 'f2e9b134', '2745aead', '1f161d80', 'f4a2593c', '61422f7b', '5463920e', '9682bbb7', 'b0fefc3b', 'e894027f', '120fbda6', 'f0ab656c', '3493b123'],
   );
   // And the year from launch: changing this hash changes days to come, so start the change on a day of its own (DAILY_DEALINGS).
   const year = createHash('sha256')
