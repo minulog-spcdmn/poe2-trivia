@@ -184,7 +184,8 @@ async function runSeat(slot) {
     handleSIGTERM: false,
     handleSIGHUP: false,
     // Nobody listens to the bot, and nothing is drawn: the page has no screens.
-    args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-gpu', ...proxy],
+    // Its timers at full pace even with its window covered (--headed): the hand moves twenty times a second (src/bot/hand.ts).
+    args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-gpu', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', ...proxy],
   });
   const seat = { page: null, context, say };
 

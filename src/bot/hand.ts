@@ -35,7 +35,7 @@ const LOBBY_REST_MS: [number, number] = [2000, 12000];
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
 
-/** The hand of whoever plays on this page now (the seat's current player): moved twenty times a second, as a real tab sends. */
+/** The hand of whoever plays on this page now (the seat's current player): moved twenty times a second, as a real tab sends; its presses and releases go as they happen, as a real tab's do. */
 let current: Hand | null = null;
 setInterval(() => current?.tick(), SEND_EVERY_MS);
 // For scripts that watch a bot on the dev server (as src/main.ts gives the session).
@@ -83,6 +83,7 @@ export class Hand {
   private restUntil = 0;
   private sentAt = 0;
   private sent = 'null';
+  private sentPressed = false;
   /** The anchor it's clicking, while it reaches for it. */
   private on: string | null = null;
   /** The screen it last clicked its pick on: done there, it waits as on anyone else's turn. */
@@ -240,6 +241,7 @@ export class Hand {
     this.restUntil = pressed + between(...REST_MS) * (0.5 + this.persona.hand.still);
     // The click is the letting go, as a browser's is: what it does happens then, with the press seen first.
     await wait(e.hold);
+    if (current === this && this.live()) this.send(true);
   }
 
   /** A recorded spot on an answer or a card (thousandths of it), moved by the bot's own grip, and kept well on it. */
@@ -316,8 +318,12 @@ export class Hand {
     if (this.presses.length && now >= this.presses[0]) {
       this.presses.shift();
       const p = this.where(now);
-      if (![...layout(s)].some(([k, b]) => (k.startsWith('opt:') || k.startsWith('card:') || k === 'next') && p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3]))
-        this.pressedUntil = now + between(70, 120);
+      if (![...layout(s)].some(([k, b]) => (k.startsWith('opt:') || k.startsWith('card:') || k === 'next') && p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3])) {
+        const hold = between(70, 120);
+        this.pressedUntil = now + hold;
+        // Let go when it does, not with the next move.
+        setTimeout(() => current === this && this.live() && this.send(true), hold);
+      }
     }
     this.send(true);
   }
@@ -388,11 +394,12 @@ export class Hand {
     // which on another screen could put it somewhere else, every bot at once.
     const spot = at ? this.at : null;
     const key = spot && at ? `${Math.round(spot.x)},${Math.round(spot.y)},${at[3]}` : 'null';
-    const plain = !at || actionOf(at[3]) === MOUSE;
-    // A press always goes; anything else only when it changed, and not too often.
-    if (key === this.sent || (plain && at && now - this.sentAt < SEND_EVERY_MS - 10)) return;
+    const pressed = !!at && actionOf(at[3]) === PRESSED;
+    // A press, or its release, always goes; anything else only when it changed, and not too often.
+    if (key === this.sent || (!pressed && !this.sentPressed && at && now - this.sentAt < SEND_EVERY_MS - 10)) return;
     this.sent = key;
     this.sentAt = now;
+    this.sentPressed = pressed;
     session.pointAt(at);
   }
 }
