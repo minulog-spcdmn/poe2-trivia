@@ -50,14 +50,16 @@ const ICON_GROUP: Record<string, string> = {
   'Flasks, Charms, Jewels, Relics & Tablets': 'Flasks',
 };
 // A category that names several kinds of item ("Gloves & Boots") shows one
-// of each: its emblem (ICON_ITEM) large, and an item of each other kind
-// named smaller round it, so the card says at a glance what it holds. By
-// name as above, else the group's middle item.
+// of each: its emblem (ICON_ITEM) in front, and an item of each other kind
+// named behind it, so the card says at a glance what it holds. Each is
+// picked for an outline that says its kind even when small and partly
+// hidden (ChooseCategory places each kind by eye for its item). By name as
+// above, else the group's middle item.
 const COMPANIONS: Record<string, [group: string, name: string][]> = {
   'Gloves & Boots': [['Gloves', "Leopold's Applause"]],
   'Amulets & Belts': [['Belts', 'Ingenuity']],
   'Flasks, Charms, Jewels, Relics & Tablets': [
-    ['Charms', "Ngamahu's Chosen"],
+    ['Charms', "Arakaali's Gift"],
     ['Jewels', 'Prism of Belief'],
     ['Relics', 'The Desperate Alliance'],
     ['Tablets', 'Freedom of Faith'],
@@ -72,7 +74,7 @@ const icons = new Map<string, string>();
 /** The same, as 128 px copies (itemThumb), for small glyphs. */
 const glyphs = new Map<string, string>();
 /** The other kinds' icons for a category that names several (see COMPANIONS). */
-const companions = new Map<string, string[]>();
+const companions = new Map<string, Companion[]>();
 for (const cat of engine.categories) {
   const list = engine.byCategory.get(cat)!;
   if (list[0].kind === 'gem') {
@@ -91,7 +93,7 @@ for (const cat of engine.categories) {
   const others = (COMPANIONS[cat] ?? []).flatMap(([group, name]) => {
     const pool = list.filter((it) => it.group === group);
     const it = pool.find((it) => it.name === name) ?? pool[Math.floor(pool.length / 2)];
-    return it ? [new URL(itemImage(it.id), document.baseURI).href] : [];
+    return it ? [{ kind: group, url: new URL(itemImage(it.id), document.baseURI).href }] : [];
   });
   if (others.length) companions.set(cat, others);
 }
@@ -106,14 +108,17 @@ export function categoryGlyph(category: string) {
   return glyphs.get(category)!;
 }
 
-/** The icons a category shows round its own, one for each other kind of item it names (none for most). Absolute, as categoryIcon. */
-export function categoryCompanions(category: string): readonly string[] {
+/** An item of another kind a category names, shown behind its icon: the kind (its group) and the item's icon, absolute as categoryIcon. */
+export type Companion = { kind: string; url: string };
+
+/** The items a category shows behind its own icon, one for each other kind of item it names (none for most). */
+export function categoryCompanions(category: string): readonly Companion[] {
   return companions.get(category) ?? [];
 }
 
 /** Every category's icon, and their companions' (to measure them all ahead of the deal). */
 export function categoryIcons() {
-  return [...icons.values(), ...[...companions.values()].flat()];
+  return [...icons.values(), ...[...companions.values()].flat().map((c) => c.url)];
 }
 
 /** How much larger (or smaller) than the common size to draw a category's icon, and how far to move it up and left. */

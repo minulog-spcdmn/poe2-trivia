@@ -301,29 +301,36 @@
   for (const url of categoryIcons()) measure(url);
 
   // A category that names several kinds of item shows one of each (lib/ui,
-  // categoryCompanions): its emblem in front, the others large but behind
-  // it and darker, as a heap of loot in the window. For each count, the
-  // emblem's size and shift (px at a tall card's size, as its tweak's), and
-  // each companion's offset from the window's middle (right and down) and size.
-  type Moons = { k: number; up: number; left: number; at: [x: number, y: number, k: number][] };
-  const MOONS: Record<number, Moons> = {
-    1: { k: 0.9, up: -6, left: 22, at: [[30, -20, 0.8]] },
-    4: {
-      k: 0.92,
-      up: -4,
+  // categoryCompanions): its emblem in front, the others behind it and
+  // darker, as a heap of loot in the window. Each heap is set by eye to its
+  // items' shapes, so that every kind shows enough of itself to be known:
+  // the emblem's size and shift (px at a tall card's size, as its tweak's),
+  // and for each kind (its group) its item's offset from the window's
+  // middle (right and down), size and tilt (degrees, clockwise). A kind the
+  // data no longer has leaves its spot empty.
+  type Spot = [x: number, y: number, k: number, turn: number];
+  type Moons = { k: number; up: number; left: number; at: Record<string, Spot> };
+  const MOONS: Record<string, Moons> = {
+    'Gloves & Boots': { k: 0.9, up: -6, left: 18, at: { Gloves: [30, -22, 0.74, 14] } },
+    'Amulets & Belts': { k: 0.86, up: 10, left: -12, at: { Belts: [-18, 20, 0.92, 8] } },
+    'Flasks, Charms, Jewels, Relics & Tablets': {
+      k: 0.9,
+      up: -2,
       left: 0,
-      at: [
-        [-40, -26, 0.62],
-        [40, -26, 0.62],
-        [-46, 26, 0.62],
-        [46, 26, 0.62],
-      ],
+      at: {
+        Charms: [-38, -32, 0.42, 0],
+        Jewels: [44, -32, 0.5, -10],
+        Relics: [-46, 35, 0.6, -10],
+        Tablets: [40, 26, 0.54, 14],
+      },
     },
   };
+  /** A category's heap, when it has companions to show. */
+  const heapOf = (cat: string) => (categoryCompanions(cat).length ? MOONS[cat] : undefined);
   /** The emblem's style for a category: its fit, made room for its companions. */
   function emblemStyle(cat: string) {
     const t = categoryIconTweak(cat);
-    const m = MOONS[categoryCompanions(cat).length];
+    const m = heapOf(cat);
     return fitStyle(categoryIcon(cat), m ? { k: t.k * m.k, up: t.up + m.up, left: t.left + m.left } : t);
   }
 
@@ -522,18 +529,20 @@
               <span class="find-tag" data-zoom>{FIND_TEXT[kind].name}</span>
             {/if}
             <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={emblemStyle(cat)} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
-              {#if MOONS[categoryCompanions(cat).length]}
-                {@const at = MOONS[categoryCompanions(cat).length].at}
+              {#if heapOf(cat)}
+                {@const at = heapOf(cat)!.at}
                 <span class="lit moons">
-                  {#each categoryCompanions(cat) as url, j (url)}
-                    {@const [x, y, k] = at[j]}
-                    <span class="moon" style:--mx={x} style:--my={y} style:--mk={k}
-                      ><span class="glyph" class:fit={!!fits[url]} style={fitStyle(url, { k })} style:--src="url('{maskOf(url)}')"></span></span
-                    >
+                  {#each categoryCompanions(cat) as c (c.url)}
+                    {#if at[c.kind]}
+                      {@const [x, y, k, turn] = at[c.kind]}
+                      <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
+                        ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')"></span></span
+                      >
+                    {/if}
                   {/each}
                 </span>
               {/if}
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={emblemStyle(cat)} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
             <span class="title"
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
@@ -804,23 +813,34 @@
       transform 0.5s var(--ease-out),
       opacity 0.4s;
   }
-  /* The companions (see MOONS), each centred on its spot round the emblem,
-     behind it (under one shadow, as the emblem's) and darker, so they read
-     as further back; dimmed by a filter, they keep the card's own colours. */
+  /* The companions (see MOONS), each centred on its spot round the emblem
+     and tilted, behind it (under one shadow, as the emblem's). They're
+     darker, so they read as further back, but edged in the plate's ink, so
+     each keeps its shape against the window and the others; dimmed by a
+     filter, they keep the card's own colours. */
   .moons {
     position: absolute;
     inset: 0;
     display: block;
-    z-index: -1;
   }
   .moon {
+    --far: 1;
     position: absolute;
     left: 50%;
     top: 50%;
     display: grid;
     place-items: center;
-    translate: calc(-50% + var(--mx) * var(--e-s, 1) * 1px) calc(-50% + var(--my) * var(--e-s, 1) * 1px);
-    filter: brightness(0.62);
+    translate: calc(-50% + var(--mx) * var(--far) * var(--e-s, 1) * 1px) calc(-50% + var(--my) * var(--far) * var(--e-s, 1) * 1px);
+    rotate: calc(var(--mr) * 1deg);
+    filter: brightness(0.5) saturate(1.3)
+      drop-shadow(0.75px 0 0 var(--ink)) drop-shadow(-0.75px 0 0 var(--ink))
+      drop-shadow(0 0.75px 0 var(--ink)) drop-shadow(0 -0.75px 0 var(--ink));
+    transition: translate 0.45s var(--ease-out);
+  }
+  /* The emblem stands clear of them: a dark edge is cut round it, so their
+     lines stop short of it, as an engraver's would. */
+  .moons + .lit {
+    filter: drop-shadow(0 0 1px #0b0805) drop-shadow(0 0 1px #0b0805) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8));
   }
   /* Until measured, a companion fits its whole image to a small box. */
   .moon .glyph:not(.fit) {
@@ -1007,6 +1027,12 @@
     transform: scale(1.1) rotate(-3deg);
     opacity: 1;
     filter: brightness(1.15);
+  }
+  /* The companions draw out a little from behind the emblem, staying in
+     its shade (and in the window), so it still leads. Only their places
+     change; no filter of theirs fades as they go. */
+  .card.mine:not(:global(.down)):hover .moon {
+    --far: 1.1;
   }
   /* A soft highlight that follows the pointer across the card. */
   .glare {
