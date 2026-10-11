@@ -298,7 +298,7 @@ class Session {
    * second resume of the same question) is dropped, even for the same question.
    */
   private mediaGen = 0;
-  /** Media messages already released for the current question (for late joiners). */
+  /** Media messages already released for the current question, as guests get them (for late joiners; see release). */
   private released: MediaMsg[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private autoNext: ReturnType<typeof setTimeout> | null = null;
@@ -1020,7 +1020,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, this.mode === 'host' && !this.labRoomless), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, this.guests.size > 0), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -1191,7 +1191,10 @@ class Session {
     });
   }
 
-  /** Out to everyone who may have it: `m` to guests (and kept for later arrivals), `own` on this screen. */
+  /**
+   * Out to everyone who may have it: `m` to guests, and kept for those who
+   * arrive later (so `released` is what guests get), `own` on this screen.
+   */
   private release(m: MediaMsg, own = m) {
     this.released.push(m);
     shown.receive(own);

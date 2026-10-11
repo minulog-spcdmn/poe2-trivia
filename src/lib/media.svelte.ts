@@ -211,9 +211,9 @@ function encodesLosslessWebp(): Promise<boolean> {
 async function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffer> {
   if (!lossless) return (await toBlob(canvas, 'image/webp', rand(0.92, 0.95))).arrayBuffer();
   if (await encodesLosslessWebp()) {
-    const bytes = await (await toBlob(canvas, 'image/webp', 1)).arrayBuffer();
-    // Each file checked too, should the encoder ever go lossy after all.
-    if (losslessWebp(new Uint8Array(bytes))) return bytes;
+    // Each file checked too, should the encoder ever go lossy (or fail) after all.
+    const bytes = await toBlob(canvas, 'image/webp', 1).then((b) => b.arrayBuffer(), () => null);
+    if (bytes && losslessWebp(new Uint8Array(bytes))) return bytes;
   }
   return (await toBlob(canvas, 'image/png')).arrayBuffer();
 }
@@ -222,8 +222,8 @@ async function encode(canvas: HTMLCanvasElement, lossless = false): Promise<Arra
  * Host side: builds the art for a question (full question, with the answer).
  * `clock`: the question's seconds (game.ts questionClock) and the veil's
  * share of them, which each veiled picture's pace is fitted to once it is
- * cut (cutVeil). `guests`: the host has a room, where guests may get the
- * veil's finale lighter (PreparedMedia.light).
+ * cut (cutVeil). `guests`: someone is connected, to get the veil's finale
+ * lighter (PreparedMedia.light).
  */
 export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes, guests = false): Promise<PreparedMedia> {
   const art = (id: string) => sizes.get(id)!;
@@ -262,8 +262,6 @@ export interface CutVeil {
   delays: number[];
   gap: number;
   areas: number[];
-  /** Each patch's picture at LIGHT, by patch, if asked for (PreparedMedia.light). */
-  light: Map<number, ArrayBuffer> | null;
 }
 
 /**
@@ -274,9 +272,10 @@ export interface CutVeil {
  * of the picture scaled down to them), so their shapes, seams and areas are
  * what they always were; each patch's own picture is then taken from the
  * full-resolution canvas, scale × scale pixels for each of its own.
- * `light`: each patch at LIGHT too (CutVeil.light), should it be finer.
+ * `light`: each patch at LIGHT too, should it be finer (PreparedMedia.light);
+ * those that fail to encode leave it null, as they're only a saving.
  */
-async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, light = false): Promise<CutVeil> {
+async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, light = false): Promise<CutVeil & { light: Map<number, ArrayBuffer> | null }> {
   const W = Math.round(canvas.width / S);
   const H = Math.round(canvas.height / S);
   const small = document.createElement('canvas');
@@ -306,13 +305,18 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, l
       return { i, x, y, w, h, data: await encode(patchPicture(fine, FW, S, cut[i]), true), edges: edges.buffer as ArrayBuffer };
     }),
   );
-  let lighter: Promise<Map<number, ArrayBuffer>> | null = null;
+  // (Pictures are SHARP or LIGHT per art pixel: artScale is 4 or 2.)
+  let lighter: Promise<Map<number, ArrayBuffer> | null> = Promise.resolve(null);
   if (light && S > LIGHT && S % LIGHT === 0) {
     const k = S / LIGHT;
     const down = boxDown(new Uint8Array(fine.buffer), FW, canvas.height, k);
-    lighter = Promise.all(order.map(async (i) => [i, await encode(patchPicture(down, FW / k, LIGHT, cut[i]), true)] as const)).then((e) => new Map(e));
+    lighter = Promise.all(order.map(async (i) => [i, await encode(patchPicture(down, FW / k, LIGHT, cut[i]), true)] as const)).then(
+      (e) => new Map(e),
+      () => null,
+    );
   }
-  return { veil, patches: await patches, delays: schedule.delays, gap: schedule.gap, areas, light: lighter && (await lighter) };
+  const [done, lightDone] = await Promise.all([patches, lighter]);
+  return { veil, patches: done, delays: schedule.delays, gap: schedule.gap, areas, light: lightDone };
 }
 
 /** A patch's own picture from the picture's pixels at `S` per art pixel (`FW` wide): wherever the patch has an art pixel. */
