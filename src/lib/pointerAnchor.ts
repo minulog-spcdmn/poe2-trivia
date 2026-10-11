@@ -1,5 +1,13 @@
 import { anchorCode, toAnchor, type CursorAt, type PointerKind } from './cursors.ts';
 
+/**
+ * The screen height the game anchor's positions go by (cursors.ts toAnchor):
+ * the page's own viewport, which keeps its height while a phone's toolbars
+ * slide in and out (innerHeight follows them, and a pointer placed by it
+ * would slide up and down the page as they do).
+ */
+export const screenHeight = () => document.documentElement.clientHeight || innerHeight;
+
 /** The page under a spot, through the covers that aren't the page (middle-button scrolling's, the recorder's badge). */
 const under = (px: number, py: number) => document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll, .recorder'));
 
@@ -28,5 +36,5 @@ export function anchorAt(px: number, py: number, kind: PointerKind): CursorAt | 
   if (!el || code === null) return null;
   const r = el.getBoundingClientRect();
   if (px < r.left || px > r.right || py < r.top || py > r.bottom || !r.width || !r.height) return null;
-  return [code, ...toAnchor(code, px, py, r, innerHeight), kind];
+  return [code, ...toAnchor(code, px, py, r, screenHeight()), kind];
 }
