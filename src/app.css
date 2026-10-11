@@ -227,17 +227,8 @@ input {
   background: rgba(201, 164, 92, 0.35);
 }
 
-/* The page behind an open dialog: darkened and blurred, or only one of the
-   two (see lib/behindDialog.ts). */
-[data-behind-dialog] {
-  filter: var(--behind-dialog);
-}
-[data-behind-dialog='dim'] {
-  filter: var(--behind-dialog-dim);
-}
-[data-behind-dialog='blur'] {
-  filter: var(--behind-dialog-blur);
-}
+/* The page behind an open dialog ([data-behind-dialog]) is darkened and
+   blurred by lib/behindDialog.ts, each layer's filter set inline. */
 
 /* ---------- shared building blocks ---------- */
 
