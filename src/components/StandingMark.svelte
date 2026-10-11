@@ -35,10 +35,6 @@
     margin: 0 0.1rem 0 0.2rem;
     color: var(--muted);
   }
-  .slow {
-    color: #eab3a3;
-    filter: drop-shadow(0 0 4px rgba(224, 85, 63, 0.4));
-  }
   svg {
     width: 20px;
     height: 20px;
