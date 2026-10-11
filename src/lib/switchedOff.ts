@@ -13,7 +13,10 @@ const named =
   CHANNEL === 'live' || typeof location === 'undefined'
     ? new Set<string>()
     : new Set(
-        (new URLSearchParams(location.search).get('off') ?? '')
+        // (After the #, too: poe2.quest/beta/#codex?off=press reads as well as ?off=press#codex.)
+        [location.search, location.hash.slice(location.hash.indexOf('?') + 1 || location.hash.length)]
+          .map((q) => new URLSearchParams(q).get('off') ?? '')
+          .join(',')
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean),

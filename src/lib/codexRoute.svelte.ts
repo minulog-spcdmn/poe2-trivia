@@ -2,14 +2,16 @@
 // browser's back button closes it.
 
 const HASH = '#codex';
+/** The address's #codex, whatever follows it (?off=: lib/switchedOff.ts). */
+const atCodex = () => location.hash.split('?')[0] === HASH;
 
 class CodexRoute {
-  open = $state(location.hash === HASH);
+  open = $state(atCodex());
 }
 
 export const codexRoute = new CodexRoute();
 
-const sync = () => (codexRoute.open = location.hash === HASH);
+const sync = () => (codexRoute.open = atCodex());
 addEventListener('popstate', sync);
 addEventListener('hashchange', sync);
 

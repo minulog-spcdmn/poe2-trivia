@@ -134,7 +134,7 @@ const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: ac
 const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text'];
 
 function apply() {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || switchedOff('cursor')) return;
   const root = document.documentElement.style;
   const key = forced?.matches ? 'forced' : color;
   if (key === applied) return;
