@@ -623,6 +623,8 @@
     padding: 26px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
   }
   .intro {
+    /* The title's size; the kicker under it is fitted to it. */
+    --title-size: 92px;
     grid-area: intro;
     min-width: 0;
   }
@@ -643,7 +645,6 @@
 
   /* ---- the title ---- */
   .title {
-    --title-size: 92px;
     display: flex;
     align-items: flex-start;
     gap: 14px;
@@ -666,10 +667,12 @@
     position: relative;
     margin: 2px 0 4px;
     font-family: var(--font-display);
-    font-size: 14px;
+    font-size: max(10px, var(--title-size) * 0.147);
     line-height: 1.3;
-    /* Ends under the tip of the Q's tail. */
-    letter-spacing: 0.42em;
+    /* Ends under the left tip of the Q's tail at any title size: that tip sits
+       2.3313 title sizes right of the P's stem, and the kicker's ink runs
+       8.4836em plus its 17 letter spacings. */
+    letter-spacing: calc((var(--title-size) * 2.3313 - 8.4836em) / 17);
     text-transform: uppercase;
     color: var(--unique-hi);
   }
@@ -1046,14 +1049,25 @@
   @media (max-height: 859px) and (min-width: 1081px) {
     .home {
       --slot: 92px;
+      /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
+      --daily-stage-h: 405px;
       --daily-circle: 456px;
-      --daily-overlap: 44px;
+      --daily-circle-y: 230px;
+      --daily-art-inset: 14% 26% 21%;
+      --daily-fade-from: 50.7%;
+      --daily-fade-to: 81.4%;
+      --daily-title-size: 20px;
+      --daily-title-lh: 29px;
+      --daily-title-gap: 4px;
+      --daily-line-size: 15px;
+      --daily-line-lh: 21px;
+      --daily-legend-gap: 7px;
       --daily-after-h: 36px;
       --daily-after-gap: 4px;
       --rooms-head-gap: 8px;
       padding-top: 16px;
     }
-    .title {
+    .intro {
       --title-size: 80px;
     }
     .greeting {
@@ -1099,12 +1113,8 @@
       grid-template-columns: minmax(0, 1fr);
       padding: 28px 16px 20px;
     }
-    .title {
+    .intro {
       --title-size: 54px;
-    }
-    .kicker {
-      font-size: 11px;
-      letter-spacing: 0.3em;
     }
     .blurb {
       font-size: 15px;

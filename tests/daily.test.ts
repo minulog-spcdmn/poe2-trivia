@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Engine, isFake, type Item } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, answerDaily, askOne, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, TOO_THIN, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -109,4 +109,17 @@ test('stored records are checked before use', () => {
   assert.equal(parseDaily(JSON.stringify({ ...rec, picked: 7 })), null);
   assert.equal(parseDaily(JSON.stringify({ ...rec, streak: -1 })), null);
   assert.equal(parseDaily(JSON.stringify({ ...rec, ok: 'yes' })), null);
+});
+
+test("a record from a day still to come (a clock that ran ahead) stands as yesterday's once the server has said the day", () => {
+  const ahead: DailyRecord = { day: 101, picked: 2, ok: true, streak: 4, ended: 0 };
+  const mended = fromClockAhead(ahead, 100)!;
+  assert.deepEqual(mended, { ...ahead, day: 99 });
+  // Today's can be answered, and its run goes on.
+  assert.equal(answeredOn(mended, 100), null);
+  assert.equal(streakOn(mended, 100), 4);
+  assert.equal(answerDaily(mended, 100, 0, true).streak, 5);
+  // Nothing to mend in a record from today or before.
+  assert.equal(fromClockAhead({ ...ahead, day: 100 }, 100), null);
+  assert.equal(fromClockAhead(null, 100), null);
 });

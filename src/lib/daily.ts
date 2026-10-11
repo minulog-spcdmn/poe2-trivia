@@ -107,6 +107,16 @@ export function streakOn(rec: DailyRecord | null, today: number): number {
   return rec.day === today || rec.day === today - 1 ? rec.streak : 0;
 }
 
+/**
+ * A record from a day still to come, once the server has said what day it
+ * is: made while this device's clock ran ahead (or before the server had
+ * said). Taken as answered yesterday, so today's can be answered and its run
+ * goes on. Null when the record is no such one.
+ */
+export function fromClockAhead(rec: DailyRecord | null, today: number): DailyRecord | null {
+  return rec && rec.day > today ? { ...rec, day: today - 1 } : null;
+}
+
 /** Today's answer, once given. */
 export const answeredOn = (rec: DailyRecord | null, today: number) => (rec && rec.day === today ? rec : null);
 

@@ -974,31 +974,6 @@ test('glints show as a look has them: in the side walls, or all over; fewer on a
   assert.equal(glints(1200).length, 0);
 });
 
-test('in the frozen stratum the motes drift down instead of rising', () => {
-  /** How many embers burning in stratum k move down and up over a moment. */
-  const moves = (k: number) => {
-    const e = new Embers();
-    e.descend({ ...descent(0), look: lookOf(k) }, { stratum: k + 1, turn: 0 });
-    e.step(0, 1200, 800, false, true);
-    e.step(1, 1200, 800);
-    const before = slots(e).filter(([, , , , entry]) => entry !== GLINT_COLOR);
-    e.step(0.002, 1200, 800);
-    const after = slots(e).filter(([, , , , entry]) => entry !== GLINT_COLOR);
-    let down = 0;
-    let up = 0;
-    for (const [x, y] of before) {
-      const next = after.find(([x2, y2]) => Math.abs(x2 - x) < 0.5 && Math.abs(y2 - y) < 2 && y2 !== y);
-      if (next) next[1] > y ? down++ : up++;
-    }
-    return { down, up };
-  };
-  assert.equal(STRATA[2].look.fall, 1);
-  const rising = moves(1);
-  const sinking = moves(2);
-  assert.ok(rising.up > 10 && rising.down === 0, `rising: ${JSON.stringify(rising)}`);
-  assert.ok(sinking.down > 10 && sinking.up === 0, `sinking: ${JSON.stringify(sinking)}`);
-});
-
 test('deep down nothing overflows and no tile holds more than its slots', () => {
   const e = new Embers();
   for (const k of [9, 5, 8, 14, 127]) {

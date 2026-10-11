@@ -28,10 +28,10 @@
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
 
   const TARGETS = [5, 10, 15, 20];
-  const MODES: { id: GameMode; name: string; beta?: boolean }[] = [
+  const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
     { id: 'turns', name: 'Take turns' },
     { id: 'race', name: 'Race' },
-    { id: 'delve', name: 'Delve', beta: true },
+    { id: 'delve', name: 'Delve', isNew: true },
   ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
@@ -456,14 +456,14 @@
               aria-disabled={offline(m.id) || undefined}
               tabindex={on ? 0 : -1}
               data-mode={m.id}
-              aria-label={m.beta ? `${m.name}, beta` : undefined}
+              aria-label={m.isNew ? `${m.name}, new` : undefined}
               disabled={!isHost && !on}
               title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
               onclick={(e) => isHost && pickMode(m.id, e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
               <b>{m.name}</b>
-              {#if m.beta}<span class="beta" aria-hidden="true">Beta</span>{/if}
+              {#if m.isNew}<span class="new" aria-hidden="true">New</span>{/if}
             </button>
           {/each}
         </div>
@@ -1103,8 +1103,9 @@
   .mode.on b {
     text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
   }
-  /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark. */
-  .mode .beta {
+  /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark;
+     in the teal of skill gems, so it reads as fresh rather than unfinished. */
+  .mode .new {
     position: absolute;
     top: 4px;
     right: 4px;
@@ -1115,8 +1116,8 @@
     line-height: 1.4;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--unique-hi);
-    border: 1px solid rgba(224, 138, 68, 0.45);
+    color: #4fd0b4;
+    border: 1px solid rgba(79, 208, 180, 0.45);
     border-radius: 2px;
     pointer-events: none;
   }

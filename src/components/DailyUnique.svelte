@@ -13,7 +13,8 @@
   import { glare } from '../lib/glare';
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { isFake, questionTopic, type Item, type Question } from '../lib/game';
-  import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
+  import { clock } from '../lib/clock';
+  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyGame, dailyQuestion, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -26,16 +27,31 @@
 
   // The clock moves on (the hours left, and past midnight UTC a new day):
   // every minute, and at once when the tab is looked at again (a tab in the
-  // background ticks seldom).
-  let now = $state(Date.now());
+  // background ticks seldom). The server's time where it can say (lib/clock:
+  // asked once, and again only when it had no reply, or this device's clock
+  // has jumped since), and at once when the device is back online.
+  let now = $state(clock.now());
+  let alive = true;
   onMount(() => {
-    const tick = () => (now = Date.now());
-    const t = setInterval(tick, 60_000);
-    const seen = () => document.visibilityState === 'visible' && tick();
+    const tick = () => {
+      now = clock.now();
+      mendClockAhead();
+    };
+    const refresh = () => {
+      tick();
+      void clock.refresh()?.then(tick);
+    };
+    refresh();
+    const t = setInterval(refresh, 60_000);
+    const seen = () => document.visibilityState === 'visible' && refresh();
+    const online = () => void clock.sync().then(tick);
     document.addEventListener('visibilitychange', seen);
+    addEventListener('online', online);
     return () => {
+      alive = false;
       clearInterval(t);
       document.removeEventListener('visibilitychange', seen);
+      removeEventListener('online', online);
     };
   });
   const today = $derived(utcDay(now));
@@ -82,11 +98,47 @@
   let artEl: HTMLElement | null = $state(null);
   let practiceEl: HTMLButtonElement | null = $state(null);
 
-  function pick(i: number) {
+  /** How long an answer waits at most for the server to say the time. */
+  const CLOCK_WAIT_MS = 1500;
+  /**
+   * Once the server has said what day it is, a record from a day still to
+   * come was made on a clock running ahead: it stands as yesterday's, so
+   * today's can be answered (lib/daily fromClockAhead).
+   */
+  function mendClockAhead() {
+    if (!clock.trusted()) return;
+    const mended = fromClockAhead(loadDaily(), utcDay(now));
+    if (!mended) return;
+    rec = mended;
+    saveDaily(mended);
+  }
+
+  /** An answer to today's held until the server has said what day it is (or not for long): the option picked, the last one tapped. */
+  let held = $state<number | null>(null);
+  async function pick(i: number) {
     if (answered || disabled) return;
-    // Past midnight UTC since the clock last moved: that was yesterday's question. Today's comes up instead.
-    if (!practice && utcDay(Date.now()) !== today) {
-      now = Date.now();
+    if (held !== null) {
+      held = i;
+      return;
+    }
+    /** The day whose question was there to pick from. */
+    const shown = today;
+    // Answered as the page comes up: the day is the server's, once it has
+    // said (a device with a wrong clock may be showing another day's).
+    if (!practice && !clock.known()) {
+      held = i;
+      await clock.ready(CLOCK_WAIT_MS);
+      i = held ?? i;
+      held = null;
+      if (!alive || answered || disabled || practice) return;
+    }
+    // Past midnight UTC since the clock last moved (or the server's day isn't
+    // the one shown): that was another day's question. Today's comes up
+    // instead, and the tap says so.
+    if (!practice && (utcDay(clock.now()) !== shown || today !== shown)) {
+      now = clock.now();
+      mendClockAhead();
+      toasts.show("That question was another day's. Here is today's.", 'info', { title: "Today's unique" });
       return;
     }
     // Another tab may have answered today's meanwhile: that answer stands.
@@ -106,11 +158,13 @@
     // answer today: nothing is recorded, so nothing plays as if it were, and
     // the tap says why.
     const next = practice ? null : answerDaily(rec, today, i, good);
+    // (Only while the server hasn't said: once it has, such a record is mended, mendClockAhead.)
     if (next && next === rec) {
       toasts.show("This device's clock is behind the day you last answered on. Set it right to play today's unique.", 'info', { title: 'Clock behind' });
       return;
     }
-    const at = Date.now();
+    // (The codex's time by the same clock as the day.)
+    const at = clock.now();
     settled = false;
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => (settled = true), SETTLE_MS);
@@ -193,41 +247,49 @@
   }
 
   const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  /** What the item is, in the legend's line: "shield", "ring", "gloves". */
+  const topic = $derived(questionTopic(q, true).toLowerCase());
 </script>
 
 <svelte:window onkeydown={keys} />
 
 <section class="daily" aria-label="Today's unique">
+  <!-- The circle, and under it (pinned to the stage's foot) the legend: a
+       title or line taking two lines grows the legend up over the faded
+       circle, never down into the answers. -->
   <div class="stage">
-    <!-- The fade at the bottom is a mask, and a mask cuts off whatever lies
-         outside its box: it is drawn on a box larger than the circle, so the
-         circle's glow (and its wave when answered right) spreads freely. -->
-    <div class="veil">
-      <div class="inner">
-        <div class="circle">
-          <ArcaneCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
-        </div>
-        <!-- "frame", as the game's art stage: the right answer's flare and rays find the
-             picture through it (fx/moments reveal) and shine from behind its outline. -->
-        <div class="art frame" bind:this={artEl}>
-          {#key q.itemId + (practice ? ':p' : '')}
-            {@const art = engine.byId.get(q.itemId)!}
-            <ArtImage src={itemImage(q.itemId)} w={art.w} h={art.h} alt="The item to name" scale={4} float round />
-          {/key}
+    <div class="plate">
+      <!-- The fade at the bottom is a mask, and a mask cuts off whatever lies
+           outside its box: it is drawn on a box larger than the circle, so the
+           circle's glow (and its wave when answered right) spreads freely. -->
+      <div class="veil">
+        <div class="inner">
+          <div class="circle">
+            <ArcaneCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
+          </div>
+          <!-- "frame", as the game's art stage: the right answer's flare and rays find the
+               picture through it (fx/moments reveal) and shine from behind its outline. -->
+          <div class="art frame" bind:this={artEl}>
+            {#key q.itemId + (practice ? ':p' : '')}
+              {@const art = engine.byId.get(q.itemId)!}
+              <ArtImage src={itemImage(q.itemId)} w={art.w} h={art.h} alt="The item to name" scale={4} float round />
+            {/key}
+          </div>
         </div>
       </div>
     </div>
-    <p class="chip">
-      <span class="topic">{questionTopic(q)}</span>
-      <span class="gem" aria-hidden="true"></span>
+    <div class="legend">
       {#if answered && item}
-        <b class="what" in:fade={{ duration: 300 }}>{item.name}</b>
+        <!-- Answered: the item named, over its base type. -->
+        <div in:fade={{ duration: 300 }}>
+          <h2 class="title" class:right>{item.name}</h2>
+          <p class="line">{item.base}</p>
+        </div>
       {:else}
-        <b class="what">{practice ? 'Practice' : 'Today’s unique'}</b>
+        <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>
+        <p class="line">Name the {topic}.{practice ? '' : ' The same for every exile today.'}</p>
       {/if}
-      <!-- Which day's question (not the item's number): only until it is answered. -->
-      {#if !practice && !answered}<span class="no"><span class="no-label">Day</span> {dayNumber(now)}</span>{/if}
-    </p>
+    </div>
   </div>
 
   <div class="options" role="group" aria-label="Which one is it?">
@@ -236,6 +298,8 @@
       {@const fake = answered && isFake(q.options[i])}
       <button
         class="option {st}"
+        class:held={held === i}
+        aria-busy={held === i || undefined}
         bind:this={optEls[i]}
         data-sfx="none"
         disabled={answered || disabled}
@@ -264,7 +328,7 @@
         <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
         <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; {nextIn(now, 'daily')}.</p>
       {:else}
-        <p class="caption">The same item for every exile today.<span class="more">{' '}Watch for look-alikes.</span></p>
+        <p class="caption">Watch for look-alikes: one name may be made up.</p>
       {/if}
     {:else}
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
@@ -297,23 +361,35 @@
     flex-direction: column;
   }
 
-  /* ---- the circle, its art and the chip on top ---- */
+  /* ---- the circle, its art, and the legend under it ---- */
+  /* Every size's numbers are custom properties: their fallbacks here are the
+     wide column's (1440 x 900, and 641 to 1080 wide); the start page sets
+     short windows' (Home.svelte), the phone query below phones'. The stage,
+     the gap and the rows under it always add up to the block's height, so
+     the page round it never moves. */
   .stage {
     position: relative;
-    /* 520 px on a 510 px column: the circle's band reaches a little past it
-       (the start page makes it smaller on short windows). */
-    width: var(--daily-circle, calc(100% + 10px));
-    margin-inline: calc((100% - var(--daily-circle, calc(100% + 10px))) / 2);
-    aspect-ratio: 1;
+    height: var(--daily-stage-h, 463px);
   }
-  /* The circle fades out at the bottom, into the answers: from 72% to 96%
-     of its height, on a box reaching 15% past it on every side. */
+  /* The circle's square, centred on the column (a little wider than it on
+     wide screens, which is meant), its foot running on behind the legend. */
+  .plate {
+    position: absolute;
+    left: 50%;
+    top: calc(var(--daily-circle-y, 274px) - var(--daily-circle, 560px) / 2);
+    width: var(--daily-circle, 560px);
+    aspect-ratio: 1;
+    translate: -50% 0;
+    pointer-events: none;
+  }
+  /* The circle fades out at the bottom, into the answers, on a box reaching
+     15% past it on every side. */
   .veil {
     position: absolute;
     inset: -15%;
     pointer-events: none;
-    -webkit-mask-image: linear-gradient(180deg, #000 66.9%, transparent 85.4%);
-    mask-image: linear-gradient(180deg, #000 66.9%, transparent 85.4%);
+    -webkit-mask-image: linear-gradient(180deg, #000 var(--daily-fade-from, 48.4%), transparent var(--daily-fade-to, 79.9%));
+    mask-image: linear-gradient(180deg, #000 var(--daily-fade-from, 48.4%), transparent var(--daily-fade-to, 79.9%));
   }
   /* The circle's own box again (15 / 130 of the veil on each side). */
   .inner {
@@ -324,12 +400,13 @@
     position: absolute;
     inset: 0;
   }
-  /* An art box that suits tall staves; a wide item (a belt) reaches past
-     its sides into the circle round its centre, 68% of the circle across
-     (--round, in the box's widths: ArtImage's round fit), clear of the runes. */
+  /* An art box that suits tall staves (high enough in the circle that a bow
+     clears the legend); a wide item (a belt) reaches past its sides into the
+     circle round its centre, 68% of the circle across (--round, in the box's
+     widths: ArtImage's round fit), clear of the runes. */
   .art {
     position: absolute;
-    inset: 14% 26% 21%;
+    inset: var(--daily-art-inset, 12.5% 26% 22.5%);
     --round: 1.4167;
     display: grid;
     place-items: center;
@@ -338,56 +415,47 @@
     position: absolute;
     inset: 0;
   }
-  .chip {
+  /* What to do, or what it was: over the faded circle, pinned to the stage's foot. */
+  .legend {
     position: absolute;
-    top: 4%;
-    left: 50%;
-    translate: -50% 0;
-    display: flex;
-    align-items: baseline;
-    gap: 0.7rem;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    text-align: center;
+  }
+  /* Cinzel sets the lower case as small capitals, so the title is written in
+     normal case. (Over the global h2's display face.) Shadowed, so the runes
+     behind don't break the letters up. */
+  .title {
     margin: 0;
-    padding: 0.42rem 1rem 0.5rem;
-    white-space: nowrap;
-    background: rgba(10, 8, 6, 0.82);
-    border: 1px solid rgba(125, 99, 51, 0.6);
-    border-radius: 2px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  }
-  .topic {
-    font-style: italic;
-    font-size: 15px;
-    color: #8f8270;
-  }
-  .gem {
-    align-self: center;
-    width: 7px;
-    height: 7px;
-    rotate: 45deg;
-    background: var(--unique-hi);
-    box-shadow: 0 0 6px rgba(224, 138, 68, 0.8);
-  }
-  .what {
-    font-family: var(--font-display);
-    font-size: 20px;
-    color: #fff1cf;
-    text-shadow: 0 0 12px rgba(241, 217, 155, 0.35);
-  }
-  .no {
     font-family: var(--font-cinzel);
-    font-size: 13px;
-    letter-spacing: 0.06em;
-    color: var(--gold);
+    font-weight: 500;
+    font-size: var(--daily-title-size, 21px);
+    line-height: var(--daily-title-lh, 30px);
+    letter-spacing: 0.07em;
+    color: #d9c08a;
+    text-wrap: balance;
+    text-shadow:
+      0 0 10px rgba(0, 0, 0, 0.9),
+      0 0 3px rgba(0, 0, 0, 0.9);
   }
-  .no-label {
-    font-size: 15px;
+  .title.right {
+    color: #e3e6b8;
+  }
+  .line {
+    margin: var(--daily-title-gap, 5px) 0 0;
+    font-style: italic;
+    font-size: var(--daily-line-size, 16px);
+    line-height: var(--daily-line-lh, 22px);
+    color: #ab9d88;
+    text-wrap: balance;
+    text-shadow: 0 0 8px rgba(0, 0, 0, 0.95);
   }
 
   /* ---- the answers, as in the game (QuestionView) ---- */
   .options {
     position: relative;
-    /* Up over the faded bottom of the circle. */
-    margin-top: calc(-1 * var(--daily-overlap, 48px));
+    margin-top: var(--daily-legend-gap, 9px);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-auto-rows: 1fr;
@@ -468,6 +536,15 @@
      :is(:hover, :focus-visible) would take the keyboard's focus light with it. */
   .option:not(:disabled):hover,
   .option:not(:disabled):focus-visible {
+    border-color: var(--gold);
+    background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
+    box-shadow:
+      inset 0 0 0 1px rgba(241, 217, 155, 0.1),
+      0 0 26px rgba(224, 138, 68, 0.2);
+  }
+  /* Picked while the day is being made sure of (a moment, at most 1.5 s): it
+     stays lit as hovered, so the tap shows it was taken. */
+  .option.held {
     border-color: var(--gold);
     background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
     box-shadow:
@@ -662,7 +739,10 @@
     flex-wrap: wrap;
   }
   .caption {
+    width: 100%;
     margin: 0;
+    text-align: center;
+    text-wrap: balance;
     font-style: italic;
     font-size: 17px;
     color: #a99c86;
@@ -684,15 +764,21 @@
   }
 
   @media (max-width: 640px) {
-    .stage {
-      width: min(330px, 100%);
-      margin: 0 auto;
-    }
-    .chip {
-      top: 0;
+    .daily {
+      --daily-stage-h: 296px;
+      --daily-circle: 336px;
+      --daily-circle-y: 170px;
+      --daily-art-inset: 14% 26% 21%;
+      --daily-fade-from: 52.3%;
+      --daily-fade-to: 82.1%;
+      --daily-title-size: 19px;
+      --daily-title-lh: 27px;
+      --daily-title-gap: 4px;
+      --daily-line-size: 15px;
+      --daily-line-lh: 21px;
+      --daily-legend-gap: 10px;
     }
     .options {
-      margin-top: -24px;
       grid-template-columns: minmax(0, 1fr);
       gap: 12px;
     }
@@ -706,8 +792,6 @@
       min-height: 62px;
     }
     .caption {
-      width: 100%;
-      text-align: center;
       font-size: 15px;
     }
     .caption .more {
