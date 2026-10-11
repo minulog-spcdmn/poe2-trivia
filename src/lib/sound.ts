@@ -596,7 +596,8 @@ export function bedOf(place: string): Bed {
 /**
  * Delve: whose beds sound at depth `d` and how much, as the mix board has
  * them. The place the scene is turning from (strataAt) and the one it is
- * turning into, on the curve of the backdrop's hall (hallTurn), equal power:
+ * turning into, on the curve of the backdrop's hall (hallTurn: half way at
+ * a zone's 10th depth, the rest of the way into the next zone), equal power:
  * cos and sin of its quarter turn, so their squares always add up to 1. A
  * settled depth is one place alone. `fire` is how much of AMBIENCE's level
  * stays lit: each place's share of its bed's fire (0 where none has any),
@@ -632,7 +633,8 @@ let hearth = 1;
  * each): those sounding now as they are wanted (updateLoop; one that loads
  * late joins then, fading in), and the next place's when the page has a
  * moment to spare, from the first depth of the zone before it. Its turn into
- * the next begins at the 6th, and is heard from the 8th.
+ * the next begins at the 6th, and is heard from the 8th, most of it as the
+ * next zone arrives.
  */
 function prefetchBeds(b: Bus) {
   for (const { file } of nextBed().layers) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));

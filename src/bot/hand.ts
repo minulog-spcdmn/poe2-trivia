@@ -7,13 +7,16 @@
 // rested on theirs, then reaches for its pick and clicks; moving on after a reveal, it reaches
 // for Next. On someone else's turn it waits as the recorded player waited,
 // mostly still, now and then a little move or a click at nothing; in the
-// lobby and at the end, the same. A click is a press seen by everyone, and
-// its action goes as the button is let go, as a browser's does.
+// lobby and at the end, the same. While a new zone's cards are on their way
+// (its title card over the game) its pointer is off the page, as everyone's
+// is. A click is a press seen by everyone, and its action goes as the
+// button is let go, as a browser's does.
 // Each place is sent on the element nearest it (an answer, a card, the art,
 // a row), even off it, so it keeps its place beside what's on every screen,
 // whatever the screen's shape.
 
 import type { GameState, Question } from '../lib/game';
+import { dealIn } from '../lib/delve';
 import { LIT, MOUSE, OFF, PRESSED, SCALE, SEND_EVERY_MS, actionOf, anchorCode, clickableFor, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
 import type { Persona } from './brain';
@@ -99,6 +102,11 @@ export class Hand {
     return !!s && session.status === 'ready' && cursorsLive(s) && s.players.some((p) => p.id === session.myPlayerId);
   }
 
+  /** Whether a new zone's cards are still on their way: nothing of the game to point at (its title card over it). */
+  private dealing(s: GameState) {
+    return dealIn(s, session.hostNow()) > 0;
+  }
+
   /** How long a click takes it once it sets off (ms): to begin early enough by (nothing while no pointer is shown). */
   lead() {
     return this.live() ? Math.round(REACH_MS * this.speed) : 0;
@@ -127,9 +135,9 @@ export class Hand {
     this.trackBox = this.box(frame);
   }
 
-  /** Looks the cards over, as the recorded player did, until it reaches for one at `until`. */
-  lookOverCards(_n: number, until: number) {
-    this.lookOver('card', 'cards', until);
+  /** Looks the cards over, as the recorded player did, from when they are dealt (`dealt`) until it reaches for one at `until`. */
+  lookOverCards(_n: number, until: number, dealt = Date.now()) {
+    this.lookOver('card', 'cards', until, [], undefined, undefined, dealt);
   }
 
   /**
@@ -141,13 +149,14 @@ export class Hand {
     this.lookOver('answer', 'answers', until, torn, q.mode, q.labels.length);
   }
 
-  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, torn: number[] = [], mode?: string, n?: number) {
+  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, torn: number[] = [], mode?: string, n?: number, dealt = Date.now()) {
     const s = this.s ?? session.state;
     if (!s) return;
     const now = Date.now();
+    const from = Math.max(now, dealt);
     const at = this.where(now);
     const f = this.box(frame, s);
-    const e = pickClick(kind, until - now, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, x.src) });
+    const e = pickClick(kind, until - from, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, x.src) });
     if (!e) return;
     this.remember(e);
     const w = waver(Math.random);
@@ -155,9 +164,9 @@ export class Hand {
     this.presses = [];
     const onto = this.onto(kind === 'card' ? 'card:' : 'opt:', e, torn, this.box(frame, s), s);
     // It takes in what's come up before its hand stirs, its own while: the room's hands don't all set off as one
-    // (already on the move, waiting, it goes straight on).
-    const moving = !!this.track && now < this.track.t[this.track.t.length - 1];
-    const start = moving ? now : now + Math.min(between(200, 2600) * (0.6 + 0.8 * this.persona.hand.still), (until - now) * 0.45);
+    // (already on the move, waiting, it goes straight on; never before the cards are dealt).
+    const moving = !!this.track && from < this.track.t[this.track.t.length - 1];
+    const start = moving ? from : from + Math.min(between(200, 2600) * (0.6 + 0.8 * this.persona.hand.still), (until - from) * 0.45);
     this.follow(leadTrack(e, within(this.where(now), this.box(frame, s), e.src), start, until, this.speed, { onto, w }), frame);
   }
 
@@ -197,7 +206,7 @@ export class Hand {
    */
   async click(anchor: string, by = Infinity): Promise<void> {
     const s = session.state;
-    if (!this.live(s)) return;
+    if (!this.live(s) || this.dealing(s!)) return;
     const box = layout(s!).get(anchor);
     if (!box) return;
     const kind: ClickStretch['kind'] = anchor.startsWith('opt:') ? 'answer' : anchor.startsWith('card:') ? 'card' : 'next';
@@ -267,18 +276,22 @@ export class Hand {
     const now = Date.now();
     const screen = `${s.phase}:${s.round}:${s.turnCount}:${s.question?.askedAt ?? 0}`;
     if (screen !== this.screen) {
+      // (A new zone's cards come once dealt.)
+      const dealt = now + dealIn(s, session.hostNow());
       this.screen = screen;
-      this.screenAt = now;
+      this.screenAt = dealt;
       this.on = null;
       // A click it was about to make on what's gone: not any more.
       if (this.pending && this.pending.kind !== (s.phase === 'choosing' ? 'card' : s.phase === 'question' ? 'answer' : 'next')) this.pending = null;
-      // Waiting on the next screen begins a while in, its own while: not all the room's hands at once.
-      if (!this.track) this.restUntil = Math.max(this.restUntil, now + between(400, 4000) * (0.5 + this.persona.hand.still));
+      // Waiting on the next screen begins a while in, its own while: not all the room's hands at once (nor as a new zone's cards are dealt).
+      if (!this.track || dealt > now) this.restUntil = Math.max(this.restUntil, dealt + between(400, 4000) * (0.5 + this.persona.hand.still));
     }
     if (!this.live(s)) {
       this.track = null;
       return this.send(false);
     }
+    // A new zone's cards on their way: off the page till they are dealt (its look over them, set off from then, kept).
+    if (this.dealing(s)) return this.send(false);
     // Nothing of its own to do (someone else's turn, the lobby, the end): it waits as the recorded player waited.
     if (!this.track && this.idle(s) && now >= this.restUntil) {
       const lobby = s.phase === 'lobby' || s.phase === 'over';

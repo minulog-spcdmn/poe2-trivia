@@ -4,18 +4,15 @@
   // at a desktop's width or a phone's, as in a game: the run steps down into
   // the zone the engine's way, so the plunge, its sound, the scene's colours
   // and the deal as it lands are the zone's. Any family of motion can be
-  // tried on it, and the card stopped at any moment (Freeze). The zone gate
-  // (components/zonebanner/Threshold), which opens a run and marks a new
-  // best, has its entries too. The frame (zones.html?stage,
-  // ./stage.svelte.ts) runs the lab's Delve run.
+  // tried on it, and the card stopped at any moment (Freeze). The frame
+  // (zones.html?stage, ./stage.svelte.ts) runs the lab's Delve run.
   import { onMount } from 'svelte';
-  import { accentAt, stratumName } from '../lib/descent';
-  import { zoneAt } from '../lib/zoneSigils';
+  import { stratumName } from '../lib/descent';
   import { readStored, writeStored } from '../lib/storage';
   import type { Family } from '../lib/zoneTitle';
-  import type { CardPlay, Play } from './stage.svelte';
+  import type { CardPlay } from './stage.svelte';
 
-  type Entry = { key: string; label: string; depth: number; gate?: string; name?: string; best?: boolean };
+  type Entry = { key: string; label: string; depth: number; name?: string; best?: boolean };
   const ENTRIES: Entry[] = [
     ...Array.from({ length: 15 }, (_, j) => {
       const k = j + 1;
@@ -24,8 +21,6 @@
     }),
     { key: 'wide', label: '101 • Fathomless Firmament (the widest name)', depth: 101, name: 'Fathomless Firmament' },
     { key: 'best', label: '41 • Vaal Outpost, past your best', depth: 41, best: true },
-    { key: 'mines', label: '1 • The Mines (the gate, as a run opens)', depth: 1, gate: stratumName(0) },
-    { key: 'record', label: '47 • Deeper than ever (the gate)', depth: 47, gate: 'Deeper than ever' },
   ];
   const FAMILIES: (Family | '')[] = ['', 'ember', 'rime', 'spore', 'void', 'light', 'fume'];
 
@@ -48,16 +43,12 @@
   const entry = $derived(ENTRIES.find((e) => e.key === zone) ?? ENTRIES[0]);
 
   let frame: HTMLIFrameElement;
-  type Api = { play: (o: Play) => Promise<void>; card: (o: CardPlay) => Promise<void>; seek: (ms: number | null) => void; ready: boolean };
+  type Api = { card: (o: CardPlay) => Promise<void>; seek: (ms: number | null) => void; ready: boolean };
   const api = () => (frame?.contentWindow as unknown as { __zb?: Api } | null)?.__zb;
 
   async function replay() {
     for (let i = 0; !api()?.ready && i < 100; i++) await new Promise((r) => setTimeout(r, 100));
     const e = entry;
-    if (e.gate) {
-      await api()?.play({ title: e.gate, sigil: zoneAt(e.depth), accent: accentAt(e.depth), depth: e.depth, hold: freeze });
-      return;
-    }
     await api()?.card({ depth: e.depth, name: e.name, family: family || undefined, best: e.best, hold: freeze });
     if (freeze) seek();
   }
@@ -108,14 +99,14 @@
     </label>
     <label class="zone">
       <span class="sr">Family</span>
-      <select bind:value={family} disabled={!!entry.gate}>
+      <select bind:value={family}>
         {#each FAMILIES as f (f)}<option value={f}>{f ? `As ${f}` : 'Its own motion'}</option>{/each}
       </select>
     </label>
     <button class="btn small" onclick={replay} title="Replay (R)">Replay</button>
     <label class="tog"><input type="checkbox" bind:checked={phone} /> Phone width</label>
     <label class="tog"><input type="checkbox" bind:checked={freeze} /> Freeze</label>
-    {#if freeze && !entry.gate}
+    {#if freeze}
       <label class="tog at"><input type="range" min="0" max="7000" step="50" bind:value={at} /> {(at / 1000).toFixed(2)} s</label>
     {/if}
     <label class="tog"><input type="checkbox" checked={still} onchange={(e) => setStill(e.currentTarget.checked)} /> Effects off</label>

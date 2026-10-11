@@ -30,9 +30,9 @@ export type Ctx = {
   /** The name's letters, spaces among them: each an outer span (for drifts) holding an inner one (entrance and exit). */
   outer: HTMLElement[];
   inner: HTMLElement[];
-  /** Each letter's centre from the name's, px (measured at rest). */
+  /** Each letter's centre from the name's, in the card's own px (measured at rest). */
   dx: number[];
-  /** The seal's centre from the name's, px (measured at rest). */
+  /** The seal's centre from the name's, in the card's own px (measured at rest). */
   toSeal: [number, number];
   /** The letters that are not spaces. */
   glyphs: number[];

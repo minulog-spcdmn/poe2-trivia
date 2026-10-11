@@ -18,10 +18,7 @@
   import { startLine } from '../lib/delveStart';
   import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
-  import { zoneAt } from '../lib/zoneSigils';
-  import Threshold from './zonebanner/Threshold.svelte';
-  import { DELAY as ZONE_DELAY, EXIT as ZONE_EXIT, HOLD as ZONE_HOLD, STILL_FADE } from './zonebanner/thresholdArt';
-  import { descended, milestoneReached } from '../lib/fx/moments';
+  import { deeperThanEver, descended, zoneArrival } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { motion } from '../lib/motion.svelte';
@@ -99,15 +96,9 @@
   const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
   const bannerBig = $derived(race || mine || group);
 
-  /**
-   * Svelte action: the turn banner's entrance. Runs once per turn (the stage is
-   * keyed). Not under a zone's mark (it lands in the same moment): its light
-   * would only glare over the mark's own.
-   */
+  /** Svelte action: the turn banner's entrance. Runs once per turn (the stage is keyed). */
   function bannerFx(node: HTMLElement, o: { color: string; big: boolean }) {
-    const t = setTimeout(() => {
-      if (!card) turnBanner(node, o.color, o.big);
-    });
+    const t = setTimeout(() => turnBanner(node, o.color, o.big));
     return { destroy: () => clearTimeout(t) };
   }
 
@@ -180,71 +171,52 @@
   /** The stage in play: the turn's, or an empty one while its cards are on their way. */
   const stageKey = $derived(held ? `held:${s.turnCount}` : `${s.turnCount}`);
 
-  // Delve: a gate at the start of a depth worth it (a new best alone, and the
-  // run's very start, where the first zone's gate opens it), built over the
-  // head of the stage for a few seconds (zonebanner/Threshold); a new zone's
-  // name has its title card instead, in the plunge into it. Only when the run
-  // is seen going one deeper, or at a start this device saw (session.runStarted),
-  // not a reload or a rejoin during the first choice. It belongs to its turn: the next one clears it.
-  type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string; leaving: boolean; still: boolean };
-  let card = $state<Card | null>(null);
-  let cardTimers: ReturnType<typeof setTimeout>[] = [];
+  // Delve: each depth, once, as its cards are dealt. A new zone's name has its
+  // title card, in the plunge into it (components/zonecard); here the
+  // backdrop's embers flare at every depth the run is seen going down to, and
+  // a screen reader is told where a run starts, on a screen that saw it start
+  // (session.runStarted), and the name of a new zone this screen never saw
+  // named by its card. Alone, one past this device's best says so on the line
+  // over the banner, for the turn that reached it.
+  type Past = { turn: number; accent: string; live: boolean };
+  let pastBest = $state<Past | null>(null);
   let depthSeen = '';
-  // It starts once the stage has faded in (ZONE_DELAY), is built in about
-  // 1.3 s, held, then told to leave at ZONE_HOLD and gone ZONE_EXIT later
-  // (with reduced motion or the effects off it only fades in and out).
   $effect(() => {
     if (!run || s.phase !== 'choosing' || held) return;
     const key = `${run.startedAt}:${depth}`;
     if (key === depthSeen) return;
     const deeper = depthSeen.startsWith(`${run.startedAt}:`);
     depthSeen = key;
-    // The run's first depth: the first zone's gate, as each new zone gets one.
-    const opening = !deeper && depth === 1 && session.runStarted === run.startedAt;
-    // A new zone this screen never saw named by its card (components/zonecard): back in the game as its cards
-    // were on their way (a reload), or too late in the plunge into it for a card at all.
-    const zoneName = milestoneAt(depth);
-    const unnamed = !!zoneName && opensZone(depth) && untrack(() => arrival.shownFor) !== key;
-    if (!deeper && !opening) {
-      // (A reload: a screen reader is told where the run has come.)
-      if (unnamed) untrack(() => speak(key, `Depth ${shownDepth(depth)}: ${zoneName}.`));
-      return;
-    }
     untrack(() => {
       if (deeper) descended();
-      // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
-      const accent = accentAt(depth);
-      // A new zone is named by its title card in the plunge into it (components/zonecard), the run's first here,
-      // and one this screen saw too late for its card here too.
-      const name = opening ? stratumName(0) : unnamed ? zoneName : null;
-      const sigil = zoneAt(depth);
       const best = session.bestAtStart;
-      const turn = s.turnCount;
-      const still = motion.still;
-      let next: Card | null = null;
-      if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${shownDepth(depth)}: ${name}.`, leaving: false, still };
-      // (On a zone's first depth, its card says so instead.)
-      else if (!group && best !== null && depth === best + 1 && (!opensZone(depth) || unnamed))
-        next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
-      if (!next) return;
-      card = next;
-      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself, and a zone's sounded as the plunge into it began (App.svelte).
-      if (!opening && !unnamed) sfx('stratum');
-      cardTimers.forEach(clearTimeout);
-      cardTimers = [
-        setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
-        setTimeout(() => card?.key === key && (card = null), (ZONE_HOLD + (still ? STILL_FADE : ZONE_EXIT)) * 1000 + 50),
-      ];
+      const past = !group && best !== null && depth === best + 1;
+      // The zone this depth opens, if it opens one, and whether this screen saw its card name it.
+      const zone = opensZone(depth) ? milestoneAt(depth) : null;
+      const unnamed = !!zone && arrival.shownFor !== key;
+      // Seen as it happened, on any depth but a zone's first (where its card says so, over the zone's own sound): the line comes with its sting.
+      const live = deeper && past && !zone;
+      pastBest = past ? { turn: s.turnCount, accent: accentAt(depth), live } : null;
+      if (!deeper && depth === 1 && session.runStarted === run.startedAt) speak(key, `${stratumName(0)}.`);
+      else if (unnamed) {
+        // Back in the game as its cards were on their way (a reload), or too late in the plunge into it for a card at all.
+        speak(key, `Depth ${shownDepth(depth)}: ${zone}.${past ? ' Deeper than ever.' : ''}`);
+        // The embers take the zone's colour all the same, as they would at the card's lock.
+        if (deeper) zoneArrival();
+      } else if (live) speak(key, `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(depth - 1)}.`);
     });
   });
-  // The next turn takes the head (the stage is keyed), and the mark with it.
-  $effect(() => {
-    if (card && card.turn !== s.turnCount) card = null;
-  });
-  $effect(() => () => cardTimers.forEach(clearTimeout));
-  const zone = $derived(card && card.turn === s.turnCount ? card : null);
-  /** The gate's light breaks into the scene once its lintel is lit, off the lintel, toned to its size. */
-  const zoneFx = (el: HTMLElement) => card && milestoneReached(el, card.accent);
+  /** Ms from a turn's stage coming in to its line over the banner coming in: once the stage has faded in (its in:fade, below). */
+  const PAST_IN = 500;
+  /** Svelte action: deeper than ever, seen as it happened: as its line comes in, a sting and a few glints on it. */
+  function pastFx(node: HTMLElement, p: Past) {
+    if (!p.live) return;
+    const t = setTimeout(() => {
+      sfx('zoneSting');
+      deeperThanEver(node, p.accent);
+    }, PAST_IN);
+    return { destroy: () => clearTimeout(t) };
+  }
 
   // Delve: dynamite blasted the question away for a new one at the same
   // depth. No depth deeper, so instead of the plunge the stage swings
@@ -341,7 +313,7 @@
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular. -->
 <div class="game" data-cursor="game">
-  <p class="sr" aria-live="polite">{zone?.label ?? (run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : '')}</p>
+  <p class="sr" aria-live="polite">{run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
@@ -376,30 +348,22 @@
           {/if}
           <div class="head">
             {#if run}
-              <!-- An empty line over the banner, the room a zone's gate rises into (zonebanner/Threshold measures it). -->
-              <p class="kicker">{'\u00a0'}</p>
+              <!-- A line over the banner: alone, one past your best says so here; otherwise it stands empty. -->
+              <p class="kicker">
+                {#if pastBest && pastBest.turn === s.turnCount}
+                  <span class="past" class:still={motion.still} style:--accent={pastBest.accent} style:--in="{PAST_IN}ms">
+                    <span class="past-text" use:pastFx={pastBest}>Deeper than ever</span>
+                  </span>
+                {:else}
+                  {'\u00a0'}
+                {/if}
+              </p>
             {/if}
-            <!-- The gate's columns stand in for the rules while it shows. -->
-            <div class="banner" class:dm={!!dm} class:veiled={!!zone && !zone.leaving} style:--c={bannerColor}>
+            <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
               <span class="rule"></span>
               <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
               <span class="rule"></span>
             </div>
-            {#if zone}
-              <!-- Delve: a new zone's name over the head for a moment, on a gate
-                   built once the stage has faded in. -->
-              {#key zone.key}
-                <Threshold
-                  title={zone.title}
-                  sigil={zone.sigil}
-                  accent={zone.accent}
-                  leaving={zone.leaving}
-                  still={zone.still}
-                  delay={zone.still ? 0 : ZONE_DELAY}
-                  onfx={zoneFx}
-                />
-              {/key}
-            {/if}
           </div>
 
           {#if s.phase === 'choosing' || drawing}
@@ -508,20 +472,9 @@
     grid-area: 1 / 1;
     min-width: 0;
   }
-  /* The kicker and banner. Holds their margins, so the gate laid over it
-     (zonebanner/Threshold) has their box to measure and keeps within it. */
+  /* The kicker and banner, holding their margins. */
   .head {
     display: flow-root;
-    position: relative;
-  }
-  /* The rules give way to the gate's columns while it shows, and come back
-     as it goes. */
-  .rule {
-    transition: opacity 0.6s 0.75s ease-out;
-  }
-  .veiled .rule {
-    opacity: 0;
-    transition: opacity 0.25s ease-out;
   }
   .sr {
     position: absolute;
@@ -532,9 +485,10 @@
     white-space: nowrap;
   }
 
-  /* Room above the banner, always there in a run (so nothing moves when a
-     gate shows): the gate's lintel and keystone rise into it, clear of the
-     player strip above. */
+  /* A line over the banner, always there in a run (so nothing moves when it
+     has something to say). Alone, one past this device's best, it says so:
+     lettered as the zone title card's meta line (components/zonecard), in
+     the depth's colour, between two short rules. */
   .kicker {
     margin: 1.4rem 0 -0.4rem;
     text-align: center;
@@ -543,6 +497,55 @@
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
+  }
+  .past {
+    --track: 0.3em;
+    --ink: color-mix(in srgb, var(--accent) 75%, var(--gold-hi));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8em;
+    color: var(--ink);
+    white-space: nowrap;
+    /* As tall as the line, and set on its top (not on its baseline, which an
+       empty rule would give it), so the line keeps its height. */
+    vertical-align: top;
+  }
+  /* Its letters spread out of a blur once the stage has faded in, and the rules
+     are drawn out from them. */
+  .past-text {
+    letter-spacing: var(--track);
+    padding-left: var(--track);
+    text-shadow:
+      0 0 10px color-mix(in srgb, var(--accent) 35%, transparent),
+      0 1px 2px rgba(0, 0, 0, 0.9);
+    animation: past-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) var(--in) both;
+  }
+  .past::before,
+  .past::after {
+    content: '';
+    width: clamp(20px, 6vw, 56px);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--ink));
+    transform-origin: right;
+    animation: grow 0.7s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--in) + 0.1s) both;
+  }
+  .past::after {
+    background: linear-gradient(270deg, transparent, var(--ink));
+    transform-origin: left;
+  }
+  /* Held still, it only comes in with the stage's fade. */
+  .past.still .past-text,
+  .past.still::before,
+  .past.still::after {
+    animation: none;
+  }
+  @keyframes past-in {
+    from {
+      opacity: 0;
+      letter-spacing: 0.08em;
+      padding-left: 0.08em;
+      filter: blur(3px);
+    }
   }
   .delve-line {
     margin: 0.8rem 0 0;
@@ -760,6 +763,9 @@
     }
     .banner h2 {
       font-size: 1.45rem;
+    }
+    .past {
+      --track: 0.22em;
     }
     .skip {
       margin-top: 1rem;

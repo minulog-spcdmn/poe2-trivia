@@ -256,8 +256,9 @@ class Session {
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
-   * or a rejoin, which come in on a run already under way. Its opening gate
-   * (Game.svelte) is only for a start seen. Set before the state it comes with.
+   * or a rejoin, which come in on a run already under way. Only at a start
+   * seen is a screen reader told the first zone's name (Game.svelte). Set
+   * before the state it comes with.
    */
   runStarted: number | null = null;
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */

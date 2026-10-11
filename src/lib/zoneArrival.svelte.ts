@@ -31,10 +31,10 @@ export type Arrival = {
 export const arrival = $state<{
   /** The card under way, if any. */
   card: Arrival | null;
-  /** What a screen reader is told of the run's arrival in a zone, and the arrival (its key) it is for (Game.svelte reads it out at that depth only). */
+  /** What a screen reader is told of the run's arrival at a depth (a zone's, and the few Game.svelte tells), and the arrival (its key) it is for (Game.svelte reads it out at that depth only). */
   spoken: string;
   spokenFor: string;
-  /** The arrival (its key) whose card was shown: one seen through to its name needs no gate at the deal. */
+  /** The arrival (its key) whose card was shown: one seen through to its name isn't told again at the deal (Game.svelte). */
   shownFor: string;
 }>({ card: null, spoken: '', spokenFor: '', shownFor: '' });
 

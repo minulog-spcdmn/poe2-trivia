@@ -22,9 +22,12 @@
   // whole, holds and fades out; a screen that saw the run move on late gets
   // the same, sooner (compact). It lies over the game (portalled), under
   // toasts and dialogs, and takes no clicks but on its bars, which cover
-  // the header's stale depth.
+  // the header's stale depth. It is scaled up with the stage on large
+  // windows (lib/stage.ts), as the header is, so what it measures on screen
+  // it turns into its own px.
   import { onMount } from 'svelte';
   import { portal } from '../../lib/portal';
+  import { unzoomRect, zoomOf } from '../../lib/stage';
   import { holdLight } from '../../lib/lights';
   import { accentLight, fxDensity, hdr } from '../../lib/fx/moments';
   import { fxActive, type Vec3 } from '../../lib/fx/core';
@@ -40,7 +43,7 @@
   import ZoneSeal from './ZoneSeal.svelte';
   import NewsMark from './NewsMark.svelte';
 
-  let { a, bar }: { a: Arrival; /** How tall the bars are: the header's height (px). */ bar: number } = $props();
+  let { a, bar }: { a: Arrival; /** How tall the bars are: the header's height (its own px, as the card's). */ bar: number } = $props();
 
   const title = $derived(a.title);
   const tl = $derived(a.tl);
@@ -155,12 +158,15 @@
     function build(still: boolean, rich: boolean, phone: boolean) {
       const outer = [...letters.querySelectorAll<HTMLElement>('.l')];
       const inner = outer.map((o) => o.firstElementChild as HTMLElement);
-      const mid = word.getBoundingClientRect();
+      // Measured on screen, in the card's own px (what the letters are moved by).
+      const z = zoomOf(word);
+      const own = (el: Element) => unzoomRect(el.getBoundingClientRect(), z);
+      const mid = own(word);
       const dx = outer.map((o) => {
-        const b = o.getBoundingClientRect();
+        const b = own(o);
         return b.left + b.width / 2 - (mid.left + mid.width / 2);
       });
-      const sb = seal!.getBoundingClientRect();
+      const sb = own(seal!);
       const toSeal: [number, number] = [sb.left + sb.width / 2 - (mid.left + mid.width / 2), sb.top + sb.height / 2 - (mid.top + mid.height / 2)];
       const tint = hdr(title.accent, 1);
       const main: Vec3 = [tint[0] * 2.7, tint[1] * 2.7, tint[2] * 2.7];
@@ -192,13 +198,14 @@
       };
       built = true;
       if (!still) animate(c);
-      // The light the name casts into the scene, from the sigil's drawing to the exit.
+      // The light the name casts into the scene, from the sigil's drawing to the exit (as far on screen as the name is wide).
       if (!still && fxActive()) {
-        light = holdLight(word, accentLight(title.accent), Math.max(240, nameW * 0.75));
+        const reach = Math.max(240, nameW * 0.75) * z;
+        light = holdLight(word, accentLight(title.accent), reach);
         const fam = FAMILIES[t.family];
         const step = () => {
           const ms = now();
-          light?.set(glowAt(ms, tl) * (fam.flicker?.(ms) ?? 1), Math.max(240, nameW * 0.75) * (ms > tl.lock && ms < tl.lock + 600 ? 1.25 : 1));
+          light?.set(glowAt(ms, tl) * (fam.flicker?.(ms) ?? 1), reach * (ms > tl.lock && ms < tl.lock + 600 ? 1.25 : 1));
           if (ms < tl.exit + 750 || frozen !== null) raf = requestAnimationFrame(step);
           else light?.release();
         };
@@ -345,7 +352,9 @@
 </div>
 
 <style>
+  /* Scaled up on large windows (lib/stage.ts), as the header its bars cover is. */
   .zc {
+    zoom: var(--stage-zoom, 1);
     position: fixed;
     inset: 0;
     z-index: 60;
@@ -400,11 +409,12 @@
   .zc:not(.still):not(.built) .plate {
     visibility: hidden;
   }
+  /* (The window's size in the card's zoomed px, lib/stage.ts.) */
   .plate {
     position: absolute;
-    inset: calc(var(--bar) + env(safe-area-inset-top) + 12px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 6vh);
+    inset: calc(var(--bar) + env(safe-area-inset-top) + 12px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 6vh / var(--stage-zoom, 1));
     margin: 0 auto;
-    width: min(46rem, 100vw - 32px);
+    width: min(46rem, 100vw / var(--stage-zoom, 1) - 32px);
     display: flex;
     flex-direction: column;
     align-items: center;

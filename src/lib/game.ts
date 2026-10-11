@@ -42,6 +42,7 @@ import {
   voteDone,
   opensZone,
   ZONE_DESCENT_MS,
+  dealIn,
   unaskedCards,
   waitingIds,
   SECOND_FIND,
@@ -447,7 +448,8 @@ export interface Delve {
   /**
    * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
    * after the run moved on to it, as the plunge into it lands. Every screen
-   * shows them then, and a vote cast sooner opens its window no sooner.
+   * shows them then. A pick sooner is refused; a vote sooner is kept, but
+   * opens its window no sooner, nor closes the vote (delve.ts voteDone).
    * Missing for any other depth, and in older saves.
    */
   dealAt?: number;
@@ -1275,6 +1277,8 @@ export class Engine {
         if (s.phase !== 'choosing') throw new ActionError("It's not time to pick a category.");
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
+        // A new zone's cards are still on their way (no screen shows them yet): a pick sooner is dropped quietly.
+        if (from !== null && dealIn(s, this.now()) > 0) throw new ActionError('Too early.', true);
         if (coop) this.closeVote(s, action.category);
         else this.takePick(s, active, action.category);
         break;
@@ -1510,9 +1514,10 @@ export class Engine {
       case 'expire': {
         if (from !== null) throw new ActionError('Not allowed.');
         // Co-op: the vote's window ran out, or everyone it waits for has voted.
-        // Without a vote it never runs out: nobody's card is picked for them.
+        // Without a vote it never runs out: nobody's card is picked for them;
+        // nor before a new zone's cards are dealt, however soon it is due.
         const closes = voteClosesAt(s);
-        if (!s.delve || !isGroupRun(s) || s.phase !== 'choosing') break;
+        if (!s.delve || !isGroupRun(s) || s.phase !== 'choosing' || dealIn(s, this.now()) > 0) break;
         if (voteDone(s, this.now()) || (closes !== null && this.now() >= closes - 250)) this.closeVote(s);
         break;
       }
@@ -1980,9 +1985,10 @@ export class Engine {
 
   /**
    * Co-op: what a change of who is here (or seated, or voted) settles. A vote
-   * is in once everyone it waits for has voted; a question is over once
-   * nobody standing is left to answer it; with nobody standing at all
-   * between questions, the run is over.
+   * is in once everyone it waits for has voted (and the cards are dealt: a
+   * new zone's vote in sooner is closed by the host's 'expire' as they are);
+   * a question is over once nobody standing is left to answer it; with
+   * nobody standing at all between questions, the run is over.
    */
   private coopCarryOn(s: GameState) {
     if (s.phase === 'choosing') {

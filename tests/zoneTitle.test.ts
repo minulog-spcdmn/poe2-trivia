@@ -1,15 +1,16 @@
 // Delve's zone title card: what it says for every place (lib/zoneTitle.ts),
-// and when it says it in the plunge (lib/zoneTitleTiming.ts).
+// when it says it in the plunge (lib/zoneTitleTiming.ts), and the sigil on
+// its seal (lib/zoneSigils.ts).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { metaLine, NEWS_MOST, SUBTITLE_MOST, SUBTITLES, TREATMENTS, subtitleAt, treatmentAt, zoneNews, zoneTitleAt, type Family } from '../src/lib/zoneTitle.ts';
 import { T, drawPlan, glowAt, timeline } from '../src/lib/zoneTitleTiming.ts';
 import { ARCHETYPES, composedNames, NAME_MOST } from '../src/lib/archetypes.ts';
-import { biomeAt } from '../src/lib/backdrops.ts';
+import { biomeAt, emblemOf } from '../src/lib/backdrops.ts';
 import { STRATA, stratumName } from '../src/lib/descent.ts';
 import { opensZone, ZONE_DESCENT_MS } from '../src/lib/delve.ts';
-import { sigilOf, sigilStrokes, SIGIL_NAMES } from '../src/lib/zoneSigils.ts';
+import { sigilOf, sigilStrokes, SIGIL_NAMES, zoneAt } from '../src/lib/zoneSigils.ts';
 import { roman } from '../src/lib/roman.ts';
 
 /** The dash the house never uses (CLAUDE.md), made from its code so this file doesn't hold one. */
@@ -195,4 +196,36 @@ test("a sigil's strokes, split to draw themselves, are the sigil's own, nearest 
     const r = (p: string) => Math.hypot(...(p.match(/-?[\d.]+/g)!.slice(0, 2).map(Number) as [number, number]));
     for (let i = 1; i < parts.lines.length; i++) assert.ok(r(parts.lines[i]) >= r(parts.lines[i - 1]) - 1e-9, name);
   }
+});
+
+/** Every point a path's data names (of an arc, its end). */
+const points = (d: string) =>
+  [...d.matchAll(/([MLA])([^MLAZ]*)/g)].flatMap(([, cmd, args]) => {
+    const n = args.match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+    const step = cmd === 'A' ? 7 : 2;
+    return Array.from({ length: n.length / step }, (_, i) => [n[i * step + step - 2], n[i * step + step - 1]] as [number, number]);
+  });
+
+test('every biome has a sigil of its own, within its seal', () => {
+  for (const s of STRATA) assert.ok(SIGIL_NAMES.includes(s.name), s.name);
+  // Past depth 100 each stratum has a name of its own, and bears its archetype's zone's emblem.
+  for (let k = 10; k < 30; k++) assert.ok(SIGIL_NAMES.includes(emblemOf(stratumName(k))!), stratumName(k));
+  for (const a of ARCHETYPES) assert.ok(SIGIL_NAMES.includes(a.emblem), a.kind);
+  for (let k = 10; k < 30; k++) assert.deepEqual(sigilOf(stratumName(k)), sigilOf(emblemOf(stratumName(k))!));
+  for (const name of SIGIL_NAMES) {
+    const { lines, fine } = sigilOf(name);
+    assert.ok(lines.length > 20, name);
+    for (const [x, y] of points(lines + fine)) assert.ok(Math.hypot(x, y) <= 10.6, `${name} reaches ${Math.hypot(x, y).toFixed(1)}`);
+  }
+});
+
+test('the zone a depth is in', () => {
+  assert.equal(zoneAt(1), 'The Mines');
+  assert.equal(zoneAt(10), 'The Mines');
+  assert.equal(zoneAt(11), 'Magma Fissure');
+  assert.equal(zoneAt(21), 'Frozen Hollow');
+  assert.equal(zoneAt(100), 'Primeval Ruins');
+  for (let d = 1; d <= 100; d++) assert.ok(SIGIL_NAMES.includes(zoneAt(d)), `depth ${d}`);
+  // Past 100 the stratum's own name, which bears its archetype's zone's emblem.
+  for (let d = 101; d < 400; d++) assert.ok(SIGIL_NAMES.includes(emblemOf(zoneAt(d))!), `depth ${d}: ${zoneAt(d)}`);
 });

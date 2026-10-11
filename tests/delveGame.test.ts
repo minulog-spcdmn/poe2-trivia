@@ -14,6 +14,7 @@ import {
   livesOf,
   veilSeconds,
 } from '../src/lib/delve.ts';
+import { sceneOf } from '../src/lib/recorder.ts';
 import { ActionError, Engine, RARE_GROUPS, RARE_MAX_OPTIONS, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -208,6 +209,22 @@ test("going down into a new zone, its cards are dealt as the plunge into it land
   // The run's end leaves nothing on its way.
   h.playOut({ p0: [false, false, false] });
   assert.equal(h.s.delve!.dealAt, undefined);
+});
+
+test("going down into a new zone, the player's own pick before the cards are dealt is dropped quietly", () => {
+  const h = delve(['Ash']);
+  for (let d = 1; d < 11; d++) h.turn(true);
+  const at = h.s.delve!.dealAt!;
+  assert.equal(at, h.clock.now + ZONE_DESCENT_MS);
+  h.clock.now = at - 1;
+  throwsSilently(() => h.pick('p0'), /early/i);
+  assert.equal(h.s.phase, 'choosing');
+  // The bots' recordings know the cards weren't there yet (scripts/bot-motion.mjs).
+  assert.equal(sceneOf(h.s, 'p0', 0).dealAt, at);
+  h.clock.now = at;
+  h.pick('p0');
+  assert.equal(h.s.phase, 'question');
+  assert.equal(sceneOf(h.s, 'p0', 0).dealAt, undefined);
 });
 
 test('alone, the run ends with the third life, at the depth where it went', () => {

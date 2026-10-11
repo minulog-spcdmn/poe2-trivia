@@ -1,8 +1,8 @@
 // Delve: going down into a new zone, its cards are dealt as the plunge into
 // it lands (DelveState.dealAt, on the host's clock, the same moment on every
 // screen). Until then the header keeps the depth before and Game.svelte's
-// stage stands empty over the plunging scene; then the depth, its gate and
-// its cards come in together. App.svelte follows the state (followDeal).
+// stage stands empty over the plunging scene; then the depth and its cards
+// come in together. App.svelte follows the state (followDeal).
 
 import { dealIn } from './delve.ts';
 import type { GameState } from './game.ts';

@@ -12,6 +12,7 @@
 import { emitter, flash, glints, sparks } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
+import { ownRect } from '../../lib/stage';
 import { IN, shuffled, startsIn, times, type Ctx, type FamilyMotion } from './family';
 
 /** The order the lamps are lit in (the same for a card's exit as for its entrance). */
@@ -46,7 +47,8 @@ export const light: FamilyMotion = {
     copy.textContent = c.letters.textContent;
     shaft.append(copy);
     c.word.append(shaft);
-    const w = c.word.getBoundingClientRect().width;
+    // (In the card's own px, as the shaft is sized and moved: lib/stage.ts.)
+    const w = ownRect(c.word).width;
     const slit = Math.max(40, w * 0.12);
     // Both slanted about the slit's top left, so the copy's slant undoes the slit's exactly.
     shaft.style.cssText = `position:absolute;top:-0.2em;bottom:-0.2em;left:0;width:${slit}px;overflow:hidden;transform:skewX(-18deg);transform-origin:0 0;opacity:0;pointer-events:none`;

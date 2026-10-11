@@ -5,11 +5,12 @@
 // The plunge and the zone's sound ('stratum') start together, and the card
 // keeps to the sound's beats: the hit (the floor gives way, the bars close
 // in) and its long decay, which is the place's (the scene takes the new
-// zone's colours as it falls); the lull, where the sigil draws itself and the
-// letters gather; the second swell, whose first strong note is where the name
-// locks (LOCK) and whose loudest is where its sting rings; and the fade,
-// where the card leaves (EXIT) before the cards are dealt (lib/delve.ts
-// ZONE_DESCENT_MS), so control comes back as it goes.
+// zone's look over them, ARRIVAL_PACE in lib/descent.ts); the lull, where
+// the sigil draws itself and the letters gather; the second swell, whose
+// first strong note is where the name locks (LOCK) and whose loudest is
+// where its sting rings; and the fade, where the card leaves (EXIT) before
+// the cards are dealt (lib/delve.ts ZONE_DESCENT_MS), so control comes back
+// as it goes.
 
 import type { Sfx } from './sound.ts';
 

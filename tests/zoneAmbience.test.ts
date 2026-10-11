@@ -97,15 +97,17 @@ test('a settled depth is one place alone; a turn cross-fades two at equal power'
       before = turning[1].weight;
     }
   }
-  // Half way through the hall's turn (the Mines' turn is 3/5 of the way at depth 9), each at 1/√2.
-  const half = bedsAt(9).beds;
+  // Half way through the hall's turn, the depth before the next is announced (depth 10, the Mines' turn 3/5 of the
+  // way there), each at 1/√2; the depth before that the Mines still most of it, the Magma Fissure under a third.
+  const half = bedsAt(10).beds;
   assert.deepEqual(half.map((b) => b.place), ['z0', 'z1']);
   for (const b of half) assert.ok(Math.abs(b.weight - Math.SQRT1_2) < 1e-9);
-  // The depth before the next is announced (depth 10) the Magma Fissure is most of it, five sixths of the hall;
-  // as it is announced (depth 11), all of it.
-  const [mines, magma] = bedsAt(10).beds;
-  assert.ok(magma.weight > mines.weight && magma.weight ** 2 > 0.93 && magma.weight ** 2 < 0.95, `${magma.weight}`);
+  const [mines, magma] = bedsAt(9).beds;
+  assert.ok(mines.weight > magma.weight && magma.weight ** 2 > 0.15 && magma.weight ** 2 < 0.3, `${magma.weight}`);
+  // As it is announced (depth 11), all of it: the other half at once, the most of the turn in any depth.
   assert.deepEqual(bedsAt(11).beds.map((b) => [b.place, b.weight]), [['z1', 1]]);
+  const share = (d: number) => (bedsAt(d).beds.find((b) => b.place === 'z1')?.weight ?? 0) ** 2;
+  for (const d of [8, 9, 10]) assert.ok(share(d) - share(d - 1) < share(11) - share(10), `depth ${d}`);
 });
 
 test("the ambience is each place's fire, by its share", () => {

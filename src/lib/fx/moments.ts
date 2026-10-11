@@ -1030,31 +1030,17 @@ export function zoneArrival() {
 export const accentLight = (css: string): Vec3 => unit(hdr(css, 1));
 
 /**
- * Delve: a named depth reached; its plaque (`card`) lies over the banner.
- * Light streaks along it, sparks fly off its pointed ends, embers rise off
- * its top edge and it lights the stage; the backdrop's embers flare and all
- * take the depth's colour. `accent`: the stratum's colour (a CSS colour,
- * lib/descent.ts accentAt), which tints all of it.
+ * Delve alone: deeper than ever, its line over the banner (`line`) coming in.
+ * A few glints catch on it as its letters spread, in the depth's colour
+ * (`accent`, a CSS colour, lib/descent.ts accentAt).
  */
-export function milestoneReached(card: Element, accent: string) {
-  backdropEmbers.flare(0.85, 2.4);
-  backdropEmbers.recolor();
-  if (!fxActive() || detached(card)) return;
+export function deeperThanEver(line: Element, accent: string) {
+  if (!fxActive() || detached(line)) return;
   const tint = hdr(accent, 1);
-  const main = k3(tint, 2.7);
   // Its pale: the colour run most of the way to white, as light at its hottest.
   const pale: Vec3 = [1.6 + tint[0] * 1.2, 1.6 + tint[1] * 1.2, 1.6 + tint[2] * 1.2];
-  const b = boxOf(card);
-  flare(card, { size: 12, streak: b.w * 0.6, life: 0.8, color: pale, intensity: 0.3 });
-  glints(card, { count: 4, area: 'edge', size: [4, 8], color: pale, delay: [0.1, 0.7] });
-  for (const side of [-1, 1]) {
-    const end = { x: b.x + (side * b.w) / 2, y: b.y };
-    sparks(end, { count: 16, angle: side > 0 ? 0 : Math.PI, spread: 0.7, colors: [main, pale], speed: [120, 420], gravity: -30, drag: 2.4, life: [0.4, 0.9] });
-    flash(end, { radius: 30, color: main, intensity: 0.3, life: 0.5 });
-  }
-  const top = new DOMRect(b.x - b.w * 0.4, b.y - b.h / 2, b.w * 0.8, 2);
-  embers(top, { count: 18, area: 'fill', colors: [main, pale], rise: [50, 150], scatter: 30, life: [0.8, 1.6] });
-  light(card, { color: unit(tint), radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
+  // (Once the letters have most of their spacing, so they fall along the whole line.)
+  after(0.3, () => glints(line, { count: 4, area: 'edge', size: [3, 6], color: pale, delay: [0, 0.5] }));
 }
 
 /**

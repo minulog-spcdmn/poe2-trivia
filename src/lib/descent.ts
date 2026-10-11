@@ -8,20 +8,22 @@
 // named after a Delve biome, their looks kept in src/data/backdrops.json
 // (lib/backdrops.ts; the backdrop tool, backdrop.html, edits them).
 //
-// One place turns into the next gradually, never all at once, over the
-// five depths (TURN_DEPTHS) from a zone's 6th to the next one's 1st
-// (strataAt), on an eased curve: slowly at first, fastest half way,
-// settling slowly. A growing share of the embers burns in the next one's
-// colour (one in ten at the zone's 7th depth, two in three at its 9th,
-// nine in ten at its 10th), and from its 7th depth the next one's light,
-// smoke and features creep in as its own recede (a sixth at its 8th, half
-// way at its 9th, five in six at its 10th). So the handover is done as the
-// next zone is announced, at its first depth, its gate's: from there it
-// shows alone, until its own turn begins at its 6th. Past depth 100 the
-// strata go on for ever, each one of the archetypes (lib/archetypes.ts)
-// generated from a seed of its own (lib/backdropGen.ts, the same for
-// everyone), never the same archetype twice in a row, and each is
-// announced by a name of its archetype's own (`endgameName`).
+// One place turns into the next over the five depths (TURN_DEPTHS) from a
+// zone's 6th to the next one's 1st (strataAt): it creeps in over the
+// zone's last depths, and the largest step by far is the one into the next
+// zone (TURN_AT), so each zone reads as a place of its own. A growing share
+// of the embers burns in the next one's colour (one in ten at the zone's
+// 7th depth, half at its 9th, two in three at its 10th), and from its 7th
+// depth the next one's light, smoke and features creep in as its own recede
+// (a sixth at its 8th, a third at its 9th, half way at its 10th), eased.
+// The rest comes in at once as the next zone is announced, at its first
+// depth, while the scene plunges into it under its title card
+// (components/zonecard): from there it shows alone, until its own turn
+// begins at its 6th. Past depth 100 the strata go on for ever, each one of
+// the archetypes (lib/archetypes.ts) generated from a seed of its own
+// (lib/backdropGen.ts, the same for everyone), never the same archetype
+// twice in a row, and each is announced by a name of its archetype's own
+// (`endgameName`).
 //
 // And the deeper, the darker, never the other way: the dark draws in from
 // the edges a little with every depth, and the scene's light is set (`light`,
@@ -33,12 +35,12 @@
 // Pure, apart from the eased channel and the plunge at the bottom that the
 // backdrop reads.
 
-import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_DEPTHS, type Look, type RGB, type Tone } from './backdropData.ts';
+import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_AT, TURN_DEPTHS, turnAt, type Look, type RGB, type Tone } from './backdropData.ts';
 import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
 import { whenIdle, type Deadline } from './idle.ts';
 import { ZONE_DESCENT_MS } from './delve.ts';
 
-export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, TURN_DEPTHS, type Look };
+export { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneOf, TURN_AT, TURN_DEPTHS, type Look };
 
 /** The magma among the environments (it cools as it goes out; see magmaCooling). */
 export const MAGMA = ENVIRONMENTS.indexOf('magma');
@@ -150,15 +152,16 @@ export function stratumName(k: number): string {
 export const TURN_FROM = 5;
 
 /**
- * The stratum a depth is turning into, and how far (0 to 1, a fifth with
- * every depth; the embers, light, smoke and features follow it eased, see
- * emberTurn and hallTurn): from stratum k's 6th depth (10k + 6) the scene
- * turns into stratum k + 1, and is it at k + 1's 1st (10k + 11), as k + 1
- * is announced (its gate). From there to k + 1's own turn (its 1st depth to
- * its 6th) it shows k + 1 alone, which reads as the turn into k + 2 not yet
- * begun ({ stratum: k + 2, turn: 0 }), as at any settled depth. Through the
- * Mines' first depths (1 to 6) it is the Mines alone; below depth 1 (only
- * while the scene eases in) the surface turns into them.
+ * The stratum a depth is turning into, and how far (0 to 1, TURN_AT: a
+ * fifth a depth to stratum k's 8th, a tenth a depth to its 10th, the last
+ * two fifths in one; the embers, light, smoke and features follow it eased,
+ * see emberTurn and hallTurn): from stratum k's 6th depth (10k + 6) the
+ * scene turns into stratum k + 1, and is it at k + 1's 1st (10k + 11), as
+ * k + 1 is announced (its title card). From there to k + 1's own turn (its
+ * 1st depth to its 6th) it shows k + 1 alone, which reads as the turn into
+ * k + 2 not yet begun ({ stratum: k + 2, turn: 0 }), as at any settled
+ * depth. Through the Mines' first depths (1 to 6) it is the Mines alone;
+ * below depth 1 (only while the scene eases in) the surface turns into them.
  */
 export function strataAt(depth: number): { stratum: number; turn: number } {
   const d = Number.isFinite(depth) ? Math.max(0, depth) : 0;
@@ -167,7 +170,7 @@ export function strataAt(depth: number): { stratum: number; turn: number } {
   if (x < 0) return { stratum: 1, turn: 0 };
   const k = Math.floor(x / 10);
   const into = x - 10 * k;
-  return into < TURN_DEPTHS ? { stratum: k + 1, turn: into / TURN_DEPTHS } : { stratum: k + 2, turn: 0 };
+  return into < TURN_DEPTHS ? { stratum: k + 1, turn: turnAt(into) } : { stratum: k + 2, turn: 0 };
 }
 
 /** The first depth stratum `k` shows alone, the turn into it done: its 1st, as it is announced (depth 1 for the Mines). */
@@ -432,11 +435,17 @@ export function envTable(row: readonly number[], e: number) {
  * (see correction). Measured by scripts/measure-luminance.mjs (calibrate)
  * with the ENV_ tables in place, when the handover ran from a zone's 4th
  * depth to the next one's first, straight; carried over to the eased
- * handovers since (now from a zone's 6th depth to the next one's 1st), each
- * depth taking the corrections of the depth that showed the same share of
- * the next zone's hall then, and a zone's depths before its hall begins to
- * turn spread evenly over the ones it showed alone then (calibrate measures
- * them afresh). Empty, the estimate stands as it is.
+ * handovers since (from a zone's 6th depth to the next one's 1st, half way
+ * at its 9th), each depth taking the corrections of the depth that showed
+ * the same share of the next zone's hall then, and a zone's depths before
+ * its hall begins to turn spread evenly over the ones it showed alone then
+ * (calibrate measures them afresh). Not carried over to TURN_AT's turn
+ * (half way at a zone's 10th depth), as no zone is marked measured now:
+ * marking them again, measure afresh, or carry them over the same way: a
+ * zone's 7th and 8th depths keep theirs, its 10th takes its 9th's, and its
+ * 9th (a third of the way into the next zone's hall) what lies between its
+ * 8th's and 9th's here (a sixth and half of the way), a little under half
+ * way from the one to the other. Empty, the estimate stands as it is.
  */
 export const MEASURED: (readonly [number, number])[] = [
   [0.943, 0.974], [0.944, 0.975], [0.944, 0.976], [0.944, 0.976], [0.944, 0.977], [0.944, 0.983], [0.944, 1.011], [0.942, 1.016],
@@ -569,10 +578,11 @@ export const magmaGoesOut = (k: number) => k >= 0 && hasMagma(lookOf(k)) && !has
  * is stratum - 1: from the Magma Fissure's 7th depth to the Frozen
  * Hollow's 1st), in step with its hall (hallTurn, eased), so the frost,
  * which comes in with the hall and only grows once the magma has well
- * cooled (env_frost), never shows over bright magma; five sixths cooled at
- * the 10th depth, cooled, stopped and gone as the next is announced; and all
- * the way once the scene is past it (the turn into the stratum after, and
- * the settled depths before it, k < stratum - 1).
+ * cooled (env_frost), never shows over bright magma; half cooled at the
+ * 10th depth, still glowing as the zone ends, then cooled, stopped and gone
+ * as the next is announced, the most of it in that one step; and all the
+ * way once the scene is past it (the turn into the stratum after, and the
+ * settled depths before it, k < stratum - 1).
  */
 export function magmaCoolingOf(k: number, stratum: number, turn: number): number {
   if (k > stratum - 1 || !magmaGoesOut(k)) return 0;
@@ -797,9 +807,12 @@ export const LIGHT_MAX = 1.8;
  * endgame stratum's 0.4, say), `light` may fall as fast as it does, so what
  * is drawn keeps pace with it, rather than the scene growing brighter by
  * the difference. (Half as much again as when the hall turned over six
- * depths, and that half as much again as over nine: over four, at its
- * steepest it turns half as far again a depth, and the light has to keep
- * pace with it.)
+ * depths, and that half as much again as over nine: over four, eased, at
+ * its steepest it turned half as far again a depth, and the light has to
+ * keep pace with it. The step into a new zone, where it turns furthest
+ * since (half of it in one depth, TURN_AT), needs no more: most of what
+ * the light does there is make way for the zone's own, lightK, and what is
+ * left swings by under 0.09.)
  */
 export const LIGHT_STEP = 0.135;
 /**
@@ -1084,6 +1097,14 @@ let target = 0;
  */
 const JUMP = 3;
 const FADE = 1.6;
+/**
+ * How fast the shown depth eases, against the usual, while the scene
+ * plunges into a new zone (plunge): the step into it, the turn's largest
+ * (TURN_AT), takes about 2.3 s rather than a second, so the new zone comes
+ * in over the plunge's first blow and as its sound dies down, and has come
+ * before the title card's name locks (LOCK in lib/zoneTitleTiming.ts).
+ */
+const ARRIVAL_PACE = 0.41;
 let fading = false;
 let fadeT = 0;
 const from = fresh();
@@ -1118,8 +1139,8 @@ export function onDescent(f: (d: Descent) => void): () => void {
 
 /**
  * Eases the shown depth toward the target by `dt` seconds: one depth takes
- * about a second; a jump cross-fades (see JUMP). Returns whether it is still
- * moving.
+ * about a second (into a new zone longer, see ARRIVAL_PACE); a jump
+ * cross-fades (see JUMP). Returns whether it is still moving.
  */
 export function stepDescent(dt: number): boolean {
   if (fading) {
@@ -1129,7 +1150,8 @@ export function stepDescent(dt: number): boolean {
   }
   const diff = target - shown;
   if (diff === 0) return fading;
-  const step = Math.max(Math.abs(diff) * (1 - Math.exp(-dt / 0.7)), dt);
+  const t = intoZone() ? dt * ARRIVAL_PACE : dt;
+  const step = Math.max(Math.abs(diff) * (1 - Math.exp(-t / 0.7)), t);
   shown = Math.abs(diff) <= step ? target : shown + Math.sign(diff) * step;
   return true;
 }
@@ -1253,10 +1275,11 @@ export const shownDepth = () => shown;
  * past you (the nearer, the faster) as if you sank PLUNGE_SINK of a screen,
  * the embers streak up, and the dark draws in and lets go again; it gathers
  * speed quickly and comes to rest slowly, settling where it came to.
- * Into a new zone (the depth its gate names, milestoneAt) it plunges much
- * further, ZONE_PLUNGE_SINK screens, for as long as the zone's sound
+ * Into a new zone (the depth its title card names, milestoneAt) it plunges
+ * much further, ZONE_PLUNGE_SINK screens, for as long as the zone's sound
  * ('stratum' in lib/soundDesign.ts, played as it starts) rings, moving as
- * the sound swells and fades (ZONE_SPEED), and the depth's cards are dealt
+ * the sound swells and fades (ZONE_SPEED), the scene taking the step into
+ * the zone slower meanwhile (ARRIVAL_PACE), and the depth's cards are dealt
  * as it lands (ZONE_DESCENT_MS, DelveState.dealAt in lib/game.ts).
  * App.svelte calls plunge() (see dealtDeeper); the backdrop steps it, and
  * skips it while it holds still (reduced motion, effects off).
@@ -1313,6 +1336,9 @@ function resetSink() {
 export function plunge(zone = false) {
   asked = zone ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK, curve: ZONE_CURVE } : { ms: PLUNGE_MS, by: PLUNGE_SINK, curve: EASED };
 }
+
+/** Whether the scene is plunging into a new zone, or about to (asked for: the backdrop steps the depth before the plunge). */
+const intoZone = () => (asked ? asked.curve : plungeAt === -Infinity ? null : curve) === ZONE_CURVE;
 
 /** Where a run's cards were last dealt: which run (its start) and at what depth. */
 export type Dealt = { run: number; depth: number };
