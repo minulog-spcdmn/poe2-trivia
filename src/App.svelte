@@ -159,7 +159,7 @@
       if (zone) {
         sfx('stratum');
         const s = gs;
-        untrack(() => beginArrival(s, session.hostNow(), { best: session.bestAtStart, group: isGroupRun(s) }));
+        untrack(() => beginArrival(s, session.hostNow(), { best: session.spectating ? null : session.bestAtStart, group: isGroupRun(s) }));
       }
     }
     lastDealt = now;

@@ -322,6 +322,9 @@ export class Player {
       this.plans.set(key, {
         at: now + dealIn(s, now) + between(1500, 5000) * this.persona.pace,
         run: async () => {
+          // Planned on the reveal before a new zone and due in the plunge into it: that depth's own plan, from the deal, gives it.
+          const cur0 = session.state;
+          if (!cur0 || dealIn(cur0, session.hostNow()) > 0) return;
           // The life is given from the teammate's row on the scoreboard.
           await this.hand.click(`row:${session.state?.players.findIndex((o) => o.id === p.id) ?? -1}`);
           const cur = session.state;

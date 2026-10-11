@@ -43,7 +43,7 @@
   import ZoneSeal from './ZoneSeal.svelte';
   import NewsMark from './NewsMark.svelte';
 
-  let { a, bar }: { a: Arrival; /** How tall the bars are: the header's height (its own px, as the card's). */ bar: number } = $props();
+  let { a, bar }: { a: Arrival; /** How tall the bars are: the header's height (its own px, as the card's; they reach a px past it, as it is measured in whole px and under the stage's zoom its gold hairline hangs a little below it). */ bar: number } = $props();
 
   const title = $derived(a.title);
   const tl = $derived(a.tl);
@@ -297,7 +297,7 @@
   use:portal={'dim'}
   aria-hidden="true"
   style:--accent={title.accent}
-  style:--bar="{Math.max(44, bar)}px"
+  style:--bar="{Math.max(44, bar + 1)}px"
   style:--name-c="color-mix(in srgb, {title.accent} {nameMix}%, {nameInto})"
   style:--glow-blur="{t.glowBlur}px"
   style:--track="{t.track}em"

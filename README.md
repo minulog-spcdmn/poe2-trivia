@@ -1184,7 +1184,7 @@ run of the lab's, in a frame) stepping down into a zone the engine's way,
 so the plunge, its sound, the scene's colours and the deal as it lands are
 all as in a game.
 
-- **Zone:** any of the nine zones past the Mines, the endgame's first five
+- **Zone:** any of the nine zones past the Mines, the endgame's first six
   strata (one of each of several kinds of place), the widest name an
   endgame stratum can have (to check its fit), and a zone reached past
   your best. **Replay** (or R) plays it again.

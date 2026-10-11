@@ -102,7 +102,8 @@ export function mayAutoReask(s: GameState | null, qid: number): boolean {
 export function expireIn(s: GameState, now: number): number | null {
   const at = voteClosesAt(s);
   if (at === null) return null;
-  // Everyone it waits for has voted (the engine closes it on the vote itself, a new zone's once its cards are dealt; this covers the rest).
+  // Everyone it waits for has voted (the engine closes it on the vote itself; this covers the rest). A new zone's,
+  // all in before its cards are dealt, is not done till then: voteClosesAt gives the deal, and the host's 'expire' closes it.
   return voteDone(s, now) ? 0 : Math.max(0, at - now);
 }
 

@@ -25,7 +25,9 @@
   const FAMILIES: (Family | '')[] = ['', 'ember', 'rime', 'spore', 'void', 'light', 'fume'];
 
   const stored = (name: string, fallback: string) => readStored(`zones.${name}`) ?? fallback;
-  let zone = $state(stored('zone', 'z1'));
+  // (One stored before an entry was dropped falls back to the first.)
+  const savedZone = stored('zone', 'z1');
+  let zone = $state(ENTRIES.some((e) => e.key === savedZone) ? savedZone : 'z1');
   let family = $state(stored('family', '') as Family | '');
   let phone = $state(stored('phone', '0') === '1');
   let freeze = $state(stored('freeze', '0') === '1');

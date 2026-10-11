@@ -324,7 +324,9 @@
     overflow: hidden;
     transition: opacity 0.3s;
   }
-  /* Over a new zone's title card (z-index 60): out of sight till the cards are dealt, still moving meanwhile. */
+  /* Over a new zone's title card (z-index 60): out of sight at once, till the cards are dealt. Nobody points
+     meanwhile (pointing, above), so each of the others' pointers goes once its player's screen stops sending it;
+     one heard from a screen that reaches the deal sooner stays out of sight till this one does. */
   .cursors.veiled {
     opacity: 0;
   }

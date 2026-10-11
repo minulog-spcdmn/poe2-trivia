@@ -189,7 +189,8 @@
     depthSeen = key;
     untrack(() => {
       if (deeper) descended();
-      const best = session.bestAtStart;
+      // (This device's best: not a spectator's, watching someone else's run.)
+      const best = session.spectating ? null : session.bestAtStart;
       const past = !group && best !== null && depth === best + 1;
       // The zone this depth opens, if it opens one, and whether this screen saw its card name it.
       const zone = opensZone(depth) ? milestoneAt(depth) : null;

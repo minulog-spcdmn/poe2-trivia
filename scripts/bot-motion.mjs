@@ -108,15 +108,17 @@ for (const file of files) {
     return out;
   };
 
-  // The scenes as stretches: a phase, whose turn, from when to when (a new zone's cards from when they were dealt:
-  // its title card was on screen till then).
+  // The scenes as stretches: a phase, whose turn, from when to when (a new zone's cards from when they were dealt,
+  // the first look at the screen with cards on it: its title card was on screen till then; on this recording's own
+  // clock, as the deal's time is the host's).
   const spans = [];
   scenes.forEach((s, i) => {
     const end = scenes[i + 1]?.t ?? T.at(-1);
     const last = spans.at(-1);
     if (last && last.phase === s.phase && last.round === s.round && last.turn === s.turn) last.end = end;
     else {
-      const t = s.dealAt ? Math.min(end, Math.max(s.t, s.dealAt - r.started)) : s.t;
+      const dealt = s.dealAt ? layouts.find((l) => l.t >= s.t && l.t <= end && Object.keys(l.boxes).some(isCard))?.t : undefined;
+      const t = dealt ?? s.t;
       spans.push({ phase: s.phase, round: s.round, turn: s.turn, mine: s.mine, players: s.players, mode: s.question?.mode, n: s.question?.labels.length ?? s.offered.length, t, end });
     }
   });

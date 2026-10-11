@@ -732,8 +732,8 @@ export const othersPerish = () =>
 
 /**
  * One depth deeper, built as the engine does it at the end of a round, so the
- * mark for it plays: into a new zone, its cards dealt as the plunge lands
- * (dealAt), as the engine deals them.
+ * game screen takes it as one: into a new zone, its cards dealt as the plunge
+ * lands (dealAt), as the engine deals them.
  */
 function stepDown() {
   put((s) => {
@@ -759,8 +759,12 @@ async function stepInto(d: number, before?: () => void) {
     deal(s);
   }, true);
   before?.();
-  // The screen notes the depth it is at, so the next one counts as deeper.
+  // The screen notes the depth it is at, so the next one counts as deeper; the
+  // scene settles there, as a run's has by the time it steps down (not still
+  // easing or fading from the last play), so the step into a zone plays whole.
   await sleep(350);
+  const snap = (descentModule as Record<string, unknown>).snapDescent;
+  if (typeof snap === 'function') snap();
   stepDown();
 }
 
