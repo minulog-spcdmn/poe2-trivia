@@ -13,6 +13,7 @@
   import { glare } from '../lib/glare';
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { isFake, questionTopic, type Item, type Question } from '../lib/game';
+  import { clock } from '../lib/clock';
   import { answerDaily, answeredOn, askOne, dailyGame, dailyQuestion, dayNumber, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -26,12 +27,18 @@
 
   // The clock moves on (the hours left, and past midnight UTC a new day):
   // every minute, and at once when the tab is looked at again (a tab in the
-  // background ticks seldom).
-  let now = $state(Date.now());
+  // background ticks seldom). The server's time where it can say (lib/clock),
+  // asked again now and then, as this device's clock may be set meanwhile.
+  let now = $state(clock.now());
   onMount(() => {
-    const tick = () => (now = Date.now());
-    const t = setInterval(tick, 60_000);
-    const seen = () => document.visibilityState === 'visible' && tick();
+    const tick = () => (now = clock.now());
+    const refresh = () => {
+      tick();
+      void clock.syncIfOld()?.then(tick);
+    };
+    void clock.sync().then(tick);
+    const t = setInterval(refresh, 60_000);
+    const seen = () => document.visibilityState === 'visible' && refresh();
     document.addEventListener('visibilitychange', seen);
     return () => {
       clearInterval(t);
@@ -82,11 +89,26 @@
   let artEl: HTMLElement | null = $state(null);
   let practiceEl: HTMLButtonElement | null = $state(null);
 
-  function pick(i: number) {
-    if (answered || disabled) return;
-    // Past midnight UTC since the clock last moved: that was yesterday's question. Today's comes up instead.
-    if (!practice && utcDay(Date.now()) !== today) {
-      now = Date.now();
+  /** How long an answer waits at most for the server to say the time. */
+  const CLOCK_WAIT_MS = 1500;
+  /** An answer to today's held until the server has said what day it is (or not for long). */
+  let holding = false;
+  async function pick(i: number) {
+    if (answered || disabled || holding) return;
+    /** The day whose question was there to pick from. */
+    const shown = today;
+    // Answered as the page comes up: the day is the server's, once it has
+    // said (a device with a wrong clock may be showing another day's).
+    if (!practice && !clock.known()) {
+      holding = true;
+      await clock.ready(CLOCK_WAIT_MS);
+      holding = false;
+      if (answered || disabled || practice) return;
+    }
+    // Past midnight UTC since the clock last moved (or the server's day isn't
+    // the one shown): that was another day's question. Today's comes up instead.
+    if (!practice && (utcDay(clock.now()) !== shown || today !== shown)) {
+      now = clock.now();
       return;
     }
     // Another tab may have answered today's meanwhile: that answer stands.
