@@ -314,7 +314,7 @@
 {/snippet}
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular. -->
-<div class="game" data-cursor="game">
+<div class="game" class:kicking={!!run && !!pastBest && pastBest.turn === s.turnCount} data-cursor="game">
   <p class="sr" aria-live="polite">{run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
