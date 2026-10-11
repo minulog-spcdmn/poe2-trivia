@@ -14,7 +14,7 @@
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
-  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyGame, dailyQuestion, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
+  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -247,8 +247,8 @@
   }
 
   const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  /** What the item is, in the legend's line: "shield", "ring", "gloves". */
-  const topic = $derived(questionTopic(q, true).toLowerCase());
+  /** What the item is, in the legend's line: "A shield", "An amulet or belt", "Gloves". */
+  const topic = $derived(aTopic(questionTopic(q, true)));
 </script>
 
 <svelte:window onkeydown={keys} />
@@ -287,7 +287,9 @@
         </div>
       {:else}
         <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>
-        <p class="line">Name the {topic}.{practice ? '' : ' The same for every exile today.'}</p>
+        <!-- The line always describes the item: what kind it is while asking (the
+             four answers and the caption say what to do), its base once answered. -->
+        <p class="line">{topic}{practice ? '.' : ', the same for every exile today.'}</p>
       {/if}
     </div>
   </div>
@@ -369,7 +371,7 @@
      the page round it never moves. */
   .stage {
     position: relative;
-    height: var(--daily-stage-h, 463px);
+    height: var(--daily-stage-h, 459px);
   }
   /* The circle's square, centred on the column (a little wider than it on
      wide screens, which is meant), its foot running on behind the legend. */
@@ -442,8 +444,9 @@
   .title.right {
     color: #e3e6b8;
   }
+  /* Tight under the title (its line box tucks up into the title's): the pair says what the item is. */
   .line {
-    margin: var(--daily-title-gap, 5px) 0 0;
+    margin: var(--daily-title-gap, -7px) 0 0;
     font-style: italic;
     font-size: var(--daily-line-size, 16px);
     line-height: var(--daily-line-lh, 22px);
@@ -455,7 +458,7 @@
   /* ---- the answers, as in the game (QuestionView) ---- */
   .options {
     position: relative;
-    margin-top: var(--daily-legend-gap, 9px);
+    margin-top: var(--daily-legend-gap, 13px);
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-auto-rows: 1fr;
@@ -765,7 +768,7 @@
 
   @media (max-width: 640px) {
     .daily {
-      --daily-stage-h: 296px;
+      --daily-stage-h: 292px;
       --daily-circle: 336px;
       --daily-circle-y: 170px;
       --daily-art-inset: 14% 26% 21%;
@@ -773,10 +776,10 @@
       --daily-fade-to: 82.1%;
       --daily-title-size: 19px;
       --daily-title-lh: 27px;
-      --daily-title-gap: 4px;
+      --daily-title-gap: -7px;
       --daily-line-size: 15px;
       --daily-line-lh: 21px;
-      --daily-legend-gap: 10px;
+      --daily-legend-gap: 14px;
     }
     .options {
       grid-template-columns: minmax(0, 1fr);

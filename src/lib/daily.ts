@@ -11,6 +11,22 @@ import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 
+/** Item kinds named as a pair, which take no article ("Gloves", "Gloves or boots"). */
+const PAIRS = /^(gloves|boots)\b/;
+
+/**
+ * What the item is, as the legend's line names it: the topic with its
+ * article, the first letter capitalised ("A shield", "An amulet or belt",
+ * "A one-handed weapon"), none for the pairs ("Gloves or boots"). "An" goes
+ * by the sound: before a vowel sound, not before "one-".
+ */
+export function aTopic(topic: string): string {
+  const t = topic.toLowerCase();
+  const article = PAIRS.test(t) ? '' : /^[aeiou]/.test(t) && !/^(one|uni|use|eu)/.test(t) ? 'an ' : 'a ';
+  const said = article + t;
+  return said.charAt(0).toUpperCase() + said.slice(1);
+}
+
 /** Day No. 1: the day Today's unique first went up. */
 export const DAILY_LAUNCH = Date.UTC(2026, 9, 9);
 

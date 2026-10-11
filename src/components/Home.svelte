@@ -1050,7 +1050,7 @@
     .home {
       --slot: 92px;
       /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
-      --daily-stage-h: 405px;
+      --daily-stage-h: 401px;
       --daily-circle: 456px;
       --daily-circle-y: 230px;
       --daily-art-inset: 14% 26% 21%;
@@ -1058,10 +1058,10 @@
       --daily-fade-to: 81.4%;
       --daily-title-size: 20px;
       --daily-title-lh: 29px;
-      --daily-title-gap: 4px;
+      --daily-title-gap: -7px;
       --daily-line-size: 15px;
       --daily-line-lh: 21px;
-      --daily-legend-gap: 7px;
+      --daily-legend-gap: 11px;
       --daily-after-h: 36px;
       --daily-after-gap: 4px;
       --rooms-head-gap: 8px;
