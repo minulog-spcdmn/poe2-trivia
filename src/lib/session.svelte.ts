@@ -41,7 +41,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -256,8 +256,9 @@ class Session {
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
-   * or a rejoin, which come in on a run already under way. Its opening gate
-   * (Game.svelte) is only for a start seen. Set before the state it comes with.
+   * or a rejoin, which come in on a run already under way. Only at a start
+   * seen is a screen reader told the first zone's name (Game.svelte). Set
+   * before the state it comes with.
    */
   runStarted: number | null = null;
   /** Host: when the disconnected active player's turn will be skipped (0 = not pending). */
@@ -1809,9 +1810,13 @@ class Session {
     if (!next.delve && (hotSeat || !me || !next.players.some((p) => p.id === me))) return;
     const a = this.answered;
     const veilShare = a?.share !== undefined ? { qid: a.qid, share: a.share } : undefined;
+    // Going down into a new zone, what it earns is announced as its cards are dealt, not on the way down.
+    const wait = dealIn(next, this.hostNow());
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
-        announceAchievements(noteState(prev, next, me, hotSeat, { items: engine.items, veilShare }), 'game');
+        const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
+        if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
+        else announceAchievements(earned, 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }

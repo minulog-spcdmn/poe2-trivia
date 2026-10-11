@@ -14,6 +14,8 @@ import {
   FLARE_MS,
   REVIVE_FROM,
   VOTE_WINDOW_MS,
+  ZONE_DESCENT_MS,
+  dealIn,
   delveStandings,
   delveTeam,
   expectedVoters,
@@ -182,6 +184,85 @@ test('otherwise the vote closes six seconds after the first vote', () => {
   assert.equal(h.s.phase, 'question');
   assert.equal(h.s.question!.category, card);
   assert.deepEqual(h.s.delve!.missed, { p0: 1, p1: 0, p2: 1 });
+});
+
+test("going down into a new zone, the team's cards are dealt as the plunge lands: a vote cast sooner opens its window no sooner", () => {
+  const h = team(3, { depth: 10 });
+  const q = h.ask();
+  h.pickAs('p0', right(q));
+  assert.equal(h.s.phase, 'reveal');
+  h.next();
+  assert.equal(h.s.round, 11);
+  const at = h.clock.now + ZONE_DESCENT_MS;
+  assert.equal(h.s.delve!.dealAt, at);
+  assert.equal(dealIn(h.s, h.clock.now), ZONE_DESCENT_MS);
+  // A screen that shows the cards sooner (none should) can't cut the others' time short.
+  h.clock.now += 1000;
+  h.vote('p1');
+  assert.equal(h.s.delve!.voteFrom, at);
+  assert.equal(voteClosesAt(h.s), at + VOTE_WINDOW_MS);
+  // Nor the plunge: every vote in, the vote closes as the cards are dealt (not before, nor the window's six seconds on).
+  const armed = expireKey(h.s, expireIn(h.s, h.clock.now));
+  h.vote('p0');
+  h.vote('p2');
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(voteDone(h.s, h.clock.now), false);
+  assert.equal(voteClosesAt(h.s), at);
+  assert.equal(expireIn(h.s, h.clock.now), at - h.clock.now);
+  assert.notEqual(expireKey(h.s, expireIn(h.s, h.clock.now)), armed, "the host's timer is set again, for the deal");
+  h.clock.now = at - 200;
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'choosing', 'not a moment before the deal');
+  h.clock.now = at;
+  assert.equal(voteDone(h.s, h.clock.now), true);
+  assert.equal(expireIn(h.s, h.clock.now), 0);
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'question');
+  assert.equal(dealIn(h.s, h.clock.now), 0);
+  // The next depth's cards are dealt at once, and its first vote opens the window then.
+  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+  h.pickAs('p0', right(h.s.question!));
+  h.next();
+  assert.equal(h.s.round, 12);
+  assert.equal(h.s.delve!.dealAt, undefined);
+  h.vote('p1');
+  assert.equal(h.s.delve!.voteFrom, h.clock.now);
+});
+
+test('going down into a new zone, a vote still waiting for someone as the cards are dealt runs its window from the deal, and closes the moment the last vote comes', () => {
+  const h = team(3, { depth: 10 });
+  h.pickAs('p0', right(h.ask()));
+  h.next();
+  const at = h.s.delve!.dealAt!;
+  h.vote('p0');
+  h.vote('p1');
+  assert.equal(voteClosesAt(h.s), at + VOTE_WINDOW_MS, 'p2 is yet to vote');
+  h.clock.now = at + 2000;
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'choosing');
+  h.vote('p2');
+  assert.equal(h.s.phase, 'question');
+});
+
+test('going down into a new zone, quick votes from all it waits for (one perished) close nothing before the deal, nor does someone going', () => {
+  const h = team(3, { depth: 10 });
+  h.pickAs('p0', right(h.ask()));
+  h.next();
+  const at = h.s.delve!.dealAt!;
+  // p0 perished: the vote waits for p1 and p2 alone, who vote mid-plunge.
+  h.lives({ p0: 0 });
+  h.clock.now += 1300;
+  h.vote('p1');
+  h.clock.now += 400;
+  h.vote('p2');
+  assert.deepEqual(expectedVoters(h.s, h.clock.now), ['p1', 'p2']);
+  assert.equal(h.s.phase, 'choosing');
+  // Someone going away mid-plunge settles nothing either.
+  h.act({ type: 'connection', playerId: 'p2', connected: false });
+  assert.equal(h.s.phase, 'choosing');
+  h.clock.now = at;
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'question');
 });
 
 test('nobody votes, nothing is picked: the cards wait for as long as it takes', () => {
