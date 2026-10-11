@@ -220,7 +220,11 @@ export interface Descent {
   look: Look;
 }
 
-/** The depth the azure stratum is announced (the blue streaks begin there). Its embers come in over the four depths before, all there at it (emberTurn). */
+/**
+ * The depth the azure stratum is announced (shown as 20: lib/delve shownDepth), which a streak of
+ * twenty reaches as its fire turns blue (lib/fx/streaks DELVE_BLUE_FROM). Its embers come in over the
+ * four depths before, all there at it (emberTurn).
+ */
 export const BLUE_FROM = 21;
 export const ABYSS_FROM = 50;
 export const ABYSS_FULL = 75;

@@ -264,7 +264,8 @@ test("each zone hands over to the next from its 6th depth to the next one's 1st:
   assert.equal(HALL_FROM, TURN_AT[1]);
   // The azure stratum's blue embers come in through the depths before its announcement, from four before, two in
   // three the depth before, all there at it.
-  assert.equal(BLUE_FROM, DELVE_BLUE_FROM);
+  // Depths count from 1 inside, from 0 on screen (one per right answer): twenty in a row lands on it.
+  assert.equal(BLUE_FROM - 1, DELVE_BLUE_FROM);
   assert.deepEqual(strataAt(BLUE_FROM - 5), { stratum: 2, turn: 0 });
   assert.ok(emberTurn(strataAt(BLUE_FROM - 4).turn) > 0);
   assert.equal(strataAt(BLUE_FROM - 1).stratum, 2);
