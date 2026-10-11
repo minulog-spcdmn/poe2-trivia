@@ -11,6 +11,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "bot": "node scripts/room-bot.mjs",
     "fetch-data": "node scripts/fetch-data.mjs",
+    "fetch-stats": "node scripts/fetch-stats.mjs",
     "looks": "node scripts/looks.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },

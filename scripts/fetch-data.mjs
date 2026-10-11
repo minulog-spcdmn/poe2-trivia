@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Scrapes unique items and lineage support gems from poe2db.tw and downloads
 // their art into art-source/items/. Writes the item index to
-// src/data/items.json. The site shows upscaled copies of the art: run
+// src/data/items.json, and their tooltips to src/data/itemStats.json
+// (scripts/fetch-stats.mjs). The site shows upscaled copies of the art: run
 // scripts/upscale-art.py afterwards for any new items (it says how), and
 // npm run looks.
 //
@@ -11,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
 import { webpSize } from './webp-size.mjs';
+import { fetchStats } from './fetch-stats.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -196,6 +198,7 @@ async function main() {
   console.log(`${quiz.length} items (${downloaded} new images)`);
   console.table(perCat);
   if (missing.length) console.warn(`${missing.length} items have no upscaled art yet: run scripts/upscale-art.py (see its header).`);
+  await fetchStats();
 }
 
 main().catch((err) => {

@@ -12,6 +12,7 @@
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import ItemDetails from './ItemDetails.svelte';
   import { calm } from '../lib/motion.svelte';
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
@@ -131,6 +132,10 @@
 
     <div class="body">
       <p class="kind">{kind}</p>
+      <div class="sep" aria-hidden="true"></div>
+      {#key item.id}
+        <ItemDetails {item} />
+      {/key}
       {#if entry}
         <div class="sep" aria-hidden="true"></div>
         <ul class="lines">

@@ -972,6 +972,12 @@ Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
 doesn't reveal the answer.
 
+Each item's tooltip (properties, requirements, mods, flavour text) comes from
+poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by
+fetching them, and `npm run fetch-stats` fetches them alone. The game loads
+that file only when a player opens an item's details (its art, clicked once a
+question is answered, or its card in the codex).
+
 poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
 ring) and lossy, and the game draws it bigger than that. The site serves
 copies upscaled with Real-ESRGAN (x4plus) from `public/items/`, as AVIF (a
