@@ -301,22 +301,22 @@
   for (const url of categoryIcons()) measure(url);
 
   // A category that names several kinds of item shows one of each (lib/ui,
-  // categoryCompanions): its emblem a little smaller and aside, the others
-  // small round it, in the window. For each count, the emblem's size and
-  // shift (px at a tall card's size, as its tweak's), and each companion's
-  // offset from the window's middle (right and down) and size.
+  // categoryCompanions): its emblem in front, the others large but behind
+  // it and darker, as a heap of loot in the window. For each count, the
+  // emblem's size and shift (px at a tall card's size, as its tweak's), and
+  // each companion's offset from the window's middle (right and down) and size.
   type Moons = { k: number; up: number; left: number; at: [x: number, y: number, k: number][] };
   const MOONS: Record<number, Moons> = {
-    1: { k: 0.86, up: 4, left: 18, at: [[50, 42, 0.5]] },
+    1: { k: 0.9, up: -6, left: 22, at: [[30, -20, 0.8]] },
     4: {
-      k: 0.9,
-      up: 0,
+      k: 0.92,
+      up: -4,
       left: 0,
       at: [
-        [-58, -40, 0.4],
-        [58, -40, 0.4],
-        [-58, 44, 0.4],
-        [58, 44, 0.4],
+        [-40, -26, 0.62],
+        [40, -26, 0.62],
+        [-46, 26, 0.62],
+        [46, 26, 0.62],
       ],
     },
   };
@@ -804,12 +804,14 @@
       transform 0.5s var(--ease-out),
       opacity 0.4s;
   }
-  /* The companions (see MOONS), each centred on its spot round the emblem;
-     all under one shadow, as the emblem's. */
+  /* The companions (see MOONS), each centred on its spot round the emblem,
+     behind it (under one shadow, as the emblem's) and darker, so they read
+     as further back; dimmed by a filter, they keep the card's own colours. */
   .moons {
     position: absolute;
     inset: 0;
     display: block;
+    z-index: -1;
   }
   .moon {
     position: absolute;
@@ -818,6 +820,7 @@
     display: grid;
     place-items: center;
     translate: calc(-50% + var(--mx) * var(--e-s, 1) * 1px) calc(-50% + var(--my) * var(--e-s, 1) * 1px);
+    filter: brightness(0.62);
   }
   /* Until measured, a companion fits its whole image to a small box. */
   .moon .glyph:not(.fit) {
