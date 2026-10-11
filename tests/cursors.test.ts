@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { pack } from 'peerjs-js-binarypack';
 import {
   CursorOutbox,
@@ -13,6 +15,10 @@ import {
   SEND_EVERY_MS,
   anchorCode,
   anchorName,
+  cursorAt,
+  hopsOf,
+  SINGLE_ANCHORS,
+  MAX_HOPS,
   cursorKey,
   clickableFor,
   actionOf,
@@ -23,6 +29,8 @@ import {
   entryAt,
   parseCursorAt,
   parseCursorBatch,
+  OFF,
+  type CursorAt,
   type CursorEntry,
 } from '../src/lib/cursors.ts';
 import { createGame, MAX_PLAYERS } from '../src/lib/game.ts';
@@ -36,17 +44,62 @@ const bytes = (m: unknown) => {
 };
 
 test('every anchor has a code of its own, and back', () => {
-  const names = ['game', 'art', 'next', ...['opt', 'card', 'row'].flatMap((l) => Array.from({ length: 16 }, (_, i) => `${l}:${i}`))];
+  const names = [...SINGLE_ANCHORS, ...['opt', 'card', 'row'].flatMap((l) => Array.from({ length: 16 }, (_, i) => `${l}:${i}`))];
   const codes = names.map((n) => anchorCode(n));
   assert.equal(new Set(codes).size, names.length);
   for (const [i, n] of names.entries()) {
     assert.ok(codes[i] !== null && codes[i]! <= MAX_ANCHOR, n);
     assert.equal(anchorName(codes[i]!), n);
   }
+  // The first ones keep their codes, as recorded hands have them.
+  assert.deepEqual(['game', 'art', 'next', 'opt:0', 'card:0', 'row:0'].map(anchorCode), [0, 1, 2, 16, 32, 48]);
+  // Every code is one byte on the wire.
+  assert.ok(MAX_ANCHOR < 128);
   // A scoreboard row for every seat.
   assert.ok(MAX_PLAYERS <= 16);
-  for (const n of ['', 'opt', 'opt:16', 'opt:-1', 'opt:01x', 'stage', 'row:1:2']) assert.equal(anchorCode(n), null, n);
+  for (const n of ['', 'opt', 'opt:16', 'opt:-1', 'opt:01x', 'stage', 'row:1:2', 'toString', '__proto__']) assert.equal(anchorCode(n), null, n);
   for (const c of [3, 15, MAX_ANCHOR + 1, -1]) assert.equal(anchorName(c), null, String(c));
+});
+
+test('every anchor on the page is one there is', () => {
+  const used = new Set<string>();
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (name.endsWith('.svelte')) for (const [, v] of readFileSync(path, 'utf8').matchAll(/data-cursor="([^"]*)"/g)) used.add(v);
+    }
+  };
+  walk('src');
+  // A list's index is written as an expression ({i}); PeerCursors looks them up by name (${name}).
+  const names = [...used].filter((v) => v !== '${name}').map((v) => v.replace(/\{.*\}$/, '0'));
+  assert.ok(names.length > 40, `${names.length} anchors`);
+  for (const n of names) assert.notEqual(anchorCode(n), null, n);
+});
+
+test("a pointer goes with the anchors round its own, innermost first, and back", () => {
+  const at = cursorAt([[anchorCode('lock')!, 500, 600], [anchorCode('access')!, 900, 400], [GAME_ANCHOR, 300, 200]], 3);
+  assert.deepEqual(at, [anchorCode('lock'), 500, 600, 3, anchorCode('access'), 900, 400, GAME_ANCHOR, 300, 200]);
+  assert.deepEqual(hopsOf(at), [[anchorCode('lock'), 500, 600], [anchorCode('access'), 900, 400], [GAME_ANCHOR, 300, 200]]);
+  assert.deepEqual(parseCursorAt(at), at);
+  // One anchor alone, as a bot sends it, is as it was.
+  assert.deepEqual(cursorAt([[16, 1, 2]], 0), [16, 1, 2, 0]);
+  assert.deepEqual(hopsOf([16, 1, 2, 0]), [[16, 1, 2]]);
+  // Never more than MAX_HOPS.
+  assert.equal(hopsOf(cursorAt(Array.from({ length: 5 }, () => [16, 1, 2]), 0)).length, MAX_HOPS);
+  // In a batch, as from a guest.
+  assert.deepEqual(entryAt(['abcdefgh', ...at]), at);
+  assert.deepEqual(parseCursorBatch([['abcdefgh', ...at]]), [['abcdefgh', ...at]]);
+  // Every anchor checked, as the first is.
+  for (const bad of [
+    [16, 1, 2, 0, 3, 0, 0], // no such anchor
+    [16, 1, 2, 0, 16, 1], // half a spot
+    [16, 1, 2, 0, GAME_ANCHOR, SCALE + 1, 0],
+    [16, 1, 2, 0, 17, 5 * SCALE + 1, 0],
+    [16, 1, 2, 0, 17, 0.5, 0],
+    [16, 1, 2, 0, 16, 1, 2, 16, 1, 2, 16, 1, 2], // too many
+  ])
+    assert.equal(parseCursorAt(bad), undefined, JSON.stringify(bad));
 });
 
 test('a pointer from a guest is checked like any message', () => {
@@ -83,7 +136,7 @@ test("a host's batch is checked, and read back", () => {
   assert.deepEqual(parseHostMsg({ t: 'cursors', c }), { t: 'cursors', c });
   assert.deepEqual(entryAt(c[0]), [16, 10, 20, 0]);
   assert.equal(entryAt(c[1]), null);
-  for (const bad of [null, {}, [[1]], [['x', 16, 10]], [['x', 99, 0, 0, 0]], [['x'.repeat(17)]], Array.from({ length: 33 }, () => ['x'])])
+  for (const bad of [null, {}, [[1]], [['x', 16, 10]], [['x', 3, 0, 0, 0]], [['x'.repeat(17)]], Array.from({ length: 33 }, () => ['x'])])
     assert.equal(parseCursorBatch(bad), null, JSON.stringify(bad));
 });
 
@@ -142,12 +195,15 @@ test('the outbox keeps only the newest of each pointer, for each guest', () => {
 test('a full room of moving pointers stays small, and within the frame budget', () => {
   const key = cursorKey('Xq3vB9kLm2Pz');
   assert.equal(key.length, 8);
-  const one = bytes({ t: 'cursor', at: [anchorCode('row:11'), SCALE, SCALE, 0] });
+  // As far as a pointer goes: off its own anchor, with two more round it.
+  const far: CursorAt = [anchorCode('lock')!, -OFF, SCALE + OFF, 5, anchorCode('access')!, SCALE, SCALE, GAME_ANCHOR, SCALE, GAME_DEPTH * SCALE];
+  assert.deepEqual(parseCursorAt(far), far);
+  const one = bytes({ t: 'cursor', at: far });
   assert.ok(plausiblePack(one));
-  assert.ok(one.length <= 32, `${one.length} bytes`);
+  assert.ok(one.length <= 40, `${one.length} bytes`);
   // What every guest is sent ten times a second at most, when all the others moved.
-  const batch = bytes({ t: 'cursors', c: Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => [cursorKey(`player${i}abcd`), 47, 999, 999, 0]) });
-  assert.ok(batch.length <= 240, `${batch.length} bytes`);
+  const batch = bytes({ t: 'cursors', c: Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => [cursorKey(`player${i}abcd`), ...far]) });
+  assert.ok(batch.length <= 520, `${batch.length} bytes`);
 
   // A pointer at full speed beside a key held down, for a minute: never a flood.
   let t = 0;

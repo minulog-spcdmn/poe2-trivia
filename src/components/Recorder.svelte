@@ -121,11 +121,11 @@
       if (rec.unsaved && rec.moves.length) e.preventDefault();
     };
     const tick = setInterval(() => (elapsed = since()), 1000);
-    // The others' pointers, as heard: each update as it comes, and each going.
+    // The others' pointers, as heard: each update as it comes, and each going (on the first of their anchors, as recordings have them).
     const who = new Map<string, number>();
     const unlisten = peerCursors.listen((key, at) => {
       if (!who.has(key)) who.set(key, who.size);
-      rec.peer(since(), who.get(key)!, at);
+      rec.peer(since(), who.get(key)!, at && [at[0], at[1], at[2], at[3]]);
     });
 
     addEventListener('pointermove', move, { passive: true, capture: true });

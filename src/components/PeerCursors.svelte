@@ -2,12 +2,13 @@
   // The other players' pointers, live over the game (lib/cursors.ts), and
   // this device's own, sent for them to see. Each pointer is placed on the
   // element it was over (data-cursor), wherever that element is on this
-  // screen, and glides between the updates (ten a second) so it moves
+  // screen, or, where this screen hasn't that one, on the next one round it
+  // that it has; and glides between the updates (ten a second) so it moves
   // smoothly. A tap on a phone shows where it landed, as the dart pressed, for a moment.
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { anchorAt, clickableAt } from '../lib/pointerAnchor';
@@ -170,12 +171,33 @@
   /** Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until. */
   const drawn = new Map<string, { x: number; y: number; tap: number; code: number; ox: number; oy: number; px: number; py: number; pressUntil: number }>();
 
-  function anchorFor(code: number, cache: Map<number, HTMLElement | null>) {
+  /** Where the anchor `code` is on this screen (its first copy not on its way out, with a size), or null when it isn't; once a frame. */
+  function boxOf(code: number, cache: Map<number, DOMRect | null>) {
     if (cache.has(code)) return cache.get(code)!;
     const name = anchorName(code);
-    const el = name ? ([...document.querySelectorAll<HTMLElement>(`[data-cursor="${name}"]`)].find((n) => !n.closest('[inert]')) ?? null) : null;
-    cache.set(code, el);
-    return el;
+    let box: DOMRect | null = null;
+    for (const n of name ? document.querySelectorAll<HTMLElement>(`[data-cursor="${name}"]`) : []) {
+      if (n.closest('[inert]')) continue;
+      const r = n.getBoundingClientRect();
+      if (r.width && r.height) {
+        box = r;
+        break;
+      }
+    }
+    cache.set(code, box);
+    return box;
+  }
+
+  /** Where a pointer at `at` is on this screen: on the first of its anchors this screen has (cursors.ts); null when it has none. */
+  function placeOf(at: CursorAt, cache: Map<number, DOMRect | null>): { code: number; x: number; y: number } | null {
+    for (const [code, x, y] of hopsOf(at)) {
+      const r = boxOf(code, cache);
+      if (r) {
+        const [px, py] = fromAnchor(code, x, y, r, innerHeight);
+        return { code, x: px, y: py };
+      }
+    }
+    return null;
   }
 
   $effect(() => {
@@ -191,19 +213,19 @@
       const dt = now - last;
       const step = 1 - Math.exp(-dt / GLIDE_MS);
       last = now;
-      const anchors = new Map<number, HTMLElement | null>();
+      const boxes = new Map<number, DOMRect | null>();
       for (const c of list) {
         const el = els[c.key];
         const p = peerCursors.at.get(c.key);
         if (!el || !p) continue;
-        const [code, ax, ay, kind] = p.at;
+        const kind = p.at[3];
         const touch = actionOf(kind) === TAP;
         const age = now - p.moved;
         if (touch && age > TAP_MS) {
           peerCursors.set(c.key, null);
           continue;
         }
-        const anchor = anchorFor(code, anchors);
+        const place = placeOf(p.at, boxes);
         // Pressed as the pointer drawn behind gets there, not before; and once pressed, long enough to see.
         const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
         const dueKind = due?.at[3] ?? kind;
@@ -211,8 +233,8 @@
         // (what it pressed goes as it's let go, and a pointer still on its way there would seem to click from afar).
         const pressNow = actionOf(kind) === PRESSED;
         const pressing = pressNow || actionOf(dueKind) === PRESSED;
-        if (!anchor) {
-          // Its element went (the card picked, the screen moved on): it stays where it's drawn until it moves again.
+        if (!place) {
+          // Its elements went (the card picked, the screen moved on): it stays where it's drawn until it moves again.
           const held = drawn.get(c.key);
           el.classList.toggle('lost', !held);
           if (held) {
@@ -222,17 +244,17 @@
           continue;
         }
         el.classList.remove('lost');
-        const r = anchor.getBoundingClientRect();
-        // Its trail on this screen (each place on its own element, where that's still here), drawn a little behind.
+        const code = place.code;
+        // Its trail on this screen (each place on its own elements, where they're still here), drawn a little behind.
         const ps: [number, number][] = [];
         const ts: number[] = [];
-        for (const { at: [c2, x2, y2], t } of p.trail) {
-          const el2 = c2 === code ? anchor : anchorFor(c2, anchors);
-          if (!el2) continue;
-          ps.push(fromAnchor(c2, x2, y2, c2 === code ? r : el2.getBoundingClientRect(), innerHeight));
+        for (const { at, t } of p.trail) {
+          const q = placeOf(at, boxes);
+          if (!q) continue;
+          ps.push([q.x, q.y]);
           ts.push(t);
         }
-        const [rx, ry] = touch || pressNow || !ps.length ? fromAnchor(code, ax, ay, r, innerHeight) : trailAt(ps, ts, now - BEHIND_MS);
+        const [rx, ry] = touch || pressNow || !ps.length ? [place.x, place.y] : trailAt(ps, ts, now - BEHIND_MS);
         // Never off this screen, however far off the others' place lands here.
         const tx = Math.min(innerWidth - 16, Math.max(2, rx));
         const ty = Math.min(innerHeight - 20, Math.max(2, ry));

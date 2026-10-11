@@ -246,8 +246,10 @@
   let el = $state<HTMLElement>();
 </script>
 
+<!-- data-cursor: where other players' pointers are placed (PeerCursors), wherever a layout puts the timer. -->
 <div
   class="timer"
+  data-cursor="timer"
   bind:this={el}
   class:urgent={urgent && !fast}
   class:stopped
