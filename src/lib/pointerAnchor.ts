@@ -8,8 +8,8 @@ import { MAX_HOPS, anchorCode, cursorAt, toAnchor, type CursorAt, type Hop, type
  */
 export const screenHeight = () => document.documentElement.clientHeight || innerHeight;
 
-/** The page under a spot, through the covers that aren't the page (middle-button scrolling's, the recorder's badge, the pressed pointer's speck: lib/ownCursor.ts). */
-const under = (px: number, py: number) => document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll, .recorder, .press-pin'));
+/** The page under a spot, through the covers that aren't the page (middle-button scrolling's, the recorder's badge). */
+const under = (px: number, py: number) => document.elementsFromPoint(px, py).find((n) => !n.closest('.autoscroll, .recorder'));
 
 /**
  * Whether this player's own cursor is the hand at a spot: something they can

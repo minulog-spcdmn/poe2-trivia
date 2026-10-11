@@ -14,8 +14,9 @@
   import { peerCursors } from '../lib/peerCursors.svelte';
   import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
-  import { portal } from '../lib/portal';
+  import { portalToPage } from '../lib/portal';
   import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
+  import { scrollFollow } from '../lib/scrollFollow';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /**
@@ -172,33 +173,76 @@
 
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
-  /** Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until. */
-  const drawn = new Map<string, { x: number; y: number; tap: number; code: number; ox: number; oy: number; px: number; py: number; pressUntil: number }>();
+  /**
+   * Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until;
+   * whether it's set in the page (stuck: its places are then the page's, not the screen's), and whether its element scrolls with the page;
+   * its element's top and the page's scroll last frame.
+   */
+  const drawn = new Map<
+    string,
+    {
+      x: number;
+      y: number;
+      tap: number;
+      code: number;
+      ox: number;
+      oy: number;
+      px: number;
+      py: number;
+      pressUntil: number;
+      page: boolean;
+      follows: boolean;
+      top: number;
+      scroll: number;
+    }
+  >();
 
-  /** Where the anchor `code` is on this screen (its first copy not on its way out, with a size), or null when it isn't; once a frame. */
-  function boxOf(code: number, cache: Map<number, DOMRect | null>) {
+  /**
+   * A phone scrolls the page on its own, ahead of the frames drawn here, so
+   * a pointer fixed to the screen trails what it's on as the page scrolls,
+   * by as far as it goes in a frame or two. One on something that scrolls
+   * with the page is set in the page instead (in #app, and clipped with it),
+   * and scrolls along between frames; one on something that stays put (the
+   * bar pinned to the top in a game, the dock at the bottom) stays fixed to
+   * the screen. Told apart by how its element moves as the page scrolls
+   * (lib/scrollFollow.ts), and, before that's seen, by whether it's in
+   * something fixed or sticky. One held at the screen's edge (its place
+   * here is off it) stays fixed there.
+   */
+  function stuck(el: Element) {
+    for (let n: Element | null = el; n && n !== document.body; n = n.parentElement) {
+      const p = getComputedStyle(n).position;
+      if (p === 'fixed' || p === 'sticky') return true;
+    }
+    return false;
+  }
+
+  type Found = { box: DOMRect; el: HTMLElement };
+
+  /** Where the anchor `code` is on this screen (its first copy not on its way out, with a size), and that copy, or null when it isn't; once a frame. */
+  function boxOf(code: number, cache: Map<number, Found | null>) {
     if (cache.has(code)) return cache.get(code)!;
     const name = anchorName(code);
-    let box: DOMRect | null = null;
+    let found: Found | null = null;
     for (const n of name ? document.querySelectorAll<HTMLElement>(`[data-cursor="${name}"]`) : []) {
       if (n.closest('[inert]')) continue;
       const r = n.getBoundingClientRect();
       if (r.width && r.height) {
-        box = r;
+        found = { box: r, el: n };
         break;
       }
     }
-    cache.set(code, box);
-    return box;
+    cache.set(code, found);
+    return found;
   }
 
   /** Where a pointer at `at` is on this screen: on the first of its anchors this screen has (cursors.ts); null when it has none. */
-  function placeOf(at: CursorAt, cache: Map<number, DOMRect | null>, screenH: number): { code: number; x: number; y: number } | null {
+  function placeOf(at: CursorAt, cache: Map<number, Found | null>, screenH: number): { code: number; x: number; y: number; on: Found } | null {
     for (const [code, x, y] of hopsOf(at)) {
-      const r = boxOf(code, cache);
-      if (r) {
-        const [px, py] = fromAnchor(code, x, y, r, screenH);
-        return { code, x: px, y: py };
+      const on = boxOf(code, cache);
+      if (on) {
+        const [px, py] = fromAnchor(code, x, y, on.box, screenH);
+        return { code, x: px, y: py, on };
       }
     }
     return null;
@@ -217,7 +261,7 @@
       const dt = now - last;
       const step = 1 - Math.exp(-dt / GLIDE_MS);
       last = now;
-      const boxes = new Map<number, DOMRect | null>();
+      const boxes = new Map<number, Found | null>();
       const screenH = screenHeight();
       for (const c of list) {
         const el = els[c.key];
@@ -260,12 +304,31 @@
           ts.push(t);
         }
         const [rx, ry] = touch || pressNow || !ps.length ? [place.x, place.y] : trailAt(ps, ts, now - BEHIND_MS);
-        // Never off this screen, however far off the others' place lands here.
-        const tx = Math.min(innerWidth - 16, Math.max(2, rx));
-        const ty = Math.min(innerHeight - 20, Math.max(2, ry));
         let d = drawn.get(c.key);
+        // Never off this screen, however far off the others' place lands here.
+        const cx = Math.min(innerWidth - 16, Math.max(2, rx));
+        const cy = Math.min(innerHeight - 20, Math.max(2, ry));
+        // In the page or on the screen (stuck): whether its element scrolls with the page, by how it moved as the
+        // page scrolled, or, new to it, by where it is; on the screen while held at its edge.
+        const top = place.on.box.top;
+        let follows = d && d.code === code ? d.follows : !stuck(place.on.el);
+        const went = d && d.code === code ? scrollFollow(top - d.top, scrollY - d.scroll) : null;
+        if (went) follows = went === 'page';
+        const page = follows && cx === rx && cy === ry;
+        const [sx, sy] = page ? [scrollX, scrollY] : [0, 0];
+        if (d && page !== d.page) {
+          // (Where it's drawn, and was, in the other's terms.)
+          const [kx, ky] = page ? [scrollX, scrollY] : [-scrollX, -scrollY];
+          d.x += kx;
+          d.y += ky;
+          d.px += kx;
+          d.py += ky;
+        }
+        const tx = cx + sx;
+        const ty = cy + sy;
         // A tap lands where it is; a pointer just come in starts where it is.
-        if (!d || touch) drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, pressUntil: d?.pressUntil ?? 0 }));
+        if (!d || touch)
+          drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, pressUntil: d?.pressUntil ?? 0, page, follows, top, scroll: scrollY }));
         else {
           // Placed on another element far from where it's drawn, or leaping: it stays where it's drawn (JUMP_PX).
           const far = Math.hypot(tx + d.ox - d.x, ty + d.oy - d.y);
@@ -285,6 +348,12 @@
           d.x += (tx + d.ox - d.x) * step;
           d.y += (ty + d.oy - d.y) * step;
         }
+        d.page = page;
+        d.follows = follows;
+        d.top = top;
+        d.scroll = scrollY;
+        const position = page ? '' : 'fixed';
+        if (el.style.position !== position) el.style.position = position;
         el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
         el.classList.toggle('tap', touch);
         if (pressing) d.pressUntil = now + PRESS_SHOW_MS;
@@ -306,9 +375,9 @@
   });
 </script>
 
-<div class="cursors" class:veiled={dealing.held} use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
+<div class="cursors" class:veiled={dealing.held} use:portalToPage aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
-    <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
+    <div class="cursor" bind:this={els[c.key]} style:--c={c.color} data-behind-dialog>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
            Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little, its hatched side struck solid,
            and the hand pushes its finger into the page, foreshortened and struck solid. -->
@@ -339,12 +408,14 @@
 </div>
 
 <style>
+  /* Over the whole page, in #app (see stuck): each pointer is set in it, or
+     fixed to the screen. */
   .cursors {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 80;
     pointer-events: none;
-    overflow: hidden;
+    overflow: clip;
     transition: opacity 0.3s;
   }
   /* Over a new zone's title card (z-index 60): out of sight at once, till the cards are dealt. Nobody points
