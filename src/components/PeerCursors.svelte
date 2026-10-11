@@ -44,8 +44,10 @@
   const IDLE_MS = 5000;
   /** How long a tap shows (ms). */
   const TAP_MS = 1100;
-  /** A press shows at least this long (ms): a click is over in less than two updates. */
-  const PRESS_SHOW_MS = 300;
+  /** A press shows at least this long (ms), so a quick click is still seen (presses and releases are sent at once). */
+  const PRESS_SHOW_MS = 120;
+  /** The newest press shown of each pointer (its trail's time), so each is shown once. */
+  const pressSeen = new Map<string, number>();
   /** A still pointer is looked at again this often, for what moved under it (the next turn, a scroll). */
   const RECHECK_MS = 500;
 
@@ -87,6 +89,8 @@
     dirty = false;
     // Over something this player can click, it goes as the hand, as their own cursor is.
     const at = pointing && over ? anchorAt(x, y, ((held || clicked ? PRESSED : MOUSE) + (clickableAt(x, y) ? LIT : 0)) as PointerKind) : null;
+    // Pressed and let go before this went: the release goes with the next one.
+    if (clicked && !held) dirty = true;
     clicked = false;
     const key = JSON.stringify(at);
     if (key !== sent) {
@@ -96,9 +100,13 @@
     timer = setTimeout(flush, SEND_EVERY_MS);
   }
 
-  /** Something may have moved: sent at once, or with the next update if one just went. */
-  function poke() {
+  /** Something may have moved: sent at once, or with the next update if one just went; a press or a release (`now`) at once whatever. */
+  function poke(now = false) {
     dirty = true;
+    if (now && timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
     if (!timer) flush();
   }
 
@@ -121,7 +129,7 @@
       if (e.pointerType !== 'mouse' || e.button !== 0 || held === on) return;
       held = on;
       if (on) clicked = true;
-      poke();
+      poke(true);
     };
     const down = (e: PointerEvent) => press(e, true);
     const up = (e: PointerEvent) => press(e, false);
@@ -275,13 +283,17 @@
           continue;
         }
         const place = placeOf(p.at, boxes, screenH);
-        // Pressed as the pointer drawn behind gets there, not before; and once pressed, long enough to see.
         const due = p.trail.filter((x) => x.t <= now - BEHIND_MS).at(-1) ?? p.trail[0];
         const dueKind = due?.at[3] ?? kind;
         // A press just heard: drawn where it is now, not behind, so the click shows where it happens, as it happens
         // (what it pressed goes as it's let go, and a pointer still on its way there would seem to click from afar).
+        // Shown while it's held, and once let go for PRESS_SHOW_MS at least: a press and its release are sent
+        // at once (lib/session.svelte.ts), so a quick click shows as quick. One that came and went between
+        // two frames is shown all the same, once.
         const pressNow = actionOf(kind) === PRESSED;
-        const pressing = pressNow || actionOf(dueKind) === PRESSED;
+        const lastPress = p.trail.findLast((x) => actionOf(x.at[3]) === PRESSED)?.t ?? -1;
+        const pressing = pressNow || lastPress > (pressSeen.get(c.key) ?? -1);
+        if (lastPress >= 0) pressSeen.set(c.key, lastPress);
         if (!place) {
           // Its elements went (the card picked, the screen moved on): it stays where it's drawn until it moves again.
           const held = drawn.get(c.key);

@@ -69,7 +69,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
-import { CursorOutbox, FLUSH_EVERY_MS, SEND_EVERY_MS, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
+import { CursorOutbox, FLUSH_EVERY_MS, PRESSED, SEND_EVERY_MS, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 
@@ -357,6 +357,8 @@ class Session {
   private flareKey = '';
   /** Host: the pointers each guest is still to be sent (cursors.ts), and the next batch. */
   private cursorOut = new CursorOutbox<DataConnection>();
+  /** Whose pointer is pressed, as last passed on: a press or a release goes out at once, not with the next batch. */
+  private cursorPressed = new Map<string, boolean>();
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
   private cursorsSentAt = 0;
 
@@ -644,8 +646,8 @@ class Session {
     const guest: Guest = {
       playerId: null,
       limit: new RateLimit(10, 20),
-      // A real client sends one every SEND_EVERY_MS at most.
-      pointer: new RateLimit(1000 / SEND_EVERY_MS + 2, 12),
+      // A real client sends one every SEND_EVERY_MS at most, and a press and its release at once besides.
+      pointer: new RateLimit(1000 / SEND_EVERY_MS + 8, 20),
       rtt: 150,
       lastPong: Date.now(),
       pings: new Map(),
@@ -908,7 +910,11 @@ class Session {
     const entry: CursorEntry = at ? [key, ...at] : [key];
     this.cursorOut.put(entry, [...this.guests].flatMap(([c, g]) => (g.playerId && g.playerId !== from ? [c] : [])));
     if (from !== this.myPlayerId) peerCursors.set(key, at);
-    this.planCursors();
+    // A click is quicker than a batch: a press or its release goes at once.
+    const pressed = !!at && actionOf(at[3]) === PRESSED;
+    const changed = pressed !== (this.cursorPressed.get(key) ?? false);
+    this.cursorPressed.set(key, pressed);
+    this.planCursors(changed);
   }
 
   /**
@@ -917,9 +923,9 @@ class Session {
    * sight gets its timers held back to once a second, the messages it gets
    * aren't, so the room's pointers stay as smooth.
    */
-  private planCursors() {
+  private planCursors(now = false) {
     if (!this.cursorOut.waiting) return;
-    const wait = this.cursorsSentAt + FLUSH_EVERY_MS - performance.now();
+    const wait = now ? 0 : this.cursorsSentAt + FLUSH_EVERY_MS - performance.now();
     if (wait > 0) {
       this.cursorTimer ??= setTimeout(() => {
         this.cursorTimer = null;
