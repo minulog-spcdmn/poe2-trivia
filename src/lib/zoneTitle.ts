@@ -96,32 +96,35 @@ export const TREATMENTS: Record<string, Treatment> = {
 
 /**
  * One line under each place's name, as players will read it a hundred
- * times: plain, short and of the place, never more than SUBTITLE_MOST
- * characters (one line on a 375 px phone), with no full stop.
+ * times: what a delver who went down first would tell you of it, a warning
+ * or one thing seen there, said flat and never the name over again. Never
+ * more than SUBTITLE_MOST characters (one line on a 375 px phone), with no
+ * full stop. Past depth 100 a kind of place's line goes under every name it
+ * takes (lib/archetypes.ts), so it holds for all of them.
  */
 export const SUBTITLES: Record<string, string> = {
-  'The Mines': 'Where every delver starts',
-  'Magma Fissure': 'The rock is split, and it burns',
-  'Frozen Hollow': 'Nothing thaws this far down',
-  'Fungal Caverns': 'The rot here glows and breathes',
-  'Vaal Outpost': 'The Vaal dug here before you',
-  'Abyssal Depths': 'Here the deep begins to pull',
-  'Petrified Forest': 'The trees forgot they lived',
-  'Sulphur Vents': 'Every breath tastes of brimstone',
-  'Abyssal City': 'Its lamps still burn for no one',
-  'Primeval Ruins': 'Older than the first gods',
-  'Drowned temple': 'The water keeps their hymns',
-  'Ember forge': 'The anvils never cooled',
-  'Void bloom': 'Something flowers in the nothing',
-  'Frozen abyss': 'Ice over an endless fall',
-  'Sulphur marsh': 'The mire smoulders under mist',
-  'Lantern necropolis': 'The dead keep their lamps lit',
-  'Sunken garden': 'Flowers that never saw the sun',
-  'Blood eclipse': 'Light the colour of old blood',
-  'Glacial pyre': 'Fire sealed inside the ice',
-  'Ashen reliquary': 'The ash of saints, kept in stone',
-  'Starfall abyss': 'Stars fell here and kept falling',
-  'Witchfire grove': 'The old wood burns green',
+  'The Mines': 'Stay in the light',
+  'Magma Fissure': 'Step where the rock is black',
+  'Frozen Hollow': 'Bare skin sticks to the walls',
+  'Fungal Caverns': 'Breathe through cloth',
+  'Vaal Outpost': 'Vaal picks, left in the seam',
+  'Abyssal Depths': 'No rope reaches the bottom',
+  'Petrified Forest': 'Axes ring off the trunks',
+  'Sulphur Vents': 'The canary went quiet',
+  'Abyssal City': 'Doors barred from the outside',
+  'Primeval Ruins': "The stairs weren't built for us",
+  'Drowned temple': 'Waist-deep and rising',
+  'Ember forge': 'Fresh slag, and no smith',
+  'Void bloom': 'Do not pick the flowers',
+  'Frozen abyss': 'Test the ice with every step',
+  'Sulphur marsh': 'Never follow the lights',
+  'Lantern necropolis': 'Someone trims these wicks',
+  'Sunken garden': 'Light gets in from somewhere',
+  'Blood eclipse': 'The altar is still wet',
+  'Glacial pyre': 'The meltwater runs warm',
+  'Ashen reliquary': 'That ash was someone',
+  'Starfall abyss': 'Every star here is moving',
+  'Witchfire grove': 'Leave nothing of yours behind',
 };
 
 /** The longest a subtitle may be (characters). */
