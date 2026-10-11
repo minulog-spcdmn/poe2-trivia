@@ -237,8 +237,9 @@
       <p class="go-note">Add the first exile to begin.</p>
     {:else if !local && s.players.length < 2}
       <p class="go-note">You can begin alone, or wait for your party.</p>
-    {:else}
-      <p class="go-note"><b class="num">{s.players.length}</b> {s.players.length === 1 ? 'exile' : 'exiles'} ready</p>
+    {:else if s.players.length > 1}
+      <!-- A lone player knows they're here: Begin stands by itself. -->
+      <p class="go-note"><b class="num">{s.players.length}</b> exiles ready</p>
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
