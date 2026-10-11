@@ -1163,8 +1163,12 @@ class Session {
     if (!media) return [];
     const key = (tile: number | undefined, i: number) => `${tile ?? ''}:${i}`;
     const sent = new Set(this.released.flatMap((m) => (m.t === 'patch' ? [key(m.tile, m.i)] : [])));
+    // The veiled picture's go out lighter if they can (PreparedMedia.finale).
+    const light = (tile: number | undefined, i: number) => (tile === undefined ? media.finale.get(i) : undefined);
     return veiledSets(media).flatMap(({ tile, patches }) =>
-      patches.filter((p) => !sent.has(key(tile, p.i))).map((p) => ({ qid: media.qid, ...(tile === undefined ? {} : { tile }), ...p })),
+      patches
+        .filter((p) => !sent.has(key(tile, p.i)))
+        .map((p) => ({ qid: media.qid, ...(tile === undefined ? {} : { tile }), ...p, data: light(tile, p.i) ?? p.data })),
     );
   }
 

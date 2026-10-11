@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
+import { cutPatches, spreadOrder, veilSchedule, visibleBox, type RawPatch, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question, Veil } from './game';
 import { veilPlan } from './delve';
@@ -50,6 +50,14 @@ export interface PreparedMedia {
   options: { w: number; h: number; data: ArrayBuffer }[];
   /** Veiled art questions (Delve): each option's picture cut into patches instead, with its own delays. */
   tiles: CutVeil[];
+  /**
+   * The veiled picture's patches again at LIGHT, by patch, for those still
+   * to go out when the answer is out: they burn in for a moment before the
+   * full art takes over, so they needn't be sharp, and a smaller burst gets
+   * to everyone sooner. Cut in the background once the question is out, so
+   * a patch not done by then goes out as it is.
+   */
+  finale: Map<number, ArrayBuffer>;
 }
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
@@ -101,11 +109,12 @@ export type ArtSizes = ReadonlyMap<string, { w: number; h: number }>;
  * At most how many pixels per art pixel a picture goes out with. The art to
  * name is shown big and alone, so it keeps all the file has (4 for items up
  * to 2 x 2: artScale), veiled or not: a large screen draws it at up to about
- * 4 pixels per art pixel, where veiled patches at 2 burnt in blurry (a small
- * item's patches, lossless, come to about 500 KB at 4, 160 KB at 2). The
- * small tiles of a "find the art" question with many options, and veiled
- * tiles, go out at 2, which keeps what every guest is sent near what it was
- * before the art went to 4.
+ * 4 pixels per art pixel, where veiled patches at 2 burnt in blurry. Its
+ * patches are lossless (encode: a small item's come to about 280 KB, where
+ * at 2 as PNG they were 140), and those left when the answer is out go out
+ * at 2 (PreparedMedia.finale). The small tiles of a "find the art"
+ * question with many options, and veiled tiles, go out at 2, which keeps
+ * what every guest is sent near what it was before the art went to 4.
  */
 const SHARP = 4;
 const LIGHT = 2;
@@ -163,19 +172,38 @@ async function alteredCanvas(itemId: string, art: { w: number; h: number }, most
   return { canvas, scale: S };
 }
 
+function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('encode failed'))), type, quality));
+}
+
+/** Whether a WebP file holds a lossless image (a VP8L chunk; a lossy one has VP8 instead). */
+function losslessWebp(b: Uint8Array): boolean {
+  const tag = (at: number) => String.fromCharCode(b[at], b[at + 1], b[at + 2], b[at + 3]);
+  if (b.length < 20 || tag(0) !== 'RIFF' || tag(8) !== 'WEBP') return false;
+  // Chunks: a tag, a 32-bit little-endian size, the data padded to even.
+  for (let at = 12; at + 8 <= b.length; ) {
+    const t = tag(at);
+    if (t === 'VP8L') return true;
+    if (t === 'VP8 ') return false;
+    const size = (b[at + 4] | (b[at + 5] << 8) | (b[at + 6] << 16) | (b[at + 7] << 24)) >>> 0;
+    at += 8 + size + (size & 1);
+  }
+  return false;
+}
+
 /**
  * Whole pictures go out as WebP, at a quality that keeps the upscaled art's
- * detail. Patches are lossless PNG: lossy encoding blurs them into blocks
- * with seams between neighbours.
+ * detail. Patches are lossless: lossy encoding blurs them into blocks with
+ * seams between neighbours. That's WebP where the browser encodes it
+ * losslessly (Chromium does at quality 1), about 40% smaller than PNG, and
+ * PNG elsewhere (a browser that can't encode WebP at all gives PNG anyway).
  */
-function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffer> {
-  return new Promise((resolve, reject) =>
-    canvas.toBlob(
-      (blob) => (blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('encode failed'))),
-      lossless ? 'image/png' : 'image/webp',
-      lossless ? undefined : rand(0.92, 0.95),
-    ),
-  );
+async function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffer> {
+  if (!lossless) return (await toBlob(canvas, 'image/webp', rand(0.92, 0.95))).arrayBuffer();
+  const webp = await toBlob(canvas, 'image/webp', 1);
+  const bytes = await webp.arrayBuffer();
+  if (webp.type === 'image/png' || losslessWebp(new Uint8Array(bytes))) return bytes;
+  return (await toBlob(canvas, 'image/png')).arrayBuffer();
 }
 
 /**
@@ -186,7 +214,7 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
  */
 export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes): Promise<PreparedMedia> {
   const art = (id: string) => sizes.get(id)!;
-  const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [] };
+  const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [], finale: new Map() };
   if (q.mode === 'art') {
     const most = q.veil || q.options.length > FEW_OPTIONS ? LIGHT : SHARP;
     const pictures = await Promise.all(q.options.map((id, i) => alteredCanvas(id, art(id), most, grayscale !== 'off', !!q.mirrored?.[i])));
@@ -206,6 +234,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
   out.delays = cut.delays;
   out.gap = cut.gap;
   out.areas = cut.areas;
+  if (picture.scale > LIGHT) setTimeout(() => void cutFinale(picture, cut, out.finale).catch(() => {}));
   return out;
 }
 
@@ -220,6 +249,8 @@ export interface CutVeil {
   delays: number[];
   gap: number;
   areas: number[];
+  /** Host only: the patches as cut (by RawPatch index, which is each Patch's i). */
+  cut: RawPatch[];
 }
 
 /**
@@ -257,26 +288,46 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   };
   const patches = await Promise.all(
     order.map(async (i) => {
-      const { x, y, w, h, pixels: own, edges } = cut[i];
-      // The patch's pixels at full resolution: wherever it has an art pixel.
-      const pw = w * S;
-      const ph = h * S;
-      const big = new Uint32Array(pw * ph);
-      for (let by = 0; by < ph; by++) {
-        const ay = (by / S) | 0;
-        const row = (y * S + by) * FW + x * S;
-        for (let bx = 0; bx < pw; bx++) {
-          if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
-        }
-      }
-      const piece = document.createElement('canvas');
-      piece.width = pw;
-      piece.height = ph;
-      piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
-      return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
+      const { x, y, w, h, edges } = cut[i];
+      return { i, x, y, w, h, data: await encode(patchPicture(fine, FW, S, cut[i]), true), edges: edges.buffer as ArrayBuffer };
     }),
   );
-  return { veil, patches, delays: schedule.delays, gap: schedule.gap, areas };
+  return { veil, patches, delays: schedule.delays, gap: schedule.gap, areas, cut };
+}
+
+/** A patch's own picture from the picture's pixels at `S` per art pixel (`FW` wide): wherever the patch has an art pixel. */
+function patchPicture(fine: Uint32Array, FW: number, S: number, { x, y, w, h, pixels: own }: RawPatch): HTMLCanvasElement {
+  const pw = w * S;
+  const ph = h * S;
+  const big = new Uint32Array(pw * ph);
+  for (let by = 0; by < ph; by++) {
+    const ay = (by / S) | 0;
+    const row = (y * S + by) * FW + x * S;
+    for (let bx = 0; bx < pw; bx++) {
+      if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
+    }
+  }
+  const piece = document.createElement('canvas');
+  piece.width = pw;
+  piece.height = ph;
+  piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
+  return piece;
+}
+
+/**
+ * The veiled picture's patches at LIGHT, into `into` one by one as each is
+ * done (PreparedMedia.finale): the last to go out first, as those are the
+ * ones likeliest still to be left when the answer is out.
+ */
+async function cutFinale({ canvas, scale: S }: Altered, { cut, patches }: CutVeil, into: Map<number, ArrayBuffer>) {
+  const light = document.createElement('canvas');
+  light.width = (canvas.width / S) * LIGHT;
+  light.height = (canvas.height / S) * LIGHT;
+  const g = light.getContext('2d', { willReadFrequently: true })!;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(canvas, 0, 0, light.width, light.height);
+  const fine = new Uint32Array(g.getImageData(0, 0, light.width, light.height).data.buffer);
+  for (const { i } of [...patches].reverse()) into.set(i, await encode(patchPicture(fine, light.width, LIGHT, cut[i]), true));
 }
 
 // ---- what this device shows -------------------------------------------
@@ -314,7 +365,7 @@ class Shown {
   private urls: string[] = [];
 
   private url(data: ArrayBuffer) {
-    // No type: patches are PNG, everything else WebP, and images are sniffed anyway.
+    // No type: patches are lossless WebP or PNG, everything else WebP, and images are sniffed anyway.
     const u = URL.createObjectURL(new Blob([data]));
     this.urls.push(u);
     return u;

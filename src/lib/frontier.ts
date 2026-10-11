@@ -128,9 +128,8 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     if (W) return true;
     const cw = canvas.clientWidth;
     if (!cw) return false;
-    // On screen the canvas is the stage's zoom (lib/stage.ts) larger than its own px;
-    // no finer than the sharpest art (4 pixels per art pixel, media.svelte.ts SHARP).
-    W = Math.max(1, Math.round(Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), cur.w * 4)));
+    // On screen the canvas is the stage's zoom (lib/stage.ts) larger than its own px.
+    W = Math.max(1, Math.round(Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), cur.w * 2)));
     H = Math.max(1, Math.round((W * cur.h) / cur.w));
     k = W / cur.w;
     canvas.width = W;
