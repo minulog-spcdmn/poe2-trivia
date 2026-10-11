@@ -272,6 +272,18 @@
     };
   }
 
+  /**
+   * Svelte transition: the cards fade out over the question that takes their
+   * place, rather than going at once, so the effects on them (a picked card's
+   * fire) fade with them rather than outlining where they were. They take
+   * no height meanwhile (.leaving), so the question is laid out where it
+   * stays and nothing under it moves; what of them reaches past it, #app clips.
+   */
+  function cardsOut(node: HTMLElement) {
+    node.classList.add('leaving');
+    return { duration: 180, css: (t: number) => `opacity: ${t}` };
+  }
+
   /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
   const myFall = $derived(session.perished && session.myPlayerId && standingIds(s).length ? fellAt(s, session.myPlayerId) : null);
   /** Delve together: a teammate who stands could still give you one of their lives. */
@@ -366,20 +378,25 @@
             </div>
           </div>
 
-          {#if s.phase === 'choosing' || drawing}
-            <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
-          {:else}
-            <!-- A new question on the same turn (the host asked another, or dynamite
-                 blasted the last away) starts fresh. Old and new share one grid
-                 cell while they cross. -->
-            <div class="questions">
-              {#key s.question?.askedAt}
-                <div class="q-slot" in:swingIn out:swingOut>
-                  <QuestionView timer={phone.current ? undefined : timer} />
-                </div>
-              {/key}
-            </div>
-          {/if}
+          <!-- The cards fade out over the question that takes their place (see cardsOut). -->
+          <div class="turn-body">
+            {#if s.phase === 'choosing' || drawing}
+              <div class="cards-slot" out:cardsOut>
+                <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
+              </div>
+            {:else}
+              <!-- A new question on the same turn (the host asked another, or dynamite
+                   blasted the last away) starts fresh. Old and new share one grid
+                   cell while they cross. -->
+              <div class="questions">
+                {#key s.question?.askedAt}
+                  <div class="q-slot" in:swingIn out:swingOut>
+                    <QuestionView timer={phone.current ? undefined : timer} />
+                  </div>
+                {/key}
+              </div>
+            {/if}
+          </div>
 
           {#if group}
             <!-- Who brought whom back, read out as it happens. -->
@@ -462,6 +479,22 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
+  }
+  /* The cards, and the question that takes their place, in one cell. */
+  .turn-body {
+    display: grid;
+  }
+  .turn-body > * {
+    grid-area: 1 / 1;
+    min-width: 0;
+  }
+  /* Leaving, they take no height (still drawn where they were, over the
+     question), so the cell is the question's from the start. */
+  .cards-slot:global(.leaving) {
+    height: 0;
+    min-height: 0;
+    z-index: 1;
+    pointer-events: none;
   }
   /* The question and, as it cross-fades with reduced motion, the one dynamite
      blasted away, in one cell (#app clips what comes in past the screen's edge). */
