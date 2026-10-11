@@ -494,6 +494,10 @@ question shows at most one of a set, picked at random when the answer is none
 of them (`TWINS` in `src/lib/game.ts`). The Guiding Palms differ only in
 colour, so they never meet where the art is in grayscale. Today's unique
 leaves twins be: they may meet in it, as they could from its first day.
+New items are checked for twins by `tests/twins.test.ts`: it lists every
+pair in a group whose art looks very alike (the look-alike table, so rebuild
+it when items come in) or whose names share a word, until each is a set in
+`TWINS` or marked as looked at and told apart.
 
 **Codex:** a page (from the start page's corner, or at
 `poe2.quest/#codex`) listing every item you have seen, with your accuracy per

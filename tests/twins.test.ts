@@ -43,6 +43,69 @@ test('twins come in with a zone, whose card says so', () => {
   for (const { names, depth } of TWINS) assert.ok(opensZone(depth), `${names} at ${depth}`);
 });
 
+/**
+ * Pairs that could be twins and were looked at: their art is told apart at a
+ * glance, so they are not. Each pair by name, in alphabetical order.
+ */
+const CHECKED: [string, string][] = [
+  // Looked alike to the look-alike table (scripts/looks.mjs).
+  ['Cloak of Defiance', 'Gloomform'],
+  ["Cospri's Will", 'Perfidy'],
+  ['Dionadair', 'Wulfsbane'],
+  ['Icetomb', 'The Mutable Star'],
+  ['Irongrasp', 'Kingsguard'],
+  ["Kaom's Madness", "Uhtred's Augury"],
+  ["Kaom's Madness", "Uhtred's Omen"],
+  ['Kingsguard', "Voll's Protector"],
+  ['Pragmatism', 'Reverie'],
+  ['Silks of Veneration', 'Tabula Rasa'],
+  // Named alike.
+  ["Atziri's Allure", "Atziri's Communion"],
+  ["Berek's Grip", 'Grip of Kulemak'],
+  ['Black Sun Crest', 'The Black Insignia'],
+  ['Cloak of Defiance', 'Cloak of Flame'],
+  ['Crown of Eyes', 'Crown of the Pale King'],
+  ['Crown of Eyes', 'Crown of the Victor'],
+  ['Crown of Eyes', 'Crown of Thorns'],
+  ['Crown of the Pale King', 'Crown of the Victor'],
+  ['Crown of Thorns', 'Crown of the Pale King'],
+  ['Crown of Thorns', 'Crown of the Victor'],
+  ["Greed's Embrace", "Pariah's Embrace"],
+  ['Guiding Palm of the Eye', 'Palm of the Dreamer'],
+  ['Guiding Palm of the Heart', 'Palm of the Dreamer'],
+  ['Guiding Palm of the Mind', 'Palm of the Dreamer'],
+  ['Mask of the Sanguimancer', 'Mask of the Stitched Demon'],
+  ['Mask of the Sanguimancer', 'The Hollow Mask'],
+  ['Mask of the Stitched Demon', 'The Hollow Mask'],
+  ['Sandstorm Visage', 'Visage of Ayah'],
+  ['The Smiling Knight', 'The Vile Knight'],
+];
+
+/** How alike two items' art has to look to the table for a pair to be looked at. */
+const ALIKE = 0.86;
+
+test('every item that could have a twin was looked at: new items, new art', () => {
+  // The table is what finds look-alikes, so every item needs its art in it.
+  const missing = items.filter((it) => !looks.looksLike(it.id).length).map((it) => it.name);
+  assert.deepEqual(missing, [], 'rebuild the look-alike table (README, "npm run looks")');
+  /** A name's longer words, "'s" taken off. */
+  const words = (n: string) => new Set(n.toLowerCase().replace(/'s\b/g, '').replace(/[^a-z ]/g, '').split(' ').filter((w) => w.length > 3));
+  const twins = (a: string, b: string) => TWINS.some((t) => t.names.includes(a) && t.names.includes(b));
+  const checked = new Set(CHECKED.map((pair) => pair.join('|')));
+  const unchecked: string[] = [];
+  for (const a of items) {
+    for (const b of items) {
+      // Tablets all look alike, but only ever meet each other (game.ts RARE_GROUPS).
+      if (a.name >= b.name || a.group !== b.group || a.group === 'Tablets' || twins(a.name, b.name)) continue;
+      const alike = looks.lookScore(a.id, b.id) >= ALIKE || [...words(a.name)].some((w) => words(b.name).has(w));
+      if (alike && !checked.has(`${a.name}|${b.name}`)) unchecked.push(`${a.name} / ${b.name}`);
+    }
+  }
+  // Look at their art: only a detail tells them apart → a set in game.ts TWINS; else → CHECKED.
+  assert.deepEqual(unchecked, [], 'look-alikes nobody has looked at yet');
+  for (const pair of CHECKED) for (const name of pair) assert.ok(byName.has(name), `${name} (CHECKED) is an item`);
+});
+
 test('every twin is a real item, each set from one group', () => {
   for (const { names } of TWINS) {
     const set = names.map((n) => byName.get(n));
