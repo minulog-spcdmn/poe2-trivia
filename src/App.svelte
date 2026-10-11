@@ -6,7 +6,7 @@
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
   import ZoneCard from './components/zonecard/ZoneCard.svelte';
   import { ownRect, stageZoom } from './lib/stage';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Component } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
@@ -20,9 +20,8 @@
   import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
-  import Game from './components/Game.svelte';
-  import GameOver from './components/GameOver.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
+  import { whenIdle } from './lib/idle';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
   import { setCursorColor } from './lib/ownCursor';
@@ -230,6 +229,22 @@
   onMount(() => {
     const t = setTimeout(loadCodexPage, 2000);
     return () => clearTimeout(t);
+  });
+
+  // The game's screens (a question, the end of a game) are a chunk of their
+  // own, so the start page loads and runs without them: fetched in the first
+  // idle moment, or at once on the way into a room.
+  let Game = $state<Component | null>(null);
+  let GameOver = $state<Component | null>(null);
+  let gamePages: Promise<unknown> | null = null;
+  const loadGamePages = () =>
+    (gamePages ??= Promise.all([
+      import('./components/Game.svelte').then((m) => (Game = m.default)),
+      import('./components/GameOver.svelte').then((m) => (GameOver = m.default)),
+    ]).catch(() => (gamePages = null)));
+  onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
+  $effect(() => {
+    if (screen !== 'home' && screen !== 'codex') untrack(loadGamePages);
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join
@@ -448,13 +463,13 @@
         {:else if screen === 'lobby'}
           <Lobby />
         {:else if screen === 'game'}
-          <Game />
+          {#if Game}<Game />{/if}
         {:else if screen === 'codex'}
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
           {/await}
-        {:else}
+        {:else if GameOver}
           <GameOver />
         {/if}
       </div>

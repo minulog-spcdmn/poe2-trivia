@@ -56,24 +56,60 @@ const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
 /** A request that neither loads nor fails by then has stalled. */
 const IMAGE_TIMEOUT_MS = 8000;
+/**
+ * A request still out after this most likely hangs on a stalled connection
+ * (it normally takes a few hundred ms): a second one goes out beside it, and
+ * whichever arrives first is used, so one stall doesn't hold the question up
+ * for the whole timeout.
+ */
+const IMAGE_HEDGE_MS = 2000;
 
+/**
+ * Loads a picture and decodes it. Decoding first (img.decode) does it off the
+ * main thread, and for a "find the art" question all its pictures at once;
+ * drawn undecoded, each would be decoded on the main thread, one after the
+ * other, as it is drawn.
+ */
 function fetchImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    const timer = setTimeout(() => {
-      img.onload = img.onerror = null;
-      img.src = '';
-      reject(new Error(`Timed out loading ${src}`));
-    }, IMAGE_TIMEOUT_MS);
-    img.onload = () => {
+    const imgs: HTMLImageElement[] = [];
+    let failed = 0;
+    let loaded = false;
+    let settled = false;
+    const finish = (err: Error | null, img?: HTMLImageElement) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve(img);
+      clearTimeout(hedge);
+      for (const other of imgs) {
+        if (other === img) continue;
+        other.onload = other.onerror = null;
+        other.src = '';
+      }
+      if (img) resolve(img);
+      else reject(err);
     };
-    img.onerror = () => {
-      clearTimeout(timer);
-      reject(new Error(`Could not load ${src}`));
+    const request = (url: string) => {
+      const img = new Image();
+      imgs.push(img);
+      img.onload = () => {
+        loaded = true;
+        img.decode().then(
+          () => finish(null, img),
+          // Still drawable: it decodes as it's drawn instead.
+          () => finish(null, img),
+        );
+      };
+      img.onerror = () => {
+        // Every request out so far failed (one failing before the second goes out is enough).
+        if (++failed === imgs.length) finish(new Error(`Could not load ${src}`));
+      };
+      img.src = url;
     };
-    img.src = src;
+    const timer = setTimeout(() => finish(new Error(`Timed out loading ${src}`)), IMAGE_TIMEOUT_MS);
+    // The second request's own address, so the browser doesn't just wait on the first.
+    const hedge = setTimeout(() => loaded || request(`${src}?again`), IMAGE_HEDGE_MS);
+    request(src);
   });
 }
 
