@@ -208,7 +208,8 @@
   // `lit` lights the seals' signs (an unidentified item keeps them dark
   // until the reveal, when they flare); `end` is what the right seal holds:
   // Luna, or nothing, for a button to sit in it (the dialog's close; see
-  // SOCKET_X). The ends can be drawn smaller with `--end-scale`; with `fit`
+  // SOCKET_X); `start` the same for the left one: Sol, or nothing (the item
+  // window's fold). The ends can be drawn smaller with `--end-scale`; with `fit`
   // they are sized to the plate itself (drawn for 64px: a taller plate, as
   // a name that wraps makes it, draws them larger), so the frame's rules
   // always run along its edges; `scale` (bindable) says how large, so what
@@ -216,9 +217,10 @@
   let {
     lit = true,
     end = 'luna',
+    start = 'sol',
     fit = false,
     scale: endScale = $bindable(),
-  }: { lit?: boolean; end?: 'luna' | 'empty'; fit?: boolean; scale?: number } = $props();
+  }: { lit?: boolean; end?: 'luna' | 'empty'; start?: 'sol' | 'empty'; fit?: boolean; scale?: number } = $props();
   let plateEl = $state<HTMLElement>();
   $effect(() => {
     if (!fit || !plateEl) return;
@@ -286,7 +288,7 @@
 
 {#snippet plate()}
   <!-- The ends, round the middle, each in its own half of the plate. -->
-  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap('sol')}</svg></svg>
+  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(start)}</svg></svg>
   <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
 {/snippet}
 

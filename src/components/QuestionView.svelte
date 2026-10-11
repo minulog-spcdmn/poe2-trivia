@@ -1169,7 +1169,8 @@
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
             <span class="sheen"></span>
-            <span class="key">{(i + 1) % 10}</span>
+            <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
+            <span class="key" class:lens-key={!!option}>{#if option}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 300, delay: 600 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
             <span class="cue" aria-hidden="true"></span>
             {#if pic || tv}
               <span class="pic">
@@ -2454,6 +2455,26 @@
   .tile.inspect:not(:disabled):hover .pic,
   .tile.inspect:not(:disabled):focus-visible .pic {
     transform: scale(1.04);
+  }
+  /* Bright enough to read on a picture dimmed at the reveal. */
+  .lens-key {
+    color: var(--gold-hi);
+    border-color: var(--gold);
+  }
+  .lens-key svg {
+    width: 14px;
+    height: 14px;
+    margin-top: -2px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+  .tile.inspect:not(:disabled):hover .lens-key,
+  .tile.inspect:not(:disabled):focus-visible .lens-key {
+    color: var(--gold-hi);
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(201, 164, 92, 0.3);
   }
   /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
      and the picture comes forward. */

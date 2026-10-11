@@ -20,15 +20,15 @@ test('every item has its tooltip, and only the items do (npm run fetch-stats)', 
   );
 });
 
-test('tooltip lines are of a kind ItemDetails draws, their values marked in pairs', () => {
+test('tooltip lines are of a kind ItemDetails draws, their values marked whole', () => {
   const bad: string[] = [];
   for (const [id, sections] of Object.entries(stats))
     for (const section of sections) {
       if (!section.length) bad.push(`${id}: an empty section`);
       for (const [kind, text] of section) {
         if (!'priedcft'.includes(kind) || kind.length !== 1) bad.push(`${id}: kind ${kind}`);
-        // Values in {} (white) and <> (blue), never nested or left open.
-        if (!/^(?:[^{}<>]|\{[^{}<>]*\}|<[^{}<>]*>)*$/.test(text)) bad.push(`${id}: ${text}`);
+        // Coloured values written {x|value} (x one of ItemDetails' COLOURS), never nested or left open.
+        if (!/^(?:[^{}]|\{[wapfclh]\|[^{}|]*\})*$/.test(text)) bad.push(`${id}: ${text}`);
         if (!text.trim()) bad.push(`${id}: an empty line`);
       }
     }

@@ -1,109 +1,180 @@
 <script lang="ts" module>
+  import { singular, type Item } from '../lib/game';
+
   /**
    * A tooltip line, as scripts/fetch-stats.mjs writes it: its kind (a
    * property, the requirements, an implicit or explicit mod, a gem's
-   * description, the corrupted mark, flavour text, a skill's title) and its
-   * text, a value in white wrapped in {} and one in blue in <>.
+   * description, the corrupted mark, flavour text, the title of a skill a
+   * gem brings) and its text, each coloured value in it written {x|value}
+   * (x: see COLOURS).
    */
-  type Line = [kind: 'p' | 'r' | 'i' | 'e' | 'd' | 'c' | 'f' | 't', text: string];
+  type Kind = 'p' | 'r' | 'i' | 'e' | 'd' | 'c' | 'f' | 't';
+  type Line = [kind: Kind, text: string];
   type Stats = Record<string, Line[][]>;
 
   // Loaded the first time an item's details are opened: most games never do.
   let stats: Promise<Stats> | undefined;
-  const loadStats = () => (stats ??= import('../data/itemStats.json').then((m) => m.default as unknown as Stats));
+  /** The tooltips, loaded once (ItemWindow asks ahead, so its body doesn't grow after it has unrolled). */
+  export const loadStats = () => (stats ??= import('../data/itemStats.json').then((m) => m.default as unknown as Stats));
 
-  /** A line's text in runs: plain, a white value, a blue one. */
+  /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */
+  const COLOURS: Record<string, string> = { w: 'white', a: 'aug', p: 'white', f: 'fire', c: 'cold', l: 'lightning', h: 'chaos' };
+
+  /** A line's text in runs: plain, or a value in its colour. */
   const runs = (text: string) =>
-    text.split(/(\{[^}]*\}|<[^>]*>)/).flatMap((t) => (!t ? [] : t[0] === '{' ? [{ t: t.slice(1, -1), c: 'value' }] : t[0] === '<' ? [{ t: t.slice(1, -1), c: 'aug' }] : [{ t, c: '' }]));
+    text.split(/(\{\w\|[^}]*\})/).flatMap((t) => {
+      if (!t) return [];
+      const m = /^\{(\w)\|([^}]*)\}$/.exec(t);
+      return m ? [{ t: m[2], c: COLOURS[m[1]] ?? '' }] : [{ t, c: '' }];
+    });
+
+  /**
+   * Flavour text in its lines. The game breaks it where its own tooltip is
+   * full, so a line that goes on with a small letter goes on the line before
+   * it; one that starts a sentence or a verse keeps its own (a poem stays a
+   * poem).
+   */
+  const verses = (text: string) =>
+    text.split('\n').reduce<string[]>((out, l) => {
+      if (out.length && /^[a-z]/.test(l)) out[out.length - 1] += ` ${l}`;
+      else out.push(l);
+      return out;
+    }, []);
+
+  const WEAPONS = new Set(['One-Handed Weapons', 'Two-Handed Weapons']);
+
+  /**
+   * The item's sections, as the game's tooltip has them. A weapon's first
+   * line is its class, grey, as in the game (poe2db's own grouping of its
+   * base, which the data leaves out, isn't the game's).
+   */
+  function sectionsOf(item: Item, all: Stats): Line[][] {
+    const list = (all[item.id] ?? []).map((s) => [...s]);
+    if (item.kind === 'unique' && WEAPONS.has(item.category)) {
+      const head: Line = ['p', singular(item.group)];
+      if (list[0]?.[0]?.[0] === 'p') list[0].unshift(head);
+      else list.unshift([head]);
+    }
+    return list;
+  }
 </script>
 
 <script lang="ts">
-  import type { Item } from '../lib/game';
-
-  // An item's tooltip as the game shows it: its properties, requirements, mods and flavour text.
+  // An item's tooltip as the game shows it: its properties, requirements,
+  // mods and flavour text, in sections parted by the game's plain rule.
   let { item }: { item: Item } = $props();
 
-  const sections = $derived(loadStats().then((s) => s[item.id] ?? []));
+  const sections = $derived(loadStats().then((s) => sectionsOf(item, s)));
 </script>
 
-{#await sections}
-  <p class="wait" aria-label="Loading">…</p>
-{:then list}
-  {#each list as section, i (i)}
-    {#if i}<div class="sep" aria-hidden="true"></div>{/if}
-    <div class="section">
-      {#each section as [kind, text], j (j)}
-        <!-- On one line: it keeps its text's line breaks (white-space: pre-line). -->
-        <p class="line {kind}">{#if kind === 'r'}{'Requires: '}{/if}{#each runs(text) as r, k (k)}{#if r.c}<span class={r.c}>{r.t}</span>{:else}{r.t}{/if}{/each}</p>
-      {/each}
-    </div>
-  {/each}
-{:catch}
-  <p class="wait">Its details couldn't be loaded.</p>
-{/await}
+{#snippet text(t: string)}{#each runs(t) as r, k (k)}{#if r.c}<span class={r.c}>{r.t}</span>{:else}{r.t}{/if}{/each}{/snippet}
+
+<div class="tooltip-body">
+  {#await sections}
+    <p class="wait" aria-label="Loading">…</p>
+  {:then list}
+    {#each list as section, i (i)}
+      {#if i}<div class="rule" aria-hidden="true"></div>{/if}
+      <div class="section">
+        {#each section as [kind, t], j (j)}
+          {#if kind === 'f'}
+            <p class="line f">
+              {#each verses(t) as v, k (k)}<span class="verse">{v}</span>{/each}
+            </p>
+          {:else}
+            <!-- On one line: it keeps its text's line breaks (white-space: pre-line). -->
+            <p class="line {kind}">{#if kind === 'r'}{'Requires: '}{/if}{@render text(t)}</p>
+          {/if}
+        {/each}
+      </div>
+    {/each}
+  {:catch}
+    <p class="wait">Its details couldn't be loaded.</p>
+  {/await}
+</div>
 
 <style>
-  /* The game's tooltip colours: grey properties with white or blue values, blue mods, orange flavour text. */
+  /*
+   * The game's tooltip: centred small capitals, grey labels with white or
+   * blue values (each damage type in its own colour), blue mods, orange
+   * flavour text. Its colours are the game's (as poe2db has them), fire and
+   * cold lifted a little: theirs are too dark to read at this size on our
+   * black.
+   */
+  .tooltip-body {
+    --tt-grey: #8c8c8c;
+    --tt-white: #f2efe8;
+    --tt-blue: #8888ff;
+    --tt-unique: #af6025;
+    text-align: center;
+    font-variant: small-caps;
+    font-variant-numeric: lining-nums;
+  }
   .section {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.1rem;
   }
   .line {
     margin: 0;
-    font-size: 0.98rem;
-    line-height: 1.3;
+    font-size: 1.02rem;
+    line-height: 1.28;
     white-space: pre-line;
-    color: #8c8c8c;
+    text-wrap: balance;
+    color: var(--tt-grey);
   }
-  .value {
-    color: #e8e4dc;
+  .white {
+    color: var(--tt-white);
   }
   .aug,
   .i,
   .e {
-    color: #8f9cff;
+    color: var(--tt-blue);
+  }
+  .fire {
+    color: #b8301f;
+  }
+  .cold {
+    color: #4f7fb5;
+  }
+  .lightning {
+    color: #ffd700;
+  }
+  .chaos {
+    color: #d02090;
   }
   .d {
-    color: #b9b4aa;
+    color: #c4beb4;
   }
   .c {
-    color: #d65a4a;
+    color: #d20000;
   }
+  /* Flavour text: in italic lower case as the game sets it, each verse balanced on its own. */
   .f {
+    font-variant: normal;
     font-style: italic;
-    color: #b8743c;
+    color: var(--tt-unique);
+    white-space: normal;
   }
+  .verse {
+    display: block;
+    text-wrap: balance;
+  }
+  /* A skill the gem brings: its name, as the game titles the gem's second tab. */
   .t {
-    font-family: var(--font-display);
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: #d8a26a;
-    margin-bottom: 0.2rem;
+    color: var(--tt-white);
+    font-size: 1.08rem;
+    margin-bottom: 0.15rem;
   }
   .wait {
     margin: 0;
     color: var(--muted);
   }
-  /* The tooltip's separator, as CodexItem's: a hairline with a gem in the middle. */
-  .sep {
-    position: relative;
+  /* The game's rule between sections: a plain line fading out at both ends, in the unique's colour. */
+  .rule {
     height: 1px;
-    margin: 0.7rem auto;
-    width: 80%;
-    background: linear-gradient(90deg, transparent, #6b4520 25%, #6b4520 75%, transparent);
-  }
-  .sep::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 5px;
-    height: 5px;
-    translate: -50% -50%;
-    rotate: 45deg;
-    background: var(--unique);
-    box-shadow: 0 0 6px rgba(224, 138, 68, 0.6);
+    margin: 0.6rem auto;
+    width: 84%;
+    background: linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.75) 22%, rgba(175, 96, 37, 0.75) 78%, transparent);
   }
 </style>

@@ -13,6 +13,7 @@
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
   import ItemDetails from './ItemDetails.svelte';
+  import { readStored, writeStored } from '../lib/storage';
   import { calm } from '../lib/motion.svelte';
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
@@ -34,6 +35,15 @@
   const tookForIt = $derived(
     byCount(Object.entries(codex.items).flatMap(([id, e]) => (e.mixed[item.id] ? [[id, e.mixed[item.id]] as [string, number]] : []))),
   );
+
+  /** Which face shows: the item's tooltip or your record of it, as you last left it. */
+  type View = 'item' | 'record';
+  const VIEW_KEY = 'codexItemView';
+  let view = $state<View>(readStored(VIEW_KEY) === 'record' ? 'record' : 'item');
+  function show(v: View) {
+    view = v;
+    writeStored(VIEW_KEY, v);
+  }
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
@@ -130,45 +140,59 @@
       </div>
     </div>
 
-    <div class="body">
-      <p class="kind">{kind}</p>
-      <div class="sep" aria-hidden="true"></div>
-      {#key item.id}
-        <ItemDetails {item} />
-      {/key}
-      {#if entry}
-        <div class="sep" aria-hidden="true"></div>
-        <ul class="lines">
-          <li>Seen <b>{times(entry.seen)}</b></li>
-          <li>
-            {#if entry.first === entry.last}Seen on <b>{date(entry.first)}</b>{:else}First seen <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
-          </li>
-          <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
-          <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
-          {#if entry.delve}
-            {@const d = entry.delve}
-            {@const lives = livesCost(d)}
-            <li>
-              In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{shownDepth(d.deepest)}</b>{/if}
-            </li>
-            {#if d.n > d.ok}
-              <li>
-                {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{shownDepth(d.lostAt)}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
-              </li>
-            {/if}
-            {#if d.finds || d.blasted}
-              <li>
-                {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? '; dynamite' : 'Dynamite'} went off on it <b>{times(d.blasted)}</b>{/if}
-              </li>
-            {/if}
-          {/if}
-        </ul>
-      {/if}
-      {@render related('You took it for', tookItFor)}
-      {@render related('You took these for it', tookForIt)}
+    <!-- Two faces: the item as the game's tooltip shows it, and what you've done with it. -->
+    <div class="seg" role="tablist" aria-label="Show">
+      <button role="tab" id="codex-item-tab-item" aria-selected={view === 'item'} aria-controls="codex-item-face-item" class:on={view === 'item'} onclick={() => show('item')}>The item</button>
+      <button role="tab" id="codex-item-tab-record" aria-selected={view === 'record'} aria-controls="codex-item-face-record" class:on={view === 'record'} onclick={() => show('record')}>Your record</button>
+    </div>
+
+    <!-- Both faces in one place, the hidden one kept for its height: switching never resizes the card. -->
+    <div class="faces">
+      <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'}>
+        {#key item.id}
+          <ItemDetails {item} />
+        {/key}
+      </div>
+      <div class="body face" class:on={view === 'record'} id="codex-item-face-record" role="tabpanel" aria-labelledby="codex-item-tab-record" inert={view !== 'record'}>
+        {@render record()}
+      </div>
     </div>
   </div>
 </div>
+
+{#snippet record()}
+  <p class="kind">{kind}</p>
+  {#if entry}
+    <div class="sep" aria-hidden="true"></div>
+    <ul class="lines">
+      <li>Seen <b>{times(entry.seen)}</b></li>
+      <li>
+        {#if entry.first === entry.last}Seen on <b>{date(entry.first)}</b>{:else}First seen <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
+      </li>
+      <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
+      <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
+      {#if entry.delve}
+        {@const d = entry.delve}
+        {@const lives = livesCost(d)}
+        <li>
+          In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{shownDepth(d.deepest)}</b>{/if}
+        </li>
+        {#if d.n > d.ok}
+          <li>
+            {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{shownDepth(d.lostAt)}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
+          </li>
+        {/if}
+        {#if d.finds || d.blasted}
+          <li>
+            {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? '; dynamite' : 'Dynamite'} went off on it <b>{times(d.blasted)}</b>{/if}
+          </li>
+        {/if}
+      {/if}
+    </ul>
+  {/if}
+  {@render related('You took it for', tookItFor)}
+  {@render related('You took these for it', tookForIt)}
+{/snippet}
 
 <style>
   /* The page behind scrolls the dialog on a short screen, so it never shows a scrollbar of its own. */
@@ -298,6 +322,55 @@
     inset: 0;
   }
 
+  .faces {
+    display: grid;
+  }
+  .face {
+    grid-area: 1 / 1;
+    visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity 0.2s,
+      visibility 0s 0.2s;
+  }
+  .face.on {
+    visibility: visible;
+    opacity: 1;
+    transition: opacity 0.2s;
+  }
+  /* The switch between the item and your record of it, as the codex's own (Grid, Table). */
+  .seg {
+    display: flex;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: 0.75rem 1rem 0;
+  }
+  .seg > button {
+    min-width: 96px;
+    padding: 0.45rem 0.8rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--muted);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .seg > button:hover {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+  }
+  .seg > button.on {
+    color: #fff1cf;
+    background: linear-gradient(180deg, #8a5a22, #452a0e);
+    border-color: var(--gold);
+    text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 230, 170, 0.3),
+      0 0 14px rgba(201, 164, 92, 0.3);
+  }
   .body {
     padding: 0.9rem 1.2rem 1.1rem;
     text-align: center;

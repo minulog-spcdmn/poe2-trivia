@@ -48,17 +48,36 @@ const decode = (s) =>
     .replace(/&amp;/g, '&');
 
 /**
- * A line's text. A value in the game's white is wrapped in {}, one in its
- * augmented blue in <>; the ranges' dash becomes a hyphen, as the game
- * writes them.
+ * The colours a value is shown in, by its class on poe2db, as one letter:
+ * the game's white, its augmented blue (a value the item's mods raise), and
+ * each damage type's own.
+ */
+const COLOURS = {
+  colourDefault: 'w',
+  colourAugmented: 'a',
+  colourPhysicalDamage: 'p',
+  colourFireDamage: 'f',
+  colourColdDamage: 'c',
+  colourLightningDamage: 'l',
+  colourChaosDamage: 'h',
+};
+const unknownColours = new Set();
+
+/**
+ * A line's text. A coloured value is wrapped as {x|value}, x its colour's
+ * letter (COLOURS); the ranges' dash becomes a hyphen, as the game writes
+ * them.
  */
 function lineText(html, where) {
   const plain = decode(html.replace(/<[^>]+>/g, ''));
-  if (/[{}<>]/.test(plain)) throw new Error(`${where}: a line already holds a bracket: ${plain}`);
+  if (/[{}]/.test(plain)) throw new Error(`${where}: a line already holds a brace: ${plain}`);
   const marked = html
     .replace(/<span class="ndash">[^<]*<\/span>/g, '-')
-    .replace(/<span class=['"]colourDefault['"]>([^<]*)<\/span>/g, '\u0001$1\u0002')
-    .replace(/<span class=['"]colourAugmented['"]>([^<]*)<\/span>/g, '\u0003$1\u0004')
+    .replace(/<span class=['"](colour\w+)['"]>([^<]*)<\/span>/g, (all, cls, v) => {
+      const c = COLOURS[cls];
+      if (!c) unknownColours.add(cls);
+      return c ? `\u0001${c}|${v}\u0002` : v;
+    })
     .replace(/<br\s*\/?>/g, '\n')
     .replace(/<[^>]+>/g, '');
   return decode(marked)
@@ -66,8 +85,6 @@ function lineText(html, where) {
     .replaceAll(EM_DASH_RUN, '; ')
     .replace(/\u0001/g, '{')
     .replace(/\u0002/g, '}')
-    .replace(/\u0003/g, '<')
-    .replace(/\u0004/g, '>')
     .split('\n')
     .map((l) => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
@@ -178,6 +195,7 @@ export async function fetchStats() {
   console.log(`${Object.keys(sorted).length} of ${items.length} items have their tooltip`);
   if (missing.length) console.warn(`No tooltip found for:\n  ${missing.join('\n  ')}`);
   if (unknown.size) console.warn(`Lines of an unknown kind, left out: ${[...unknown].join(', ')}`);
+  if (unknownColours.size) console.warn(`Values in a colour of an unknown kind, shown plain: ${[...unknownColours].join(', ')}`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url))

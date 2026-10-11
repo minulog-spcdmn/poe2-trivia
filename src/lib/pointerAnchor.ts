@@ -13,12 +13,13 @@ const under = (px: number, py: number) => document.elementsFromPoint(px, py).fin
 
 /**
  * Whether this player's own cursor is the hand at a spot: something they can
- * click (cursor: pointer, which the app's cursors keep as the fallback after
- * their own picture), so the others see it as the hand too.
+ * click (cursor: pointer, or a closer look or something to move, which the
+ * app's cursors keep as the fallback after their own picture), so the others
+ * see it as the hand too.
  */
 export function clickableAt(px: number, py: number): boolean {
   const el = under(px, py);
-  return !!el && /\bpointer$/.test(getComputedStyle(el).cursor.trim());
+  return !!el && /\b(?:pointer|zoom-in|grab|grabbing)$/.test(getComputedStyle(el).cursor.trim());
 }
 
 /**
