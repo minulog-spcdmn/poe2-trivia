@@ -614,8 +614,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     for two minutes, signal bars with two lit when their game answers the host's
     pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
     unlit bars when they're offline, all in the same muted grey. Away, idle
-    and offline names dim, and away and offline avatars grey as an offline
-    player's does in the game. Beside Begin the host sees "All 4 exiles here and ready" with
+    and offline names dim, and idle and offline avatars grey as an offline
+    player's does in the game (away can be a look at another tab). Beside Begin the host sees "All 4 exiles here and ready" with
     a tick, or who the game would begin without and why ("3 of 4 ready; Kai
     is away"); a guest waiting on an away host is told so. Each device tells
     the host its own presence as it changes, and the host tells the room
