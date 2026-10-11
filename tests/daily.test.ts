@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { Engine, isFake, type Item } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { Engine, TWINS, isFake, type Item } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -60,6 +60,18 @@ test("a day's question never changes, twins and all", () => {
     .digest('hex')
     .slice(0, 16);
   assert.equal(year, '1b1d51fb22411642');
+});
+
+test('practice asks as the daily does: twins may meet', () => {
+  const byName = new Map(items.map((it) => [it.name, it.id]));
+  const engine = dailyEngine(items, fakes);
+  const game = dailyGame();
+  let met = 0;
+  for (let i = 0; i < 4000; i++) {
+    const q = askOne(engine, game);
+    if (TWINS.some((t) => t.names.filter((n) => q.options.includes(byName.get(n)!)).length > 1)) met++;
+  }
+  assert.ok(met > 0, 'twins met');
 });
 
 test('each day asks a named item among four names, one of them made up, never a gem', () => {

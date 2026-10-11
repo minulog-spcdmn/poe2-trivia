@@ -97,15 +97,17 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
 }
 
 /**
- * The day's question, the same everywhere for the same items, made-up names
- * and day. Twins (game.ts TWINS) may meet in it, as they could from its
- * first day, so no day's question changes with them (tests/daily.test.ts
- * pins the days).
+ * An engine that asks as Today's unique does. Twins (game.ts TWINS) may meet
+ * in it, as they could from its first day, so no day's question changes with
+ * them (tests/daily.test.ts pins the days), and practice asks the same way.
  */
+export const dailyEngine = (items: Item[], fakes: Record<string, string[]>, opts: { rng?: () => number; now?: () => number } = {}) =>
+  new Engine(items, { ...opts, fakes, twins: false });
+
+/** The day's question, the same everywhere for the same items, made-up names and day. */
 export function dailyQuestion(items: Item[], fakes: Record<string, string[]>, day: number): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
-  const engine = new Engine(items, { rng, fakes, now: () => day * DAY_MS, twins: false });
-  return askOne(engine, dailyGame(), rng);
+  return askOne(dailyEngine(items, fakes, { rng, now: () => day * DAY_MS }), dailyGame(), rng);
 }
 
 // ---- this browser's answers ----------------------------------------------
