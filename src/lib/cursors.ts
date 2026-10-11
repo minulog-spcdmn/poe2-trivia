@@ -1,14 +1,25 @@
 // Other players' pointers, live on everyone's screen (PeerCursors.svelte).
 //
-// Screens differ (a phone stacks what a desktop sets side by side), so a
-// pointer isn't sent as a spot on the screen but as a spot on something every
-// screen has: an anchor, an element marked data-cursor="<name>" (an answer, a
-// category card, a scoreboard row, the art; the game as a whole when over
-// none of them), with where on it from 0 to SCALE across and down. Each
-// screen puts it on its own copy of that element. The game as a whole is the
-// exception down it (toAnchor): its height changes as cards are dealt and
-// questions come and go, so a pointer resting on it would slide with it.
-// Down the game, a pointer goes by screen heights from its top instead.
+// Screens differ (a phone stacks what a desktop sets side by side, a host
+// has controls a guest only reads), so a pointer isn't sent as a spot on the
+// screen but as a spot on something every screen has: an anchor, an element
+// marked data-cursor="<name>" (an answer, a category card, a scoreboard row,
+// a setting, the header's buttons; the game as a whole when over none of
+// them), with where on it from 0 to SCALE across and down. Each screen puts
+// it on its own copy of that element. Anchors sit inside each other (a
+// setting's button in its row, the row in the settings panel), and a pointer
+// goes with up to MAX_HOPS of them, innermost first: a screen without the
+// first (a guest has no host's buttons; a phone hides what a desktop shows)
+// puts it on the next it has, so it lands in the right part of the screen
+// rather than by the game as a whole. Counterparts share a name: the host's
+// Begin row and a guest's "waiting for the host" line are both `start`, the
+// timer is `timer` wherever a layout puts it. Between anchors, a pointer
+// goes on the one nearest it, beside it (pointerAnchor.ts).
+//
+// The game as a whole is the exception down it (toAnchor): its height
+// changes as cards are dealt and questions come and go, so a pointer resting
+// on it would slide with it. Down the game, a pointer goes by screen heights
+// from its top instead.
 //
 // Guests send theirs to the host at most every SEND_EVERY_MS while it moves;
 // the host keeps only the latest of each and sends every guest one batch of
@@ -25,8 +36,8 @@ export const GAME_DEPTH = 4;
 /** The furthest down a position on `anchor` goes. */
 const maxY = (anchor: number) => (anchor === GAME_ANCHOR ? GAME_DEPTH * SCALE : SCALE);
 /**
- * On an element, a position may lie off it (a bot's pointer goes on the
- * element nearest it, so it keeps its place beside it on every screen): as
+ * On an element, a position may lie off it (a pointer between elements goes
+ * on the one nearest it, so it keeps its place beside it on every screen): as
  * far as four times its own size on either side.
  */
 export const OFF = 4 * SCALE;
@@ -46,9 +57,10 @@ export interface AnchorBox {
  * as screens come and go, the screen doesn't).
  */
 export function toAnchor(anchor: number, px: number, py: number, r: AnchorBox, screenH: number): [number, number] {
-  const clamp = (v: number, max: number) => Math.round(Math.min(max, Math.max(0, v * SCALE)));
-  const down = anchor === GAME_ANCHOR ? (py - r.top) / screenH : (py - r.top) / r.height;
-  return [clamp((px - r.left) / r.width, SCALE), clamp(down, maxY(anchor))];
+  const game = anchor === GAME_ANCHOR;
+  const clamp = (v: number, max: number) => Math.round(Math.min(max, Math.max(game ? 0 : -OFF, v * SCALE)));
+  const down = game ? (py - r.top) / screenH : (py - r.top) / r.height;
+  return [clamp((px - r.left) / r.width, game ? SCALE : SCALE + OFF), clamp(down, game ? maxY(anchor) : SCALE + OFF)];
 }
 
 /**
@@ -84,14 +96,37 @@ export const FLUSH_EVERY_MS = 100;
 
 /** Anchors that come in lists (by index, the same on every screen) take the codes from their base up. */
 const LISTS = { opt: 16, card: 32, row: 48 } as const;
-/** `next`: the button that moves on after a reveal (a host or the player whose turn it was presses it). */
-const SINGLES: Record<string, number> = { game: GAME_ANCHOR, art: 1, next: 2 };
 const LIST_SIZE = 16;
-export const MAX_ANCHOR = LISTS.row + LIST_SIZE - 1;
+/**
+ * Anchors there's one of, coded from 64 up (`game`, `art` and `next` keep
+ * their first codes, as recorded hands have them). Each is a part of a
+ * screen, named for what it is so its counterpart elsewhere can share the
+ * name. `next`: the button that moves on after a reveal (a host or the
+ * player whose turn it was presses it).
+ */
+const FIRST = ['game', 'art', 'next'];
+const MORE = [
+  // The header over every screen.
+  'header', 'brand', 'meta', 'mute', 'fx', 'leave',
+  // The lobby: the room, the party, the game's settings, the start (Begin, or a guest's wait for it).
+  'room', 'code', 'invite', 'hide', 'access', 'public', 'lock', 'party', 'watch', 'coop',
+  'settings', 'modes', 'about', 'target', 'difficulty', 'time', 'rules', 'descent', 'start', 'begin',
+  // A game: its banner, the scoreboard, the choice of cards, a question and the row under it.
+  'banner', 'duel', 'skip', 'board', 'ask',
+  'prompt', 'cards', 'notes', 'vote', 'note',
+  'task', 'timer', 'item', 'plate', 'options', 'footer', 'result', 'verdict', 'outcome', 'blast', 'hint',
+  // The end: the headline, the standings, what's next.
+  'kicker', 'headline', 'sub', 'standings', 'actions', 'again', 'back', 'share', 'joining', 'credit',
+];
+/** Every anchor there's one of, by name. */
+export const SINGLE_ANCHORS: readonly string[] = [...FIRST, ...MORE];
+const SINGLES: Record<string, number> = Object.fromEntries([...FIRST.map((n, i) => [n, i]), ...MORE.map((n, i) => [n, 64 + i])]);
+const NAMES = new Map(Object.entries(SINGLES).map(([n, c]) => [c, n]));
+export const MAX_ANCHOR = 64 + MORE.length - 1;
 
 /** The wire code for an anchor's name (data-cursor), or null for one there isn't. */
 export function anchorCode(name: string): number | null {
-  if (name in SINGLES) return SINGLES[name];
+  if (Object.hasOwn(SINGLES, name)) return SINGLES[name];
   const m = /^(opt|card|row):(\d{1,2})$/.exec(name);
   if (!m) return null;
   const i = Number(m[2]);
@@ -100,7 +135,8 @@ export function anchorCode(name: string): number | null {
 
 /** The name for a wire code, or null for one there isn't. */
 export function anchorName(code: number): string | null {
-  for (const [name, c] of Object.entries(SINGLES)) if (c === code) return name;
+  const single = NAMES.get(code);
+  if (single !== undefined) return single;
   for (const [name, base] of Object.entries(LISTS)) if (code >= base && code < base + LIST_SIZE) return `${name}:${code - base}`;
   return null;
 }
@@ -120,13 +156,34 @@ export type PointerKind = 0 | 1 | 2 | 3 | 4 | 5;
 export const actionOf = (kind: PointerKind) => kind % LIT;
 /** Whether it's over something its player can click. */
 export const litOf = (kind: PointerKind) => kind >= LIT;
-/** Where a pointer is: an anchor's code, the spot on it, and what it's doing. */
-export type CursorAt = [anchor: number, x: number, y: number, kind: PointerKind];
+/** A spot on an anchor: its code, and where on it. */
+export type Hop = [anchor: number, x: number, y: number];
+/** A pointer goes with at most this many anchors: its own, then what holds it (cursors.ts). */
+export const MAX_HOPS = 3;
+/**
+ * Where a pointer is: an anchor's code and the spot on it, what it's doing,
+ * then up to MAX_HOPS - 1 more anchors that hold the first, outward, and
+ * the spot on each, for a screen that doesn't have the first.
+ */
+export type CursorAt = [anchor: number, x: number, y: number, kind: PointerKind, ...more: number[]];
 /** One pointer in a host's batch: whose (cursorKey), and where, or nothing when it's gone. */
 export type CursorEntry = [who: string] | [who: string, ...CursorAt];
 
+/** A pointer at `hops` (innermost first, at least one), doing `kind`. */
+export function cursorAt(hops: Hop[], kind: PointerKind): CursorAt {
+  const [first, ...more] = hops.slice(0, MAX_HOPS);
+  return [...first, kind, ...more.flat()];
+}
+
+/** The anchors a pointer is at, innermost first. */
+export function hopsOf(at: CursorAt): Hop[] {
+  const out: Hop[] = [[at[0], at[1], at[2]]];
+  for (let i = 4; i + 2 < at.length; i += 3) out.push([at[i], at[i + 1], at[i + 2]]);
+  return out;
+}
+
 /** Where a batch's entry has the pointer, or null when it's gone. */
-export const entryAt = (e: CursorEntry): CursorAt | null => (e.length === 5 ? [e[1], e[2], e[3], e[4]] : null);
+export const entryAt = (e: CursorEntry): CursorAt | null => (e.length >= 5 ? (e.slice(1) as CursorAt) : null);
 
 /** Short for a player's id in batches; ids are random, so their start tells a room's players apart. */
 export const cursorKey = (id: string) => id.slice(0, 8);
@@ -171,16 +228,22 @@ export function clickableFor(s: GameState, id: string, name: string): boolean | 
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
+/** Whether (a, x, y) is a spot on an anchor there is. */
+function isHop(a: unknown, x: unknown, y: unknown): boolean {
+  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null) return false;
+  const game = a === GAME_ANCHOR;
+  const lo = game ? 0 : -OFF;
+  return isInt(x, lo, game ? SCALE : SCALE + OFF) && isInt(y, lo, game ? maxY(a) : SCALE + OFF);
+}
+
 /** A pointer from a guest, or undefined when it's bogus (null is a pointer gone). */
 export function parseCursorAt(v: unknown): CursorAt | null | undefined {
   if (v === null) return null;
-  if (!Array.isArray(v) || v.length !== 4) return undefined;
-  const [a, x, y, kind] = v;
-  const game = a === GAME_ANCHOR;
-  const lo = game ? 0 : -OFF;
-  if (!isInt(a, 0, MAX_ANCHOR) || anchorName(a) === null || !isInt(x, lo, game ? SCALE : SCALE + OFF) || !isInt(y, lo, game ? maxY(a) : SCALE + OFF) || !isInt(kind, MOUSE, LIT + PRESSED))
-    return undefined;
-  return [a, x, y, kind as PointerKind];
+  if (!Array.isArray(v) || v.length < 4 || v.length > 1 + 3 * MAX_HOPS || (v.length - 4) % 3) return undefined;
+  if (!isInt(v[3], MOUSE, LIT + PRESSED)) return undefined;
+  if (!isHop(v[0], v[1], v[2])) return undefined;
+  for (let i = 4; i < v.length; i += 3) if (!isHop(v[i], v[i + 1], v[i + 2])) return undefined;
+  return v.slice() as CursorAt;
 }
 
 /** A host's batch, or null when it's bogus. */

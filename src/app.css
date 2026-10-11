@@ -113,10 +113,16 @@ html[data-fullscreen]::-webkit-scrollbar {
   display: none;
 }
 
+/* Every element takes the cursor handed down to it (vite.config.ts), rather
+   than inheriting its parent's: one set on an element alone stays there. */
+:where(*) {
+  cursor: var(--cursor-now, auto);
+}
+
 a:any-link {
   cursor: pointer;
 }
-:where(input:not([type]), input[type='text'], input[type='search'], textarea) {
+:where(input:not([type]), input[type='text'], input[type='search'], input[type='number'], textarea) {
   cursor: text;
 }
 

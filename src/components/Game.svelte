@@ -313,7 +313,8 @@
   {/if}
 {/snippet}
 
-<!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular. -->
+<!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular;
+     its parts and what's in them have anchors of their own (Scoreboard, ChooseCategory, QuestionView). -->
 <div class="game" class:kicking={!!run && !!pastBest && pastBest.turn === s.turnCount} data-cursor="game">
   <p class="sr" aria-live="polite">{run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : ''}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
@@ -327,7 +328,7 @@
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
           {#if dm}
-            <div class="dm-strip" in:fly={{ y: -10, duration: 400 }}>
+            <div class="dm-strip" data-cursor="duel" in:fly={{ y: -10, duration: 400 }}>
               <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
               <span class="dm-duelists">
                 {#each dm.alive as id (id)}
@@ -348,7 +349,7 @@
               </span>
             </div>
           {/if}
-          <div class="head">
+          <div class="head" data-cursor="banner">
             {#if run && pastBest && pastBest.turn === s.turnCount}
               <!-- Over the banner, alone, one past your best says so (in the room
                    above it, so nothing moves when it comes). -->
@@ -400,18 +401,18 @@
             </p>
           {/if}
           {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
-            <div class="skip" transition:fade>
+            <div class="skip" data-cursor="skip" transition:fade>
               <span class="muted">{active.name} is disconnected{skipIn ? `; skipping in ${skipIn}s` : ''}.</span>
               <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>
             </div>
           {:else if session.idle}
-            <div class="skip" transition:fade>
+            <div class="skip" data-cursor="skip" transition:fade>
               <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
               <button class="btn small" onclick={() => skipTurn(session.idle)}>Skip their turn</button>
             </div>
           {/if}
           {#if session.artMissing}
-            <div class="skip" transition:fade>
+            <div class="skip" data-cursor="skip" transition:fade>
               <span class="muted">The art for this question couldn't be loaded.</span>
               <button class="btn small" onclick={() => session.dispatch({ type: 'reask' })}>Ask another question</button>
             </div>

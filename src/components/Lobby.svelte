@@ -244,7 +244,7 @@
       <p class="go-note"><b class="num">{s.players.length}</b> exiles ready</p>
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
-    <button class="btn big primary" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+    <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
     <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
   {/if}
@@ -254,27 +254,30 @@
      was, the room and the party; on the right, where today's unique was, the
      game. Begin closes the right column, in the same corner at every size,
      and the party's chips are the ones the game shows along its top. -->
-<!-- data-cursor: where other players' pointers are placed (PeerCursors): the room as a whole, the party's chips, the modes. -->
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the room as a whole, its blocks and what's in them.
+     A host and a guest see different controls in the same places (a setting's choices or its value, Begin or the wait
+     for it), so those share their row's anchor, and what only a host has falls back to it on a guest's screen. -->
 <div class="lobby" class:online={!local} data-cursor="game">
   <div class="cols">
     <div class="col side">
       {#if !local}
         <!-- The room code and link are how the party grows, so they come first. -->
-        <section class="block room" in:fly={{ x: -30, duration: 500, delay: 50 }}>
+        <section class="block room" data-cursor="room" in:fly={{ x: -30, duration: 500, delay: 50 }}>
           <header>
             <h2>Room code</h2>
           </header>
-          <div class="code" aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
+          <div class="code" data-cursor="code" aria-label={session.hideCode ? 'Room code hidden' : `Room code ${session.code}`}>
             <RoomCodeGlyphs code={session.code} hidden={session.hideCode} sparks />
           </div>
           <div class="invite-row">
             <!-- A locked or full room takes nobody new: the link isn't offered then, and the button says why. -->
-            <button class="btn invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
+            <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
               {s.settings.locked ? 'Room locked' : full ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
             </button>
             <!-- Hiding the code (for a stream) sits with the other ways of handing it on. -->
             <button
               class="room-tool"
+              data-cursor="hide"
               onclick={() => session.setHideCode(!session.hideCode)}
               title={session.hideCode ? 'Show the room code' : 'Hide the room code (for streaming)'}
               aria-label={session.hideCode ? 'Show room code' : 'Hide room code'}
@@ -286,12 +289,13 @@
               {/if}
             </button>
           </div>
-          <div class="room-actions">
+          <div class="room-actions" data-cursor="access">
             {#if isHost}
               <span class="who">Who can join</span>
               <!-- One switch, both its sides named: the lit plate slides under the side that holds, as the game's own choices light. -->
               <button
                 class="vis-toggle"
+                data-cursor="public"
                 class:public={!!s.settings.public}
                 role="switch"
                 aria-checked={!!s.settings.public}
@@ -305,6 +309,7 @@
               </button>
               <button
                 class="lock"
+                data-cursor="lock"
                 class:on={!!s.settings.locked}
                 onclick={() => setLocked(!s.settings.locked)}
                 title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining or watching'}
@@ -362,7 +367,7 @@
         </section>
       {/if}
 
-      <section class="block party" in:fly={{ x: -30, duration: 500, delay: 100 }}>
+      <section class="block party" data-cursor="party" in:fly={{ x: -30, duration: 500, delay: 100 }}>
         <header>
           <h2>Party</h2>
           <!-- Every seat as a pip, filled as exiles take them: how many more can come, at a glance. -->
@@ -416,14 +421,14 @@
         {#if watching.length}{@render gallery('Watching', watching)}{/if}
         {#if !local && !isHost && session.myPlayerId}
           <!-- A guest can sit the games out and watch, and take a seat again. -->
-          <p class="watch-choice"><WatchToggle /></p>
+          <p class="watch-choice" data-cursor="watch"><WatchToggle /></p>
         {/if}
         {#if !local && s.players.length < 2}
           <p class="hint waiting"><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
         {/if}
         {#if delve && !local}
           <!-- Co-op is about the party, so it is told under it: in a team room, or one a second player can still join (on one device, Delve is for one). -->
-          <div class="setting together">
+          <div class="setting together" data-cursor="coop">
             <span class="label">Play co-op together</span>
             {#if !together}
               <p class="together-when">Once a second exile joins this room:</p>
@@ -439,11 +444,11 @@
     </div>
 
     <!-- The game is the one framed panel: the settings and Begin are what the host works with. -->
-    <section class="col block game settings panel" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
+    <section class="col block game settings panel" data-cursor="settings" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
       <header><h2>Game</h2></header>
 
       <div class="setting">
-        <div class="modes" class:tall={tall.current} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+        <div class="modes" data-cursor="modes" class:tall={tall.current} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
           {#each MODES as m, i (m.id)}
             {@const on = s.settings.mode === m.id}
             <button
@@ -468,7 +473,7 @@
           {/each}
         </div>
         <!-- The chosen mode's description, under a notch that points up at it. -->
-        <div class="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
+        <div class="about" data-cursor="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
           <span class="about-frame" aria-hidden="true"></span>
           {#key peek ? 'peek' : s.settings.mode}
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
@@ -491,12 +496,12 @@
         <!-- The descent is Delve's progress: it is never cut. -->
         <!-- On a desktop the descent takes the height the panel has spare, at its own width:
              the gap to the finds is only what its leader lines need. -->
-        <div class="delve-slot">
+        <div class="delve-slot" data-cursor="descent">
           <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
         </div>
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
-        <div class="setting row">
+        <div class="setting row" data-cursor="target">
           <span class="label">Points to win</span>
           {#if !isHost}<b class="val num">{s.settings.targetScore}</b>{:else}
           <div class="seg">
@@ -512,7 +517,7 @@
           {/if}
         </div>
 
-        <div class="setting row">
+        <div class="setting row" data-cursor="difficulty">
           <span class="label">Difficulty</span>
           {#if !isHost}<b class="val">{DIFFICULTY_NAMES[difficulty]}</b>{:else}
           <div class="seg">
@@ -543,7 +548,7 @@
           </div>
         </div>
 
-        <div class="setting row">
+        <div class="setting row" data-cursor="time">
           <span class="label">Time per question</span>
           {#if !isHost}<b class="val">{s.settings.timer === 0 ? 'No limit' : `${s.settings.timer}s`}</b>{:else}
           <div class="seg">
@@ -556,7 +561,7 @@
           {/if}
         </div>
 
-        <ul class="rules">
+        <ul class="rules" data-cursor="rules">
           {#if race}
             <li>A wrong answer costs a point and sits you out until the next question.</li>
             <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
@@ -573,9 +578,9 @@
            to the bottom of the screen like the reveal's Next bar (lib/layout's dock).
            A guest's waiting line has nothing to tap, so it stays in place. -->
       {#if phone.current && isHost}
-        <div class="dock" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
+        <div class="dock" data-cursor="start" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
       {:else}
-        <div class="start">{@render startRow()}</div>
+        <div class="start" data-cursor="start">{@render startRow()}</div>
       {/if}
     </section>
   </div>

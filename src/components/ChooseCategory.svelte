@@ -419,7 +419,8 @@
 </script>
 
 <div class="choose" class:coop style:--n={s.offered.length}>
-  <p class="prompt">
+  <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
+  <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
     {:else if coop}
@@ -439,7 +440,7 @@
     {/if}
   </p>
 
-  <div class="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
+  <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"
@@ -519,7 +520,7 @@
     {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
     <!-- Wide screens: each note under its own card (its column), so what a find
          gives is read where it is chosen; phones: one under the other. -->
-    <div class="find-notes">
+    <div class="find-notes" data-cursor="notes">
       {#each finds as f (f.kind)}
         <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}" style:--col={s.offered.indexOf(f.category) + 1}>
           {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
@@ -533,7 +534,7 @@
   {#if coop && !drawn && s.phase === 'choosing'}
     <!-- The vote: when it closes, and who it is still waiting for (under what each card gives, with the rules' lines). -->
     <!-- Only who it waits for is announced; the countdown would be read out every second. -->
-    <p class="vote-status">
+    <p class="vote-status" data-cursor="vote">
       {#if closesIn !== null}
         <span class="closes" aria-hidden="true">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
       {/if}
@@ -552,11 +553,11 @@
   {/if}
 
   {#if s.deathmatch}
-    <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+    <p class="note muted" data-cursor="note">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if coop && canVote && lockout > 0}
-    <p class="note muted">A category the team plays stays locked for the next {lockout} depths.</p>
+    <p class="note muted" data-cursor="note">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
-    <p class="note muted">A category you choose stays locked for {lockoutText(lockout)}.</p>
+    <p class="note muted" data-cursor="note">A category you choose stays locked for {lockoutText(lockout)}.</p>
   {/if}
 </div>
 
