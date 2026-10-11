@@ -1237,7 +1237,7 @@
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
-            {#if showFull && item}
+            {#if media?.veil && showFull && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float unflip={mirrored(0)} />
             {/if}
             {#if media?.veil && !showFull}
@@ -1267,8 +1267,11 @@
                 <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, burn: v.burn, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
-            {:else if !showFull && media?.art && !waiting}
-              <ArtImage src={media.art.url} alt="The item to identify" w={media.art.w} h={media.art.h} float />
+            {:else if !media?.veil && ((showFull && item) || (media?.art && !waiting))}
+              <!-- One picture throughout: at the reveal the original art takes over in it, once loaded (ArtImage). -->
+              {@const full = showFull && item ? item : null}
+              {@const art = full ? { url: itemImage(full.id), w: full.w, h: full.h } : media!.art!}
+              <ArtImage src={art.url} alt={full ? full.name : 'The item to identify'} w={art.w} h={art.h} float unflip={!!full && mirrored(0)} />
             {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
             {/if}

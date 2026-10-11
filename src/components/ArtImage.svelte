@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { fade } from 'svelte/transition';
 
   // One item picture, centred in whatever space its parent gives it, with the
@@ -8,8 +9,8 @@
   // between items, so its own size says nothing about how big to draw it.
   // It fades in once its first file has loaded, so a large one never draws in
   // bit by bit; a picture swapped in later (the original art at the reveal)
-  // fades in over it. `unflip` starts it mirrored (as it was shown during the
-  // question) and turns it round. `round` lets it reach past the space into a
+  // fades in over it once it has loaded. `unflip` starts it mirrored (as it
+  // was shown during the question) and turns it round. `round` lets it reach past the space into a
   // circle around its centre (as big across as --round times the space's
   // width), so a wide item can be as big as the circle allows, not only as
   // the box (app.css).
@@ -25,12 +26,49 @@
   }: { src: string; alt?: string; w: number; h: number; scale?: number; float?: boolean; unflip?: boolean; round?: boolean } = $props();
 
   let loaded = $state(false);
+
+  /**
+   * What is on screen. A new picture (the original art at the reveal) is
+   * loaded and decoded first, while the one before stays, and then fades in
+   * over it, so the art never blinks out while the new file comes (a guest
+   * has never fetched it: its name would give the answer away).
+   */
+  let shown = $state(untrack(() => ({ src, w, h, unflip })));
+  $effect(() => {
+    const next = { src, w, h, unflip };
+    const cur = untrack(() => shown);
+    if (next.src === cur.src) {
+      if (next.w !== cur.w || next.h !== cur.h || next.unflip !== cur.unflip) shown = next;
+      return;
+    }
+    // Nothing on screen yet: it loads in place, faded in once it has.
+    if (!untrack(() => loaded)) {
+      shown = next;
+      return;
+    }
+    let live = true;
+    const img = new Image();
+    img.src = next.src;
+    const go = () => live && (shown = next);
+    img.decode().then(go, go);
+    return () => {
+      live = false;
+    };
+  });
 </script>
 
 <span class="art-slot">
-  <span class="art-fit" class:ready={loaded} class:float class:round style:--w={w} style:--h={h} style:--s={scale}>
-    {#key src}
-      <img {src} {alt} draggable="false" class:unflip in:fade={{ duration: 300 }} onload={() => (loaded = true)} />
+  <span class="art-fit" class:ready={loaded} class:float class:round style:--w={shown.w} style:--h={shown.h} style:--s={scale}>
+    {#key shown.src}
+      <img
+        src={shown.src}
+        {alt}
+        draggable="false"
+        class:unflip={shown.unflip}
+        in:fade={{ duration: 300 }}
+        out:fade={{ duration: 300 }}
+        onload={() => (loaded = true)}
+      />
     {/key}
   </span>
 </span>
@@ -45,6 +83,11 @@
   }
   .art-fit img {
     filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
+  }
+  /* The picture going out stays where it was while the new one fades in over it. */
+  .art-fit img:not(:only-child) {
+    position: absolute;
+    inset: 0;
   }
   .unflip {
     animation: unflip 0.45s var(--ease-out) 0.25s backwards;
