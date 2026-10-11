@@ -24,7 +24,7 @@ interface Plan {
 }
 
 import { between, log } from './util';
-import { Hand } from './hand';
+import { Hand, dealtAt } from './hand';
 
 /** New to it, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn. */
 const TRY_NEXT_FOR = 3;
@@ -257,7 +257,7 @@ export class Player {
     const now = session.hostNow();
     const dealt = now + dealIn(s, now);
     const at = dealt + Math.max(300, pickDelay(this.persona, Math.random, offered.length) - this.hand.lead());
-    this.hand.lookOverCards(offered.length, Date.now() + (at - now), Date.now() + (dealt - now));
+    this.hand.lookOverCards(offered.length, Date.now() + (at - now), dealtAt(s));
     const still = () => {
       const cur = session.state;
       if (cur?.phase !== 'choosing' || cur.turnCount !== s.turnCount || cur.round !== s.round) return null;

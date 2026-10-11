@@ -58,6 +58,9 @@ const ASIDES: [number, number][] = [
   [-120, -250],
 ];
 
+/** When the cards on offer are (or were) dealt, on this device's clock (Date.now): now, but for a new zone's, on their way. */
+export const dealtAt = (s: GameState) => Date.now() + dealIn(s, session.hostNow());
+
 export class Hand {
   private at: Spot = { x: 480 + Math.random() * 40, y: 600 + Math.random() * 100 };
   /** What it's replaying, and what the track's places are in thousandths of. */
@@ -137,7 +140,7 @@ export class Hand {
 
   /** Looks the cards over, as the recorded player did, from when they are dealt (`dealt`) until it reaches for one at `until`. */
   lookOverCards(_n: number, until: number, dealt = Date.now()) {
-    this.lookOver('card', 'cards', until, [], undefined, undefined, dealt);
+    this.lookOver('card', 'cards', until, { dealt });
   }
 
   /**
@@ -146,10 +149,10 @@ export class Hand {
    * what else it's torn between (answer indices).
    */
   ponder(q: Question, until: number, torn: number[] = []) {
-    this.lookOver('answer', 'answers', until, torn, q.mode, q.labels.length);
+    this.lookOver('answer', 'answers', until, { torn, mode: q.mode, n: q.labels.length });
   }
 
-  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, torn: number[] = [], mode?: string, n?: number, dealt = Date.now()) {
+  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, { torn = [], mode, n, dealt = Date.now() }: { torn?: number[]; mode?: string; n?: number; dealt?: number } = {}) {
     const s = this.s ?? session.state;
     if (!s) return;
     const now = Date.now();
@@ -277,7 +280,7 @@ export class Hand {
     const screen = `${s.phase}:${s.round}:${s.turnCount}:${s.question?.askedAt ?? 0}`;
     if (screen !== this.screen) {
       // (A new zone's cards come once dealt.)
-      const dealt = now + dealIn(s, session.hostNow());
+      const dealt = dealtAt(s);
       this.screen = screen;
       this.screenAt = dealt;
       this.on = null;

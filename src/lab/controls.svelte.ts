@@ -42,7 +42,7 @@ import {
   type Inventory,
   type ItemKind,
 } from '../lib/delve';
-import { milestoneAt } from '../lib/descent';
+import { milestoneAt, snapDescent } from '../lib/descent';
 import * as descentModule from '../lib/descent';
 import { resetRecords } from '../lib/delveRecord';
 
@@ -763,8 +763,7 @@ async function stepInto(d: number, before?: () => void) {
   // scene settles there, as a run's has by the time it steps down (not still
   // easing or fading from the last play), so the step into a zone plays whole.
   await sleep(350);
-  const snap = (descentModule as Record<string, unknown>).snapDescent;
-  if (typeof snap === 'function') snap();
+  snapDescent();
   stepDown();
 }
 

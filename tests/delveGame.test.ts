@@ -5,6 +5,7 @@ import {
   DELVE_LIVES,
   ZONE_DESCENT_MS,
   dealIn,
+  DEAL_SLACK_MS,
   delveLockout,
   delveRules,
   delveTimer,
@@ -211,17 +212,18 @@ test("going down into a new zone, its cards are dealt as the plunge into it land
   assert.equal(h.s.delve!.dealAt, undefined);
 });
 
-test("going down into a new zone, the player's own pick before the cards are dealt is dropped quietly", () => {
+test("going down into a new zone, the player's own pick well before the cards are dealt is dropped quietly", () => {
   const h = delve(['Ash']);
   for (let d = 1; d < 11; d++) h.turn(true);
   const at = h.s.delve!.dealAt!;
   assert.equal(at, h.clock.now + ZONE_DESCENT_MS);
-  h.clock.now = at - 1;
+  h.clock.now = at - DEAL_SLACK_MS - 1;
   throwsSilently(() => h.pick('p0'), /early/i);
   assert.equal(h.s.phase, 'choosing');
   // The bots' recordings know the cards weren't there yet (scripts/bot-motion.mjs).
   assert.equal(sceneOf(h.s, 'p0', 0).dealAt, at);
-  h.clock.now = at;
+  // A screen whose guess at the host's clock runs a little ahead showed them: its pick is taken.
+  h.clock.now = at - DEAL_SLACK_MS;
   h.pick('p0');
   assert.equal(h.s.phase, 'question');
   assert.equal(sceneOf(h.s, 'p0', 0).dealAt, undefined);

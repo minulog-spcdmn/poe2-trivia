@@ -639,6 +639,13 @@ export const ZONE_DESCENT_MS = 7000;
  */
 export const dealIn = (s: GameState, now: number) => (s.phase === 'choosing' && s.delve?.dealAt ? Math.max(0, s.delve.dealAt - now) : 0);
 
+/**
+ * How much sooner than the deal a player's pick is still taken: a guest's
+ * screen deals by its guess at the host's clock, which may run a little
+ * ahead of it, and a pick it showed the cards for is never lost.
+ */
+export const DEAL_SLACK_MS = 1000;
+
 /** A co-op run: two or more players set out together (online only). One player is a solo run. */
 export const isGroupRun = (s: GameState) => (s.delve?.entrants.length ?? 0) >= 2;
 

@@ -43,6 +43,7 @@ import {
   opensZone,
   ZONE_DESCENT_MS,
   dealIn,
+  DEAL_SLACK_MS,
   unaskedCards,
   waitingIds,
   SECOND_FIND,
@@ -1277,8 +1278,9 @@ export class Engine {
         if (s.phase !== 'choosing') throw new ActionError("It's not time to pick a category.");
         if (!isActive) throw new ActionError("It's not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
-        // A new zone's cards are still on their way (no screen shows them yet): a pick sooner is dropped quietly.
-        if (from !== null && dealIn(s, this.now()) > 0) throw new ActionError('Too early.', true);
+        // A new zone's cards are still on their way (no screen shows them yet): a pick sooner is dropped quietly
+        // (not one a screen whose guess at this clock runs a little ahead showed them for).
+        if (from !== null && dealIn(s, this.now()) > DEAL_SLACK_MS) throw new ActionError('Too early.', true);
         if (coop) this.closeVote(s, action.category);
         else this.takePick(s, active, action.category);
         break;

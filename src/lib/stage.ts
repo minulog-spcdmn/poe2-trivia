@@ -55,8 +55,8 @@ export function unzoomRect(r: DOMRect, z: number): DOMRect {
 }
 
 /** Where `el` is on screen (getBoundingClientRect), in its own CSS px: what to set its styles, or its children's, by. */
-export function ownRect(el: Element): DOMRect {
-  return unzoomRect(el.getBoundingClientRect(), zoomOf(el));
+export function ownRect(el: Element, z = zoomOf(el)): DOMRect {
+  return unzoomRect(el.getBoundingClientRect(), z);
 }
 
 /** A point on screen (a pointer's clientX/Y), as an offset into `el` in its own CSS px. */

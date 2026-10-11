@@ -27,7 +27,7 @@
   // it turns into its own px.
   import { onMount } from 'svelte';
   import { portal } from '../../lib/portal';
-  import { unzoomRect, zoomOf } from '../../lib/stage';
+  import { ownRect, zoomOf } from '../../lib/stage';
   import { holdLight } from '../../lib/lights';
   import { accentLight, fxDensity, hdr } from '../../lib/fx/moments';
   import { fxActive, type Vec3 } from '../../lib/fx/core';
@@ -160,7 +160,7 @@
       const inner = outer.map((o) => o.firstElementChild as HTMLElement);
       // Measured on screen, in the card's own px (what the letters are moved by).
       const z = zoomOf(word);
-      const own = (el: Element) => unzoomRect(el.getBoundingClientRect(), z);
+      const own = (el: Element) => ownRect(el, z);
       const mid = own(word);
       const dx = outer.map((o) => {
         const b = own(o);

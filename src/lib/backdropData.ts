@@ -204,10 +204,10 @@ export function turnAt(into: number): number {
 }
 /**
  * How far into a stratum's turn the next one's light, smoke and features
- * begin to creep in: one depth in (a fifth of the way), at the zone's 7th
+ * begin to creep in: one depth in (TURN_AT's first step), at the zone's 7th
  * depth, a depth after the embers.
  */
-export const HALL_FROM = 1 / TURN_DEPTHS;
+export const HALL_FROM = TURN_AT[1];
 /**
  * How far the next stratum's light, smoke and features have come at `turn`:
  * eased (easeTurn) from HALL_FROM to the end of the turn, four depths in

@@ -329,6 +329,7 @@
      one heard from a screen that reaches the deal sooner stays out of sight till this one does. */
   .cursors.veiled {
     opacity: 0;
+    transition: none;
   }
   .cursor {
     position: absolute;
