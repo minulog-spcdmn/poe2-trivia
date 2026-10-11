@@ -815,7 +815,7 @@
 <!-- The verdict at the reveal: it leads the result line, in the row under the answers. -->
 {#snippet verdictBadge()}
   {#if verdict}
-    <div class="verdict {verdict.tone}" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, flame: chipFlame, out: chipOut }}>
+    <div class="verdict {verdict.tone}" data-cursor="verdict" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, flame: chipFlame, out: chipOut }}>
       <span class="glyph" aria-hidden="true">
         <svg viewBox="0 0 20 20">
           {#if verdict.icon === 'check'}
@@ -870,9 +870,9 @@
   {#if reveal}
     <!-- The verdict lands at once (its own entrance, and the glint the reveal
          aims at it); the sentence and Next follow. -->
-    <div class="result">
+    <div class="result" data-cursor="result">
       {@render verdictBadge()}
-      <p in:fly={{ y: 16, duration: 400, delay: 250 }}>
+      <p data-cursor="outcome" in:fly={{ y: 16, duration: 400, delay: 250 }}>
         {#if race}
           {#if winner}
             <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
@@ -1011,10 +1011,11 @@
   {:else if blastSlot}
     <!-- Delve: dynamite at hand. The button stands at the row's end, where
          Next will stand. -->
-    <div class="result blasting">
+    <div class="result blasting" data-cursor="result">
       <div class="hint">{@render openHint()}</div>
       <button
         class="btn blast"
+        data-cursor="blast"
         class:gone={!canBlast}
         class:out={!mine}
         data-sfx="none"
@@ -1040,7 +1041,7 @@
 <!-- What there is to know while the question is open, under the answers. -->
 {#snippet openHint()}
   <!-- One block: the footer row's first item, which takes the room Detonate leaves. -->
-  <div>
+  <div data-cursor="hint">
     {#if coop}
       <!-- What befell the team on this question, over the line below: read out as it comes. -->
       <div class="news" aria-live="polite">
@@ -1083,13 +1084,15 @@
   </div>
 {/snippet}
 
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the answers, the item and its art, the line over
+     them and the row under them (a dock at the foot of a phone's screen, under the same name), and what's in those. -->
 <div class="question">
   <!-- The turn's second line, under its banner, where the cards screen asks
        for a category (ChooseCategory's prompt): what to do now, and at its
        right end the timer, read with the question at a glance before the
        eyes go down to the answers. The category is the tooltip's base line;
        at the reveal the verdict is in the row under the answers. -->
-  <div class="task" class:snug class:timed={!!timer && clocked}>
+  <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
     <p class="task-text">
       <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
       {#if !race && !coop && !session.myTurn}
@@ -1111,8 +1114,8 @@
   <!-- Delve: until the clock runs (waiting), the question keeps its shape but shows nothing to read. -->
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
-    <div class="tooltip wide" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
-      <div class="head" style:--plate-scale={plateScale}>
+    <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
+      <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <NamePlate fit bind:scale={plateScale} />
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
@@ -1126,6 +1129,7 @@
       </div>
       <div
         class="tiles"
+        data-cursor="options"
         bind:this={artEl}
         class:theirs
         class:many={count > 4}
@@ -1213,8 +1217,8 @@
     </div>
   {:else}
     <div class="stage" class:snug class:ten={count === 10} class:long class:armed={blastSlot}>
-      <div class="tooltip" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
-        <div class="head" style:--plate-scale={plateScale}>
+      <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
+        <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified. -->
           <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
           {#if reveal && item}
@@ -1272,7 +1276,7 @@
         </div>
       </div>
 
-      <div class="options" class:theirs class:compact={count > 6} class:dense={count > 8} class:ten={count === 10} class:snug class:long>
+      <div class="options" data-cursor="options" class:theirs class:compact={count > 6} class:dense={count > 8} class:ten={count === 10} class:snug class:long>
         {#each q.labels as label, i (i)}
           {@const st = optionState(i)}
           <button
@@ -1304,7 +1308,7 @@
     </div>
   {/if}
 
-  <div class="footer">
+  <div class="footer" data-cursor="footer">
     {#if (reveal || blastSlot) && phone.current}
       <!-- Phones: the result and Next button stay at the bottom of the screen, in
            reach of a thumb, however far down the answers have been scrolled; so
@@ -1314,7 +1318,7 @@
            button goes and the bar stays, so nothing under it moves). A new dock at the reveal, so it lifts the answers to keep
            in view above itself. -->
       {#key !!reveal}
-        <div class="dock" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+        <div class="dock" data-cursor="footer" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
           {@render footer()}
         </div>
       {/key}

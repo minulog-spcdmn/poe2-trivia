@@ -309,8 +309,9 @@
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
-    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
-      <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
+    <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
+    <header data-cursor="header" in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
+      <button class="brand" data-cursor="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -318,7 +319,7 @@
         </span>
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{:else if LOCAL}{' '}<small class="beta">Local</small>{/if}</span>
       </button>
-      <div class="meta">
+      <div class="meta" data-cursor="meta">
         {#if gs?.delve && (screen === 'game' || screen === 'over')}
           <!-- Delve: no target, just how deep. -->
           {#if session.code && !session.hideCode}
@@ -371,7 +372,7 @@
       </div>
       <div class="tools">
         <div class="volume">
-          <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
+          <button class="icon-btn" data-cursor="mute" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
             {#if silent}
               <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
             {:else}
@@ -400,6 +401,7 @@
         {#if fxCan}
           <button
             class="icon-btn"
+            data-cursor="fx"
             class:off={!fxOn}
             onclick={toggleFx}
             title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
@@ -418,7 +420,7 @@
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         {:else}
-          <button class="icon-btn" onclick={askLeave} title="Leave" aria-label="Leave game">
+          <button class="icon-btn" data-cursor="leave" onclick={askLeave} title="Leave" aria-label="Leave game">
             <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
           </button>
         {/if}

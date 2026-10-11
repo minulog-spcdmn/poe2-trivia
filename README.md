@@ -629,11 +629,18 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
     began, with the ways left to go, and a dart pointing the way it scrolls.
     Spectators see them but don't show their own. A pointer is sent as a
-    spot on the element under it (an answer, a category card, a scoreboard
-    row, the art, the button that moves on; at the end, the winner's circle
-    and the standings' rows; the game as a whole otherwise, measured down it by screen
-    heights so it holds still as cards are dealt), so it lands on the same
-    thing on every screen, a phone's included. A click is always seen:
+    spot on the element under it (`data-cursor`: an answer, a category
+    card, a scoreboard row, the art, the button that moves on, a setting,
+    the room code, the header's buttons, the line under a question, the
+    winner's circle; about sixty in all), so it lands on the same thing on
+    every screen, a phone's included, and with the elements round that
+    one (a setting's button, its row, the panel), so a screen without the
+    first (a guest has no host's buttons, a phone lays things out its own
+    way) puts it on the next it has. Counterparts share a name: the host's
+    Begin row and a guest's wait for it are both `start`, the timer is
+    `timer` wherever a layout puts it. Between elements a pointer goes
+    beside the nearest one; near none, on the game as a whole, measured
+    down it by screen heights so it holds still as cards are dealt. A click is always seen:
     the press goes out even when it's over before the next update, and a
     pointer whose element goes with the click (a card picked) stays where
     it was a moment. While a new zone's title card is up, nobody's pointer

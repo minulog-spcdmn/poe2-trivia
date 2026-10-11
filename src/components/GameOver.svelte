@@ -245,9 +245,10 @@
      would be redone every frame. -->
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
-<!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the winner's circle, each player's row. -->
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the winner's circle, each player's row,
+     and the lines round them. What's next is the host's buttons or a guest's wait for them: both are `actions`. -->
 <div class="over" class:delve={!!run} class:deeper data-cursor="game">
-  <p class="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
+  <p class="kicker" data-cursor="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
   {#if winner}
     <div class="crown" class:fallen={!!run} bind:this={crown} data-cursor="art" in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
       <!-- Delve: the deeper the run went, the colder the circle. -->
@@ -268,11 +269,11 @@
         <Avatar name={winner.name} hue={winner.hue} size={110} />
       {/if}
     </div>
-    <h1 bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
+    <h1 data-cursor="headline" bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
       <span class="shade" aria-hidden="true">{headline}</span>
       <span class="gold">{headline}</span>
     </h1>
-    <p class="sub muted" in:fly={{ y: 10, duration: 700, delay: 700 }}>
+    <p class="sub muted" data-cursor="sub" in:fly={{ y: 10, duration: 700, delay: 700 }}>
       {#if run}
         {delveSub}{#if run.mixed}{delveSub ? ' ' : ''}Finished under newer rules.{/if}
         {#if zone}<span class="zone" style:--accent={zone.accent}>{zone.name}</span>{/if}
@@ -285,7 +286,7 @@
     </p>
   {/if}
 
-  <ol class="standings panel" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
+  <ol class="standings panel" data-cursor="standings" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
     {#each standings as p, i (p.id)}
       {@const row = team?.players.find((r) => r.id === p.id)}
       <li class:first={!team && rank[i] === 1} class:delver={!!row} data-cursor="row:{s.players.findIndex((o) => o.id === p.id)}" in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
@@ -314,15 +315,15 @@
     {/each}
   </ol>
 
-  <div class="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
+  <div class="actions" data-cursor="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
     {#if session.isHost}
-      <button class="btn primary big" disabled={leaving} onclick={() => again(true)}>Play again</button>
-      <button class="btn ghost" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
+      <button class="btn primary big" data-cursor="again" disabled={leaving} onclick={() => again(true)}>Play again</button>
+      <button class="btn ghost" data-cursor="back" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
     {:else}
       <p class="muted">Waiting for the host to start a new game…</p>
     {/if}
     {#if canShare}
-      <span class="share">
+      <span class="share" data-cursor="share">
         <button class="btn ghost" onclick={shareDepth} aria-label={team ? "Share the team's depth" : 'Share your depth'} title={team ? "Share the team's depth" : 'Share your depth'}>
           {#if shared}
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
@@ -339,18 +340,18 @@
     {/if}
   </div>
   {#if spectators.length}
-    <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
+    <p class="joining muted" data-cursor="joining" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
       {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
     </p>
   {/if}
   {#if session.spectating}
-    <p class="joining muted" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
+    <p class="joining muted" data-cursor="joining" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
       {session.justWatching ? "You're just watching." : "You'll play in the next game."}
       <WatchToggle />
     </p>
   {/if}
 
-  <p class="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
+  <p class="credit" data-cursor="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
     <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
     <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a>
     · <a class="tip" href={DONATE_URL} target="_blank" rel="noopener noreferrer">♥ support the project</a>

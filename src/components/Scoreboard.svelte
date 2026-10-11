@@ -701,7 +701,8 @@
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
-<div class="strip" class:stuck bind:this={strip}>
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
+<div class="strip" data-cursor="board" class:stuck bind:this={strip}>
   <ol class="board" class:crowded={s.players.length > 6}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
@@ -792,6 +793,7 @@
     <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
       class="revive-ask"
+      data-cursor="ask"
       role="group"
       aria-label="Give a life"
       use:takeFocus
