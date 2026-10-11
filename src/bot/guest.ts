@@ -20,7 +20,7 @@ import { nameSkeleton } from '../lib/names';
 import type { Identity } from './identities';
 import { staysOn, type Mood } from './brain';
 import { appeal, settlesFor, type Visit } from './choice';
-import { joinable, notJoinable, waitingAlone } from './wanted';
+import { joinable, notJoinable, waitingAlone, watchable } from './wanted';
 import { moodOf, Player } from './player';
 import { lastReading, sight } from './sight';
 import { between, log, playersLine } from './util';
@@ -95,7 +95,9 @@ export class Guest {
    * everyone who sits there); `ours`: our own bot rooms' codes; `warmth`:
    * how they got on with a host before (-1 to 1); `until`: when their time
    * is up (they finish the game they're in); `prefer`: a room they mean to
-   * join first (one their own room made way for).
+   * join first (one their own room made way for); `watching`: they only
+   * watch (the runner's --watch): any room with a spectator's seat free, a
+   * game on or not, and they never answer.
    */
   constructor(
     readonly who: Identity,
@@ -104,7 +106,18 @@ export class Guest {
     private readonly warmth: (host: string) => number,
     readonly until: number,
     private readonly prefer = '',
+    private readonly watching = false,
   ) {}
+
+  /** A room they could come into: to play, or (watching) to watch. */
+  private canJoin(r: RoomInfo) {
+    return this.watching ? watchable(r) : joinable(r);
+  }
+
+  /** Someone waiting alone for players: kept company first, but only by those who play. */
+  private keepsCompany(r: RoomInfo, ours: ReadonlySet<string>) {
+    return !this.watching && waitingAlone(r, ours);
+  }
 
   /** Still looking for a room (not on their way into one). */
   get looking() {
@@ -151,14 +164,14 @@ export class Guest {
     if (this.doing !== 'looking') return;
     this.listed = rooms;
     const me = nameSkeleton(this.who.name);
-    const fresh = rooms.filter((r) => joinable(r) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS && nameSkeleton(r.host) !== me);
+    const fresh = rooms.filter((r) => this.canJoin(r) && now - (this.visited.get(r.code) ?? -Infinity) > AGAIN_AFTER_MS && nameSkeleton(r.host) !== me);
     const ours = this.ours();
     const theirs = fresh.filter((r) => !ours.has(r.code));
     const open = theirs.length ? theirs : fresh;
     const codes = new Set(open.map((r) => r.code));
     for (const code of this.waiting.keys()) if (!codes.has(code)) this.waiting.delete(code);
     for (const r of open)
-      if (!this.waiting.has(r.code)) this.waiting.set(r.code, { since: now, wait: between(...(r.code === this.prefer ? WAIT_PREFERRED : r.players === 1 ? WAIT_ALONE : WAIT_MORE)) });
+      if (!this.waiting.has(r.code)) this.waiting.set(r.code, { since: now, wait: between(...(r.code === this.prefer ? WAIT_PREFERRED : this.keepsCompany(r, ours) ? WAIT_ALONE : WAIT_MORE)) });
     this.open = open;
     this.appeals = new Map(open.map((r) => [r.code, r.code === this.prefer ? Infinity : appeal(this.who.persona, this.who.prefs, r, this.warmth(r.host))]));
   }
@@ -173,7 +186,7 @@ export class Guest {
     const ours = this.ours();
     const due = this.open.filter((r) => {
       const w = this.waiting.get(r.code);
-      return !!w && now - w.since >= w.wait && (this.appeals.get(r.code)! >= least || waitingAlone(r, ours));
+      return !!w && now - w.since >= w.wait && (this.appeals.get(r.code)! >= least || this.keepsCompany(r, ours));
     });
     if (!due.length) return;
     due.sort((a, b) => this.appeals.get(b.code)! - this.appeals.get(a.code)! || this.waiting.get(a.code)!.since - this.waiting.get(b.code)!.since);
@@ -198,14 +211,15 @@ export class Guest {
       this.doing = 'looking';
       return;
     }
-    this.player = new Player(this.who.persona, sight);
+    // Watching, they never answer: no hands to play with.
+    this.player = this.watching ? null : new Player(this.who.persona, sight);
     this.room = room;
     this.waiting.delete(room.code);
     this.gamesLeft = between(...GAMES);
     this.doing = 'joining';
     this.joinBy = Date.now() + JOIN_GIVE_UP_MS;
-    log(`${this.who.name} joins ${room.host}'s room ${room.code} (${room.mode}), for ${this.gamesLeft} game${this.gamesLeft > 1 ? 's' : ''}`);
-    session.join(room.code, this.who.name);
+    log(`${this.who.name} ${this.watching ? 'watches' : 'joins'} ${room.host}'s room ${room.code} (${room.mode}), for ${this.gamesLeft} game${this.gamesLeft > 1 ? 's' : ''}`);
+    session.join(room.code, this.who.name, this.watching);
   }
 
   /** Why each room in the last list wasn't joined, for the log (empty when none was listed). */
@@ -213,10 +227,10 @@ export class Guest {
     const least = settlesFor((now - this.since) / 60000);
     const me = nameSkeleton(this.who.name);
     const ours = this.ours();
-    const theirs = this.listed.some((r) => joinable(r) && !ours.has(r.code));
+    const theirs = this.listed.some((r) => this.canJoin(r) && !ours.has(r.code));
     const reasons = this.listed.map((r) => {
       const why =
-        notJoinable(r) ??
+        notJoinable(r, this.watching) ??
         (now - (this.visited.get(r.code) ?? -Infinity) <= AGAIN_AFTER_MS
           ? 'left it lately'
           : nameSkeleton(r.host) === me

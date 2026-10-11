@@ -5,7 +5,7 @@ import { createGame, rulesFor, type GameState, type Item, type Preset } from '..
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
 import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
-import { joinable, makesWay, nextRole, notJoinable, waitingAlone, wanted } from '../src/bot/wanted.ts';
+import { joinable, makesWay, nextRole, notJoinable, waitingAlone, wanted, watchable } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 import { afterHosting, afterVisit, appeal, hesitation, joinsAfter, keenTo, opensRoom, playsOn, settlesFor, sourNow, urgeToHost } from '../src/bot/choice.ts';
@@ -258,6 +258,17 @@ test('a room that can\'t be joined says why, for the log', () => {
   assert.equal(notJoinable(room('locked')), 'locked');
   assert.equal(notJoinable(room('lobby', 12)), 'full');
   assert.match(notJoinable({ ...room('lobby'), v: PROTOCOL_VERSION - 1 })!, new RegExp(`protocol ${PROTOCOL_VERSION - 1}`));
+});
+
+test('a room can be watched in the lobby or mid-game, while a spectator seat is free', () => {
+  assert.ok(watchable(room('lobby')));
+  assert.ok(watchable(room('question')));
+  assert.ok(watchable(room('lobby', 12)));
+  assert.ok(!watchable(room('locked')));
+  assert.ok(!watchable({ ...room('question'), spectators: 8 }));
+  assert.ok(!watchable({ ...room('question'), v: PROTOCOL_VERSION - 1 }));
+  assert.equal(notJoinable(room('question'), true), null);
+  assert.equal(notJoinable({ ...room('question'), spectators: 8 }, true), 'no seat left to watch from');
 });
 
 test("someone waiting alone in their own lobby is the bot's to keep company first", () => {
