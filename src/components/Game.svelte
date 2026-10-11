@@ -7,6 +7,7 @@
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
@@ -334,7 +335,7 @@
                   {#if p}
                     <span class="duelist" class:done={id in dm.results} title={p.name}>
                       <Avatar name={p.name} hue={p.hue} size={24} />
-                      {#if id in dm.results}<i class:ok={dm.results[id]}>{dm.results[id] ? '✓' : '✕'}</i>{/if}
+                      {#if id in dm.results}<i class:ok={dm.results[id]}><DrawnMark shape={dm.results[id] ? 'check' : 'cross'} /></i>{/if}
                     </span>
                   {/if}
                 {/each}
@@ -658,9 +659,8 @@
     height: 14px;
     display: grid;
     place-items: center;
-    font-style: normal;
-    font-size: 0.6rem;
-    font-weight: 700;
+    --mark-size: 6px;
+    --mark-stroke: 1.3px;
     color: #fff;
     background: var(--bad);
     border-radius: 50%;

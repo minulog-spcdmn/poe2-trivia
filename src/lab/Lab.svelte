@@ -18,6 +18,7 @@
   import { CREATOR, CREATOR_TITLE } from '../lib/site';
   import { showTip } from '../lib/fullscreenTip';
   import { ABLAZE_FROM, ABLAZE_FULL, BLUE_FROM, DELVE_ABLAZE_FULL, DELVE_FLAMES } from '../lib/fx/streaks';
+  import DrawnMark from '../components/DrawnMark.svelte';
 
   const s = $derived(session.state);
 
@@ -184,7 +185,7 @@
           {#if q && s?.phase === 'question'}• <i class="num">{secs(left)}</i> s{#if paused}{' '}(paused){/if}{/if}
         </span>
       </div>
-      <button class="close" onclick={() => (open = false)} aria-label="Close the lab">{wide.current ? '›' : '×'}</button>
+      <button class="close" onclick={() => (open = false)} aria-label="Close the lab"><DrawnMark shape={wide.current ? 'chevron' : 'cross'} /></button>
     </header>
     {#if busy}<p class="busy">{busy}…</p>{/if}
 
@@ -559,8 +560,9 @@
     border-radius: 50%;
     background: none;
     color: var(--gold);
-    font-size: 1.1rem;
-    line-height: 1;
+    display: grid;
+    place-items: center;
+    --mark-size: 7.75px;
     cursor: pointer;
   }
   .close:hover {
