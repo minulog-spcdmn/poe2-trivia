@@ -1148,10 +1148,12 @@
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
           {@const option = known ? engine.byId.get(q.options[i]) : undefined}
+          <!-- Only a picture the reveal names opens its details: the untouched decoys stay anonymous (see named). -->
+          {@const shownItem = option && named(i) ? option : undefined}
           {@const pic = option ? { url: itemImage(option.id), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
-          <!-- Once answered, each named picture opens that item's details. -->
+          <!-- Once answered, each picture the reveal names opens that item's details. -->
           <button
             class="tile {st}"
             data-cursor="opt:{i}"
@@ -1159,18 +1161,18 @@
             data-fx="hover"
             bind:this={optionEls[i]}
             class:mine={mine && !reveal}
-            class:inspect={!!option}
+            class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
-            aria-label={option ? `${option.name}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
-            title={option ? 'See its details' : undefined}
-            disabled={reveal ? !option : !mine || chosen !== null || waiting || struckAt.has(i)}
-            onclick={() => (option ? inspect(option) : answer(i))}
+            aria-label={shownItem ? `${shownItem.name}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            title={shownItem ? 'See its details' : undefined}
+            disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
+            onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
             <span class="sheen"></span>
             <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
-            <span class="key" class:lens-key={!!option}>{#if option}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 300, delay: 600 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
+            <span class="key" class:lens-key={!!shownItem}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 300, delay: 600 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
             <span class="cue" aria-hidden="true"></span>
             {#if pic || tv}
               <span class="pic">
