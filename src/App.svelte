@@ -2,7 +2,7 @@
   import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { shownDepth } from './lib/delve';
-  import { stageZoom } from './lib/stage';
+  import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -250,6 +250,31 @@
     if (alone && screen === 'lobby') leave();
     else confirmLeave = true;
   }
+
+  /**
+   * The legal links keep their place under a game and its result but don't
+   * show there. Asking to leave shows them, above the dialog's darkening,
+   * so they are two clicks away from anywhere: a copy in the dialog's
+   * backdrop, held over the hidden ones as the page scrolls or the game
+   * moves on behind the dialog.
+   */
+  const legalHidden = $derived(screen === 'game' || screen === 'over');
+  let legalNav: HTMLElement | undefined = $state();
+  function overLegal(node: HTMLElement) {
+    let raf = 0;
+    const place = () => {
+      if (legalNav) {
+        // In the shell's px, which the backdrop is zoomed to as well (lib/behindDialog.ts).
+        const r = ownRect(legalNav);
+        node.style.top = `${r.top}px`;
+        node.style.left = `${r.left}px`;
+        node.style.width = `${r.width}px`;
+      }
+      raf = requestAnimationFrame(place);
+    };
+    place();
+    return { destroy: () => cancelAnimationFrame(raf) };
+  }
 </script>
 
 <Background />
@@ -409,13 +434,17 @@
   </main>
 
   {#if headerOn}
-    <nav class="legal">
-      <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
-      <span aria-hidden="true">·</span>
-      <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav}>
+      {@render legalLinks()}
     </nav>
   {/if}
 </div>
+
+{#snippet legalLinks()}
+  <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
+  <span aria-hidden="true">·</span>
+  <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+{/snippet}
 
 <Toasts headerHeight={headerOn ? headerHeight : 0} />
 
@@ -426,6 +455,13 @@
     onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
     role="presentation"
   >
+    {#if legalHidden && legalNav}
+      <!-- A link opens in a new tab and the dialog stays. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <nav class="legal lifted" aria-label="Legal" use:overLegal onclick={(e) => e.stopPropagation()}>
+        {@render legalLinks()}
+      </nav>
+    {/if}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="modal panel"
@@ -747,6 +783,9 @@
     padding: 0.6rem 1rem 1rem;
     font-size: 0.8rem;
     color: var(--muted);
+    transition:
+      opacity 0.3s,
+      visibility 0s;
   }
   .legal a {
     color: var(--muted);
@@ -754,6 +793,17 @@
   }
   .legal a:hover {
     color: var(--gold-hi);
+  }
+  .legal.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.3s,
+      visibility 0s 0.3s;
+  }
+  .legal.lifted {
+    position: absolute;
+    margin: 0;
   }
   .modal-backdrop {
     position: fixed;
