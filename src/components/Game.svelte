@@ -348,16 +348,13 @@
             </div>
           {/if}
           <div class="head">
-            {#if run}
-              <!-- A line over the banner: alone, one past your best says so here; otherwise it stands empty. -->
+            {#if run && pastBest && pastBest.turn === s.turnCount}
+              <!-- Over the banner, alone, one past your best says so (in the room
+                   above it, so nothing moves when it comes). -->
               <p class="kicker">
-                {#if pastBest && pastBest.turn === s.turnCount}
-                  <span class="past" class:still={motion.still} style:--accent={pastBest.accent} style:--in="{PAST_IN}ms">
-                    <span class="past-text" use:pastFx={pastBest}>Deeper than ever</span>
-                  </span>
-                {:else}
-                  {'\u00a0'}
-                {/if}
+                <span class="past" class:still={motion.still} style:--accent={pastBest.accent} style:--in="{PAST_IN}ms">
+                  <span class="past-text" use:pastFx={pastBest}>Deeper than ever</span>
+                </span>
               </p>
             {/if}
             <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
@@ -473,8 +470,9 @@
     grid-area: 1 / 1;
     min-width: 0;
   }
-  /* The kicker and banner, holding their margins. */
+  /* The banner, holding its margins, and the kicker over it. */
   .head {
+    position: relative;
     display: flow-root;
   }
   .sr {
@@ -486,12 +484,17 @@
     white-space: nowrap;
   }
 
-  /* A line over the banner, always there in a run (so nothing moves when it
-     has something to say). Alone, one past this device's best, it says so:
-     lettered as the zone title card's meta line (components/zonecard), in
-     the depth's colour, between two short rules. */
+  /* Over the banner, in the room above it (taking none of its own, so
+     nothing moves when it comes): alone, one past this device's best says
+     so, lettered as the zone title card's meta line (components/zonecard),
+     in the depth's colour, between two short rules. */
   .kicker {
-    margin: 1.4rem 0 -0.4rem;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% - 0.6rem);
+    margin: 0;
+    pointer-events: none;
     text-align: center;
     font-family: var(--font-cinzel);
     font-weight: 700;
@@ -767,6 +770,12 @@
     }
     .past {
       --track: 0.22em;
+    }
+    /* The banner has no margin over it here: the kicker sits just above it, a little smaller. */
+    .kicker {
+      bottom: 100%;
+      font-size: 0.64rem;
+      line-height: 1.2;
     }
     .skip {
       margin-top: 1rem;

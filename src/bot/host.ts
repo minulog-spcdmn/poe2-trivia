@@ -8,7 +8,7 @@
 // closes, is the seat's to say.
 
 import type { GameState } from '../lib/game';
-import { joinable, makesWay, type Role } from './wanted';
+import { joinable, makesWay, waitingAlone, type Role } from './wanted';
 import type { RoomInfo } from '../lib/rooms';
 import { SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
@@ -24,14 +24,16 @@ const ALONE_MS = 40000;
 const STUCK_MS = 60000;
 /** Past the end of their time, people waiting or playing get this long before the host goes anyway. */
 const OVERTIME_MS = 30 * 60000;
-/** Lists in a row that must show another room to join before an empty lobby makes way. */
+/** Lists in a row that must show another room to join before an empty lobby makes way (for one of our own rooms). */
 const MAKE_WAY_CHECKS = 2;
-/** An empty lobby stays open at least this long before it makes way. */
+/** An empty lobby stays open at least this long before it makes way (for one of our own rooms). */
 const MIN_OPEN_MS = 60000;
+// For someone's own room with its host waiting alone, an empty lobby makes
+// way at the first list that shows it: they shouldn't wait on our room.
 /**
  * How long a host waits for more after someone comes or goes (ms, from..to),
  * by the others in the lobby: with just one, long enough for the next to
- * find the room (the list is checked every 10 to 20 s, and arrivals come 5
+ * find the room (the list is checked every 6 to 10 s, and arrivals come 5
  * to 20 s apart); with a few, a little; with a crowd, hardly.
  */
 const waitForMore = (others: number): [number, number] => (others <= 1 ? [45000, 90000] : others === 2 ? [20000, 40000] : [8000, 20000]);
@@ -102,6 +104,8 @@ export class Host {
   private configured = false;
   /** Lists in a row that showed another room to join. */
   private wayChecks = 0;
+  /** The last list showed someone's own room with its host waiting alone (see waitingAlone). */
+  private personWaiting = false;
   /** Since when the lobby has been empty but for the host (0: it isn't), and how long they'll stand it. */
   private lonelySince = 0;
   private lonelyFor = 0;
@@ -161,6 +165,7 @@ export class Host {
     // Several of our rooms waiting empty: the higher ones make way, never a lower one for them.
     const rivals = others.filter((r) => !this.above.has(r.code));
     this.wayChecks = makesWay(rivals, ours) ? this.wayChecks + 1 : 0;
+    this.personWaiting = rivals.some((r) => waitingAlone(r, ours));
   }
 
   /** The room another one made way for: someone else's lobby to join, people's before ours. */
@@ -231,6 +236,7 @@ export class Host {
       this.lonelyFor = lonelyLength(Math.random);
     }
     const alone = now - this.lonelySince;
+    if (this.personWaiting && this.wayChecks >= 1) return { exit: 'made way', why: "someone's room is waiting for players" };
     if (alone >= MIN_OPEN_MS && this.wayChecks >= MAKE_WAY_CHECKS) return { exit: 'made way', why: 'another room is open' };
     if (alone < this.lonelyFor) return null;
     const other = this.stint.retried ? null : otherPrefs(this.who.prefs, Math.random, this.modes);

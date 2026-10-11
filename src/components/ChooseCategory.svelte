@@ -12,7 +12,7 @@
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
-  import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
+  import { cover, fxActive, fxGroup, onFxChange, type CoverBox, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
@@ -45,6 +45,39 @@
   const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
+
+  // ---- the cards' effects ---------------------------------------------------
+  // Everything the cards set off is one group: it ends with them (a short
+  // fade) rather than playing on over the question that takes their place.
+  // It shines from behind the UI, so the voters' seals on the cards' feet
+  // (a cover while they're up) stay in front of a card's fire and its light.
+  // The seals' own glint, as a vote lands, is in front of them.
+
+  const fx = fxGroup();
+  const onCards = <T,>(fn: () => T): T => fx.run(fn, { behind: true });
+  $effect(() => () => fx.stop());
+
+  let cardsEl = $state<HTMLElement>();
+  function* seals(): Iterable<CoverBox> {
+    for (const el of cardsEl?.querySelectorAll('.votes > *') ?? []) {
+      const box = el.getBoundingClientRect();
+      const r = box.height / 2;
+      yield { box, radii: [r, r, r, r] };
+    }
+  }
+  $effect(() => {
+    if (!coop) return;
+    // (Again when the effects are turned back on: turning them off drops every cover.)
+    let seen = cover(seals);
+    const off = onFxChange(() => {
+      seen.stop();
+      seen = cover(seals);
+    });
+    return () => {
+      off();
+      seen.stop();
+    };
+  });
 
   // ---- the vote (Delve together) ------------------------------------------
   // Votes are public and can change until the vote closes: when everyone it
@@ -88,7 +121,7 @@
     if (!canVote || !faceUp(i) || myVote === category) return;
     sfx('vote');
     const frame = cardEls[i]?.querySelector('.frame');
-    if (frame && fxActive()) outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 });
+    if (frame && fxActive()) onCards(() => outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 }));
     session.dispatch({ type: 'vote', category });
   }
 
@@ -99,7 +132,7 @@
     return () => clearTimeout(t);
   });
   function cast(node: HTMLElement) {
-    if (pipsReady) voteCast(node);
+    if (pipsReady) fx.run(() => voteCast(node));
   }
 
   // ---- the draw -------------------------------------------------------------
@@ -141,8 +174,8 @@
       const frame = card?.querySelector('.frame');
       const others = cardEls.filter((c, j) => c && j !== target).map((c) => c.querySelector('.frame') ?? c);
       const kind = kindOf(category);
-      if (frame && kind) findPicked(frame, card, others, kind);
-      else if (frame) cardPicked(frame, card, others, false);
+      if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
+      else if (frame) onCards(() => cardPicked(frame, card, others, false));
       sfx('draw');
     };
     // The cards in the draw: those with votes, in their order.
@@ -177,7 +210,7 @@
         const i = path[k];
         lit = i;
         const frame = cardEls[i]?.querySelector('.frame');
-        if (frame) raffleHop(frame);
+        if (frame) onCards(() => raffleHop(frame));
         sfx('hover');
       }
       drawFrame = requestAnimationFrame(step);
@@ -317,10 +350,7 @@
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
-      if (dealtAt !== null) {
-        if (kind) findRevealed(frame, kind);
-        else cardRevealed(frame, dm);
-      }
+      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : cardRevealed(frame, dm)));
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -344,7 +374,7 @@
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
-    if (frame) burning = kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch);
+    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch)));
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -379,8 +409,8 @@
     const frame = cardEls[i]?.querySelector('.frame');
     const others = cardEls.filter((c, j) => c && j !== i).map((c) => c.querySelector('.frame') ?? c);
     const kind = kindOf(category);
-    if (frame && kind) findPicked(frame, cardEls[i], others, kind);
-    else if (frame) cardPicked(frame, cardEls[i], others, !!s.deathmatch);
+    if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
+    else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
     sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -409,7 +439,7 @@
     {/if}
   </p>
 
-  <div class="cards" data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
+  <div class="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       <button
         class="card"

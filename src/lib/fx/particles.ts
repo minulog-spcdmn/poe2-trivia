@@ -102,8 +102,11 @@ const F = {
   page: 31, // 1 for the page's light, 0 for an open dialog's (see BEHIND_DIALOG in renderer.ts), plus 2 from behind the UI (see COVER)
   from: 32, // a seeking particle's follow slots (0 for none): its start's, its target's
   to: 33,
+  group: 34, // the group it was made in (core.ts fxGroup), 0 for none
+  out: 35, // seconds left of its fade-out once its group ended (0: not fading), and that fade's length
+  outTotal: 36,
 } as const;
-const STRIDE = 34;
+const STRIDE = 37;
 
 /** How many moving elements seeking particles can follow at once (slots are reused in turn). */
 export const FOLLOW_SLOTS = 64;
@@ -142,9 +145,10 @@ export class ParticlePool {
 
   /**
    * Adds a particle; when the pool is full, the oldest-looking one makes way.
-   * `page` is false for light from an open dialog, which shows over it.
+   * `page` is false for light from an open dialog, which shows over it;
+   * `group` is the group it belongs to (see fadeGroup).
    */
-  spawn(p: ParticleSpec, page = true) {
+  spawn(p: ParticleSpec, page = true, group = 0) {
     let i = this.count;
     if (i >= this.cap) {
       // Replace a random particle rather than refusing: bursts stay complete.
@@ -180,6 +184,8 @@ export class ParticlePool {
     d[o + F.turb] = p.turbulence ?? 0;
     d[o + F.seed] = Math.random() * 1000;
     d[o + F.page] = (page ? 1 : 0) + (p.behind ? 2 : 0);
+    d[o + F.group] = group;
+    d[o + F.out] = d[o + F.outTotal] = 0;
     const k = p.seek;
     d[o + F.seek] = k ? 1 : 0;
     if (k) {
@@ -204,19 +210,24 @@ export class ParticlePool {
       const o = i * STRIDE;
       const age = d[o + F.age] + dt;
       const life = d[o + F.life];
-      if (age >= life) {
+      // (Fading out, its group ended: gone once the fade is over.)
+      let fade = d[o + F.out];
+      const faded = fade > 0 && (fade -= dt) <= 0;
+      if (age >= life || faded) {
         // Swap-remove with the last particle.
         this.count--;
         if (i !== this.count) d.copyWithin(o, this.count * STRIDE, this.count * STRIDE + STRIDE);
         continue;
       }
       d[o + F.age] = age;
+      if (fade > 0) d[o + F.out] = fade;
       i++;
       if (age < 0) continue; // still delayed
 
+      const fading = fade > 0 ? fade / d[o + F.outTotal] : 1;
       const seed = d[o + F.seed];
       if (d[o + F.seek]) {
-        this.seekStep(o, age, life, n++);
+        this.seekStep(o, age, life, n++, fading);
         fastest = Infinity;
         continue;
       }
@@ -244,7 +255,7 @@ export class ParticlePool {
 
       const t = age / life;
       const fadeIn = d[o + F.fadeIn];
-      let env = (fadeIn > 0 ? Math.min(1, t / fadeIn) : 1) * Math.pow(1 - t, 1.35);
+      let env = (fadeIn > 0 ? Math.min(1, t / fadeIn) : 1) * Math.pow(1 - t, 1.35) * fading;
       const flicker = d[o + F.flicker];
       if (flicker) {
         const f = 0.5 + 0.5 * Math.sin(age * (9 + (seed % 7)) + seed) * Math.sin(age * 23.7 + seed * 0.7);
@@ -274,8 +285,8 @@ export class ParticlePool {
     return n;
   }
 
-  /** A seeking particle: its place on the curve, as streak and colour, into instance `n`. */
-  private seekStep(o: number, age: number, life: number, n: number) {
+  /** A seeking particle: its place on the curve, as streak and colour, into instance `n` (dimmed by `fading`). */
+  private seekStep(o: number, age: number, life: number, n: number, fading: number) {
     const d = this.d;
     const t = age / life;
     // Ease out of the start and glide into the target.
@@ -303,7 +314,7 @@ export class ParticlePool {
     d[o + F.x] = x;
     d[o + F.y] = y;
     const fadeIn = d[o + F.fadeIn];
-    const env = fadeIn > 0 ? Math.min(1, t / fadeIn) : 1;
+    const env = (fadeIn > 0 ? Math.min(1, t / fadeIn) : 1) * fading;
     const size = d[o + F.s0] + (d[o + F.s1] - d[o + F.s0]) * t;
     const q = n * INSTANCE_FLOATS;
     const out = this.instances;
@@ -319,6 +330,21 @@ export class ParticlePool {
     out[q + 9] = (d[o + F.g0] + (d[o + F.g1] - d[o + F.g0]) * t) * env;
     out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * t) * env;
     out[q + 11] = d[o + F.page];
+  }
+
+  /**
+   * The particles of `group` fade out over `seconds` (those still waiting
+   * to appear never do); one already fading keeps the quicker fade.
+   */
+  fadeGroup(group: number, seconds: number) {
+    const d = this.d;
+    for (let i = 0; i < this.count; i++) {
+      const o = i * STRIDE;
+      if (d[o + F.group] !== group) continue;
+      // (Its age at its life: it ends on the next step.)
+      if (d[o + F.age] < 0) d[o + F.age] = d[o + F.life];
+      else if (!(d[o + F.out] > 0 && d[o + F.out] <= seconds)) d[o + F.out] = d[o + F.outTotal] = Math.max(0.001, seconds);
+    }
   }
 
   clear() {
