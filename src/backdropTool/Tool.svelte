@@ -8,6 +8,7 @@
   import { PROFILE_NAMES } from '../lib/emberProfiles';
   import { readStored, writeStored } from '../lib/storage';
   import * as T from './state.svelte';
+  import DrawnMark from '../components/DrawnMark.svelte';
 
   const tool = T.tool;
 
@@ -266,7 +267,7 @@
         <b>Backdrops</b>
         <span class="status">Depth <i class="num" style:color={accentAt(tool.depth)}>{tool.depth}</i> • {here}</span>
       </div>
-      <button class="close" onclick={() => (open = false)} aria-label="Close the backdrop tool">{wide.current ? '›' : '×'}</button>
+      <button class="close" onclick={() => (open = false)} aria-label="Close the backdrop tool"><DrawnMark shape={wide.current ? 'chevron' : 'cross'} /></button>
     </header>
 
     <div class="body">
@@ -618,8 +619,9 @@
     border-radius: 50%;
     background: none;
     color: var(--gold);
-    font-size: 1.1rem;
-    line-height: 1;
+    display: grid;
+    place-items: center;
+    --mark-size: 7.75px;
     cursor: pointer;
   }
   .close:hover {

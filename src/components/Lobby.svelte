@@ -12,6 +12,7 @@
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { kickConfirm } from '../lib/kick';
@@ -237,8 +238,9 @@
       <p class="go-note">Add the first exile to begin.</p>
     {:else if !local && s.players.length < 2}
       <p class="go-note">You can begin alone, or wait for your party.</p>
-    {:else}
-      <p class="go-note"><b class="num">{s.players.length}</b> {s.players.length === 1 ? 'exile' : 'exiles'} ready</p>
+    {:else if s.players.length > 1}
+      <!-- A lone player knows they're here: Begin stands by itself. -->
+      <p class="go-note"><b class="num">{s.players.length}</b> exiles ready</p>
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
@@ -393,7 +395,7 @@
                   title="Remove {p.name}"
                   aria-label="Remove {p.name}"
                   onclick={() => removePlayer(p.id)}
-                  >{#if confirming === p.id}Kick{:else}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1 1 9" /></svg>{/if}</button
+                  >{#if confirming === p.id}Kick{:else}<DrawnMark />{/if}</button
                 >
               {/if}
             </li>
@@ -405,7 +407,7 @@
                 class:confirm={confirming === o.id}
                 title="Remove {o.name}"
                 aria-label="Remove {o.name}"
-                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{#if confirming === o.id}Kick{:else}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1 1 9" /></svg>{/if}</button
+                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{#if confirming === o.id}Kick{:else}<DrawnMark />{/if}</button
               >{/if}{/each}
         {/snippet}
         {#if waiting.length}
@@ -909,14 +911,9 @@
     display: inline-grid;
     place-items: center;
   }
-  /* The × is drawn, not set: a glyph sits wherever its font puts it on the line, off the ring's centre. */
-  .remove svg {
-    width: 8px;
-    height: 8px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.25;
-    stroke-linecap: round;
+  /* The × is drawn (DrawnMark), so it sits in the ring's centre. */
+  .remove {
+    --mark-size: 8px;
   }
   /* Armed: the ring the × shows under the pointer grows sideways into a pill
      and the × gives way to Kick. Same ring, same red, only longer. */
@@ -951,11 +948,8 @@
     width: 22px;
     height: 22px;
     vertical-align: middle;
-  }
-  .remove.inline svg {
-    width: 7px;
-    height: 7px;
-    stroke-width: 1.3;
+    --mark-size: 7px;
+    --mark-stroke: 0.9px;
   }
   /* A spectator's kick, in the line of names: the same ring into a pill. */
   .remove.inline.confirm {

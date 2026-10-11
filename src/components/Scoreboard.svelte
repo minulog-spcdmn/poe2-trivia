@@ -5,6 +5,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
@@ -773,10 +774,10 @@
             title="Remove {p.name} from the game"
             aria-label="Remove {p.name}"
           >
-            {confirming === p.id ? 'Kick' : '×'}
+            {#if confirming === p.id}Kick{:else}<DrawnMark />{/if}
           </button>
         {/if}
-        {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
+        {#if out}<span class="x" title="Answered wrong"><DrawnMark /></span>{/if}
         {#if reviveOk}
           <!-- Delve together: revive them with one of your lives. A heart of
                light in the entry, beating as the phial's lives do. -->
@@ -821,7 +822,7 @@
             class:confirm={confirming === o.id}
             onclick={() => kick(o.id)}
             title="Remove {o.name}"
-            aria-label="Remove {o.name}">{confirming === o.id ? 'Kick' : '×'}</button
+            aria-label="Remove {o.name}">{#if confirming === o.id}Kick{:else}<DrawnMark />{/if}</button
           >{/if}</span
       >
     {/each}
@@ -933,6 +934,9 @@
     color: var(--muted);
     font-size: 0.95rem;
     line-height: 1;
+    display: grid;
+    place-items: center;
+    --mark-size: 6.25px;
     cursor: pointer;
     opacity: 0;
     transition:
@@ -1290,8 +1294,8 @@
     height: 18px;
     display: grid;
     place-items: center;
-    font-size: 0.7rem;
-    font-weight: 700;
+    --mark-size: 7px;
+    --mark-stroke: 1.5px;
     color: #fff;
     background: var(--bad);
     border-radius: 50%;
@@ -1449,6 +1453,12 @@
     color: var(--muted);
     font-size: 0.8rem;
     line-height: 1.3;
+    height: calc(1.3em + 2px);
+    display: inline-grid;
+    place-items: center;
+    vertical-align: middle;
+    --mark-size: 5.5px;
+    --mark-stroke: 0.9px;
     cursor: pointer;
     transition:
       color 0.2s,
