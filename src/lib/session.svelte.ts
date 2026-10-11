@@ -1163,12 +1163,8 @@ class Session {
     if (!media) return [];
     const key = (tile: number | undefined, i: number) => `${tile ?? ''}:${i}`;
     const sent = new Set(this.released.flatMap((m) => (m.t === 'patch' ? [key(m.tile, m.i)] : [])));
-    // The veiled picture's go out lighter if they can (PreparedMedia.finale).
-    const light = (tile: number | undefined, i: number) => (tile === undefined ? media.finale.get(i) : undefined);
     return veiledSets(media).flatMap(({ tile, patches }) =>
-      patches
-        .filter((p) => !sent.has(key(tile, p.i)))
-        .map((p) => ({ qid: media.qid, ...(tile === undefined ? {} : { tile }), ...p, data: light(tile, p.i) ?? p.data })),
+      patches.filter((p) => !sent.has(key(tile, p.i))).map((p) => ({ qid: media.qid, ...(tile === undefined ? {} : { tile }), ...p })),
     );
   }
 
@@ -1176,17 +1172,21 @@ class Session {
    * The rest of a veiled picture goes out now (the answer is out), a few
    * tens of ms apart: it burns in
    * quickly, still spreading from what's there, and every device starts each
-   * patch's burn in a different frame.
+   * patch's burn in a different frame. The veiled picture's go out lighter
+   * where it was sent finer (PreparedMedia.light), each cut now and sent once
+   * it's both due and ready.
    */
-  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
+  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>, light: PreparedMedia['light']) {
     const gap = Math.min(30, 300 / Math.max(1, rest.length));
     rest.forEach((patch, k) => {
-      const go = () => {
+      const data = patch.tile === undefined && light ? light(patch.i).catch(() => patch.data) : patch.data;
+      const go = async () => {
+        const d = await data;
         const s = this.state;
-        if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
+        if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch, data: d });
       };
-      if (k === 0) go();
-      else this.mediaTimers.push(setTimeout(go, k * gap));
+      if (k === 0) void go();
+      else this.mediaTimers.push(setTimeout(() => void go(), k * gap));
     });
   }
 
@@ -1704,11 +1704,12 @@ class Session {
       // the room going public) would cancel the patches still on their way.
       if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
         const rest = this.unreleasedPatches();
+        const light = this.media?.light ?? null;
         // Delve: a question that ended before its clock started still shows everyone its art.
         this.releaseHeld();
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
         this.stopMedia(true);
-        this.finishVeil(rest);
+        this.finishVeil(rest, light);
       }
     } else if (next.phase !== 'question') {
       this.stopMedia();
