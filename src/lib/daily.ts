@@ -97,25 +97,14 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
 }
 
 /**
- * How each day's question is dealt (game.ts DEALING), from the day each
- * came in, so no day's question changes once it may have been asked
- * (tests/daily.test.ts pins them). A new way of dealing starts on a day
- * still to come once it is live: past the day it ships, or the days
- * between change.
+ * The day's question, the same everywhere for the same items, made-up names
+ * and day. Twins (game.ts TWINS) may meet in it, as they could from its
+ * first day, so no day's question changes with them (tests/daily.test.ts
+ * pins the days).
  */
-export const DAILY_DEALINGS: readonly { from: number; dealing: number }[] = [
-  { from: utcDay(DAILY_LAUNCH), dealing: 1 },
-  // Twins kept apart.
-  { from: utcDay(Date.UTC(2026, 9, 26)), dealing: 2 },
-];
-
-/** How day `day`'s question is dealt. */
-export const dealingOn = (day: number) => DAILY_DEALINGS.findLast((d) => day >= d.from)?.dealing ?? DAILY_DEALINGS[0].dealing;
-
-/** The day's question, the same everywhere for the same items, made-up names and day. */
 export function dailyQuestion(items: Item[], fakes: Record<string, string[]>, day: number): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
-  const engine = new Engine(items, { rng, fakes, now: () => day * DAY_MS, dealing: dealingOn(day) });
+  const engine = new Engine(items, { rng, fakes, now: () => day * DAY_MS, twins: false });
   return askOne(engine, dailyGame(), rng);
 }
 

@@ -204,14 +204,6 @@ export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
 
-/**
- * How questions are dealt, for Today's unique, which deals each day as it
- * was first dealt (daily.ts DAILY_DEALINGS): bumped with every change to
- * which items or names a seeded question shows. 1: before twins; 2: twins
- * (TWINS) kept apart.
- */
-export const DEALING = 2;
-
 /** The deepest twins (TWINS) that may meet under `rules`: Delve's depth, elsewhere all or none. */
 const twinReach = (rules: DifficultyRules) => rules.twins ?? (rules.similarNames >= 1 ? Infinity : 0);
 
@@ -1114,10 +1106,9 @@ export class Engine {
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
    * `looks`: the look-alike table, if at hand already (else see setLooks).
-   * `dealing`: deal as DEALING was then (Today's unique, on the days it was
-   * dealt so); the current one by default.
+   * `twins`: false lets twins (TWINS) meet anywhere (Today's unique).
    */
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; dealing?: number } = {}) {
+  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean } = {}) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
     this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
@@ -1132,7 +1123,7 @@ export class Engine {
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     const byName = new Map(items.map((it) => [it.name, it]));
-    this.twins = (opts.dealing ?? DEALING) < 2 ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
+    this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
 
   /**

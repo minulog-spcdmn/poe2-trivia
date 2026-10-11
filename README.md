@@ -492,7 +492,8 @@ Uhtred's three gems; Zarokh's two), only meet in a question once every wrong
 answer is a look-alike name (Eternal, or Custom with All); before that a
 question shows at most one of a set, picked at random when the answer is none
 of them (`TWINS` in `src/lib/game.ts`). The Guiding Palms differ only in
-colour, so they never meet where the art is in grayscale.
+colour, so they never meet where the art is in grayscale. Today's unique
+leaves twins be: they may meet in it, as they could from its first day.
 
 **Codex:** a page (from the start page's corner, or at
 `poe2.quest/#codex`) listing every item you have seen, with your accuracy per
