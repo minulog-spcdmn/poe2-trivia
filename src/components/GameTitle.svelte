@@ -47,6 +47,10 @@
     letter-spacing: 0.02em;
     margin-bottom: -0.3em;
   }
+  /* The P's stem, not its serif, lines up with the text below. */
+  h1:not(.lines) {
+    margin-left: -0.053em;
+  }
   h1 > span {
     grid-area: 1 / 1;
     display: flex;
