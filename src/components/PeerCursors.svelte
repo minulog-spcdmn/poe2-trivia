@@ -14,7 +14,7 @@
   import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portal } from '../lib/portal';
-  import { anchorAt, clickableAt } from '../lib/pointerAnchor';
+  import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /**
@@ -196,6 +196,7 @@
       const step = 1 - Math.exp(-dt / GLIDE_MS);
       last = now;
       const anchors = new Map<number, HTMLElement | null>();
+      const screenH = screenHeight();
       for (const c of list) {
         const el = els[c.key];
         const p = peerCursors.at.get(c.key);
@@ -233,10 +234,10 @@
         for (const { at: [c2, x2, y2], t } of p.trail) {
           const el2 = c2 === code ? anchor : anchorFor(c2, anchors);
           if (!el2) continue;
-          ps.push(fromAnchor(c2, x2, y2, c2 === code ? r : el2.getBoundingClientRect(), innerHeight));
+          ps.push(fromAnchor(c2, x2, y2, c2 === code ? r : el2.getBoundingClientRect(), screenH));
           ts.push(t);
         }
-        const [rx, ry] = touch || pressNow || !ps.length ? fromAnchor(code, ax, ay, r, innerHeight) : trailAt(ps, ts, now - BEHIND_MS);
+        const [rx, ry] = touch || pressNow || !ps.length ? fromAnchor(code, ax, ay, r, screenH) : trailAt(ps, ts, now - BEHIND_MS);
         // Never off this screen, however far off the others' place lands here.
         const tx = Math.min(innerWidth - 16, Math.max(2, rx));
         const ty = Math.min(innerHeight - 20, Math.max(2, ry));

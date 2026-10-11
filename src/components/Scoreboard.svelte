@@ -44,7 +44,8 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
-  import WatchToggle from './WatchToggle.svelte';
+  import Gallery from './Gallery.svelte';
+  import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
 
   /** Shown at the end of the row (the timer, on phones). */
@@ -56,9 +57,6 @@
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
-  const spectators = $derived(s.spectators ?? []);
-  /** Those of them who take a seat in the next game (the rest just watch). */
-  const joining = $derived(spectators.filter((o) => !o.stay));
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
@@ -698,7 +696,7 @@
     if (asking) (e.preventDefault(), closeAsk());
     else kicker.disarm();
   }}
-  onpointerdown={(e) => !(e.target as Element).closest?.('.kick.confirm, .kick-inline.confirm') && kicker.disarm()}
+  onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
 />
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
@@ -767,15 +765,9 @@
         {/if}
         {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
         {#if canKick && p.id !== s.hostId}
-          <button
-            class="kick"
-            class:confirm={confirming === p.id}
-            onclick={() => kick(p.id)}
-            title="Remove {p.name} from the game"
-            aria-label="Remove {p.name}"
-          >
-            {#if confirming === p.id}Kick{:else}<DrawnMark />{/if}
-          </button>
+          <span class="kick-at" class:armed={confirming === p.id}>
+            <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
+          </span>
         {/if}
         {#if out}<span class="x" title="Answered wrong"><DrawnMark /></span>{/if}
         {#if reviveOk}
@@ -794,6 +786,8 @@
     {/each}
   </ol>
   {@render aside?.()}
+  <!-- Who's watching hangs under the strip, so nothing moves when someone comes in to watch. Not while the offer to give a life hangs there. -->
+  {#if !asking && !session.spectating}<Gallery hang />{/if}
   {#if asking && askingName && me}
     <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
@@ -811,32 +805,8 @@
     </div>
   {/if}
 </div>
-{#if spectators.length}
-  <p class="watching">
-    <span class="eye" aria-hidden="true">👁</span>
-    Watching:
-    {#each spectators as o (o.id)}
-      <span class="spectator"
-        >{o.name}{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}{#if canKick}<button
-            class="kick-inline"
-            class:confirm={confirming === o.id}
-            onclick={() => kick(o.id)}
-            title="Remove {o.name}"
-            aria-label="Remove {o.name}">{#if confirming === o.id}Kick{:else}<DrawnMark />{/if}</button
-          >{/if}</span
-      >
-    {/each}
-    {#if joining.length === spectators.length}
-      <span class="hint">· joining next game</span>
-    {:else if joining.length}
-      <span class="hint">· {joining.map((o) => o.name).join(', ')} {joining.length === 1 ? 'joins' : 'join'} next game</span>
-    {/if}
-    {#if session.spectating}
-      <!-- Your own choice: take a seat when the next game starts, or keep watching. -->
-      <WatchToggle />
-    {/if}
-  </p>
-{/if}
+<!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
+{#if session.spectating}<Gallery />{/if}
 
 <style>
   .board {
@@ -915,69 +885,26 @@
     border: 5px solid transparent;
     border-top-color: var(--c);
   }
-  /* The kick, as the lobby's: a quiet × on the entry's corner; pointed at, a
-     thin red ring round it and the entry's edge warms red; armed, the ring
-     grows sideways into a pill and the × gives way to Kick, while the entry
-     takes the wrong-answer colours. Same ring, same red, only longer. */
-  .kick {
+  /* The kick, as the lobby's (KickButton): a small seal on the entry's
+     corner, shown while the entry is pointed at; pointed at itself, it and
+     the entry's edge warm red; armed, it grows sideways into a pill reading
+     Kick, while the entry takes the wrong-answer colours. */
+  .kick-at {
     position: absolute;
     top: -8px;
     left: -6px;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: #140d0a;
-    color: var(--muted);
-    font-size: 0.95rem;
-    line-height: 1;
-    display: grid;
-    place-items: center;
-    --mark-size: 6.25px;
-    cursor: pointer;
+    display: flex;
+    --kick-size: 20px;
+    --kick-armed: 50px;
     opacity: 0;
-    transition:
-      opacity 0.2s,
-      width 0.22s var(--ease-out),
-      color 0.2s,
-      border-color 0.2s,
-      background-color 0.2s,
-      box-shadow 0.2s;
+    transition: opacity 0.2s;
   }
-  li:hover .kick,
-  .kick:focus-visible,
-  .kick.confirm {
+  li:hover .kick-at,
+  .kick-at:focus-within,
+  .kick-at.armed {
     opacity: 1;
   }
-  .kick:hover {
-    color: var(--bad);
-    border-color: rgba(224, 85, 63, 0.6);
-  }
-  .kick:focus-visible {
-    outline: 1px solid var(--gold-hi);
-    outline-offset: 2px;
-  }
-  .kick.confirm {
-    width: 50px;
-    border-color: rgba(224, 85, 63, 0.75);
-    background-color: #2a120d;
-    color: #ff9c86;
-    font-family: var(--font-display);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    box-shadow: 0 0 10px rgba(224, 85, 63, 0.25);
-  }
-  .kick.confirm:hover {
-    color: #ffd2c6;
-    border-color: #e0553f;
-    background-color: #3a170f;
-  }
-  li:has(.kick:hover) {
+  li:has(:global(.kick:hover)) {
     border-color: rgba(224, 85, 63, 0.45);
   }
   /* Armed: the whole entry asks, in the wrong-answer colours, the avatar dimmed. */
@@ -992,7 +919,7 @@
     color: #eab3a3;
   }
   @media (hover: none) {
-    .kick {
+    .kick-at {
       opacity: 0.8;
     }
   }
@@ -1101,7 +1028,7 @@
     filter: none;
   }
   /* (Not the remove button, which keeps its own showing: on hover only.) */
-  li.fallen.revivable > :not(.revive, .kick) {
+  li.fallen.revivable > :not(.revive, .kick-at) {
     opacity: 0.45;
     filter: grayscale(0.85);
   }
@@ -1427,60 +1354,6 @@
     font-size: 0.8rem;
   }
 
-  .watching {
-    margin: -0.2rem 0 0;
-    text-align: center;
-    font-size: 0.88rem;
-    color: var(--muted);
-  }
-  .watching em,
-  .watching .hint {
-    font-size: 0.9em;
-    font-style: italic;
-  }
-  .spectator {
-    color: var(--text);
-    margin-left: 0.5em;
-  }
-  /* A spectator's kick, in the line of names: the same ring into a pill. */
-  .kick-inline {
-    margin-left: 0.25em;
-    min-width: 1.5em;
-    padding: 0 0.35em;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #140d0a;
-    color: var(--muted);
-    font-size: 0.8rem;
-    line-height: 1.3;
-    height: calc(1.3em + 2px);
-    display: inline-grid;
-    place-items: center;
-    vertical-align: middle;
-    --mark-size: 5.5px;
-    --mark-stroke: 0.9px;
-    cursor: pointer;
-    transition:
-      color 0.2s,
-      border-color 0.2s,
-      background-color 0.2s;
-  }
-  .kick-inline:hover {
-    color: var(--bad);
-    border-color: rgba(224, 85, 63, 0.6);
-  }
-  .kick-inline.confirm {
-    border-color: rgba(224, 85, 63, 0.75);
-    background-color: #2a120d;
-    color: #ff9c86;
-    font-family: var(--font-display);
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-style: normal;
-  }
-
   @media (max-width: 640px) {
     /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
        row of avatars and scores, with the name and progress of whoever's turn
@@ -1507,6 +1380,11 @@
       background-color: var(--pinned-bg);
       border-bottom: var(--pinned-line);
       box-shadow: 0 8px var(--pinned-shadow);
+    }
+    /* Who's watching stays at the top of the page; pinned, the strip goes without it. */
+    .strip.stuck :global(.gallery) {
+      opacity: 0;
+      visibility: hidden;
     }
     /* One row while it fits (the name of whoever's turn it is gives way first). */
     .board {

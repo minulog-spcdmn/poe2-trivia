@@ -765,6 +765,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
+  let anchorsMoved = false;
   opacities.clear();
   shapes = shapes.filter((s) => {
     s.age += dt;
@@ -774,11 +775,14 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       if (s.fade <= 0) return false;
     }
     if (Number.isFinite(s.life) && s.age >= s.life) return false;
+    let moved = false;
     if (s.at instanceof Element) {
       // Follow the element; once it's gone (the screen moved on), fade out
       // where it was.
       if (s.at.isConnected) {
-        s.box = boxOf(s.at);
+        const b = boxOf(s.at);
+        moved = Math.abs(b.x - s.box.x) + Math.abs(b.y - s.box.y) > 0.25;
+        s.box = b;
         if (s.followOpacity) s.opacity = opacityOf(s.at, opacities);
       } else if (!s.stopped) {
         s.stopped = true;
@@ -787,7 +791,10 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     }
     const t = Number.isFinite(s.life) ? s.age / s.life : 0;
     s.update(s.f, t, s.age, s.box);
-    if (s.f.k > 0) visible.push([s, t]);
+    if (s.f.k > 0) {
+      visible.push([s, t]);
+      if (moved) anchorsMoved = true;
+    }
     return true;
   });
   // (Let go of the elements: they may leave the page before the next pass.)
@@ -812,7 +819,10 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   }
 
   const nParticles = pool.step(dt);
-  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
+  // (A calm shape on an element that moves isn't calm: drawn at half the rate
+  // while the page scrolls, or a phone's toolbars slide, it would trail its
+  // element, jumping after it every other frame.)
+  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && !anchorsMoved && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
 
   // Shake: trauma decays; the offset follows two noise curves.
   if (shake.trauma > 0) {
@@ -824,7 +834,8 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   }
 
   const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
-  if (!render) return busy;
+  // (Drawn now if it has just begun to move, rather than a frame behind.)
+  if (!render && !(anchorsMoved && manualClock === null)) return busy;
   if (nParticles > 0 || nShapes > 0) {
     setCovers(renderer);
     renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
