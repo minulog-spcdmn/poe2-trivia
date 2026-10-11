@@ -49,6 +49,20 @@ const ICON_GROUP: Record<string, string> = {
   'Amulets & Belts': 'Amulets',
   'Flasks, Charms, Jewels, Relics & Tablets': 'Flasks',
 };
+// A category that names several kinds of item ("Gloves & Boots") shows one
+// of each: its emblem (ICON_ITEM) large, and an item of each other kind
+// named smaller round it, so the card says at a glance what it holds. By
+// name as above, else the group's middle item.
+const COMPANIONS: Record<string, [group: string, name: string][]> = {
+  'Gloves & Boots': [['Gloves', "Leopold's Applause"]],
+  'Amulets & Belts': [['Belts', 'Ingenuity']],
+  'Flasks, Charms, Jewels, Relics & Tablets': [
+    ['Charms', "Ngamahu's Chosen"],
+    ['Jewels', 'Prism of Belief'],
+    ['Relics', 'The Desperate Alliance'],
+    ['Tablets', 'Freedom of Faith'],
+  ],
+};
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
 // Oisín's Oath (public/icons/, background removed with rembg, given the same
 // soft drop shadow as the poe2db item art, and padded so it sits a little
@@ -57,6 +71,8 @@ const GEM_ICON = new URL(`${import.meta.env.BASE_URL}icons/lineage-gems.webp`, d
 const icons = new Map<string, string>();
 /** The same, as 128 px copies (itemThumb), for small glyphs. */
 const glyphs = new Map<string, string>();
+/** The other kinds' icons for a category that names several (see COMPANIONS). */
+const companions = new Map<string, string[]>();
 for (const cat of engine.categories) {
   const list = engine.byCategory.get(cat)!;
   if (list[0].kind === 'gem') {
@@ -72,6 +88,12 @@ for (const cat of engine.categories) {
   const id = (named ?? pool[Math.floor(pool.length / 2)]).id;
   icons.set(cat, new URL(itemImage(id), document.baseURI).href);
   glyphs.set(cat, new URL(itemThumb(id, 128), document.baseURI).href);
+  const others = (COMPANIONS[cat] ?? []).flatMap(([group, name]) => {
+    const pool = list.filter((it) => it.group === group);
+    const it = pool.find((it) => it.name === name) ?? pool[Math.floor(pool.length / 2)];
+    return it ? [new URL(itemImage(it.id), document.baseURI).href] : [];
+  });
+  if (others.length) companions.set(cat, others);
 }
 
 /** Absolute URL, safe to use inside CSS custom properties. */
@@ -84,9 +106,14 @@ export function categoryGlyph(category: string) {
   return glyphs.get(category)!;
 }
 
-/** Every category's icon (to measure them all ahead of the deal). */
+/** The icons a category shows round its own, one for each other kind of item it names (none for most). Absolute, as categoryIcon. */
+export function categoryCompanions(category: string): readonly string[] {
+  return companions.get(category) ?? [];
+}
+
+/** Every category's icon, and their companions' (to measure them all ahead of the deal). */
 export function categoryIcons() {
-  return [...icons.values()];
+  return [...icons.values(), ...[...companions.values()].flat()];
 }
 
 /** How much larger (or smaller) than the common size to draw a category's icon, and how far to move it up and left. */

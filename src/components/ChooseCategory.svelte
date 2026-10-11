@@ -4,7 +4,7 @@
   import { untrack } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
-  import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
+  import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
@@ -300,6 +300,33 @@
   // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
   for (const url of categoryIcons()) measure(url);
 
+  // A category that names several kinds of item shows one of each (lib/ui,
+  // categoryCompanions): its emblem a little smaller and aside, the others
+  // small round it, in the window. For each count, the emblem's size and
+  // shift (px at a tall card's size, as its tweak's), and each companion's
+  // offset from the window's middle (right and down) and size.
+  type Moons = { k: number; up: number; left: number; at: [x: number, y: number, k: number][] };
+  const MOONS: Record<number, Moons> = {
+    1: { k: 0.86, up: 4, left: 18, at: [[50, 42, 0.5]] },
+    4: {
+      k: 0.9,
+      up: 0,
+      left: 0,
+      at: [
+        [-58, -40, 0.4],
+        [58, -40, 0.4],
+        [-58, 44, 0.4],
+        [58, 44, 0.4],
+      ],
+    },
+  };
+  /** The emblem's style for a category: its fit, made room for its companions. */
+  function emblemStyle(cat: string) {
+    const t = categoryIconTweak(cat);
+    const m = MOONS[categoryCompanions(cat).length];
+    return fitStyle(categoryIcon(cat), m ? { k: t.k * m.k, up: t.up + m.up, left: t.left + m.left } : t);
+  }
+
   // The deal: the cards slide in face down one after another, then turn face
   // up from left to right. Seconds from when they appear. Held still (reduced
   // motion, or the effects off) they only fade in, face up, and the vote pips
@@ -495,7 +522,18 @@
               <span class="find-tag" data-zoom>{FIND_TEXT[kind].name}</span>
             {/if}
             <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={emblemStyle(cat)} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
+              {#if MOONS[categoryCompanions(cat).length]}
+                {@const at = MOONS[categoryCompanions(cat).length].at}
+                <span class="lit moons">
+                  {#each categoryCompanions(cat) as url, j (url)}
+                    {@const [x, y, k] = at[j]}
+                    <span class="moon" style:--mx={x} style:--my={y} style:--mk={k}
+                      ><span class="glyph" class:fit={!!fits[url]} style={fitStyle(url, { k })} style:--src="url('{maskOf(url)}')"></span></span
+                    >
+                  {/each}
+                </span>
+              {/if}
             </span>
             <span class="title"
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
@@ -765,6 +803,26 @@
     transition:
       transform 0.5s var(--ease-out),
       opacity 0.4s;
+  }
+  /* The companions (see MOONS), each centred on its spot round the emblem;
+     all under one shadow, as the emblem's. */
+  .moons {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+  .moon {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: grid;
+    place-items: center;
+    translate: calc(-50% + var(--mx) * var(--e-s, 1) * 1px) calc(-50% + var(--my) * var(--e-s, 1) * 1px);
+  }
+  /* Until measured, a companion fits its whole image to a small box. */
+  .moon .glyph:not(.fit) {
+    width: calc(var(--mk) * 110px * var(--e-s, 1));
+    height: calc(var(--mk) * 110px * var(--e-s, 1));
   }
   /* Once measured: the box is the visible item, scaled to a common weight
      (lib/iconFit) and by the item's own --e-k, and the image is placed so
@@ -1454,11 +1512,12 @@
       flex: none;
       width: 80px;
       height: 80px;
+      /* The emblem, and its companions and their places, at a row's size. */
+      --e-s: 0.58;
     }
     .glyph {
       width: 74px;
       height: 74px;
-      --e-s: 0.58;
     }
     /* A row has no room for an item to grow. */
     .glyph.fit {
