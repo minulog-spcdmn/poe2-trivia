@@ -58,6 +58,11 @@ export interface Scene {
   players: number;
   lives?: number;
   offered: string[];
+  /**
+   * Delve: host clock a new zone's cards are dealt at (`started` maps it onto
+   * the recording's): till then its title card is on screen, not the cards.
+   */
+  dealAt?: number;
   question?: {
     mode: string;
     category: string;
@@ -87,6 +92,7 @@ export function sceneOf(s: GameState, me: string | null, t: number): Scene {
     // Hot seat (no `me`): whoever's turn it is.
     ...(s.delve && (me ?? s.players[turn]?.id) ? { lives: livesOf(s, me ?? s.players[turn].id) } : {}),
     offered: s.offered,
+    ...(s.phase === 'choosing' && s.delve?.dealAt ? { dealAt: s.delve.dealAt } : {}),
     ...(q
       ? {
           question: {

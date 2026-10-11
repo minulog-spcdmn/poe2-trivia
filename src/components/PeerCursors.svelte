@@ -4,8 +4,12 @@
   // element it was over (data-cursor), wherever that element is on this
   // screen, and glides between the updates (ten a second) so it moves
   // smoothly. A tap on a phone shows where it landed, as the dart pressed, for a moment.
+  // While a new zone's cards are on their way (its title card over the game,
+  // lib/dealing.svelte.ts) nobody points: this one isn't sent, and the
+  // others' fade out, to come back where they are as the cards are dealt.
   import { onMount } from 'svelte';
   import { session } from '../lib/session.svelte';
+  import { dealing } from '../lib/dealing.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
   import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
@@ -46,8 +50,8 @@
   const s = $derived(session.state!);
   const me = $derived(session.myPlayerId);
   const live = $derived(session.status === 'ready' && cursorsLive(s));
-  /** Only players point (a spectator could hint the answer). */
-  const pointing = $derived(live && !!me && s.players.some((p) => p.id === me));
+  /** Only players point (a spectator could hint the answer), and nobody while a new zone's cards are on their way. */
+  const pointing = $derived(live && !!me && s.players.some((p) => p.id === me) && !dealing.held);
   const shown = $derived(
     live
       ? peerCursors.keys.flatMap((key) => {
@@ -279,7 +283,7 @@
   });
 </script>
 
-<div class="cursors" use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
+<div class="cursors" class:veiled={dealing.held} use:portal aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color}>
       <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
@@ -318,6 +322,14 @@
     z-index: 80;
     pointer-events: none;
     overflow: hidden;
+    transition: opacity 0.3s;
+  }
+  /* Over a new zone's title card (z-index 60): out of sight at once, till the cards are dealt. Nobody points
+     meanwhile (pointing, above), so each of the others' pointers goes once its player's screen stops sending it;
+     one heard from a screen that reaches the deal sooner stays out of sight till this one does. */
+  .cursors.veiled {
+    opacity: 0;
+    transition: none;
   }
   .cursor {
     position: absolute;

@@ -269,5 +269,28 @@ export function sigilOf(name: string): Sigil {
 /** The zone a depth is in: the Mines for depths 1 to 10, Magma Fissure for 11 to 20, and so on (past 100, the generated stratum's own name). */
 export const zoneAt = (depth: number) => stratumName(Math.max(0, Math.floor((depth - 1) / 10)));
 
+/**
+ * A sigil's lines as separate strokes, so it can draw itself (each piece of
+ * the path data is a stroke of its own: the browser restarts a dash at every
+ * one): `lines` and `fine` each nearest the centre first, `shade` whole (it
+ * fades in after).
+ */
+export function sigilStrokes(name: string): { lines: string[]; fine: string[]; shade: string } {
+  const s = sigilOf(name);
+  const from = (d: string) => {
+    const [x, y] = (d.match(/-?[\d.]+/g) ?? ['0', '0']).slice(0, 2).map(Number);
+    return Math.hypot(x, y);
+  };
+  const split = (d: string) =>
+    d
+      .split(/(?=M)/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((p, i) => ({ p, i, r: from(p) }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .map((x) => x.p);
+  return { lines: split(s.lines), fine: split(s.fine), shade: s.shade ?? '' };
+}
+
 /** The biomes that have an emblem of their own. */
 export const SIGIL_NAMES = Object.keys(BY_NAME);

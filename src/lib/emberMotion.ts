@@ -83,7 +83,8 @@ export function zoneMotionOf(k: number): ZoneMotion {
  * far as its stratum's magma (magmaCoolingOf in lib/descent.ts), so only
  * in a stratum whose look has magma that goes out (the Magma Fissure's),
  * never in one that merely moves its embers the magma's way: in step with
- * its hall as the scene turns out of it, and all the way once the scene is
- * past it. Only a motion with `cool` slows for it (the magma's).
+ * its hall as the scene turns out of it (half way at the zone's 10th depth,
+ * the rest as the next arrives), and all the way once the scene is past it.
+ * Only a motion with `cool` slows for it (the magma's).
  */
 export const cooling = (burn: number, stratum: number, turn: number): number => magmaCoolingOf(burn, stratum, turn);

@@ -622,6 +622,30 @@ export const shownDepth = (d: number) => d - 1;
 /** The depth of the run in progress (the round), 0 outside Delve. */
 export const delveDepth = (s: GameState) => (s.delve ? s.round : 0);
 
+/** Whether internal depth `d` opens a new zone: the first of every ten past the first ten (named by lib/descent.ts milestoneAt). */
+export const opensZone = (d: number) => d > 10 && d % 10 === 1;
+
+/**
+ * How long the run takes to go down into a new zone: the scene plunges for
+ * as long as the zone's sound rings (lib/descent.ts plunge), and the depth's
+ * cards are dealt as it lands (DelveState.dealAt).
+ */
+export const ZONE_DESCENT_MS = 7000;
+
+/**
+ * Milliseconds until the cards on offer are dealt, at host-clock time `now`:
+ * above 0 only while the run goes down into a new zone (dealAt). Till then
+ * nothing is picked, and a vote doesn't close.
+ */
+export const dealIn = (s: GameState, now: number) => (s.phase === 'choosing' && s.delve?.dealAt ? Math.max(0, s.delve.dealAt - now) : 0);
+
+/**
+ * How much sooner than the deal a player's pick is still taken: a guest's
+ * screen deals by its guess at the host's clock, which may run a little
+ * ahead of it, and a pick it showed the cards for is never lost.
+ */
+export const DEAL_SLACK_MS = 1000;
+
 /** A co-op run: two or more players set out together (online only). One player is a solo run. */
 export const isGroupRun = (s: GameState) => (s.delve?.entrants.length ?? 0) >= 2;
 
@@ -751,22 +775,33 @@ export function expectedVoters(s: GameState, now: number): string[] {
   return s.players.filter((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && (p.connected || inGrace(s, p, now))).map((p) => p.id);
 }
 
-/** Co-op, voting: the vote is in at `now`, as someone voted and everyone it waits for has. */
-export function voteDone(s: GameState, now: number): boolean {
+/** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */
+function allVoted(s: GameState, now: number): boolean {
   const votes = s.delve?.votes ?? {};
   if (!isGroupRun(s) || s.phase !== 'choosing' || !Object.keys(votes).length) return false;
   return expectedVoters(s, now).every((id) => Object.hasOwn(votes, id));
 }
 
 /**
+ * Co-op, voting: the vote is in at `now`, as someone voted and everyone it
+ * waits for has; never before the cards are dealt (dealAt), however soon
+ * the votes came.
+ */
+export function voteDone(s: GameState, now: number): boolean {
+  return dealIn(s, now) === 0 && allVoted(s, now);
+}
+
+/**
  * Co-op, voting: when the vote closes by the clock (host clock), or null
  * while nobody has voted (it waits for as long as it takes) and outside co-op.
  * VOTE_WINDOW_MS from the first vote, held to the end of a reload's grace
- * while anyone it cut off is still away.
+ * while anyone it cut off is still away; or, every vote it waits for in
+ * before a new zone's cards are dealt, as they are (dealAt).
  */
 export function voteClosesAt(s: GameState): number | null {
   const dm = s.delve;
   if (!dm || !isGroupRun(s) || s.phase !== 'choosing' || dm.voteFrom === null || dm.voteFrom === undefined) return null;
+  if (dm.dealAt !== undefined && allVoted(s, dm.dealAt)) return dm.dealAt;
   const away = s.players.some((p) => !p.connected && dm.excused.includes(p.id) && livesOf(s, p.id) > 0);
   return Math.max(dm.voteFrom + VOTE_WINDOW_MS, away ? dm.graceUntil : 0);
 }

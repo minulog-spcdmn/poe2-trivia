@@ -60,7 +60,9 @@ the same thing for everyone.
   - The team votes for a card. Each vote is a ticket in a raffle (two
     votes for a card, twice its chance), and a vote can be changed until
     the vote closes: once everyone it waits for has voted, or 6 s after the
-    first vote. Until that first vote the cards wait for as long as it
+    first vote (going down into a new zone, never before its cards are
+    dealt: votes all in by then close it as they are dealt, and its 6 s
+    run from the deal). Until that first vote the cards wait for as long as it
     takes; nobody is ever picked for. A player who lets 3 votes in a row
     pass is idle and isn't waited for until they vote again. A short draw
     then plays on the cards (a light hopping over the voted ones and
@@ -187,7 +189,7 @@ the same thing for everyone.
     stands where Next will after the answer (its place kept, so nothing moves as it comes and
     goes): pressed, a stick blasts the question away for a new one at the
     same depth, from a card on the depth's offer not asked yet. The depth
-    doesn't change (no depth reached, no zone gate); the new question gets
+    doesn't change (no depth reached, no new zone); the new question gets
     the depth's full clock and rules (veil, pictures, grayscale, options,
     made-up names) as a fresh question, a flare works on it as usual, and
     it is never a find, even from a find's card (dynamite is no way to fish
@@ -313,19 +315,19 @@ the same thing for everyone.
   seed of its own, the same for everyone, and named from its archetype's
   names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
   fifty from 100, never the same twice in a row.
-- Each zone hands over to the next gradually, over seven depths from its
-  5th depth to the next zone's 2nd, on an eased curve: slow to begin,
-  quickest toward the zone's end, slow to settle, never a straight ramp.
-  The next zone's name is still announced at its first depth, nearly all
-  of the way through the handover, which is done once that depth's
-  question is answered: from its 2nd depth to its 5th the new zone shows
+- Each zone hands over to the next over five depths, from its 6th depth
+  to the next zone's 1st: the next zone creeps in over the zone's last
+  depths, eased, never a straight ramp, and the largest step of the
+  handover by far (at least twice any before it) is the one into the next
+  zone, as its title card names it at its first depth, so each zone reads
+  as a place of its own. From its 1st depth to its 6th the new zone shows
   alone.
-  - Its embers take the next zone's colour one by one: one in twenty of
-    them at its 6th depth, three in five at its 9th, nineteen in twenty at
-    the next zone's 1st.
-  - From its 6th depth the next zone's light, smoke and features creep in
-    while its own recede (barely at its 7th, half way at its 9th, nine
-    tenths at the next zone's 1st, all there at its 2nd), each feature
+  - Its embers take the next zone's colour one by one: one in ten of
+    them at its 7th depth, half at its 9th, two in three at its 10th, the
+    last third at the next zone's 1st.
+  - From its 7th depth the next zone's light, smoke and features creep in
+    while its own recede (a sixth at its 8th, a third at its 9th, half way
+    at its 10th, the other half at the next zone's 1st), each feature
     coming and going its own way (the lamps kindle one by one, magma cracks
     open from hairlines and cool, frost grows in from the walls, fire rises
     from below).
@@ -340,27 +342,82 @@ the same thing for everyone.
   (not a run's first depth, after a reload, or the same depth dealt again):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
-  It is skipped with reduced motion or effects off.
+  Into a new zone (its first depth) it plunges much further, 5 screens,
+  for as long as the zone's sound rings (7 s), its speed following the
+  sound: it drops hard with the first blow, eases off as the sound dies
+  down, is carried down again by its second swell and glides to rest as it
+  fades. The scene takes the step into the new zone over the first blow
+  and as the sound dies down (about 2.3 s, rather than the usual second).
+  Meanwhile the stage stands empty and the header keeps the depth before,
+  while the zone's title card names it (below); the new depth and its
+  cards come in as the plunge lands, at one moment for the whole team.
+  Nothing is picked before then, and a vote cast sooner neither opens its
+  window nor closes the vote; the room bots look the cards over, vote and
+  pick only once they are dealt. It is skipped with reduced motion or
+  effects off (the wait for the cards is not).
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience, a hearth fire, sinks with the depth, over a slow
   rumble. Each zone, and from depth 100 each kind of place, lays a bed of
   its own under it and keeps as much of the fire as suits it; the beds
-  cross-fade as the scene turns, in step with its light. Leaving a
+  cross-fade as the scene turns, in step with its light (half way at a
+  zone's last depth, the rest into the next zone). Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
   (the surface, say) instead of passing through every zone.
-- A new zone is announced by a gate built over the depth banner, so "Depth
-  N" stands in its doorway: engraved columns rise beside the heading, a
-  lintel is lowered onto them with the zone's name lit along its face, and
-  a keystone bearing the zone's sigil is set in its crown, all in the zone's
-  colour, the zone's light showing faintly through the doorway. It is built
-  in about a second, holds about four and leaves as you pass through it;
-  it never covers the cards or the player strip, or takes a tap, and the
-  head keeps room for it above the banner throughout a run, so nothing
-  moves when it comes or goes. With reduced motion or effects off it only
-  fades in and out. Alone, the same gate marks the first depth past your
-  best ("Deeper than ever"). The header names the zone beside the depth,
-  both in its colour (on a second line on phones).
+- A new zone is named by a title card in the plunge into it, timed to the
+  zone's sound: letterbox bars close in with the first blow (over the
+  header's old depth) and the scene behind darkens a little; as the sound
+  dies down, the place shows (the scene takes on the new zone, the largest
+  change of its handover, as the sound falls, done before the name locks),
+  the zone's sigil draws itself in a worn seal and a meta line
+  ("Depth 10 • Zone II", or "• Deeper than ever" alone past your best)
+  tracks out between rules ending in Sol and Luna; the name's letters
+  gather, a soft tick as each lands, and lock on the sound's second swell
+  with a whoosh, a thump and a chime, lighting the scene behind them, a
+  divider struck out under them. A subtitle follows ("Magma Fissure • The
+  rock is split, and it burns"), then up to three things new in the zone,
+  each in a small engraved seal (a find's item, a number, or an
+  alchemist's sign: "Dynamite Cache", "6 Options", "Mirrored art"). It
+  holds, then leaves as its place has it, before the cards are dealt, the
+  bars opening as control comes back. On large windows it is scaled up
+  with the rest of the page, its bars as tall as the header they cover.
+  Other players' pointers fade out while it is up and come back as the
+  cards are dealt; your own isn't sent meanwhile. Each zone, and each kind of place
+  past 100, moves after its look:
+  - fire (Magma Fissure, Primeval Ruins in blue, forges, reliquaries)
+    rises out of the divider's opened fissure white-hot, embers rising and
+    heat shimmering in its glow, and burns away left to right;
+  - ice (Frozen Hollow, frozen abysses, glacial pyres) condenses from
+    above, glinting, under falling snow, and shatters on jagged seams;
+  - spores (Fungal Caverns, sunken gardens, witchfire groves) drift in from
+    a scatter in no order, breathing, and are exhaled into motes;
+  - the void (Abyssal Depths, void blooms, blood eclipses) pulls the glyphs
+    together out of a spiral, ghosts in split colours closing in, and
+    draws them into its turning seal;
+  - light (Vaal Outpost, Abyssal City's lanterns, necropolises, starfalls,
+    drowned temples' rippling tide) lights each letter like a lamp, a shaft
+    of light crossing the name as it locks, and puts them out in turn;
+  - fumes (Sulphur Vents, sulphur marshes; the Petrified Forest's stone,
+    which crumbles) lift the letters out of a fog of the zone's colour and
+    carry them off.
+
+  With reduced motion or effects off it fades in whole, holds and fades
+  out; a screen that saw the run move on late gets the same, sooner, and a
+  reload mid-plunge none (a screen reader is told where the run has come
+  either way, and the scene's embers still take the zone's colour). The
+  run's opening (the Mines) has no card: its start line, the header, the
+  start sound and the light wave mark it, and on a screen that saw the run
+  start a screen reader is told "The Mines." Alone, the first depth past
+  your best says "Deeper than ever" on the line over the depth banner,
+  lettered like the card's meta line in the depth's colour: its letters
+  spread out of a blur as the stage comes in, between two short rules,
+  with a short sting and a few glints, and a screen reader is told "Deeper
+  than ever: depth N, past your best of M." On a zone's first depth the
+  card says it instead, and the line still shows once the cards are dealt,
+  quietly (with reduced motion or effects off it comes in with the
+  stage). The header
+  names the zone beside the depth, both in its colour (on a second line on
+  phones).
 - A run ends as a fall, not a victory. Alone, the end screen says "Perished"
   (or "Deeper than ever"), with your depth, where your lives went and your
   best. Together it says "The descent ends", with the team's depth and the
@@ -572,7 +629,9 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     thing on every screen, a phone's included. A click is always seen:
     the press goes out even when it's over before the next update, and a
     pointer whose element goes with the click (a card picked) stays where
-    it was a moment. Never in a race, nor while
+    it was a moment. While a new zone's title card is up, nobody's pointer
+    shows or is sent (the room bots' included); they come back as its
+    cards are dealt. Never in a race, nor while
     deathmatch duelists answer, where it would give answers away. See
     `src/lib/cursors.ts`.
   - The room code stays in the header during the game, unless the host
@@ -756,7 +815,7 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   other modes exactly as the whole would. Delve's programs are built in the
   background once Delve is on its way (`wantDelveBackdrop`: Delve picked in a
   lobby, a Delve room joined, a run picked up or begun from a `?delve` link,
-  the lab, the zone gate page and the backdrop tool), with
+  the lab, the zone tuning page and the backdrop tool), with
   `buildPrograms` in `src/lib/fx/gl.ts` (`KHR_parallel_shader_compile`
   polled once a frame, or one program per idle moment without it), and are
   drawn once each, small, so the GPU has them ready. Should a Delve scene
@@ -799,23 +858,25 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   archetype's next (`endgameName`): the curated ones first, then epithets
   and places composed; its sigil and ornament its archetype's zone's
   (`emblemOf`).
-  From a zone's 5th depth to the next one's 2nd, seven depths, the scene
+  From a zone's 6th depth to the next one's 1st, five depths, the scene
   turns into the next (`strataAt`, `turnInto`; `TURN_FROM`,
-  `TURN_DEPTHS`): the embers follow the turn eased (`emberTurn`), the
+  `TURN_DEPTHS`), the turn coming a fifth a depth to the zone's 8th, a
+  tenth a depth to its 10th and the last two fifths into the next zone
+  (`TURN_AT`, `turnAt`): the embers follow the turn eased (`emberTurn`), the
   light, smoke, features and their colours follow it eased from the
-  zone's 6th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
+  zone's 7th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
   (`easeTurn`), and a magma that goes out cools with the hall
-  (`magmaCooling`), gone by the next zone's 2nd (through a cross-fade it
+  (`magmaCooling`), half cooled at the zone's 10th depth and gone by the next zone's 1st (through a cross-fade it
   keeps each scene's own cooling, `Descent.cool`, so it never flares up
   again as it fades). A zone shows alone from
-  its 2nd depth (`settledAt`) to its 5th, where its own turn begins.
+  its 1st depth (`settledAt`) to its 6th, where its own turn begins.
   The scene's `light` is set so its average brightness never rises with
   depth through the zones and, past them, by 8% a depth at most
   (`luminanceAt`, `lightAt`, `brighterAt`): `estimateLuminance` works out
   what the backdrop draws from what each environment adds and dims as it
   comes in (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to
-  depth 92), and the light is solved a stretch of depths at a time, moving
-  at most 0.09 a depth (`light`, or the light drawn, `light` times the
+  depth 91), and the light is solved a stretch of depths at a time, moving
+  at most 0.135 a depth (`light`, or the light drawn, `light` times the
   stratum's own `lightK`, so a stratum lit brighter is made way for), to
   depth 2001 (past it the curve is kept to exactly). It is worked out in
   idle moments ahead of the scene (`warmLights`); a rejoin deep down shows
@@ -830,20 +891,43 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   depths' corrections dropped (faded out over its turns) rather than
   applied wrongly. (They were measured with the straight handover and
   carried over to the eased one by the share of the next zone's hall each
-  depth shows; calibrate measures them afresh.)
-  The shown depth eases along at about a second a depth, and a jump of
+  depth shows; not yet to `TURN_AT`'s, as no zone is marked measured now:
+  measure afresh with calibrate, or carry them over the same way, before
+  marking zones measured again.)
+  The shown depth eases along at about a second a depth (the step into a
+  new zone, while its plunge runs, slower: `ARRIVAL_PACE`, about 2.3 s), and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
-  the scene, and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  the scene (a new zone's further and longer with the zone's sound,
+  `ZONE_PLUNGE_SINK`, `ZONE_PLUNGE_MS`, `ZONE_SPEED`), and the backdrop
+  steps it (`stepPlunge`). A new zone's cards are dealt as its plunge lands
+  (`DelveState.dealAt`, `ZONE_DESCENT_MS`; the screens wait through
+  `src/lib/dealing.svelte.ts`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
   small palette of zone colours, so a new colour spreads ember by ember,
   each taking its zone's way of moving from `src/lib/emberMotion.ts` with it),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
   ring and drawn by the backdrop, with a thin late shade at the screen's
-  edges (`Darkness.svelte`). The zone gate (`src/components/zonebanner/`,
-  with the zones' sigils in `src/lib/zoneSigils.ts`) and the find cards
-  (`findEngraving.ts`) are engraved in the arcane style, and a run's end
-  has its own effect (`src/lib/fx/delveEnd.ts`).
+  edges (`Darkness.svelte`). A new zone's title card: `src/lib/zoneTitle.ts`
+  says what it shows for a depth (name, subtitle, meta line, what is new
+  from `delveRules` and the finds, and its treatment: the family of motion
+  and its colours), `src/lib/zoneTitleTiming.ts` when (its beats from the
+  plunge's start, the name locking on the zone sound's second swell; the
+  compact and still timelines; the light it casts, `glowAt`; one pen for
+  a broken line, `drawPlan`), `src/lib/zoneArrival.svelte.ts` sets it up
+  as App starts the plunge (its sounds booked on the audio clock with
+  `sfx`'s `inMs`, the name timed to the speakers' lag, `audioLead`), and
+  `src/components/zonecard/ZoneCard.svelte` plays it, every animation on
+  its own clock (WAAPI from the plunge's start), with the seal
+  (`ZoneSeal.svelte`, the sigil's strokes from `sigilStrokes`), the marks
+  of what is new (`NewsMark.svelte`) and a family of motion each
+  (`ember.ts`, `rime.ts`, `spore.ts`, `void.ts`, `light.ts`, `fume.ts`, to
+  the contract in `family.ts`). Like the shell, it is drawn at the stage's
+  CSS zoom (`.zc` in `ZOOMED`, `src/lib/stage.ts`): the letters' and seal's
+  places are measured in its own px (`unzoomRect`), its light and effects
+  in screen px. The zones' sigils (`src/lib/zoneSigils.ts`), on the zone
+  card's seal, and the find cards (`findEngraving.ts`) are engraved in the arcane style,
+  and a run's end has its own effect (`src/lib/fx/delveEnd.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a
@@ -991,19 +1075,23 @@ On the beta and the dev server, `?record` in the address (for example
 bots' hands to move by: the pointer about 120 times
 a second, what it was over (the anchors the pointer sync uses), clicks,
 scrolls and keys pressed outside text fields, where everything was on the
-screen, and what the game showed (phase, question, clock, reveal, lives).
+screen, and what the game showed (phase, question, clock, reveal, lives,
+and when a new zone's cards were dealt).
 Nothing typed and no names. A badge in the bottom left corner shows it's on;
 **Save** downloads the file (nothing leaves the device otherwise), **Stop**
 ends it. It stays on for the tab until stopped or `?record=off`
 (`src/lib/recorder.ts`, `src/components/Recorder.svelte`).
 
 The bots' hands replay what was recorded: `node scripts/bot-motion.mjs
-one.json two.json …` cuts recordings into stretches (picking a card,
+one.json two.json …` cuts recordings into stretches (picking a card, from
+when the cards were dealt, not the zone's title card before them;
 answering, pressing Next, waiting through someone else's turn, the lobby),
 kept relative to what was on screen, into `src/data/botMotion.json` (the
 recordings themselves stay out of the repo). A bot replays one that fits
 the moment, its pauses fitted to how long it takes to make up its mind and
 its last reach steered onto its own pick (`src/bot/motion.ts`, `hand.ts`).
+A bot does nothing while a new zone's cards are on their way: its pointer
+is off the page, and it looks the cards over from the deal.
 More players' recordings make for more kinds of hands.
 
 ### The lab
@@ -1056,7 +1144,7 @@ and how the embers move. Every change shows at once.
   the game estimates it with its solved light (no frame is drawn or read),
   beside the curve it keeps to; any depth brighter than the rule allows
   (than the one before through the zones, by 8% past them) is marked.
-- **Zones:** pick one of the ten (the panel jumps to its 2nd depth, where
+- **Zones:** pick one of the ten (the panel jumps to its 1st depth, where
   it shows alone), then tweak its look: a colour picker for every colour,
   sliders for every strength (Light and dark, Smoke, Haze, Embers, Glints,
   Details), and the embers' motion (a profile and its speed, rise or fall, drift, turbulence
@@ -1088,20 +1176,25 @@ and how the embers move. Every change shows at once.
   data-backdrop-tool>`), so `src/lib/storage.ts` starts its keys with
   `backdrops.` and its drafts and settings never reach the game's.
 
-### The zone gate's tuning page
+### The zone tuning page
 
-`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone gate
-(`src/components/zonebanner/Threshold.svelte`) in place: the real game
-screen (a Delve run of the lab's, in a frame) with the gate built over its
-head, timed as in a game.
+`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone title
+card (`src/components/zonecard/`) in place: the real game screen (a Delve
+run of the lab's, in a frame) stepping down into a zone the engine's way,
+so the plunge, its sound, the scene's colours and the deal as it lands are
+all as in a game.
 
-- **Zone:** any of the ten zones, two long endgame-style names (to check
-  the fit of a long name) or "Deeper than ever". Each play sets the run's
-  depth quietly first, so the header, the scene and the colours are the
-  zone's; **Replay** (or R) builds the gate again.
-- **Phone width** shows the screen at 375 px; **Hold** keeps the gate up;
-  **Effects off** and **Reduced motion** show it as those players see it
-  (it only fades in and out).
+- **Zone:** any of the nine zones past the Mines, the endgame's first six
+  strata (one of each of several kinds of place), the widest name an
+  endgame stratum can have (to check its fit), and a zone reached past
+  your best. **Replay** (or R) plays it again.
+- **Family:** shows the zone with another family's motion (fire, ice,
+  spores, the void, light, fumes) to compare them on one place.
+- **Phone width** shows the screen at 375 px. **Freeze** keeps the card up
+  (its cards never dealt) and stops it at the moment the slider sets, to
+  look at any frame of it. **Effects off** and **Reduced motion** show it
+  as those players see it (it fades in and out whole). Click the screen
+  once for sound.
 - **Open it:** `npm run dev`, then `http://localhost:5173/zones.html`; on
   the beta, **poe2.quest/beta/zones.html**. Like the lab, the live build
   leaves it out, and its page is marked (`<html data-lab data-zones>`), so

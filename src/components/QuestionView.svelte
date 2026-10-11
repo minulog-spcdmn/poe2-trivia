@@ -28,7 +28,7 @@
     ablaze,
   } from '../lib/fx/moments';
   import { FILL_LEAD } from '../lib/soundDesign';
-  import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
+  import { flameOf, heatOf, streakOf, type Flame } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
@@ -594,7 +594,7 @@
    * the scoreboard does, at the same heat and in the same colours.
    */
   const chipHeat = $derived(streakInChip ? heatOf(streak, !!s.delve) : 0);
-  const chipBlue = $derived(chipHeat > 0 && burnsBlue(chipHeat, !!s.delve));
+  const chipFlame = $derived(flameOf(streak, !!s.delve));
 
   /**
    * Svelte action: the streak chip catches fire as it lands (the chip comes
@@ -603,12 +603,12 @@
    */
   /** The question whose chip has caught fire: moved (the phone's dock coming or going), it burns on without catching again. */
   let caughtAt = 0;
-  function chipFire(node: HTMLElement, o: { heat: number; blue: boolean }) {
+  function chipFire(node: HTMLElement, o: { heat: number; flame: Flame }) {
     let fire: Handle | null = null;
     let t: ReturnType<typeof setTimeout> | null = null;
-    let lit = { heat: 0, blue: false };
-    const set = (n: { heat: number; blue: boolean }) => {
-      if (n.heat === lit.heat && n.blue === lit.blue) return;
+    let lit: { heat: number; flame: Flame | null } = { heat: 0, flame: null };
+    const set = (n: { heat: number; flame: Flame }) => {
+      if (n.heat === lit.heat && n.flame === lit.flame) return;
       lit = n;
       if (t) clearTimeout(t);
       fire?.stop(0.3);
@@ -617,7 +617,7 @@
       if (n.heat <= 0) return;
       const catching = caughtAt !== q.askedAt;
       caughtAt = q.askedAt;
-      t = setTimeout(() => (fire = ablaze(node, n.heat, n.blue, undefined, catching)), motion.still || !catching ? 0 : 600);
+      t = setTimeout(() => (fire = ablaze(node, n.heat, n.flame.blue, n.flame.tint, catching)), motion.still || !catching ? 0 : 600);
     };
     set(o);
     return {
@@ -792,7 +792,7 @@
 <!-- The verdict at the reveal: it leads the result line, in the row under the answers. -->
 {#snippet verdictBadge()}
   {#if verdict}
-    <div class="verdict {verdict.tone}" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, blue: chipBlue }}>
+    <div class="verdict {verdict.tone}" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, flame: chipFlame }}>
       <span class="glyph" aria-hidden="true">
         <svg viewBox="0 0 20 20">
           {#if verdict.icon === 'check'}
@@ -808,7 +808,7 @@
       </span>
       {#if chipHeat > 0}
         <!-- The streak instead of the word, in the fire's colour. -->
-        <span class="word count" class:blue={chipBlue} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
+        <span class="word count" class:blue={chipFlame.blue} class:tinted={!!chipFlame.tint} style:--flame-rgb={chipFlame.css} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
       {:else}
         <span class="word">{verdict.word}</span>
       {/if}
@@ -2482,6 +2482,13 @@
     text-shadow:
       0 0 calc(4px + 14px * var(--heat)) rgba(110, 160, 255, calc(0.3 + 0.7 * var(--heat))),
       0 0 calc(1px + 3px * var(--heat)) rgba(110, 160, 255, calc(0.4 + 0.5 * var(--heat)));
+  }
+  /* Past blue (Delve's long runs), in the colour of its step on the ladder (lib/fx/streaks DELVE_FLAMES). */
+  .verdict .count.tinted {
+    color: color-mix(in srgb, rgb(var(--flame-rgb)) 45%, #fff);
+    text-shadow:
+      0 0 calc(4px + 14px * var(--heat)) rgba(var(--flame-rgb), calc(0.3 + 0.7 * var(--heat))),
+      0 0 calc(1px + 3px * var(--heat)) rgba(var(--flame-rgb), calc(0.4 + 0.5 * var(--heat)));
   }
   .verdict .count b {
     font-family: var(--font-body);
