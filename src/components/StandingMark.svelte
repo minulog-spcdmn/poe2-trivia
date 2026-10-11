@@ -3,7 +3,8 @@
      box sat badly in the round chips. Idle: a crescent moon (dozing, as
      chat apps show it). Away: the spectators' eye (WatchEye), closed (not
      looking at the game). Lagging: a signal with only its two short bars
-     lit. Offline: no bar lit, a cross beside them. -->
+     lit. Offline: no bar lit
+     (a cross would echo the × beside it). -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { STANDING_TEXT, type Standing } from '../lib/presence';
@@ -22,7 +23,6 @@
       <path d="M2.5 10.5A11.6 11.6 0 0 0 21.5 10.5" /><path d="M6.6 14.4l-1.3 2.1M12 16.2v2.5M17.4 14.4l1.3 2.1" />
     {:else}
       <path class="bar" class:faint={standing === 'offline'} d="M6 19.5v-3M10.5 19.5v-6.5" /><path class="bar faint" d="M15 19.5v-10M19.5 19.5v-13.5" />
-      {#if standing === 'offline'}<path d="M3.5 4.5l5 5M8.5 4.5l-5 5" />{/if}
     {/if}
   </svg></span
 >

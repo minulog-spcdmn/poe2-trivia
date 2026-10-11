@@ -413,7 +413,7 @@
               class:absent={st === 'offline' || notReady(st)}
               style:--c={playerColor(p.hue)}
             >
-              <Avatar name={p.name} hue={p.hue} size={32} />
+              <Avatar name={p.name} hue={p.hue} size={32} dim={st === 'offline' || notReady(st)} />
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
               {#if st}<StandingMark standing={st} />{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
@@ -915,11 +915,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Away, idle or offline (lib/presence.ts, StandingMark): their chip dims. */
-  .chips li.absent :global(.avatar),
+  /* Away, idle or offline (lib/presence.ts, StandingMark): their name dims, and their avatar greys as an offline one does in the game. */
   .chips li.absent .name {
     opacity: 0.55;
-    transition: opacity 0.4s;
   }
   /* Pointing at the kick: the chip it would remove warms red, so it is clear whose it is. */
   .chips li:has(:global(.kick:hover)),
