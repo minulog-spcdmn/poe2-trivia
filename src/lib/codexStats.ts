@@ -8,6 +8,7 @@ import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
 import { MAX_DEPTH, bestKey, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
 import { biomeAt } from './backdrops.ts';
 import { stratumName } from './descent.ts';
+import { roman } from './roman.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
 export const NEMESIS_MIN = 2;
@@ -163,13 +164,6 @@ export interface Zone {
   to: number;
   /** Its name as the descent has it (past 100 a generated stratum's own), numbered should one come round again ("The Drowned Nave II"). */
   name: string;
-}
-
-function roman(n: number): string {
-  const parts: [number, string][] = [[100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
-  let out = '';
-  for (const [v, s] of parts) for (; n >= v; n -= v) out += s;
-  return out;
 }
 
 const LAST_ZONE = Math.floor((MAX_DEPTH - 1) / ZONE_SIZE);

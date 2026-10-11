@@ -123,20 +123,21 @@ function moves(anim: Animation, effect: KeyframeEffect): boolean {
 }
 
 /**
- * Elements with a running animation or transition that moves them. Scanned
- * every frame rather than kept until one starts: a hover's transition, say,
- * shows up here in the frame that first styles it, but its transitionrun (or
- * animationstart) event only fires a frame later.
+ * Whether `el` itself has a running animation or transition that moves it.
+ * Asked every frame rather than kept until one starts: a hover's transition,
+ * say, shows up here in the frame that first styles it, but its transitionrun
+ * (or animationstart) event only fires a frame later. Asked of the element,
+ * not of the whole document: a long page (the codex) runs far more
+ * animations than the few elements with shadows have, and going through them
+ * all every frame stalled it.
  */
-function movingElements(): Set<Element> {
-  const out = new Set<Element>();
-  for (const anim of document.getAnimations()) {
+function movesNow(el: Element): boolean {
+  for (const anim of el.getAnimations()) {
     if (anim.playState !== 'running') continue;
     const effect = anim.effect as KeyframeEffect | null;
-    const target = effect?.target;
-    if (target && moves(anim, effect)) out.add(target);
+    if (effect?.target === el && moves(anim, effect)) return true;
   }
-  return out;
+  return false;
 }
 
 function paintsBackground(cs: CSSStyleDeclaration) {
@@ -252,11 +253,14 @@ export function measureShadows(
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
   const shook = shaking();
-  let moving: Set<Element> | null = null;
+  // Each element asked once a frame: shadowed elements share most of their ancestors.
+  const moving = new Map<Element, boolean>();
   const isMoving = (node: HTMLElement) => {
-    moving ??= movingElements();
-    if (!moving.size) return false;
-    for (let el: Element | null = node; el; el = el.parentElement) if (moving.has(el)) return true;
+    for (let el: Element | null = node; el; el = el.parentElement) {
+      let m = moving.get(el);
+      if (m === undefined) moving.set(el, (m = movesNow(el)));
+      if (m) return true;
+    }
     return false;
   };
   // Ancestors' backgrounds, read once a frame: fills share most of their
