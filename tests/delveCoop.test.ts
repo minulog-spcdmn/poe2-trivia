@@ -451,6 +451,48 @@ test('everyone standing answers the one question: a wrong pick strikes its optio
   assert.deepEqual(h.s.delve!.votes, {});
 });
 
+test("the team's streak: depths cleared in a row with nobody missing, a ward's save, a blasted question's miss or a time-out ending it", () => {
+  const h = team(3);
+  /** One depth cleared by p2, after `miss` (if any) picked wrong. */
+  const depth = (miss?: string) => {
+    const q = h.ask();
+    if (miss) h.pickAs(miss, wrongs(q)[0]);
+    h.pickAs('p2', right(q));
+    const r = h.s.reveal!;
+    h.next();
+    return [r.teamStreak, r.teamLost];
+  };
+  assert.deepEqual([depth(), depth(), depth()], [
+    [1, undefined],
+    [2, undefined],
+    [3, undefined],
+  ]);
+  assert.equal(h.s.delve!.teamStreak, 3);
+  // A ward takes p1's loss: still a miss, though the depth is cleared and p2's own streak goes on.
+  h.give('p1', { wards: 1 });
+  assert.deepEqual(depth('p1'), [0, 3]);
+  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES);
+  assert.equal(h.s.delve!.teamStreak, undefined);
+  assert.equal(h.s.players.find((p) => p.id === 'p2')!.streak, 4);
+  assert.equal(h.s.delve!.bestTeamStreak, 3);
+  assert.deepEqual(depth(), [1, undefined]);
+  // A miss on a question dynamite blasted away counts at its depth.
+  h.give('p0', { dynamite: 1 });
+  const q = h.ask();
+  h.pickAs('p1', wrongs(q)[0]);
+  h.act({ type: 'blast', askedAt: q.askedAt }, 'p0');
+  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+  h.pickAs('p2', right(h.s.question!));
+  assert.deepEqual([h.s.reveal!.teamStreak, h.s.reveal!.teamLost], [0, 1]);
+  h.next();
+  // Nobody missing at the next depth, it starts again; a time-out ends it.
+  assert.deepEqual(depth(), [1, undefined]);
+  h.ask();
+  h.timeOut();
+  assert.deepEqual([h.s.reveal!.teamStreak, h.s.reveal!.teamLost], [0, 1]);
+  assert.equal(h.s.delve!.bestTeamStreak, 3);
+});
+
 test('no answer before the clock, none after it, none from the perished', () => {
   const h = team(3);
   h.lives({ p2: 0 });

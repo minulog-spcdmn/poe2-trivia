@@ -310,11 +310,19 @@ function invSet(s: GameState, id: string, change: (inv: Inventory) => void) {
   (s.delve!.inventory ??= {})[id] = capShards(inv);
 }
 
-/** A player's streak of right answers, as if they had answered `n` in a row (the streak chip and the scoreboard's fire at any tier). */
+/**
+ * A player's streak of right answers, as if they had answered `n` in a row
+ * (the streak chip and the scoreboard's fire at any tier); together, the
+ * team's too (what the verdict's chip burns with there).
+ */
 export function setStreak(id: string, n: number) {
   put((s) => {
     const p = s.players.find((x) => x.id === id);
     if (p) p.streak = n;
+    if (s.delve && isGroupRun(s)) {
+      if (n) s.delve.teamStreak = n;
+      else delete s.delve.teamStreak;
+    }
   });
 }
 
