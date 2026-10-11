@@ -35,7 +35,7 @@ const LOBBY_REST_MS: [number, number] = [2000, 12000];
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
 
-/** The hand of whoever plays on this page now (the seat's current player): moved ten times a second, as a real tab sends. */
+/** The hand of whoever plays on this page now (the seat's current player): moved twenty times a second, as a real tab sends. */
 let current: Hand | null = null;
 setInterval(() => current?.tick(), SEND_EVERY_MS);
 // For scripts that watch a bot on the dev server (as src/main.ts gives the session).

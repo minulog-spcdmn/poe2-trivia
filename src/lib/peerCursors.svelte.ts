@@ -1,6 +1,6 @@
 // The pointers of the other players in the room, as last heard (cursors.ts),
 // for PeerCursors.svelte to draw. Only which pointers there are is reactive:
-// where they are changes ten times a second, and is read every frame instead.
+// where they are changes twenty times a second, and is read every frame instead.
 
 import { SEND_EVERY_MS, type CursorAt } from './cursors.ts';
 

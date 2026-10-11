@@ -22,11 +22,11 @@
   /**
    * A pointer is drawn this far behind where it was last heard to be (ms),
    * along a curve through its last few places (cursors.ts trailAt): it is
-   * heard ten times a second, and drawn from one place straight to the next
+   * heard twenty times a second, and drawn from one place straight to the next
    * it would move from corner to corner. Then it catches up with that this
    * quickly (ms to cover about 2/3 of the way), smoothing what's left.
    */
-  const BEHIND_MS = 150;
+  const BEHIND_MS = 90;
   const GLIDE_MS = 35;
   /**
    * Placed on another element far from where it's drawn (px; the two

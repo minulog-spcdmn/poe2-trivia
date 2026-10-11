@@ -67,7 +67,7 @@ export function toAnchor(anchor: number, px: number, py: number, r: AnchorBox, s
  * Where a pointer is drawn at time `t`, from where it was heard to be at
  * times `ts` (points `ps`, oldest first): along a smooth curve through them
  * (Catmull-Rom), held at the first before it and the last after it. Drawn a
- * little behind the newest, a pointer heard ten times a second moves along
+ * little behind the newest, a pointer heard twenty times a second moves along
  * a curve rather than from corner to corner.
  */
 export function trailAt(ps: [number, number][], ts: number[], t: number): [number, number] {
@@ -91,8 +91,8 @@ export function fromAnchor(anchor: number, x: number, y: number, r: AnchorBox, s
   return [r.left + (x / SCALE) * r.width, r.top + (y / SCALE) * (anchor === GAME_ANCHOR ? screenH : r.height)];
 }
 /** A guest sends its pointer at most this often (ms), and the host its batches. */
-export const SEND_EVERY_MS = 100;
-export const FLUSH_EVERY_MS = 100;
+export const SEND_EVERY_MS = 50;
+export const FLUSH_EVERY_MS = 50;
 
 /** Anchors that come in lists (by index, the same on every screen) take the codes from their base up. */
 const LISTS = { opt: 16, card: 32, row: 48 } as const;

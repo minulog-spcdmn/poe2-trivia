@@ -201,7 +201,7 @@ test('a full room of moving pointers stays small, and within the frame budget', 
   const one = bytes({ t: 'cursor', at: far });
   assert.ok(plausiblePack(one));
   assert.ok(one.length <= 40, `${one.length} bytes`);
-  // What every guest is sent ten times a second at most, when all the others moved.
+  // What every guest is sent twenty times a second at most, when all the others moved.
   const batch = bytes({ t: 'cursors', c: Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => [cursorKey(`player${i}abcd`), ...far]) });
   assert.ok(batch.length <= 520, `${batch.length} bytes`);
 
