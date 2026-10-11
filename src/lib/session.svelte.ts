@@ -1020,7 +1020,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, this.mode === 'host' && !this.labRoomless), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -1172,27 +1172,29 @@ class Session {
    * The rest of a veiled picture goes out now (the answer is out), a few
    * tens of ms apart: it burns in
    * quickly, still spreading from what's there, and every device starts each
-   * patch's burn in a different frame. The veiled picture's go out lighter
-   * where it was sent finer (PreparedMedia.light), each cut now and sent once
-   * it's both due and ready.
+   * patch's burn in a different frame. Guests get the veiled picture's
+   * lighter where it was sent finer (PreparedMedia.light); this screen keeps
+   * it sharp.
    */
   private finishVeil(rest: ReturnType<Session['unreleasedPatches']>, light: PreparedMedia['light']) {
     const gap = Math.min(30, 300 / Math.max(1, rest.length));
     rest.forEach((patch, k) => {
-      const data = patch.tile === undefined && light ? light(patch.i).catch(() => patch.data) : patch.data;
-      const go = async () => {
-        const d = await data;
+      const go = () => {
         const s = this.state;
-        if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch, data: d });
+        if ((s?.phase !== 'reveal' && s?.phase !== 'question') || s.question?.askedAt !== patch.qid) return;
+        const m: MediaMsg = { t: 'patch', ...patch };
+        const lighter = patch.tile === undefined ? light?.get(patch.i) : undefined;
+        this.release(lighter ? { ...m, data: lighter } : m, m);
       };
-      if (k === 0) void go();
-      else this.mediaTimers.push(setTimeout(() => void go(), k * gap));
+      if (k === 0) go();
+      else this.mediaTimers.push(setTimeout(go, k * gap));
     });
   }
 
-  private release(m: MediaMsg) {
+  /** Out to everyone who may have it: `m` to guests (and kept for later arrivals), `own` on this screen. */
+  private release(m: MediaMsg, own = m) {
     this.released.push(m);
-    shown.receive(m);
+    shown.receive(own);
     for (const [conn, g] of this.guests) if (g.playerId && this.mayGetMedia(g)) this.sendMedia(conn, g, m);
   }
 

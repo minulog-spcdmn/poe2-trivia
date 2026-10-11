@@ -52,12 +52,13 @@ export interface PreparedMedia {
   /** Veiled art questions (Delve): each option's picture cut into patches instead, with its own delays. */
   tiles: CutVeil[];
   /**
-   * Host only, a veiled picture sent finer than LIGHT: patch i's picture
-   * again at LIGHT, cut when asked, for those still to go out when the answer
-   * is out. They burn in for a moment before the full art takes over, so
-   * they needn't be sharp, and a smaller burst gets to everyone sooner.
+   * Host only, a veiled picture sent finer than LIGHT to guests: each patch's
+   * picture again at LIGHT, by patch, for guests to get those still to go out
+   * when the answer is out. They burn in for a moment before the full art
+   * takes over, so they needn't be sharp, and a smaller burst gets to
+   * everyone sooner.
    */
-  light: ((i: number) => Promise<ArrayBuffer>) | null;
+  light: Map<number, ArrayBuffer> | null;
 }
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
@@ -179,7 +180,11 @@ function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
 
 let webpProbe: Promise<boolean> | null = null;
 
-/** Whether this browser encodes WebP losslessly at quality 1 (Chromium does; Firefox's is lossy, Safari gives PNG): tried once, on a tiny picture. */
+/**
+ * Whether this browser encodes WebP losslessly at quality 1 (Chromium does;
+ * Firefox's is lossy, Safari gives PNG): tried on a tiny picture, once it
+ * gives an answer (a try that fails is made again next time).
+ */
 function encodesLosslessWebp(): Promise<boolean> {
   webpProbe ??= (async () => {
     const c = document.createElement('canvas');
@@ -189,7 +194,10 @@ function encodesLosslessWebp(): Promise<boolean> {
     g.fillRect(0, 0, 1, 1);
     const blob = await toBlob(c, 'image/webp', 1);
     return blob.type === 'image/webp' && losslessWebp(new Uint8Array(await blob.arrayBuffer()));
-  })().catch(() => false);
+  })().catch(() => {
+    webpProbe = null;
+    return false;
+  });
   return webpProbe;
 }
 
@@ -214,9 +222,10 @@ async function encode(canvas: HTMLCanvasElement, lossless = false): Promise<Arra
  * Host side: builds the art for a question (full question, with the answer).
  * `clock`: the question's seconds (game.ts questionClock) and the veil's
  * share of them, which each veiled picture's pace is fitted to once it is
- * cut (cutVeil).
+ * cut (cutVeil). `guests`: the host has a room, where guests may get the
+ * veil's finale lighter (PreparedMedia.light).
  */
-export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes): Promise<PreparedMedia> {
+export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes, guests = false): Promise<PreparedMedia> {
   const art = (id: string) => sizes.get(id)!;
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [], light: null };
   if (q.mode === 'art') {
@@ -232,7 +241,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
     out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(picture.canvas) };
     return out;
   }
-  const cut = await cutVeil(picture, q.veil, veilPlan(clock.secs, clock.share, false), true);
+  const cut = await cutVeil(picture, q.veil, veilPlan(clock.secs, clock.share, false), guests);
   out.veil = cut.veil;
   out.patches = cut.patches;
   out.delays = cut.delays;
@@ -253,8 +262,8 @@ export interface CutVeil {
   delays: number[];
   gap: number;
   areas: number[];
-  /** Patch i's picture at LIGHT, if asked for (PreparedMedia.light). */
-  light: ((i: number) => Promise<ArrayBuffer>) | null;
+  /** Each patch's picture at LIGHT, by patch, if asked for (PreparedMedia.light). */
+  light: Map<number, ArrayBuffer> | null;
 }
 
 /**
@@ -265,8 +274,7 @@ export interface CutVeil {
  * of the picture scaled down to them), so their shapes, seams and areas are
  * what they always were; each patch's own picture is then taken from the
  * full-resolution canvas, scale × scale pixels for each of its own.
- * `light`: also keep the picture at LIGHT, to cut any patch from again
- * (CutVeil.light), should it be finer.
+ * `light`: each patch at LIGHT too (CutVeil.light), should it be finer.
  */
 async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, light = false): Promise<CutVeil> {
   const W = Math.round(canvas.width / S);
@@ -292,13 +300,19 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, l
     count: cut.length,
     box: visibleBox(pixels, W, H),
   };
-  const patches = await Promise.all(
+  const patches = Promise.all(
     order.map(async (i) => {
       const { x, y, w, h, edges } = cut[i];
       return { i, x, y, w, h, data: await encode(patchPicture(fine, FW, S, cut[i]), true), edges: edges.buffer as ArrayBuffer };
     }),
   );
-  return { veil, patches, delays: schedule.delays, gap: schedule.gap, areas, light: light && S > LIGHT ? lightCutter(canvas, S, cut) : null };
+  let lighter: Promise<Map<number, ArrayBuffer>> | null = null;
+  if (light && S > LIGHT && S % LIGHT === 0) {
+    const k = S / LIGHT;
+    const down = boxDown(new Uint8Array(fine.buffer), FW, canvas.height, k);
+    lighter = Promise.all(order.map(async (i) => [i, await encode(patchPicture(down, FW / k, LIGHT, cut[i]), true)] as const)).then((e) => new Map(e));
+  }
+  return { veil, patches: await patches, delays: schedule.delays, gap: schedule.gap, areas, light: lighter && (await lighter) };
 }
 
 /** A patch's own picture from the picture's pixels at `S` per art pixel (`FW` wide): wherever the patch has an art pixel. */
@@ -321,20 +335,40 @@ function patchPicture(fine: Uint32Array, FW: number, S: number, { x, y, w, h, pi
 }
 
 /**
- * Cuts the picture's patches again at LIGHT, one when asked (CutVeil.light):
- * the picture is scaled down to it now, so only that copy and the patches'
- * shapes are kept, not the canvas.
+ * RGBA pixels `W` x `H` scaled down `k` times, each pixel the average of the
+ * k x k it covers, weighted by their alpha: nothing reaches past that square,
+ * so no colour or transparency bleeds across an art pixel's edge (k divides
+ * the pixels per art pixel). One 32-bit word per pixel, as patchPicture takes.
  */
-function lightCutter(canvas: HTMLCanvasElement, S: number, cut: RawPatch[]): (i: number) => Promise<ArrayBuffer> {
-  const light = document.createElement('canvas');
-  light.width = (canvas.width / S) * LIGHT;
-  light.height = (canvas.height / S) * LIGHT;
-  const g = light.getContext('2d', { willReadFrequently: true })!;
-  g.imageSmoothingQuality = 'high';
-  g.drawImage(canvas, 0, 0, light.width, light.height);
-  const fine = new Uint32Array(g.getImageData(0, 0, light.width, light.height).data.buffer);
-  const FW = light.width;
-  return (i) => encode(patchPicture(fine, FW, LIGHT, cut[i]), true);
+function boxDown(rgba: Uint8Array, W: number, H: number, k: number): Uint32Array {
+  const w = W / k;
+  const h = H / k;
+  const out = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      for (let dy = 0; dy < k; dy++) {
+        for (let dx = 0; dx < k; dx++) {
+          const o = ((y * k + dy) * W + x * k + dx) * 4;
+          const al = rgba[o + 3];
+          r += rgba[o] * al;
+          g += rgba[o + 1] * al;
+          b += rgba[o + 2] * al;
+          a += al;
+        }
+      }
+      if (!a) continue;
+      const o = (y * w + x) * 4;
+      out[o] = r / a;
+      out[o + 1] = g / a;
+      out[o + 2] = b / a;
+      out[o + 3] = a / (k * k);
+    }
+  }
+  return new Uint32Array(out.buffer);
 }
 
 // ---- what this device shows -------------------------------------------
