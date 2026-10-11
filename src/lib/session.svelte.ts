@@ -298,7 +298,7 @@ class Session {
    * second resume of the same question) is dropped, even for the same question.
    */
   private mediaGen = 0;
-  /** Media messages already released for the current question, as guests get them (for late joiners; see release). */
+  /** Media messages already released for the current question (for late joiners). */
   private released: MediaMsg[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private autoNext: ReturnType<typeof setTimeout> | null = null;
@@ -1020,7 +1020,7 @@ class Session {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
       });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, this.guests.size > 0), timeout]).finally(() => clearTimeout(timer));
+      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
@@ -1172,32 +1172,23 @@ class Session {
    * The rest of a veiled picture goes out now (the answer is out), a few
    * tens of ms apart: it burns in
    * quickly, still spreading from what's there, and every device starts each
-   * patch's burn in a different frame. Guests get the veiled picture's
-   * lighter where it was sent finer (PreparedMedia.light); this screen keeps
-   * it sharp.
+   * patch's burn in a different frame.
    */
-  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>, light: PreparedMedia['light']) {
+  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
     const gap = Math.min(30, 300 / Math.max(1, rest.length));
     rest.forEach((patch, k) => {
       const go = () => {
         const s = this.state;
-        if ((s?.phase !== 'reveal' && s?.phase !== 'question') || s.question?.askedAt !== patch.qid) return;
-        const m: MediaMsg = { t: 'patch', ...patch };
-        const lighter = patch.tile === undefined ? light?.get(patch.i) : undefined;
-        this.release(lighter ? { ...m, data: lighter } : m, m);
+        if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
       };
       if (k === 0) go();
       else this.mediaTimers.push(setTimeout(go, k * gap));
     });
   }
 
-  /**
-   * Out to everyone who may have it: `m` to guests, and kept for those who
-   * arrive later (so `released` is what guests get), `own` on this screen.
-   */
-  private release(m: MediaMsg, own = m) {
+  private release(m: MediaMsg) {
     this.released.push(m);
-    shown.receive(own);
+    shown.receive(m);
     for (const [conn, g] of this.guests) if (g.playerId && this.mayGetMedia(g)) this.sendMedia(conn, g, m);
   }
 
@@ -1709,12 +1700,11 @@ class Session {
       // the room going public) would cancel the patches still on their way.
       if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
         const rest = this.unreleasedPatches();
-        const light = this.media?.light ?? null;
         // Delve: a question that ended before its clock started still shows everyone its art.
         this.releaseHeld();
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
         this.stopMedia(true);
-        this.finishVeil(rest, light);
+        this.finishVeil(rest);
       }
     } else if (next.phase !== 'question') {
       this.stopMedia();

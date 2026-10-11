@@ -9,7 +9,7 @@
 
 import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
-import { FINALE_MS } from './materialize';
+import { FINALE_MS, FX_SCALE } from './materialize';
 import { fxDensity, veilSpark } from './fx/moments';
 import { zoomOf } from './stage';
 
@@ -129,7 +129,7 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     const cw = canvas.clientWidth;
     if (!cw) return false;
     // On screen the canvas is the stage's zoom (lib/stage.ts) larger than its own px.
-    W = Math.max(1, Math.round(Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), cur.w * 2)));
+    W = Math.max(1, Math.round(Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), cur.w * FX_SCALE)));
     H = Math.max(1, Math.round((W * cur.h) / cur.w));
     k = W / cur.w;
     canvas.width = W;

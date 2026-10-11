@@ -16,6 +16,13 @@ import { zoomOf } from './stage';
 export const FINALE_MS = 400;
 
 /**
+ * At most how many pixels per art pixel the veil's effects are drawn with
+ * (here and in frontier.ts): about the most a screen shows the art at (1.8
+ * times its size, times the stage's zoom of up to 2.2, or a dense screen's).
+ */
+export const FX_SCALE = 4;
+
+/**
  * As fractions of the burn: the mist ahead of the front, the twinkling ahead
  * of that, how long each grain glints, and how long its light takes to cool
  * (in patches.ts, where the host paces the veil by them: burntShare).
@@ -93,7 +100,9 @@ export interface BurnParams {
 
 /**
  * Svelte action for a veiled patch's <canvas>, sized and placed by CSS: draws
- * the patch (at screen resolution, capped at the picture's own) and burns it in.
+ * the patch and burns it in, at the screen's resolution (FX_SCALE at most),
+ * the picture scaled up smoothly into it, so the burn's grains and glints are
+ * as fine as the screen however coarse the picture is.
  */
 export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   let W = 0;
@@ -303,15 +312,15 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   const begin = () => {
     if (stopped) return;
     // Screen resolution (the canvas's own px times the stage's zoom, lib/stage.ts,
-    // times the screen's density), but no more than the picture's own: it has
-    // no finer detail, and every pixel costs work on each frame. Its size in
-    // art pixels places the burn.
+    // times the screen's density), up to FX_SCALE: every pixel costs work on
+    // each frame. Its size in art pixels places the burn.
     const aw = params.w;
     const ah = params.h;
-    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), img.naturalWidth)));
+    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), aw * FX_SCALE)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, W, H);
     if (reduce?.matches || burning >= MAX_BURNING) {
       canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduce?.matches ? 300 : 450, easing: 'ease-out' });
