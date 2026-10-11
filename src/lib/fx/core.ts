@@ -22,6 +22,7 @@ import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
+import { scrollFollow } from '../scrollFollow';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -96,6 +97,8 @@ type LiveShape = ShapeSpec & {
   age: number;
   seed: number;
   box: Box;
+  /** How far the page was scrolled when `box` was measured (see placeCanvas). */
+  scrollAt: number;
   /** Fade-out once stopped: remaining and total seconds. */
   fade: number;
   fadeTotal: number;
@@ -378,6 +381,7 @@ export function shape(spec: ShapeSpec): ShapeHandle {
     age: -(spec.delay ?? 0) - waited(),
     seed: Math.random() * 100,
     box: boxOf(spec.at),
+    scrollAt: pageScroll()[1],
     fade: 0,
     fadeTotal: 0,
     stopped: false,
@@ -621,6 +625,37 @@ function show(on: boolean) {
   canvas.style.visibility = on ? 'visible' : 'hidden';
 }
 
+/**
+ * A phone scrolls the page on its own, ahead of the frames drawn here, so a
+ * canvas fixed to the screen leaves the light on what scrolls behind, by as
+ * far as the page goes in a frame or two (a lot, in a fling). While what the
+ * effects follow scrolls with the page (an avatar in a list), the canvas is
+ * set in the page instead, at the top of the screen as each frame is drawn:
+ * between frames it scrolls with what it lights. While they follow what
+ * stays put as the page scrolls (the bar pinned to the top in a game, the
+ * dock at the bottom), it's fixed, as it was. Each pass, the shapes on
+ * elements say which they are by how they moved as the page scrolled
+ * (lib/scrollFollow.ts); with none, it's fixed, for what's placed on the
+ * screen (sparks, the edge glow, a dialog's clear box). (#app is its
+ * containing block in the page, and clips it, so a canvas reaching past the
+ * end of the page never makes it longer.)
+ */
+let setInPage = false;
+let placedAt = '';
+/** How far the page is scrolled (0 with no window, as in the tests). */
+function pageScroll() {
+  return typeof scrollY === 'number' ? [scrollX, scrollY] : [0, 0];
+}
+function placeCanvas() {
+  if (!canvas) return;
+  const [x, y] = pageScroll();
+  const at = setInPage ? `${x}px ${y}px` : '';
+  if (at === placedAt) return;
+  placedAt = at;
+  canvas.style.position = setInPage ? 'absolute' : '';
+  canvas.style.translate = at;
+}
+
 /** While the test harness steps effects by hand: its clock (ms); else null. */
 let manualClock: number | null = null;
 
@@ -765,7 +800,15 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // Soft shapes are written first; thin-line shapes (sigils, orbits) last, and the
   // renderer draws those at full resolution so their strokes stay crisp.
   const visible: [LiveShape, number][] = [];
-  let anchorsMoved = false;
+  // Of the shapes on elements, drawn this pass: how many there are, which
+  // way they went as the page scrolled (see placeCanvas), and whether any
+  // moved on the screen, or in the page.
+  const scrollNow = pageScroll()[1];
+  let onElements = 0;
+  let withPage = 0;
+  let pinned = 0;
+  let movedOnScreen = false;
+  let movedInPage = false;
   opacities.clear();
   shapes = shapes.filter((s) => {
     s.age += dt;
@@ -775,14 +818,20 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       if (s.fade <= 0) return false;
     }
     if (Number.isFinite(s.life) && s.age >= s.life) return false;
-    let moved = false;
+    let follow: ReturnType<typeof scrollFollow> = null;
+    let onScreen = false;
+    let inPage = false;
     if (s.at instanceof Element) {
       // Follow the element; once it's gone (the screen moved on), fade out
       // where it was.
       if (s.at.isConnected) {
         const b = boxOf(s.at);
-        moved = Math.abs(b.x - s.box.x) + Math.abs(b.y - s.box.y) > 0.25;
+        const [dx, dy, scrolled] = [b.x - s.box.x, b.y - s.box.y, scrollNow - s.scrollAt];
+        onScreen = Math.abs(dx) + Math.abs(dy) > 0.25;
+        inPage = Math.abs(dx) + Math.abs(dy + scrolled) > 0.25;
+        follow = scrollFollow(dy, scrolled);
         s.box = b;
+        s.scrollAt = scrollNow;
         if (s.followOpacity) s.opacity = opacityOf(s.at, opacities);
       } else if (!s.stopped) {
         s.stopped = true;
@@ -793,10 +842,22 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     s.update(s.f, t, s.age, s.box);
     if (s.f.k > 0) {
       visible.push([s, t]);
-      if (moved) anchorsMoved = true;
+      if (s.at instanceof Element) {
+        onElements++;
+        if (follow === 'page') withPage++;
+        else if (follow === 'screen') pinned++;
+        movedOnScreen ||= onScreen;
+        movedInPage ||= inPage;
+      }
     }
     return true;
   });
+  const wasInPage = setInPage;
+  if (!onElements) setInPage = false;
+  else if (withPage !== pinned) setInPage = withPage > pinned;
+  // Moved where the canvas is set: a canvas in the page goes along with what
+  // scrolls with it, with no new frame.
+  const anchorsMoved = (setInPage ? movedInPage : movedOnScreen) || setInPage !== wasInPage;
   // (Let go of the elements: they may leave the page before the next pass.)
   opacities.clear();
   let nShapes = 0;
@@ -837,6 +898,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // (Drawn now if it has just begun to move, rather than a frame behind.)
   if (!render && !(anchorsMoved && manualClock === null)) return busy;
   if (nParticles > 0 || nShapes > 0) {
+    placeCanvas();
     setCovers(renderer);
     renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
     show(true);
@@ -1078,6 +1140,7 @@ function setHidden(away: boolean) {
 /** Starts the overlay on `c`. Returns a cleanup function. */
 export function startFx(c: HTMLCanvasElement): () => void {
   canvas = c;
+  placedAt = '';
   prepare(c);
   const onMotion = () => {
     if (!fxActive()) clearAll();

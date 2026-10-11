@@ -17,3 +17,19 @@ export function portal(node: HTMLElement, behind: 'dim' | undefined = undefined)
     },
   };
 }
+
+/**
+ * Like portal, but to the end of #app (after the shell, so camera shake
+ * doesn't carry it): for an overlay over the whole page, set in it rather
+ * than on the screen, so it scrolls with the page and is clipped with it.
+ * It isn't marked to dim behind a dialog: the filter would carry along
+ * whatever inside it is fixed to the screen, so what's in it marks itself.
+ */
+export function portalToPage(node: HTMLElement) {
+  (document.getElementById('app') ?? document.body).append(node);
+  return {
+    destroy() {
+      node.remove();
+    },
+  };
+}

@@ -205,6 +205,10 @@ textarea,
 }
 
 #app {
+  /* What's set in the page rather than on the screen (the effects layer and
+     the others' pointers while they follow what scrolls) is placed in here,
+     and clipped with it. */
+  position: relative;
   min-height: 100dvh;
   /* Camera shake translates the app shell; clip it so a shake never makes
      the page scrollable. (Fixed overlays aren't clipped by this.) */
