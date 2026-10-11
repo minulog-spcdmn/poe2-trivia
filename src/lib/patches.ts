@@ -246,6 +246,57 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
   return out;
 }
 
+/** Which of a W × H RGBA picture's pixels are visible, as cutPatches takes them: 1 or 0 each. */
+export function litMask(rgba: Uint8ClampedArray, W: number, H: number): Uint8Array {
+  const lit = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) lit[i] = rgba[i * 4 + 3] > CLEAR ? 1 : 0;
+  return lit;
+}
+
+/**
+ * How much of each of a patch's pixels to draw, 0 to 1, when its picture has
+ * `S` pixels per art pixel ((w × S) × (h × S), row by row). Its art pixels
+ * alone would give it edges in steps S pixels tall, which a large screen
+ * shows as blocks; instead its outline runs halfway between the art pixels
+ * it has and the item's pixels it hasn't (bilinear, so a staircase comes out
+ * a slope), softened over one pixel. The item's own outline is left to its
+ * pixels' alpha, and a pixel off the item (`lit`, from litMask) is never
+ * drawn, as before. Its own art pixels lie wholly inside (their neighbours
+ * are all in its ring, or off the item), so patches still cover the item
+ * between them.
+ */
+export function patchCoverage({ x, y, w, h, pixels }: RawPatch, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
+  /** 1 where the patch has the art pixel, or the item hasn't; 0 on the item outside the patch. */
+  const inside = (ax: number, ay: number) => {
+    const lx = ax - x;
+    const ly = ay - y;
+    if (lx >= 0 && ly >= 0 && lx < w && ly < h && pixels[(ly * w + lx) * 4 + 3]) return 1;
+    return ax < 0 || ay < 0 || ax >= W || ay >= H || !lit[ay * W + ax] ? 1 : 0;
+  };
+  const pw = w * S;
+  const ph = h * S;
+  const out = new Float32Array(pw * ph);
+  for (let by = 0; by < ph; by++) {
+    const ay = y + ((by / S) | 0);
+    // Where the pixel's centre is, in art pixels from the art pixels' centres.
+    const v = (y * S + by + 0.5) / S - 0.5;
+    const y0 = Math.floor(v);
+    const ty = v - y0;
+    for (let bx = 0; bx < pw; bx++) {
+      const ax = x + ((bx / S) | 0);
+      if (!lit[ay * W + ax]) continue;
+      const u = (x * S + bx + 0.5) / S - 0.5;
+      const x0 = Math.floor(u);
+      const tx = u - x0;
+      const m =
+        (inside(x0, y0) * (1 - tx) + inside(x0 + 1, y0) * tx) * (1 - ty) + (inside(x0, y0 + 1) * (1 - tx) + inside(x0 + 1, y0 + 1) * tx) * ty;
+      // m changes by 1 per art pixel, so this goes from 0 to 1 over one pixel.
+      out[by * pw + bx] = Math.min(1, Math.max(0, (m - 0.5) * S + 0.5));
+    }
+  }
+  return out;
+}
+
 /**
  * The order patches are revealed in: the reveal spreads through the item
  * like fire. It starts at a random patch, and each next one is a neighbour

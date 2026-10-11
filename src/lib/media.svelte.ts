@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder, veilSchedule, visibleBox, type RawPatch, type VeilPlan } from './patches';
+import { cutPatches, litMask, patchCoverage, spreadOrder, veilSchedule, visibleBox, type RawPatch, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
 import { losslessWebp } from './webp';
 import type { Grayscale, Question, Veil } from './game';
@@ -289,6 +289,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, l
   const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
   const FW = canvas.width;
   const cut = cutPatches(pixels, W, H, v.size, v.seed);
+  const lit = litMask(pixels, W, H);
   const order = spreadOrder(cut, v.seed);
   const areas = order.map((i) => cut[i].area);
   const schedule = veilSchedule(areas, plan);
@@ -302,7 +303,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, l
   const patches = Promise.all(
     order.map(async (i) => {
       const { x, y, w, h, edges } = cut[i];
-      return { i, x, y, w, h, data: await encode(patchPicture(fine, FW, S, cut[i]), true), edges: edges.buffer as ArrayBuffer };
+      return { i, x, y, w, h, data: await encode(patchPicture(fine, FW, S, cut[i], lit, W, H), true), edges: edges.buffer as ArrayBuffer };
     }),
   );
   // (Pictures are SHARP or LIGHT per art pixel: artScale is 4 or 2.)
@@ -310,7 +311,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, l
   if (light && S > LIGHT && S % LIGHT === 0) {
     const k = S / LIGHT;
     const down = boxDown(new Uint8Array(fine.buffer), FW, canvas.height, k);
-    lighter = Promise.all(order.map(async (i) => [i, await encode(patchPicture(down, FW / k, LIGHT, cut[i]), true)] as const)).then(
+    lighter = Promise.all(order.map(async (i) => [i, await encode(patchPicture(down, FW / k, LIGHT, cut[i], lit, W, H), true)] as const)).then(
       (e) => new Map(e),
       () => null,
     );
@@ -319,16 +320,26 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan, l
   return { veil, patches: done, delays: schedule.delays, gap: schedule.gap, areas, light: lightDone };
 }
 
-/** A patch's own picture from the picture's pixels at `S` per art pixel (`FW` wide): wherever the patch has an art pixel. */
-function patchPicture(fine: Uint32Array, FW: number, S: number, { x, y, w, h, pixels: own }: RawPatch): HTMLCanvasElement {
+/**
+ * A patch's own picture from the picture's pixels at `S` per art pixel (`FW`
+ * wide), as much of each as patchCoverage says (the item `W` × `H` art
+ * pixels, `lit` where it's visible): smooth edges, not art pixels' steps.
+ */
+function patchPicture(fine: Uint32Array, FW: number, S: number, patch: RawPatch, lit: Uint8Array, W: number, H: number): HTMLCanvasElement {
+  const { x, y, w, h } = patch;
+  const cover = patchCoverage(patch, lit, W, H, S);
   const pw = w * S;
   const ph = h * S;
   const big = new Uint32Array(pw * ph);
+  const bytes = new Uint8Array(big.buffer);
   for (let by = 0; by < ph; by++) {
-    const ay = (by / S) | 0;
     const row = (y * S + by) * FW + x * S;
     for (let bx = 0; bx < pw; bx++) {
-      if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
+      const o = by * pw + bx;
+      const c = cover[o];
+      if (!c) continue;
+      big[o] = fine[row + bx];
+      if (c < 1) bytes[o * 4 + 3] = Math.round(bytes[o * 4 + 3] * c);
     }
   }
   const piece = document.createElement('canvas');

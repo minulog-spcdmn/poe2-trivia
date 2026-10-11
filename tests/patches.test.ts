@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { areaTime, burntShare, cutPatches, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, litMask, patchCoverage, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -37,6 +37,39 @@ test('patches cover every visible pixel exactly as it is, and nothing else', () 
     }
   }
   for (let g = 0; g < W * H; g++) assert.equal(covered[g], art[g * 4 + 3] > 8 ? 1 : 0, `pixel ${g}`);
+});
+
+test('drawn finer, patches still cover the whole item between them, with smooth edges', () => {
+  const W = 90;
+  const H = 120;
+  const S = 4;
+  const art = ellipse(W, H);
+  const lit = litMask(art, W, H);
+  const patches = cutPatches(art, W, H, 5, 1234);
+  // The most any patch draws of each fine pixel.
+  const most = new Float32Array(W * S * H * S);
+  let soft = 0;
+  for (const p of patches) {
+    const cover = patchCoverage(p, lit, W, H, S);
+    assert.equal(cover.length, p.w * S * p.h * S);
+    for (let by = 0; by < p.h * S; by++) {
+      for (let bx = 0; bx < p.w * S; bx++) {
+        const c = cover[by * p.w * S + bx];
+        if (c > 0 && c < 1) soft++;
+        const g = (p.y * S + by) * W * S + p.x * S + bx;
+        most[g] = Math.max(most[g], c);
+      }
+    }
+  }
+  for (let fy = 0; fy < H * S; fy++) {
+    for (let fx = 0; fx < W * S; fx++) {
+      const on = lit[((fy / S) | 0) * W + ((fx / S) | 0)];
+      // Every pixel of the item wholly by some patch (no gaps at the seams), nothing off it.
+      assert.equal(most[fy * W * S + fx], on ? 1 : 0, `pixel ${fx}, ${fy}`);
+    }
+  }
+  // The patches' outlines are softened, not art pixels' steps.
+  assert.ok(soft > 0);
 });
 
 test('patches come out about as big as the old grid tiles over the item', () => {
