@@ -26,7 +26,7 @@
   import { untrack } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
-  import { arrival } from '../lib/zoneArrival.svelte';
+  import { arrival, speak } from '../lib/zoneArrival.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -201,18 +201,22 @@
     depthSeen = key;
     // The run's first depth: the first zone's gate, as each new zone gets one.
     const opening = !deeper && depth === 1 && session.runStarted === run.startedAt;
+    // A new zone this screen never saw named by its card (components/zonecard): back in the game as its cards
+    // were on their way (a reload), or too late in the plunge into it for a card at all.
+    const zoneName = milestoneAt(depth);
+    const unnamed = !!zoneName && opensZone(depth) && untrack(() => arrival.shownFor) !== key;
     if (!deeper && !opening) {
-      // Come back into the game as a new zone's cards were on their way (a reload): it was never named, so a screen reader is told now.
-      const zoneName = milestoneAt(depth);
-      if (zoneName && opensZone(depth) && untrack(() => arrival.shownFor) !== key) untrack(() => (arrival.spoken = `Depth ${shownDepth(depth)}: ${zoneName}.`));
+      // (A reload: a screen reader is told where the run has come.)
+      if (unnamed) untrack(() => speak(key, `Depth ${shownDepth(depth)}: ${zoneName}.`));
       return;
     }
     untrack(() => {
       if (deeper) descended();
       // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
       const accent = accentAt(depth);
-      // A new zone is named by its title card in the plunge into it (components/zonecard), the run's first here.
-      const name = opening ? stratumName(0) : null;
+      // A new zone is named by its title card in the plunge into it (components/zonecard), the run's first here,
+      // and one this screen saw too late for its card here too.
+      const name = opening ? stratumName(0) : unnamed ? zoneName : null;
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const turn = s.turnCount;
@@ -220,12 +224,12 @@
       let next: Card | null = null;
       if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${shownDepth(depth)}: ${name}.`, leaving: false, still };
       // (On a zone's first depth, its card says so instead.)
-      else if (!group && best !== null && depth === best + 1 && !opensZone(depth))
+      else if (!group && best !== null && depth === best + 1 && (!opensZone(depth) || unnamed))
         next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
       if (!next) return;
       card = next;
-      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself.
-      if (!opening) sfx('stratum');
+      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself, and a zone's sounded as the plunge into it began (App.svelte).
+      if (!opening && !unnamed) sfx('stratum');
       cardTimers.forEach(clearTimeout);
       cardTimers = [
         setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
@@ -336,7 +340,7 @@
 {/snippet}
 
 <div class="game">
-  <p class="sr" aria-live="polite">{zone?.label ?? arrival.spoken}</p>
+  <p class="sr" aria-live="polite">{zone?.label ?? (run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : '')}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,

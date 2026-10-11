@@ -75,29 +75,34 @@
     };
   });
 
-  /** The meta line's rules, each ending short of a small seal (Sol on the left, Luna on the right), drawn outward. */
-  const RULE = 72;
-
   const anims: Animation[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
   let gone = false;
+  /** Stopped at this moment for tuning (seekCard), or running (null). */
+  let frozen: number | null = null;
 
-  /** Ms into the card now. */
-  const now = () => performance.now() - a.t0;
+  /** Ms into the card now (or where it is stopped). */
+  const now = () => frozen ?? performance.now() - a.t0;
 
   const play: Ctx['play'] = (el, frames, o) => {
     const an = el.animate(frames, { duration: Math.max(1, o.ms), delay: o.at, easing: o.easing ?? 'linear', fill: o.fill ?? 'both', composite: o.composite ?? 'replace' });
     // On the card's clock: started as the plunge did, so one mounted late lands part-way.
     const doc = document.timeline.currentTime;
-    if (typeof doc === 'number') an.startTime = doc - now();
+    if (typeof doc === 'number') an.startTime = doc - (performance.now() - a.t0);
     // Kept once finished, though a later one (an exit) takes its place: stopped
     // at an earlier moment (zones.html), the card still shows what it did then.
     an.persist?.();
+    // Made while the card is stopped: stopped with it.
+    if (frozen !== null) {
+      an.pause();
+      an.currentTime = frozen;
+    }
     anims.push(an);
     return an;
   };
+  /** (Its effects never fire while it is stopped: they can't be.) */
   const at: Ctx['at'] = (ms, fn) => {
-    timers.push(setTimeout(() => !gone && fn(), Math.max(0, ms - now())));
+    timers.push(setTimeout(() => !gone && frozen === null && fn(), Math.max(0, ms - (performance.now() - a.t0))));
   };
 
   onMount(() => {
@@ -112,9 +117,10 @@
     const bars = [...root.querySelectorAll<HTMLElement>('.bar')];
     const scrim = root.querySelector<HTMLElement>('.scrim')!;
     if (still) {
+      // (Hidden, not only faded, while out of sight: the bars take clicks only while they are seen.)
       for (const el of [...bars, scrim]) {
-        play(el, [{ opacity: 0 }, { opacity: 1 }], { at: 300, ms: 600 });
-        play(el, [{ opacity: 1 }, { opacity: 0 }], { at: tl.gone - 500, ms: 500, fill: 'forwards' });
+        play(el, [{ opacity: 0, visibility: 'hidden' }, { opacity: 1, visibility: 'visible' }], { at: 300, ms: 600 });
+        play(el, [{ opacity: 1, visibility: 'visible' }, { opacity: 0, visibility: 'hidden' }], { at: tl.gone - 500, ms: 500, fill: 'forwards' });
       }
       const fade = tl.mode === 'compact' ? 400 : 600;
       play(plate, [{ opacity: 0 }, { opacity: 1 }], { at: tl.showAt, ms: fade });
@@ -193,7 +199,7 @@
         const step = () => {
           const ms = now();
           light?.set(glowAt(ms, tl) * (fam.flicker?.(ms) ?? 1), Math.max(240, nameW * 0.75) * (ms > tl.lock && ms < tl.lock + 600 ? 1.25 : 1));
-          if (ms < tl.exit + 750) raf = requestAnimationFrame(step);
+          if (ms < tl.exit + 750 || frozen !== null) raf = requestAnimationFrame(step);
           else light?.release();
         };
         raf = requestAnimationFrame(step);
@@ -205,7 +211,7 @@
       // Meta line: it tracks out of a blur, its rules drawn outward, their seals stamped.
       const meta = root.querySelector<HTMLElement>('.meta-text')!;
       play(meta, [{ opacity: 0, letterSpacing: '0.12em', filter: 'blur(2px)' }, { opacity: 1, letterSpacing: 'var(--meta-track)', filter: 'none' }], { at: T.META, ms: T.META_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
-      for (const r of root.querySelectorAll('.meta-rule .draw')) play(r, [{ strokeDashoffset: 100 }, { strokeDashoffset: 0 }], { at: T.META + 100, ms: 420, easing: OUT });
+      for (const r of root.querySelectorAll('.meta-rule .rule-line')) play(r, [{ transform: 'scaleX(0)' }, { transform: 'none' }], { at: T.META + 100, ms: 420, easing: OUT });
       for (const s of root.querySelectorAll('.meta-rule .sign')) play(s, [{ opacity: 0, transform: 'scale(1.5)' }, { opacity: 1, transform: 'none' }], { at: T.META + 380, ms: 300, easing: OUT });
       // The name drifts wider while it holds.
       drift(c);
@@ -253,6 +259,7 @@
     }
 
     const seek = (ms: number | null) => {
+      frozen = ms;
       for (const an of anims) {
         if (ms === null) an.play();
         else {
@@ -294,20 +301,23 @@
   <div class="plate" bind:this={plate}>
     <ZoneSeal sigil={title.sigil} {play} still={!full} {seed} bind:el={seal} />
     <div class="meta">
+      <!-- Its rules: each a line as long as there is room for, ending short of a small seal (Sol on the left, Luna on the right) drawn at its own size. -->
       {#each ['sol', 'luna'] as side (side)}
-        <svg class="meta-rule {side}" viewBox="0 -7 {RULE} 14" style:order={side === 'sol' ? 0 : 2}>
-          <path d={side === 'sol' ? `M${RULE} 0H13` : `M0 0H${RULE - 13}`} class="draw" pathLength="100" />
-          <g transform="translate({side === 'sol' ? 6 : RULE - 6} 0) scale(0.42)">
-            <!-- (Stamped by its own transform, so its place above stays.) -->
+        <span class="meta-rule {side}" style:order={side === 'sol' ? 0 : 2}>
+          <span class="rule-line"></span>
+          <svg class="rule-seal" viewBox="-7 -7 14 14">
+            <!-- (Stamped by its own transform, so the scale below stays.) -->
             <g class="sign">
-              {#if side === 'sol'}
-                <circle r="5" /><circle r="1.1" /><path d={SOL_RAYS} />
-              {:else}
-                <g transform="rotate(180)"><path d={LUNA} /><path d={LUNA_HATCH} class="hatch" /></g>
-              {/if}
+              <g transform="scale(0.42)">
+                {#if side === 'sol'}
+                  <circle r="5" /><circle r="1.1" /><path d={SOL_RAYS} />
+                {:else}
+                  <g transform="rotate(180)"><path d={LUNA} /><path d={LUNA_HATCH} class="hatch" /></g>
+                {/if}
+              </g>
             </g>
-          </g>
-        </svg>
+          </svg>
+        </span>
       {/each}
       <span class="meta-text">{title.meta}</span>
     </div>
@@ -364,7 +374,7 @@
     bottom: 0;
     height: calc(var(--bar) + env(safe-area-inset-bottom));
   }
-  .hair {
+  .bar .hair {
     position: absolute;
     left: 6%;
     right: 6%;
@@ -392,7 +402,7 @@
   }
   .plate {
     position: absolute;
-    inset: calc(var(--bar) + 12px) 0 calc(var(--bar) + 6vh);
+    inset: calc(var(--bar) + env(safe-area-inset-top) + 12px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 6vh);
     margin: 0 auto;
     width: min(46rem, 100vw - 32px);
     display: flex;
@@ -419,28 +429,41 @@
     padding-left: var(--meta-track);
   }
   .meta-rule {
+    display: flex;
+    align-items: center;
+    gap: 1.5px;
     width: clamp(28px, 7vw, 72px);
+  }
+  .meta-rule.sol {
+    flex-direction: row-reverse;
+  }
+  .rule-line {
+    flex: 1;
+    height: 1px;
+    background: var(--ink);
+    opacity: 0.7;
+    transform-origin: right;
+  }
+  .luna .rule-line {
+    transform-origin: left;
+  }
+  .rule-seal {
+    flex: none;
+    width: 14px;
     height: 14px;
     overflow: visible;
   }
-  .meta-rule path,
-  .meta-rule circle {
+  .rule-seal path,
+  .rule-seal circle {
     fill: none;
-    stroke: var(--ink);
-    stroke-width: 0.6px;
-  }
-  .meta-rule .sign path,
-  .meta-rule .sign circle {
-    stroke-width: 1.3px;
     stroke: var(--ink-hi);
+    stroke-width: 1.3px;
   }
-  .meta-rule .hatch {
+  .rule-seal .hatch {
     stroke-width: 0.8px;
+    stroke: var(--ink);
   }
-  .meta-rule .draw {
-    stroke-dasharray: 100;
-  }
-  .meta-rule .sign {
+  .rule-seal .sign {
     transform-box: fill-box;
     transform-origin: center;
   }
@@ -539,6 +562,30 @@
     justify-content: center;
     gap: 0.6rem;
     margin-top: 22px;
+  }
+  .plate > :global(*) {
+    flex-shrink: 0;
+  }
+  /* A short screen (a phone turned on its side): a smaller seal and name, and no row of news. */
+  @media (max-height: 520px) {
+    .zc {
+      --seal: 36px;
+    }
+    /* The column fills what is left between the bars, over the scoreboard,
+       so it is darker behind it (only the world's light comes through). */
+    .scrim {
+      background:
+        radial-gradient(ellipse 70% 62% at 50% 50%, rgb(5 4 3 / 0.95) 30%, rgb(5 4 3 / 0.75) 80%, rgb(5 4 3 / 0.6));
+    }
+    .plate {
+      inset: calc(var(--bar) + env(safe-area-inset-top) + 4px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 4px);
+    }
+    .word {
+      font-size: clamp(1.6rem, 3vw + 1rem, 2.6rem);
+    }
+    .news {
+      display: none;
+    }
   }
   @media (max-width: 640px) {
     .zc {

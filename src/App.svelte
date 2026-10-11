@@ -233,7 +233,8 @@
 
 <div class="shell" data-behind-dialog bind:this={shell}>
   {#if headerOn}
-    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
+    <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
+    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}

@@ -14,8 +14,13 @@ import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
 import { IN, shuffled, startsIn, times, type Ctx, type FamilyMotion } from './family';
 
-/** The order the lamps are lit in. */
-const lit = (c: Ctx) => (c.has('lanterns') ? shuffled(c, c.glyphs) : c.glyphs);
+/** The order the lamps are lit in (the same for a card's exit as for its entrance). */
+const orders = new WeakMap<Ctx, number[]>();
+function lit(c: Ctx): number[] {
+  let order = orders.get(c);
+  if (!order) orders.set(c, (order = c.has('lanterns') ? shuffled(c, c.glyphs) : c.glyphs));
+  return order;
+}
 
 export const light: FamilyMotion = {
   enter(c) {
@@ -107,8 +112,9 @@ export const light: FamilyMotion = {
   exit(c) {
     const order = [...lit(c)].reverse();
     if (c.has('tide')) {
+      const drip = Math.min(20, 300 / Math.max(1, order.length - 1));
       order.forEach((i, k) => {
-        const at = c.tl.exit + k * 20;
+        const at = c.tl.exit + k * drip;
         c.play(c.inner[i], [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(0.3em) scaleY(1.6)' }], { at, ms: 500, easing: IN, fill: 'forwards' });
       });
       c.at(c.tl.exit + 150, () => sparks(c.word, { count: c.phone ? 3 : 6, area: 'fill', colors: [c.pale], angle: Math.PI / 2, spread: 0.4, speed: [20, 60], gravity: 700, life: [0.5, 0.9] }));

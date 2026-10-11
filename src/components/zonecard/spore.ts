@@ -47,8 +47,8 @@ export const spore: FamilyMotion = {
         { at: at.get(i)!, ms: c.tl.letterMs },
       );
     }
-    // Its glow breathes while it holds.
-    c.play(c.glow, [{ opacity: 0.32 }, { opacity: 0.5 }, { opacity: 0.22 }, { opacity: 0.5 }, { opacity: 0.3 }], {
+    // Its glow breathes while it holds (to where the card's exit fades it from).
+    c.play(c.glow, [{ opacity: 0.32 }, { opacity: 0.5 }, { opacity: 0.22 }, { opacity: 0.5 }, { opacity: 0.22 }], {
       at: c.tl.lock + 900,
       ms: Math.max(1, c.tl.exit - c.tl.lock - 900),
       easing: 'ease-in-out',
@@ -58,7 +58,7 @@ export const spore: FamilyMotion = {
 
   lock(c) {
     embers(c.word, { count: 20, area: 'fill', colors: [c.main, c.pale], rise: [10, 45], scatter: 30, turbulence: 160, life: [1.2, 2.2], size: [1, 2] });
-    if (c.has('witchfire')) embers(c.word, { count: 12, area: 'fill', colors: [C.ember, C.gold], rise: [40, 110] });
+    if (c.has('witchfire')) embers(c.word, { count: 12, area: 'fill', colors: [C.good, C.goodPale], rise: [40, 110] });
   },
 
   ambient(c) {
@@ -68,12 +68,13 @@ export const spore: FamilyMotion = {
 
   exit(c) {
     const order = shuffled(c, c.glyphs);
+    const gap = Math.min(24, 200 / Math.max(1, order.length - 1));
     order.forEach((i, k) => {
-      const at = c.tl.exit + k * 24;
+      const at = c.tl.exit + k * gap;
       const side = (c.rnd() - 0.5) * 0.6;
       c.play(c.inner[i], [{ opacity: 1, transform: 'none', filter: 'none' }, { opacity: 0, transform: `translate(${side.toFixed(2)}em, -0.5em)`, filter: 'blur(8px)' }], {
         at,
-        ms: 700,
+        ms: 600,
         easing: 'cubic-bezier(0.4, 0, 0.7, 0.4)',
         fill: 'forwards',
       });

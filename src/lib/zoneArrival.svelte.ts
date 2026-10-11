@@ -31,14 +31,22 @@ export type Arrival = {
 export const arrival = $state<{
   /** The card under way, if any. */
   card: Arrival | null;
-  /** What a screen reader was last told (Game.svelte reads it out). */
+  /** What a screen reader is told of the run's arrival in a zone, and the arrival (its key) it is for (Game.svelte reads it out at that depth only). */
   spoken: string;
-  /** The arrival (its key) whose card was shown: one seen in full needs no telling at the deal. */
+  spokenFor: string;
+  /** The arrival (its key) whose card was shown: one seen through to its name needs no gate at the deal. */
   shownFor: string;
-}>({ card: null, spoken: '', shownFor: '' });
+}>({ card: null, spoken: '', spokenFor: '', shownFor: '' });
+
+/** What a screen reader is told of the arrival `key`. */
+export function speak(key: string, text: string) {
+  arrival.spoken = text;
+  arrival.spokenFor = key;
+}
 
 let stops: (() => void)[] = [];
 let timers: ReturnType<typeof setTimeout>[] = [];
+let offHidden: (() => void) | null = null;
 type Preview = { name?: string; family?: Family; hold?: boolean };
 let preview: Preview | null = null;
 
@@ -84,19 +92,26 @@ export function beginArrival(s: GameState, hostNow: number, o: { best: number | 
   timers.push(
     setTimeout(() => {
       zoneArrival();
-      arrival.spoken = title.spoken;
+      speak(key, title.spoken);
       arrival.shownFor = key;
     }, tl.lock + lead),
   );
+  // Out of sight the audio clock stops (lib/sound.ts rest) while the card's runs on: its sounds would come back late, so they stop.
+  if (typeof document !== 'undefined') {
+    const hide = () => document.hidden && stopSounds();
+    document.addEventListener('visibilitychange', hide);
+    offHidden = () => document.removeEventListener('visibilitychange', hide);
+  }
   if (!hold)
     timers.push(
       // Nothing of it rings on over the deal.
       setTimeout(() => stopSounds(), Math.max(0, budget - 60)),
       setTimeout(() => {
         if (arrival.card?.key === key) arrival.card = null;
+        offHidden?.();
+        offHidden = null;
       }, budget + 200),
     );
-  arrival.spoken = '';
   arrival.card = { key, run: s.delve.startedAt, depth: s.round, t0: performance.now() + lead, budget, title, tl };
 }
 
@@ -105,10 +120,13 @@ function stopSounds() {
   stops = [];
 }
 
-/** Any arrival under way is over: its card goes, its sounds stop (the run ended, the game was left). */
+/** Any arrival under way is over: its card goes, its sounds stop and nothing more is said of it (the run ended, the game was left, another came). */
 export function endArrival() {
   stopSounds();
   for (const t of timers) clearTimeout(t);
   timers = [];
+  offHidden?.();
+  offHidden = null;
   arrival.card = null;
+  speak('', '');
 }

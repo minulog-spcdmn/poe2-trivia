@@ -124,7 +124,11 @@ function put(change: (s: GameState) => void, quiet = false) {
   if (!prev) return;
   const s = structuredClone(prev);
   change(s);
-  if (quiet && s.delve) s.delve.startedAt = Math.max(Date.now(), prev.delve!.startedAt + 1);
+  if (quiet && s.delve) {
+    s.delve.startedAt = Math.max(Date.now(), prev.delve!.startedAt + 1);
+    // Set up afresh: no new zone's cards still on their way.
+    delete s.delve.dealAt;
+  }
   s.version = prev.version + 1;
   if (lab.paused && s.question?.askedAt !== lab.paused.askedAt) lab.paused = null;
   session.labSetState(s);

@@ -78,6 +78,8 @@ function leave(keep = false) {
 async function play(o: Play) {
   const id = ++serial;
   clear();
+  // A zone's card still up (frozen, say) goes first.
+  endArrival();
   if (L.depthOf() !== o.depth) {
     L.setDepth(o.depth);
     // The header and the scene take the new depth first.

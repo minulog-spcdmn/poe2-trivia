@@ -29,7 +29,9 @@
 
   const s = $derived(sigilStrokes(sigil));
   const pieces = (d: string) => d.split(/(?=M)/).filter((p) => p.trim());
-  const rings = $derived([pieces(ring([0, 0], 12.6, { wear: wear(seed) })), pieces(ring([0, 0], 11.4, { wear: wear(seed + 1) }))]);
+  /** The wear's seeds, from the name's (any 32-bit number) into its generator's range (lib/arcane.ts seeded), well apart for the two rings. */
+  const worn = $derived(((seed >>> 0) % 2147483646) + 1);
+  const rings = $derived([pieces(ring([0, 0], 12.6, { wear: wear(worn) })), pieces(ring([0, 0], 11.4, { wear: wear(((worn + 104729) % 2147483646) + 1) }))]);
   const whole = [ring([0, 0], 12.6), ring([0, 0], 11.4)];
 
   let lines: SVGSVGElement;
@@ -50,8 +52,8 @@
     };
     draw('.ring0', T.SEAL, T.SEAL_MS);
     draw('.ring1', T.SEAL + 120, T.SEAL_MS);
-    draw('.main', T.SIGIL, T.SIGIL_MS);
-    draw('.fine', T.FINE, T.FINE_MS);
+    draw('.sig', T.SIGIL, T.SIGIL_MS);
+    draw('.sig-fine', T.FINE, T.FINE_MS);
     for (const h of lines.querySelectorAll('.shade')) play(h, [{ opacity: 0 }, { opacity: 1 }], { at: T.HATCH, ms: T.HATCH_MS });
     // The glow swells as the name locks, then breathes.
     play(glow, [{ opacity: 0 }, { opacity: 0.22, offset: 0.4 }, { opacity: 0.6, offset: 0.62 }, { opacity: 0.3 }], {
@@ -64,15 +66,15 @@
 {#snippet art(worn: boolean)}
   {#if worn}
     {#each rings as r, ri (ri)}
-      {#each r as d, i (i)}<path {d} class="draw ring{ri} {ri ? 'thin' : 'main'}" pathLength="100" />{/each}
+      {#each r as d, i (i)}<path {d} class="draw ring{ri}" class:thin={ri === 1} pathLength="100" />{/each}
     {/each}
   {:else}
     <path d={whole[0]} class="main" /><path d={whole[1]} class="thin" />
   {/if}
   <g transform="scale(0.9)">
     {#if s.shade && worn}<path d={s.shade} class="shade" />{/if}
-    {#each s.fine as d, i (i)}<path {d} class="draw fine" pathLength="100" />{/each}
-    {#each s.lines as d, i (i)}<path {d} class="draw main" pathLength="100" />{/each}
+    {#each s.fine as d, i (i)}<path {d} class="draw sig-fine fine" pathLength="100" />{/each}
+    {#each s.lines as d, i (i)}<path {d} class="draw sig main" pathLength="100" />{/each}
   </g>
 {/snippet}
 

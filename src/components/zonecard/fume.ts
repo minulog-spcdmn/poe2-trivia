@@ -58,8 +58,9 @@ export const fume: FamilyMotion = {
 
   exit(c) {
     if (c.has('crumble')) {
+      const gap = Math.min(22, 200 / Math.max(1, c.glyphs.length - 1));
       c.glyphs.forEach((i, k) => {
-        const at = c.tl.exit + k * 22;
+        const at = c.tl.exit + k * gap;
         const turn = (c.rnd() - 0.5) * 10;
         c.play(
           c.inner[i],
@@ -91,9 +92,10 @@ export const fume: FamilyMotion = {
       });
       return;
     }
+    const gap = Math.min(14, 120 / Math.max(1, c.glyphs.length - 1));
     c.glyphs.forEach((i, k) =>
       c.play(c.inner[i], [{ opacity: 1, transform: 'none', filter: 'none' }, { opacity: 0, transform: 'translateY(-0.6em) scaleY(1.15)', filter: 'blur(8px)' }], {
-        at: c.tl.exit + (k % 2) * 60 + k * 14,
+        at: c.tl.exit + (k % 2) * 60 + k * gap,
         ms: 620,
         easing: 'cubic-bezier(0.4, 0, 0.7, 0.3)',
         fill: 'forwards',

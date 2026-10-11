@@ -67,18 +67,19 @@ export const voidFamily: FamilyMotion = {
   },
 
   ambient(c) {
-    // The spiral seal turns, a turn in 40 s.
-    const turn = c.play(c.seal.querySelector('.lines')!, [{ rotate: '0deg' }, { rotate: '360deg' }], { at: c.tl.lock + 400, ms: 40000, fill: 'none' });
-    return () => turn.cancel();
+    // The spiral seal turns, a turn in 40 s, its glow with it; it leaves at the angle it came to.
+    const turn = c.play(c.seal, [{ rotate: '0deg' }, { rotate: '360deg' }], { at: c.tl.lock + 400, ms: 40000, fill: 'none' });
+    return () => turn.pause();
   },
 
   exit(c) {
     // The ends first.
     const order = [...c.glyphs].sort((a, b) => Math.abs(c.dx[b]) - Math.abs(c.dx[a]));
+    const gap = Math.min(22, 300 / Math.max(1, order.length - 1));
     order.forEach((i, k) => {
       const [x, y] = [c.toSeal[0] - c.dx[i], c.toSeal[1]];
       c.play(c.inner[i], [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) scale(0.3)` }], {
-        at: c.tl.exit + k * 22,
+        at: c.tl.exit + k * gap,
         ms: 500,
         easing: 'cubic-bezier(0.6, 0, 0.9, 0.4)',
         fill: 'forwards',
