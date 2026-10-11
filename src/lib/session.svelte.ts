@@ -72,6 +72,7 @@ import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from 
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
+import { noteInput, ownPresence, slowLink, standingOf, watchPresence, type Seen, type Standing } from './presence';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
@@ -210,6 +211,10 @@ interface Guest {
   tab: string | null;
   /** When the connection came in. */
   since: number;
+  /** Whether its game is on screen and in use, as it last said (presence.ts). */
+  seen: Seen;
+  /** Its link to the host is slow (presence.ts slowLink). */
+  slow: boolean;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -274,6 +279,13 @@ class Session {
    * so a click on a Skip button that is just fading out does nothing.
    */
   idle = $state(false);
+  /**
+   * Online, in the lobby: how each player who isn't simply ready stands
+   * (presence.ts), by id. The host works it out and tells everyone.
+   */
+  standing = $state.raw<Record<string, Standing>>({});
+  /** Guest: tells the host whenever this device's presence changes (set up on the first join). */
+  private presenceWatch: (() => void) | null = null;
   /** Guest: the host turned down this device's answer to the question asked at `askedAt` (too quick), so it may be given again. */
   turnedDown = $state<{ askedAt: number } | null>(null);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
@@ -660,6 +672,8 @@ class Session {
       mediaAt: null,
       tab: null,
       since: Date.now(),
+      seen: { presence: 'here', since: Date.now() },
+      slow: false,
     };
     this.guests.set(conn, guest);
     // The hello's clock starts once the connection is open; until then, only a much longer limit.
@@ -680,6 +694,11 @@ class Session {
       // capped all the same, guard.ts).
       if (msg.t === 'cursor') {
         if (guest.playerId) this.cursorFrom(conn, guest, msg.at);
+        return;
+      }
+      // Only ever this guest's own word on itself, and as cheap to take as a pointer.
+      if (msg.t === 'presence') {
+        if (msg.p !== guest.seen.presence) guest.seen = { presence: msg.p, since: Date.now() };
         return;
       }
       if (!guest.limit.take()) {
@@ -841,6 +860,7 @@ class Session {
       }
     guest.playerId = playerId;
     this.send(conn, { t: 'welcome', playerId });
+    if (Object.keys(this.standing).length) this.send(conn, { t: 'standing', s: this.standing });
     this.setState(next);
     for (const m of this.released) if (this.mayGetMedia(guest)) this.sendMedia(conn, guest, m);
     const player = next.players.find((p) => p.id === playerId);
@@ -893,8 +913,32 @@ class Session {
         g.pings.set(n, now);
         if (g.pings.size > 10) g.pings.delete(g.pings.keys().next().value!);
         this.send(conn, { t: 'ping', n });
+        g.slow = slowLink(g.slow, g.rtt, now - g.lastPong);
       }
+      this.updateStanding();
     }, PING_EVERY_MS);
+  }
+
+  /**
+   * Host, in the lobby: works out how each player stands (presence.ts) and,
+   * when that changed, tells everyone. Players who are simply ready, and
+   * those offline (Player.connected says so), aren't listed.
+   */
+  private updateStanding() {
+    const s = this.state;
+    const now = Date.now();
+    const next: Record<string, Standing> = {};
+    if (this.mode === 'host' && s?.phase === 'lobby') {
+      const links = new Map([...this.guests.values()].flatMap((g) => (g.playerId ? [[g.playerId, g] as const] : [])));
+      for (const p of s.players) {
+        const g = links.get(p.id);
+        const st = p.id === this.myPlayerId ? standingOf(ownPresence(), false, now) : g ? standingOf(g.seen, g.slow, now) : null;
+        if (st) next[p.id] = st;
+      }
+    }
+    if (JSON.stringify(next) === JSON.stringify(this.standing)) return;
+    this.standing = next;
+    for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, { t: 'standing', s: next });
   }
 
   /** In a race the host's clicks skip the network; delay them by a typical guest's one-way trip. */
@@ -992,6 +1036,7 @@ class Session {
   pointAt(at: CursorAt | null) {
     const me = this.myPlayerId;
     if (!me || this.status !== 'ready') return;
+    if (at) noteInput();
     if (this.mode === 'client') {
       if (this.hostConn?.open) this.hostConn.send({ t: 'cursor', at });
     } else if (this.mode === 'host' && !this.labRoomless) this.relayCursor(me, at);
@@ -1500,6 +1545,9 @@ class Session {
         case 'ping':
           conn.send({ t: 'pong', n: msg.n });
           break;
+        case 'standing':
+          this.standing = msg.s;
+          break;
         case 'cursors':
           if (!cursorsLive(this.state)) break;
           for (const e of msg.c) if (e[0] !== cursorKey(this.myPlayerId ?? '')) peerCursors.set(e[0], entryAt(e));
@@ -1523,6 +1571,12 @@ class Session {
     const secret = await this.helloSecret;
     if (secret && this.hostConn === conn && conn.open)
       conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}) });
+    // The host takes every guest to be here until told otherwise; from then on, each change is sent as it happens.
+    const { presence } = ownPresence();
+    if (secret && this.hostConn === conn && conn.open && presence !== 'here') conn.send({ t: 'presence', p: presence });
+    this.presenceWatch ??= watchPresence((p) => {
+      if (this.mode === 'client' && this.hostConn?.open) this.hostConn.send({ t: 'presence', p });
+    });
   }
 
   private hostLost(conn: DataConnection) {
@@ -2327,6 +2381,7 @@ class Session {
     this.labRoomless = false;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
+    this.standing = {};
     this.cursorOut.clear();
     this.cursorPressed.clear();
     if (this.cursorTimer) clearTimeout(this.cursorTimer);

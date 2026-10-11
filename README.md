@@ -606,6 +606,15 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
+  - **Who's ready:** in the lobby, a player whose game isn't on their
+    screen (another tab or app, or the screen off, for more than a couple of
+    seconds) is marked **Away**, one who hasn't touched it for two minutes
+    **Idle**, and one whose game answers the host's pings slowly (a smoothed
+    round trip over 800 ms, or none for 7 s) **Lagging**. Beside Begin the
+    host sees "All 4 exiles here and ready" with a tick, or who the game
+    would begin without ("3 of 4 ready; waiting on Kai"); a guest waiting on
+    an away host is told so. Each device tells the host its own presence as
+    it changes, and the host tells the room (`src/lib/presence.ts`).
   - **Live pointers:** in the lobby, in turns mode and Delve together, and
     on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
     with their name; a tap on a phone shows where it landed, as the
@@ -837,7 +846,13 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   show before then, the lean programs stand in and Delve's parts come in over
   a moment once they're ready. The effects layer's renderer is made at the
   first idle moment after the first paint, or as soon as an effect is asked
-  for; effects asked for before it's ready wait for it.
+  for; effects asked for before it's ready wait for it. The game's own
+  screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
+  a quarter of the script, fetched at the first idle moment or at once on the
+  way into a room, so the start page loads and runs without them. The host
+  decodes a question's pictures off the main thread (all of a "find the art"
+  question's at once), and a picture request still out after 2 s gets a
+  second one beside it, so one stalled request doesn't hold the question up.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

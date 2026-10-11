@@ -4,8 +4,9 @@
 
 import type { Action, GameState } from './game';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
+import type { Presence, Standing } from './presence.ts';
 
-export const PROTOCOL_VERSION = 24;
+export const PROTOCOL_VERSION = 25;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -31,7 +32,9 @@ export type ClientMsg =
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
-  | { t: 'cursor'; at: CursorAt | null };
+  | { t: 'cursor'; at: CursorAt | null }
+  /** Whether this player's game is on screen and in use (presence.ts), sent when it changes. */
+  | { t: 'presence'; p: Presence };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
@@ -51,6 +54,8 @@ export type HostMsg =
   | { t: 'ping'; n: number }
   /** Other players' pointers that moved since the last batch (cursors.ts). */
   | { t: 'cursors'; c: CursorEntry[] }
+  /** Lobby: how each player who isn't simply ready stands (presence.ts), by id; sent when it changes. */
+  | { t: 'standing'; s: Record<string, Standing> }
   | MediaMsg;
 
 export type MediaMsg =
@@ -102,6 +107,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       const at = parseCursorAt(raw.at);
       return at === undefined ? null : { t: 'cursor', at };
     }
+    case 'presence':
+      return raw.p === 'here' || raw.p === 'idle' || raw.p === 'away' ? { t: 'presence', p: raw.p } : null;
     case 'action': {
       const a = raw.action;
       if (!isObj(a)) return null;
@@ -165,6 +172,17 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
     case 'cursors': {
       const c = parseCursorBatch(raw.c);
       return c ? { t: 'cursors', c } : null;
+    }
+    case 'standing': {
+      if (!isObj(raw.s)) return null;
+      const s: Record<string, Standing> = Object.create(null);
+      const entries = Object.entries(raw.s);
+      if (entries.length > 64) return null;
+      for (const [id, v] of entries) {
+        if (id.length > 64 || (v !== 'away' && v !== 'idle' && v !== 'slow')) return null;
+        s[id] = v;
+      }
+      return { t: 'standing', s };
     }
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
