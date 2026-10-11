@@ -12,6 +12,7 @@
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { kickConfirm } from '../lib/kick';
@@ -394,7 +395,7 @@
                   title="Remove {p.name}"
                   aria-label="Remove {p.name}"
                   onclick={() => removePlayer(p.id)}
-                  >{confirming === p.id ? 'Kick' : '×'}</button
+                  >{#if confirming === p.id}Kick{:else}<DrawnMark />{/if}</button
                 >
               {/if}
             </li>
@@ -406,7 +407,7 @@
                 class:confirm={confirming === o.id}
                 title="Remove {o.name}"
                 aria-label="Remove {o.name}"
-                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{confirming === o.id ? 'Kick' : '×'}</button
+                onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))}>{#if confirming === o.id}Kick{:else}<DrawnMark />{/if}</button
               >{/if}{/each}
         {/snippet}
         {#if waiting.length}
@@ -906,8 +907,13 @@
     background: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: 1.2rem;
     line-height: 1;
+    display: inline-grid;
+    place-items: center;
+  }
+  /* The × is drawn (DrawnMark), so it sits in the ring's centre. */
+  .remove {
+    --mark-size: 8px;
   }
   /* Armed: the ring the × shows under the pointer grows sideways into a pill
      and the × gives way to Kick. Same ring, same red, only longer. */
@@ -941,7 +947,9 @@
   .remove.inline {
     width: 22px;
     height: 22px;
-    font-size: 1rem;
+    vertical-align: middle;
+    --mark-size: 7px;
+    --mark-stroke: 0.9px;
   }
   /* A spectator's kick, in the line of names: the same ring into a pill. */
   .remove.inline.confirm {

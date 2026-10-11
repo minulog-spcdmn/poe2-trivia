@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
+  import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
-  import { shownDepth } from './lib/delve';
+  import { isGroupRun, shownDepth } from './lib/delve';
+  import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
+  import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
+  import ZoneCard from './components/zonecard/ZoneCard.svelte';
   import { stageZoom } from './lib/stage';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -136,19 +139,39 @@
   $effect(() => {
     if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
   });
+  // Delve: a new zone's cards on their way (lib/dealing.svelte.ts). Set
+  // before the DOM updates, so neither the header's depth nor the stage
+  // shows the new depth for a frame first.
+  $effect.pre(() => followDeal(gs ?? null, session.hostNow()));
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper).
+  // question set aside; see dealtDeeper). Into a new zone much further, with
+  // the zone's sound and its title card, its cards dealt as it lands
+  // (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
     if (dealtDeeper(lastDealt, now)) {
-      plunge();
+      const zone = !!milestoneAt(now.depth);
+      plunge(zone);
       sfx('plunge');
+      if (zone) {
+        sfx('stratum');
+        const s = gs;
+        untrack(() => beginArrival(s, session.hostNow(), { best: session.spectating ? null : session.bestAtStart, group: isGroupRun(s) }));
+      }
     }
     lastDealt = now;
   });
+  // A zone's card belongs to the game it came in: leaving it, the card goes.
+  $effect(() => {
+    if (screen !== 'game' || !gs?.delve) untrack(endArrival);
+  });
+  /** The zone card under way, while the stage waits for its cards (and only for the run and depth it came for). */
+  const zoneCard = $derived(
+    arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
+  );
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
@@ -260,7 +283,8 @@
 
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
-    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
+    <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
+    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
       <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -284,14 +308,16 @@
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
                too long for this line on a phone. -->
-          {#if screen !== 'game' || shownDepth(gs.round) > 0}
+          <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
+          {@const round = shownRound(gs)}
+          {#if screen !== 'game' || shownDepth(round) > 0}
             <span class="dot">•</span>
-            <span class="depth" style:--accent={accentAt(gs.round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(gs.round)}</b></span>
+            <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
           {/if}
           <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
           <span class="dot zone-dot">•</span>
-          {#key zoneAt(gs.round)}
-            <span class="zone" style:--accent={accentAt(gs.round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(gs.round)}</span>
+          {#key zoneAt(round)}
+            <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
@@ -417,6 +443,11 @@
   {/if}
 </div>
 
+{#if zoneCard}
+  {#key zoneCard.key}
+    <ZoneCard a={zoneCard} bar={headerHeight} />
+  {/key}
+{/if}
 <Toasts headerHeight={headerOn ? headerHeight : 0} />
 
 <FxLayer />

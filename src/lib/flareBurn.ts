@@ -143,8 +143,8 @@ const SOLID = new Set(['img', 'svg', 'canvas', 'video', 'button', 'input', 'sele
  * (a heading's words, not the whole width of its line). Light from behind
  * the UI hides behind these. Hidden or faint elements, decorations laid
  * over the page (hidden from screen readers, never taking a click: the
- * zone's gate above the question, say), and a container as big as most of
- * the screen, aren't taken whole. `alpha` is how visible `root` is, its
+ * draw's light round a card, say), and a container as big as most of the
+ * screen, aren't taken whole. `alpha` is how visible `root` is, its
  * ancestors' opacity included.
  */
 type Painted = { node: Element | Text; corners?: string[] };

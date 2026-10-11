@@ -276,6 +276,8 @@
       {#if run}
         {delveSub}{#if run.mixed}{delveSub ? ' ' : ''}Finished under newer rules.{/if}
         {#if zone}<span class="zone" style:--accent={zone.accent}>{zone.name}</span>{/if}
+        <!-- Together: the most depths the team cleared in a row with nobody missing. -->
+        {#if team && (run.bestTeamStreak ?? 0) >= 2}<span class="team-streak">Longest team streak: {run.bestTeamStreak}</span>{/if}
       {:else}
         {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
         {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
@@ -537,6 +539,11 @@
     margin: 0.4rem 0 1.8rem;
     font-style: italic;
     font-size: 1.1rem;
+  }
+  .team-streak {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 0.95rem;
   }
   .standings {
     list-style: none;

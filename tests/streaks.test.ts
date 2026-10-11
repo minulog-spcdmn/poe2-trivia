@@ -28,7 +28,28 @@ test('in Delve the fire grows over a long run, and only burns blue deep down', a
   assert.equal(burnsBlue(heatOf(DELVE_BLUE_FROM - 1, true), true), false);
   assert.equal(burnsBlue(heatOf(DELVE_BLUE_FROM, true), true), true);
   assert.equal(burnsBlue(heatOf(BLUE_FROM, true), true), false, 'not blue at seven');
-  // A streak can't be longer than the depth: blue fire never comes before depth 21.
+  // A streak can't be longer than the right answers so far: blue fire never comes before depth 20 (the Frozen Hollow).
+  assert.equal(DELVE_BLUE_FROM, 20);
+});
+
+test("a game's fire is orange then blue, and a long Delve run climbs on up the daily's colours to gold at a hundred", async () => {
+  const { DAILY_LADDER, DELVE_BLUE_FROM, DELVE_FLAMES, flameOf } = await import('../src/lib/fx/streaks.ts');
+  assert.equal(flameOf(ABLAZE_FROM).name, 'orange');
+  assert.equal(flameOf(BLUE_FROM - 1).name, 'orange');
+  assert.equal(flameOf(BLUE_FROM).name, 'blue');
+  assert.equal(flameOf(50).name, 'blue', 'never past blue in a game');
+  assert.deepEqual(
+    DELVE_FLAMES.map((f) => [f.from, f.name]),
+    [[ABLAZE_FROM, 'orange'], [DELVE_BLUE_FROM, 'blue'], [30, 'ice'], [40, 'chaos'], [60, 'violet'], [80, 'crimson'], [100, 'gold']],
+  );
+  assert.equal(flameOf(BLUE_FROM, true).name, 'orange', 'not blue at seven');
+  assert.equal(flameOf(DELVE_BLUE_FROM, true).blue, true, "the game's own blue fire");
+  assert.equal(flameOf(86, true).name, 'crimson');
+  assert.equal(flameOf(500, true).name, 'gold');
+  for (const f of DELVE_FLAMES) {
+    const daily = DAILY_LADDER.find((d) => d.name === f.name)!;
+    assert.deepEqual({ ...f, from: daily.from }, daily, `${f.name} burns as the daily's`);
+  }
 });
 
 test('a run of daily answers burns from the first day and grows every day, quickly at first', async () => {
