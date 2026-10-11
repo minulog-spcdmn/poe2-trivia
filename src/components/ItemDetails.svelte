@@ -14,8 +14,16 @@
 
   // Loaded the first time an item's details are opened: most games never do.
   let stats: Promise<Stats> | undefined;
-  /** The tooltips, loaded once (ItemWindow asks ahead, so its body doesn't grow after it has unrolled). */
-  export const loadStats = () => (stats ??= import('../data/itemStats.json').then((m) => m.default as unknown as Stats));
+  /** The tooltips once they're here: a tooltip drawn after that is drawn whole at once, never a moment of "…" first. */
+  let loaded: Stats | null = null;
+  /**
+   * The tooltips, loaded once. ItemWindow waits for them before it unrolls,
+   * so what it unrolls is the whole tooltip, not the line that waits for it.
+   */
+  /** Whether the tooltips are here already. */
+  export const statsLoaded = () => !!loaded;
+  export const loadStats = () =>
+    (stats ??= import('../data/itemStats.json').then((m) => (loaded = m.default as unknown as Stats)));
 
   /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */
   const COLOURS: Record<string, string> = { w: 'white', a: 'aug', p: 'white', f: 'fire', c: 'cold', l: 'lightning', h: 'chaos' };
@@ -64,16 +72,21 @@
   // mods and flavour text, in sections parted by the game's plain rule.
   let { item }: { item: Item } = $props();
 
-  const sections = $derived(loadStats().then((s) => sectionsOf(item, s)));
+  let all = $state<Stats | null>(loaded);
+  let failed = $state(false);
+  if (!loaded) loadStats().then((s) => (all = s), () => (failed = true));
+  const sections = $derived(all ? sectionsOf(item, all) : null);
 </script>
 
 {#snippet text(t: string)}{#each runs(t) as r, k (k)}{#if r.c}<span class={r.c}>{r.t}</span>{:else}{r.t}{/if}{/each}{/snippet}
 
 <div class="tooltip-body">
-  {#await sections}
+  {#if failed}
+    <p class="wait">Its details couldn't be loaded.</p>
+  {:else if !sections}
     <p class="wait" aria-label="Loading">…</p>
-  {:then list}
-    {#each list as section, i (i)}
+  {:else}
+    {#each sections as section, i (i)}
       {#if i}<div class="rule" aria-hidden="true"></div>{/if}
       <div class="section">
         {#each section as [kind, t], j (j)}
@@ -88,9 +101,7 @@
         {/each}
       </div>
     {/each}
-  {:catch}
-    <p class="wait">Its details couldn't be loaded.</p>
-  {/await}
+  {/if}
 </div>
 
 <style>

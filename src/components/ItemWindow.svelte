@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
-  import { fade, fly, slide } from 'svelte/transition';
+  import { untrack } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { type Item } from '../lib/game';
-  import { itemImage } from '../lib/ui';
   import { portal } from '../lib/portal';
   import { calm, motion } from '../lib/motion.svelte';
   import { phone } from '../lib/layout';
@@ -11,8 +10,7 @@
   import { hideLightIn } from '../lib/fx/core';
   import { zoomOf } from '../lib/stage';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
-  import ArtImage from './ArtImage.svelte';
-  import ItemDetails, { loadStats } from './ItemDetails.svelte';
+  import ItemDetails, { loadStats, statsLoaded } from './ItemDetails.svelte';
 
   // An item opened from an answered question (lib/itemWindow.svelte.ts): its
   // tooltip, as the game shows it, in a window that floats over the game.
@@ -20,8 +18,13 @@
   // the left, the first time) with only its name plate, then unrolls, so
   // the player sees it folds. Dragged by the plate, it stays where it's left
   // (next time too), and the game goes on under it. The chevron in the
-  // plate's left socket (or a click on the plate) folds it down to the plate
+  // plate's left socket (or a click on the plate) folds it up to the plate
   // alone; another item opened unfolds it.
+  //
+  // It's placed by its height open, folded or not, so the plate never moves
+  // as it rolls: only the tooltip's height changes under it (a CSS
+  // transition, on the compositor's clock, nothing measured meanwhile), and
+  // there's always room below the plate to unroll into.
   let { item }: { item: Item } = $props();
 
   /** Kept this far from the screen's edges (px). */
@@ -36,42 +39,51 @@
   /** A phone's bar pinned to the bottom (Next, lib/layout.ts dock): the window keeps above it. */
   let dockPx = $state(0);
   const dock = $derived(phone.current ? dockPx / zoom : 0);
-  const maxH = $derived(Math.max(120, Math.min(600, vh * 0.8, vh - dock - 2 * EDGE)));
-  let w = $state(0);
-  let h = $state(0);
-  /** Where the top is held while the window folds or unfolds: the plate stays put and the rest rolls up under it, or down. */
-  let pinTop = $state<number | null>(null);
+  let w = $state(380);
+  let plateH = $state(58);
+  /** The tooltip's own height, whole. */
+  let bodyH = $state(0);
+  /** How tall the tooltip shows unrolled: whole, up to the screen (less the pinned bar); only past that does it scroll. */
+  const rollH = $derived(Math.min(bodyH, Math.max(0, vh - dock - 2 * EDGE - plateH)));
+  const openH = $derived(plateH + rollH);
   // Its place as shares of the room left round it, so it keeps to the same side as the screen changes size.
   const roomX = $derived(Math.max(vw - w - 2 * EDGE, 0));
-  const roomY = $derived(Math.max(vh - dock - h - 2 * EDGE, 0));
+  const roomY = $derived(Math.max(vh - dock - openH - 2 * EDGE, 0));
   const left = $derived(EDGE + place.x * roomX);
-  const top = $derived(pinTop !== null ? Math.max(EDGE, Math.min(pinTop, EDGE + roomY)) : EDGE + place.y * roomY);
+  const top = $derived(EDGE + place.y * roomY);
   /** A place on the screen (own px) as a share of the room there is for it. */
   const share = (at: number, room: number) => (room > 0 ? Math.min(Math.max((at - EDGE) / room, 0), 1) : 0);
 
-  // It comes in with its plate alone, and unrolls once it's there (at once, with motion reduced),
-  // about its place: the first time, the middle of the screen's left edge.
+  // It comes in once the tooltips are here (the first time, a moment after the click), so it's
+  // placed by the whole tooltip's height from the start and never shifts on the way in; with its
+  // plate alone, unrolling once it's there (open at once, with motion reduced).
+  let ready = $state(statsLoaded());
+  if (!statsLoaded()) loadStats().then(() => (ready = true), () => (ready = true));
   let folded = $state(!motion.still);
-  void loadStats();
-  /** It came in from the left (or, left on the right half of the screen, from the right). */
-  const fromLeft = untrack(() => place.x) <= 0.5;
 
   let box = $state<HTMLElement>();
+  let head = $state<HTMLElement>();
+  let body = $state<HTMLElement>();
   const measure = () => {
     screenW = innerWidth;
     screenH = innerHeight;
-    if (box) zoom = zoomOf(box) || 1;
+    if (box) {
+      zoom = zoomOf(box) || 1;
+      w = box.offsetWidth;
+    }
   };
   const readDock = () => (dockPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dock')) || 0);
-  onMount(() => {
+  $effect(() => {
+    if (!box) return;
     measure();
     readDock();
     const ro = new ResizeObserver(() => {
-      if (!box) return;
-      w = box.offsetWidth;
-      h = box.offsetHeight;
+      if (box) w = box.offsetWidth;
+      if (head) plateH = head.offsetHeight;
+      if (body) bodyH = body.offsetHeight;
     });
-    ro.observe(box!);
+    // (Not the window itself: its height follows these, and watching it too would loop.)
+    for (const el of [head, body]) if (el) ro.observe(el);
     // The pinned bar comes and goes with each reveal: lib/layout.ts sets its height on <html>.
     const mo = new MutationObserver(readDock);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
@@ -84,35 +96,12 @@
     };
   });
 
-  /** Folds or unfolds it, the plate held where it is until the roll is done. */
-  function setFolded(to: boolean) {
-    if (to === folded) return;
-    pinTop = top;
-    folded = to;
-  }
-  /**
-   * The roll is done: where the plate stopped becomes the window's place,
-   * once its new height is known (a frame on: the rolled-up body leaves the
-   * page only after this).
-   */
-  function rolled() {
-    if (pinTop === null) return;
-    requestAnimationFrame(() => {
-      if (pinTop === null || !box) return;
-      h = box.offsetHeight;
-      const at = top;
-      place = { x: place.x, y: share(at, roomY) };
-      pinTop = null;
-      writePlace(place);
-    });
-  }
-
   // Another item opened unfolds it.
   let shown = untrack(() => item.id);
   $effect.pre(() => {
     if (item.id === shown) return;
     shown = item.id;
-    setFolded(false);
+    folded = false;
   });
 
   /** A press that moves less than this (px) is a click, which folds the window, not a drag. */
@@ -129,7 +118,6 @@
     if (held?.id !== e.pointerId) return;
     if (!held.moved && Math.hypot(e.clientX - held.x, e.clientY - held.y) < CLICK_PX) return;
     held.moved = true;
-    pinTop = null;
     place = { x: share(e.clientX / zoom - held.dx, roomX), y: share(e.clientY / zoom - held.dy, roomY) };
   }
   function up(e: PointerEvent) {
@@ -137,81 +125,81 @@
     const moved = held.moved;
     held = null;
     if (moved) writePlace(place);
-    else if (e.type === 'pointerup') setFolded(!folded);
+    else if (e.type === 'pointerup') folded = !folded;
   }
 
-  /** In from the side of the screen, and out the same way. */
+  /**
+   * In from the side of the screen it's on, and out to the side it's on as
+   * it goes (asked as each starts: dragged across meanwhile, it leaves by
+   * the nearer edge).
+   */
   const sideways = () => {
-    // (Coming in, it hasn't been measured yet: as wide as it's drawn.)
-    const width = w || box?.offsetWidth || 380;
-    return calm({ x: fromLeft ? -(left + width + 40) : vw - left + 40, opacity: 0.4, duration: 420, easing: cubicOut });
+    const toLeft = left + w / 2 <= vw / 2;
+    return calm({ x: toLeft ? -(left + w + 40) : vw - left + 40, opacity: 0.4, duration: 420, easing: cubicOut });
   };
 </script>
 
 <svelte:window onresize={measure} />
 
-<div
-  class="window"
-  class:folded
-  data-item-window
-  bind:this={box}
-  use:portal
-  style:left="{left}px"
-  style:top="{top}px"
-  style:--max-h="{maxH}px"
-  in:fly={sideways()}
-  out:fly={sideways()}
-  onintroend={() => (folded = false)}
-  onkeydown={(e) => {
-    if (e.key !== 'Escape') return;
-    e.stopPropagation();
-    closeItemWindow();
-  }}
-  role="dialog"
-  aria-labelledby="item-window-name"
-  tabindex="-1"
->
-  <div class="head" onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation" title="Drag to move">
-    <NamePlate start="empty" end="empty" />
-    {#key item.id}
-      <div class="head-text" in:fade={{ duration: 200 }}>
-        <span class="iname" id="item-window-name">{item.name}</span>
-        <span class="ibase">{item.base}</span>
-      </div>
-    {/key}
-    <button
-      class="socket fold"
-      style:--socket="{SOCKET_X}px"
-      onclick={() => setFolded(!folded)}
-      aria-expanded={!folded}
-      aria-controls="item-window-body"
-      aria-label={folded ? 'Unfold' : 'Fold'}
-      title={folded ? 'Unfold' : 'Fold'}
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6" /></svg>
-    </button>
-    <button class="socket close" style:--socket="{SOCKET_X}px" onclick={closeItemWindow} aria-label="Close" title="Close">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-    </button>
-  </div>
+<!-- (Its transitions global: it sits in this block of its own, and comes and goes with the game's.) -->
+{#if ready}
+  <div
+    class="window"
+    class:folded
+    class:still={motion.still}
+    data-item-window
+    bind:this={box}
+    use:portal
+    style:left="{left}px"
+    style:top="{top}px"
+    in:fly|global={sideways()}
+    out:fly|global={sideways()}
+    onintroend={() => (folded = false)}
+    onkeydown={(e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeItemWindow();
+    }}
+    role="dialog"
+    aria-labelledby="item-window-name"
+    tabindex="-1"
+  >
+    <div class="head" bind:this={head} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation" title="Drag to move">
+      <NamePlate start="empty" end="empty" />
+      {#key item.id}
+        <div class="head-text" in:fade={{ duration: 200 }}>
+          <span class="iname" id="item-window-name">{item.name}</span>
+          <span class="ibase">{item.base}</span>
+        </div>
+      {/key}
+      <button
+        class="socket fold"
+        style:--socket="{SOCKET_X}px"
+        onclick={() => (folded = !folded)}
+        aria-expanded={!folded}
+        aria-controls="item-window-body"
+        aria-label={folded ? 'Unfold' : 'Fold'}
+        title={folded ? 'Unfold' : 'Fold'}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6" /></svg>
+      </button>
+      <button class="socket close" style:--socket="{SOCKET_X}px" onclick={closeItemWindow} aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </div>
 
-  {#if !folded}
-    <div class="scroll" id="item-window-body" transition:slide={calm({ duration: 380, easing: cubicOut })} onintroend={rolled} onoutroend={rolled}>
-      <div class="art">
-        <div class="frame">
+    <!-- The roll: its height runs between nothing and the tooltip's; what's in it keeps its own, so it's uncovered, not squeezed. -->
+    <div class="roll" id="item-window-body" style:height="{folded ? 0 : rollH}px" inert={folded}>
+      <div class="scroll" style:height="{rollH}px">
+        <div class="body" bind:this={body}>
           {#key item.id}
-            <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} />
+            <ItemDetails {item} />
           {/key}
         </div>
       </div>
-      <div class="body">
-        {#key item.id}
-          <ItemDetails {item} />
-        {/key}
-      </div>
     </div>
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
   /* The item's tooltip, as the game draws it under a name plate: not a dialog that holds the page, a window over it. */
@@ -220,16 +208,11 @@
     /* Under the toasts and dialogs (90, 94), over the game. */
     z-index: 89;
     width: min(380px, calc(100vw / var(--stage-zoom, 1) - 16px));
-    max-height: var(--max-h, 600px);
     zoom: var(--stage-zoom, 1);
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
-    /*
-     * Painted here, as dialogs are: it floats over the page. A faint grain (as
-     * on the page's backdrop) dithers the art's glows, which would band this
-     * close to black.
-     */
+    /* Painted here, as dialogs are: it floats over the page. A faint grain, as on the page's backdrop. */
     background:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.025'/%3E%3C/svg%3E"),
       #030201;
@@ -329,48 +312,35 @@
   .folded .fold svg {
     rotate: 0deg;
   }
-  /* A long tooltip scrolls under its name plate. */
+  /*
+   * The tooltip, whole: the window is as tall as it is. Only where the
+   * screen is shorter than that (a long gem's on a phone) does it scroll,
+   * with no bar of its own, as dialogs on a short screen do.
+   */
+  /* The roll unrolls (and rolls up) at the chevron's pace; held still, it just opens. */
+  .roll {
+    flex: none;
+    overflow: hidden;
+    transition: height 0.38s cubic-bezier(0.215, 0.61, 0.355, 1);
+  }
+  .still .roll {
+    transition: none;
+  }
   .scroll {
-    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scrollbar-color: #5a3a1c transparent;
+    scrollbar-width: none;
   }
-  .art {
-    position: relative;
-    height: 150px;
-    container-type: size;
-    background:
-      radial-gradient(ellipse 55% 50% at 50% 50%, rgba(175, 96, 37, 0.14), transparent),
-      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(90, 110, 160, 0.1), transparent);
-    box-shadow: inset 0 1px 0 rgba(201, 164, 92, 0.12);
-    overflow: hidden;
-  }
-  .frame {
-    position: absolute;
-    inset: 0;
-    margin: auto;
-    width: 80%;
-    height: 84%;
-    display: grid;
-    place-items: center;
-  }
-  .frame > :global(.art-slot) {
-    position: absolute;
-    inset: 0;
+  .scroll::-webkit-scrollbar {
+    display: none;
   }
   .body {
-    padding: 0.4rem 1.1rem 1.1rem;
+    padding: 0.85rem 1.1rem 1.1rem;
   }
 
-  /* A phone has little room: the art smaller (still big enough to know the item by), the tooltip closer in. */
   @media (max-width: 640px) {
-    .art {
-      height: 96px;
-    }
     .body {
-      padding: 0.3rem 0.8rem 0.9rem;
+      padding: 0.7rem 0.8rem 0.9rem;
     }
   }
 </style>

@@ -8,7 +8,7 @@
   import { itemImage, itemThumb } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
-  import { singular, type Item } from '../lib/game';
+  import { type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
@@ -20,8 +20,6 @@
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
   const entry = $derived(codex.items[item.id]);
-  /** What it is, as one item: "Wand", "Ring". A gem's group is only its attribute, so gems say "Lineage Gem". */
-  const kind = $derived(singular(item.kind === 'gem' ? item.category : item.group));
   const byCount = (pairs: [string, number][]) =>
     pairs
       .flatMap(([id, n]) => {
@@ -161,9 +159,7 @@
 </div>
 
 {#snippet record()}
-  <p class="kind">{kind}</p>
   {#if entry}
-    <div class="sep" aria-hidden="true"></div>
     <ul class="lines">
       <li>Seen <b>{times(entry.seen)}</b></li>
       <li>
@@ -338,49 +334,78 @@
     opacity: 1;
     transition: opacity 0.2s;
   }
-  /* The switch between the item and your record of it, as the codex's own (Grid, Table). */
+  /*
+   * The switch between the item and your record of it: two engraved labels
+   * (as the card's own headings, "You took it for") standing on a rule like
+   * the tooltip's, the one shown lit, and the rule lit under it.
+   */
   .seg {
+    position: relative;
     display: flex;
     justify-content: center;
-    gap: 0.3rem;
-    padding: 0.75rem 1rem 0;
+    gap: 2.2rem;
+    width: 84%;
+    margin: 0.5rem auto 0;
+  }
+  .seg::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.55) 22%, rgba(175, 96, 37, 0.55) 78%, transparent);
   }
   .seg > button {
-    min-width: 96px;
-    padding: 0.45rem 0.8rem;
+    position: relative;
+    padding: 0.55rem 0.15rem 0.5rem;
     font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.8rem;
-    color: var(--muted);
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--line);
-    border-radius: 3px;
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8a7560;
+    background: none;
+    border: 0;
     cursor: pointer;
-    transition: all 0.2s;
+    transition:
+      color 0.25s,
+      text-shadow 0.25s;
   }
-  .seg > button:hover {
-    color: var(--gold-hi);
-    border-color: var(--gold-lo);
+  .seg > button::after {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    left: -0.4rem;
+    right: -0.4rem;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-hi), transparent);
+    box-shadow: 0 0 8px rgba(224, 168, 92, 0.6);
+    opacity: 0;
+    scale: 0.4 1;
+    transition:
+      opacity 0.25s,
+      scale 0.3s var(--ease-out, ease-out);
+  }
+  .seg > button:hover,
+  .seg > button:focus-visible {
+    color: #d8a26a;
+  }
+  .seg > button:focus-visible {
+    outline: none;
   }
   .seg > button.on {
-    color: #fff1cf;
-    background: linear-gradient(180deg, #8a5a22, #452a0e);
-    border-color: var(--gold);
-    text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 230, 170, 0.3),
-      0 0 14px rgba(201, 164, 92, 0.3);
+    color: #f1d9a8;
+    text-shadow: 0 0 10px rgba(255, 210, 140, 0.35);
+  }
+  .seg > button.on::after,
+  .seg > button:focus-visible::after {
+    opacity: 1;
+    scale: 1 1;
   }
   .body {
     padding: 0.9rem 1.2rem 1.1rem;
     text-align: center;
-  }
-  .kind {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: 0.82rem;
-    letter-spacing: 0.08em;
-    color: var(--muted);
   }
   /* The tooltip's separator: a hairline with a gem in the middle. */
   .sep {

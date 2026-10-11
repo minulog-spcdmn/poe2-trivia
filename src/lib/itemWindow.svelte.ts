@@ -9,8 +9,12 @@ import { readStored, writeStored } from './storage';
  */
 export const itemWindow = $state<{ item: Item | null }>({ item: null });
 
-export const inspect = (item: Item) => (itemWindow.item = item);
-export const closeItemWindow = () => (itemWindow.item = null);
+export function inspect(item: Item) {
+  itemWindow.item = item;
+}
+export function closeItemWindow() {
+  itemWindow.item = null;
+}
 
 /** Where the window was last left: its top left corner, as shares of the room the screen leaves round it. */
 export interface WindowPlace {

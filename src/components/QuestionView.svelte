@@ -1172,7 +1172,7 @@
           >
             <span class="sheen"></span>
             <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
-            <span class="key" class:lens-key={!!shownItem}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 300, delay: 600 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
+            <span class="key" class:lens-key={!!shownItem}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
             <span class="cue" aria-hidden="true"></span>
             {#if pic || tv}
               <span class="pic">
@@ -1284,7 +1284,7 @@
           </div>
           {#if reveal && item}
             <!-- Once answered, the art opens the item's details (ItemWindow). -->
-            <button class="details" onclick={() => inspect(item)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 300, delay: 600 }}>
+            <button class="details" onclick={() => inspect(item)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
               <span class="lens">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>
                 Details
