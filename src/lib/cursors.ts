@@ -21,9 +21,10 @@
 // on it would slide with it. Down the game, a pointer goes by screen heights
 // from its top instead.
 //
-// Guests send theirs to the host at most every SEND_EVERY_MS while it moves;
-// the host keeps only the latest of each and sends every guest one batch of
-// what changed every FLUSH_EVERY_MS. None of it is part of the game state, so
+// Guests send theirs to the host at most every SEND_EVERY_MS while it moves,
+// and a press or a release at once (within POINTER_RATE); the host keeps
+// only the latest of each and sends every guest one batch of what changed
+// every FLUSH_EVERY_MS, or, for a click, a frame after the last. None of it is part of the game state, so
 // a pointer moving never sends the state to anyone.
 
 import type { GameState } from './game.ts';

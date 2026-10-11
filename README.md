@@ -695,10 +695,11 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   in Delve together vote for a card or give a teammate a life (and where
   their pointer is). Guests
   are rate-limited to about 10 messages per second (their pointer has a
-  budget of its own, so moving it never uses up the one for playing, and
-  the host keeps it out of the game state and passes it on in batches,
-  never more than ten a second, whose sending holds back while a link is
-  busy with pictures), and the raw data they
+  budget of its own, about 40 a second, so moving it never uses up the one
+  for playing; what goes past it waits rather than being lost; and the
+  host keeps it out of the game state and passes it on in batches, twenty
+  a second, and for a click a frame after the last at the soonest, whose
+  sending holds back while a link is busy with pictures), and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
   or freeze its tab). A connection that doesn't introduce itself

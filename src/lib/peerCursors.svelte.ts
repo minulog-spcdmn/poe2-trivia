@@ -12,8 +12,8 @@ export interface PeerCursor {
   trail: { at: CursorAt; t: number }[];
 }
 
-/** How many places a pointer's trail keeps; heard again after this long (ms), it had been resting. */
-const TRAIL = 4;
+/** How many places a pointer's trail keeps (more than BEHIND_MS's worth, PeerCursors.svelte, with clicks among them); heard again after this long (ms), it had been resting. */
+const TRAIL = 8;
 const REST_MS = 250;
 
 class PeerCursors {

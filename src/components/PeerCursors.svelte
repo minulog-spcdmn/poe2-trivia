@@ -3,16 +3,17 @@
   // this device's own, sent for them to see. Each pointer is placed on the
   // element it was over (data-cursor), wherever that element is on this
   // screen, or, where this screen hasn't that one, on the next one round it
-  // that it has; and glides between the updates (ten a second) so it moves
+  // that it has; and glides between the updates (twenty a second) so it moves
   // smoothly. A tap on a phone shows where it landed, as the dart pressed, for a moment.
   // While a new zone's cards are on their way (its title card over the game,
   // lib/dealing.svelte.ts) nobody points: this one isn't sent, and the
   // others' fade out, to come back where they are as the cards are dealt.
   import { onMount } from 'svelte';
+  import { RateLimit } from '../lib/protocol';
   import { session } from '../lib/session.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { LIT, MOUSE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { LIT, MOUSE, POINTER_BURST, POINTER_RATE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portalToPage } from '../lib/portal';
   import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
@@ -46,8 +47,9 @@
   const TAP_MS = 1100;
   /** A press shows at least this long (ms), so a quick click is still seen (presses and releases are sent at once). */
   const PRESS_SHOW_MS = 120;
-  /** The newest press shown of each pointer (its trail's time), so each is shown once. */
+  /** The newest press shown of each pointer (its trail's time), so each is shown once; one heard longer ago than this (ms, a tab out of sight) isn't. */
   const pressSeen = new Map<string, number>();
+  const PRESS_FRESH_MS = 250;
   /** A still pointer is looked at again this often, for what moved under it (the next turn, a scroll). */
   const RECHECK_MS = 500;
 
@@ -76,8 +78,10 @@
   /** The mouse is over the page; its main button is held. */
   let over = false;
   let held = false;
-  /** Pressed since the last update: sent as pressed even if let go meanwhile (a click is quicker than an update). */
+  /** Pressed since the last update: sent as pressed even if let go meanwhile (a click is quicker than an update, when one has to wait). */
   let clicked = false;
+  /** What the host takes (cursors.ts POINTER_RATE): past it a release would be dropped and the pointer left pressed, so what's past it waits. */
+  const budget = new RateLimit(POINTER_RATE, POINTER_BURST);
   let dirty = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** What was sent last, so a pointer that stays put isn't sent again. */
@@ -89,14 +93,20 @@
     dirty = false;
     // Over something this player can click, it goes as the hand, as their own cursor is.
     const at = pointing && over ? anchorAt(x, y, ((held || clicked ? PRESSED : MOUSE) + (clickableAt(x, y) ? LIT : 0)) as PointerKind) : null;
-    // Pressed and let go before this went: the release goes with the next one.
-    if (clicked && !held) dirty = true;
-    clicked = false;
     const key = JSON.stringify(at);
     if (key !== sent) {
+      if (!budget.take()) {
+        // Clicking faster than the host takes: this goes once it does.
+        dirty = true;
+        timer = setTimeout(flush, 1000 / POINTER_RATE);
+        return;
+      }
       sent = key;
       session.pointAt(at);
     }
+    // Pressed and let go before this went: the release goes with the next one.
+    if (clicked && !held) dirty = true;
+    clicked = false;
     timer = setTimeout(flush, SEND_EVERY_MS);
   }
 
@@ -128,6 +138,10 @@
     const press = (e: PointerEvent, on: boolean) => {
       if (e.pointerType !== 'mouse' || e.button !== 0 || held === on) return;
       held = on;
+      // Where it is, though it hasn't moved since it came back to the page.
+      x = e.clientX;
+      y = e.clientY;
+      over = true;
       if (on) clicked = true;
       poke(true);
     };
@@ -260,9 +274,11 @@
     const list = shown;
     if (!list.length) {
       drawn.clear();
+      pressSeen.clear();
       return;
     }
     for (const k of drawn.keys()) if (!list.some((c) => c.key === k)) drawn.delete(k);
+    for (const k of pressSeen.keys()) if (!list.some((c) => c.key === k)) pressSeen.delete(k);
     let raf = 0;
     let last = performance.now();
     const frame = (now: number) => {
@@ -292,18 +308,22 @@
         // two frames is shown all the same, once.
         const pressNow = actionOf(kind) === PRESSED;
         const lastPress = p.trail.findLast((x) => actionOf(x.at[3]) === PRESSED)?.t ?? -1;
-        const pressing = pressNow || lastPress > (pressSeen.get(c.key) ?? -1);
-        if (lastPress >= 0) pressSeen.set(c.key, lastPress);
+        const pressing = pressNow || (lastPress > (pressSeen.get(c.key) ?? -1) && now - lastPress < PRESS_FRESH_MS);
+        const prev = drawn.get(c.key);
         if (!place) {
           // Its elements went (the card picked, the screen moved on): it stays where it's drawn until it moves again.
-          const held = drawn.get(c.key);
-          el.classList.toggle('lost', !held);
-          if (held) {
-            if (pressing) held.pressUntil = now + PRESS_SHOW_MS;
-            el.classList.toggle('pressed', now < held.pressUntil);
+          el.classList.toggle('lost', !prev);
+          if (prev) {
+            if (pressing) prev.pressUntil = now + PRESS_SHOW_MS;
+            if (lastPress >= 0) pressSeen.set(c.key, lastPress);
+            el.classList.toggle('pressed', now < prev.pressUntil);
           }
           continue;
         }
+        if (lastPress >= 0) pressSeen.set(c.key, lastPress);
+        // Pressed, or let go so lately its press still shows: drawn where it is, with the press (the release came at
+        // once after it, often in the same frame, and the place a little behind is where it was before the click).
+        const clicking = pressing || (!!prev && now < prev.pressUntil);
         el.classList.remove('lost');
         const code = place.code;
         // Its trail on this screen (each place on its own elements, where they're still here), drawn a little behind.
@@ -315,7 +335,7 @@
           ps.push([q.x, q.y]);
           ts.push(t);
         }
-        const [rx, ry] = touch || pressNow || !ps.length ? [place.x, place.y] : trailAt(ps, ts, now - BEHIND_MS);
+        const [rx, ry] = touch || clicking || !ps.length ? [place.x, place.y] : trailAt(ps, ts, now - BEHIND_MS);
         let d = drawn.get(c.key);
         // Never off this screen, however far off the others' place lands here.
         const cx = Math.min(innerWidth - 16, Math.max(2, rx));
@@ -344,13 +364,13 @@
         else {
           // Placed on another element far from where it's drawn, or leaping: it stays where it's drawn (JUMP_PX).
           const far = Math.hypot(tx + d.ox - d.x, ty + d.oy - d.y);
-          if (!pressNow && ((code !== d.code && far > JUMP_PX) || far > LEAP_PX)) {
+          if (!clicking && ((code !== d.code && far > JUMP_PX) || far > LEAP_PX)) {
             d.ox = d.x - tx;
             d.oy = d.y - ty;
           } else {
             // The difference fades as it moves, and slowly as time goes by; at once for a press, so the click lands where it is.
             const moved = Math.hypot(tx - d.px, ty - d.py);
-            const fade = pressNow ? Math.exp(-dt / 60) : Math.exp(-moved / FADE_PX - dt / FADE_MS);
+            const fade = clicking ? Math.exp(-dt / 60) : Math.exp(-moved / FADE_PX - dt / FADE_MS);
             d.ox *= fade;
             d.oy *= fade;
           }

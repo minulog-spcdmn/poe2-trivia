@@ -79,8 +79,9 @@ export class FrameGuard {
 
   constructor(now: () => number = Date.now) {
     // Looser than the message limits (10/s, and 40/s for the pointer,
-    // cursors.ts), so only abuse ever hits it.
-    this.frames = new RateLimit(80, 80, now);
+    // cursors.ts), so only abuse ever hits it; a few seconds' worth at once,
+    // so a link that stalled and sends its backlog in one go isn't.
+    this.frames = new RateLimit(80, 240, now);
     this.bytes = new RateLimit(3072, 16 * 1024, now);
   }
 

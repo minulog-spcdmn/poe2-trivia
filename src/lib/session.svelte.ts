@@ -156,6 +156,8 @@ const MEDIA_TIMEOUT_MS = 15000;
 const EARLY_MS = 250;
 /** Host: a guest's link with this much still to send (the art, say) gets the pointers later, by when only the newest are left. */
 const CURSOR_BACKLOG_BYTES = 64 * 1024;
+/** Batches sent for a click (a press or a release) are this far apart at least (ms): a frame. */
+const CLICK_GAP_MS = 16;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -195,6 +197,9 @@ interface Guest {
   limit: RateLimit;
   /** For the pointer (cursors.ts), apart from `limit` so moving it never uses up the budget for playing. */
   pointer: RateLimit;
+  /** Its newest pointer past `pointer`, waiting until it may go (undefined when none is), and when it's looked at again. */
+  pointerLate?: CursorAt | null;
+  pointerTimer?: ReturnType<typeof setTimeout> | null;
   /** Round-trip time estimate (ms). */
   rtt: number;
   lastPong: number;
@@ -361,6 +366,8 @@ class Session {
   private cursorPressed = new Map<string, boolean>();
   private cursorTimer: ReturnType<typeof setTimeout> | null = null;
   private cursorsSentAt = 0;
+  /** When the planned batches go (performance.now). */
+  private cursorsDue = 0;
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
@@ -669,10 +676,10 @@ class Session {
         this.block(conn);
         return;
       }
-      // A pointer beyond what a real client sends is only dropped (frames
-      // are capped all the same, guard.ts).
+      // A pointer beyond what a real client sends only waits (frames are
+      // capped all the same, guard.ts).
       if (msg.t === 'cursor') {
-        if (guest.pointer.take() && guest.playerId) this.relayCursor(guest.playerId, msg.at);
+        if (guest.playerId) this.cursorFrom(conn, guest, msg.at);
         return;
       }
       if (!guest.limit.take()) {
@@ -713,6 +720,7 @@ class Session {
       clearTimeout(helloTimer);
       this.guests.delete(conn);
       this.cursorOut.drop(conn);
+      if (guest.pointerTimer) clearTimeout(guest.pointerTimer);
       const id = guest.playerId;
       if (!id || !this.state) return;
       if ([...this.guests.values()].some((g) => g.playerId === id)) return;
@@ -901,6 +909,29 @@ class Session {
     return Math.min(MAX_HOST_HANDICAP_MS, rtts[Math.floor(rtts.length / 2)] / 2);
   }
 
+  /**
+   * Host: a guest's pointer, passed on; past what a real client sends
+   * (cursors.ts POINTER_RATE: a stall delivering a backlog at once), only
+   * its newest waits until it may go. None is lost for good, so a release
+   * never is, which would leave that pointer pressed on every screen.
+   */
+  private cursorFrom(conn: DataConnection, guest: Guest, at: CursorAt | null) {
+    guest.pointerLate = at;
+    if (guest.pointerTimer) return;
+    const pass = () => {
+      guest.pointerTimer = null;
+      if (!this.guests.has(conn) || !guest.playerId || guest.pointerLate === undefined) return;
+      if (!guest.pointer.take()) {
+        guest.pointerTimer = setTimeout(pass, 1000 / POINTER_RATE);
+        return;
+      }
+      const late = guest.pointerLate;
+      guest.pointerLate = undefined;
+      this.relayCursor(guest.playerId, late);
+    };
+    pass();
+  }
+
   /** Host: passes a player's pointer on to everyone else in the room, in the next batch (cursors.ts). */
   private relayCursor(from: string, at: CursorAt | null) {
     const s = this.state;
@@ -912,26 +943,37 @@ class Session {
     // A click is quicker than a batch: a press or its release goes at once.
     const pressed = !!at && actionOf(at[3]) === PRESSED;
     const changed = pressed !== (this.cursorPressed.get(key) ?? false);
-    this.cursorPressed.set(key, pressed);
+    if (at) this.cursorPressed.set(key, pressed);
+    else this.cursorPressed.delete(key);
     this.planCursors(changed);
   }
 
   /**
    * Sends the guests their batches, or plans to once FLUSH_EVERY_MS has gone
-   * by since the last. Called as pointers come in, too: a host's tab out of
-   * sight gets its timers held back to once a second, the messages it gets
-   * aren't, so the room's pointers stay as smooth.
+   * by since the last; a click (`now`), once CLICK_GAP_MS has, so however
+   * many are clicking, a guest is sent a frame's worth at once at most.
+   * Called as pointers come in, too: a host's tab out of sight gets its
+   * timers held back to once a second, the messages it gets aren't, so the
+   * room's pointers stay as smooth.
    */
   private planCursors(now = false) {
     if (!this.cursorOut.waiting) return;
-    const wait = now ? 0 : this.cursorsSentAt + FLUSH_EVERY_MS - performance.now();
-    if (wait > 0) {
-      this.cursorTimer ??= setTimeout(() => {
+    const t = performance.now();
+    const due = this.cursorsSentAt + (now ? CLICK_GAP_MS : FLUSH_EVERY_MS);
+    if (due > t) {
+      if (this.cursorTimer && this.cursorsDue <= due) return;
+      if (this.cursorTimer) clearTimeout(this.cursorTimer);
+      this.cursorsDue = due;
+      this.cursorTimer = setTimeout(() => {
         this.cursorTimer = null;
-        this.planCursors();
-      }, wait);
+        this.sendCursors();
+      }, due - t);
       return;
     }
+    this.sendCursors();
+  }
+
+  private sendCursors() {
     if (this.cursorTimer) clearTimeout(this.cursorTimer);
     this.cursorTimer = null;
     this.cursorsSentAt = performance.now();
@@ -942,12 +984,8 @@ class Session {
       const c = this.cursorOut.take(conn);
       if (c) this.send(conn, { t: 'cursors', c });
     }
-    // Whoever's link was backed up: next time round.
-    if (this.cursorOut.waiting)
-      this.cursorTimer = setTimeout(() => {
-        this.cursorTimer = null;
-        this.planCursors();
-      }, FLUSH_EVERY_MS);
+    // Whoever's link was backed up (or what followed a press): next time round.
+    if (this.cursorOut.waiting) this.planCursors();
   }
 
   /** This device's pointer (PeerCursors.svelte), for the other players to see; null when it left the page. */
@@ -2290,6 +2328,7 @@ class Session {
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.cursorOut.clear();
+    this.cursorPressed.clear();
     if (this.cursorTimer) clearTimeout(this.cursorTimer);
     this.cursorTimer = null;
     peerCursors.clear();
