@@ -212,11 +212,19 @@ const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
  * `depth`, elsewhere once every wrong answer is a look-alike (Eternal, or
  * Custom with all look-alike names). Until then a question shows at most one
  * of a set, picked at random when the answer is none of them, so seeing one
- * says nothing about which option is right.
+ * says nothing about which option is right. A set told apart by its colours
+ * alone (`colour`) never meets in a question whose art is in grayscale,
+ * where nothing could tell them apart.
  */
-export const TWINS: { names: readonly string[]; depth: number }[] = [
+export const TWINS: { names: readonly string[]; depth: number; colour?: true }[] = [
   // Two stones each, told apart mostly by their colours.
   { names: ["Berek's Grip", "Berek's Pass", "Berek's Respite"], depth: 50 },
+  // The same brooch, turned another way.
+  { names: ["Zarokh's Refrain", "Zarokh's Revolt"], depth: 50 },
+  // The same lantern, at another angle or in another light.
+  { names: ["Uhtred's Omen", "Uhtred's Augury", "Uhtred's Exodus"], depth: 50 },
+  // The same sceptre, its glow cyan, red or violet.
+  { names: ['Guiding Palm of the Eye', 'Guiding Palm of the Heart', 'Guiding Palm of the Mind'], depth: 60, colour: true },
   // The same band, its blue and gold swapped and its glyph changed.
   { names: ['Call of the Brotherhood', 'Whisper of the Brotherhood'], depth: 70 },
 ];
@@ -1089,7 +1097,7 @@ export class Engine {
   /** Which items' art looks alike (src/lib/looks.ts), once it has been fetched. */
   private looks: Looks | null;
   /** TWINS, as items (sets with fewer than two of them left out). */
-  private readonly twins: { items: Item[]; depth: number }[];
+  private readonly twins: { items: Item[]; depth: number; colour?: true }[];
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1110,7 +1118,7 @@ export class Engine {
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     const byName = new Map(items.map((it) => [it.name, it]));
-    this.twins = TWINS.map(({ names, depth }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), depth })).filter((t) => t.items.length > 1);
+    this.twins = TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
 
   /**
@@ -2470,10 +2478,10 @@ export class Engine {
     return names;
   }
 
-  /** The sets of twins (TWINS) that may not meet under `rules`. */
-  private apartTwins(rules: DifficultyRules): Item[][] {
+  /** The sets of twins (TWINS) that may not meet under `rules`, in a question whose art is `gray` or not. */
+  private apartTwins(rules: DifficultyRules, gray: boolean): Item[][] {
     const reach = rules.twins ?? (rules.similarNames >= 1 ? Infinity : 0);
-    return this.twins.flatMap((t) => (t.depth > reach ? [t.items] : []));
+    return this.twins.flatMap((t) => (t.depth > reach || (t.colour && gray) ? [t.items] : []));
   }
 
   /**
@@ -2614,12 +2622,16 @@ export class Engine {
       }
       return any;
     };
-    // Twins that may not meet yet: all but one of each set sit out, so they don't count.
-    const apart = this.apartTwins(rules);
+    // Delve: the art in grayscale or not, rolled for each question.
+    const grayRoll = rules.grayChance ? this.rng() < rules.grayChance : undefined;
+    // Twins that may not meet yet: all but one of each set sit out, so they
+    // don't count. Which ones can follow the mode (a name question may still
+    // turn into a picture one, and "find the art" may be the art in grayscale).
+    const apart = () => this.apartTwins(rules, grayRoll ?? (rules.grayscale === 'all' || (rules.grayscale === 'art' && mode === 'art')));
     const shareable = (unused: Item[], fakes: number) => {
       const left = new Map<string, number>();
       for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
-      for (const set of apart) {
+      for (const set of apart()) {
         const n = set.filter((it) => unused.includes(it)).length;
         if (n > 1) left.set(set[0].group, left.get(set[0].group)! - (n - 1));
       }
@@ -2644,7 +2656,7 @@ export class Engine {
     const need = count - 1;
     fakes = Math.min(fakes, maxFakes(count));
 
-    const benched = this.benchTwins(answer, apart, unused);
+    const benched = this.benchTwins(answer, apart(), unused);
     const fits = (it: Item) => !benched.has(it.id);
     const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group && fits(it));
     // Decoys come from the answer's own group (all rings, all bows…): a flask
@@ -2696,8 +2708,7 @@ export class Engine {
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    // Delve: the art in grayscale or not, rolled for each question.
-    const gray = rules.grayChance ? { gray: this.rng() < rules.grayChance } : {};
+    const gray = grayRoll === undefined ? {} : { gray: grayRoll };
     const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
     return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
   }

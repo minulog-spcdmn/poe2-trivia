@@ -23,14 +23,19 @@ const real = (q: Question) => q.options.filter((id) => !isFake(id));
 /** The twin sets with more than one of their members on screen. */
 const met = (q: Question) => TWINS.filter((t) => t.names.filter((n) => real(q).includes(byName.get(n)!.id)).length > 1);
 
-/** Ring questions played one after another, each answer used up, as in a game. */
-function ringQuestions(settings: Partial<Settings>, seed: number, n = 1500): Question[] {
+/** The categories twins are in. */
+const CATEGORIES = [...new Set(TWINS.map((t) => byName.get(t.names[0])!.category))];
+
+/** Questions in each twin category played one after another, each answer used up, as in a game. */
+function twinQuestions(settings: Partial<Settings>, seed: number, n = 1500): Question[] {
   const engine = new Engine(items, { rng: seeded(seed), fakes });
-  const s = createGame(null, { targetScore: 5, timer: 0, mode: 'turns', public: false, locked: false, ...settings });
-  return Array.from({ length: n }, () => {
-    const q = engine.makeQuestion(s, 'Rings');
-    s.used.push(q.itemId);
-    return q;
+  return CATEGORIES.flatMap((category) => {
+    const s = createGame(null, { targetScore: 5, timer: 0, mode: 'turns', public: false, locked: false, ...settings });
+    return Array.from({ length: n }, () => {
+      const q = engine.makeQuestion(s, category);
+      s.used.push(q.itemId);
+      return q;
+    });
   });
 }
 
@@ -44,7 +49,7 @@ test('every twin is a real item, each set from one group', () => {
 
 for (const difficulty of ['cruel', 'merciless'] as Difficulty[]) {
   test(`on ${difficulty}, twins never meet, yet each comes up as the answer and as a wrong option`, () => {
-    const qs = ringQuestions({ difficulty }, 3);
+    const qs = twinQuestions({ difficulty }, 3);
     for (const q of qs) assert.deepEqual(met(q), [], `${met(q).map((t) => t.names)} met`);
     for (const { names } of TWINS) {
       for (const name of names) {
@@ -58,17 +63,22 @@ for (const difficulty of ['cruel', 'merciless'] as Difficulty[]) {
 }
 
 test('custom keeps twins apart until every wrong answer is a look-alike', () => {
-  const half = ringQuestions({ difficulty: 'custom', custom: { ...PRESETS.eternal, similarNames: 0.5 } }, 4);
+  const half = twinQuestions({ difficulty: 'custom', custom: { ...PRESETS.eternal, similarNames: 0.5 } }, 4);
   assert.ok(half.every((q) => !met(q).length), 'half look-alikes: apart');
-  const all = ringQuestions({ difficulty: 'custom', custom: { ...PRESETS.merciless, similarNames: 1 } }, 4);
+  const all = twinQuestions({ difficulty: 'custom', custom: { ...PRESETS.merciless, similarNames: 1 } }, 4);
   assert.ok(all.some((q) => met(q).length), 'all look-alikes: they meet');
 });
 
-test('on Eternal, every set of twins meets', () => {
-  const qs = ringQuestions({ difficulty: 'eternal' }, 5);
+test('on Eternal, every set of twins meets, but those told apart by colour alone never in grayscale', () => {
+  const qs = twinQuestions({ difficulty: 'eternal' }, 5);
   for (const { names } of TWINS) {
     assert.ok(qs.some((q) => met(q).some((t) => t.names === names)), `${names} meet`);
   }
+  // Eternal shows "find the art" pictures in grayscale, so those meet in name questions only.
+  for (const q of qs) if (q.mode === 'art') assert.ok(!met(q).some((t) => t.colour), `${met(q).map((t) => t.names)} met in grayscale`);
+  const gray = twinQuestions({ difficulty: 'custom', custom: { ...PRESETS.eternal, grayscale: 'all' } }, 5);
+  assert.ok(gray.every((q) => !met(q).some((t) => t.colour)), 'never with all art in grayscale');
+  assert.ok(gray.some((q) => met(q).some((t) => !t.colour)), 'the others still meet');
 });
 
 test('in Delve, twins meet from their depth on (a find from its deeper one)', () => {
@@ -77,12 +87,16 @@ test('in Delve, twins meet from their depth on (a find from its deeper one)', ()
   base = engine.apply(base, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
   base = engine.apply(base, { type: 'start' }, null);
   /** Which sets met at `depth`, over a fresh pool each question. */
-  const meetsAt = (depth: number, find?: 'flare') => {
+  const meetsAt = (depth: number) => {
     const seen = new Set<string>();
-    for (let i = 0; i < 600; i++) {
-      const s: GameState = structuredClone(base);
-      s.round = depth;
-      for (const t of met(engine.makeQuestion(s, 'Rings', find ? { find } : {}))) seen.add(t.names[0]);
+    for (const category of CATEGORIES) {
+      for (let i = 0; i < 600; i++) {
+        const s: GameState = structuredClone(base);
+        s.round = depth;
+        const q = engine.makeQuestion(s, category);
+        if (q.gray) assert.ok(!met(q).some((t) => t.colour), `${met(q).map((t) => t.names)} met in grayscale at ${depth}`);
+        for (const t of met(q)) seen.add(t.names[0]);
+      }
     }
     return seen;
   };
