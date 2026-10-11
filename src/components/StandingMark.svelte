@@ -1,8 +1,9 @@
 <!-- How a player in the lobby stands, when not simply ready (lib/presence.ts),
      as a mark on their chip beside the host's banner or the ×: a word in a
-     box sat badly in the round chips. Away: a crescent moon (the screen gone
-     dark). Idle: the spectators' eye (WatchEye), closed. Lagging: a signal
-     with only its two short bars lit. Offline: no bar lit, a cross beside them. -->
+     box sat badly in the round chips. Idle: a crescent moon (dozing, as
+     chat apps show it). Away: the spectators' eye (WatchEye), closed (not
+     looking at the game). Lagging: a signal with only its two short bars
+     lit. Offline: no bar lit, a cross beside them. -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { STANDING_TEXT, type Standing } from '../lib/presence';
@@ -15,9 +16,9 @@
 
 <span class="mark {standing}" role="img" aria-label={text.tag} title={text.title} transition:fade={{ duration: 250 }}
   ><svg viewBox="0 0 24 24" aria-hidden="true">
-    {#if standing === 'away'}
+    {#if standing === 'idle'}
       <path d="M10.83 5.01A7.6 7.6 0 1 0 18.55 14.54A6.2 6.2 0 0 1 10.83 5.01Z" />
-    {:else if standing === 'idle'}
+    {:else if standing === 'away'}
       <path d="M2.5 10.5A11.6 11.6 0 0 0 21.5 10.5" /><path d="M6.6 14.4l-1.3 2.1M12 16.2v2.5M17.4 14.4l1.3 2.1" />
     {:else}
       <path class="bar" class:faint={standing === 'offline'} d="M6 19.5v-3M10.5 19.5v-6.5" /><path class="bar faint" d="M15 19.5v-10M19.5 19.5v-13.5" />

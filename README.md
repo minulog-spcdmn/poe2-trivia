@@ -608,10 +608,10 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     way, and **Take a seat** again. The choice holds through reconnects.
   - **Who's ready:** in the lobby, a player's chip carries a mark, where the
     host has their banner, when they aren't simply there
-    (`src/components/StandingMark.svelte`): a crescent moon when their game
+    (`src/components/StandingMark.svelte`): a closed eye when their game
     isn't on their screen (another tab or app, or the screen off, for more
-    than a couple of seconds), a closed eye when they haven't touched it for
-    two minutes, signal bars with two lit when their game answers the host's
+    than a couple of seconds), a crescent moon when they haven't touched it
+    for two minutes, signal bars with two lit when their game answers the host's
     pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
     unlit bars with a cross when they're offline. Away, idle and offline
     chips dim. Beside Begin the host sees "All 4 exiles here and ready" with
