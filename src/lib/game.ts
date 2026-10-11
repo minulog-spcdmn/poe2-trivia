@@ -447,6 +447,17 @@ export interface Delve {
   /** Questions dynamite blasted away in this run (missing for none, and in older saves). */
   blasts?: number;
   /**
+   * Co-op: depths the team cleared in a row with nobody missing (a wrong
+   * answer breaks it even when a ward took the loss, and so does a time-out
+   * or an answer given to a question blasted away). Missing for none, in
+   * solo runs and in older saves.
+   */
+  teamStreak?: number;
+  /** Co-op: the longest `teamStreak` this run (missing for none). */
+  bestTeamStreak?: number;
+  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone at the next depth. */
+  missedHere?: true;
+  /**
    * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
    * after the run moved on to it, as the plunge into it lands. Every screen
    * shows them then. A pick sooner is refused; a vote sooner is kept, but
@@ -727,6 +738,13 @@ export interface Reveal {
   forged?: boolean;
   /** Delve: Azurite Wards took this answer's whole loss, so no life was lost. */
   warded?: boolean;
+  /**
+   * Delve co-op: the team's streak (Delve.teamStreak) as this reveal leaves
+   * it, and `teamLost`, the one it ended (missing when none ended). What the
+   * verdict's chip burns with, for everyone.
+   */
+  teamStreak?: number;
+  teamLost?: number;
   /**
    * Delve: a wrong answer (or a time-out) to an Azurite Vein, which caves in
    * for two losses (delve.ts findLosses). Lost a life on the last one: just that.
@@ -1013,11 +1031,20 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
  * going or loses it. Race: the winner's goes on and everyone else's breaks,
  * whether they guessed wrong or just weren't first. Delve co-op: whoever
  * cleared the depth keeps theirs going; a loss already broke anyone's it hit.
+ * The team's goes on with a depth cleared with nobody missing on it.
  */
 function countStreaks(s: GameState, r: Reveal) {
   if (s.delve && isGroupRun(s)) {
     const winner = s.players.find((p) => p.id === r.winnerId);
     if (winner) winner.streak = (winner.streak ?? 0) + 1;
+    const dm = s.delve;
+    const was = dm.teamStreak ?? 0;
+    const n = r.correct && !dm.missedHere && !r.hits?.length ? was + 1 : 0;
+    if (n) dm.teamStreak = n;
+    else delete dm.teamStreak;
+    if (n > (dm.bestTeamStreak ?? 0)) dm.bestTeamStreak = n;
+    r.teamStreak = n;
+    if (!n && was) r.teamLost = was;
     return;
   }
   if (s.settings.mode === 'race') {
@@ -1570,6 +1597,8 @@ export class Engine {
               else delete packs[p.id];
               if (Object.hasOwn(snap.streaks, p.id)) p.streak = snap.streaks[p.id];
             }
+            // Nobody has missed at this depth, as at the pick (the team's streak only moves at a reveal).
+            delete dm.missedHere;
             // Back on their feet, those cut off among them get the grace too.
             dm.excused = cutOff();
           } else {
@@ -2082,6 +2111,7 @@ export class Engine {
     }
     const took = this.hit(s, from);
     struck.push({ index, by: from, at: now, ...took });
+    s.delve!.missedHere = true;
     const chosenId = q.options[index];
     if (isFake(chosenId) && !s.used.includes(chosenId)) s.used.push(chosenId);
     this.coopCarryOn(s);
@@ -2196,6 +2226,7 @@ export class Engine {
       s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
       delete s.delve.find;
       delete s.delve.asked;
+      delete s.delve.missedHere;
       if (deeper && opensZone(s.round)) s.delve.dealAt = this.now() + ZONE_DESCENT_MS;
       else delete s.delve.dealAt;
     }

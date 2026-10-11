@@ -75,6 +75,13 @@ the same thing for everyone.
     option. The first right answer clears the depth and takes the find, if
     the card was one. A time-out costs everyone standing who hasn't
     answered.
+  - The team keeps a streak of its own: depths cleared in a row with
+    nobody missing (a wrong pick ends it even when a ward took the loss,
+    and so does one on a question blasted away, or a time-out). The
+    verdict at the reveal burns with it for everyone, from three in a row,
+    in a Delve streak's colours, and when it ends its fire goes out on the
+    verdict in a puff of smoke. Each player's own streak burns on their
+    entry on the scoreboard. The end screen gives the team's longest.
   - Flares go off from the pack of a random holder still standing, and
     help everyone. Only a player standing who hasn't answered and holds a
     stick of dynamite may press Detonate, and it spends theirs (a
