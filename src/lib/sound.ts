@@ -65,7 +65,21 @@ export type Sfx =
   /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
   | 'caveIn'
   /** Delve: a Dynamite Cache answered wrong; its blast destroys something the player carries. */
-  | 'itemBlown';
+  | 'itemBlown'
+  /** Delve: a new zone's title card (components/zonecard): a soft tick as each letter of its name lands. */
+  | 'zoneTick'
+  /** Delve: the zone's name locks in, on its sound's second swell: a whoosh, a low thump and a ring. */
+  | 'zoneLock'
+  /** Delve: the chime over the zone's name, on its sound's loudest note. */
+  | 'zoneSting'
+  /** Delve: the zone's name leaves, as its place has it: burning away, */
+  | 'zoneBurn'
+  /** ...shattering like ice, */
+  | 'zoneShatter'
+  /** ...drifting off on the air, */
+  | 'zoneDrift'
+  /** ...or pulled into the void. */
+  | 'zoneVoid';
 
 let muted = (() => {
   return readStored('muted') === '1';
@@ -446,6 +460,18 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
     src.stop(end + STOP_FADE);
   }
   return { src, gain: g };
+}
+
+/**
+ * How far behind the page the speakers are (ms, at most 150): what a
+ * picture timed to a sound waits, so the two land together (a zone's name
+ * locking on its swell, heard through a Bluetooth headset). 0 before any
+ * sound has started.
+ */
+export function audioLead(): number {
+  const ac = bus?.ac;
+  if (!ac) return 0;
+  return Math.round(Math.min(0.15, Math.max(0, ac.outputLatency || ac.baseLatency || 0)) * 1000);
 }
 
 /** How long (s) a sound stopped early takes to fade out (see sfx). */

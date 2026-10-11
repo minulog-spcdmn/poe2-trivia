@@ -339,15 +339,15 @@ the same thing for everyone.
   (not a run's first depth, after a reload, or the same depth dealt again):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
-  Into a new zone (its gate's depth) it plunges much further, 5 screens,
+  Into a new zone (its first depth) it plunges much further, 5 screens,
   for as long as the zone's sound rings (7 s), its speed following the
   sound: it drops hard with the first blow, eases off as the sound dies
   down, is carried down again by its second swell and glides to rest as it
   fades. Meanwhile the stage stands empty and the header keeps the depth
-  before; the new depth, its gate and its cards come in as the plunge
-  lands, at one moment for the whole team (a vote cast sooner opens its
-  window no sooner). It is skipped with reduced motion or effects off (the
-  wait for the cards is not).
+  before, while the zone's title card names it (below); the new depth and
+  its cards come in as the plunge lands, at one moment for the whole team
+  (a vote cast sooner opens its window no sooner). It is skipped with
+  reduced motion or effects off (the wait for the cards is not).
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience, a hearth fire, sinks with the depth, over a slow
@@ -356,19 +356,53 @@ the same thing for everyone.
   cross-fade as the scene turns, in step with its light. Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
   (the surface, say) instead of passing through every zone.
-- A new zone is announced, as the plunge into it lands, by a gate built
-  over the depth banner, so "Depth N" stands in its doorway: engraved
+- A new zone is named by a title card in the plunge into it, timed to the
+  zone's sound: letterbox bars close in with the first blow (over the
+  header's old depth) and the scene behind darkens a little; as the sound
+  dies down, the place shows (the scene takes the new zone's colours as it
+  falls), the zone's sigil draws itself in a worn seal and a meta line
+  ("Depth 10 • Zone II", or "• Deeper than ever" alone past your best)
+  tracks out between rules ending in Sol and Luna; the name's letters
+  gather, a soft tick as each lands, and lock on the sound's second swell
+  with a whoosh, a thump and a chime, lighting the scene behind them, a
+  divider struck out under them. A subtitle follows ("Magma Fissure • The
+  rock is split, and it burns"), then up to three things new in the zone,
+  each in a small engraved seal (a find's item, a number, or an
+  alchemist's sign: "Dynamite Cache", "6 Options", "Mirrored art"). It
+  holds, then leaves as its place has it, before the cards are dealt, the
+  bars opening as control comes back. Each zone, and each kind of place
+  past 100, moves after its look:
+  - fire (Magma Fissure, Primeval Ruins in blue, forges, reliquaries)
+    rises out of the divider's opened fissure white-hot, embers rising and
+    heat shimmering in its glow, and burns away left to right;
+  - ice (Frozen Hollow, frozen abysses, glacial pyres) condenses from
+    above, glinting, under falling snow, and shatters on jagged seams;
+  - spores (Fungal Caverns, sunken gardens, witchfire groves) drift in from
+    a scatter in no order, breathing, and are exhaled into motes;
+  - the void (Abyssal Depths, void blooms, blood eclipses) pulls the glyphs
+    together out of a spiral, ghosts in split colours closing in, and
+    draws them into its turning seal;
+  - light (Vaal Outpost, Abyssal City's lanterns, necropolises, starfalls,
+    drowned temples' rippling tide) lights each letter like a lamp, a shaft
+    of light crossing the name as it locks, and puts them out in turn;
+  - fumes (Sulphur Vents, sulphur marshes; the Petrified Forest's stone,
+    which crumbles) lift the letters out of a fog of the zone's colour and
+    carry them off.
+
+  With reduced motion or effects off it fades in whole, holds and fades
+  out; a screen that saw the run move on late gets the same, sooner, and a
+  reload mid-plunge none (a screen reader is told where the run has come
+  either way). The run's opening (the Mines) is marked by a gate built over
+  the depth banner instead, so "Depth N" stands in its doorway: engraved
   columns rise beside the heading, a lintel is lowered onto them with the
   zone's name lit along its face, and a keystone bearing the zone's sigil
-  is set in its crown, all in the zone's
-  colour, the zone's light showing faintly through the doorway. It is built
-  in about a second, holds about four and leaves as you pass through it;
-  it never covers the cards or the player strip, or takes a tap, and the
-  head keeps room for it above the banner throughout a run, so nothing
-  moves when it comes or goes. With reduced motion or effects off it only
-  fades in and out. Alone, the same gate marks the first depth past your
-  best ("Deeper than ever"). The header names the zone beside the depth,
-  both in its colour (on a second line on phones).
+  is set in its crown, all in the zone's colour; it is built in about a
+  second, holds about four and leaves as you pass through it, never
+  covering the cards or taking a tap (with reduced motion or effects off
+  it only fades in and out). Alone, the same gate marks the first depth
+  past your best ("Deeper than ever") where no zone begins. The header
+  names the zone beside the depth, both in its colour (on a second line on
+  phones).
 - A run ends as a fall, not a victory. Alone, the end screen says "Perished"
   (or "Deeper than ever"), with your depth, where your lives went and your
   best. Together it says "The descent ends", with the team's depth and the
@@ -710,7 +744,7 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   other modes exactly as the whole would. Delve's programs are built in the
   background once Delve is on its way (`wantDelveBackdrop`: Delve picked in a
   lobby, a Delve room joined, a run picked up or begun from a `?delve` link,
-  the lab, the zone gate page and the backdrop tool), with
+  the lab, the zone tuning page and the backdrop tool), with
   `buildPrograms` in `src/lib/fx/gl.ts` (`KHR_parallel_shader_compile`
   polled once a frame, or one program per idle moment without it), and are
   drawn once each, small, so the GPU has them ready. Should a Delve scene
@@ -798,10 +832,24 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
   ring and drawn by the backdrop, with a thin late shade at the screen's
-  edges (`Darkness.svelte`). The zone gate (`src/components/zonebanner/`,
-  with the zones' sigils in `src/lib/zoneSigils.ts`) and the find cards
-  (`findEngraving.ts`) are engraved in the arcane style, and a run's end
-  has its own effect (`src/lib/fx/delveEnd.ts`).
+  edges (`Darkness.svelte`). A new zone's title card: `src/lib/zoneTitle.ts`
+  says what it shows for a depth (name, subtitle, meta line, what is new
+  from `delveRules` and the finds, and its treatment: the family of motion
+  and its colours), `src/lib/zoneTitleTiming.ts` when (its beats from the
+  plunge's start, the name locking on the zone sound's second swell; the
+  compact and still timelines; the light it casts, `glowAt`; one pen for
+  a broken line, `drawPlan`), `src/lib/zoneArrival.svelte.ts` sets it up
+  as App starts the plunge (its sounds booked on the audio clock with
+  `sfx`'s `inMs`, the name timed to the speakers' lag, `audioLead`), and
+  `src/components/zonecard/ZoneCard.svelte` plays it, every animation on
+  its own clock (WAAPI from the plunge's start), with the seal
+  (`ZoneSeal.svelte`, the sigil's strokes from `sigilStrokes`), the marks
+  of what is new (`NewsMark.svelte`) and a family of motion each
+  (`ember.ts`, `rime.ts`, `spore.ts`, `void.ts`, `light.ts`, `fume.ts`, to
+  the contract in `family.ts`). The zone gate (`src/components/zonebanner/`,
+  with the zones' sigils in `src/lib/zoneSigils.ts`), the zone card's seal
+  and the find cards (`findEngraving.ts`) are engraved in the arcane style,
+  and a run's end has its own effect (`src/lib/fx/delveEnd.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a
@@ -998,20 +1046,27 @@ and how the embers move. Every change shows at once.
   data-backdrop-tool>`), so `src/lib/storage.ts` starts its keys with
   `backdrops.` and its drafts and settings never reach the game's.
 
-### The zone gate's tuning page
+### The zone tuning page
 
-`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone gate
-(`src/components/zonebanner/Threshold.svelte`) in place: the real game
-screen (a Delve run of the lab's, in a frame) with the gate built over its
-head, timed as in a game.
+`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone title
+card (`src/components/zonecard/`) in place: the real game screen (a Delve
+run of the lab's, in a frame) stepping down into a zone the engine's way,
+so the plunge, its sound, the scene's colours and the deal as it lands are
+all as in a game.
 
-- **Zone:** any of the ten zones, two long endgame-style names (to check
-  the fit of a long name) or "Deeper than ever". Each play sets the run's
-  depth quietly first, so the header, the scene and the colours are the
-  zone's; **Replay** (or R) builds the gate again.
-- **Phone width** shows the screen at 375 px; **Hold** keeps the gate up;
-  **Effects off** and **Reduced motion** show it as those players see it
-  (it only fades in and out).
+- **Zone:** any of the nine zones past the Mines, the endgame's first five
+  strata (one of each of several kinds of place), the widest name an
+  endgame stratum can have (to check its fit), and a zone reached past
+  your best. Two entries build the zone gate instead
+  (`src/components/zonebanner/Threshold.svelte`), as it opens a run and
+  marks a new best. **Replay** (or R) plays it again.
+- **Family:** shows the zone with another family's motion (fire, ice,
+  spores, the void, light, fumes) to compare them on one place.
+- **Phone width** shows the screen at 375 px. **Freeze** keeps the card up
+  (its cards never dealt) and stops it at the moment the slider sets, to
+  look at any frame of it. **Effects off** and **Reduced motion** show it
+  as those players see it (it fades in and out whole). Click the screen
+  once for sound.
 - **Open it:** `npm run dev`, then `http://localhost:5173/zones.html`; on
   the beta, **poe2.quest/beta/zones.html**. Like the lab, the live build
   leaves it out, and its page is marked (`<html data-lab data-zones>`), so

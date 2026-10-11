@@ -1,8 +1,10 @@
 <script lang="ts">
   import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
-  import { shownDepth } from './lib/delve';
-  import { followDeal, shownRound } from './lib/dealing.svelte';
+  import { isGroupRun, shownDepth } from './lib/delve';
+  import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
+  import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
+  import ZoneCard from './components/zonecard/ZoneCard.svelte';
   import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
@@ -132,8 +134,8 @@
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
   // question set aside; see dealtDeeper). Into a new zone (its gate's
-  // depth) much further, with the zone's sound, its cards dealt as it lands
-  // (DelveState.dealAt).
+  // depth) much further, with the zone's sound and its title card, its cards
+  // dealt as it lands (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
@@ -142,10 +144,22 @@
       const zone = !!milestoneAt(now.depth);
       plunge(zone);
       sfx('plunge');
-      if (zone) sfx('stratum');
+      if (zone) {
+        sfx('stratum');
+        const s = gs;
+        untrack(() => beginArrival(s, session.hostNow(), { best: session.bestAtStart, group: isGroupRun(s) }));
+      }
     }
     lastDealt = now;
   });
+  // A zone's card belongs to the game it came in: leaving it, the card goes.
+  $effect(() => {
+    if (screen !== 'game' || !gs?.delve) untrack(endArrival);
+  });
+  /** The zone card under way, while the stage waits for its cards (and only for the run and depth it came for). */
+  const zoneCard = $derived(
+    arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
+  );
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
@@ -366,6 +380,11 @@
   {/if}
 </div>
 
+{#if zoneCard}
+  {#key zoneCard.key}
+    <ZoneCard a={zoneCard} bar={headerHeight} />
+  {/key}
+{/if}
 <Toasts headerHeight={headerOn ? headerHeight : 0} />
 
 <FxLayer />

@@ -984,6 +984,19 @@ export function descended() {
 }
 
 /**
+ * Delve: a new zone's name locks in on its title card (components/zonecard):
+ * the backdrop's embers flare and all take the zone's colour. Even with the
+ * effects off, as the colour is the zone's.
+ */
+export function zoneArrival() {
+  backdropEmbers.flare(0.85, 2.4);
+  backdropEmbers.recolor();
+}
+
+/** A CSS colour as a light's colour (lib/lights.ts): its hue, at full strength. */
+export const accentLight = (css: string): Vec3 => unit(hdr(css, 1));
+
+/**
  * Delve: a named depth reached; its plaque (`card`) lies over the banner.
  * Light streaks along it, sparks fly off its pointed ends, embers rise off
  * its top edge and it lights the stage; the backdrop's embers flare and all

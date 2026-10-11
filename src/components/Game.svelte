@@ -14,7 +14,7 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { REVIVE_FROM, delveDepth, fellAt, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { REVIVE_FROM, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
   import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
@@ -26,6 +26,7 @@
   import { untrack } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
+  import { arrival } from '../lib/zoneArrival.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -172,16 +173,18 @@
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
 
   // Delve: going down into a new zone, the stage stands empty over the
-  // plunging scene until its cards are dealt as the plunge lands
-  // (lib/dealing.svelte.ts); then the depth, its gate and its cards come in together.
+  // plunging scene, where the zone's title card names it (components/zonecard),
+  // until its cards are dealt as the plunge lands (lib/dealing.svelte.ts); then
+  // the depth and its cards come in together.
   const held = $derived(dealing.held);
   /** The stage in play: the turn's, or an empty one while its cards are on their way. */
   const stageKey = $derived(held ? `held:${s.turnCount}` : `${s.turnCount}`);
 
-  // Delve: a gate at the start of a depth worth it (a new zone, a new best),
-  // built over the head of the stage for a few seconds (zonebanner/Threshold).
-  // Only when the run is seen going one deeper, and at its very start, where
-  // the first zone's gate opens it: a start this device saw (session.runStarted),
+  // Delve: a gate at the start of a depth worth it (a new best alone, and the
+  // run's very start, where the first zone's gate opens it), built over the
+  // head of the stage for a few seconds (zonebanner/Threshold); a new zone's
+  // name has its title card instead, in the plunge into it. Only when the run
+  // is seen going one deeper, or at a start this device saw (session.runStarted),
   // not a reload or a rejoin during the first choice. It belongs to its turn: the next one clears it.
   type Card = { key: string; turn: number; title: string; sigil: string; accent: string; label: string; leaving: boolean; still: boolean };
   let card = $state<Card | null>(null);
@@ -198,25 +201,31 @@
     depthSeen = key;
     // The run's first depth: the first zone's gate, as each new zone gets one.
     const opening = !deeper && depth === 1 && session.runStarted === run.startedAt;
-    if (!deeper && !opening) return;
+    if (!deeper && !opening) {
+      // Come back into the game as a new zone's cards were on their way (a reload): it was never named, so a screen reader is told now.
+      const zoneName = milestoneAt(depth);
+      if (zoneName && opensZone(depth) && untrack(() => arrival.shownFor) !== key) untrack(() => (arrival.spoken = `Depth ${shownDepth(depth)}: ${zoneName}.`));
+      return;
+    }
     untrack(() => {
       if (deeper) descended();
       // Tinted by the zone it opens (the depth's colour on the header), bearing its sigil and its ornament.
       const accent = accentAt(depth);
-      const name = opening ? stratumName(0) : milestoneAt(depth);
+      // A new zone is named by its title card in the plunge into it (components/zonecard), the run's first here.
+      const name = opening ? stratumName(0) : null;
       const sigil = zoneAt(depth);
       const best = session.bestAtStart;
       const turn = s.turnCount;
       const still = motion.still;
       let next: Card | null = null;
       if (name) next = { key, turn, title: name, sigil, accent, label: `Depth ${shownDepth(depth)}: ${name}.`, leaving: false, still };
-      else if (!group && best !== null && depth === best + 1)
+      // (On a zone's first depth, its card says so instead.)
+      else if (!group && best !== null && depth === best + 1 && !opensZone(depth))
         next = { key, turn, title: 'Deeper than ever', sigil, accent, label: `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best)}.`, leaving: false, still };
       if (!next) return;
       card = next;
-      // A run's opening gate keeps the game's start sound (session.svelte.ts) to
-      // itself, and a new zone's sounded as the plunge into it began (App.svelte).
-      if (!opening && !name) sfx('stratum');
+      // A run's opening gate keeps the game's start sound (session.svelte.ts) to itself.
+      if (!opening) sfx('stratum');
       cardTimers.forEach(clearTimeout);
       cardTimers = [
         setTimeout(() => card?.key === key && (card.leaving = true), ZONE_HOLD * 1000),
@@ -327,7 +336,7 @@
 {/snippet}
 
 <div class="game">
-  <p class="sr" aria-live="polite">{zone?.label ?? ''}</p>
+  <p class="sr" aria-live="polite">{zone?.label ?? arrival.spoken}</p>
   <Scoreboard aside={phone.current ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,

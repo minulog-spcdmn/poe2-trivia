@@ -4,7 +4,7 @@ import { thresholdArt, type ThresholdArt } from '../src/components/zonebanner/th
 import type { Head } from '../src/components/zonebanner/head.ts';
 import { sigilOf, SIGIL_NAMES, zoneAt } from '../src/lib/zoneSigils.ts';
 import { STRATA, stratumName } from '../src/lib/descent.ts';
-import { ARCHETYPES, composedNames, NAME_MOST } from '../src/lib/archetypes.ts';
+import { ARCHETYPES } from '../src/lib/archetypes.ts';
 import { emblemOf } from '../src/lib/backdrops.ts';
 
 // The head of the stage as measured in the app (Game.svelte's .head, a Delve
@@ -19,7 +19,8 @@ const CASES = [
   { head: PHONE, em: EM.phone, per: PER_CHAR.phone },
   { head: DESK, em: EM.desk, per: PER_CHAR.desk },
 ];
-const NAMES = ['The Mines', 'Deeper than ever', 'Crypts of the Pale Choir'];
+// The gate names the run's first zone and a new best (a new zone has its title card, components/zonecard).
+const NAMES = ['The Mines', 'Deeper than ever'];
 
 /** Every point a path's data names (of an arc, its end). */
 const points = (d: string) =>
@@ -116,15 +117,4 @@ test('the lintel is drawn out from the middle, and the gate is built in about a 
   assert.ok(from(sorted[0]) < from(sorted.at(-1)!));
   // The keystone is set at 0.72 s (Threshold.svelte); everything else is drawn by then or soon after.
   assert.ok(Math.max(...strokes(a).map((s) => s.delay + s.t)) <= 1);
-});
-
-test("the endgame's names fit the gate on a 375 px phone, as the zones' do", () => {
-  const names = ARCHETYPES.flatMap((a) => [...a.names, ...composedNames(a)]);
-  const longest = Math.max(...names.map((n) => n.length));
-  assert.ok(longest <= NAME_MOST, `${longest} characters`);
-  // And the gate is made for 24 (a little past the longest), with room to spare.
-  for (const chars of [longest, 24]) {
-    const a = thresholdArt(PHONE, PER_CHAR.phone * chars, EM.phone);
-    assert.ok(a.x0 >= 0 && a.x1 <= PHONE.w, `${chars} characters: the lintel runs from ${a.x0} to ${a.x1}`);
-  }
 });

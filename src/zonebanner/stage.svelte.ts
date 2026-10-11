@@ -1,8 +1,11 @@
 // The tuning page's stage (zones.html?stage, in the panel's frame): the real
-// game screen on a Delve run of the lab's (src/lab), and Delve's zone gate
-// (components/zonebanner/Threshold) built over the head of the stage on
-// request, timed as Game.svelte times it, for any name. The panel drives it
-// through `window.__zb`.
+// game screen on a Delve run of the lab's (src/lab). A new zone's title card
+// (components/zonecard) plays as in a game, the run stepping down into the
+// zone the engine's way (its cards dealt as the plunge lands), with any name
+// or family of motion, and can be stopped at any moment; the zone gate
+// (components/zonebanner/Threshold), which now opens a run and marks a new
+// best, is built over the head of the stage on request, timed as Game.svelte
+// times it. The panel drives it through `window.__zb`.
 
 import { mount, unmount } from 'svelte';
 import '../app.css';
@@ -14,6 +17,9 @@ import { motion } from '../lib/motion.svelte';
 import { session } from '../lib/session.svelte';
 import { wantDelveBackdrop } from '../lib/backdrop';
 import * as L from '../lab/controls.svelte';
+import { endArrival, previewNext } from '../lib/zoneArrival.svelte';
+import { seekCard } from '../components/zonecard/ZoneCard.svelte';
+import type { Family } from '../lib/zoneTitle';
 
 installUiFx();
 // The run's depth jumps earn the lab's player achievements; their toasts would
@@ -94,4 +100,35 @@ async function play(o: Play) {
   if (!o.hold) timers.push(setTimeout(() => id === shown?.id && leave(), HOLD * 1000));
 }
 
-Object.assign(window, { __zb: { play, leave, clear, ready: true }, __s: session, __lab: L });
+export type CardPlay = {
+  /** The zone's first depth. */
+  depth: number;
+  /** Shown instead of the zone's own name. */
+  name?: string;
+  /** Moved as this family moves instead of its own. */
+  family?: Family;
+  /** Alone, past your best (its meta line says so). */
+  best?: boolean;
+  /** Kept up (its cards never dealt), to be stopped at any moment (seek). */
+  hold?: boolean;
+};
+
+/** Into the zone at `o.depth` the game's way: a step down from the depth before, with its plunge, sound and card. */
+async function card(o: CardPlay) {
+  ++serial;
+  clear();
+  endArrival();
+  seekCard(null);
+  previewNext({ name: o.name, family: o.family, hold: o.hold });
+  session.bestAtStart = o.best ? o.depth - 1 : null;
+  await L.zoneEnter(o.depth);
+  if (o.hold && session.state?.delve) {
+    // Its cards kept on their way, so the card stays.
+    const s = structuredClone(session.state);
+    s.delve!.dealAt = session.hostNow() + 3_600_000;
+    s.version++;
+    session.labSetState(s);
+  }
+}
+
+Object.assign(window, { __zb: { play, leave, clear, card, seek: seekCard, ready: true }, __s: session, __lab: L });

@@ -1374,6 +1374,8 @@ const ZONE_CURVE: Curve = (() => {
     breath: (x) => speed(x),
   };
 })();
+/** How far along the plunge into a new zone is (0 to 1) `x` of the way through it: what the scene has sunk, for what moves with it. */
+export const zoneSunk = (x: number) => ZONE_CURVE.at(x);
 
 /**
  * Steps the plunge to `now` (ms): starts one asked for (unless `allowed` is
