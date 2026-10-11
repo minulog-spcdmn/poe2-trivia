@@ -908,6 +908,10 @@
     font-size: 1.2rem;
     line-height: 1;
   }
+  /* Garamond's × rides above the middle of its line: let it down onto the ring's centre. */
+  .remove:not(.confirm) {
+    padding-top: 0.1em;
+  }
   /* Armed: the ring the × shows under the pointer grows sideways into a pill
      and the × gives way to Kick. Same ring, same red, only longer. */
   .remove {
