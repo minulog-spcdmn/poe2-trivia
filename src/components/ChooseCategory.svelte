@@ -299,84 +299,105 @@
 
   // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
   for (const url of categoryIcons()) measure(url);
+  // And the items behind the dealt cards' emblems (lib/ui, categoryCompanions).
+  $effect(() => {
+    for (const cat of s.offered) for (const c of categoryCompanions(cat)) measure(c.url);
+  });
 
   // A category that names several kinds of item shows one of each (lib/ui,
   // categoryCompanions): its emblem in front, and behind it, a little
   // smaller and darker, an item of each other kind, partly hidden but with
   // the part that says its kind in view. MOONS sets how they lie together,
-  // by eye for their shapes: the emblem's size and shift, and for each kind
-  // (its group) its item's offset (right and down), size and tilt (degrees,
+  // by eye for their shapes: for each kind (its group) its item's offset
+  // from the emblem (right and down), size against it and tilt (degrees,
   // clockwise), in px at a tall card's size, so that together they make
-  // one compact shape. The heap as a whole is then drawn as one emblem
-  // would be, centred and sized by the same rule (see heapOf). A kind the
-  // data no longer has leaves its spot empty.
+  // one compact shape. The heap as a whole is then centred and sized as one
+  // emblem's box would be (see heapOf). A kind the data no longer has
+  // leaves its spot empty.
   type Spot = [x: number, y: number, k: number, turn: number];
-  type Moons = { k: number; up: number; left: number; at: Record<string, Spot> };
-  const MOONS: Record<string, Moons> = {
-    'Gloves & Boots': { k: 1, up: 0, left: 0, at: { Gloves: [18, -34, 0.85, 0] } },
-    'Amulets & Belts': { k: 1, up: 0, left: 0, at: { Amulets: [0, -44, 0.88, 0] } },
+  const MOONS: Record<string, Record<string, Spot>> = {
+    'Gloves & Boots': { Gloves: [18, -34, 0.85, 0] },
+    'Amulets & Belts': { Amulets: [0, -44, 0.88, 0] },
     'Flasks, Charms, Jewels, Relics & Tablets': {
-      k: 1,
-      up: 0,
-      left: 0,
-      at: {
-        Charms: [-43, -30, 0.42, -8],
-        Jewels: [44, -30, 0.46, 0],
-        Relics: [-34, 26, 0.6, -28],
-        Tablets: [34, 22, 0.46, 18],
-      },
+      Charms: [-43, -30, 0.42, -8],
+      Jewels: [44, -30, 0.46, 0],
+      Relics: [-34, 26, 0.6, -28],
+      Tablets: [34, 22, 0.46, 18],
     },
   };
+  /** How far the companions draw out from the heap's middle on hover, at most (see .moon). */
+  const SPREAD = 1.25;
+  /** A heap laid out: the emblem's size and shift on top of its tweak's, each kind's spot, and how far it may spread on hover. */
+  type Heap = { k: number; up: number; left: number; at: Record<string, Spot>; spread: number };
   /**
    * A category's heap, when it has companions to show, laid out as one
    * emblem: the box round all its items' visible parts (a tilted item's
-   * turned box) is centred in the window and scaled to a single item's
-   * size and bounds (lib/iconFit), so it covers the window as much as the
-   * emblems beside it. As set in
-   * MOONS until every item is measured.
+   * turned box) is centred in the window and scaled to a single item's size
+   * and bounds (lib/iconFit: WEIGHT, MAX_W, MAX_H; not its ink, which a
+   * heap's overlaps would overcount), so it covers the window as much as the
+   * emblems beside it. No item is drawn larger than its own fit (k 1): a
+   * larger one would grow upward from its foot (.glyph.fit), and a row
+   * holds every item to 1. As set in MOONS until every item is measured.
    */
-  function heapOf(cat: string): Moons | undefined {
-    const m = categoryCompanions(cat).length ? MOONS[cat] : undefined;
-    if (!m) return m;
+  function heapOf(cat: string): Heap | undefined {
+    const spots = MOONS[cat];
+    const companions = categoryCompanions(cat).filter((c) => spots?.[c.kind]);
+    if (!companions.length) return undefined;
     const t = categoryIconTweak(cat);
     const face = fits[categoryIcon(cat)];
-    if (!face) return m;
-    const ke = t.k * m.k;
-    /** Where the emblem's centre sits for a size and a shift (as .glyph.fit places it). */
-    const emblemAt = (k: number, up: number, left: number) => [-left, Math.min(0, ((1 - k) * face.h) / 2) - up];
-    const items: [x: number, y: number, w: number, h: number][] = [];
-    const add = (f: { w: number; h: number }, k: number, [x, y]: number[], turn: number) => {
+    const ready = !!face && companions.every((c) => fits[c.url]);
+    if (!ready) return { k: 1, up: 0, left: 0, at: spots, spread: 1 };
+    /** An item's box, turned by its tilt: [x, y, w, h], about its centre. */
+    const box = (f: { w: number; h: number }, k: number, x: number, y: number, turn: number) => {
       const [w, h] = [(f.w - 2 * PAD) * k, (f.h - 2 * PAD) * k];
       const r = (turn * Math.PI) / 180;
       const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
-      items.push([x, y, w * c + h * s, w * s + h * c]);
+      return [x, y, w * c + h * s, w * s + h * c];
     };
-    add(face, ke, emblemAt(ke, t.up + m.up, t.left + m.left), 0);
-    for (const c of categoryCompanions(cat)) {
-      const spot = m.at[c.kind];
-      if (!spot) continue;
-      if (!fits[c.url]) return m;
-      add(fits[c.url], spot[2], spot, spot[3]);
-    }
+    // The emblem where its tweak puts it (as .glyph.fit does), and the others round it.
+    const [ex, ey] = [-t.left, Math.min(0, ((1 - t.k) * face.h) / 2) - t.up];
+    const items = [box(face, t.k, ex, ey, 0), ...companions.map((c) => box(fits[c.url], ...spotOf(spots[c.kind], ex, ey)))];
     const x0 = Math.min(...items.map(([x, , w]) => x - w / 2));
     const x1 = Math.max(...items.map(([x, , w]) => x + w / 2));
     const y0 = Math.min(...items.map(([, y, , h]) => y - h / 2));
     const y1 = Math.max(...items.map(([, y, , h]) => y + h / 2));
     const [W, H, cx, cy] = [x1 - x0, y1 - y0, (x0 + x1) / 2, (y0 + y1) / 2];
-    const s = Math.min(WEIGHT / Math.sqrt(W * H), MAX_W / W, MAX_H / H);
-    const k = m.k * s;
-    const [ex, ey] = emblemAt(ke, t.up + m.up, t.left + m.left);
-    // The emblem's new centre, and the shift that puts it there at its new size.
+    const most = Math.max(t.k, ...companions.map((c) => spots[c.kind][2]));
+    const s = Math.min(WEIGHT / Math.sqrt(W * H), MAX_W / W, MAX_H / H, 1 / most);
+    const at = Object.fromEntries(companions.map((c) => {
+      const [x, y, k, turn] = spots[c.kind];
+      return [c.kind, [(ex + x - cx) * s, (ey + y - cy) * s, k * s, turn] as Spot];
+    }));
+    // At its new size the emblem is no larger than its fit, so it sits where its shift puts it.
     const [nx, ny] = [(ex - cx) * s, (ey - cy) * s];
-    const up = Math.min(0, ((1 - t.k * k) * face.h) / 2) - ny - t.up;
-    const at = Object.fromEntries(Object.entries(m.at).map(([kind, [x, y, kk, turn]]) => [kind, [(x - cx) * s, (y - cy) * s, kk * s, turn] as Spot]));
-    return { k, up, left: -nx - t.left, at };
+    return { k: s, up: -ny - t.up, left: -nx - t.left, at, spread: spreadOf(companions.map((c) => box(fits[c.url], ...spotOf(at[c.kind], 0, 0)))) };
+  }
+  /** A spot's size, centre (about the emblem at x, y) and tilt, as box() takes them. */
+  const spotOf = ([x, y, k, turn]: Spot, ex: number, ey: number) => [k, ex + x, ey + y, turn] as const;
+  /**
+   * How far (up to SPREAD) companions at these boxes may draw out from the
+   * window's middle and stay in the window: inside its sides and floor
+   * (84 px either side, 97 below) and its arch (radius 84, springing 22
+   * above the middle), as the plate draws it (lib/cardEngraving).
+   */
+  function spreadOf(boxes: number[][]) {
+    const inside = (far: number) =>
+      boxes.every(([x, y, w, h]) =>
+        [-1, 1].every((sx) =>
+          [-1, 1].every((sy) => {
+            const [px, py] = [x * far + (sx * w) / 2, y * far + (sy * h) / 2];
+            return Math.abs(px) <= 84 && py <= 97 && (py >= -22 || Math.hypot(px, py + 22) <= 84);
+          }),
+        ),
+      );
+    let far = SPREAD;
+    while (far > 1 && !inside(far)) far -= 0.01;
+    return far;
   }
   /** The emblem's style for a category: its fit, made room for its companions. */
-  function emblemStyle(cat: string) {
+  function emblemStyle(cat: string, heap: Heap | undefined) {
     const t = categoryIconTweak(cat);
-    const m = heapOf(cat);
-    return fitStyle(categoryIcon(cat), m ? { k: t.k * m.k, up: t.up + m.up, left: t.left + m.left } : t);
+    return fitStyle(categoryIcon(cat), heap ? { k: t.k * heap.k, up: t.up + heap.up, left: t.left + heap.left } : t);
   }
 
   // The deal: the cards slide in face down one after another, then turn face
@@ -532,6 +553,7 @@
 
   <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
+      {@const heap = heapOf(cat)}
       <button
         class="card"
         data-cursor="card:{i}"
@@ -574,9 +596,9 @@
               <span class="find-tag" data-zoom>{FIND_TEXT[kind].name}</span>
             {/if}
             <span class="icon">
-              {#if heapOf(cat)}
-                {@const at = heapOf(cat)!.at}
-                <span class="lit moons">
+              {#if heap}
+                {@const at = heap.at}
+                <span class="lit moons" style:--spread={heap.spread}>
                   {#each categoryCompanions(cat) as c (c.url)}
                     {#if at[c.kind]}
                       {@const [x, y, k, turn] = at[c.kind]}
@@ -587,7 +609,7 @@
                   {/each}
                 </span>
               {/if}
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={emblemStyle(cat)} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
             </span>
             <span class="title"
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
@@ -860,9 +882,8 @@
   }
   /* The companions (see MOONS), each centred on its spot round the emblem
      and tilted, behind it (under one shadow, as the emblem's). They're
-     darker, so they read as further back, but edged in the plate's ink, so
-     each keeps its shape against the window and the others; dimmed by a
-     filter, they keep the card's own colours. */
+     darker, so they read as further back; dimmed by a filter, they keep the
+     card's own colours. */
   .moons {
     position: absolute;
     inset: 0;
@@ -1067,10 +1088,10 @@
     filter: brightness(1.15);
   }
   /* The stack fans out: the companions draw out from behind the emblem,
-     staying in its shade (and in the window); only the emblem grows and
-     brightens, so it still leads. */
+     staying in its shade, and in the window (as far as heapOf finds they
+     can); only the emblem grows and brightens, so it still leads. */
   .card.mine:not(:global(.down)):hover .moon {
-    --far: 1.25;
+    --far: var(--spread, 1);
   }
   .card.mine:not(:global(.down)):hover .moon .glyph {
     transform: none;
