@@ -96,38 +96,35 @@ export const TREATMENTS: Record<string, Treatment> = {
 
 /**
  * One line under each place's name, as players will read it a hundred
- * times: a dry aside from the crew delving it, never spooky, never the name
- * over again, each on something real in Path of Exile (Niko's own words, a
- * biome's nodes, monsters and bosses, a fossil, an item, a patch) that a
- * player who knows it catches and one who doesn't still reads plainly. Some
- * wink at the rule the zone brings (Aul's short audiences, its 5 seconds).
- * Never more than SUBTITLE_MOST characters (one line on a 375 px phone),
- * with no full stop. Past depth 100 a kind of place's line goes under every
- * name it takes (lib/archetypes.ts), so it holds for all of them.
+ * times: one concrete thing seen there, said flat. No jokes, no warnings,
+ * no place that remembers or waits, no mood words, and never the name over
+ * again. Never more than SUBTITLE_MOST characters (one line on a 375 px
+ * phone), with no full stop. Past depth 100 a kind of place's line goes
+ * under every name it takes (lib/archetypes.ts), so it holds for all of them.
  */
 export const SUBTITLES: Record<string, string> = {
-  'The Mines': 'Eternals got the easy ore',
-  'Magma Fissure': "The dynamite's sweating again",
-  'Frozen Hollow': 'No fire modifiers',
-  'Fungal Caverns': 'Mouldy Camp was the nice one',
-  'Vaal Outpost': 'All the same to Ahuatotli',
-  'Abyssal Depths': 'Where the cracks were headed',
-  'Petrified Forest': 'Devourers no longer follow you',
-  'Sulphur Vents': 'Even the crabs come out bleached',
-  'Abyssal City': 'Not Vaal work, and not Eternal',
-  'Primeval Ruins': 'Aul grants short audiences',
-  'Drowned temple': 'Relatively dry',
-  'Ember forge': 'Paid in whetstones and scrap',
-  'Void bloom': "Kulemak's doing",
-  'Frozen abyss': 'A Thawing Charm on each belt',
-  'Sulphur marsh': "Niko swears it's sulphite",
-  'Lantern necropolis': "It's no Allflame",
-  'Sunken garden': 'Oshabi wants a cutting',
-  'Blood eclipse': 'Lunaris won this round',
-  'Glacial pyre': 'Both resists at seventy-five',
-  'Ashen reliquary': 'The labels burned first',
-  'Starfall abyss': 'Every one a Divine till it lands',
-  'Witchfire grove': "Doedre's herb garden",
+  'The Mines': 'The Eternals left in a hurry',
+  'Magma Fissure': 'Stone that never set',
+  'Frozen Hollow': 'Ice holds the last footprints',
+  'Fungal Caverns': 'Caps grow where miners fell',
+  'Vaal Outpost': 'Blood channels in the floor',
+  'Abyssal Depths': 'Light stops short of the floor',
+  'Petrified Forest': 'Birds still in the branches',
+  'Sulphur Vents': 'Yellow crust on every lamp',
+  'Abyssal City': 'Streets laid with bone',
+  'Primeval Ruins': 'Blue fire in the old halls',
+  'Drowned temple': 'Bells ring under the water',
+  'Ember forge': 'Tongs left in the coals',
+  'Void bloom': 'Petals that cast no shadow',
+  'Frozen abyss': 'Snow falls and never lands',
+  'Sulphur marsh': 'Gas rising from old graves',
+  'Lantern necropolis': 'A lamp for every grave',
+  'Sunken garden': 'Vines holding up the ceiling',
+  'Blood eclipse': 'A red sun with no heat',
+  'Glacial pyre': 'Flames that melt nothing',
+  'Ashen reliquary': 'Relics under a foot of ash',
+  'Starfall abyss': 'Stars falling the wrong way',
+  'Witchfire grove': 'Green flame on bare branches',
 };
 
 /** The longest a subtitle may be (characters). */
