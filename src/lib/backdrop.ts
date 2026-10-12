@@ -108,77 +108,49 @@ ${ENV_GLSL}
 ${SPORES_GLSL}
 ${SHAFTS_GLSL}
 
-// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path, the
+// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path the
 // hall goes cold, and the rock of the walls and the floor turns out to be
-// shot through with azurite. In layers, back to front: the hall's own
-// light cooling and drawing back toward the walls; broad bands of ore
-// slanting through the rock, a faint mineral blue in them, and on them
-// the faint planes of crystal faces; within them, far and fine, a mesh of
-// hairline fractures, dim, going up more slowly than the walls as the
-// scene sinks; then the near fractures, each a run of straight strokes
-// meeting at angles as a crack in a crystal runs (where a noise that is
-// linear across each triangle of a lattice crosses its middle: straight
-// within a triangle, turning at its edges), with a pale core, an azure
-// body and an indigo halo, a second fracture branching off near the
-// first; the light moving along them slowly, as if the vein breathed; here
-// and there a point in one that brightens and fades over a few seconds;
-// and a cold mist low over the floor. Its colours run from ice white at a
-// fracture's heart (c0) through azure (c1) to indigo (c2), wandering a
-// little across the rock and over time. It comes in from the walls as the
-// vein does, the fractures opening from hairlines, and draws back the same
-// way. Never over the middle, behind the UI.
+// crystal: azurite, its faces meeting in straight seams that glow, with
+// small crystals catching the light where three faces meet. In layers,
+// back to front: the hall's own light cooling and drawing back toward the
+// walls; broad bands of ore slanting through the rock, a faint mineral blue
+// and a cold bloom in them; far in the rock, fine faces and dim deep-blue
+// seams, going up more slowly than the walls as the scene sinks; then the
+// near faces, larger, each catching a little more or less of the light,
+// their seams with a pale core, an azure body and an indigo halo, the light
+// running slowly along them; the crystals at their corners breathing over
+// many seconds; and a cold mist low over the floor. Its colours run from
+// ice white (c0) through azure (c1) to indigo (c2), wandering a little
+// across the rock and over time. It comes in from the walls as the vein
+// does, the seams opening from hairlines, and draws back the same way.
+// Never over the middle, behind the UI.
 
-// Noise linear across each triangle of a lattice (the square grid skewed
-// into triangles, as simplex noise does), and its gradient: (value, d/dx).
-vec3 veinNoise(vec2 x) {
-  const float F = 0.3660254;
-  vec2 u = x + (x.x + x.y) * F;
-  vec2 i = floor(u);
-  vec2 f = u - i;
-  float a = nhash(i);
-  float c = nhash(i + 1.0);
-  float v;
-  vec2 g;
-  if (f.x > f.y) {
-    float b = nhash(i + vec2(1.0, 0.0));
-    v = a + (b - a) * f.x + (c - b) * f.y;
-    g = vec2(b - a, c - b);
-  } else {
-    float d = nhash(i + vec2(0.0, 1.0));
-    v = a + (d - a) * f.y + (c - d) * f.x;
-    g = vec2(c - d, d - a);
-  }
-  return vec3(v, g + F * (g.x + g.y));
-}
-
-// A turn by a (radians), for the fractures' lattices.
-mat2 veinTurn(float a) {
-  float c = cos(a);
-  float n = sin(a);
-  return mat2(c, n, -n, c);
-}
-
-// A field of fractures at p (CSS px): two octaves of veinNoise, each read
-// through its own turn and stretch (linear, so its strokes stay straight).
-// Returns how far p is from a fracture, in px, and how steep the field is
-// there (a flat stretch draws nothing).
-vec2 veinField(vec2 p, float S, mat2 m1, mat2 m2, vec2 o) {
-  vec3 a = veinNoise(m1 * p / S + o);
-  vec3 b = veinNoise(m2 * p / S + o * 1.7 + 3.1);
-  float n = 0.65 * a.x + 0.35 * b.x;
-  vec2 g = (0.65 * (transpose(m1) * a.yz) + 0.35 * (transpose(m2) * b.yz)) / S;
-  float steep = length(g);
-  return vec2(abs(n - 0.5) / max(steep, 1e-6), steep * S);
-}
-
-// One layer of fractures at pw (CSS px, the rock's own place): how much of
-// a stroke's core (sig px wide), its body (bw px) and its halo (hw px)
-// lie there, and how far the nearest stroke is (px).
-vec4 veinStrokes(vec2 pw, float S, mat2 m1, mat2 m2, vec2 o, float sig, float bw, float hw) {
-  vec2 f = veinField(pw, S, m1, m2, o);
-  float steep = smoothstep(0.3, 0.8, f.y);
-  float d = f.x;
-  return vec4(exp(-d * d / (sig * sig)), exp(-d / bw), exp(-d / hw), d) * vec4(steep, steep, steep, 1.0);
+// Crystal faces: the cells of a jittered grid drawn out on a slant (x in
+// cell units). How near x is to the seam between two faces and to a corner
+// where three meet (cell units, 0 on it), and which face it is in (0 to 1).
+vec3 veinCells(vec2 x) {
+  vec2 i = floor(x);
+  vec2 f = fract(x);
+  float d1 = 8.0;
+  float d2 = 8.0;
+  float d3 = 8.0;
+  vec2 id = vec2(0.0);
+  for (int y = -1; y <= 1; y++)
+    for (int k = -1; k <= 1; k++) {
+      vec2 g = vec2(float(k), float(y));
+      vec2 r = g + 0.15 + 0.7 * vec2(nhash(i + g), nhash(i + g + 17.31)) - f;
+      float d = dot(r, r);
+      if (d < d1) {
+        d3 = d2;
+        d2 = d1;
+        d1 = d;
+        id = i + g;
+      } else if (d < d2) {
+        d3 = d2;
+        d2 = d;
+      } else if (d < d3) d3 = d;
+    }
+  return vec3(sqrt(d2) - sqrt(d1), sqrt(d3) - sqrt(d1), nhash(id + 5.7));
 }
 
 vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float dark) {
@@ -196,100 +168,56 @@ vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float da
   col *= 1.0 - e * (0.16 + 0.2 * near);
   // How far in from the walls (and up from the floor) it has come.
   float come = smoothstep(0.0, 1.0, e);
-  float reach = 0.1 + 0.26 * come;
-  float rock = max(1.0 - smoothstep(0.4 * reach, reach, side), 0.85 * smoothstep(1.0 - 0.75 * reach, 1.0, xy.y));
+  float reach = 0.1 + 0.25 * come;
+  float rock = max(1.0 - smoothstep(0.35 * reach, reach, side), 0.85 * smoothstep(1.0 - 0.7 * reach, 1.0, xy.y));
   // The vein's cold light about the walls, faint.
   col += lit * c1 * (0.018 * e * (exp(-side / 0.08) + 0.5 * exp(-(1.0 - xy.y) / 0.07)));
   if (rock <= 0.0) return col;
   float rise = smoothstep(0.0, 0.35, e);
   float se = sqrt(e) * rise;
-  vec2 pw = p + vec2(uSlide, uSink);
-  vec2 q = pw / S;
+  vec2 q = (p + vec2(uSlide, uSink)) / S;
   float w = 0.6 * envDrift(q, tm, 5.0);
-  // The ore: broad bands slanting through the rock; the fractures run in
-  // them, and the rock there has a faint blue, and a soft cold bloom deeper in.
+  // The ore: broad bands slanting through the rock, where the crystal is;
+  // a faint mineral blue in them and a cold bloom deeper in.
   vec2 b = mat2(0.87, -0.5, 0.5, 0.87) * q;
   vec2 bw = b + 0.5 * vec2(vnoise(b * 1.1 + 3.0), vnoise(b * 1.1 - 4.0));
-  float band = smoothstep(0.42, 0.74, fbm(vec2(bw.x * 1.2, bw.y * 3.6)));
-  col = mix(col, c2 * uLight, lit * 0.09 * band * rock * e);
-  col += lit * c2 * (0.035 * band * band * rock * se);
-  // The planes of crystal faces in the ore, each a little lighter or darker
-  // than the next, so faint they are only felt.
-  vec2 fu = mat2(0.9, -0.44, 0.44, 0.9) * q * 5.5;
-  fu += (fu.x + fu.y) * 0.3660254;
-  vec2 fi = floor(fu);
-  vec2 ff = fu - fi;
-  float facet = nhash(fi + (ff.x > ff.y ? 0.37 : 0.71));
-  col *= 1.0 + 0.07 * (facet - 0.5) * band * rock * e;
-  float thick = smoothstep(0.35, 0.8, vnoise(b * vec2(5.0, 2.2) + 13.0));
-  float open = (0.35 + 0.65 * e) * rise;
-  vec3 body = envTone(c0, c1, c2, 0.62 + w);
-  vec3 core = envTone(c0, c1, c2, 0.15 + 0.5 * w);
-  vec3 rim = envTone(c0, c1, c2, 1.0);
-  vec3 deep = envTone(c0, c1, c2, 0.8 + w);
-  // The fractures in three layers, each going up at its own pace as the
-  // scene sinks, the further the slower: far, a dense mesh of hairlines,
-  // dim and deep blue; then finer strokes; then the near ones, few and long.
-  vec2 pf = p + vec2(uSlide, 0.55 * uSink);
-  vec4 fa = veinStrokes(pf, S, mat2(11.0, 0.0, 0.0, 6.0) * veinTurn(0.95), mat2(8.0, 0.0, 0.0, 10.0) * veinTurn(-0.3), vec2(21.0, 4.0), 0.9 * open + 0.01, 2.0, 8.0);
-  vec2 pm = p + vec2(uSlide, 0.8 * uSink);
-  vec4 fm = veinStrokes(pm, S, mat2(6.5, 0.0, 0.0, 3.0) * veinTurn(0.7), mat2(4.5, 0.0, 0.0, 5.0) * veinTurn(-0.5), vec2(5.0, 13.0), 1.2 * open + 0.01, 3.5, 14.0);
-  vec4 f1 = veinStrokes(pw, S, mat2(4.2, 0.0, 0.0, 1.7) * veinTurn(0.83), mat2(3.0, 0.0, 0.0, 2.2) * veinTurn(-0.41), vec2(0.0), (1.3 + 1.7 * thick) * open + 0.01, 3.5 + 6.0 * thick, 34.0);
-  float k1 = f1.x;
-  float body1 = f1.y;
-  float halo1 = f1.z;
-  float dpx = f1.w;
-  // Where a near one runs broad it is filled with crystal: blades of
-  // azurite laid along it, side by side, each facet of the rock about it
-  // catching a little more or less of their light.
-  float wide = (3.0 + 16.0 * thick) * open;
-  float fill = (1.0 - smoothstep(0.55 * wide, wide, dpx)) * thick * sqrt(thick) * step(0.001, body1);
-  // (Blades about 8 px apart: the soft light is drawn at half the screen's resolution.)
-  float blades = 0.6 + 0.4 * cos(dpx * 0.8);
-  vec2 cu = veinTurn(0.6) * pw / S * 26.0;
-  cu += (cu.x + cu.y) * 0.3660254;
-  vec2 ci = floor(cu);
-  vec2 cf = cu - ci;
-  float shine = 0.6 + 0.8 * nhash(ci + (cf.x > cf.y ? 0.37 : 0.71));
-  // A second fracture branching off near a near one.
-  float k2 = 0.0;
-  float body2 = 0.0;
-  if (halo1 > 0.15) {
-    vec4 f2 = veinStrokes(pw, S, mat2(3.6, 0.0, 0.0, 1.5) * veinTurn(-0.95), mat2(2.6, 0.0, 0.0, 2.0) * veinTurn(0.2), vec2(9.0, 2.0), 1.2 * open * e + 0.01, 3.0, 12.0);
-    float near2 = smoothstep(0.15, 0.5, halo1);
-    k2 = f2.x * near2;
-    body2 = f2.y * near2;
-  }
-  float strength = (0.15 + 0.85 * band * sqrt(band)) * rock;
-  // The light moving along them, slowly: the vein breathing.
-  float breath = 0.5 + 0.5 * vnoise(vec2(b.x * 2.1 - tm * 0.04, b.y * 1.4 + tm * 0.018));
-  float pulse = 0.45 + 0.55 * breath;
-  // The rock either side of a fracture a little darker, as it opens.
-  col *= 1.0 - 0.45 * e * (1.0 - e) * body1 * rock;
-  col += lit * strength * (
-    deep * (fa.x * 0.22 + fa.y * 0.12 + fa.z * 0.025) * se +
-    pulse * (body * (fm.y * 0.3 + fm.z * 0.06) + core * fm.x * 0.45) * se +
-    pulse * (0.55 + 0.45 * thick) * (
-      rim * halo1 * 0.32 * se +
-      body * (body1 + 0.7 * body2) * 0.55 * se +
-      envTone(c0, c1, c2, 0.4 + w) * fill * blades * shine * 0.75 * se +
-      core * (k1 + 0.7 * k2) * (0.9 + 1.1 * thick) * e * rise));
-  // Here and there a point in a fracture brightens for a few seconds and
-  // fades: one in many cells of a 16 px grid near one, each on a slow beat
-  // of its own, a point and a soft halo well inside its cell.
-  if (body1 > 0.3) {
-    vec2 cell = floor(pw / 16.0);
-    float h = nhash(cell + 5.3);
-    if (h > 0.86) {
-      vec2 d = pw - (cell + 0.3 + 0.4 * vec2(nhash(cell + 1.7), nhash(cell + 9.1))) * 16.0;
-      float tw = max(0.0, sin(tm * (0.1 + 0.18 * nhash(cell + 4.4)) + 6.283 * nhash(cell + 2.9)));
-      tw *= tw;
-      tw *= tw;
-      tw *= tw;
-      float r2 = dot(d, d);
-      col += lit * c0 * (exp(-r2 / 5.0) + 0.18 * exp(-r2 / 24.0)) * tw * body1 * band * rock * e * 0.8;
-    }
-  }
+  float ore = smoothstep(0.4, 0.72, fbm(vec2(bw.x * 1.2, bw.y * 3.6)));
+  col = mix(col, c2 * uLight, lit * 0.09 * ore * rock * e);
+  col += lit * c2 * (0.03 * ore * ore * rock * se);
+  // Far in the rock: finer faces, their seams dim and deep blue.
+  vec2 qf = (p + vec2(uSlide, 0.6 * uSink)) / S;
+  vec3 cf = veinCells(mat2(0.8, -0.6, 0.6, 0.8) * qf * vec2(10.5, 5.0) + 31.0);
+  float px = 10.5 / S;
+  float seamF = exp(-cf.x * cf.x / (2.0 * px * px)) * rise;
+  col += lit * envTone(c0, c1, c2, 0.78 + w) * (seamF * 0.14 + exp(-cf.x / 0.12) * 0.02) * ore * rock * se;
+  // Near: the faces, each catching a little more or less of the light.
+  vec2 xn = mat2(0.8, -0.6, 0.6, 0.8) * q * vec2(5.5, 2.6);
+  vec3 cn = veinCells(xn);
+  float face = cn.z;
+  // A sheen drifting slowly over the faces, as the light finds them.
+  float sheen = smoothstep(0.3, 0.8, vnoise(q * 1.6 + vec2(tm * 0.012, -tm * 0.008)));
+  col = mix(col, envTone(c0, c1, c2, 0.85 + w) * uLight, lit * ore * rock * e * 0.07 * face);
+  col += lit * c1 * (0.022 * face * face * sheen * ore * rock * se);
+  // Their seams: px wide at the screen (a cell is about S / 5.5 px across),
+  // opening from hairlines as it comes.
+  float pn = 5.5 / S;
+  float open = 0.4 + 0.6 * e;
+  float coreS = exp(-cn.x * cn.x / (2.0 * pow(1.3 * pn * open, 2.0)));
+  float bodyS = exp(-cn.x / (4.0 * pn * open + 1e-4));
+  float haloS = exp(-cn.x / 0.18);
+  // The light running slowly along them.
+  float run = 0.55 + 0.45 * sin(tm * 0.4 - 1.6 * (xn.x + 0.6 * xn.y) + 6.283 * face);
+  col *= 1.0 - 0.4 * e * (1.0 - e) * bodyS * ore * rock;
+  col += lit * ore * rock * (
+    envTone(c0, c1, c2, 1.0) * haloS * 0.05 * se +
+    envTone(c0, c1, c2, 0.6 + w) * bodyS * (0.22 + 0.14 * run) * se +
+    envTone(c0, c1, c2, 0.15 + 0.5 * w) * coreS * (0.35 + 0.3 * run) * e * rise);
+  // The crystals where three faces meet: a small point of light and a
+  // soft glow round it, each breathing slowly on a beat of its own.
+  float corner = cn.y / (pn * 1.0);
+  float breathe = 0.55 + 0.45 * sin(tm * (0.22 + 0.2 * face) + 6.283 * face);
+  float node = exp(-corner * corner / 4.0) + 0.25 * exp(-corner / 6.0);
+  col += lit * c0 * node * breathe * bodyS * 0.5 * ore * rock * e * rise;
   // A cold mist low over the floor.
   float low = smoothstep(0.72, 1.0, xy.y);
   if (low > 0.0) {
