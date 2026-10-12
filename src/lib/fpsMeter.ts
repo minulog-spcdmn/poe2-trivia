@@ -37,12 +37,12 @@ export function frameEvent(what: string) {
  */
 const work: Record<string, number> = {};
 
-/** Runs `fn`, adding its time to this frame's `name` while the meter runs. */
-export function timed<T>(name: string, fn: () => T): T {
-  if (!on) return fn();
+/** Runs `fn(arg)`, adding its time to this frame's `name` while the meter runs. (Its argument passed, not closed over: nothing made each frame with the meter off.) */
+export function timed<A, T>(name: string, fn: (arg: A) => T, arg: A): T {
+  if (!on) return fn(arg);
   const t = performance.now();
   try {
-    return fn();
+    return fn(arg);
   } finally {
     work[name] = (work[name] ?? 0) + performance.now() - t;
   }

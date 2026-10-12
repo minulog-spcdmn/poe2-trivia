@@ -1487,6 +1487,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // embers drift a few pixels a frame), and while calm() nothing is drawn
   // until something changes.
   let dirty = false;
+  /** A change held back for the 30fps pace (see frame()). */
+  let owed = false;
   let wasDescending = false;
   // Calls that wait on the GPU process (whenGpuCaughtUp in fx/gl.ts), and
   // the fence after the last frame drawn before they asked: nothing new is
@@ -1527,7 +1529,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     }
   }
   /** One frame of the backdrop (timed for the beta's frame meter). */
-  const frame = (now: number) => timed('backdrop', () => frameUntimed(now));
+  const frame = (now: number) => timed('backdrop', frameUntimed, now);
   function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
     if (catchingUp.size) {
@@ -1615,11 +1617,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // gold) would otherwise redraw this pass every frame, along with the
     // effects overlay's own.
     const measured = measure();
+    // A colour measured now isn't measured as changed again (measure() takes
+    // it as drawn), and a light or mood easing may stop in a frame held back:
+    // either is owed a frame, at the 30fps pace.
+    if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
     const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
-    if (!urgent && ((still && !soft && !measured) || now - last < 33)) return;
+    if (!urgent && ((still && !owed) || now - last < 33)) return;
     last = now;
     dirty = false;
+    owed = false;
     draw();
   }
 

@@ -355,6 +355,13 @@ export function imageType(data: ArrayBuffer | ArrayBufferView): string {
   return '';
 }
 
+/** Whether two runs of numbers are the same. */
+function sameNumbers(a: Uint16Array, b: Uint16Array) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /** Binary from the wire (an ArrayBuffer or a view of one) as 16-bit numbers. */
 function uint16s(data: ArrayBuffer | ArrayBufferView): Uint16Array {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
@@ -375,8 +382,10 @@ class Shown {
   /** When this question's first picture arrived (page clock), for the codex's answer times. */
   since = 0;
   private urls: string[] = [];
-  /** The veiled pictures received, by tile (-1: the question's own). */
-  private cuts = new Map<number, CutHandle>();
+  /** The veiled pictures received, by tile (-1: the question's own), and their labels. */
+  private cuts = new Map<number, { cut: CutHandle; labels: Uint16Array }>();
+  /** This question's patch pictures from the worker, freed when it's over (the drawn patches have them on their own canvases by then). */
+  private bitmaps: ImageBitmap[] = [];
 
   private url(data: ArrayBuffer) {
     const u = URL.createObjectURL(new Blob([data], { type: imageType(data) }));
@@ -391,6 +400,8 @@ class Shown {
     this.urls = [];
     this.cuts.clear();
     forgetCuts();
+    for (const b of this.bitmaps) b.close();
+    this.bitmaps = [];
     this.qid = qid;
     this.since = performance.now();
     this.art = null;
@@ -412,10 +423,18 @@ class Shown {
         // Labels that don't make the patches the veil counts would leave it never whole.
         const labels = uint16s(m.labels);
         if (patchCount(labels, m.w * m.h) !== m.count) return;
-        // Cut in the worker (veilCutter.ts); the host's own device from what it cut.
-        const own = ownCuts.get(m.data);
-        ownCuts.delete(m.data);
-        this.cuts.set(m.tile ?? -1, startCut({ w: m.w, h: m.h, data: m.data, labels }, own));
+        // The same veil again (a guest reconnecting) keeps its cut and the
+        // patches shown of it; one cut otherwise starts afresh.
+        const tile = m.tile ?? -1;
+        const had = this.cuts.get(tile);
+        if (!had || !sameNumbers(had.labels, labels)) {
+          // Cut in the worker (veilCutter.ts); the host's own device from what it cut.
+          const own = ownCuts.get(m.data);
+          ownCuts.delete(m.data);
+          this.cuts.set(tile, { cut: startCut({ w: m.w, h: m.h, data: m.data, labels }, own), labels });
+          if (had && m.tile === undefined) this.patches = {};
+          else if (had) this.tilePatches = { ...this.tilePatches, [m.tile!]: {} };
+        }
         const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
         if (m.tile === undefined) this.veil = v;
         else this.tileVeils = { ...this.tileVeils, [m.tile]: v };
@@ -423,14 +442,23 @@ class Shown {
       }
       case 'patch': {
         const tile = m.tile ?? -1;
-        const cut = this.cuts.get(tile);
-        if (!cut) return;
+        const held = this.cuts.get(tile);
+        if (!held) return;
+        const { cut } = held;
+        const shownAlready = () => !!(m.tile === undefined ? this.patches : this.tilePatches[m.tile])?.[m.i];
+        // (Sent again to a guest reconnecting: it's there, burnt in already.)
+        if (shownAlready()) return;
+        const bitmaps = this.bitmaps;
         // (Its places come from the worker; patches named meanwhile wait for them, in turn.)
         cut.places().then((places) => {
           const shape = places?.[m.i];
-          if (!shape || this.cuts.get(tile) !== cut) return;
+          if (!shape || this.cuts.get(tile) !== held || shownAlready()) return;
           let made: Promise<PatchImage> | null = null;
-          const picture = () => (made ??= cut.picture(m.i));
+          const picture = () =>
+            (made ??= cut.picture(m.i).then((img) => {
+              if (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) bitmaps.push(img);
+              return img;
+            }));
           const p = { i: m.i, x: shape.x, y: shape.y, w: shape.w, h: shape.h, picture, edges: shape.edges };
           if (m.tile === undefined) this.patches = { ...this.patches, [m.i]: p };
           else this.tilePatches = { ...this.tilePatches, [m.tile]: { ...this.tilePatches[m.tile], [m.i]: p } };

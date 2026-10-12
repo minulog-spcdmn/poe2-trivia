@@ -710,6 +710,15 @@ class Session {
         if (guest.playerId) this.cursorFrom(conn, guest, msg.at);
         return;
       }
+      // Presence is sent only when it changes, so one dropped would stand
+      // until the next change; a guest can't send it faster than its page
+      // goes away and back, and repeats change nothing.
+      if (msg.t === 'presence') {
+        if (!guest.playerId || msg.p === guest.seen.presence) return;
+        guest.seen = { presence: msg.p, since: Date.now() };
+        this.standingSoon(msg.p);
+        return;
+      }
       if (!guest.limit.take()) {
         // Someone holding a key down: disconnect (they may come back), don't block.
         if (guest.limit.strikes > 30) this.drop(conn);
@@ -721,11 +730,6 @@ class Session {
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
-        } else if (msg.t === 'presence') {
-          // Only ever this guest's own word on itself.
-          if (!guest.playerId || msg.p === guest.seen.presence) return;
-          guest.seen = { presence: msg.p, since: Date.now() };
-          this.standingSoon(msg.p);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -1285,10 +1289,14 @@ class Session {
   }
 
   private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg) {
-    // A veil alone shows nothing to answer from, so it isn't the art reaching
-    // them (tooFast). In Delve it is: there a question opens to answers once
-    // its veil is in and its clock runs (QuestionView's waiting), its patches
-    // only burning in after.
+    // A veil alone shows nothing on screen to answer from, so it isn't the
+    // art reaching them (tooFast): their clock starts with the first patch.
+    // It does carry the whole picture, which a guest digging into the page
+    // could answer from at once; timed from the first patch, such an answer
+    // is still turned down as too quick. In Delve the veil is the art
+    // reaching them: there a question opens to answers once its veil is in
+    // and its clock runs (QuestionView's waiting), its patches only burning
+    // in after.
     const reached = m.t !== 'veil' || !!this.state?.delve;
     if (reached && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: performance.now() };
     this.send(conn, m);

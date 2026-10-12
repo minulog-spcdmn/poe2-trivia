@@ -56,7 +56,8 @@ class Cutting implements CutHandle {
     this.own = own && (w ? { shapes: own.shapes, lit: own.lit } : own);
     if (!w) return;
     this.key = ++keys;
-    const job: VeilJob = { t: 'cut', key: this.key, wire, own };
+    // (The host's own picture goes as pixels; the encoded one stays here, for should the worker fail.)
+    const job: VeilJob = { t: 'cut', key: this.key, wire: own?.pixels ? { ...wire, data: new ArrayBuffer(0) } : wire, own };
     const answer = new Promise<PatchPlace[] | null | undefined>((resolve) => cutting.set(this.key, resolve));
     w.postMessage(job, own?.pixels ? [own.pixels.data.buffer] : []);
     // (Even with the host's own places in hand, a cut the worker couldn't make is made here.)

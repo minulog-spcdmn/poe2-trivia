@@ -715,7 +715,7 @@ function writeShape(i: number, s: LiveShape, t: number) {
 
 /** One frame of the effects (timed for the beta's frame meter). */
 function frame(nowMs: number) {
-  timed('effects', () => frameUntimed(nowMs));
+  timed('effects', frameUntimed, nowMs);
 }
 
 function frameUntimed(nowMs: number) {
