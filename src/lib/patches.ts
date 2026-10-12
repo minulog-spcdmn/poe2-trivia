@@ -80,11 +80,11 @@ export function visibleBox(rgba: Uint8ClampedArray, W: number, H: number): [numb
  * the veil's grid size: the patches come out about as big as the tiles of a
  * size × size grid over the whole picture used to, so the art reveals at the
  * same pace. Each patch also takes a 1px ring of its neighbours' pixels, so
- * patches drawn side by side and scaled meet without seams.
+ * patches drawn side by side and scaled meet without seams. `shown` is the
+ * picture's litMask, for a caller that has it already.
  */
-export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: number, seed: number): RawPatch[] {
+export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: number, seed: number, shown = litMask(rgba, W, H)): RawPatch[] {
   const rand = seededRandom(seed);
-  const shown = litMask(rgba, W, H);
   const lit: number[] = [];
   for (let i = 0; i < W * H; i++) if (shown[i]) lit.push(i);
   if (!lit.length) return [];
@@ -279,6 +279,11 @@ export function litMask(rgba: Uint8ClampedArray, W: number, H: number): Uint8Arr
  * their seams.
  */
 export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
+  if (S === 1) {
+    const whole = new Float32Array(w * h);
+    for (let l = 0; l < w * h; l++) if (pixels[l * 4 + 3]) whole[l] = 1;
+    return whole;
+  }
   // What each art pixel counts, over the patch's box and one pixel round it.
   const gw = w + 2;
   const grid = new Float32Array(gw * (h + 2)).fill(1);
@@ -295,10 +300,6 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
   const pw = w * S;
   const ph = h * S;
   const out = new Float32Array(pw * ph);
-  if (S === 1) {
-    for (let l = 0; l < w * h; l++) if (pixels[l * 4 + 3]) out[l] = 1;
-    return out;
-  }
   for (let by = 0; by < ph; by++) {
     const ly = (by / S) | 0;
     // Where the pixel's centre is, in the grid, from its art pixels' centres.

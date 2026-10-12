@@ -204,8 +204,6 @@
   const invSnapshot = (st: GameState) =>
     ({
       phase: st.phase,
-      // setAside (lib/delveSession.ts) tells a set-aside question by its turn.
-      turnCount: st.turnCount,
       players: st.players.map((p) => ({ id: p.id })),
       question: st.question && { askedAt: st.question.askedAt, struck: [...(st.question.struck ?? [])] },
       delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },

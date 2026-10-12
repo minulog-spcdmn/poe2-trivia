@@ -1,6 +1,8 @@
 // Player name hygiene: strip invisible / direction-flipping characters and
-// "zalgo" stacks, and catch names that impersonate the host or another player.
+// "zalgo" stacks, catch names that impersonate the host or another player,
+// and turn down slurs and the like (offensive.ts).
 
+import { offensive } from './offensive.ts';
 import { readKey, writeKey } from './storage.ts';
 
 export const MAX_NAME = 20;
@@ -124,6 +126,8 @@ export const nameUsable = (name: string) => nameRefusal(name) === null;
 export function nameProblem(name: string, others: string[]): string | null {
   if (!name) return 'Please enter a name with at least one letter or number.';
   if (nameTooShort(name)) return NAME_TOO_SHORT;
+  // Doesn't repeat the name back, which would show it to the host when it's turned down at the door.
+  if (offensive(name)) return 'That name is not allowed. Pick another name.';
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
     return `"${name}" is reserved. Pick another name.`;

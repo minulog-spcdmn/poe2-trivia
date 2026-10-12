@@ -647,7 +647,7 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
     const hit = r.hits?.find((h) => h.playerId === self);
     if (hit && hit.lives === 0 && hit.wards > 0 && lives === 1) out.push('saving-grace');
     const q = next.question!;
-    // Cleared it after every other teammate who stood at this depth struck an option, with options to spare:
+    // Cleared it after every other teammate who stood for this question struck an option, with options to spare:
     // those standing still, and those it took (who fell on it striking, as nobody's clock ran out on a clear).
     const strikers = new Set((q.struck ?? []).map((x) => x.by).filter((id) => others.some((p) => p.id === id)));
     const gone = new Set([...(q.struck ?? []).map((x) => x.index), ...(q.blownAway ?? [])]);
@@ -658,8 +658,10 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
       q.labels.length - gone.size >= OPEN_OPTIONS
     )
       out.push('elimination');
-    // The whole team at once, nobody walking away on their feet at this depth.
-    const fell = next.players.filter((p) => fellAt(next, p.id) === next.round).map((p) => p.id);
+    // The whole team at once, nobody walking away on their feet from this question or the one a blast
+    // took away for it (a miss before them, at the same depth, was another offer's).
+    const fellOn = new Set([...(r.hits ?? []).map((h) => h.playerId), ...(q.blast?.was.struck ?? []).map((x) => x.by)]);
+    const fell = next.players.filter((p) => livesOf(next, p.id) === 0 && fellOn.has(p.id)).map((p) => p.id);
     if (r.winnerId === null && !standing.length && depth >= FALL_DEPTH && (d.leftAt ?? 0) < next.round && fell.length >= FALL_MANY && fell.includes(self))
       out.push('fell-as-one');
     // The last one standing, clean for LONE depths past the last of the others to fall or leave (and past

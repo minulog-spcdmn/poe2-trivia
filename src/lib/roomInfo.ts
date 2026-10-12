@@ -4,6 +4,7 @@
 
 import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game.ts';
 import { cleanName } from './names.ts';
+import { offensive } from './offensive.ts';
 import { PROTOCOL_VERSION } from './protocol.ts';
 import { DIFFICULTY_NAMES } from './difficultyText.ts';
 import { shownDepth } from './delve.ts';
@@ -111,3 +112,11 @@ export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; wait
   if (others < 1) return { text: 'Nobody else is in yet.', warn: false };
   return { text: `${others} more ${others === 1 ? 'exile is' : 'exiles are'} in; you see them once you are in.`, warn: false };
 }
+
+/**
+ * Whether a well-formed listing is shown in the room list: not when its host's
+ * name has a slur or the like in it. Such a room still holds its listing slot,
+ * so the scan counts it and goes on past it (an empty batch would end the
+ * scan, hiding the rooms above it too).
+ */
+export const listable = (room: RoomInfo) => !offensive(room.host);

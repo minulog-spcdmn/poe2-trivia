@@ -31,7 +31,9 @@ export const FX_SCALE = 4;
  * most; 0 for a canvas not laid out yet.
  */
 export function fxWidth(canvas: HTMLElement, artW: number): number {
-  return Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), artW * FX_SCALE);
+  const cw = canvas.clientWidth;
+  if (!cw) return 0;
+  return Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), artW * FX_SCALE);
 }
 
 /**
@@ -188,8 +190,8 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     vis.forEach((i, j) => {
       const ax = (i % W) / sx;
       const ay = ((i / W) | 0) / sy;
-      const n = valueNoise(ax / 5, ay / 5, seed) * 0.65 + valueNoise(ax / 2, ay / 2, seed + 1) * 0.35;
-      const v = dist[i] / sx + (n - 0.5) * 2 * ROUGH + (Math.random() - 0.5) * 2 * GRAIN;
+      const rough = valueNoise(ax / 5, ay / 5, seed) * 0.65 + valueNoise(ax / 2, ay / 2, seed + 1) * 0.35;
+      const v = dist[i] / sx + (rough - 0.5) * 2 * ROUGH + (Math.random() - 0.5) * 2 * GRAIN;
       when[j] = v;
       if (v < lo) lo = v;
       if (v > hi) hi = v;
@@ -239,14 +241,6 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       if (!start) start = last = now;
       const p = Math.min(1, (now - start) / duration);
       const t = from + (to - from) * p;
-      // Only the rows this frame changes go to the canvas: those from the first pixel settling to the last sparkling ahead.
-      let y0 = H;
-      let y1 = -1;
-      const touch = (i: number) => {
-        const y = (i / W) | 0;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      };
       const was = settled;
       while (settled < lit.length && t - order[settled] >= LINE + COOL) {
         const o = lit[settled++] * 4;
@@ -302,8 +296,22 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
         for (let c = 0; c < 3; c++) px[o + c] = src[o + c] + (LIGHT_COOL[c] + (LIGHT_HOT[c] - LIGHT_COOL[c]) * g) * k;
         px[o + 3] = src[o + 3];
       }
-      for (let j = was; j < ahead; j++) touch(lit[j]);
-      if (y1 >= 0) ctx.putImageData(art, 0, 0, 0, y0, W, y1 - y0 + 1);
+      // Only the box this frame changes goes to the canvas: round the pixels
+      // from the first one settling to the last one sparkling ahead.
+      let x0 = W;
+      let y0 = H;
+      let x1 = -1;
+      let y1 = -1;
+      for (let j = was; j < ahead; j++) {
+        const i = lit[j];
+        const y = (i / W) | 0;
+        const x = i - y * W;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+      if (y1 >= 0) ctx.putImageData(art, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 
       // Sparks fly off the front, more the longer it is.
       const front = shown - line;

@@ -618,6 +618,8 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Host' }, 'p9'), /reserved/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Zаna' }, 'p9'), /looks too much like/); // Cyrillic а
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'A1va' }, 'p9'), /looks too much like/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'HeilHitler' }, 'p9'), /name is not allowed/);
+  assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'n1gg3r' }, 'p1'), /name is not allowed/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: '\u200b\u202e ' }, 'p9'), /at least one letter/);
   s = engine.apply(s, { type: 'join', playerId: 'p9', name: 'Dori\u202eevil\u200b' }, 'p9');
   assert.equal(s.players.find((p) => p.id === 'p9')!.name, 'Dorievil');

@@ -38,7 +38,7 @@
     { label: 'Room busy', show: () => toast('The host is setting up a game. Try again in a moment.', 'warn', { title: 'Room busy' }) },
     { label: 'Refused (error)', show: () => toast("It's not your turn.", 'error') },
     { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
-    { label: 'Question set aside', show: () => toast('The host reloaded, so it cost nothing.', 'info', { title: 'Question set aside', who: someone() }) },
+    { label: 'Clock paused', show: () => toast('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' }) },
     { label: 'Fullscreen tip', show: showTip },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
@@ -820,6 +820,7 @@
   }
 
   input[type='range'] {
+    --thumb: 14px;
     appearance: none;
     height: 4px;
     border-radius: 2px;
@@ -828,15 +829,15 @@
   }
   input[type='range']::-webkit-slider-thumb {
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   input[type='range']::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);

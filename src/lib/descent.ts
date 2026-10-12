@@ -1350,7 +1350,7 @@ export type Dealt = { run: number; depth: number };
  * Whether cards dealt at `now` are a new depth's, deeper in the same run
  * than the cards dealt `before`: the moment to plunge. Not the first cards
  * of a run (or the first seen after a reload), and not the same depth's
- * cards dealt again (a question set aside by the host's reload).
+ * cards dealt again (after a miss).
  */
 export function dealtDeeper(before: Dealt | undefined, now: Dealt): boolean {
   return !!before && before.run === now.run && now.depth > before.depth;

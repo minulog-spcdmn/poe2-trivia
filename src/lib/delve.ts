@@ -1,5 +1,6 @@
-// Delve: a game with no settings. Everyone has three lives and each round goes
-// one depth deeper, where the questions get harder, the timer shorter and the
+// Delve: a game with no settings. Everyone has three lives and each question
+// cleared goes one depth deeper (a miss is followed by another question at the
+// same depth), where the questions get harder, the timer shorter and the
 // lockout longer. The rules at a depth are the same in every run, so "depth N"
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
@@ -41,6 +42,17 @@ export const REVIVE_FROM = 2;
 
 /** After the host reloads, players who were cut off get this long to come back before a vote closes without them. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
+
+/**
+ * After the host reloads, a question's clock waits this long at most for
+ * those it cut off who could still answer it (awaitingReturn): enough for a
+ * guest to notice and get back (it tries every 3 s), not a minute to look
+ * the answer up on a question it has seen.
+ */
+export const DELVE_RESUME_CLOCK_MS = 20_000;
+
+/** A question the host's reload held still starts again with at least this long on its clock. */
+export const DELVE_RESUME_MIN_MS = 5_000;
 
 /** Depth as a whole number from 1 (anything odd counts as the surface). */
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) : 1);
@@ -321,7 +333,8 @@ export const FIND_FADE_TO = 200;
  * others' chances. An offer that holds one rolls once more for a second find
  * on another card (see SECOND_FIND). Players see them in the order they
  * first turn up (FINDS_IN_ORDER). On its own first depth a find is certain
- * (firstFindAt): that offer always holds it, for a player with room for it.
+ * (firstFindAt): the depth's first offer always holds it, for a player with
+ * room for it (one after a miss there rolls as any other).
  *
  * They come one at a time. The Dynamite Cache comes first, from depth 11
  * (shown 10), and is the only find until the Azurite Vein comes, so it
@@ -552,11 +565,19 @@ export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
  */
 export function clockLeft(q: Pick<Question, 'deadline' | 'held'>, now: number): number {
   if (q.deadline === null) return Infinity;
-  const h = q.held;
-  // Before the pause (a screen whose clock runs a little behind the host's) all of it is still to come.
-  const pausing = h && now < h.until ? h.until - Math.max(now, h.from) : 0;
-  return Math.max(0, q.deadline - now - pausing);
+  return Math.max(0, q.deadline - now - heldAhead(q.held, now));
 }
+
+/**
+ * How much of a pause (`held`) is still to come at `now`: before it (a
+ * screen whose clock runs a little behind the host's), all of it.
+ */
+export function heldAhead(h: Question['held'], now: number): number {
+  return h && now < h.until ? h.until - Math.max(now, h.from) : 0;
+}
+
+/** How much of a clock the host's reload held still had been used when it stopped (ms). */
+export const pausedUsed = (p: NonNullable<Question['paused']>) => Math.max(0, p.at - p.clockAt);
 
 /** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */
 export const delveQuestionTimer = (d: number, q: { find?: FindKind }) => (q.find ? findTimer(q.find, d) : delveTimer(d));
@@ -745,6 +766,26 @@ export function expectedVoters(s: GameState, now: number): string[] {
   return s.players.filter((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && (p.connected || inGrace(s, p, now))).map((p) => p.id);
 }
 
+/**
+ * Those the host's reload cut off who could still answer the question in
+ * play (or the next one): standing, not idle (a vote doesn't wait for them
+ * either, expectedVoters) and with no answer given to it yet.
+ */
+export function cutOffAnswering(s: GameState): string[] {
+  const done = new Set(answeredIds(s));
+  return (s.delve?.excused ?? []).filter((id) => livesOf(s, id) > 0 && !isIdle(s, id) && !done.has(id) && s.players.some((p) => p.id === id && !p.connected));
+}
+
+/**
+ * Someone the host's reload cut off who could still answer may yet come
+ * back at `now` (host clock): a question's clock doesn't start without them,
+ * for DELVE_RESUME_CLOCK_MS after the reload at most.
+ */
+export function awaitingReturn(s: GameState, now: number): boolean {
+  const dm = s.delve;
+  return !!dm && now < dm.graceUntil - DELVE_RESUME_GRACE_MS + DELVE_RESUME_CLOCK_MS && cutOffAnswering(s).length > 0;
+}
+
 /** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */
 function allVoted(s: GameState, now: number): boolean {
   const votes = s.delve?.votes ?? {};
@@ -792,7 +833,7 @@ export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter
  * Co-op: whether a flare or a stick of dynamite can go off on the question in
  * play, from the pack of whoever standing holds one: its clock runs, it is no
  * find's, someone here still has an answer to give (nobody else gains from
- * it), and for a flare none burnt on it yet, for dynamite the depth has a
+ * it), and for a flare none burnt on it yet, for dynamite the offer has a
  * blast left (blastsLeft). When it is due is the solo rule's.
  */
 export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
@@ -825,7 +866,7 @@ export function unaskedCards(s: GameState): string[] {
   return s.offered.filter((c) => !asked.includes(c));
 }
 
-/** Blasts the depth in play has left: DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
+/** Blasts the offer in play has left (a fresh offer after a miss at the same depth has its own): DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
 export function blastsLeft(s: GameState): number {
   if (!s.delve || s.phase !== 'question' || !s.question) return 0;
   const made = Math.max(0, askedCards(s).length - 1);
@@ -834,7 +875,7 @@ export function blastsLeft(s: GameState): number {
 
 /**
  * Why `by` can't blast the question in play away now, or null when they can
- * (the button shows only then): its clock runs, it is no find's, the depth
+ * (the button shows only then): its clock runs, it is no find's, the offer
  * has a blast left, and the stick is at hand. Alone: the player answering,
  * holding one. Together: a player standing who hasn't answered it yet and
  * holds one (it is spent from their own pack); a teammate's wrong answer
@@ -846,7 +887,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   if (!s.delve || s.phase !== 'question' || !q) return 'There is no open question.';
   if (q.deadline === null) return 'Not yet.';
   if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
-  if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
+  if (blastsLeft(s) === 0) return 'No more blasts on these cards.';
   if (isGroupRun(s)) {
     if (by === null) return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
     if (!seated(s, by)) return 'You are not in this game.';
@@ -885,7 +926,7 @@ export function fuseDue(s: GameState): boolean {
  * will go off (fuseDue), from 1 to 0 as the clock hits 0, and stays at 0
  * until the time-out blasts the question away. Null while there is more
  * time than that on the clock, or when nothing would go off at this 0 (a
- * flare burns first, no stick at hand, no blast left at this depth, a
+ * flare burns first, no stick at hand, no blast left on the offer, a
  * find's question, or none open). It holds while the clock holds
  * (clockLeft).
  */

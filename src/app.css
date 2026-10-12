@@ -588,6 +588,14 @@ h3,
   text-wrap: balance;
 }
 
+/* A range input's thumb length along its track, which its thumb rules use and the
+   sliding sparks (lib/fx/ui.ts) read. Registered, so it reads back in px whatever unit set it. */
+@property --thumb {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 16px;
+}
+
 /* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).
    An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset
    and blur, then colour) and paints them through

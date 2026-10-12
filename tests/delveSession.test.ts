@@ -18,8 +18,8 @@ import {
   inventoryChanges,
   livesLost,
   mayAutoReask,
+  pausedNow,
   reaskDelay,
-  setAside,
 } from '../src/lib/delveSession.ts';
 import { DELVE_RULESET, VOTE_WINDOW_MS } from '../src/lib/delve.ts';
 import { createGame, type GameState, type Question } from '../src/lib/game.ts';
@@ -97,7 +97,7 @@ test('a send queue is empty only when PeerJS and the channel both are', () => {
   assert.equal(drained({}), true);
 });
 
-test('notices: a question set aside by a reload (a life given, the board and the game screen say)', () => {
+test('notices: a clock the reload holds still (a life given, the board and the game screen say)', () => {
   const prev = run();
   const lost = run();
   lost.delve!.losses = { b: [3] };
@@ -115,15 +115,18 @@ test('notices: a question set aside by a reload (a life given, the board and the
   assert.deepEqual(delveNotices(down, back), []);
   assert.deepEqual(livesLost(down, back), []);
 
-  const asking = run({ phase: 'question', question: question(null), turnCount: 4 });
-  assert.deepEqual(delveNotices(asking, run({ turnCount: 4 })), [{ kind: 'setAside', playerId: '' }], "together, it was the team's question");
-  assert.deepEqual(delveNotices(asking, run({ turnCount: 5 })), [], 'the next turn is not a rewind');
+  // The host's reload holds the clock still: a toast says so, together and alone.
+  const asking = run({ phase: 'question', question: question(5000) });
+  const held = run({ phase: 'question', question: { ...question(null), paused: { clockAt: 1000, at: 2000, left: 3000 } } });
+  assert.deepEqual(delveNotices(asking, held), [{ kind: 'paused' }]);
+  assert.deepEqual(delveNotices(held, structuredClone(held)), [], 'once, as it stops');
   const alone = (o: Partial<GameState>) => {
     const s = run(o);
     s.delve!.entrants = ['a'];
     return s;
   };
-  assert.deepEqual(delveNotices(alone({ phase: 'question', question: question(null), turnCount: 4 }), alone({ turnCount: 4 })), [{ kind: 'setAside', playerId: 'a' }]);
+  assert.deepEqual(delveNotices(alone({ phase: 'question', question: question(5000) }), alone({ phase: 'question', question: held.question })), [{ kind: 'paused' }]);
+  assert.deepEqual(delveNotices(asking, run({ phase: 'question', question: question(null) })), [], 'nothing held still');
 
   const nextRun = run();
   nextRun.delve = { ...nextRun.delve!, startedAt: 6, losses: {} };
@@ -178,21 +181,14 @@ test('co-op notices: only a perish (a wrong pick and a flare the question says i
   assert.deepEqual(delveNotices(soloPrev, soloNext), []);
 });
 
-test('a question set aside is quiet: what it cost comes back without a word but the notice', () => {
-  const asking = run({ phase: 'question', question: question(5000), turnCount: 4 });
-  asking.delve!.inventory = { a: { wards: 0, flares: 0, dynamite: 0 } };
-  const back = run({ turnCount: 4 });
-  back.delve!.inventory = { a: { wards: 0, flares: 1, dynamite: 1 } };
-  assert.equal(setAside(asking, back), true);
-  assert.deepEqual(inventoryChanges(asking, back), [], 'a refunded flare is not a flare found');
-  assert.deepEqual(delveNotices(asking, back), [{ kind: 'setAside', playerId: '' }]);
-  assert.equal(setAside(asking, run({ turnCount: 5 })), false, 'the next depth is no rewind');
-  assert.deepEqual(
-    inventoryChanges(run(), back).map((c) => c.change),
-    ['gained', 'gained'],
-  );
+test("a clock the host's reload holds still is told by its question, the same one on the screen", () => {
+  const asking = run({ phase: 'question', question: question(5000) });
+  const held = run({ phase: 'question', question: { ...question(null), paused: { clockAt: 1000, at: 2000, left: 3000 } } });
+  assert.equal(pausedNow(asking, held), true);
+  assert.equal(pausedNow(null, held), false, "the host's own reload: nothing was on its screen");
+  assert.equal(pausedNow(asking, { ...held, question: { ...held.question!, askedAt: 200 } }), false, 'another question');
+  assert.equal(pausedNow(held, run({ phase: 'question', question: question(9000) })), false, 'carrying on');
 });
-
 
 test("together, a question the vote drew holds its clock until the draw has played out on the cards", () => {
   const voting = run();

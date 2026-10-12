@@ -383,12 +383,12 @@ test('from depth 10 to 24 as shown, the Dynamite Cache is the only find', () => 
   }
   // Rolled by the engine: only dynamite, and never two side by side.
   const h = delve(['Ash'], { seed: 8 });
-  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean): void }).beginTurn.bind(h.engine);
+  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean, deeper?: boolean): void }).beginTurn.bind(h.engine);
   const s = structuredClone(h.s);
   let caches = 0;
   for (let i = 0; i < 3000; i++) {
     s.round = 11 + (i % 15);
-    roll(s, false);
+    roll(s, false, true);
     const finds = findOffers(s);
     assert.ok(finds.length <= 1 && finds.every((f) => f.kind === 'dynamite'), `at depth ${s.round}`);
     caches += finds.length;
@@ -403,12 +403,12 @@ test('each find is certain on its own first depth (shown 10, 25 and 40), for a p
   );
   for (const d of [NaN, -3, 0, 300]) assert.equal(firstFindAt(d), null);
   const h = delve(['Ash'], { seed: 12 });
-  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean): void }).beginTurn.bind(h.engine);
+  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean, deeper?: boolean): void }).beginTurn.bind(h.engine);
   for (const f of FINDS_IN_ORDER) {
     const s = structuredClone(h.s);
     for (let i = 0; i < 300; i++) {
       s.round = f.from;
-      roll(s, false);
+      roll(s, false, true);
       const finds = findOffers(s);
       assert.equal(finds[0]?.kind, f.kind, `${f.kind} at depth ${f.from}`);
       assert.ok(s.offered.includes(finds[0].category));
@@ -419,13 +419,36 @@ test('each find is certain on its own first depth (shown 10, 25 and 40), for a p
     let other = 0;
     for (let i = 0; i < 300; i++) {
       full.round = f.from;
-      roll(full, false);
+      roll(full, false, true);
       const finds = findOffers(full);
       assert.ok(finds.every((x) => x.kind !== f.kind), `no ${f.kind} for a player full of it`);
       other += finds.length;
     }
     assert.ok(other < 300 * 0.3, `${other} finds rolled beside no ${f.kind} at ${f.from}`);
   }
+});
+
+test("a find's certain offer is its first depth's first one only: the offer after a miss there rolls as any other", () => {
+  const d = findFor('dynamite').from;
+  let again = 0;
+  const runs = 40;
+  for (let seed = 1; seed <= runs; seed++) {
+    const h = delve(['Ash'], { seed });
+    at(h, d - 1);
+    h.plainTurn();
+    assert.equal(h.s.round, d);
+    assert.equal(findOffers(h.s)[0]?.kind, 'dynamite', 'certain on the first offer');
+    // Missed on a card that is no find, once its cards are dealt.
+    h.clock.now = h.s.delve!.dealAt ?? h.clock.now;
+    h.act({ type: 'pick', category: h.s.offered.find((c) => !findOn(h.s, c))! });
+    h.clockIn();
+    h.answer(false);
+    h.act({ type: 'next' });
+    assert.equal(h.s.round, d, 'still at the depth');
+    if (findOffers(h.s).some((f) => f.kind === 'dynamite')) again++;
+  }
+  // At its start chance (8%), not every time.
+  assert.ok(again < runs * 0.3, `dynamite again after ${again} of ${runs} misses`);
 });
 
 /** The find that yields an item (as delve.ts findFor). */
@@ -530,7 +553,7 @@ test('two finds side by side are rare early and grow less rare with depth, and a
   assert.ok(double(61) / anyFind(61) < 0.12 && double(40) / anyFind(40) < 0.08);
   // Simulated: offers rolled by the engine at each depth, for a player with room for everything.
   const h = delve(['Ash'], { seed: 21 });
-  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean): void }).beginTurn.bind(h.engine);
+  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean, deeper?: boolean): void }).beginTurn.bind(h.engine);
   const N = 20_000;
   for (const d of [26, 41, 61]) {
     let one = 0;
@@ -538,7 +561,7 @@ test('two finds side by side are rare early and grow less rare with depth, and a
     const s = structuredClone(h.s);
     for (let i = 0; i < N; i++) {
       s.round = d;
-      roll(s, false);
+      roll(s, false, true);
       const n = findOffers(s).length;
       if (n >= 1) one++;
       if (n === 2) two++;
@@ -1238,7 +1261,7 @@ test('leaving or being kicked takes your items with you, and a new run starts wi
   assert.equal(h.s.delve!.find, undefined);
 });
 
-test('a question asked again, or set aside by a host reload, keeps what it was', () => {
+test('a question asked again, or held still by a host reload, keeps what it was', () => {
   const h = delve(['Ash']);
   at(h, 20);
   const card = h.plant('flare');
@@ -1247,14 +1270,16 @@ test('a question asked again, or set aside by a host reload, keeps what it was',
   assert.equal(h.s.question!.find, 'flare');
   assert.equal(h.s.question!.category, card);
 
-  // A co-op question is set aside after a host reload, and the same cards come back.
+  // A co-op find's question on the clock holds still through a host reload, and stays the find's.
   const g = coop();
   const infused = g.plant();
   g.act({ type: 'pick', category: infused });
+  g.act({ type: 'clock', askedAt: g.s.question!.askedAt });
   g.act({ type: 'connection', playerId: 'p1', connected: false });
   g.act({ type: 'resumed' });
-  assert.equal(g.s.phase, 'choosing');
-  assert.deepEqual(findOffers(g.s), [{ category: infused, kind: 'azurite' }]);
+  assert.equal(g.s.phase, 'question');
+  assert.equal(g.s.question!.find, 'azurite');
+  assert.ok(g.s.question!.paused);
 });
 
 test('item changes are reported for the phial and its sounds', () => {
@@ -1317,12 +1342,12 @@ test('a second find is only of a kind someone can still carry', () => {
   const h = delve(['Ash'], { seed: 4 });
   const id = h.active().id;
   h.give(id, { flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE });
-  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean): void }).beginTurn.bind(h.engine);
+  const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean, deeper?: boolean): void }).beginTurn.bind(h.engine);
   const s = structuredClone(h.s);
   let veins = 0;
   for (let i = 0; i < 4000; i++) {
     s.round = 61;
-    roll(s, false);
+    roll(s, false, true);
     const finds = findOffers(s);
     assert.ok(finds.every((f) => f.kind === 'azurite'), 'only veins');
     assert.ok(finds.length <= 1);

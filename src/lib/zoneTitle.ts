@@ -97,32 +97,35 @@ export const TREATMENTS: Record<string, Treatment> = {
 
 /**
  * One line under each place's name, as players will read it a hundred
- * times: plain, short and of the place, never more than SUBTITLE_MOST
- * characters (one line on a 375 px phone), with no full stop.
+ * times: one concrete thing seen there, said flat. No jokes, no warnings,
+ * no place that remembers or waits, no mood words, and never the name over
+ * again. Never more than SUBTITLE_MOST characters (one line on a 375 px
+ * phone), with no full stop. Past depth 100 a kind of place's line goes
+ * under every name it takes (lib/archetypes.ts), so it holds for all of them.
  */
 export const SUBTITLES: Record<string, string> = {
-  'The Mines': 'Where every delver starts',
-  'Magma Fissure': 'The rock is split, and it burns',
-  'Frozen Hollow': 'Nothing thaws this far down',
-  'Fungal Caverns': 'The rot here glows and breathes',
-  'Vaal Outpost': 'The Vaal dug here before you',
-  'Abyssal Depths': 'Here the deep begins to pull',
-  'Petrified Forest': 'The trees forgot they lived',
-  'Sulphur Vents': 'Every breath tastes of brimstone',
-  'Abyssal City': 'Its lamps still burn for no one',
-  'Primeval Ruins': 'Older than the first gods',
-  'Drowned temple': 'The water keeps their hymns',
-  'Ember forge': 'The anvils never cooled',
-  'Void bloom': 'Something flowers in the nothing',
-  'Frozen abyss': 'Ice over an endless fall',
-  'Sulphur marsh': 'The mire smoulders under mist',
-  'Lantern necropolis': 'The dead keep their lamps lit',
-  'Sunken garden': 'Flowers that never saw the sun',
-  'Blood eclipse': 'Light the colour of old blood',
-  'Glacial pyre': 'Fire sealed inside the ice',
-  'Ashen reliquary': 'The ash of saints, kept in stone',
-  'Starfall abyss': 'Stars fell here and kept falling',
-  'Witchfire grove': 'The old wood burns green',
+  'The Mines': 'The Eternals left in a hurry',
+  'Magma Fissure': 'Stone that never set',
+  'Frozen Hollow': 'Ice holds the last footprints',
+  'Fungal Caverns': 'Caps grow where miners fell',
+  'Vaal Outpost': 'Blood channels in the floor',
+  'Abyssal Depths': 'Light stops short of the floor',
+  'Petrified Forest': 'Sap set hard mid-drip',
+  'Sulphur Vents': 'Yellow crust on every lamp',
+  'Abyssal City': 'Streets laid with bone',
+  'Primeval Ruins': 'Blue fire in the old halls',
+  'Drowned temple': 'Bells ring under the water',
+  'Ember forge': 'Tongs left in the coals',
+  'Void bloom': 'Petals that cast no shadow',
+  'Frozen abyss': 'Snow falls and never lands',
+  'Sulphur marsh': 'Gas rising from old graves',
+  'Lantern necropolis': 'A lamp for every grave',
+  'Sunken garden': 'Vines holding up the ceiling',
+  'Blood eclipse': 'A red sun with no heat',
+  'Glacial pyre': 'Flames that melt nothing',
+  'Ashen reliquary': 'Relics under a foot of ash',
+  'Starfall abyss': 'Stars falling the wrong way',
+  'Witchfire grove': 'Green flame on bare branches',
 };
 
 /** The longest a subtitle may be (characters). */

@@ -22,7 +22,8 @@
   // its depth under it inside the ring); when they would overlap, one star stands for
   // both, drifting between gold and red, the last run's depth over it and
   // yours under it. A small legend left of the ouroboros says which is
-  // which. Each find you
+  // which, and whose runs they are: alone (solo) or together (co-op,
+  // `together`). Each find you
   // have met (`met`) is tied to its heading by a fine gold line from the wall
   // where it first turns up, that depth written in the middle of it: to its
   // heading in the finds list (`finds`) when that stands beside the plate,
@@ -49,7 +50,7 @@
   let {
     deepest = null,
     last = null,
-    label = 'Your deepest',
+    together = false,
     met = [],
     caption = null,
     finds = null,
@@ -58,7 +59,7 @@
   }: {
     deepest?: number | null;
     last?: number | null;
-    label?: string;
+    together?: boolean;
     met?: FindKind[];
     caption?: HTMLElement | null;
     finds?: HTMLElement | null;
@@ -66,8 +67,8 @@
     stacked?: boolean;
   } = $props();
   const uid = $props.id();
-  /** The legend's words. */
-  const KEY = { best: 'your best', last: 'last run' } as const;
+  /** The legend's words: whose runs the stars mark, alone or together. */
+  const KEY = $derived(together ? { best: 'best co-op', last: 'last co-op' } : { best: 'best solo', last: 'last solo' });
 
   let fig: HTMLElement | undefined = $state();
   let w = $state(0);
@@ -170,9 +171,10 @@
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(measure);
   };
-  // The callouts come and go with the layout; measure them once they are there.
+  // The callouts come and go with the layout, the legend's words with the kind of run; measure them once they are there.
   $effect(() => {
     void beside;
+    void KEY;
     soon();
   });
 
@@ -205,8 +207,8 @@
           : `Zones reached: ${ZONES.slice(0, reached)
               .map((z) => z.name)
               .join(', ')}. ${ZONES.length - reached === 1 ? 'The last one is' : `The other ${words(ZONES.length - reached)} are`} uncharted.`,
-      best ? `${label}: depth ${shownDepth(best)}.` : '',
-      lastRun ? `Your last run: depth ${shownDepth(lastRun)}.` : '',
+      best ? `Your deepest ${together ? 'together' : 'alone'}: depth ${shownDepth(best)}.` : '',
+      lastRun ? `Your last run ${together ? 'together' : 'alone'}: depth ${shownDepth(lastRun)}.` : '',
       ...metFinds.map((x) => `${FIND_NAME[x.kind]} turn up from depth ${shownDepth(x.from)}.`),
     ]
       .filter(Boolean)

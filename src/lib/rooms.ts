@@ -11,7 +11,7 @@ import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 export { ProbeDesk, isProbe } from './probeDesk';
-import { parseRoomInfo, type RoomInfo } from './roomInfo';
+import { listable, parseRoomInfo, type RoomInfo } from './roomInfo';
 import { ProbeDesk } from './probeDesk';
 
 const BATCH = 10;
@@ -130,7 +130,7 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
           const r = await prober.probe(id);
           if (r && r !== 'free') {
             found++;
-            if (!cancelled() && listed++ < MAX_LISTED) onRoom(r);
+            if (listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
           }
         }),
       );
