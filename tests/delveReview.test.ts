@@ -1,12 +1,27 @@
 // Regressions from a review of the Delve engine: a guest's late answer with a
-// flare still to burn, the items spent on a question set aside after a host
-// reload, the lockout that setting a question aside gives back, and the
-// lives, wards, packs and streaks it gives back (it costs nobody anything).
+// flare still to burn, and a question the host's reload holds still (its
+// clock carries on with the time it had left; what was answered on it
+// stands).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DELVE_LIVES, DELVE_MAX_LOCKOUT, FLARE_MS, delveLockout, dynamiteOf, findOn, flaresOf, inventoryOf, livesOf, wardsOf, type Inventory } from '../src/lib/delve.ts';
+import {
+  DELVE_IDLE_ROUNDS,
+  DELVE_LIVES,
+  DELVE_RESUME_CLOCK_MS,
+  DELVE_RESUME_GRACE_MS,
+  DELVE_RESUME_MIN_MS,
+  FLARE_MS,
+  awaitingReturn,
+  expectedVoters,
+  findOn,
+  flaresOf,
+  inventoryOf,
+  livesOf,
+  pausedUsed,
+  type Inventory,
+} from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, ActionError, Engine, createGame, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -152,234 +167,249 @@ test('together: an answer long after 0 is dropped, and the flare stays burnt at 
   for (const id of ['p0', 'p1', 'p2']) assert.equal(livesOf(h.s, id), DELVE_LIVES - 1);
 });
 
-// ---- 2. items spent on a question set aside -----------------------------------
+// ---- 2. a question the host's reload holds still ------------------------------
 
-test('alone: a question set aside after a reload gives back the flare and the dynamite spent on it', () => {
-  const h = solo();
-  h.give('p0', { flares: 1, dynamite: 1 });
-  const q = h.ask();
-  const offer = [...h.s.offered];
-  h.act({ type: 'blast', askedAt: q.askedAt });
-  const b = h.s.question!;
-  assert.equal(b.blast?.was.at, q.askedAt);
-  h.act({ type: 'clock', askedAt: b.askedAt });
-  h.clock.now = h.s.question!.deadline!;
-  h.act({ type: 'flare', askedAt: b.askedAt });
-  assert.equal(h.s.question!.flared, true);
-  assert.deepEqual([flaresOf(h.s, 'p0'), dynamiteOf(h.s, 'p0')], [0, 0]);
-  h.act({ type: 'connection', playerId: 'p0', connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.deepEqual([flaresOf(h.s, 'p0'), dynamiteOf(h.s, 'p0'), livesOf(h.s, 'p0')], [1, 1, DELVE_LIVES]);
-  // The same cards come back, none asked yet, and the blast is undone with it.
-  assert.deepEqual(h.s.offered, offer);
-  assert.equal(h.s.delve!.asked, undefined);
-  assert.equal(h.s.delve!.blasts, undefined);
-});
-
-test('together: a question set aside after a reload gives each item back to whoever spent it', () => {
-  const h = run(3, { depth: 30 });
-  h.give('p1', { dynamite: 1 });
-  h.give('p2', { flares: 1 });
-  const q = h.ask();
-  h.act({ type: 'blast', askedAt: q.askedAt }, 'p1');
-  const b = h.s.question!;
-  assert.deepEqual([b.blast?.by, b.blast?.stick], ['p1', 'p1']);
-  h.act({ type: 'clock', askedAt: b.askedAt });
-  h.clock.now = h.s.question!.deadline!;
-  h.act({ type: 'flare', askedAt: b.askedAt });
-  assert.equal(h.s.question!.flaredBy, 'p2');
-  h.act({ type: 'connection', playerId: 'p2', connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.equal(dynamiteOf(h.s, 'p1'), 1);
-  assert.equal(flaresOf(h.s, 'p2'), 1);
-  assert.equal(flaresOf(h.s, 'p1') + dynamiteOf(h.s, 'p2') + flaresOf(h.s, 'p0') + dynamiteOf(h.s, 'p0'), 0, 'nobody else gains one');
-});
-
-test('a question set aside with nothing spent on it gives nothing', () => {
-  const h = solo();
-  h.ask();
-  h.act({ type: 'connection', playerId: 'p0', connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.deepEqual([flaresOf(h.s, 'p0'), dynamiteOf(h.s, 'p0')], [0, 0]);
-});
-
-// ---- 3. the lockout a question set aside gives back ----------------------------
-
-/** DELVE_MAX_LOCKOUT categories nobody is offered right now, oldest first. */
-const fullLockout = (h: ReturnType<typeof run>) => h.engine.categories.filter((c) => !h.s.offered.includes(c)).slice(0, DELVE_MAX_LOCKOUT);
-
-test('alone: setting a question aside at the longest lockout restores the lockout as it was', () => {
-  const h = solo({ depth: 95 });
-  assert.equal(delveLockout(95), DELVE_MAX_LOCKOUT);
-  const before = fullLockout(h);
-  h.edit((c) => (c.players[0].recent = [...before]));
-  h.ask();
-  assert.notDeepEqual(h.s.players[0].recent, before);
-  h.act({ type: 'connection', playerId: 'p0', connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.deepEqual(h.s.players[0].recent, before);
-});
-
-test("together: setting a question aside at the longest lockout restores the team's lockout as it was", () => {
-  const h = run(3, { depth: 95 });
-  const before = fullLockout(h);
-  h.edit((c) => (c.recentCategories = [...before]));
-  h.ask();
-  assert.notDeepEqual(h.s.recentCategories, before);
-  h.act({ type: 'connection', playerId: 'p2', connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.deepEqual(h.s.recentCategories, before);
-});
-
-test('a save from before the lockout was kept still takes back just the pick', () => {
-  const h = run(3);
-  h.ask();
-  const picked = h.s.recentCategories;
-  h.edit((c) => {
-    delete c.delve!.snapshot;
-    delete c.delve!.picksBefore;
-  });
-  h.act({ type: 'connection', playerId: 'p2', connected: false });
-  h.act({ type: 'resumed' });
-  assert.deepEqual(h.s.recentCategories, picked.slice(0, -1));
-});
-
-// ---- 4. what a question set aside gives back to everyone ----------------------
-
-/** The host's reload cuts off p2, so the open question is set aside. */
-const reload = (h: ReturnType<typeof run>, cut = ['p2']) => {
+/** The host reloads at `at` (its last moment before it), cutting off `cut`. */
+const reload = (h: ReturnType<typeof run>, cut = ['p2'], at?: number) => {
   for (const id of cut) h.act({ type: 'connection', playerId: id, connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.equal(h.s.delve!.snapshot, undefined, 'the snapshot goes with the question');
+  h.act({ type: 'resumed', ...(at === undefined ? {} : { at }) });
 };
+/** The art is back on screens, so the clock carries on. */
+const carryOn = (h: ReturnType<typeof run>) => h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
 
-test('together: a wrong pick on a question set aside gives the life back', () => {
+test('together: a reload holds the clock still, and nobody can answer meanwhile', () => {
   const h = run(3);
+  const q = h.ask();
+  h.clock.now += 4000;
+  reload(h, ['p2'], h.clock.now);
+  const held = h.s.question!;
+  assert.equal(h.s.phase, 'question');
+  assert.equal(held.askedAt, q.askedAt, 'the same question');
+  assert.equal(held.deadline, null);
+  assert.equal(held.clockAt, undefined);
+  assert.deepEqual(held.paused, { clockAt: q.clockAt, at: h.clock.now, left: q.deadline! - q.clockAt! - 4000 });
+  silently(() => h.answer('p0', right(q)), /early/);
+  silently(() => h.act({ type: 'answer', index: null, askedAt: q.askedAt }), /early/);
+  // Long after its old deadline, it is still there.
+  h.clock.now = q.deadline! + 60_000;
+  assert.equal(h.s.phase, 'question');
+});
+
+test('together: the clock carries on with the time it had left, everything timed on it moved on with it', () => {
+  const h = run(3);
+  const q = h.ask();
+  const span = q.deadline! - q.clockAt!;
+  h.clock.now += 3000;
+  h.answer('p1', wrongs(q)[0]);
+  h.clock.now += 2000;
+  reload(h, ['p2'], h.clock.now);
+  assert.equal(pausedUsed(h.s.question!.paused!), 5000, 'what had gone of it, for the answer times');
+  h.clock.now += 45_000;
+  carryOn(h);
+  const r = h.s.question!;
+  assert.equal(r.paused, undefined);
+  assert.equal(r.deadline, h.clock.now + span - 5000);
+  assert.equal(r.clockAt, h.clock.now - 5000, '5 s of it had gone');
+  assert.equal(r.struck![0].at, r.clockAt! + 3000, 'the wrong answer, 3 s in');
+  h.answer('p0', right(q));
+  assert.equal(h.s.reveal!.correct, true);
+});
+
+test('together: what was answered before the reload stands: lives, wards and streaks', () => {
+  const h = run(3);
+  h.give('p1', { wards: 1, flares: 1 });
+  h.edit((c) => (c.players[0].streak = 3));
   const q = h.ask();
   h.answer('p1', wrongs(q)[0]);
   h.answer('p0', wrongs(q)[1]);
-  assert.deepEqual([livesOf(h.s, 'p0'), livesOf(h.s, 'p1')], [DELVE_LIVES - 1, DELVE_LIVES - 1]);
   reload(h);
-  for (const id of ['p0', 'p1', 'p2']) assert.equal(livesOf(h.s, id), DELVE_LIVES);
-  assert.deepEqual(h.s.delve!.losses.p1 ?? [], []);
+  carryOn(h);
+  assert.deepEqual([livesOf(h.s, 'p0'), livesOf(h.s, 'p1'), livesOf(h.s, 'p2')], [DELVE_LIVES - 1, DELVE_LIVES, DELVE_LIVES]);
+  assert.deepEqual(inventoryOf(h.s, 'p1'), { ...NONE, flares: 1 }, 'the ward stays broken');
+  assert.equal(h.s.players[0].streak, 0);
+  assert.deepEqual(h.s.question!.struck!.map((x) => x.by), ['p1', 'p0']);
+  silently(() => h.answer('p1', wrongs(q)[2] ?? right(q)), /already answered/);
 });
 
-test('together: a ward a wrong pick broke on a question set aside comes back', () => {
-  const h = run(3);
-  h.give('p1', { wards: 1, flares: 1 });
-  const q = h.ask();
-  h.answer('p1', wrongs(q)[0]);
-  assert.deepEqual(h.s.question!.struck!.map((x) => [x.by, x.lives, x.wards]), [['p1', 0, 1]]);
-  assert.deepEqual([wardsOf(h.s, 'p1'), livesOf(h.s, 'p1')], [0, DELVE_LIVES]);
-  reload(h);
-  assert.deepEqual(inventoryOf(h.s, 'p1'), { ...NONE, wards: 1, flares: 1 });
-  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES);
-});
-
-test('together: a player who perished on a question set aside is back on their feet, pack and all', () => {
+test('together: a player who perished before the reload stays fallen, and is not waited for', () => {
   const h = run(3);
   h.edit((c) => (c.delve!.losses.p1 = Array(DELVE_LIVES - 1).fill(1)));
-  h.give('p1', { flares: 2, dynamite: 1 });
+  h.give('p1', { flares: 2 });
   const q = h.ask();
   h.answer('p1', wrongs(q)[0]);
+  reload(h, ['p1', 'p2']);
   assert.equal(livesOf(h.s, 'p1'), 0);
   assert.deepEqual(inventoryOf(h.s, 'p1'), NONE);
-  // They were cut off too: back on their feet, they get the grace as well.
-  reload(h, ['p1', 'p2']);
-  assert.equal(livesOf(h.s, 'p1'), 1);
-  assert.deepEqual(inventoryOf(h.s, 'p1'), { ...NONE, flares: 2, dynamite: 1 });
-  assert.deepEqual([...h.s.delve!.excused].sort(), ['p1', 'p2']);
+  assert.deepEqual(h.s.delve!.excused, ['p2']);
 });
 
-test('together: the streaks a question set aside ended come back', () => {
-  const h = run(3);
-  h.edit((c) => c.players.forEach((p, i) => (p.streak = [2, 4, 1][i])));
-  const q = h.ask();
-  h.answer('p1', wrongs(q)[0]);
-  assert.equal(h.s.players[1].streak, 0);
-  reload(h);
-  assert.deepEqual(h.s.players.map((p) => p.streak), [2, 4, 1]);
-});
-
-test('together: a player who left during a question set aside stays gone', () => {
+test('a reload late on the clock leaves at least DELVE_RESUME_MIN_MS when it carries on', () => {
   const h = run(3);
   const q = h.ask();
-  h.answer('p1', wrongs(q)[0]);
-  h.act({ type: 'remove', playerId: 'p1' });
-  reload(h);
-  assert.equal(h.s.delve!.losses.p1, undefined);
-  assert.equal(h.s.delve!.inventory!.p1, undefined);
+  h.clock.now = q.deadline! - 1000;
+  reload(h, ['p2'], h.clock.now);
+  assert.equal(h.s.question!.paused!.left, DELVE_RESUME_MIN_MS);
+  h.clock.now = q.deadline! + 30_000;
+  carryOn(h);
+  assert.equal(h.s.question!.deadline, h.clock.now + DELVE_RESUME_MIN_MS);
 });
 
-test('a reask keeps the snapshot its pick took, and an answered question lets it go', () => {
+test('the time added to reach DELVE_RESUME_MIN_MS goes on the deadline only: what had gone of the clock stays gone', () => {
   const h = run(3);
-  h.edit((c) => (c.players[1].streak = 3));
-  h.act({ type: 'pick', category: h.s.offered.find((c) => !findOn(h.s, c))! });
-  const snap = structuredClone(h.s.delve!.snapshot);
-  assert.deepEqual(snap!.picks, []);
-  h.act({ type: 'reask' });
-  assert.deepEqual(h.s.delve!.snapshot, snap);
-  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
-  const q = h.s.question!;
+  const q = h.ask();
+  h.clock.now = q.deadline! - 1500;
   h.answer('p1', wrongs(q)[0]);
-  h.answer('p0', right(q));
-  assert.equal(h.s.phase, 'reveal');
-  assert.equal(h.s.delve!.snapshot, undefined);
-  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1, 'an answered question costs what it cost');
-  assert.equal(h.s.players[1].streak, 0);
+  h.clock.now += 1000;
+  reload(h, ['p2'], h.clock.now);
+  h.clock.now += 30_000;
+  carryOn(h);
+  const r = h.s.question!;
+  assert.equal(r.deadline, h.clock.now + DELVE_RESUME_MIN_MS);
+  // An Azurite Vein's fast window, timed from clockAt, doesn't open again.
+  assert.equal(h.clock.now - r.clockAt!, q.deadline! - q.clockAt! - 500);
+  assert.equal(r.struck![0].at, h.clock.now - 1000, 'the wrong answer stays in the past');
 });
 
-test('alone: a wrong answer still costs a life, and the question lets its snapshot go', () => {
+test("without the host's last moment, the clock stops as the room reopens; one out of range is kept to the clock's", () => {
+  const h = run(3);
+  const q = h.ask();
+  h.clock.now += 6000;
+  reload(h);
+  assert.equal(h.s.question!.paused!.left, q.deadline! - h.clock.now);
+  const g = run(3);
+  const gq = g.ask();
+  g.clock.now += 2000;
+  reload(g, ['p2'], gq.clockAt! - 50_000);
+  assert.equal(g.s.question!.paused!.left, gq.deadline! - gq.clockAt!, 'never before the clock started');
+  const k = run(3);
+  const kq = k.ask();
+  k.clock.now += 2000;
+  reload(k, ['p2'], k.clock.now + 50_000);
+  assert.equal(k.s.question!.paused!.left, kq.deadline! - k.clock.now, 'never after the room reopened');
+});
+
+test('a second reload while the clock is held keeps the time it had left', () => {
+  const h = run(3);
+  const q = h.ask();
+  h.clock.now += 4000;
+  reload(h, ['p2'], h.clock.now);
+  const paused = structuredClone(h.s.question!.paused);
+  h.clock.now += 20_000;
+  reload(h, ['p1', 'p2'], h.clock.now);
+  assert.deepEqual(h.s.question!.paused, paused);
+  assert.equal(h.s.question!.askedAt, q.askedAt);
+});
+
+test('a flare burnt before the reload keeps its time, and burns no second time', () => {
+  const h = run(3);
+  h.give('p2', { flares: 2 });
+  const q = h.ask();
+  h.clock.now = q.deadline!;
+  h.act({ type: 'flare', askedAt: q.askedAt });
+  const f = h.s.question!;
+  assert.equal(f.deadline, q.deadline! + FLARE_MS);
+  h.clock.now += 1000;
+  reload(h, ['p2'], h.clock.now);
+  assert.equal(h.s.question!.paused!.left, FLARE_MS - 1000);
+  h.clock.now += 30_000;
+  carryOn(h);
+  const r = h.s.question!;
+  assert.equal(r.flaredAt, h.clock.now - 1000, 'burnt 1 s before the clock stopped');
+  assert.equal(r.deadline, h.clock.now + FLARE_MS - 1000);
+  assert.equal(flaresOf(h.s, 'p2'), 1);
+});
+
+test('alone: a guest cut off by the reload gets the same question back with its time left, and a miss still costs', () => {
   const h = solo();
+  h.give('p0', { flares: 1 });
   const q = h.ask();
-  assert.ok(h.s.delve!.snapshot);
+  h.clock.now += 5000;
+  reload(h, ['p0'], h.clock.now);
+  assert.equal(h.s.phase, 'question');
+  assert.equal(h.s.question!.paused!.left, q.deadline! - q.clockAt! - 5000);
+  h.act({ type: 'join', playerId: 'p0', name: 'back', returning: true }, 'p0');
+  carryOn(h);
   h.answer('p0', wrong(q));
   assert.equal(h.s.reveal!.correct, false);
   assert.equal(livesOf(h.s, 'p0'), DELVE_LIVES - 1);
-  assert.equal(h.s.delve!.snapshot, undefined);
-  h.act({ type: 'next' }, 'p0');
-  assert.equal(h.s.phase, 'choosing');
+  assert.equal(flaresOf(h.s, 'p0'), 1);
 });
 
-test('an older save without a snapshot sets a question aside as before: items back, losses stay', () => {
-  const h = run(3);
-  h.give('p2', { flares: 1 });
+test("nobody cut off (the host alone, or everyone else fallen): the clock runs on as it was", () => {
+  const h = run(1);
   const q = h.ask();
-  const picked = h.s.recentCategories;
-  h.clock.now = q.deadline!;
-  h.act({ type: 'flare', askedAt: q.askedAt });
-  assert.equal(h.s.question!.flaredBy, 'p2');
-  h.answer('p1', wrongs(q)[0]);
-  h.edit((c) => {
-    delete c.delve!.snapshot;
-    c.delve!.picksBefore = [];
-  });
-  h.act({ type: 'connection', playerId: 'p2', connected: false });
-  h.act({ type: 'resumed' });
-  assert.equal(h.s.phase, 'choosing');
-  assert.notDeepEqual(picked, []);
-  assert.deepEqual(h.s.recentCategories, []);
-  assert.equal(flaresOf(h.s, 'p2'), 1);
-  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
-  assert.equal(h.s.delve!.picksBefore, undefined);
+  h.clock.now += 5000;
+  reload(h, [], h.clock.now - 3000);
+  assert.equal(h.s.question!.deadline, q.deadline);
+  assert.equal(h.s.question!.paused, undefined);
+  const g = run(2);
+  g.edit((c) => (c.delve!.losses.p1 = Array(DELVE_LIVES).fill(1)));
+  const gq = g.ask();
+  reload(g, ['p1']);
+  assert.equal(g.s.question!.deadline, gq.deadline);
 });
 
-test('together: the vote a question set aside is held again does not count as let pass twice', () => {
+test("a question whose clock hadn't started is kept as it was, to start as usual", () => {
   const h = run(3);
-  h.edit((c) => (c.delve!.missed = { p0: 0, p1: 0, p2: 1 }));
-  // p0 votes, p1 and p2 let it pass: the vote closes when its window runs out.
-  h.act({ type: 'vote', category: h.s.offered[0] }, 'p0');
-  h.clock.now += 60_000;
-  h.act({ type: 'expire' });
-  assert.equal(h.s.phase, 'question');
-  assert.deepEqual(h.s.delve!.missed, { p0: 0, p1: 1, p2: 2 });
-  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+  h.act({ type: 'pick', category: h.s.offered.find((c) => !findOn(h.s, c))! });
+  const q = h.s.question!;
   reload(h);
-  assert.deepEqual(h.s.delve!.missed, { p0: 0, p1: 0, p2: 1 }, 'as before that vote');
+  assert.equal(h.s.phase, 'question');
+  assert.equal(h.s.question!.askedAt, q.askedAt);
+  assert.equal(h.s.question!.paused, undefined);
+  h.clock.now += 20_000;
+  carryOn(h);
+  assert.equal(h.s.question!.clockAt, h.clock.now, 'its clock starts now, from the full time');
+});
+
+test("a question held still whose art won't load again can be asked again; what it cost stands", () => {
+  const h = run(3);
+  const q = h.ask();
+  h.answer('p1', wrongs(q)[0]);
+  reload(h);
+  h.act({ type: 'reask' });
+  const n = h.s.question!;
+  assert.notEqual(n.itemId, q.itemId);
+  assert.equal(n.paused, undefined);
+  assert.equal(n.struck, undefined);
+  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
+});
+
+test('only those cut off who could still answer hold the clock still', () => {
+  // Cut off after answering wrong: nothing left for them to give, so the clock runs on.
+  const h = run(3);
+  const q = h.ask();
+  h.answer('p2', wrongs(q)[0]);
+  reload(h, ['p2']);
+  assert.equal(h.s.question!.deadline, q.deadline);
+  assert.equal(h.s.question!.paused, undefined);
+  assert.equal(awaitingReturn(h.s, h.clock.now), false);
+  // Idle, and cut off: a vote doesn't wait for them, nor does the clock.
+  const idle = run(3);
+  idle.edit((c) => (c.delve!.missed = { p2: DELVE_IDLE_ROUNDS }));
+  const iq = idle.ask();
+  reload(idle, ['p2']);
+  assert.equal(idle.s.question!.deadline, iq.deadline);
+  // One of two cut off still to answer: it holds still, and waits for that one only.
+  const g = run(3);
+  const gq = g.ask();
+  g.answer('p2', wrongs(gq)[0]);
+  reload(g, ['p1', 'p2']);
+  assert.ok(g.s.question!.paused);
+  assert.equal(awaitingReturn(g.s, g.clock.now), true);
+  g.act({ type: 'join', playerId: 'p1', name: 'back', returning: true }, 'p1');
+  assert.equal(awaitingReturn(g.s, g.clock.now), false, 'p2, still away, has answered');
+});
+
+test('the clock waits DELVE_RESUME_CLOCK_MS at most for those cut off, while a vote waits the whole grace', () => {
+  const h = run(3);
+  h.ask();
+  reload(h, ['p2']);
+  assert.equal(awaitingReturn(h.s, h.clock.now), true);
+  h.clock.now += DELVE_RESUME_CLOCK_MS - 1;
+  assert.equal(awaitingReturn(h.s, h.clock.now), true);
+  h.clock.now += 1;
+  assert.equal(awaitingReturn(h.s, h.clock.now), false);
+  assert.ok(DELVE_RESUME_CLOCK_MS < DELVE_RESUME_GRACE_MS);
+  assert.deepEqual(expectedVoters(h.s, h.clock.now), ['p0', 'p1', 'p2'], 'the vote still waits for them');
 });

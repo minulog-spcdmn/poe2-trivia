@@ -1030,7 +1030,7 @@ test('a new depth sinks the scene as its cards are dealt: not the first of a run
   assert.equal(dealtDeeper(undefined, { run: 1, depth: 1 }), false, 'the first cards of a run');
   assert.equal(dealtDeeper(undefined, { run: 1, depth: 7 }), false, 'the first seen after a reload');
   assert.equal(dealtDeeper({ run: 1, depth: 1 }, { run: 1, depth: 2 }), true);
-  assert.equal(dealtDeeper({ run: 1, depth: 4 }, { run: 1, depth: 4 }), false, 'a question set aside');
+  assert.equal(dealtDeeper({ run: 1, depth: 4 }, { run: 1, depth: 4 }), false, 'the same depth dealt again');
   assert.equal(dealtDeeper({ run: 1, depth: 30 }, { run: 2, depth: 1 }), false, 'a new run');
   // A plunge lasts about two seconds and travels further than half a screen.
   assert.ok(PLUNGE_MS >= 1800 && PLUNGE_MS <= 2000 && PLUNGE_SINK >= 0.5);

@@ -15,6 +15,7 @@ import {
   REVIVE_FROM,
   VOTE_WINDOW_MS,
   ZONE_DESCENT_MS,
+  awaitingReturn,
   dealIn,
   delveStandings,
   delveTeam,
@@ -378,35 +379,41 @@ test('only those standing vote, for a card on offer, as themselves', () => {
   loudly(() => solo.vote('p0'), /nothing to vote/);
 });
 
-test('after a host reload, a vote waits through the grace for those it cut off, and a question is set aside', () => {
+test("after a host reload, the question's clock holds still, and the next vote waits through the grace for those it cut off", () => {
   const h = team(3);
-  const offered = h.s.offered;
   const q = h.ask();
   h.pickAs('p1', wrongs(q)[0]);
   assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
   for (const id of ['p1', 'p2']) h.act({ type: 'connection', playerId: id, connected: false });
+  const before = h.s;
   h.act({ type: 'resumed' });
-  // The question someone cut off may have answered is set aside; the same cards come back.
-  assert.equal(h.s.phase, 'choosing');
-  assert.equal(h.s.question, null);
-  assert.deepEqual(h.s.offered, offered);
-  assert.deepEqual(h.s.recentCategories, [], 'its pick is taken back');
-  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES, 'a wrong answer given on it costs nothing');
-  assert.equal(h.s.delve!.snapshot, undefined, 'its snapshot is gone with it');
-  assert.deepEqual(delveNotices({ ...h.s, phase: 'question', question: q }, h.s), [{ kind: 'setAside', playerId: '' }]);
-  silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), /late/);
-  // The vote waits for those cut off until the grace ends.
+  // The question someone cut off may have been answering holds still; what was answered on it stands.
+  assert.equal(h.s.phase, 'question');
+  assert.equal(h.s.question!.askedAt, q.askedAt);
+  assert.equal(h.s.question!.deadline, null);
+  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1, 'a wrong answer given on it still costs');
+  assert.deepEqual(delveNotices(before, h.s), [{ kind: 'paused' }]);
+  silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), /early/);
   assert.deepEqual([...h.s.delve!.excused].sort(), ['p1', 'p2']);
+  assert.equal(awaitingReturn(h.s, h.clock.now), true, 'its clock waits for them');
+  // The art back on screens, it carries on and is cleared.
+  h.act({ type: 'clock', askedAt: q.askedAt });
+  h.pickAs('p0', right(q));
+  h.act({ type: 'next' });
+  assert.equal(h.s.phase, 'choosing');
+  // The vote waits for those cut off until the grace ends.
   assert.deepEqual(expectedVoters(h.s, h.clock.now), ['p0', 'p1', 'p2']);
   h.vote('p0');
   assert.equal(h.s.phase, 'choosing');
-  assert.equal(voteClosesAt(h.s), h.clock.now + DELVE_RESUME_GRACE_MS);
+  assert.equal(voteClosesAt(h.s), h.s.delve!.graceUntil);
   // One comes back and votes; the other never does, and the grace runs out.
   h.act({ type: 'join', playerId: 'p1', name: 'back', returning: true }, 'p1');
   assert.deepEqual(h.s.delve!.excused, ['p2']);
   h.vote('p1');
   assert.equal(h.s.phase, 'choosing');
-  h.clock.now += DELVE_RESUME_GRACE_MS;
+  assert.equal(awaitingReturn(h.s, h.clock.now), true);
+  h.clock.now = h.s.delve!.graceUntil;
+  assert.equal(awaitingReturn(h.s, h.clock.now), false);
   assert.equal(voteDone(h.s, h.clock.now), true);
   h.act({ type: 'expire' });
   assert.equal(h.s.phase, 'question');
@@ -1124,7 +1131,7 @@ test('a host reload keeps the votes cast: those cut off are marked away and excu
   assert.equal(h.s.phase, 'choosing');
   assert.deepEqual(h.s.delve!.votes, { p0: card, p1: card });
   assert.deepEqual(h.s.delve!.excused, ['p1', 'p2']);
-  assert.equal(h.s.used.length, used, 'no question drawn and set aside');
+  assert.equal(h.s.used.length, used, 'no question drawn');
   assert.equal(voteClosesAt(h.s), h.clock.now + DELVE_RESUME_GRACE_MS);
   assert.equal(expireIn(h.s, h.clock.now), DELVE_RESUME_GRACE_MS);
   // Both back a second later: the vote closes by its own window again, and the host's timer is set again for it.

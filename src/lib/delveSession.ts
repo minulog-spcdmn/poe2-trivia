@@ -210,19 +210,12 @@ export function runSeenStarting(prev: GameState | null, next: GameState): number
 }
 
 /**
- * The question in play was set aside by the host's reload (back to the same
- * cards, on the same turn): the engine put back what it cost, which is no
- * news to anyone.
+ * The question in play was held still by the host's reload (engine
+ * 'resumed'): its clock stopped, to start again with the time it had left.
  */
-export function setAside(prev: GameState | null, next: GameState): boolean {
-  return (
-    !!prev?.delve &&
-    !!next.delve &&
-    prev.delve.startedAt === next.delve.startedAt &&
-    prev.phase === 'question' &&
-    next.phase === 'choosing' &&
-    prev.turnCount === next.turnCount
-  );
+export function pausedNow(prev: GameState | null, next: GameState): boolean {
+  const [was, q] = [prev?.question, next.question];
+  return !!prev?.delve && !!next.delve && next.phase === 'question' && !!q?.paused && was?.askedAt === q.askedAt && !was.paused;
 }
 
 /** A send queue to a guest is empty: PeerJS's own, and the data channel's. */
@@ -231,29 +224,23 @@ export function drained(conn: { bufferSize?: number; dataChannel?: { bufferedAmo
 }
 
 export type DelveNotice =
-  /** The host reloaded and the question was set aside; whose it was ('' for a co-op run's, the team's). */
-  | { kind: 'setAside'; playerId: string }
+  /** The host reloaded and the question's clock is held still until it starts again. */
+  | { kind: 'paused' }
   /** Co-op: a player lost their last life, at `depth`. */
   | { kind: 'perished'; playerId: string; depth: number };
 
 /**
- * What a state change tells every screen beyond what it draws: a question
- * was set aside because the host reloaded (a toast), and together, a player
- * perishing (heard). A teammate's wrong pick, a revive and a flare burning
- * the game screen says itself; alone, the player's own screen says all of it.
+ * What a state change tells every screen beyond what it draws: a question's
+ * clock held still because the host reloaded (a toast), and together, a
+ * player perishing (heard). A teammate's wrong pick, a revive and a flare
+ * burning the game screen says itself; alone, the player's own screen says
+ * all of it.
  */
 export function delveNotices(prev: GameState | null, next: GameState): DelveNotice[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
   const out: DelveNotice[] = [];
-  const group = isGroupRun(next);
-  if (setAside(prev, next)) {
-    const active = prev.players[prev.turn];
-    if (group) out.push({ kind: 'setAside', playerId: '' });
-    else if (active) out.push({ kind: 'setAside', playerId: active.id });
-    // What it cost was put back: nothing more to tell.
-    return out;
-  }
-  if (!group) return out;
+  if (pausedNow(prev, next)) out.push({ kind: 'paused' });
+  if (!isGroupRun(next)) return out;
   for (const p of next.players)
     if (livesOf(prev, p.id) > 0 && livesOf(next, p.id) === 0) out.push({ kind: 'perished', playerId: p.id, depth: fellAt(next, p.id) ?? next.round });
   return out;
@@ -276,14 +263,10 @@ export function livesLost(prev: GameState | null, next: GameState): { playerId: 
  * Items gained or used up by this change, per player and item, for the phial,
  * sounds and effects: a find answered right, a ward breaking, a flare
  * burning, a stick of dynamite going off, everything dropped by a player who
- * perished.
- * Nothing for a question set aside. `left`: how many they hold now.
+ * perished. `left`: how many they hold now.
  */
 export function inventoryChanges(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind; change: 'gained' | 'used'; left: number }[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
-  // A question set aside gives back what it took (a flare, dynamite, a pack
-  // dropped by perishing): put back quietly, not found.
-  if (setAside(prev, next)) return [];
   return next.players.flatMap((p) => {
     const [before, after] = [inventoryOf(prev, p.id), inventoryOf(next, p.id)];
     return ITEM_KINDS.flatMap((item) =>
@@ -295,12 +278,11 @@ export function inventoryChanges(prev: GameState | null, next: GameState): { pla
 /**
  * What Dynamite Caches' blasts destroyed in this change, per player, for the
  * phial, sounds and effects: alone, at the reveal of a miss; together, with
- * each wrong pick as it comes in, and the time-out's at the reveal. Nothing
- * for a question set aside (what it took is given back). `prev` needs only
- * its phase, its turnCount and its question's askedAt and struck.
+ * each wrong pick as it comes in, and the time-out's at the reveal. `prev`
+ * needs only its phase and its question's askedAt and struck.
  */
 export function itemsBlown(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind }[] {
-  if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt || setAside(prev, next)) return [];
+  if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
   const q = next.question;
   if (!q) return [];
   const reveals = prev.phase !== 'reveal' && next.phase === 'reveal' && !!next.reveal;

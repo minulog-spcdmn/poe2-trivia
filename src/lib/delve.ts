@@ -43,6 +43,17 @@ export const REVIVE_FROM = 2;
 /** After the host reloads, players who were cut off get this long to come back before a vote closes without them. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
 
+/**
+ * After the host reloads, a question's clock waits this long at most for
+ * those it cut off who could still answer it (awaitingReturn): enough for a
+ * guest to notice and get back (it tries every 3 s), not a minute to look
+ * the answer up on a question it has seen.
+ */
+export const DELVE_RESUME_CLOCK_MS = 20_000;
+
+/** A question the host's reload held still starts again with at least this long on its clock. */
+export const DELVE_RESUME_MIN_MS = 5_000;
+
 /** Depth as a whole number from 1 (anything odd counts as the surface). */
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) : 1);
 
@@ -554,11 +565,19 @@ export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
  */
 export function clockLeft(q: Pick<Question, 'deadline' | 'held'>, now: number): number {
   if (q.deadline === null) return Infinity;
-  const h = q.held;
-  // Before the pause (a screen whose clock runs a little behind the host's) all of it is still to come.
-  const pausing = h && now < h.until ? h.until - Math.max(now, h.from) : 0;
-  return Math.max(0, q.deadline - now - pausing);
+  return Math.max(0, q.deadline - now - heldAhead(q.held, now));
 }
+
+/**
+ * How much of a pause (`held`) is still to come at `now`: before it (a
+ * screen whose clock runs a little behind the host's), all of it.
+ */
+export function heldAhead(h: Question['held'], now: number): number {
+  return h && now < h.until ? h.until - Math.max(now, h.from) : 0;
+}
+
+/** How much of a clock the host's reload held still had been used when it stopped (ms). */
+export const pausedUsed = (p: NonNullable<Question['paused']>) => Math.max(0, p.at - p.clockAt);
 
 /** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */
 export const delveQuestionTimer = (d: number, q: { find?: FindKind }) => (q.find ? findTimer(q.find, d) : delveTimer(d));
@@ -745,6 +764,26 @@ const inGrace = (s: GameState, p: Player, now: number) => !p.connected && !!s.de
 export function expectedVoters(s: GameState, now: number): string[] {
   if (!s.delve) return [];
   return s.players.filter((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && (p.connected || inGrace(s, p, now))).map((p) => p.id);
+}
+
+/**
+ * Those the host's reload cut off who could still answer the question in
+ * play (or the next one): standing, not idle (a vote doesn't wait for them
+ * either, expectedVoters) and with no answer given to it yet.
+ */
+export function cutOffAnswering(s: GameState): string[] {
+  const done = new Set(answeredIds(s));
+  return (s.delve?.excused ?? []).filter((id) => livesOf(s, id) > 0 && !isIdle(s, id) && !done.has(id) && s.players.some((p) => p.id === id && !p.connected));
+}
+
+/**
+ * Someone the host's reload cut off who could still answer may yet come
+ * back at `now` (host clock): a question's clock doesn't start without them,
+ * for DELVE_RESUME_CLOCK_MS after the reload at most.
+ */
+export function awaitingReturn(s: GameState, now: number): boolean {
+  const dm = s.delve;
+  return !!dm && now < dm.graceUntil - DELVE_RESUME_GRACE_MS + DELVE_RESUME_CLOCK_MS && cutOffAnswering(s).length > 0;
 }
 
 /** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */
