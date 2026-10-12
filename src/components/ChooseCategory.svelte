@@ -832,20 +832,8 @@
     place-items: center;
     translate: calc(-50% + var(--mx) * var(--far) * var(--e-s, 1) * 1px) calc(-50% + var(--my) * var(--far) * var(--e-s, 1) * 1px);
     rotate: calc(var(--mr) * 1deg);
-    filter: brightness(0.5) saturate(1.3)
-      drop-shadow(0.75px 0 0 var(--ink)) drop-shadow(-0.75px 0 0 var(--ink))
-      drop-shadow(0 0.75px 0 var(--ink)) drop-shadow(0 -0.75px 0 var(--ink));
+    filter: brightness(0.78);
     transition: translate 0.45s var(--ease-out);
-  }
-  /* Dimmed, the gold's pale top would turn khaki: theirs starts warmer, so
-     it darkens to bronze (deathmatch and finds keep their own colours). */
-  .moon .glyph {
-    background: linear-gradient(180deg, #e2b872 0%, #c9a45c 45%, #6d4a1c 100%);
-  }
-  /* The emblem stands clear of them: a dark edge is cut round it, so their
-     lines stop short of it, as an engraver's would. */
-  .moons + .lit {
-    filter: drop-shadow(0 0 1px #0b0805) drop-shadow(0 0 1px #0b0805) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8));
   }
   /* Until measured, a companion fits its whole image to a small box. */
   .moon .glyph:not(.fit) {
