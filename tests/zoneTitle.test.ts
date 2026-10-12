@@ -95,8 +95,8 @@ test('the whole card for a zone, as a screen reader is told it', () => {
   const t = zoneTitleAt(11);
   assert.equal(t.name, 'Magma Fissure');
   assert.equal(t.sigil, 'Magma Fissure');
-  assert.equal(t.spoken, 'Depth 10: Magma Fissure. The rock is split, and it burns. New here: Dynamite Cache, 6 options, mirrored art.');
-  assert.equal(zoneTitleAt(51).spoken, 'Depth 50: Abyssal Depths. Here the deep begins to pull. New here: twin rings and gems side by side, 7 seconds to answer.');
+  assert.equal(t.spoken, 'Depth 10: Magma Fissure. Stone that never set. New here: Dynamite Cache, 6 options, mirrored art.');
+  assert.equal(zoneTitleAt(51).spoken, 'Depth 50: Abyssal Depths. Light stops short of the floor. New here: twin rings and gems side by side, 7 seconds to answer.');
   assert.ok(zoneTitleAt(41, true).spoken.startsWith('Depth 40: Vaal Outpost. Deeper than ever.'));
   for (let d = 11; d < 400; d += 10) {
     assert.ok(opensZone(d));
