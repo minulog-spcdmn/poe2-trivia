@@ -41,7 +41,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -344,7 +344,9 @@ class Session {
    * Delve: when this device first had the question (its askedAt) with its
    * clock running (page clock), which is when it opens to answers (noteClock).
    */
-  private clockSeen: { qid: number; at: number } | null = null;
+  private clockSeen: { qid: number; at: number; before?: number } | null = null;
+  /** Delve: how much of this question's clock was used before the host's reload held it still (pausedUsed). */
+  private usedBefore: { qid: number; ms: number } | null = null;
   /**
    * Delve: the art of this question goes first to those who answer it (the
    * player alone, or everyone standing in co-op), and to everyone else
@@ -1584,8 +1586,10 @@ class Session {
       // Timed on this device's clock from its first picture, or in Delve from
       // its clock running here if that came later (its art may come well
       // before, during a team's draw): only then does it open to answers.
-      const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
-      this.answered = { qid: q.askedAt, ms: performance.now() - Math.max(shown.since, clock), ...(share !== undefined ? { share } : {}) };
+      // A clock the host's reload held still adds what was used of it before.
+      const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
+      const ms = performance.now() - Math.max(shown.since, seen?.at ?? 0) + (seen?.before ?? 0);
+      this.answered = { qid: q.askedAt, ms, ...(share !== undefined ? { share } : {}) };
     }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
@@ -1820,16 +1824,22 @@ class Session {
    * the clock's start (clockAt) itself. Noted as it first does on this
    * device, to time its answer from (dispatch); on the host that is as it
    * goes out to everyone, a guest's answer taking a round trip at least (tooFast).
-   * One the host's reload held still is noted again as it carries on.
+   * One the host's reload held still is noted again as it carries on, with
+   * what was used of its clock before (`before`, for the answer's time; it
+   * opens to answers again only then).
    */
   private noteClock(next: GameState) {
     const q = next.question;
     if (!next.delve || !q) return;
     if (q.paused) {
       this.clockSeen = null;
+      this.usedBefore = { qid: q.askedAt, ms: pausedUsed(q.paused) };
       // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
       if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
-    } else if (q.deadline !== null && this.clockSeen?.qid !== q.askedAt) this.clockSeen = { qid: q.askedAt, at: performance.now() };
+    } else if (q.deadline !== null && this.clockSeen?.qid !== q.askedAt) {
+      const before = this.usedBefore?.qid === q.askedAt ? this.usedBefore.ms : 0;
+      this.clockSeen = { qid: q.askedAt, at: performance.now(), ...(before ? { before } : {}) };
+    }
   }
 
   /**

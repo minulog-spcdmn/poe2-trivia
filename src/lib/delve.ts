@@ -580,6 +580,9 @@ export function heldAhead(h: Question['held'], now: number): number {
   return h && now < h.until ? h.until - Math.max(now, h.from) : 0;
 }
 
+/** How much of a clock the host's reload held still had been used when it stopped (ms). */
+export const pausedUsed = (p: NonNullable<Question['paused']>) => Math.max(0, p.at - p.clockAt);
+
 /** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */
 export const delveQuestionTimer = (d: number, q: { find?: FindKind }) => (q.find ? findTimer(q.find, d) : delveTimer(d));
 

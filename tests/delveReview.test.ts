@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DELVE_LIVES, DELVE_RESUME_MIN_MS, FLARE_MS, findOn, flaresOf, inventoryOf, livesOf, type Inventory } from '../src/lib/delve.ts';
+import { DELVE_LIVES, DELVE_RESUME_MIN_MS, FLARE_MS, findOn, flaresOf, inventoryOf, livesOf, pausedUsed, type Inventory } from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, ActionError, Engine, createGame, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -188,6 +188,7 @@ test('together: the clock carries on with the time it had left, everything timed
   h.answer('p1', wrongs(q)[0]);
   h.clock.now += 2000;
   reload(h, ['p2'], h.clock.now);
+  assert.equal(pausedUsed(h.s.question!.paused!), 5000, 'what had gone of it, for the answer times');
   h.clock.now += 45_000;
   carryOn(h);
   const r = h.s.question!;
