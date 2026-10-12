@@ -45,7 +45,7 @@
 // read is never written over (lib/keepAside.ts).
 
 import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
-import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
+import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
 import { clearAside, openStored } from './keepAside.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
@@ -119,6 +119,10 @@ export interface Answer {
   find?: FindKind;
   /** Delve: what a right answer to a find earned. */
   gained?: ItemKind;
+  /** Delve, an Azurite Vein's strike after the first (missing: strike 1, or no vein). */
+  strike?: number;
+  /** Delve, a vein's cave-in: the wards in hand it buried. */
+  buried?: number;
   /** Delve: a flare burnt on this question. */
   flared?: true;
   /** Delve, on a cave-in or together: lives it took and wards that broke in their place (otherwise see answerLives). */
@@ -185,6 +189,10 @@ export interface Encounter {
     lost?: { lives: number; wards: number };
     /** What a right answer to the find earned. */
     gained?: ItemKind;
+    /** An Azurite Vein's strike after the first. */
+    strike?: number;
+    /** A vein's cave-in: the wards in hand it buried. */
+    buried?: number;
     /** A flare burnt on the question. */
     flared?: true;
     /** A run together. */
@@ -218,6 +226,9 @@ export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, 
 export const noTally = (): Tally => ({ n: 0, ok: 0 });
 export const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
 
+/** A vein's later strike, or a haul it buried: a small whole number (VEIN_MAX_STRIKES at most). */
+const isStrike = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= VEIN_MAX_STRIKES;
+
 /**
  * The encounter a reveal means for this device, or null when there is none.
  * `me`: this device's player online (null in hot-seat).
@@ -239,6 +250,8 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
       ...(r.warded ? { warded: true as const } : {}),
       ...(r.caveIn && r.lost ? { lost: { lives: r.lost.lives, wards: r.lost.wards } } : {}),
       ...(r.gained ? { gained: r.gained } : {}),
+      ...((q.strike ?? 1) > 1 ? { strike: q.strike } : {}),
+      ...(r.buried ? { buried: r.buried } : {}),
       ...(q.flared ? { flared: true as const } : {}),
       ...(me && !hotSeat ? { who: me } : {}),
     };
@@ -383,6 +396,8 @@ export function record(c: Codex, e: Encounter): Codex {
     ...(warded ? { warded: true as const } : {}),
     ...(dv?.find ? { find: dv.find } : {}),
     ...(dv?.gained && a.ok ? { gained: dv.gained } : {}),
+    ...(dv?.strike ? { strike: dv.strike } : {}),
+    ...(dv?.buried && !a.ok ? { buried: dv.buried } : {}),
     ...(dv?.flared ? { flared: true as const } : {}),
     ...(dv?.lost && !a.ok ? { lives: lives, wards: wardsBroke } : {}),
     ...(dv?.blasted ? { blasted: true as const } : {}),
@@ -478,6 +493,8 @@ export function parseCodex(raw: string | null): Codex | null {
         ...(a.warded === true && !a.ok ? { warded: true as const } : {}),
         ...(d && isFind(a.find) ? { find: a.find } : {}),
         ...(d && a.ok && ITEM_KINDS.includes(a.gained as ItemKind) ? { gained: a.gained as ItemKind } : {}),
+        ...(d && a.find === 'azurite' && isStrike(a.strike) ? { strike: a.strike as number } : {}),
+        ...(d && !a.ok && a.find === 'azurite' && isStrike(a.buried) ? { buried: a.buried as number } : {}),
         ...(d && a.flared === true ? { flared: true as const } : {}),
         ...(d && !a.ok && isLoss(a.lives) && isLoss(a.wards) ? { lives: a.lives as number, wards: a.wards as number } : {}),
         ...(d && a.blasted === true ? { blasted: true as const } : {}),

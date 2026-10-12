@@ -38,6 +38,7 @@ import {
   type FindKind,
   type Inventory,
   type ItemKind,
+  WAY_OUT,
 } from '../lib/delve';
 import { milestoneAt, snapDescent } from '../lib/descent';
 import * as descentModule from '../lib/descent';
@@ -332,6 +333,26 @@ export function dealCards() {
   put((s) => {
     s.turnCount++;
     deal(s);
+  });
+}
+
+/**
+ * Deals a vein's two cards as after a right strike (delve.ts, the dig): the
+ * vein running on and the way out, `strikes` struck so far with as many
+ * wards in hand (the player's, or the lab's actor's together), and `light`
+ * seconds of the lamp left for the next strike.
+ */
+export function dealDig(strikes = 1, light = 6) {
+  put((s) => {
+    if (!s.delve) return;
+    s.turnCount++;
+    deal(s);
+    const vein = s.offered[0];
+    if (!vein) return;
+    const holder = isGroupRun(s) ? lab.actor : (s.players[s.turn]?.id ?? '');
+    s.offered = [vein, WAY_OUT];
+    s.delve.finds = [{ category: vein, kind: 'azurite' }];
+    s.delve.dig = { strikes, haul: Array.from({ length: strikes }, () => holder), light, struck: [] };
   });
 }
 

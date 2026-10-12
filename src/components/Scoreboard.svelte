@@ -206,7 +206,11 @@
       phase: st.phase,
       players: st.players.map((p) => ({ id: p.id })),
       question: st.question && { askedAt: st.question.askedAt, struck: [...(st.question.struck ?? [])] },
-      delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },
+      delve: st.delve && {
+        startedAt: st.delve.startedAt,
+        inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])),
+        banked: st.delve.banked && { ...st.delve.banked },
+      },
     }) as unknown as GameState;
   $effect(() => {
     const next = s;
@@ -214,6 +218,8 @@
     invPrev = invSnapshot(next);
     if (!run || !was) return;
     const atReveal = next.phase === 'reveal' && was.phase !== 'reveal';
+    // A vein's haul just went into the pack (the way out, or the dig's end): its wards flow in as a find's do.
+    const banking = !!next.delve?.banked && next.delve.banked.at !== was.delve?.banked?.at;
     const byPlayer = new Map<string, ReturnType<typeof inventoryChanges>>();
     for (const c of inventoryChanges(was, next)) byPlayer.set(c.playerId, [...(byPlayer.get(c.playerId) ?? []), c]);
     // A Dynamite Cache missed: what its blast destroyed is a moment of its
@@ -235,14 +241,14 @@
       // Perishing drops everything; only a ward breaking on the way (a cave-in) is a moment.
       if (kind !== 'shatter' && livesOf(next, id) === 0) continue;
       // A find answered right: its item flows from the answer to its place
-      // (findFlows) and lands with the sparks.
-      const found = atReveal && FOUND.has(kind);
-      const delay = !atReveal ? 0 : kind === 'shatter' ? 450 : found ? (FIND_START + 0.1) * 1000 : 700;
+      // (findFlows) and lands with the sparks; so does a vein's haul banked.
+      const found = (atReveal || (banking && kind === 'ward')) && FOUND.has(kind);
+      const delay = found ? (FIND_START + 0.1) * 1000 : !atReveal ? 0 : kind === 'shatter' ? 450 : 700;
       // A cave-in can break two wards at once (one of them the blast's, it has its own moment).
       const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards - (blownItem === 'wards' ? 1 : 0));
       if (delay) invHeld[id] = inventoryOf(was, id);
       // Whether the sparks really flew is known a tick later (findFlows), well before the item lands.
-      const flow = found ? untrack(() => findFlows(id, kind, inventoryOf(was, id).wards)) : null;
+      const flow = found ? untrack(() => findFlows(id, kind, inventoryOf(was, id).wards, banking && !atReveal)) : null;
       const caved = kind === 'shatter' ? caveInOf(next, id) : null;
       later(() => playMoment(id, kind, kind === 'shatter' ? broke : 1, !!flow?.fed, caved), delay);
     }
@@ -264,9 +270,11 @@
    * or dynamite to its engraving beside the phial (or the avatar), its place
    * kept for it meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
    * later, once the sparks do fly (with effects off, or no answer or place
-   * to fly between, nothing does).
+   * to fly between, nothing does). `banked`: a vein's haul going into the
+   * pack, its wards flowing from the way out's card (its lantern) as it
+   * leaves, or, the dig ended by itself, from the strike's right answer.
    */
-  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number): { fed: boolean } {
+  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number, banked = false): { fed: boolean } {
     const flow = { fed: false };
     const find = FOUND.get(kind);
     if (!find || !fxActive()) return flow;
@@ -277,8 +285,9 @@
     const startAt = performance.now();
     void tick().then(() => {
       const li = scoreRowOf(id);
-      // The right answer, as the reveal marks it (QuestionView.svelte).
-      const answer = document.querySelector('.question .option.right, .question .tile.right');
+      // The right answer, as the reveal marks it (QuestionView.svelte); a haul banked, the way out's lantern.
+      const answer =
+        (banked ? document.querySelector('.choose .card.out .icon') : null) ?? document.querySelector('.question .option.right, .question .tile.right');
       if (!li || !answer) return;
       const { flow: phial, counts } = shownVessel(li);
       // Its slot (followed as the entry moves), and within it the exact part the item takes.

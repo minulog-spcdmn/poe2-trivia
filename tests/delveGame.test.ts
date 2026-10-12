@@ -14,6 +14,7 @@ import {
   findRules,
   livesOf,
   veilSeconds,
+  WAY_OUT,
 } from '../src/lib/delve.ts';
 import { sceneOf } from '../src/lib/recorder.ts';
 import { ActionError, Engine, RARE_GROUPS, RARE_MAX_OPTIONS, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
@@ -322,6 +323,12 @@ test('three different categories every turn, locked out as long as the depth say
     h.clockIn();
     h.act({ type: 'answer', index: right(h.s.question!), askedAt: h.s.question!.askedAt });
     h.act({ type: 'next' });
+    // A vein struck right deals its two cards at the same depth: out of it, a depth deeper.
+    if (h.s.offered.includes(WAY_OUT)) {
+      assert.equal(h.s.offered.length, 2);
+      assert.equal(findOn(h.s, h.s.offered[0]), 'azurite');
+      h.act({ type: 'pick', category: WAY_OUT });
+    }
   }
   assert.equal(h.s.round, 201);
 });

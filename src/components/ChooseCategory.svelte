@@ -7,8 +7,9 @@
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
-  import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
+  import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
+  import { digOf, expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -45,6 +46,21 @@
   const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
+
+  // ---- the Azurite Vein's dig ----------------------------------------------
+  // After a right strike the deal is two cards: the vein running on, and the
+  // way out, its plaque saying what it keeps (the haul in hand).
+
+  /** The vein being dug, while its two cards are up. */
+  const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
+  const haul = $derived(dig?.haul.length ?? 0);
+  // (The way out's lantern hangs in its plate, gilded: no emblem stands in its window.)
+  const iconOf = (cat: string) => (isWayOut(cat) ? '' : categoryIcon(cat));
+  const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1, up: 0, left: 0 } : categoryIconTweak(cat));
+  /** A card's name as players read it. */
+  const cardName = (cat: string) => (isWayOut(cat) ? out.title : cat);
+  /** The way out's colours, as custom properties on its card. */
+  const outInk = Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';');
 
   // ---- the cards' effects ---------------------------------------------------
   // Everything the cards set off is one group: it ends with them (a short
@@ -185,6 +201,7 @@
       const others = cardEls.filter((c, j) => c && j !== target).map((c) => c.querySelector('.frame') ?? c);
       const kind = kindOf(category);
       if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
+      else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
       else if (frame) onCards(() => cardPicked(frame, card, others, false));
       sfx('draw');
     };
@@ -295,6 +312,46 @@
     light(card, { color: kind === 'azurite' ? [0.3, 0.6, 1] : kind === 'flare' ? [1, 0.25, 0.4] : [1, 0.45, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
   }
 
+  // The way out's effects: lamplight rather than fire. Its light swells round
+  // the lantern as it turns up, steadies and breathes under the pointer, and
+  // floods out as it is chosen; motes of it drift in the window (.icon, where
+  // the lantern hangs).
+  const LAMP: Vec3 = [1, 0.74, 0.38];
+  function outRevealed(frame: Element) {
+    if (!fxActive()) return;
+    const lantern = frame.querySelector('.icon') ?? frame;
+    outline(frame, { color: dim(C.gold, 0.75), width: 10, intensity: 0.8, life: 1.1, fadeIn: 0.1 });
+    glints(lantern, { count: 4, area: 'fill', color: C.goldPale, size: [3, 7], delay: [0.1, 0.5] });
+    light(lantern, { color: LAMP, radius: 280, intensity: 0.34, decay: 1.1 });
+  }
+  function outHover(frame: Element, card: Element): Handle {
+    if (!fxActive()) return { stop() {} };
+    const lantern = frame.querySelector('.icon') ?? frame;
+    const glow = outline(frame, { color: dim(C.gold, 0.65), width: 12, flame: 0.12, pulse: 0.5, intensity: 0.65, fadeIn: 0.35, base: card });
+    const motes = emitter(4, () => glints(lantern, { count: 1, area: 'fill', color: C.goldPale, size: [2, 5], life: [0.6, 1.1] }));
+    light(lantern, { color: LAMP, radius: 220, intensity: 0.18, decay: 0.8 });
+    return {
+      stop() {
+        glow.stop(0.45);
+        motes.stop();
+      },
+    };
+  }
+  /** The way out is chosen: the lamp's light floods out of it; the vein's card burns away. */
+  function outPicked(card: Element, base: Element, others: Element[]) {
+    if (!fxActive()) return;
+    const lantern = card.querySelector('.icon') ?? card;
+    for (const o of others) {
+      embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
+      puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
+    }
+    outline(card, { color: C.gold, width: 16, flame: 0.2, intensity: 1, life: 1.3, base });
+    ring(lantern, { radius: 300, thickness: 10, life: 0.9, color: C.goldPale, breakup: 0.2 });
+    flare(lantern, { size: 44, streak: 380, life: 0.8, color: C.goldPale });
+    glints(lantern, { count: 6, area: 'fill', color: C.goldPale, size: [4, 9] });
+    light(lantern, { color: LAMP, radius: 440, intensity: 0.85, decay: 1.3 });
+  }
+
   let picked = $state<string | null>(null);
 
   // Size each emblem, and the items behind it (lib/ui, categoryCompanions), by
@@ -393,8 +450,8 @@
   }
   /** The emblem's style for a category: its fit, made room for its companions. */
   function emblemStyle(cat: string, heap: Heap | undefined) {
-    const t = categoryIconTweak(cat);
-    return fitStyle(categoryIcon(cat), heap ? { k: t.k * heap.k, up: t.up + heap.up, left: t.left + heap.left } : t);
+    const t = tweakOf(cat);
+    return fitStyle(iconOf(cat), heap ? { k: t.k * heap.k, up: t.up + heap.up, left: t.left + heap.left } : t);
   }
 
   // The deal: the cards slide in face down one after another, then turn face
@@ -454,10 +511,11 @@
     if (motion.still) return;
     // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
     const kind = kindOf(s.offered[i]);
+    const out = isWayOut(s.offered[i]);
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
-      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : cardRevealed(frame, dm)));
+      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : cardRevealed(frame, dm)));
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -482,7 +540,8 @@
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
-    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch)));
+    const out = isWayOut(s.offered[i]);
+    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : cardHover(frame, card, !!s.deathmatch)));
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -518,6 +577,7 @@
     const others = cardEls.filter((c, j) => c && j !== i).map((c) => c.querySelector('.frame') ?? c);
     const kind = kindOf(category);
     if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
+    else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
     else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
     sfx('pick');
     session.dispatch({ type: 'pick', category });
@@ -531,6 +591,14 @@
   <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+    {:else if dig}
+      {#if coop ? canVote && !drawn : mine}
+        {coop && myVote ? 'Your vote is in' : 'Dig deeper, or get out?'}
+      {:else if coop}
+        <span class="muted">{drawn ? 'Drawing from the votes…' : 'The team is deciding whether to dig deeper…'}</span>
+      {:else}
+        <span class="muted">{active.name} is deciding whether to dig deeper…</span>
+      {/if}
     {:else if coop}
       {#if drawn}
         <span class="muted">Drawing from the votes…</span>
@@ -558,6 +626,8 @@
         data-fx="none"
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
+        class:out={isWayOut(cat)}
+        style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
@@ -566,7 +636,7 @@
         class:faded={(picked && picked !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
         class:passing={!landed && lit === i}
-        aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
+        aria-label={coop ? `${cardName(cat)}: ${voteWords(cat)}` : isWayOut(cat) ? cardName(cat) : undefined}
         aria-pressed={coop && canVote ? myVote === cat : undefined}
         disabled={!mine}
         onclick={() => pick(cat)}
@@ -580,19 +650,21 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
-            <CardEngraving side="back" find={kindOf(cat)} />
+            <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="filigree"></span>
           </span>
           <span class="frame" use:backdropShadow>
-            <CardEngraving side="face" find={kindOf(cat)} />
+            <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              <span class="find-tag" data-zoom>{FIND_TEXT[kind].name}</span>
+              <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+            {:else if isWayOut(cat)}
+              <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
             {/if}
-            <span class="icon">
+            <span class="icon" class:none={isWayOut(cat)}>
               {#if heap}
                 {@const at = heap.at}
                 <span class="lit moons" style:--spread={heap.spread}>
@@ -606,10 +678,15 @@
                   {/each}
                 </span>
               {/if}
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
             </span>
+            {#if kindOf(cat) === 'azurite'}
+              <!-- The vein's crystals in the corner stand in front of the item. -->
+              <CardEngraving side="face" find="azurite" front />
+            {/if}
             <span class="title"
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
+                >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
             >
           </span>
           {#if coop}
@@ -635,7 +712,16 @@
     {/each}
   </div>
 
-  {#if finds.length && !s.deathmatch}
+  {#if dig}
+    <!-- A dig's two cards: the strike ahead and what a cave-in costs; what the way out takes. -->
+    <div class="find-notes" data-cursor="notes">
+      {#each s.offered as cat, i (cat)}
+        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} id={isWayOut(cat) ? undefined : `${uid}-note-azurite`} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1}>
+          {#if isWayOut(cat)}{out.note(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
+        </p>
+      {/each}
+    </div>
+  {:else if finds.length && !s.deathmatch}
     <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
     {@const two = finds.length > 1}
     {@const team = coop && !!me && livesOf(s, me) > 0}
@@ -676,6 +762,8 @@
 
   {#if s.deathmatch}
     <p class="note muted" data-cursor="note">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+  {:else if dig}
+    <!-- (A dig's cards lock nothing.) -->
   {:else if coop && canVote && lockout > 0}
     <p class="note muted" data-cursor="note">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
@@ -694,6 +782,36 @@
     margin: 0;
     font-size: 1.2rem;
     text-align: center;
+  }
+  /* The way out: its design's colours (lib/wayOut, set on the card), as a find's are. */
+  /* Its lantern hangs in the engraving, gilded: the emblem's place is kept, so a row's name keeps clear of it. */
+  .card.out .icon.none {
+    visibility: hidden;
+  }
+  .find-tag.out-tag {
+    color: var(--f-hi);
+  }
+  .card.out .title {
+    color: var(--f-hi);
+  }
+  .card.out .back {
+    border-color: var(--f-border);
+  }
+  .card.out .frame {
+    border-color: var(--f-border);
+    --bs-ring: color-mix(in srgb, var(--f-border) 45%, transparent);
+  }
+  .card.out:not(:global(.down)) .frame {
+    --bs1: 0px 34px;
+    --bs1-color: var(--f-glow);
+  }
+  .card.out.mine:not(:global(.down)):hover .frame,
+  .card.out.mine:not(:global(.down)):focus-visible .frame {
+    border-color: var(--f);
+    --bs1-color: var(--f-pulse);
+  }
+  .find-note[data-find='out'] {
+    color: var(--f);
   }
   /* The cards take the room the question will: on a full-size window they
      stand as tall as its stage (1.36 x, 980 wide for three), smaller on
@@ -926,6 +1044,38 @@
   }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
+  }
+  /* The way out: no light runs across it; its lantern kindles, the light
+     round it swelling up and settling to breathe (CardEngraving's .lamp). */
+  .card.out .sheen {
+    display: none;
+  }
+  .card.out .turn:global(.dealt) :global(.gilt) {
+    animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
+  }
+  .card.out .turn:global(.dealt) :global(.engraving) {
+    animation: swell 1.6s ease-out var(--face, 0ms) backwards;
+  }
+  @keyframes kindle-gilt {
+    from {
+      opacity: 0.2;
+      filter: brightness(0.4) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+    }
+    40% {
+      opacity: 1;
+      filter: brightness(1.5) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 18px var(--f-pulse));
+    }
+    to {
+      filter: brightness(1) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+    }
+  }
+  @keyframes swell {
+    from {
+      filter: brightness(0.6);
+    }
+    35% {
+      filter: brightness(1.35);
+    }
   }
   @keyframes kindle {
     from {

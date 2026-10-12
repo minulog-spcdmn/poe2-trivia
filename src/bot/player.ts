@@ -7,8 +7,8 @@
 
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
-import { blastProblem, dealIn, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
+import { answerDelay, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
@@ -268,7 +268,26 @@ export class Player {
       run: async () => {
         let cur = still();
         if (!cur) return;
-        let category = chooseCard(this.persona, offered, finds, Math.random);
+        // A vein's two cards: dig deeper, or take the way out with the haul.
+        const dig = offered.includes(WAY_OUT) ? digOf(cur) : null;
+        const vein = offered.find((c) => c !== WAY_OUT);
+        let category =
+          dig && vein
+            ? digsOn(
+                this.persona,
+                {
+                  haul: dig.haul.length,
+                  lives: livesOf(cur, me),
+                  wards: inv?.wards ?? 0,
+                  light: dig.light,
+                  affinity: this.persona.affinity[vein] ?? 0,
+                  teammates: standingIds(cur).filter((id) => id !== me).length,
+                },
+                Math.random,
+              )
+              ? vein
+              : WAY_OUT
+            : chooseCard(this.persona, offered, finds, Math.random);
         // Together: the team's votes so far may sway it.
         if (type === 'vote') {
           const theirs = Object.entries(cur.delve?.votes ?? {}).flatMap(([id, c]) => (id !== me && offered.includes(c) ? [c] : []));

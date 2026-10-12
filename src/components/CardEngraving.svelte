@@ -6,24 +6,55 @@
   // Delve's finds (lib/findEngraving): `find` engraves a find's motif into
   // the plate, whose own lines stop short of it. A find's glow breathes,
   // quicker than the circle's, and now and then light runs over its motif
-  // or flares up in it: transform and opacity only.
+  // or flares up in it: transform and opacity only. A gilded motif (the way
+  // out's lantern, Plate.gilt) is filled as an item's emblem is instead, and
+  // its light breathes round it in place of the glint.
   import { engrave } from '../lib/cardEngraving';
   import { findVariant } from '../lib/findEngraving';
   import type { FindKind } from '../lib/delve';
+  import type { Variant } from '../lib/cardEngraving';
 
-  let { side, find = null }: { side: 'face' | 'back'; find?: FindKind | null } = $props();
+  // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
+  let { side, find = null, custom, front = false }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean } = $props();
   let w = $state(0);
   let h = $state(0);
-  const variant = $derived(find ? findVariant(find) : undefined);
+  /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
+  let box = $state<DOMRectReadOnly>();
+  // (custom: a card of its own, the way out of a vein: lib/wayOut.)
+  const variant = $derived(custom ?? (find ? findVariant(find) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
   const knockout = $derived(plate?.knockout ? plate.knockout.split(/(?<=Z)(?=M)/) : []);
-  const motif = $derived(plate?.strokes.filter((s) => s.motif) ?? []);
+  /** The plate's strokes, or in front, those that stand in front of the emblem. */
+  const strokes = $derived(plate?.strokes.filter((s) => !!s.front === front) ?? []);
+  const motif = $derived(strokes.filter((s) => s.motif));
   const uid = $props.id();
 </script>
 
-<span class="engraving" data-find={find ?? undefined} bind:clientWidth={w} bind:clientHeight={h} aria-hidden="true">
-  {#if plate}
+<span class="engraving" class:front data-find={find ?? undefined} bind:clientWidth={w} bind:clientHeight={h} bind:contentRect={box} aria-hidden="true">
+  {#if plate && front}
+    {#if plate.solid}
+      <!-- Solid: whatever lies behind (the item, the plate) is hidden, the crystal's body faintly its colour. -->
+      <svg class="solid" viewBox="0 0 {w} {h}">
+        <path d={plate.solid} class="body" />
+        <path d={plate.solid} class="tint" />
+      </svg>
+    {/if}
+    {#each ['glow', 'lines'] as layer (layer)}
+      <svg class={layer} viewBox="0 0 {w} {h}">
+        {#each strokes as { cls, d } (cls)}<path {d} class={cls} />{/each}
+      </svg>
+    {/each}
+    {#if motif.length}
+      <span class="glint">
+        <span class="through" style:--w="{box?.width ?? w}px">
+          <svg viewBox="0 0 {w} {h}" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+            {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+          </svg>
+        </span>
+      </span>
+    {/if}
+  {:else if plate}
     {#if plate.window && plate.fade}
       <!-- The card's warm glow, behind the emblem and only inside the window. -->
       <svg class="window" viewBox="0 0 {w} {h}">
@@ -60,22 +91,62 @@
           </defs>
         {/if}
         <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-          {#each plate.strokes.filter((s) => !s.motif) as { cls, d } (cls)}
+          {#each strokes.filter((s) => !s.motif) as { cls, d } (cls)}
             <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
           {/each}
         </g>
-        {#each motif as { cls, d } (cls)}
-          <path {d} class={cls} />
-        {/each}
+        {#if !(plate.gilt && layer === 'lines')}
+          {#each motif as { cls, d } (cls)}
+            <path {d} class={cls} />
+          {/each}
+        {/if}
       </svg>
     {/each}
-    {#if motif.length}
+    {#if plate.gilt}
+      {@const g = plate.gilt}
+      <!-- The lamp's light, breathing round it, under the gilding. -->
+      <svg class="lamp" viewBox="0 0 {w} {h}">
+        <defs>
+          <radialGradient id="{uid}-lamp" cx={g.light.c[0]} cy={g.light.c[1]} r={g.light.r} gradientUnits="userSpaceOnUse">
+            <stop offset="0" class="lamp-stop" style="stop-opacity: 0.85" />
+            <stop offset="0.4" class="lamp-stop" style="stop-opacity: 0.32" />
+            <stop offset="1" class="lamp-stop" style="stop-opacity: 0" />
+          </radialGradient>
+        </defs>
+        <circle cx={g.light.c[0]} cy={g.light.c[1]} r={g.light.r} fill="url(#{uid}-lamp)" />
+      </svg>
+      <!-- The motif gilded: filled as an item's emblem is, its lines cut in dark over the gold. -->
+      <svg class="gilt" viewBox="0 0 {w} {h}">
+        <defs>
+          <linearGradient id="{uid}-gold" x1="0" y1={g.span[0]} x2="0" y2={g.span[1]} gradientUnits="userSpaceOnUse">
+            <stop offset="0" class="gold-hi" />
+            <stop offset="0.45" class="gold-mid" />
+            <stop offset="1" class="gold-lo" />
+          </linearGradient>
+          <radialGradient id="{uid}-flame" cx="0.5" cy="0.74" r="0.66">
+            <stop offset="0" stop-color="#fffdf4" />
+            <stop offset="0.4" stop-color="#ffeaa6" />
+            <stop offset="1" stop-color="#ff9c34" />
+          </radialGradient>
+          <clipPath id="{uid}-body">
+            {#each g.parts.filter((x) => x.tone === 'body') as { d }, i (i)}<path {d} />{/each}
+          </clipPath>
+        </defs>
+        {#each g.parts as { d, tone }, i (i)}
+          <path {d} class="part {tone}" style:fill={tone === 'flame' ? `url(#${uid}-flame)` : `url(#${uid}-gold)`} />
+        {/each}
+        {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+        <g class="cut" clip-path="url(#{uid}-body)">
+          {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+        </g>
+      </svg>
+    {:else if motif.length}
       <!-- A glint: the motif again in pale light, seen through a band that
            runs across the card while the drawing inside it runs back, so the
            light moves and the lines stay put. -->
       <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
-        <span class="through" style:--w="{w}px">
-          <svg viewBox="0 0 {w} {h}" style:width="{w}px" style:height="{h}px">
+        <span class="through" style:--w="{box?.width ?? w}px">
+          <svg viewBox="0 0 {w} {h}" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
             {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
           </svg>
         </span>
@@ -163,6 +234,67 @@
   .glow .ray,
   .glow .lattice {
     stroke-width: 1.2;
+  }
+
+  /* What stands in front of the emblem: solid, the card's dark under it, faintly tinted its ink. */
+  .solid path {
+    stroke: none;
+  }
+  .solid .body {
+    fill: #0f0c0a;
+  }
+  .solid .tint {
+    fill: currentColor;
+    opacity: 0.07;
+  }
+
+  /* A gilded motif: the item's gold (ChooseCategory's .glyph, or the card's
+     --f-glyph colours), lifted off the card by its shadow and glowing warm
+     as an emblem does. */
+  .gilt {
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
+  }
+  .gilt path.part {
+    stroke: none;
+  }
+  .gilt path.glass {
+    opacity: 0.3;
+  }
+  .gold-hi {
+    stop-color: var(--gild-hi, #fbe6b0);
+  }
+  .gold-mid {
+    stop-color: var(--gild-mid, #c9a45c);
+  }
+  .gold-lo {
+    stop-color: var(--gild-lo, #6d4a1c);
+  }
+  /* Its lines over the gold cut in dark, as an item's details are, the shading lighter. */
+  .gilt .cut path {
+    stroke: var(--gild-cut, #3a2006);
+    opacity: 0.8;
+  }
+  .gilt .cut .hatch {
+    opacity: 0.4;
+  }
+  .gilt .cut .fill {
+    fill: var(--gild-cut, #3a2006);
+  }
+  /* The lamp's light breathes slowly round it, as a flame's does in still air. */
+  .lamp-stop {
+    stop-color: var(--f, #ffd47e);
+  }
+  .lamp {
+    animation: lamp 4.4s ease-in-out infinite;
+  }
+  @keyframes lamp {
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   /* A find's glow breathes, the vein's slowly, the flare's flickering. */
@@ -315,12 +447,15 @@
   :global(html[data-still]) .engraving .glint {
     display: none;
   }
-  :global(html[data-still]) .engraving .glow {
+  :global(html[data-still]) .engraving :is(.glow, .lamp) {
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .glint {
       display: none;
+    }
+    .lamp {
+      animation: none;
     }
   }
 </style>

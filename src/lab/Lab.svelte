@@ -281,6 +281,11 @@
           <button class="small" onclick={L.dealCards} disabled={!!busy}>Deal cards</button>
         </div>
         <div class="line">
+          <span class="lbl">Vein dig</span>
+          <button class="small" onclick={() => L.dealDig(1, 7.5)} disabled={!!busy}>After strike 1</button>
+          <button class="small" onclick={() => L.dealDig(2, 4.6)} disabled={!!busy}>After strike 2</button>
+        </div>
+        <div class="line">
           <span class="lbl">Second find</span>
           <select bind:value={L.opts.cardFind2} aria-label="A second find among the cards">
             {#each FINDS as f (f.v)}<option value={f.v} disabled={f.v !== 'none' && f.v === L.opts.cardFind}>{f.label}</option>{/each}

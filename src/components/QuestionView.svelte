@@ -35,8 +35,8 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
-  import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
+  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
+  import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -151,9 +151,24 @@
   const theirs = $derived(!race && !coop && !session.myTurn && !reveal);
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
-  /** What Next leads to. Delve: the end once nobody stands, a depth deeper after a clear, and another question at the same depth after a miss. */
+  /**
+   * What Next leads to. Delve: the end once nobody stands; a vein's next two
+   * cards at the same depth after a right strike it runs on from; a depth
+   * deeper after any other clear; and another question at the same depth
+   * after a miss.
+   */
   const nextLabel = $derived(
-    race ? 'Next question' : !s.delve ? 'Next turn' : !standingIds(s).length ? 'Results' : reveal?.correct ? 'Delve deeper' : 'Next question',
+    race
+      ? 'Next question'
+      : !s.delve
+        ? 'Next turn'
+        : !standingIds(s).length
+          ? 'Results'
+          : reveal?.correct
+            ? digRunsOn(s)
+              ? 'Next'
+              : 'Delve deeper'
+            : 'Next question',
   );
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
@@ -175,7 +190,10 @@
     const got = reveal?.correct ? reveal.gained : undefined;
     if (!s.delve || !got) return null;
     const who = gainYou ? 'You' : gainName;
-    if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
+    // A vein's ward is in hand until the way out (delve.ts, the dig), or goes into the pack as the dig ends with it.
+    if (got === 'wards' && reveal?.banked) return { glyph: 'ward', text: `${who} dug out an Azurite Ward. ${bankedText(reveal.banked)}` };
+    if (got === 'wards' && reveal?.dug) return { glyph: 'ward', text: `${who} dug out an Azurite Ward. ${inHandText(digOf(s)?.haul.length ?? 1)}` };
+    if (got === 'wards') return { glyph: 'ward', text: `${who} dug out an Azurite Ward.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
@@ -757,6 +775,8 @@
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
+      // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
+      // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
     });
   });
 
@@ -907,6 +927,9 @@
             nameOf,
             me,
             gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
+            buried: reveal.buried,
+            inHand: reveal.dug ? (digOf(s)?.haul.length ?? 1) : undefined,
+            banked: reveal.banked,
           })}
           {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
           {#if gainLine}
@@ -962,6 +985,7 @@
             {:else}
               {who} {you ? 'lose' : 'loses'} two lives.
             {/if}
+            {#if reveal.buried}{buriedText(reveal.buried, you ? 'you' : active.name)}{/if}
           {:else if reveal.warded}
             <!-- The ward that took the loss: a crystal splitting along its crack. -->
             <span class="lost-ward" aria-hidden="true"

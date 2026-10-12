@@ -7,9 +7,9 @@
 
 import { endgameAt, onBackdrops, zones } from './backdrops.ts';
 import { magmaCoolingOf } from './descent.ts';
-import { motionOf, SURFACE_MOTION, type EmberMotion, type ZoneMotion } from './emberProfiles.ts';
+import { motionOf, SURFACE_MOTION, VEIN_MOTION, type EmberMotion, type ZoneMotion } from './emberProfiles.ts';
 
-export { PROFILES, SURFACE_MOTION, ZONE_MOTION, motionOf, profileOf, tweakOf, type EmberMotion, type Spawn, type ZoneMotion } from './emberProfiles.ts';
+export { PROFILES, SURFACE_MOTION, VEIN_MOTION, ZONE_MOTION, motionOf, profileOf, tweakOf, type EmberMotion, type Spawn, type ZoneMotion } from './emberProfiles.ts';
 
 /**
  * Every motion an ember can hold (it keeps the index of its own): two to
@@ -51,6 +51,9 @@ onBackdrops(() => {
   putZones();
   ringFor.fill(-1);
 });
+
+/** The motion (MOTIONS' index) every ember takes while an Azurite Vein is dug, whatever the stratum. */
+export const VEIN = MOTIONS.push({ ...VEIN_MOTION }) - 1;
 
 /** The slot stratum `k` (-1 the start page) takes its motions from. */
 function slotOf(k: number): number {

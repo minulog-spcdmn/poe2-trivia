@@ -14,6 +14,7 @@
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
   import { wantDelveBackdrop } from './lib/backdrop';
+  import { inVein, setVein } from './lib/vein';
   import Background from './components/Background.svelte';
   import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
@@ -133,6 +134,8 @@
     setDescent(depth);
     depthAmbience(depth);
   });
+  // Delve: an Azurite Vein being dug has a scene of its own (lib/vein.ts).
+  $effect(() => setVein(screen === 'game' && inVein(gs)));
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve
   // programs now, in the background, so they're ready when the run starts.

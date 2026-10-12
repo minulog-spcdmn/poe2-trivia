@@ -473,13 +473,18 @@ export function findStats(answers: Iterable<Answer>): FindStats {
     if (a.blasted) out.blasted++;
     if (!a.find) continue;
     const f = out.finds[a.find];
-    f.taken++;
+    // A vein's later strikes are the same vein, dug deeper: taken (and cleared) once, at strike 1.
+    const later = (a.strike ?? 1) > 1;
+    if (!later) f.taken++;
     if (a.ok) {
-      f.ok++;
+      if (!later) f.ok++;
       if (a.gained) f.gained[a.gained] = (f.gained[a.gained] ?? 0) + 1;
     } else {
       f.lives += answerLives(a);
       f.wards += answerWards(a);
+      // What a cave-in buried was never carried out. (Alone only: together
+      // the haul was the team's, dug out by answers other devices logged.)
+      if (a.buried && !a.team) f.gained.wards = Math.max(0, (f.gained.wards ?? 0) - a.buried);
     }
   }
   return out;

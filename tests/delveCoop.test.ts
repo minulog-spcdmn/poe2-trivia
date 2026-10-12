@@ -39,6 +39,7 @@ import {
   wardsOf,
   type FindKind,
   type Inventory,
+  haulOf,
 } from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, ActionError, Engine, createGame, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import {
@@ -565,7 +566,7 @@ test('the time-out costs everyone standing who never answered, the away included
   );
 });
 
-test('an Azurite Vein: the first right pick mines a whole ward, however late, and a wrong one caves in for two, wards first', () => {
+test('an Azurite Vein: the first right pick digs out a whole ward, however late, and a wrong one caves in for two, wards first', () => {
   const h = team(3, { depth: 20 });
   h.give('p1', { wards: 2 });
   h.give('p2', { wards: 1 });
@@ -584,7 +585,8 @@ test('an Azurite Vein: the first right pick mines a whole ward, however late, an
     { playerId: 'p1', lives: 0, wards: 2, timedOut: false },
     { playerId: 'p2', lives: 1, wards: 1, timedOut: false },
   ]);
-  assert.equal(wardsOf(h.s, 'p0'), 1);
+  // In hand, for the team's way out.
+  assert.deepEqual([wardsOf(h.s, 'p0'), haulOf(h.s, 'p0')], [0, 1]);
 
   // On the clock's last second: still a whole ward. Timed out: a cave-in for each who never answered.
   const slow = team(2, { depth: 20 });
@@ -592,7 +594,8 @@ test('an Azurite Vein: the first right pick mines a whole ward, however late, an
   slow.clock.now = sq.deadline! - 500;
   slow.pickAs('p0', right(sq));
   assert.equal(slow.s.reveal!.gained, 'wards');
-  assert.equal(wardsOf(slow.s, 'p0'), 1);
+  // Too little light left to dig on: the dig ends there, its ward into the pack at the reveal.
+  assert.deepEqual([slow.s.reveal!.banked, haulOf(slow.s, 'p0'), wardsOf(slow.s, 'p0')], [1, 0, 1]);
   const late = team(2, { depth: 20 });
   late.ask('azurite');
   late.timeOut();
@@ -1115,7 +1118,7 @@ test('a find cleared by a winner with no room for it goes to a standing teammate
   v.give('p1', { wards: 3 });
   const qv = v.ask('azurite');
   v.pickAs('p0', right(qv));
-  assert.deepEqual([v.s.reveal!.gained, v.s.reveal!.gainedBy, wardsOf(v.s, 'p2')], ['wards', 'p2', 1]);
+  assert.deepEqual([v.s.reveal!.gained, v.s.reveal!.gainedBy, haulOf(v.s, 'p2')], ['wards', 'p2', 1]);
 });
 
 test('a host reload keeps the votes cast: those cut off are marked away and excused, and the vote waits for them', () => {

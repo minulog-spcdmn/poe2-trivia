@@ -54,6 +54,12 @@ import {
   findOn,
   livesOf,
   standingIds,
+  WAY_OUT,
+  digOf,
+  digRunsOn,
+  isWayOut,
+  lampAfter,
+  wardRoom,
   type CardFind,
   type FindKind,
   type Inventory,
@@ -433,8 +439,8 @@ export function grayscaleFor(s: GameState): Grayscale {
 }
 
 /** The rules of a Delve question at depth `d`, for a find or not. */
-function delveQuestionRules(d: number, q: Pick<Question, 'find'>): DifficultyRules {
-  return q.find ? findRules(q.find, d) : delveRules(d);
+function delveQuestionRules(d: number, q: Pick<Question, 'find' | 'strike'>): DifficultyRules {
+  return q.find ? findRules(q.find, d, q.strike) : delveRules(d);
 }
 
 /** The last `lockout` categories of a list (none for a lockout of 0). */
@@ -524,6 +530,10 @@ export interface Delve {
   asked?: string[];
   /** Questions dynamite blasted away in this run (missing for none, and in older saves). */
   blasts?: number;
+  /** An Azurite Vein being dug: from its first right strike to the way out or a cave-in (delve.ts, the dig). */
+  dig?: Dig;
+  /** The haul a way out just put into the pack: how many wards, when (host clock). Gone at the next pick. */
+  banked?: { wards: number; at: number };
   /**
    * Co-op: depths the team cleared in a row with nobody missing (a wrong
    * answer breaks it even when a ward took the loss, and so does a time-out
@@ -543,6 +553,25 @@ export interface Delve {
    * Missing for any other depth, and in older saves.
    */
   dealAt?: number;
+  /**
+   * Together: host clock the team's vote drew a vein's way out at. The two
+   * cards stay up, the vote closed, for LEAVING_MS while its draw plays on
+   * them (as a question waits for its draw, delveSession COOP_DRAW_MS); then
+   * the host's 'expire' takes the team back to the light. Missing otherwise.
+   */
+  leaving?: number;
+}
+
+/** An Azurite Vein being dug (delve.ts, the dig). */
+export interface Dig {
+  /** Strikes answered right so far (1 to VEIN_MAX_STRIKES). */
+  strikes: number;
+  /** The wards in hand, one entry each: whose hand (co-op: whoever cleared that strike, or a teammate with room). */
+  haul: string[];
+  /** Seconds of the lamp's light for the next strike. */
+  light: number;
+  /** The categories struck so far, strike 1's first: the vein never runs on into one of them again. */
+  struck: string[];
 }
 
 /** One life passed in co-op: `by` gave one of theirs at depth `depth` to bring back `to`, who had perished at `fell`. */
@@ -632,11 +661,11 @@ export const RACE_DEFAULT_TIMER = 16;
 
 /**
  * Seconds on the clock of a question asked in `s` (`q`: a Delve find's has
- * its own): a Delve depth's, else the room's timer, or the default one
+ * its own, a vein's later strikes the lamp's light): a Delve depth's, else the room's timer, or the default one
  * without. A veiled question's art is sized for it (veilSeconds), and the
  * host paces each picture's patches by it too (media.svelte.ts prepareMedia).
  */
-export function questionClock(s: GameState, q: Pick<Question, 'find'>): number {
+export function questionClock(s: GameState, q: Pick<Question, 'find' | 'light'>): number {
   if (s.delve) return delveQuestionTimer(s.round, q);
   const timer = s.settings.mode === 'race' ? s.settings.timer || RACE_DEFAULT_TIMER : s.settings.timer;
   return timer > 0 ? timer : DEFAULT_SETTINGS.timer;
@@ -707,6 +736,13 @@ export interface Question {
    * right answer earns its item (see delve.ts findReward).
    */
   find?: FindKind;
+  /**
+   * Delve, an Azurite Vein's: which strike of the dig it is (delve.ts, the
+   * dig), asked from veinDeeper(strike) further down. Missing: strike 1.
+   */
+  strike?: number;
+  /** Delve, a vein's strike after the first: its clock, the lamp's light left (seconds). */
+  light?: number;
   /**
    * Delve: asked in place of a question dynamite blasted away, at the same
    * depth (see Blast). Kept through a reask.
@@ -820,6 +856,14 @@ export interface Reveal {
   caveIn?: boolean;
   /** Delve, on a cave-in: lives it took (0 to 2) and wards that broke in their place (0 to 2). */
   lost?: { lives: number; wards: number };
+  /** Delve, an Azurite Vein's strike: which (1 on). */
+  strike?: number;
+  /** Delve: the ward this strike earned (`gained`) went into the dig's haul, in hand, not into the pack. */
+  dug?: true;
+  /** Delve: the dig ended with this strike (no further strike to be had), its whole haul going into the pack now: how many wards. */
+  banked?: number;
+  /** Delve, on a cave-in: the wards in hand it buried. */
+  buried?: number;
   /**
    * Delve: a miss on a Dynamite Cache, whose blast destroyed this of the
    * player's pack besides the loss (delve.ts blastVictim). Co-op: each
@@ -1102,7 +1146,8 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
  * going or loses it. Race: the winner's goes on and everyone else's breaks,
  * whether they guessed wrong or just weren't first. Delve co-op: whoever
  * cleared the depth keeps theirs going; a loss already broke anyone's it hit.
- * The team's goes on with a question cleared with nobody missing on its offer.
+ * The team's goes on with a question cleared with nobody missing on its offer;
+ * an Azurite Vein's later strikes keep it as it is (the vein clears one depth).
  */
 function countStreaks(s: GameState, r: Reveal) {
   if (s.delve && isGroupRun(s)) {
@@ -1110,7 +1155,7 @@ function countStreaks(s: GameState, r: Reveal) {
     if (winner) winner.streak = (winner.streak ?? 0) + 1;
     const dm = s.delve;
     const was = dm.teamStreak ?? 0;
-    const n = r.correct && !dm.missedHere && !r.hits?.length ? was + 1 : 0;
+    const n = r.correct && !dm.missedHere && !r.hits?.length ? was + ((r.strike ?? 1) > 1 ? 0 : 1) : 0;
     if (n) dm.teamStreak = n;
     else delete dm.teamStreak;
     if (n > (dm.bestTeamStreak ?? 0)) dm.bestTeamStreak = n;
@@ -1392,8 +1437,8 @@ export class Engine {
         const dm = s.delve;
         if (!dm || !isGroupRun(s)) throw new ActionError('There is nothing to vote on.');
         if (from === null || !s.players.some((p) => p.id === from)) throw new ActionError('You are not in this game.');
-        // A vote that crossed its close on the way is dropped quietly.
-        if (s.phase !== 'choosing') throw new ActionError('Too late!', true);
+        // A vote that crossed its close on the way is dropped quietly (the way out's draw playing too).
+        if (s.phase !== 'choosing' || dm.leaving !== undefined) throw new ActionError('Too late!', true);
         if (livesOf(s, from) <= 0) throw new ActionError('Only players still standing can vote.');
         if (typeof action.category !== 'string' || !s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         (dm.votes ??= {})[from] = action.category;
@@ -1478,12 +1523,26 @@ export class Engine {
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
+        let vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> = {};
+        if (s.delve && q.find === 'azurite') vein = { strike: q.strike ?? 1 };
         if (correct) {
           active.score += 1;
-          // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
-          const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
-          if (reward) gained = this.gain(s, active.id, reward);
+          if (s.delve && q.find === 'azurite') {
+            // A vein's ward goes into the dig's haul, in hand (see delve.ts, the dig).
+            if (this.strikeRight(s, q, [active.id])) {
+              gained = 'wards';
+              vein.dug = true;
+            }
+            const banked = this.endDig(s);
+            if (banked) vein.banked = banked;
+          } else {
+            // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
+            const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
+            if (reward) gained = this.gain(s, active.id, reward);
+          }
         } else if (s.delve) {
+          const buried = this.caveInDig(s);
+          if (buried) vein.buried = buried;
           // An Azurite Vein caves in for two losses, each taken by a ward if
           // one is held; on the last life the first loss is the fall, and
           // there is nothing left to take.
@@ -1509,6 +1568,7 @@ export class Engine {
           ...(warded ? { warded } : {}),
           ...caveIn,
           ...(blown ? { blown } : {}),
+          ...vein,
         };
         s.phase = 'reveal';
         break;
@@ -1639,6 +1699,14 @@ export class Engine {
         // nor before a new zone's cards are dealt, however soon it is due.
         const closes = voteClosesAt(s);
         if (!s.delve || !isGroupRun(s) || s.phase !== 'choosing' || dealIn(s, this.now()) > 0) break;
+        // The way out drawn: once its draw has played, back to the light.
+        if (s.delve.leaving !== undefined) {
+          if (closes !== null && this.now() >= closes - 250) {
+            delete s.delve.leaving;
+            this.takePick(s, null, WAY_OUT);
+          }
+          break;
+        }
         if (voteDone(s, this.now()) || (closes !== null && this.now() >= closes - 250)) this.closeVote(s);
         break;
       }
@@ -1807,15 +1875,25 @@ export class Engine {
    * offer, the question is the picked card's find, if it holds one.
    */
   private takePick(s: GameState, active: Player | null, category: string) {
-    let kind: Pick<Question, 'find'> = {};
+    let kind: Pick<Question, 'find' | 'strike' | 'light'> = {};
     if (s.delve) {
+      delete s.delve.banked;
+      const dig = digOf(s);
+      if (dig && isWayOut(category)) {
+        this.leaveVein(s);
+        return;
+      }
       // The first card of this depth's asked (more come with blasts, see blast).
       s.delve.asked = [category];
-      // Co-op locks out the team's picks, alone the player's own.
-      if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
-      else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
+      // Co-op locks out the team's picks, alone the player's own. A vein's
+      // later strikes lock nothing: so many picks at one depth would leave
+      // too few cards for the next offer.
+      if (!dig) {
+        if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
+        else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
+      }
       const find = findOn(s, category);
-      if (find) kind = { find };
+      if (find) kind = dig && find === 'azurite' ? { find, strike: dig.strikes + 1, light: dig.light } : { find };
     } else if (active && !s.deathmatch) {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
     }
@@ -1988,6 +2066,111 @@ export class Engine {
     return null;
   }
 
+  // ---- the Azurite Vein's dig ---------------------------------------------
+
+  /**
+   * A vein's strike `q` answered right (its clock stopped now): one more
+   * strike in the dig, the lamp's light left the next one's (delve.ts
+   * lampAfter), and a ward into the haul for the first of `takers` with room
+   * for it, the haul counted. Says whose hand it went to (null: nobody had
+   * room, which the offer rules out).
+   */
+  private strikeRight(s: GameState, q: Question, takers: string[]): string | null {
+    const dm = s.delve!;
+    const dig = digOf(s) ?? { strikes: 0, haul: [], light: 0, struck: [] };
+    const strike = q.strike ?? 1;
+    const left = q.deadline === null ? 0 : clockLeft(q, this.now()) / 1000;
+    const by = takers.find((id) => wardRoom(s, id)) ?? null;
+    dm.dig = {
+      strikes: strike,
+      haul: by ? [...dig.haul, by] : dig.haul,
+      light: lampAfter(s.round, strike + 1, left),
+      struck: [...dig.struck, q.category],
+    };
+    return by;
+  }
+
+  /**
+   * After a right strike: the dig over if it can't run on (VEIN_MAX_STRIKES
+   * struck, too little light, no room for another ward), its haul going into
+   * the pack at once, at this reveal, rather than when the run moves on.
+   * Says how many wards went in.
+   */
+  private endDig(s: GameState): number {
+    return digOf(s) && !digRunsOn(s) ? this.bankHaul(s) : 0;
+  }
+
+  /** A miss on a vein: the dig is over, and its haul buried. Says how many wards it buried. */
+  private caveInDig(s: GameState): number {
+    const dig = digOf(s);
+    delete s.delve!.dig;
+    return dig?.haul.length ?? 0;
+  }
+
+  /**
+   * The vein runs on: the same depth's next cards are two, the vein in a
+   * category drawn from those the lockout leaves (a later strike locks
+   * nothing), not struck in this dig yet and with items left if any have,
+   * and WAY_OUT. False with no such category: the dig ends there.
+   */
+  private dealDig(s: GameState): boolean {
+    const dm = s.delve!;
+    const dig = digOf(s)!;
+    const coop = isGroupRun(s);
+    const recent = coop ? s.recentCategories : (s.players[s.turn]?.recent ?? []);
+    const locked = lastPicks(recent, delveLockout(s.round));
+    const allowed = this.categories.filter((c) => !locked.includes(c) && !dig.struck.includes(c));
+    const fresh = allowed.filter((c) => this.unusedIn(s, c).length > 0);
+    const next = sample(fresh.length ? fresh : allowed, 1, this.rng)[0];
+    if (!next) return false;
+    s.turnCount++;
+    s.phase = 'choosing';
+    s.question = null;
+    s.reveal = null;
+    s.offered = [next, WAY_OUT];
+    dm.finds = [{ category: next, kind: 'azurite' }];
+    delete dm.find;
+    delete dm.asked;
+    delete dm.missedHere;
+    delete dm.dealAt;
+    if (coop) {
+      dm.votes = {};
+      dm.voteFrom = null;
+      if (this.now() >= dm.graceUntil) dm.excused = [];
+      // Whose seat the screens lean on: the first standing, as beginTurn has it (the strike may have felled the last).
+      s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
+    }
+    return true;
+  }
+
+  /**
+   * The dig's haul into the pack, each ward its holder's if they stand with
+   * room for it, or else the first standing teammate's who has, in seat
+   * order; the dig is over. Says how many went in.
+   */
+  private bankHaul(s: GameState): number {
+    const dm = s.delve!;
+    const dig = digOf(s);
+    delete dm.dig;
+    let banked = 0;
+    for (const holder of dig?.haul ?? []) {
+      const to = [holder, ...standingIds(s).filter((id) => id !== holder)].find((id) => hasRoom(inventoryOf(s, id), 'wards') && livesOf(s, id) > 0);
+      if (to && this.gain(s, to, 'wards')) banked++;
+    }
+    if (banked) dm.banked = { wards: banked, at: this.now() };
+    return banked;
+  }
+
+  /** WAY_OUT picked: the haul into the pack, and the run a depth deeper (the vein was this depth's question, cleared). */
+  private leaveVein(s: GameState) {
+    this.bankHaul(s);
+    const banked = s.delve!.banked;
+    if (isGroupRun(s)) this.advanceCoop(s, true);
+    else this.advanceDelve(s, s.turn, true);
+    // Dealing the next cards forgets the last pick's moment: keep the way out's.
+    if (banked) s.delve!.banked = banked;
+  }
+
   /**
    * Alone: moves on to the player's next turn (the seat after `from` with
    * lives left; one player, so their own), one depth deeper if the question
@@ -2058,6 +2241,11 @@ export class Engine {
     const missed = (dm.missed ??= {});
     for (const id of standingIds(s)) missed[id] = Object.hasOwn(votes, id) ? 0 : (missed[id] ?? 0) + 1;
     dm.voteFrom = null;
+    // The way out drawn: its cards stay up while the draw plays on them, as a question waits for its draw.
+    if (isWayOut(category) && digOf(s)) {
+      dm.leaving = this.now();
+      return;
+    }
     this.takePick(s, null, category);
   }
 
@@ -2151,6 +2339,7 @@ export class Engine {
     const struck = q.struck ?? [];
     let gained: ItemKind | undefined;
     let gainedBy: string | undefined;
+    let banked = 0;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
       if (p) p.score += 1;
@@ -2166,8 +2355,16 @@ export class Engine {
       }
       // The find goes to the winner if they have room for it, or else to the
       // first standing teammate in seat order who has: it was offered as
-      // anyone standing had room, so it never pays nothing.
-      if (q.find) {
+      // anyone standing had room, so it never pays nothing. A vein's goes
+      // into the dig's haul, in hand, the same way.
+      if (q.find === 'azurite') {
+        const by = this.strikeRight(s, q, [winner.id, ...standingIds(s).filter((id) => id !== winner.id)]);
+        if (by) {
+          gained = 'wards';
+          gainedBy = by;
+        }
+        banked = this.endDig(s);
+      } else if (q.find) {
         const takers = [winner.id, ...standingIds(s).filter((id) => id !== winner.id)];
         for (const id of takers) {
           const reward = findReward(q.find, inventoryOf(s, id));
@@ -2184,6 +2381,10 @@ export class Engine {
       ...struck.map((x) => ({ playerId: x.by, lives: x.lives, wards: x.wards, timedOut: false, ...(x.blown ? { blown: x.blown } : {}) })),
       ...hits,
     ];
+    // Nobody got it: the vein caves in on the whole haul.
+    const buried = winner ? 0 : this.caveInDig(s);
+    const vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> =
+      q.find === 'azurite' ? { strike: q.strike ?? 1, ...(gained ? { dug: true as const } : {}), ...(buried ? { buried } : {}), ...(banked ? { banked } : {}) } : {};
     s.reveal = {
       correctId: q.itemId,
       chosenId: winner ? q.itemId : null,
@@ -2194,6 +2395,7 @@ export class Engine {
       winnerId: winner?.id ?? null,
       ...(gained ? { gained, gainedBy } : {}),
       ...(q.find && cavesIn(q.find) && all.length ? { caveIn: true } : {}),
+      ...vein,
       hits: all,
     };
     s.phase = 'reveal';
@@ -2246,6 +2448,7 @@ export class Engine {
 
   private finish(s: GameState, winners: string[]) {
     if (s.delve) {
+      delete s.delve.dig;
       s.delve.finds = [];
       delete s.delve.find;
       if (s.delve.voteFrom !== undefined) s.delve.voteFrom = null;
@@ -2316,6 +2519,11 @@ export class Engine {
     if (s.delve) {
       // Only a question cleared takes the run a depth deeper: after a miss (or a time-out) the next one is asked at the same depth.
       const cleared = s.phase === 'reveal' && !!s.reveal?.correct;
+      // A vein struck right: its two cards, or (no strike left in it) the haul into the pack and on.
+      if (cleared && digOf(s)) {
+        if (digRunsOn(s) && this.dealDig(s)) return;
+        this.bankHaul(s);
+      }
       if (isGroupRun(s)) this.advanceCoop(s, cleared);
       else this.advanceDelve(s, from, cleared);
       return;
@@ -2577,8 +2785,15 @@ export class Engine {
    * has to start over. Delve: a `find` gets the rules and clock of deeper
    * down (delve.ts findRules).
    */
-  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find'> = {}): Question {
-    const special: Pick<Question, 'find'> = s.delve && kind.find ? { find: kind.find } : {};
+  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'strike' | 'light'> = {}): Question {
+    const special: Pick<Question, 'find' | 'strike' | 'light'> =
+      s.delve && kind.find
+        ? {
+            find: kind.find,
+            ...(kind.find === 'azurite' && (kind.strike ?? 1) > 1 ? { strike: kind.strike } : {}),
+            ...(kind.find === 'azurite' && typeof kind.light === 'number' ? { light: kind.light } : {}),
+          }
+        : {};
     const rules = s.delve ? delveQuestionRules(s.round, special) : activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     let mode = this.rollMode(s);
@@ -2708,7 +2923,7 @@ export class Engine {
     // Delve: the clock starts once the art has reached the player answering (the 'clock' action).
     const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
-    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round) : delveTileVeil(s.round));
+    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round, special.strike) : delveTileVeil(s.round));
     const secs = questionClock(s, special);
     const size = rules.veil && (tiles ? tileVeilSize(rules.veil.size) : rules.veil.size);
     // Its share of the clock, faster on a short one (veilSeconds); none on a
