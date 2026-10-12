@@ -31,8 +31,9 @@ export function frameEvent(what: string) {
 
 /**
  * Main-thread work timed in each frame (the effects' and the backdrop's own
- * frames, and the page's styles and layout brought up to date as a frame
- * begins), summed per frame while the meter runs.
+ * frames), summed per frame while the meter runs. The page's styles and
+ * layout aren't timed here: forcing them to be worked out would change the
+ * very frames being timed. Chrome's long animation frames tell them instead.
  */
 const work: Record<string, number> = {};
 
@@ -61,7 +62,7 @@ function summary(all: FrameWork[], ms: number): string {
   return `${(ms / 1000).toFixed(1)}s, its first ${(span / 1000).toFixed(1)}s: ${((frames.length * 1000) / Math.max(1, span)).toFixed(0)} fps, median ${median.toFixed(0)}ms, worst ${(sorted.at(-1) ?? 0).toFixed(0)}ms, ${frames.filter((d) => d > 25).length} over 25ms, ${frames.filter((d) => d > 50).length} over 50ms${slowWork(all)}`;
 }
 
-/** In the frames over 25ms: what the main thread spent on average, by part, and what's left (the GPU, the compositor, the browser's own). */
+/** In the frames over 25ms: what the main thread spent on average, by part, and what's left (styles and layout, the GPU, the compositor, the browser's own). */
 function slowWork(all: FrameWork[]): string {
   const slow = all.filter((f) => f.ms > 25);
   if (!slow.length) return '';
@@ -125,14 +126,9 @@ export function installFpsMeter() {
   const tick = (now: number) => {
     const ms = now - last;
     frames.push([now, ms]);
-    // The page's styles and layout as the frame begins (they'd be brought up to date later in it anyway).
-    const t = performance.now();
-    void document.documentElement.offsetWidth;
-    const styles = performance.now() - t;
     // (The first two seconds of a step: a question or reveal's own moments, not the wait after them.)
     if (phase && now - phase.at < 2000) phase.frames.push({ ms, work: { ...work } });
     for (const k in work) delete work[k];
-    work['styles and layout'] = styles;
     last = now;
     while (frames.length && frames[0][0] < now - 2000) frames.shift();
     const max = Math.max(...frames.map(([, d]) => d));

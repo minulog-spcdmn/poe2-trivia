@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { areaTime, burntShare, cutPatches, labelPatches, litMask, packLabels, patchCoverage, patchShapes, spreadOrder, unpackLabels, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, labelPatches, litMask, packLabels, patchCount, patchCoverage, patchShapes, spreadOrder, unpackLabels, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -246,4 +246,18 @@ test('the labels pack into runs and back, and anything that is not a whole pictu
   assert.equal(unpackLabels(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
   assert.equal(unpackLabels(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
   assert.equal(unpackLabels(Uint16Array.from([1]), 1), null, 'half a pair');
+});
+
+test('the labels say how many patches they make, and a count they would get wrong is turned down', () => {
+  const W = 200;
+  const H = 140;
+  const label = labelPatches(W, H, 9, 77, litMask(ellipse(W, H), W, H));
+  const runs = packLabels(label);
+  assert.equal(patchCount(runs, W * H), patchShapes(label, W, H).length);
+  assert.equal(patchCount(packLabels(new Int16Array(50).fill(-1)), 50), 0);
+  assert.equal(patchCount(runs, W * H + 1), null, 'too few pixels');
+  assert.equal(patchCount(Uint16Array.from([1, 2, 3, 2]), 4), null, 'patch 1 left out');
+  assert.equal(patchCount(Uint16Array.from([2, 2, 0, 1, 1, 1]), 4), 2);
+  assert.equal(patchCount(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
+  assert.equal(patchCount(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
 });

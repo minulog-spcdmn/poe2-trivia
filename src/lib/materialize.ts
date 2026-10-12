@@ -11,6 +11,7 @@
 import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 import { zoomOf } from './stage';
+import type { PatchImage } from './veilCut';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
 export const FINALE_MS = 400;
@@ -98,8 +99,8 @@ function chamfer(d: Float32Array, W: number, H: number) {
 }
 
 export interface BurnParams {
-  /** The patch's own picture (media.svelte.ts patchPicture). */
-  picture: () => Promise<HTMLCanvasElement>;
+  /** The patch's own picture (veilCut.ts patchPicture). */
+  picture: () => Promise<PatchImage>;
   /** The patch's size in art pixels (its picture is finer, by the item's artScale). */
   w: number;
   h: number;
@@ -340,7 +341,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     raf = requestAnimationFrame(frame);
   };
 
-  const begin = (img: HTMLCanvasElement) => {
+  const begin = (img: PatchImage) => {
     if (stopped) return;
     // Screen resolution, up to FX_SCALE (fxWidth): every pixel costs work on
     // each frame. The quick ones at the reveal (many at once, for a moment)

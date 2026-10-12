@@ -645,7 +645,8 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     is away"; never themselves); a guest waiting on an away or idle host is
     told so. Coming back to the game counts as a sign of life, and the room
     hears of each change at once (away once its grace is over). Each device tells
-    the host its own presence as it changes, and the host tells the room
+    the host its own presence as it changes, once the host has welcomed it
+    (a host on another version wouldn't know the message), and the host tells the room
     (`src/lib/presence.ts`).
   - **Live pointers:** in the lobby, in turns mode and Delve together, and
     on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
@@ -885,10 +886,13 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   for; effects asked for before it's ready wait for it. The game's own
   screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
   a quarter of the script, fetched at the first idle moment or at once on the
-  way into a room, so the start page loads and runs without them (tried again
-  a few times if the fetch fails, then a notice says to reload). The host
-  decodes a question's pictures off the main thread (all of a "find the art"
-  question's at once).
+  way into a room, so the start page loads and runs without them (tried once
+  more if the fetch fails; after that the game screen offers a reload, as
+  some browsers won't fetch a module that failed again). The host decodes
+  a question's pictures off the main thread (all of a "find the art"
+  question's at once), and every device cuts a veiled picture's patches in
+  a worker (`src/lib/veilWorker.ts`): their shapes as the question starts,
+  each one's picture as it uncovers.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

@@ -396,6 +396,30 @@ export function unpackLabels(runs: Uint16Array, size: number): Int16Array | null
 }
 
 /**
+ * How many patches packed labels (packLabels) make of a picture of `size`
+ * pixels; null unless they fit it and number the patches from 0 with none
+ * left out, as labelPatches does (so patchShapes' n-th is patch n).
+ */
+export function patchCount(runs: Uint16Array, size: number): number | null {
+  if (runs.length % 2) return null;
+  const seen = new Uint8Array(256);
+  let at = 0;
+  let n = 0;
+  let most = 0;
+  for (let j = 0; j < runs.length; j += 2) {
+    const [v, len] = [runs[j], runs[j + 1]];
+    if (v > 255 || !len) return null;
+    at += len;
+    if (v && !seen[v]) {
+      seen[v] = 1;
+      n++;
+      most = Math.max(most, v);
+    }
+  }
+  return at === size && n === most ? n : null;
+}
+
+/**
  * The order patches are revealed in: the reveal spreads through the item
  * like fire. It starts at a random patch, and each next one is a neighbour
  * of what's already revealed (one sharing more border with it is likelier,

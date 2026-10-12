@@ -289,8 +289,8 @@ class Session {
   standing = $state.raw<Record<string, Standing>>({});
   /** Follows this device's presence (set up on the first room opened or joined): a guest tells the host, a host the room. */
   private presenceWatch: (() => void) | null = null;
-  /** Host: the room is told how an away player stands once their grace is over. */
-  private standingTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Host: the room is told how each away player stands once their grace is over. */
+  private standingTimers = new Set<ReturnType<typeof setTimeout>>();
   /** Guest: the host turned down this device's answer to the question asked at `askedAt` (too quick), so it may be given again. */
   turnedDown = $state<{ askedAt: number } | null>(null);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
@@ -302,6 +302,8 @@ class Session {
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
+  /** Guest: the link the host welcomed this device on, so it knows this version's messages (presence). */
+  private welcomedOn: DataConnection | null = null;
   private guests = new Map<DataConnection, Guest>();
   private priv: HostPrivate = noPrivate();
   private secretToPlayer = new Map<string, string>();
@@ -913,7 +915,7 @@ class Session {
 
   private watchOwnPresence() {
     this.presenceWatch ??= watchPresence((p) => {
-      if (this.mode === 'client' && this.hostConn?.open) this.hostConn.send({ t: 'presence', p });
+      if (this.mode === 'client' && this.hostConn?.open && this.welcomedOn === this.hostConn) this.hostConn.send({ t: 'presence', p });
       else if (this.mode === 'host') this.standingSoon(p);
     });
   }
@@ -941,24 +943,25 @@ class Session {
   }
 
   /**
+   * Host: someone's presence changed (`p`): the room is told now, rather than
+   * at the next ping, and once more as an away player's grace runs out (each
+   * player's own, however many go away at once).
+   */
+  private standingSoon(p: Presence) {
+    this.updateStanding();
+    if (p !== 'away') return;
+    const t = setTimeout(() => {
+      this.standingTimers.delete(t);
+      this.updateStanding();
+    }, AWAY_AFTER_MS + 50);
+    this.standingTimers.add(t);
+  }
+
+  /**
    * Host, in the lobby: works out how each player stands (presence.ts) and,
    * when that changed, tells everyone. Players who are simply ready, and
    * those offline (Player.connected says so), aren't listed.
    */
-  /**
-   * Host: someone's presence changed (`p`): the room is told now, rather than
-   * at the next ping, and once more as an away player's grace runs out.
-   */
-  private standingSoon(p: Presence) {
-    this.updateStanding();
-    if (p === 'away') {
-      if (this.standingTimer) clearTimeout(this.standingTimer);
-      this.standingTimer = setTimeout(() => {
-        this.standingTimer = null;
-        this.updateStanding();
-      }, AWAY_AFTER_MS + 50);
-    }
-  }
 
   private updateStanding() {
     const s = this.state;
@@ -1552,9 +1555,17 @@ class Session {
       const msg = parseHostMsg(raw);
       if (!msg) return;
       switch (msg.t) {
-        case 'welcome':
+        case 'welcome': {
           this.myPlayerId = msg.playerId;
+          // Only now: a host on another version turns the hello down, and would
+          // take a message it doesn't know for an attack. It takes every guest
+          // to be here until told otherwise; from then on, each change is sent
+          // as it happens (watchOwnPresence).
+          this.welcomedOn = conn;
+          const { presence } = ownPresence();
+          if (presence !== 'here') conn.send({ t: 'presence', p: presence });
           break;
+        }
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
@@ -1615,9 +1626,6 @@ class Session {
     const secret = await this.helloSecret;
     if (secret && this.hostConn === conn && conn.open)
       conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}) });
-    // The host takes every guest to be here until told otherwise; from then on, each change is sent as it happens.
-    const { presence } = ownPresence();
-    if (secret && this.hostConn === conn && conn.open && presence !== 'here') conn.send({ t: 'presence', p: presence });
     this.watchOwnPresence();
   }
 
@@ -2459,8 +2467,8 @@ class Session {
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.standing = {};
-    if (this.standingTimer) clearTimeout(this.standingTimer);
-    this.standingTimer = null;
+    for (const t of this.standingTimers) clearTimeout(t);
+    this.standingTimers.clear();
     this.cursorOut.clear();
     this.cursorPressed.clear();
     if (this.cursorTimer) clearTimeout(this.cursorTimer);
@@ -2469,6 +2477,7 @@ class Session {
     // Let go of it first, so its 'close' doesn't count as a failed join.
     const link = this.hostConn;
     this.hostConn = null;
+    this.welcomedOn = null;
     link?.close();
     this.cancelAttempts();
     this.peer?.destroy();
