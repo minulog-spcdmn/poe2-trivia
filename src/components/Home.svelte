@@ -513,6 +513,8 @@
             <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
               {MENU[e]}
             </button>
+            <!-- Phones only: where the cursor would be, a mark that says the entry is a tap away (turned down while its row is open). -->
+            <svg class="chev" class:down={isOpen} viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
             <!-- The description and the fields share one cell, so one fades into the other. -->
             <div class="under">
               {#if isBusy}
@@ -891,6 +893,9 @@
     opacity: 0.45;
     pointer-events: none;
   }
+  .chev {
+    display: none;
+  }
 
   /* ---- the footer band ---- */
   /* A plain hairline, brightest in the middle, fading out at both ends. */
@@ -1133,20 +1138,62 @@
       flex: 1;
       min-width: 0;
     }
+    /* A list of rows a tap away: a hairline between them (fading out to the
+       right, as the footer's rule does at its ends) and a chevron at the
+       right of each, where a mouse would see the cursor. */
     .entry {
       height: auto;
-      min-height: 98px;
-      padding-bottom: 12px;
+      padding: 13px 34px 15px 0;
+    }
+    .entry + .entry {
+      border-top: 1px solid transparent;
+      border-image: linear-gradient(90deg, rgba(125, 99, 51, 0.5), rgba(125, 99, 51, 0.22) 70%, transparent) 1;
     }
     .menu :global(.cursor) {
       display: none;
     }
     .pick {
-      font-size: 28px;
-      line-height: 34px;
+      font-size: 27px;
+      line-height: 32px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Touch has no hover: the press lights the entry instead. */
+    .entry:active .pick {
+      color: #fff1cf;
+      text-shadow: 0 0 18px rgba(241, 217, 155, 0.35);
+      transition: none;
+    }
+    .chev {
+      display: block;
+      position: absolute;
+      top: 19px;
+      right: 2px;
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: var(--gold-lo);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
+      transition:
+        rotate 0.24s var(--ease-out),
+        stroke 0.2s;
+    }
+    .chev.down {
+      rotate: 90deg;
+      stroke: var(--gold);
+    }
+    .entry:active .chev {
+      stroke: var(--gold-hi);
     }
     .about {
+      margin-top: 4px;
       font-size: 15px;
+    }
+    /* An open row's fields take the whole width, past the chevron's margin. */
+    .under {
+      margin-right: -34px;
     }
     .row {
       flex-wrap: wrap;
@@ -1168,6 +1215,23 @@
     .made {
       flex-direction: column;
       gap: 14px;
+    }
+  }
+  /* Touch never hovers the greeting: the quill shows at rest beside the
+     name (its ring alone), so renaming can be found. */
+  @media (hover: none) {
+    .quill:not(:disabled) {
+      margin-left: 2px;
+      opacity: 1;
+      visibility: visible;
+      translate: 0 0;
+    }
+    .quill .ring {
+      width: 28px;
+      height: 28px;
+    }
+    .quill i {
+      display: none;
     }
   }
   @media (pointer: coarse) {
