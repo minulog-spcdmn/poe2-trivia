@@ -243,8 +243,8 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   // One 32-bit word per pixel, so each one copies without a subarray.
   const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
   const FW = canvas.width;
-  const cut = cutPatches(pixels, W, H, v.size, v.seed);
   const lit = litMask(pixels, W, H);
+  const cut = cutPatches(pixels, W, H, v.size, v.seed, lit);
   const order = spreadOrder(cut, v.seed);
   const areas = order.map((i) => cut[i].area);
   const schedule = veilSchedule(areas, plan);
