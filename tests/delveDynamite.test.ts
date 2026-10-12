@@ -45,7 +45,7 @@ import { addRun, emptyRecords, leftEvent, parseRecords, serializeRecords } from 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrongs = (q: Question) => q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));

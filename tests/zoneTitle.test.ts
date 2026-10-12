@@ -65,9 +65,9 @@ test('the meta line: the depth as players count it and the zone in numerals, or 
 test('what is new in each zone: finds, rules starting or reaching every question, twins, steps and the clock, three at most', () => {
   const said = (d: number) => zoneNews(d).map((n) => ('count' in n.mark ? `${n.mark.count} ${n.label}` : n.label));
   assert.deepEqual(said(11), ['Dynamite Cache', '6 Options', 'Mirrored art']);
-  assert.deepEqual(said(21), ['4 Turns of lockout', 'Art burns in', 'Flare Cache']);
+  assert.deepEqual(said(21), ['4 Turns of lockout', 'Art burns in', 'Azurite Vein']);
   assert.deepEqual(said(31), ['8 Options', '5 Turns of lockout', '11 Seconds to answer']);
-  assert.deepEqual(said(41), ['Azurite Vein', 'Art without colour', 'Look-alike art']);
+  assert.deepEqual(said(41), ['Flare Cache', 'Art without colour', 'Look-alike art']);
   assert.deepEqual(said(51), ['Twin rings and gems', '7 Seconds to answer']);
   assert.deepEqual(said(61), ['Twin sceptres', '6 Turns of lockout', '10 Options']);
   assert.deepEqual(said(71), ['Twin rings', '6 Seconds to answer', 'All names look alike']);

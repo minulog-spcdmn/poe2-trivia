@@ -180,9 +180,9 @@ test('co-op notices: only a perish (a wrong pick and a flare the question says i
 
 test('a question set aside is quiet: what it cost comes back without a word but the notice', () => {
   const asking = run({ phase: 'question', question: question(5000), turnCount: 4 });
-  asking.delve!.inventory = { a: { wards: 0, flares: 0, dynamite: 0, shards: 0 } };
+  asking.delve!.inventory = { a: { wards: 0, flares: 0, dynamite: 0 } };
   const back = run({ turnCount: 4 });
-  back.delve!.inventory = { a: { wards: 0, flares: 1, dynamite: 1, shards: 0 } };
+  back.delve!.inventory = { a: { wards: 0, flares: 1, dynamite: 1 } };
   assert.equal(setAside(asking, back), true);
   assert.deepEqual(inventoryChanges(asking, back), [], 'a refunded flare is not a flare found');
   assert.deepEqual(delveNotices(asking, back), [{ kind: 'setAside', playerId: '' }]);

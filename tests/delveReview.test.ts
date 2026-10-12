@@ -12,7 +12,7 @@ import { ANSWER_GRACE_MS, ActionError, Engine, createGame, type Action, type Gam
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrong = (q: Question) => q.options.findIndex((id) => id !== q.itemId);
@@ -285,7 +285,7 @@ test('together: a ward a wrong pick broke on a question set aside comes back', (
 test('together: a player who perished on a question set aside is back on their feet, pack and all', () => {
   const h = run(3);
   h.edit((c) => (c.delve!.losses.p1 = Array(DELVE_LIVES - 1).fill(1)));
-  h.give('p1', { flares: 2, dynamite: 1, shards: 1 });
+  h.give('p1', { flares: 2, dynamite: 1 });
   const q = h.ask();
   h.answer('p1', wrongs(q)[0]);
   assert.equal(livesOf(h.s, 'p1'), 0);
@@ -293,7 +293,7 @@ test('together: a player who perished on a question set aside is back on their f
   // They were cut off too: back on their feet, they get the grace as well.
   reload(h, ['p1', 'p2']);
   assert.equal(livesOf(h.s, 'p1'), 1);
-  assert.deepEqual(inventoryOf(h.s, 'p1'), { ...NONE, flares: 2, dynamite: 1, shards: 1 });
+  assert.deepEqual(inventoryOf(h.s, 'p1'), { ...NONE, flares: 2, dynamite: 1 });
   assert.deepEqual([...h.s.delve!.excused].sort(), ['p1', 'p2']);
 });
 

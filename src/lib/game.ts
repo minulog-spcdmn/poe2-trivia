@@ -22,6 +22,7 @@ import {
   blowsUp,
   fellAt,
   findChance,
+  firstFindAt,
   findLosses,
   findReward,
   findRules,
@@ -36,7 +37,6 @@ import {
   reviveProblem,
   teamItemReady,
   tileVeilSize,
-  veinWindow,
   veilSeconds,
   voteClosesAt,
   voteDone,
@@ -47,8 +47,6 @@ import {
   unaskedCards,
   waitingIds,
   SECOND_FIND,
-  SHARDS_PER_WARD,
-  capShards,
   findOn,
   livesOf,
   standingIds,
@@ -761,15 +759,13 @@ export interface Reveal {
   winnerId: string | null;
   /** Host-clock timestamp of the reveal, so every screen counts down to the same move on (missing in older saves). */
   at?: number;
-  /** Delve: the item this right answer to a find earned ('wards' for a shard that forged one). */
+  /** Delve: the item this right answer to a find earned. */
   gained?: ItemKind;
   /**
    * Delve co-op, with `gained`: who took the item. The winner, if they had
    * room for it; otherwise the first standing teammate in seat order who had.
    */
   gainedBy?: string;
-  /** Delve: the shard this answer earned forged a ward with the one held. */
-  forged?: boolean;
   /** Delve: Azurite Wards took this answer's whole loss, so no life was lost. */
   warded?: boolean;
   /**
@@ -1438,15 +1434,14 @@ export class Engine {
           delete q.flaredAt;
         }
         let gained: ItemKind | undefined;
-        let forged = false;
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
         if (correct) {
           active.score += 1;
           // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
-          const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id), this.answeredFast(s, q, from)) : null;
-          if (reward) [gained, forged] = this.gain(s, active.id, reward);
+          const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
+          if (reward) gained = this.gain(s, active.id, reward);
         } else if (s.delve) {
           // An Azurite Vein caves in for two losses, each taken by a ward if
           // one is held; on the last life the first loss is the fall, and
@@ -1470,7 +1465,6 @@ export class Engine {
           timedOut,
           winnerId: correct ? active.id : null,
           ...(gained ? { gained } : {}),
-          ...(forged ? { forged } : {}),
           ...(warded ? { warded } : {}),
           ...caveIn,
           ...(blown ? { blown } : {}),
@@ -1848,27 +1842,20 @@ export class Engine {
     if (p) p.streak = 0;
     if (this.spend(s, id, 'wards')) return 'ward';
     (s.delve!.losses[id] ??= []).push(s.round);
-    if (livesOf(s, id) === 0 && s.delve!.inventory?.[id]) s.delve!.inventory[id] = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+    if (livesOf(s, id) === 0 && s.delve!.inventory?.[id]) s.delve!.inventory[id] = { wards: 0, flares: 0, dynamite: 0 };
     return 'life';
   }
 
   /**
    * One more of an item for a player still standing, if they have room for it
-   * (delve.ts hasRoom). A shard that makes SHARDS_PER_WARD forges a ward.
-   * Says what they gained (undefined for nothing) and whether a ward was forged.
+   * (delve.ts hasRoom). Says what they gained (undefined for nothing).
    */
-  private gain(s: GameState, id: string, item: ItemKind): [ItemKind | undefined, boolean] {
+  private gain(s: GameState, id: string, item: ItemKind): ItemKind | undefined {
     const inv = inventoryOf(s, id);
-    if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return [undefined, false];
-    let forged = false;
-    if (item === 'shards' && inv.shards + 1 >= SHARDS_PER_WARD) {
-      inv.shards = 0;
-      inv.wards++;
-      forged = true;
-    } else inv[item]++;
-    // With every ward a player can hold, no shard is kept (a fast Vein's ward or a forge may reach it).
-    (s.delve!.inventory ??= {})[id] = capShards(inv);
-    return [forged ? 'wards' : item, forged];
+    if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return undefined;
+    inv[item]++;
+    (s.delve!.inventory ??= {})[id] = inv;
+    return item;
   }
 
   /**
@@ -1970,31 +1957,21 @@ export class Engine {
   }
 
   /**
-   * An answer arrived within an Azurite Vein's fast window (delve.ts
-   * veinWindow) of the clock starting, measured on the host. A guest saw the clock start up to a one-way trip late and
-   * their answer takes another to arrive, so it gets the same allowance as an
-   * answer at the deadline; the host's own and hot-seat answers travel nowhere.
-   */
-  private answeredFast(s: GameState, q: Question, from: string | null): boolean {
-    if (q.clockAt === undefined) return false;
-    const guest = from !== null && from !== s.hostId;
-    return this.now() - q.clockAt <= veinWindow(delveQuestionTimer(s.round, q)) + (guest ? ANSWER_GRACE_MS : 0);
-  }
-
-  /**
    * Which of the cards on offer are finds, and of what: one roll against the
    * finds' slices at this depth (delve.ts findChance), and, if that found
    * one, a second for another kind on another card, at SECOND_FIND of its
-   * chance. Never more than two. A find whose item the player on turn
-   * (co-op: anyone standing, as anyone may answer it) can't carry any more
-   * of is never offered: its slice finds nothing, so the others' chances
-   * stay the depth's.
+   * chance. Never more than two. On a find's own first depth (delve.ts
+   * firstFindAt) the first is that find, certain. A find whose item the
+   * player on turn (co-op: anyone standing, as anyone may answer it) can't
+   * carry any more of is never offered: its slice finds nothing, so the
+   * others' chances stay the depth's.
    */
   private rollFinds(s: GameState, takers: string[]): CardFind[] {
     if (!s.delve || !takers.length || !s.offered.length) return [];
     const room = (item: ItemKind) => takers.some((id) => hasRoom(inventoryOf(s, id), item));
     const chances = (share: number, but?: FindKind) => FINDS.filter((f) => f.kind !== but).map((f) => ({ ...f, chance: findChance(f.kind, s.round) * share }));
-    const first = this.rollFind(chances(1), room, s.offered);
+    const certain = FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item));
+    const first = certain ? { category: sample(s.offered, 1, this.rng)[0], kind: certain.kind } : this.rollFind(chances(1), room, s.offered);
     if (!first) return [];
     const second = this.rollFind(
       chances(SECOND_FIND, first.kind),
@@ -2171,16 +2148,14 @@ export class Engine {
   /**
    * Co-op: the question is over, cleared by `winner`'s right answer or by
    * nobody (all wrong, or the time-out's `hits`). The winner earns the find's
-   * item, if it is one, as alone (an Azurite Vein's fast window counted from
-   * the clock's start to their answer); with no room for it, a standing
-   * teammate who has room takes it (`gainedBy`).
+   * item, if it is one, as alone; with no room for it, a standing teammate
+   * who has room takes it (`gainedBy`).
    */
   private coopReveal(s: GameState, winner: { id: string; index: number } | null, timedOut: boolean, hits: Hit[]) {
     const q = s.question!;
     const struck = q.struck ?? [];
     let gained: ItemKind | undefined;
     let gainedBy: string | undefined;
-    let forged = false;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
       if (p) p.score += 1;
@@ -2198,12 +2173,11 @@ export class Engine {
       // first standing teammate in seat order who has: it was offered as
       // anyone standing had room, so it never pays nothing.
       if (q.find) {
-        const fast = this.answeredFast(s, q, winner.id);
         const takers = [winner.id, ...standingIds(s).filter((id) => id !== winner.id)];
         for (const id of takers) {
-          const reward = findReward(q.find, inventoryOf(s, id), fast);
+          const reward = findReward(q.find, inventoryOf(s, id));
           if (!reward) continue;
-          [gained, forged] = this.gain(s, id, reward);
+          gained = this.gain(s, id, reward);
           if (gained) {
             gainedBy = id;
             break;
@@ -2224,7 +2198,6 @@ export class Engine {
       timedOut,
       winnerId: winner?.id ?? null,
       ...(gained ? { gained, gainedBy } : {}),
-      ...(forged ? { forged } : {}),
       ...(q.find && cavesIn(q.find) && all.length ? { caveIn: true } : {}),
       hits: all,
     };

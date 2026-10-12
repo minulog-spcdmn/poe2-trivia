@@ -33,7 +33,6 @@ import {
   standingIds,
   teamDepth,
   teamItemReady,
-  veinWindow,
   voteClosesAt,
   voteDone,
   wardsOf,
@@ -59,7 +58,7 @@ import { parseClientMsg } from '../src/lib/protocol.ts';
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 const right = (q: Question) => q.options.indexOf(q.itemId);
 /** The wrong options of a question, by index. */
@@ -559,7 +558,7 @@ test('the time-out costs everyone standing who never answered, the away included
   );
 });
 
-test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, and a wrong one caves in for two, wards first', () => {
+test('an Azurite Vein: the first right pick mines a whole ward, however late, and a wrong one caves in for two, wards first', () => {
   const h = team(3, { depth: 20 });
   h.give('p1', { wards: 2 });
   h.give('p2', { wards: 1 });
@@ -569,7 +568,6 @@ test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, an
   assert.deepEqual([livesOf(h.s, 'p1'), wardsOf(h.s, 'p1')], [DELVE_LIVES, 0], 'both losses warded');
   h.pickAs('p2', w2);
   assert.deepEqual([livesOf(h.s, 'p2'), wardsOf(h.s, 'p2')], [DELVE_LIVES - 1, 0], 'one warded, one a life');
-  h.clock.now = q.clockAt! + veinWindow(findTimer('azurite', 20));
   h.pickAs('p0', right(q));
   const r = h.s.reveal!;
   assert.equal(r.winnerId, 'p0');
@@ -581,12 +579,13 @@ test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, an
   ]);
   assert.equal(wardsOf(h.s, 'p0'), 1);
 
-  // Slower: a shard. Timed out: a cave-in for each who never answered.
+  // On the clock's last second: still a whole ward. Timed out: a cave-in for each who never answered.
   const slow = team(2, { depth: 20 });
   const sq = slow.ask('azurite');
-  slow.clock.now = sq.clockAt! + veinWindow(findTimer('azurite', 20)) + 1;
+  slow.clock.now = sq.deadline! - 500;
   slow.pickAs('p0', right(sq));
-  assert.equal(slow.s.reveal!.gained, 'shards');
+  assert.equal(slow.s.reveal!.gained, 'wards');
+  assert.equal(wardsOf(slow.s, 'p0'), 1);
   const late = team(2, { depth: 20 });
   late.ask('azurite');
   late.timeOut();
@@ -626,7 +625,7 @@ test('a Dynamite Cache: each wrong pick blows up one thing from the picker\'s ow
 
 test('a Dynamite Cache timed out: each who never answered loses a life and one thing; one with nothing, or who perishes, only the life', () => {
   const h = team(3, { depth: 20 });
-  h.give('p0', { shards: 1 });
+  h.give('p0', { flares: 1 });
   h.give('p2', { flares: 2, dynamite: 1 });
   h.lives({ p2: 1 });
   const q = h.ask('dynamite');
@@ -638,13 +637,13 @@ test('a Dynamite Cache timed out: each who never answered loses a life and one t
   assert.equal(r.timedOut, true);
   assert.deepEqual(r.hits, [
     { playerId: 'p1', lives: 1, wards: 0, timedOut: false },
-    { playerId: 'p0', lives: 1, wards: 0, timedOut: true, blown: 'shards' },
+    { playerId: 'p0', lives: 1, wards: 0, timedOut: true, blown: 'flares' },
     { playerId: 'p2', lives: 1, wards: 0, timedOut: true },
   ]);
   assert.deepEqual(inventoryOf(h.s, 'p0'), NONE);
   assert.equal(livesOf(h.s, 'p2'), 0);
   assert.deepEqual(inventoryOf(h.s, 'p2'), NONE, 'perishing drops the pack anyway');
-  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p0', item: 'shards' }]);
+  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p0', item: 'flares' }]);
 });
 
 test("a find is offered while anyone standing has room for its item, and pays whoever clears it", () => {
@@ -672,7 +671,7 @@ test("a find is offered while anyone standing has room for its item, and pays wh
 test('perishing drops everything a player carries, for good', () => {
   const h = team(2);
   h.lives({ p1: 1 });
-  h.give('p1', { flares: 2, dynamite: 1, shards: 1 });
+  h.give('p1', { flares: 2, dynamite: 1 });
   const before = h.s;
   const q = h.ask();
   h.pickAs('p1', wrongs(q)[0]);
@@ -683,7 +682,6 @@ test('perishing drops everything a player carries, for good', () => {
     [
       ['flares', 'used', 0],
       ['dynamite', 'used', 0],
-      ['shards', 'used', 0],
     ],
   );
   // Brought back, they start over with nothing.
@@ -1074,7 +1072,7 @@ test('a find cleared by a winner with no room for it goes to a standing teammate
   assert.deepEqual([h.s.reveal!.gained, h.s.reveal!.gainedBy], ['flares', 'p2']);
   assert.deepEqual([flaresOf(h.s, 'p0'), flaresOf(h.s, 'p1'), flaresOf(h.s, 'p2')], [0, 3, 1]);
   assert.deepEqual(inventoryChanges(before, h.s), [{ playerId: 'p2', item: 'flares', change: 'gained', left: 1 }]);
-  // An Azurite Vein answered fast by someone with every ward: a ward for a teammate with room.
+  // An Azurite Vein answered by someone with every ward: a ward for a teammate with room.
   const v = team(3, { depth: 20 });
   v.give('p0', { wards: 3 });
   v.give('p1', { wards: 3 });
@@ -1112,7 +1110,7 @@ test('a host reload keeps the votes cast: those cut off are marked away and excu
   assert.equal(h.s.question!.category, card);
 });
 
-test("the host's own answers are held back for the guests standing, never past the clock's 0 or a Vein's fast window", () => {
+test("the host's own answers are held back for the guests standing, never past the clock's 0", () => {
   const h = team(3, { depth: 20 });
   h.lives({ p2: 0 });
   assert.deepEqual(racerIds(h.s), ['p0', 'p1'], 'those who perished race for nothing');
@@ -1122,14 +1120,11 @@ test("the host's own answers are held back for the guests standing, never past t
   assert.equal(hostAnswerHold(h.s, q.deadline! - 100, 150), 100 - HOST_HOLD_MARGIN_MS, 'lands before the flare would burn');
   assert.equal(hostAnswerHold(h.s, q.deadline! - 20, 150), 0);
   assert.equal(hostAnswerHold(h.s, h.clock.now, 0), 0);
-  // An Azurite Vein: before its fast window closes.
+  // An Azurite Vein: no window of its own, only the clock's 0.
   const v = team(2, { depth: 20 });
   const qv = v.ask('azurite');
-  const fastEnd = qv.clockAt! + veinWindow(findTimer('azurite', 20));
-  assert.equal(hostAnswerHold(v.s, fastEnd - 120, 150), 120 - HOST_HOLD_MARGIN_MS);
-  assert.equal(hostAnswerHold(v.s, fastEnd + 10, 150), 150, 'past the window: nothing left to keep');
-  // Held that long, the host's fast answer still mines a ward.
-  v.clock.now = fastEnd - 120 + hostAnswerHold(v.s, fastEnd - 120, 150);
+  assert.equal(hostAnswerHold(v.s, qv.clockAt! + 1000, 150), 150);
+  assert.equal(hostAnswerHold(v.s, qv.deadline! - 100, 150), 100 - HOST_HOLD_MARGIN_MS);
   v.pickAs('p0', right(qv));
   assert.equal(v.s.reveal!.gained, 'wards');
   // A race outside Delve: as it is.

@@ -413,14 +413,14 @@ test('together: falling as one, and the lone wolf', () => {
 });
 
 test('a pack full of everything, alone only', () => {
-  const full = { wards: 3, flares: 3, dynamite: 3, shards: 0 };
+  const full = { wards: 3, flares: 3, dynamite: 3 };
   const laden = (o: Partial<typeof full>, losses: Record<string, number[]> = { a: [] }) => {
     const s = delve(losses, { round: 70 });
     return { ...s, delve: { ...s.delve!, inventory: Object.fromEntries(Object.keys(losses).map((id) => [id, { ...full, ...o }])) } };
   };
   assert.ok(momentsIn(null, laden({}), 'a', false).includes('fully-laden'));
   assert.ok(!momentsIn(null, laden({ flares: 2 }), 'a', false).includes('fully-laden'));
-  assert.ok(!momentsIn(null, laden({ wards: 2, shards: 1 }), 'a', false).includes('fully-laden'));
+  assert.ok(!momentsIn(null, laden({ wards: 2 }), 'a', false).includes('fully-laden'));
   assert.ok(!momentsIn(null, laden({}, { a: [], b: [] }), 'a', false).includes('fully-laden'), 'together');
 });
 
