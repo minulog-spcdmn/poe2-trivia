@@ -20,6 +20,7 @@ import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
+import { frameEvent } from './fpsMeter';
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -1451,6 +1452,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
       atlasSize[2] = atlases.blurW;
       atlasSize[3] = atlases.blurH;
+      frameEvent('backdrop: drop shadows upload');
       changed = 'now';
     }
     let k = 0;
@@ -1461,6 +1463,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
         // A colour easing is paced; one coming or going (a fill's kind, a shadow's alpha from or to 0) is a handover.
         const handover = !colour || (arr === el.c ? i % 4 === 0 : arr === el.col ? i % 4 === 3 && (prev[k] === 0 || arr[i] === 0) : false);
         prev[k] = arr[i];
+        // (Named in the beta's frame meter: an element's shadows or fill coming or going, which CSS then paints or stops painting.)
+        if ((colour && handover) || (arr === el.b && i % 4 === 3)) frameEvent('backdrop: a shadow or fill handed between it and CSS');
         if (handover) changed = 'now';
         else changed ||= 'paced';
       }

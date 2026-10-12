@@ -24,6 +24,7 @@ import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
 import { switchedOff, type Switch } from '../switchedOff';
+import { frameEvent } from '../fpsMeter';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -187,6 +188,9 @@ let frameAvg = 16;
 let slowMs = 22;
 /** After a drop in quality: whether it made frames quicker (see frame()). */
 let probe: { from: number; before: number; time: number; frames: number } | null = null;
+/** The quality changed: the targets are made at its size once nothing is drawn (see frame()). */
+let resizeDue = false;
+let resizeDueAt = 0;
 
 /**
  * On phones, while everything alive is slow (glitter drifting down, rays
@@ -732,10 +736,17 @@ function frame(nowMs: number) {
   // browser runs at a lower rate (30fps in a power-saving mode, say). Then
   // the drop is undone and frames that slow count as normal from then on.
   // (Gaps over 300ms are a background tab or a stall, not the effects.)
+  // The resolution itself changes only once nothing is drawn (resizeDue):
+  // making the targets anew stalls the GPU, which in the middle of a moment
+  // (a right answer's reveal) held several frames up at once. The moment
+  // plays out as it began; the next one is drawn at the new size, and only
+  // then are frames timed to see whether the drop helped.
   if (rawDt > 0 && rawDt < 0.3) {
     const ms = Math.min(rawDt, 0.1) * 1000;
     frameAvg += (ms - frameAvg) * 0.12;
-    if (probe) {
+    if (resizeDue) {
+      // (Waiting for the drop to take effect.)
+    } else if (probe) {
       probe.time += rawDt;
       probe.frames++;
       if (probe.time > 1) {
@@ -743,7 +754,8 @@ function frame(nowMs: number) {
         if (avg > probe.before * 0.85) {
           quality = probe.from;
           slowMs = Math.max(slowMs, avg * 1.3);
-          resize();
+          resizeDue = true;
+          resizeDueAt = nowMs;
         }
         probe = null;
         slowFor = 0;
@@ -755,7 +767,8 @@ function frame(nowMs: number) {
         probe = { from: quality, before: frameAvg, time: 0, frames: 0 };
         quality++;
         slowFor = 0;
-        resize();
+        resizeDue = true;
+        resizeDueAt = nowMs;
       }
     } else slowFor = Math.max(0, slowFor - rawDt * 0.5);
   }
@@ -768,6 +781,11 @@ function frame(nowMs: number) {
     busy = simulate(Math.min(rawDt, 1 / 15), nowMs, draw);
   } finally {
     raf = busy ? requestAnimationFrame(frame) : 0;
+  }
+  // (Something endless, a streak's fire, may never let go: then once it's calm, a few seconds on.)
+  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000))) {
+    resizeDue = false;
+    resize();
   }
   if (!busy) show(false);
 }
@@ -975,6 +993,7 @@ function resize() {
   const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * (devicePixelRatio || 1) * k);
   const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * (devicePixelRatio || 1) * k);
   dpr = w / viewW;
+  frameEvent(`effects at ${w}x${h} (quality ${quality})`);
   renderer.resize(w, h, Math.min(1, 1 / dpr));
   wake();
 }
@@ -1020,6 +1039,7 @@ function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
   probe = null;
+  resizeDue = false;
   waiting?.();
   waiting = null;
   if (typeof WebGL2RenderingContext === 'undefined' || webgl2Refused()) return;

@@ -11,6 +11,7 @@
 import { INSTANCE_FLOATS } from './particles';
 import { NOISE, buildPrograms, dropTarget, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
+import { frameEvent } from '../fpsMeter';
 
 /** Floats per shape instance: five vec4s (see ShapeType). */
 export const SHAPE_FLOATS = 24;
@@ -1475,6 +1476,7 @@ export class FxRenderer {
       }
     }
     const gl = this.gl;
+    frameEvent('effects: UI mask upload');
     this.coverTex ??= gl.createTexture();
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
@@ -1523,6 +1525,7 @@ export class FxRenderer {
     // backdrop's full-screen pass included, which held whole frames up.
     const ctx = c.getContext('2d', { willReadFrequently: true });
     if (!ctx) return false;
+    frameEvent('effects: item outline upload');
     ctx.filter = `blur(${SIL_BLUR}px)`;
     ctx.drawImage(pic, pad, pad, w, h);
     const gl = this.gl;

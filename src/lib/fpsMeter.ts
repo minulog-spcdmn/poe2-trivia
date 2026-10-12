@@ -7,7 +7,21 @@
 // (Chrome's long animation frames): the scripts that ran longest, by file
 // and function, and the style and layout. A slow frame with the main
 // thread mostly free was held up by the GPU instead (the WebGL canvases
-// being drawn). Each slow frame is also written to the console.
+// being drawn). Each slow frame is also written to the console, and so is
+// any of the heavier steps the effects and the backdrop take (frameEvent),
+// which the readout names when they fall in the worst frame.
+
+/** The heavier steps taken lately (time, what), while the meter runs. */
+const events: [number, string][] = [];
+let on = false;
+
+/** Notes a heavier step (a GPU upload, targets made anew), for the meter to name in a slow frame. Nothing unless ?fps. */
+export function frameEvent(what: string) {
+  if (!on) return;
+  events.push([performance.now(), what]);
+  while (events.length > 100) events.shift();
+  console.info(`[fps] ${what}`);
+}
 
 type Script = { duration: number; sourceURL: string; sourceFunctionName: string; invoker: string; forcedStyleAndLayoutDuration: number };
 type LoAF = PerformanceEntry & { renderStart: number; styleAndLayoutStart: number; blockingDuration: number; scripts: Script[] };
@@ -27,6 +41,7 @@ function describe(f: LoAF): string {
 
 /** Starts the meter: a fixed readout in the bottom left corner. */
 export function installFpsMeter() {
+  on = true;
   const el = document.createElement('div');
   el.setAttribute('aria-hidden', 'true');
   el.style.cssText =
@@ -53,7 +68,9 @@ export function installFpsMeter() {
   /** What the main thread did in the frame that ended at `end` after `ms`. */
   const why = (end: number, ms: number) => {
     const f = long.find((e) => e.startTime < end && e.startTime + e.duration > end - ms);
-    return f ? describe(f) : 'main thread free: held up by the GPU or the compositor';
+    // The steps taken in it, or in the frame before (whose work it may have waited on).
+    const seen = [...new Set(events.filter(([t]) => t > end - ms - 40 && t <= end).map(([, w]) => w))];
+    return (f ? describe(f) : 'main thread free: held up by the GPU or the compositor') + (seen.length ? `\nduring it: ${seen.join(', ')}` : '');
   };
   let shownAt = 0;
   const tick = (now: number) => {
