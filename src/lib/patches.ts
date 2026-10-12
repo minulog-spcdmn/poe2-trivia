@@ -252,12 +252,10 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
   return out;
 }
 
-/** Which of the item's W × H art pixels are visible: those its patches hold between them (1 or 0 each). */
-export function litMask(patches: RawPatch[], W: number, H: number): Uint8Array {
+/** Which of a W × H RGBA picture's pixels are visible, the ones cutPatches shares out (1 or 0 each). */
+export function litMask(rgba: Uint8ClampedArray, W: number, H: number): Uint8Array {
   const lit = new Uint8Array(W * H);
-  for (const { x, y, w, h, pixels } of patches) {
-    for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) if (pixels[(py * w + px) * 4 + 3]) lit[(y + py) * W + x + px] = 1;
-  }
+  for (let i = 0; i < W * H; i++) if (rgba[i * 4 + 3] > CLEAR) lit[i] = 1;
   return lit;
 }
 
@@ -267,18 +265,20 @@ export function litMask(patches: RawPatch[], W: number, H: number): Uint8Array {
  * alone would give it edges in steps S pixels tall, which a large screen
  * shows as blocks; instead its outline runs smoothly through its ring of
  * neighbours' pixels, never past them, so it holds nothing more of the item
- * than it did. Each art pixel counts 1 if the patch's own, 0 if on the item
- * past its ring, and ½ in its ring or off the item; mixed bilinearly at each
- * pixel, a staircase comes out a slope, and ½ is where the outline runs
- * (softened over a pixel). Its own art pixels come out whole (nothing next
- * to them counts less than ½), so patches still cover the item between them;
- * the item's own outline is left to its pixels' alpha, and a pixel off the
- * item (`lit`, from litMask) is never drawn, as before.
+ * than it did. Each art pixel counts 1 if the patch's own or off the item,
+ * ½ in its ring and 0 on the item past it; mixed bilinearly at each pixel, a
+ * staircase comes out a slope, and ½ is where the outline runs (softened
+ * over a pixel). Only art pixels it holds are drawn, so a pixel past its
+ * ring never is, however much it's lifted by the item's edge next to it. Its
+ * own art pixels come out whole (nothing next to them counts less than ½),
+ * so patches still cover the item between them; the item's own outline is
+ * left to its pixels' alpha, and a pixel off the item (`lit`, from litMask)
+ * is never drawn, as before.
  */
 export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
   // What each art pixel counts, over the patch's box and one pixel round it.
   const gw = w + 2;
-  const grid = new Float32Array(gw * (h + 2)).fill(0.5);
+  const grid = new Float32Array(gw * (h + 2)).fill(1);
   for (let gy = 0; gy < h + 2; gy++) {
     for (let gx = 0; gx < gw; gx++) {
       const ax = x + gx - 1;

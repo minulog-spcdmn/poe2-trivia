@@ -44,7 +44,7 @@ test('drawn finer, patches cover the whole item between them with smooth edges, 
   const H = 120;
   const art = ellipse(W, H);
   const patches = cutPatches(art, W, H, 5, 1234);
-  const lit = litMask(patches, W, H);
+  const lit = litMask(art, W, H);
   for (let g = 0; g < W * H; g++) assert.equal(lit[g], art[g * 4 + 3] > 8 ? 1 : 0);
   for (const S of [1, 2, 4]) {
     // The most any patch draws of each fine pixel.
