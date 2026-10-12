@@ -491,13 +491,27 @@ function veinRow(p: Plate, g: RowLayout) {
     [root[0] + 60, g.h + 30],
     [root[0] - 60, g.h + 30],
   ];
-  // The crown round the emblem, as in the flare's row: points out to the row's edges and the divider.
+  // The crown round the emblem, as in the flare's row, but grown as crystals grow: uneven, each at its
+  // own heading, length and thickness, none in the lower third (out to the row's edges and the divider).
   const C = g.emblem;
   const r0 = 30;
-  const points = [-120, -90, -60, 0, 60, 90, 120, 180].map((a, i) => {
+  const crystals: [number, number, number][] = [
+    [-126, 13, 2.2],
+    [-108, 24, 3.2],
+    [-95, 12, 2],
+    [-56, 18, 2.7],
+    [-30, 10, 1.9],
+    [-19, 15, 2.3],
+    [24, 21, 2.9],
+    [58, 11, 2],
+    [71, 25, 3.3],
+    [83, 13, 2.2],
+    [121, 16, 2.5],
+  ];
+  const points = crystals.map(([a, len, hw]) => {
     const u = at([0, 0], a, 1);
     const ends = [u[0] > 1e-9 ? (g.divider - 8 - C[0]) / u[0] : u[0] < -1e-9 ? (10 - C[0]) / u[0] : Infinity, u[1] > 1e-9 ? (g.h - 8 - C[1]) / u[1] : u[1] < -1e-9 ? (8 - C[1]) / u[1] : Infinity];
-    return { a, end: Math.min(...ends, r0 + (i % 2 ? 16 : 26)), hw: i % 2 ? 2.6 : 3.2 };
+    return { a, end: Math.min(...ends, r0 + len), hw };
   });
   crystalCrown(p, C, r0, points, NONE, 0.8);
   cluster(p, prisms, { polys: [ground], holes: [] }, k);
