@@ -14,7 +14,9 @@ const BAD = [
   ...['kike', 'k1ke', 'Kyke', 'chink', 'gook', 'zipperhead', 'spic', 'sp1c', 'wetback', 'w3tback', 'Beaner420', 'coon', 'jiggaboo'],
   ...['porchmonkey', 'raghead', 'camel jockey', 'Paki', 'retard', 'r3tard', 'Ret4rd'],
   ...['Hitler', 'AdolfHitler', 'heilhitler', 'HeilHitler88', 'siegheil', 'sieg_heil', 'Sieg Heil', 'WhitePower', 'white_power'],
-  ...['1488', '14/88', 'KKK_Member', 'KuKluxKlan', 'rahowa', 'holohoax', 'Untermensch'],
+  ...['1488', '14/88', 'KKK_Member', 'KuKluxKlan', 'rahowa', 'holohoax', 'Untermensch', 'heilwhitler', 'whitler88'],
+  // An innocent word spares only itself, not the same word elsewhere in the name.
+  ...['FaginFag', 'CumMingCum', 'PussyCatPussy'],
   ...['gasthejews', 'gas the jews', 'killalljews', 'KillAllJews', 'kill the gays'],
   ...['Neger', 'Schwuchtel', 'Kanake', 'Judensau', 'Zigeuner', 'Fotze', 'maricón', 'sudaca', 'negrata', 'bougnoule', 'youpin'],
   ...['cumslut', 'rapist', 'pussyslayer', 'DickMage', 'PenisMage', 'BigCock', 'Porn_Star', 'whore', 'cunt', 'Bestiality'],
@@ -28,7 +30,9 @@ const FINE = [
   ...['Annalise', 'Anusha', 'Adrianus', 'Dickinson', 'Fagin', 'Pachinko', 'Pussycat', 'Squawk', 'Beanery', 'Spectre', 'Sextant'],
   ...['Kitava', 'Infernalist', 'Witchhunter', 'Sorceress', 'Bestial', 'Jewel', 'JewishGamer', 'GayMage', 'QueerBard', 'Black Knight'],
   ...['Assistant', 'Butterfield', 'Exile69', 'Mass Effect', 'Hit Hard', 'The Everlasting Gaze', 'Nazir', 'Aryan', 'Shitlord', 'FuckThisBoss'],
-  ...['kkkkk', 'Brazil kkkk', 'Sir/Knight', 'Mage#1', 'Unit14ab88', 'Rose & Thorn'],
+  ...['kkkkk', 'Brazil kkkk', 'Sir/Knight', 'Mage#1', 'Unit14ab88', 'Rose & Thorn', 'Analise', 'Dickey'],
+  // Split where the case changes, these still read as the innocent word.
+  ...['PussyCat', 'DickSon', 'DickInson', 'CumMing', 'RapeSeed', 'KlonDyke', 'AnalYst'],
 ];
 
 test('slurs, hate slogans and sexual terms are caught through the usual disguises', () => {

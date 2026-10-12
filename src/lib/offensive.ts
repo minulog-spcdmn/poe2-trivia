@@ -33,7 +33,7 @@ const MORE: [string[], string[]][] = [
   [['|coon[s]|', 'ji[g]gaboo', 'porch[ ]monkey', 'redskin', '|squaw[s]|', 'shemale', '|troon[s]|'], []],
   [['|paki[s]|', '|darkie', 'golliwog', 'mongoloid', '|kyke', '|yid[s]|', 'muzrat', '|lesbo', 'slant[ ]eye'], ['lesbos']],
   // Nazi names and slogans.
-  [['hitler', 'sieg[ ]heil', 'white[ ]power', 'rahowa', 'klux', 'holohoax', 'untermensch'], ['whittler', 'whitler']],
+  [['hitler', 'sieg[ ]heil', 'white[ ]power', 'rahowa', 'klux', 'holohoax', 'untermensch'], ['whittler']],
   // German.
   [['|neger', 'kanake', 'kanacke', 'schwuchtel', 'judensau', 'judenschwein', 'kameltreiber', 'zigeuner', '|spast|', 'fotze'], []],
   // Spanish and French.
@@ -43,7 +43,8 @@ const MORE: [string[], string[]][] = [
   [
     [],
     [
-      ...['anush', 'ianus', 'annus', 'banus', 'danus', 'annal', 'cumin', 'cumming', 'dickinson', 'dickson', 'dickerson', 'fagin'],
+      ...['anush', 'ianus', 'annus', 'banus', 'danus', 'annal', 'analis', 'cumin', 'cumming', 'dickey', 'dickinson', 'dickson'],
+      ...['dickerson', 'fagin'],
       ...['pachinko', 'penistone', 'pussycat', 'pussyfoot', 'rappe', 'rapeseed', 'retardant', 'cockpit', 'cocksure', 'booboo'],
       ...['vandyke', 'klondyke'],
     ],
@@ -61,17 +62,29 @@ MORE.push([THREATS.flatMap((t) => GROUPS.map((g) => `${t}[ ][al][l][ ][the][ ]${
  */
 const CODES = /(?<!\d)14[^\p{L}\p{N}]{0,2}88(?!\d)|(?<!k)kkk(?!k)/iu;
 
-const data = new DataSet<{ originalWord?: string }>()
-  .addAll(englishDataset)
-  .removePhrasesIf((p) => ALLOWED.has(p.metadata?.originalWord ?? ''));
-for (const [patterns, innocent] of MORE) {
-  data.addPhrase((p) => {
-    for (const s of patterns) p.addPattern(parseRawPattern(s));
-    for (const w of innocent) p.addWhitelistedTerm(w);
-    return p;
-  });
+/**
+ * The matcher, and one for the same terms that spares no innocent words. Built on the first check rather than
+ * when the app loads, as names.ts (and so this) is on the start page's path.
+ */
+let matchers: ReturnType<typeof build> | undefined;
+
+function build() {
+  const data = new DataSet<{ originalWord?: string }>()
+    .addAll(englishDataset)
+    .removePhrasesIf((p) => ALLOWED.has(p.metadata?.originalWord ?? ''));
+  for (const [patterns, innocent] of MORE) {
+    data.addPhrase((p) => {
+      for (const s of patterns) p.addPattern(parseRawPattern(s));
+      for (const w of innocent) p.addWhitelistedTerm(w);
+      return p;
+    });
+  }
+  const { blacklistedTerms, whitelistedTerms } = data.build();
+  return {
+    all: new RegExpMatcher({ blacklistedTerms, whitelistedTerms, ...englishRecommendedTransformers }),
+    unspared: new RegExpMatcher({ blacklistedTerms, ...englishRecommendedTransformers }),
+  };
 }
-const matcher = new RegExpMatcher({ ...data.build(), ...englishRecommendedTransformers });
 
 /** What splits a name into words: anything but letters, digits and the leetspeak obscenity reads as letters (@ ( $ | ! /). */
 const BREAKS = /[^\p{L}\p{N}@($|!/]+/gu;
@@ -86,14 +99,54 @@ const joinLetters = (s: string) => s.replace(/(?<=(?:^| )\S) (?=\S(?: |$))/gu, '
  * together ("n i g g e r", "n.i.g.g.e.r"). Not with every space taken out: across words, that finds slurs
  * in innocent names ("The Everlasting Gaze").
  */
-function readings(name: string): string[] {
+function readings(name: string) {
   const plain = name.normalize('NFKD').replace(/\p{M}/gu, '').replace(BREAKS, ' ').trim();
-  const words = plain.replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2').replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, '$1 $2');
   const bare = plain.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  return [...new Set([plain, words, joinLetters(plain), bare, joinLetters(bare)])];
+  return { plain, words: splitWords(plain), others: [joinLetters(plain), bare, joinLetters(bare)] };
+}
+
+const LOWER = /\p{Ll}/u;
+const UPPER = /\p{Lu}/u;
+
+/**
+ * The name split where the case changes (see readings), with where each of its
+ * characters is in the name (`at`, by UTF-16 index; an added space gets the next character's).
+ */
+function splitWords(plain: string): { text: string; at: number[] } {
+  const chars = Array.from(plain);
+  let text = '';
+  const at: number[] = [];
+  let i = 0;
+  chars.forEach((c, k) => {
+    const prev = chars[k - 1] ?? '';
+    if ((LOWER.test(prev) && UPPER.test(c)) || (UPPER.test(prev) && UPPER.test(c) && LOWER.test(chars[k + 1] ?? ''))) {
+      text += ' ';
+      at.push(i);
+    }
+    text += c;
+    for (let u = 0; u < c.length; u++) at.push(i + u);
+    i += c.length;
+  });
+  return { text, at };
 }
 
 /** Whether a name has a slur, a hate slogan or a sexual term in it, in any spelling the check sees through. */
 export function offensive(name: string): boolean {
-  return readings(name).some((r) => CODES.test(r) || matcher.hasMatch(r));
+  const { all, unspared } = (matchers ??= build());
+  const { plain, words, others } = readings(name);
+  const hit = (s: string) => CODES.test(s) || all.hasMatch(s);
+  if (hit(plain) || others.some(hit)) return true;
+  if (words.text === plain) return false;
+  if (CODES.test(words.text)) return true;
+  // Splitting at the case changes can cut through an innocent word ("PussyCat" → "Pussy Cat"), which then
+  // no longer spares what's in it. So a word found here counts unless it lies where an innocent word spared
+  // one in the name as typed ("FaginFag" still counts, for the second "Fag").
+  const key = (m: { termId: number; startIndex: number; endIndex: number }) => `${m.termId}:${m.startIndex}:${m.endIndex}`;
+  const kept = new Set(all.getAllMatches(plain).map(key));
+  const spared = unspared.getAllMatches(plain).filter((m) => !kept.has(key(m)));
+  return all.getAllMatches(words.text).some((m) => {
+    const start = words.at[m.startIndex];
+    const end = words.at[m.endIndex];
+    return !spared.some((s) => s.startIndex <= start && end <= s.endIndex);
+  });
 }
