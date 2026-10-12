@@ -40,6 +40,8 @@ export interface RawPatch {
   h: number;
   /** RGBA, w × h: the patch's pixels, everything else transparent. */
   pixels: Uint8ClampedArray;
+  /** w × h: 1 for the patch's own pixels, 0 for its ring of neighbours' and the rest. */
+  own: Uint8Array;
   /**
    * Where the item carries on into another patch: (x, y, patch) triples, x and
    * y relative to this patch, for each of its own pixels that touches a pixel
@@ -213,6 +215,7 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     const w = Math.min(W - 1, x1[k] + 1) - px + 1;
     const h = Math.min(H - 1, y1[k] + 1) - py + 1;
     const pixels = new Uint8ClampedArray(w * h * 4);
+    const ownPx = new Uint8Array(w * h);
     const edges: number[] = [];
     let area = 0;
     for (let y = 0; y < h; y++) {
@@ -222,7 +225,10 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
         const g = gy * W + gx;
         if (label[g] < 0) continue;
         const own = label[g] === k;
-        if (own) area++;
+        if (own) {
+          area++;
+          ownPx[y * w + x] = 1;
+        }
         let mine = own;
         const others: number[] = [];
         for (let dy = -1; dy <= 1; dy++) {
@@ -241,7 +247,69 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
         if (own) for (const l of others) edges.push(x, y, index[l]);
       }
     }
-    out.push({ x: px, y: py, w, h, pixels, edges: Uint16Array.from(edges), area });
+    out.push({ x: px, y: py, w, h, pixels, own: ownPx, edges: Uint16Array.from(edges), area });
+  }
+  return out;
+}
+
+/** Which of a W × H RGBA picture's pixels are visible, the ones cutPatches shares out (1 or 0 each). */
+export function litMask(rgba: Uint8ClampedArray, W: number, H: number): Uint8Array {
+  const lit = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) if (rgba[i * 4 + 3] > CLEAR) lit[i] = 1;
+  return lit;
+}
+
+/**
+ * How much of each of a patch's pixels to draw, 0 to 1, when its picture has
+ * `S` pixels per art pixel ((w × S) × (h × S), row by row). Its art pixels
+ * alone would give it edges in steps S pixels tall, which a large screen
+ * shows as blocks; instead its outline runs smoothly through its ring of
+ * neighbours' pixels, never past them, so it holds nothing more of the item
+ * than it did. Each art pixel counts 1 if the patch's own or off the item,
+ * ½ in its ring and 0 on the item past it; mixed bilinearly at each pixel, a
+ * staircase comes out a slope, and ½ is where the outline runs (softened
+ * over a pixel). Only art pixels it holds are drawn, so a pixel past its
+ * ring never is, however much it's lifted by the item's edge next to it. Its
+ * own art pixels come out whole (nothing next to them counts less than ½),
+ * so patches still cover the item between them; the item's own outline is
+ * left to its pixels' alpha, and a pixel off the item (`lit`, from litMask)
+ * is never drawn, as before.
+ */
+export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
+  // What each art pixel counts, over the patch's box and one pixel round it.
+  const gw = w + 2;
+  const grid = new Float32Array(gw * (h + 2)).fill(1);
+  for (let gy = 0; gy < h + 2; gy++) {
+    for (let gx = 0; gx < gw; gx++) {
+      const ax = x + gx - 1;
+      const ay = y + gy - 1;
+      if (ax < 0 || ay < 0 || ax >= W || ay >= H || !lit[ay * W + ax]) continue;
+      const inBox = gx >= 1 && gy >= 1 && gx <= w && gy <= h;
+      const l = (gy - 1) * w + gx - 1;
+      grid[gy * gw + gx] = inBox && own[l] ? 1 : inBox && pixels[l * 4 + 3] ? 0.5 : 0;
+    }
+  }
+  const pw = w * S;
+  const ph = h * S;
+  const out = new Float32Array(pw * ph);
+  for (let by = 0; by < ph; by++) {
+    const ly = (by / S) | 0;
+    // Where the pixel's centre is, in the grid, from its art pixels' centres.
+    const v = (by + 0.5) / S + 0.5;
+    const y0 = Math.floor(v);
+    const ty = v - y0;
+    for (let bx = 0; bx < pw; bx++) {
+      const lx = (bx / S) | 0;
+      // Only the art pixels it holds: its own and its ring.
+      if (!pixels[(ly * w + lx) * 4 + 3]) continue;
+      const u = (bx + 0.5) / S + 0.5;
+      const x0 = Math.floor(u);
+      const tx = u - x0;
+      const g = y0 * gw + x0;
+      const m = (grid[g] * (1 - tx) + grid[g + 1] * tx) * (1 - ty) + (grid[g + gw] * (1 - tx) + grid[g + gw + 1] * tx) * ty;
+      // m changes by ½ per art pixel across the outline, so this goes from 0 to 1 over a pixel.
+      out[by * pw + bx] = Math.min(1, Math.max(0, (m - 0.5) * 2 * S + 0.5));
+    }
   }
   return out;
 }

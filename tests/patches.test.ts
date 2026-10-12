@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { areaTime, burntShare, cutPatches, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, litMask, patchCoverage, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -37,6 +37,44 @@ test('patches cover every visible pixel exactly as it is, and nothing else', () 
     }
   }
   for (let g = 0; g < W * H; g++) assert.equal(covered[g], art[g * 4 + 3] > 8 ? 1 : 0, `pixel ${g}`);
+});
+
+test('drawn finer, patches cover the whole item between them with smooth edges, holding nothing past their ring', () => {
+  const W = 90;
+  const H = 120;
+  const art = ellipse(W, H);
+  const patches = cutPatches(art, W, H, 5, 1234);
+  const lit = litMask(art, W, H);
+  for (let g = 0; g < W * H; g++) assert.equal(lit[g], art[g * 4 + 3] > 8 ? 1 : 0);
+  for (const S of [1, 2, 4]) {
+    // The most any patch draws of each fine pixel.
+    const most = new Float32Array(W * S * H * S);
+    let soft = 0;
+    for (const p of patches) {
+      const cover = patchCoverage(p, lit, W, H, S);
+      assert.equal(cover.length, p.w * S * p.h * S);
+      for (let by = 0; by < p.h * S; by++) {
+        for (let bx = 0; bx < p.w * S; bx++) {
+          const c = cover[by * p.w * S + bx];
+          const l = ((by / S) | 0) * p.w + ((bx / S) | 0);
+          // Only from art pixels it holds (its own and its ring), and its own wholly.
+          if (!p.pixels[l * 4 + 3]) assert.equal(c, 0, `S ${S}: patch at ${p.x}, ${p.y} reaches past its ring`);
+          if (p.own[l]) assert.equal(c, 1, `S ${S}: patch at ${p.x}, ${p.y} loses some of its own`);
+          if (c > 0 && c < 1) soft++;
+          const g = (p.y * S + by) * W * S + p.x * S + bx;
+          most[g] = Math.max(most[g], c);
+        }
+      }
+    }
+    for (let fy = 0; fy < H * S; fy++) {
+      for (let fx = 0; fx < W * S; fx++) {
+        // Every pixel of the item wholly by some patch (no gaps at the seams), nothing off it.
+        assert.equal(most[fy * W * S + fx], lit[((fy / S) | 0) * W + ((fx / S) | 0)], `S ${S}: pixel ${fx}, ${fy}`);
+      }
+    }
+    // Finer than art pixels, the outlines are softened, not art pixels' steps.
+    if (S > 1) assert.ok(soft > 0, `S ${S}: no soft edges`);
+  }
 });
 
 test('patches come out about as big as the old grid tiles over the item', () => {

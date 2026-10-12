@@ -5,7 +5,7 @@
 // questions only the patches of it that have been uncovered so far.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
+import { cutPatches, litMask, patchCoverage, spreadOrder, veilSchedule, visibleBox, type RawPatch, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question, Veil } from './game';
 import { veilPlan } from './delve';
@@ -227,7 +227,8 @@ export interface CutVeil {
  * at the latest, the rest after. The patches are cut in art pixels (a copy
  * of the picture scaled down to them), so their shapes, seams and areas are
  * what they always were; each patch's own picture is then taken from the
- * full-resolution canvas, scale × scale pixels for each of its own.
+ * full-resolution canvas, scale × scale pixels for each of its own (and of
+ * its ring, its outline smoothed through it: patchCoverage).
  */
 async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): Promise<CutVeil> {
   const W = Math.round(canvas.width / S);
@@ -243,6 +244,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
   const FW = canvas.width;
   const cut = cutPatches(pixels, W, H, v.size, v.seed);
+  const lit = litMask(pixels, W, H);
   const order = spreadOrder(cut, v.seed);
   const areas = order.map((i) => cut[i].area);
   const schedule = veilSchedule(areas, plan);
@@ -255,26 +257,40 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   };
   const patches = await Promise.all(
     order.map(async (i) => {
-      const { x, y, w, h, pixels: own, edges } = cut[i];
-      // The patch's pixels at full resolution: wherever it has an art pixel.
-      const pw = w * S;
-      const ph = h * S;
-      const big = new Uint32Array(pw * ph);
-      for (let by = 0; by < ph; by++) {
-        const ay = (by / S) | 0;
-        const row = (y * S + by) * FW + x * S;
-        for (let bx = 0; bx < pw; bx++) {
-          if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
-        }
-      }
-      const piece = document.createElement('canvas');
-      piece.width = pw;
-      piece.height = ph;
-      piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
-      return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
+      const { x, y, w, h, edges } = cut[i];
+      return { i, x, y, w, h, data: await encode(patchPicture(fine, FW, S, cut[i], lit, W, H), true), edges: edges.buffer as ArrayBuffer };
     }),
   );
   return { veil, patches, delays: schedule.delays, gap: schedule.gap, areas };
+}
+
+/**
+ * A patch's own picture from the picture's pixels at `S` per art pixel (`FW`
+ * wide), as much of each as patchCoverage says (the item `W` × `H` art
+ * pixels, `lit` where it's visible): smooth edges, not art pixels' steps.
+ */
+function patchPicture(fine: Uint32Array, FW: number, S: number, patch: RawPatch, lit: Uint8Array, W: number, H: number): HTMLCanvasElement {
+  const { x, y, w, h } = patch;
+  const cover = patchCoverage(patch, lit, W, H, S);
+  const pw = w * S;
+  const ph = h * S;
+  const big = new Uint32Array(pw * ph);
+  const bytes = new Uint8Array(big.buffer);
+  for (let by = 0; by < ph; by++) {
+    const row = (y * S + by) * FW + x * S;
+    for (let bx = 0; bx < pw; bx++) {
+      const o = by * pw + bx;
+      const c = cover[o];
+      if (!c) continue;
+      big[o] = fine[row + bx];
+      if (c < 1) bytes[o * 4 + 3] = Math.round(bytes[o * 4 + 3] * c);
+    }
+  }
+  const piece = document.createElement('canvas');
+  piece.width = pw;
+  piece.height = ph;
+  piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
+  return piece;
 }
 
 // ---- what this device shows -------------------------------------------
