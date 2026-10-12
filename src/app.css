@@ -1,9 +1,12 @@
 @import '@fontsource/cinzel/latin-500.css';
 @import '@fontsource/cinzel/latin-700.css';
 @import '@fontsource/cinzel/latin-900.css';
-@import '@fontsource/eb-garamond/latin-400.css';
-@import '@fontsource/eb-garamond/latin-500.css';
-@import '@fontsource/eb-garamond/latin-400-italic.css';
+/* EB Garamond with all its scripts (Latin Extended, Vietnamese, Cyrillic,
+   Greek), each behind a unicode-range: a browser fetches a script's file
+   only when text on the page needs it, such as a player's name. */
+@import '@fontsource/eb-garamond/400.css';
+@import '@fontsource/eb-garamond/500.css';
+@import '@fontsource/eb-garamond/400-italic.css';
 
 /* Maragsâ Display by Jad Maza (free license, gum.co/Maragsa). The license
    allows web use only as WOFF/WOFF2 through @font-face. It has a single weight,
