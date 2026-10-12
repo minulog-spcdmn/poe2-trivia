@@ -203,7 +203,7 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
     miss: `${cap(FIND_MISS.flare ?? '')}.`,
   },
   dynamite: {
-    gives: `Dynamite lets you skip a question and get a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per depth. If time runs out, it goes off on its own.`,
+    gives: `Dynamite lets you skip a question and get a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per set of cards. If time runs out, it goes off on its own.`,
     miss: `${cap(FIND_MISS.dynamite ?? '')}.`,
   },
 };
@@ -211,7 +211,7 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
 /** Over a flare or a stick of dynamite in a player's pack, on hover: how it works. */
 export const ITEM_TIPS = {
   flares: { name: 'Flare', text: `When your time runs out, it burns and gives you ${words(FLARE_MS / 1000)} more seconds. It doesn't work on finds.` },
-  dynamite: { name: 'Dynamite', text: `Swap a question for a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per depth. If time runs out, it goes off on its own. It doesn't work on finds.` },
+  dynamite: { name: 'Dynamite', text: `Swap a question for a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per set of cards. If time runs out, it goes off on its own. It doesn't work on finds.` },
 } as const;
 
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */

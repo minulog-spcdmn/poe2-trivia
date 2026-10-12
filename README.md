@@ -210,10 +210,11 @@ the same thing for everyone.
     the depth's full clock and rules (veil, pictures, grayscale, options,
     made-up names) as a fresh question, a flare works on it as usual, and
     it is never a find, even from a find's card (dynamite is no way to fish
-    for finds). Its card is locked out like a pick. At most two blasts a
-    depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
+    for finds). Its card is locked out like a pick. At most two blasts an
+    offer (`DELVE_MAX_BLASTS`, the offer's other cards; the fresh offer after
+    a miss at the same depth has its own). As the clock hits
     0, a flare burns first; only with none to burn does a stick go off by
-    itself (while the depth has a blast left), right at 0, in place of the
+    itself (while the offer has a blast left), right at 0, in place of the
     time-out, which then costs nothing. Its fuse warns of it: over the
     clock's last `DELVE_FUSE_MS` (1.8 s) before that 0 it hisses, and a bar
     burns down on Detonate as Next's does, reaching its end at 0 (every

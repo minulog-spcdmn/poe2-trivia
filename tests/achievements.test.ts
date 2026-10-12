@@ -401,6 +401,10 @@ test('together: falling as one, and the lone wolf', () => {
   // c perished on an earlier question at the same depth (a miss doesn't go deeper): not on this one.
   const before = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, r: { winnerId: null, correct: false, hits: hits('a', 'b') } });
   assert.ok(!momentsIn(was(before), before, 'a', false).includes('fell-as-one'), 'c fell on the question before');
+  // c fell striking the question a blast took away for this one: the same offer, so it counts.
+  const blast = { stick: 'b', side: 1 as const, was: { at: 1, itemId: 'x', mode: 'name' as const, struck: [{ by: 'c', index: 0, lives: 1, wards: 0 }] } };
+  const blasted = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, q: { blast }, r: { winnerId: null, correct: false, hits: hits('a', 'b') } });
+  assert.ok(momentsIn(was(blasted), blasted, 'a', false).includes('fell-as-one'), 'c fell on the question blasted away');
 
   // Teammates down at 25 and 31; clean past 31 to 41.
   const wolf = delve({ a: [12], b: [5, 9, 25], c: [6, 20, 31] }, { round: 41, r: { winnerId: 'a' } });

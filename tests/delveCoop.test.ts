@@ -1,5 +1,5 @@
 // Delve together is co-op: the team votes for a card, everyone standing
-// answers one shared question per depth (a wrong pick strikes its option for
+// answers one shared question per offer (a wrong pick strikes its option for
 // everyone, at a life), items stay each player's but go off for the team, and
 // a player with lives to spare can bring back a teammate who perished. The run
 // ends when nobody stands; the team's depth is where the last of them perished.
