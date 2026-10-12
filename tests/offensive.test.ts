@@ -9,6 +9,7 @@ import { NAMES } from '../src/bot/identities.ts';
 const BAD = [
   ...['nigger', 'NiGgEr', 'n1gg3r', 'n!gger', 'n|gger', 'nigggger', 'niqqer', 'nlgger', 'nıgger', 'ηigger', 'Nïgger', 'nigga', 'N1GGA', 'niggerz'],
   ...['n i g g e r', 'n.i.g.g.e.r', 'niggerslayer', 'xXniggerXx', 'sandnigger', 'nigg3r_ki11er'],
+  ...['n/i/g/g/e/r', 'N•I•G•G•E•R', 'n#i#g#g#e#r', 'sieg/heil', 'Sieg(Heil)', 'white#power', '14 / 88', 'BIGFag', 'spics', 'Coons'],
   ...['faggot', 'f4gg0t', 'FaggotMage', 'xXfaggotXx', 'Big Fag', 'FagMage', 'dyke', 'tranny', 'tr4nny', 'troon'],
   ...['kike', 'k1ke', 'Kyke', 'chink', 'gook', 'zipperhead', 'spic', 'sp1c', 'wetback', 'w3tback', 'Beaner420', 'coon', 'jiggaboo'],
   ...['porchmonkey', 'raghead', 'camel jockey', 'Paki', 'retard', 'r3tard', 'Ret4rd'],
@@ -27,6 +28,7 @@ const FINE = [
   ...['Annalise', 'Anusha', 'Adrianus', 'Dickinson', 'Fagin', 'Pachinko', 'Pussycat', 'Squawk', 'Beanery', 'Spectre', 'Sextant'],
   ...['Kitava', 'Infernalist', 'Witchhunter', 'Sorceress', 'Bestial', 'Jewel', 'JewishGamer', 'GayMage', 'QueerBard', 'Black Knight'],
   ...['Assistant', 'Butterfield', 'Exile69', 'Mass Effect', 'Hit Hard', 'The Everlasting Gaze', 'Nazir', 'Aryan', 'Shitlord', 'FuckThisBoss'],
+  ...['kkkkk', 'Brazil kkkk', 'Sir/Knight', 'Mage#1', 'Unit14ab88', 'Rose & Thorn'],
 ];
 
 test('slurs, hate slogans and sexual terms are caught through the usual disguises', () => {
