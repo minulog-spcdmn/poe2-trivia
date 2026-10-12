@@ -4,6 +4,7 @@
 
 import { isDifficulty, type Difficulty, type GameMode, type Phase } from './game.ts';
 import { cleanName } from './names.ts';
+import { offensive } from './offensive.ts';
 import { PROTOCOL_VERSION } from './protocol.ts';
 
 export interface RoomInfo {
@@ -66,3 +67,11 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     ...(int(r.v, 0, 1e6) ? { v: r.v } : {}),
   };
 }
+
+/**
+ * Whether a well-formed listing is shown in the room list: not when its host's
+ * name has a slur or the like in it. Such a room still holds its listing slot,
+ * so the scan counts it and goes on past it (an empty batch would end the
+ * scan, hiding the rooms above it too).
+ */
+export const listable = (room: RoomInfo) => !offensive(room.host);

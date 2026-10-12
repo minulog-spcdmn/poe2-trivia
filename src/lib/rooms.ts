@@ -10,7 +10,7 @@ import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
-import { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
+import { listable, parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 
 const BATCH = 10;
 /** Slots up to this are scanned at full speed; later batches wait a little. */
@@ -112,7 +112,7 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
           const r = await prober.probe(id);
           if (r && r !== 'free') {
             found++;
-            if (!cancelled() && listed++ < MAX_LISTED) onRoom(r);
+            if (listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
           }
         }),
       );
