@@ -905,6 +905,8 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
   return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE;
 }
 
+/** The most device pixels the backdrop draws (see scale() in startBackdrop): a 1440p screen's. */
+const MAX_PIXELS = 2560 * 1440;
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
 
@@ -1625,7 +1627,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // redrawn 30 times a second for as long as the page is open. The grain is
   // per CSS px anyway, the embers are soft glows, and the dither still hides
   // every band.
-  const scale = () => (cssShadows.matches && devicePixelRatio > 1 ? 1 / devicePixelRatio : 1);
+  //
+  // And on any screen, never more than MAX_PIXELS: a 4K screen's 8 million
+  // device pixels (or more) made this full-screen pass, drawn under the
+  // effects overlay's own, too much for the GPU in a reveal, and frames came
+  // a tenth of a second late. Up to a 1440p screen's worth it is drawn
+  // exact; past that, about one pixel per CSS px or a little more, which the
+  // crisp fills and shadows (under the UI's own 1px borders) still hold to.
+  const scale = () => {
+    if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
+    const device = canvas.clientWidth * canvas.clientHeight * devicePixelRatio * devicePixelRatio;
+    return device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
+  };
 
   // The canvas is as tall as the viewport with a phone's toolbars hidden, but
   // the scene is laid out for the height with them showing (--view-h in

@@ -900,6 +900,8 @@ export function pictureReady(pic: HTMLImageElement | HTMLCanvasElement) {
 // Fine enough that thin items (a spear's shaft) keep most of their alpha.
 const SIL_SIZE = 256;
 const SIL_BLUR = 2.5;
+/** Silhouettes kept (see FxRenderer.sils). */
+const SIL_KEPT = 3;
 
 /**
  * How far the bloom carries light, in texels of its smallest level: each
@@ -958,10 +960,17 @@ export class FxRenderer {
   height = 0;
   bloom = true;
   private cleared = false;
+  /** The silhouette drawn with (one of `sils`), and how much of its texture the picture covers. */
   private silTex: WebGLTexture | null = null;
-  /** The picture in silTex (by its silhouette's key, so a picture gone from the page isn't kept), and how much of the texture it covers. */
-  private silKey = '';
   private silFit: [number, number] = [1, 1];
+  /**
+   * The last few pictures' silhouettes, newest first, by their key (so a
+   * picture gone from the page isn't kept): a reveal's effects shine from
+   * behind two pictures at once (the question's copy fading out under the
+   * original art, a tile and the art), and asking for them by turns would
+   * otherwise make one anew every frame.
+   */
+  private sils: { key: string; tex: WebGLTexture; fit: [number, number] }[] = [];
   /** A picture that couldn't be read (another origin, say): not tried again every frame. */
   private silFailed = '';
   /** The UI's boxes light from behind it hides behind (see COVER): their mask, what it was drawn from, and whether it's set. */
@@ -1500,18 +1509,31 @@ export class FxRenderer {
 
   /** Makes the silhouette's picture the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
   private loadSilhouette({ pic, key }: Silhouette): boolean {
-    if (key === this.silKey) return true;
+    const i = this.sils.findIndex((x) => x.key === key);
+    if (i >= 0) {
+      const [hit] = this.sils.splice(i, 1);
+      this.sils.unshift(hit);
+      this.silTex = hit.tex;
+      this.silFit = hit.fit;
+      return true;
+    }
     if (key === this.silFailed || !pictureReady(pic)) return false;
-    if (!this.makeSilhouette(pic)) {
+    // The oldest one's texture is drawn anew, once there are enough.
+    const tex = this.sils.length >= SIL_KEPT ? this.sils.pop()!.tex : this.gl.createTexture();
+    const fit = this.makeSilhouette(pic, tex);
+    if (!fit) {
+      this.gl.deleteTexture(tex);
       this.silFailed = key;
       return false;
     }
-    this.silKey = key;
+    this.sils.unshift({ key, tex, fit });
+    this.silTex = tex;
+    this.silFit = fit;
     return true;
   }
 
-  /** Draws `pic`'s alpha, blurred, into silTex, with a margin for the blur to spread into. False if it can't be read. */
-  private makeSilhouette(pic: HTMLImageElement | HTMLCanvasElement): boolean {
+  /** Draws `pic`'s alpha, blurred, into `tex`, with a margin for the blur to spread into. Returns how much of it the picture covers, or null if it can't be read. */
+  private makeSilhouette(pic: HTMLImageElement | HTMLCanvasElement, tex: WebGLTexture): [number, number] | null {
     const [pw, ph] = pic instanceof HTMLImageElement ? [pic.naturalWidth, pic.naturalHeight] : [pic.width, pic.height];
     const k = SIL_SIZE / Math.max(pw, ph);
     const w = Math.max(1, Math.round(pw * k));
@@ -1524,19 +1546,18 @@ export class FxRenderer {
     // this context waits for the GPU to finish everything queued before it, the
     // backdrop's full-screen pass included, which held whole frames up.
     const ctx = c.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return false;
+    if (!ctx) return null;
     frameEvent('effects: item outline upload');
     ctx.filter = `blur(${SIL_BLUR}px)`;
     ctx.drawImage(pic, pad, pad, w, h);
     const gl = this.gl;
-    this.silTex ??= gl.createTexture();
     gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.silTex);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, c);
     } catch {
       gl.activeTexture(gl.TEXTURE0);
-      return false;
+      return null;
     }
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -1544,13 +1565,12 @@ export class FxRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.activeTexture(gl.TEXTURE0);
-    this.silFit = [w / c.width, h / c.height];
-    return true;
+    return [w / c.width, h / c.height];
   }
 
   destroy() {
     const gl = this.gl;
-    if (this.silTex) gl.deleteTexture(this.silTex);
+    for (const x of this.sils) gl.deleteTexture(x.tex);
     if (this.coverTex) gl.deleteTexture(this.coverTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);

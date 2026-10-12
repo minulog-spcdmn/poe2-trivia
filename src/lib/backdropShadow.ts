@@ -128,38 +128,28 @@ function moves(anim: Animation, effect: KeyframeEffect): boolean {
 }
 
 /**
- * Whether `el` itself has a running animation or transition that moves it.
- * Asked every frame rather than kept until one starts: a hover's transition,
- * say, shows up here in the frame that first styles it, but its transitionrun
- * (or animationstart) event only fires a frame later. Asked of the element,
- * not of the whole document: a long page (the codex) runs far more
- * animations than the few elements with shadows have, and going through them
- * all every frame stalled it.
+ * The elements a running animation or transition moves now, found once a
+ * frame: every running animation in the document, asked once. (Asking each
+ * shadowed element and each of its ancestors for its own, as this did,
+ * flushed the styles every time: some 40 asks a frame, which in a reveal,
+ * with its many animations, took tens of ms.) Found as the frame is
+ * measured, not kept until one starts: a hover's transition shows up here
+ * in the frame that first styles it, but its transitionrun (or
+ * animationstart) event only fires a frame later.
  */
-function movesNow(el: Element): boolean {
-  for (const anim of el.getAnimations()) {
+function movedNow(): Set<Element> {
+  const moved = new Set<Element>();
+  for (const anim of document.getAnimations()) {
     if (anim.playState !== 'running') continue;
     const effect = anim.effect as KeyframeEffect | null;
-    if (effect?.target === el && moves(anim, effect)) return true;
+    if (effect?.target && !effect.pseudoElement && moves(anim, effect)) moved.add(effect.target);
   }
-  return false;
+  return moved;
 }
 
 /** An element as the frame meter names it: its tag and first class. */
 function nameOf(el: Element) {
   return `${el.tagName.toLowerCase()}${el.classList[0] ? '.' + el.classList[0] : ''}`;
-}
-
-/** What moves `node` now: it or the nearest ancestor with a running animation that moves it (for the frame meter). */
-function movingWho(node: Element): string {
-  for (let el: Element | null = node; el; el = el.parentElement) {
-    for (const anim of el.getAnimations()) {
-      if (anim.playState !== 'running') continue;
-      const effect = anim.effect as KeyframeEffect | null;
-      if (effect?.target === el && moves(anim, effect)) return nameOf(el) + (el === node ? '' : ` (round ${nameOf(node)})`);
-    }
-  }
-  return nameOf(node);
 }
 
 function paintsBackground(cs: CSSStyleDeclaration) {
@@ -275,16 +265,17 @@ export function measureShadows(
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
   const shook = shaking();
-  // Each element asked once a frame: shadowed elements share most of their ancestors.
-  const moving = new Map<Element, boolean>();
-  const isMoving = (node: HTMLElement) => {
-    for (let el: Element | null = node; el; el = el.parentElement) {
-      let m = moving.get(el);
-      if (m === undefined) moving.set(el, (m = movesNow(el)));
-      if (m) return true;
-    }
-    return false;
+  // What moves, found once a frame, and only if a fill asks: `node` or the
+  // ancestor of it that moves, if any.
+  let moved: Set<Element> | null = null;
+  const movingOf = (node: HTMLElement): Element | null => {
+    moved ??= movedNow();
+    if (!moved.size) return null;
+    for (let el: Element | null = node; el; el = el.parentElement) if (moved.has(el)) return el;
+    return null;
   };
+  /** How the frame meter names what moves `node` (`el`, it or an ancestor). */
+  const movingName = (node: Element, el: Element) => nameOf(el) + (el === node ? '' : ` (round ${nameOf(node)})`);
   // Ancestors' backgrounds, read once a frame: fills share most of their
   // ancestors. (An ancestor comes first in document order, so its own
   // data-bs-fill is settled before any descendant reads it.)
@@ -346,7 +337,8 @@ export function measureShadows(
 
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
     // Why a fill goes back to CSS now (named in the beta's frame meter).
-    const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : isMoving(node) ? `${movingWho(node)} moving` : '';
+    const mover = ok && fillKind && flat && !keepFills && !scrolling && !shook ? movingOf(node) : null;
+    const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : mover ? `${movingName(node, mover)} moving` : '';
     if (ok && fillKind && !toCss) {
       const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
       const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
