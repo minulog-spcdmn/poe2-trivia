@@ -13,13 +13,11 @@ import {
   DELVE_FUSE_MS,
   DELVE_MAX_BLASTS,
   FLARE_MS,
-  SHARDS_PER_WARD,
   MAX_FINDS,
   SECOND_FIND,
   findRules,
   findTileVeil,
   findTimer,
-  veinWindow,
   DELVE_MAX_LOCKOUT,
   DELVE_RULESET,
   FIND_MIN_TIMER,
@@ -52,6 +50,10 @@ import {
   fellAt,
   livesOf,
   standingIds,
+  LAMP_START,
+  VEIN_DEEPER,
+  VEIN_MAX_STRIKES,
+  lampAfter,
 } from '../src/lib/delve.ts';
 import { Engine, KNOB_STEPS, OFFER_COUNT, createGame, maxFakes, type GameState, type Item } from '../src/lib/game.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
@@ -174,11 +176,15 @@ test('from depth 50 a growing share of questions picks its look-alikes by their 
   assert.equal(delveRules(120).lookalikes, 1);
   // It only makes look-alikes pick differently, so it comes once most of them are look-alikes.
   assert.ok(delveRules(LOOKALIKES_FROM).similarNames > 0.8);
-  // Finds ask from up to twenty depths deeper, so a flare at 30 already gets it.
-  assert.equal(LOOKALIKES_ASKED_FROM, 30);
+  // Finds ask from further down: a flare from twenty, a vein's third strike from forty, so from
+  // the first vein (depth 26) its third strike may already get it.
+  assert.equal(LOOKALIKES_ASKED_FROM, 26);
   assert.equal(findRules('flare', 29).lookalikes, undefined);
   assert.equal(findRules('flare', 30).lookalikes, 0.0141);
-  assert.equal(findRules('azurite', 35).lookalikes, 0.0141);
+  assert.equal(findRules('azurite', 30).lookalikes, 0.0141);
+  assert.equal(findRules('azurite', 26, 1).lookalikes, undefined);
+  assert.equal(findRules('azurite', 26, 2).lookalikes, delveLookalikes(56));
+  assert.equal(findRules('azurite', 26, 3).lookalikes, delveLookalikes(66));
 });
 
 test('timer and lockout stay within bounds', () => {
@@ -233,28 +239,30 @@ test('there are always three categories left to offer at the longest lockout', (
 
 test('the ruleset is pinned to the curve and the protocol', () => {
   // Changing the curve changes this hash: bump DELVE_RULESET and PROTOCOL_VERSION with it, then update the pin.
-  // (Ruleset 1 is frozen as the rules Delve opens with, at protocol 12; dynamite blasting a question away for a new one, in place of going off at half the clock, kept it at 1 at protocol 13, as Delve isn't public yet, and so did its fuse burning at 0 before it goes off by itself, at protocol 14, and the fuse burning over the clock's last seconds instead, the dynamite going off right at 0, at protocol 15 (DELVE_FUSE_MS kept its 1.8 s). The finds starting later, one at a time (the Dynamite Cache from shown depth 10, the Flare Cache from 30, the Azurite Vein from 40, each reaching its cap 20 depths on), kept it at 1 at protocol 14 too. The Flare Cache coming from shown depth 25 in place of 30 (its cap by 45) kept it at 1 at protocol 15. A flare giving six seconds in place of five, and a Flare Cache's clock two thirds of its deeper depth's in place of three seconds short, never under four in place of three, kept it at 1 at protocol 16. A blasted question remembering the wrong answers given to it (no rules change) kept it at 1 at protocol 17. The upscaled item art going out at twice the pixels (no rules change) kept it at 1 at protocol 18. A guest choosing to watch rather than play (no rules change) kept it at 1 at protocol 19. Before that, while Delve was unreleased, every change kept the ruleset and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
+  // (Ruleset 1 is frozen as the rules Delve opens with, at protocol 12; dynamite blasting a question away for a new one, in place of going off at half the clock, kept it at 1 at protocol 13, as Delve isn't public yet, and so did its fuse burning at 0 before it goes off by itself, at protocol 14, and the fuse burning over the clock's last seconds instead, the dynamite going off right at 0, at protocol 15 (DELVE_FUSE_MS kept its 1.8 s). The finds starting later, one at a time (the Dynamite Cache from shown depth 10, the Flare Cache from 30, the Azurite Vein from 40, each reaching its cap 20 depths on), kept it at 1 at protocol 14 too. The Flare Cache coming from shown depth 25 in place of 30 (its cap by 45) kept it at 1 at protocol 15. A flare giving six seconds in place of five, and a Flare Cache's clock two thirds of its deeper depth's in place of three seconds short, never under four in place of three, kept it at 1 at protocol 16. A blasted question remembering the wrong answers given to it (no rules change) kept it at 1 at protocol 17. The upscaled item art going out at twice the pixels (no rules change) kept it at 1 at protocol 18. A guest choosing to watch rather than play (no rules change) kept it at 1 at protocol 19. The item art going out at each item's own scale, with option pictures' sizes (no rules change), kept it at 1 at protocol 20. The players' pointers shown live (no rules change) kept it at 1 at protocol 21. A new zone's cards dealt as the plunge into it lands, every screen holding them and their votes till then (no rules change), kept it at 1 at protocol 22. The team's streak counted in co-op (no rules change) kept it at 1 at protocol 23. A pointer going with the anchors round its own, on many more of them (no rules change), kept it at 1 at protocol 24. Ruleset 2, at protocol 25: twins (game.ts TWINS) meet in a question only from a depth on, the rules' `twins`, and never in grayscale where only their colours tell them apart (the grayscale roll now comes before the options are picked). The Azurite Vein always giving a whole ward (no shards, no fast window), and the Vein coming from shown depth 25 and the Flare Cache from 40 in place of the other way round, each certain on its first depth, kept it at 2 at protocol 26, as ruleset 2 isn't out yet, and so did only a question cleared going a depth deeper (a miss asks another at the same depth), at protocol 27, and the Azurite Vein dug a strike at a time on one lamp (strike 1 on LAMP_START of its clock, up to VEIN_MAX_STRIKES, the haul in hand buried by a cave-in), at protocol 28, and so did its lamp never fed, at protocol 29, and its strikes asking from 20, 30 and 40 depths further down; and players saying whether their game is on screen and in use, the lobby showing who is ready, and a veiled picture going out whole with which patch each pixel falls in, its patches only named as they uncover (no rules changes), on another line at 28; the two joined at protocol 30, still ruleset 2. Before that, while Delve was unreleased, every change kept the ruleset and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
   const clocks = Array.from({ length: 12 }, (_, i) => i + 5);
-  table.push([FINDS, SECOND_FIND, MAX_FINDS, SHARDS_PER_WARD, FLARE_MS, ['blasts', DELVE_MAX_BLASTS], ['fuse', DELVE_FUSE_MS]]);
+  table.push([FINDS, SECOND_FIND, MAX_FINDS, FLARE_MS, ['blasts', DELVE_MAX_BLASTS], ['fuse', DELVE_FUSE_MS]]);
   table.push(DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => findChance(f.kind, d))));
   table.push(
-    DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => [findRules(f.kind, d), findTimer(f.kind, d), findTileVeil(f.kind, d), veinWindow(findTimer(f.kind, d))])),
+    DEPTHS.slice(0, 100).map((d) => FINDS.map((f) => [findRules(f.kind, d), findTimer(f.kind, d), findTileVeil(f.kind, d)])),
   );
   // The shortest a find's clock gets, and what a Dynamite Cache's blast takes of a full pack at a few rolls.
-  table.push(['risk', FIND_MIN_TIMER, [0, 0.2, 0.4, 0.6, 0.8, 0.95].map((r) => blastVictim({ wards: 2, flares: 1, dynamite: 1, shards: 1 }, r))]);
+  table.push(['risk', FIND_MIN_TIMER, [0, 0.2, 0.4, 0.6, 0.8, 0.95].map((r) => blastVictim({ wards: 2, flares: 1, dynamite: 1 }, r))]);
   // How long the art takes to burn in on each clock, whole and as pictures (veilSeconds).
   table.push([3, 4, ...clocks].map((secs) => [0.55, 0.7, 0.8].flatMap((share) => [5, 7, 9].flatMap((size) => [veilSeconds(secs, share, size), veilSeconds(secs, share, tileVeilSize(size), true)]))));
   // Co-op: how long a vote stays open after the first vote, when a player counts as idle, and what a life given takes.
   table.push(['coop', VOTE_WINDOW_MS, DELVE_IDLE_ROUNDS, REVIVE_FROM, DELVE_RESUME_GRACE_MS]);
   // The lives everyone sets out with.
   table.push(['lives', DELVE_LIVES]);
+  // The Azurite Vein's dig: how many strikes, how deep each asks, and the lamp.
+  table.push(['vein', VEIN_MAX_STRIKES, VEIN_DEEPER, LAMP_START, DEPTHS.slice(0, 100).map((d) => [2, 3].map((k) => [findRules('azurite', d, k), lampAfter(d, k, 2.5)]))]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
-  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [1, 19, PINNED_HASH]);
+  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [2, 30, PINNED_HASH]);
 });
 
-const PINNED_HASH = 'f02382ccfa6646ee';
+const PINNED_HASH = '13a63b9853d0bb48';
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');

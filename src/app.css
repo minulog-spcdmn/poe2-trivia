@@ -1,9 +1,14 @@
-@import '@fontsource/cinzel/latin-500.css';
-@import '@fontsource/cinzel/latin-700.css';
-@import '@fontsource/cinzel/latin-900.css';
-@import '@fontsource/eb-garamond/latin-400.css';
-@import '@fontsource/eb-garamond/latin-500.css';
-@import '@fontsource/eb-garamond/latin-400-italic.css';
+/* Cinzel with Latin Extended too, for names in headings and avatars (a turn
+   banner's "Wałęsa's turn", an avatar's Ł); it has no other scripts. */
+@import '@fontsource/cinzel/500.css';
+@import '@fontsource/cinzel/700.css';
+@import '@fontsource/cinzel/900.css';
+/* EB Garamond with all its scripts (Latin Extended, Vietnamese, Cyrillic,
+   Greek), each behind a unicode-range: a browser fetches a script's file
+   only when text on the page needs it, such as a player's name. */
+@import '@fontsource/eb-garamond/400.css';
+@import '@fontsource/eb-garamond/500.css';
+@import '@fontsource/eb-garamond/400-italic.css';
 
 /* Maragsâ Display by Jad Maza (free license, gum.co/Maragsa). The license
    allows web use only as WOFF/WOFF2 through @font-face. It has a single weight,
@@ -27,6 +32,27 @@
   font-style: normal;
   font-display: swap;
 }
+/* A font by Jos Buivenga (exljbris) -> www.exljbris.com */
+/* Fontin, the font of the game's item tooltips (ItemDetails): its small caps
+   for nearly every line, its italic for a gem's description. Its license
+   allows @font-face embedding only with the notice above, kept beside the
+   declarations (in the build too: vite.config.ts puts it back there). The
+   small caps face draws its lower case as small capitals, so it's set without
+   font-variant: small-caps, which would fake them over its own. */
+@font-face {
+  font-family: 'Fontin SmallCaps';
+  src: url('./assets/fonts/fontin-smallcaps.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fontin';
+  src: url('./assets/fonts/fontin-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
 
 :root {
   --bg: #0a0908;
@@ -45,11 +71,15 @@
   /* Room codes, the in-game header and avatars. */
   --font-cinzel: 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-body: 'EB Garamond', Garamond, Georgia, serif;
+  /* Item tooltips, as the game sets them. */
+  --font-tooltip: 'Fontin SmallCaps', var(--font-body);
+  --font-tooltip-italic: 'Fontin', var(--font-body);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
-  /* Bars pinned over the page on phones (the scoreboard at the top, the
-     reveal's Next bar at the bottom): nearly opaque dark glass, a gold
-     hairline on the edge facing the page, and a shadow cast onto it. No
+  /* Bars pinned over the page on phones (the scoreboard at the top): nearly
+     opaque dark glass, a gold hairline on the edge facing the page, and a
+     shadow cast onto it. (The bar docked at the bottom with Next or
+     Detonate keeps the hairline and shadow but is solid: QuestionView.) No
      backdrop blur: under it the backdrop canvas changes every frame, so the
      blur would be worked out again every frame, a steady cost on phones for
      the tenth of the page that shows through. */
@@ -93,8 +123,12 @@ body {
   background: var(--bg);
 }
 
-/* Reserve the scrollbar's space so screens that need one don't shift sideways. */
+/* Reserve the scrollbar's space so screens that need one don't shift sideways.
+   The app's own pointer everywhere (lib/ownCursor.ts; vite.config.ts makes
+   `default` and `pointer` read it), links and text fields included, which
+   the browser would otherwise give its own. */
 html {
+  cursor: default;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }
@@ -106,6 +140,68 @@ html[data-fullscreen] {
 }
 html[data-fullscreen]::-webkit-scrollbar {
   display: none;
+}
+
+/* Every element takes the cursor handed down to it (vite.config.ts), rather
+   than inheriting its parent's: one set on an element alone stays there. */
+:where(*) {
+  cursor: var(--cursor-now, auto);
+}
+
+a:any-link {
+  cursor: pointer;
+}
+:where(input:not([type]), input[type='text'], input[type='search'], input[type='number'], textarea) {
+  cursor: text;
+}
+
+/* Middle-button scrolling (lib/autoscroll.ts): a cover over everything while
+   it runs, holding the cursor, and the seal stamped where it began. */
+.autoscroll {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+}
+.autoscroll-seal {
+  position: absolute;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 12;
+  translate: -50% -50%;
+  animation: seal-stamp 0.2s var(--ease-out) both;
+}
+@keyframes seal-stamp {
+  from {
+    opacity: 0;
+    scale: 1.6;
+  }
+}
+.autoscroll-seal .ground {
+  fill: rgba(10, 9, 8, 0.82);
+  stroke: none;
+}
+.autoscroll-seal .glow {
+  stroke-width: 2;
+  opacity: 0.25;
+  filter: blur(1px);
+}
+.autoscroll-seal .dot {
+  fill: currentColor;
+  stroke: none;
+}
+.autoscroll-seal .fine {
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.autoscroll-seal .way {
+  transition: opacity 0.2s;
+}
+/* No room left that way: its dart fades, as the browsers' own do. */
+.autoscroll-seal.no-up .up,
+.autoscroll-seal.no-down .down {
+  opacity: 0.25;
 }
 
 :focus-visible {
@@ -138,6 +234,10 @@ textarea,
 }
 
 #app {
+  /* What's set in the page rather than on the screen (the effects layer and
+     the others' pointers while they follow what scrolls) is placed in here,
+     and clipped with it. */
+  position: relative;
   min-height: 100dvh;
   /* Camera shake translates the app shell; clip it so a shake never makes
      the page scrollable. (Fixed overlays aren't clipped by this.) */
@@ -166,17 +266,8 @@ input {
   background: rgba(201, 164, 92, 0.35);
 }
 
-/* The page behind an open dialog: darkened and blurred, or only one of the
-   two (see lib/behindDialog.ts). */
-[data-behind-dialog] {
-  filter: var(--behind-dialog);
-}
-[data-behind-dialog='dim'] {
-  filter: var(--behind-dialog-dim);
-}
-[data-behind-dialog='blur'] {
-  filter: var(--behind-dialog-blur);
-}
+/* The page behind an open dialog ([data-behind-dialog]) is darkened and
+   blurred by lib/behindDialog.ts, each layer's filter set inline. */
 
 /* ---------- shared building blocks ---------- */
 
@@ -482,6 +573,9 @@ input {
 .art-slot {
   position: relative;
   display: grid;
+  /* One fixed cell, so a picture wider than it (a round fit) spills out
+     evenly on both sides instead of stretching the cell to the right. */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   width: 100%;
   height: 100%;
@@ -493,6 +587,15 @@ input {
   display: block;
   width: min(100cqw, 100cqh * var(--w) / var(--h), var(--w) * var(--s) * 1px);
   height: min(100cqh, 100cqw * var(--h) / var(--w), var(--h) * var(--s) * 1px);
+}
+/* A round fit (ArtImage's `round`): the bigger of the box's fit and a fit in
+   the circle round its centre, --round times its width across. A square or a
+   tall item comes out as in the box; a wide one (a belt) as big as the
+   circle holds it, past the box's sides. */
+.art-fit.round {
+  --diag: sqrt(var(--w) * var(--w) + var(--h) * var(--h));
+  width: min(var(--w) * var(--s) * 1px, max(min(100cqw, 100cqh * var(--w) / var(--h)), var(--round, 1) * 100cqw * var(--w) / var(--diag)));
+  height: min(var(--h) * var(--s) * 1px, max(min(100cqh, 100cqw * var(--h) / var(--w)), var(--round, 1) * 100cqw * var(--h) / var(--diag)));
 }
 .art-fit > img {
   display: block;
@@ -512,6 +615,26 @@ h3,
 .btn,
 .balance {
   text-wrap: balance;
+}
+
+/* A range input's thumb length along its track, which its thumb rules use and the
+   sliding sparks (lib/fx/ui.ts) read. Registered, so it reads back in px whatever unit set it.
+   Inherited: the thumb is a pseudo-element of the input, and takes the input's. */
+@property --thumb {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 16px;
+}
+
+/* Banding: a soft gradient or glow over a large area steps through so few of
+   8-bit's levels that each shows as a band (CLAUDE.md). Under a see-through
+   dark layer laid over other content (a scrim, a veil), --dither, a tile of
+   near-black at 0 to 10/255 opacity, a different one each pixel, stirs that
+   layer's opacity so what shows through it rounds up or down at random and
+   the bands dissolve. Put it last (under the gradients), and give the element
+   image-rendering: pixelated so it isn't smoothed away. */
+:root {
+  --dither: url('./assets/dither.png');
 }
 
 /* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).

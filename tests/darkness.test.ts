@@ -298,11 +298,15 @@ test('alone: the answer itself settles the dark; a ward rescues, the last life h
   assert.equal(darkOutcome(fell, null), 'perish', 'a spectator sees the same');
 });
 
-test('together: your own outcome, or with no answer of yours the team\'s', () => {
+test('together: cleared by anyone, the light; missed, your own loss or the team\'s', () => {
   const s = delveRun(['a', 'b', 'c']);
   const cleared = { ...s, reveal: reveal({ correct: true, winnerId: 'b', hits: [hit('a', 1)] }) };
   assert.equal(darkOutcome(cleared, 'b'), 'right');
-  assert.equal(darkOutcome(cleared, 'a'), 'miss', 'your wrong pick, though the team cleared it');
+  assert.equal(darkOutcome(cleared, 'a'), 'right', 'your wrong pick, but a teammate cleared it');
+  const clearedWarded = { ...s, reveal: reveal({ correct: true, winnerId: 'b', hits: [hit('a', 0, 1)] }) };
+  assert.equal(darkOutcome(clearedWarded, 'a'), 'right', 'your ward took your miss, and the team cleared it');
+  const clearedLast = { ...cleared, delve: { ...s.delve!, losses: { a: [1, 2, 4] } } };
+  assert.equal(darkOutcome(clearedLast, 'a'), 'perish', 'your last life went, cleared or not');
   assert.equal(darkOutcome(cleared, 'c'), 'right', 'no answer of yours: the team cleared it');
   assert.equal(darkOutcome(cleared, 'z'), 'right', 'a spectator follows the team');
   assert.equal(darkOutcome(cleared, null), 'right');

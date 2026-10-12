@@ -16,12 +16,14 @@ if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw ne
 // each with its own share of the cast. ?rooms=: how many rooms the bot keeps
 // open at most (--rooms, 0 to only join; no limit without it); ?modes=: the game modes its hosts
 // may pick (--mode), all of them by default; ?scout=0: a seat that is handed
-// the room list (the runner's first seat checks it for all).
+// the room list (the runner's first seat checks it for all); ?watch=1: they
+// only watch (--watch: no rooms of their own, spectators in others').
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
 const names = namesFor(slot, Number(q.get('of') ?? 1));
-const rooms = q.has('rooms') ? Math.max(0, Number(q.get('rooms')) || 0) : Infinity;
-const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0');
+const watching = q.get('watch') === '1';
+const rooms = watching ? 0 : q.has('rooms') ? Math.max(0, Number(q.get('rooms')) || 0) : Infinity;
+const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0', watching);
 // Where it plays (src/lib/channel.ts): on the dev server, its own local rooms, not the live game's.
 log(`playing in the ${CHANNEL} rooms`);
 bot.start();

@@ -23,7 +23,10 @@ export function channelOf(env: Env): Channel {
 /** How a channel's rooms are named on the matchmaking server (`id`: the local channel's machine). */
 export const roomPrefix = (channel: Channel, id = '') => `poe2-trivia-${channel === 'live' ? '' : channel === 'local' ? `local-${id ? `${id}-` : ''}` : `${channel}-`}`;
 
-/** Optional chaining so the tests, which run outside Vite, see the live build. */
-export const CHANNEL = channelOf(import.meta.env);
+/**
+ * Optional chaining so the tests, which run outside Vite, see the live build.
+ * Typed here, as vite.config.ts (checked without Vite's client types) imports this too.
+ */
+export const CHANNEL = channelOf((import.meta as ImportMeta & { env?: Env }).env);
 export const BETA = CHANNEL === 'beta';
 export const LOCAL = CHANNEL === 'local';

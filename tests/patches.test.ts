@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { areaTime, burntShare, cutPatches, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, labelPatches, litMask, packLabels, patchCount, patchCoverage, patchShapes, spreadOrder, unpackLabels, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -37,6 +37,46 @@ test('patches cover every visible pixel exactly as it is, and nothing else', () 
     }
   }
   for (let g = 0; g < W * H; g++) assert.equal(covered[g], art[g * 4 + 3] > 8 ? 1 : 0, `pixel ${g}`);
+});
+
+test('drawn finer, patches cover the whole item between them with smooth edges, holding nothing past their ring', () => {
+  const W = 90;
+  const H = 120;
+  const art = ellipse(W, H);
+  const patches = cutPatches(art, W, H, 5, 1234);
+  const lit = litMask(art, W, H);
+  for (let g = 0; g < W * H; g++) assert.equal(lit[g], art[g * 4 + 3] > 8 ? 1 : 0);
+  for (const S of [1, 2, 4]) {
+    // The most any patch draws of each fine pixel.
+    const most = new Float32Array(W * S * H * S);
+    let soft = 0;
+    for (const p of patches) {
+      const cover = patchCoverage(p, lit, W, H, S);
+      assert.equal(cover.length, p.w * S * p.h * S);
+      for (let by = 0; by < p.h * S; by++) {
+        for (let bx = 0; bx < p.w * S; bx++) {
+          const c = cover[by * p.w * S + bx];
+          const l = ((by / S) | 0) * p.w + ((bx / S) | 0);
+          // Only from art pixels it holds (its own and its ring), and its own wholly.
+          if (!p.pixels[l * 4 + 3]) assert.equal(c, 0, `S ${S}: patch at ${p.x}, ${p.y} reaches past its ring`);
+          if (p.own[l]) assert.equal(c, 1, `S ${S}: patch at ${p.x}, ${p.y} loses some of its own`);
+          if (c > 0 && c < 1) soft++;
+          const g = (p.y * S + by) * W * S + p.x * S + bx;
+          most[g] = Math.max(most[g], c);
+        }
+      }
+    }
+    for (let fy = 0; fy < H * S; fy++) {
+      for (let fx = 0; fx < W * S; fx++) {
+        // Every pixel of the item wholly by some patch (no gaps at the seams), nothing off it.
+        assert.equal(most[fy * W * S + fx], lit[((fy / S) | 0) * W + ((fx / S) | 0)], `S ${S}: pixel ${fx}, ${fy}`);
+      }
+    }
+    // Finer than art pixels, the outlines are softened, not art pixels' steps.
+    if (S > 1) assert.ok(soft > 0, `S ${S}: no soft edges`);
+    // At the art's own pixels, nothing to smooth: the ring is held whole, no half-drawn band.
+    else assert.equal(soft, 0, 'S 1: a half-drawn ring');
+  }
 });
 
 test('patches come out about as big as the old grid tiles over the item', () => {
@@ -166,4 +206,58 @@ test("a patch's area comes into view as its front sweeps across, from 6% to 68% 
   assert.ok(Math.abs(areaTime([0, 1000], 1000, [3, 1]) - ((2 / 3 + 0.1) / 1.61) * 1000) < 1e-3);
   // No burn: in at once.
   assert.equal(areaTime([400, 500], 0, [1, 1]), 400);
+});
+
+test("a guest's patches, cut from the labels the host sends, are the host's: places, masks, edges and areas", () => {
+  for (const [W, H, size, seed] of [
+    [90, 120, 5, 1234],
+    [200, 140, 9, 77],
+    [40, 40, 3, 5],
+  ]) {
+    const art = ellipse(W, H);
+    const host = cutPatches(art, W, H, size, seed);
+    const label = unpackLabels(packLabels(labelPatches(W, H, size, seed, litMask(art, W, H))), W * H);
+    assert.ok(label);
+    const guest = patchShapes(label, W, H);
+    assert.equal(guest.length, host.length);
+    guest.forEach((g, k) => {
+      const h = host[k];
+      assert.deepEqual([g.x, g.y, g.w, g.h, g.area], [h.x, h.y, h.w, h.h, h.area]);
+      assert.deepEqual([...g.edges], [...h.edges]);
+      for (let i = 0; i < g.w * g.h; i++) assert.equal(g.mask[i], h.pixels[i * 4 + 3] ? 1 : 0);
+    });
+    assert.deepEqual(spreadOrder(guest, seed), spreadOrder(host, seed));
+  }
+});
+
+test('the labels pack into runs and back, and anything that is not a whole picture of them is turned down', () => {
+  const W = 200;
+  const H = 140;
+  const label = labelPatches(W, H, 9, 77, litMask(ellipse(W, H), W, H));
+  const runs = packLabels(label);
+  assert.ok(runs.byteLength < W * H / 4, `${runs.byteLength} bytes`);
+  assert.deepEqual(unpackLabels(runs, W * H), label);
+  // A long transparent stretch splits at 65535.
+  const empty = new Int16Array(70000).fill(-1);
+  assert.deepEqual([...packLabels(empty)], [0, 65535, 0, 4465]);
+  assert.deepEqual(unpackLabels(packLabels(empty), 70000), empty);
+  assert.equal(unpackLabels(runs, W * H + 1), null, 'too few pixels');
+  assert.equal(unpackLabels(runs, W * H - 1), null, 'too many pixels');
+  assert.equal(unpackLabels(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
+  assert.equal(unpackLabels(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
+  assert.equal(unpackLabels(Uint16Array.from([1]), 1), null, 'half a pair');
+});
+
+test('the labels say how many patches they make, and a count they would get wrong is turned down', () => {
+  const W = 200;
+  const H = 140;
+  const label = labelPatches(W, H, 9, 77, litMask(ellipse(W, H), W, H));
+  const runs = packLabels(label);
+  assert.equal(patchCount(runs, W * H), patchShapes(label, W, H).length);
+  assert.equal(patchCount(packLabels(new Int16Array(50).fill(-1)), 50), 0);
+  assert.equal(patchCount(runs, W * H + 1), null, 'too few pixels');
+  assert.equal(patchCount(Uint16Array.from([1, 2, 3, 2]), 4), null, 'patch 1 left out');
+  assert.equal(patchCount(Uint16Array.from([2, 2, 0, 1, 1, 1]), 4), 2);
+  assert.equal(patchCount(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
+  assert.equal(patchCount(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
 });

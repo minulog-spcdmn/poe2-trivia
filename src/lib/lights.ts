@@ -5,6 +5,10 @@
 // sets them; the backdrop reads them every frame.
 
 import { fxActive, fxHidden, onFxHidden, type Anchor, boxOf, detached, type Vec3 } from './fx/core';
+import { switchedOff } from './switchedOff';
+
+/** Beta: no lights behind the UI (lib/switchedOff.ts). */
+const lightsOff = switchedOff('lights');
 
 export const MAX_LIGHTS = 8;
 
@@ -38,7 +42,7 @@ export type LightSpec = {
 
 /** Flashes a light behind `at` (followed if it's an element). Not while the tab is away: it's a moment's, and runs its course (see onFxHidden below). */
 export function light(at: Anchor, spec: LightSpec) {
-  if (!fxActive() || fxHidden() || detached(at)) return;
+  if (!fxActive() || fxHidden() || detached(at) || lightsOff) return;
   const b = boxOf(at);
   const now = performance.now() / 1000;
   const l: Light = { at, x: b.x, y: b.y, attack: 0.08, hold: 0.1, decay: 0.9, ...spec, born: now };
@@ -70,7 +74,7 @@ export type HeldLight = {
  * lights: a burst can't take it.
  */
 export function holdLight(at: Anchor, color: Vec3, radius: number): HeldLight {
-  if (!fxActive() || detached(at)) return { set() {}, release() {} };
+  if (!fxActive() || detached(at) || lightsOff) return { set() {}, release() {} };
   const b = boxOf(at);
   const l: Light = { at, x: b.x, y: b.y, color, radius, intensity: 1, attack: 0, hold: Infinity, decay: 0, born: performance.now() / 1000, held: { k: 0, done: false } };
   // Room for it: the weakest light that isn't held makes way.
@@ -227,7 +231,9 @@ export function stepHomeScene(dt: number, a: Float32Array, b: Float32Array): boo
     const r = scene.title.getBoundingClientRect();
     scene.x = r.left + r.width / 2;
     scene.y = r.top + r.height / 2;
-    scene.w = r.width / 2;
+    // The glow is as wide as a title with its rules either side, so the
+    // start page's (bare, left-aligned) title gets the same golden halo.
+    scene.w = Math.max(r.width / 2, r.height * 2.8);
     scene.h = r.height / 2;
   }
   const next = [scene.rays, scene.glow, scene.x, scene.y, scene.w, scene.h].map(Math.fround);

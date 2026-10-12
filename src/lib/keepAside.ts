@@ -39,6 +39,20 @@ export function makeRoom(name: string, raw: string, version: number): boolean {
   return kept !== null || writeStored(slot, raw);
 }
 
+/**
+ * Reads what is stored under `name`, to change it: `{ was }` (null when
+ * there is none, or what there is couldn't be read and room was made for
+ * new data), or undefined when nothing may be written (storage blocked, or
+ * no room could be made).
+ */
+export function openStored<T>(name: string, version: number, parse: (raw: string | null) => T | null): { was: T | null } | undefined {
+  const raw = tryReadStored(name);
+  if (raw === undefined) return undefined;
+  const was = parse(raw);
+  if (raw && !was && !makeRoom(name, raw, version)) return undefined;
+  return { was };
+}
+
 /** Removes what was kept aside for `name`: its slot, and the copies older builds kept under `${name}.unread.${time}`. */
 export function clearAside(name: string) {
   removeStored(asideName(name));

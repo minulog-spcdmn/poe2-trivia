@@ -16,8 +16,10 @@
 //   is copper's blue ore); a cluster of hexagonal prisms grows out of the
 //   floor in the window's right corner, out through the arch and the panel,
 //   each computed from its section and hatched down the faces turned from
-//   the light (the upper left, as on the rest of the plate), over a glory
-//   that ends on a hexagon, as a crystal grows. The back holds the crystal
+//   the light (the upper left, as on the rest of the plate); the emblem in
+//   a crown of the same crystals standing out of a double ring like a
+//   geode's lining, grown unevenly in groups, the longest out through the
+//   arch to the panel, over a glory of fine rays. The back holds the crystal
 //   in that glory.
 // • Flare Cache: a flare's burst about the sign of fire, so large it breaks
 //   the arch, and sulphur, the flare's brimstone; the emblem in a sun, a
@@ -30,7 +32,8 @@
 //   rings. The back holds nitre in a ring blown apart.
 //
 // Laid in a row (phones) the spandrels are gone: the vein's crystals grow at
-// the row's far end, the sun and the broken ring stand round the emblem.
+// the row's far end, the crown, the sun and the broken ring stand round the
+// emblem.
 
 import { arc, at, hatch, lerp, line, pointedRay, pt, rad, type Cut, type Hole, type Pt } from './arcane.ts';
 import { type BackLayout, type Plate, type RowLayout, type TallLayout, type Variant } from './cardEngraving.ts';
@@ -41,10 +44,10 @@ import type { FindKind } from './delve.ts';
 const sub = (p: Pt, q: Pt): Pt => [p[0] - q[0], p[1] - q[1]];
 const dot = (p: Pt, q: Pt) => p[0] * q[0] + p[1] * q[1];
 const centroid = (poly: Pt[]): Pt => [poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length];
-const poly = (ps: Pt[]) => `M${ps.map(pt).join('L')}Z`;
+export const poly = (ps: Pt[]) => `M${ps.map(pt).join('L')}Z`;
 
 /** The convex hull of `ps`, in order round it. */
-function hull(ps: Pt[]): Pt[] {
+export function hull(ps: Pt[]): Pt[] {
   const s = [...ps].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const half = (list: Pt[]) => {
@@ -59,7 +62,7 @@ function hull(ps: Pt[]): Pt[] {
 }
 
 /** A convex polygon grown outward by `d` (each side moved out, the corners where they meet). */
-function grow(ps: Pt[], d: number): Pt[] {
+export function grow(ps: Pt[], d: number): Pt[] {
   const c = centroid(ps);
   const sides = ps.map((a, i) => {
     const b = ps[(i + 1) % ps.length];
@@ -99,10 +102,10 @@ function inPoly(p: Pt, q: Pt, ps: Pt[]): Cut | null {
 }
 
 /** What a motif's lines stop short of: convex shapes standing in front, and discs. */
-type Shields = { polys: Pt[][]; holes: Hole[] };
-const NONE: Shields = { polys: [], holes: [] };
+export type Shields = { polys: Pt[][]; holes: Hole[] };
+export const NONE: Shields = { polys: [], holes: [] };
 /** A straight line, broken where it passes behind a shield. */
-const seg = (p: Pt, q: Pt, s: Shields = NONE) =>
+export const seg = (p: Pt, q: Pt, s: Shields = NONE) =>
   line(p, q, { holes: s.holes, cuts: s.polys.map((ps) => inPoly(p, q, ps)).filter((c): c is Cut => !!c) });
 
 /** Lines across the quadrilateral `a`, `b`, `c`, `d` parallel to its side `a` to `b`, stepping toward `d` to `c`, `gap` apart, kept 0.5 in from its ends. */
@@ -215,14 +218,18 @@ function above(ps: Pt[], y: number): Pt[] {
 /**
  * A cluster of prisms drawn back to front, each stopping short of those
  * before it; their outlines are kept clear of the plate, above `top` only
- * (below it they stand behind the plate's pedestal).
+ * (below it they stand behind the plate's pedestal). `solid`: it stands in
+ * front of the emblem too, its crystals hiding what is behind them (Plate.front).
  */
-function cluster(p: Plate, prisms: Prism[], extra: Shields = NONE, k = 1, top = Infinity) {
+function cluster(p: Plate, prisms: Prism[], extra: Shields = NONE, k = 1, top = Infinity, solid = false) {
   const shapes = prisms.map(prismShape);
+  p.front = solid;
   prisms.forEach((pr, i) => {
     const front = shapes.slice(i + 1).map((sh) => grow(sh.outline, 0.7));
     prism(p, pr, { polys: [...front, ...extra.polys], holes: extra.holes }, k);
   });
+  p.front = false;
+  if (solid) p.solid += shapes.map((sh) => poly(above(sh.outline, top))).join('');
   p.knockout += shapes
     .map((sh) => above(grow(sh.outline, 1.4), top))
     .filter((ps) => ps.length > 2)
@@ -248,45 +255,37 @@ function crystalSeal(p: Plate, c: Pt, r: number) {
   p.add(shade, 'hatch');
 }
 
-/** A glory ending on a hexagon (its points up and down), as a crystal grows: fine rays long and short in turn, and its six axes as pointed rays. */
+/** The vein's glory: fine rays long and short in turn, out to the arch. */
 function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: boolean) {
   const r0 = row ? 28 : 66;
-  const R = row ? 58 : 150;
-  /** How far the hexagon of size `s` lies from the centre at `deg`. */
-  const hexAt = (s: number, deg: number) => {
-    const off = ((((deg - 30) % 60) + 60) % 60) - 30;
-    return (s * Math.cos(rad(30))) / Math.cos(rad(off));
-  };
   const n = row ? 60 : 72;
   let rays = '';
   for (let k = 0; k < n; k++) {
     const a = ((k + 0.5) / n) * 360;
-    const end = Math.min(reach(a) - 2, hexAt(k % 2 ? R * 0.7 : R, a));
+    const r1 = reach(a) - 2;
+    const end = k % 2 ? r0 + (r1 - r0) * 0.62 : r1;
     if (end - r0 > 4) rays += line(at(c, a, r0), at(c, a, end));
   }
   p.add(rays, 'ray');
-  // The hexagons themselves, where they lie inside the reach.
-  let hex = '';
-  for (const s of [R * 0.7, R]) {
-    for (let k = 0; k < 6; k++) {
-      const [a0, a1] = [k * 60, k * 60 + 60];
-      const steps = 24;
-      for (let i = 0; i < steps; i++) {
-        const [b0, b1] = [a0 + ((a1 - a0) * i) / steps, a0 + ((a1 - a0) * (i + 1)) / steps];
-        const [q0, q1] = [at(c, b0, hexAt(s, b0)), at(c, b1, hexAt(s, b1))];
-        if (hexAt(s, b0) < reach(b0) - 2 && hexAt(s, b1) < reach(b1) - 2) hex += line(q0, q1);
-      }
-    }
-  }
-  p.add(hex, 'ray');
-  for (let k = 0; k < 6; k++) {
-    const a = k * 60;
-    const end = Math.min(reach(a) - 3, hexAt(R, a) - 3);
-    if (end - r0 < 10) continue;
-    const ray = pointedRay(c, a, r0, end, (Math.asin(2.2 / r0) * 180) / Math.PI, 0.9);
-    p.add(ray.lines, 'hair');
-    p.add(ray.hatch, 'hatch');
-  }
+}
+
+/**
+ * The vein's crown round the emblem, as the flare's sun and the dynamite's
+ * broken ring are theirs: a double ring, and out of it prisms of azurite
+ * standing on it like crystals lining a geode, each
+ * at its own `points` heading out to `end(a)` from the centre, cut and shaded
+ * as the cluster's are, stopping short of `s`. Their outlines are kept clear
+ * of the plate.
+ */
+function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1) {
+  sunRing(p, c, r0);
+  points.forEach(({ a, end, hw }, i) => {
+    const len = end - r0 + 1;
+    if (len < hw * 3.5) return;
+    const pr: Prism = { root: at(c, a, r0 - 1), a, len, hw, phase: [14, 40, 22, 8, 30, 18, 44, 26][i % 8] };
+    prism(p, pr, s, k);
+    p.knockout += poly(grow(prismShape(pr).outline, 1.4));
+  });
 }
 
 // ---- the flare ------------------------------------------------------------------
@@ -398,7 +397,46 @@ function veinTall(p: Plate, g: TallLayout) {
     [root[0] + 50 * k, g.floor + 40],
     [root[0] - 50 * k, g.floor + 40],
   ];
-  cluster(p, prisms, { polys: [ground], holes: [{ c: g.luna.c, r: g.luna.r + 3 }] }, k);
+  // The crown round the emblem, behind the cluster: long points out to just short of the panel's inner
+  // line, short ones just through the arch, all short of the seals in the spandrels.
+  const C = g.emblem;
+  const r0 = 64 * k;
+  const holes = [
+    { c: g.sol.c, r: g.sol.r + 3 },
+    { c: g.luna.c, r: g.luna.r + 3 },
+  ];
+  // Grown as crystals grow: in uneven groups, each at its own heading, length (past the ring, on a card
+  // 218 wide) and thickness, the longest out through the arch, none below the emblem's middle (the one
+  // at the top would stand behind it). They stop short of the panel's inner line, the seals in the
+  // spandrels and, on the right, the cluster.
+  const crystals: [number, number, number][] = [
+    [-128, 15, 2.4],
+    [-113, 44, 3.5],
+    [-99, 19, 2.4],
+    [-63, 32, 3],
+    [-37, 13, 2],
+    [-23, 25, 2.7],
+    [27, 38, 3.3],
+    [57, 14, 2.1],
+    [71, 48, 3.6],
+    [85, 20, 2.5],
+    [119, 23, 2.8],
+  ];
+  const points = crystals.map(([a, len, hw]) => {
+    const u = at([0, 0], a, 1);
+    const xs = u[0] > 0 ? (g.inner[2] - 2 - C[0]) / u[0] : (g.inner[0] + 2 - C[0]) / u[0];
+    const ys = u[1] < 0 ? (g.inner[1] + 2 - C[1]) / u[1] : Infinity;
+    let end = Math.min(xs, ys, r0 + len * k);
+    for (const h of holes) {
+      const t = throughHole(C, a, h);
+      if (t !== null) end = Math.min(end, t - 2);
+    }
+    return { a, end, hw: hw * k };
+  });
+  const shapes = prisms.map((pr) => grow(prismShape(pr).outline, 0.9));
+  crystalCrown(p, C, r0, points, { polys: [...shapes, ground], holes }, k);
+  // In front of the emblem: an item reaching into the corner passes behind the crystals.
+  cluster(p, prisms, { polys: [ground], holes: [{ c: g.luna.c, r: g.luna.r + 3 }] }, k, g.floor + 0.6, true);
 }
 
 /** The flare's sun round the emblem: long pointed rays out of the glory, breaking out through the arch to the panel, short ones between. */
@@ -472,6 +510,29 @@ function veinRow(p: Plate, g: RowLayout) {
     [root[0] + 60, g.h + 30],
     [root[0] - 60, g.h + 30],
   ];
+  // The crown round the emblem, as in the flare's row, but grown as crystals grow: uneven, each at its
+  // own heading, length and thickness, none in the lower third (out to the row's edges and the divider).
+  const C = g.emblem;
+  const r0 = 30;
+  const crystals: [number, number, number][] = [
+    [-126, 13, 2.2],
+    [-108, 24, 3.2],
+    [-95, 12, 2],
+    [-56, 18, 2.7],
+    [-30, 10, 1.9],
+    [-19, 15, 2.3],
+    [24, 21, 2.9],
+    [58, 11, 2],
+    [71, 25, 3.3],
+    [83, 13, 2.2],
+    [121, 16, 2.5],
+  ];
+  const points = crystals.map(([a, len, hw]) => {
+    const u = at([0, 0], a, 1);
+    const ends = [u[0] > 1e-9 ? (g.divider - 8 - C[0]) / u[0] : u[0] < -1e-9 ? (10 - C[0]) / u[0] : Infinity, u[1] > 1e-9 ? (g.h - 8 - C[1]) / u[1] : u[1] < -1e-9 ? (8 - C[1]) / u[1] : Infinity];
+    return { a, end: Math.min(...ends, r0 + len), hw };
+  });
+  crystalCrown(p, C, r0, points, NONE, 0.8);
   cluster(p, prisms, { polys: [ground], holes: [] }, k);
 }
 
@@ -644,8 +705,16 @@ function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
 
 // ---- the variants ---------------------------------------------------------------
 
-/** The plate of a find's card. */
+const variants = new Map<FindKind, Variant>();
+
+/** The plate of a find's card: one object per find, so its engraved plates are kept (cardEngraving's engrave). */
 export function findVariant(kind: FindKind): Variant {
+  let v = variants.get(kind);
+  if (!v) variants.set(kind, (v = variantOf(kind)));
+  return v;
+}
+
+function variantOf(kind: FindKind): Variant {
   const v: Variant = { spandrels: (p, sol, luna, w) => spandrels(kind, p, sol, luna, w) };
   if (kind === 'azurite') {
     v.back = veinBack;

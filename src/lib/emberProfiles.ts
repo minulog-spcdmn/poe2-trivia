@@ -70,6 +70,12 @@ export interface EmberMotion {
   bright: number;
   /** As its zone goes out (the magma cooling, see cooling in lib/emberMotion.ts): how much it slows. */
   cool: number;
+  /**
+   * Drawn into the nearer side wall (an Azurite Vein's, VEIN_MOTION), ever
+   * faster through its life (a share of the classic rise at its end),
+   * brightening as it goes; gone as it reaches the rock.
+   */
+  wall?: number;
 }
 
 /** A zone's motion: its embers', and the rarer kind's with the share of embers they are. */
@@ -110,6 +116,32 @@ const BASE: Omit<EmberMotion, 'name'> = {
 
 const motion = (m: Partial<EmberMotion> & { name: string }): EmberMotion => ({ ...BASE, ...m });
 const zone = (main: EmberMotion, accent: EmberMotion | null = null, share = 0): ZoneMotion => ({ main, accent, share });
+
+/**
+ * An Azurite Vein being dug (lib/vein.ts): whatever the zone, the embers
+ * are motes of the lamp's light hanging in the cold air, turning in slow
+ * lazy curls, until the vein draws each one into the nearer wall, slowly
+ * at first and then faster, brightening as it nears the rock, where it is
+ * gone: the vein drinks the light.
+ */
+export const VEIN_MOTION = motion({
+  name: 'light drawn into the vein',
+  spawn: 'anywhere',
+  life: [9, 14],
+  rise: 0.04,
+  sway: 0.2,
+  swayRate: 0.4,
+  curl: 7,
+  curlRate: 0.07,
+  tilt: 0.45,
+  depth: 0.35,
+  flicker: 0.12,
+  flickerRate: 0.35,
+  rest: [0.5, 2.5],
+  size: 0.9,
+  bright: 1.1,
+  wall: 3.4,
+});
 
 /** Outside Delve (the start page): the classic embers, rising and swaying, a little apart. */
 export const SURFACE_MOTION = zone(motion({ name: 'embers rising', rise: 1, driftSpread: 0.05, sway: 1, flicker: 0.22 }));

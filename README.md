@@ -40,7 +40,8 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 settings. Everyone plays the exact same rules, so "I reached depth 30" means
 the same thing for everyone.
 - Pick one of three categories and name the item, as in turns mode. Each
-  question goes one depth deeper.
+  question cleared goes one depth deeper; after a miss (or a time-out) the
+  next question is asked at the same depth, from a fresh offer of cards.
 - The depth counts the questions cleared: a run sets out at depth 0, where
   the banner shows a short line instead ("Your light is borrowed", "Solve
   et coagula"; over fifty, dealt like a shuffled deck on each device so one
@@ -60,7 +61,9 @@ the same thing for everyone.
   - The team votes for a card. Each vote is a ticket in a raffle (two
     votes for a card, twice its chance), and a vote can be changed until
     the vote closes: once everyone it waits for has voted, or 6 s after the
-    first vote. Until that first vote the cards wait for as long as it
+    first vote (going down into a new zone, never before its cards are
+    dealt: votes all in by then close it as they are dealt, and its 6 s
+    run from the deal). Until that first vote the cards wait for as long as it
     takes; nobody is ever picked for. A player who lets 3 votes in a row
     pass is idle and isn't waited for until they vote again. A short draw
     then plays on the cards (a light hopping over the voted ones and
@@ -73,6 +76,13 @@ the same thing for everyone.
     option. The first right answer clears the depth and takes the find, if
     the card was one. A time-out costs everyone standing who hasn't
     answered.
+  - The team keeps a streak of its own: depths cleared in a row with
+    nobody missing (a wrong pick ends it even when a ward took the loss,
+    and so does one on a question blasted away, or a time-out). The
+    verdict at the reveal burns with it for everyone, from three in a row,
+    in a Delve streak's colours, and when it ends its fire goes out on the
+    verdict in a puff of smoke. Each player's own streak burns on their
+    entry on the scoreboard. The end screen gives the team's longest.
   - Flares go off from the pack of a random holder still standing, and
     help everyone. Only a player standing who hasn't answered and holds a
     stick of dynamite may press Detonate, and it spends theirs (a
@@ -141,7 +151,7 @@ the same thing for everyone.
   "find the art" pictures: 1% of those questions at depth 24, one percent
   more every depth, all of them from depth 123. Each picture is cut much
   coarser than a whole item (at most 4 × 4), so ten of them stay a few
-  dozen patches each to send.
+  dozen patches each to burn in.
 - **Look-alike pictures.** From depth 49 a growing share of questions picks
   its look-alikes by their art instead of their names (1.4% at 49, as much
   more every depth, every question from 119): the wrong pictures of "find
@@ -152,6 +162,11 @@ the same thing for everyone.
   (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
   reaches depth 19 (finds ask from up to 20 depths deeper); until it
   arrives, look-alikes go by name.
+- **Twins.** Items whose art only a detail tells apart only meet in a
+  question from the start of a zone on, whose card says so: Berek's rings
+  and Uhtred's and Zarokh's gems from 50, the Guiding Palms from 60 (never
+  in grayscale), the Brotherhood rings from 70 (a find from its deeper
+  depth). Above it a question shows at most one of them.
 - **Endless.** From depth 100 the rules hold, but a growing share of name
   questions gets a fourth made-up name (2% at 100, 2% more every depth, all
   of them from 149), "find the art" pictures keep burning in more often
@@ -163,20 +178,24 @@ the same thing for everyone.
   blows up something you carry, the Flare Cache gives less time, the Vein
   caves in. The card shows only the find's name, and the note under the
   cards says what the item does and what the find risks. The finds turn
-  up one at a time, the strongest last: the Dynamite Cache from depth 10,
-  the Flare Cache from 25 and the Azurite Vein from 40. Each find's chance
-  rises evenly over the 20 depths after its first and then holds (the
-  Dynamite Cache from 8% to 9% by depth 30, the Flare Cache from 4% to 13%
-  by 45, the Vein from 4% to 11% by 60). From 10 to 24 the Dynamite Cache
-  is the only find, so it starts higher than the others to keep finds
-  turning up early. From 60 about one offer in three holds a find. From
+  up one at a time: the Dynamite Cache from depth 10, the Azurite Vein from
+  25 and the Flare Cache from 40. On its own first depth a find is certain:
+  the depth's first offer always holds it (for a player with room for its
+  item); one after a miss there rolls as any other. After
+  that each find's chance rises evenly over the 20 depths after its first
+  and then holds (the Dynamite Cache from 8% to 9% by depth 30, the Vein
+  from 4% to 11% by 45, the Flare Cache from 4% to 13% by 60). From 10 to
+  24 the Dynamite Cache is the only find, so it starts higher than the
+  others to keep finds turning up early. From 60 about one offer in three
+  holds a find. From
   100 they grow scarcer a little with every depth, down to half their chance at 199 (the Vein to a third, as a ward
   takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
-    by side are rare early on: never above depth 25, where the Flare Cache
-    joins the dynamite, then about 1 offer in 290 at 25 and 1 in 57 at 40,
-    and about 1 offer in 28 from depth 60.
+    by side are rare early on: never above depth 25, where the Vein joins
+    the dynamite; about 1 offer in 23 at 25 (beside the certain Vein), then
+    1 in 260 at 26 and 1 in 125 at 39; 1 in 11 at 40 (beside the certain
+    Flare Cache); and about 1 offer in 28 from depth 60.
   - A find is never offered for an item nobody could carry more of: alone,
     you; together, anyone standing.
   - A right answer sends sparks in the find's colour from the answer to
@@ -187,14 +206,15 @@ the same thing for everyone.
     stands where Next will after the answer (its place kept, so nothing moves as it comes and
     goes): pressed, a stick blasts the question away for a new one at the
     same depth, from a card on the depth's offer not asked yet. The depth
-    doesn't change (no depth reached, no zone gate); the new question gets
+    doesn't change (no depth reached, no new zone); the new question gets
     the depth's full clock and rules (veil, pictures, grayscale, options,
     made-up names) as a fresh question, a flare works on it as usual, and
     it is never a find, even from a find's card (dynamite is no way to fish
-    for finds). Its card is locked out like a pick. At most two blasts a
-    depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
+    for finds). Its card is locked out like a pick. At most two blasts an
+    offer (`DELVE_MAX_BLASTS`, the offer's other cards; the fresh offer after
+    a miss at the same depth has its own). As the clock hits
     0, a flare burns first; only with none to burn does a stick go off by
-    itself (while the depth has a blast left), right at 0, in place of the
+    itself (while the offer has a blast left), right at 0, in place of the
     time-out, which then costs nothing. Its fuse warns of it: over the
     clock's last `DELVE_FUSE_MS` (1.8 s) before that 0 it hisses, and a bar
     burns down on Detonate as Next's does, reaching its end at 0 (every
@@ -220,8 +240,7 @@ the same thing for everyone.
     The cache itself is unstable: a miss on it (a wrong answer or a
     time-out) costs a life as usual, and then its blast destroys one thing
     you carry, drawn at random by the host, whose state tells every screen
-    what went (each ward, flare and stick one chance, a shard half of one,
-    as it is half a ward; a ward drawn goes whole). A ward that takes the
+    what went (each ward, flare and stick one chance). A ward that takes the
     life goes first, and the blast draws from what is left. Carrying
     nothing, or perishing on the miss (which drops the whole pack anyway),
     it takes nothing more. Together,
@@ -229,19 +248,38 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - A **Flare Cache** (from depth 25) gives a **flare**: time later for time
+  - An **Azurite Vein** (from depth 25) is dug a strike at a time. Each
+    right answer digs out a whole **Azurite Ward** (one takes your next
+    lost life instead), but only into your hand: the next cards are two,
+    the vein running on into another category you may pick (the next
+    strike, from further down: 20, 30, then 40 depths, its plaque reading
+    "Dig Deeper") and the way out, **Back to the Light** (its plaque saying
+    what it keeps), which puts what you dug out into your pack and takes the
+    run a depth deeper. At most three strikes, and only as far as your pack has room.
+    The whole dig runs on one **lamp**, the clock ring turned azurite:
+    lit with strike 1's whole clock, it burns only while a strike is open
+    and is never fed, so every strike after the first is paid for by how
+    quickly the ones before it were answered; with a second or more left
+    you may still dig on, a gamble on whatever light is left (under a
+    second, the dig ends there and the haul goes into the pack by itself). A wrong answer or a
+    time-out on any strike caves in, with a sound of its own: it costs two
+    lives, a ward in the pack taking each loss first (on your last life
+    you simply fall), and buries everything in hand. The dig stays at the
+    vein's depth and its later strikes lock no category. Together the team
+    votes between the two cards and answers each strike as any question;
+    each ward goes to whoever got it right. While a vein is dug the scene
+    is its own (`src/lib/vein.ts`, `azuriteVein` in `src/lib/backdrop.ts`):
+    the hall goes cold and dark, cracks of azurite glow in the rock of the
+    walls and the floor with crystals where they meet, and the embers burn
+    azure; it fades back to the depth's own as the dig ends. The rules are in
+    `src/lib/delve.ts` (the dig); `docs/vein-digging.md` has the design.
+  - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,
     rounded (never under 4 s, where its art still burns in, fast, with over
     3 s left once half of it is in). When your clock hits 0 a flare burns by
     itself, with a signal flare's hiss, and gives you 6 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
-  - An **Azurite Vein** (from depth 40): a right answer within the first half
-    of its clock mines an **Azurite Ward**, which takes your next lost life
-    instead; a slower one a shard (two make a ward; with three wards you
-    hold no shard). A wrong answer or a time-out on a vein caves in, with
-    a sound of its own: it costs two lives, a ward taking each loss first
-    if you hold one (on your last life you simply fall).
   - Flares and dynamite never work on a find's own question: finds lie
     down dangerous routes, with thicker walls and a darkness nothing can
     hold back, so there is no Detonate button and nothing happens at 0. You carry up to three of each item.
@@ -257,8 +295,10 @@ the same thing for everyone.
 - There's no time limit on picking a card: alone the cards wait for you,
   together the vote decides. Nobody can skip a turn by hand. After the host
   reloads, players who were cut off get a minute to come back (a vote waits
-  for them meanwhile), and a question one of them may have been answering
-  is set aside: the same cards come back, and it costs nobody anything.
+  for them meanwhile). A question one of them could still answer holds its
+  clock still: once they're back (or after 20 s at most), it carries on with
+  the time it had left (at least 5 s), and what was answered on it before
+  the reload stands.
 - A run starts from the lobby: alone in hot-seat or a room with one player,
   together in a room of two or more. Choosing Delve there shows its
   milestones, its rules in a few short lines (a run together's too, in a
@@ -271,13 +311,12 @@ the same thing for everyone.
   sends a wave of light through it; a life given to a teammate streams
   across into their phial.
   - Azurite Wards are crystal casings on the chambers, one each from the
-    base (a shard is half a casing), shimmering at rest: a ward
+    base, shimmering at rest: a ward
     crystallises on as it is mined, and bursts in blue sparks where it is
     when it takes a loss.
   - Flares and dynamite stand as small counts beside the phial.
-  - The reveal says what happened in a few words: "You mined an Azurite
-    Ward.", "Too slow for a ward, but you mined a shard.", "Your ward
-    took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
+  - The reveal says what happened in a few words: "You dug out an Azurite
+    Ward. A ward in hand.", "Your ward took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
     "The darkness took you." Together it says who cleared it ("Ash cleared
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
@@ -313,19 +352,19 @@ the same thing for everyone.
   seed of its own, the same for everyone, and named from its archetype's
   names ("The Drowned Nave", "Ashen Reliquary"), none twice in the first
   fifty from 100, never the same twice in a row.
-- Each zone hands over to the next gradually, over seven depths from its
-  5th depth to the next zone's 2nd, on an eased curve: slow to begin,
-  quickest toward the zone's end, slow to settle, never a straight ramp.
-  The next zone's name is still announced at its first depth, nearly all
-  of the way through the handover, which is done once that depth's
-  question is answered: from its 2nd depth to its 5th the new zone shows
+- Each zone hands over to the next over five depths, from its 6th depth
+  to the next zone's 1st: the next zone creeps in over the zone's last
+  depths, eased, never a straight ramp, and the largest step of the
+  handover by far (at least twice any before it) is the one into the next
+  zone, as its title card names it at its first depth, so each zone reads
+  as a place of its own. From its 1st depth to its 6th the new zone shows
   alone.
-  - Its embers take the next zone's colour one by one: one in twenty of
-    them at its 6th depth, three in five at its 9th, nineteen in twenty at
-    the next zone's 1st.
-  - From its 6th depth the next zone's light, smoke and features creep in
-    while its own recede (barely at its 7th, half way at its 9th, nine
-    tenths at the next zone's 1st, all there at its 2nd), each feature
+  - Its embers take the next zone's colour one by one: one in ten of
+    them at its 7th depth, half at its 9th, two in three at its 10th, the
+    last third at the next zone's 1st.
+  - From its 7th depth the next zone's light, smoke and features creep in
+    while its own recede (a sixth at its 8th, a third at its 9th, half way
+    at its 10th, the other half at the next zone's 1st), each feature
     coming and going its own way (the lamps kindle one by one, magma cracks
     open from hairlines and cool, frost grows in from the walls, fire rises
     from below).
@@ -337,30 +376,86 @@ the same thing for everyone.
   8% a depth. It is estimated for each depth from what the backdrop draws,
   with a measured correction table.
 - Each new depth sinks the scene a little further as its cards are dealt
-  (not a run's first depth, after a reload, or the same depth dealt again):
+  (not a run's first depth, after a reload, or the same depth dealt again,
+  as after a miss):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
-  It is skipped with reduced motion or effects off.
+  Into a new zone (its first depth) it plunges much further, 5 screens,
+  for as long as the zone's sound rings (7 s), its speed following the
+  sound: it drops hard with the first blow, eases off as the sound dies
+  down, is carried down again by its second swell and glides to rest as it
+  fades. The scene takes the step into the new zone over the first blow
+  and as the sound dies down (about 2.3 s, rather than the usual second).
+  Meanwhile the stage stands empty and the header keeps the depth before,
+  while the zone's title card names it (below); the new depth and its
+  cards come in as the plunge lands, at one moment for the whole team.
+  Nothing is picked before then, and a vote cast sooner neither opens its
+  window nor closes the vote; the room bots look the cards over, vote and
+  pick only once they are dealt. It is skipped with reduced motion or
+  effects off (the wait for the cards is not).
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience, a hearth fire, sinks with the depth, over a slow
   rumble. Each zone, and from depth 100 each kind of place, lays a bed of
   its own under it and keeps as much of the fire as suits it; the beds
-  cross-fade as the scene turns, in step with its light. Leaving a
+  cross-fade as the scene turns, in step with its light (half way at a
+  zone's last depth, the rest into the next zone). Leaving a
   run, or rejoining deep down, fades straight to the scene it's going to
   (the surface, say) instead of passing through every zone.
-- A new zone is announced by a gate built over the depth banner, so "Depth
-  N" stands in its doorway: engraved columns rise beside the heading, a
-  lintel is lowered onto them with the zone's name lit along its face, and
-  a keystone bearing the zone's sigil is set in its crown, all in the zone's
-  colour, the zone's light showing faintly through the doorway. It is built
-  in about a second, holds about four and leaves as you pass through it;
-  it never covers the cards or the player strip, or takes a tap, and the
-  head keeps room for it above the banner throughout a run, so nothing
-  moves when it comes or goes. With reduced motion or effects off it only
-  fades in and out. Alone, the same gate marks the first depth past your
-  best ("Deeper than ever"). The header names the zone beside the depth,
-  both in its colour (on a second line on phones).
+- A new zone is named by a title card in the plunge into it, timed to the
+  zone's sound: letterbox bars close in with the first blow (over the
+  header's old depth) and the scene behind darkens a little; as the sound
+  dies down, the place shows (the scene takes on the new zone, the largest
+  change of its handover, as the sound falls, done before the name locks),
+  the zone's sigil draws itself in a worn seal and a meta line
+  ("Depth 10 • Zone II", or "• Deeper than ever" alone past your best)
+  tracks out between rules ending in Sol and Luna; the name's letters
+  gather, a soft tick as each lands, and lock on the sound's second swell
+  with a whoosh, a thump and a chime, lighting the scene behind them, a
+  divider struck out under them. A subtitle follows ("Magma Fissure • The
+  rock is split, and it burns"), then up to three things new in the zone,
+  each in a small engraved seal (a find's item, a number, or an
+  alchemist's sign: "Dynamite Cache", "6 Options", "Mirrored art"). It
+  holds, then leaves as its place has it, before the cards are dealt, the
+  bars opening as control comes back. On large windows it is scaled up
+  with the rest of the page, its bars as tall as the header they cover.
+  Other players' pointers fade out while it is up and come back as the
+  cards are dealt; your own isn't sent meanwhile. Each zone, and each kind of place
+  past 100, moves after its look:
+  - fire (Magma Fissure, Primeval Ruins in blue, forges, reliquaries)
+    rises out of the divider's opened fissure white-hot, embers rising and
+    heat shimmering in its glow, and burns away left to right;
+  - ice (Frozen Hollow, frozen abysses, glacial pyres) condenses from
+    above, glinting, under falling snow, and shatters on jagged seams;
+  - spores (Fungal Caverns, sunken gardens, witchfire groves) drift in from
+    a scatter in no order, breathing, and are exhaled into motes;
+  - the void (Abyssal Depths, void blooms, blood eclipses) pulls the glyphs
+    together out of a spiral, ghosts in split colours closing in, and
+    draws them into its turning seal;
+  - light (Vaal Outpost, Abyssal City's lanterns, necropolises, starfalls,
+    drowned temples' rippling tide) lights each letter like a lamp, a shaft
+    of light crossing the name as it locks, and puts them out in turn;
+  - fumes (Sulphur Vents, sulphur marshes; the Petrified Forest's stone,
+    which crumbles) lift the letters out of a fog of the zone's colour and
+    carry them off.
+
+  With reduced motion or effects off it fades in whole, holds and fades
+  out; a screen that saw the run move on late gets the same, sooner, and a
+  reload mid-plunge none (a screen reader is told where the run has come
+  either way, and the scene's embers still take the zone's colour). The
+  run's opening (the Mines) has no card: its start line, the header, the
+  start sound and the light wave mark it, and on a screen that saw the run
+  start a screen reader is told "The Mines." Alone, the first depth past
+  your best says "Deeper than ever" on the line over the depth banner,
+  lettered like the card's meta line in the depth's colour: its letters
+  spread out of a blur as the stage comes in, between two short rules,
+  with a short sting and a few glints, and a screen reader is told "Deeper
+  than ever: depth N, past your best of M." On a zone's first depth the
+  card says it instead, and the line still shows once the cards are dealt,
+  quietly (with reduced motion or effects off it comes in with the
+  stage). The header
+  names the zone beside the depth, both in its colour (on a second line on
+  phones).
 - A run ends as a fall, not a victory. Alone, the end screen says "Perished"
   (or "Deeper than ever"), with your depth, where your lives went and your
   best. Together it says "The descent ends", with the team's depth and the
@@ -417,6 +512,19 @@ Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
 than any other.
 
+Twins, items whose art only a detail tells apart (Call and Whisper of the
+Brotherhood; Berek's Grip, Pass and Respite; the three Guiding Palms;
+Uhtred's three gems; Zarokh's two), only meet in a question once every wrong
+answer is a look-alike name (Eternal, or Custom with All); before that a
+question shows at most one of a set, picked at random when the answer is none
+of them (`TWINS` in `src/lib/game.ts`). The Guiding Palms differ only in
+colour, so they never meet where the art is in grayscale. Today's unique
+leaves twins be: they may meet in it, as they could from its first day.
+New items are checked for twins by `tests/twins.test.ts`: it lists every
+pair in a group whose art looks very alike (the look-alike table, so rebuild
+it when items come in) or whose names share a word, until each is a set in
+`TWINS` or marked as looked at and told apart.
+
 **Codex:** a page (from the start page's corner, or at
 `poe2.quest/#codex`) listing every item you have seen, with your accuracy per
 item, category, item group, question type and difficulty, your nemeses (lowest
@@ -424,7 +532,11 @@ accuracy, at least 2 answers), mix-ups (what you picked for what), made-up
 names you fell for, streaks and answer times. Every question revealed on your
 screen counts as seen; only your own answers count toward accuracy (your turn,
 or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
-answers only count when one person plays alone. Undiscovered items show as
+answers only count when one person plays alone. Today's unique on the start
+page counts as seen, but its answer doesn't count toward accuracy; its practice
+questions find nothing and count only toward a Practice accuracy of their own
+(endless as they are, they'd otherwise fill the codex without a game).
+Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 
@@ -513,6 +625,18 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   ([PeerJS](https://peerjs.com/)). The host's browser runs the game and
   everyone else sees the same state live. Only the free PeerJS cloud is used,
   to introduce the players to each other.
+  - An invite link (`?room=CODE`) carries only the room's code. Opened by
+    someone who has never played, the start page shows it with the choice
+    made: "Join <host>'s room" with a name field, and the room as the
+    lobby will show it (its code, the host's chip, theirs filling in as they
+    type). Whose room it is, how many are in and whether it can be joined
+    (locked, full, playing, gone, another version) the room says itself:
+    the screen asks it on opening, as the room list asks public rooms
+    (`probeRoom`, answered by `ProbeDesk` in `src/lib/probeDesk.ts`), so
+    no link can name a host it doesn't have. Asking connects to the host,
+    as the room list does (see Privacy below).
+    Anyone with a saved name joins straight away; if the room is gone or
+    full they stay on the start page with the code in Join a room.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.
@@ -526,6 +650,66 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
+  - **Who's ready:** in the lobby, a player's chip carries a mark, where the
+    host has their banner, when they aren't simply there
+    (`src/components/StandingMark.svelte`): a closed eye when their game
+    isn't on their screen (another tab, a minimised window, or the screen
+    off, for more than a couple of seconds; another app's window over the
+    browser doesn't count, as the page can't tell), a crescent moon when they haven't touched it
+    for two minutes, signal bars with two lit when their game answers the host's
+    pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
+    unlit bars when they're offline, all in the same muted grey. Away, idle
+    and offline names dim, and idle and offline avatars grey as an offline
+    player's does in the game (away can be a look at another tab). Beside Begin the host sees "All 4 exiles here and ready" with
+    a tick, or who the game would begin without and why ("3 of 4 ready; Kai
+    is away"; never themselves); a guest waiting on an away or idle host is
+    told so. Coming back to the game counts as a sign of life, and the room
+    hears of each change at once (away once its grace is over). Each device tells
+    the host its own presence as it changes, once the host has welcomed it
+    (a host on another version wouldn't know the message), and the host tells the room
+    (`src/lib/presence.ts`).
+  - **Live pointers:** in the lobby, in turns mode and Delve together, and
+    on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
+    with their name; a tap on a phone shows where it landed, as the
+    pointer pressed, for a moment. Every pointer, your own included, is the same engraved dart
+    (one point of the rune circle's compass star, `src/lib/pointerArt.ts`):
+    yours in old gold, or in your colour once you have a seat in an online
+    room (the lobby included), shown as the system cursor so it never lags (`src/lib/ownCursor.ts`).
+    It has its states, the others' included: over anything that can be
+    clicked, a demon's clawed hand pointing, seen a little from the side;
+    while the button is held, the dart sinks a little, lit a little, its
+    hatched side struck solid, and the hand pushes its finger into the page; on
+    something disabled (another player's answers and cards), dull lead with
+    a saltire. Another's pointer is the hand whenever their own cursor is:
+    each player's screen sends that with the pointer. A still pointer dims;
+    it's hidden only once its player leaves the page. Text fields get an
+    engraved I-beam. With Windows' high contrast on, the system's own
+    cursors come back. Text fields don't offer autofill, and a right click
+    brings no browser menu (but in a text field), since both show the
+    system's cursor. Scrolling with the middle
+    button (Windows and Linux, where browsers do it) is the game's own
+    (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
+    began, with the ways left to go, and a dart pointing the way it scrolls.
+    Spectators see them but don't show their own. A pointer is sent as a
+    spot on the element under it (`data-cursor`: an answer, a category
+    card, a scoreboard row, the art, the button that moves on, a setting,
+    the room code, the header's buttons, the line under a question, the
+    winner's circle; about sixty in all), so it lands on the same thing on
+    every screen, a phone's included, and with the elements round that
+    one (a setting's button, its row, the panel), so a screen without the
+    first (a guest has no host's buttons, a phone lays things out its own
+    way) puts it on the next it has. Counterparts share a name: the host's
+    Begin row and a guest's wait for it are both `start`, the timer is
+    `timer` wherever a layout puts it. Between elements a pointer goes
+    beside the nearest one; near none, on the game as a whole, measured
+    down it by screen heights so it holds still as cards are dealt. A click is always seen:
+    the press goes out even when it's over before the next update, and a
+    pointer whose element goes with the click (a card picked) stays where
+    it was a moment. While a new zone's title card is up, nobody's pointer
+    shows or is sent (the room bots' included); they come back as its
+    cards are dealt. Never in a race, nor while
+    deathmatch duelists answer, where it would give answers away. See
+    `src/lib/cursors.ts`.
   - The room code stays in the header during the game, unless the host
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
@@ -561,8 +745,12 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **No image files to look up.** Guests never load an item's image file
   during a question. The host sends a lightly altered copy of the art
   (re-scaled, shifted, noised, re-encoded) straight over the connection. On
-  veiled difficulties it sends only the patches revealed so far, so the rest
-  of the picture isn't on the guest's machine at all.
+  veiled difficulties the altered picture goes out whole as the question
+  starts, with which patch each of its pixels falls in, and burns into view
+  as the host uncovers its patches. Cutting and sending every patch as a
+  picture of its own held the host's page up as each question began, so a
+  guest who digs into the page can now see a veiled picture before it has
+  burned in.
 - **Seats can't be taken over.** Each browser has a secret token that only
   its host ever sees; the IDs other players see are random public IDs.
   Rejoining needs the token and keeps your original name. The token is
@@ -570,8 +758,14 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
   code), so a host never learns a token that works in someone else's room.
 - **Everything guests send is checked.** Every message is validated against
   the few actions a guest may take: pick a category, answer, continue, and
-  in Delve together vote for a card or give a teammate a life. Guests
-  are rate-limited to about 10 messages per second, and the raw data they
+  in Delve together vote for a card or give a teammate a life (and where
+  their pointer is). Guests
+  are rate-limited to about 10 messages per second (their pointer has a
+  budget of its own, about 40 a second, so moving it never uses up the one
+  for playing; what goes past it waits rather than being lost; and the
+  host keeps it out of the game state and passes it on in batches, twenty
+  a second, and for a click a frame after the last at the soonest, whose
+  sending holds back while a link is busy with pictures), and the raw data they
   send is capped in size and volume, and checked for lengths that can't be
   real, before it is decoded (so it can't be used to fill the host's memory
   or freeze its tab). A connection that doesn't introduce itself
@@ -633,10 +827,10 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Room codes** are 6 characters (about a billion combinations).
 
 **Privacy:** guests connect directly to the host (WebRTC), also briefly
-while browsing the open rooms list, so the host and guests can see each
-other's IP address (unless the connection runs through a TURN relay).
-Guests never connect to each other. The privacy policy says so; the game
-itself doesn't show a notice.
+while browsing the open rooms list or on opening an invite link, so the
+host and guests can see each other's IP address (unless the connection
+runs through a TURN relay). Guests never connect to each other. The
+privacy policy says so; the game itself doesn't show a notice.
 
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
@@ -702,14 +896,23 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   other modes exactly as the whole would. Delve's programs are built in the
   background once Delve is on its way (`wantDelveBackdrop`: Delve picked in a
   lobby, a Delve room joined, a run picked up or begun from a `?delve` link,
-  the lab, the zone gate page and the backdrop tool), with
+  the lab, the zone tuning page and the backdrop tool), with
   `buildPrograms` in `src/lib/fx/gl.ts` (`KHR_parallel_shader_compile`
   polled once a frame, or one program per idle moment without it), and are
   drawn once each, small, so the GPU has them ready. Should a Delve scene
   show before then, the lean programs stand in and Delve's parts come in over
   a moment once they're ready. The effects layer's renderer is made at the
   first idle moment after the first paint, or as soon as an effect is asked
-  for; effects asked for before it's ready wait for it.
+  for; effects asked for before it's ready wait for it. The game's own
+  screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
+  a quarter of the script, fetched at the first idle moment or at once on the
+  way into a room, so the start page loads and runs without them (tried once
+  more if the fetch fails; after that the game screen offers a reload, as
+  some browsers won't fetch a module that failed again). The host decodes
+  a question's pictures off the main thread (all of a "find the art"
+  question's at once), and every device cuts a veiled picture's patches in
+  a worker (`src/lib/veilWorker.ts`): their shapes as the question starts,
+  each one's picture as it uncovers.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with
@@ -745,23 +948,25 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   archetype's next (`endgameName`): the curated ones first, then epithets
   and places composed; its sigil and ornament its archetype's zone's
   (`emblemOf`).
-  From a zone's 5th depth to the next one's 2nd, seven depths, the scene
+  From a zone's 6th depth to the next one's 1st, five depths, the scene
   turns into the next (`strataAt`, `turnInto`; `TURN_FROM`,
-  `TURN_DEPTHS`): the embers follow the turn eased (`emberTurn`), the
+  `TURN_DEPTHS`), the turn coming a fifth a depth to the zone's 8th, a
+  tenth a depth to its 10th and the last two fifths into the next zone
+  (`TURN_AT`, `turnAt`): the embers follow the turn eased (`emberTurn`), the
   light, smoke, features and their colours follow it eased from the
-  zone's 6th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
+  zone's 7th depth (`hallTurn`, `HALL_FROM`), both on a smoothstep
   (`easeTurn`), and a magma that goes out cools with the hall
-  (`magmaCooling`), gone by the next zone's 2nd (through a cross-fade it
+  (`magmaCooling`), half cooled at the zone's 10th depth and gone by the next zone's 1st (through a cross-fade it
   keeps each scene's own cooling, `Descent.cool`, so it never flares up
   again as it fades). A zone shows alone from
-  its 2nd depth (`settledAt`) to its 5th, where its own turn begins.
+  its 1st depth (`settledAt`) to its 6th, where its own turn begins.
   The scene's `light` is set so its average brightness never rises with
   depth through the zones and, past them, by 8% a depth at most
   (`luminanceAt`, `lightAt`, `brighterAt`): `estimateLuminance` works out
   what the backdrop draws from what each environment adds and dims as it
   comes in (`ENV_ADD`, `ENV_HALL`), corrected per depth (`MEASURED`, to
-  depth 92), and the light is solved a stretch of depths at a time, moving
-  at most 0.09 a depth (`light`, or the light drawn, `light` times the
+  depth 91), and the light is solved a stretch of depths at a time, moving
+  at most 0.135 a depth (`light`, or the light drawn, `light` times the
   stratum's own `lightK`, so a stratum lit brighter is made way for), to
   depth 2001 (past it the curve is kept to exactly). It is worked out in
   idle moments ahead of the scene (`warmLights`); a rejoin deep down shows
@@ -776,20 +981,43 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   depths' corrections dropped (faded out over its turns) rather than
   applied wrongly. (They were measured with the straight handover and
   carried over to the eased one by the share of the next zone's hall each
-  depth shows; calibrate measures them afresh.)
-  The shown depth eases along at about a second a depth, and a jump of
+  depth shows; not yet to `TURN_AT`'s, as no zone is marked measured now:
+  measure afresh with calibrate, or carry them over the same way, before
+  marking zones measured again.)
+  The shown depth eases along at about a second a depth (the step into a
+  new zone, while its plunge runs, slower: `ARRIVAL_PACE`, about 2.3 s), and a jump of
   more than three depths cross-fades straight there. `plunge()` (called by
   `App.svelte` when a deeper depth's cards are dealt, `dealtDeeper`) sinks
-  the scene, and the backdrop steps it (`stepPlunge`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
+  the scene (a new zone's further and longer with the zone's sound,
+  `ZONE_PLUNGE_SINK`, `ZONE_PLUNGE_MS`, `ZONE_SPEED`), and the backdrop
+  steps it (`stepPlunge`). A new zone's cards are dealt as its plunge lands
+  (`DelveState.dealAt`, `ZONE_DESCENT_MS`; the screens wait through
+  `src/lib/dealing.svelte.ts`). The backdrop's shaders and embers (`src/lib/backdropEmbers.ts`, a
   small palette of zone colours, so a new colour spreads ember by ember,
   each taking its zone's way of moving from `src/lib/emberMotion.ts` with it),
   the CSS fallback and the ambience (`depthAmbience` in `src/lib/sound.ts`)
   follow it. The clock's dark (`src/lib/darkness.ts`) is set by the timer
   ring and drawn by the backdrop, with a thin late shade at the screen's
-  edges (`Darkness.svelte`). The zone gate (`src/components/zonebanner/`,
-  with the zones' sigils in `src/lib/zoneSigils.ts`) and the find cards
-  (`findEngraving.ts`) are engraved in the arcane style, and a run's end
-  has its own effect (`src/lib/fx/delveEnd.ts`).
+  edges (`Darkness.svelte`). A new zone's title card: `src/lib/zoneTitle.ts`
+  says what it shows for a depth (name, subtitle, meta line, what is new
+  from `delveRules` and the finds, and its treatment: the family of motion
+  and its colours), `src/lib/zoneTitleTiming.ts` when (its beats from the
+  plunge's start, the name locking on the zone sound's second swell; the
+  compact and still timelines; the light it casts, `glowAt`; one pen for
+  a broken line, `drawPlan`), `src/lib/zoneArrival.svelte.ts` sets it up
+  as App starts the plunge (its sounds booked on the audio clock with
+  `sfx`'s `inMs`, the name timed to the speakers' lag, `audioLead`), and
+  `src/components/zonecard/ZoneCard.svelte` plays it, every animation on
+  its own clock (WAAPI from the plunge's start), with the seal
+  (`ZoneSeal.svelte`, the sigil's strokes from `sigilStrokes`), the marks
+  of what is new (`NewsMark.svelte`) and a family of motion each
+  (`ember.ts`, `rime.ts`, `spore.ts`, `void.ts`, `light.ts`, `fume.ts`, to
+  the contract in `family.ts`). Like the shell, it is drawn at the stage's
+  CSS zoom (`.zc` in `ZOOMED`, `src/lib/stage.ts`): the letters' and seal's
+  places are measured in its own px (`unzoomRect`), its light and effects
+  in screen px. The zones' sigils (`src/lib/zoneSigils.ts`), on the zone
+  card's seal, and the find cards (`findEngraving.ts`) are engraved in the arcane style,
+  and a run's end has its own effect (`src/lib/fx/delveEnd.ts`).
 - **Dialogs** dim the page behind them (`src/lib/behindDialog.ts`). A dark,
   blurred layer over the page would band the backdrop and hide the dialog's
   own effects, so the backdrop darkens itself in its shader and the UI takes a
@@ -817,24 +1045,49 @@ npm run fetch-data
 
 Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
-doesn't reveal the answer.
+doesn't reveal the answer. The script also reads each unique's own page: for
+its art where the list leaves it out, and for the other ways the game draws
+it, which the list never shows. Those become the item's `variants` (its art,
+base and tooltip, under the same name): Grand Spectrum is a Ruby, an Emerald
+or a Sapphire, each its own colour, and Grip of Kulemak glows brighter with
+each desecrated mod it can take (five stages). A question shows any of an
+item's art, each as often (`Question.variant`, rolled with the mirroring);
+the answer is still just its name, and the codex shows them all. Other
+uniques have more than one version on their page too (each glove's Fists of
+Stone base, a league's changed mods), but they share one art, so they add
+nothing. A fetch that would leave noticeably fewer items than `items.json`
+has (a changed page layout, most likely) stops before it deletes any art;
+`npm run fetch-data -- --shrink` accepts it when poe2db really dropped them.
+
+Each item's tooltip (properties, requirements, mods, flavour text) comes from
+poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by
+fetching them, and `npm run fetch-stats` fetches them alone. The game loads
+that file only when a player opens an item's details (its art, clicked once a
+question is answered, or its card in the codex).
 
 poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
 ring) and lossy, and the game draws it bigger than that. The site serves
-copies upscaled with Real-ESRGAN (x4plus, scaled down to 2× and mixed with
-the smoothly enlarged original, which beat other models and mixes in blind
-tests: 75% of the model for one-cell items, which are drawn the most
-enlarged, except precursor tablets at 50%, whose stone it smooths too much;
-40% up to 2 × 2 and 30% for larger ones) from `public/items/`, as AVIF (a third smaller than WebP, and
-closer to the unencoded picture). Small spots load smaller copies:
-`public/items/128/` for thumbnails, and `128/` or `256/` by screen sharpness
-for the codex's tiles and the start page (`itemThumb`, `itemSrcset` in
-`src/lib/ui-paths.ts`); only the question and the codex's item page load the
-full size. For new items, run `scripts/upscale-art.py` (its header has the
-one-time setup: a Python venv with torch for the CPU and the model file). It
-only does the items that have no upscaled copies yet. All sizes in the code
-stay in the original art's pixels (`ART_SCALE` in `src/lib/ui-paths.ts`), and
-`tests/itemArt.test.ts` checks every item has its copies.
+copies upscaled with Real-ESRGAN (x4plus) from `public/items/`, as AVIF (a
+third smaller than WebP, and closer to the unencoded picture):
+
+- **Resolution.** 4 pixels per art pixel for items up to 2 × 2 cells, which
+  are drawn the most enlarged (on a phone, or on a big screen under the
+  stage's zoom), and 2 for larger ones (`artScale` in `src/lib/ui-paths.ts`).
+  `items.json` keeps each item's art size (`w`, `h`), so the code works in
+  art pixels and only the bitmaps are finer.
+- **Mix.** Each picture is mixed with the smoothly enlarged original, which
+  beat other models and mixes in blind tests: 75% of the model for one-cell
+  items, except precursor tablets at 50%, whose stone it smooths too much;
+  50% up to 2 × 2 and 30% for larger ones.
+- **Smaller copies.** Small spots load `public/items/128/` for thumbnails,
+  and `128/` or `256/` by screen sharpness for the codex's tiles and the
+  start page (`itemThumb`, `itemSrcset`); only the question and the codex's
+  item page load the full size.
+
+For new items, run `scripts/upscale-art.py` (its header has the one-time
+setup: a Python venv with torch for the CPU and the model file). It only does
+the items that have no upscaled copies yet, and `tests/itemArt.test.ts`
+checks every item has its copies.
 
 After the art changes, rebuild the look-alike table (needs ffmpeg):
 
@@ -842,11 +1095,42 @@ After the art changes, rebuild the look-alike table (needs ffmpeg):
 npm run looks
 ```
 
+Then measure which items are too thin for Today's unique on the start page:
+the day's item is the page's eye-catcher, drawn big in the arcane circle,
+and a bare stick leaves the circle all but empty. `scripts/daily-art.py`
+measures how much of the art box each item's opaque pixels cover at the
+size the page draws it, and writes those under 9.5% (28 staves, spears and
+quarterstaves, and the slimmest bows and wands) to
+`src/data/dailyArt.json`; the daily and its practice questions never ask
+them, though their names can still be decoys. Wide items (belts, some
+relics) are drawn bigger there than a box would let them: the picture may
+reach past the box's sides into the circle round its centre (ArtImage's
+`round` fit).
+
+```sh
+python3 scripts/daily-art.py
+```
+
 It writes `src/data/looks.json`: for every item, the fourteen items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
 edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,
-decoys are picked from it (`src/lib/looks.ts`). The output only changes when
+decoys are picked from it (`src/lib/looks.ts`). An item drawn more than one way
+has each of its art ranked on its own (Grand Spectrum's Sapphire looks most
+like Prism of Belief, its Ruby like Flesh Crucible), and such a question draws
+each picture's art before it picks the look-alikes, so they look like the art
+it shows. The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
+
+The category cards' emblems, and the items behind them, are laid out from
+fits measured ahead into `src/data/iconFits.json`, and drawn with clean masks
+baked into `public/icons/masks/` (`src/lib/iconFit.svelte.ts`).
+Bake them again after their art changes, or after a data refresh picks a
+different item for a card (needs Chromium, and ffmpeg for the masks' WebP;
+see `scripts/bake-icons.mjs`):
+
+```sh
+npm run bake-icons
+```
 
 ### Self-hosted signalling (optional)
 
@@ -903,15 +1187,45 @@ it apart from the live game:
   other modules off storage); only the creator unlock is shared
 - it says Beta on the start page, in the header and in the tab title, and
   asks search engines not to index it
+- adding `&first` to an invite link (`?room=CODE&first`) shows the invite
+  screen as a first visit sees it, with a name saved (the dev server too):
+  the saved name is set aside for that visit, not erased
+
+### Recording a hand
+
+On the beta and the dev server, `?record` in the address (for example
+**poe2.quest/beta/?record**) records how this player plays, for the room
+bots' hands to move by: the pointer about 120 times
+a second, what it was over (the anchors the pointer sync uses), clicks,
+scrolls and keys pressed outside text fields, where everything was on the
+screen, and what the game showed (phase, question, clock, reveal, lives,
+and when a new zone's cards were dealt).
+Nothing typed and no names. A badge in the bottom left corner shows it's on;
+**Save** downloads the file (nothing leaves the device otherwise), **Stop**
+ends it. It stays on for the tab until stopped or `?record=off`
+(`src/lib/recorder.ts`, `src/components/Recorder.svelte`).
+
+The bots' hands replay what was recorded: `node scripts/bot-motion.mjs
+one.json two.json …` cuts recordings into stretches (picking a card, from
+when the cards were dealt, not the zone's title card before them;
+answering, pressing Next, waiting through someone else's turn, the lobby),
+kept relative to what was on screen, into `src/data/botMotion.json` (the
+recordings themselves stay out of the repo). A bot replays one that fits
+the moment, its pauses fitted to how long it takes to make up its mind and
+its last reach steered onto its own pick (`src/bot/motion.ts`, `hand.ts`).
+A bot does nothing while a new zone's cards are on their way: its pointer
+is off the page, and it looks the cards over from the deal.
+More players' recordings make for more kinds of hands.
 
 ### The lab
 
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the
 real game screen (the app itself, with its backdrop, effects, sounds and
 header) beside a panel that sets up and plays a run on this device. It sets
-the players (1 to 4), each one's lives, wards, shard, flares and dynamite,
+the players (1 to 4), each one's lives, wards, flares and dynamite,
 and the depth (any of 1 to 150, or a zone); deals cards with a find among
-them, and a second find if wanted; asks questions (name the item or find
+them, and a second find if wanted; deals a vein's two cards after strike 1
+or 2 (the dig, with its haul and lamp); asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right
 or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
 a blast (Detonate), dynamite at 0 (its fuse), items gained, a find answered right, the last
@@ -954,7 +1268,7 @@ and how the embers move. Every change shows at once.
   the game estimates it with its solved light (no frame is drawn or read),
   beside the curve it keeps to; any depth brighter than the rule allows
   (than the one before through the zones, by 8% past them) is marked.
-- **Zones:** pick one of the ten (the panel jumps to its 2nd depth, where
+- **Zones:** pick one of the ten (the panel jumps to its 1st depth, where
   it shows alone), then tweak its look: a colour picker for every colour,
   sliders for every strength (Light and dark, Smoke, Haze, Embers, Glints,
   Details), and the embers' motion (a profile and its speed, rise or fall, drift, turbulence
@@ -986,20 +1300,25 @@ and how the embers move. Every change shows at once.
   data-backdrop-tool>`), so `src/lib/storage.ts` starts its keys with
   `backdrops.` and its drafts and settings never reach the game's.
 
-### The zone gate's tuning page
+### The zone tuning page
 
-`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone gate
-(`src/components/zonebanner/Threshold.svelte`) in place: the real game
-screen (a Delve run of the lab's, in a frame) with the gate built over its
-head, timed as in a game.
+`zones.html` (`src/zonebanner/`) is a page for tuning Delve's zone title
+card (`src/components/zonecard/`) in place: the real game screen (a Delve
+run of the lab's, in a frame) stepping down into a zone the engine's way,
+so the plunge, its sound, the scene's colours and the deal as it lands are
+all as in a game.
 
-- **Zone:** any of the ten zones, two long endgame-style names (to check
-  the fit of a long name) or "Deeper than ever". Each play sets the run's
-  depth quietly first, so the header, the scene and the colours are the
-  zone's; **Replay** (or R) builds the gate again.
-- **Phone width** shows the screen at 375 px; **Hold** keeps the gate up;
-  **Effects off** and **Reduced motion** show it as those players see it
-  (it only fades in and out).
+- **Zone:** any of the nine zones past the Mines, the endgame's first six
+  strata (one of each of several kinds of place), the widest name an
+  endgame stratum can have (to check its fit), and a zone reached past
+  your best. **Replay** (or R) plays it again.
+- **Family:** shows the zone with another family's motion (fire, ice,
+  spores, the void, light, fumes) to compare them on one place.
+- **Phone width** shows the screen at 375 px. **Freeze** keeps the card up
+  (its cards never dealt) and stops it at the moment the slider sets, to
+  look at any frame of it. **Effects off** and **Reduced motion** show it
+  as those players see it (it fades in and out whole). Click the screen
+  once for sound.
 - **Open it:** `npm run dev`, then `http://localhost:5173/zones.html`; on
   the beta, **poe2.quest/beta/zones.html**. Like the lab, the live build
   leaves it out, and its page is marked (`<html data-lab data-zones>`), so
@@ -1022,6 +1341,25 @@ by side.
   deeper every 180 ms.
 - **Open it:** `npm run dev`, then `http://localhost:5173/descent.html`; on
   the beta, **poe2.quest/beta/descent.html**. The live build leaves it out.
+
+### The daily streak's test page
+
+`streak.html` (`src/streakPreview/`) shows the daily's streak badge
+(`src/components/DailyStreak.svelte`) under a mock of Today's unique's
+answers, burning for any run of days, and every step of its ladder of
+colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
+
+- **Days in a row:** a slider from 0 to 730 and a box for any run; the hint
+  names the colour, the fire's heat and the days to the next colour.
+- **Steps** shows a step's first day; the numbers after them show the day
+  before a step, to answer right and see it turn.
+- **Answer right** plays what the start page plays for a right answer: the
+  badge comes in at yesterday's run and grows into today's, bursting when it
+  reaches a new colour. **Miss** ends the run in a puff of smoke;
+  **Replay entrance** brings the badge in again.
+- `streak.html?days=30` opens it at a run of 30 days.
+- **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
+  the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
 
 ---
 

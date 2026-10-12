@@ -13,13 +13,16 @@ import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShado
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
-import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
+import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
 import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
+import { onVein, veinLevel } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
+import { frameEvent, timed } from './fpsMeter';
+import { switchedOff } from './switchedOff';
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -71,6 +74,8 @@ uniform vec4 uFx[${FX_SLOTS * 3}];
 uniform vec4 uFxK;
 uniform vec4 uEddy;
 uniform vec2 uDark;
+// How far an Azurite Vein's scene has come in (lib/vein.ts), 0 to 1.
+uniform float uVein;
 `;
 
 /** Delve's noise, its environments, and the dark closing in. */
@@ -104,6 +109,108 @@ ${FX_NOISE_GLSL}
 ${ENV_GLSL}
 ${SPORES_GLSL}
 ${SHAFTS_GLSL}
+
+// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path the hall
+// goes cold and dark, and seams of azurite run through the rock of the
+// walls and the floor: broad crystal faces, their seams glowing pale blue,
+// brightest where three faces meet, and behind them, deeper in the rock,
+// more of the crystal, dimmer and bluer. The faces catch a little of the
+// light, each its own, and the light moves slowly along the seams. It grows
+// in from the edges as the vein comes in (never over the middle, behind the
+// UI).
+// Crystal faces: the cells of a jittered grid (x in cell units). How near x
+// is to the seam between two faces (0 on it), and to a corner where three
+// meet (0 at it); which face it is in (0 to 1); and how far across the face
+// toward the light it lies (-1 to 1).
+vec4 veinCells(vec2 x) {
+  vec2 i = floor(x);
+  vec2 f = fract(x);
+  float d1 = 8.0;
+  float d2 = 8.0;
+  float d3 = 8.0;
+  vec2 r1 = vec2(0.0);
+  vec2 id = vec2(0.0);
+  for (int y = -1; y <= 1; y++)
+    for (int k = -1; k <= 1; k++) {
+      vec2 g = vec2(float(k), float(y));
+      vec2 r = g + 0.15 + 0.7 * vec2(nhash(i + g), nhash(i + g + 17.31)) - f;
+      float d = dot(r, r);
+      if (d < d1) {
+        d3 = d2;
+        d2 = d1;
+        d1 = d;
+        r1 = r;
+        id = i + g;
+      } else if (d < d2) {
+        d3 = d2;
+        d2 = d;
+      } else if (d < d3) d3 = d;
+    }
+  return vec4(sqrt(d2) - sqrt(d1), sqrt(d3) - sqrt(d1), nhash(id + 5.7), clamp(dot(-r1, vec2(0.6, -0.8)) / 0.7, -1.0, 1.0));
+}
+
+vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float dark) {
+  float v = uVein;
+  vec2 xy = p / vec2(W, H);
+  // Cold and darker: the path's warm light is behind you.
+  col = mix(col, col * vec3(0.42, 0.58, 0.95), 0.75 * v);
+  col *= 1.0 - 0.3 * v;
+  // The rock the seams run in: the walls, then the floor, reaching further in as it comes.
+  float side = min(xy.x, 1.0 - xy.x);
+  float reach = 0.1 + 0.24 * v;
+  float wall = max(1.0 - smoothstep(reach * 0.3, reach, side), 0.8 * smoothstep(1.0 - 0.55 * reach, 1.0, xy.y));
+  if (wall <= 0.0) return col;
+  vec3 deep = rgb(22.0, 40.0, 140.0);
+  vec3 azure = rgb(40.0, 105.0, 255.0);
+  vec3 pale = rgb(150.0, 205.0, 255.0);
+  vec3 white = rgb(230.0, 245.0, 255.0);
+  // The dark of the depth and the clock dims it, as it does every glow.
+  float lit = wall * v * (1.0 - 0.8 * dark);
+  mat2 slant = mat2(0.8, -0.6, 0.6, 0.8);
+  // Deeper in the rock, behind: smaller faces, their seams dim and deep
+  // blue, going up slower than the near ones as the scene sinks.
+  vec2 qf = (p + vec2(0.7 * uSlide, 0.55 * uSink)) / S;
+  vec2 xf = slant * qf * vec2(9.0, 4.4) + 31.0;
+  vec4 ef = veinCells(xf);
+  float oreF = smoothstep(0.38, 0.7, fbm(qf * 1.7 + vec2(-2.6, 7.1)));
+  float runF = 0.65 + 0.35 * sin(tm * 0.3 - 1.3 * (xf.x + 0.5 * xf.y));
+  // (Wider and softer than the near seams, as if out of focus.)
+  // (Each face's own light fades out toward its seams, so no edge shows where two faces meet.)
+  float faceF = (0.4 + 0.6 * ef.z) * smoothstep(0.0, 0.25, ef.x);
+  col += (deep * (0.24 * (1.0 - smoothstep(0.0, 0.34, ef.x)) + 0.05 * faceF * smoothstep(-0.6, 1.0, ef.w)) +
+    azure * (0.16 * runF * (1.0 - smoothstep(0.0, 0.11, ef.x)))) * (oreF * lit);
+  // The near seams: straight cracks between crystal faces, the faces drawn
+  // out on a slant so they run as veins, only where the ore runs (a band of
+  // slow noise), the walls going up with the scene (uSink) as it sinks.
+  vec2 q = (p + vec2(uSlide, 0.9 * uSink)) / S;
+  vec2 x = slant * q * vec2(5.5, 2.6);
+  vec4 e = veinCells(x);
+  float ore = smoothstep(0.42, 0.68, fbm(q * 2.2 + vec2(4.2, 1.3)));
+  if (ore <= 0.0) return col;
+  float face = e.z;
+  // The faces: each catches a little of the light, brighter toward the
+  // side it comes from, and a glint crosses each one slowly, on its own beat.
+  // (Faded out toward the seams, as deeper in.)
+  float inner = smoothstep(0.0, 0.14, e.x);
+  float catchL = (0.35 + 0.65 * face) * smoothstep(-0.6, 1.0, e.w) * inner;
+  float glint = exp(-pow(e.w - 0.9 * sin(tm * 0.11 + 6.283 * face), 2.0) / 0.05) * inner;
+  col += mix(azure, pale, 0.25 * glint) * ((0.075 * catchL + 0.05 * glint * face) * ore * lit);
+  // The seams swell and pinch along their length, as ore does.
+  float swell = 0.7 + 0.6 * vnoise(x * 1.3 + 9.0);
+  float seam = 1.0 - smoothstep(0.0, 0.045 * swell, e.x);
+  float body = 1.0 - smoothstep(0.0, 0.12 * swell, e.x);
+  float halo = 1.0 - smoothstep(0.0, 0.32, e.x);
+  // Crystals where three faces meet, each breathing over many seconds, with a soft bloom round it.
+  float node = (1.0 - smoothstep(0.0, 0.16, e.y)) * seam;
+  float bloom = 1.0 - smoothstep(0.0, 0.34, e.y);
+  // (Its beat from slow noise, not from the grid's squares, whose edges would cut through the bloom.)
+  float breathe = 0.7 + 0.3 * sin(tm * 0.35 + 12.566 * vnoise(x * 0.6 + 3.0));
+  // The light moving along the seams, slowly.
+  float run = 0.6 + 0.4 * sin(tm * 0.45 - 1.7 * (x.x + 0.6 * x.y));
+  vec3 add = azure * (0.14 * halo * halo + 0.16 * body * swell) + pale * (0.55 * seam * run) +
+    white * (0.85 * node + 0.12 * bloom * bloom * halo) * breathe;
+  return col + add * (ore * lit);
+}
 
 // The slot environment i (its index in ENVIRONMENTS) is drawn from, or ${NO_SLOT}: none.
 int fxSlot(int i) {
@@ -267,6 +374,8 @@ const DELVE_DARK = `  // The light about you drawing in (see closing()). What gl
   dark = 1.0 - (1.0 - dark) * (1.0 - 0.9 * arms);
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
   if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(uSlide, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
+  // An Azurite Vein being dug.
+  if (uVein > 0.0) col = azuriteVein(col, p, S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
   // stratum's glow and all (and a right answer's light, a little under 0,
   // lifts it a touch). Never past black, however far it is pushed.
@@ -463,11 +572,12 @@ ${delve ? DELVE_SMOKE : ''}  // The stratum's light, set so the scene's average 
   // bright one (fire, gold) is balanced by darker surroundings.
   col *= uLight;
 
-${delve ? DELVE_DARK : ''}  // The start page: god rays falling from high above the centre, each beam
-  // slowly waxing and waning in place, and a royal glow behind the title.
+${delve ? DELVE_DARK : ''}  // The start page: god rays falling from high above the title (the centre
+  // without one), each beam slowly waxing and waning in place, and a royal
+  // glow behind the title.
   if (uHome.x > 0.0) {
     float ht = uHome.z;
-    vec2 src = vec2(0.5 * W, -0.32 * H);
+    vec2 src = vec2(uTitle.z > 0.0 ? uTitle.x : 0.5 * W, -0.32 * H);
     vec2 dr = p - src;
     float ang = atan(dr.x, dr.y); // 0 is straight down
     float r = length(dr);
@@ -512,13 +622,13 @@ void main() {
 
 /**
  * Fragment uniform vectors the main pass uses apart from the UI elements'
- * (counted unpacked, samplers apart, with one to spare: 170 as linked with
+ * (counted unpacked, samplers apart, with one to spare: 171 as linked with
  * the soft light worked out here, the effects' slots, 3 * FX_SLOTS, among
  * them), and each element's: its seven rows and its shadows' two each.
  * Recount when adding a uniform (the active uniforms of the program
  * frag(4, false, true) links to, less 4 elements' worth).
  */
-const FIXED_UNIFORMS = 171;
+const FIXED_UNIFORMS = 172;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**
@@ -898,10 +1008,15 @@ const CITY_TRACE = 0.002;
  * surface's look, outside Delve, where the lean programs draw exactly what
  * Delve's would.
  */
-export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pressure: number, city: number): boolean {
+export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pressure: number, city: number, vein = 0): boolean {
   // (The clock's dark is drawn either way from 0: a right answer's light is a little under it.)
-  return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE;
+  return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE || vein > 0;
 }
+
+/** The most device pixels the backdrop draws (see scale() in startBackdrop): a 1440p screen's. */
+const MAX_PIXELS = 2560 * 1440;
+/** The embers' halo in an Azurite Vein: azurite blue. */
+const VEIN_EMBERS = [0.3, 0.62, 1];
 
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
@@ -1048,6 +1163,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     col: new Float32Array(MAX_MASKS * DROPS_PER_MASK * 4),
   };
   const shadowArrays = [...Object.values(el), ...Object.values(mk)];
+  /** What only colours the elements' shadows and fills (see measure): their changes can wait for a 30fps frame. */
+  const colourArrays = new Set<Float32Array>([el.c, el.d, el.e, el.col]);
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
   /** The drop-shadow atlases' sizes (uSharpSize, uBlurSize). */
   const atlasSize = new Float32Array([1, 1, 1, 1]);
@@ -1116,6 +1233,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       uFxK: S('uFxK'),
       uEddy: S('uEddy'),
       uDark: S('uDark'),
+      uVein: S('uVein'),
       uGlowCol: S('uGlowCol'),
       uScene: S('uScene'),
       uBlobColor: S('uBlobColor'),
@@ -1133,6 +1251,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       uCityB: U('uCityB'),
       uCityC: U('uCityC'),
       uIce: U('uIce'),
+      // An Azurite Vein's, in the main pass too (it draws the whole soft light where no float target is to be had).
+      mVein: U('uVein'),
       // The dark closing in dims the embers too (closing() in the shader).
       mDark: U('uDark'),
       mScene: U('uScene'),
@@ -1246,6 +1366,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
   // so there every element keeps its CSS shadow and the backdrop draws none.
   const cssShadows = matchMedia('(pointer: coarse)');
+  // Beta, to find what makes frames slow (lib/switchedOff.ts): the UI's shadows and fills left to CSS;
+  // the backdrop drawn once a second (and its shadows and fills left to CSS with it).
+  const drawnSlowly = switchedOff('backdraw');
+  const fillsToCss = drawnSlowly || switchedOff('fills');
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
@@ -1254,6 +1378,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   /** The question's clock as the dark last drawn shows it (lib/darkness.ts). */
   let pressure = 0;
+  /** How far an Azurite Vein's scene has come in (lib/vein.ts). */
+  let vein = 0;
   function draw() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
@@ -1278,7 +1404,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
     // Which programs draw it: Delve's while any of Delve's parts show, once
     // they're ready; else the lean ones (the same picture without them).
-    const deep = delveScene(look, close, pressure, city);
+    const deep = delveScene(look, close, pressure, city, vein);
     if (deep && delveFailed) return lost();
     if (deep) wantDelveBackdrop();
     if (warming) warm(warming);
@@ -1294,8 +1420,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // to the stratum's dark, keeps all of itself while that isn't drawn.)
     const k = v === lean ? 1 : delveIn;
     const dark = v === lean ? 0 : delveIn * look.dark;
-    const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uGlowCol, uScene, uBlobColor } = v;
-    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
+    const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uVein, uGlowCol, uScene, uBlobColor } = v;
+    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mVein, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
 
     // The soft light: into its own target first, or along with the rest.
     gl!.useProgram(soft);
@@ -1316,6 +1442,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uFxK, fxK);
     gl!.uniform4fv(uEddy, embers.eddies);
     gl!.uniform2f(uDark, close * k, pressure * k);
+    if (uVein) gl!.uniform1f(uVein, vein * k);
     gl!.uniform3f(uGlowCol, look.glow[0] / 255, look.glow[1] / 255, look.glow[2] / 255);
     gl!.uniform4f(uScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
@@ -1400,6 +1527,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     stopsFor(look, 'frost', stops);
     gl!.uniform3f(uIce, stops[0] + 0.35 * (1 - stops[0]), stops[1] + 0.35 * (1 - stops[1]), stops[2] + 0.35 * (1 - stops[2]));
     gl!.uniform2f(mDark, close * k, pressure * k);
+    if (mVein) gl!.uniform1f(mVein, vein * k);
     gl!.uniform4f(mScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform4fv(mHome, home);
     gl!.activeTexture(gl!.TEXTURE2);
@@ -1413,24 +1541,33 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
-  // Measures the shadowed elements; true if anything changed since last time.
-  // On phones and tablets there's nothing to measure: everything is let go
-  // to CSS once, and nothing changes until the pointer does.
+  // Measures the shadowed elements and says what changed since last time:
+  // 'now' when something must be drawn in this very frame (an element moved
+  // or changed size, or a shadow or fill was handed between CSS and the
+  // backdrop, which CSS stops or starts painting this frame), 'paced' when
+  // only colours changed (a fill or shadow easing to another colour), which
+  // 30fps draws as well, or false. On phones and tablets there's nothing to
+  // measure: everything is let go to CSS once, and nothing changes until the
+  // pointer does.
   let released = false;
-  function measure() {
+  function measure(): 'now' | 'paced' | false {
     let atlases: ReturnType<typeof measureDrops> = null;
-    if (cssShadows.matches) {
+    if (cssShadows.matches || fillsToCss) {
       if (released) return false;
       released = true;
+      // (What was last drawn is now these zeros too: measured again later,
+      // values that happen to equal those from before still count.)
       for (const arr of shadowArrays) arr.fill(0);
+      prev.fill(0);
       releaseAll();
       releaseAllDrops();
+      return 'now';
     } else {
       released = false;
       measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
       atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     }
-    let changed = false;
+    let changed: 'now' | 'paced' | false = false;
     if (atlases) {
       gl!.activeTexture(gl!.TEXTURE0);
       gl!.bindTexture(gl!.TEXTURE_2D, sharpTex);
@@ -1442,15 +1579,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
       atlasSize[2] = atlases.blurW;
       atlasSize[3] = atlases.blurH;
-      changed = true;
+      frameEvent('backdrop: drop shadows upload');
+      changed = 'now';
     }
     let k = 0;
     for (const arr of shadowArrays) {
+      const colour = colourArrays.has(arr);
       for (let i = 0; i < arr.length; i++, k++) {
-        if (prev[k] !== arr[i]) {
-          prev[k] = arr[i];
-          changed = true;
-        }
+        if (prev[k] === arr[i]) continue;
+        // A colour easing is paced; one coming or going (a fill's kind, a shadow's alpha from or to 0) is a handover.
+        const handover = !colour || (arr === el.c ? i % 4 === 0 : arr === el.col ? i % 4 === 3 && (prev[k] === 0 || arr[i] === 0) : false);
+        prev[k] = arr[i];
+        if (handover) changed = 'now';
+        else changed ||= 'paced';
       }
     }
     return changed;
@@ -1463,6 +1604,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // embers drift a few pixels a frame), and while calm() nothing is drawn
   // until something changes.
   let dirty = false;
+  /** A change held back for the 30fps pace (see frame()). */
+  let owed = false;
   let wasDescending = false;
   // Calls that wait on the GPU process (whenGpuCaughtUp in fx/gl.ts), and
   // the fence after the last frame drawn before they asked: nothing new is
@@ -1502,7 +1645,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       }
     }
   }
-  function frame(now: number) {
+  /** One frame of the backdrop (timed for the beta's frame meter). */
+  const frame = (now: number) => timed('backdrop', frameUntimed, now);
+  function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
     if (catchingUp.size) {
       // (The backdrop's clock holds still meanwhile.)
@@ -1545,6 +1690,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       pressure = p;
       if (still) dirty = true;
     }
+    // An Azurite Vein's scene eases in and out by itself, as the dark does.
+    const vn = veinLevel(now, still);
+    if (vn !== vein) {
+      vein = vn;
+      dirty = true;
+    }
     embers.descend(currentDescent(), targetDescent());
     // A new depth dealt: the scene sinks a little further (plunge in descent.ts),
     // the embers and glints carried up with the walls; never while holding still.
@@ -1569,7 +1720,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
     const soft = lights || moodState === 'moving';
-    const lit = homeMoving || (soft && !cssShadows.matches);
     if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     else if (descending) embers.step(0, canvas.clientWidth, canvas.clientHeight, true, true);
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
@@ -1582,10 +1732,24 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       delveIn = Math.min(1, delveIn + dt / DELVE_IN_S);
       dirty = true;
     }
-    const changed = measure() || dirty || lit || fading || !!warming;
-    if (!changed && ((still && !soft) || now - last < 33)) return;
+    // What must be drawn now: the UI's shadows and fills moving with it, the
+    // start page's scene, a dialog's dimming, the scene sinking or swinging,
+    // Delve's parts coming in. Lights, a mood easing and colours changing
+    // under the UI are slow enough for 30fps on every screen: a right
+    // answer's reveal (its light, its fills and glows easing to green and
+    // gold) would otherwise redraw this pass every frame, along with the
+    // effects overlay's own.
+    const measured = measure();
+    // A colour measured now isn't measured as changed again (measure() takes
+    // it as drawn), and a light or mood easing may stop in a frame held back:
+    // either is owed a frame, at the 30fps pace.
+    if (measured || soft) owed = true;
+    if (drawnSlowly && now - last < 1000) return;
+    const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
+    if (!urgent && ((still && !owed) || now - last < 33)) return;
     last = now;
     dirty = false;
+    owed = false;
     draw();
   }
 
@@ -1604,7 +1768,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // redrawn 30 times a second for as long as the page is open. The grain is
   // per CSS px anyway, the embers are soft glows, and the dither still hides
   // every band.
-  const scale = () => (cssShadows.matches && devicePixelRatio > 1 ? 1 / devicePixelRatio : 1);
+  //
+  // And on any screen, never more than MAX_PIXELS: a 4K screen's 8 million
+  // device pixels (or more) made this full-screen pass, drawn under the
+  // effects overlay's own, too much for the GPU in a reveal, and frames came
+  // a tenth of a second late. Up to a 1440p screen's worth it is drawn
+  // exact; past that, about one pixel per CSS px or a little more, which the
+  // crisp fills and shadows (under the UI's own 1px borders) still hold to.
+  const scale = () => {
+    if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
+    const device = canvas.clientWidth * canvas.clientHeight * devicePixelRatio * devicePixelRatio;
+    return device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
+  };
 
   // The canvas is as tall as the viewport with a phone's toolbars hidden, but
   // the scene is laid out for the height with them showing (--view-h in
@@ -1646,7 +1821,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     ro.observe(canvas);
   }
 
+  // An Azurite Vein's embers burn azure, and take their own colours back as it ends.
+  const offVein = onVein((on) => {
+    embers.tint(on ? VEIN_EMBERS : CALM);
+    embers.vein(on);
+  });
   function stop() {
+    offVein();
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
     delveWaiters.delete(buildDelve);

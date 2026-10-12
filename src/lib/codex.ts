@@ -45,9 +45,9 @@
 // read is never written over (lib/keepAside.ts).
 
 import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
-import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
-import { clearAside, makeRoom } from './keepAside.ts';
-import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
+import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
+import { clearAside, openStored } from './keepAside.ts';
+import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -117,8 +117,12 @@ export interface Answer {
   warded?: true;
   /** Delve: asked from this find. */
   find?: FindKind;
-  /** Delve: what a right answer to a find earned ('wards' for a shard that forged one). */
+  /** Delve: what a right answer to a find earned. */
   gained?: ItemKind;
+  /** Delve, an Azurite Vein's strike after the first (missing: strike 1, or no vein). */
+  strike?: number;
+  /** Delve, a vein's cave-in: the wards in hand it buried. */
+  buried?: number;
   /** Delve: a flare burnt on this question. */
   flared?: true;
   /** Delve, on a cave-in or together: lives it took and wards that broke in their place (otherwise see answerLives). */
@@ -185,6 +189,10 @@ export interface Encounter {
     lost?: { lives: number; wards: number };
     /** What a right answer to the find earned. */
     gained?: ItemKind;
+    /** An Azurite Vein's strike after the first. */
+    strike?: number;
+    /** A vein's cave-in: the wards in hand it buried. */
+    buried?: number;
     /** A flare burnt on the question. */
     flared?: true;
     /** A run together. */
@@ -215,8 +223,11 @@ export const RECENT = 100;
 
 export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, fooled: {}, streak: 0, best: 0, fastest: null, byDepth: {} });
 
-const noTally = (): Tally => ({ n: 0, ok: 0 });
-const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
+export const noTally = (): Tally => ({ n: 0, ok: 0 });
+export const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
+
+/** A vein's later strike, or a haul it buried: a small whole number (VEIN_MAX_STRIKES at most). */
+const isStrike = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= VEIN_MAX_STRIKES;
 
 /**
  * The encounter a reveal means for this device, or null when there is none.
@@ -239,6 +250,8 @@ export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, m
       ...(r.warded ? { warded: true as const } : {}),
       ...(r.caveIn && r.lost ? { lost: { lives: r.lost.lives, wards: r.lost.wards } } : {}),
       ...(r.gained ? { gained: r.gained } : {}),
+      ...((q.strike ?? 1) > 1 ? { strike: q.strike } : {}),
+      ...(r.buried ? { buried: r.buried } : {}),
       ...(q.flared ? { flared: true as const } : {}),
       ...(me && !hotSeat ? { who: me } : {}),
     };
@@ -383,6 +396,8 @@ export function record(c: Codex, e: Encounter): Codex {
     ...(warded ? { warded: true as const } : {}),
     ...(dv?.find ? { find: dv.find } : {}),
     ...(dv?.gained && a.ok ? { gained: dv.gained } : {}),
+    ...(dv?.strike ? { strike: dv.strike } : {}),
+    ...(dv?.buried && !a.ok ? { buried: dv.buried } : {}),
     ...(dv?.flared ? { flared: true as const } : {}),
     ...(dv?.lost && !a.ok ? { lives: lives, wards: wardsBroke } : {}),
     ...(dv?.blasted ? { blasted: true as const } : {}),
@@ -478,6 +493,8 @@ export function parseCodex(raw: string | null): Codex | null {
         ...(a.warded === true && !a.ok ? { warded: true as const } : {}),
         ...(d && isFind(a.find) ? { find: a.find } : {}),
         ...(d && a.ok && ITEM_KINDS.includes(a.gained as ItemKind) ? { gained: a.gained as ItemKind } : {}),
+        ...(d && a.find === 'azurite' && isStrike(a.strike) ? { strike: a.strike as number } : {}),
+        ...(d && !a.ok && a.find === 'azurite' && isStrike(a.buried) ? { buried: a.buried as number } : {}),
         ...(d && a.flared === true ? { flared: true as const } : {}),
         ...(d && !a.ok && isLoss(a.lives) && isLoss(a.wards) ? { lives: a.lives as number, wards: a.wards as number } : {}),
         ...(d && a.blasted === true ? { blasted: true as const } : {}),
@@ -522,16 +539,69 @@ function write(c: Codex): boolean {
   }
 }
 
-/** Adds an encounter to the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
-export function recordEncounter(e: Encounter) {
-  const raw = tryReadStored(CODEX);
-  if (raw === undefined) return;
+/** Changes the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
+function update(change: (c: Codex) => Codex) {
   // The first time, it starts from the old name's (left as it is).
-  const stored = parseCodex(storedRaw(raw));
-  if (raw && !stored && !makeRoom(CODEX, raw, CODEX_VERSION)) return;
-  const prev = stored ?? emptyCodex();
-  const next = record(prev, e);
+  const opened = openStored(CODEX, CODEX_VERSION, (raw) => parseCodex(storedRaw(raw)));
+  if (!opened) return;
+  const prev = opened.was ?? emptyCodex();
+  const next = change(prev);
   if (next !== prev) write(next);
+}
+
+/** Adds an encounter to the stored codex. */
+export function recordEncounter(e: Encounter) {
+  update((c) => record(c, e));
+}
+
+/**
+ * Items met outside a game (today's unique on the start page, and in "Find
+ * the art" a wrong pick, which the reveal names): seen, no answer counted.
+ */
+export function recordSeen(at: number, mode: QuestionMode, ids: string[]) {
+  // (Difficulty and race only count with an answer.)
+  update((c) => ids.reduce((x, itemId) => record(x, { at, itemId, mode, difficulty: 'custom', race: false }), c));
+}
+
+// ---- practice ----------------------------------------------------------
+
+/**
+ * Answers to the start page's practice questions: only how many were
+ * right. They find no item and touch nothing in the codex (answers to be
+ * had without end, they'd fill it without a game). Stored apart from it,
+ * so a build from before them, writing the codex, can't drop them.
+ */
+const PRACTICE = 'practice';
+export const PRACTICE_KEY = storeKey(PRACTICE);
+const PRACTICE_VERSION = 1;
+
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+
+/** A stored practice tally, or null when there is none or it can't be read (another build's, or damaged). */
+function parsePractice(raw: string | null): Tally | null {
+  if (!raw) return null;
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (!isObj(v) || v.v !== PRACTICE_VERSION || !isCount(v.n) || !isCount(v.ok) || v.ok > v.n) return null;
+    return { n: v.n, ok: v.ok };
+  } catch {
+    return null;
+  }
+}
+
+/** The stored practice tally (none when there is none, or it can't be read). */
+export function loadPractice(): Tally {
+  return parsePractice(readStored(PRACTICE)) ?? noTally();
+}
+
+/**
+ * Adds a practice answer (the start page's) to its tally, as the codex is
+ * written: never over one a newer build wrote, and anything else unreadable
+ * kept aside first. When storage is full, the answer is let go.
+ */
+export function recordPractice(ok: boolean) {
+  const opened = openStored(PRACTICE, PRACTICE_VERSION, parsePractice);
+  if (opened) writeStored(PRACTICE, JSON.stringify({ v: PRACTICE_VERSION, ...add(opened.was ?? noTally(), ok) }));
 }
 
 /**
@@ -540,6 +610,8 @@ export function recordEncounter(e: Encounter) {
  * meanwhile under the old name, is never taken up.
  */
 export function resetCodex() {
+  removeStored(PRACTICE);
+  clearAside(PRACTICE);
   for (const name of [CODEX, LEGACY]) {
     removeStored(name);
     clearAside(name);

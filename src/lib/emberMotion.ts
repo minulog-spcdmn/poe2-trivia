@@ -7,9 +7,9 @@
 
 import { endgameAt, onBackdrops, zones } from './backdrops.ts';
 import { magmaCoolingOf } from './descent.ts';
-import { motionOf, SURFACE_MOTION, type EmberMotion, type ZoneMotion } from './emberProfiles.ts';
+import { motionOf, SURFACE_MOTION, VEIN_MOTION, type EmberMotion, type ZoneMotion } from './emberProfiles.ts';
 
-export { PROFILES, SURFACE_MOTION, ZONE_MOTION, motionOf, profileOf, tweakOf, type EmberMotion, type Spawn, type ZoneMotion } from './emberProfiles.ts';
+export { PROFILES, SURFACE_MOTION, VEIN_MOTION, ZONE_MOTION, motionOf, profileOf, tweakOf, type EmberMotion, type Spawn, type ZoneMotion } from './emberProfiles.ts';
 
 /**
  * Every motion an ember can hold (it keeps the index of its own): two to
@@ -52,6 +52,9 @@ onBackdrops(() => {
   ringFor.fill(-1);
 });
 
+/** The motion (MOTIONS' index) every ember takes while an Azurite Vein is dug, whatever the stratum. */
+export const VEIN = MOTIONS.push({ ...VEIN_MOTION }) - 1;
+
 /** The slot stratum `k` (-1 the start page) takes its motions from. */
 function slotOf(k: number): number {
   if (k < 0) return 0;
@@ -83,7 +86,8 @@ export function zoneMotionOf(k: number): ZoneMotion {
  * far as its stratum's magma (magmaCoolingOf in lib/descent.ts), so only
  * in a stratum whose look has magma that goes out (the Magma Fissure's),
  * never in one that merely moves its embers the magma's way: in step with
- * its hall as the scene turns out of it, and all the way once the scene is
- * past it. Only a motion with `cool` slows for it (the magma's).
+ * its hall as the scene turns out of it (half way at the zone's 10th depth,
+ * the rest as the next arrives), and all the way once the scene is past it.
+ * Only a motion with `cool` slows for it (the magma's).
  */
 export const cooling = (burn: number, stratum: number, turn: number): number => magmaCoolingOf(burn, stratum, turn);

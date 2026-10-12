@@ -330,7 +330,8 @@ export const MOMENTS: Record<Sfx, Moment> = {
   // Delve, as picked on the Delve sound page.
   stratum: {
     soften: 6,
-    varyPitch: 0.02,
+    // Never nudged: a new zone's name lands on its second swell, so it must come at the same moment every time.
+    varyPitch: 0,
     varyGain: 1,
     layers: [
       { file: 'defeat-5', gain: -34, rate: 0.59, delay: 0, hp: 107, lp: 5917, send: 0.85 },
@@ -413,6 +414,73 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'burn-crackle', gain: -33, rate: 0.9, delay: 120, hp: 250, lp: 11000, send: 0.6 },
     ],
   },
+  // A new zone's title card (components/zonecard), under the zone's own sound
+  // ('stratum') and its compressor: a stone tap as each letter of the name
+  // lands; as it locks, a reversed whoosh whose peak meets a low thump and a
+  // metal ring on the swell's first strong note; a chime on its loudest; and
+  // as the name leaves, its place's own: embers and crackle, ice ringing,
+  // air, or a dark hit falling away.
+  zoneTick: {
+    soften: 2,
+    varyPitch: 0.06,
+    varyGain: 2,
+    layers: [{ file: 'click-5', gain: -42, rate: 1.7, delay: 0, hp: 900, lp: 6000, send: 0.35 }],
+  },
+  zoneLock: {
+    soften: 4,
+    varyPitch: 0,
+    varyGain: 1,
+    layers: [
+      { file: 'layer-air-3', gain: -34, rate: 0.8, delay: 0, hp: 300, lp: 5000, send: 0.6 },
+      { file: 'layer-sub-3', gain: -28, rate: 0.6, delay: 130, hp: 20, lp: 500, send: 0.5 },
+      { file: 'layer-metal-2', gain: -40, rate: 2.2, delay: 210, hp: 1200, lp: 9000, send: 0.7 },
+    ],
+  },
+  zoneSting: {
+    soften: 6,
+    varyPitch: 0,
+    varyGain: 1,
+    layers: [
+      { file: 'reveal-4', gain: -38, rate: 1.3, delay: 0, hp: 1500, lp: 12000, send: 0.85 },
+      { file: 'correct-6', gain: -44, rate: 1.5, delay: 120, hp: 116, lp: 12000, send: 0.95 },
+    ],
+  },
+  zoneBurn: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'burn-embers', gain: -38, rate: 0.8, delay: 0, hp: 200, lp: 7000, send: 0.6 },
+      { file: 'burn-crackle', gain: -42, rate: 0.7, delay: 80, hp: 300, lp: 6000, send: 0.5 },
+    ],
+  },
+  zoneShatter: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'layer-metal-2', gain: -40, rate: 2.4, delay: 0, hp: 1500, lp: 12000, send: 0.8 },
+      { file: 'correct-7', gain: -44, rate: 1.4, delay: 40, hp: 2000, lp: 12000, send: 0.85 },
+    ],
+  },
+  zoneDrift: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'layer-air-3', gain: -40, rate: 0.6, delay: 0, hp: 150, lp: 2500, send: 0.9 },
+      { file: 'hover-1', gain: -44, rate: 0.6, delay: 100, hp: 200, lp: 3000, send: 0.9 },
+    ],
+  },
+  zoneVoid: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'defeat-3', gain: -42, rate: 0.7, delay: 0, hp: 60, lp: 2000, send: 0.9 },
+      { file: 'layer-sub-5', gain: -40, rate: 0.7, delay: 150, hp: 20, lp: 400, send: 0.6 },
+    ],
+  },
   // Each deeper depth, as its cards are dealt and the scene sinks: a slow breath
   // falling away and a low thud.
   plunge: {
@@ -441,7 +509,9 @@ export const MOMENTS: Record<Sfx, Moment> = {
     ],
   },
   // An Azurite Ward breaking in place of a life: a high bell struck and cut,
-  // a low thump, a ring of metal and a shimmer as the crystal bursts.
+  // a low thump, a ring of metal and a shimmer as the crystal bursts. Its
+  // timing is mirrored by the azurite smoke at the screen's edges (edgeWard
+  // in lib/fx/effects.ts): retune them together (tests/wardSmoke.test.ts).
   wardShatter: {
     soften: 3,
     varyPitch: 0.045,

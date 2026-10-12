@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HOST_ODDS, answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
+import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
 import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
-import { joinable, makesWay, nextRole, wanted } from '../src/bot/wanted.ts';
+import { joinable, makesWay, nextRole, notJoinable, waitingAlone, wanted, watchable } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 import { afterHosting, afterVisit, appeal, hesitation, joinsAfter, keenTo, opensRoom, playsOn, settlesFor, sourNow, urgeToHost } from '../src/bot/choice.ts';
@@ -17,7 +18,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5 };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -251,6 +252,34 @@ test('a room can be joined only in its lobby, with a seat free', () => {
   assert.ok(!joinable({ ...room('lobby'), v: undefined }));
 });
 
+test('a room that can\'t be joined says why, for the log', () => {
+  assert.equal(notJoinable(room('lobby')), null);
+  assert.equal(notJoinable(room('question')), 'mid-game');
+  assert.equal(notJoinable(room('locked')), 'locked');
+  assert.equal(notJoinable(room('lobby', 12)), 'full');
+  assert.match(notJoinable({ ...room('lobby'), v: PROTOCOL_VERSION - 1 })!, new RegExp(`protocol ${PROTOCOL_VERSION - 1}`));
+});
+
+test('a room can be watched in the lobby or mid-game, while a spectator seat is free', () => {
+  assert.ok(watchable(room('lobby')));
+  assert.ok(watchable(room('question')));
+  assert.ok(watchable(room('lobby', 12)));
+  assert.ok(!watchable(room('locked')));
+  assert.ok(!watchable({ ...room('question'), spectators: 8 }));
+  assert.ok(!watchable({ ...room('question'), v: PROTOCOL_VERSION - 1 }));
+  assert.equal(notJoinable(room('question'), true), null);
+  assert.equal(notJoinable({ ...room('question'), spectators: 8 }, true), 'no seat left to watch from');
+});
+
+test("someone waiting alone in their own lobby is the bot's to keep company first", () => {
+  const ours = new Set(['OURS22']);
+  assert.ok(waitingAlone(room('lobby', 1), ours));
+  // Company already, mid-game, or one of our own: not waiting alone.
+  assert.ok(!waitingAlone(room('lobby', 2), ours));
+  assert.ok(!waitingAlone(room('question', 1), ours));
+  assert.ok(!waitingAlone({ ...room('lobby', 1), code: 'OURS22' }, ours));
+});
+
 test('room 1 opens only when no room is listed', () => {
   assert.ok(wanted(1, []));
   assert.ok(!wanted(1, [room('question')]));
@@ -415,7 +444,9 @@ test('picking a card mostly takes seconds, now and then a while longer, never pa
   const times = Array.from({ length: 4000 }, () => pickDelay({ ...plain, pace: 1.35 }, rng));
   assert.ok(Math.max(...times) < 30000, `${Math.max(...times)}`);
   const long = times.filter((t) => t > 5200).length / times.length;
-  assert.ok(long > 0.08 && long < 0.25, `${long}`);
+  assert.ok(long > 0.08 && long < 0.25, `${long}`);  // A single card (a deathmatch's): taken straight away.
+  const one = Array.from({ length: 400 }, () => pickDelay(plain, rng, 1));
+  assert.ok(Math.max(...one) <= 1100 && Math.min(...one) >= 400);
 });
 
 test('misclicks are rare, likelier for the hasty', () => {

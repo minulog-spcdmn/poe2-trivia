@@ -11,7 +11,9 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "bot": "node scripts/room-bot.mjs",
     "fetch-data": "node scripts/fetch-data.mjs",
+    "fetch-stats": "node scripts/fetch-stats.mjs",
     "looks": "node scripts/looks.mjs",
+    "bake-icons": "node scripts/bake-icons.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "devDependencies": {
@@ -27,6 +29,7 @@
   "dependencies": {
     "@fontsource/cinzel": "^5.3.0",
     "@fontsource/eb-garamond": "^5.3.0",
+    "obscenity": "^0.4.6",
     "peerjs": "^1.5.5"
   }
 }

@@ -1,5 +1,5 @@
 // Delve together is co-op: the team votes for a card, everyone standing
-// answers one shared question per depth (a wrong pick strikes its option for
+// answers one shared question per offer (a wrong pick strikes its option for
 // everyone, at a life), items stay each player's but go off for the team, and
 // a player with lives to spare can bring back a teammate who perished. The run
 // ends when nobody stands; the team's depth is where the last of them perished.
@@ -14,6 +14,9 @@ import {
   FLARE_MS,
   REVIVE_FROM,
   VOTE_WINDOW_MS,
+  ZONE_DESCENT_MS,
+  awaitingReturn,
+  dealIn,
   delveStandings,
   delveTeam,
   expectedVoters,
@@ -31,12 +34,12 @@ import {
   standingIds,
   teamDepth,
   teamItemReady,
-  veinWindow,
   voteClosesAt,
   voteDone,
   wardsOf,
   type FindKind,
   type Inventory,
+  haulOf,
 } from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, ActionError, Engine, createGame, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import {
@@ -57,7 +60,7 @@ import { parseClientMsg } from '../src/lib/protocol.ts';
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 const right = (q: Question) => q.options.indexOf(q.itemId);
 /** The wrong options of a question, by index. */
@@ -184,6 +187,85 @@ test('otherwise the vote closes six seconds after the first vote', () => {
   assert.deepEqual(h.s.delve!.missed, { p0: 1, p1: 0, p2: 1 });
 });
 
+test("going down into a new zone, the team's cards are dealt as the plunge lands: a vote cast sooner opens its window no sooner", () => {
+  const h = team(3, { depth: 10 });
+  const q = h.ask();
+  h.pickAs('p0', right(q));
+  assert.equal(h.s.phase, 'reveal');
+  h.next();
+  assert.equal(h.s.round, 11);
+  const at = h.clock.now + ZONE_DESCENT_MS;
+  assert.equal(h.s.delve!.dealAt, at);
+  assert.equal(dealIn(h.s, h.clock.now), ZONE_DESCENT_MS);
+  // A screen that shows the cards sooner (none should) can't cut the others' time short.
+  h.clock.now += 1000;
+  h.vote('p1');
+  assert.equal(h.s.delve!.voteFrom, at);
+  assert.equal(voteClosesAt(h.s), at + VOTE_WINDOW_MS);
+  // Nor the plunge: every vote in, the vote closes as the cards are dealt (not before, nor the window's six seconds on).
+  const armed = expireKey(h.s, expireIn(h.s, h.clock.now));
+  h.vote('p0');
+  h.vote('p2');
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(voteDone(h.s, h.clock.now), false);
+  assert.equal(voteClosesAt(h.s), at);
+  assert.equal(expireIn(h.s, h.clock.now), at - h.clock.now);
+  assert.notEqual(expireKey(h.s, expireIn(h.s, h.clock.now)), armed, "the host's timer is set again, for the deal");
+  h.clock.now = at - 200;
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'choosing', 'not a moment before the deal');
+  h.clock.now = at;
+  assert.equal(voteDone(h.s, h.clock.now), true);
+  assert.equal(expireIn(h.s, h.clock.now), 0);
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'question');
+  assert.equal(dealIn(h.s, h.clock.now), 0);
+  // The next depth's cards are dealt at once, and its first vote opens the window then.
+  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+  h.pickAs('p0', right(h.s.question!));
+  h.next();
+  assert.equal(h.s.round, 12);
+  assert.equal(h.s.delve!.dealAt, undefined);
+  h.vote('p1');
+  assert.equal(h.s.delve!.voteFrom, h.clock.now);
+});
+
+test('going down into a new zone, a vote still waiting for someone as the cards are dealt runs its window from the deal, and closes the moment the last vote comes', () => {
+  const h = team(3, { depth: 10 });
+  h.pickAs('p0', right(h.ask()));
+  h.next();
+  const at = h.s.delve!.dealAt!;
+  h.vote('p0');
+  h.vote('p1');
+  assert.equal(voteClosesAt(h.s), at + VOTE_WINDOW_MS, 'p2 is yet to vote');
+  h.clock.now = at + 2000;
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'choosing');
+  h.vote('p2');
+  assert.equal(h.s.phase, 'question');
+});
+
+test('going down into a new zone, quick votes from all it waits for (one perished) close nothing before the deal, nor does someone going', () => {
+  const h = team(3, { depth: 10 });
+  h.pickAs('p0', right(h.ask()));
+  h.next();
+  const at = h.s.delve!.dealAt!;
+  // p0 perished: the vote waits for p1 and p2 alone, who vote mid-plunge.
+  h.lives({ p0: 0 });
+  h.clock.now += 1300;
+  h.vote('p1');
+  h.clock.now += 400;
+  h.vote('p2');
+  assert.deepEqual(expectedVoters(h.s, h.clock.now), ['p1', 'p2']);
+  assert.equal(h.s.phase, 'choosing');
+  // Someone going away mid-plunge settles nothing either.
+  h.act({ type: 'connection', playerId: 'p2', connected: false });
+  assert.equal(h.s.phase, 'choosing');
+  h.clock.now = at;
+  h.act({ type: 'expire' });
+  assert.equal(h.s.phase, 'question');
+});
+
 test('nobody votes, nothing is picked: the cards wait for as long as it takes', () => {
   const h = team(3);
   const offered = h.s.offered;
@@ -298,35 +380,41 @@ test('only those standing vote, for a card on offer, as themselves', () => {
   loudly(() => solo.vote('p0'), /nothing to vote/);
 });
 
-test('after a host reload, a vote waits through the grace for those it cut off, and a question is set aside', () => {
+test("after a host reload, the question's clock holds still, and the next vote waits through the grace for those it cut off", () => {
   const h = team(3);
-  const offered = h.s.offered;
   const q = h.ask();
   h.pickAs('p1', wrongs(q)[0]);
   assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
   for (const id of ['p1', 'p2']) h.act({ type: 'connection', playerId: id, connected: false });
+  const before = h.s;
   h.act({ type: 'resumed' });
-  // The question someone cut off may have answered is set aside; the same cards come back.
-  assert.equal(h.s.phase, 'choosing');
-  assert.equal(h.s.question, null);
-  assert.deepEqual(h.s.offered, offered);
-  assert.deepEqual(h.s.recentCategories, [], 'its pick is taken back');
-  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES, 'a wrong answer given on it costs nothing');
-  assert.equal(h.s.delve!.snapshot, undefined, 'its snapshot is gone with it');
-  assert.deepEqual(delveNotices({ ...h.s, phase: 'question', question: q }, h.s), [{ kind: 'setAside', playerId: '' }]);
-  silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), /late/);
-  // The vote waits for those cut off until the grace ends.
+  // The question someone cut off may have been answering holds still; what was answered on it stands.
+  assert.equal(h.s.phase, 'question');
+  assert.equal(h.s.question!.askedAt, q.askedAt);
+  assert.equal(h.s.question!.deadline, null);
+  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1, 'a wrong answer given on it still costs');
+  assert.deepEqual(delveNotices(before, h.s), [{ kind: 'paused' }]);
+  silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, 'p0'), /early/);
   assert.deepEqual([...h.s.delve!.excused].sort(), ['p1', 'p2']);
+  assert.equal(awaitingReturn(h.s, h.clock.now), true, 'its clock waits for them');
+  // The art back on screens, it carries on and is cleared.
+  h.act({ type: 'clock', askedAt: q.askedAt });
+  h.pickAs('p0', right(q));
+  h.act({ type: 'next' });
+  assert.equal(h.s.phase, 'choosing');
+  // The vote waits for those cut off until the grace ends.
   assert.deepEqual(expectedVoters(h.s, h.clock.now), ['p0', 'p1', 'p2']);
   h.vote('p0');
   assert.equal(h.s.phase, 'choosing');
-  assert.equal(voteClosesAt(h.s), h.clock.now + DELVE_RESUME_GRACE_MS);
+  assert.equal(voteClosesAt(h.s), h.s.delve!.graceUntil);
   // One comes back and votes; the other never does, and the grace runs out.
   h.act({ type: 'join', playerId: 'p1', name: 'back', returning: true }, 'p1');
   assert.deepEqual(h.s.delve!.excused, ['p2']);
   h.vote('p1');
   assert.equal(h.s.phase, 'choosing');
-  h.clock.now += DELVE_RESUME_GRACE_MS;
+  assert.equal(awaitingReturn(h.s, h.clock.now), true);
+  h.clock.now = h.s.delve!.graceUntil;
+  assert.equal(awaitingReturn(h.s, h.clock.now), false);
   assert.equal(voteDone(h.s, h.clock.now), true);
   h.act({ type: 'expire' });
   assert.equal(h.s.phase, 'question');
@@ -368,6 +456,48 @@ test('everyone standing answers the one question: a wrong pick strikes its optio
   assert.equal(h.s.round, 2);
   assert.equal(h.s.phase, 'choosing');
   assert.deepEqual(h.s.delve!.votes, {});
+});
+
+test("the team's streak: depths cleared in a row with nobody missing, a ward's save, a blasted question's miss or a time-out ending it", () => {
+  const h = team(3);
+  /** One depth cleared by p2, after `miss` (if any) picked wrong. */
+  const depth = (miss?: string) => {
+    const q = h.ask();
+    if (miss) h.pickAs(miss, wrongs(q)[0]);
+    h.pickAs('p2', right(q));
+    const r = h.s.reveal!;
+    h.next();
+    return [r.teamStreak, r.teamLost];
+  };
+  assert.deepEqual([depth(), depth(), depth()], [
+    [1, undefined],
+    [2, undefined],
+    [3, undefined],
+  ]);
+  assert.equal(h.s.delve!.teamStreak, 3);
+  // A ward takes p1's loss: still a miss, though the depth is cleared and p2's own streak goes on.
+  h.give('p1', { wards: 1 });
+  assert.deepEqual(depth('p1'), [0, 3]);
+  assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES);
+  assert.equal(h.s.delve!.teamStreak, undefined);
+  assert.equal(h.s.players.find((p) => p.id === 'p2')!.streak, 4);
+  assert.equal(h.s.delve!.bestTeamStreak, 3);
+  assert.deepEqual(depth(), [1, undefined]);
+  // A miss on a question dynamite blasted away counts at its depth.
+  h.give('p0', { dynamite: 1 });
+  const q = h.ask();
+  h.pickAs('p1', wrongs(q)[0]);
+  h.act({ type: 'blast', askedAt: q.askedAt }, 'p0');
+  h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+  h.pickAs('p2', right(h.s.question!));
+  assert.deepEqual([h.s.reveal!.teamStreak, h.s.reveal!.teamLost], [0, 1]);
+  h.next();
+  // Nobody missing at the next depth, it starts again; a time-out ends it.
+  assert.deepEqual(depth(), [1, undefined]);
+  h.ask();
+  h.timeOut();
+  assert.deepEqual([h.s.reveal!.teamStreak, h.s.reveal!.teamLost], [0, 1]);
+  assert.equal(h.s.delve!.bestTeamStreak, 3);
 });
 
 test('no answer before the clock, none after it, none from the perished', () => {
@@ -436,7 +566,7 @@ test('the time-out costs everyone standing who never answered, the away included
   );
 });
 
-test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, and a wrong one caves in for two, wards first', () => {
+test('an Azurite Vein: the first right pick digs out a whole ward, however late, and a wrong one caves in for two, wards first', () => {
   const h = team(3, { depth: 20 });
   h.give('p1', { wards: 2 });
   h.give('p2', { wards: 1 });
@@ -446,7 +576,6 @@ test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, an
   assert.deepEqual([livesOf(h.s, 'p1'), wardsOf(h.s, 'p1')], [DELVE_LIVES, 0], 'both losses warded');
   h.pickAs('p2', w2);
   assert.deepEqual([livesOf(h.s, 'p2'), wardsOf(h.s, 'p2')], [DELVE_LIVES - 1, 0], 'one warded, one a life');
-  h.clock.now = q.clockAt! + veinWindow(findTimer('azurite', 20));
   h.pickAs('p0', right(q));
   const r = h.s.reveal!;
   assert.equal(r.winnerId, 'p0');
@@ -456,14 +585,17 @@ test('an Azurite Vein: the first right pick mines the ward (fast) or a shard, an
     { playerId: 'p1', lives: 0, wards: 2, timedOut: false },
     { playerId: 'p2', lives: 1, wards: 1, timedOut: false },
   ]);
-  assert.equal(wardsOf(h.s, 'p0'), 1);
+  // In hand, for the team's way out.
+  assert.deepEqual([wardsOf(h.s, 'p0'), haulOf(h.s, 'p0')], [0, 1]);
 
-  // Slower: a shard. Timed out: a cave-in for each who never answered.
+  // On the clock's last second: still a whole ward. Timed out: a cave-in for each who never answered.
   const slow = team(2, { depth: 20 });
   const sq = slow.ask('azurite');
-  slow.clock.now = sq.clockAt! + veinWindow(findTimer('azurite', 20)) + 1;
+  slow.clock.now = sq.deadline! - 500;
   slow.pickAs('p0', right(sq));
-  assert.equal(slow.s.reveal!.gained, 'shards');
+  assert.equal(slow.s.reveal!.gained, 'wards');
+  // Too little light left to dig on: the dig ends there, its ward into the pack at the reveal.
+  assert.deepEqual([slow.s.reveal!.banked, haulOf(slow.s, 'p0'), wardsOf(slow.s, 'p0')], [1, 0, 1]);
   const late = team(2, { depth: 20 });
   late.ask('azurite');
   late.timeOut();
@@ -503,7 +635,7 @@ test('a Dynamite Cache: each wrong pick blows up one thing from the picker\'s ow
 
 test('a Dynamite Cache timed out: each who never answered loses a life and one thing; one with nothing, or who perishes, only the life', () => {
   const h = team(3, { depth: 20 });
-  h.give('p0', { shards: 1 });
+  h.give('p0', { flares: 1 });
   h.give('p2', { flares: 2, dynamite: 1 });
   h.lives({ p2: 1 });
   const q = h.ask('dynamite');
@@ -515,13 +647,13 @@ test('a Dynamite Cache timed out: each who never answered loses a life and one t
   assert.equal(r.timedOut, true);
   assert.deepEqual(r.hits, [
     { playerId: 'p1', lives: 1, wards: 0, timedOut: false },
-    { playerId: 'p0', lives: 1, wards: 0, timedOut: true, blown: 'shards' },
+    { playerId: 'p0', lives: 1, wards: 0, timedOut: true, blown: 'flares' },
     { playerId: 'p2', lives: 1, wards: 0, timedOut: true },
   ]);
   assert.deepEqual(inventoryOf(h.s, 'p0'), NONE);
   assert.equal(livesOf(h.s, 'p2'), 0);
   assert.deepEqual(inventoryOf(h.s, 'p2'), NONE, 'perishing drops the pack anyway');
-  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p0', item: 'shards' }]);
+  assert.deepEqual(itemsBlown(before, h.s), [{ playerId: 'p0', item: 'flares' }]);
 });
 
 test("a find is offered while anyone standing has room for its item, and pays whoever clears it", () => {
@@ -549,7 +681,7 @@ test("a find is offered while anyone standing has room for its item, and pays wh
 test('perishing drops everything a player carries, for good', () => {
   const h = team(2);
   h.lives({ p1: 1 });
-  h.give('p1', { flares: 2, dynamite: 1, shards: 1 });
+  h.give('p1', { flares: 2, dynamite: 1 });
   const before = h.s;
   const q = h.ask();
   h.pickAs('p1', wrongs(q)[0]);
@@ -560,7 +692,6 @@ test('perishing drops everything a player carries, for good', () => {
     [
       ['flares', 'used', 0],
       ['dynamite', 'used', 0],
-      ['shards', 'used', 0],
     ],
   );
   // Brought back, they start over with nothing.
@@ -731,12 +862,42 @@ test('lives stay consistent through revives: lost, given and received, and a sec
 
 // ---- the end -----------------------------------------------------------------
 
+test('together, only a question cleared goes a depth deeper: all wrong or a time-out is followed by a fresh offer at the same depth', () => {
+  const h = team(3);
+  // All wrong: nobody cleared it.
+  let q = h.ask();
+  const [w0, w1, w2] = wrongs(q);
+  h.pickAs('p0', w0);
+  h.pickAs('p1', w1);
+  h.pickAs('p2', w2);
+  assert.equal(h.s.phase, 'reveal');
+  h.next();
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(h.s.round, 1);
+  // A time-out: the same.
+  h.ask();
+  h.timeOut();
+  h.next();
+  assert.equal(h.s.round, 1);
+  // A teammate's miss, then a right answer: cleared.
+  q = h.ask();
+  h.pickAs('p0', wrongs(q)[0]);
+  h.pickAs('p1', right(q));
+  h.next();
+  assert.equal(h.s.round, 2);
+});
+
 test('the run ends when nobody stands: no winner, one depth for the team, where the last of them perished', () => {
   const h = team(3);
   h.lives({ p0: 1, p1: 2, p2: 3 });
   for (let depth = 1; depth <= 3; depth++) {
     h.ask();
     h.timeOut();
+    h.next();
+    if (h.s.phase === 'over') break;
+    // A time-out clears nothing: the next question is asked at the same depth, and p2 clears it.
+    assert.equal(h.s.round, depth);
+    h.pickAs('p2', right(h.ask()));
     h.next();
   }
   assert.equal(h.s.phase, 'over');
@@ -951,13 +1112,13 @@ test('a find cleared by a winner with no room for it goes to a standing teammate
   assert.deepEqual([h.s.reveal!.gained, h.s.reveal!.gainedBy], ['flares', 'p2']);
   assert.deepEqual([flaresOf(h.s, 'p0'), flaresOf(h.s, 'p1'), flaresOf(h.s, 'p2')], [0, 3, 1]);
   assert.deepEqual(inventoryChanges(before, h.s), [{ playerId: 'p2', item: 'flares', change: 'gained', left: 1 }]);
-  // An Azurite Vein answered fast by someone with every ward: a ward for a teammate with room.
+  // An Azurite Vein answered by someone with every ward: a ward for a teammate with room.
   const v = team(3, { depth: 20 });
   v.give('p0', { wards: 3 });
   v.give('p1', { wards: 3 });
   const qv = v.ask('azurite');
   v.pickAs('p0', right(qv));
-  assert.deepEqual([v.s.reveal!.gained, v.s.reveal!.gainedBy, wardsOf(v.s, 'p2')], ['wards', 'p2', 1]);
+  assert.deepEqual([v.s.reveal!.gained, v.s.reveal!.gainedBy, haulOf(v.s, 'p2')], ['wards', 'p2', 1]);
 });
 
 test('a host reload keeps the votes cast: those cut off are marked away and excused, and the vote waits for them', () => {
@@ -973,7 +1134,7 @@ test('a host reload keeps the votes cast: those cut off are marked away and excu
   assert.equal(h.s.phase, 'choosing');
   assert.deepEqual(h.s.delve!.votes, { p0: card, p1: card });
   assert.deepEqual(h.s.delve!.excused, ['p1', 'p2']);
-  assert.equal(h.s.used.length, used, 'no question drawn and set aside');
+  assert.equal(h.s.used.length, used, 'no question drawn');
   assert.equal(voteClosesAt(h.s), h.clock.now + DELVE_RESUME_GRACE_MS);
   assert.equal(expireIn(h.s, h.clock.now), DELVE_RESUME_GRACE_MS);
   // Both back a second later: the vote closes by its own window again, and the host's timer is set again for it.
@@ -989,7 +1150,7 @@ test('a host reload keeps the votes cast: those cut off are marked away and excu
   assert.equal(h.s.question!.category, card);
 });
 
-test("the host's own answers are held back for the guests standing, never past the clock's 0 or a Vein's fast window", () => {
+test("the host's own answers are held back for the guests standing, never past the clock's 0", () => {
   const h = team(3, { depth: 20 });
   h.lives({ p2: 0 });
   assert.deepEqual(racerIds(h.s), ['p0', 'p1'], 'those who perished race for nothing');
@@ -999,14 +1160,11 @@ test("the host's own answers are held back for the guests standing, never past t
   assert.equal(hostAnswerHold(h.s, q.deadline! - 100, 150), 100 - HOST_HOLD_MARGIN_MS, 'lands before the flare would burn');
   assert.equal(hostAnswerHold(h.s, q.deadline! - 20, 150), 0);
   assert.equal(hostAnswerHold(h.s, h.clock.now, 0), 0);
-  // An Azurite Vein: before its fast window closes.
+  // An Azurite Vein: no window of its own, only the clock's 0.
   const v = team(2, { depth: 20 });
   const qv = v.ask('azurite');
-  const fastEnd = qv.clockAt! + veinWindow(findTimer('azurite', 20));
-  assert.equal(hostAnswerHold(v.s, fastEnd - 120, 150), 120 - HOST_HOLD_MARGIN_MS);
-  assert.equal(hostAnswerHold(v.s, fastEnd + 10, 150), 150, 'past the window: nothing left to keep');
-  // Held that long, the host's fast answer still mines a ward.
-  v.clock.now = fastEnd - 120 + hostAnswerHold(v.s, fastEnd - 120, 150);
+  assert.equal(hostAnswerHold(v.s, qv.clockAt! + 1000, 150), 150);
+  assert.equal(hostAnswerHold(v.s, qv.deadline! - 100, 150), 100 - HOST_HOLD_MARGIN_MS);
   v.pickAs('p0', right(qv));
   assert.equal(v.s.reveal!.gained, 'wards');
   // A race outside Delve: as it is.

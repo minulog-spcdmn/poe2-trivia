@@ -13,7 +13,9 @@
 <style>
   /* A fixed height, so a phone's toolbars sliding don't resize (and clear)
      the canvas (see --screen-h in app.css). Effects are placed by the
-     elements they play on; the edge glow follows the visible area. */
+     elements they play on; the edge glow follows the visible area. While
+     those elements scroll with the page, it's set in the page instead
+     (lib/fx/core.ts placeCanvas), so it scrolls with them. */
   .fx {
     position: fixed;
     inset: 0;

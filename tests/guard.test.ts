@@ -59,9 +59,9 @@ test('frame guard blocks oversized frames and drops floods', () => {
 
   // Many small frames in a burst (a key held down): a flood, not abuse.
   const burst = new FrameGuard(c.now);
-  const verdicts = Array.from({ length: 100 }, () => burst.check(answer));
+  const verdicts = Array.from({ length: 400 }, () => burst.check(answer));
   const ok = verdicts.filter((v) => v === 'ok').length;
-  assert.ok(ok >= 20 && ok < 100, `accepted ${ok}`);
+  assert.ok(ok >= 20 && ok < 400, `accepted ${ok}`);
   assert.ok(verdicts.every((v) => v !== 'bad'));
 
   // A steady trickle of mid-sized frames runs out of bytes.

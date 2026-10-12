@@ -1,5 +1,6 @@
-// Delve: a game with no settings. Everyone has three lives and each round goes
-// one depth deeper, where the questions get harder, the timer shorter and the
+// Delve: a game with no settings. Everyone has three lives and each question
+// cleared goes one depth deeper (a miss is followed by another question at the
+// same depth), where the questions get harder, the timer shorter and the
 // lockout longer. The rules at a depth are the same in every run, so "depth N"
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
@@ -8,7 +9,7 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, GameState, Player, Preset, Question, Revive } from './game.ts';
+import type { DifficultyRules, Dig, GameState, Player, Preset, Question, Revive } from './game.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -21,7 +22,7 @@ export const DELVE_LIVES = 3;
  * Delve opens with, frozen from its public release: every change to them
  * after that bumps it.
  */
-export const DELVE_RULESET = 1;
+export const DELVE_RULESET = 2;
 
 /** Ten categories, three on offer: a lockout of seven still leaves three to pick from. */
 export const DELVE_MAX_LOCKOUT = 7;
@@ -41,6 +42,17 @@ export const REVIVE_FROM = 2;
 
 /** After the host reloads, players who were cut off get this long to come back before a vote closes without them. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
+
+/**
+ * After the host reloads, a question's clock waits this long at most for
+ * those it cut off who could still answer it (awaitingReturn): enough for a
+ * guest to notice and get back (it tries every 3 s), not a minute to look
+ * the answer up on a question it has seen.
+ */
+export const DELVE_RESUME_CLOCK_MS = 20_000;
+
+/** A question the host's reload held still starts again with at least this long on its clock. */
+export const DELVE_RESUME_MIN_MS = 5_000;
 
 /** Depth as a whole number from 1 (anything odd counts as the surface). */
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) : 1);
@@ -180,7 +192,7 @@ export const VEIL_LEFT_MS = 3000;
  * VEIL_LEFT_MS before the end there too (veilPlan, patches.ts
  * veilSchedule, on the clock game.ts questionClock gives).
  * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS
- * (shorter than any question's, FIND_MIN_TIMER being the least): the engine
+ * (a vein's strike on a lamp burnt low, down to VEIN_MIN_LIGHT): the engine
  * then shows the art plain.
  */
 export function veilSeconds(secs: number, share: number, size: number, tiles = false): number {
@@ -254,6 +266,7 @@ export function delveRules(d: number): DifficultyRules {
     grayscale: 'off',
     mirror: delveCurve('mirror', d),
     lockout: delveLockout(d),
+    twins: depthOf(d),
     ...(gray ? { grayChance: gray } : {}),
     ...(looks ? { lookalikes: looks } : {}),
     ...(more ? { moreFakes: more } : {}),
@@ -265,8 +278,7 @@ export function delveRules(d: number): DifficultyRules {
 /**
  * Special cards found among those on offer: pick one and answer right for an
  * item. An Azurite Vein yields an Azurite Ward (a ward takes a loss in place of
- * a life) to a fast answer and a shard to a slow one (two shards forge a ward);
- * a Flare Cache a flare (it burns by itself as the clock hits 0, for more
+ * a life); a Flare Cache a flare (it burns by itself as the clock hits 0, for more
  * time); a Dynamite Cache dynamite (it blasts the question in play away for
  * a new one at the same depth, at most DELVE_MAX_BLASTS times a depth: by
  * hand, or by itself as the clock hits 0 with no flare to burn, its fuse
@@ -280,15 +292,10 @@ export interface Inventory {
   wards: number;
   flares: number;
   dynamite: number;
-  /**
-   * Azurite shards toward the next ward (two forge one, so never more than
-   * one held), and none at all with DELVE_MAX_WARDS wards (see capShards).
-   */
-  shards: number;
 }
 export type ItemKind = keyof Inventory;
 /** Every item a player can carry. */
-export const ITEM_KINDS: ItemKind[] = ['wards', 'flares', 'dynamite', 'shards'];
+export const ITEM_KINDS: ItemKind[] = ['wards', 'flares', 'dynamite'];
 
 /** Azurite Wards a player can hold at once. */
 export const DELVE_MAX_WARDS = 3;
@@ -296,8 +303,6 @@ export const DELVE_MAX_WARDS = 3;
 export const DELVE_MAX_FLARES = 3;
 /** Sticks of dynamite a player can hold at once. */
 export const DELVE_MAX_DYNAMITE = 3;
-/** Azurite shards that forge a ward. */
-export const SHARDS_PER_WARD = 2;
 
 /**
  * Whether Dynamite Caches turn up. Switched off, no cache is ever rolled and
@@ -308,8 +313,8 @@ export const DYNAMITE_ON = true;
 /**
  * Depths a find's chance takes to climb from its `start` at its own first
  * depth to its `cap` (FINDS), which it holds to FIND_FADE_FROM: the Dynamite
- * Cache is at its cap from depth 31 (shown 30), the Flare Cache from 46
- * (shown 45), the Azurite Vein from 61 (shown 60).
+ * Cache is at its cap from depth 31 (shown 30), the Azurite Vein from 46
+ * (shown 45), the Flare Cache from 61 (shown 60).
  */
 export const FIND_RAMP = 20;
 /** Past this depth (shown 99) the finds grow scarcer with every depth (FINDS, `late`)... */
@@ -327,17 +332,18 @@ export const FIND_FADE_TO = 200;
  * more of is never rolled (its slice finds nothing), so it never changes the
  * others' chances. An offer that holds one rolls once more for a second find
  * on another card (see SECOND_FIND). Players see them in the order they
- * first turn up (FINDS_IN_ORDER).
+ * first turn up (FINDS_IN_ORDER). On its own first depth a find is certain
+ * (firstFindAt): the depth's first offer always holds it, for a player with
+ * room for it (one after a miss there rolls as any other).
  *
- * They come one at a time, the strongest last. The Dynamite Cache comes
- * first, from depth 11 (shown 10), and is the only find until the Flare
- * Cache comes, so it starts at 8% to keep finds turning up early; it climbs
- * only to 9%, the rarest at its cap. The Flare Cache follows from depth 26
- * (shown 25), where clocks run short and flares get burnt, and ends up the
- * most common. The
- * Azurite Vein comes last, from depth 41 (shown 40): a ward takes a whole
- * loss, the strongest thing to carry. Together, one offer in three from
- * depth 61 (shown 60), once the vein has reached its cap.
+ * They come one at a time. The Dynamite Cache comes first, from depth 11
+ * (shown 10), and is the only find until the Azurite Vein comes, so it
+ * starts at 8% to keep finds turning up early; it climbs only to 9%, the
+ * rarest at its cap. The Azurite Vein follows from depth 26 (shown 25): a
+ * ward takes a whole loss, the strongest thing to carry. The Flare Cache
+ * comes last, from depth 41 (shown 40), where clocks run short and flares
+ * get burnt, and ends up the most common. Together, one offer in three from
+ * depth 61 (shown 60), once the Flare Cache has reached its cap.
  *
  * Past depth 100 they grow scarcer, a little with every depth, down to
  * `late` of their cap at depth 200 (FIND_FADE_FROM to FIND_FADE_TO), and
@@ -360,10 +366,10 @@ export const FINDS: {
   /** Things a miss on it blows up from the player's pack (blastVictim), besides the life. */
   blows: number;
 }[] = [
+  // From depth 26 (shown 25). Its strike 1: the rest of the dig is VEIN_DEEPER's and the lamp's (LAMP_START).
+  { kind: 'azurite', item: 'wards', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 20, losses: 2, clock: 1, blows: 0 },
   // From depth 41 (shown 40).
-  { kind: 'azurite', item: 'wards', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, clock: 1, blows: 0 },
-  // From depth 26 (shown 25).
-  { kind: 'flare', item: 'flares', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, clock: 2 / 3, blows: 0 },
+  { kind: 'flare', item: 'flares', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, clock: 2 / 3, blows: 0 },
   {
     kind: 'dynamite',
     item: 'dynamite',
@@ -391,9 +397,10 @@ export const FINDS_IN_ORDER = FINDS.filter((f) => f.cap > 0).sort((a, b) => a.fr
  * so as many offers hold a find as with one roll; the second roll's chances
  * ramp with the depth's, so two finds side by side are rare early and grow
  * less rare with depth. With the Dynamite Cache alone above depth 26 (shown
- * 25) there are never two; then about 1 offer in 290 at depth 26, 1 in 57 at
- * depth 41 (shown 40), as the vein joins, and 1 in 28 from depth 61 (shown
- * 60; a ninth of those with a find), when the takers have room for
+ * 25) there are never two; then about 1 offer in 23 at depth 26, beside the
+ * certain vein (firstFindAt), 1 in 260 at 27 and 1 in 125 at 40, 1 in 11 at
+ * depth 41 (shown 40), beside the certain Flare Cache, and 1 in 28 from depth
+ * 61 (shown 60; a ninth of those with a find), when the takers have room for
  * everything (tests/delveFinds.test.ts simulates it).
  */
 export const SECOND_FIND = 0.5;
@@ -410,6 +417,9 @@ export const MAX_FINDS = 2;
 /** The find that yields an item. */
 export const findFor = (kind: FindKind) => FINDS.find((f) => f.kind === kind)!;
 
+/** The find whose first depth `d` is (FINDS, `from`): certain on that depth's offer. Null on any other depth. */
+export const firstFindAt = (d: number): FindKind | null => FINDS_IN_ORDER.find((f) => f.from === depthOf(d))?.kind ?? null;
+
 /** How likely an offer at depth `d` is to hold a find of `kind` (for a player with room for its item). */
 export function findChance(kind: FindKind, d: number): number {
   const { from, start, cap, late } = findFor(kind);
@@ -420,14 +430,100 @@ export function findChance(kind: FindKind, d: number): number {
   return Math.round((start + (cap - start) * t) * (1 - (1 - late) * fade) * 10_000) / 10_000;
 }
 
+// ---- the Azurite Vein's dig ------------------------------------------------
+
+/**
+ * An Azurite Vein is dug a strike at a time. Each right strike brings out a
+ * ward that is only in hand (the dig's `haul`: no use yet, and lost if the
+ * vein caves in), and the run stays at the vein's depth: the next cards are
+ * two, the vein running on into another category (the next strike) and
+ * WAY_OUT, which puts the haul into the pack and takes the run a depth
+ * deeper. A miss on any strike caves in: two losses (findLosses), the haul
+ * buried, and the run asks again at the same depth, as after any miss.
+ *
+ * The whole dig runs on one lamp instead of a clock per question: lit at
+ * strike 1 with LAMP_START of its deeper depth's clock, burning only while a
+ * strike is open, and never fed. What is left of it is the next strike's
+ * clock, so every strike after the first is paid for by how quickly the ones
+ * before it were answered. Under VEIN_MIN_LIGHT left, VEIN_MAX_STRIKES
+ * struck, or no room left for another ward, and the haul goes into the pack
+ * by itself; with less light than any question gets, digging on is a gamble
+ * the player may take.
+ */
+export const VEIN_MAX_STRIKES = 3;
+
+/** How much further down each strike asks from: strike 1 the find's own `deeper`, then further each time. */
+export const VEIN_DEEPER = [20, 30, 40];
+
+/** The depths a vein's strike `strike` (1 on) asks from below its own. */
+export const veinDeeper = (strike: number) => VEIN_DEEPER[Math.min(VEIN_DEEPER.length, Math.max(1, Math.floor(strike) || 1)) - 1];
+
+/** The least light left that the vein may still be dug on with: a second, a gamble. */
+export const VEIN_MIN_LIGHT = 1;
+
+/** The lamp's light at strike 1, as a share of strike 1's deeper clock (FINDS `clock`, so findTimer gives it): the whole dig's. */
+export const LAMP_START = 1;
+
+/** Together, how long the way out's cards stay up once the vote draws it, as its draw plays (Delve.leaving). */
+export const LEAVING_MS = 2000;
+
+/** The card dealt beside the vein after a right strike: it leads out with the haul. Never a category. */
+export const WAY_OUT = '~way-out';
+
+/** Whether a card on offer is the way out of a vein. */
+export const isWayOut = (category: string) => category === WAY_OUT;
+
+/**
+ * Seconds of light the lamp has for strike `next` of a vein at depth `d`,
+ * with `left` seconds of it unburnt when the strike before was answered
+ * right: what is left, never more than strike `next`'s whole deeper clock,
+ * in tenths.
+ */
+export function lampAfter(d: number, next: number, left: number): number {
+  const full = delveTimer(findDepth('azurite', d, next));
+  const light = Math.min(full, Math.max(0, left));
+  return Math.floor(light * 10) / 10;
+}
+
+/** The vein being dug, as far as it reads sane, or null (no dig, older saves, outside Delve). */
+export function digOf(s: GameState): Dig | null {
+  const d = s.delve?.dig;
+  if (!d || typeof d !== 'object' || !Array.isArray(d.haul) || !Array.isArray(d.struck)) return null;
+  const strikes = Number.isFinite(d.strikes) ? Math.max(1, Math.min(VEIN_MAX_STRIKES, Math.floor(d.strikes))) : 1;
+  const light = Number.isFinite(d.light) ? Math.max(0, d.light) : 0;
+  return { strikes, haul: d.haul.filter((id) => typeof id === 'string'), light, struck: d.struck.filter((c) => typeof c === 'string') };
+}
+
+/** Wards `id` holds in hand from the vein being dug. */
+export const haulOf = (s: GameState, id: string) => digOf(s)?.haul.filter((h) => h === id).length ?? 0;
+
+/** Whether `id` stands and has room for one more ward, the haul in hand counted. */
+export const wardRoom = (s: GameState, id: string) => livesOf(s, id) > 0 && inventoryOf(s, id).wards + haulOf(s, id) < DELVE_MAX_WARDS;
+
+/**
+ * Whether the vein being dug runs on after the strike just revealed: fewer
+ * than VEIN_MAX_STRIKES struck, light enough for another (VEIN_MIN_LIGHT),
+ * and room for another ward (alone the player's, together anyone's
+ * standing). Otherwise its haul goes into the pack by itself.
+ */
+export function digRunsOn(s: GameState): boolean {
+  const dig = digOf(s);
+  if (!dig || dig.strikes >= VEIN_MAX_STRIKES || dig.light < VEIN_MIN_LIGHT) return false;
+  const takers = isGroupRun(s) ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [];
+  return takers.some((id) => wardRoom(s, id));
+}
+
 /** The shallowest depth with any find: the Dynamite Cache's, 11 (shown 10). */
 export const FINDS_FROM = FINDS_IN_ORDER[0]?.from ?? Infinity;
 
 /**
  * The shallowest depth whose questions may pick look-alikes by their art: a
- * find asks from further down, so a little above LOOKALIKES_FROM.
+ * find asks from further down (a vein's last strike furthest), so above
+ * LOOKALIKES_FROM, though never above the depth the find first turns up at.
  */
-export const LOOKALIKES_ASKED_FROM = LOOKALIKES_FROM - Math.max(...FINDS.filter((f) => f.cap > 0).map((f) => f.deeper));
+export const LOOKALIKES_ASKED_FROM = Math.min(
+  ...FINDS.filter((f) => f.cap > 0).map((f) => Math.max(f.from, LOOKALIKES_FROM - (f.kind === 'azurite' ? Math.max(f.deeper, ...VEIN_DEEPER) : f.deeper))),
+);
 
 /**
  * A find's question is the question of `deeper` depths down (FINDS): hard,
@@ -436,11 +532,12 @@ export const LOOKALIKES_ASKED_FROM = LOOKALIKES_FROM - Math.max(...FINDS.filter(
  * carries the weight there: findLosses, findTimer, blowsUp). The Flare Cache
  * asks from further down than the others.
  */
-export const findDepth = (kind: FindKind, d: number) => depthOf(d) + findFor(kind).deeper;
+export const findDepth = (kind: FindKind, d: number, strike = 1) => depthOf(d) + (kind === 'azurite' ? veinDeeper(strike) : findFor(kind).deeper);
 
 /**
  * Each find weighs its reward against a risk of its own:
- * - an Azurite Vein caves in on a miss, for two losses (findLosses);
+ * - an Azurite Vein caves in on a miss, for two losses (findLosses), and
+ *   buries what was dug out of it (the dig, below);
  * - a Flare Cache gives less time to answer (findTimer, `clock`): time
  *   now for time later;
  * - a Dynamite Cache is unstable: a miss costs the life and its blast
@@ -471,13 +568,11 @@ export const blowsUp = (kind: FindKind) => findFor(kind).blows > 0;
  * What a Dynamite Cache's blast destroys of a pack `inv`, for a `roll` in
  * [0, 1) (the engine's roll: the host draws it and sends the outcome in
  * the state, so every screen shows the same loss): one thing, drawn at
- * random, each ward, flare and stick of dynamite one chance, and a shard
- * half of one, as it is half a ward. A ward drawn goes whole (a shard
- * held beside it stays); a pack of a shard alone loses the shard. Null for
- * an empty pack.
+ * random, each ward, flare and stick of dynamite one chance. Null for an
+ * empty pack.
  */
 export function blastVictim(inv: Inventory, roll: number): ItemKind | null {
-  const weight = (k: ItemKind) => Math.max(0, inv[k]) * (k === 'shards' ? 1 / SHARDS_PER_WARD : 1);
+  const weight = (k: ItemKind) => Math.max(0, inv[k]);
   const held = ITEM_KINDS.filter((k) => weight(k) > 0);
   let r = Math.min(Math.max(roll, 0), 0.999_999) * held.reduce((sum, k) => sum + weight(k), 0);
   for (const k of held) {
@@ -494,7 +589,12 @@ export function blastVictim(inv: Inventory, roll: number): ItemKind | null {
  */
 export const FIND_MIN_TIMER = 4;
 
-/** Seconds on the clock for a find's question: its `clock` share of the deeper depth's (a Flare Cache's two thirds), rounded, never below FIND_MIN_TIMER. */
+/**
+ * Seconds on the clock for a find's question: its `clock` share of the
+ * deeper depth's (a Flare Cache's two thirds; an Azurite Vein's strike 1 the
+ * lamp's LAMP_START), rounded, never below FIND_MIN_TIMER. A vein's later
+ * strikes run on the lamp's light left (Question.light).
+ */
 export const findTimer = (kind: FindKind, d: number) => {
   const { clock } = findFor(kind);
   const secs = delveTimer(findDepth(kind, d));
@@ -502,7 +602,7 @@ export const findTimer = (kind: FindKind, d: number) => {
 };
 
 /** The share of a find's "find the art" questions whose pictures burn into view: the deeper depth's. */
-export const findTileVeil = (kind: FindKind, d: number) => delveTileVeil(findDepth(kind, d));
+export const findTileVeil = (kind: FindKind, d: number, strike = 1) => delveTileVeil(findDepth(kind, d, strike));
 
 /**
  * The rules of a find's question at depth `d`: those of its deeper depth, a
@@ -510,18 +610,9 @@ export const findTileVeil = (kind: FindKind, d: number) => delveTileVeil(findDep
  * the depth's: neither makes the question harder, and the art lean counts
  * every question alike.
  */
-export function findRules(kind: FindKind, d: number): DifficultyRules {
-  return { ...delveRules(findDepth(kind, d)), artChance: delveCurve('artChance', d), lockout: delveLockout(d) };
+export function findRules(kind: FindKind, d: number, strike = 1): DifficultyRules {
+  return { ...delveRules(findDepth(kind, d, strike)), artChance: delveCurve('artChance', d), lockout: delveLockout(d) };
 }
-
-/**
- * An Azurite Vein's fast window: a right answer this soon after the clock
- * starts mines a whole ward. The first half of the question's `secs`, rounded
- * up to a whole second so the ring and the note can say it plainly. Even at
- * the shortest clock under the slowest veil, half the art burns in before it
- * closes (tests/delveFinds.test.ts checks).
- */
-export const veinWindow = (secs: number) => Math.ceil(secs / 2) * 1000;
 
 /**
  * How much longer a burning flare keeps the clock running. It burns as the
@@ -566,39 +657,37 @@ export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
  */
 export function clockLeft(q: Pick<Question, 'deadline' | 'held'>, now: number): number {
   if (q.deadline === null) return Infinity;
-  const h = q.held;
-  // Before the pause (a screen whose clock runs a little behind the host's) all of it is still to come.
-  const pausing = h && now < h.until ? h.until - Math.max(now, h.from) : 0;
-  return Math.max(0, q.deadline - now - pausing);
+  return Math.max(0, q.deadline - now - heldAhead(q.held, now));
 }
-
-/** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */
-export const delveQuestionTimer = (d: number, q: { find?: FindKind }) => (q.find ? findTimer(q.find, d) : delveTimer(d));
-
-const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE, shards: SHARDS_PER_WARD - 1 };
 
 /**
- * An inventory with no shard beside DELVE_MAX_WARDS wards: with every ward a
- * player can hold, a shard has nothing left to forge, so none is kept. The
- * engine applies it whenever wards reach the most (a fast Vein's ward, a
- * forge), and inventoryOf whenever it reads one (an older or hand-made state).
+ * How much of a pause (`held`) is still to come at `now`: before it (a
+ * screen whose clock runs a little behind the host's), all of it.
  */
-export function capShards(inv: Inventory): Inventory {
-  if (inv.wards >= DELVE_MAX_WARDS) inv.shards = 0;
-  return inv;
+export function heldAhead(h: Question['held'], now: number): number {
+  return h && now < h.until ? h.until - Math.max(now, h.from) : 0;
 }
 
-/** Whether a player holding `inv` can take one more of `item` (a shard only toward a ward they have room for). */
-export const hasRoom = (inv: Inventory, item: ItemKind) => (item === 'shards' ? inv.wards < DELVE_MAX_WARDS : inv[item] < CAPS[item]);
+/** How much of a clock the host's reload held still had been used when it stopped (ms). */
+export const pausedUsed = (p: NonNullable<Question['paused']>) => Math.max(0, p.at - p.clockAt);
+
+/** Seconds a Delve question at depth `d` starts with: a vein strike's light, a find's, or the depth's. */
+export const delveQuestionTimer = (d: number, q: { find?: FindKind; light?: number }) =>
+  typeof q.light === 'number' && q.light > 0 ? q.light : q.find ? findTimer(q.find, d) : delveTimer(d);
+
+const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE };
+
+/** Whether a player holding `inv` can take one more of `item`. */
+export const hasRoom = (inv: Inventory, item: ItemKind) => inv[item] < CAPS[item];
 
 /**
  * What a right answer to a find earns a player holding `inv`: a ward from an
- * Azurite Vein answered `fast`, a shard from one answered slower, a flare or
- * dynamite from their caches; null if they can't carry it (no such find is
- * offered to them, but one could be planted by hand or come from an older save).
+ * Azurite Vein, a flare or dynamite from their caches; null if they can't
+ * carry it (no such find is offered to them, but one could be planted by
+ * hand or come from an older save).
  */
-export function findReward(kind: FindKind, inv: Inventory, fast: boolean): ItemKind | null {
-  const own: ItemKind = kind === 'azurite' ? (fast ? 'wards' : 'shards') : findFor(kind).item;
+export function findReward(kind: FindKind, inv: Inventory): ItemKind | null {
+  const own = findFor(kind).item;
   return hasRoom(inv, own) ? own : null;
 }
 
@@ -621,6 +710,30 @@ export const shownDepth = (d: number) => d - 1;
 
 /** The depth of the run in progress (the round), 0 outside Delve. */
 export const delveDepth = (s: GameState) => (s.delve ? s.round : 0);
+
+/** Whether internal depth `d` opens a new zone: the first of every ten past the first ten (named by lib/descent.ts milestoneAt). */
+export const opensZone = (d: number) => d > 10 && d % 10 === 1;
+
+/**
+ * How long the run takes to go down into a new zone: the scene plunges for
+ * as long as the zone's sound rings (lib/descent.ts plunge), and the depth's
+ * cards are dealt as it lands (DelveState.dealAt).
+ */
+export const ZONE_DESCENT_MS = 7000;
+
+/**
+ * Milliseconds until the cards on offer are dealt, at host-clock time `now`:
+ * above 0 only while the run goes down into a new zone (dealAt). Till then
+ * nothing is picked, and a vote doesn't close.
+ */
+export const dealIn = (s: GameState, now: number) => (s.phase === 'choosing' && s.delve?.dealAt ? Math.max(0, s.delve.dealAt - now) : 0);
+
+/**
+ * How much sooner than the deal a player's pick is still taken: a guest's
+ * screen deals by its guess at the host's clock, which may run a little
+ * ahead of it, and a pick it showed the cards for is never lost.
+ */
+export const DEAL_SLACK_MS = 1000;
 
 /** A co-op run: two or more players set out together (online only). One player is a solo run. */
 export const isGroupRun = (s: GameState) => (s.delve?.entrants.length ?? 0) >= 2;
@@ -645,7 +758,7 @@ export function livesOf(s: GameState, id: string): number {
   return Math.max(0, DELVE_LIVES - (s.delve.losses[id]?.length ?? 0) - given + received);
 }
 
-const EMPTY: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+const EMPTY: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 
 /**
  * What a seated player carries: nothing outside Delve, for anyone without a
@@ -658,7 +771,7 @@ export function inventoryOf(s: GameState, id: string): Inventory {
     const n = raw[k];
     return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(CAPS[k], Math.floor(n))) : 0;
   };
-  return capShards({ wards: clean('wards'), flares: clean('flares'), dynamite: clean('dynamite'), shards: clean('shards') });
+  return { wards: clean('wards'), flares: clean('flares'), dynamite: clean('dynamite') };
 }
 
 /** Azurite Wards a player holds: each takes a loss in place of a life. */
@@ -667,8 +780,6 @@ export const wardsOf = (s: GameState, id: string) => inventoryOf(s, id).wards;
 export const flaresOf = (s: GameState, id: string) => inventoryOf(s, id).flares;
 /** Dynamite a player holds. */
 export const dynamiteOf = (s: GameState, id: string) => inventoryOf(s, id).dynamite;
-/** Azurite shards a player holds toward their next ward. */
-export const shardsOf = (s: GameState, id: string) => inventoryOf(s, id).shards;
 
 const FIND_KINDS: readonly string[] = ['azurite', 'flare', 'dynamite'] satisfies FindKind[];
 
@@ -707,9 +818,6 @@ export const findOffer = (s: GameState): CardFind | null => findOffers(s)[0] ?? 
  * flare's extra time not counted).
  */
 export const questionTimer = (s: GameState) => (s.delve && s.question ? delveQuestionTimer(s.round, s.question) : delveTimer(s.round));
-
-/** An Azurite Vein's fast window for the question in play, in ms from its clock's start (0 for any other question). */
-export const veinWindowMs = (s: GameState) => (s.delve && s.question?.find === 'azurite' ? veinWindow(questionTimer(s)) : 0);
 
 /**
  * The depth where a seated player lost their last life, or null while they
@@ -751,22 +859,57 @@ export function expectedVoters(s: GameState, now: number): string[] {
   return s.players.filter((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && (p.connected || inGrace(s, p, now))).map((p) => p.id);
 }
 
-/** Co-op, voting: the vote is in at `now`, as someone voted and everyone it waits for has. */
-export function voteDone(s: GameState, now: number): boolean {
+/**
+ * Those the host's reload cut off who could still answer the question in
+ * play (or the next one): standing, not idle (a vote doesn't wait for them
+ * either, expectedVoters) and with no answer given to it yet.
+ */
+export function cutOffAnswering(s: GameState): string[] {
+  const done = new Set(answeredIds(s));
+  return (s.delve?.excused ?? []).filter((id) => livesOf(s, id) > 0 && !isIdle(s, id) && !done.has(id) && s.players.some((p) => p.id === id && !p.connected));
+}
+
+/**
+ * Someone the host's reload cut off who could still answer may yet come
+ * back at `now` (host clock): a question's clock doesn't start without them,
+ * for DELVE_RESUME_CLOCK_MS after the reload at most.
+ */
+export function awaitingReturn(s: GameState, now: number): boolean {
+  const dm = s.delve;
+  return !!dm && now < dm.graceUntil - DELVE_RESUME_GRACE_MS + DELVE_RESUME_CLOCK_MS && cutOffAnswering(s).length > 0;
+}
+
+/** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */
+function allVoted(s: GameState, now: number): boolean {
   const votes = s.delve?.votes ?? {};
   if (!isGroupRun(s) || s.phase !== 'choosing' || !Object.keys(votes).length) return false;
   return expectedVoters(s, now).every((id) => Object.hasOwn(votes, id));
 }
 
 /**
+ * Co-op, voting: the vote is in at `now`, as someone voted and everyone it
+ * waits for has; never before the cards are dealt (dealAt), however soon
+ * the votes came.
+ */
+export function voteDone(s: GameState, now: number): boolean {
+  return s.delve?.leaving === undefined && dealIn(s, now) === 0 && allVoted(s, now);
+}
+
+/**
  * Co-op, voting: when the vote closes by the clock (host clock), or null
- * while nobody has voted (it waits for as long as it takes) and outside co-op.
+ * while nobody has voted (it waits for as long as it takes) and outside co-op;
+ * with a vein's way out drawn, when its draw is done (Delve.leaving).
  * VOTE_WINDOW_MS from the first vote, held to the end of a reload's grace
- * while anyone it cut off is still away.
+ * while anyone it cut off is still away; or, every vote it waits for in
+ * before a new zone's cards are dealt, as they are (dealAt).
  */
 export function voteClosesAt(s: GameState): number | null {
   const dm = s.delve;
-  if (!dm || !isGroupRun(s) || s.phase !== 'choosing' || dm.voteFrom === null || dm.voteFrom === undefined) return null;
+  if (!dm || !isGroupRun(s) || s.phase !== 'choosing') return null;
+  // The way out drawn: its draw plays, then the team goes back to the light.
+  if (dm.leaving !== undefined) return dm.leaving + LEAVING_MS;
+  if (dm.voteFrom === null || dm.voteFrom === undefined) return null;
+  if (dm.dealAt !== undefined && allVoted(s, dm.dealAt)) return dm.dealAt;
   const away = s.players.some((p) => !p.connected && dm.excused.includes(p.id) && livesOf(s, p.id) > 0);
   return Math.max(dm.voteFrom + VOTE_WINDOW_MS, away ? dm.graceUntil : 0);
 }
@@ -787,7 +930,7 @@ export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter
  * Co-op: whether a flare or a stick of dynamite can go off on the question in
  * play, from the pack of whoever standing holds one: its clock runs, it is no
  * find's, someone here still has an answer to give (nobody else gains from
- * it), and for a flare none burnt on it yet, for dynamite the depth has a
+ * it), and for a flare none burnt on it yet, for dynamite the offer has a
  * blast left (blastsLeft). When it is due is the solo rule's.
  */
 export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
@@ -820,7 +963,7 @@ export function unaskedCards(s: GameState): string[] {
   return s.offered.filter((c) => !asked.includes(c));
 }
 
-/** Blasts the depth in play has left: DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
+/** Blasts the offer in play has left (a fresh offer after a miss at the same depth has its own): DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
 export function blastsLeft(s: GameState): number {
   if (!s.delve || s.phase !== 'question' || !s.question) return 0;
   const made = Math.max(0, askedCards(s).length - 1);
@@ -829,7 +972,7 @@ export function blastsLeft(s: GameState): number {
 
 /**
  * Why `by` can't blast the question in play away now, or null when they can
- * (the button shows only then): its clock runs, it is no find's, the depth
+ * (the button shows only then): its clock runs, it is no find's, the offer
  * has a blast left, and the stick is at hand. Alone: the player answering,
  * holding one. Together: a player standing who hasn't answered it yet and
  * holds one (it is spent from their own pack); a teammate's wrong answer
@@ -841,7 +984,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   if (!s.delve || s.phase !== 'question' || !q) return 'There is no open question.';
   if (q.deadline === null) return 'Not yet.';
   if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
-  if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
+  if (blastsLeft(s) === 0) return 'No more blasts on these cards.';
   if (isGroupRun(s)) {
     if (by === null) return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
     if (!seated(s, by)) return 'You are not in this game.';
@@ -880,7 +1023,7 @@ export function fuseDue(s: GameState): boolean {
  * will go off (fuseDue), from 1 to 0 as the clock hits 0, and stays at 0
  * until the time-out blasts the question away. Null while there is more
  * time than that on the clock, or when nothing would go off at this 0 (a
- * flare burns first, no stick at hand, no blast left at this depth, a
+ * flare burns first, no stick at hand, no blast left on the offer, a
  * find's question, or none open). It holds while the clock holds
  * (clockLeft).
  */

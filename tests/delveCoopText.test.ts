@@ -77,19 +77,18 @@ test('one who picked wrong and then left the room is neither named nor said to p
 
 test("a find's gain is said with who cleared it, or who it went to", () => {
   assert.equal(says({ winner: 'a', gain: { kind: 'flares', by: 'a' } }), 'Ash cleared it and found a flare.');
-  assert.equal(says({ winner: 'me', gain: { kind: 'wards', by: 'me' } }), 'You cleared it and mined an Azurite Ward.');
-  assert.equal(says({ winner: 'a', gain: { kind: 'shards', by: 'a', slow: true } }), 'Ash cleared it and mined a shard, too slow for a ward.');
+  assert.equal(says({ winner: 'me', gain: { kind: 'wards', by: 'me' } }), 'You cleared it and dug out an Azurite Ward.');
   assert.equal(says({ winner: 'b', gain: { kind: 'flares', by: 'a' } }), 'Brea cleared it; the flare went to Ash.');
   assert.equal(says({ winner: 'b', gain: { kind: 'dynamite', by: 'me' } }), 'Brea cleared it; the dynamite went to you.');
-  assert.equal(says({ winner: 'b', gain: { kind: 'wards', by: 'a', forged: true } }), "Brea cleared it; Ash's two shards forged an Azurite Ward.");
+  assert.equal(says({ winner: 'b', gain: { kind: 'wards', by: 'a' } }), 'Brea cleared it; the ward went to Ash.');
 });
 
 test("a Dynamite Cache's blast says what it destroyed of each pack, after the losses", () => {
-  const blown = (playerId: string, item: 'wards' | 'shards' | 'flares' | 'dynamite', timedOut = false) => ({ ...hit(playerId, 1, 0, timedOut), blown: item });
+  const blown = (playerId: string, item: 'wards' | 'flares' | 'dynamite', timedOut = false) => ({ ...hit(playerId, 1, 0, timedOut), blown: item });
   assert.equal(says({ winner: 'b', hits: [blown('me', 'flares')], left: { me: 2 } }), 'Brea cleared it. You picked wrong. The blast destroyed your flare.');
   assert.equal(
-    says({ timedOut: true, hits: [blown('a', 'shards'), blown('c', 'wards', true)] }),
-    "Time's up; nobody found it. Ash picked wrong. The darkness took Cara. The blast destroyed Ash's shard and Cara's ward.",
+    says({ timedOut: true, hits: [blown('a', 'dynamite'), blown('c', 'wards', true)] }),
+    "Time's up; nobody found it. Ash picked wrong. The darkness took Cara. The blast destroyed Ash's dynamite and Cara's ward.",
   );
   // Nothing for one who perished: their pack went with them.
   assert.equal(says({ hits: [blown('a', 'dynamite')], left: { a: 0 } }), 'Every answer was wrong. Ash perishes.');
@@ -119,7 +118,7 @@ test('what befalls the team in play: teammates perishing, a flare burning, a lif
 
 test("a find's note for the team says what it does for all, and what stays unused", () => {
   assert.equal(teamFindNote('flare', false), 'It adds six seconds for everyone when time runs out. You get less time to answer.');
-  assert.match(teamFindNote('azurite', true), /\. A miss costs two lives\. Flares and dynamite can't be used on it\.$/);
+  assert.match(teamFindNote('azurite', true), /\. A miss costs two lives and your haul\. Flares and dynamite can't be used on it\.$/);
 });
 
 test('the end screen: lives lost at a cave-in counted once, and what each delver gave', () => {

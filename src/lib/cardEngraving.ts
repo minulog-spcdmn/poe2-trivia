@@ -40,10 +40,18 @@ import {
 import { LUNA, LUNA_HATCH } from './alchemy.ts';
 
 export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattice' | 'sign' | 'fill';
-/** `motif`: drawn by a Variant over the plate (see Plate.knockout). */
-export type Stroke = { d: string; cls: Cls; motif?: boolean };
+/** `motif`: drawn by a Variant over the plate (see Plate.knockout). `front`: in front of the emblem too (see Plate.front). */
+export type Stroke = { d: string; cls: Cls; motif?: boolean; front?: boolean };
 /** Where the glory's rays fade in from its centre (from `from` on) and out again (by `r`). */
 export type Fade = { c: Pt; from: number; r: number };
+/**
+ * A motif gilded as a category's emblem is (CardEngraving): its parts filled,
+ * `body` in the emblem's gold running pale to deep from `span`'s top to its
+ * foot (y), `glass` in the same gold, faint, and `flame` white-hot; the
+ * motif's lines over the body cut in dark, as an item's details are. `light`:
+ * where it shines from and how far, the light that breathes round it.
+ */
+export type Gilt = { parts: { d: string; tone: 'glass' | 'body' | 'flame' }[]; span: [number, number]; light: { c: Pt; r: number } };
 
 // Where things sit, in pixels from the card's top left (inside its border).
 // ChooseCategory's CSS places the emblem and the name to match.
@@ -136,8 +144,17 @@ export class Plate {
   motif = false;
   /** Filled shapes (path data) where the plate's own lines are left out, so they stop short of the motif. */
   knockout = '';
+  /** The motif gilded, if it is (see Gilt). */
+  gilt: Gilt | null = null;
+  /**
+   * While true, what is added stands in front of the emblem as well as the
+   * plate (CardEngraving's front layer, over the category's item), solid:
+   * `solid` (filled shapes, path data) hides whatever lies behind it.
+   */
+  front = false;
+  solid = '';
   add(d: string, cls: Cls) {
-    if (d) this.out.push(this.motif ? { d, cls, motif: true } : { d, cls });
+    if (d) this.out.push(this.front ? { d, cls, motif: true, front: true } : this.motif ? { d, cls, motif: true } : { d, cls });
   }
   /** A frame of two lines with notched corners, broken at `holes`. */
   frame(x0: number, y0: number, x1: number, y1: number, holes: Hole[] = []) {
@@ -627,24 +644,49 @@ const back = (w: number, h: number, p: Plate, v?: Variant) => {
   p.fade = { c, from: 0, r: row ? len + 10 : len + 6 };
 };
 
+/** A side's plate, as engrave() gives it. */
+export type Engraved = ReturnType<typeof engraveAnew>;
+
+/** Plates already engraved, by variant (one for none) and then side and size: a card's front layer and its plate share one. */
+const engraved = new WeakMap<Variant, Map<string, Engraved>>();
+const PLAIN: Variant = {};
+/** Sizes kept per variant: a few layouts' worth, as a window is resized. */
+const KEEP = 12;
+
 /**
  * The strokes of one side of a card `w` by `h`, and where its glory fades;
- * `v` redraws parts of it for a special card. The motif's strokes come
+ * `v` redraws parts of it for a special card (the same object for the same
+ * card, so its plates are kept: findVariant). The motif's strokes come
  * after the plate's, and `knockout` is where the plate's are left out.
+ * Shared: not to be changed.
  */
-export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant) => {
+export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant): Engraved => {
+  let sizes = engraved.get(v ?? PLAIN);
+  if (!sizes) engraved.set(v ?? PLAIN, (sizes = new Map()));
+  const key = `${side} ${w} ${h}`;
+  let plate = sizes.get(key);
+  if (!plate) {
+    plate = engraveAnew(side, w, h, v);
+    if (sizes.size >= KEEP) sizes.delete(sizes.keys().next().value!);
+    sizes.set(key, plate);
+  }
+  return plate;
+};
+
+const engraveAnew = (side: 'face' | 'back', w: number, h: number, v?: Variant) => {
   const p = new Plate();
   if (side === 'back') back(w, h, p, v);
   else if (w > h) rowFace(w, h, p, v);
   else tallFace(w, h, p, v);
   // Merge each class into one path (the motif's apart).
   const by = new Map<string, Stroke>();
-  for (const { d, cls, motif } of p.out) {
-    const key = motif ? `${cls}*` : cls;
+  for (const { d, cls, motif, front } of p.out) {
+    const key = front ? `${cls}!` : motif ? `${cls}*` : cls;
     const s = by.get(key);
     if (s) s.d += d;
-    else by.set(key, motif ? { d, cls, motif } : { d, cls });
+    else by.set(key, front ? { d, cls, motif, front } : motif ? { d, cls, motif } : { d, cls });
   }
-  const strokes = [...by.values()].sort((a, b) => Number(!!a.motif) - Number(!!b.motif)).map(({ cls, d, motif }) => (motif ? { cls, d, motif } : { cls, d }));
-  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null };
+  const rank = (s: Stroke) => (s.front ? 2 : s.motif ? 1 : 0);
+  const strokes = [...by.values()].sort((a, b) => rank(a) - rank(b)).map(({ cls, d, motif, front }) => (front ? { cls, d, motif, front } : motif ? { cls, d, motif } : { cls, d }));
+  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt, solid: p.solid || null };
 };

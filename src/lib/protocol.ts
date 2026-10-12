@@ -3,8 +3,10 @@
 // sender disconnected: a real client never sends malformed messages.
 
 import type { Action, GameState } from './game';
+import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
+import type { Presence, Standing } from './presence.ts';
 
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 30;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -28,7 +30,11 @@ export type ClientMsg =
    */
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
   | { t: 'action'; action: Action }
-  | { t: 'pong'; n: number };
+  | { t: 'pong'; n: number }
+  /** Where this player's pointer is (cursors.ts), or null when it left the page. */
+  | { t: 'cursor'; at: CursorAt | null }
+  /** Whether this player's game is on screen and in use (presence.ts), sent when it changes. */
+  | { t: 'presence'; p: Presence };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
@@ -46,17 +52,27 @@ export type HostMsg =
   /** Not now (too many joins): this connection is dropped, try again in a moment. */
   | { t: 'busy'; message: string }
   | { t: 'ping'; n: number }
+  /** Other players' pointers that moved since the last batch (cursors.ts). */
+  | { t: 'cursors'; c: CursorEntry[] }
+  /** Lobby: how each player who isn't simply ready stands (presence.ts), by id; sent when it changes. */
+  | { t: 'standing'; s: Record<string, Standing> }
   | MediaMsg;
 
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
-  /** `tile`: a veiled "find the art" picture (Delve), by option; missing for the art of a name question. */
-  | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number] }
-  | { t: 'patch'; qid: number; tile?: number; i: number; x: number; y: number; w: number; h: number; data: ArrayBuffer; edges: ArrayBuffer }
-  | { t: 'option'; qid: number; index: number; data: ArrayBuffer };
+  /**
+   * A veiled picture, whole (`data`), with which patch each of its art pixels
+   * falls in (`labels`: patches.ts packLabels). `tile`: a veiled "find the
+   * art" picture (Delve), by option; missing for the art of a name question.
+   */
+  | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number]; data: ArrayBuffer; labels: ArrayBuffer }
+  /** Patch `i` of the veiled picture (its index in the cut) is uncovered. */
+  | { t: 'patch'; qid: number; tile?: number; i: number }
+  /** `w`, `h`: its size in art pixels (the picture is finer, by the item's artScale). */
+  | { t: 'option'; qid: number; index: number; w: number; h: number; data: ArrayBuffer };
 
-/** A patch's edges: (x, y, patch) triples of 16-bit numbers, a few thousand at most. */
-const MAX_EDGE_BYTES = 6 * 16384;
+/** A veiled picture's labels: (patch, length) pairs of 16-bit numbers, a run per patch per row or so. */
+const MAX_LABEL_BYTES = 4 * 262144;
 
 /** Roughly how big a decoded message is; guests never need more than this. */
 const MAX_CLIENT_MSG_CHARS = 2000;
@@ -92,6 +108,12 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
+    case 'cursor': {
+      const at = parseCursorAt(raw.at);
+      return at === undefined ? null : { t: 'cursor', at };
+    }
+    case 'presence':
+      return raw.p === 'here' || raw.p === 'idle' || raw.p === 'away' ? { t: 'presence', p: raw.p } : null;
     case 'action': {
       const a = raw.action;
       if (!isObj(a)) return null;
@@ -131,6 +153,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
 export function parseHostMsg(raw: unknown): HostMsg | null {
   if (!isObj(raw) || typeof raw.t !== 'string') return null;
   const bin = (v: unknown) => v instanceof ArrayBuffer || ArrayBuffer.isView(v);
+  const byteLength = (v: unknown) => (v as ArrayBuffer | ArrayBufferView).byteLength;
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   const tile = raw.tile === undefined || isInt(raw.tile, 0, 16);
   switch (raw.t) {
@@ -152,22 +175,34 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return raw as HostMsg;
     case 'ping':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? (raw as HostMsg) : null;
+    case 'cursors': {
+      const c = parseCursorBatch(raw.c);
+      return c ? { t: 'cursors', c } : null;
+    }
+    case 'standing': {
+      if (!isObj(raw.s)) return null;
+      const s: Record<string, Standing> = Object.create(null);
+      const entries = Object.entries(raw.s);
+      if (entries.length > 64) return null;
+      for (const [id, v] of entries) {
+        if (id.length > 64 || (v !== 'away' && v !== 'idle' && v !== 'slow')) return null;
+        s[id] = v;
+      }
+      return { t: 'standing', s };
+    }
     case 'art':
       return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     case 'veil':
       return qid && tile && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.burn, 0, 120000) &&
         isInt(raw.count, 0, 256) && Array.isArray(raw.box) && raw.box.length === 4 &&
-        raw.box.every((v) => isInt(v, 0, 4096))
+        raw.box.every((v) => isInt(v, 0, 4096)) && bin(raw.data) && bin(raw.labels) &&
+        byteLength(raw.labels) % 4 === 0 && byteLength(raw.labels) <= MAX_LABEL_BYTES
         ? (raw as HostMsg)
         : null;
     case 'patch':
-      return qid && tile && bin(raw.data) && isInt(raw.i, 0, 255) && isInt(raw.x, 0, 4096) && isInt(raw.y, 0, 4096) &&
-        isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && bin(raw.edges) &&
-        (raw.edges as ArrayBuffer).byteLength % 6 === 0 && (raw.edges as ArrayBuffer).byteLength <= MAX_EDGE_BYTES
-        ? (raw as HostMsg)
-        : null;
+      return qid && tile && isInt(raw.i, 0, 254) ? (raw as HostMsg) : null;
     case 'option':
-      return qid && bin(raw.data) && isInt(raw.index, 0, 16) ? (raw as HostMsg) : null;
+      return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     default:
       return null;
   }

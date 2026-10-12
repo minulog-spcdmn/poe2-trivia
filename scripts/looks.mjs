@@ -2,7 +2,9 @@
 // Ranks every item's art against the rest of its group (the pool a question
 // draws its options from) and writes each item's closest look-alikes to
 // src/data/looks.json, for questions whose wrong pictures look like the right
-// one. Reads the original art (art-source/items/), not the upscaled copies.
+// one. An item drawn more than one way (Item.variants) has each of its art
+// ranked on its own, by its art's id, and each of the others' art counts as
+// a look-alike of its own. Reads the original art (art-source/items/), not the upscaled copies.
 // Needs ffmpeg (to decode the WebP art). Deterministic: the same art and
 // ffmpeg give the same file.
 //
@@ -19,8 +21,10 @@ const ITEMS_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 const OUT_FILE = path.join(ROOT, 'src', 'data', 'looks.json');
 
 /**
- * Look-alikes kept per item: ten options need nine decoys, plus some to
- * spare so picks still vary (as many as game.ts lookalikes looks through).
+ * Items whose art is kept per art: ten options need nine decoys, plus some
+ * to spare so picks still vary (as many as game.ts lookalikes looks through).
+ * An item drawn more than one way keeps each of its art that ranks among
+ * them, so the art a question draws it with has its own score.
  */
 const KEEP = 14;
 /**
@@ -162,27 +166,32 @@ const similarity = (a, b) =>
 
 function main() {
   const items = JSON.parse(readFileSync(ITEMS_FILE, 'utf8'));
+  // Every art: each item's own, then its variants'.
+  const arts = items.flatMap((it) => [it, ...(it.variants ?? [])].map(({ id }) => ({ id, item: it })));
   const feats = new Map();
-  for (const it of items) {
-    const img = decode(path.join(IMG_DIR, `${it.id}.webp`));
-    feats.set(it.id, { plain: features(img, false), mirrored: features(img, true) });
+  for (const { id } of arts) {
+    const img = decode(path.join(IMG_DIR, `${id}.webp`));
+    feats.set(id, { plain: features(img, false), mirrored: features(img, true) });
   }
 
   const looks = {};
-  for (const it of items) {
-    looks[it.id] = items
-      .filter((o) => o !== it && o.group === it.group)
-      .map((o) => ({ id: o.id, score: similarity(feats.get(it.id), feats.get(o.id)) }))
-      .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
-      .slice(0, KEEP)
+  for (const a of arts) {
+    const ranked = arts
+      .filter((o) => o.item !== a.item && o.item.group === a.item.group)
+      .map((o) => ({ id: o.id, item: o.item, score: similarity(feats.get(a.id), feats.get(o.id)) }))
+      .sort((x, y) => y.score - x.score || (x.id < y.id ? -1 : 1));
+    // The KEEP items drawn most like it, each with every art of it that ranks among theirs.
+    const kept = new Set();
+    looks[a.id] = ranked
+      .filter((o) => kept.has(o.item) || (kept.size < KEEP && kept.add(o.item)))
       .map(({ id, score }) => [id, Math.round(score * 100) / 100]);
   }
 
-  // One item per line keeps diffs readable when the art changes.
-  const lines = items.map((it) => `  ${JSON.stringify(it.id)}: ${JSON.stringify(looks[it.id])}`);
+  // One art per line keeps diffs readable when the art changes.
+  const lines = arts.map(({ id }) => `  ${JSON.stringify(id)}: ${JSON.stringify(looks[id])}`);
   const json = `{\n "v": 1,\n "looks": {\n${lines.join(',\n')}\n }\n}\n`;
   writeFileSync(OUT_FILE, json);
-  console.log(`${items.length} items, ${(json.length / 1024).toFixed(1)} KiB written to ${path.relative(ROOT, OUT_FILE)}`);
+  console.log(`${arts.length} pictures of ${items.length} items, ${(json.length / 1024).toFixed(1)} KiB written to ${path.relative(ROOT, OUT_FILE)}`);
 }
 
 main();

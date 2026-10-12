@@ -11,7 +11,6 @@ import {
   livesOf,
   standingIds,
   teamItemReady,
-  veinWindowMs,
   voteClosesAt,
   voteDone,
   type ItemKind,
@@ -102,7 +101,8 @@ export function mayAutoReask(s: GameState | null, qid: number): boolean {
 export function expireIn(s: GameState, now: number): number | null {
   const at = voteClosesAt(s);
   if (at === null) return null;
-  // Everyone it waits for has voted (the engine closes it on the vote itself; this covers the rest).
+  // Everyone it waits for has voted (the engine closes it on the vote itself; this covers the rest). A new zone's,
+  // all in before its cards are dealt, is not done till then: voteClosesAt gives the deal, and the host's 'expire' closes it.
   return voteDone(s, now) ? 0 : Math.max(0, at - now);
 }
 
@@ -143,17 +143,13 @@ export const HOST_HOLD_MARGIN_MS = 50;
  * (host clock): `handicap`, a typical guest's one-way trip, but never past
  * the moment that judges it, as the engine judges the host's answers by
  * when they arrive with no allowance: before the clock hits 0 (where a
- * flare would burn) and, on an Azurite Vein, before its fast window closes.
- * Anywhere else, `handicap` as it is.
+ * flare would burn). Anywhere else, `handicap` as it is.
  */
 export function hostAnswerHold(s: GameState, now: number, handicap: number): number {
   const q = s.question;
   if (handicap <= 0) return 0;
   if (!s.delve || !isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null) return handicap;
-  let cap = q.deadline - now;
-  const fastEnd = q.clockAt === undefined ? null : q.clockAt + veinWindowMs(s);
-  if (fastEnd !== null && q.find === 'azurite' && now <= fastEnd) cap = Math.min(cap, fastEnd - now);
-  return Math.max(0, Math.min(handicap, cap - HOST_HOLD_MARGIN_MS));
+  return Math.max(0, Math.min(handicap, q.deadline - now - HOST_HOLD_MARGIN_MS));
 }
 
 /**
@@ -214,19 +210,12 @@ export function runSeenStarting(prev: GameState | null, next: GameState): number
 }
 
 /**
- * The question in play was set aside by the host's reload (back to the same
- * cards, on the same turn): the engine put back what it cost, which is no
- * news to anyone.
+ * The question in play was held still by the host's reload (engine
+ * 'resumed'): its clock stopped, to start again with the time it had left.
  */
-export function setAside(prev: GameState | null, next: GameState): boolean {
-  return (
-    !!prev?.delve &&
-    !!next.delve &&
-    prev.delve.startedAt === next.delve.startedAt &&
-    prev.phase === 'question' &&
-    next.phase === 'choosing' &&
-    prev.turnCount === next.turnCount
-  );
+export function pausedNow(prev: GameState | null, next: GameState): boolean {
+  const [was, q] = [prev?.question, next.question];
+  return !!prev?.delve && !!next.delve && next.phase === 'question' && !!q?.paused && was?.askedAt === q.askedAt && !was.paused;
 }
 
 /** A send queue to a guest is empty: PeerJS's own, and the data channel's. */
@@ -235,29 +224,23 @@ export function drained(conn: { bufferSize?: number; dataChannel?: { bufferedAmo
 }
 
 export type DelveNotice =
-  /** The host reloaded and the question was set aside; whose it was ('' for a co-op run's, the team's). */
-  | { kind: 'setAside'; playerId: string }
+  /** The host reloaded and the question's clock is held still until it starts again. */
+  | { kind: 'paused' }
   /** Co-op: a player lost their last life, at `depth`. */
   | { kind: 'perished'; playerId: string; depth: number };
 
 /**
- * What a state change tells every screen beyond what it draws: a question
- * was set aside because the host reloaded (a toast), and together, a player
- * perishing (heard). A teammate's wrong pick, a revive and a flare burning
- * the game screen says itself; alone, the player's own screen says all of it.
+ * What a state change tells every screen beyond what it draws: a question's
+ * clock held still because the host reloaded (a toast), and together, a
+ * player perishing (heard). A teammate's wrong pick, a revive and a flare
+ * burning the game screen says itself; alone, the player's own screen says
+ * all of it.
  */
 export function delveNotices(prev: GameState | null, next: GameState): DelveNotice[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
   const out: DelveNotice[] = [];
-  const group = isGroupRun(next);
-  if (setAside(prev, next)) {
-    const active = prev.players[prev.turn];
-    if (group) out.push({ kind: 'setAside', playerId: '' });
-    else if (active) out.push({ kind: 'setAside', playerId: active.id });
-    // What it cost was put back: nothing more to tell.
-    return out;
-  }
-  if (!group) return out;
+  if (pausedNow(prev, next)) out.push({ kind: 'paused' });
+  if (!isGroupRun(next)) return out;
   for (const p of next.players)
     if (livesOf(prev, p.id) > 0 && livesOf(next, p.id) === 0) out.push({ kind: 'perished', playerId: p.id, depth: fellAt(next, p.id) ?? next.round });
   return out;
@@ -278,16 +261,12 @@ export function livesLost(prev: GameState | null, next: GameState): { playerId: 
 
 /**
  * Items gained or used up by this change, per player and item, for the phial,
- * sounds and effects: a find answered right (two shards forging a ward show
- * as a shard used and a ward gained), a ward breaking, a flare burning, a
- * stick of dynamite going off, everything dropped by a player who perished.
- * Nothing for a question set aside. `left`: how many they hold now.
+ * sounds and effects: a find answered right, a ward breaking, a flare
+ * burning, a stick of dynamite going off, everything dropped by a player who
+ * perished. `left`: how many they hold now.
  */
 export function inventoryChanges(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind; change: 'gained' | 'used'; left: number }[] {
   if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
-  // A question set aside gives back what it took (a flare, dynamite, a pack
-  // dropped by perishing): put back quietly, not found.
-  if (setAside(prev, next)) return [];
   return next.players.flatMap((p) => {
     const [before, after] = [inventoryOf(prev, p.id), inventoryOf(next, p.id)];
     return ITEM_KINDS.flatMap((item) =>
@@ -299,12 +278,11 @@ export function inventoryChanges(prev: GameState | null, next: GameState): { pla
 /**
  * What Dynamite Caches' blasts destroyed in this change, per player, for the
  * phial, sounds and effects: alone, at the reveal of a miss; together, with
- * each wrong pick as it comes in, and the time-out's at the reveal. Nothing
- * for a question set aside (what it took is given back). `prev` needs only
- * its phase, its turnCount and its question's askedAt and struck.
+ * each wrong pick as it comes in, and the time-out's at the reveal. `prev`
+ * needs only its phase and its question's askedAt and struck.
  */
 export function itemsBlown(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind }[] {
-  if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt || setAside(prev, next)) return [];
+  if (!prev?.delve || !next.delve || prev.delve.startedAt !== next.delve.startedAt) return [];
   const q = next.question;
   if (!q) return [];
   const reveals = prev.phase !== 'reveal' && next.phase === 'reveal' && !!next.reveal;
@@ -339,23 +317,22 @@ export function flareIn(s: GameState, now: number): number | null {
  * Delve: how the question `s` reveals ended for the player on this device
  * (`me`; null for none, as hot-seat), as the dark closing in with its clock
  * settles (darkness.ts resolveDark), or null for no reveal. Alone, the
- * answer's own outcome. Together, your own: your right answer, or a loss
- * you took (your wrong pick, or the time-out while you stood); with no
- * answer of yours (a teammate's came first, or you watch or lie perished),
- * the team's. A ward that took the whole loss rescues; the last life lost,
- * or the whole team fallen, holds the dark until the reveal is over.
+ * answer's own outcome. Together, the team's: cleared (whoever answered
+ * right, though your own pick was wrong), the light; missed, your own loss
+ * (your wrong pick, or the time-out while you stood), or with none of yours
+ * the team's miss. A ward that took the whole loss rescues; your last life
+ * lost (cleared or not), or the whole team fallen, holds the dark until the
+ * reveal is over.
  */
 export function darkOutcome(s: GameState, me: string | null): DarkOutcome | null {
   const r = s.phase === 'reveal' ? s.reveal : null;
   if (!s.delve || !r) return null;
   if (isGroupRun(s)) {
-    if (me && r.winnerId === me) return 'right';
     const hit = me ? r.hits?.find((h) => h.playerId === me) : undefined;
-    if (me && hit) {
-      if (hit.lives > 0 && livesOf(s, me) === 0) return 'perish';
-      return hit.lives === 0 && hit.wards > 0 ? 'ward' : 'miss';
-    }
+    if (me && hit && hit.lives > 0 && livesOf(s, me) === 0) return 'perish';
+    // A teammate's right answer clears it for everyone, a wrong pick of yours before it too.
     if (r.winnerId) return 'right';
+    if (me && hit) return hit.lives === 0 && hit.wards > 0 ? 'ward' : 'miss';
     return standingIds(s).length ? 'miss' : 'perish';
   }
   if (r.correct) return 'right';

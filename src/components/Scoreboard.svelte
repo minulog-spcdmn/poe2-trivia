@@ -5,11 +5,12 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { tick, untrack, type Snippet } from 'svelte';
+  import { onDestroy, tick, untrack, type Snippet } from 'svelte';
   import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
   import {
     FILL_SPAN,
@@ -26,7 +27,7 @@
     lifeHeld,
     lifeLost,
     lostPoint,
-    shardFound,
+    newFlame,
     turnsBlue,
     wardBlocked,
     wardFormed,
@@ -34,14 +35,17 @@
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { flareStrike } from '../lib/flareBurn';
-  import { burnsBlue, heatOf, streakOf } from '../lib/fx/streaks';
+  import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
+  import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
-  import WatchToggle from './WatchToggle.svelte';
+  import Gallery from './Gallery.svelte';
+  import KickButton from './KickButton.svelte';
+  import { zoomOf } from '../lib/stage';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -52,9 +56,6 @@
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
-  const spectators = $derived(s.spectators ?? []);
-  /** Those of them who take a seat in the next game (the rest just watch). */
-  const joining = $derived(spectators.filter((o) => !o.stay));
   /** Delve: lives instead of a score. */
   const run = $derived(s.delve ?? null);
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
@@ -203,11 +204,13 @@
   const invSnapshot = (st: GameState) =>
     ({
       phase: st.phase,
-      // setAside (lib/delveSession.ts) tells a set-aside question by its turn.
-      turnCount: st.turnCount,
       players: st.players.map((p) => ({ id: p.id })),
       question: st.question && { askedAt: st.question.askedAt, struck: [...(st.question.struck ?? [])] },
-      delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },
+      delve: st.delve && {
+        startedAt: st.delve.startedAt,
+        inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])),
+        banked: st.delve.banked && { ...st.delve.banked },
+      },
     }) as unknown as GameState;
   $effect(() => {
     const next = s;
@@ -215,6 +218,8 @@
     invPrev = invSnapshot(next);
     if (!run || !was) return;
     const atReveal = next.phase === 'reveal' && was.phase !== 'reveal';
+    // A vein's haul just went into the pack (the way out, or the dig's end): its wards flow in as a find's do.
+    const banking = !!next.delve?.banked && next.delve.banked.at !== was.delve?.banked?.at;
     const byPlayer = new Map<string, ReturnType<typeof inventoryChanges>>();
     for (const c of inventoryChanges(was, next)) byPlayer.set(c.playerId, [...(byPlayer.get(c.playerId) ?? []), c]);
     // A Dynamite Cache missed: what its blast destroyed is a moment of its
@@ -231,20 +236,19 @@
       // What the blast took is left to its own moment (a second ward gone with a ward that took the loss stays a shatter).
       const blownItem = blownBy.get(id);
       const changes = blownItem ? all.filter((c) => c.item !== blownItem || inventoryOf(was, id)[c.item] - inventoryOf(next, id)[c.item] > 1) : all;
-      // At a reveal it says whether a ward was forged (a third ward mined outright also drops the shard held).
-      const kind = momentOf(changes, atReveal ? !!next.reveal?.forged : undefined);
+      const kind = momentOf(changes);
       if (!kind) continue;
       // Perishing drops everything; only a ward breaking on the way (a cave-in) is a moment.
       if (kind !== 'shatter' && livesOf(next, id) === 0) continue;
       // A find answered right: its item flows from the answer to its place
-      // (findFlows) and lands with the sparks.
-      const found = atReveal && FOUND.has(kind);
-      const delay = !atReveal ? 0 : kind === 'shatter' ? 450 : found ? (FIND_START + 0.1) * 1000 : 700;
+      // (findFlows) and lands with the sparks; so does a vein's haul banked.
+      const found = (atReveal || (banking && kind === 'ward')) && FOUND.has(kind);
+      const delay = found ? (FIND_START + 0.1) * 1000 : !atReveal ? 0 : kind === 'shatter' ? 450 : 700;
       // A cave-in can break two wards at once (one of them the blast's, it has its own moment).
       const broke = Math.max(1, inventoryOf(was, id).wards - inventoryOf(next, id).wards - (blownItem === 'wards' ? 1 : 0));
       if (delay) invHeld[id] = inventoryOf(was, id);
       // Whether the sparks really flew is known a tick later (findFlows), well before the item lands.
-      const flow = found ? untrack(() => findFlows(id, kind, inventoryOf(was, id).wards)) : null;
+      const flow = found ? untrack(() => findFlows(id, kind, inventoryOf(was, id).wards, banking && !atReveal)) : null;
       const caved = kind === 'shatter' ? caveInOf(next, id) : null;
       later(() => playMoment(id, kind, kind === 'shatter' ? broke : 1, !!flow?.fed, caved), delay);
     }
@@ -253,8 +257,6 @@
   /** Moments of a find answered right, and the find each comes from. */
   const FOUND = new Map<InventoryMoment['kind'], FindKind>([
     ['ward', 'azurite'],
-    ['forge', 'azurite'],
-    ['shard', 'azurite'],
     ['flare', 'flare'],
     ['dynamite', 'dynamite'],
   ]);
@@ -264,14 +266,15 @@
    * from the right answer to the very place its item appears in player
    * `id`'s entry (findGained in lib/fx/moments.ts), as a point flows into
    * the bar in the other modes: a ward to the casing it forms on (round the
-   * first chamber without a ward, `wards` being how many they had), a shard
-   * to that casing's base half, where it forms, a flare or dynamite to its
-   * engraving beside the phial (or the avatar), its place kept for it
-   * meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
+   * first chamber without a ward, `wards` being how many they had), a flare
+   * or dynamite to its engraving beside the phial (or the avatar), its place
+   * kept for it meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
    * later, once the sparks do fly (with effects off, or no answer or place
-   * to fly between, nothing does).
+   * to fly between, nothing does). `banked`: a vein's haul going into the
+   * pack, its wards flowing from the way out's card (its lantern) as it
+   * leaves, or, the dig ended by itself, from the strike's right answer.
    */
-  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number): { fed: boolean } {
+  function findFlows(id: string, kind: InventoryMoment['kind'], wards: number, banked = false): { fed: boolean } {
     const flow = { fed: false };
     const find = FOUND.get(kind);
     if (!find || !fxActive()) return flow;
@@ -282,14 +285,15 @@
     const startAt = performance.now();
     void tick().then(() => {
       const li = scoreRowOf(id);
-      // The right answer, as the reveal marks it (QuestionView.svelte).
-      const answer = document.querySelector('.question .option.right, .question .tile.right');
+      // The right answer, as the reveal marks it (QuestionView.svelte); a haul banked, the way out's lantern.
+      const answer =
+        (banked ? document.querySelector('.choose .card.out .icon') : null) ?? document.querySelector('.question .option.right, .question .tile.right');
       if (!li || !answer) return;
       const { flow: phial, counts } = shownVessel(li);
       // Its slot (followed as the entry moves), and within it the exact part the item takes.
       const casing = phial?.phial.querySelector(`.slot[data-slot="${Math.min(wards, CASINGS.length - 1)}"]`);
       const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : casing;
-      const aim = item ? slot?.querySelector('.grow') : kind === 'shard' ? casing?.querySelector('.half') : casing;
+      const aim = item ? slot?.querySelector('.grow') : casing;
       if (!slot) return;
       findGained(answer, slot, find, aim ?? slot);
       flow.fed = true;
@@ -340,14 +344,10 @@
       if (!li) return;
       const { vessel, counts } = shownVessel(li);
       const pip = (sel: string) => vessel?.querySelector(sel) ?? null;
-      // A ward's casing and a shard are on the chambers; a breaking ward bursts off its own.
-      if (kind === 'ward' || kind === 'forge') {
+      // A ward's casing is on the chambers; a breaking ward bursts off its own.
+      if (kind === 'ward') {
         const el = pip('.casing.whole.fresh');
-        if (el) wardFormed(el, kind === 'forge', fed);
-        if (mine && !fed) sfx('findReward');
-      } else if (kind === 'shard') {
-        const el = pip('.casing.shard');
-        if (el) shardFound(el);
+        if (el) wardFormed(el, fed);
         if (mine && !fed) sfx('findReward');
       } else if (kind === 'shatter') {
         // Each barrier catches its blow in turn, and its casing breaks with it.
@@ -375,10 +375,10 @@
         // Everyone hears it: the clock everyone watches just got longer.
         sfx('flare');
       } else if (kind === 'blown' && item) {
-        // What it was: a ward's or shard's casing on the chambers (bursting
-        // off, Phial.svelte), a flare or stick beside the phial.
+        // What it was: a ward's casing on the chambers (bursting off,
+        // Phial.svelte), a flare or stick beside the phial.
         const el =
-          item === 'wards' || item === 'shards'
+          item === 'wards'
             ? (vessel?.querySelector('.casing.ghost.blown') ?? null)
             : (counts?.querySelector(`[data-pip="${item === 'flares' ? 'flare' : 'dynamite'}"]`) ?? null);
         if (el) itemBlown(el, li, item, mine);
@@ -545,7 +545,7 @@
               filling[p.id] = false;
               shown[p.id] = barShown[p.id] = latest(p.id, score);
               // A streak's fire grows as the number ticks up.
-              heat[p.id] = heatOf(streakOf(session.state?.players.find((x) => x.id === p.id)), !!session.state?.delve);
+              burning[p.id] = streakOf(session.state?.players.find((x) => x.id === p.id));
             },
           ],
         ]);
@@ -565,43 +565,52 @@
 
   // Players on a streak burn. The fire grows with the score, as the number
   // ticks up (the award's last step above); a broken streak puts it out at once.
-  let heat = $state<Record<string, number>>({});
+  // The streak as the fire shows it, per player.
+  let burning = $state<Record<string, number>>({});
   $effect(() => {
     const here = new Set<string>();
     for (const p of s.players) {
       here.add(p.id);
-      const h = heatOf(streakOf(p), !!s.delve);
-      const was = untrack(() => heat[p.id] ?? 0);
-      if (h > was && awards.has(p.id)) continue;
-      if (h !== was) heat[p.id] = h;
+      const n = streakOf(p);
+      const was = untrack(() => burning[p.id] ?? 0);
+      if (n > was && awards.has(p.id)) continue;
+      if (n !== was) burning[p.id] = n;
     }
     // Players who left take their fire with them.
-    for (const id of Object.keys(untrack(() => heat))) if (!here.has(id)) delete heat[id];
+    for (const id of Object.keys(untrack(() => burning))) if (!here.has(id)) delete burning[id];
   });
   $effect(() => () => {
     for (const id of [...awards.keys()]) cancel(awards, id);
   });
 
-  /** Svelte action: sets a row burning at `h` (0 to 1), re-lit as it changes. `delve`: the long scale (lib/fx/streaks). */
-  function burn(node: HTMLElement, o: { h: number; delve: boolean }) {
+  /**
+   * Svelte action: sets a row burning for a streak of `n`, re-lit as its heat
+   * or colour changes. `delve`: the long scale and the colours past blue
+   * (lib/fx/streaks). Reaching a new colour, it bursts in it.
+   */
+  function burn(node: HTMLElement, o: { n: number; delve: boolean }) {
     let fire: Handle | null = null;
-    let lit = 0;
-    let delve = o.delve;
-    const set = ({ h: next, delve: long }: { h: number; delve: boolean }) => {
-      delve = long;
-      if (next === lit) return;
-      fire?.stop(0.5);
-      fire = next > 0 ? ablaze(node, next, burnsBlue(next, delve)) : null;
-      if (lit > 0 && next === 0) doused(node);
-      if (lit > 0 && !burnsBlue(lit, delve) && burnsBlue(next, delve)) turnsBlue(node);
+    let lit = { heat: 0, flame: flameOf(0) };
+    const light = () => (fire = lit.heat > 0 ? ablaze(node, lit.heat, lit.flame.blue, lit.flame.tint) : null);
+    const set = ({ n, delve }: { n: number; delve: boolean }) => {
+      const next = { heat: heatOf(n, delve), flame: flameOf(n, delve) };
+      if (next.heat === lit.heat && (next.heat === 0 || next.flame === lit.flame)) return;
+      const was = lit;
       lit = next;
+      fire?.stop(0.5);
+      light();
+      if (was.heat > 0 && next.heat === 0) doused(node);
+      if (was.heat > 0 && next.heat > 0 && next.flame !== was.flame) {
+        if (next.flame.blue) turnsBlue(node);
+        else if (next.flame.tint) newFlame(node, next.flame.tint);
+      }
     };
     set(o);
     // Effects switched off and on, or the GL context lost and restored, wipe
     // every shape: light it again on the new one.
     const relight = onFxChange(() => {
       fire?.stop(0);
-      fire = lit > 0 ? ablaze(node, lit, burnsBlue(lit, delve)) : null;
+      light();
     });
     return {
       update: set,
@@ -612,18 +621,13 @@
     };
   }
 
-  // Kicking takes two clicks so a stray tap doesn't remove anyone.
+  // Kicking takes two clicks (lib/kick), so neither a stray tap nor a double
+  // click removes anyone.
   let confirming = $state<string | null>(null);
-  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  const kicker = kickConfirm((id) => (confirming = id));
+  onDestroy(kicker.dispose);
   function kick(id: string) {
-    if (confirming !== id) {
-      confirming = id;
-      if (confirmTimer) clearTimeout(confirmTimer);
-      confirmTimer = setTimeout(() => (confirming = null), 3000);
-      return;
-    }
-    confirming = null;
-    session.kick(id);
+    if (kicker.click(id)) session.kick(id);
   }
 
   /**
@@ -632,9 +636,11 @@
    * shrinks between turns on phones. It moves them with `translate`, so the
    * active entry's own transform stays.
    */
-  function glide(_node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
-    const dx = from.left - to.left;
-    const dy = from.top - to.top;
+  function glide(node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    // Measured on screen: in the entry's own px under the stage's zoom.
+    const z = zoomOf(node);
+    const dx = (from.left - to.left) / z;
+    const dy = (from.top - to.top) / z;
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
@@ -681,11 +687,20 @@
 {/snippet}
 
 <!-- While the offer to give a life is open, Escape closes it and hands focus back to its heart. -->
-<svelte:window onkeydown={(e) => asking && e.key === 'Escape' && (e.preventDefault(), closeAsk())} />
+<!-- Escape closes the revive question, or takes an armed kick back; a press anywhere but the armed Kick takes it back too. -->
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key !== 'Escape') return;
+    if (asking) (e.preventDefault(), closeAsk());
+    else kicker.disarm();
+  }}
+  onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
+/>
 
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
-<div class="strip" class:stuck bind:this={strip}>
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
+<div class="strip" data-cursor="board" class:stuck bind:this={strip}>
   <ol class="board" class:crowded={s.players.length > 6}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
@@ -694,7 +709,8 @@
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
       {@const score = scoreOf(p.id, p.score)}
-      {@const fire = heat[p.id] ?? 0}
+      {@const streakShown = burning[p.id] ?? 0}
+      {@const fire = heatOf(streakShown, !!run)}
       {@const lives = run ? livesOf(s, p.id) : 0}
       {@const fell = run && !(p.id in hit) && !(p.id in held) ? fellAt(s, p.id) : null}
       {@const shownLives = held[p.id] ?? lives}
@@ -703,12 +719,14 @@
       {@const expect = expecting[p.id] ?? null}
       {@const reviveOk = fell !== null && canRevive(p.id)}
       <li
+        data-cursor="row:{i}"
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
-        use:burn={{ h: fire, delve: !!run }}
+        use:burn={{ n: streakShown, delve: !!run }}
         class:ablaze={fire > 0}
         style:--heat={fire}
-        style:--blue={burnsBlue(fire, !!run) ? 1 : 0}
+        style:--flame-rgb={flameOf(streakShown, !!run).css}
+        class:armed={confirming === p.id}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
@@ -746,17 +764,11 @@
         {/if}
         {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
         {#if canKick && p.id !== s.hostId}
-          <button
-            class="kick"
-            class:confirm={confirming === p.id}
-            onclick={() => kick(p.id)}
-            title="Remove {p.name} from the game"
-            aria-label="Remove {p.name}"
-          >
-            {confirming === p.id ? 'Kick?' : '×'}
-          </button>
+          <span class="kick-at" class:armed={confirming === p.id}>
+            <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
+          </span>
         {/if}
-        {#if out}<span class="x" title="Answered wrong">✕</span>{/if}
+        {#if out}<span class="x" title="Answered wrong"><DrawnMark /></span>{/if}
         {#if reviveOk}
           <!-- Delve together: revive them with one of your lives. A heart of
                light in the entry, beating as the phial's lives do. -->
@@ -773,10 +785,13 @@
     {/each}
   </ol>
   {@render aside?.()}
+  <!-- Who's watching hangs under the strip, so nothing moves when someone comes in to watch. Not while the offer to give a life hangs there. -->
+  {#if !asking && !session.spectating}<Gallery hang />{/if}
   {#if asking && askingName && me}
     <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
       class="revive-ask"
+      data-cursor="ask"
       role="group"
       aria-label="Give a life"
       use:takeFocus
@@ -790,32 +805,8 @@
     </div>
   {/if}
 </div>
-{#if spectators.length}
-  <p class="watching">
-    <span class="eye" aria-hidden="true">👁</span>
-    Watching:
-    {#each spectators as o (o.id)}
-      <span class="spectator"
-        >{o.name}{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}{#if canKick}<button
-            class="kick-inline"
-            class:confirm={confirming === o.id}
-            onclick={() => kick(o.id)}
-            title="Remove {o.name}"
-            aria-label="Remove {o.name}">{confirming === o.id ? 'Kick?' : '×'}</button
-          >{/if}</span
-      >
-    {/each}
-    {#if joining.length === spectators.length}
-      <span class="hint">· joining next game</span>
-    {:else if joining.length}
-      <span class="hint">· {joining.map((o) => o.name).join(', ')} {joining.length === 1 ? 'joins' : 'join'} next game</span>
-    {/if}
-    {#if session.spectating}
-      <!-- Your own choice: take a seat when the next game starts, or keep watching. -->
-      <WatchToggle />
-    {/if}
-  </p>
-{/if}
+<!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
+{#if session.spectating}<Gallery />{/if}
 
 <style>
   .board {
@@ -860,8 +851,8 @@
   }
   /* On a streak: the entry smoulders under its flames (and still glows with effects off). */
   li.ablaze {
-    /* Orange, and blue at the top of a streak. */
-    --flame: color-mix(in srgb, rgb(70, 140, 255) calc(var(--blue) * 100%), rgb(255, 110, 30));
+    /* Orange, blue at the top of a streak, and in Delve on up the daily's colours (lib/fx/streaks). */
+    --flame: rgb(var(--flame-rgb, 255, 110, 30));
   }
   /* Borders that say something (whose turn, answered wrong, a duelist) win over the fire's. */
   li.ablaze:not(.active, .out, .duelist) {
@@ -894,36 +885,41 @@
     border: 5px solid transparent;
     border-top-color: var(--c);
   }
-  .kick {
+  /* The kick, as the lobby's (KickButton): a small seal on the entry's
+     corner, shown while the entry is pointed at; pointed at itself, it and
+     the entry's edge warm red; armed, it grows sideways into a pill reading
+     Kick, while the entry takes the wrong-answer colours. */
+  .kick-at {
     position: absolute;
     top: -8px;
     left: -6px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 0.35em;
-    border-radius: 10px;
-    border: 1px solid rgba(224, 85, 63, 0.5);
-    background: #1c0f0b;
-    color: #ff9c86;
-    font-family: var(--font-display);
-    font-size: 0.7rem;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
+    display: flex;
+    --kick-size: 20px;
+    --kick-armed: 50px;
     opacity: 0;
     transition: opacity 0.2s;
   }
-  li:hover .kick,
-  .kick:focus-visible,
-  .kick.confirm {
+  li:hover .kick-at,
+  .kick-at:focus-within,
+  .kick-at.armed {
     opacity: 1;
   }
-  .kick.confirm {
-    background: var(--bad);
-    color: #fff;
+  li:has(:global(.kick:hover)) {
+    border-color: rgba(224, 85, 63, 0.45);
+  }
+  /* Armed: the whole entry asks, in the wrong-answer colours, the avatar dimmed. */
+  li.armed {
+    border-color: #8e4434;
+    background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
+  }
+  li.armed :global(.avatar) {
+    filter: saturate(0.4) brightness(0.75);
+  }
+  li.armed .name {
+    color: #eab3a3;
   }
   @media (hover: none) {
-    .kick {
+    .kick-at {
       opacity: 0.8;
     }
   }
@@ -1032,7 +1028,7 @@
     filter: none;
   }
   /* (Not the remove button, which keeps its own showing: on hover only.) */
-  li.fallen.revivable > :not(.revive, .kick) {
+  li.fallen.revivable > :not(.revive, .kick-at) {
     opacity: 0.45;
     filter: grayscale(0.85);
   }
@@ -1225,8 +1221,8 @@
     height: 18px;
     display: grid;
     place-items: center;
-    font-size: 0.7rem;
-    font-weight: 700;
+    --mark-size: 7px;
+    --mark-stroke: 1.5px;
     color: #fff;
     background: var(--bad);
     border-radius: 50%;
@@ -1358,37 +1354,6 @@
     font-size: 0.8rem;
   }
 
-  .watching {
-    margin: -0.2rem 0 0;
-    text-align: center;
-    font-size: 0.88rem;
-    color: var(--muted);
-  }
-  .watching em,
-  .watching .hint {
-    font-size: 0.9em;
-    font-style: italic;
-  }
-  .spectator {
-    color: var(--text);
-    margin-left: 0.5em;
-  }
-  .kick-inline {
-    margin-left: 0.25em;
-    padding: 0 0.35em;
-    border: 1px solid rgba(224, 85, 63, 0.5);
-    border-radius: 8px;
-    background: #1c0f0b;
-    color: #ff9c86;
-    font-size: 0.7rem;
-    line-height: 1.3;
-    cursor: pointer;
-  }
-  .kick-inline.confirm {
-    background: var(--bad);
-    color: #fff;
-  }
-
   @media (max-width: 640px) {
     /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
        row of avatars and scores, with the name and progress of whoever's turn
@@ -1415,6 +1380,11 @@
       background-color: var(--pinned-bg);
       border-bottom: var(--pinned-line);
       box-shadow: 0 8px var(--pinned-shadow);
+    }
+    /* Who's watching stays at the top of the page; pinned, the strip goes without it. */
+    .strip.stuck :global(.gallery) {
+      opacity: 0;
+      visibility: hidden;
     }
     /* One row while it fits (the name of whoever's turn it is gives way first). */
     .board {
@@ -1519,8 +1489,9 @@
     li.wide .info :global(.vessel) {
       height: 9px;
     }
-    /* The timer at the end of the row, smaller than beside the question. */
-    .strip :global(.timer) {
+    /* The timer at the end of the row, smaller than on the task line on wider screens. */
+    /* (.timer twice, to outweigh TimerRing's own size whatever the bundle's order.) */
+    .strip :global(.timer.timer) {
       flex: none;
       width: 44px;
       height: 44px;

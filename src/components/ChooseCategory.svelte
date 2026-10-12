@@ -4,15 +4,16 @@
   import { untrack } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
-  import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
-  import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
+  import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
+  import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
-  import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
+  import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
+  import { digOf, expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
-  import { fxActive, type Handle, type Vec3 } from '../lib/fx/core';
+  import { cover, fxActive, fxGroup, onFxChange, type CoverBox, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
@@ -45,6 +46,61 @@
   const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
+
+  // ---- the Azurite Vein's dig ----------------------------------------------
+  // After a right strike the deal is two cards: the vein running on, and the
+  // way out, its plaque saying what it keeps (the haul in hand).
+
+  /** The vein being dug, while its two cards are up. */
+  const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
+  const haul = $derived(dig?.haul.length ?? 0);
+  // (The way out's lantern hangs in its plate, gilded: no emblem stands in its window.)
+  const iconOf = (cat: string) => (isWayOut(cat) ? '' : categoryIcon(cat));
+  const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1, up: 0, left: 0 } : categoryIconTweak(cat));
+  /** A card's name as players read it. */
+  const cardName = (cat: string) => (isWayOut(cat) ? out.title : cat);
+  /** The way out's colours, as custom properties on its card. */
+  const outInk = Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';');
+
+  // ---- the cards' effects ---------------------------------------------------
+  // Everything the cards set off is one group: it ends with them (a short
+  // fade) rather than playing on over the question that takes their place.
+  // It shines from behind the UI, so the voters' seals on the cards' feet
+  // (a cover while they're up) stay in front of a card's fire and its light.
+  // The seals' own glint, as a vote lands, is in front of them.
+
+  const fx = fxGroup();
+  const onCards = <T,>(fn: () => T): T => fx.run(fn, { behind: true });
+  $effect(() => () => fx.stop());
+
+  let cardsEl = $state<HTMLElement>();
+  /**
+   * How far a seal's cover reaches past its box, px: the avatar's rings (3px
+   * round it), and the cover's soft edge (a mask at a quarter of the view,
+   * blurred), which would otherwise let the light through over the seal's rim.
+   */
+  const SEAL_PAD = 10;
+  function* seals(): Iterable<CoverBox> {
+    for (const el of cardsEl?.querySelectorAll('.votes > *') ?? []) {
+      const b = el.getBoundingClientRect();
+      const box = new DOMRect(b.left - SEAL_PAD, b.top - SEAL_PAD, b.width + 2 * SEAL_PAD, b.height + 2 * SEAL_PAD);
+      const r = box.height / 2;
+      yield { box, radii: [r, r, r, r] };
+    }
+  }
+  $effect(() => {
+    if (!coop) return;
+    // (Again when the effects are turned back on: turning them off drops every cover.)
+    let seen = cover(seals);
+    const off = onFxChange(() => {
+      seen.stop();
+      seen = cover(seals);
+    });
+    return () => {
+      off();
+      seen.stop();
+    };
+  });
 
   // ---- the vote (Delve together) ------------------------------------------
   // Votes are public and can change until the vote closes: when everyone it
@@ -87,8 +143,11 @@
     const i = s.offered.indexOf(category);
     if (!canVote || !faceUp(i) || myVote === category) return;
     sfx('vote');
+    // The card's hover fire goes out: it stands lit as yours now (.voted).
+    burning?.stop();
+    burning = null;
     const frame = cardEls[i]?.querySelector('.frame');
-    if (frame && fxActive()) outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 });
+    if (frame && fxActive()) onCards(() => outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 }));
     session.dispatch({ type: 'vote', category });
   }
 
@@ -99,7 +158,7 @@
     return () => clearTimeout(t);
   });
   function cast(node: HTMLElement) {
-    if (pipsReady) voteCast(node);
+    if (pipsReady) fx.run(() => voteCast(node));
   }
 
   // ---- the draw -------------------------------------------------------------
@@ -141,8 +200,9 @@
       const frame = card?.querySelector('.frame');
       const others = cardEls.filter((c, j) => c && j !== target).map((c) => c.querySelector('.frame') ?? c);
       const kind = kindOf(category);
-      if (frame && kind) findPicked(frame, card, others, kind);
-      else if (frame) cardPicked(frame, card, others, false);
+      if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
+      else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
+      else if (frame) onCards(() => cardPicked(frame, card, others, false));
       sfx('draw');
     };
     // The cards in the draw: those with votes, in their order.
@@ -177,7 +237,7 @@
         const i = path[k];
         lit = i;
         const frame = cardEls[i]?.querySelector('.frame');
-        if (frame) raffleHop(frame);
+        if (frame) onCards(() => raffleHop(frame));
         sfx('hover');
       }
       drawFrame = requestAnimationFrame(step);
@@ -252,10 +312,147 @@
     light(card, { color: kind === 'azurite' ? [0.3, 0.6, 1] : kind === 'flare' ? [1, 0.25, 0.4] : [1, 0.45, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
   }
 
+  // The way out's effects: lamplight rather than fire. Its light swells round
+  // the lantern as it turns up, steadies and breathes under the pointer, and
+  // floods out as it is chosen; motes of it drift in the window (.icon, where
+  // the lantern hangs).
+  const LAMP: Vec3 = [1, 0.74, 0.38];
+  function outRevealed(frame: Element) {
+    if (!fxActive()) return;
+    const lantern = frame.querySelector('.icon') ?? frame;
+    outline(frame, { color: dim(C.gold, 0.75), width: 10, intensity: 0.8, life: 1.1, fadeIn: 0.1 });
+    glints(lantern, { count: 4, area: 'fill', color: C.goldPale, size: [3, 7], delay: [0.1, 0.5] });
+    light(lantern, { color: LAMP, radius: 280, intensity: 0.34, decay: 1.1 });
+  }
+  function outHover(frame: Element, card: Element): Handle {
+    if (!fxActive()) return { stop() {} };
+    const lantern = frame.querySelector('.icon') ?? frame;
+    const glow = outline(frame, { color: dim(C.gold, 0.65), width: 12, flame: 0.12, pulse: 0.5, intensity: 0.65, fadeIn: 0.35, base: card });
+    const motes = emitter(4, () => glints(lantern, { count: 1, area: 'fill', color: C.goldPale, size: [2, 5], life: [0.6, 1.1] }));
+    light(lantern, { color: LAMP, radius: 220, intensity: 0.18, decay: 0.8 });
+    return {
+      stop() {
+        glow.stop(0.45);
+        motes.stop();
+      },
+    };
+  }
+  /** The way out is chosen: the lamp's light floods out of it; the vein's card burns away. */
+  function outPicked(card: Element, base: Element, others: Element[]) {
+    if (!fxActive()) return;
+    const lantern = card.querySelector('.icon') ?? card;
+    for (const o of others) {
+      embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
+      puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
+    }
+    outline(card, { color: C.gold, width: 16, flame: 0.2, intensity: 1, life: 1.3, base });
+    ring(lantern, { radius: 300, thickness: 10, life: 0.9, color: C.goldPale, breakup: 0.2 });
+    flare(lantern, { size: 44, streak: 380, life: 0.8, color: C.goldPale });
+    glints(lantern, { count: 6, area: 'fill', color: C.goldPale, size: [4, 9] });
+    light(lantern, { color: LAMP, radius: 440, intensity: 0.85, decay: 1.3 });
+  }
+
   let picked = $state<string | null>(null);
 
-  // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
+  // Size each emblem, and the items behind it (lib/ui, categoryCompanions), by
+  // its visible shape (see lib/iconFit); measured while the cards lie face down.
   for (const url of categoryIcons()) measure(url);
+
+  // A category that names several kinds of item shows one of each (lib/ui,
+  // categoryCompanions): its emblem in front, and behind it, a little
+  // smaller and darker, an item of each other kind, partly hidden but with
+  // the part that says its kind in view. MOONS sets how they lie together,
+  // by eye for their shapes: for each kind (its group) its item's offset
+  // from the emblem (right and down), size against it and tilt (degrees,
+  // clockwise), in px at a tall card's size, so that together they make
+  // one compact shape. The heap as a whole is then centred and sized as one
+  // emblem's box would be (see heapOf). A kind the data no longer has
+  // leaves its spot empty.
+  type Spot = [x: number, y: number, k: number, turn: number];
+  const MOONS: Record<string, Record<string, Spot>> = {
+    'Gloves & Boots': { Gloves: [18, -34, 0.85, 0] },
+    'Amulets & Belts': { Amulets: [0, -44, 0.88, 0] },
+    'Flasks, Charms, Jewels, Relics & Tablets': {
+      Charms: [-43, -30, 0.42, -8],
+      Jewels: [44, -30, 0.46, 0],
+      Relics: [-34, 26, 0.6, -28],
+      Tablets: [34, 22, 0.46, 18],
+    },
+  };
+  /** How far the companions draw out from the heap's middle on hover, at most (see .moon). */
+  const SPREAD = 1.25;
+  /** A heap laid out: the emblem's size and shift on top of its tweak's, each kind's spot, and how far it may spread on hover. */
+  type Heap = { k: number; up: number; left: number; at: Record<string, Spot>; spread: number };
+  /**
+   * A category's heap, when it has companions to show, laid out as one
+   * emblem: the box round all its items' visible parts (a tilted item's
+   * turned box) is centred in the window and scaled to a single item's size
+   * and bounds (lib/iconFit: WEIGHT, MAX_W, MAX_H; not its ink, which a
+   * heap's overlaps would overcount), so it covers the window as much as the
+   * emblems beside it. No item is drawn larger than its own fit (k 1): a
+   * larger one would grow upward from its foot (.glyph.fit), and a row
+   * holds every item to 1. As set in MOONS until every item is measured.
+   */
+  function heapOf(cat: string): Heap | undefined {
+    const spots = MOONS[cat];
+    const companions = categoryCompanions(cat).filter((c) => spots?.[c.kind]);
+    if (!companions.length) return undefined;
+    const t = categoryIconTweak(cat);
+    const face = fits[categoryIcon(cat)];
+    const ready = !!face && companions.every((c) => fits[c.url]);
+    if (!ready) return { k: 1, up: 0, left: 0, at: spots, spread: 1 };
+    /** An item's box, turned by its tilt: [x, y, w, h], about its centre. */
+    const box = (f: { w: number; h: number }, k: number, x: number, y: number, turn: number) => {
+      const [w, h] = [(f.w - 2 * PAD) * k, (f.h - 2 * PAD) * k];
+      const r = (turn * Math.PI) / 180;
+      const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
+      return [x, y, w * c + h * s, w * s + h * c];
+    };
+    // The emblem where its tweak puts it (as .glyph.fit does), and the others round it.
+    const [ex, ey] = [-t.left, Math.min(0, ((1 - t.k) * face.h) / 2) - t.up];
+    const items = [box(face, t.k, ex, ey, 0), ...companions.map((c) => box(fits[c.url], ...spotOf(spots[c.kind], ex, ey)))];
+    const x0 = Math.min(...items.map(([x, , w]) => x - w / 2));
+    const x1 = Math.max(...items.map(([x, , w]) => x + w / 2));
+    const y0 = Math.min(...items.map(([, y, , h]) => y - h / 2));
+    const y1 = Math.max(...items.map(([, y, , h]) => y + h / 2));
+    const [W, H, cx, cy] = [x1 - x0, y1 - y0, (x0 + x1) / 2, (y0 + y1) / 2];
+    const most = Math.max(t.k, ...companions.map((c) => spots[c.kind][2]));
+    const s = Math.min(WEIGHT / Math.sqrt(W * H), MAX_W / W, MAX_H / H, 1 / most);
+    const at = Object.fromEntries(companions.map((c) => {
+      const [x, y, k, turn] = spots[c.kind];
+      return [c.kind, [(ex + x - cx) * s, (ey + y - cy) * s, k * s, turn] as Spot];
+    }));
+    // At its new size the emblem is no larger than its fit, so it sits where its shift puts it.
+    const [nx, ny] = [(ex - cx) * s, (ey - cy) * s];
+    return { k: s, up: -ny - t.up, left: -nx - t.left, at, spread: spreadOf(companions.map((c) => box(fits[c.url], ...spotOf(at[c.kind], 0, 0)))) };
+  }
+  /** A spot's size, centre (about the emblem at x, y) and tilt, as box() takes them. */
+  const spotOf = ([x, y, k, turn]: Spot, ex: number, ey: number) => [k, ex + x, ey + y, turn] as const;
+  /**
+   * How far (up to SPREAD) companions at these boxes may draw out from the
+   * window's middle and stay in the window: inside its sides and floor
+   * (84 px either side, 97 below) and its arch (radius 84, springing 22
+   * above the middle), as the plate draws it (lib/cardEngraving).
+   */
+  function spreadOf(boxes: number[][]) {
+    const inside = (far: number) =>
+      boxes.every(([x, y, w, h]) =>
+        [-1, 1].every((sx) =>
+          [-1, 1].every((sy) => {
+            const [px, py] = [x * far + (sx * w) / 2, y * far + (sy * h) / 2];
+            return Math.abs(px) <= 84 && py <= 97 && (py >= -22 || Math.hypot(px, py + 22) <= 84);
+          }),
+        ),
+      );
+    // In whole hundredths, so repeated subtraction can't drift below 1.
+    for (let i = Math.round((SPREAD - 1) * 100); i > 0; i--) if (inside(1 + i / 100)) return 1 + i / 100;
+    return 1;
+  }
+  /** The emblem's style for a category: its fit, made room for its companions. */
+  function emblemStyle(cat: string, heap: Heap | undefined) {
+    const t = tweakOf(cat);
+    return fitStyle(iconOf(cat), heap ? { k: t.k * heap.k, up: t.up + heap.up, left: t.left + heap.left } : t);
+  }
 
   // The deal: the cards slide in face down one after another, then turn face
   // up from left to right. Seconds from when they appear. Held still (reduced
@@ -314,13 +511,11 @@
     if (motion.still) return;
     // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
     const kind = kindOf(s.offered[i]);
+    const out = isWayOut(s.offered[i]);
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
-      if (dealtAt !== null) {
-        if (kind) findRevealed(frame, kind);
-        else cardRevealed(frame, dm);
-      }
+      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : cardRevealed(frame, dm)));
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -339,12 +534,14 @@
   }
   function ignite(i: number) {
     waiting = null;
-    if (!mine || picked) return;
+    // (Not the card you voted for: it stands lit as yours.)
+    if (!mine || picked || (coop && myVote === s.offered[i])) return;
     burning?.stop();
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
-    if (frame) burning = kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch);
+    const out = isWayOut(s.offered[i]);
+    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : cardHover(frame, card, !!s.deathmatch)));
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -379,8 +576,9 @@
     const frame = cardEls[i]?.querySelector('.frame');
     const others = cardEls.filter((c, j) => c && j !== i).map((c) => c.querySelector('.frame') ?? c);
     const kind = kindOf(category);
-    if (frame && kind) findPicked(frame, cardEls[i], others, kind);
-    else if (frame) cardPicked(frame, cardEls[i], others, !!s.deathmatch);
+    if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
+    else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
+    else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
     sfx('pick');
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -388,10 +586,19 @@
   }
 </script>
 
-<div class="choose">
-  <p class="prompt">
+<div class="choose" class:coop style:--n={s.offered.length}>
+  <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
+  <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+    {:else if dig}
+      {#if coop ? canVote && !drawn : mine}
+        {coop && myVote ? 'Your vote is in' : 'Dig deeper, or get out?'}
+      {:else if coop}
+        <span class="muted">{drawn ? 'Drawing from the votes…' : 'The team is deciding whether to dig deeper…'}</span>
+      {:else}
+        <span class="muted">{active.name} is deciding whether to dig deeper…</span>
+      {/if}
     {:else if coop}
       {#if drawn}
         <span class="muted">Drawing from the votes…</span>
@@ -409,14 +616,18 @@
     {/if}
   </p>
 
-  <div class="cards" class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
+  <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
+      {@const heap = heapOf(cat)}
       <button
         class="card"
+        data-cursor="card:{i}"
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
+        class:out={isWayOut(cat)}
+        style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
@@ -425,7 +636,7 @@
         class:faded={(picked && picked !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
         class:passing={!landed && lit === i}
-        aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
+        aria-label={coop ? `${cardName(cat)}: ${voteWords(cat)}` : isWayOut(cat) ? cardName(cat) : undefined}
         aria-pressed={coop && canVote ? myVote === cat : undefined}
         disabled={!mine}
         onclick={() => pick(cat)}
@@ -439,23 +650,43 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
-            <CardEngraving side="back" find={kindOf(cat)} />
+            <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="filigree"></span>
           </span>
           <span class="frame" use:backdropShadow>
-            <CardEngraving side="face" find={kindOf(cat)} />
+            <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              <span class="find-tag">{FIND_TEXT[kind].name}</span>
+              <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+            {:else if isWayOut(cat)}
+              <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
             {/if}
-            <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
+            <span class="icon" class:none={isWayOut(cat)}>
+              {#if heap}
+                {@const at = heap.at}
+                <span class="lit moons" style:--spread={heap.spread}>
+                  {#each categoryCompanions(cat) as c (c.url)}
+                    {#if at[c.kind]}
+                      {@const [x, y, k, turn] = at[c.kind]}
+                      <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
+                        ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')"></span></span
+                      >
+                    {/if}
+                  {/each}
+                </span>
+              {/if}
+              <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
             </span>
+            {#if kindOf(cat) === 'azurite'}
+              <!-- The vein's crystals in the corner stand in front of the item. -->
+              <CardEngraving side="face" find="azurite" front />
+            {/if}
             <span class="title"
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
+                >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
             >
           </span>
           {#if coop}
@@ -464,7 +695,8 @@
           {/if}
         </span>
         {#if coop}
-          <!-- Who voted for it, your own mark ringed; the row keeps its height while empty. -->
+          <!-- Who voted for it, your own mark ringed: on the card's foot from 701px
+               wide, else a row under it that keeps its height while empty. -->
           {@const voters = votersOf(cat)}
           {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
           <span class="votes" aria-hidden="true">
@@ -480,10 +712,37 @@
     {/each}
   </div>
 
+  {#if dig}
+    <!-- A dig's two cards: the strike ahead and what a cave-in costs; what the way out takes. -->
+    <div class="find-notes" data-cursor="notes">
+      {#each s.offered as cat, i (cat)}
+        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} id={isWayOut(cat) ? undefined : `${uid}-note-azurite`} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1}>
+          {#if isWayOut(cat)}{out.note(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
+        </p>
+      {/each}
+    </div>
+  {:else if finds.length && !s.deathmatch}
+    <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
+    {@const two = finds.length > 1}
+    {@const team = coop && !!me && livesOf(s, me) > 0}
+    {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
+    <!-- Wide screens: each note under its own card (its column), so what a find
+         gives is read where it is chosen; phones: one under the other. -->
+    <div class="find-notes" data-cursor="notes">
+      {#each finds as f (f.kind)}
+        <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}" style:--col={s.offered.indexOf(f.category) + 1}>
+          {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
+              >{FIND_TEXT[f.kind].tag}.</strong
+            > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
+        </p>
+      {/each}
+      {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
+    </div>
+  {/if}
   {#if coop && !drawn && s.phase === 'choosing'}
-    <!-- The vote: when it closes, and who it is still waiting for. -->
+    <!-- The vote: when it closes, and who it is still waiting for (under what each card gives, with the rules' lines). -->
     <!-- Only who it waits for is announced; the countdown would be read out every second. -->
-    <p class="vote-status">
+    <p class="vote-status" data-cursor="vote">
       {#if closesIn !== null}
         <span class="closes" aria-hidden="true">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
       {/if}
@@ -501,28 +760,14 @@
     </p>
   {/if}
 
-  {#if finds.length && !s.deathmatch}
-    <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
-    {@const two = finds.length > 1}
-    {@const team = coop && !!me && livesOf(s, me) > 0}
-    {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
-    <div class="find-notes">
-      {#each finds as f (f.kind)}
-        <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}">
-          {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
-              >{FIND_TEXT[f.kind].tag}.</strong
-            > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
-        </p>
-      {/each}
-      {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
-    </div>
-  {/if}
   {#if s.deathmatch}
-    <p class="note muted">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+    <p class="note muted" data-cursor="note">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+  {:else if dig}
+    <!-- (A dig's cards lock nothing.) -->
   {:else if coop && canVote && lockout > 0}
-    <p class="note muted">A category the team plays stays locked for the next {lockout} depths.</p>
+    <p class="note muted" data-cursor="note">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
-    <p class="note muted">A category you choose stays locked for {lockoutText(lockout)}.</p>
+    <p class="note muted" data-cursor="note">A category you choose stays locked for {lockoutText(lockout)}.</p>
   {/if}
 </div>
 
@@ -538,10 +783,77 @@
     font-size: 1.2rem;
     text-align: center;
   }
+  /* The way out: its design's colours (lib/wayOut, set on the card), as a find's are. */
+  /* Its lantern hangs in the engraving, gilded: the emblem's place is kept, so a row's name keeps clear of it. */
+  .card.out .icon.none {
+    visibility: hidden;
+  }
+  .find-tag.out-tag {
+    color: var(--f-hi);
+  }
+  .card.out .title {
+    color: var(--f-hi);
+  }
+  .card.out .back {
+    border-color: var(--f-border);
+  }
+  .card.out .frame {
+    border-color: var(--f-border);
+    --bs-ring: color-mix(in srgb, var(--f-border) 45%, transparent);
+  }
+  .card.out:not(:global(.down)) .frame {
+    --bs1: 0px 34px;
+    --bs1-color: var(--f-glow);
+  }
+  .card.out.mine:not(:global(.down)):hover .frame,
+  .card.out.mine:not(:global(.down)):focus-visible .frame {
+    border-color: var(--f);
+    --bs1-color: var(--f-pulse);
+  }
+  .find-note[data-find='out'] {
+    color: var(--f);
+  }
+  /* The cards take the room the question will: on a full-size window they
+     stand as tall as its stage (1.36 x, 980 wide for three), smaller on
+     shorter windows. Scaled whole with zoom, as the engraving is laid out to
+     the card's own 220 x 300 (see .frame). */
+  .choose {
+    --card-z: 1;
+  }
+  @media (min-width: 1100px) and (min-height: 821px) {
+    .choose {
+      --card-z: 1.2;
+    }
+  }
+  @media (min-width: 1100px) and (min-height: 900px) {
+    .choose {
+      --card-z: 1.36;
+    }
+  }
+  /* Tablets standing up: as wide as the screen allows. */
+  @media (min-width: 761px) and (max-width: 1099px) and (min-height: 1000px) {
+    .choose {
+      --card-z: 1.1;
+    }
+  }
+  /* Delve together takes some of the height for the votes under the cards
+     and the vote's line: as large as alone from 900 tall, smaller below. */
+  @media (min-width: 761px) and (min-height: 821px) and (max-height: 899px) {
+    .choose.coop {
+      --card-z: 1;
+    }
+  }
+  @media (min-width: 761px) and (max-height: 820px) {
+    .choose.coop {
+      --card-z: 0.8;
+    }
+  }
   .cards {
     display: grid;
     grid-template-columns: repeat(var(--n, 3), minmax(0, 220px));
     gap: 1.4rem;
+    /* (data-zoom: so lib/stage.ts finds it where the browser can't say an element's zoom.) */
+    zoom: var(--card-z);
   }
   .card {
     /* The engraving's gold, and the warm glow in the face's window. */
@@ -683,6 +995,32 @@
       transform 0.5s var(--ease-out),
       opacity 0.4s;
   }
+  /* The companions (see MOONS), each centred on its spot round the emblem
+     and tilted, behind it (under one shadow, as the emblem's). They're
+     darker, so they read as further back; dimmed by a filter, they keep the
+     card's own colours. */
+  .moons {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+  .moon {
+    --far: 1;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: grid;
+    place-items: center;
+    translate: calc(-50% + var(--mx) * var(--far) * var(--e-s, 1) * 1px) calc(-50% + var(--my) * var(--far) * var(--e-s, 1) * 1px);
+    rotate: calc(var(--mr) * 1deg);
+    filter: brightness(0.78);
+    transition: translate 0.45s var(--ease-out);
+  }
+  /* Until measured, a companion fits its whole image to a small box. */
+  .moon .glyph:not(.fit) {
+    width: calc(var(--mk) * 110px * var(--e-s, 1));
+    height: calc(var(--mk) * 110px * var(--e-s, 1));
+  }
   /* Once measured: the box is the visible item, scaled to a common weight
      (lib/iconFit) and by the item's own --e-k, and the image is placed so
      its visible part fills it. An item drawn larger grows upward, its foot
@@ -706,6 +1044,38 @@
   }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
+  }
+  /* The way out: no light runs across it; its lantern kindles, the light
+     round it swelling up and settling to breathe (CardEngraving's .lamp). */
+  .card.out .sheen {
+    display: none;
+  }
+  .card.out .turn:global(.dealt) :global(.gilt) {
+    animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
+  }
+  .card.out .turn:global(.dealt) :global(.engraving) {
+    animation: swell 1.6s ease-out var(--face, 0ms) backwards;
+  }
+  @keyframes kindle-gilt {
+    from {
+      opacity: 0.2;
+      filter: brightness(0.4) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+    }
+    40% {
+      opacity: 1;
+      filter: brightness(1.5) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 18px var(--f-pulse));
+    }
+    to {
+      filter: brightness(1) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+    }
+  }
+  @keyframes swell {
+    from {
+      filter: brightness(0.6);
+    }
+    35% {
+      filter: brightness(1.35);
+    }
   }
   @keyframes kindle {
     from {
@@ -836,6 +1206,10 @@
   .card.mine {
     cursor: pointer;
   }
+  /* Someone else's to pick (or, together, once this player can't vote): not this player's to click. */
+  .card:not(.mine) {
+    cursor: not-allowed;
+  }
   .card.mine:not(:global(.down)):hover .frame,
   .card.mine:not(:global(.down)):focus-visible .frame {
     transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);
@@ -859,6 +1233,19 @@
     transform: scale(1.1) rotate(-3deg);
     opacity: 1;
     filter: brightness(1.15);
+  }
+  /* The stack fans out: the companions draw out from behind the emblem,
+     staying in its shade, and in the window (as far as heapOf finds they
+     can); only the emblem grows and brightens, so it still leads. Only on
+     the tall cards: the window it's worked out for isn't the rows'. */
+  @media (min-width: 701px) {
+    .card.mine:not(:global(.down)):hover .moon {
+      --far: var(--spread, 1);
+    }
+  }
+  .card.mine:not(:global(.down)):hover .moon .glyph {
+    transform: none;
+    filter: none;
   }
   /* A soft highlight that follows the pointer across the card. */
   .glare {
@@ -896,8 +1283,10 @@
   .card.dim .back {
     filter: saturate(0.6) brightness(0.8);
   }
+  /* Lifted and grown a little: no more than keeps it clear of the line over
+     the cards on a short window and inside a phone's margins. */
   .card.chosen .frame {
-    transform: translateY(-14px) scale(1.08);
+    transform: translateY(-4px) scale(1.05);
     transition:
       transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
       --bs-shade 0.35s,
@@ -957,6 +1346,64 @@
     flex-direction: column;
     align-items: center;
     gap: 0.35rem;
+  }
+  /* Wide screens: the notes in the cards' columns, each under its card. */
+  @media (min-width: 701px) {
+    .find-notes {
+      display: grid;
+      /* The cards' own tracks (shrinking with them on a narrow tablet). */
+      grid-template-columns: repeat(var(--n, 3), minmax(0, calc(220px * var(--card-z))));
+      column-gap: calc(1.4rem * var(--card-z));
+      row-gap: 0.35rem;
+      align-items: start;
+      margin-top: -0.6rem;
+    }
+    .find-notes .find-note {
+      grid-column: var(--col);
+      grid-row: 1;
+      margin: 0;
+      max-width: none;
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+    .find-notes .note.muted {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    /* Together: who voted hangs on the card's foot, their seals over its
+       frame, rather than in a row of its own kept under every card. */
+    .card {
+      position: relative;
+    }
+    .card .votes {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -13px;
+      margin: 0;
+    }
+    /* The find's tag never much smaller than at the cards' own size (nine
+       tenths, so it still fits its plate's slot): it is all that marks a
+       find on the card's face. */
+    .cards .find-tag {
+      zoom: max(1, calc(0.9 / var(--card-z)));
+    }
+    /* Side by side on the foot, each seal whole, so every voter can be told. */
+    .card .votes .pip + .pip {
+      margin-left: 3px;
+    }
+    /* The vote's line and the rule under it read as one block of small print. */
+    .vote-status + .note {
+      margin-top: -0.6rem;
+    }
+    .coop .find-notes {
+      margin-top: 0;
+    }
+    /* Under notes in the cards' columns, the next line keeps the usual gap. */
+    .find-notes + .note,
+    .find-notes + .vote-status {
+      margin-top: 0;
+    }
   }
 
   /* ---- finds ---------------------------------------------------------------
@@ -1132,8 +1579,9 @@
     height: 22px;
     border-radius: 50%;
   }
+  /* Close, each seal whole, so every voter can be told. */
   .pip + .pip {
-    margin-left: -6px;
+    margin-left: 2px;
   }
   /* Your own vote: the avatar's own ring in gold rather than your colour,
      on top of the others; the same rings, so it sits in the row like them. */
@@ -1200,7 +1648,8 @@
     transition-duration: 0.05s;
   }
   .card.chosen .glow {
-    transform: translateY(-14px) scale(1.08);
+    /* (The frame's lift, so the light stays on the card.) */
+    transform: translateY(-4px) scale(1.05);
     transition: transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15);
     animation: drawn-glow 1.1s ease-out both;
   }
@@ -1305,11 +1754,12 @@
       flex: none;
       width: 80px;
       height: 80px;
+      /* The emblem, and its companions and their places, at a row's size. */
+      --e-s: 0.58;
     }
     .glyph {
       width: 74px;
       height: 74px;
-      --e-s: 0.58;
     }
     /* A row has no room for an item to grow. */
     .glyph.fit {
@@ -1389,12 +1839,19 @@
       min-height: 0;
       margin: 0;
     }
-    .cards:has(.votes) {
+    .choose.coop .cards {
       gap: 1.25rem;
     }
     .card.voted .frame,
     .card.voted .glow {
       transform: translateX(6px);
+    }
+  }
+
+  /* Short desktop windows: the same gap under the prompt as under the question's task line. */
+  @media (min-width: 761px) and (max-height: 820px) {
+    .choose {
+      gap: 1rem;
     }
   }
 </style>

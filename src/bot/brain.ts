@@ -17,6 +17,7 @@
 // All of it mild: these are players, not caricatures.
 // Pure functions of their inputs and a random source, so tests can pin them.
 
+import { PLAIN_HAND, type HandStyle } from './motion.ts';
 import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
 
 export type Rng = () => number;
@@ -57,6 +58,8 @@ export interface Persona {
   sociable: number;
   /** How much it minds rules other than its own in a room to join (0 to 1). */
   picky: number;
+  /** Its own touch on the recorded hand its pointer replays (motion.ts). */
+  hand: HandStyle;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -129,6 +132,7 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     hosting: rng() ** 1.6,
     sociable: rng(),
     picky: rng(),
+    hand: PLAIN_HAND,
   };
 }
 
@@ -253,6 +257,38 @@ export function findAppetite(p: Persona, f: FindStake): number {
   return p.finds * (1 - risk);
 }
 
+/** What digging a vein deeper would put at stake for the bot (Delve, the dig's two cards). */
+export interface DigStake {
+  /** Wards in hand, buried by a cave-in. */
+  haul: number;
+  lives: number;
+  wards: number;
+  /** Seconds of the lamp's light for the next strike. */
+  light: number;
+  /** Its affinity for the category the vein runs on into (Persona.affinity). */
+  affinity: number;
+  /** Delve together: teammates still standing. */
+  teammates: number;
+}
+
+/**
+ * Whether it digs deeper rather than take the way out: as keen as it is on
+ * finds, more so into a category it knows, with light and lives to spare;
+ * the bigger the haul in hand, the likelier it gets out with it. Teammates
+ * still standing make it braver (one of them may know it).
+ */
+export function digsOn(p: Persona, d: DigStake, rng: Rng): boolean {
+  let want = p.finds * (0.55 + 6 * d.affinity) - 0.18 * d.haul;
+  // Under about three seconds it can hardly answer in time (answerDelay's least is 0.7 to 1 s): a long shot.
+  if (d.light < 3) want -= 0.5;
+  else if (d.light < 6) want -= 0.2;
+  const left = d.lives + d.wards - 2;
+  if (left <= 0) want -= 0.35;
+  else if (left === 1) want -= 0.15;
+  if (d.teammates > 0) want += 0.1;
+  return rng() < clamp(want, 0.05, 0.9);
+}
+
 /**
  * The option the bot picks: the right one if it knows, else a guess that is
  * right as often as guessChance says and otherwise falls for a look-alike.
@@ -343,7 +379,9 @@ export function chooseCard(p: Persona, offered: string[], finds: { category: str
 }
 
 /** Milliseconds to look over the categories before picking. */
-export function pickDelay(p: Persona, rng: Rng): number {
+export function pickDelay(p: Persona, rng: Rng, cards = 3): number {
+  // A single card (a deathmatch's): nothing to choose, so it just takes it.
+  if (cards <= 1) return Math.round(between(rng, 400, 1100) * p.pace);
   let ms = between(rng, 1300, 3800);
   // Now and then it reads the cards a while longer, or something else catches its eye (well under the host's skip).
   const r = rng();

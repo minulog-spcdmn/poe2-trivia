@@ -390,13 +390,21 @@ test('together: the clear after every other teammate standing struck', () => {
 });
 
 test('together: falling as one, and the lone wolf', () => {
-  // Depth 20 as shown is round 21.
-  const wipe = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, r: { winnerId: null, correct: false } });
+  // Depth 20 as shown is round 21. Those the question's reveal hit.
+  const hits = (...ids: string[]) => ids.map((playerId) => ({ playerId, lives: 1, wards: 0, timedOut: true }));
+  const wipe = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, r: { winnerId: null, correct: false, hits: hits('a', 'b', 'c') } });
   assert.ok(momentsIn(was(wipe), wipe, 'a', false).includes('fell-as-one'));
-  const shallow = delve({ a: [5, 9, 20], b: [7, 15, 20], c: [3, 18, 20] }, { round: 20, r: { winnerId: null, correct: false } });
+  const shallow = delve({ a: [5, 9, 20], b: [7, 15, 20], c: [3, 18, 20] }, { round: 20, r: { winnerId: null, correct: false, hits: hits('a', 'b', 'c') } });
   assert.ok(!momentsIn(was(shallow), shallow, 'a', false).includes('fell-as-one'));
-  const two = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 4, 6] }, { round: 21, r: { winnerId: null, correct: false } });
+  const two = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 4, 6] }, { round: 21, r: { winnerId: null, correct: false, hits: hits('a', 'b') } });
   assert.ok(!momentsIn(was(two), two, 'a', false).includes('fell-as-one'), 'only two fell on it');
+  // c perished on an earlier question at the same depth (a miss doesn't go deeper): not on this one.
+  const before = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, r: { winnerId: null, correct: false, hits: hits('a', 'b') } });
+  assert.ok(!momentsIn(was(before), before, 'a', false).includes('fell-as-one'), 'c fell on the question before');
+  // c fell striking the question a blast took away for this one: the same offer, so it counts.
+  const blast = { stick: 'b', side: 1 as const, was: { at: 1, itemId: 'x', mode: 'name' as const, struck: [{ by: 'c', index: 0, lives: 1, wards: 0 }] } };
+  const blasted = delve({ a: [5, 9, 21], b: [7, 15, 21], c: [3, 18, 21] }, { round: 21, q: { blast }, r: { winnerId: null, correct: false, hits: hits('a', 'b') } });
+  assert.ok(momentsIn(was(blasted), blasted, 'a', false).includes('fell-as-one'), 'c fell on the question blasted away');
 
   // Teammates down at 25 and 31; clean past 31 to 41.
   const wolf = delve({ a: [12], b: [5, 9, 25], c: [6, 20, 31] }, { round: 41, r: { winnerId: 'a' } });
@@ -413,14 +421,14 @@ test('together: falling as one, and the lone wolf', () => {
 });
 
 test('a pack full of everything, alone only', () => {
-  const full = { wards: 3, flares: 3, dynamite: 3, shards: 0 };
+  const full = { wards: 3, flares: 3, dynamite: 3 };
   const laden = (o: Partial<typeof full>, losses: Record<string, number[]> = { a: [] }) => {
     const s = delve(losses, { round: 70 });
     return { ...s, delve: { ...s.delve!, inventory: Object.fromEntries(Object.keys(losses).map((id) => [id, { ...full, ...o }])) } };
   };
   assert.ok(momentsIn(null, laden({}), 'a', false).includes('fully-laden'));
   assert.ok(!momentsIn(null, laden({ flares: 2 }), 'a', false).includes('fully-laden'));
-  assert.ok(!momentsIn(null, laden({ wards: 2, shards: 1 }), 'a', false).includes('fully-laden'));
+  assert.ok(!momentsIn(null, laden({ wards: 2 }), 'a', false).includes('fully-laden'));
   assert.ok(!momentsIn(null, laden({}, { a: [], b: [] }), 'a', false).includes('fully-laden'), 'together');
 });
 

@@ -24,9 +24,10 @@
 // where it is.
 
 import { currentFrame, fxActive, type CoverBox, type Point } from './fx/core';
-import { cornerPx } from './corner';
+import { cornerOnScreen } from './corner';
 import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
 import { motion } from './motion.svelte';
+import { zoomOf } from './stage';
 
 /** ms from the strike until its streak reaches the clock and sets it alight (TimerRing.svelte holds the clock at 0 till then). */
 export const FLARE_IGNITE_MS = 430;
@@ -142,8 +143,8 @@ const SOLID = new Set(['img', 'svg', 'canvas', 'video', 'button', 'input', 'sele
  * (a heading's words, not the whole width of its line). Light from behind
  * the UI hides behind these. Hidden or faint elements, decorations laid
  * over the page (hidden from screen readers, never taking a click: the
- * zone's gate above the question, say), and a container as big as most of
- * the screen, aren't taken whole. `alpha` is how visible `root` is, its
+ * draw's light round a card, say), and a container as big as most of the
+ * screen, aren't taken whole. `alpha` is how visible `root` is, its
  * ancestors' opacity included.
  */
 type Painted = { node: Element | Text; corners?: string[] };
@@ -182,8 +183,10 @@ const cornerMemo = new WeakMap<Element, { w: number; h: number; corners: string[
 function radiiOf(node: Element, corners: string[], box: DOMRect): number[] {
   const m = cornerMemo.get(node);
   if (m && m.w === box.width && m.h === box.height && m.corners.every((c, i) => c === corners[i])) return m.radii;
-  // A corner can round at most half the box (999px makes a pill a capsule).
-  const radii = corners.map((c) => Math.min(cornerPx(c, box.width, box.height), box.width / 2, box.height / 2));
+  // A corner can round at most half the box (999px makes a pill a capsule). Its radius
+  // is in the node's own px, the box on screen: the stage's zoom (lib/stage.ts) between them.
+  const z = zoomOf(node);
+  const radii = corners.map((c) => Math.min(cornerOnScreen(c, box.width, box.height, z), box.width / 2, box.height / 2));
   cornerMemo.set(node, { w: box.width, h: box.height, corners, radii });
   return radii;
 }

@@ -8,9 +8,8 @@
   // pours out of the end of its chamber; Scoreboard.svelte jets it out of the
   // phial into the effects layer (lifeLost in lib/fx/moments.ts) as it does.
   // Azurite Wards, which break before a life does, encase the chambers in
-  // crystal from the base, one each (CASINGS in lib/inventoryArt.ts), and a
-  // shard toward the next ward is half a casing. At rest the crystal is cold
-  // and alive in its own way, not the life's: its glaze breathes slowly, and
+  // crystal from the base, one each (CASINGS in lib/inventoryArt.ts). At
+  // rest the crystal is cold and alive in its own way, not the life's: its glaze breathes slowly, and
   // now and then light runs along its lit band and twinkles at its end, each
   // casing on a rhythm of its own. A ward forming crystallises onto its
   // chamber; one breaking in place of a life shatters where it is, in a
@@ -44,7 +43,7 @@
     /** Changes each time a wave of light should run through the lit chambers (a question survived). */
     surge?: number;
     vertical?: boolean;
-    /** What the player carries (its wards and shards on the chambers; lying, its flares and dynamite beside it). */
+    /** What the player carries (its wards on the chambers; lying, its flares and dynamite beside it). */
     inv?: Carried | null;
     /** What just happened to it, to play on it. */
     moment?: InventoryMoment | null;
@@ -62,23 +61,20 @@
   const uid = $props.id();
 
   /** `brk`: seconds until a ward taking a loss breaks (its barrier first catches the blow). */
-  type Cased = { k: number; kind: 'whole' | 'shard' | 'ghost'; fresh: boolean; blown?: 'wards' | 'shards'; brk?: number };
+  type Cased = { k: number; kind: 'whole' | 'ghost'; fresh: boolean; blown?: boolean; brk?: number };
   /**
-   * The casings on the chambers: whole wards from the base, a shard after
-   * them, and wards just broken bursting off; a ward or shard a blast
-   * destroyed (a Dynamite Cache missed) blows apart on the chamber after
+   * The casings on the chambers: whole wards from the base, and wards just
+   * broken bursting off; a ward a blast destroyed (a Dynamite Cache missed) blows apart on the chamber after
    * those left.
    */
   const casings = $derived.by((): Cased[] => {
     const wards = inv?.wards ?? 0;
     const m = moment?.kind;
     const out: Cased[] = [];
-    for (let k = 0; k < Math.min(wards, CASINGS.length); k++) out.push({ k, kind: 'whole', fresh: (m === 'ward' || m === 'forge') && k === wards - 1 });
-    if (inv?.shards && wards < CASINGS.length) out.push({ k: wards, kind: 'shard', fresh: m === 'shard' });
+    for (let k = 0; k < Math.min(wards, CASINGS.length); k++) out.push({ k, kind: 'whole', fresh: m === 'ward' && k === wards - 1 });
     if (m === 'shatter')
       for (let k = wards; k < Math.min(wards + (moment?.n ?? 1), CASINGS.length); k++) out.push({ k, kind: 'ghost', fresh: true, brk: (k - wards) * WARD_NEXT + WARD_BREAK });
-    const item = moment?.item;
-    if (m === 'blown' && (item === 'wards' || item === 'shards') && wards < CASINGS.length) out.push({ k: wards, kind: 'ghost', fresh: true, blown: item });
+    if (m === 'blown' && moment?.item === 'wards' && wards < CASINGS.length) out.push({ k: wards, kind: 'ghost', fresh: true, blown: true });
     return out;
   });
 </script>
@@ -146,7 +142,6 @@
           class="casing {c.kind}"
           class:fresh={c.fresh}
           class:blown={!!c.blown}
-          class:forged={c.fresh && moment?.kind === 'forge'}
           data-k={c.k}
           style:--from={set.whole.from}
           style:--to={set.whole.to}
@@ -154,13 +149,13 @@
           style:--brk={c.brk ? `${c.brk}s` : undefined}
         >
           {#if c.kind === 'ghost'}
-            {#each c.blown === 'shards' ? [set.shard] : set.pieces as piece, i (i)}
+            {#each set.pieces as piece, i (i)}
               <svg class="piece p{i}" viewBox="0 0 64 12" aria-hidden="true">{@render art(piece, `${uid}-x${c.k}${i}`)}</svg>
             {/each}
             <span class="burst"></span>
           {:else}
             {#key c.fresh ? moment?.key : 0}
-              <svg class="grow" viewBox="0 0 64 12" aria-hidden="true">{@render art(c.kind === 'whole' ? set.whole : set.shard, `${uid}-${c.kind}${c.k}`, true)}</svg>
+              <svg class="grow" viewBox="0 0 64 12" aria-hidden="true">{@render art(set.whole, `${uid}-${c.kind}${c.k}`, true)}</svg>
               {#if c.fresh}<span class="flash"></span>{/if}
             {/key}
           {/if}
@@ -210,9 +205,9 @@
           {/each}
         {/key}
       {/if}
-      <!-- Where each chamber's casing goes, unseen, and a shard's half of it: what a find's sparks aim at (Scoreboard.svelte). -->
+      <!-- Where each chamber's casing goes, unseen: what a find's sparks aim at (Scoreboard.svelte). -->
       {#each CASINGS as set, k (k)}
-        <span class="slot" data-slot={k} style:--from={set.whole.from} style:--to={set.whole.to} aria-hidden="true"><span class="half"></span></span>
+        <span class="slot" data-slot={k} style:--from={set.whole.from} style:--to={set.whole.to} aria-hidden="true"></span>
       {/each}
     </span>
   </span>
@@ -537,7 +532,7 @@
     }
   }
 
-  /* Where each chamber's casing goes (as .casing below), the base half for a shard. Never seen. */
+  /* Where each chamber's casing goes (as .casing below). Never seen. */
   .slot {
     position: absolute;
     top: 0;
@@ -546,10 +541,6 @@
     width: calc(100% * (var(--to) - var(--from)) / 64);
     visibility: hidden;
     pointer-events: none;
-  }
-  .slot .half {
-    position: absolute;
-    inset: 0 50% 0 0;
   }
 
   /* An Azurite Ward: a casing of crystal round a chamber (CASINGS in
@@ -633,15 +624,11 @@
 
   /* A ward forming crystallises onto its chamber: the casing closes in round
      it from wide and short, growing from the base end, and a cold light
-     flashes in it as it settles (with a glint from the effects layer). A
-     shard grows the same, as far as it reaches. */
+     flashes in it as it settles (with a glint from the effects layer). */
   .fresh .grow {
     /* The chamber's base end, in the drawing's box (the whole phial's). */
     transform-origin: calc(100% * var(--from) / 64) 50%;
     animation: encase 0.75s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
-  }
-  .forged .grow {
-    animation-duration: 1s;
   }
   @keyframes encase {
     from {
@@ -657,10 +644,6 @@
     inset: -70% -10%;
     background: radial-gradient(closest-side, rgba(225, 240, 255, 0.95), rgba(110, 175, 255, 0.45) 50%, rgba(110, 175, 255, 0) 100%);
     animation: flash 0.9s ease-out 0.2s both;
-  }
-  .forged .flash {
-    inset: -120% -25%;
-    animation-duration: 1.2s;
   }
   @keyframes flash {
     from {
@@ -786,7 +769,7 @@
     }
   }
 
-  /* A blast takes a ward or a shard (a Dynamite Cache missed): it flares
+  /* A blast takes a ward (a Dynamite Cache missed): it flares
      orange-white and its pieces are thrown apart and fall, tumbling, in a
      burst of fire rather than the ward's own blue (the effects layer throws
      the sparks, chips and smoke: itemBlown). */

@@ -17,6 +17,8 @@
   import { RUBY } from '../lib/palette';
   import { CREATOR, CREATOR_TITLE } from '../lib/site';
   import { showTip } from '../lib/fullscreenTip';
+  import { ABLAZE_FROM, ABLAZE_FULL, BLUE_FROM, DELVE_ABLAZE_FULL, DELVE_FLAMES } from '../lib/fx/streaks';
+  import DrawnMark from '../components/DrawnMark.svelte';
 
   const s = $derived(session.state);
 
@@ -36,7 +38,7 @@
     { label: 'Room busy', show: () => toast('The host is setting up a game. Try again in a moment.', 'warn', { title: 'Room busy' }) },
     { label: 'Refused (error)', show: () => toast("It's not your turn.", 'error') },
     { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
-    { label: 'Question set aside', show: () => toast('The host reloaded, so it cost nothing.', 'info', { title: 'Question set aside', who: someone() }) },
+    { label: 'Clock paused', show: () => toast('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' }) },
     { label: 'Fullscreen tip', show: showTip },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
@@ -54,6 +56,12 @@
     for (const t of [...toasts.list]) toasts.dismiss(t.id);
   }
   const run = $derived(s?.delve ? s : null);
+  /** A streak one short of each of the fire's tiers (lit, blue, full; a Delve's own, and its colours past blue), so the next right answer reaches it. */
+  const streakSteps = $derived(
+    run
+      ? [0, 10, DELVE_ABLAZE_FULL - 1, ...DELVE_FLAMES.map((f) => f.from - 1)].sort((a, b) => a - b)
+      : [0, ABLAZE_FROM - 1, BLUE_FROM - 1, ABLAZE_FULL - 1],
+  );
   const depth = $derived(run?.round ?? 1);
   const players = $derived(run?.players ?? []);
   const group = $derived(!!run && isGroupRun(run));
@@ -128,7 +136,6 @@
 
   const ITEMS: { item: ItemKind; label: string }[] = [
     { item: 'wards', label: 'Wards' },
-    { item: 'shards', label: 'Shard' },
     { item: 'flares', label: 'Flares' },
     { item: 'dynamite', label: 'Dynamite' },
   ];
@@ -177,7 +184,7 @@
           {#if q && s?.phase === 'question'}• <i class="num">{secs(left)}</i> s{#if paused}{' '}(paused){/if}{/if}
         </span>
       </div>
-      <button class="close" onclick={() => (open = false)} aria-label="Close the lab">{wide.current ? '›' : '×'}</button>
+      <button class="close" onclick={() => (open = false)} aria-label="Close the lab"><DrawnMark shape={wide.current ? 'chevron' : 'cross'} /></button>
     </header>
     {#if busy}<p class="busy">{busy}…</p>{/if}
 
@@ -217,6 +224,11 @@
               <span class="lbl">Lives</span>
               {@render seg([0, 1, 2, 3].slice(0, DELVE_LIVES + 1), run ? livesOf(run, p.id) : 0, (n) => L.setLives(p.id, n), 'Lives')}
             </div>
+            <!-- Right answers in a row, one short of each of the fire's tiers: the next right answer's chip says one more. -->
+            <div class="line">
+              <span class="lbl">Streak</span>
+              {@render seg(streakSteps, p.streak ?? 0, (n) => L.setStreak(p.id, n), 'Streak')}
+            </div>
             <div class="items">
               {#each ITEMS as it (it.item)}
                 <div class="stepper">
@@ -251,9 +263,10 @@
           {/each}
         </div>
         <div class="grid">
-          <button onclick={() => L.zoneEnter()} disabled={!!busy}>Replay zone gate</button>
+          <button onclick={() => L.zoneEnter()} disabled={!!busy}>Replay zone card</button>
           <button onclick={L.nextZone} disabled={!!busy}>Enter next zone</button>
           <button onclick={() => did(L.plunge(), 'This build has no plunge yet.')}>Plunge</button>
+          <button onclick={() => did(L.plunge(true), 'This build has no plunge yet.')}>Zone plunge</button>
           <button onclick={L.descend} disabled={!!busy}>Descend (right, Next)</button>
         </div>
       </details>
@@ -266,6 +279,11 @@
             {#each FINDS as f (f.v)}<option value={f.v}>{f.label}</option>{/each}
           </select>
           <button class="small" onclick={L.dealCards} disabled={!!busy}>Deal cards</button>
+        </div>
+        <div class="line">
+          <span class="lbl">Vein dig</span>
+          <button class="small" onclick={() => L.dealDig(1, 7.5)} disabled={!!busy}>After strike 1</button>
+          <button class="small" onclick={() => L.dealDig(2, 4.6)} disabled={!!busy}>After strike 2</button>
         </div>
         <div class="line">
           <span class="lbl">Second find</span>
@@ -361,16 +379,14 @@
           </div>
         {/if}
         <span class="sub">Gain at once</span>
-        <div class="grid four">
+        <div class="grid three">
           <button onclick={() => L.gain('wards')} disabled={!!busy}>Ward</button>
-          <button onclick={() => L.gain('shards')} disabled={!!busy}>Shard</button>
           <button onclick={() => L.gain('flares')} disabled={!!busy}>Flare</button>
           <button onclick={() => L.gain('dynamite')} disabled={!!busy}>Dynamite</button>
         </div>
         <span class="sub">Find answered right</span>
-        <div class="grid">
-          <button onclick={() => L.findRight('azurite')} disabled={!!busy}>Vein, fast: ward</button>
-          <button onclick={() => L.findRight('azurite', true)} disabled={!!busy}>Vein, slow: shard</button>
+        <div class="grid three">
+          <button onclick={() => L.findRight('azurite')} disabled={!!busy}>Azurite Vein</button>
           <button onclick={() => L.findRight('flare')} disabled={!!busy}>Flare Cache</button>
           <button onclick={() => L.findRight('dynamite')} disabled={!!busy}>Dynamite Cache</button>
         </div>
@@ -397,7 +413,7 @@
         {:else}
           <p class="hint">{q && s?.phase === 'question' ? 'Waiting for the art; the clock starts once it is in.' : 'No question on the clock.'}</p>
         {/if}
-        <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count (a Vein's as fast).</p>
+        <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count.</p>
       </details>
 
       <details>
@@ -546,8 +562,9 @@
     border-radius: 50%;
     background: none;
     color: var(--gold);
-    font-size: 1.1rem;
-    line-height: 1;
+    display: grid;
+    place-items: center;
+    --mark-size: 7.75px;
     cursor: pointer;
   }
   .close:hover {
@@ -694,6 +711,9 @@
     gap: 0.3rem;
     margin: 0.4rem 0;
   }
+  .grid.three {
+    grid-template-columns: repeat(3, 1fr);
+  }
   .grid.four {
     grid-template-columns: repeat(4, 1fr);
   }
@@ -805,6 +825,7 @@
   }
 
   input[type='range'] {
+    --thumb: 14px;
     appearance: none;
     height: 4px;
     border-radius: 2px;
@@ -813,15 +834,15 @@
   }
   input[type='range']::-webkit-slider-thumb {
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   input[type='range']::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);

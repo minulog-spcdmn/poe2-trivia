@@ -15,8 +15,8 @@ class Motion {
   /**
    * The effects are off in the app. Read off the attribute itself: the
    * observer hears of a change only a microtask later, and a read straight
-   * after it must have it already (the zone gate's tuning page sets it and
-   * plays the gate at once).
+   * after it must have it already (the zone tuning page sets it and plays a
+   * zone's card at once).
    */
   get off() {
     void flips;

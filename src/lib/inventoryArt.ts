@@ -1,6 +1,6 @@
 // Delve's finds as small engravings (Inventory.svelte, the result line): an
-// Azurite Ward as a crystal, a shard as the lower half of one broken across,
-// a flare as a burst on a rod, dynamite as a banded stick with a lit fuse.
+// Azurite Ward as a crystal, a flare as a burst on a rod, dynamite as a
+// banded stick with a lit fuse.
 // Every line comes from the geometry below, shaded by hatching down one side
 // (the left, away from the light), as docs/arcane-style.md asks. Each glyph is
 // drawn in its own box, in units of about a pixel at the scoreboard's size.
@@ -96,40 +96,6 @@ function crystal(): Glyph {
   };
 }
 
-/**
- * Where a shard broke off, across the crystal from left to right: through
- * each corner of the prism in turn, jagged, so it reads as a break and not a
- * cut. Its points sit on the prism's edges (x = -R, -r, r, R) and between.
- */
-const BREAK: Pt[] = [
-  [-R, 2.3],
-  [-r, 1.5],
-  [0.15, 1.25],
-  [r, 0.1],
-  [R, -0.9],
-];
-
-function shard(): Glyph {
-  const [b0, b1, b2, b3, b4] = BREAK;
-  const faces: Face[] = [
-    { d: poly([b0, b1, ft.l, ft.L]), tone: 'dark' },
-    { d: poly([b1, b2, b3, ft.rr, ft.l]), tone: 'lit' },
-    { d: poly([b3, b4, ft.R, ft.rr]), tone: 'mid' },
-    { d: poly([ft.L, ft.l, BOTTOM]), tone: 'dark' },
-    { d: poly([ft.l, ft.rr, BOTTOM]), tone: 'mid' },
-    { d: poly([ft.rr, ft.R, BOTTOM]), tone: 'dark' },
-  ];
-  return {
-    box: '-3.4 -1.6 6.8 8.4',
-    aspect: 6.8 / 8.4,
-    faces,
-    rim: poly([...BREAK, ft.R, BOTTOM, ft.L]),
-    edges: open([ft.L, ft.l, ft.rr, ft.R]) + line(b1, ft.l) + line(b3, ft.rr) + line(ft.l, BOTTOM) + line(ft.rr, BOTTOM),
-    hatch: quadHatch(b0, ft.L, b1, ft.l, 0.95),
-    catch: line([r - 0.35, 1.0], [r - 0.35, FOOT + DIP - 0.7]),
-  };
-}
-
 // ---- the flare ---------------------------------------------------------------
 
 /** The burst at the head of a flare, and the rod it sits on. */
@@ -209,10 +175,10 @@ function dynamite(): Glyph {
   };
 }
 
-export type GlyphKind = 'ward' | 'shard' | 'flare' | 'dynamite';
+export type GlyphKind = 'ward' | 'flare' | 'dynamite';
 
 /** The glyphs, drawn once. */
-export const GLYPHS: Record<GlyphKind, Glyph> = { ward: crystal(), shard: shard(), flare: flare(), dynamite: dynamite() };
+export const GLYPHS: Record<GlyphKind, Glyph> = { ward: crystal(), flare: flare(), dynamite: dynamite() };
 
 /**
  * The crack a ward shatters along, as two clip polygons in the crystal's box
@@ -242,8 +208,7 @@ export const WARD_CRACK = (() => {
  * frame at each wall and following a pointed end round in two facets; over
  * the chamber's light a clear front face, its two long edges and a glaze
  * that thickens toward the frame. Wards encase the chambers from the base
- * (one each, up to three), and the outermost breaks first. A shard toward the
- * next ward is that casing's base half, broken off jagged.
+ * (one each, up to three), and the outermost breaks first.
  */
 
 /** The phial's frame: its top and bottom, its middle, and the walls between chambers (Phial.svelte draws the same). */
@@ -295,7 +260,7 @@ export interface Casing {
   hollow: string;
   /** The front face's long edges, across the light. */
   front: string;
-  /** Where it is cut away (a shard: all but the base half; a breaking ward's piece: the other side of the crack). */
+  /** Where it is cut away (a breaking ward's piece: the other side of the crack). */
   clip?: string;
   /** A broken edge, cut bright. */
   crack?: string;
@@ -383,25 +348,20 @@ function jagged(a: Pt, b: Pt, n: number, swing: number): Pt[] {
 }
 
 /**
- * The casings, drawn once: for each chamber a whole ward, the shard (its base
- * half, broken off across the chamber), and the two pieces it breaks into
- * when it shatters (split along its length, so the bands burst off above and
+ * The casings, drawn once: for each chamber a whole ward and the two pieces
+ * it breaks into when it shatters (split along its length, so the bands burst off above and
  * below the light).
  */
 export const CASINGS = [0, 1, 2].map((k) => {
   const whole = casing(k);
   const up = FRAME.top - STANDOFF - 0.6;
   const dn = FRAME.bottom + STANDOFF + 0.6;
-  // The shard's break, a little past the chamber's middle.
-  const m = (whole.from + whole.to) / 2;
-  const brk = jagged([m + 0.6, up], [m - 0.2, dn], 5, 1);
   // The shatter's crack, along the casing from end to end.
   const crack = jagged([whole.from, FRAME.mid + 0.3], [whole.to, FRAME.mid - 0.3], 7, 1.1);
   const [a, z] = [whole.from - 4, whole.to + 4];
   const across = [[a, crack[0][1]], ...crack, [z, crack.at(-1)![1]]] as Pt[];
   return {
     whole,
-    shard: { ...whole, clip: poly([[-4, up], ...brk, [-4, dn]]), crack: open(brk.slice(1, -1)) },
     pieces: [
       { ...whole, clip: poly([[a, up], ...across, [z, up]]), crack: open(crack) },
       { ...whole, clip: poly([[a, dn], ...across, [z, dn]]), crack: open(crack) },
@@ -564,11 +524,10 @@ export const WARD_NEXT = 0.34;
 
 const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
 
-/** What a player carries, in words: "1 Azurite Ward, 1 azurite shard, 2 flares". Empty for nothing. */
+/** What a player carries, in words: "1 Azurite Ward, 2 flares". Empty for nothing. */
 export function inventoryWords(inv: Inventory): string {
   const parts: string[] = [];
   if (inv.wards) parts.push(many(inv.wards, 'Azurite Ward', 'Azurite Wards'));
-  if (inv.shards) parts.push(many(inv.shards, 'azurite shard', 'azurite shards'));
   if (inv.flares) parts.push(many(inv.flares, 'flare', 'flares'));
   if (inv.dynamite) parts.push(many(inv.dynamite, 'stick of dynamite', 'sticks of dynamite'));
   return parts.join(', ');
@@ -584,13 +543,12 @@ export function vesselLabel(lives: number, inv: Inventory | null | undefined): s
 
 /**
  * What just happened to a player's things, for the scoreboard to show: a ward
- * mined, forged from two shards or shattered in place of a life, a shard or a
- * flare found, a flare burning, dynamite found or lit, or something blown up
+ * mined or shattered in place of a life, a flare found, a flare burning, dynamite found or lit, or something blown up
  * by a Dynamite Cache missed (`blown`, which `item`). `key` tells one moment
  * from the next of the same kind.
  */
 export interface InventoryMoment {
-  kind: 'ward' | 'forge' | 'shatter' | 'shard' | 'flare' | 'burn' | 'dynamite' | 'blast' | 'blown';
+  kind: 'ward' | 'shatter' | 'flare' | 'burn' | 'dynamite' | 'blast' | 'blown';
   key: number;
   /** How many wards shatter at once (a cave-in breaks two); one if missing. */
   n?: number;
@@ -603,17 +561,13 @@ type Change = { item: keyof Inventory; change: 'gained' | 'used' };
 
 /**
  * The moment a player's changes make, or null: a ward shattering before
- * anything else, then a ward forged (a shard used as a ward is gained), a ward
- * or shard mined, a flare or dynamite found, a flare burning, dynamite lit.
- * `forged`: whether the reveal says a ward was forged, when known. A third
- * ward mined outright drops the shard held too (capShards in lib/delve.ts),
- * which reads like a forge; told it wasn't, it is a ward mined.
+ * anything else, then a ward mined, a flare or dynamite found, a flare
+ * burning, dynamite lit.
  */
-export function momentOf(changes: Change[], forged?: boolean): InventoryMoment['kind'] | null {
+export function momentOf(changes: Change[]): InventoryMoment['kind'] | null {
   const has = (item: keyof Inventory, change: Change['change']) => changes.some((c) => c.item === item && c.change === change);
   if (has('wards', 'used')) return 'shatter';
-  if (has('wards', 'gained')) return has('shards', 'used') && forged !== false ? 'forge' : 'ward';
-  if (has('shards', 'gained')) return 'shard';
+  if (has('wards', 'gained')) return 'ward';
   if (has('flares', 'gained')) return 'flare';
   if (has('dynamite', 'gained')) return 'dynamite';
   if (has('flares', 'used')) return 'burn';

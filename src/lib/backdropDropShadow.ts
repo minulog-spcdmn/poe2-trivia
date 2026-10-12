@@ -14,7 +14,7 @@
 // `filter: … var(--drop-shadow-paint, var(--drop-shadow))`. While the backdrop
 // draws the element it sets `data-bs-drop`, which (via app.css) swaps the
 // drop-shadow part of the filter for a no-op. Whenever it can't (3D turns,
-// fonts or image not ready, over budget, no WebGL), the attribute
+// fonts or image not ready, its shape still changing, over budget, no WebGL), the attribute
 // stays off and CSS paints the shadow as usual.
 //
 // Only text and <img> content is masked: a text element's non-text children
@@ -34,6 +34,7 @@ export function backdropDropShadow(node: HTMLElement) {
       tagged.delete(node);
       node.removeAttribute('data-bs-drop');
       masks.delete(node);
+      unsettled.delete(node);
       atlasDirty = true;
     },
   };
@@ -67,6 +68,8 @@ type Mask = {
 };
 
 const masks = new Map<HTMLElement, Mask>();
+/** Per element, the shape (mask key) it last changed to that has no mask yet (see measureDrops). */
+const unsettled = new Map<HTMLElement, string>();
 let atlasDirty = true;
 let fontsGeneration = 0;
 if (typeof document !== 'undefined' && document.fonts) {
@@ -409,13 +412,21 @@ export function measureDrops(
         decl,
         fontsGeneration,
       ].join('|');
-      if (!mask || mask.key !== key) {
+      if (mask && mask.key !== key && unsettled.get(node) !== key) {
+        // Its shape changed since its mask was made, and may go on changing
+        // every frame (an entrance opening its letter-spacing): CSS paints it
+        // until it holds still for a frame, rather than a mask blurred anew
+        // each frame.
+        unsettled.set(node, key);
+        ok = false;
+      } else if (!mask || mask.key !== key) {
+        unsettled.delete(node);
         mask = buildMask(node, cs!, key, drops, lin!) ?? undefined;
         if (mask) masks.set(node, mask);
         else masks.delete(node);
         atlasDirty = true;
       }
-      ok = !!mask;
+      ok &&= !!mask;
     }
     if (!ok) {
       node.removeAttribute('data-bs-drop');

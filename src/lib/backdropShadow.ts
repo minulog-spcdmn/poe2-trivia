@@ -35,6 +35,11 @@ import { shaking } from './fx/core';
 import { cornerPx } from './corner';
 import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
+import { frameEvent } from './fpsMeter';
+import { switchedOff } from './switchedOff';
+
+/** Beta: fills stay with the backdrop while their element moves or the page scrolls (see measureShadows). */
+const keepFills = switchedOff('handover');
 
 export type Fill = 'linear' | 'stage';
 /**
@@ -104,39 +109,66 @@ if (typeof window !== 'undefined') {
 
 const MOVING = /transform|translate|scale|rotate/;
 
-/** Whether an animation moves its target (cached: an animation's keyframes don't change). */
+/**
+ * Whether an animation moves its target (cached: an animation's keyframes
+ * don't change, and a CSS animation's are those of its name: the rune
+ * circle starts some six hundred of the same few every question).
+ */
 const movesCache = new WeakMap<Animation, boolean>();
+const namedMoves = new Map<string, boolean>();
 function moves(anim: Animation, effect: KeyframeEffect): boolean {
   let m = movesCache.get(anim);
   if (m === undefined) {
     if (anim instanceof CSSTransition) m = MOVING.test(anim.transitionProperty);
-    else {
-      try {
-        m = effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)));
-      } catch {
-        m = true;
-      }
-    }
+    else if (anim instanceof CSSAnimation) {
+      m = namedMoves.get(anim.animationName);
+      if (m === undefined) namedMoves.set(anim.animationName, (m = keyframesMove(effect)));
+    } else m = keyframesMove(effect);
     movesCache.set(anim, m);
   }
   return m;
 }
+function keyframesMove(effect: KeyframeEffect): boolean {
+  try {
+    return effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)));
+  } catch {
+    return true;
+  }
+}
 
 /**
- * Elements with a running animation or transition that moves them. Scanned
- * every frame rather than kept until one starts: a hover's transition, say,
- * shows up here in the frame that first styles it, but its transitionrun (or
- * animationstart) event only fires a frame later.
+ * Which of `nodes` and their ancestors a running animation or transition
+ * moves now, each asked once. Found as the frame is measured, not kept until
+ * one starts: a hover's transition shows up here in the frame that first
+ * styles it, but its transitionrun (or animationstart) event only fires a
+ * frame later. Asked of these elements alone, not of the whole document: a
+ * long page (the codex) runs far more animations than the few elements with
+ * fills have, and going through them all every frame stalled it. And all
+ * asked at once, with nothing written in between: an ask between the
+ * measuring's writes (data-bs-fill) brought the styles up to date again
+ * each time, which in a reveal, with its many animations, took tens of ms.
  */
-function movingElements(): Set<Element> {
-  const out = new Set<Element>();
-  for (const anim of document.getAnimations()) {
-    if (anim.playState !== 'running') continue;
-    const effect = anim.effect as KeyframeEffect | null;
-    const target = effect?.target;
-    if (target && moves(anim, effect)) out.add(target);
-  }
-  return out;
+function movedAmong(nodes: Iterable<Element>): Set<Element> {
+  const asked = new Set<Element>();
+  const moved = new Set<Element>();
+  for (const node of nodes)
+    for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
+      asked.add(el);
+      for (const anim of el.getAnimations()) {
+        if (anim.playState !== 'running') continue;
+        const effect = anim.effect as KeyframeEffect | null;
+        if (effect?.target === el && !effect.pseudoElement && moves(anim, effect)) {
+          moved.add(el);
+          break;
+        }
+      }
+    }
+  return moved;
+}
+
+/** An element as the frame meter names it: its tag and first class. */
+function nameOf(el: Element) {
+  return `${el.tagName.toLowerCase()}${el.classList[0] ? '.' + el.classList[0] : ''}`;
 }
 
 function paintsBackground(cs: CSSStyleDeclaration) {
@@ -252,13 +284,17 @@ export function measureShadows(
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
   const shook = shaking();
-  let moving: Set<Element> | null = null;
-  const isMoving = (node: HTMLElement) => {
-    moving ??= movingElements();
-    if (!moving.size) return false;
-    for (let el: Element | null = node; el; el = el.parentElement) if (moving.has(el)) return true;
-    return false;
+  // What moves, found once a frame for all the fills, and only if one asks:
+  // `node` or the ancestor of it that moves, if any.
+  let moved: Set<Element> | null = null;
+  const movingOf = (node: HTMLElement): Element | null => {
+    moved ??= movedAmong(withFill.filter((n) => chosen.has(n)));
+    if (!moved.size) return null;
+    for (let el: Element | null = node; el; el = el.parentElement) if (moved.has(el)) return el;
+    return null;
   };
+  /** How the frame meter names what moves `node` (`el`, it or an ancestor). */
+  const movingName = (node: Element, el: Element) => nameOf(el) + (el === node ? '' : ` (round ${nameOf(node)})`);
   // Ancestors' backgrounds, read once a frame: fills share most of their
   // ancestors. (An ancestor comes first in document order, so its own
   // data-bs-fill is settled before any descendant reads it.)
@@ -277,7 +313,11 @@ export function measureShadows(
   nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
   const chosen = new Set([...withFill, ...nodes.filter((n) => !shadowed.get(n)?.fill)].slice(0, max));
-  for (const n of shadowed.keys()) if (!chosen.has(n)) release(n);
+  for (const n of shadowed.keys())
+    if (!chosen.has(n)) {
+      if (n.hasAttribute('data-bs-on') || n.hasAttribute('data-bs-fill')) frameEvent(`backdrop: ${nameOf(n)} to CSS (more than the ${max} it can draw)`);
+      release(n);
+    }
 
   const filled = new Set<Element>();
   let n = 0;
@@ -315,7 +355,10 @@ export function measureShadows(
     ok &&= opacity > 0;
 
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
-    if (ok && flat && fillKind && !scrolling && !shook && !isMoving(node)) {
+    // Why a fill goes back to CSS now (named in the beta's frame meter).
+    const mover = ok && fillKind && flat && !keepFills && !scrolling && !shook ? movingOf(node) : null;
+    const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : mover ? 'moving' : '';
+    if (ok && fillKind && !toCss) {
       const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
       const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
       const angle = parseFloat(cs.getPropertyValue('--bs-fill-angle')) || 180;
@@ -326,8 +369,12 @@ export function measureShadows(
       }
       if (clear) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a: a!, b: b! };
     }
+    const had = node.hasAttribute('data-bs-fill');
+    // (Named only as it's handed over: no text made each frame while something moves.)
+    if (had !== !!fill) frameEvent(`backdrop: ${nameOf(node)}'s fill ${fill ? 'back from CSS' : `to CSS (${mover ? `${movingName(node, mover)} moving` : toCss || 'covered or gone'})`}`);
 
     if (!ok || (!soft.length && !fill)) {
+      if (!ok && node.hasAttribute('data-bs-on')) frameEvent(`backdrop: ${nameOf(node)}'s shadows to CSS (${opacity > 0 ? 'off screen or unmeasurable' : 'hidden'})`);
       release(node);
       continue;
     }

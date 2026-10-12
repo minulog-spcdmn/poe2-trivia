@@ -14,14 +14,18 @@
 // page is dimmed, and the [role="dialog"] inside it is the box the effects
 // layer leaves clear.
 //
-// The page's layers take the CSS side through `data-behind-dialog` (app.css):
-// with no value they darken and blur; 'dim' only darkens (viewport-sized
-// layers, whose edges a blur would fade, and light that is soft already);
-// 'blur' only blurs (content inside a 'dim' layer). use:portal sets it on
-// every overlay it moves, so a new one is dimmed without asking.
+// The page's layers are marked `data-behind-dialog`: with no value they
+// darken and blur; 'dim' only darkens (viewport-sized layers, whose edges a
+// blur would fade, and light that is soft already); 'blur' only blurs
+// (content inside a 'dim' layer). use:portal sets it on every overlay it
+// moves, so a new one is dimmed without asking. Each marked layer gets its
+// filter inline, frame by frame as the dialog fades: not as variables on
+// <html>, whose every change restyles the whole page (on a long one, the
+// codex with its every tile, a stall each frame of the fade).
 
-import { cornerPx } from './corner';
+import { cornerOnScreen } from './corner';
 import { opacityOf } from './opacity';
+import { zoomOf } from './stage';
 
 /** How much the page darkens (as an rgba(0, 0, 0, 0.65) layer over it would). */
 export const DIALOG_DIM = 0.65;
@@ -30,9 +34,12 @@ export const DIALOG_BLUR = 3;
 
 const backdrops: HTMLElement[] = [];
 
-/** Svelte action for a dialog's backdrop: moves it to the end of <body> and dims the page while it's there. */
+/** Svelte action for a dialog's backdrop: moves it to the end of <body>, at the page's scale, and dims the page while it's there. */
 export function dialogBackdrop(node: HTMLElement) {
   document.body.append(node);
+  // Out of the app's shell, so scaled here as the shell is on large windows
+  // (lib/stage.ts): every dialog at the page's scale, whoever writes it.
+  node.style.zoom = 'var(--stage-zoom, 1)';
   backdrops.push(node);
   changed();
   return {
@@ -85,12 +92,37 @@ export function dialogBox(): { rect: DOMRect; radius: number } | null {
   if (box === undefined) {
     const dialog = open.backdrop?.querySelector<HTMLElement>('[role="dialog"]');
     const rect = dialog?.getBoundingClientRect();
-    box = dialog && rect ? { rect, radius: cornerPx(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height) } : null;
+    // Its radius is in its own px, the box on screen: the stage's zoom (lib/stage.ts) between them.
+    const z = dialog ? zoomOf(dialog) : 1;
+    box = dialog && rect ? { rect, radius: cornerOnScreen(getComputedStyle(dialog).borderTopLeftRadius, rect.width, rect.height, z) } : null;
   }
   return box;
 }
 
-// The CSS side: the filters `data-behind-dialog` layers apply, as variables on the root.
+/** The filter a marked layer takes with the page dimmed `v` of the way (0: none), by its mark. */
+export function behindFilter(mark: string, v: number): string {
+  if (v <= 0) return '';
+  const dim = `brightness(${(1 - DIALOG_DIM * v).toFixed(3)})`;
+  const blur = `blur(${(DIALOG_BLUR * v).toFixed(2)}px)`;
+  return mark === 'dim' ? dim : mark === 'blur' ? blur : `${dim} ${blur}`;
+}
+
+/** The layers filtered last, so they're let go of as the dialog goes (or when one leaves the page meanwhile). */
+let filtered = new Set<HTMLElement | SVGElement>();
+
+/** Each marked layer's filter, for the page dimmed `v` of the way: written only where it changes. */
+function filterLayers(v: number) {
+  const now = new Set<HTMLElement | SVGElement>();
+  if (v > 0)
+    for (const el of document.querySelectorAll<HTMLElement | SVGElement>('[data-behind-dialog]')) {
+      now.add(el);
+      const f = behindFilter(el.dataset.behindDialog ?? '', v);
+      if (el.style.filter !== f) el.style.filter = f;
+    }
+  for (const el of filtered) if (!now.has(el)) el.style.removeProperty('filter');
+  filtered = now;
+}
+
 let raf = 0;
 let applied = 0;
 function changed() {
@@ -99,15 +131,10 @@ function changed() {
   const step = () => {
     raf = 0;
     const v = openDialog().amount;
-    if (v !== applied) {
+    // Every frame while a dialog is up: a layer moved onto the page meanwhile (a toast) is dimmed too.
+    if (v !== applied || backdrops.length) {
       applied = v;
-      const root = document.documentElement.style;
-      const dim = `brightness(${(1 - DIALOG_DIM * v).toFixed(3)})`;
-      const blur = `blur(${(DIALOG_BLUR * v).toFixed(2)}px)`;
-      for (const [name, value] of [['', `${dim} ${blur}`], ['-dim', dim], ['-blur', blur]]) {
-        if (v > 0) root.setProperty(`--behind-dialog${name}`, value);
-        else root.removeProperty(`--behind-dialog${name}`);
-      }
+      filterLayers(v);
     }
     if (backdrops.length || applied > 0) raf = requestAnimationFrame(step);
   };

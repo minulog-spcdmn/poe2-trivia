@@ -1,8 +1,12 @@
 <script lang="ts">
-  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
+  import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
-  import { shownDepth } from './lib/delve';
-  import { onMount, untrack } from 'svelte';
+  import { isGroupRun, shownDepth } from './lib/delve';
+  import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
+  import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
+  import ZoneCard from './components/zonecard/ZoneCard.svelte';
+  import { ownRect, stageZoom } from './lib/stage';
+  import { onMount, untrack, type Component } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
@@ -10,23 +14,35 @@
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
   import { wantDelveBackdrop } from './lib/backdrop';
+  import { inVein, setVein } from './lib/vein';
   import Background from './components/Background.svelte';
   import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
-  import Game from './components/Game.svelte';
-  import GameOver from './components/GameOver.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
+  import { whenIdle } from './lib/idle';
+  import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
+  import { setCursorColor } from './lib/ownCursor';
+  import PeerCursors from './components/PeerCursors.svelte';
+  import Recorder from './components/Recorder.svelte';
+  import { wantsRecording } from './lib/recorder';
+  import { playerColor } from './lib/ui';
 
+  // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
+  let recording = $state(wantsRecording());
   let muted = $state(isMuted());
   let volume = $state(getVolume());
   const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
+  // With a seat in an online room, lobby included, this device's own pointer takes its
+  // player's colour, as the others see it (lib/ownCursor.ts); otherwise it's old gold.
+  const seat = $derived(session.mode === 'host' || session.mode === 'client' ? session.state?.players.find((p) => p.id === session.myPlayerId) : undefined);
+  $effect(() => setCursorColor(seat ? playerColor(seat.hue) : undefined));
   // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
   $effect(() => {
     document.documentElement.toggleAttribute('data-still', !fxOn);
@@ -118,38 +134,96 @@
     setDescent(depth);
     depthAmbience(depth);
   });
+  // Delve: an Azurite Vein being dug has a scene of its own (lib/vein.ts).
+  $effect(() => setVein(screen === 'game' && inVein(gs)));
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve
   // programs now, in the background, so they're ready when the run starts.
   $effect(() => {
     if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
   });
+  // Delve: a new zone's cards on their way (lib/dealing.svelte.ts). Set
+  // before the DOM updates, so neither the header's depth nor the stage
+  // shows the new depth for a frame first.
+  $effect.pre(() => followDeal(gs ?? null, session.hostNow()));
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper).
+  // miss; see dealtDeeper). Into a new zone much further, with
+  // the zone's sound and its title card, its cards dealt as it lands
+  // (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
   $effect(() => {
     if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
     if (dealtDeeper(lastDealt, now)) {
-      plunge();
+      const zone = !!milestoneAt(now.depth);
+      plunge(zone);
       sfx('plunge');
+      if (zone) {
+        sfx('stratum');
+        const s = gs;
+        untrack(() => beginArrival(s, session.hostNow(), { best: session.spectating ? null : session.bestAtStart, group: isGroupRun(s) }));
+      }
     }
     lastDealt = now;
   });
+  // A zone's card belongs to the game it came in: leaving it, the card goes.
+  $effect(() => {
+    if (screen !== 'game' || !gs?.delve) untrack(endArrival);
+  });
+  /** The zone card under way, while the stage waits for its cards (and only for the run and depth it came for). */
+  const zoneCard = $derived(
+    arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
+  );
 
   /** How long the outgoing screen takes to fade (the .screen transition below). */
   const SCREEN_OUT_MS = 150;
   /**
-   * The header comes and goes with the start page, but only once the
-   * outgoing screen has faded: in the meantime it would push that screen
-   * down (or let it jump up) by its own height.
+   * While screens swap, the outgoing one fades over the incoming one in the
+   * same grid cell, and neither sizes the page: both fill the window (below
+   * the header, which comes or goes in the meantime) and what is longer is
+   * cut off there, out of sight anyway. Nor does a bar docked to the bottom
+   * (lib/layout.ts) pad the page meanwhile: the lobby's arrives as it
+   * mounts, and would lift the start page's centred content as it fades.
+   * So the swap never moves, stretches or scrolls either screen. Once in,
+   * the screen sizes the page again (screenIn's end).
+   */
+  let swapping = $state(false);
+  function hold(node: HTMLElement, on: boolean) {
+    node.style.contain = on ? 'size' : '';
+    node.style.overflow = on ? 'clip' : '';
+  }
+  function screenOut(node: HTMLElement) {
+    swapping = true;
+    hold(node, true);
+    return fade(node, { duration: SCREEN_OUT_MS });
+  }
+  function screenIn(node: HTMLElement) {
+    hold(node, true);
+    return fade(node, { duration: 350, delay: SCREEN_OUT_MS });
+  }
+  /**
+   * Every screen is scaled up alike on large windows (lib/stage.ts), header
+   * and all, so moving between them never changes the scale. Set on the root,
+   * for the shell and for what sits outside it (dialogs, toasts, overlays).
+   */
+  let winW = $state(innerWidth);
+  let winH = $state(innerHeight);
+  const zoom = $derived(stageZoom(winW, winH));
+  $effect(() => document.documentElement.style.setProperty('--stage-zoom', String(zoom)));
+  /**
+   * The header and the legal links under the screen (the start page has
+   * its own) come and go with the start page, but only once the outgoing
+   * screen has faded: in the meantime they would squeeze or stretch it, and
+   * the start page's centred content would move. Its fade's end sets them
+   * (the .screen's outroend), not a timer, which a busy first frame of the
+   * new screen can beat; the timer is only a fallback.
    */
   let headerOn = $state(untrack(() => screen !== 'home'));
+  const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
-    const want = screen !== 'home';
-    if (want === untrack(() => headerOn)) return;
-    const t = setTimeout(() => (headerOn = want), SCREEN_OUT_MS);
+    if (screen !== 'home' === untrack(() => headerOn)) return;
+    const t = setTimeout(showHeader, SCREEN_OUT_MS + 500);
     return () => clearTimeout(t);
   });
 
@@ -159,6 +233,38 @@
   onMount(() => {
     const t = setTimeout(loadCodexPage, 2000);
     return () => clearTimeout(t);
+  });
+
+  // The game's screens (a question, the end of a game) are a chunk of their
+  // own, so the start page loads and runs without them: fetched in the first
+  // idle moment, or at once on the way into a room. A fetch that fails is
+  // tried once more while a room is open (a dropped connection may be back),
+  // but no more: some browsers keep a module that failed as failed, and a
+  // deploy that replaced the chunk fails every time. After that, only a
+  // reload brings it, which the game screen offers (a room carries on
+  // through one).
+  let Game = $state<Component | null>(null);
+  let GameOver = $state<Component | null>(null);
+  let gamePagesLost = $state(false);
+  let gamePages: Promise<unknown> | null = null;
+  let gamePagesFailed = 0;
+  const inRoom = () => screen !== 'home' && screen !== 'codex';
+  const loadGamePages = () =>
+    (gamePages ??= Promise.all([
+      import('./components/Game.svelte').then((m) => (Game = m.default)),
+      import('./components/GameOver.svelte').then((m) => (GameOver = m.default)),
+    ]).catch(() => {
+      if (++gamePagesFailed < 2) {
+        gamePages = null;
+        setTimeout(() => inRoom() && loadGamePages(), 1000);
+      } else {
+        gamePagesLost = true;
+        toasts.show("Part of the game couldn't be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
+      }
+    }));
+  onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
+  $effect(() => {
+    if (inRoom()) untrack(loadGamePages);
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join
@@ -202,16 +308,45 @@
     if (alone && screen === 'lobby') leave();
     else confirmLeave = true;
   }
+
+  /**
+   * The legal links keep their place under a game and its result but don't
+   * show there. Asking to leave shows them, above the dialog's darkening,
+   * so they are two clicks away from anywhere: a copy in the dialog's
+   * backdrop, held over the hidden ones as the page scrolls or the game
+   * moves on behind the dialog.
+   */
+  const legalHidden = $derived(screen === 'game' || screen === 'over');
+  let legalNav: HTMLElement | undefined = $state();
+  function overLegal(node: HTMLElement) {
+    let raf = 0;
+    const place = () => {
+      if (legalNav) {
+        // In the shell's px, which the backdrop is zoomed to as well (lib/behindDialog.ts).
+        const r = ownRect(legalNav);
+        node.style.top = `${r.top}px`;
+        node.style.left = `${r.left}px`;
+        node.style.width = `${r.width}px`;
+      }
+      raf = requestAnimationFrame(place);
+    };
+    place();
+    return { destroy: () => cancelAnimationFrame(raf) };
+  }
 </script>
 
 <Background />
 <!-- Delve: the light shrinking at the screen's edges as a question's clock runs down. -->
 <Darkness active={!!gs?.delve && screen === 'game'} />
 
-<div class="shell" data-behind-dialog bind:this={shell}>
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+
+<div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
-    <header in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight}>
-      <button class="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
+    <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
+    <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
+    <header data-cursor="header" in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
+      <button class="brand" data-cursor="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -219,7 +354,7 @@
         </span>
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{:else if LOCAL}{' '}<small class="beta">Local</small>{/if}</span>
       </button>
-      <div class="meta">
+      <div class="meta" data-cursor="meta">
         {#if gs?.delve && (screen === 'game' || screen === 'over')}
           <!-- Delve: no target, just how deep. -->
           {#if session.code && !session.hideCode}
@@ -234,14 +369,16 @@
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
                too long for this line on a phone. -->
-          {#if screen !== 'game' || shownDepth(gs.round) > 0}
+          <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
+          {@const round = shownRound(gs)}
+          {#if screen !== 'game' || shownDepth(round) > 0}
             <span class="dot">•</span>
-            <span class="depth" style:--accent={accentAt(gs.round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(gs.round)}</b></span>
+            <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
           {/if}
           <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
           <span class="dot zone-dot">•</span>
-          {#key zoneAt(gs.round)}
-            <span class="zone" style:--accent={accentAt(gs.round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(gs.round)}</span>
+          {#key zoneAt(round)}
+            <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode}
@@ -270,7 +407,7 @@
       </div>
       <div class="tools">
         <div class="volume">
-          <button class="icon-btn" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
+          <button class="icon-btn" data-cursor="mute" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
             {#if silent}
               <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
             {:else}
@@ -292,13 +429,14 @@
               oninput={slide}
               onchange={() => sfx('click')}
               aria-label="Volume"
-              style:--fill="{(muted ? 0 : volume) * 100}%"
+              style:--level={muted ? 0 : volume}
             />
           </div>
         </div>
         {#if fxCan}
           <button
             class="icon-btn"
+            data-cursor="fx"
             class:off={!fxOn}
             onclick={toggleFx}
             title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
@@ -317,7 +455,7 @@
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         {:else}
-          <button class="icon-btn" onclick={askLeave} title="Leave" aria-label="Leave game">
+          <button class="icon-btn" data-cursor="leave" onclick={askLeave} title="Leave" aria-label="Leave game">
             <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
           </button>
         {/if}
@@ -326,35 +464,70 @@
   {/if}
 
   <main>
+    <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
+    {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
+    {#if recording}<Recorder onstop={() => (recording = false)} />{/if}
     {#key screen}
-      <div class="screen" in:fade={{ duration: 350, delay: SCREEN_OUT_MS }} out:fade={{ duration: SCREEN_OUT_MS }}>
+      <div
+        class="screen"
+        in:screenIn
+        out:screenOut
+        onintroend={(e) => {
+          hold(e.currentTarget, false);
+          swapping = false;
+        }}
+        onoutroend={showHeader}
+      >
         {#if screen === 'home'}
           <Home />
         {:else if screen === 'lobby'}
           <Lobby />
         {:else if screen === 'game'}
-          <Game />
+          {#if Game}<Game />{:else}{@render gamePagesWait()}{/if}
         {:else if screen === 'codex'}
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
           {/await}
-        {:else}
+        {:else if GameOver}
           <GameOver />
+        {:else}
+          {@render gamePagesWait()}
         {/if}
       </div>
     {/key}
   </main>
 
-  {#if screen !== 'home'}
-    <nav class="legal">
-      <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
-      <span aria-hidden="true">·</span>
-      <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+  {#if headerOn}
+    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav}>
+      {@render legalLinks()}
     </nav>
   {/if}
 </div>
 
+<!-- The game's screens still on their way (loadGamePages), or lost. -->
+{#snippet gamePagesWait()}
+  <div class="pages-wait">
+    {#if gamePagesLost}
+      <p>Part of the game couldn't be loaded.</p>
+      <button class="btn primary" onclick={() => location.reload()}>Reload</button>
+    {:else}
+      <span class="spinner" aria-label="Loading"></span>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet legalLinks()}
+  <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
+  <span aria-hidden="true">·</span>
+  <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+{/snippet}
+
+{#if zoneCard}
+  {#key zoneCard.key}
+    <ZoneCard a={zoneCard} bar={headerHeight} />
+  {/key}
+{/if}
 <Toasts headerHeight={headerOn ? headerHeight : 0} />
 
 <FxLayer />
@@ -364,6 +537,13 @@
     onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
     role="presentation"
   >
+    {#if legalHidden && legalNav}
+      <!-- A link opens in a new tab and the dialog stays. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <nav class="legal lifted" aria-label="Legal" use:overLegal onclick={(e) => e.stopPropagation()}>
+        {@render legalLinks()}
+      </nav>
+    {/if}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="modal panel"
@@ -399,14 +579,19 @@
     user-select: all;
     cursor: text;
   }
+  /* Scaled up on large windows (lib/stage.ts): the window's height in its zoomed pixels. */
   .shell {
+    zoom: var(--stage-zoom, 1);
     position: relative;
     z-index: 1;
-    min-height: 100dvh;
+    min-height: calc(100dvh / var(--stage-zoom, 1));
     display: flex;
     flex-direction: column;
     /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */
     padding-bottom: var(--dock, 0px);
+  }
+  .shell.swapping {
+    padding-bottom: 0;
   }
 
   header {
@@ -596,6 +781,7 @@
     }
   }
   .volume-pop input {
+    --thumb: 12px;
     display: block;
     writing-mode: vertical-lr;
     direction: rtl;
@@ -616,6 +802,8 @@
   .volume-pop input::-webkit-slider-runnable-track {
     width: 4px;
     border-radius: 2px;
+    /* Gold up to the thumb's middle, which runs from half a thumb in at either end. */
+    --fill: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--level, 0));
     background: linear-gradient(0deg, var(--gold) var(--fill), var(--line) var(--fill));
   }
   .volume-pop input::-moz-range-track {
@@ -630,16 +818,17 @@
   }
   .volume-pop input::-webkit-slider-thumb {
     appearance: none;
-    width: 12px;
-    height: 12px;
-    margin-left: -4px;
+    width: var(--thumb);
+    height: var(--thumb);
+    /* Centred on the 4px track. */
+    margin-left: calc((4px - var(--thumb)) / 2);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   .volume-pop input::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);
@@ -666,6 +855,46 @@
     grid-area: 1 / 1;
     min-width: 0;
   }
+  /* The start page fills the height below the header, not the window's:
+     while the header is still up behind it, it must not overflow. */
+  .screen:has(> :global(.home)) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pages-wait {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 4rem 16px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .pages-wait p {
+    margin: 0;
+  }
+  /* Only for a wait long enough to notice. */
+  .pages-wait .spinner {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid rgba(201, 164, 92, 0.15);
+    border-top-color: var(--gold);
+    animation:
+      pages-wait-in 0.3s 0.4s both,
+      pages-wait-spin 0.9s linear infinite;
+  }
+  @keyframes pages-wait-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pages-wait-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
   .legal {
     display: flex;
@@ -674,6 +903,9 @@
     padding: 0.6rem 1rem 1rem;
     font-size: 0.8rem;
     color: var(--muted);
+    transition:
+      opacity 0.3s,
+      visibility 0s;
   }
   .legal a {
     color: var(--muted);
@@ -681,6 +913,17 @@
   }
   .legal a:hover {
     color: var(--gold-hi);
+  }
+  .legal.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.3s,
+      visibility 0s 0.3s;
+  }
+  .legal.lifted {
+    position: absolute;
+    margin: 0;
   }
   .modal-backdrop {
     position: fixed;

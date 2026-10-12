@@ -3,17 +3,15 @@
 // opened, carries them.
 
 import type { Difficulty, Item, QuestionMode } from './game.ts';
-import { RECENT, answerLives, answerWards, livesCost, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
+import { RECENT, add, answerLives, answerWards, livesCost, noTally, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
 import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
 import { MAX_DEPTH, bestKey, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
 import { biomeAt } from './backdrops.ts';
 import { stratumName } from './descent.ts';
+import { roman } from './roman.ts';
 
 /** Fewer answers than this don't make an item a nemesis. */
 export const NEMESIS_MIN = 2;
-
-const noTally = (): Tally => ({ n: 0, ok: 0 });
-const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
 
 export const tallyOf = (e: ItemEntry): Tally => ({ n: e.name.n + e.art.n, ok: e.name.ok + e.art.ok });
 /** Share of right answers, or null without any. */
@@ -166,13 +164,6 @@ export interface Zone {
   to: number;
   /** Its name as the descent has it (past 100 a generated stratum's own), numbered should one come round again ("The Drowned Nave II"). */
   name: string;
-}
-
-function roman(n: number): string {
-  const parts: [number, string][] = [[100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
-  let out = '';
-  for (const [v, s] of parts) for (; n >= v; n -= v) out += s;
-  return out;
 }
 
 const LAST_ZONE = Math.floor((MAX_DEPTH - 1) / ZONE_SIZE);
@@ -475,6 +466,13 @@ const noFind = (): FindTally => ({ taken: 0, ok: 0, gained: {}, lives: 0, wards:
 /** Finds taken and how they ended, wards that saved a life and flares burnt, over these answers. */
 export function findStats(answers: Iterable<Answer>): FindStats {
   const out: FindStats = { finds: { azurite: noFind(), flare: noFind(), dynamite: noFind() }, wardsBroke: 0, flaresBurnt: 0, blasted: 0 };
+  /**
+   * By run, the wards the vein being dug has dug so far, as logged: all its
+   * cave-in can bury. (The log drops its oldest answers first, so a cave-in
+   * can outlive the strikes that dug what it buried; those wards were never
+   * counted, and other veins' aren't taken in their place.)
+   */
+  const digging = new Map<number | undefined, number>();
   for (const a of answers) {
     if (a.depth === undefined) continue;
     out.wardsBroke += answerWards(a);
@@ -482,13 +480,23 @@ export function findStats(answers: Iterable<Answer>): FindStats {
     if (a.blasted) out.blasted++;
     if (!a.find) continue;
     const f = out.finds[a.find];
-    f.taken++;
+    // A vein's later strikes are the same vein, dug deeper: taken (and cleared) once, at strike 1.
+    const later = (a.strike ?? 1) > 1;
+    if (!later) f.taken++;
+    if (a.find === 'azurite' && !later) digging.set(a.run, 0);
     if (a.ok) {
-      f.ok++;
+      if (!later) f.ok++;
       if (a.gained) f.gained[a.gained] = (f.gained[a.gained] ?? 0) + 1;
+      if (a.find === 'azurite' && a.gained === 'wards') digging.set(a.run, (digging.get(a.run) ?? 0) + 1);
     } else {
       f.lives += answerLives(a);
       f.wards += answerWards(a);
+      // What a cave-in buried was never carried out. (Alone only: together
+      // the haul was the team's, dug out by answers other devices logged.)
+      if (a.buried && !a.team) {
+        f.gained.wards = Math.max(0, (f.gained.wards ?? 0) - Math.min(a.buried, digging.get(a.run) ?? 0));
+        digging.delete(a.run);
+      }
     }
   }
   return out;

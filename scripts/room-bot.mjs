@@ -6,7 +6,7 @@
 // is hosting and the room's save, so it comes back as the same player in
 // the same room.
 //
-//   npm run bot -- [--bots 4] [--rooms N] [--mode turns,race,delve] [--per-room N] [--beta | --localhost] [--headed] [--no-build]
+//   npm run bot -- [--bots 4] [--rooms N | --watch] [--mode turns,race,delve] [--per-room N] [--beta | --localhost] [--headed] [--no-build]
 //   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve beta (or localhost),
 //   or npm run bot 2, work too)
 //
@@ -22,6 +22,9 @@
 // --per-room N: at most N of them in one room (any number by default);
 // they arrive in a room 5 to 20 s apart.
 // --joiners N (or --join, for 1): N seats more (--bots 1+N, or --rooms+N).
+// --watch (or the bare word `watch`): they only watch: no rooms of their own,
+// and they come into others' rooms as spectators (in the lobby or mid-game,
+// while a spectator's seat is free), never answering. With --per-room.
 // --beta: to the beta (poe2.quest/beta/) instead of the live game: its rooms
 // and open-room list are the beta's own (src/lib/peer.ts), so the bot is
 // built as the beta is (VITE_CHANNEL=beta), with a build and browser
@@ -61,6 +64,7 @@ const { values: args, positionals } = parseArgs({
     join: { type: 'boolean' },
     joiners: { type: 'string' },
     'per-room': { type: 'string' },
+    watch: { type: 'boolean' },
     beta: { type: 'boolean' },
     localhost: { type: 'boolean' },
     headed: { type: 'boolean' },
@@ -86,6 +90,7 @@ const opts = {
   join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
   joiners: numberOf('joiners'),
   perRoom: numberOf('per-room'),
+  watch: args.watch ?? (words.includes('watch') || env.npm_config_watch === 'true'),
   beta: args.beta ?? (words.includes('beta') || env.npm_config_beta === 'true'),
   localhost: args.localhost ?? (words.includes('localhost') || words.includes('local') || env.npm_config_localhost === 'true'),
   headed: args.headed ?? env.npm_config_headed === 'true',
@@ -101,8 +106,12 @@ if (perRoom !== Infinity && (!Number.isInteger(perRoom) || perRoom < 1)) {
   console.error('--per-room takes a number of players (1 or more).');
   process.exit(2);
 }
-/** The most rooms open at once (Infinity: as many as are wanted). */
-const rooms = opts.rooms === undefined ? Infinity : Number(opts.rooms);
+/** The most rooms open at once (Infinity: as many as are wanted). Watching, none: they only come into others' rooms. */
+if (opts.watch && opts.rooms !== undefined && Number(opts.rooms) > 0) {
+  console.error('--watch bots only watch other rooms: leave out --rooms.');
+  process.exit(2);
+}
+const rooms = opts.watch ? 0 : opts.rooms === undefined ? Infinity : Number(opts.rooms);
 if (rooms !== Infinity && (!Number.isInteger(rooms) || rooms < 0)) {
   console.error('--rooms takes a number of rooms (0 or more).');
   process.exit(2);
@@ -166,7 +175,7 @@ const roles = new Map();
  */
 async function runSeat(slot) {
   const say = bots > 1 ? (...args) => log(`[${slot}]`, ...args) : log;
-  const url = `${base}bot.html?slot=${slot}&of=${bots}${rooms === Infinity ? '' : `&rooms=${rooms}`}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}`;
+  const url = `${base}bot.html?slot=${slot}&of=${bots}${rooms === Infinity ? '' : `&rooms=${rooms}`}&modes=${modes.join(',')}${slot > 1 ? '&scout=0' : ''}${opts.watch ? '&watch=1' : ''}`;
   const context = await chromium.launchPersistentContext(join(root, '.bot', `profile-${channel === 'live' ? '' : `${channel}-`}${slot}`), {
     headless: !opts.headed,
     executablePath: process.env.BOT_CHROMIUM || undefined,
@@ -175,7 +184,8 @@ async function runSeat(slot) {
     handleSIGTERM: false,
     handleSIGHUP: false,
     // Nobody listens to the bot, and nothing is drawn: the page has no screens.
-    args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-gpu', ...proxy],
+    // Its timers at full pace even with its window covered (--headed): the hand moves twenty times a second (src/bot/hand.ts).
+    args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-gpu', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', ...proxy],
   });
   const seat = { page: null, context, say };
 
@@ -270,7 +280,7 @@ async function runSeat(slot) {
   return seat;
 }
 
-log(`${where}${bots === 1 ? '1 seat' : `${bots} seats`}, ${rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
+log(`${where}${bots === 1 ? '1 seat' : `${bots} seats`}, ${opts.watch ? 'watching only (as spectators)' : rooms === Infinity ? `as many rooms as wanted, hosting ${modes.join(', ')}` : rooms ? `up to ${rooms === 1 ? '1 room' : `${rooms} rooms`} at once, hosting ${modes.join(', ')}` : 'joining only'}${perRoom < bots ? `, up to ${perRoom} in a room` : ''}`);
 const all = [];
 for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 

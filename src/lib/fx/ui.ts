@@ -21,7 +21,7 @@ function weightOf(el: Element): Weight {
 }
 
 function danger(el: Element) {
-  return el.matches('.kick, .remove, .kick-inline, .kick.confirm, .btn.danger');
+  return el.matches('.kick, .btn.danger');
 }
 
 const scaleC = (c: readonly number[], k: number) => [c[0] * k, c[1] * k, c[2] * k] as const;
@@ -74,6 +74,34 @@ function caretPoint(input: HTMLInputElement): Point {
     x = r.left + padL + width(before) - input.scrollLeft;
   }
   return { x: Math.min(r.right - padR, Math.max(r.left + padL, x)), y: r.top + r.height / 2 };
+}
+
+/** A number attribute as the browser reads it: `fallback` when missing or not a number. */
+const num = (v: string, fallback: number) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : fallback);
+
+/**
+ * Where a range input's thumb is, in viewport px: along its track (the
+ * content box), across or upright (writing-mode) and either way round
+ * (direction; sideways-lr runs bottom to top as it is). The thumb's length
+ * along the track is the input's `--thumb` (app.css registers it, so it reads
+ * back in px).
+ */
+function thumbPoint(input: HTMLInputElement): Point {
+  const r = input.getBoundingClientRect();
+  const cs = getComputedStyle(input);
+  const min = num(input.min, 0);
+  const max = num(input.max, 100);
+  const t = max > min ? Math.min(1, Math.max(0, (input.valueAsNumber - min) / (max - min))) : 0;
+  const px = (p: string) => parseFloat(cs.getPropertyValue(p)) || 0;
+  const thumb = px('--thumb') || 16;
+  const upright = !cs.writingMode.startsWith('horizontal');
+  const back = (cs.writingMode === 'sideways-lr') !== (cs.direction === 'rtl');
+  const [lo, hi] = upright
+    ? [r.top + px('border-top-width') + px('padding-top'), r.bottom - px('border-bottom-width') - px('padding-bottom')]
+    : [r.left + px('border-left-width') + px('padding-left'), r.right - px('border-right-width') - px('padding-right')];
+  const along = thumb / 2 + t * Math.max(0, hi - lo - thumb);
+  const at = back ? hi - along : lo + along;
+  return upright ? { x: r.left + r.width / 2, y: at } : { x: at, y: r.top + r.height / 2 };
 }
 
 // ---------- install ----------
@@ -132,10 +160,29 @@ export function installUiFx() {
     glints(el, { count: 2, area: 'edge', size: [3, 6] });
   });
 
+  // Sliding: a few sparks off a slider's thumb, at most once a frame, and
+  // only once it has moved on from the last (a drag sends an input per move).
+  let sliding: HTMLInputElement | null = null;
+  let lastSpark: { el: HTMLInputElement; at: Point } | null = null;
+  addEventListener('input', (e) => {
+    const el = e.target;
+    if (!fxActive() || !(el instanceof HTMLInputElement) || el.type !== 'range') return;
+    if (sliding) return void (sliding = el);
+    sliding = el;
+    requestAnimationFrame(() => {
+      const input = sliding!;
+      sliding = null;
+      const p = thumbPoint(input);
+      if (lastSpark?.el === input && Math.hypot(p.x - lastSpark.at.x, p.y - lastSpark.at.y) < 4) return;
+      lastSpark = { el: input, at: p };
+      sparks(p, { count: 4, speed: [50, 200], angle: -Math.PI / 2, spread: Math.PI * 1.2, colors: [C.ember, C.gold], life: [0.2, 0.45], size: [0.5, 1], gravity: 420 });
+    });
+  });
+
   // Typing: sparks fly off the caret.
   addEventListener('input', (e) => {
     const el = e.target;
-    if (!fxActive() || !(el instanceof HTMLInputElement) || el.type === 'checkbox') return;
+    if (!fxActive() || !(el instanceof HTMLInputElement) || el.type === 'checkbox' || el.type === 'range') return;
     const p = caretPoint(el);
     const deleting = (e as InputEvent).inputType?.startsWith('delete');
     sparks(p, {

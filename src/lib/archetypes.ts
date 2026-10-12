@@ -101,7 +101,7 @@ export interface Archetype {
   dense: number;
   /** More (positive) or fewer embers than the settings have. */
   crowd: number;
-  /** The zone whose emblem its strata bear (the sigil on the zone gate's keystone, lib/zoneSigils.ts). */
+  /** The zone whose emblem its strata bear (the sigil on the seal of their title card, lib/zoneSigils.ts). */
   emblem: string;
   /** Its strata's names: the curated ones first, then every epithet with every place. */
   names: string[];
@@ -372,5 +372,5 @@ export const ARCHETYPES: readonly Archetype[] = [
 /** Every name an archetype's strata may take: its curated ones, then each epithet with each place. */
 export const composedNames = (a: Archetype): string[] => a.epithets.flatMap((e) => a.places.map((p) => `${e} ${p}`));
 
-/** The most characters a stratum's name has (the zone gate fits it on a 375 px phone, tests/zoneGate.test.ts; the zones' longest has 16). */
+/** The most characters a stratum's name has (the zone title card is made for it, tests/zoneTitle.test.ts; the zones' longest has 16). */
 export const NAME_MOST = 20;

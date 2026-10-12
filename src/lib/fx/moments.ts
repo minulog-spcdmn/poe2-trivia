@@ -7,6 +7,9 @@ import { after, boxOf, detached, fxActive, isLive, shakeView, type Anchor, type 
 import {
   C,
   edgeGlow,
+  edgeCountdown,
+  edgeHit,
+  edgeWard,
   embers,
   emitter,
   fire,
@@ -321,6 +324,7 @@ export type RevealTargets = {
 
 /** The answer is revealed. */
 export function reveal(t: RevealTargets) {
+  endCountdown();
   if (!fxActive()) return;
   const streak = t.streak ?? 1;
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
@@ -381,7 +385,9 @@ export function reveal(t: RevealTargets) {
       }
     }
     if (!t.warded) {
-      edgeGlow({ color: C.wrong, intensity: 0.05, width: 60, life: 0.7 });
+      // A blow at the edges, as its sound: the same for time's up, which
+      // sounds the same (only the art tells them apart, above).
+      edgeHit({ color: C.wrong });
       pulseMood(0.16, [0.9, 0.3, 0.15]);
     }
     shakeView(0.45, 6);
@@ -489,13 +495,18 @@ export function scored(pill: Element, streak = 1) {
  * and a blaze by ten.
  * Returns a handle to put it out.
  */
-export function ablaze(row: Element, heat: number, blue = burnsBlue(heat)): Handle {
+export function ablaze(row: Element, heat: number, blue = burnsBlue(heat), tint?: Vec3, catching = false): Handle {
   if (!fxActive() || heat <= 0) return { stop() {} };
-  // At the very top of a streak the fire burns blue.
-  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0 });
+  // At the very top of a streak the fire burns blue (or, `tint`, in a colour of its own).
+  // Catching, it kindles and its flames shoot up in a moment instead of burning at full height at once.
+  const flames = fire(row, { height: 6 + 66 * heat, intensity: 0.45 + 1.0 * heat, blue: blue ? 1 : 0, tint, fadeIn: catching ? 0.2 : 0.5, grow: catching ? 0.35 : 0 });
   // No room for the flames (or the entry is gone): no sparks off nothing either.
   if (!isLive(flames)) return flames;
-  const sparkColors = blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
+  const sparkColors = fireColors(blue, tint);
+  if (catching) {
+    flash(row, { radius: 80, color: sparkColors[0], intensity: 0.22, life: 0.35 });
+    embers(row, { count: 10, area: 'top', colors: sparkColors, size: [0.8, 1.6], rise: [80, 180], scatter: 40, gravity: 0, life: [0.4, 0.8] });
+  }
   // Sparks spat out of the fire, drifting up; slower than CALM_SPEED (lib/fx/core.ts),
   // so a fire that burns all game lets phones draw at 30fps.
   const rising = emitter(14 * heat, () =>
@@ -509,6 +520,11 @@ export function ablaze(row: Element, heat: number, blue = burnsBlue(heat)): Hand
   };
 }
 
+/** A fire's sparks: in its tint and a paler one, or the blue fire's, or the orange's. */
+function fireColors(blue: boolean, tint?: Vec3): Vec3[] {
+  return tint ? [tint, [0.5 + tint[0] / 2, 0.5 + tint[1] / 2, 0.5 + tint[2] / 2]] : blue ? [C.portal, C.portalPale] : [C.ember, C.gold];
+}
+
 /** A streak reaches the top: the fire on a player's entry flares up and turns blue. */
 export function turnsBlue(row: Element) {
   if (!fxActive()) return;
@@ -516,6 +532,20 @@ export function turnsBlue(row: Element) {
   ring(row, { radius: 140, thickness: 8, life: 0.6, color: C.portalPale, breakup: 0.6, intensity: 0.5 });
   sparks(row, { count: 40, area: 'edge', colors: [C.portal, C.portalPale, C.whiteHot], speed: [150, 480], gravity: -60, life: [0.4, 0.9] });
   embers(row, { count: 16, area: 'top', colors: [C.portal, C.portalPale], rise: [120, 280], life: [0.6, 1.3] });
+}
+
+/**
+ * A fire takes a new colour (the daily streak's ladder): it flares up in it,
+ * as turnsBlue does in blue. `color` in linear RGB 0 to 1.
+ */
+export function newFlame(row: Element, color: Vec3) {
+  if (!fxActive()) return;
+  const hot: Vec3 = [color[0] * 3, color[1] * 3, color[2] * 3];
+  const pale: Vec3 = [1 + color[0] * 2, 1 + color[1] * 2, 1 + color[2] * 2];
+  flash(row, { radius: 160, color: hot, intensity: 0.35, life: 0.6 });
+  ring(row, { radius: 140, thickness: 8, life: 0.6, color: pale, breakup: 0.6, intensity: 0.5 });
+  sparks(row, { count: 40, area: 'edge', colors: [hot, pale, C.whiteHot], speed: [150, 480], gravity: -60, life: [0.4, 0.9] });
+  embers(row, { count: 16, area: 'top', colors: [hot, pale], rise: [120, 280], life: [0.6, 1.3] });
 }
 
 /** A streak ends: the fire on a player's entry goes out in a puff of smoke. */
@@ -686,29 +716,19 @@ const rectOf = (el: Element) => el.getBoundingClientRect();
 /**
  * Delve: an Azurite Ward crystallises onto a chamber of the phial (`pip`, its
  * casing): blue light gathers into it, and as it settles it flashes and
- * glints. `forged` from two shards: more light, and a ring of it running out.
- * `fed`: a find's sparks already gathered into it (findGained), so the light
- * doesn't gather again.
+ * glints. `fed`: a find's sparks already gathered into it (findGained), so
+ * the light doesn't gather again.
  */
-export function wardFormed(pip: Element, forged: boolean, fed = false) {
+export function wardFormed(pip: Element, fed = false) {
   if (!fxActive() || detached(pip)) return;
-  if (!fed) implode(pip, { count: forged ? 22 : 14, radius: forged ? 48 : 34, color: C.azurite, life: forged ? 0.55 : 0.45 });
-  after(forged ? 0.5 : 0.4, () => {
+  if (!fed) implode(pip, { count: 14, radius: 34, color: C.azurite, life: 0.45 });
+  after(0.4, () => {
     if (detached(pip)) return;
-    flash(pip, { radius: forged ? 26 : 16, color: C.azurite, intensity: forged ? 0.42 : 0.3, life: 0.55 });
-    glints(pip, { count: forged ? 3 : 2, area: 'centre', size: [6, 11], color: C.azuritePale, life: [0.5, 0.85], delay: [0, 0.25] });
-    sparks(pip, { count: forged ? 12 : 6, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [60, 200], gravity: -40, drag: 3, life: [0.25, 0.55] });
-    if (forged) ring(pip, { radius: 42, from: 6, thickness: 4, life: 0.6, color: C.azurite, breakup: 0.45, fill: 0, intensity: 0.6 });
-    light(pip, { color: [0.4, 0.65, 1], radius: forged ? 160 : 110, intensity: forged ? 0.3 : 0.2, decay: 0.9 });
+    flash(pip, { radius: 16, color: C.azurite, intensity: 0.3, life: 0.55 });
+    glints(pip, { count: 2, area: 'centre', size: [6, 11], color: C.azuritePale, life: [0.5, 0.85], delay: [0, 0.25] });
+    sparks(pip, { count: 6, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [60, 200], gravity: -40, drag: 3, life: [0.25, 0.55] });
+    light(pip, { color: [0.4, 0.65, 1], radius: 110, intensity: 0.2, decay: 0.9 });
   });
-}
-
-/** Delve: an azurite shard toward the next ward lands on its chamber (`pip`, the half casing). */
-export function shardFound(pip: Element) {
-  if (!fxActive() || detached(pip)) return;
-  flash(pip, { radius: 12, color: C.azurite, intensity: 0.22, life: 0.4 });
-  sparks(pip, { count: 8, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [40, 150], gravity: 160, life: [0.25, 0.5] });
-  glints(pip, { count: 1, area: 'centre', size: [5, 8], color: C.azuritePale, delay: [0.15, 0.25] });
 }
 
 /**
@@ -779,9 +799,12 @@ export function wardShattered(pip: Element, pill: Element, mine: boolean) {
   if (!detached(pill)) outline(pill, { color: k3(C.azurite, 0.8), width: 8, life: 0.8, intensity: 0.45 });
 }
 
-/** The cold-blue swell at the screen's edges as your ward takes a loss: the red one of a wrong answer (reveal), in azurite. */
+/** Your ward takes a loss: azurite smoke at the screen's edges, with its sound (edgeWard), and the scene lit blue. */
+let wardSmoke: ReturnType<typeof edgeWard> | null = null;
 function wardedEdge() {
-  edgeGlow({ color: C.azurite, intensity: 0.05, width: 70, life: 0.8 });
+  // A cave-in breaks several, a moment apart: they strike the one smoke.
+  if (!wardSmoke?.open()) wardSmoke = edgeWard();
+  wardSmoke.hit();
   pulseMood(0.16, [0.3, 0.55, 1]);
 }
 
@@ -858,16 +881,16 @@ export function wardBlocked(barrier: Element, pip: Element | null, pill: Element
  * carries (`pip`, its casing on the phial or its engraving beside it): a
  * small blast of its own, as the stick's on the art but close and light. A
  * white-hot pop and a ring of fire, sparks and chips of what it was (blue
- * crystal for a ward or a shard, the item's own warm colours for a flare or
+ * crystal for a ward, the item's own warm colours for a flare or
  * dynamite) thrown out and falling, a wisp of smoke, and the entry (`pill`)
  * flickering ember-red where the ward's breaking glows blue.
  */
-export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'shards' | 'flares' | 'dynamite', mine: boolean) {
+export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'flares' | 'dynamite', mine: boolean) {
   if (!fxActive() || detached(pip)) return;
   const at = rectOf(pip);
   const b = boxOf(at);
   const big = Math.max(b.w, b.h);
-  const crystal = item === 'wards' || item === 'shards';
+  const crystal = item === 'wards';
   const chips: Vec3[] = crystal ? [C.azuritePale, C.azurite, C.whiteHot] : item === 'flares' ? [[2.6, 1.2, 1.1], C.ember, C.gold] : [[2.4, 0.9, 0.6], C.ember, [0.55, 0.45, 0.38]];
   flash(at, { radius: big * 0.8 + 10, color: C.whiteHot, intensity: 0.5, life: 0.3 });
   ring(at, { radius: big * 0.9 + 14, from: 3, thickness: 4, life: 0.45, color: C.ember, breakup: 0.55, fill: 0.15, intensity: 0.75 });
@@ -899,7 +922,7 @@ export const FIND_COLORS: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
 /**
  * Delve: a find answered right. As a point flows into the scorer's bar
  * (fillBar), the reward flows from the answer (`answer`) to the very place
- * its item appears (`slot`: the casing its ward or shard forms on, or the
+ * its item appears (`slot`: the casing its ward forms on, or the
  * engraving its flare or dynamite stands as; `aim`, inside it, narrows that
  * down where the slot is wider), in the find card's colours: a stream of
  * sparks that gathers on it between FIND_START and FIND_LANDS, wherever it
@@ -984,31 +1007,30 @@ export function descended() {
 }
 
 /**
- * Delve: a named depth reached; its plaque (`card`) lies over the banner.
- * Light streaks along it, sparks fly off its pointed ends, embers rise off
- * its top edge and it lights the stage; the backdrop's embers flare and all
- * take the depth's colour. `accent`: the stratum's colour (a CSS colour,
- * lib/descent.ts accentAt), which tints all of it.
+ * Delve: a new zone's name locks in on its title card (components/zonecard):
+ * the backdrop's embers flare and all take the zone's colour. Even with the
+ * effects off, as the colour is the zone's.
  */
-export function milestoneReached(card: Element, accent: string) {
+export function zoneArrival() {
   backdropEmbers.flare(0.85, 2.4);
   backdropEmbers.recolor();
-  if (!fxActive() || detached(card)) return;
+}
+
+/** A CSS colour as a light's colour (lib/lights.ts): its hue, at full strength. */
+export const accentLight = (css: string): Vec3 => unit(hdr(css, 1));
+
+/**
+ * Delve alone: deeper than ever, its line over the banner (`line`) coming in.
+ * A few glints catch on it as its letters spread, in the depth's colour
+ * (`accent`, a CSS colour, lib/descent.ts accentAt).
+ */
+export function deeperThanEver(line: Element, accent: string) {
+  if (!fxActive() || detached(line)) return;
   const tint = hdr(accent, 1);
-  const main = k3(tint, 2.7);
   // Its pale: the colour run most of the way to white, as light at its hottest.
   const pale: Vec3 = [1.6 + tint[0] * 1.2, 1.6 + tint[1] * 1.2, 1.6 + tint[2] * 1.2];
-  const b = boxOf(card);
-  flare(card, { size: 12, streak: b.w * 0.6, life: 0.8, color: pale, intensity: 0.3 });
-  glints(card, { count: 4, area: 'edge', size: [4, 8], color: pale, delay: [0.1, 0.7] });
-  for (const side of [-1, 1]) {
-    const end = { x: b.x + (side * b.w) / 2, y: b.y };
-    sparks(end, { count: 16, angle: side > 0 ? 0 : Math.PI, spread: 0.7, colors: [main, pale], speed: [120, 420], gravity: -30, drag: 2.4, life: [0.4, 0.9] });
-    flash(end, { radius: 30, color: main, intensity: 0.3, life: 0.5 });
-  }
-  const top = new DOMRect(b.x - b.w * 0.4, b.y - b.h / 2, b.w * 0.8, 2);
-  embers(top, { count: 18, area: 'fill', colors: [main, pale], rise: [50, 150], scatter: 30, life: [0.8, 1.6] });
-  light(card, { color: unit(tint), radius: Math.max(220, b.w * 0.6), intensity: 0.2, decay: 1.1 });
+  // (Once the letters have most of their spacing, so they fall along the whole line.)
+  after(0.3, () => glints(line, { count: 4, area: 'edge', size: [3, 6], color: pale, delay: [0, 0.5] }));
 }
 
 /**
@@ -1022,7 +1044,7 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
   if (mine) {
     shards(option, { count: 16 });
     if (!warded) {
-      edgeGlow({ color: C.wrong, intensity: 0.05, life: 0.7 });
+      edgeHit({ color: C.wrong });
       pulseMood(0.16, [0.9, 0.3, 0.15]);
     }
     shakeView(0.4, 6);
@@ -1030,9 +1052,42 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
 }
 
 /**
+ * timerTick's screen beat for each of the last seconds (1 first), as
+ * an EdgeBeat (edgeCountdown), and the scene's red flush. The smoke starts out thin,
+ * fairly even round the edges and a dusky red, and second by second
+ * thickens, gathers, reddens and stays a little longer.
+ */
+const TICK_STEPS = [
+  { intensity: 0.17, width: 100, smoke: 1, even: 0, body: 1, hold: 1.6, color: [3.2, 0.3, 0.15] as Vec3, rim: 0.6, mood: 0.6 },
+  { intensity: 0.12, width: 80, smoke: 1.1, even: 0.1, body: 0.75, hold: 1.4, color: [2.8, 0.3, 0.17] as Vec3, rim: 0.25, mood: 0.45 },
+  { intensity: 0.088, width: 62, smoke: 1.3, even: 0.22, body: 0.5, hold: 1.25, color: [2.3, 0.28, 0.2] as Vec3, rim: 0, mood: 0.26 },
+  { intensity: 0.078, width: 56, smoke: 1.3, even: 0.33, body: 0.3, hold: 1.12, color: [1.9, 0.26, 0.22] as Vec3, rim: 0, mood: 0.2 },
+  { intensity: 0.075, width: 50, smoke: 1.3, even: 0.42, body: 0.15, hold: 1, color: [1.6, 0.24, 0.24] as Vec3, rim: 0, mood: 0.15 },
+];
+
+/** The countdown's smoke (timerTick): new when it starts, drifting on through its every tick. */
+let countdown: ReturnType<typeof edgeCountdown> | null = null;
+let lastTick = 0;
+/** Whose countdown it is: the timer ring, a new one for each question (Game.svelte keys it). */
+let countdownOf: Element | null = null;
+
+/** A timer ring is gone (the question left without a reveal: the room left or closed, the game over): its countdown's smoke goes with it. */
+export function timerGone(timer: Element) {
+  if (timer === countdownOf) endCountdown();
+}
+
+/** The question is decided, so the countdown is over: its smoke fades out where it is, about as the reveal's sound dies. */
+function endCountdown() {
+  countdown?.stop(0.35);
+  countdown = null;
+  lastTick = 0;
+  countdownOf = null;
+}
+
+/**
  * The last seconds of the clock. `screen`: the crimson pulse over the scene
- * and the red glow at the screen's edges too; Delve leaves them out, as its
- * darkness closing in already tells the clock running down.
+ * and a beat at the screen's edges too (edgeCountdown); Delve leaves them out, as
+ * its darkness closing in already tells the clock running down.
  */
 export function timerTick(timer: Element, secs: number, screen = true) {
   if (!fxActive()) return;
@@ -1040,8 +1095,21 @@ export function timerTick(timer: Element, secs: number, screen = true) {
   ring(timer, { radius: 50 + urgency * 30, from: 26, thickness: 4 + urgency * 3, life: 0.6, color: C.crimson, breakup: 0.3, fill: 0 });
   sparks(timer, { count: 6 + Math.round(urgency * 10), area: 'edge', colors: [C.crimson, C.ember], speed: [80, 260], gravity: 200, life: [0.25, 0.5] });
   if (!screen) return;
-  pulseMood(0.25 + urgency * 0.35);
-  if (secs <= 2) edgeGlow({ color: C.crimson, intensity: 0.08 + urgency * 0.06, width: 60, life: 0.7 });
+  // Every tick alike: the scene flushed red and a beat of red smoke at the
+  // screen's edges, one smoke for the whole countdown, each second a step
+  // stronger (TICK_STEPS).
+  const step = TICK_STEPS[Math.max(0, Math.min(TICK_STEPS.length - 1, secs - 1))];
+  // A new countdown (another question's ring, or this one's clock put back):
+  // its own smoke, and whatever is left of the last one goes.
+  if (timer !== countdownOf || secs >= lastTick || !countdown?.open()) {
+    countdown?.stop(0.35);
+    // Room for every second left, and a moment's grace for a late tick.
+    countdown = edgeCountdown(secs + 0.5);
+    countdownOf = timer;
+  }
+  lastTick = secs;
+  pulseMood(step.mood);
+  countdown.beat(step);
 }
 
 // ---------- deathmatch ----------
@@ -1320,9 +1388,9 @@ export function heraldNotice(toast: Element) {
   });
 }
 
-/** A portal opens while connecting. */
-export function connecting(at: Element): Handle {
-  return portal(at, { radius: 46 });
+/** A portal opens while connecting, `radius` px round the rune it swirls on. */
+export function connecting(at: Element, radius = 46): Handle {
+  return portal(at, { radius });
 }
 
 /** A small celebratory twinkle (link copied, setting changed). */

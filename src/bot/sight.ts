@@ -11,7 +11,7 @@
 // opacity; two grids compare by their correlation, over the cells revealed
 // so far on a veiled picture.
 
-import { activeRules, type GameState, type Question } from '../lib/game';
+import { activeRules, allArt, type GameState, type Question } from '../lib/game';
 import { engine } from '../lib/session.svelte';
 import { shown, type ShownPatch, type VeilArt } from '../lib/media.svelte';
 import { visibleBox } from '../lib/patches';
@@ -141,7 +141,7 @@ async function seenVeiled(veil: VeilArt, patches: Record<number, ShownPatch>): P
   const [cover, mask] = canvas(veil.w, veil.h);
   mask.fillStyle = '#fff';
   for (const p of list) {
-    ctx.drawImage(await load(p.url), p.x, p.y, p.w, p.h);
+    ctx.drawImage(await p.picture(), p.x, p.y, p.w, p.h);
     mask.fillRect(p.x, p.y, p.w, p.h);
   }
   const weight = new Float32Array(SIZE * SIZE);
@@ -158,12 +158,12 @@ async function match(seen: Seen, id: string, flips: boolean): Promise<number> {
   return flips ? Math.max(a, likeness(seen.grid, flipped, seen.weight)) : a;
 }
 
-/** Items by name (made-up names have none: they are never the answer). */
+/** Art ids by item name, each way it is drawn (made-up names have none: they are never the answer). */
 let byName: Map<string, string[]> | null = null;
 function idsNamed(name: string | null): string[] {
   if (!byName) {
     byName = new Map();
-    for (const it of engine.items) byName.set(it.name, [...(byName.get(it.name) ?? []), it.id]);
+    for (const it of engine.items) byName.set(it.name, [...(byName.get(it.name) ?? []), ...allArt(it).map((a) => a.art)]);
   }
   return name ? (byName.get(name) ?? []) : [];
 }
@@ -192,13 +192,15 @@ export const sight: Eyes = async (s: GameState, q: Question) => {
       }
     } else {
       // The name is shown; which picture is it?
-      const target = idsNamed(q.prompt)[0];
-      if (!target) return null;
+      const targets = idsNamed(q.prompt);
+      if (!targets.length) return null;
       for (let i = 0; i < q.labels.length; i++) {
         const tile = shown.tileVeils[i];
-        const url = shown.options[i];
+        const url = shown.options[i]?.url;
         const seen = tile ? await seenVeiled(tile, shown.tilePatches[i] ?? {}) : url ? await seenWhole(url).catch(() => null) : null;
-        scores.push(seen ? await match(seen, target, flips) : -1);
+        let best = -1;
+        if (seen) for (const id of targets) best = Math.max(best, await match(seen, id, flips));
+        scores.push(best);
       }
     }
   } catch {

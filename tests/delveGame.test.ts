@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
+  ZONE_DESCENT_MS,
+  dealIn,
+  DEAL_SLACK_MS,
   delveLockout,
   delveRules,
   delveTimer,
@@ -11,7 +14,9 @@ import {
   findRules,
   livesOf,
   veilSeconds,
+  WAY_OUT,
 } from '../src/lib/delve.ts';
+import { sceneOf } from '../src/lib/recorder.ts';
 import { ActionError, Engine, RARE_GROUPS, RARE_MAX_OPTIONS, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -179,13 +184,81 @@ test('wrong answers, giving up and answering late each cost a life; right ones s
   assert.ok(h.s.reveal!.timedOut);
 });
 
+test("going down into a new zone, its cards are dealt as the plunge into it lands; any other depth's at once", () => {
+  const h = delve(['Ash'], { host: null });
+  for (let d = 1; d < 10; d++) {
+    h.turn(true);
+    assert.equal(h.s.delve!.dealAt, undefined, `depth ${h.s.round}`);
+    assert.equal(dealIn(h.s, h.clock.now), 0);
+  }
+  assert.equal(h.s.round, 10);
+  h.clock.now += 5000;
+  h.turn(true);
+  assert.equal(h.s.round, 11);
+  assert.equal(h.s.delve!.dealAt, h.clock.now + ZONE_DESCENT_MS);
+  assert.equal(dealIn(h.s, h.clock.now), ZONE_DESCENT_MS);
+  assert.equal(dealIn(h.s, h.clock.now + ZONE_DESCENT_MS - 1000), 1000);
+  assert.equal(dealIn(h.s, h.clock.now + ZONE_DESCENT_MS + 1), 0);
+  // Picked once dealt; the depth after is dealt at once.
+  h.clock.now += ZONE_DESCENT_MS;
+  h.pick();
+  assert.equal(dealIn(h.s, h.clock.now - ZONE_DESCENT_MS), 0, 'nothing on its way once a card is picked');
+  h.clockIn();
+  h.act({ type: 'answer', index: right(h.s.question!), askedAt: h.s.question!.askedAt });
+  h.act({ type: 'next' });
+  assert.equal(h.s.round, 12);
+  assert.equal(h.s.delve!.dealAt, undefined);
+  // The run's end leaves nothing on its way.
+  h.playOut({ p0: [false, false, false] });
+  assert.equal(h.s.delve!.dealAt, undefined);
+});
+
+test("going down into a new zone, the player's own pick well before the cards are dealt is dropped quietly", () => {
+  const h = delve(['Ash']);
+  for (let d = 1; d < 11; d++) h.turn(true);
+  const at = h.s.delve!.dealAt!;
+  assert.equal(at, h.clock.now + ZONE_DESCENT_MS);
+  h.clock.now = at - DEAL_SLACK_MS - 1;
+  throwsSilently(() => h.pick('p0'), /early/i);
+  assert.equal(h.s.phase, 'choosing');
+  // The bots' recordings know the cards weren't there yet (scripts/bot-motion.mjs).
+  assert.equal(sceneOf(h.s, 'p0', 0).dealAt, at);
+  // A screen whose guess at the host's clock runs a little ahead showed them: its pick is taken.
+  h.clock.now = at - DEAL_SLACK_MS;
+  h.pick('p0');
+  assert.equal(h.s.phase, 'question');
+  assert.equal(sceneOf(h.s, 'p0', 0).dealAt, undefined);
+});
+
+test('alone, only a question cleared goes a depth deeper: a miss is followed by a fresh offer at the same depth', () => {
+  const h = delve(['Ash']);
+  h.turn(true);
+  assert.equal(h.s.round, 2);
+  const turns = h.s.turnCount;
+  h.turn(false);
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(h.s.round, 2, 'still at the depth missed');
+  assert.equal(h.s.turnCount, turns + 1, 'a new turn all the same');
+  assert.deepEqual(h.s.delve!.losses.p0, [2]);
+  h.turn(true);
+  assert.equal(h.s.round, 3);
+  // A miss on a new zone's first depth plunges into it only once: the offer after it is dealt at once.
+  for (let d = 3; d < 11; d++) h.turn(true);
+  assert.equal(h.s.round, 11);
+  h.clock.now = h.s.delve!.dealAt!;
+  h.turn(false);
+  assert.equal(h.s.round, 11);
+  assert.equal(h.s.delve!.dealAt, undefined);
+});
+
 test('alone, the run ends with the third life, at the depth where it went', () => {
   const h = delve(['Ash'], { host: null });
   h.playOut({ p0: [true, false, true, false, true, true, false] });
   assert.deepEqual(h.s.winners, []);
-  assert.equal(fellAt(h.s, 'p0'), 7);
-  assert.equal(h.s.round, 7);
-  assert.deepEqual(h.s.delve!.losses.p0, [2, 4, 7]);
+  // Only the right answers go deeper: five of them, the misses each at the depth after the last one.
+  assert.equal(fellAt(h.s, 'p0'), 5);
+  assert.equal(h.s.round, 5);
+  assert.deepEqual(h.s.delve!.losses.p0, [2, 3, 5]);
 });
 
 test('no deathmatch and no target: a run only ends when the lives do', () => {
@@ -250,6 +323,12 @@ test('three different categories every turn, locked out as long as the depth say
     h.clockIn();
     h.act({ type: 'answer', index: right(h.s.question!), askedAt: h.s.question!.askedAt });
     h.act({ type: 'next' });
+    // A vein struck right deals its two cards at the same depth: out of it, a depth deeper.
+    if (h.s.offered.includes(WAY_OUT)) {
+      assert.equal(h.s.offered.length, 2);
+      assert.equal(findOn(h.s, h.s.offered[0]), 'azurite');
+      h.act({ type: 'pick', category: WAY_OUT });
+    }
   }
   assert.equal(h.s.round, 201);
 });

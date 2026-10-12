@@ -99,6 +99,26 @@ function preloadFonts(): Plugin {
   };
 }
 
+/**
+ * Fontin's license (app.css) asks for its notice beside the @font-face that
+ * embeds it. The CSS minifier drops every comment, even a /*! one, so the
+ * build puts it back before each Fontin face.
+ */
+const FONTIN_NOTICE = '/* A font by Jos Buivenga (exljbris) -> www.exljbris.com */';
+
+function fontinNotice(): Plugin {
+  return {
+    name: 'fontin-notice',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type !== 'asset' || !file.fileName.endsWith('.css') || typeof file.source !== 'string') continue;
+        file.source = file.source.replace(/@font-face\s*\{\s*font-family:\s*["']?Fontin\b/g, (face) => FONTIN_NOTICE + face);
+      }
+    },
+  };
+}
+
 /** Where the backdrop tool saves to (and the game reads its zones' looks from). */
 const BACKDROPS_FILE = fileURLToPath(new URL('./src/data/backdrops.json', import.meta.url));
 
@@ -179,6 +199,42 @@ const hoverOnlyWhereHoverable = {
 };
 
 /**
+ * The app's own mouse pointer (src/lib/ownCursor.ts): every `cursor: pointer`,
+ * `default`, `not-allowed`, `text`, `zoom-in`, `grab` and `grabbing` reads its picture from a variable, falling back to
+ * the system's own where it isn't set (pages that don't draw one).
+ *
+ * And every cursor is handed down as a variable rather than inherited:
+ * `cursor: X` becomes `--cursor-now: X; cursor: var(--cursor-now)`, and
+ * app.css gives every element `cursor: var(--cursor-now)`. So a cursor set
+ * on one element alone (the pressed pointer, ownCursor.ts) stays on it: what
+ * it holds keeps taking the variable, unchanged, and isn't restyled. (An
+ * inherited cursor changed on a big element restyles all it holds.)
+ */
+const CURSOR_VARS: Record<string, string> = {
+  pointer: '--cursor-pointer',
+  default: '--cursor',
+  'not-allowed': '--cursor-disabled',
+  text: '--cursor-text',
+  'zoom-in': '--cursor-zoom',
+  grab: '--cursor-grab',
+  grabbing: '--cursor-grabbing',
+};
+const HANDED_DOWN = 'var(--cursor-now)';
+
+const themedCursors = {
+  postcssPlugin: 'themed-cursors',
+  Declaration: {
+    cursor(decl: { value: string; important: boolean; cloneBefore(o: { prop: string; value: string }): unknown }) {
+      const v = decl.value.trim();
+      if (v.startsWith('var(--cursor-now')) return;
+      const name = CURSOR_VARS[v];
+      decl.cloneBefore({ prop: '--cursor-now', value: name ? `var(${name}, ${v})` : v });
+      decl.value = HANDED_DOWN;
+    },
+  },
+};
+
+/**
  * This machine (and user), for the local channel's room names
  * (src/lib/channel.ts): the dev server and the room bot's --localhost
  * build here share them; anyone else's local rooms stay apart.
@@ -201,8 +257,8 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
-    css: { postcss: { plugins: [hoverOnlyWhereHoverable] } },
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
+    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     build: {
       rollupOptions: {
         // Legal pages are plain static pages so they work without JavaScript.
@@ -211,10 +267,11 @@ export default defineConfig(({ command, mode }) => {
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool),
-          // the zone gate's tuning page (src/zonebanner) and the descent's
-          // test page (src/descentPreview): the dev server serves them by
-          // itself; of the builds only the beta has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html' } : {}),
+          // the zone tuning page (src/zonebanner), the descent's test page
+          // (src/descentPreview) and the daily streak's (src/streakPreview):
+          // the dev server serves them by itself; of the builds only the beta
+          // has them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

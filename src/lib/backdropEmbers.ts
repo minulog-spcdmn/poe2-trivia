@@ -11,15 +11,14 @@
 // down in the Mines, embers rising on the magma's heat, snow falling, motes
 // drawn into the abyss's eddies, ...). Through a stratum's handover a
 // growing share of them burns in the next one's colour and moves its way
-// (emberTurn: one in twenty at the zone's 6th depth, nineteen in twenty
-// as the next is announced, all of them at its 2nd, eased), each taking
-// both as it starts a new life. Each new
-// depth carries them, and the glints with the walls, up past you as the
-// scene sinks (`rise`).
+// (emberTurn: one in ten at the zone's 7th depth, two in three at its 10th,
+// the last third as the next is announced, eased), each taking both as it
+// starts a new life. Each new depth carries them, and the glints with the
+// walls, up past you as the scene sinks (`rise`).
 
 import { emberTurn, hallTurn, lookOf, SURFACE, type Descent, type Look } from './descent.ts';
 import { backdropsVersion } from './backdrops.ts';
-import { cooling, MOTIONS, motionFor, type EmberMotion } from './emberMotion.ts';
+import { cooling, MOTIONS, motionFor, VEIN, type EmberMotion } from './emberMotion.ts';
 
 /** The embers that are always there. */
 export const CALM_EMBERS = 36;
@@ -351,7 +350,7 @@ export class Embers {
   private born(i: number, w: number, h: number, seed: boolean) {
     const b = this.pick(i);
     this.burn[i] = b;
-    const id = motionFor(b, this.kindGate[i]);
+    const id = this.motionOf(i, b);
     this.motion[i] = id;
     this.from[i] = id;
     this.mix[i] = 1;
@@ -366,7 +365,11 @@ export class Embers {
     const u = this.u[i];
     let x: number;
     let y: number;
-    if (m.pull > 0 || m.swirl > 0) {
+    if (m.wall) {
+      // Hanging in the air away from the walls, which draw it in.
+      x = (0.2 + 0.6 * r()) * w;
+      y = (0.08 + 0.84 * r()) * h;
+    } else if (m.pull > 0 || m.swirl > 0) {
       // Somewhere round the eddy it is drawn to.
       this.centre(i, w, h);
       const reach = EDDY_REACH * Math.min(w, h);
@@ -391,7 +394,7 @@ export class Embers {
   private rekindle(i: number, w: number, h: number, snap: boolean) {
     const b = this.pick(i);
     this.burn[i] = b;
-    const id = motionFor(b, this.kindGate[i]);
+    const id = this.motionOf(i, b);
     if (id === this.motion[i]) return;
     // Resting dark between lives: it just starts afresh, its new way.
     if (this.wait[i] > 0) return this.born(i, w, h, false);
@@ -399,6 +402,22 @@ export class Embers {
     this.fromCool[i] = this.cool[i];
     this.motion[i] = id;
     this.mix[i] = snap ? 1 : 0;
+  }
+
+  /** The motion ember `i` takes burning in stratum `b`: the vein's while one is dug, else the stratum's (its rarer kind's by its gate). */
+  private motionOf(i: number, b: number) {
+    return this.inVein ? VEIN : motionFor(b, this.kindGate[i]);
+  }
+  private inVein = false;
+
+  /**
+   * An Azurite Vein dug, or no longer: every ember turns to its way of
+   * moving (VEIN_MOTION) over a moment, or back to its stratum's.
+   */
+  vein(on: boolean) {
+    if (on === this.inVein) return;
+    this.inVein = on;
+    this.recolorDue = true;
   }
 
   /** Sets (cx, cy, spin) to the eddy ember `i` is drawn to (each ember its own, the second turning the other way). */
@@ -445,7 +464,15 @@ export class Embers {
       bright *= 1 + 0.35 * m.depth * z;
     }
     let gone = false;
-    if (m.pull > 0 || m.swirl > 0) {
+    if (m.wall) {
+      // Drawn into the nearer wall, ever faster, brightening as it nears the rock; gone at it.
+      const u = this.u[i];
+      const toRight = this.bx[i] > w / 2;
+      vx += (toRight ? 1 : -1) * m.wall * speed * (0.08 + u * u * u);
+      const edge = toRight ? w - this.bx[i] : this.bx[i];
+      bright *= 0.7 + 0.8 * clamp01(1 - edge / (0.3 * w));
+      gone = edge < 4;
+    } else if (m.pull > 0 || m.swirl > 0) {
       // Drawn in and round, quicker round the nearer, dimming as it nears the middle.
       this.centre(i, w, h);
       const dx = this.bx[i] - this.cx;
@@ -625,7 +652,8 @@ export class Embers {
         pos[o + 3] = 0;
         continue;
       }
-      const fade = Math.min(1, u / 0.1) * (1 - Math.max(0, (u - 0.62) / 0.38));
+      // (Drawn into a wall, it burns on till the rock takes it, going out only if its life ends first.)
+      const fade = Math.min(1, u / 0.1) * (m.wall ? 1 - Math.max(0, (u - 0.9) / 0.1) : 1 - Math.max(0, (u - 0.62) / 0.38));
       // The extra embers join a swarm one by one as it builds, and leave as it ebbs.
       const join = i < CALM_EMBERS ? 1 : i < extra ? clamp01((this.crowd - e.gate) / 0.3) : 0;
       // A flicker about a steady mean, however deep, so a zone's brightness keeps to its look.

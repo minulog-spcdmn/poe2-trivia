@@ -2,7 +2,8 @@
 // names of items with such pictures) are picked to resemble the answer.
 // The likeness comes from scripts/looks.mjs (shape, edges, colour; mirror-
 // blind) and only ranks items within their own group, the pool a question
-// draws its options from. Items missing from the data (added since it was
+// draws its options from. Ids are the art's: an item drawn more than one way
+// (Item.variants) has each of its art ranked on its own, by the variant's id. Items missing from the data (added since it was
 // built) have no look-alikes and fall back to the caller's order.
 //
 // The table is only wanted deep in Delve, and only by whoever builds the

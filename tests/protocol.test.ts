@@ -87,21 +87,23 @@ test('rate limit allows bursts but not floods', () => {
   assert.equal(r.strikes, 80);
 });
 
-test('veiled art patches carry their edges, in whole (x, y, patch) triples', () => {
-  const patch = { t: 'patch', qid: 5, i: 3, x: 10, y: 20, w: 30, h: 40, data: new ArrayBuffer(8) };
-  assert.ok(parseHostMsg({ ...patch, edges: new Uint16Array([1, 2, 4, 3, 2, 4]).buffer }));
-  assert.ok(parseHostMsg({ ...patch, edges: new Uint8Array(12) }), 'a view of the bytes is fine');
-  assert.ok(parseHostMsg({ ...patch, edges: new ArrayBuffer(0) }), 'a patch may touch nothing');
-  assert.equal(parseHostMsg(patch), null);
-  assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(7) }), null);
-  assert.equal(parseHostMsg({ ...patch, edges: [1, 2, 3] }), null);
-  assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(6 * 20000) }), null);
-  const veil = { t: 'veil', qid: 5, w: 100, h: 120, burn: 900, count: 12, box: [4, 6, 90, 108] };
+test('a veiled picture goes out whole with its labels, and a patch only says which one is uncovered', () => {
+  const veil = { t: 'veil', qid: 5, w: 100, h: 120, burn: 900, count: 12, box: [4, 6, 90, 108], data: new ArrayBuffer(8), labels: new Uint16Array([1, 12000]).buffer };
   assert.ok(parseHostMsg(veil));
+  assert.ok(parseHostMsg({ ...veil, labels: new Uint8Array(8) }), 'a view of the bytes is fine');
+  assert.equal(parseHostMsg({ ...veil, data: undefined }), null);
+  assert.equal(parseHostMsg({ ...veil, labels: undefined }), null);
+  assert.equal(parseHostMsg({ ...veil, labels: new ArrayBuffer(6) }), null, 'whole (patch, length) pairs');
+  assert.equal(parseHostMsg({ ...veil, labels: new ArrayBuffer(4 * 300000) }), null);
   assert.equal(parseHostMsg({ ...veil, box: undefined }), null);
   assert.equal(parseHostMsg({ ...veil, box: [1, 2, 3] }), null);
   assert.equal(parseHostMsg({ ...veil, count: undefined }), null);
   assert.equal(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120 }), null);
+  const patch = { t: 'patch', qid: 5, i: 3 };
+  assert.deepEqual(parseHostMsg(patch), patch);
+  assert.equal(parseHostMsg({ ...patch, i: 255 }), null);
+  assert.equal(parseHostMsg({ ...patch, i: -1 }), null);
+  assert.equal(parseHostMsg({ t: 'patch', qid: 5 }), null);
 });
 
 test('a version mismatch says which side has to reload', () => {
@@ -115,8 +117,8 @@ test('a version mismatch says which side has to reload', () => {
 });
 
 test('veiled "find the art" pictures say which option they belong to', () => {
-  const veil = { t: 'veil', qid: 5, w: 100, h: 80, burn: 900, count: 16, box: [0, 0, 100, 80] };
-  const patch = { t: 'patch', qid: 5, i: 3, x: 0, y: 0, w: 20, h: 20, data: new ArrayBuffer(8), edges: new ArrayBuffer(6) };
+  const veil = { t: 'veil', qid: 5, w: 100, h: 80, burn: 900, count: 16, box: [0, 0, 100, 80], data: new ArrayBuffer(8), labels: new ArrayBuffer(4) };
+  const patch = { t: 'patch', qid: 5, i: 3 };
   assert.ok(parseHostMsg(veil), 'the art of a name question has no tile');
   assert.ok(parseHostMsg({ ...veil, tile: 7 }));
   assert.ok(parseHostMsg({ ...patch, tile: 0 }));
@@ -134,8 +136,33 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 19);
+test('version 30 joins two lines from 27 (one numbered 28 and 29, the other 28): an Azurite Vein\'s lamp is its strike 1\'s whole clock, never fed, and its strikes ask from 20, 30 and 40 depths further down; and an Azurite Vein is dug a strike at a time on one lamp, its wards in hand until the way out (WAY_OUT) and buried by a cave-in; and players say whether their game is on screen and in use (presence), the host tells the lobby how each stands (standing), and a veiled picture goes out whole with which patch each pixel falls in, its patches only named as they uncover; 27: in Delve only a question cleared goes a depth deeper, a miss or a time-out followed by another question at the same depth; 26: an Azurite Vein always gives a whole ward (no shards, no fast window), the Vein comes from shown depth 25 and the Flare Cache from 40, each certain on its first depth; 25: the Delve rules are ruleset 2, twins kept apart down to their depth (game.ts TWINS); 24: a pointer goes with the anchors round its own, and many more parts of the screen are anchors (cursors.ts); 23: Delve together counts the team\'s streak (depths cleared in a row with nobody missing), which every screen\'s verdict burns with; 22: a new zone\'s cards are dealt as the plunge into it lands (dealAt), every screen holding them and their votes till then; 21: players send their pointers (cursor, cursors); 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 30);
+  // A guest on 29 would know nothing of presence or whole veiled pictures; one on 28 (presence) nothing of the vein's dig.
+  assert.match(versionProblem(29)!, /^Your game is out of date/);
+  assert.match(versionProblem(28)!, /^Your game is out of date/);
+  // A host on 27 would take a guest's presence for a forged message and block them; a guest on 27 would look for patches as pictures,
+  // and put a vein's ward straight into the pack and never deal the way out.
+  assert.match(versionProblem(27)!, /^Your game is out of date/);
+  // A guest on 26 would expect a miss to take the run deeper.
+  assert.match(versionProblem(26)!, /^Your game is out of date/);
+  // A guest on 25 would draw a Vein's fast window and look for shards the host no longer gives.
+  assert.match(versionProblem(25)!, /^Your game is out of date/);
+  // A host on 24 would deal Delve questions under ruleset 1 to a guest recording them under 2.
+  assert.match(versionProblem(24)!, /^Your game is out of date/);
+  // A host on 23 would take a pointer with more than one anchor, or on one it doesn't know, for a forged message and block its guest.
+  assert.match(versionProblem(23)!, /^Your game is out of date/);
+  // A guest on 22 would show its own streak, not the team's, on the verdict.
+  assert.match(versionProblem(22)!, /^Your game is out of date/);
+  // A guest on 21 would show a new zone's cards mid-plunge, and vote on them.
+  assert.match(versionProblem(21)!, /^Your game is out of date/);
+  // A host on 20 would take a guest's pointer for a forged message and block them.
+  assert.match(versionProblem(20)!, /^Your game is out of date/);
+  // A guest on 19 would draw a small item's picture at twice its size, and find no size on an option's picture.
+  assert.match(versionProblem(19)!, /^Your game is out of date/);
+  const pic = new ArrayBuffer(8);
+  assert.ok(parseHostMsg({ t: 'option', qid: 1, index: 0, w: 120, h: 120, data: pic }));
+  assert.equal(parseHostMsg({ t: 'option', qid: 1, index: 0, data: pic }), null, 'an option picture without its size');
   // A host on 18 would take a guest's watch action for a forged message and block them.
   assert.match(versionProblem(18)!, /^Your game is out of date/);
   // A guest on 17 would show a host's pictures at twice their size, or a 17 host's at half, and burn patches in out of place.
@@ -164,4 +191,14 @@ test('version 19: a guest can choose to watch rather than play (the watch action
   assert.equal(parseClientMsg({ t: 'action', action: { type: 'fuse', askedAt: 42 } }), null);
   // The plain art the dynamite before it laid bare is no message any more.
   assert.equal(parseHostMsg({ t: 'clean', qid: 5, w: 120, h: 160, data: new ArrayBuffer(8) }), null);
+});
+
+test('presence: a guest says only how it is, and the host lists only those not simply ready', () => {
+  for (const p of ['here', 'idle', 'away']) assert.deepEqual(parseClientMsg({ t: 'presence', p }), { t: 'presence', p });
+  for (const p of ['slow', 'gone', 1, null, undefined]) assert.equal(parseClientMsg({ t: 'presence', p }), null);
+  assert.deepEqual({ ...(parseHostMsg({ t: 'standing', s: { a1: 'away', b2: 'slow', c3: 'idle' } }) as { s: object }).s }, { a1: 'away', b2: 'slow', c3: 'idle' });
+  assert.deepEqual({ ...(parseHostMsg({ t: 'standing', s: {} }) as { s: object }).s }, {});
+  assert.equal(parseHostMsg({ t: 'standing', s: { a1: 'here' } }), null);
+  assert.equal(parseHostMsg({ t: 'standing', s: [] }), null);
+  assert.equal(parseHostMsg({ t: 'standing', s: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`p${i}`, 'away'])) }), null);
 });

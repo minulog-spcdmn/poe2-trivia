@@ -56,12 +56,6 @@
     --glow: rgba(70, 140, 255, 0.55);
     filter: drop-shadow(0 0 1.5px var(--glow)) drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.9));
   }
-  /* A shard is a broken piece: paler, as light leaks through the break. */
-  .shard {
-    --dark: #173a78;
-    --mid: #3270c8;
-    --lit: #86c2ff;
-  }
   .flare {
     --dark: #6e2406;
     --mid: #a4501a;

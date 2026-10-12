@@ -22,25 +22,25 @@ import {
   DELVE_MAX_DYNAMITE,
   DELVE_MAX_FLARES,
   DELVE_MAX_WARDS,
-  SHARDS_PER_WARD,
   clockLeft,
   REVIVE_FROM,
   delveQuestionTimer,
-  capShards,
   findOffers,
   hasRoom,
   inventoryOf,
   isGroupRun,
   livesOf,
+  opensZone,
   standingIds,
   tileVeilSize,
   veilSeconds,
-  veinWindowMs,
+  ZONE_DESCENT_MS,
   type FindKind,
   type Inventory,
   type ItemKind,
+  WAY_OUT,
 } from '../lib/delve';
-import { milestoneAt } from '../lib/descent';
+import { milestoneAt, snapDescent } from '../lib/descent';
 import * as descentModule from '../lib/descent';
 import { resetRecords } from '../lib/delveRecord';
 
@@ -51,7 +51,6 @@ export const MAX_DEPTH = 150;
 
 export const CAPS: Record<ItemKind, number> = {
   wards: DELVE_MAX_WARDS,
-  shards: SHARDS_PER_WARD - 1,
   flares: DELVE_MAX_FLARES,
   dynamite: DELVE_MAX_DYNAMITE,
 };
@@ -122,7 +121,11 @@ function put(change: (s: GameState) => void, quiet = false) {
   if (!prev) return;
   const s = structuredClone(prev);
   change(s);
-  if (quiet && s.delve) s.delve.startedAt = Math.max(Date.now(), prev.delve!.startedAt + 1);
+  if (quiet && s.delve) {
+    s.delve.startedAt = Math.max(Date.now(), prev.delve!.startedAt + 1);
+    // Set up afresh: no new zone's cards still on their way.
+    delete s.delve.dealAt;
+  }
   s.version = prev.version + 1;
   if (lab.paused && s.question?.askedAt !== lab.paused.askedAt) lab.paused = null;
   session.labSetState(s);
@@ -181,13 +184,13 @@ function deal(s: GameState) {
       s.delve.votes = {};
       s.delve.voteFrom = null;
     }
-    delete s.delve.snapshot;
     // Two finds go on different cards and must differ in kind (findOffers drops a second of the same kind).
     const first = opts.cardFind !== 'none' && s.offered.length ? [{ category: s.offered[1] ?? s.offered[0], kind: opts.cardFind }] : [];
     const second =
       opts.cardFind2 !== 'none' && opts.cardFind2 !== opts.cardFind && s.offered.length > 1 ? [{ category: s.offered[0], kind: opts.cardFind2 }] : [];
     s.delve.finds = [...first, ...second];
     delete s.delve.find;
+    delete s.delve.dealAt;
   }
 }
 
@@ -255,7 +258,7 @@ export function boot() {
 export function newRun(n: number, depth: number) {
   const s = freshRun(n, depth, null);
   place(s, true);
-  // Seen starting, as a run from the lobby is: at depth 1 it opens with the first zone's gate (Game.svelte).
+  // Seen starting, as a run from the lobby is: at depth 1 a screen reader is told the first zone's name (Game.svelte).
   session.runStarted = s.delve!.startedAt;
   note(`New run: ${n === 1 ? 'alone' : `${n} players together`} at depth ${depth}.`);
 }
@@ -300,7 +303,23 @@ export function setLives(id: string, lives: number) {
 function invSet(s: GameState, id: string, change: (inv: Inventory) => void) {
   const inv = inventoryOf(s, id);
   change(inv);
-  (s.delve!.inventory ??= {})[id] = capShards(inv);
+  (s.delve!.inventory ??= {})[id] = inv;
+}
+
+/**
+ * A player's streak of right answers, as if they had answered `n` in a row
+ * (the streak chip and the scoreboard's fire at any tier); together, the
+ * team's too (what the verdict's chip burns with there).
+ */
+export function setStreak(id: string, n: number) {
+  put((s) => {
+    const p = s.players.find((x) => x.id === id);
+    if (p) p.streak = n;
+    if (s.delve && isGroupRun(s)) {
+      if (n) s.delve.teamStreak = n;
+      else delete s.delve.teamStreak;
+    }
+  });
 }
 
 export function setItem(id: string, item: ItemKind, n: number) {
@@ -314,6 +333,26 @@ export function dealCards() {
   put((s) => {
     s.turnCount++;
     deal(s);
+  });
+}
+
+/**
+ * Deals a vein's two cards as after a right strike (delve.ts, the dig): the
+ * vein running on and the way out, `strikes` struck so far with as many
+ * wards in hand (the player's, or the lab's actor's together), and `light`
+ * seconds of the lamp left for the next strike.
+ */
+export function dealDig(strikes = 1, light = 6) {
+  put((s) => {
+    if (!s.delve) return;
+    s.turnCount++;
+    deal(s);
+    const vein = s.offered[0];
+    if (!vein) return;
+    const holder = isGroupRun(s) ? lab.actor : (s.players[s.turn]?.id ?? '');
+    s.offered = [vein, WAY_OUT];
+    s.delve.finds = [{ category: vein, kind: 'azurite' }];
+    s.delve.dig = { strikes, haul: Array.from({ length: strikes }, () => holder), light, struck: [] };
   });
 }
 
@@ -481,38 +520,24 @@ const activeId = () => {
   return s?.players[s.turn]?.id ?? IDS[0];
 };
 
-/** Gains one of an item as a find would give it, at once (a second shard forges a ward). */
+/** Gains one of an item as a find would give it, at once. */
 export function gain(item: ItemKind) {
   const s = run();
   if (!s) return;
   const id = activeId();
-  const inv = inventoryOf(s, id);
-  const forge = item === 'shards' && inv.shards + 1 >= SHARDS_PER_WARD;
-  if (!hasRoom(inv, item)) {
-    note(`No room for more ${item === 'shards' ? 'wards' : item}.`);
+  if (!hasRoom(inventoryOf(s, id), item)) {
+    note(`No room for more ${item}.`);
     return;
   }
-  put((n) =>
-    invSet(n, id, (v) => {
-      if (forge) {
-        v.shards = 0;
-        v.wards++;
-      } else v[item]++;
-    }),
-  );
+  put((n) => invSet(n, id, (v) => v[item]++));
 }
 
-/** A find answered right: its reward and the line that says so. `slow`: a Vein answered after its fast window (a shard). */
-export const findRight = (kind: FindKind, slow = false) =>
+/** A find answered right: its reward and the line that says so. */
+export const findRight = (kind: FindKind) =>
   event(`${kind} answered right`, async () => {
     const q = await running((q) => q.find === kind, kind);
     if (q.find !== kind) throw new Error('could not ask that find');
-    if (slow) {
-      // Just past its fast window (half the clock, rounded up to a second).
-      setElapsed(veinWindowMs(state()!) + 200);
-      await sleep(120);
-    }
-    answer(state()!.question!, true);
+    answer(q, true);
   });
 
 /**
@@ -525,7 +550,7 @@ export const findWrong = (kind: 'flare' | 'dynamite') =>
   event(`${kind} answered wrong`, async () => {
     const id = activeId();
     const inv = inventoryOf(run()!, id);
-    if (kind === 'dynamite' && !(inv.wards || inv.shards || inv.flares || inv.dynamite)) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
+    if (kind === 'dynamite' && !(inv.wards || inv.flares || inv.dynamite)) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
     const q = await running((q) => q.find === kind, kind);
     if (q.find !== kind) throw new Error('could not ask that find');
     answer(q, false);
@@ -715,17 +740,26 @@ export const othersPerish = () =>
     }
   });
 
-/** One depth deeper, built as the engine does it at the end of a round, so the mark for it plays. */
+/**
+ * One depth deeper, built as the engine does it at the end of a round, so the
+ * game screen takes it as one: into a new zone, its cards dealt as the plunge
+ * lands (dealAt), as the engine deals them.
+ */
 function stepDown() {
   put((s) => {
     s.round++;
     s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
     s.turnCount++;
     deal(s);
+    if (s.delve && opensZone(s.round)) s.delve.dealAt = session.hostNow() + ZONE_DESCENT_MS;
   });
 }
 
-/** At depth `d` with cards dealt (a fresh run id), seen by the game screen, then one deeper. */
+/**
+ * At depth `d` with cards dealt (a fresh run id), seen by the game screen,
+ * then one deeper. `before` runs once it is set up: a fresh run reads this
+ * device's best from its records again (session.bestAtStart).
+ */
 async function stepInto(d: number, before?: () => void) {
   put((s) => {
     const lives = new Map(s.players.map((p) => [p.id, livesOf(s, p.id)]));
@@ -735,27 +769,30 @@ async function stepInto(d: number, before?: () => void) {
     deal(s);
   }, true);
   before?.();
-  // The screen notes the depth it is at, so the next one counts as deeper.
+  // The screen notes the depth it is at, so the next one counts as deeper; the
+  // scene settles there, as a run's has by the time it steps down (not still
+  // easing or fading from the last play), so the step into a zone plays whole.
   await sleep(350);
+  snapDescent();
   stepDown();
 }
 
-/** Into the zone `d` is in (its first depth), or the next one from the Mines. */
-export const zoneEnter = (d = depthOf()) =>
+/** Into the zone `d` is in (its first depth), or the next one from the Mines; `before`: as stepInto's. */
+export const zoneEnter = (d = depthOf(), before?: () => void) =>
   event('Zone change', async () => {
     let start = Math.floor((Math.max(1, d) - 1) / 10) * 10 + 1;
     if (!milestoneAt(start)) start = 11;
-    await stepInto(start);
+    await stepInto(start, before);
   });
 
 export const nextZone = () => zoneEnter(Math.floor((depthOf() - 1) / 10) * 10 + 11);
 
-/** Past this device's best alone ("Deeper than ever"): the best is set to the depth just left. */
+/** Past this device's best alone ("Deeper than ever", on the line over the banner): the best is set to the depth just left. */
 export const deeperThanEver = () =>
   event('Deeper than ever', async () => {
     if ((run()?.players.length ?? 1) > 1) setPlayers(1);
     let d = depthOf() + 1;
-    // A zone's own name takes the gate on its first depth.
+    // Not a zone's first depth, where its title card says it instead.
     if (milestoneAt(d)) d++;
     await stepInto(d, () => (session.bestAtStart = d - 1));
   });
@@ -768,11 +805,11 @@ export const descend = () =>
     next();
   });
 
-/** The plunge the scene takes as a card is picked (src/lib/descent.ts), if this build has it. */
-export function plunge(): boolean {
+/** The plunge the scene takes as a card is picked (src/lib/descent.ts), if this build has it; `zone`: into a new zone's, deeper and longer. */
+export function plunge(zone = false): boolean {
   const f = (descentModule as Record<string, unknown>).plunge;
   if (typeof f !== 'function') return false;
-  (f as () => void)();
+  (f as (zone: boolean) => void)(zone);
   return true;
 }
 
@@ -806,7 +843,6 @@ function finish(s: GameState) {
     dm.votes = {};
     dm.voteFrom = null;
   }
-  delete dm.snapshot;
   dm.finds = [];
   delete dm.find;
   s.phase = 'over';
