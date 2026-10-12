@@ -116,9 +116,9 @@ export function categoryCompanions(category: string): readonly Companion[] {
   return companions.get(category) ?? [];
 }
 
-/** Every category's icon (to measure them all ahead of the deal; their companions are measured as their card is dealt). */
+/** Every category's icon and the items behind it (to measure them all ahead of the deal). */
 export function categoryIcons() {
-  return [...icons.values()];
+  return [...icons.values(), ...[...companions.values()].flatMap((list) => list.map((c) => c.url))];
 }
 
 /** How much larger (or smaller) than the common size to draw a category's icon, and how far to move it up and left. */

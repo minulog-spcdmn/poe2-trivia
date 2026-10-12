@@ -51,8 +51,8 @@
   const inviteLink = $derived(inviteUrl(session.code));
   /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
   const tall = new MediaQuery('(min-height: 860px)');
-  // Measure the category cards' emblems (lib/iconFit) while the party
-  // gathers, so the first deal doesn't have to.
+  // Measure the category cards' emblems and the items behind them
+  // (lib/iconFit) while the party gathers, so the first deal doesn't have to.
   onMount(() => {
     const t = setTimeout(() => categoryIcons().forEach(measure), 1000);
     return () => clearTimeout(t);

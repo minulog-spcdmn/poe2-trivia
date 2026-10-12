@@ -297,12 +297,9 @@
 
   let picked = $state<string | null>(null);
 
-  // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
+  // Size each emblem, and the items behind it (lib/ui, categoryCompanions), by
+  // its visible shape (see lib/iconFit); measured while the cards lie face down.
   for (const url of categoryIcons()) measure(url);
-  // And the items behind the dealt cards' emblems (lib/ui, categoryCompanions).
-  $effect(() => {
-    for (const cat of s.offered) for (const c of categoryCompanions(cat)) measure(c.url);
-  });
 
   // A category that names several kinds of item shows one of each (lib/ui,
   // categoryCompanions): its emblem in front, and behind it, a little
@@ -390,9 +387,9 @@
           }),
         ),
       );
-    let far = SPREAD;
-    while (far > 1 && !inside(far)) far -= 0.01;
-    return far;
+    // In whole hundredths, so repeated subtraction can't drift below 1.
+    for (let i = Math.round((SPREAD - 1) * 100); i > 0; i--) if (inside(1 + i / 100)) return 1 + i / 100;
+    return 1;
   }
   /** The emblem's style for a category: its fit, made room for its companions. */
   function emblemStyle(cat: string, heap: Heap | undefined) {
