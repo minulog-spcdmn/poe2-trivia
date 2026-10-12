@@ -301,9 +301,9 @@
   for (const url of categoryIcons()) measure(url);
 
   // A category that names several kinds of item shows one of each (lib/ui,
-  // categoryCompanions): its emblem in front, the others behind it and
-  // darker, as a heap of loot in the window. Each heap is set by eye to its
-  // items' shapes, so that every kind shows enough of itself to be known:
+  // categoryCompanions): its emblem in front, the others stacked close
+  // behind it and darker, each showing only the edge that says its kind
+  // (the stack fans out on hover). Each is set by eye to its items' shapes:
   // the emblem's size and shift (px at a tall card's size, as its tweak's),
   // and for each kind (its group) its item's offset from the window's
   // middle (right and down), size and tilt (degrees, clockwise). A kind the
@@ -311,17 +311,17 @@
   type Spot = [x: number, y: number, k: number, turn: number];
   type Moons = { k: number; up: number; left: number; at: Record<string, Spot> };
   const MOONS: Record<string, Moons> = {
-    'Gloves & Boots': { k: 0.9, up: -6, left: 18, at: { Gloves: [30, -22, 0.74, 14] } },
-    'Amulets & Belts': { k: 0.82, up: 18, left: -14, at: { Belts: [-10, 34, 0.86, -6] } },
+    'Gloves & Boots': { k: 0.96, up: -2, left: 10, at: { Gloves: [24, -16, 0.78, 16] } },
+    'Amulets & Belts': { k: 0.9, up: 6, left: -8, at: { Belts: [-22, 22, 0.9, -10] } },
     'Flasks, Charms, Jewels, Relics & Tablets': {
-      k: 0.9,
-      up: -2,
+      k: 1,
+      up: 0,
       left: 0,
       at: {
-        Charms: [-38, -32, 0.42, 0],
-        Jewels: [47, -30, 0.48, -26],
-        Relics: [-52, 27, 0.6, -6],
-        Tablets: [40, 26, 0.54, 14],
+        Charms: [-36, -32, 0.4, -12],
+        Jewels: [39, -31, 0.48, -26],
+        Relics: [-34, 26, 0.6, -28],
+        Tablets: [34, 22, 0.54, 18],
       },
     },
   };
@@ -1033,11 +1033,11 @@
     opacity: 1;
     filter: brightness(1.15);
   }
-  /* The companions draw out a little from behind the emblem, staying in
-     its shade (and in the window); only the emblem grows and brightens, so
-     it still leads. */
+  /* The stack fans out: the companions draw out from behind the emblem,
+     staying in its shade (and in the window); only the emblem grows and
+     brightens, so it still leads. */
   .card.mine:not(:global(.down)):hover .moon {
-    --far: 1.1;
+    --far: 1.25;
   }
   .card.mine:not(:global(.down)):hover .moon .glyph {
     transform: none;
