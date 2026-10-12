@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Item } from '../src/lib/game.ts';
+import { allArt, type Item } from '../src/lib/game.ts';
 import { artScale, ITEM_THUMBS as THUMBS } from '../src/lib/ui-paths.ts';
 import { webpSize as parse } from '../scripts/webp-size.mjs';
 
@@ -11,6 +11,8 @@ const webpSize = (file: string): [number, number] => parse(readFileSync(file), f
 
 const ROOT = join(import.meta.dirname, '..');
 const items: Item[] = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'items.json'), 'utf8'));
+/** Every picture: each item's art, and its variants' (Item.variants). */
+const arts = items.flatMap(allArt);
 const SITE = join(ROOT, 'public', 'items');
 
 /** An AVIF file's width and height (its first 'ispe' box), and the file is whole: its top-level boxes add up to its length. */
@@ -35,12 +37,12 @@ const files = (dir: string) =>
     .map((f) => f.name)
     .sort();
 
-test('every item has its original art (its size in items.json), an upscaled copy artScale times its size and its smaller copies, and nothing else', () => {
-  const ids = items.map((it) => it.id).sort();
+test('every item (and each of its variants) has its original art (its size in items.json), an upscaled copy artScale times its size and its smaller copies, and nothing else', () => {
+  const ids = arts.map((it) => it.id).sort();
   assert.deepEqual(files(join(ROOT, 'art-source', 'items')), ids.map((id) => `${id}.webp`));
   assert.deepEqual(files(SITE), ids.map((id) => `${id}.avif`));
   for (const t of THUMBS) assert.deepEqual(files(join(SITE, String(t))), ids.map((id) => `${id}.avif`), `public/items/${t}/`);
-  for (const it of items) {
+  for (const it of arts) {
     const [w, h] = webpSize(join(ROOT, 'art-source', 'items', `${it.id}.webp`));
     const [W, H] = avifSize(join(SITE, `${it.id}.avif`));
     assert.deepEqual([it.w, it.h], [w, h], `${it.name}: its size in items.json (npm run fetch-data)`);

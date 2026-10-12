@@ -2,18 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Item } from '../src/lib/game.ts';
+import { allArt, type Item } from '../src/lib/game.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const items: Item[] = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'items.json'), 'utf8'));
 const stats: Record<string, [string, string][][]> = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'itemStats.json'), 'utf8'));
 
-test('every item has its tooltip, and only the items do (npm run fetch-stats)', () => {
+test('every item has its tooltip, and each of its variants, and only they do (npm run fetch-stats)', () => {
+  const arts = items.flatMap(allArt);
   assert.deepEqual(
-    items.filter((it) => !stats[it.id]?.length).map((it) => it.name),
+    arts.filter((it) => !stats[it.id]?.length).map((it) => `${it.name} (${it.base})`),
     [],
   );
-  const ids = new Set(items.map((it) => it.id));
+  const ids = new Set(arts.map((it) => it.id));
   assert.deepEqual(
     Object.keys(stats).filter((id) => !ids.has(id)),
     [],

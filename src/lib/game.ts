@@ -72,7 +72,36 @@ export interface Item {
   /** Its art's size, in art pixels (poe2db's, about 104 per inventory cell); its picture is artScale times that (ui-paths.ts). */
   w: number;
   h: number;
+  /**
+   * The other ways the game draws it, each with its own base and tooltip:
+   * Grand Spectrum is a Ruby, an Emerald or a Sapphire, each its own colour,
+   * and Grip of Kulemak glows brighter with each desecrated mod it can take.
+   * A question shows any of its art, each as often (Question.variant).
+   */
+  variants?: ArtVariant[];
 }
+
+/** One more way an item is drawn (Item.variants): its art's id (its picture's file, as an item's id is), base and size. */
+export interface ArtVariant {
+  id: string;
+  base: string;
+  w: number;
+  h: number;
+}
+
+/**
+ * The item as its art `variant` draws it (Question.variant: 0, or none, its
+ * own art): that art's id, base and size, for its picture and its tooltip.
+ * The id is then the art's, not the item's: never count or look items up by
+ * a drawn item's id.
+ */
+export function drawnAs(item: Item, variant = 0): Item {
+  const v = variant > 0 ? item.variants?.[variant - 1] : undefined;
+  return v ? { ...item, ...v, variants: undefined } : item;
+}
+
+/** Every art the item is drawn with (drawnAs), its own first. */
+export const allArt = (item: Item): Item[] => [item, ...(item.variants ?? []).map((_, i) => drawnAs(item, i + 1))];
 
 /** The three ready-made difficulties. */
 export type Preset = 'cruel' | 'merciless' | 'eternal';
@@ -627,6 +656,13 @@ export interface Question {
    * reveal (missing in games saved before it existed).
    */
   mirrored?: boolean[];
+  /**
+   * Which of its item's art each picture shows (drawnAs), counted as
+   * `mirrored` counts them: missing where every picture shows its item's own.
+   * Guests get it as the options: none until the reveal (an empty list), then
+   * for the pictures the reveal names.
+   */
+  variant?: number[];
   /** Delve: the art is shown without colour, as rolled against the rules' grayChance (see grayscaleFor). */
   gray?: boolean;
   /** Host-clock timestamp when the question was asked. */
@@ -982,7 +1018,7 @@ export function publicView(s: GameState): GameState {
   const q = s.question;
   if (!q) return { ...s, used: [] };
   if (s.phase === 'question') {
-    const hidden = { ...q, itemId: '', options: [], mirrored: [] };
+    const hidden = { ...q, itemId: '', options: [], mirrored: [], variant: [] };
     // Delve: nothing to read off the clock either, until the art has reached the player answering.
     if (s.delve && q.deadline === null) return { ...s, used: [], question: { ...hidden, labels: q.labels.map(() => null), prompt: null, groups: [] } };
     return { ...s, used: [], question: hidden };
@@ -995,7 +1031,10 @@ export function publicView(s: GameState): GameState {
     ...q.misses.map((m) => m.index),
     ...(q.struck ?? []).map((m) => m.index),
   ]);
-  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) ? id : '')) } };
+  // A name question's one picture is the answer's; an art question's are the options'.
+  const variant = q.mode === 'name' ? q.variant : q.variant?.map((v, i) => (known.has(i) ? v : 0));
+  const { variant: _, ...rest } = q;
+  return { ...s, used: [], question: { ...rest, options: q.options.map((id, i) => (known.has(i) ? id : '')), ...(variant?.some(Boolean) ? { variant } : {}) } };
 }
 
 export function shuffle<T>(arr: T[], rng: Rng): T[] {
@@ -2637,7 +2676,14 @@ export class Engine {
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
     const gray = rules.grayChance ? { gray: grayRoll ?? this.rng() < rules.grayChance } : {};
     const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
-    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
+    // An item drawn more than one way shows any of its art, each as often
+    // (only those roll, so a game without one asks what it always asked).
+    const variant = (mode === 'art' ? options : [answer.id]).map((id) => {
+      const n = this.byId.get(id)!.variants?.length ?? 0;
+      return n ? Math.floor(this.rng() * (n + 1)) : 0;
+    });
+    const drawn = variant.some(Boolean) ? { variant } : {};
+    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, ...drawn, askedAt, deadline, misses: [], ...special };
   }
 }
 

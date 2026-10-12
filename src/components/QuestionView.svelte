@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -135,6 +135,8 @@
   const flareLine = $derived(coop && !reveal && q.flared && q.flaredBy ? flareText(q.flaredBy, nameOf, me) : '');
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
+  /** The answer as its picture drew it (Grand Spectrum's Emerald…): its art, base and tooltip. */
+  const drawn = $derived(item && drawnAs(item, q.variant?.[q.mode === 'name' ? 0 : q.options.indexOf(item.id)]));
   const race = $derived(s.settings.mode === 'race');
   /**
    * Turns: someone else is answering. The answers go grey and sit flat in the
@@ -386,7 +388,7 @@
   let fullLoaded = $state(false);
   let fullBox = $state<[number, number, number, number] | null>(null);
   $effect(() => {
-    if (!reveal || !item) {
+    if (!reveal || !drawn) {
       fullLoaded = false;
       fullBox = null;
       return;
@@ -394,13 +396,13 @@
     let live = true;
     const done = () => live && (fullLoaded = true);
     const img = new Image();
-    img.src = itemImage(item.id);
+    img.src = itemImage(drawn.id);
     img.decode().then(() => {
       if (!live) return;
       // Measured in art pixels, as the host measures the veiled copy.
       const c = document.createElement('canvas');
-      c.width = item.w;
-      c.height = item.h;
+      c.width = drawn.w;
+      c.height = drawn.h;
       const g = c.getContext('2d', { willReadFrequently: true })!;
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, c.width, c.height);
@@ -424,7 +426,7 @@
   const veilFit = $derived.by(() => {
     const v = media?.veil;
     const slot = artEl?.querySelector('.frame');
-    if (!reveal || !v || !fullBox || !item || !slot) return null;
+    if (!reveal || !v || !fullBox || !drawn || !slot) return null;
     const cw = slot.clientWidth;
     const ch = slot.clientHeight;
     const place = (w: number, h: number, [bx, by, bw, bh]: number[]) => {
@@ -436,7 +438,7 @@
     const from = place(v.w, v.h, v.box);
     // A mirrored item starts the reveal mirrored, as it was shown.
     const fb = fullBox;
-    const to = place(item.w, item.h, mirrored(0) ? [item.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
+    const to = place(drawn.w, drawn.h, mirrored(0) ? [drawn.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
     const k = (to.w / from.w + to.h / from.h) / 2;
     if (!isFinite(k) || k <= 0) return null;
     return `translate(${to.x - k * from.x}px, ${to.y - k * from.y}px) scale(${k})`;
@@ -1121,7 +1123,7 @@
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
           {#if reveal && item}
-            <span class="ibase" in:fade>{item.base}</span>
+            <span class="ibase" in:fade>{drawn?.base}</span>
           {:else}
             <span class="ibase">{questionTopic(q, true)}</span>
           {/if}
@@ -1144,7 +1146,9 @@
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
-          {@const option = known ? engine.byId.get(q.options[i]) : undefined}
+          {@const found = known ? engine.byId.get(q.options[i]) : undefined}
+          <!-- As the picture drew it (Grand Spectrum's Emerald…). -->
+          {@const option = found && drawnAs(found, q.variant?.[i])}
           <!-- Only a picture the reveal names opens its details: the untouched decoys stay anonymous (see named). -->
           {@const shownItem = option && named(i) ? option : undefined}
           {@const pic = option ? { url: itemImage(option.id), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
@@ -1230,7 +1234,7 @@
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
-              <span class="ibase">{item.base}</span>
+              <span class="ibase">{drawn?.base}</span>
               {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
           {:else}
@@ -1243,8 +1247,8 @@
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
-            {#if showFull && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float unflip={mirrored(0)} />
+            {#if showFull && drawn}
+              <ArtImage src={itemImage(drawn.id)} alt={drawn.name} w={drawn.w} h={drawn.h} float unflip={mirrored(0)} />
             {/if}
             {#if media?.veil && !showFull}
               {@const v = media.veil}
@@ -1281,7 +1285,7 @@
           </div>
           {#if reveal && item}
             <!-- Once answered, the art opens the item's details (ItemWindow). -->
-            <button class="details" onclick={() => inspect(item)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
+            <button class="details" onclick={() => inspect(drawn ?? item)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
               <span class="lens">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>
                 Details

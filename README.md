@@ -994,7 +994,17 @@ npm run fetch-data
 
 Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
-doesn't reveal the answer.
+doesn't reveal the answer. The script also reads each unique's own page: for
+its art where the list leaves it out, and for the other ways the game draws
+it, which the list never shows. Those become the item's `variants` (its art,
+base and tooltip, under the same name): Grand Spectrum is a Ruby, an Emerald
+or a Sapphire, each its own colour, and Grip of Kulemak glows brighter with
+each desecrated mod it can take (five stages). A question shows any of an
+item's art, each as often (`Question.variant`, rolled with the mirroring);
+the answer is still just its name, and the codex shows them all. Other
+uniques have more than one version on their page too (each glove's Fists of
+Stone base, a league's changed mods), but they share one art, so they add
+nothing.
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from
 poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by

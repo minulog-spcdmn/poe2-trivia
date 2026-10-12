@@ -7,7 +7,7 @@
 import { itemImage } from './ui-paths';
 import { cutPatches, litMask, patchCoverage, spreadOrder, veilSchedule, visibleBox, type RawPatch, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
-import type { Grayscale, Question, Veil } from './game';
+import { drawnAs, type Grayscale, type Item, type Question, type Veil } from './game';
 import { veilPlan } from './delve';
 
 export interface Patch {
@@ -94,8 +94,8 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
-/** Items' art sizes (art pixels; Item.w, Item.h), by id. */
-export type ArtSizes = ReadonlyMap<string, { w: number; h: number }>;
+/** The items, by id: their art, its size (art pixels; Item.w, Item.h) and their other art (Item.variants). */
+export type ArtSizes = ReadonlyMap<string, Item>;
 
 /**
  * At most how many pixels per art pixel a picture goes out with. The art to
@@ -124,8 +124,8 @@ interface Altered {
  * pixels. The changes keep clear of the art's sharpness: it is shifted by
  * whole pixels and not turned, only its size is resampled.
  */
-async function alteredCanvas(itemId: string, art: { w: number; h: number }, most: number, grayscale: boolean, mirror = false): Promise<Altered> {
-  const img = await loadImage(itemImage(itemId));
+async function alteredCanvas(art: { id: string; w: number; h: number }, most: number, grayscale: boolean, mirror = false): Promise<Altered> {
+  const img = await loadImage(itemImage(art.id));
   const S = Math.max(1, Math.min(most, Math.round(img.naturalWidth / art.w)));
   const scale = rand(0.9, 1.0);
   const w = Math.round(art.w * scale);
@@ -183,17 +183,18 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
  * cut (cutVeil).
  */
 export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes): Promise<PreparedMedia> {
-  const art = (id: string) => sizes.get(id)!;
+  // Each picture as the question draws its item (Question.variant).
+  const art = (id: string, i: number) => drawnAs(sizes.get(id)!, q.variant?.[i]);
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [] };
   if (q.mode === 'art') {
     const most = q.veil || q.options.length > FEW_OPTIONS ? LIGHT : SHARP;
-    const pictures = await Promise.all(q.options.map((id, i) => alteredCanvas(id, art(id), most, grayscale !== 'off', !!q.mirrored?.[i])));
+    const pictures = await Promise.all(q.options.map((id, i) => alteredCanvas(art(id, i), most, grayscale !== 'off', !!q.mirrored?.[i])));
     // Each picture cut on its own seed, so no two burn in alike.
     if (q.veil) out.tiles = await Promise.all(pictures.map((p, i) => cutVeil(p, { ...q.veil!, seed: q.veil!.seed + i }, veilPlan(clock.secs, clock.share, true))));
     else out.options = await Promise.all(pictures.map(async (p) => ({ w: p.canvas.width / p.scale, h: p.canvas.height / p.scale, data: await encode(p.canvas) })));
     return out;
   }
-  const picture = await alteredCanvas(q.itemId, art(q.itemId), q.veil ? LIGHT : SHARP, grayscale === 'all', !!q.mirrored?.[0]);
+  const picture = await alteredCanvas(art(q.itemId, 0), q.veil ? LIGHT : SHARP, grayscale === 'all', !!q.mirrored?.[0]);
   if (!q.veil) {
     out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(picture.canvas) };
     return out;

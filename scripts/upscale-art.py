@@ -160,11 +160,11 @@ _groups = None
 
 
 def group_of(iid):
-    """An item's group, from src/data/items.json."""
+    """An item's group, from src/data/items.json (a variant's art: its item's)."""
     global _groups
     if _groups is None:
         with open(os.path.join(ROOT, 'src', 'data', 'items.json')) as f:
-            _groups = {it['id']: it['group'] for it in json.load(f)}
+            _groups = {a['id']: it['group'] for it in json.load(f) for a in [it, *it.get('variants', [])]}
     return _groups.get(iid)
 
 
