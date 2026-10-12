@@ -344,7 +344,7 @@ class Session {
    * Delve: when this device first had the question (its askedAt) with its
    * clock running (page clock), which is when it opens to answers (noteClock).
    */
-  private clockSeen: { qid: number; at: number; before?: number } | null = null;
+  private clockSeen: { qid: number; clockAt?: number; at: number; before?: number } | null = null;
   /** Delve: how much of this question's clock was used before the host's reload held it still (pausedUsed). */
   private usedBefore: { qid: number; ms: number } | null = null;
   /**
@@ -1826,7 +1826,9 @@ class Session {
    * goes out to everyone, a guest's answer taking a round trip at least (tooFast).
    * One the host's reload held still is noted again as it carries on, with
    * what was used of its clock before (`before`, for the answer's time; it
-   * opens to answers again only then).
+   * opens to answers again only then); so is one that carried on unseen here
+   * (this device back after the grace, or idle and not waited for), from its
+   * new clockAt.
    */
   private noteClock(next: GameState) {
     const q = next.question;
@@ -1836,9 +1838,12 @@ class Session {
       this.usedBefore = { qid: q.askedAt, ms: pausedUsed(q.paused) };
       // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
       if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
-    } else if (q.deadline !== null && this.clockSeen?.qid !== q.askedAt) {
-      const before = this.usedBefore?.qid === q.askedAt ? this.usedBefore.ms : 0;
-      this.clockSeen = { qid: q.askedAt, at: performance.now(), ...(before ? { before } : {}) };
+    } else if (q.deadline !== null) {
+      const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
+      if (seen && seen.clockAt === q.clockAt) return;
+      // Held still and seen so: what was used of it before; carried on unseen: what has gone of it by now.
+      const before = seen ? Math.max(0, this.hostNow() - (q.clockAt ?? this.hostNow())) : this.usedBefore?.qid === q.askedAt ? this.usedBefore.ms : 0;
+      this.clockSeen = { qid: q.askedAt, clockAt: q.clockAt, at: performance.now(), ...(before ? { before } : {}) };
     }
   }
 
