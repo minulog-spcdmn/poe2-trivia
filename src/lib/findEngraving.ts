@@ -705,8 +705,16 @@ function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
 
 // ---- the variants ---------------------------------------------------------------
 
-/** The plate of a find's card. */
+const variants = new Map<FindKind, Variant>();
+
+/** The plate of a find's card: one object per find, so its engraved plates are kept (cardEngraving's engrave). */
 export function findVariant(kind: FindKind): Variant {
+  let v = variants.get(kind);
+  if (!v) variants.set(kind, (v = variantOf(kind)));
+  return v;
+}
+
+function variantOf(kind: FindKind): Variant {
   const v: Variant = { spandrels: (p, sol, luna, w) => spandrels(kind, p, sol, luna, w) };
   if (kind === 'azurite') {
     v.back = veinBack;

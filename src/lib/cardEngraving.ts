@@ -644,12 +644,36 @@ const back = (w: number, h: number, p: Plate, v?: Variant) => {
   p.fade = { c, from: 0, r: row ? len + 10 : len + 6 };
 };
 
+/** A side's plate, as engrave() gives it. */
+export type Engraved = ReturnType<typeof engraveAnew>;
+
+/** Plates already engraved, by variant (one for none) and then side and size: a card's front layer and its plate share one. */
+const engraved = new WeakMap<Variant, Map<string, Engraved>>();
+const PLAIN: Variant = {};
+/** Sizes kept per variant: a few layouts' worth, as a window is resized. */
+const KEEP = 12;
+
 /**
  * The strokes of one side of a card `w` by `h`, and where its glory fades;
- * `v` redraws parts of it for a special card. The motif's strokes come
+ * `v` redraws parts of it for a special card (the same object for the same
+ * card, so its plates are kept: findVariant). The motif's strokes come
  * after the plate's, and `knockout` is where the plate's are left out.
+ * Shared: not to be changed.
  */
-export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant) => {
+export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant): Engraved => {
+  let sizes = engraved.get(v ?? PLAIN);
+  if (!sizes) engraved.set(v ?? PLAIN, (sizes = new Map()));
+  const key = `${side} ${w} ${h}`;
+  let plate = sizes.get(key);
+  if (!plate) {
+    plate = engraveAnew(side, w, h, v);
+    if (sizes.size >= KEEP) sizes.delete(sizes.keys().next().value!);
+    sizes.set(key, plate);
+  }
+  return plate;
+};
+
+const engraveAnew = (side: 'face' | 'back', w: number, h: number, v?: Variant) => {
   const p = new Plate();
   if (side === 'back') back(w, h, p, v);
   else if (w > h) rowFace(w, h, p, v);

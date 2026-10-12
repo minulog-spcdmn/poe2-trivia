@@ -466,6 +466,13 @@ const noFind = (): FindTally => ({ taken: 0, ok: 0, gained: {}, lives: 0, wards:
 /** Finds taken and how they ended, wards that saved a life and flares burnt, over these answers. */
 export function findStats(answers: Iterable<Answer>): FindStats {
   const out: FindStats = { finds: { azurite: noFind(), flare: noFind(), dynamite: noFind() }, wardsBroke: 0, flaresBurnt: 0, blasted: 0 };
+  /**
+   * By run, the wards the vein being dug has dug so far, as logged: all its
+   * cave-in can bury. (The log drops its oldest answers first, so a cave-in
+   * can outlive the strikes that dug what it buried; those wards were never
+   * counted, and other veins' aren't taken in their place.)
+   */
+  const digging = new Map<number | undefined, number>();
   for (const a of answers) {
     if (a.depth === undefined) continue;
     out.wardsBroke += answerWards(a);
@@ -476,15 +483,20 @@ export function findStats(answers: Iterable<Answer>): FindStats {
     // A vein's later strikes are the same vein, dug deeper: taken (and cleared) once, at strike 1.
     const later = (a.strike ?? 1) > 1;
     if (!later) f.taken++;
+    if (a.find === 'azurite' && !later) digging.set(a.run, 0);
     if (a.ok) {
       if (!later) f.ok++;
       if (a.gained) f.gained[a.gained] = (f.gained[a.gained] ?? 0) + 1;
+      if (a.find === 'azurite' && a.gained === 'wards') digging.set(a.run, (digging.get(a.run) ?? 0) + 1);
     } else {
       f.lives += answerLives(a);
       f.wards += answerWards(a);
       // What a cave-in buried was never carried out. (Alone only: together
       // the haul was the team's, dug out by answers other devices logged.)
-      if (a.buried && !a.team) f.gained.wards = Math.max(0, (f.gained.wards ?? 0) - a.buried);
+      if (a.buried && !a.team) {
+        f.gained.wards = Math.max(0, (f.gained.wards ?? 0) - Math.min(a.buried, digging.get(a.run) ?? 0));
+        digging.delete(a.run);
+      }
     }
   }
   return out;
