@@ -72,6 +72,7 @@ import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from 
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
+import { frameEvent } from './fpsMeter';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
@@ -1866,6 +1867,8 @@ class Session {
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
+    // (Named in the beta's frame meter, so a slow frame can be placed in the game.)
+    if (prev?.phase !== next.phase || prev?.question?.askedAt !== next.question?.askedAt) frameEvent(`game: ${next.phase}${next.reveal && !prev?.reveal ? (next.reveal.correct ? ' (right)' : ' (wrong)') : ''}`);
     this.noteClock(next);
     this.noteRun(prev, next);
     this.onNewState(prev, next);

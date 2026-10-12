@@ -20,7 +20,7 @@ export function frameEvent(what: string) {
   if (!on) return;
   events.push([performance.now(), what]);
   while (events.length > 100) events.shift();
-  console.info(`[fps] ${what}`);
+  console.info(`[fps] ${performance.now().toFixed(0)} ${what}`);
 }
 
 type Script = { duration: number; sourceURL: string; sourceFunctionName: string; invoker: string; forcedStyleAndLayoutDuration: number };
@@ -58,7 +58,7 @@ export function installFpsMeter() {
     new PerformanceObserver((list) => {
       for (const e of list.getEntries() as LoAF[]) {
         long.push(e);
-        console.info(`[fps] slow frame ${e.duration.toFixed(0)}ms, ${describe(e)}`, e);
+        console.info(`[fps] ${e.startTime.toFixed(0)} slow frame ${e.duration.toFixed(0)}ms, ${describe(e)}`);
       }
       while (long.length > 50) long.shift();
     }).observe({ type: 'long-animation-frame', buffered: false });

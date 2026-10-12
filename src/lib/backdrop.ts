@@ -21,6 +21,7 @@ import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
 import { frameEvent } from './fpsMeter';
+import { switchedOff } from './switchedOff';
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -1252,6 +1253,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
   // so there every element keeps its CSS shadow and the backdrop draws none.
   const cssShadows = matchMedia('(pointer: coarse)');
+  // Beta, to find what makes frames slow (lib/switchedOff.ts): the UI's shadows and fills left to CSS;
+  // the backdrop drawn once a second (and its shadows and fills left to CSS with it).
+  const drawnSlowly = switchedOff('backdraw');
+  const fillsToCss = drawnSlowly || switchedOff('fills');
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
@@ -1430,7 +1435,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let released = false;
   function measure(): 'now' | 'paced' | false {
     let atlases: ReturnType<typeof measureDrops> = null;
-    if (cssShadows.matches) {
+    if (cssShadows.matches || fillsToCss) {
       if (released) return false;
       released = true;
       for (const arr of shadowArrays) arr.fill(0);
@@ -1605,6 +1610,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // gold) would otherwise redraw this pass every frame, along with the
     // effects overlay's own.
     const measured = measure();
+    if (drawnSlowly && now - last < 1000) return;
     const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
     if (!urgent && ((still && !soft && !measured) || now - last < 33)) return;
     last = now;
