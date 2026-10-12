@@ -1630,7 +1630,7 @@ export class Engine {
               else delete packs[p.id];
               if (Object.hasOwn(snap.streaks, p.id)) p.streak = snap.streaks[p.id];
             }
-            // Nobody has missed at this depth, as at the pick (the team's streak only moves at a reveal).
+            // Nobody has missed on this offer, as at the pick (the team's streak only moves at a reveal).
             delete dm.missedHere;
             // Back on their feet, those cut off among them get the grace too.
             dm.excused = cutOff();

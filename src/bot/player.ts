@@ -310,12 +310,12 @@ export class Player {
     });
   }
 
-  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once a depth each, a moment after the cards are dealt). */
+  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once an offer each, a moment after the cards are dealt). */
   private planRevive(s: GameState) {
     const me = session.myPlayerId!;
     for (const p of s.players) {
       if (p.id === me || reviveProblem(s, me, p.id)) continue;
-      const key = `revive:${p.id}:${s.round}`;
+      const key = `revive:${p.id}:${s.turnCount}`;
       if (this.decided.has(key)) continue;
       this.decided.add(key);
       const now = session.hostNow();

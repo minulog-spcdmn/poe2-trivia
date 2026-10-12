@@ -426,7 +426,8 @@ export const revivedText = (by: string, to: string, nameOf: (id: string) => stri
 
 /**
  * Depths where lives went, for the end screen: a depth that took two (a
- * cave-in) once, with how many: "3 (two lives) and 4". `losses` are the
+ * cave-in, or misses on two questions there) once, with how many: "3 (two
+ * lives) and 4". `losses` are the
  * run's own depths; the text counts them as players do (shownDepth).
  */
 export function lossDepths(losses: number[]): string {
