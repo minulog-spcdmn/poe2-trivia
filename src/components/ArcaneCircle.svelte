@@ -589,17 +589,39 @@
   // not all on the frame that shows the question; `late` says how long after
   // the circle they came, which their delays leave out, so the summoning
   // plays as if they had been there all along. Once drawn, a layer takes its
-  // still copy.
+  // still copy. Both are timed on the summoning's own clock (its settle
+  // animation's), not from when this ran: a slow first frame starts the CSS
+  // animations late, and a layer swapped on the page's clock would jump to
+  // drawn before its lines had finished.
   const due = (name: Layer) => Math.max(0, Math.min(LINES[name].start, GLOW[name].start) - AHEAD);
   let late = $state<Partial<Record<Layer, number>>>(Object.fromEntries(LAYERS.filter((name) => !due(name)).map((name) => [name, 0])));
   let drawn = $state<Partial<Record<Layer, true>>>({});
+  let summon: HTMLDivElement;
   $effect(() => {
-    const t0 = performance.now();
-    const timers = LAYERS.flatMap((name) => [
-      ...(due(name) ? [setTimeout(() => (late[name] = (performance.now() - t0) / 1000), due(name) * 1000)] : []),
-      setTimeout(() => (drawn[name] = true), (Math.max(LINES[name].end, GLOW[name].end) + 0.15) * 1000),
-    ]);
-    return () => timers.forEach(clearTimeout);
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    let stopped = false;
+    /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
+    const time = (start: number) => {
+      if (stopped) return;
+      const at = (s: number, fn: () => void) => timers.push(setTimeout(fn, Math.max(0, s * 1000 - (performance.now() - start))));
+      for (const name of LAYERS) {
+        if (due(name)) at(due(name), () => (late[name] = (performance.now() - start) / 1000));
+        at(Math.max(LINES[name].end, GLOW[name].end) + 0.15, () => (drawn[name] = true));
+      }
+    };
+    // (Its only animation: the circle's settling in.)
+    const settle = summon.getAnimations()[0];
+    if (settle)
+      settle.ready.then(
+        () => time(performance.now() - Number(settle.currentTime ?? 0)),
+        () => {},
+      );
+    else time(performance.now());
+    return () => {
+      stopped = true;
+      timers.forEach(clearTimeout);
+      timers = [];
+    };
   });
   const plate = (p: Plate, name: Layer) => (drawn[name] ? p.still : late[name] === undefined ? '' : p.drawing);
   const lateOf = (name: Layer) => `${(late[name] ?? 0).toFixed(3)}s`;
@@ -614,7 +636,7 @@
 -->
 
 <div class="arcane {mood}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
-  <div class="summon">
+  <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
     {#each SPUN as name (name)}
       <div class="layer spin {name}">

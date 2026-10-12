@@ -1438,7 +1438,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (cssShadows.matches || fillsToCss) {
       if (released) return false;
       released = true;
+      // (What was last drawn is now these zeros too: measured again later,
+      // values that happen to equal those from before still count.)
       for (const arr of shadowArrays) arr.fill(0);
+      prev.fill(0);
       releaseAll();
       releaseAllDrops();
       return 'now';

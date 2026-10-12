@@ -137,22 +137,32 @@ function keyframesMove(effect: KeyframeEffect): boolean {
 }
 
 /**
- * The elements a running animation or transition moves now, found once a
- * frame: every running animation in the document, asked once. (Asking each
- * shadowed element and each of its ancestors for its own, as this did,
- * flushed the styles every time: some 40 asks a frame, which in a reveal,
- * with its many animations, took tens of ms.) Found as the frame is
- * measured, not kept until one starts: a hover's transition shows up here
- * in the frame that first styles it, but its transitionrun (or
- * animationstart) event only fires a frame later.
+ * Which of `nodes` and their ancestors a running animation or transition
+ * moves now, each asked once. Found as the frame is measured, not kept until
+ * one starts: a hover's transition shows up here in the frame that first
+ * styles it, but its transitionrun (or animationstart) event only fires a
+ * frame later. Asked of these elements alone, not of the whole document: a
+ * long page (the codex) runs far more animations than the few elements with
+ * fills have, and going through them all every frame stalled it. And all
+ * asked at once, with nothing written in between: an ask between the
+ * measuring's writes (data-bs-fill) brought the styles up to date again
+ * each time, which in a reveal, with its many animations, took tens of ms.
  */
-function movedNow(): Set<Element> {
+function movedAmong(nodes: Iterable<Element>): Set<Element> {
+  const asked = new Set<Element>();
   const moved = new Set<Element>();
-  for (const anim of document.getAnimations()) {
-    if (anim.playState !== 'running') continue;
-    const effect = anim.effect as KeyframeEffect | null;
-    if (effect?.target && !effect.pseudoElement && moves(anim, effect)) moved.add(effect.target);
-  }
+  for (const node of nodes)
+    for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
+      asked.add(el);
+      for (const anim of el.getAnimations()) {
+        if (anim.playState !== 'running') continue;
+        const effect = anim.effect as KeyframeEffect | null;
+        if (effect?.target === el && !effect.pseudoElement && moves(anim, effect)) {
+          moved.add(el);
+          break;
+        }
+      }
+    }
   return moved;
 }
 
@@ -274,11 +284,11 @@ export function measureShadows(
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
   const shook = shaking();
-  // What moves, found once a frame, and only if a fill asks: `node` or the
-  // ancestor of it that moves, if any.
+  // What moves, found once a frame for all the fills, and only if one asks:
+  // `node` or the ancestor of it that moves, if any.
   let moved: Set<Element> | null = null;
   const movingOf = (node: HTMLElement): Element | null => {
-    moved ??= movedNow();
+    moved ??= movedAmong(withFill.filter((n) => chosen.has(n)));
     if (!moved.size) return null;
     for (let el: Element | null = node; el; el = el.parentElement) if (moved.has(el)) return el;
     return null;

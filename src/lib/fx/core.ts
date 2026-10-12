@@ -787,8 +787,11 @@ function frameUntimed(nowMs: number) {
   } finally {
     raf = busy ? requestAnimationFrame(frame) : 0;
   }
-  // (Something endless, a streak's fire, may never let go: then once it's calm, a few seconds on.)
-  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000))) {
+  // (Something endless, a streak's fire, may never let go: then once it's
+  // calm, a few seconds on, and after a while even if it never is, or a slow
+  // machine would wait at the old size, its quality never adapting, for as
+  // long as it lasts.)
+  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)) {
     resizeDue = false;
     resize();
   }
