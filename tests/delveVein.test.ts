@@ -8,6 +8,7 @@ import {
   DELVE_MAX_WARDS,
   FIND_MIN_TIMER,
   LAMP_START,
+  LEAVING_MS,
   VEIN_MAX_STRIKES,
   VEIN_MIN_LIGHT,
   WAY_OUT,
@@ -26,6 +27,7 @@ import {
   livesOf,
   questionTimer,
   veinDeeper,
+  voteClosesAt,
   wardRoom,
   wardsOf,
   type Inventory,
@@ -317,7 +319,16 @@ test('together: the team votes between the vein and the way out; the way out ban
   assert.deepEqual(h.s.offered.length, 2);
   h.act({ type: 'vote', category: WAY_OUT }, 'p0');
   h.act({ type: 'vote', category: WAY_OUT }, 'p1');
-  assert.equal(h.s.round, 31);
+  // The vote closed on the way out: its two cards stay up while the draw plays on them, and take no more votes.
+  assert.deepEqual([h.s.phase, h.s.round, h.s.delve!.leaving], ['choosing', 30, h.clock.now]);
+  assert.equal(voteClosesAt(h.s), h.clock.now + LEAVING_MS);
+  assert.throws(() => h.act({ type: 'vote', category: h.veinCard() }, 'p0'), /Too late/);
+  // Too soon, the host's timer changes nothing; once the draw has played, back to the light.
+  h.act({ type: 'expire' }, null);
+  assert.equal(h.s.round, 30);
+  h.clock.now += LEAVING_MS;
+  h.act({ type: 'expire' }, null);
+  assert.deepEqual([h.s.round, h.s.delve!.leaving], [31, undefined]);
   assert.deepEqual([wardsOf(h.s, 'p0'), wardsOf(h.s, 'p1')], [0, 1]);
 });
 

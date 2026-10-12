@@ -499,6 +499,13 @@ export interface Delve {
    * Missing for any other depth, and in older saves.
    */
   dealAt?: number;
+  /**
+   * Together: host clock the team's vote drew a vein's way out at. The two
+   * cards stay up, the vote closed, for LEAVING_MS while its draw plays on
+   * them (as a question waits for its draw, delveSession COOP_DRAW_MS); then
+   * the host's 'expire' takes the team back to the light. Missing otherwise.
+   */
+  leaving?: number;
 }
 
 /** An Azurite Vein being dug (delve.ts, the dig). */
@@ -1364,8 +1371,8 @@ export class Engine {
         const dm = s.delve;
         if (!dm || !isGroupRun(s)) throw new ActionError('There is nothing to vote on.');
         if (from === null || !s.players.some((p) => p.id === from)) throw new ActionError('You are not in this game.');
-        // A vote that crossed its close on the way is dropped quietly.
-        if (s.phase !== 'choosing') throw new ActionError('Too late!', true);
+        // A vote that crossed its close on the way is dropped quietly (the way out's draw playing too).
+        if (s.phase !== 'choosing' || dm.leaving !== undefined) throw new ActionError('Too late!', true);
         if (livesOf(s, from) <= 0) throw new ActionError('Only players still standing can vote.');
         if (typeof action.category !== 'string' || !s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         (dm.votes ??= {})[from] = action.category;
@@ -1624,6 +1631,14 @@ export class Engine {
         // nor before a new zone's cards are dealt, however soon it is due.
         const closes = voteClosesAt(s);
         if (!s.delve || !isGroupRun(s) || s.phase !== 'choosing' || dealIn(s, this.now()) > 0) break;
+        // The way out drawn: once its draw has played, back to the light.
+        if (s.delve.leaving !== undefined) {
+          if (closes !== null && this.now() >= closes - 250) {
+            delete s.delve.leaving;
+            this.takePick(s, null, WAY_OUT);
+          }
+          break;
+        }
         if (voteDone(s, this.now()) || (closes !== null && this.now() >= closes - 250)) this.closeVote(s);
         break;
       }
@@ -2148,6 +2163,11 @@ export class Engine {
     const missed = (dm.missed ??= {});
     for (const id of standingIds(s)) missed[id] = Object.hasOwn(votes, id) ? 0 : (missed[id] ?? 0) + 1;
     dm.voteFrom = null;
+    // The way out drawn: its cards stay up while the draw plays on them, as a question waits for its draw.
+    if (isWayOut(category) && digOf(s)) {
+      dm.leaving = this.now();
+      return;
+    }
     this.takePick(s, null, category);
   }
 

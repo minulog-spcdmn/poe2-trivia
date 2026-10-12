@@ -15,7 +15,7 @@
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
   import { phone } from '../lib/layout';
-  import { REVIVE_FROM, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
   import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
@@ -167,6 +167,8 @@
     if (raffleTimer) clearTimeout(raffleTimer);
   });
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
+  /** Together: the vote drew a vein's way out, and its draw plays on the two cards before the team goes back to the light (Delve.leaving). */
+  const leaving = $derived(!!run && group && s.phase === 'choosing' && s.delve?.leaving !== undefined);
 
   // Delve: going down into a new zone, the stage stands empty over the
   // plunging scene, where the zone's title card names it (components/zonecard),
@@ -386,7 +388,7 @@
           <div class="turn-body">
             {#if s.phase === 'choosing' || drawing}
               <div class="cards-slot" out:cardsOut>
-                <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : null} ondrawn={() => (raffle = null)} />
+                <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null} ondrawn={() => (raffle = null)} />
               </div>
             {:else}
               <!-- A new question on the same turn (the host asked another, or dynamite

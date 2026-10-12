@@ -134,7 +134,9 @@ mechanic built on speed. Tune it on the beta instead:
 The same loop, with no new rules for the team:
 
 - **Picking:** the team votes between the two cards with the vote they
-  already have.
+  already have, and its draw plays on them as on any cards, the way out's
+  too: drawn, its two cards stay up while the draw lands on it (LEAVING_MS),
+  then the team goes back to the light.
 - **Answering:** everyone answers each strike. The first right answer clears
   it, and its ward goes into the team's haul, given to whoever got it right,
   or to a teammate with room when it is banked.

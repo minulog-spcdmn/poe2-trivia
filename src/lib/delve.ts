@@ -464,6 +464,9 @@ export const VEIN_MIN_LIGHT = 1;
 /** The lamp's light at strike 1, as a share of strike 1's deeper clock (FINDS `clock`, so findTimer gives it): the whole dig's. */
 export const LAMP_START = 1;
 
+/** Together, how long the way out's cards stay up once the vote draws it, as its draw plays (Delve.leaving). */
+export const LEAVING_MS = 2000;
+
 /** The card dealt beside the vein after a right strike: it leads out with the haul. Never a category. */
 export const WAY_OUT = '~way-out';
 
@@ -889,19 +892,23 @@ function allVoted(s: GameState, now: number): boolean {
  * the votes came.
  */
 export function voteDone(s: GameState, now: number): boolean {
-  return dealIn(s, now) === 0 && allVoted(s, now);
+  return s.delve?.leaving === undefined && dealIn(s, now) === 0 && allVoted(s, now);
 }
 
 /**
  * Co-op, voting: when the vote closes by the clock (host clock), or null
- * while nobody has voted (it waits for as long as it takes) and outside co-op.
+ * while nobody has voted (it waits for as long as it takes) and outside co-op;
+ * with a vein's way out drawn, when its draw is done (Delve.leaving).
  * VOTE_WINDOW_MS from the first vote, held to the end of a reload's grace
  * while anyone it cut off is still away; or, every vote it waits for in
  * before a new zone's cards are dealt, as they are (dealAt).
  */
 export function voteClosesAt(s: GameState): number | null {
   const dm = s.delve;
-  if (!dm || !isGroupRun(s) || s.phase !== 'choosing' || dm.voteFrom === null || dm.voteFrom === undefined) return null;
+  if (!dm || !isGroupRun(s) || s.phase !== 'choosing') return null;
+  // The way out drawn: its draw plays, then the team goes back to the light.
+  if (dm.leaving !== undefined) return dm.leaving + LEAVING_MS;
+  if (dm.voteFrom === null || dm.voteFrom === undefined) return null;
   if (dm.dealAt !== undefined && allVoted(s, dm.dealAt)) return dm.dealAt;
   const away = s.players.some((p) => !p.connected && dm.excused.includes(p.id) && livesOf(s, p.id) > 0);
   return Math.max(dm.voteFrom + VOTE_WINDOW_MS, away ? dm.graceUntil : 0);
