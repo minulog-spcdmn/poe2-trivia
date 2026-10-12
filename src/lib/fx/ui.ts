@@ -76,6 +76,30 @@ function caretPoint(input: HTMLInputElement): Point {
   return { x: Math.min(r.right - padR, Math.max(r.left + padL, x)), y: r.top + r.height / 2 };
 }
 
+/**
+ * Where a range input's thumb is, in viewport px: along its track (the
+ * content box), across or upright (writing-mode) and either way round
+ * (direction). The thumb's length is the input's `--thumb`, or the browsers'
+ * usual 16px.
+ */
+function thumbPoint(input: HTMLInputElement): Point {
+  const r = input.getBoundingClientRect();
+  const cs = getComputedStyle(input);
+  const min = parseFloat(input.min) || 0;
+  const max = input.max === '' ? 100 : parseFloat(input.max);
+  const t = max > min ? Math.min(1, Math.max(0, (input.valueAsNumber - min) / (max - min))) : 0;
+  const thumb = parseFloat(cs.getPropertyValue('--thumb')) || 16;
+  const px = (p: string) => parseFloat(cs.getPropertyValue(p)) || 0;
+  const upright = !cs.writingMode.startsWith('horizontal');
+  const back = cs.direction === 'rtl';
+  const [lo, hi] = upright
+    ? [r.top + px('border-top-width') + px('padding-top'), r.bottom - px('border-bottom-width') - px('padding-bottom')]
+    : [r.left + px('border-left-width') + px('padding-left'), r.right - px('border-right-width') - px('padding-right')];
+  const along = thumb / 2 + t * Math.max(0, hi - lo - thumb);
+  const at = back ? hi - along : lo + along;
+  return upright ? { x: r.left + r.width / 2, y: at } : { x: at, y: r.top + r.height / 2 };
+}
+
 // ---------- install ----------
 
 export function installUiFx() {
@@ -132,11 +156,11 @@ export function installUiFx() {
     glints(el, { count: 2, area: 'edge', size: [3, 6] });
   });
 
-  // Typing: sparks fly off the caret.
+  // Typing: sparks fly off the caret (a slider's: off its thumb).
   addEventListener('input', (e) => {
     const el = e.target;
     if (!fxActive() || !(el instanceof HTMLInputElement) || el.type === 'checkbox') return;
-    const p = caretPoint(el);
+    const p = el.type === 'range' ? thumbPoint(el) : caretPoint(el);
     const deleting = (e as InputEvent).inputType?.startsWith('delete');
     sparks(p, {
       count: deleting ? 4 : 7,

@@ -732,6 +732,8 @@
     }
   }
   .volume-pop input {
+    /* The thumb's length, which the sliding sparks (lib/fx/ui.ts) read too. */
+    --thumb: 12px;
     display: block;
     writing-mode: vertical-lr;
     direction: rtl;
@@ -766,16 +768,16 @@
   }
   .volume-pop input::-webkit-slider-thumb {
     appearance: none;
-    width: 12px;
-    height: 12px;
+    width: var(--thumb);
+    height: var(--thumb);
     margin-left: -4px;
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   .volume-pop input::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);
