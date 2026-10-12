@@ -1,6 +1,8 @@
-@import '@fontsource/cinzel/latin-500.css';
-@import '@fontsource/cinzel/latin-700.css';
-@import '@fontsource/cinzel/latin-900.css';
+/* Cinzel with Latin Extended too, for names in headings and avatars (a turn
+   banner's "Wałęsa's turn", an avatar's Ł); it has no other scripts. */
+@import '@fontsource/cinzel/500.css';
+@import '@fontsource/cinzel/700.css';
+@import '@fontsource/cinzel/900.css';
 /* EB Garamond with all its scripts (Latin Extended, Vietnamese, Cyrillic,
    Greek), each behind a unicode-range: a browser fetches a script's file
    only when text on the page needs it, such as a player's name. */
