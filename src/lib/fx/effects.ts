@@ -432,7 +432,8 @@ function assemble(el: HTMLElement): { pic: HTMLCanvasElement; key: string } {
   const c = a.pic;
   c.width = Math.max(1, Math.round(W * k));
   c.height = Math.max(1, Math.round(H * k));
-  const g = c.getContext('2d');
+  // In memory, as the silhouette it makes is (renderer.ts makeSilhouette).
+  const g = c.getContext('2d', { willReadFrequently: true });
   if (g) {
     for (const piece of el.querySelectorAll<HTMLCanvasElement>('canvas[data-shape]')) {
       if (!piece.width || !piece.height) continue;

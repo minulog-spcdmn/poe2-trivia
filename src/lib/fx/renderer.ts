@@ -1434,7 +1434,10 @@ export class FxRenderer {
       c.width = w;
       c.height = h;
     }
-    const ctx = c.getContext('2d');
+    // In memory, not on the GPU (willReadFrequently): uploading a GPU canvas into
+    // this context waits for the GPU to finish everything queued before it, the
+    // backdrop's full-screen pass included, which held whole frames up.
+    const ctx = c.getContext('2d', { willReadFrequently: true });
     if (!ctx) {
       this.coverOn = false;
       this.coverKey = '';
@@ -1515,7 +1518,10 @@ export class FxRenderer {
     const c = document.createElement('canvas');
     c.width = w + pad * 2;
     c.height = h + pad * 2;
-    const ctx = c.getContext('2d');
+    // In memory, not on the GPU (willReadFrequently): uploading a GPU canvas into
+    // this context waits for the GPU to finish everything queued before it, the
+    // backdrop's full-screen pass included, which held whole frames up.
+    const ctx = c.getContext('2d', { willReadFrequently: true });
     if (!ctx) return false;
     ctx.filter = `blur(${SIL_BLUR}px)`;
     ctx.drawImage(pic, pad, pad, w, h);
