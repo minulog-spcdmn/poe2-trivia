@@ -621,6 +621,17 @@ h3,
   initial-value: 16px;
 }
 
+/* Banding: a soft gradient or glow over a large area steps through so few of
+   8-bit's levels that each shows as a band (CLAUDE.md). Under a see-through
+   dark layer laid over other content (a scrim, a veil), --dither, a tile of
+   near-black at 0 to 10/255 opacity, a different one each pixel, stirs that
+   layer's opacity so what shows through it rounds up or down at random and
+   the bands dissolve. Put it last (under the gradients), and give the element
+   image-rendering: pixelated so it isn't smoothed away. */
+:root {
+  --dither: url('./assets/dither.png');
+}
+
 /* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).
    An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset
    and blur, then colour) and paints them through

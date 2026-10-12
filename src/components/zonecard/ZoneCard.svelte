@@ -398,15 +398,11 @@
     top: 0;
   }
   /* The scene darkened behind the card: at its edges, and a pool under the text.
-     So dark a fade over the whole screen would show 8-bit steps as rings; under
-     it, a tile of the same black at 0 to 10/255 opacity, a different one each
-     pixel (white noise), stirs its opacity a little, so the scene blended under
-     it rounds up or down at random and the rings dissolve (a grain on top would
-     only blur their edges). Drawn pixel for pixel, as smoothing would average it out. */
+     So dark a fade over the whole screen would show as rings: dithered (app.css,
+     --dither; a grain on top would only blur their edges). */
   .scrim {
     position: absolute;
     inset: 0;
-    --dither: url('../../assets/dither.png');
     image-rendering: pixelated;
     background:
       radial-gradient(ellipse 60% 34% at 50% 46%, rgb(5 4 3 / 0.4), transparent 80%),

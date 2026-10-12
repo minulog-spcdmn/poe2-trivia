@@ -27,6 +27,7 @@
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
   import ItemWindow from './ItemWindow.svelte';
+  import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
@@ -377,7 +378,7 @@
             {/if}
             <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
               <span class="rule"></span>
-              <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }}>{bannerTitle}</h2>
+              <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
               <span class="rule"></span>
             </div>
           </div>
@@ -616,9 +617,10 @@
     font-size: clamp(1.7rem, 5vw, 2.7rem);
     font-weight: 900;
     color: var(--gold-hi);
-    text-shadow:
-      0 0 24px color-mix(in srgb, var(--c), transparent 40%),
-      0 3px 12px rgba(0, 0, 0, 0.9);
+    /* Its glow, so wide and soft it bands in CSS, drawn by the WebGL backdrop
+       when it can (lib/backdropDropShadow.ts), dithered; CSS paints it otherwise. */
+    --drop-shadow: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 24px color-mix(in srgb, var(--c), transparent 40%));
+    filter: var(--drop-shadow-paint, var(--drop-shadow));
     animation: arrive 0.9s var(--ease-out) both;
     text-align: center;
     white-space: nowrap;
