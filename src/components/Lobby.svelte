@@ -188,7 +188,6 @@
   const lastAlone = lastOf(records, true)?.depth ?? null;
   const lastTogether = lastOf(records, false)?.depth ?? null;
   const lastRun = $derived(s.players.length < 2 ? lastAlone : local ? null : lastTogether);
-  const deepestLabel = $derived(s.players.length < 2 ? 'Your deepest alone' : 'Your deepest together');
   // The finds this browser's player has met, alone or together: the drawing of the descent marks where each first turns up.
   const met = [...findsMet()];
 
@@ -497,7 +496,7 @@
         <!-- On a desktop the descent takes the height the panel has spare, at its own width:
              the gap to the finds is only what its leader lines need. -->
         <div class="delve-slot" data-cursor="descent">
-          <DelveRules {deepest} last={lastRun} label={deepestLabel} {met} />
+          <DelveRules {deepest} last={lastRun} together={s.players.length >= 2} {met} />
         </div>
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->

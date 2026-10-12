@@ -250,7 +250,7 @@ export type Layout = {
   callouts?: Partial<Record<FindKind, CalloutShape>> | null;
   /** The zones' names as set (px), measured on the page. */
   nameW?: number[] | null;
-  /** The legend's words as set (px): "your best" and "last run". */
+  /** The legend's words as set (px): "best solo" and "last solo", or co-op. */
   legendW?: { best: number; last: number } | null;
 };
 

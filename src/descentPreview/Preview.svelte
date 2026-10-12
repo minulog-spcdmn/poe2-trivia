@@ -2,9 +2,10 @@
   // The descent's test page: Delve's rules block (components/DelveRules) in
   // a rules card as the lobby shows it, at a phone's, a tablet's and a
   // desktop's card width side by side, driven by the deepest depth, the last
-  // run's depth and the finds met, or by a preset. Replay mounts the blocks
+  // run's depth, whether they were alone or together and the finds met, or
+  // by a preset. Replay mounts the blocks
   // again (their entrance); Walk down goes a depth deeper every 180 ms. The
-  // address can set them too: descent.html?best=46&last=20&met=flare,azurite.
+  // address can set them too: descent.html?best=46&last=20&met=flare,azurite&coop.
   import { onDestroy } from 'svelte';
   import DelveRules from '../components/DelveRules.svelte';
   import ItemGlyph from '../components/ItemGlyph.svelte';
@@ -30,6 +31,8 @@
   let lastDepth = $state(num('last', 20));
   const deepest = $derived(depth > 0 ? depth : null);
   const last = $derived(lastDepth > 0 ? lastDepth : null);
+  /** Runs together (co-op) rather than alone: the legend says which. */
+  let together = $state(query.has('coop'));
   let met = $state<FindKind[]>(
     query.has('met')
       ? FINDS_IN_ORDER.map((f) => f.kind).filter((k) => query.get('met')!.split(',').includes(k))
@@ -112,6 +115,12 @@
       {/each}
     </div>
     <div class="row">
+      <span class="what">Runs</span>
+      {#each [[false, 'Solo'], [true, 'Co-op']] as [v, name] (name)}
+        <button class:on={together === v} onclick={() => (together = v as boolean)}>{name}</button>
+      {/each}
+    </div>
+    <div class="row">
       <span class="what">Ouroboros</span>
       {#each [['', 'By state'], ['filled', 'Filled'], ['outline', 'Outline']] as [v, name] (v)}
         <button class:on={ouro === v} onclick={() => (ouro = v as typeof ouro)}>{name}</button>
@@ -126,7 +135,7 @@
         <div class="panel card">
           <div style:width="{w.px}px">
             {#key replay}
-              <DelveRules {deepest} {last} label="Your deepest alone" {met} />
+              <DelveRules {deepest} {last} {together} {met} />
             {/key}
           </div>
         </div>
