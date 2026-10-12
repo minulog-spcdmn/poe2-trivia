@@ -149,9 +149,9 @@ const KNOBS = ['options', 'similarNames', 'fakes', 'grayChance', 'mirror'] as co
 /** A knob's value as a number that only grows as the curve gets harder (no grayscale chance is none). */
 const level = (_: (typeof KNOBS)[number], v: unknown) => (v as number | undefined) ?? 0;
 const LIVE = ['azurite', 'flare'] as const;
-const DEEPER: Record<FindKind, number> = { azurite: 15, flare: 20, dynamite: 15 };
+const DEEPER: Record<FindKind, number> = { azurite: 20, flare: 20, dynamite: 15 };
 
-test('an Azurite Vein asks the question of fifteen depths deeper, a Flare Cache of twenty: its rules, its clock and its pictures\' veil', () => {
+test('an Azurite Vein and a Flare Cache ask the question of twenty depths deeper: its rules, its clock and its pictures\' veil', () => {
   assert.deepEqual(
     FINDS.map((f) => [f.kind, f.deeper]),
     Object.entries(DEEPER),
@@ -176,7 +176,7 @@ test('an Azurite Vein asks the question of fifteen depths deeper, a Flare Cache 
     }
   // Odd depths read as the surface.
   assert.equal(findDepth('flare', NaN), 21);
-  assert.deepEqual([findDepth('azurite', 20), findDepth('flare', 20)], [35, 40]);
+  assert.deepEqual([findDepth('azurite', 20), findDepth('flare', 20)], [40, 40]);
 });
 
 test('a find is never easier than its depth, nearly always harder, and the hardest there is only once its question is from 150 down', () => {
@@ -217,14 +217,14 @@ test("a find's clock is fair: never the shortest near the top, and never shorter
     if (findTimer('dynamite', d) === DELVE_MIN_TIMER) assert.ok(delveTimer(d) > DELVE_MIN_TIMER || d >= 96, `dynamite at ${d}`);
     assert.ok(findTimer('dynamite', d) >= DELVE_MIN_TIMER && findTimer('dynamite', d) <= 16);
   }
-  // A vein's strike 1 runs on its lamp, the whole dig's light: its deeper depth's clock, 11 s where it
-  // first turns up (depth 41's), down to the shortest any depth has from depth 81 (96's).
-  assert.equal(findTimer('azurite', findFor('azurite').from), 11);
+  // A vein's strike 1 runs on its lamp, the whole dig's light: its deeper depth's clock, 10 s where it
+  // first turns up (depth 46's), down to the shortest any depth has from depth 76 (96's).
+  assert.equal(findTimer('azurite', findFor('azurite').from), 10);
   assert.equal(findTimer('azurite', 43), 7);
-  assert.equal(findTimer('azurite', 80), 6);
-  assert.equal(findTimer('azurite', 81), DELVE_MIN_TIMER);
+  assert.equal(findTimer('azurite', 75), 6);
+  assert.equal(findTimer('azurite', 76), DELVE_MIN_TIMER);
   for (let d = 1; d <= 300; d++) {
-    assert.equal(findTimer('azurite', d), delveTimer(d + 15));
+    assert.equal(findTimer('azurite', d), delveTimer(d + 20));
     assert.ok(findTimer('azurite', d) <= delveTimer(d), `the lamp at ${d}`);
   }
 });

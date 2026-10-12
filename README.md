@@ -252,7 +252,7 @@ the same thing for everyone.
     right answer digs out a whole **Azurite Ward** (one takes your next
     lost life instead), but only into your hand: the next cards are two,
     the vein running on into another category you may pick (the next
-    strike, from further down: 15, 30, then 50 depths, its plaque reading
+    strike, from further down: 20, 30, then 40 depths, its plaque reading
     "Dig Deeper") and the way out, **Back to the Light** (its plaque saying
     what it keeps), which puts what you dug out into your pack and takes the
     run a depth deeper. At most three strikes, and only as far as your pack has room.

@@ -367,7 +367,7 @@ export const FINDS: {
   blows: number;
 }[] = [
   // From depth 26 (shown 25). Its strike 1: the rest of the dig is VEIN_DEEPER's and the lamp's (LAMP_START).
-  { kind: 'azurite', item: 'wards', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, clock: 1, blows: 0 },
+  { kind: 'azurite', item: 'wards', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 20, losses: 2, clock: 1, blows: 0 },
   // From depth 41 (shown 40).
   { kind: 'flare', item: 'flares', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, clock: 2 / 3, blows: 0 },
   {
@@ -452,7 +452,7 @@ export function findChance(kind: FindKind, d: number): number {
 export const VEIN_MAX_STRIKES = 3;
 
 /** How much further down each strike asks from: strike 1 the find's own `deeper`, then further each time. */
-export const VEIN_DEEPER = [15, 30, 50];
+export const VEIN_DEEPER = [20, 30, 40];
 
 /** The depths a vein's strike `strike` (1 on) asks from below its own. */
 export const veinDeeper = (strike: number) => VEIN_DEEPER[Math.min(VEIN_DEEPER.length, Math.max(1, Math.floor(strike) || 1)) - 1];

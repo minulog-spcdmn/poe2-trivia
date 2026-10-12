@@ -73,8 +73,8 @@ whole dig**, and the clock ring becomes its light:
 - **It burns only while a question is open.** It holds still while you look
   at the two cards: that choice is the heart of the vein and isn't rushed.
 - **Nothing feeds it.** A quick answer carries time forward and a slow one
-  leaves you digging in the dark: at shown depth 25 the lamp holds 11 s, so a
-  third strike needs the first two answered in about 7 s together.
+  leaves you digging in the dark: at shown depth 25 the lamp holds 10 s, so a
+  third strike needs the first two answered in about 6 s together.
 - **Too little light to dig** (under FIND_MIN_TIMER, 4 s): the vein card
   isn't dealt again, and the haul goes into the pack.
 - **Running out is a cave-in.** The lamp hitting 0 is the time-out.
@@ -110,8 +110,8 @@ little light?"
 
 ## Tuning
 
-The knobs: the lamp's starting share (1), each strike's `deeper` (+15, +30,
-+50), and the cave-in's losses (2).
+The knobs: the lamp's starting share (1), each strike's `deeper` (+20, +30,
++40), and the cave-in's losses (2).
 
 The room bot's answer model can't settle them. Run against these rules, it
 puts today's vein at about even by shown depth 50 and a clear loss from 80
