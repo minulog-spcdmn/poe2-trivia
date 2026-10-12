@@ -732,7 +732,6 @@
     }
   }
   .volume-pop input {
-    /* The thumb's length, which the sliding sparks (lib/fx/ui.ts) read too. */
     --thumb: 12px;
     display: block;
     writing-mode: vertical-lr;
