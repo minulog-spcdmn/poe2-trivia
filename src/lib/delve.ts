@@ -569,10 +569,15 @@ export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
  */
 export function clockLeft(q: Pick<Question, 'deadline' | 'held'>, now: number): number {
   if (q.deadline === null) return Infinity;
-  const h = q.held;
-  // Before the pause (a screen whose clock runs a little behind the host's) all of it is still to come.
-  const pausing = h && now < h.until ? h.until - Math.max(now, h.from) : 0;
-  return Math.max(0, q.deadline - now - pausing);
+  return Math.max(0, q.deadline - now - heldAhead(q.held, now));
+}
+
+/**
+ * How much of a pause (`held`) is still to come at `now`: before it (a
+ * screen whose clock runs a little behind the host's), all of it.
+ */
+export function heldAhead(h: Question['held'], now: number): number {
+  return h && now < h.until ? h.until - Math.max(now, h.from) : 0;
 }
 
 /** Seconds a Delve question at depth `d` starts with: a find's, or the depth's. */

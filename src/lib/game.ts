@@ -20,6 +20,7 @@ import {
   delveTimer,
   cavesIn,
   clockLeft,
+  heldAhead,
   blastVictim,
   blowsUp,
   fellAt,
@@ -603,11 +604,10 @@ export interface Question {
   clockAt?: number;
   /**
    * Delve: the clock held still by the host's reload (a player was cut off):
-   * its `clockAt` and `deadline` as they were, when it stopped (`at`, host
-   * clock), and the time it has `left` when it starts again ('clock').
-   * `deadline` is null meanwhile.
+   * its `clockAt` as it was, when it stopped (`at`, host clock), and the time
+   * it has `left` when it starts again ('clock'). `deadline` is null meanwhile.
    */
-  paused?: { clockAt: number; deadline: number; at: number; left: number };
+  paused?: { clockAt: number; at: number; left: number };
   /**
    * Delve: asked from a find, under the rules and clock of deeper down; a
    * right answer earns its item (see delve.ts findReward).
@@ -1522,10 +1522,8 @@ export class Engine {
           // gone (an Azurite Vein's fast window too); only the deadline gets
           // the time it had left (with a hold still to come, see clockLeft).
           const shift = start - p.at;
-          const h = q.held;
-          const holding = h && p.at < h.until ? h.until - Math.max(p.at, h.from) : 0;
           q.clockAt = p.clockAt + shift;
-          q.deadline = start + p.left + holding;
+          q.deadline = start + p.left + heldAhead(q.held, p.at);
           if (q.flaredAt !== undefined) q.flaredAt += shift;
           if (q.held) q.held = { from: q.held.from + shift, until: q.held.until + shift };
           for (const x of q.struck ?? []) x.at += shift;
@@ -1565,7 +1563,7 @@ export class Engine {
           // The host's last moment before the reload, never before the clock started nor after now.
           const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : this.now();
           const stop = Math.min(Math.max(at, q.clockAt), this.now());
-          q.paused = { clockAt: q.clockAt, deadline: q.deadline, at: stop, left: Math.max(DELVE_RESUME_MIN_MS, clockLeft(q, stop)) };
+          q.paused = { clockAt: q.clockAt, at: stop, left: Math.max(DELVE_RESUME_MIN_MS, clockLeft(q, stop)) };
           q.deadline = null;
           delete q.clockAt;
         }

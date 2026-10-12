@@ -172,7 +172,7 @@ test('together: a reload holds the clock still, and nobody can answer meanwhile'
   assert.equal(held.askedAt, q.askedAt, 'the same question');
   assert.equal(held.deadline, null);
   assert.equal(held.clockAt, undefined);
-  assert.deepEqual(held.paused, { clockAt: q.clockAt, deadline: q.deadline, at: h.clock.now, left: q.deadline! - q.clockAt! - 4000 });
+  assert.deepEqual(held.paused, { clockAt: q.clockAt, at: h.clock.now, left: q.deadline! - q.clockAt! - 4000 });
   silently(() => h.answer('p0', right(q)), /early/);
   silently(() => h.act({ type: 'answer', index: null, askedAt: q.askedAt }), /early/);
   // Long after its old deadline, it is still there.

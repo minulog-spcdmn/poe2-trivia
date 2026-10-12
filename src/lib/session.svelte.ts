@@ -503,9 +503,12 @@ class Session {
     this.delveLink = false;
     if (saved.mode === 'local') this.startLocal(soloHotSeat(underRuleset(renameCategories(saved.state))));
     else if (saved.mode === 'host') {
+      // The host's last moment before the reload, which reset() lets go of with the save ('resumed' reads it).
+      const alive = readStored(ALIVE, 'session');
       this.reset();
       // Kept while the room reopens, so neither a refresh nor a failed try loses the game.
       writeSaved(saved);
+      if (alive) writeStored(ALIVE, alive, 'session');
       this.mode = 'host';
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
