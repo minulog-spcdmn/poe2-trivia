@@ -24,7 +24,7 @@ import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
 import { switchedOff, type Switch } from '../switchedOff';
-import { frameEvent } from '../fpsMeter';
+import { frameEvent, timed } from '../fpsMeter';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -713,7 +713,12 @@ function writeShape(i: number, s: LiveShape, t: number) {
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
+/** One frame of the effects (timed for the beta's frame meter). */
 function frame(nowMs: number) {
+  timed('effects', () => frameUntimed(nowMs));
+}
+
+function frameUntimed(nowMs: number) {
   // `raf` stays set while this frame runs: effects that tasks spawn during it
   // would otherwise wake() a second loop, and every such frame another one,
   // each drawing the whole overlay again.

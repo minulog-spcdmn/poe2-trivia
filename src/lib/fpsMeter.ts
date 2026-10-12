@@ -29,15 +29,47 @@ export function frameEvent(what: string) {
   console.info(`[fps] ${now.toFixed(0)} ${what}`);
 }
 
-/** The game's step under way (the reveal, a question) and its frames' times, ms. */
-let phase: { name: string; at: number; frames: number[] } | null = null;
+/**
+ * Main-thread work timed in each frame (the effects' and the backdrop's own
+ * frames, and the page's styles and layout brought up to date as a frame
+ * begins), summed per frame while the meter runs.
+ */
+const work: Record<string, number> = {};
+
+/** Runs `fn`, adding its time to this frame's `name` while the meter runs. */
+export function timed<T>(name: string, fn: () => T): T {
+  if (!on) return fn();
+  const t = performance.now();
+  try {
+    return fn();
+  } finally {
+    work[name] = (work[name] ?? 0) + performance.now() - t;
+  }
+}
+
+type FrameWork = { ms: number; work: Record<string, number> };
+
+/** The game's step under way (the reveal, a question) and its frames. */
+let phase: { name: string; at: number; frames: FrameWork[] } | null = null;
 
 /** How smoothly a stretch of frames went: their rate, the slowest, and how many took over 25 and 50 ms. */
-function summary(frames: number[], ms: number): string {
+function summary(all: FrameWork[], ms: number): string {
+  const frames = all.map((f) => f.ms);
   const sorted = [...frames].sort((a, b) => a - b);
   const median = sorted[sorted.length >> 1] ?? 0;
   const span = Math.min(ms, 2000);
-  return `${(ms / 1000).toFixed(1)}s, its first ${(span / 1000).toFixed(1)}s: ${((frames.length * 1000) / Math.max(1, span)).toFixed(0)} fps, median ${median.toFixed(0)}ms, worst ${(sorted.at(-1) ?? 0).toFixed(0)}ms, ${frames.filter((d) => d > 25).length} over 25ms, ${frames.filter((d) => d > 50).length} over 50ms`;
+  return `${(ms / 1000).toFixed(1)}s, its first ${(span / 1000).toFixed(1)}s: ${((frames.length * 1000) / Math.max(1, span)).toFixed(0)} fps, median ${median.toFixed(0)}ms, worst ${(sorted.at(-1) ?? 0).toFixed(0)}ms, ${frames.filter((d) => d > 25).length} over 25ms, ${frames.filter((d) => d > 50).length} over 50ms${slowWork(all)}`;
+}
+
+/** In the frames over 25ms: what the main thread spent on average, by part, and what's left (the GPU, the compositor, the browser's own). */
+function slowWork(all: FrameWork[]): string {
+  const slow = all.filter((f) => f.ms > 25);
+  if (!slow.length) return '';
+  const names = [...new Set(slow.flatMap((f) => Object.keys(f.work)))];
+  const avg = (get: (f: FrameWork) => number) => slow.reduce((n, f) => n + get(f), 0) / slow.length;
+  const parts = names.map((n) => `${n} ${avg((f) => f.work[n] ?? 0).toFixed(1)}`);
+  const rest = avg((f) => f.ms - Object.values(f.work).reduce((a, b) => a + b, 0));
+  return `; in those, on average ms: ${avg((f) => f.ms).toFixed(0)} a frame, ${parts.join(', ')}, the rest ${rest.toFixed(0)}`;
 }
 
 type Script = { duration: number; sourceURL: string; sourceFunctionName: string; invoker: string; forcedStyleAndLayoutDuration: number };
@@ -93,8 +125,14 @@ export function installFpsMeter() {
   const tick = (now: number) => {
     const ms = now - last;
     frames.push([now, ms]);
+    // The page's styles and layout as the frame begins (they'd be brought up to date later in it anyway).
+    const t = performance.now();
+    void document.documentElement.offsetWidth;
+    const styles = performance.now() - t;
     // (The first two seconds of a step: a question or reveal's own moments, not the wait after them.)
-    if (phase && now - phase.at < 2000) phase.frames.push(ms);
+    if (phase && now - phase.at < 2000) phase.frames.push({ ms, work: { ...work } });
+    for (const k in work) delete work[k];
+    work['styles and layout'] = styles;
     last = now;
     while (frames.length && frames[0][0] < now - 2000) frames.shift();
     const max = Math.max(...frames.map(([, d]) => d));

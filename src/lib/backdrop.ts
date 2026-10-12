@@ -20,7 +20,7 @@ import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
-import { frameEvent } from './fpsMeter';
+import { frameEvent, timed } from './fpsMeter';
 import { switchedOff } from './switchedOff';
 
 const CITY = ENVIRONMENTS.indexOf('city');
@@ -1523,7 +1523,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       }
     }
   }
-  function frame(now: number) {
+  /** One frame of the backdrop (timed for the beta's frame meter). */
+  const frame = (now: number) => timed('backdrop', () => frameUntimed(now));
+  function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
     if (catchingUp.size) {
       // (The backdrop's clock holds still meanwhile.)
