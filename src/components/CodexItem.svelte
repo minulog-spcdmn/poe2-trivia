@@ -14,7 +14,7 @@
   import ArcaneCircle from './ArcaneCircle.svelte';
   import ItemDetails from './ItemDetails.svelte';
   import { readStored, writeStored } from '../lib/storage';
-  import { calm } from '../lib/motion.svelte';
+  import { calm, motion } from '../lib/motion.svelte';
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
@@ -50,6 +50,22 @@
     view = v;
     writeStored(VIEW_KEY, v);
   }
+  /**
+   * Each face's height: the card grows or shrinks to the one shown. It's
+   * placed as if the taller showed, the room the shorter leaves kept empty
+   * under it, so only its foot moves and the tabs stay under the pointer.
+   */
+  let itemH = $state(0);
+  let recordH = $state(0);
+  const faceH = $derived(view === 'item' ? itemH : recordH);
+  const spare = $derived(Math.max(itemH, recordH) - faceH);
+  /** Sized at once as it opens; only what changes after that eases. */
+  let eased = $state(false);
+  $effect(() => {
+    if (!faceH || eased) return;
+    const raf = requestAnimationFrame(() => (eased = true));
+    return () => cancelAnimationFrame(raf);
+  });
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
@@ -112,65 +128,67 @@
 {/snippet}
 
 <div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div
-    class="tooltip"
-    bind:this={box}
-    transition:fly={calm({ y: 20, duration: 250 })}
-    onclick={(e) => e.stopPropagation()}
-    {onkeydown}
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="codex-item-name"
-    tabindex="-1"
-  >
-    <div class="head">
-      <NamePlate end="empty" />
-      {#key item.id}
-        <div class="head-text" in:fade={{ duration: 250 }}>
-          <span class="iname" id="codex-item-name">{item.name}</span>
-          <span class="ibase">{drawn.base}</span>
-        </div>
-      {/key}
-      <button class="close" style:--socket="{SOCKET_X}px" onclick={onclose} aria-label="Close" title="Close">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-      </button>
-    </div>
-
-    <div class="art" class:several={arts.length > 1} bind:this={art}>
-      <ArcaneCircle />
-      <div class="frame">
-        {#key drawn.art}
-          <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />
+  <div class="place" class:eased={eased && !motion.still} style:padding-bottom="{spare}px">
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      class="tooltip"
+      bind:this={box}
+      transition:fly={calm({ y: 20, duration: 250 })}
+      onclick={(e) => e.stopPropagation()}
+      {onkeydown}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="codex-item-name"
+      tabindex="-1"
+    >
+      <div class="head">
+        <NamePlate end="empty" />
+        {#key item.id}
+          <div class="head-text" in:fade={{ duration: 250 }}>
+            <span class="iname" id="codex-item-name">{item.name}</span>
+            <span class="ibase">{drawn.base}</span>
+          </div>
         {/key}
+        <button class="close" style:--socket="{SOCKET_X}px" onclick={onclose} aria-label="Close" title="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
       </div>
-      {#if arts.length > 1}
-        <!-- Drawn more than one way: each of its art, to look at in turn. -->
-        <div class="variants" role="group" aria-label="Its art">
-          {#each arts as a, i (a.art)}
-            <button class:on={a === drawn} aria-pressed={a === drawn} aria-label={artName(a, i)} title={artName(a, i)} onclick={() => (picked = { id: item.id, i })}>
-              <img src={itemThumb(a.art, 128)} alt="" loading="lazy" />
-            </button>
-          {/each}
+
+      <div class="art" class:several={arts.length > 1} bind:this={art}>
+        <ArcaneCircle />
+        <div class="frame">
+          {#key drawn.art}
+            <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />
+          {/key}
         </div>
-      {/if}
-    </div>
-
-    <!-- Two faces: the item as the game's tooltip shows it, and what you've done with it. -->
-    <div class="seg" role="tablist" aria-label="Show">
-      <button role="tab" id="codex-item-tab-item" aria-selected={view === 'item'} aria-controls="codex-item-face-item" class:on={view === 'item'} onclick={() => show('item')}>The item</button>
-      <button role="tab" id="codex-item-tab-record" aria-selected={view === 'record'} aria-controls="codex-item-face-record" class:on={view === 'record'} onclick={() => show('record')}>Your record</button>
-    </div>
-
-    <!-- Both faces in one place, the hidden one kept for its height: switching never resizes the card. -->
-    <div class="faces">
-      <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'}>
-        {#key drawn.art}
-          <ItemDetails item={drawn} />
-        {/key}
+        {#if arts.length > 1}
+          <!-- Drawn more than one way: each of its art, to look at in turn. -->
+          <div class="variants" role="group" aria-label="Its art">
+            {#each arts as a, i (a.art)}
+              <button class:on={a === drawn} aria-pressed={a === drawn} aria-label={artName(a, i)} title={artName(a, i)} onclick={() => (picked = { id: item.id, i })}>
+                <img src={itemThumb(a.art, 128)} alt="" loading="lazy" />
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
-      <div class="body face" class:on={view === 'record'} id="codex-item-face-record" role="tabpanel" aria-labelledby="codex-item-tab-record" inert={view !== 'record'}>
-        {@render record()}
+
+      <!-- Two faces: the item as the game's tooltip shows it, and what you've done with it. -->
+      <div class="seg" role="tablist" aria-label="Show">
+        <button role="tab" id="codex-item-tab-item" aria-selected={view === 'item'} aria-controls="codex-item-face-item" class:on={view === 'item'} onclick={() => show('item')}>The item</button>
+        <button role="tab" id="codex-item-tab-record" aria-selected={view === 'record'} aria-controls="codex-item-face-record" class:on={view === 'record'} onclick={() => show('record')}>Your record</button>
+      </div>
+
+      <!-- Both faces in one place, the card as tall as the one shown: switching grows or shrinks it. -->
+      <div class="faces" style:height={faceH ? `${faceH}px` : undefined}>
+        <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'} bind:offsetHeight={itemH}>
+          {#key drawn.art}
+            <ItemDetails item={drawn} />
+          {/key}
+        </div>
+        <div class="body face" class:on={view === 'record'} id="codex-item-face-record" role="tabpanel" aria-labelledby="codex-item-tab-record" inert={view !== 'record'} bind:offsetHeight={recordH}>
+          {@render record()}
+        </div>
       </div>
     </div>
   </div>
@@ -224,10 +242,13 @@
     display: none;
   }
 
-  /* PoE-style item tooltip, as in the game (QuestionView). */
-  .tooltip {
+  /* Where the card sits: centred as if its taller face showed (the spare room under it, empty, a click there closes it). */
+  .place {
     margin: auto;
     width: min(440px, 100%);
+  }
+  /* PoE-style item tooltip, as in the game (QuestionView). */
+  .tooltip {
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
@@ -378,11 +399,16 @@
     inset: 0;
   }
 
+  /* The faces over each other, the box as tall as the one shown; it grows or shrinks to the other as they cross-fade. */
   .faces {
-    display: grid;
+    position: relative;
+    overflow: hidden;
   }
   .face {
-    grid-area: 1 / 1;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     visibility: hidden;
     opacity: 0;
     transition:
@@ -393,6 +419,11 @@
     visibility: visible;
     opacity: 1;
     transition: opacity 0.2s;
+  }
+  .eased,
+  .eased .faces {
+    transition: 0.3s var(--ease-out, ease-out);
+    transition-property: padding-bottom, height;
   }
   /*
    * The switch between the item and your record of it: two engraved labels

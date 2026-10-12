@@ -99,6 +99,26 @@ function preloadFonts(): Plugin {
   };
 }
 
+/**
+ * Fontin's license (app.css) asks for its notice beside the @font-face that
+ * embeds it. The CSS minifier drops every comment, even a /*! one, so the
+ * build puts it back before each Fontin face.
+ */
+const FONTIN_NOTICE = '/* A font by Jos Buivenga (exljbris) -> www.exljbris.com */';
+
+function fontinNotice(): Plugin {
+  return {
+    name: 'fontin-notice',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type !== 'asset' || !file.fileName.endsWith('.css') || typeof file.source !== 'string') continue;
+        file.source = file.source.replace(/@font-face\s*\{\s*font-family:\s*["']?Fontin\b/g, (face) => FONTIN_NOTICE + face);
+      }
+    },
+  };
+}
+
 /** Where the backdrop tool saves to (and the game reads its zones' looks from). */
 const BACKDROPS_FILE = fileURLToPath(new URL('./src/data/backdrops.json', import.meta.url));
 
@@ -237,7 +257,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), backdropSave()],
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     build: {
       rollupOptions: {
