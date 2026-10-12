@@ -376,15 +376,16 @@
   // A circle is made of some six hundred lines, most of them pieces of a
   // broken line, each drawn in by its own animation. Built as markup once
   // (not as six hundred components each time a circle mounts) and put on
-  // the page in one go, it mounts in a few ms. Once a layer is drawn, its
+  // the page a layer at a time, just before each draws, no frame carries
+  // much of it. Once a layer is drawn, its
   // pieces give way to a still copy: the same lines merged into one path
   // per weight, with nothing animated (finished animations keep holding
   // their last frame and are styled again with every change of the
   // circle's colour), so a reveal recolours a few dozen paths, not the
   // whole drawing.
 
-  /** A drawing's lines as they draw in, the same lines still, and when the last of them is drawn (s). */
-  type Plate = { drawing: string; still: string; end: number };
+  /** A drawing's lines as they draw in, the same lines still, and when the first of them starts and the last is drawn (s). */
+  type Plate = { drawing: string; still: string; start: number; end: number };
 
   /** Maps a path of absolute commands (as the signs are drawn) point by point; `turn` (degrees) and `k` for its arcs. */
   const mapPath = (d: string, m: (p: Pt) => Pt, turn = 0, k = 1) => {
@@ -446,28 +447,33 @@
   const engrave = (draw: (e: ReturnType<typeof engraver>) => void): Plate => {
     const e = engraver();
     draw(e);
-    return { drawing: e.drawing(), still: e.still(), end: e.end() };
+    return { drawing: e.drawing(), still: e.still(), start: e.start(), end: e.end() };
   };
   const engraver = () => {
     let drawing = '';
+    let start = Infinity;
     let end = 0;
     const still = new Map<string, string>();
     const keep = (cls: string, d: string) => still.set(cls, (still.get(cls) ?? '') + d);
-    const until = (t: number) => (end = Math.max(end, t));
+    /** A line that starts at `from` and is done at `to`. */
+    const span = (from: number, to: number) => {
+      start = Math.min(start, from);
+      end = Math.max(end, to);
+    };
     const style = (delay: number, t: number) => `style="--d:${sec(delay)};--t:${sec(t)}"`;
     return {
       /** A line drawn in, eased, as one stroke. */
       line(d: string, cls: string, delay: number, t: number) {
         drawing += `<path d="${d}" class="draw ${cls}" ${style(delay, t)} pathLength="100"/>`;
         keep(cls, d);
-        until(delay + t);
+        span(delay, delay + t);
       },
       /** A broken line drawn in one sweep of the pen, piece by piece (see stroke()). */
       pieces(list: Stroke, cls: string) {
         for (const { d, delay, t } of list) {
           drawing += `<path d="${d}" class="draw piece ${cls}" ${style(delay, t)} pathLength="100"/>`;
           keep(cls, d);
-          until(delay + t);
+          span(delay, delay + t);
         }
       },
       /**
@@ -485,16 +491,17 @@
         keep('', mapPath(circlePath(r), place));
         keep('hair', mapPath(circlePath(r - inner), place));
         for (const [d, cls, k] of signs) keep(k === 1 ? cls : `${cls} big`, mapPath(d, (p) => place([p[0] * k, p[1] * k]), turn, k));
-        until(delay + Math.max(0.55, t, 0.3 + 0.6));
+        span(delay, delay + Math.max(0.55, t, 0.3 + 0.6));
       },
       /** A mark of the script, written at `delay`, `transform` and `place` putting it on the band. */
       mark(d: string, delay: number, transform: string, place: (p: Pt) => Pt, turn: number) {
         drawing += `<path d="${d}" transform="${transform}" class="sign mark" style="--d:${sec(delay)}"/>`;
         keep('sign', mapPath(d, place, turn));
-        until(delay + 0.35);
+        span(delay, delay + 0.35);
       },
       drawing: () => drawing,
       still: () => [...still].map(([cls, d]) => `<path d="${d}"${cls ? ` class="${cls}"` : ''}/>`).join(''),
+      start: () => start,
       end: () => end,
     };
   };
@@ -547,6 +554,9 @@
   const LINES = layers(drawing(true));
   wearing = false;
   type Layer = keyof typeof LINES;
+  const LAYERS = Object.keys(LINES) as Layer[];
+  /** How long before its first line draws a layer's lines go on the page (s). */
+  const AHEAD = 0.2;
   /** The layers that turn, outermost first; the glory stays still. */
   const SPUN = ['band', 'star', 'heart'] as const;
 
@@ -575,15 +585,24 @@
   const eyeGlow = EYE_GLOW.replaceAll('@id@', uid);
   const eyeLines = EYE_LINES.replaceAll('@id@', uid);
 
-  // Each layer, once drawn, takes its still copy.
+  // Each layer's lines go on the page a moment before they start to draw,
+  // not all on the frame that shows the question; `late` says how long after
+  // the circle they came, which their delays leave out, so the summoning
+  // plays as if they had been there all along. Once drawn, a layer takes its
+  // still copy.
+  const due = (name: Layer) => Math.max(0, Math.min(LINES[name].start, GLOW[name].start) - AHEAD);
+  let late = $state<Partial<Record<Layer, number>>>(Object.fromEntries(LAYERS.filter((name) => !due(name)).map((name) => [name, 0])));
   let drawn = $state<Partial<Record<Layer, true>>>({});
   $effect(() => {
-    const timers = (Object.keys(LINES) as Layer[]).map((name) =>
+    const t0 = performance.now();
+    const timers = LAYERS.flatMap((name) => [
+      ...(due(name) ? [setTimeout(() => (late[name] = (performance.now() - t0) / 1000), due(name) * 1000)] : []),
       setTimeout(() => (drawn[name] = true), (Math.max(LINES[name].end, GLOW[name].end) + 0.15) * 1000),
-    );
+    ]);
     return () => timers.forEach(clearTimeout);
   });
-  const plate = (p: Plate, name: Layer) => (drawn[name] ? p.still : p.drawing);
+  const plate = (p: Plate, name: Layer) => (drawn[name] ? p.still : late[name] === undefined ? '' : p.drawing);
+  const lateOf = (name: Layer) => `${(late[name] ?? 0).toFixed(3)}s`;
 </script>
 
 <!--
@@ -599,13 +618,13 @@
     <div class="bloom"></div>
     {#each SPUN as name (name)}
       <div class="layer spin {name}">
-        <svg class="glow" viewBox="-100 -100 200 200">{@html plate(GLOW[name], name)}</svg>
-        <svg viewBox="-100 -100 200 200">{@html plate(LINES[name], name)}</svg>
+        <svg class="glow" viewBox="-100 -100 200 200" style:--late={lateOf(name)}>{@html plate(GLOW[name], name)}</svg>
+        <svg viewBox="-100 -100 200 200" style:--late={lateOf(name)}>{@html plate(LINES[name], name)}</svg>
       </div>
     {/each}
     <div class="layer">
-      <svg class="glow" viewBox="-100 -100 200 200">{@html plate(GLOW.glory, 'glory')}</svg>
-      <svg viewBox="-100 -100 200 200">{@html plate(LINES.glory, 'glory')}</svg>
+      <svg class="glow" viewBox="-100 -100 200 200" style:--late={lateOf('glory')}>{@html plate(GLOW.glory, 'glory')}</svg>
+      <svg viewBox="-100 -100 200 200" style:--late={lateOf('glory')}>{@html plate(LINES.glory, 'glory')}</svg>
     </div>
     <div class="layer eye">
       <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
@@ -764,7 +783,7 @@
 
   .arcane :global(.draw) {
     stroke-dasharray: 100;
-    animation: draw var(--t, 1s) var(--d, 0s) var(--draw-ease) both;
+    animation: draw var(--t, 1s) calc(var(--d, 0s) - var(--late, 0s)) var(--draw-ease) both;
   }
   /* A piece of a longer stroke keeps the pen's pace (see stroke()). */
   .arcane :global(.piece) {
@@ -772,17 +791,17 @@
   }
   /* Signs are set down once their lines are drawn. */
   .arcane :global(.carve) {
-    animation: carve 0.6s calc(var(--d, 0s) + 0.3s) var(--ease-out) both;
+    animation: carve 0.6s calc(var(--d, 0s) + 0.3s - var(--late, 0s)) var(--ease-out) both;
   }
   /* The script is written mark by mark. */
   .arcane :global(.mark) {
-    animation: carve 0.35s var(--d) var(--ease-out) both;
+    animation: carve 0.35s calc(var(--d) - var(--late, 0s)) var(--ease-out) both;
   }
   /* Seals are pressed in like a stamp. */
   .arcane :global(.seal) {
     transform-box: fill-box;
     transform-origin: center;
-    animation: stamp 0.55s var(--d) var(--ease-out) both;
+    animation: stamp 0.55s calc(var(--d) - var(--late, 0s)) var(--ease-out) both;
   }
 
   /* The eye opens last, and now and then it blinks. */
