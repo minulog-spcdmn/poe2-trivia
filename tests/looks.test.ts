@@ -9,7 +9,7 @@ const raw = JSON.parse(readFileSync(new URL('../src/data/looks.json', import.met
 const { looksLike, lookScore, lookalikePool } = readLooks(raw);
 const byName = new Map(items.map((it) => [it.name, it]));
 /** Every art, each its own entry (an item drawn more than one way: each of its variants too). */
-const arts = items.flatMap(allArt);
+const arts = items.flatMap(allArt).map((a) => ({ ...a, id: a.art })); // keyed as the table is, by the art's id
 const byId = new Map(arts.map((it) => [it.id, it]));
 const id = (name: string) => byName.get(name)!.id;
 const names = (looks: readonly { id: string }[]) => looks.map((l) => byId.get(l.id)!.name);
@@ -34,11 +34,11 @@ test('every art has its closest look-alikes from its own group, and nothing else
 });
 
 test('each of an item\'s art is ranked on its own', () => {
-  const [ruby, emerald, sapphire] = allArt(byName.get('Grand Spectrum')!).map((a) => looksLike(a.id));
+  const [ruby, emerald, sapphire] = allArt(byName.get('Grand Spectrum')!).map((a) => looksLike(a.art));
   assert.notDeepEqual(ruby, sapphire);
   assert.notDeepEqual(emerald, sapphire);
   // A ring's list scores Grip of Kulemak's stages each by its own picture.
-  const kulemak = new Set(allArt(byName.get('Grip of Kulemak')!).map((a) => a.id));
+  const kulemak = new Set(allArt(byName.get('Grip of Kulemak')!).map((a) => a.art));
   const stages = arts.filter((it) => it.group === 'Rings').flatMap((it) => looksLike(it.id).filter((l) => kulemak.has(l.id)));
   assert.ok(new Set(stages.map((l) => l.id)).size > 1, 'more than one stage ranks');
   assert.ok(new Set(stages.map((l) => l.score)).size > 1, 'scored apart');

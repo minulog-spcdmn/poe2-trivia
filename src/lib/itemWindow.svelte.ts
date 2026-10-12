@@ -1,4 +1,4 @@
-import type { Item } from './game';
+import type { DrawnItem } from './game';
 import { readStored, writeStored } from './storage';
 
 /**
@@ -7,9 +7,9 @@ import { readStored, writeStored } from './storage';
  * until they close it: only on their screen, and the game goes on under it.
  * Opening another item shows that one in the same window.
  */
-export const itemWindow = $state<{ item: Item | null }>({ item: null });
+export const itemWindow = $state<{ item: DrawnItem | null }>({ item: null });
 
-export function inspect(item: Item) {
+export function inspect(item: DrawnItem) {
   itemWindow.item = item;
 }
 export function closeItemWindow() {

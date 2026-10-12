@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { singular, type Item } from '../lib/game';
+  import { singular, type DrawnItem } from '../lib/game';
 
   /**
    * A tooltip line, as scripts/fetch-stats.mjs writes it: its kind (a
@@ -56,8 +56,9 @@
    * line is its class, grey, as in the game (poe2db's own grouping of its
    * base, which the data leaves out, isn't the game's).
    */
-  function sectionsOf(item: Item, all: Stats): Line[][] {
-    const list = (all[item.id] ?? []).map((s) => [...s]);
+  function sectionsOf(item: DrawnItem, all: Stats): Line[][] {
+    // The tooltip of the picture it is drawn as (a variant's has its own base and mods).
+    const list = (all[item.art] ?? []).map((s) => [...s]);
     if (item.kind === 'unique' && WEAPONS.has(item.category)) {
       const head: Line = ['p', singular(item.group)];
       if (list[0]?.[0]?.[0] === 'p') list[0].unshift(head);
@@ -70,7 +71,7 @@
 <script lang="ts">
   // An item's tooltip as the game shows it: its properties, requirements,
   // mods and flavour text, in sections parted by the game's plain rule.
-  let { item }: { item: Item } = $props();
+  let { item }: { item: DrawnItem } = $props();
 
   let all = $state<Stats | null>(loaded);
   let failed = $state(false);

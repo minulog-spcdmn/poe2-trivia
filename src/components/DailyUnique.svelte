@@ -12,7 +12,7 @@
   import { engine, session } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
   import { codexRoute } from '../lib/codexRoute.svelte';
-  import { drawnAs, isFake, questionTopic, type Item, type Question } from '../lib/game';
+  import { answerPicture, drawnAs, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
@@ -73,7 +73,7 @@
   const right = $derived(answered && picked === rightIdx);
   const item = $derived(engine.byId.get(q.itemId));
   /** The item as the question draws it (Grand Spectrum's Emerald…): its art and base. */
-  const drawn = $derived(item && drawnAs(item, q.variant?.[0]));
+  const drawn = $derived(item && drawnAs(item, q.variant?.[answerPicture(q)]));
   const streak = $derived(streakOn(rec, today));
 
   /**
@@ -274,7 +274,7 @@
                picture through it (fx/moments reveal) and shine from behind its outline. -->
           <div class="art frame" bind:this={artEl}>
             {#key q.itemId + (practice ? ':p' : '')}
-              {#if drawn}<ArtImage src={itemImage(drawn.id)} w={drawn.w} h={drawn.h} alt="The item to name" scale={4} float round />{/if}
+              {#if drawn}<ArtImage src={itemImage(drawn.art)} w={drawn.w} h={drawn.h} alt="The item to name" scale={4} float round />{/if}
             {/key}
           </div>
         </div>

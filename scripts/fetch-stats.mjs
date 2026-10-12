@@ -40,7 +40,8 @@ const KINDS = {
 /** A long dash and the spaces round it (built from its code: tests/style.test.ts looks for the dash and its escapes). */
 const EM_DASH_RUN = new RegExp(` *${String.fromCharCode(0x2014)} *`, 'g');
 
-const decode = (s) =>
+/** HTML's entities in poe2db's text, as text (fetch-data decodes names with it too). */
+export const decode = (s) =>
   s
     .replace(/&#0?39;|&apos;/g, "'")
     .replace(/&quot;/g, '"')
@@ -174,7 +175,12 @@ async function fetchRetry(url, tries = 6) {
   }
 }
 
-export async function fetchStats() {
+/**
+ * `variantBoxes`: each variant's box on its item's page, by the variant's id,
+ * as fetch-data has just read them (pageBoxes); without them (npm run
+ * fetch-stats) the pages are fetched here.
+ */
+export async function fetchStats(variantBoxes = null) {
   const items = JSON.parse(await readFile(DATA_FILE, 'utf8'));
   // Each item's tooltip, by its name: the first link to it on the list pages (and its page there).
   const hovers = new Map();
@@ -222,10 +228,11 @@ export async function fetchStats() {
         out[it.id] = tooltip(await (await fetchRetry(hovers.get(it.name))).text(), it);
         // Its other art (fetch-data: Item.variants), each with its own box on the item's page.
         if (it.variants?.length) {
-          const boxes = pageBoxes(await (await fetchRetry(pages.get(it.name))).text());
+          const page = !variantBoxes && pages.get(it.name);
+          const boxes = page ? pageBoxes(await (await fetchRetry(page)).text()) : [];
           for (const v of it.variants) {
-            const box = boxes.find((b) => b.art && variantId(b.art) === v.id);
-            if (box) out[v.id] = tooltip(box.html, it);
+            const html = variantBoxes ? variantBoxes.get(v.id) : boxes.find((b) => b.art && variantId(b.art) === v.id)?.html;
+            if (html) out[v.id] = tooltip(html, it);
             else missing.push(`${it.name} (${v.base}, ${v.id})`);
           }
         }

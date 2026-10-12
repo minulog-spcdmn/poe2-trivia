@@ -11,10 +11,10 @@ const stats: Record<string, [string, string][][]> = JSON.parse(readFileSync(join
 test('every item has its tooltip, and each of its variants, and only they do (npm run fetch-stats)', () => {
   const arts = items.flatMap(allArt);
   assert.deepEqual(
-    arts.filter((it) => !stats[it.id]?.length).map((it) => `${it.name} (${it.base})`),
+    arts.filter((it) => !stats[it.art]?.length).map((it) => `${it.name} (${it.base})`),
     [],
   );
-  const ids = new Set(arts.map((it) => it.id));
+  const ids = new Set(arts.map((it) => it.art));
   assert.deepEqual(
     Object.keys(stats).filter((id) => !ids.has(id)),
     [],

@@ -9,13 +9,13 @@
 // scripts/upscale-art.py afterwards for any new items (it says how), and
 // npm run looks.
 //
-// Usage: npm run fetch-data
+// Usage: npm run fetch-data (-- --shrink: see below)
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
 
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
 import { webpSize } from './webp-size.mjs';
-import { fetchStats, pageBoxes, variantId } from './fetch-stats.mjs';
+import { decode as decodeText, fetchStats, pageBoxes, variantId } from './fetch-stats.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,12 +76,8 @@ const ENTRY = new RegExp(
   'g',
 );
 
-const decode = (s) =>
-  s
-    .replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .trim();
+// As fetch-stats decodes the item pages' names (pageBoxes), so the two match.
+const decode = (s) => decodeText(s).trim();
 
 const ART = 'https://cdn.poe2db.tw/image/Art/2DItems/';
 
@@ -154,6 +150,11 @@ async function main() {
     }
     items.push({ id: makeId(name), name, base, ...cat, kind: 'unique', slug, src, boxes });
   }
+  // Before anything is deleted: a page that changed its layout leaves most items without a picture or a category.
+  if (items.length < 100) throw new Error(`Only ${items.length} items have their art; page layout changed?`);
+  const pictureless = skipped.filter((s) => s.endsWith('(no picture)'));
+  if (pictureless.length > entries.length / 20)
+    throw new Error(`${pictureless.length} of ${entries.length} uniques have no picture on the list or their page; page layout changed?`);
 
   console.log(`Fetching ${GEM_SOURCE}`);
   const gemHtml = await (await fetchRetry(GEM_SOURCE)).text();
@@ -187,10 +188,10 @@ async function main() {
   // (a league's version, a base it also drops as) share its art and add none.
   for (const it of quiz) {
     const variants = [];
-    for (const { base, art } of it.boxes ?? []) {
+    for (const { base, art, html } of it.boxes ?? []) {
       const src = ART + art;
       if (artCount.has(src) || variants.some((v) => v.src === src)) continue;
-      variants.push({ id: variantId(art), base, src });
+      variants.push({ id: variantId(art), base, src, html });
     }
     if (variants.length) it.variants = variants;
   }
@@ -198,6 +199,12 @@ async function main() {
   if (withVariants.length) console.log(`Drawn more than one way: ${withVariants.map((it) => `${it.name} (${it.variants.length + 1})`).join(', ')}`);
   /** Every picture to keep: each item's own, and its variants'. */
   const arts = quiz.flatMap((it) => [it, ...(it.variants ?? [])]);
+
+  // Nor when the items would shrink a lot: art and data deleted by a broken
+  // fetch is worse than none (--shrink, when poe2db really dropped them).
+  const before = await readFile(DATA_FILE, 'utf8').then((t) => JSON.parse(t).length, () => 0);
+  if (quiz.length < before * 0.9 && !process.argv.includes('--shrink'))
+    throw new Error(`${quiz.length} items, ${before} before: page layout changed? (--shrink keeps the fewer)`);
 
   await mkdir(IMG_DIR, { recursive: true });
   let downloaded = 0;
@@ -248,7 +255,8 @@ async function main() {
   console.log(`${quiz.length} items (${downloaded} new images)`);
   console.table(perCat);
   if (missing.length) console.warn(`${missing.length} items have no upscaled art yet: run scripts/upscale-art.py (see its header).`);
-  await fetchStats();
+  // Each variant's tooltip, from the box read above.
+  await fetchStats(new Map(quiz.flatMap((it) => (it.variants ?? []).map((v) => [v.id, v.html]))));
 }
 
 main().catch((err) => {

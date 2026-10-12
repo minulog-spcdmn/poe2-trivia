@@ -8,7 +8,7 @@
   import { itemImage, itemThumb } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
-  import { allArt, type Item } from '../lib/game';
+  import { allArt, type DrawnItem, type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
@@ -24,9 +24,9 @@
   /** Every way the item is drawn (Grand Spectrum's three jewels), and the one shown: its own, until another is picked. */
   const arts = $derived(allArt(item));
   let picked = $state({ id: '', i: 0 });
-  const drawn = $derived(arts[picked.id === item.id ? picked.i : 0] ?? item);
+  const drawn = $derived(arts[picked.id === item.id ? picked.i : 0] ?? arts[0]);
   /** A variant's name in its picker: its base where they differ, else its place among them. */
-  const artName = (a: Item, i: number) => (new Set(arts.map((x) => x.base)).size === arts.length ? a.base : `${i + 1} of ${arts.length}`);
+  const artName = (a: DrawnItem, i: number) => (new Set(arts.map((x) => x.base)).size === arts.length ? a.base : `${i + 1} of ${arts.length}`);
   const byCount = (pairs: [string, number][]) =>
     pairs
       .flatMap(([id, n]) => {
@@ -139,16 +139,16 @@
     <div class="art" class:several={arts.length > 1} bind:this={art}>
       <ArcaneCircle />
       <div class="frame">
-        {#key drawn.id}
-          <ArtImage src={itemImage(drawn.id)} alt={item.name} w={drawn.w} h={drawn.h} float />
+        {#key drawn.art}
+          <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />
         {/key}
       </div>
       {#if arts.length > 1}
         <!-- Drawn more than one way: each of its art, to look at in turn. -->
         <div class="variants" role="group" aria-label="Its art">
-          {#each arts as a, i (a.id)}
-            <button class:on={a.id === drawn.id} aria-pressed={a.id === drawn.id} aria-label={artName(a, i)} title={artName(a, i)} onclick={() => (picked = { id: item.id, i })}>
-              <img src={itemThumb(a.id, 128)} alt="" loading="lazy" />
+          {#each arts as a, i (a.art)}
+            <button class:on={a === drawn} aria-pressed={a === drawn} aria-label={artName(a, i)} title={artName(a, i)} onclick={() => (picked = { id: item.id, i })}>
+              <img src={itemThumb(a.art, 128)} alt="" loading="lazy" />
             </button>
           {/each}
         </div>
@@ -164,7 +164,7 @@
     <!-- Both faces in one place, the hidden one kept for its height: switching never resizes the card. -->
     <div class="faces">
       <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'}>
-        {#key drawn.id}
+        {#key drawn.art}
           <ItemDetails item={drawn} />
         {/key}
       </div>

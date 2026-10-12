@@ -1004,7 +1004,9 @@ item's art, each as often (`Question.variant`, rolled with the mirroring);
 the answer is still just its name, and the codex shows them all. Other
 uniques have more than one version on their page too (each glove's Fists of
 Stone base, a league's changed mods), but they share one art, so they add
-nothing.
+nothing. A fetch that would leave noticeably fewer items than `items.json`
+has (a changed page layout, most likely) stops before it deletes any art;
+`npm run fetch-data -- --shrink` accepts it when poe2db really dropped them.
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from
 poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by

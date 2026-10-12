@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, TWINS, allArt, drawnAs, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, TWINS, allArt, drawnAs, picturesOf, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -621,7 +621,7 @@ test('an item drawn more than one way shows each of its art about as often', () 
   const drawn = new Map<string, number[]>();
   for (let i = 0; i < 8000; i++) {
     const q = engine.makeQuestion(s, i % 2 ? 'Rings' : 'Flasks, Charms, Jewels, Relics & Tablets');
-    const pictured = q.mode === 'art' ? q.options : [q.itemId];
+    const pictured = picturesOf(q);
     // Missing where every picture shows its item's own art.
     if (q.variant) assert.equal(q.variant.length, pictured.length, 'one per picture');
     if (q.variant) assert.ok(q.variant.some(Boolean), 'only listed when some picture shows a variant');
@@ -641,15 +641,16 @@ test('an item drawn more than one way shows each of its art about as often', () 
   }
 });
 
-test('a drawn item is its variant\'s art, base and size under the item\'s name', () => {
+test('a drawn item is its variant\'s picture, base and size under the item\'s name and id', () => {
   const gs = items.find((it) => it.name === 'Grand Spectrum')!;
   assert.deepEqual(allArt(gs).map((a) => a.base), ['Ruby', 'Emerald', 'Sapphire']);
-  assert.equal(drawnAs(gs), gs);
-  assert.equal(drawnAs(gs, 0), gs);
+  assert.equal(drawnAs(gs).art, gs.id);
+  assert.equal(drawnAs(gs, 0), drawnAs(gs), 'the same picture, the same object');
   const emerald = drawnAs(gs, 1);
-  assert.deepEqual([emerald.id, emerald.base, emerald.name, emerald.group], [gs.variants![0].id, 'Emerald', 'Grand Spectrum', gs.group]);
-  assert.equal(drawnAs(gs, 9), gs, 'a variant it lacks: its own art');
-  const ids = items.flatMap((it) => allArt(it).map((a) => a.id));
+  assert.deepEqual([emerald.art, emerald.base, emerald.name, emerald.group], [gs.variants![0].id, 'Emerald', 'Grand Spectrum', gs.group]);
+  assert.equal(emerald.id, gs.id, 'its id stays the item\'s');
+  assert.equal(drawnAs(gs, 9), drawnAs(gs), 'a variant it lacks: its own art');
+  const ids = items.flatMap((it) => allArt(it).map((a) => a.art));
   assert.equal(new Set(ids).size, ids.length, 'every art its own id');
 });
 

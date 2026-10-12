@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { AUTO_NEXT_MS, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, answerPicture, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -136,7 +136,7 @@
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   /** The answer as its picture drew it (Grand Spectrum's Emerald…): its art, base and tooltip. */
-  const drawn = $derived(item && drawnAs(item, q.variant?.[q.mode === 'name' ? 0 : q.options.indexOf(item.id)]));
+  const drawn = $derived(item && drawnAs(item, q.variant?.[answerPicture(q)]));
   const race = $derived(s.settings.mode === 'race');
   /**
    * Turns: someone else is answering. The answers go grey and sit flat in the
@@ -396,7 +396,7 @@
     let live = true;
     const done = () => live && (fullLoaded = true);
     const img = new Image();
-    img.src = itemImage(drawn.id);
+    img.src = itemImage(drawn.art);
     img.decode().then(() => {
       if (!live) return;
       // Measured in art pixels, as the host measures the veiled copy.
@@ -1151,7 +1151,7 @@
           {@const option = found && drawnAs(found, q.variant?.[i])}
           <!-- Only a picture the reveal names opens its details: the untouched decoys stay anonymous (see named). -->
           {@const shownItem = option && named(i) ? option : undefined}
-          {@const pic = option ? { url: itemImage(option.id), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
+          {@const pic = option ? { url: itemImage(option.art), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
           <!-- Once answered, each picture the reveal names opens that item's details. -->
@@ -1248,7 +1248,7 @@
           <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
           <div class="frame">
             {#if showFull && drawn}
-              <ArtImage src={itemImage(drawn.id)} alt={drawn.name} w={drawn.w} h={drawn.h} float unflip={mirrored(0)} />
+              <ArtImage src={itemImage(drawn.art)} alt={drawn.name} w={drawn.w} h={drawn.h} float unflip={mirrored(0)} />
             {/if}
             {#if media?.veil && !showFull}
               {@const v = media.veil}
@@ -1285,7 +1285,7 @@
           </div>
           {#if reveal && item}
             <!-- Once answered, the art opens the item's details (ItemWindow). -->
-            <button class="details" onclick={() => inspect(drawn ?? item)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
+            <button class="details" onclick={() => drawn && inspect(drawn)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
               <span class="lens">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>
                 Details

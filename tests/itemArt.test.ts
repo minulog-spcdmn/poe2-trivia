@@ -38,18 +38,18 @@ const files = (dir: string) =>
     .sort();
 
 test('every item (and each of its variants) has its original art (its size in items.json), an upscaled copy artScale times its size and its smaller copies, and nothing else', () => {
-  const ids = arts.map((it) => it.id).sort();
+  const ids = arts.map((it) => it.art).sort();
   assert.deepEqual(files(join(ROOT, 'art-source', 'items')), ids.map((id) => `${id}.webp`));
   assert.deepEqual(files(SITE), ids.map((id) => `${id}.avif`));
   for (const t of THUMBS) assert.deepEqual(files(join(SITE, String(t))), ids.map((id) => `${id}.avif`), `public/items/${t}/`);
   for (const it of arts) {
-    const [w, h] = webpSize(join(ROOT, 'art-source', 'items', `${it.id}.webp`));
-    const [W, H] = avifSize(join(SITE, `${it.id}.avif`));
+    const [w, h] = webpSize(join(ROOT, 'art-source', 'items', `${it.art}.webp`));
+    const [W, H] = avifSize(join(SITE, `${it.art}.avif`));
     assert.deepEqual([it.w, it.h], [w, h], `${it.name}: its size in items.json (npm run fetch-data)`);
     const k = artScale(w, h);
     assert.deepEqual([W, H], [w * k, h * k], `${it.name}: run scripts/upscale-art.py`);
     for (const t of THUMBS) {
-      const [tw, th] = avifSize(join(SITE, String(t), `${it.id}.avif`));
+      const [tw, th] = avifSize(join(SITE, String(t), `${it.art}.avif`));
       assert.equal(Math.max(tw, th), Math.min(t, Math.max(W, H)), `${it.name}: ${t} px copy`);
       assert.ok(Math.abs(tw / th - W / H) < 0.05, `${it.name}: ${t} px copy keeps its shape`);
     }

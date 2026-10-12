@@ -163,7 +163,7 @@ let byName: Map<string, string[]> | null = null;
 function idsNamed(name: string | null): string[] {
   if (!byName) {
     byName = new Map();
-    for (const it of engine.items) byName.set(it.name, [...(byName.get(it.name) ?? []), ...allArt(it).map((a) => a.id)]);
+    for (const it of engine.items) byName.set(it.name, [...(byName.get(it.name) ?? []), ...allArt(it).map((a) => a.art)]);
   }
   return name ? (byName.get(name) ?? []) : [];
 }

@@ -90,18 +90,40 @@ export interface ArtVariant {
 }
 
 /**
- * The item as its art `variant` draws it (Question.variant: 0, or none, its
- * own art): that art's id, base and size, for its picture and its tooltip.
- * The id is then the art's, not the item's: never count or look items up by
- * a drawn item's id.
+ * An item as one of its pictures draws it (drawnAs): `art` is the picture's
+ * id (its file, and its tooltip's key; the item's own id for its own art),
+ * and the base and size are that picture's. The rest, its id included, stay
+ * the item's.
  */
-export function drawnAs(item: Item, variant = 0): Item {
-  const v = variant > 0 ? item.variants?.[variant - 1] : undefined;
-  return v ? { ...item, ...v, variants: undefined } : item;
+export interface DrawnItem extends Item {
+  art: string;
 }
 
-/** Every art the item is drawn with (drawnAs), its own first. */
-export const allArt = (item: Item): Item[] => [item, ...(item.variants ?? []).map((_, i) => drawnAs(item, i + 1))];
+/** Each item's drawings, made once, so the same picture is always the same object. */
+const drawings = new WeakMap<Item, readonly DrawnItem[]>();
+
+/** Every picture the item is drawn with, its own first (Question.variant counts them so). */
+export function allArt(item: Item): readonly DrawnItem[] {
+  let all = drawings.get(item);
+  if (!all) {
+    all = [{ ...item, art: item.id }, ...(item.variants ?? []).map((v) => ({ ...item, art: v.id, base: v.base, w: v.w, h: v.h }))];
+    drawings.set(item, all);
+  }
+  return all;
+}
+
+/** The item as its picture `variant` draws it (Question.variant: 0, none, or one it lacks: its own art). */
+export const drawnAs = (item: Item, variant = 0): DrawnItem => allArt(item)[variant] ?? allArt(item)[0];
+
+/**
+ * The item ids a question's pictures show, in order (as Question.mirrored and
+ * .variant count them): the options' on an art question, the answer's alone
+ * on a name question.
+ */
+export const picturesOf = (q: Pick<Question, 'mode' | 'options' | 'itemId'>): string[] => (q.mode === 'art' ? q.options : [q.itemId]);
+
+/** Which of a question's pictures (picturesOf) is the answer's. */
+export const answerPicture = (q: Pick<Question, 'mode' | 'options' | 'itemId'>): number => (q.mode === 'art' ? q.options.indexOf(q.itemId) : 0);
 
 /** The three ready-made difficulties. */
 export type Preset = 'cruel' | 'merciless' | 'eternal';
@@ -1031,8 +1053,8 @@ export function publicView(s: GameState): GameState {
     ...q.misses.map((m) => m.index),
     ...(q.struck ?? []).map((m) => m.index),
   ]);
-  // A name question's one picture is the answer's; an art question's are the options'.
-  const variant = q.mode === 'name' ? q.variant : q.variant?.map((v, i) => (known.has(i) ? v : 0));
+  // An art question's pictures are the options' (picturesOf); a name question's one is the answer's.
+  const variant = q.mode === 'art' ? q.variant?.map((v, i) => (known.has(i) ? v : 0)) : q.variant;
   const { variant: _, ...rest } = q;
   return { ...s, used: [], question: { ...rest, options: q.options.map((id, i) => (known.has(i) ? id : '')), ...(variant?.some(Boolean) ? { variant } : {}) } };
 }
@@ -2352,14 +2374,16 @@ export class Engine {
    * outside it), so "the name that fits the others best" doesn't give it
    * away.
    */
-  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false, art: (it: Item) => string = (it) => it.id): Item[] {
+  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false, arts: (it: Item) => readonly string[] = (it) => [it.id]): Item[] {
     if (count <= 0) return [];
     // By art only with the table at hand and the answer in it (items added
     // since it was built have no look-alikes); by name otherwise. By art,
-    // each item is compared as the question draws it (`art`: the id of the
-    // art it shows, Item.variants).
-    const looks = byArt && this.looks?.looksLike(art(answer)).length ? this.looks : null;
-    const like = looks ? (a: Item, b: Item) => looks.lookScore(art(a), art(b)) : (a: Item, b: Item) => this.similarity(a, b);
+    // two items look as alike as the likest of their pictures (`arts`: the
+    // one the question shows, or each it could, Item.variants).
+    const looks = byArt && this.looks?.looksLike(arts(answer)[0]).length ? this.looks : null;
+    const like = looks
+      ? (a: Item, b: Item) => Math.max(...arts(a).flatMap((x) => arts(b).map((y) => looks.lookScore(x, y))))
+      : (a: Item, b: Item) => this.similarity(a, b);
     // The items most like `to`, with a few to spare so the pick still varies.
     const near = (to: Item, from: Item[]) =>
       shuffle(from, this.rng) // random order among equal scores
@@ -2645,16 +2669,20 @@ export class Engine {
     // times or neither).
     const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
     // An item drawn more than one way shows any of its art, each as often.
-    // By art, each one's art is drawn before the look-alikes are picked (only
-    // those roll), so they look like the art the question shows; else when
-    // the options are known (rollArt below).
+    // By art, the pictures to be shown are drawn before the look-alikes are
+    // picked (only those items roll), so they look like the art the question
+    // shows: the answer's, and on an art question every picture's. A name
+    // question shows no decoy's art, so a decoy there counts as the likest of
+    // its own. Else each picture is drawn once the options are known
+    // (rollArt below).
     const drawnWith = new Map<string, number>();
     const rollArt = (it: Item) => {
       const n = it.variants?.length ?? 0;
       return n ? Math.floor(this.rng() * (n + 1)) : 0;
     };
-    if (byArt) for (const it of [answer, ...pool]) if (it.variants) drawnWith.set(it.id, rollArt(it));
-    const decoys = this.lookalikes(answer, pool, simCount, count, byArt, (it) => drawnAs(it, drawnWith.get(it.id)).id);
+    if (byArt) for (const it of mode === 'art' ? [answer, ...pool] : [answer]) if (it.variants) drawnWith.set(it.id, rollArt(it));
+    const arts = (it: Item) => (mode === 'art' || it === answer ? [drawnAs(it, drawnWith.get(it.id)).art] : allArt(it).map((a) => a.art));
+    const decoys = this.lookalikes(answer, pool, simCount, count, byArt, arts);
     // Rest at random, preferring the same group, then the category, then anything.
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;
@@ -2691,7 +2719,7 @@ export class Engine {
     // Each picture's art, as drawn for the look-alikes or rolled now (only
     // items drawn more than one way roll, so a game without one asks what it
     // always asked).
-    const variant = (mode === 'art' ? options : [answer.id]).map((id) => drawnWith.get(id) ?? rollArt(this.byId.get(id)!));
+    const variant = picturesOf({ mode, options, itemId: answer.id }).map((id) => drawnWith.get(id) ?? rollArt(this.byId.get(id)!));
     const drawn = variant.some(Boolean) ? { variant } : {};
     return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, ...drawn, askedAt, deadline, misses: [], ...special };
   }

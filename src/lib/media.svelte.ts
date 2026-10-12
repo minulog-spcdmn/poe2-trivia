@@ -124,8 +124,8 @@ interface Altered {
  * pixels. The changes keep clear of the art's sharpness: it is shifted by
  * whole pixels and not turned, only its size is resampled.
  */
-async function alteredCanvas(art: { id: string; w: number; h: number }, most: number, grayscale: boolean, mirror = false): Promise<Altered> {
-  const img = await loadImage(itemImage(art.id));
+async function alteredCanvas(art: { art: string; w: number; h: number }, most: number, grayscale: boolean, mirror = false): Promise<Altered> {
+  const img = await loadImage(itemImage(art.art));
   const S = Math.max(1, Math.min(most, Math.round(img.naturalWidth / art.w)));
   const scale = rand(0.9, 1.0);
   const w = Math.round(art.w * scale);
