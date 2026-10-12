@@ -116,8 +116,8 @@
     </div>
     <div class="row">
       <span class="what">Runs</span>
-      {#each [[false, 'Solo'], [true, 'Co-op']] as [v, name] (name)}
-        <button class:on={together === v} onclick={() => (together = v as boolean)}>{name}</button>
+      {#each [[false, 'Solo'], [true, 'Co-op']] as const as [v, name] (name)}
+        <button class:on={together === v} onclick={() => (together = v)}>{name}</button>
       {/each}
     </div>
     <div class="row">

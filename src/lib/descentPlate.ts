@@ -544,7 +544,8 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
 
   // ---- across: the zones' names | the left wall (the stars' band) | the pit | the rock | the lines | the finds (beside) or the callouts (stacked) ----
   const nameW = (k: number) => layout.nameW?.[k] ?? ZONES[k].name.length * 5.9 + 1;
-  const keyW = (layout.legendW ? Math.max(layout.legendW.best, lastD ? layout.legendW.last : 0) : lastD ? 44 : 46) + 2 * KEY_R + 5;
+  // Before the page has measured them, about "best co-op", the widest of the words.
+  const keyW = (layout.legendW ? Math.max(layout.legendW.best, lastD ? layout.legendW.last : 0) : 47) + 2 * KEY_R + 5;
   const slant = (k: number) => (TAPER * (k + 0.5)) / 10;
   // The pit's half-width at the mouth plus what stands left of it: the names shown, or the brace of the zones not reached.
   const need = Math.max(30, ...ZONES.slice(0, reached).map((_, k) => nameW(k) + NAME_GAP + LW - slant(k)), reached < 10 ? UNCH_W + LW - slant((reached + 9) / 2) : 0);

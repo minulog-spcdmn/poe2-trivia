@@ -179,15 +179,17 @@
     setMode(next);
     (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
   }
+  /** Delve together: a room of two or more online plays as a team. */
+  const together = $derived(!local && s.players.length > 1);
   // The deepest this browser has delved, alone or together (hot-seat is always alone).
   const records = loadRecords();
   const bestAlone = bestOf(records, true)?.depth ?? null;
   const bestTogether = bestOf(records, false)?.depth ?? null;
-  const deepest = $derived(s.players.length < 2 ? bestAlone : local ? null : bestTogether);
+  const deepest = $derived(together ? bestTogether : s.players.length < 2 ? bestAlone : null);
   // The last run of the same kind: the descent marks it with a red star.
   const lastAlone = lastOf(records, true)?.depth ?? null;
   const lastTogether = lastOf(records, false)?.depth ?? null;
-  const lastRun = $derived(s.players.length < 2 ? lastAlone : local ? null : lastTogether);
+  const lastRun = $derived(together ? lastTogether : s.players.length < 2 ? lastAlone : null);
   // The finds this browser's player has met, alone or together: the drawing of the descent marks where each first turns up.
   const met = [...findsMet()];
 
@@ -212,8 +214,6 @@
 
   /** Delve on one device is a run alone: together, it's played online (the engine refuses it too). */
   const delveCrowded = $derived(local && s.settings.mode === 'delve' && s.players.length > 1);
-  /** Delve together: a room of two or more online plays as a team. */
-  const together = $derived(!local && s.players.length > 1);
   const full = $derived(s.players.length >= MAX_PLAYERS);
   const alone = $derived(s.players.length < 2);
   /** Nobody new can come in: locked, or every seat taken. */
@@ -496,7 +496,7 @@
         <!-- On a desktop the descent takes the height the panel has spare, at its own width:
              the gap to the finds is only what its leader lines need. -->
         <div class="delve-slot" data-cursor="descent">
-          <DelveRules {deepest} last={lastRun} together={s.players.length >= 2} {met} />
+          <DelveRules {deepest} last={lastRun} {together} {met} />
         </div>
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
