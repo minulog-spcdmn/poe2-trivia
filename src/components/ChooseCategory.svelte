@@ -1086,9 +1086,12 @@
   }
   /* The stack fans out: the companions draw out from behind the emblem,
      staying in its shade, and in the window (as far as heapOf finds they
-     can); only the emblem grows and brightens, so it still leads. */
-  .card.mine:not(:global(.down)):hover .moon {
-    --far: var(--spread, 1);
+     can); only the emblem grows and brightens, so it still leads. Only on
+     the tall cards: the window it's worked out for isn't the rows'. */
+  @media (min-width: 701px) {
+    .card.mine:not(:global(.down)):hover .moon {
+      --far: var(--spread, 1);
+    }
   }
   .card.mine:not(:global(.down)):hover .moon .glyph {
     transform: none;
