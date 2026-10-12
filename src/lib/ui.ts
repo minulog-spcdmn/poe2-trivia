@@ -19,7 +19,7 @@ const ICON_ITEM: Record<string, string> = {
   Helmets: 'Horns of Bynden',
   'Gloves & Boots': 'Decree of Flight',
   Rings: "Ming's Heart",
-  'Amulets & Belts': 'Astramentis',
+  'Amulets & Belts': 'Mageblood',
   'Flasks, Charms, Jewels, Relics & Tablets': "Uhtred's Chalice",
 };
 // Each chosen item's size against the common one (lib/iconFit), and how far
@@ -46,7 +46,7 @@ const ICON_GROUP: Record<string, string> = {
   'Two-Handed Weapons': 'Bows',
   'Off-Hands': 'Quivers',
   'Gloves & Boots': 'Boots',
-  'Amulets & Belts': 'Amulets',
+  'Amulets & Belts': 'Belts',
   'Flasks, Charms, Jewels, Relics & Tablets': 'Flasks',
 };
 // A category that names several kinds of item ("Gloves & Boots") shows one
@@ -57,7 +57,7 @@ const ICON_GROUP: Record<string, string> = {
 // above, else the group's middle item.
 const COMPANIONS: Record<string, [group: string, name: string][]> = {
   'Gloves & Boots': [['Gloves', "Leopold's Applause"]],
-  'Amulets & Belts': [['Belts', 'Mageblood']],
+  'Amulets & Belts': [['Amulets', 'Astramentis']],
   'Flasks, Charms, Jewels, Relics & Tablets': [
     ['Charms', "Valako's Roar"],
     ['Jewels', 'Grand Spectrum'],

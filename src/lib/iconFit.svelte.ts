@@ -22,10 +22,10 @@ export type Fit = { iw: number; ih: number; x: number; y: number; w: number; h: 
  * pendant comes out smaller than a spindly bow of the same bounds), and the
  * most it may take of the window.
  */
-const WEIGHT = 108;
+export const WEIGHT = 108;
 const INK = 5200;
-const MAX_W = 120;
-const MAX_H = 118;
+export const MAX_W = 120;
+export const MAX_H = 118;
 /** Room round the visible part for the art's soft edges (pixels under half opaque). */
 export const PAD = 8;
 /** The clean mask's edge: pixels less opaque than this go, more opaque than that stay whole, those between ramp up. */

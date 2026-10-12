@@ -5,7 +5,7 @@
   import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
-  import { PAD, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
+  import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
@@ -306,15 +306,15 @@
   // the part that says its kind in view. MOONS sets how they lie together,
   // by eye for their shapes: the emblem's size and shift, and for each kind
   // (its group) its item's offset (right and down), size and tilt (degrees,
-  // clockwise), in px at a tall card's size. The heap as a whole is then
-  // drawn as one emblem would be: centred in the window and scaled to a
-  // single emblem's weight (see heapOf). A kind the data no longer has
-  // leaves its spot empty.
+  // clockwise), in px at a tall card's size, so that together they make
+  // one compact shape. The heap as a whole is then drawn as one emblem
+  // would be, centred and sized by the same rule (see heapOf). A kind the
+  // data no longer has leaves its spot empty.
   type Spot = [x: number, y: number, k: number, turn: number];
   type Moons = { k: number; up: number; left: number; at: Record<string, Spot> };
   const MOONS: Record<string, Moons> = {
-    'Gloves & Boots': { k: 1, up: 0, left: 0, at: { Gloves: [40, -26, 0.82, 0] } },
-    'Amulets & Belts': { k: 0.82, up: 0, left: 0, at: { Belts: [22, 34, 1.04, 0] } },
+    'Gloves & Boots': { k: 1, up: 0, left: 0, at: { Gloves: [18, -34, 0.85, 0] } },
+    'Amulets & Belts': { k: 1, up: 0, left: 0, at: { Amulets: [0, -44, 0.88, 0] } },
     'Flasks, Charms, Jewels, Relics & Tablets': {
       k: 1,
       up: 0,
@@ -328,15 +328,11 @@
     },
   };
   /**
-   * The heap's size, as a single emblem's (lib/iconFit: its visible part's
-   * typical size, and the most of the window it may take), a little larger
-   * as a heap has gaps a single item doesn't.
-   */
-  const HEAP = { weight: 118, w: 132, h: 126 };
-  /**
    * A category's heap, when it has companions to show, laid out as one
    * emblem: the box round all its items' visible parts (a tilted item's
-   * turned box) is centred in the window and scaled to HEAP. As set in
+   * turned box) is centred in the window and scaled to a single item's
+   * size and bounds (lib/iconFit), so it covers the window as much as the
+   * emblems beside it. As set in
    * MOONS until every item is measured.
    */
   function heapOf(cat: string): Moons | undefined {
@@ -367,7 +363,7 @@
     const y0 = Math.min(...items.map(([, y, , h]) => y - h / 2));
     const y1 = Math.max(...items.map(([, y, , h]) => y + h / 2));
     const [W, H, cx, cy] = [x1 - x0, y1 - y0, (x0 + x1) / 2, (y0 + y1) / 2];
-    const s = Math.min(HEAP.weight / Math.sqrt(W * H), HEAP.w / W, HEAP.h / H);
+    const s = Math.min(WEIGHT / Math.sqrt(W * H), MAX_W / W, MAX_H / H);
     const k = m.k * s;
     const [ex, ey] = emblemAt(ke, t.up + m.up, t.left + m.left);
     // The emblem's new centre, and the shift that puts it there at its new size.
