@@ -20,16 +20,23 @@
    question.
 2. **Every right answer pays.** A harder question answered right always earns
    a ward.
-3. **The danger grows with the haul.** What you stand to lose grows with each
-   strike, and you can see it.
+3. **One danger you can see, growing.** Not a number in the rules: something
+   on screen that runs out.
 4. **It reads at a glance.** Two cards where the game always deals three.
 5. **Co-op stays co-op.** The team votes on cards and answers together, as it
    does now.
 
+## The fantasy
+
+Azurite lies off the lit path, in the dark. To dig it you leave the light
+with only your lamp, and the seam can come down on you. Everything below
+serves that: going in, the lamp burning down, a choice to go deeper or get
+out, and what you lose if the rock comes down.
+
 ## The loop
 
 1. **Strike 1.** Pick the vein's card. Its question is in that card's
-   category, from further down, as now.
+   category, from further down, as now, and the **lamp is lit**.
 2. **A right strike** puts an Azurite Ward **in hand**. It glows over the
    cards but isn't in the pack yet, so it takes no loss.
 3. **Two cards.** Instead of the usual three, the game deals:
@@ -48,49 +55,72 @@ takes. Taking the way out, or a cave-in, takes the run one depth deeper, as
 after any question.
 
 **Room.** The vein card is dealt again only while the pack plus the haul has
-room for another ward. Otherwise the haul goes into the pack by itself.
+room for another ward. Otherwise the haul goes into the pack by itself. So
+a player who holds no wards can dig deepest, and one who holds two gets one
+strike: the vein gives most to whoever needs it.
 
-## Why it works
+## The lamp: the vein's own danger
 
-**Each further strike is a real decision.** With the haul at stake, digging
-on pays only when you are sure enough of the category on the card:
+The vein doesn't give each strike a fresh clock. **It has one lamp for the
+whole dig**, and the clock ring becomes its light:
+
+- **Lit at strike 1** with a share of the deeper depth's clock (start: 80%).
+- **It burns only while a question is open.** It holds still while you look
+  at the two cards: that choice is the heart of the vein and isn't rushed.
+- **Each right strike feeds it** a little ore light (start: half of the
+  next strike's deeper clock), so a quick answer carries time forward and a
+  slow one leaves you digging in the dark.
+- **Too little light to dig** (under FIND_MIN_TIMER, 4 s): the vein card
+  isn't dealt again, and the haul goes into the pack.
+- **Running out is a cave-in.** The lamp hitting 0 is the time-out.
+
+What this does:
+
+- **It answers "too easy" without taking the reward away.** Strike 1 runs on
+  less than a full clock at every depth, including deep down, where "further
+  down" has stopped meaning anything.
+- **The danger is something you watch.** The light left is on the vein card
+  when you choose, and it carries from strike to strike, so each choice
+  weighs two things: "do I know Belts?" and "do I have the light for it?"
+- **It rewards mastery.** Players who know an item at a glance dig deeper,
+  and those who have to think get out sooner. Nothing else in the game does
+  that.
+- **It doesn't copy the Flare Cache.** The flare's clock is short for one
+  question. The lamp is a store of time across a dig that you spend and
+  feed.
+
+## Why the choice works
+
+With the haul at stake, digging on pays only when you are sure enough of the
+category on the card (a ward counted as a life):
 
 | Haul in hand | Dig on only if you are at least |
 |---|---|
 | 1 ward (before strike 2) | 75% sure |
 | 2 wards (before strike 3) | 80% sure |
 
-The category is random and shown on the card, so the answer depends on the
-card in front of you. That's the decision we want, and it is easy to feel
-without doing any maths: "do I know Belts that well?"
+Add the lamp and the bar rises with every second you've burnt. Players will
+feel the rule without doing any maths: "do I know Belts that well, with this
+little light?"
 
-**Greed costs, care pays.** Expected gain over an ordinary card, in lives:
+## Tuning
 
-| Player | Leave after strike 1 | Dig when sure enough | Always dig |
-|---|---|---|---|
-| Strong | +0.77 | +0.95 | +0.81 |
-| Good | +0.65 | +0.65 | +0.19 |
-| Shaky | +0.43 | +0.43 | −0.54 |
+The knobs: the lamp's starting share (0.8), the feed per right strike (0.5),
+each strike's `deeper` (+15, +20, +25), and the cave-in's losses (2).
 
-A strong player gets more out of a vein than now, while a greedy average
-player gets much less. The danger is real, but you choose it.
+The room bot's answer model can't settle them. Run against these rules, it
+puts today's vein at about even by shown depth 50 and a clear loss from 80
+on, because its answers are slower than real players' deep down. That
+disagrees with how the vein plays, so the bots are the wrong judge of a
+mechanic built on speed. Tune it on the beta instead:
 
-## The one open problem: strike 1
-
-Leaving after strike 1 is today's vein, and it is still too easy (+0.65 for
-a good player). Under pillar 2 the fix can't be to take the reward away. It
-has to be strike 1's question:
-
-- **Target:** leaving after strike 1 worth about +0.3 for a good player.
-  That means getting strike 1 right about 3 times in 4, against about 85%
-  now.
-- **Levers:**
-  - **Further down:** 25 depths further, not 15. This bites only above
-    about depth 85, where the curves run out.
-  - **A shorter clock:** a share of the deeper depth's clock. This works at
-    every depth, but it borrows from the Flare Cache's identity, so keep the
-    cut small.
-- **Tune with bot runs** (tests/delveFinds.test.ts style), not this table.
+- Build it with the knobs in one table (FINDS).
+- Have the codex keep each vein's strikes, the light left at each one and
+  what was buried, so runs on the beta show where players get out and where
+  they cave in.
+- Target: a cautious player who gets out after strike 1 succeeds about 3
+  times in 4; a second strike is a real coin toss for a good player; a third
+  is rare and remembered.
 
 ## Co-op
 
@@ -101,6 +131,7 @@ The same loop, with no new rules for the team:
 - **Answering:** everyone answers each strike. The first right answer clears
   it, and its ward goes into the team's haul, given to whoever got it right,
   or to a teammate with room when it is banked.
+- **The lamp** is the team's: it burns until the first right answer.
 - **Cave-in:** when nobody is right, the haul is buried. Each wrong pick costs
   the player who made it 2 losses, as a cave-in does now.
 
@@ -113,8 +144,10 @@ for the whole team.
 - **The two-card deal** is the moment: the hall's third card slot is dark
   rock. The vein card glows azurite blue, the way out burns with the warm
   light of the path.
-- **The haul** hangs over the cards as shards of light, one more each strike,
-  and it flickers more the deeper you are into the vein.
+- **The lamp** is the clock ring turned azurite: a light that stays lit
+  from strike to strike, flares as ore is fed to it, and gutters as it runs
+  low. When it gutters, the darkness closes in from the edges of the screen.
+- **The haul** hangs over the cards as shards of light, one more each strike.
 - **Each strike** shakes the hall a little more, with the sound of a pick on
   stone and creaks and dust that grow with every strike.
 - **The way out** carries the haul into the pack with the ward sound: a
@@ -141,9 +174,11 @@ Most of this fits the game as it is:
 - **This avoids the problems an extra choice on the reveal would bring.**
   The existing vote, the reload snapshot and dealing all apply as they are,
   and the reveal's auto move-on never decides for the player.
-- **New state:** `Question.strike`; the haul in hand on the DelveState,
-  saved with the game and kept through a host reload; and the way-out card as
-  a pseudo-category.
+- **New state:** `Question.strike`; the haul in hand and the lamp's light
+  left on the DelveState, saved with the game and kept through a host
+  reload; and the way-out card as a pseudo-category. A strike's clock is the
+  light left, set in the state when it is asked, so guests read it rather
+  than work it out.
 - **The strike number** has to reach every function keyed on (find, depth):
   the rules, the clock, the veil, the guests' timer and the bot.
 - **Counters that assume one question per depth** must count the vein once:
