@@ -109,22 +109,31 @@ if (typeof window !== 'undefined') {
 
 const MOVING = /transform|translate|scale|rotate/;
 
-/** Whether an animation moves its target (cached: an animation's keyframes don't change). */
+/**
+ * Whether an animation moves its target (cached: an animation's keyframes
+ * don't change, and a CSS animation's are those of its name: the rune
+ * circle starts some six hundred of the same few every question).
+ */
 const movesCache = new WeakMap<Animation, boolean>();
+const namedMoves = new Map<string, boolean>();
 function moves(anim: Animation, effect: KeyframeEffect): boolean {
   let m = movesCache.get(anim);
   if (m === undefined) {
     if (anim instanceof CSSTransition) m = MOVING.test(anim.transitionProperty);
-    else {
-      try {
-        m = effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)));
-      } catch {
-        m = true;
-      }
-    }
+    else if (anim instanceof CSSAnimation) {
+      m = namedMoves.get(anim.animationName);
+      if (m === undefined) namedMoves.set(anim.animationName, (m = keyframesMove(effect)));
+    } else m = keyframesMove(effect);
     movesCache.set(anim, m);
   }
   return m;
+}
+function keyframesMove(effect: KeyframeEffect): boolean {
+  try {
+    return effect.getKeyframes().some((k) => Object.keys(k).some((p) => MOVING.test(p)));
+  } catch {
+    return true;
+  }
 }
 
 /**

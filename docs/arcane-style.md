@@ -106,6 +106,15 @@ It plays every time the circle mounts (every question), so the shape has to read
 - A broken line (pieces between nicks, holes and underpasses) must not draw each piece from its own start, or it looks like scattered dashes. The browser restarts the dash at every subpath, so give each piece its own `<path>` with a delay and duration taken from where it sits along the whole. The pen then sweeps once, eased (fast start, slow end), and runs on across the gaps (`stroke()` in the component).
 - Symbols fade in 0.3 s after their lines.
 
+### Keeping it light
+
+The circle mounts with every question and some six hundred lines draw in, so how it is built matters as much as how it looks:
+
+- **Built once.** The geometry and the markup are made once per page load (`<script module>`), as strings, and each circle puts them on the page with `{@html}`; six hundred Svelte elements, each with its own styles to set, took tens of ms to mount.
+- **Still once drawn.** When a layer's last line is drawn, its pieces give way to a still copy: the same lines merged into one path per weight (`main`, `thin`, `hair`, `hatch`, `sign`), with the seals' and the script's transforms worked into the path data, and no animation on any of them. It looks the same; but a finished animation keeps holding its last frame, so every piece would otherwise be styled again whenever the circle's colour changes (the reveal), and listed by every `document.getAnimations()` for as long as the question is up.
+- **Colour changes at once.** The strokes all take `currentColor`; easing it restyles and repaints every stroke in every frame of the change. The reveal's flare covers the jump.
+- A new piece that draws in should do the same: its pieces as markup made once, swapped for a merged still copy when drawn.
+
 ### State changes
 
 - **Right answer**: a flare at the centre and a ring of light running out over the circle (scale 0.2 to 1.15, fading); the colour warms to pale gold; the pupil widens (scale 1.3).
