@@ -173,7 +173,8 @@ vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float da
   float oreF = smoothstep(0.38, 0.7, fbm(qf * 1.7 + vec2(-2.6, 7.1)));
   float runF = 0.65 + 0.35 * sin(tm * 0.3 - 1.3 * (xf.x + 0.5 * xf.y));
   // (Wider and softer than the near seams, as if out of focus.)
-  float faceF = 0.4 + 0.6 * ef.z;
+  // (Each face's own light fades out toward its seams, so no edge shows where two faces meet.)
+  float faceF = (0.4 + 0.6 * ef.z) * smoothstep(0.0, 0.25, ef.x);
   col += (deep * (0.24 * (1.0 - smoothstep(0.0, 0.34, ef.x)) + 0.05 * faceF * smoothstep(-0.6, 1.0, ef.w)) +
     azure * (0.16 * runF * (1.0 - smoothstep(0.0, 0.11, ef.x)))) * (oreF * lit);
   // The near seams: straight cracks between crystal faces, the faces drawn
@@ -187,8 +188,10 @@ vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float da
   float face = e.z;
   // The faces: each catches a little of the light, brighter toward the
   // side it comes from, and a glint crosses each one slowly, on its own beat.
-  float catchL = (0.35 + 0.65 * face) * smoothstep(-0.6, 1.0, e.w);
-  float glint = exp(-pow(e.w - 0.9 * sin(tm * 0.11 + 6.283 * face), 2.0) / 0.05);
+  // (Faded out toward the seams, as deeper in.)
+  float inner = smoothstep(0.0, 0.14, e.x);
+  float catchL = (0.35 + 0.65 * face) * smoothstep(-0.6, 1.0, e.w) * inner;
+  float glint = exp(-pow(e.w - 0.9 * sin(tm * 0.11 + 6.283 * face), 2.0) / 0.05) * inner;
   col += mix(azure, pale, 0.25 * glint) * ((0.075 * catchL + 0.05 * glint * face) * ore * lit);
   // The seams swell and pinch along their length, as ore does.
   float swell = 0.7 + 0.6 * vnoise(x * 1.3 + 9.0);
@@ -198,7 +201,8 @@ vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float da
   // Crystals where three faces meet, each breathing over many seconds, with a soft bloom round it.
   float node = (1.0 - smoothstep(0.0, 0.16, e.y)) * seam;
   float bloom = 1.0 - smoothstep(0.0, 0.34, e.y);
-  float breathe = 0.7 + 0.3 * sin(tm * 0.35 + 6.283 * nhash(floor(x)));
+  // (Its beat from slow noise, not from the grid's squares, whose edges would cut through the bloom.)
+  float breathe = 0.7 + 0.3 * sin(tm * 0.35 + 12.566 * vnoise(x * 0.6 + 3.0));
   // The light moving along the seams, slowly.
   float run = 0.6 + 0.4 * sin(tm * 0.45 - 1.7 * (x.x + 0.6 * x.y));
   vec3 add = azure * (0.14 * halo * halo + 0.16 * body * swell) + pale * (0.55 * seam * run) +
