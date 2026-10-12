@@ -19,7 +19,7 @@ const ICON_ITEM: Record<string, string> = {
   Helmets: 'Horns of Bynden',
   'Gloves & Boots': 'Decree of Flight',
   Rings: "Ming's Heart",
-  'Amulets & Belts': 'Astramentis',
+  'Amulets & Belts': 'Mageblood',
   'Flasks, Charms, Jewels, Relics & Tablets': "Uhtred's Chalice",
 };
 // Each chosen item's size against the common one (lib/iconFit), and how far
@@ -46,8 +46,24 @@ const ICON_GROUP: Record<string, string> = {
   'Two-Handed Weapons': 'Bows',
   'Off-Hands': 'Quivers',
   'Gloves & Boots': 'Boots',
-  'Amulets & Belts': 'Amulets',
+  'Amulets & Belts': 'Belts',
   'Flasks, Charms, Jewels, Relics & Tablets': 'Flasks',
+};
+// A category that names several kinds of item ("Gloves & Boots") shows one
+// of each: its emblem (ICON_ITEM) in front, and an item of each other kind
+// named behind it, so the card says at a glance what it holds. Each is
+// picked for an outline that says its kind even when small and partly
+// hidden (ChooseCategory places each kind by eye for its item). By name as
+// above, else the group's middle item.
+const COMPANIONS: Record<string, [group: string, name: string][]> = {
+  'Gloves & Boots': [['Gloves', "Leopold's Applause"]],
+  'Amulets & Belts': [['Amulets', 'Astramentis']],
+  'Flasks, Charms, Jewels, Relics & Tablets': [
+    ['Charms', "Valako's Roar"],
+    ['Jewels', 'Grand Spectrum'],
+    ['Relics', 'The Desperate Alliance'],
+    ['Tablets', 'Freedom of Faith'],
+  ],
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
 // Oisín's Oath (public/icons/, background removed with rembg, given the same
@@ -57,6 +73,8 @@ const GEM_ICON = new URL(`${import.meta.env.BASE_URL}icons/lineage-gems.webp`, d
 const icons = new Map<string, string>();
 /** The same, as 128 px copies (itemThumb), for small glyphs. */
 const glyphs = new Map<string, string>();
+/** The other kinds' icons for a category that names several (see COMPANIONS). */
+const companions = new Map<string, Companion[]>();
 for (const cat of engine.categories) {
   const list = engine.byCategory.get(cat)!;
   if (list[0].kind === 'gem') {
@@ -72,6 +90,12 @@ for (const cat of engine.categories) {
   const id = (named ?? pool[Math.floor(pool.length / 2)]).id;
   icons.set(cat, new URL(itemImage(id), document.baseURI).href);
   glyphs.set(cat, new URL(itemThumb(id, 128), document.baseURI).href);
+  const others = (COMPANIONS[cat] ?? []).flatMap(([group, name]) => {
+    const pool = list.filter((it) => it.group === group);
+    const it = pool.find((it) => it.name === name) ?? pool[Math.floor(pool.length / 2)];
+    return it ? [{ kind: group, url: new URL(itemImage(it.id), document.baseURI).href }] : [];
+  });
+  if (others.length) companions.set(cat, others);
 }
 
 /** Absolute URL, safe to use inside CSS custom properties. */
@@ -84,7 +108,15 @@ export function categoryGlyph(category: string) {
   return glyphs.get(category)!;
 }
 
-/** Every category's icon (to measure them all ahead of the deal). */
+/** An item of another kind a category names, shown behind its icon: the kind (its group) and the item's icon, absolute as categoryIcon. */
+export type Companion = { kind: string; url: string };
+
+/** The items a category shows behind its own icon, one for each other kind of item it names (none for most). */
+export function categoryCompanions(category: string): readonly Companion[] {
+  return companions.get(category) ?? [];
+}
+
+/** Every category's icon (to measure them all ahead of the deal; their companions are measured as their card is dealt). */
 export function categoryIcons() {
   return [...icons.values()];
 }
