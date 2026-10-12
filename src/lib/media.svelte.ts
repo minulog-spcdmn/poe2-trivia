@@ -227,7 +227,8 @@ export interface CutVeil {
  * at the latest, the rest after. The patches are cut in art pixels (a copy
  * of the picture scaled down to them), so their shapes, seams and areas are
  * what they always were; each patch's own picture is then taken from the
- * full-resolution canvas, scale × scale pixels for each of its own.
+ * full-resolution canvas, scale × scale pixels for each of its own (and of
+ * its ring, its outline smoothed through it: patchCoverage).
  */
 async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): Promise<CutVeil> {
   const W = Math.round(canvas.width / S);
@@ -243,7 +244,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
   const FW = canvas.width;
   const cut = cutPatches(pixels, W, H, v.size, v.seed);
-  const lit = litMask(pixels, W, H);
+  const lit = litMask(cut, W, H);
   const order = spreadOrder(cut, v.seed);
   const areas = order.map((i) => cut[i].area);
   const schedule = veilSchedule(areas, plan);

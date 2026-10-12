@@ -17,8 +17,10 @@ export const FINALE_MS = 400;
 
 /**
  * At most how many pixels per art pixel the veil's effects are drawn with
- * (here and in frontier.ts): about the most a screen shows the art at (1.8
- * times its size, times the stage's zoom of up to 2.2, or a dense screen's).
+ * (here and in frontier.ts): about what the largest screens show the art at
+ * (1.8 times its size, times the stage's zoom of up to 2.2). A dense screen
+ * on top of that (a large Retina one: about 5) gets a little less than its
+ * own, as every pixel costs work on each frame.
  */
 export const FX_SCALE = 4;
 
@@ -313,10 +315,13 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     if (stopped) return;
     // Screen resolution (the canvas's own px times the stage's zoom, lib/stage.ts,
     // times the screen's density), up to FX_SCALE: every pixel costs work on
-    // each frame. Its size in art pixels places the burn.
+    // each frame. The quick ones at the reveal (many at once, for a moment)
+    // keep to the picture's own, as does a canvas not laid out yet. Its size
+    // in art pixels places the burn.
     const aw = params.w;
     const ah = params.h;
-    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), aw * FX_SCALE)));
+    const screen = canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1);
+    W = Math.max(1, Math.round(screen && !params.quick ? Math.min(screen, aw * FX_SCALE) : Math.min(screen || Infinity, img.naturalWidth)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
