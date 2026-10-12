@@ -34,7 +34,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -145,6 +145,10 @@
   const theirs = $derived(!race && !coop && !session.myTurn && !reveal);
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
+  /** What Next leads to. Delve: the end once nobody stands, a depth deeper after a clear, and another question at the same depth after a miss. */
+  const nextLabel = $derived(
+    race ? 'Next question' : !s.delve ? 'Next turn' : !standingIds(s).length ? 'Results' : reveal?.correct ? 'Delve deeper' : 'Next question',
+  );
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   /** Turns and race: you (or whoever answered) got it. Delve together: the team cleared the depth. */
@@ -252,7 +256,7 @@
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (your own;
   // together while you still have an answer to give) can blast it away for a
-  // new one at the same depth, twice a depth at most: its button (Detonate)
+  // new one at the same depth, twice per set of cards at most: its button (Detonate)
   // takes the place Next has after an answer. Once this question has dynamite
   // at hand its place is kept until the question ends, the button only
   // showing while it can be used, so nothing moves as it comes and goes. When
@@ -320,7 +324,7 @@
       blastProblem(s, session.mode === 'local' ? null : me) === null,
   );
   /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
-  // (Not when this depth has no blast left: on phones the place is a docked bar, which would hold nothing.)
+  // (Not when this offer has no blast left: on phones the place is a docked bar, which would hold nothing.)
   const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine && blastsLeft(s) > 0;
   // Taken from the first frame when it applies already, so the row never pops in under the answers.
   let blastSlot = $state(untrack(slotWanted));
@@ -998,7 +1002,7 @@
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
         onclick={next}
       >
-        {race ? 'Next question' : coop ? 'Next depth' : 'Next turn'}
+        {nextLabel}
         {#if session.mode !== 'local'}
           <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}

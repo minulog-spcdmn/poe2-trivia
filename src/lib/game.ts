@@ -487,7 +487,7 @@ export interface Delve {
   teamStreak?: number;
   /** Co-op: the longest `teamStreak` this run (missing for none). */
   bestTeamStreak?: number;
-  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone at the next depth. */
+  /** Co-op: someone answered wrong on this offer (the question picked, or one a blast drew from it); gone with the next offer, at this depth or the next. */
   missedHere?: true;
   /**
    * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
@@ -552,7 +552,7 @@ export interface Player {
  * turns: players take turns choosing a category and answering.
  * race: everyone answers the same question; first correct answer scores,
  * wrong answers cost a point and lock that player out of the question.
- * delve: three lives and no settings, one depth deeper each question (see
+ * delve: three lives and no settings, one depth deeper each question cleared (see
  * delve.ts). Alone, a player's own turns; together (online), co-op: the team
  * votes for a card and answers one question, and nobody wins.
  */
@@ -1061,7 +1061,7 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
  * going or loses it. Race: the winner's goes on and everyone else's breaks,
  * whether they guessed wrong or just weren't first. Delve co-op: whoever
  * cleared the depth keeps theirs going; a loss already broke anyone's it hit.
- * The team's goes on with a depth cleared with nobody missing on it.
+ * The team's goes on with a question cleared with nobody missing on its offer.
  */
 function countStreaks(s: GameState, r: Reveal) {
   if (s.delve && isGroupRun(s)) {
@@ -1408,7 +1408,7 @@ export class Engine {
           flareDue = false;
         }
         // With no flare to burn, a stick of dynamite goes off by itself in
-        // place of the time-out, if the depth has a blast left (its fuse
+        // place of the time-out, if the offer has a blast left (its fuse
         // has hissed over the clock's last DELVE_FUSE_MS on every screen:
         // delve.ts fuseLeft): as the host's time-out comes (0 and the
         // allowance for answers in flight), or as a player's answer later
@@ -1630,7 +1630,7 @@ export class Engine {
               else delete packs[p.id];
               if (Object.hasOwn(snap.streaks, p.id)) p.streak = snap.streaks[p.id];
             }
-            // Nobody has missed at this depth, as at the pick (the team's streak only moves at a reveal).
+            // Nobody has missed on this offer, as at the pick (the team's streak only moves at a reveal).
             delete dm.missedHere;
             // Back on their feet, those cut off among them get the grace too.
             dm.excused = cutOff();
@@ -1961,16 +1961,17 @@ export class Engine {
    * finds' slices at this depth (delve.ts findChance), and, if that found
    * one, a second for another kind on another card, at SECOND_FIND of its
    * chance. Never more than two. On a find's own first depth (delve.ts
-   * firstFindAt) the first is that find, certain. A find whose item the
+   * firstFindAt) the depth's first offer (`fresh`) holds that find, certain;
+   * one after a miss there rolls as any other. A find whose item the
    * player on turn (co-op: anyone standing, as anyone may answer it) can't
    * carry any more of is never offered: its slice finds nothing, so the
    * others' chances stay the depth's.
    */
-  private rollFinds(s: GameState, takers: string[]): CardFind[] {
+  private rollFinds(s: GameState, takers: string[], fresh: boolean): CardFind[] {
     if (!s.delve || !takers.length || !s.offered.length) return [];
     const room = (item: ItemKind) => takers.some((id) => hasRoom(inventoryOf(s, id), item));
     const chances = (share: number, but?: FindKind) => FINDS.filter((f) => f.kind !== but).map((f) => ({ ...f, chance: findChance(f.kind, s.round) * share }));
-    const certain = FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item));
+    const certain = fresh ? FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item)) : undefined;
     const first = certain ? { category: sample(s.offered, 1, this.rng)[0], kind: certain.kind } : this.rollFind(chances(1), room, s.offered);
     if (!first) return [];
     const second = this.rollFind(
@@ -1994,11 +1995,12 @@ export class Engine {
   }
 
   /**
-   * Alone: moves on to the player's next turn, one depth deeper (the seat
-   * after `from` with lives left; one player, so their own), or ends the run
-   * with their last life: the depth is the result, nobody wins.
+   * Alone: moves on to the player's next turn (the seat after `from` with
+   * lives left; one player, so their own), one depth deeper if the question
+   * was `cleared` and at the same depth if not, or ends the run with their
+   * last life: the depth is the result, nobody wins.
    */
-  private advanceDelve(s: GameState, from: number) {
+  private advanceDelve(s: GameState, from: number, cleared: boolean) {
     const n = s.players.length;
     let next = from;
     let wrapped = false;
@@ -2018,9 +2020,10 @@ export class Engine {
       this.finish(s, []);
       return;
     }
-    if (wrapped) s.round++;
+    const deeper = wrapped && cleared;
+    if (deeper) s.round++;
     s.turn = next;
-    this.beginTurn(s, false, wrapped);
+    this.beginTurn(s, false, deeper);
   }
 
   // ---- delve co-op --------------------------------------------------------
@@ -2092,7 +2095,7 @@ export class Engine {
         return;
       }
       // With no flare to burn, a stick of dynamite goes off by itself, from
-      // a random standing holder's pack, if the depth has a blast left (its
+      // a random standing holder's pack, if the offer has a blast left (its
       // fuse has hissed over the clock's last seconds: delve.ts fuseLeft).
       // Nobody is hit, and the whole team gets the new question.
       if (fuseDue(s)) {
@@ -2204,14 +2207,18 @@ export class Engine {
     s.phase = 'reveal';
   }
 
-  /** Co-op: after a reveal, one depth deeper for whoever stands (a revived player too), or the end of the run. */
-  private advanceCoop(s: GameState) {
+  /**
+   * Co-op: after a reveal, a new offer for whoever stands (a revived player
+   * too), one depth deeper if the team `cleared` the question and at the
+   * same depth if not, or the end of the run.
+   */
+  private advanceCoop(s: GameState, cleared: boolean) {
     if (!standingIds(s).length) {
       this.finish(s, []);
       return;
     }
-    s.round++;
-    this.beginTurn(s, false, true);
+    if (cleared) s.round++;
+    this.beginTurn(s, false, cleared);
   }
 
   // ---- turns mode -------------------------------------------------------
@@ -2235,7 +2242,8 @@ export class Engine {
     // In a deathmatch nobody picks their favourite: one random category.
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
     if (s.delve) {
-      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
+      // The depth's first offer (a new depth's, or the run's), not one after a miss at it.
+      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [], first || deeper);
       delete s.delve.find;
       delete s.delve.asked;
       delete s.delve.missedHere;
@@ -2316,8 +2324,10 @@ export class Engine {
    */
   private advance(s: GameState, from = s.turn) {
     if (s.delve) {
-      if (isGroupRun(s)) this.advanceCoop(s);
-      else this.advanceDelve(s, from);
+      // Only a question cleared takes the run a depth deeper: after a miss (or a time-out) the next one is asked at the same depth.
+      const cleared = s.phase === 'reveal' && !!s.reveal?.correct;
+      if (isGroupRun(s)) this.advanceCoop(s, cleared);
+      else this.advanceDelve(s, from, cleared);
       return;
     }
     if (s.deathmatch) {

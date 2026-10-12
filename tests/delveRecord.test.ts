@@ -175,13 +175,13 @@ test('a player brought back can lose more than three lives: such runs are read b
   const back = parseRecords(serializeRecords(rec))!;
   assert.deepEqual(back, rec);
   assert.deepEqual(back.runs[0].losses, [3, 8, 8, 12, 20, 25, 30]);
-  // Still nothing that can't be: alone three at most, together two a depth at most, never deeper than the run.
+  // Still nothing that can't be: alone three at most, together no more than the team's lives (three each), never deeper than the run.
   const odd = parseRecords(
     JSON.stringify({
       v: 1,
       runs: [
         r({ id: 1, depth: 9, losses: [1, 2, 3, 9] }),
-        t({ id: 2, depth: 2, losses: [1, 1, 2, 2, 2] }),
+        t({ id: 2, depth: 2, losses: [1, 1, 1, 1, 1, 2, 2, 2, 2, 2] }),
         t({ id: 3, depth: 9, losses: [3, 12] }),
         t({ id: 4, depth: 9, losses: [3, 5], perished: [5, 7, 9], revived: 5 }),
       ],
@@ -196,6 +196,9 @@ test('a player brought back can lose more than three lives: such runs are read b
       [[3, 5], [], undefined],
     ],
   );
+  // A miss deals another question at the same depth: together, three lives there (brought back between) are read back.
+  const again = t({ id: 8, depth: 2, losses: [1, 1, 2, 2, 2], perished: [2, 2], revived: 1, given: 0 });
+  assert.deepEqual(parseRecords(serializeRecords(addRun(emptyRecords(), again).records))!.runs[0].losses, [1, 1, 2, 2, 2]);
 });
 
 test('group runs from before co-op are dropped as the records are read, solo kept', () => {

@@ -1,5 +1,6 @@
-// Delve: a game with no settings. Everyone has three lives and each round goes
-// one depth deeper, where the questions get harder, the timer shorter and the
+// Delve: a game with no settings. Everyone has three lives and each question
+// cleared goes one depth deeper (a miss is followed by another question at the
+// same depth), where the questions get harder, the timer shorter and the
 // lockout longer. The rules at a depth are the same in every run, so "depth N"
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
@@ -321,7 +322,8 @@ export const FIND_FADE_TO = 200;
  * others' chances. An offer that holds one rolls once more for a second find
  * on another card (see SECOND_FIND). Players see them in the order they
  * first turn up (FINDS_IN_ORDER). On its own first depth a find is certain
- * (firstFindAt): that offer always holds it, for a player with room for it.
+ * (firstFindAt): the depth's first offer always holds it, for a player with
+ * room for it (one after a miss there rolls as any other).
  *
  * They come one at a time. The Dynamite Cache comes first, from depth 11
  * (shown 10), and is the only find until the Azurite Vein comes, so it
@@ -792,7 +794,7 @@ export const holdersOf = (s: GameState, item: ItemKind) => standingIds(s).filter
  * Co-op: whether a flare or a stick of dynamite can go off on the question in
  * play, from the pack of whoever standing holds one: its clock runs, it is no
  * find's, someone here still has an answer to give (nobody else gains from
- * it), and for a flare none burnt on it yet, for dynamite the depth has a
+ * it), and for a flare none burnt on it yet, for dynamite the offer has a
  * blast left (blastsLeft). When it is due is the solo rule's.
  */
 export function teamItemReady(s: GameState, item: 'flares' | 'dynamite'): boolean {
@@ -825,7 +827,7 @@ export function unaskedCards(s: GameState): string[] {
   return s.offered.filter((c) => !asked.includes(c));
 }
 
-/** Blasts the depth in play has left: DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
+/** Blasts the offer in play has left (a fresh offer after a miss at the same depth has its own): DELVE_MAX_BLASTS less those made, never more than the cards not asked yet. */
 export function blastsLeft(s: GameState): number {
   if (!s.delve || s.phase !== 'question' || !s.question) return 0;
   const made = Math.max(0, askedCards(s).length - 1);
@@ -834,7 +836,7 @@ export function blastsLeft(s: GameState): number {
 
 /**
  * Why `by` can't blast the question in play away now, or null when they can
- * (the button shows only then): its clock runs, it is no find's, the depth
+ * (the button shows only then): its clock runs, it is no find's, the offer
  * has a blast left, and the stick is at hand. Alone: the player answering,
  * holding one. Together: a player standing who hasn't answered it yet and
  * holds one (it is spent from their own pack); a teammate's wrong answer
@@ -846,7 +848,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   if (!s.delve || s.phase !== 'question' || !q) return 'There is no open question.';
   if (q.deadline === null) return 'Not yet.';
   if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
-  if (blastsLeft(s) === 0) return 'No more blasts at this depth.';
+  if (blastsLeft(s) === 0) return 'No more blasts on these cards.';
   if (isGroupRun(s)) {
     if (by === null) return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
     if (!seated(s, by)) return 'You are not in this game.';
@@ -885,7 +887,7 @@ export function fuseDue(s: GameState): boolean {
  * will go off (fuseDue), from 1 to 0 as the clock hits 0, and stays at 0
  * until the time-out blasts the question away. Null while there is more
  * time than that on the clock, or when nothing would go off at this 0 (a
- * flare burns first, no stick at hand, no blast left at this depth, a
+ * flare burns first, no stick at hand, no blast left on the offer, a
  * find's question, or none open). It holds while the clock holds
  * (clockLeft).
  */

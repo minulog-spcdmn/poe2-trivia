@@ -229,13 +229,35 @@ test("going down into a new zone, the player's own pick well before the cards ar
   assert.equal(sceneOf(h.s, 'p0', 0).dealAt, undefined);
 });
 
+test('alone, only a question cleared goes a depth deeper: a miss is followed by a fresh offer at the same depth', () => {
+  const h = delve(['Ash']);
+  h.turn(true);
+  assert.equal(h.s.round, 2);
+  const turns = h.s.turnCount;
+  h.turn(false);
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(h.s.round, 2, 'still at the depth missed');
+  assert.equal(h.s.turnCount, turns + 1, 'a new turn all the same');
+  assert.deepEqual(h.s.delve!.losses.p0, [2]);
+  h.turn(true);
+  assert.equal(h.s.round, 3);
+  // A miss on a new zone's first depth plunges into it only once: the offer after it is dealt at once.
+  for (let d = 3; d < 11; d++) h.turn(true);
+  assert.equal(h.s.round, 11);
+  h.clock.now = h.s.delve!.dealAt!;
+  h.turn(false);
+  assert.equal(h.s.round, 11);
+  assert.equal(h.s.delve!.dealAt, undefined);
+});
+
 test('alone, the run ends with the third life, at the depth where it went', () => {
   const h = delve(['Ash'], { host: null });
   h.playOut({ p0: [true, false, true, false, true, true, false] });
   assert.deepEqual(h.s.winners, []);
-  assert.equal(fellAt(h.s, 'p0'), 7);
-  assert.equal(h.s.round, 7);
-  assert.deepEqual(h.s.delve!.losses.p0, [2, 4, 7]);
+  // Only the right answers go deeper: five of them, the misses each at the depth after the last one.
+  assert.equal(fellAt(h.s, 'p0'), 5);
+  assert.equal(h.s.round, 5);
+  assert.deepEqual(h.s.delve!.losses.p0, [2, 3, 5]);
 });
 
 test('no deathmatch and no target: a run only ends when the lives do', () => {

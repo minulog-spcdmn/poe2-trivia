@@ -239,7 +239,7 @@
     <div class="empty">
       <p>You have not delved yet.</p>
       <p class="muted">
-        Three lives, one depth deeper every round, and the same rules for everyone. Your runs, the zones you reach and the items that cost you lives are
+        Three lives, one depth deeper for every question cleared, and the same rules for everyone. Your runs, the zones you reach and the items that cost you lives are
         written here.
       </p>
       <button class="btn primary" onclick={onbegin}>Begin the descent</button>
