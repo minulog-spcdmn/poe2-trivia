@@ -906,8 +906,6 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
 
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
-/** The backdrop draws at most this often (ms): every frame up to 80Hz, every other one above (see frame()). */
-const MIN_FRAME_MS = 1000 / 80;
 
 let delveWanted = false;
 let delveReadyNow = false;
@@ -1530,12 +1528,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       caughtUp();
       return;
     }
-    // Never more often than about 80 times a second: a 120 or 144Hz screen
-    // would draw this full-screen pass (and measure the UI for it) two or
-    // three times as often as a 60Hz one, for nothing the eye can follow,
-    // and with the effects overlay drawing over it, a big moment's frames
-    // would come late.
-    if (now - lastStep < MIN_FRAME_MS) return;
     // (A frame's time can come before the last one's; it never runs backwards here.)
     const dt = Math.max(0, Math.min(0.1, (now - lastStep) / 1000));
     const still = calm();
