@@ -14,11 +14,20 @@ import { IN, times, type FamilyMotion } from './family';
 
 export const fume: FamilyMotion = {
   enter(c) {
-    // The fog, soft from the first (a gradient, blurred once), only moved and faded.
+    // The fog, soft from the first, only moved and faded: the zone's colour,
+    // shaped by a mask that falls off smoothly (as a blur would) to nothing at
+    // its edge. So faint a glow over so much of the screen bands in 8 bits, so
+    // the mask carries the dither too (app.css, --dither): it stirs the fog's
+    // opacity a little, a different amount each pixel, and the bands dissolve
+    // (a blur would average it away).
     const fog = document.createElement('span');
     fog.className = 'fog';
-    fog.style.cssText =
-      'position:absolute;inset:-0.6em -1.2em;border-radius:50%;pointer-events:none;background:radial-gradient(closest-side, color-mix(in srgb, var(--accent) 34%, transparent), transparent);filter:blur(14px);opacity:0';
+    fog.style.cssText = [
+      'position:absolute;inset:-0.6em -1.2em;pointer-events:none;opacity:0',
+      'background:color-mix(in srgb, var(--accent) 34%, transparent)',
+      'mask-image:radial-gradient(closest-side, #000, rgb(0 0 0 / 0.86) 20%, rgb(0 0 0 / 0.55) 40%, rgb(0 0 0 / 0.26) 60%, rgb(0 0 0 / 0.08) 80%, transparent),var(--dither)',
+      'mask-size:100% 100%,auto;mask-repeat:no-repeat,repeat;mask-composite:add;image-rendering:pixelated',
+    ].join(';');
     c.word.prepend(fog);
     c.play(fog, [{ opacity: 0, transform: 'scale(0.7, 0.5)' }, { opacity: 0.8, transform: 'scale(1)' }], { at: (c.tl.starts[0] ?? 1700) - 300, ms: 900, easing: 'ease-out' });
     c.play(fog, [{ translate: '0 0', opacity: 0.8 }, { translate: '0.3em -0.08em', opacity: 0.6 }, { translate: '-0.2em 0.05em', opacity: 0.75 }], {
