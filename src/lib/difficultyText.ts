@@ -329,13 +329,15 @@ export function coopRevealText(r: {
   buried?: number;
   /** A vein's ward dug out: the wards now in the team's hand. */
   inHand?: number;
+  /** The dig ended with that ward: the wards of its haul going into the pack now. */
+  banked?: number;
 }): string[] {
   const { nameOf, me } = r;
   const hits = r.hits.filter((h) => r.left(h.playerId) !== null);
   const left = (id: string) => r.left(id) ?? 0;
   const list = (ids: string[]) => namesOf(ids, nameOf, me);
   const out: string[] = [];
-  if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me) + (r.inHand ? ` ${inHandText(r.inHand)}` : ''));
+  if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me) + (r.banked ? ` ${bankedText(r.banked)}` : r.inHand ? ` ${inHandText(r.inHand)}` : ''));
   else out.push(r.timedOut ? "Time's up; nobody found it." : 'Every answer was wrong.');
   if (r.buried) out.push(buriedText(r.buried, 'the team'));
   const wrong = hits.filter((h) => !h.timedOut).map((h) => h.playerId);
@@ -396,6 +398,9 @@ export function digNote(next: number, light: number, haul: number, team = false)
 
 /** After a right strike: what is in hand ("Two wards in hand."). */
 export const inHandText = (n: number) => `${cap(wardsWord(n))} in hand.`;
+
+/** A dig's haul going into the pack as it ends: "It goes into the pack." or "All three go into the pack." */
+export const bankedText = (n: number) => (n === 1 ? 'It goes into the pack.' : `All ${words(n)} go into the pack.`);
 
 /** A cave-in's haul: "The ward you dug out is buried." */
 export function buriedText(n: number, whose = 'you'): string {

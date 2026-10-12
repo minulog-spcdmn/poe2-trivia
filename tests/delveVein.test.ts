@@ -265,10 +265,10 @@ test('the lamp: a quick answer carries its light on; down to a second left the d
   const id = h.id();
   h.vein();
   h.answer(true, findTimer('azurite', 90) * 1000 - 600);
-  assert.ok(digOf(h.s)!.light < VEIN_MIN_LIGHT);
+  assert.deepEqual([digOf(h.s), h.s.reveal!.banked], [null, 1]);
+  assert.deepEqual(inventoryOf(h.s, id), { ...NONE, wards: 1 });
   h.next();
   assert.equal(h.s.round, 91);
-  assert.deepEqual(inventoryOf(h.s, id), { ...NONE, wards: 1 });
   // With a second and a half left (less than any question's clock), the vein is dealt again, on that light.
   const g = run(1, 90);
   g.vein();

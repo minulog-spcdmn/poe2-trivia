@@ -35,7 +35,7 @@
   import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
-  import { blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
+  import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -184,7 +184,8 @@
     const got = reveal?.correct ? reveal.gained : undefined;
     if (!s.delve || !got) return null;
     const who = gainYou ? 'You' : gainName;
-    // A vein's ward is in hand until the way out (delve.ts, the dig).
+    // A vein's ward is in hand until the way out (delve.ts, the dig), or goes into the pack as the dig ends with it.
+    if (got === 'wards' && reveal?.banked) return { glyph: 'ward', text: `${who} dug out an Azurite Ward. ${bankedText(reveal.banked)}` };
     if (got === 'wards' && reveal?.dug) return { glyph: 'ward', text: `${who} dug out an Azurite Ward. ${inHandText(digOf(s)?.haul.length ?? 1)}` };
     if (got === 'wards') return { glyph: 'ward', text: `${who} dug out an Azurite Ward.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
@@ -768,8 +769,8 @@
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
-      // A vein's ward dug out: it rings like struck azurite, into the hand (the pack hears it at the way out).
-      if (r.dug && gainYou) setTimeout(() => sfx('findReward'), 600);
+      // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
+      // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
     });
   });
 
@@ -922,6 +923,7 @@
             gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
             buried: reveal.buried,
             inHand: reveal.dug ? (digOf(s)?.haul.length ?? 1) : undefined,
+            banked: reveal.banked,
           })}
           {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
           {#if gainLine}

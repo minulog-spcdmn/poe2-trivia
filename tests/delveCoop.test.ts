@@ -594,7 +594,8 @@ test('an Azurite Vein: the first right pick digs out a whole ward, however late,
   slow.clock.now = sq.deadline! - 500;
   slow.pickAs('p0', right(sq));
   assert.equal(slow.s.reveal!.gained, 'wards');
-  assert.equal(haulOf(slow.s, 'p0'), 1);
+  // Too little light left to dig on: the dig ends there, its ward into the pack at the reveal.
+  assert.deepEqual([slow.s.reveal!.banked, haulOf(slow.s, 'p0'), wardsOf(slow.s, 'p0')], [1, 0, 1]);
   const late = team(2, { depth: 20 });
   late.ask('azurite');
   late.timeOut();

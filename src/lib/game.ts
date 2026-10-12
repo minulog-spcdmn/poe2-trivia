@@ -799,6 +799,8 @@ export interface Reveal {
   strike?: number;
   /** Delve: the ward this strike earned (`gained`) went into the dig's haul, in hand, not into the pack. */
   dug?: true;
+  /** Delve: the dig ended with this strike (no further strike to be had), its whole haul going into the pack now: how many wards. */
+  banked?: number;
   /** Delve, on a cave-in: the wards in hand it buried. */
   buried?: number;
   /**
@@ -1457,7 +1459,7 @@ export class Engine {
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
-        let vein: Pick<Reveal, 'strike' | 'dug' | 'buried'> = {};
+        let vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> = {};
         if (s.delve && q.find === 'azurite') vein = { strike: q.strike ?? 1 };
         if (correct) {
           active.score += 1;
@@ -1467,6 +1469,8 @@ export class Engine {
               gained = 'wards';
               vein.dug = true;
             }
+            const banked = this.endDig(s);
+            if (banked) vein.banked = banked;
           } else {
             // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
             const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
@@ -2022,6 +2026,16 @@ export class Engine {
     return by;
   }
 
+  /**
+   * After a right strike: the dig over if it can't run on (VEIN_MAX_STRIKES
+   * struck, too little light, no room for another ward), its haul going into
+   * the pack at once, at this reveal, rather than when the run moves on.
+   * Says how many wards went in.
+   */
+  private endDig(s: GameState): number {
+    return digOf(s) && !digRunsOn(s) ? this.bankHaul(s) : 0;
+  }
+
   /** A miss on a vein: the dig is over, and its haul buried. Says how many wards it buried. */
   private caveInDig(s: GameState): number {
     const dig = digOf(s);
@@ -2261,6 +2275,7 @@ export class Engine {
     const struck = q.struck ?? [];
     let gained: ItemKind | undefined;
     let gainedBy: string | undefined;
+    let banked = 0;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
       if (p) p.score += 1;
@@ -2284,6 +2299,7 @@ export class Engine {
           gained = 'wards';
           gainedBy = by;
         }
+        banked = this.endDig(s);
       } else if (q.find) {
         const takers = [winner.id, ...standingIds(s).filter((id) => id !== winner.id)];
         for (const id of takers) {
@@ -2303,8 +2319,8 @@ export class Engine {
     ];
     // Nobody got it: the vein caves in on the whole haul.
     const buried = winner ? 0 : this.caveInDig(s);
-    const vein: Pick<Reveal, 'strike' | 'dug' | 'buried'> =
-      q.find === 'azurite' ? { strike: q.strike ?? 1, ...(gained ? { dug: true as const } : {}), ...(buried ? { buried } : {}) } : {};
+    const vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> =
+      q.find === 'azurite' ? { strike: q.strike ?? 1, ...(gained ? { dug: true as const } : {}), ...(buried ? { buried } : {}), ...(banked ? { banked } : {}) } : {};
     s.reveal = {
       correctId: q.itemId,
       chosenId: winner ? q.itemId : null,

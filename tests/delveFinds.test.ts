@@ -677,14 +677,9 @@ test('a right answer to a find earns its item at any speed', () => {
     h.answer(true);
     const item = findFor(kind).item;
     assert.equal(h.s.reveal!.gained, item);
-    // A vein's ward is dug out into the hand first; with the lamp all but burnt out, no light is
-    // left for another strike, so it goes into the pack by itself.
-    if (kind === 'azurite') {
-      assert.equal(h.s.reveal!.dug, true);
-      assert.deepEqual(inventoryOf(h.s, id), NONE);
-      h.act({ type: 'next' });
-      assert.equal(h.s.offered.includes(WAY_OUT), false);
-    }
+    // A vein's ward is dug out; with the lamp all but burnt out, no light is left for another
+    // strike, so the dig ends there and it goes into the pack at once.
+    if (kind === 'azurite') assert.deepEqual([h.s.reveal!.dug, h.s.reveal!.banked], [true, 1]);
     assert.deepEqual(inventoryOf(h.s, id), { ...NONE, [item]: 1 });
   }
 });
@@ -694,17 +689,17 @@ test('an Azurite Vein digs out a whole ward, fast or slow, up to three', () => {
     const h = found('azurite');
     const id = h.active().id;
     h.clock.now += late;
+    let prev = h.s;
     h.answer(true);
     assert.equal(h.s.reveal!.correct, true);
     assert.equal(h.s.reveal!.gained, 'wards');
-    assert.equal(haulOf(h.s, id), 1);
     assert.equal(livesOf(h.s, id), DELVE_LIVES);
-    let prev = h.s;
-    h.act({ type: 'next' });
-    // Fast, the lamp has light for another strike and the way out is dealt; slow, it hasn't, and
-    // the ward goes into the pack by itself.
-    assert.equal(h.s.offered.includes(WAY_OUT), late === 0);
+    // Fast, the ward is in hand and the lamp has light for another strike, so the way out is dealt;
+    // slow, it hasn't, and the ward goes into the pack at the reveal.
+    assert.equal(haulOf(h.s, id), late === 0 ? 1 : 0);
     if (late === 0) {
+      h.act({ type: 'next' });
+      assert.equal(h.s.offered.includes(WAY_OUT), true);
       prev = h.s;
       h.act({ type: 'pick', category: WAY_OUT });
     }
@@ -716,9 +711,9 @@ test('an Azurite Vein digs out a whole ward, fast or slow, up to three', () => {
   const third = found('azurite', { host: null, inv: { wards: 2 } });
   const id = third.active().id;
   third.answer(true);
-  assert.equal(third.s.reveal!.gained, 'wards');
-  third.act({ type: 'next' });
+  assert.deepEqual([third.s.reveal!.gained, third.s.reveal!.banked], ['wards', 1]);
   assert.deepEqual(inventoryOf(third.s, id), { ...NONE, wards: 3 });
+  third.act({ type: 'next' });
   assert.equal(third.s.delve!.dig, undefined);
   // An older save's shard is read as nothing.
   const odd = delve(['Ash']);
