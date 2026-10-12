@@ -35,6 +35,11 @@ import { shaking } from './fx/core';
 import { cornerPx } from './corner';
 import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
+import { frameEvent } from './fpsMeter';
+import { switchedOff } from './switchedOff';
+
+/** Beta: fills stay with the backdrop while their element moves or the page scrolls (see measureShadows). */
+const keepFills = switchedOff('handover');
 
 export type Fill = 'linear' | 'stage';
 /**
@@ -138,6 +143,23 @@ function movesNow(el: Element): boolean {
     if (effect?.target === el && moves(anim, effect)) return true;
   }
   return false;
+}
+
+/** An element as the frame meter names it: its tag and first class. */
+function nameOf(el: Element) {
+  return `${el.tagName.toLowerCase()}${el.classList[0] ? '.' + el.classList[0] : ''}`;
+}
+
+/** What moves `node` now: it or the nearest ancestor with a running animation that moves it (for the frame meter). */
+function movingWho(node: Element): string {
+  for (let el: Element | null = node; el; el = el.parentElement) {
+    for (const anim of el.getAnimations()) {
+      if (anim.playState !== 'running') continue;
+      const effect = anim.effect as KeyframeEffect | null;
+      if (effect?.target === el && moves(anim, effect)) return nameOf(el) + (el === node ? '' : ` (round ${nameOf(node)})`);
+    }
+  }
+  return nameOf(node);
 }
 
 function paintsBackground(cs: CSSStyleDeclaration) {
@@ -281,7 +303,11 @@ export function measureShadows(
   nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
   const chosen = new Set([...withFill, ...nodes.filter((n) => !shadowed.get(n)?.fill)].slice(0, max));
-  for (const n of shadowed.keys()) if (!chosen.has(n)) release(n);
+  for (const n of shadowed.keys())
+    if (!chosen.has(n)) {
+      if (n.hasAttribute('data-bs-on') || n.hasAttribute('data-bs-fill')) frameEvent(`backdrop: ${nameOf(n)} to CSS (more than the ${max} it can draw)`);
+      release(n);
+    }
 
   const filled = new Set<Element>();
   let n = 0;
@@ -319,7 +345,9 @@ export function measureShadows(
     ok &&= opacity > 0;
 
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
-    if (ok && flat && fillKind && !scrolling && !shook && !isMoving(node)) {
+    // Why a fill goes back to CSS now (named in the beta's frame meter).
+    const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : isMoving(node) ? `${movingWho(node)} moving` : '';
+    if (ok && fillKind && !toCss) {
       const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
       const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
       const angle = parseFloat(cs.getPropertyValue('--bs-fill-angle')) || 180;
@@ -330,8 +358,11 @@ export function measureShadows(
       }
       if (clear) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a: a!, b: b! };
     }
+    const had = node.hasAttribute('data-bs-fill');
+    if (had !== !!fill) frameEvent(`backdrop: ${nameOf(node)}'s fill ${fill ? 'back from CSS' : `to CSS (${toCss || 'covered or gone'})`}`);
 
     if (!ok || (!soft.length && !fill)) {
+      if (!ok && node.hasAttribute('data-bs-on')) frameEvent(`backdrop: ${nameOf(node)}'s shadows to CSS (${opacity > 0 ? 'off screen or unmeasurable' : 'hidden'})`);
       release(node);
       continue;
     }

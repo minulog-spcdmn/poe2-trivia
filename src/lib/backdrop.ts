@@ -1463,8 +1463,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
         // A colour easing is paced; one coming or going (a fill's kind, a shadow's alpha from or to 0) is a handover.
         const handover = !colour || (arr === el.c ? i % 4 === 0 : arr === el.col ? i % 4 === 3 && (prev[k] === 0 || arr[i] === 0) : false);
         prev[k] = arr[i];
-        // (Named in the beta's frame meter: an element's shadows or fill coming or going, which CSS then paints or stops painting.)
-        if ((colour && handover) || (arr === el.b && i % 4 === 3)) frameEvent('backdrop: a shadow or fill handed between it and CSS');
         if (handover) changed = 'now';
         else changed ||= 'paced';
       }
