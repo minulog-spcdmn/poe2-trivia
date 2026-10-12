@@ -63,23 +63,21 @@ export interface Stint {
 const SAVE_COPY = 'room-save';
 /** Beside it, when the host was last here (ALIVE), so a Delve clock held still by the crash stops then. */
 const ALIVE_COPY = 'room-alive';
-/** What the copy holds now (undefined: not looked at yet, so the first look sets it either way). */
-let lastCopy: string | null | undefined;
-let lastAlive: string | null | undefined;
+/** What each copy holds now, by its sessionStorage name (missing: not looked at yet, so the first look sets it either way). */
+const lastCopies = new Map<string, string | null>();
+
+/** Keeps `copy` (localStorage) in step with `key` in sessionStorage. */
+function mirror(key: string, copy: string) {
+  const value = readStored(key, 'session');
+  if (lastCopies.has(key) && lastCopies.get(key) === value) return;
+  lastCopies.set(key, value);
+  if (value) writeStored(copy, value);
+  else removeStored(copy);
+}
 
 export function keepSaveCopy() {
-  const save = readStored(SAVE, 'session');
-  if (save !== lastCopy) {
-    lastCopy = save;
-    if (save) writeStored(SAVE_COPY, save);
-    else removeStored(SAVE_COPY);
-  }
-  const alive = readStored(ALIVE, 'session');
-  if (alive !== lastAlive) {
-    lastAlive = alive;
-    if (alive) writeStored(ALIVE_COPY, alive);
-    else removeStored(ALIVE_COPY);
-  }
+  mirror(SAVE, SAVE_COPY);
+  mirror(ALIVE, ALIVE_COPY);
 }
 
 /** Lets go of the room's save and its copy (the room is gone, or can't be got back). */
@@ -87,8 +85,7 @@ export function dropSave() {
   removeStored(SAVE, 'session');
   removeStored(SAVE_COPY);
   removeStored(ALIVE_COPY);
-  lastCopy = undefined;
-  lastAlive = undefined;
+  lastCopies.clear();
 }
 
 function restoreSave() {

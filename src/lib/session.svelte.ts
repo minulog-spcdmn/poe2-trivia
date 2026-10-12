@@ -1818,8 +1818,11 @@ class Session {
   private noteClock(next: GameState) {
     const q = next.question;
     if (!next.delve || !q) return;
-    if (q.paused) this.clockSeen = null;
-    else if (q.deadline !== null && this.clockSeen?.qid !== q.askedAt) this.clockSeen = { qid: q.askedAt, at: performance.now() };
+    if (q.paused) {
+      this.clockSeen = null;
+      // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
+      if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
+    } else if (q.deadline !== null && this.clockSeen?.qid !== q.askedAt) this.clockSeen = { qid: q.askedAt, at: performance.now() };
   }
 
   /**

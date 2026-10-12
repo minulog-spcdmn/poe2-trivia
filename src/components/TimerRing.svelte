@@ -11,7 +11,8 @@
 
   /**
    * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
-   * the ring stays full. `warnFrom`: the seconds that tick and glow urgent.
+   * the ring stays full, or the host's reload holds it still at the time it
+   * had left (Question.paused). `warnFrom`: the seconds that tick and glow urgent.
    */
   let {
     deadline,
@@ -135,7 +136,10 @@
   // at once, before the flare's light has caught (the loop below holds it
   // while its streak flies).
   const delve = $derived(!!st?.delve);
-  const clocked = $derived(deadline !== null);
+  /** Delve: the time left on a clock the host's reload held still (null: none held). */
+  const pausedLeft = $derived(q?.paused?.left ?? null);
+  // A clock held still keeps the dark where it was, until it carries on.
+  const clocked = $derived(deadline !== null || pausedLeft !== null);
   let dark: Pressure | null = null;
   $effect(() => {
     if (!delve || !clocked || stopped) return;
@@ -175,7 +179,8 @@
 
   $effect(() => {
     if (deadline === null) {
-      remaining = span * 1000;
+      // Held still by the host's reload: the time it had left; not started yet: all of it.
+      remaining = pausedLeft ?? span * 1000;
       return;
     }
     const end = deadline;
