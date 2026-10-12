@@ -510,9 +510,12 @@
     pointer-events: none;
     opacity: 0.22;
     color: #d9a45a;
-    transition:
-      opacity 0.8s,
-      color 0.8s;
+    /* Only the opacity eases (on the compositor). The colour changes at
+       once: every stroke of the circle takes it (currentColor), and easing
+       it restyled and repainted each of those hundreds of strokes every
+       frame for most of a second, right as a reveal's effects began, which
+       made them stutter. The reveal's flare covers the change. */
+    transition: opacity 0.8s;
     --draw-ease: cubic-bezier(0.55, 0, 0.25, 1);
   }
   .arcane.good {
