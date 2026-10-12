@@ -248,7 +248,7 @@ function crystalSeal(p: Plate, c: Pt, r: number) {
   p.add(shade, 'hatch');
 }
 
-/** A glory ending on a hexagon (its points up and down), as a crystal grows: fine rays long and short in turn, and its six axes as pointed rays. */
+/** A glory ending on a hexagon (its points up and down), as a crystal grows: fine rays long and short in turn. */
 function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: boolean) {
   const r0 = row ? 28 : 66;
   const R = row ? 58 : 150;
@@ -279,14 +279,6 @@ function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: bool
     }
   }
   p.add(hex, 'ray');
-  for (let k = 0; k < 6; k++) {
-    const a = k * 60;
-    const end = Math.min(reach(a) - 3, hexAt(R, a) - 3);
-    if (end - r0 < 10) continue;
-    const ray = pointedRay(c, a, r0, end, (Math.asin(2.2 / r0) * 180) / Math.PI, 0.9);
-    p.add(ray.lines, 'hair');
-    p.add(ray.hatch, 'hatch');
-  }
 }
 
 // ---- the flare ------------------------------------------------------------------

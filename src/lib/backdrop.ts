@@ -108,69 +108,182 @@ ${ENV_GLSL}
 ${SPORES_GLSL}
 ${SHAFTS_GLSL}
 
-// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path the hall
-// goes cold and dark, and seams of azurite run through the rock of the
-// walls and the floor, glowing pale blue, with crystals clustered where
-// they meet. They grow in from the edges as the vein comes in (never over
-// the middle, behind the UI), and the light moves slowly along them.
-// Cracks in crystal: how near p is to the edge between two cells of a
-// jittered grid (0 on it), and to a corner where three meet (0 at it).
-vec2 veinCells(vec2 x) {
+// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path, in a
+// grotto of azurite. The hall goes cold and dark; clusters of crystal grow
+// out of the walls and the floor, one by one as the vein comes in, a row
+// further back too, smaller and dimmer; faint seams of ore run into the
+// rock about them, and a cold mist lies low over the floor. Each shard is a
+// hexagonal prism seen from the side: dark blue glass, its face toward the
+// light (the upper left, as for the rest of the scene) azure, lit from
+// within along its axis toward its root, the glow breathing over many
+// seconds. That much is soft and drawn here (veinGlass); its edges and the
+// ridges between its faces are drawn by the main pass as fine lines of
+// light, at the screen's own resolution, with a glint now and then at a
+// point (veinLines), as the engraver drew the prisms on the vein's card.
+// Never over the middle, behind the UI.
+
+// Cracks between the cells of a jittered grid: how near p is to the edge
+// between two (0 on it).
+float veinCrack(vec2 x) {
   vec2 i = floor(x);
   vec2 f = fract(x);
   float d1 = 8.0;
   float d2 = 8.0;
-  float d3 = 8.0;
   for (int y = -1; y <= 1; y++)
     for (int k = -1; k <= 1; k++) {
       vec2 g = vec2(float(k), float(y));
-      vec2 o = vec2(nhash(i + g), nhash(i + g + 17.31));
-      vec2 r = g + 0.15 + 0.7 * o - f;
+      vec2 r = g + 0.15 + 0.7 * vec2(nhash(i + g), nhash(i + g + 17.31)) - f;
       float d = dot(r, r);
       if (d < d1) {
-        d3 = d2;
         d2 = d1;
         d1 = d;
-      } else if (d < d2) {
-        d3 = d2;
-        d2 = d;
-      } else if (d < d3) d3 = d;
+      } else if (d < d2) d2 = d;
     }
-  return vec2(sqrt(d2) - sqrt(d1), sqrt(d3) - sqrt(d1));
+  return sqrt(d2) - sqrt(d1);
 }
 
+// The light falls from the upper left.
+const vec2 VEIN_LIGHT = vec2(-0.7071, -0.7071);
+
+// The crystals along one wall at p: u px out from it, v px along it, in
+// rows of cells C px apart; inward the way into the hall, up the way along
+// it toward the ceiling, seed telling the walls apart, near how near the
+// row is (1, or dimmer further back), calm the stretch along it (px) where
+// none grow (the floor's middle, under the UI). lines: the main pass's fine
+// lines (added to col); else the soft glass (laid over col).
+vec3 veinWall(vec3 col, vec2 p, float u, float v, vec2 inward, vec2 up, float C, float seed, float tm, float near, vec2 calm, bool lines) {
+  if (u > 1.6 * C) return col;
+  float j0 = floor(v / C);
+  for (int k = -1; k <= 1; k++) {
+    float j = j0 + float(k);
+    vec2 cell = vec2(j, seed);
+    float h = nhash(cell);
+    // Fewer than half of the cells hold a cluster (a row further back fewer still), coming in one by one.
+    float grow = smoothstep(0.0, 1.0, uVein * 1.5 - 0.5 * h);
+    if (h > (near < 1.0 ? 0.3 : 0.45) || grow <= 0.0) continue;
+    float at = (j + 0.25 + 0.5 * nhash(cell + 3.1)) * C;
+    if (at > calm.x && at < calm.y) continue;
+    vec2 root = p - u * inward + (at - v) * up;
+    float breathe = 0.65 + 0.35 * sin(tm * (0.18 + 0.1 * h) + 40.0 * h);
+    for (int m = 0; m < 3; m++) {
+      float fm = float(m);
+      float r1 = nhash(cell + 7.7 + fm * 1.9);
+      float r2 = nhash(cell + 11.3 + fm * 2.7);
+      // Fanned out from the root, leaning toward the ceiling; the middle one the longest.
+      float a = (fm - 1.0) * 0.55 + (r1 - 0.5) * 0.4 - 0.35;
+      vec2 dir = normalize(inward * cos(a) + up * sin(-a));
+      float g = smoothstep(0.0, 1.0, grow * 1.25 - 0.25 * fm * r1);
+      float L = C * (m == 1 ? 1.0 + 0.45 * r2 : 0.55 + 0.4 * r2) * g;
+      if (L < 2.0) continue;
+      vec2 d = p - (root + up * (fm - 1.0) * 0.18 * C - inward * 0.08 * C);
+      float t = dot(d, dir) / L;
+      if (t < -0.05 || t > 1.0) continue;
+      vec2 n = vec2(-dir.y, dir.x);
+      // Its half width (px) here: full along its body, a point at its tip, a little narrower at the root.
+      float hw = L * (0.1 + 0.04 * r1) * (0.82 + 0.18 * smoothstep(0.0, 0.25, t)) * min(1.0, (1.0 - t) / 0.26);
+      float across = dot(d, n);
+      float s = across / max(hw, 0.5);
+      float edge = abs(s);
+      if (edge * hw > hw + 6.0) continue;
+      // How far across toward the light: 1 at its lit side, -1 at its shaded one.
+      float lit = dot(n, VEIN_LIGHT) > 0.0 ? s : -s;
+      if (lines) {
+        // Its outline and the two ridges between its faces, a CSS px wide,
+        // the lit side's bright, the shaded side's faint; and the facets of its point.
+        float dOut = abs(edge - 1.0) * hw;
+        float dRidge = abs(edge - 0.34) * hw;
+        float tip = 1.0 - smoothstep(0.0, 1.2 / L, abs(t - 0.74));
+        float lineW = 1.0 - smoothstep(0.3, 1.1, min(dOut, dRidge));
+        float onBody = 1.0 - step(1.0 + 1.0 / max(hw, 1.0), edge);
+        float bright = (0.12 + 0.6 * smoothstep(-0.5, 1.0, lit)) * (1.0 - 0.4 * t) * (0.75 + 0.25 * breathe);
+        vec3 pale = rgb(170.0, 218.0, 255.0);
+        col += pale * (lineW * bright + 0.3 * tip * onBody * smoothstep(-0.2, 1.0, lit) * (1.0 - smoothstep(0.0, 1.0, abs(across) - hw))) * near * near * uVein;
+        // Now and then a glint at its point, for a few seconds.
+        vec2 tp = d - dir * L * 0.97;
+        float tw = max(0.0, sin(tm * (0.25 + 0.3 * r2) + 6.283 * r1));
+        tw *= tw;
+        tw *= tw;
+        tw *= tw;
+        float r2p = dot(tp, tp);
+        float star = exp(-r2p / 2.0) + 0.5 * exp(-abs(tp.x) * 1.2 - tp.y * tp.y / 0.6) + 0.5 * exp(-abs(tp.y) * 1.2 - tp.x * tp.x / 0.6);
+        col += rgb(220.0, 240.0, 255.0) * star * tw * 0.8 * near * uVein;
+      } else {
+        // Soft over a few px: this is drawn at half the screen's resolution.
+        float px = 4.0 / max(hw, 1.0);
+        float inside = 1.0 - smoothstep(1.0 - px, 1.0 + px, edge);
+        float face = mix(0.42, lit > 0.0 ? 1.0 : 0.1, smoothstep(0.24, 0.44, abs(lit)));
+        face = mix(face, lit > 0.0 ? 1.15 : 0.22, 0.75 * smoothstep(0.72, 0.8, t));
+        vec3 c = mix(rgb(3.0, 8.0, 26.0), rgb(48.0, 110.0, 220.0), 0.8 * face);
+        c += rgb(80.0, 165.0, 255.0) * (0.55 * breathe * exp(-3.0 * s * s) * exp(-1.9 * t));
+        c += rgb(170.0, 220.0, 255.0) * (0.16 * smoothstep(0.34, 0.6, lit) * (1.0 - smoothstep(0.6, 0.95, lit)) * (1.0 - 0.6 * t));
+        c += rgb(200.0, 232.0, 255.0) * (0.25 * breathe * smoothstep(0.82, 1.0, t) * face);
+        col = mix(col, c * near, (0.5 + 0.35 * near) * inside);
+        // Its light about it.
+        col += rgb(40.0, 100.0, 255.0) * (0.05 * breathe * exp(-max(0.0, edge - 1.0) * 2.0) * (1.0 - inside) * (1.0 - t) * near);
+      }
+    }
+  }
+  return col;
+}
+
+const vec2 NO_CALM = vec2(1.0e9);
+
+// Every wall's crystals at p: a row further back first, smaller and
+// dimmer, going up more slowly as the scene sinks; then the near one, and
+// the floor's.
+vec3 veinCrystals(vec3 col, vec2 p, float S, float W, float H, float tm, bool lines) {
+  float sinkPx = 0.9 * uSink;
+  // (Smaller on a narrow screen, where the walls stand close to the cards.)
+  float C = 0.13 * S * clamp(W / 900.0, 0.75, 1.0);
+  float far = 0.62 * C;
+  if (p.x < 1.6 * C) {
+    col = veinWall(col, p, p.x, p.y + 0.6 * sinkPx, vec2(1.0, 0.0), vec2(0.0, -1.0), far, 11.0, tm, 0.45, NO_CALM, lines);
+    col = veinWall(col, p, p.x, p.y + sinkPx, vec2(1.0, 0.0), vec2(0.0, -1.0), C, 1.0, tm, 1.0, NO_CALM, lines);
+  }
+  if (W - p.x < 1.6 * C) {
+    col = veinWall(col, p, W - p.x, p.y + 0.6 * sinkPx, vec2(-1.0, 0.0), vec2(0.0, -1.0), far, 12.0, tm, 0.45, NO_CALM, lines);
+    col = veinWall(col, p, W - p.x, p.y + sinkPx, vec2(-1.0, 0.0), vec2(0.0, -1.0), C, 2.0, tm, 1.0, NO_CALM, lines);
+  }
+  if (H - p.y < 1.8 * C) col = veinWall(col, p, H - p.y, p.x, vec2(0.0, -1.0), vec2(1.0, 0.0), 1.1 * C, 3.0, tm, 1.0, vec2(0.27, 0.73) * W, lines);
+  return col;
+}
+
+// The soft light's part of it: the cold, the light about the walls, the
+// seams of ore, the crystals' glass and the mist.
 vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float dark) {
   float v = uVein;
   vec2 xy = p / vec2(W, H);
   // Cold and darker: the path's warm light is behind you.
   col = mix(col, col * vec3(0.42, 0.58, 0.95), 0.75 * v);
   col *= 1.0 - 0.3 * v;
-  // The rock the seams run in: the walls, then the floor, reaching further in as it comes.
+  // The crystals' cold light about the walls and the floor.
   float side = min(xy.x, 1.0 - xy.x);
-  float reach = 0.1 + 0.24 * v;
-  float wall = max(1.0 - smoothstep(reach * 0.3, reach, side), 0.8 * smoothstep(1.0 - 0.55 * reach, 1.0, xy.y));
-  if (wall <= 0.0) return col;
-  // The seams: straight cracks between crystal cells, the cells drawn out
-  // on a slant so they run as veins, only where the ore runs (a band of
-  // slow noise), the walls going up with the scene (uSink) as it sinks.
-  vec2 q = (p + vec2(uSlide, 0.9 * uSink)) / S;
-  vec2 x = mat2(0.8, -0.6, 0.6, 0.8) * q * vec2(5.5, 2.6);
-  vec2 e = veinCells(x);
-  float ore = smoothstep(0.42, 0.68, fbm(q * 2.2 + vec2(4.2, 1.3)));
-  if (ore <= 0.0) return col;
-  float seam = 1.0 - smoothstep(0.0, 0.045, e.x);
-  float halo = 1.0 - smoothstep(0.0, 0.32, e.x);
-  // Crystals where three cells meet, each breathing over many seconds.
-  float node = (1.0 - smoothstep(0.0, 0.16, e.y)) * seam;
-  float breathe = 0.7 + 0.3 * sin(tm * 0.35 + 6.283 * nhash(floor(x)));
-  // The light moving along the seams, slowly.
-  float run = 0.6 + 0.4 * sin(tm * 0.45 - 1.7 * (x.x + 0.6 * x.y));
   vec3 azure = rgb(40.0, 105.0, 255.0);
-  vec3 pale = rgb(150.0, 205.0, 255.0);
-  vec3 white = rgb(230.0, 245.0, 255.0);
-  vec3 add = azure * (0.16 * halo) + pale * (0.6 * seam * run) + white * (0.9 * node * breathe);
-  // The dark of the depth and the clock dims it, as it does every glow.
-  return col + add * (ore * wall * v * (1.0 - 0.8 * dark));
+  col += azure * (0.035 * v * (exp(-side / 0.09) + 0.6 * exp(-(1.0 - xy.y) / 0.08)));
+  // The middle stays calm.
+  if (side > 0.34 && xy.y < 0.78) return col;
+  float lit = 1.0 - 0.8 * dark;
+  vec3 before = col;
+  // Seams of ore in the rock, faint, near the walls and the floor.
+  vec2 q = (p + vec2(uSlide, 0.9 * uSink)) / S;
+  float near = max(1.0 - smoothstep(0.08, 0.3, side), smoothstep(0.82, 1.0, xy.y));
+  if (near > 0.0) {
+    vec2 x = mat2(0.8, -0.6, 0.6, 0.8) * q * vec2(6.0, 3.0);
+    float e = veinCrack(x);
+    float ore = smoothstep(0.45, 0.7, fbm(q * 2.4 + vec2(4.2, 1.3)));
+    float run = 0.55 + 0.45 * sin(tm * 0.4 - 1.5 * (x.x + 0.6 * x.y));
+    col += azure * ((1.0 - smoothstep(0.0, 0.035, e)) * (0.07 + 0.11 * run) + 0.03 * (1.0 - smoothstep(0.0, 0.25, e))) * ore * near * v;
+  }
+  col = veinCrystals(col, p, S, W, H, tm, false);
+  // A cold mist low over the floor.
+  float low = smoothstep(0.7, 1.0, xy.y);
+  if (low > 0.0) {
+    vec2 mf = vec2(p.x / S * 1.4 - tm * 0.006, p.y / S * 4.0);
+    float mist = smoothstep(0.4, 0.85, fbm(mf + vec2(0.0, 0.6 * vnoise(mf * 0.5 + tm * 0.01))));
+    col = mix(col, rgb(60.0, 110.0, 200.0) * 0.5, 0.18 * mist * low * v);
+  }
+  // What glows dims where the dark has closed in, as every glow does.
+  return mix(before, col, lit);
 }
 
 // The slot environment i (its index in ENVIRONMENTS) is drawn from, or ${NO_SLOT}: none.
@@ -396,6 +509,9 @@ const DELVE_MAIN = `  // The far lights and the embers dim where the dark has cl
     }
   }
 
+  // An Azurite Vein: its crystals' edges, ridges and glints, at the screen's own resolution (see veinCrystals).
+  if (uVein > 0.0) col = veinCrystals(col, p, sqrt(W * uViewH), W, uViewH, uHome.z, true);
+
   // Frozen Hollow: the frost catching the light. Here and there, where its
   // crystal is (frost, from the soft light; already dimmed where the dark
   // has closed in), a point of it glints for a few seconds and fades: one
@@ -583,13 +699,13 @@ void main() {
 
 /**
  * Fragment uniform vectors the main pass uses apart from the UI elements'
- * (counted unpacked, samplers apart, with one to spare: 170 as linked with
+ * (counted unpacked, samplers apart, with one to spare: 171 as linked with
  * the soft light worked out here, the effects' slots, 3 * FX_SLOTS, among
  * them), and each element's: its seven rows and its shadows' two each.
  * Recount when adding a uniform (the active uniforms of the program
  * frag(4, false, true) links to, less 4 elements' worth).
  */
-const FIXED_UNIFORMS = 171;
+const FIXED_UNIFORMS = 172;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**
@@ -1208,6 +1324,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       uCityB: U('uCityB'),
       uCityC: U('uCityC'),
       uIce: U('uIce'),
+      // An Azurite Vein's, in the main pass too (its crystals' fine lines; the whole soft light where it is drawn here).
+      mVein: U('uVein'),
       // The dark closing in dims the embers too (closing() in the shader).
       mDark: U('uDark'),
       mScene: U('uScene'),
@@ -1372,7 +1490,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const k = v === lean ? 1 : delveIn;
     const dark = v === lean ? 0 : delveIn * look.dark;
     const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uVein, uGlowCol, uScene, uBlobColor } = v;
-    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
+    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mVein, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
 
     // The soft light: into its own target first, or along with the rest.
     gl!.useProgram(soft);
@@ -1478,6 +1596,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     stopsFor(look, 'frost', stops);
     gl!.uniform3f(uIce, stops[0] + 0.35 * (1 - stops[0]), stops[1] + 0.35 * (1 - stops[1]), stops[2] + 0.35 * (1 - stops[2]));
     gl!.uniform2f(mDark, close * k, pressure * k);
+    if (mVein) gl!.uniform1f(mVein, vein * k);
     gl!.uniform4f(mScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform4fv(mHome, home);
     gl!.activeTexture(gl!.TEXTURE2);
@@ -1731,7 +1850,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
 
   // An Azurite Vein's embers burn azure, and take their own colours back as it ends.
-  const offVein = onVein((on) => embers.tint(on ? VEIN_EMBERS : CALM));
+  const offVein = onVein((on) => {
+    embers.tint(on ? VEIN_EMBERS : CALM);
+    embers.vein(on);
+  });
   function stop() {
     offVein();
     cancelAnimationFrame(raf);
