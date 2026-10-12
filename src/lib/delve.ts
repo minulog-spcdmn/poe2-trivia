@@ -780,10 +780,11 @@ export function expectedVoters(s: GameState, now: number): string[] {
 
 /**
  * Someone standing whom the host's reload cut off may still come back at
- * `now` (host clock): a question's clock doesn't start without them.
+ * `now` (host clock): a question's clock doesn't start without them. Not
+ * for someone idle, whom a vote doesn't wait for either (expectedVoters).
  */
 export function awaitingReturn(s: GameState, now: number): boolean {
-  return s.players.some((p) => livesOf(s, p.id) > 0 && inGrace(s, p, now));
+  return s.players.some((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && inGrace(s, p, now));
 }
 
 /** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */

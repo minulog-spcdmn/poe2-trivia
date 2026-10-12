@@ -181,6 +181,11 @@
     if (deadline === null) {
       // Held still by the host's reload: the time it had left; not started yet: all of it.
       remaining = pausedLeft ?? span * 1000;
+      // The dark as at that time, not as this screen's clock ran on while the host was away (a flare's light aside).
+      if (pausedLeft !== null && litAt === null) {
+        shownDark = pressureOf(pausedLeft, span * 1000, warnFrom);
+        dark?.set(shownDark);
+      }
       return;
     }
     const end = deadline;

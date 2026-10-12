@@ -1744,7 +1744,11 @@ class Session {
     const s = this.state;
     if (!s) return;
     if (this.mode === 'local' || this.labRoomless) writeSaved({ mode: 'local', state: s });
-    else if (this.mode === 'host') writeSaved({ mode: 'host', code: this.code, state: s, priv: this.priv });
+    else if (this.mode === 'host') {
+      writeSaved({ mode: 'host', code: this.code, state: s, priv: this.priv });
+      // Beside it, so a crash (no pagehide) never stops a held clock before what the save holds.
+      this.noteAlive();
+    }
   }
 
   /** Lists the room publicly while the host has it set to public. */
@@ -2287,7 +2291,7 @@ class Session {
 
   /**
    * Host: when it was last here, for a reload to tell when its clock stopped
-   * (engine 'resumed'). Noted beside the save, every ping and as the page goes.
+   * (engine 'resumed'). Noted with the save, every ping and as the page goes.
    */
   noteAlive() {
     if (this.mode === 'host' && this.state?.delve) writeStored(ALIVE, String(Date.now()), 'session');
@@ -2468,7 +2472,10 @@ function readSaved(): Saved | null {
 
 function writeSaved(saved: Saved | null) {
   if (saved) writeStored(SAVE, JSON.stringify(saved), 'session');
-  else removeStored(SAVE, 'session');
+  else {
+    removeStored(SAVE, 'session');
+    removeStored(ALIVE, 'session');
+  }
 }
 
 export const session = new Session();

@@ -83,6 +83,7 @@ export function keepSaveCopy() {
 /** Lets go of the room's save and its copy (the room is gone, or can't be got back). */
 export function dropSave() {
   removeStored(SAVE, 'session');
+  removeStored(ALIVE, 'session');
   removeStored(SAVE_COPY);
   removeStored(ALIVE_COPY);
   lastCopies.clear();
