@@ -13,7 +13,7 @@
 //
 //   npm run bake-icons
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -21,6 +21,14 @@ import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'src', 'data', 'iconFits.json');
+
+// The page's code imports the fits it bakes, so a missing or broken file (a
+// merge's conflict markers) would stop it loading: start such a one afresh.
+try {
+  JSON.parse(readFileSync(OUT, 'utf8'));
+} catch {
+  writeFileSync(OUT, '{}\n');
+}
 
 const server = await createServer({ root: ROOT, logLevel: 'error', server: { port: 0, host: '127.0.0.1' } });
 await server.listen();
@@ -33,19 +41,14 @@ try {
   await page.goto(new URL('__bake', base).href);
   const fits = await page.evaluate(async () => {
     const ui = await import('/src/lib/ui.ts');
-    const { fitOf } = await import('/src/lib/iconFit.svelte.ts');
+    const { fitOf, pixelsOf } = await import('/src/lib/iconFit.svelte.ts');
     // The dev server's base is the site's root.
     const root = new URL('/', location.href).href;
     const out = {};
     for (const url of new Set(ui.categoryIcons())) {
-      const img = new Image();
-      img.src = url;
-      await img.decode();
-      const c = document.createElement('canvas');
-      [c.width, c.height] = [img.naturalWidth, img.naturalHeight];
-      const g = c.getContext('2d', { willReadFrequently: true });
-      g.drawImage(img, 0, 0);
-      const fit = fitOf(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+      const p = await pixelsOf(url);
+      if (!p) throw new Error(`no 2D canvas for ${url}`);
+      const fit = fitOf(p.rgba, p.iw, p.ih);
       if (!url.startsWith(root)) throw new Error(`${url} isn't under ${root}`);
       if (fit) out[url.slice(root.length)] = fit;
     }

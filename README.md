@@ -1070,6 +1070,15 @@ each picture's art before it picks the look-alikes, so they look like the art
 it shows. The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 
+The category cards' emblems, and the items behind them, are laid out from
+fits measured ahead into `src/data/iconFits.json` (`src/lib/iconFit.svelte.ts`).
+Bake them again after their art changes, or after a data refresh picks a
+different item for a card (needs Chromium; see `scripts/bake-icons.mjs`):
+
+```sh
+npm run bake-icons
+```
+
 ### Self-hosted signalling (optional)
 
 To use your own [PeerJS server](https://github.com/peers/peerjs-server)

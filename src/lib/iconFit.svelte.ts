@@ -56,6 +56,20 @@ export function fitOf(rgba: Uint8ClampedArray, iw: number, ih: number): Fit | nu
   return { iw: tenth(iw * k), ih: tenth(ih * k), x: tenth(x0 * k - PAD), y: tenth(y0 * k - PAD), w: tenth(w * k + 2 * PAD), h: tenth(h * k + 2 * PAD) };
 }
 
+/** The image at `url` (same origin), decoded and drawn on a canvas of its own size: the canvas, its context and its pixels (RGBA); null without a 2D context. */
+export async function pixelsOf(url: string) {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const [iw, ih] = [img.naturalWidth, img.naturalHeight];
+  const c = document.createElement('canvas');
+  [c.width, c.height] = [iw, ih];
+  const g = c.getContext('2d', { willReadFrequently: true });
+  if (!g) return null;
+  g.drawImage(img, 0, 0);
+  return { c, g, iw, ih, rgba: g.getImageData(0, 0, iw, ih).data };
+}
+
 /** Where the baked icons' paths are from (the site's base). */
 const BASE = new URL(import.meta.env.BASE_URL, document.baseURI).href;
 /** Each icon's fit, by its absolute URL: baked, or measured here. */
@@ -68,18 +82,10 @@ const pending = new Set<string>();
 export function measure(url: string) {
   if (url in masks || pending.has(url)) return;
   pending.add(url);
-  const img = new Image();
-  img.src = url;
-  img
-    .decode()
-    .then(() => {
-      const [iw, ih] = [img.naturalWidth, img.naturalHeight];
-      const c = document.createElement('canvas');
-      [c.width, c.height] = [iw, ih];
-      const g = c.getContext('2d', { willReadFrequently: true });
-      if (!g) return;
-      g.drawImage(img, 0, 0);
-      const a = g.getImageData(0, 0, iw, ih).data;
+  pixelsOf(url)
+    .then((p) => {
+      if (!p) return;
+      const { c, g, iw, ih, rgba: a } = p;
       if (!(url in fits)) {
         const fit = fitOf(a, iw, ih);
         if (!fit) return;

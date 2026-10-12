@@ -6,8 +6,8 @@
 // Spectrum's three jewels, each its own colour) keeps its other art as its
 // variants: the list page shows only the first, so each unique's own page is
 // read for the rest. The site shows upscaled copies of the art: run
-// scripts/upscale-art.py afterwards for any new items (it says how), and
-// npm run looks.
+// scripts/upscale-art.py afterwards for any new items (it says how),
+// npm run looks and npm run bake-icons.
 //
 // Usage: npm run fetch-data (-- --shrink: see below)
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
