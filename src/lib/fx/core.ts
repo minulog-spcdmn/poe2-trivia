@@ -978,6 +978,9 @@ export function fxRealtime() {
 
 // ---------- setup ----------
 
+/** The most pixels the overlay draws at (see resize): a 1440p screen's. */
+const MAX_PIXELS = 2560 * 1440;
+
 let ro: ResizeObserver | null = null;
 let deviceBox: { w: number; h: number } | null = null;
 
@@ -989,7 +992,13 @@ function resize() {
   // crisp), less as quality drops. Shapes, which are all soft, get about one
   // texel per CSS px.
   const cap = quality === 0 ? 1.5 : quality === 1 ? 1 : 0.75;
-  const k = Math.min(devicePixelRatio || 1, cap) / (devicePixelRatio || 1);
+  // And never more than MAX_PIXELS in all: on a 4K screen 1.5 per CSS px
+  // came to 8 million, in half-float targets and their bloom, under a
+  // backdrop as big: a reveal's frames waited on the GPU for a tenth of a
+  // second and more.
+  const dprNow = devicePixelRatio || 1;
+  const fit = Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
+  const k = Math.min(dprNow, cap, fit) / dprNow;
   const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * (devicePixelRatio || 1) * k);
   const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * (devicePixelRatio || 1) * k);
   dpr = w / viewW;
