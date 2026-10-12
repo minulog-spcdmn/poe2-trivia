@@ -820,6 +820,7 @@
   }
 
   input[type='range'] {
+    --thumb: 14px;
     appearance: none;
     height: 4px;
     border-radius: 2px;
@@ -828,15 +829,15 @@
   }
   input[type='range']::-webkit-slider-thumb {
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   input[type='range']::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);
