@@ -367,7 +367,7 @@ export const FINDS: {
   blows: number;
 }[] = [
   // From depth 26 (shown 25). Its strike 1: the rest of the dig is VEIN_DEEPER's and the lamp's (LAMP_START).
-  { kind: 'azurite', item: 'wards', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, clock: 0.8, blows: 0 },
+  { kind: 'azurite', item: 'wards', from: 26, start: 0.04, cap: DYNAMITE_ON ? 0.11 : 0.15, late: 1 / 3, max: DELVE_MAX_WARDS, deeper: 15, losses: 2, clock: 1, blows: 0 },
   // From depth 41 (shown 40).
   { kind: 'flare', item: 'flares', from: 41, start: 0.04, cap: DYNAMITE_ON ? 0.13 : 0.18, late: 0.5, max: DELVE_MAX_FLARES, deeper: 20, losses: 1, clock: 2 / 3, blows: 0 },
   {
@@ -443,24 +443,22 @@ export function findChance(kind: FindKind, d: number): number {
  *
  * The whole dig runs on one lamp instead of a clock per question: lit at
  * strike 1 with LAMP_START of its deeper depth's clock, burning only while a
- * strike is open, fed LAMP_FEED of the next strike's deeper clock by each
- * right one. What is left of it is the next strike's clock. Too little light
- * (under FIND_MIN_TIMER), VEIN_MAX_STRIKES struck, or no room left for
- * another ward, and the haul goes into the pack by itself.
+ * strike is open, and never fed. What is left of it is the next strike's
+ * clock, so every strike after the first is paid for by how quickly the ones
+ * before it were answered. Too little light (under FIND_MIN_TIMER),
+ * VEIN_MAX_STRIKES struck, or no room left for another ward, and the haul
+ * goes into the pack by itself.
  */
 export const VEIN_MAX_STRIKES = 3;
 
 /** How much further down each strike asks from: strike 1 the find's own `deeper`, then further each time. */
-export const VEIN_DEEPER = [15, 20, 25];
+export const VEIN_DEEPER = [15, 30, 50];
 
 /** The depths a vein's strike `strike` (1 on) asks from below its own. */
 export const veinDeeper = (strike: number) => VEIN_DEEPER[Math.min(VEIN_DEEPER.length, Math.max(1, Math.floor(strike) || 1)) - 1];
 
-/** The lamp's light at strike 1, as a share of strike 1's deeper clock (FINDS `clock`, so findTimer gives it). */
-export const LAMP_START = 0.8;
-
-/** Light a right strike feeds the lamp: this share of the next strike's deeper clock. */
-export const LAMP_FEED = 0.5;
+/** The lamp's light at strike 1, as a share of strike 1's deeper clock (FINDS `clock`, so findTimer gives it): the whole dig's. */
+export const LAMP_START = 1;
 
 /** The card dealt beside the vein after a right strike: it leads out with the haul. Never a category. */
 export const WAY_OUT = '~way-out';
@@ -471,12 +469,12 @@ export const isWayOut = (category: string) => category === WAY_OUT;
 /**
  * Seconds of light the lamp has for strike `next` of a vein at depth `d`,
  * with `left` seconds of it unburnt when the strike before was answered
- * right: that and LAMP_FEED of strike `next`'s deeper clock, never more than
- * that whole clock, in tenths.
+ * right: what is left, never more than strike `next`'s whole deeper clock,
+ * in tenths.
  */
 export function lampAfter(d: number, next: number, left: number): number {
   const full = delveTimer(findDepth('azurite', d, next));
-  const light = Math.min(full, Math.max(0, left) + LAMP_FEED * full);
+  const light = Math.min(full, Math.max(0, left));
   return Math.floor(light * 10) / 10;
 }
 
@@ -513,9 +511,12 @@ export const FINDS_FROM = FINDS_IN_ORDER[0]?.from ?? Infinity;
 
 /**
  * The shallowest depth whose questions may pick look-alikes by their art: a
- * find asks from further down, so a little above LOOKALIKES_FROM.
+ * find asks from further down (a vein's last strike furthest), so above
+ * LOOKALIKES_FROM, though never above the depth the find first turns up at.
  */
-export const LOOKALIKES_ASKED_FROM = LOOKALIKES_FROM - Math.max(...FINDS.filter((f) => f.cap > 0).map((f) => f.deeper), ...VEIN_DEEPER);
+export const LOOKALIKES_ASKED_FROM = Math.min(
+  ...FINDS.filter((f) => f.cap > 0).map((f) => Math.max(f.from, LOOKALIKES_FROM - (f.kind === 'azurite' ? Math.max(f.deeper, ...VEIN_DEEPER) : f.deeper))),
+);
 
 /**
  * A find's question is the question of `deeper` depths down (FINDS): hard,

@@ -34,7 +34,7 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -145,9 +145,24 @@
   const theirs = $derived(!race && !coop && !session.myTurn && !reveal);
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
-  /** What Next leads to. Delve: the end once nobody stands, a depth deeper after a clear, and another question at the same depth after a miss. */
+  /**
+   * What Next leads to. Delve: the end once nobody stands; a vein's next two
+   * cards at the same depth after a right strike it runs on from; a depth
+   * deeper after any other clear; and another question at the same depth
+   * after a miss.
+   */
   const nextLabel = $derived(
-    race ? 'Next question' : !s.delve ? 'Next turn' : !standingIds(s).length ? 'Results' : reveal?.correct ? 'Delve deeper' : 'Next question',
+    race
+      ? 'Next question'
+      : !s.delve
+        ? 'Next turn'
+        : !standingIds(s).length
+          ? 'Results'
+          : reveal?.correct
+            ? digRunsOn(s)
+              ? 'Next'
+              : 'Delve deeper'
+            : 'Next question',
   );
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);

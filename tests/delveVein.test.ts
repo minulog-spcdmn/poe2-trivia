@@ -7,7 +7,6 @@ import {
   DELVE_LIVES,
   DELVE_MAX_WARDS,
   FIND_MIN_TIMER,
-  LAMP_FEED,
   LAMP_START,
   VEIN_MAX_STRIKES,
   WAY_OUT,
@@ -117,7 +116,7 @@ test('a right strike puts a ward in hand, and the vein runs on: two cards at the
   assert.equal(haulOf(h.s, id), 1);
   const dig = digOf(h.s)!;
   assert.deepEqual([dig.strikes, dig.haul, dig.struck], [1, [id], [q.category]]);
-  // The lamp: what was left of strike 1's light and LAMP_FEED of strike 2's deeper clock.
+  // The lamp: what was left of strike 1's light, never fed.
   assert.equal(dig.light, lampAfter(30, 2, findTimer('azurite', 30) - 2));
   const recent = [...h.s.players[0].recent];
   h.next();
@@ -253,10 +252,11 @@ test('the dig goes no further than the pack has room: holding two wards, one str
 });
 
 test('the lamp: a quick answer carries its light on, a slow one deep down leaves too little to dig', () => {
-  assert.deepEqual([LAMP_START, LAMP_FEED, FIND_MIN_TIMER], [0.8, 0.5, 4]);
+  assert.deepEqual([LAMP_START, FIND_MIN_TIMER], [1, 4]);
   // Never more than the strike's whole deeper clock.
   assert.equal(lampAfter(30, 2, 100), delveTimer(findDepth('azurite', 30, 2)));
-  assert.equal(lampAfter(30, 2, 0), Math.floor(LAMP_FEED * delveTimer(50) * 10) / 10);
+  assert.equal(lampAfter(30, 2, 0), 0);
+  assert.equal(lampAfter(30, 2, 3.47), 3.4);
   // Deep down the feed alone is under FIND_MIN_TIMER: a slow strike 1 ends the dig.
   const h = run(1, 90);
   const id = h.id();

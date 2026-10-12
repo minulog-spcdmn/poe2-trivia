@@ -252,14 +252,14 @@ the same thing for everyone.
     right answer digs out a whole **Azurite Ward** (one takes your next
     lost life instead), but only into your hand: the next cards are two,
     the vein running on into another category you may pick (the next
-    strike, from further down: 15, 20, then 25 depths) and **the way out**,
+    strike, from further down: 15, 30, then 50 depths) and **the way out**,
     which puts what you dug out into your pack and takes the run a depth
     deeper. At most three strikes, and only as far as your pack has room.
     The whole dig runs on one **lamp**, the clock ring turned azurite:
-    lit with four fifths of strike 1's clock, it burns only while a strike
-    is open, and each right strike feeds it half of the next one's clock,
-    so a quick answer carries light on (under 4 s left, the dig ends there
-    and the haul goes into the pack by itself). A wrong answer or a
+    lit with strike 1's whole clock, it burns only while a strike is open
+    and is never fed, so every strike after the first is paid for by how
+    quickly the ones before it were answered (under 4 s left, the dig ends
+    there and the haul goes into the pack by itself). A wrong answer or a
     time-out on any strike caves in, with a sound of its own: it costs two
     lives, a ward in the pack taking each loss first (on your last life
     you simply fall), and buries everything in hand. The dig stays at the

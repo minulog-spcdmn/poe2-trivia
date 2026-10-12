@@ -1,8 +1,10 @@
 # Azurite Vein: keep digging (proposal)
 
 > **Built, being tuned on the beta.** The rules live in `src/lib/delve.ts`
-> (the dig: VEIN_MAX_STRIKES, VEIN_DEEPER, LAMP_START, LAMP_FEED) and
-> `src/lib/game.ts`; the numbers below are the first playtest's. The lab
+> (the dig: VEIN_MAX_STRIKES, VEIN_DEEPER, LAMP_START) and
+> `src/lib/game.ts`; the numbers below are the second playtest's (the first fed the lamp
+> half a clock on each right strike, and asked from 15, 20 and 25 depths
+> further down: three wards nearly every time). The lab
 > (`lab.html`) deals a dig's two cards after strike 1 or 2.
 
 ## The problem
@@ -65,21 +67,23 @@ strike: the vein gives most to whoever needs it.
 The vein doesn't give each strike a fresh clock. **It has one lamp for the
 whole dig**, and the clock ring becomes its light:
 
-- **Lit at strike 1** with a share of the deeper depth's clock (start: 80%).
+- **Lit at strike 1** with the deeper depth's whole clock, the whole dig's
+  light.
 - **It burns only while a question is open.** It holds still while you look
   at the two cards: that choice is the heart of the vein and isn't rushed.
-- **Each right strike feeds it** a little ore light (start: half of the
-  next strike's deeper clock), so a quick answer carries time forward and a
-  slow one leaves you digging in the dark.
+- **Nothing feeds it.** A quick answer carries time forward and a slow one
+  leaves you digging in the dark: at shown depth 25 the lamp holds 11 s, so a
+  third strike needs the first two answered in about 7 s together.
 - **Too little light to dig** (under FIND_MIN_TIMER, 4 s): the vein card
   isn't dealt again, and the haul goes into the pack.
 - **Running out is a cave-in.** The lamp hitting 0 is the time-out.
 
 What this does:
 
-- **It answers "too easy" without taking the reward away.** Strike 1 runs on
-  less than a full clock at every depth, including deep down, where "further
-  down" has stopped meaning anything.
+- **It answers "too easy" without taking the reward away.** Strike 1 pays
+  as before, but each strike after it runs on what the ones before it left,
+  so the third ward is for the quickest players only, and deep down, where
+  clocks are short, a vein gives one or two.
 - **The danger is something you watch.** The light left is on the vein card
   when you choose, and it carries from strike to strike, so each choice
   weighs two things: "do I know Belts?" and "do I have the light for it?"
@@ -87,8 +91,7 @@ What this does:
   and those who have to think get out sooner. Nothing else in the game does
   that.
 - **It doesn't copy the Flare Cache.** The flare's clock is short for one
-  question. The lamp is a store of time across a dig that you spend and
-  feed.
+  question. The lamp is a store of time across a dig that you only spend.
 
 ## Why the choice works
 
@@ -106,8 +109,8 @@ little light?"
 
 ## Tuning
 
-The knobs: the lamp's starting share (0.8), the feed per right strike (0.5),
-each strike's `deeper` (+15, +20, +25), and the cave-in's losses (2).
+The knobs: the lamp's starting share (1), each strike's `deeper` (+15, +30,
++50), and the cave-in's losses (2).
 
 The room bot's answer model can't settle them. Run against these rules, it
 puts today's vein at about even by shown depth 50 and a clear loss from 80
@@ -146,7 +149,7 @@ for the whole team.
   rock. The vein card glows azurite blue, the way out burns with the warm
   light of the path.
 - **The lamp** is the clock ring turned azurite: a light that stays lit
-  from strike to strike, flares as ore is fed to it, and gutters as it runs
+  from strike to strike, and gutters as it runs
   low. When it gutters, the darkness closes in from the edges of the screen.
 - **The haul** hangs over the cards as shards of light, one more each strike.
 - **Each strike** shakes the hall a little more, with the sound of a pick on

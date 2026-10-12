@@ -1987,7 +1987,7 @@ export class Engine {
 
   /**
    * A vein's strike `q` answered right (its clock stopped now): one more
-   * strike in the dig, the lamp's light left fed for the next (delve.ts
+   * strike in the dig, the lamp's light left the next one's (delve.ts
    * lampAfter), and a ward into the haul for the first of `takers` with room
    * for it, the haul counted. Says whose hand it went to (null: nobody had
    * room, which the offer rules out).

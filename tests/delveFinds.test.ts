@@ -196,11 +196,12 @@ test('a find is never easier than its depth, nearly always harder, and the harde
       assert.ok(findTileVeil(kind, d) >= delveTileVeil(d), `fewer veiled pictures at ${d}`);
       // Harder wherever the curve has anything harder further down (the tile veil rises to 124, the fourth fakes to 150).
       if (d < 150) assert.ok(harder, `${kind}: nothing harder at ${d}`);
+      // (A vein's strike 1 has its lamp, the whole of its deeper depth's clock: the shortest a depth's.)
       const hardest =
         KNOBS.every((k) => r[k] === deepest[k]) &&
         JSON.stringify(r.veil) === JSON.stringify(deepest.veil) &&
         r.moreFakes === 1 &&
-        findTimer(kind, d) === FIND_MIN_TIMER;
+        findTimer(kind, d) === (findFor(kind).clock < 1 ? FIND_MIN_TIMER : DELVE_MIN_TIMER);
       assert.equal(hardest, findDepth(kind, d) >= 150, `${kind}: the hardest question at ${d}`);
     }
 });
@@ -216,13 +217,16 @@ test("a find's clock is fair: never the shortest near the top, and never shorter
     if (findTimer('dynamite', d) === DELVE_MIN_TIMER) assert.ok(delveTimer(d) > DELVE_MIN_TIMER || d >= 96, `dynamite at ${d}`);
     assert.ok(findTimer('dynamite', d) >= DELVE_MIN_TIMER && findTimer('dynamite', d) <= 16);
   }
-  // A vein's strike 1 runs on its lamp: four fifths of its deeper depth's clock, 9 s where it first turns
-  // up (11 s at depth 41), down to FIND_MIN_TIMER from depth 81 (four fifths of 5).
-  assert.equal(findTimer('azurite', findFor('azurite').from), 9);
-  assert.equal(findTimer('azurite', 43), 6);
-  assert.equal(findTimer('azurite', 80), 5);
-  assert.equal(findTimer('azurite', 81), FIND_MIN_TIMER);
-  for (let d = 1; d <= 300; d++) assert.ok(findTimer('azurite', d) >= FIND_MIN_TIMER && findTimer('azurite', d) < delveTimer(d));
+  // A vein's strike 1 runs on its lamp, the whole dig's light: its deeper depth's clock, 11 s where it
+  // first turns up (depth 41's), down to the shortest any depth has from depth 81 (96's).
+  assert.equal(findTimer('azurite', findFor('azurite').from), 11);
+  assert.equal(findTimer('azurite', 43), 7);
+  assert.equal(findTimer('azurite', 80), 6);
+  assert.equal(findTimer('azurite', 81), DELVE_MIN_TIMER);
+  for (let d = 1; d <= 300; d++) {
+    assert.equal(findTimer('azurite', d), delveTimer(d + 15));
+    assert.ok(findTimer('azurite', d) <= delveTimer(d), `the lamp at ${d}`);
+  }
 });
 
 test('a Flare Cache trades time now for time later: two thirds of its deeper depth\'s clock, never under four', () => {
@@ -673,12 +677,13 @@ test('a right answer to a find earns its item at any speed', () => {
     h.answer(true);
     const item = findFor(kind).item;
     assert.equal(h.s.reveal!.gained, item);
-    // A vein's ward is dug out into the hand first; the way out puts it in the pack.
+    // A vein's ward is dug out into the hand first; with the lamp all but burnt out, no light is
+    // left for another strike, so it goes into the pack by itself.
     if (kind === 'azurite') {
       assert.equal(h.s.reveal!.dug, true);
       assert.deepEqual(inventoryOf(h.s, id), NONE);
       h.act({ type: 'next' });
-      h.act({ type: 'pick', category: WAY_OUT });
+      assert.equal(h.s.offered.includes(WAY_OUT), false);
     }
     assert.deepEqual(inventoryOf(h.s, id), { ...NONE, [item]: 1 });
   }
@@ -694,11 +699,17 @@ test('an Azurite Vein digs out a whole ward, fast or slow, up to three', () => {
     assert.equal(h.s.reveal!.gained, 'wards');
     assert.equal(haulOf(h.s, id), 1);
     assert.equal(livesOf(h.s, id), DELVE_LIVES);
+    let prev = h.s;
     h.act({ type: 'next' });
-    const prev = h.s;
-    h.act({ type: 'pick', category: WAY_OUT });
+    // Fast, the lamp has light for another strike and the way out is dealt; slow, it hasn't, and
+    // the ward goes into the pack by itself.
+    assert.equal(h.s.offered.includes(WAY_OUT), late === 0);
+    if (late === 0) {
+      prev = h.s;
+      h.act({ type: 'pick', category: WAY_OUT });
+    }
     assert.deepEqual(inventoryOf(h.s, id), { ...NONE, wards: 1 });
-    // The way out is where the pack gains it, and so where the phial hears it.
+    // Where the pack gains it, the phial hears it.
     assert.deepEqual(inventoryChanges(prev, h.s), [{ playerId: id, item: 'wards', change: 'gained', left: 1 }]);
   }
   // The third ward, the most there is: no room for a fourth, so it goes into the pack by itself.
