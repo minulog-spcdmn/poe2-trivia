@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { LOOKALIKES_FROM, LOOKALIKES_TO, delveLookalikes } from '../src/lib/delve.ts';
-import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, answerPicture, createGame, drawnAs, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, answerDrawn, createGame, drawnAs, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks, type Looks } from '../src/lib/looks.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -140,7 +140,7 @@ test('an item drawn more than one way gets the look-alikes of the art the questi
     const answer = byId.get(q.itemId)!;
     if (!asked.length || !answer.variants) continue;
     n++;
-    const drawn = drawnAs(answer, q.variant?.[answerPicture(q)]).art;
+    const drawn = answerDrawn(answer, q).art;
     seen.add(drawn);
     assert.deepEqual(asked, [drawn], `${answer.name}: asked about the art shown`);
     // An option drawn more than one way is never scored by its own art while it shows another.

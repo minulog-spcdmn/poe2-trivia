@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { Engine, TWINS, allArt, answerPicture, drawnAs, isFake, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
 import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -98,7 +98,7 @@ test('the pictures too thin for the start page are real items\' pictures, and ne
   const byId = new Map(items.map((it) => [it.id, it]));
   assert.ok(TOO_THIN.size > 0);
   for (const id of TOO_THIN) assert.equal(byArt.get(id)?.kind, 'unique', `${id} is an item's picture`);
-  const shown = (q: Question) => drawnAs(byId.get(q.itemId)!, q.variant?.[answerPicture(q)]).art;
+  const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
   const start = utcDay(DAILY_LAUNCH);
   for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
   const engine = new Engine(items, { fakes });

@@ -95,7 +95,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 /** The items, by id: their art, its size (art pixels; Item.w, Item.h) and their other art (Item.variants). */
-export type ArtSizes = ReadonlyMap<string, Item>;
+export type ItemsById = ReadonlyMap<string, Item>;
 
 /**
  * At most how many pixels per art pixel a picture goes out with. The art to
@@ -182,9 +182,9 @@ function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffe
  * share of them, which each veiled picture's pace is fitted to once it is
  * cut (cutVeil).
  */
-export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, sizes: ArtSizes): Promise<PreparedMedia> {
+export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, items: ItemsById): Promise<PreparedMedia> {
   // Each picture as the question draws its item (Question.variant).
-  const art = (id: string, i: number) => drawnAs(sizes.get(id)!, q.variant?.[i]);
+  const art = (id: string, i: number) => drawnAs(items.get(id)!, q.variant?.[i]);
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [] };
   if (q.mode === 'art') {
     const most = q.veil || q.options.length > FEW_OPTIONS ? LIGHT : SHARP;

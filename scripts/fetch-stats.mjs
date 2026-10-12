@@ -205,6 +205,7 @@ export async function fetchStats(variantBoxes = null) {
 
   const out = {};
   const missing = [];
+  const unknown = new Set();
   /** A tooltip's sections, as the game shows them. */
   const tooltip = (html, it) => {
     const { sections, unknown: odd } = parse(html, it.name);
@@ -215,7 +216,6 @@ export async function fetchStats(variantBoxes = null) {
     if (!sections[0]?.length) sections.shift();
     return sections;
   };
-  const unknown = new Set();
   const queue = items.filter((it) => {
     if (hovers.has(it.name)) return true;
     missing.push(it.name);

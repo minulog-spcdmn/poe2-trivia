@@ -26,7 +26,8 @@
   let picked = $state({ id: '', i: 0 });
   const drawn = $derived(arts[picked.id === item.id ? picked.i : 0] ?? arts[0]);
   /** A variant's name in its picker: its base where they differ, else its place among them. */
-  const artName = (a: DrawnItem, i: number) => (new Set(arts.map((x) => x.base)).size === arts.length ? a.base : `${i + 1} of ${arts.length}`);
+  const basesDiffer = $derived(new Set(arts.map((x) => x.base)).size === arts.length);
+  const artName = (a: DrawnItem, i: number) => (basesDiffer ? a.base : `${i + 1} of ${arts.length}`);
   const byCount = (pairs: [string, number][]) =>
     pairs
       .flatMap(([id, n]) => {
