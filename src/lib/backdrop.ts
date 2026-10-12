@@ -108,32 +108,25 @@ ${ENV_GLSL}
 ${SPORES_GLSL}
 ${SHAFTS_GLSL}
 
-// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path the
-// hall goes cold, and the rock of the walls and the floor turns out to be
-// crystal: azurite, its faces meeting in straight seams that glow, with
-// small crystals catching the light where three faces meet. In layers,
-// back to front: the hall's own light cooling and drawing back toward the
-// walls; broad bands of ore slanting through the rock, a faint mineral blue
-// and a cold bloom in them; far in the rock, fine faces and dim deep-blue
-// seams, going up more slowly than the walls as the scene sinks; then the
-// near faces, larger, each catching a little more or less of the light,
-// their seams with a pale core, an azure body and an indigo halo, the light
-// running slowly along them; the crystals at their corners breathing over
-// many seconds; and a cold mist low over the floor. Its colours run from
-// ice white (c0) through azure (c1) to indigo (c2), wandering a little
-// across the rock and over time. It comes in from the walls as the vein
-// does, the seams opening from hairlines, and draws back the same way.
-// Never over the middle, behind the UI.
-
-// Crystal faces: the cells of a jittered grid drawn out on a slant (x in
-// cell units). How near x is to the seam between two faces and to a corner
-// where three meet (cell units, 0 on it), and which face it is in (0 to 1).
-vec3 veinCells(vec2 x) {
+// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path the hall
+// goes cold and dark, and seams of azurite run through the rock of the
+// walls and the floor: broad crystal faces, their seams glowing pale blue,
+// brightest where three faces meet, and behind them, deeper in the rock,
+// more of the crystal, dimmer and bluer. The faces catch a little of the
+// light, each its own, and the light moves slowly along the seams. It grows
+// in from the edges as the vein comes in (never over the middle, behind the
+// UI).
+// Crystal faces: the cells of a jittered grid (x in cell units). How near x
+// is to the seam between two faces (0 on it), and to a corner where three
+// meet (0 at it); which face it is in (0 to 1); and how far across the face
+// toward the light it lies (-1 to 1).
+vec4 veinCells(vec2 x) {
   vec2 i = floor(x);
   vec2 f = fract(x);
   float d1 = 8.0;
   float d2 = 8.0;
   float d3 = 8.0;
+  vec2 r1 = vec2(0.0);
   vec2 id = vec2(0.0);
   for (int y = -1; y <= 1; y++)
     for (int k = -1; k <= 1; k++) {
@@ -144,89 +137,73 @@ vec3 veinCells(vec2 x) {
         d3 = d2;
         d2 = d1;
         d1 = d;
+        r1 = r;
         id = i + g;
       } else if (d < d2) {
         d3 = d2;
         d2 = d;
       } else if (d < d3) d3 = d;
     }
-  return vec3(sqrt(d2) - sqrt(d1), sqrt(d3) - sqrt(d1), nhash(id + 5.7));
+  return vec4(sqrt(d2) - sqrt(d1), sqrt(d3) - sqrt(d1), nhash(id + 5.7), clamp(dot(-r1, vec2(0.6, -0.8)) / 0.7, -1.0, 1.0));
 }
 
 vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float dark) {
-  float e = uVein;
+  float v = uVein;
   vec2 xy = p / vec2(W, H);
-  // What glows shows through the dark closing in, dimmed, and burns a little less the deeper.
-  float lit = (1.0 - 0.8 * dark) * uFeatures;
-  vec3 c0 = rgb(214.0, 238.0, 255.0);
-  vec3 c1 = rgb(62.0, 132.0, 255.0);
-  vec3 c2 = rgb(34.0, 46.0, 152.0);
-  // The hall's light, cold now, and drawing back toward the walls.
+  // Cold and darker: the path's warm light is behind you.
+  col = mix(col, col * vec3(0.42, 0.58, 0.95), 0.75 * v);
+  col *= 1.0 - 0.3 * v;
+  // The rock the seams run in: the walls, then the floor, reaching further in as it comes.
   float side = min(xy.x, 1.0 - xy.x);
-  float near = 1.0 - smoothstep(0.0, 0.42, side);
-  col = mix(col, col * vec3(0.5, 0.66, 0.98), 0.7 * e);
-  col *= 1.0 - e * (0.16 + 0.2 * near);
-  // How far in from the walls (and up from the floor) it has come.
-  float come = smoothstep(0.0, 1.0, e);
-  float reach = 0.1 + 0.25 * come;
-  float rock = max(1.0 - smoothstep(0.35 * reach, reach, side), 0.85 * smoothstep(1.0 - 0.7 * reach, 1.0, xy.y));
-  // The vein's cold light about the walls, faint.
-  col += lit * c1 * (0.018 * e * (exp(-side / 0.08) + 0.5 * exp(-(1.0 - xy.y) / 0.07)));
-  if (rock <= 0.0) return col;
-  float rise = smoothstep(0.0, 0.35, e);
-  float se = sqrt(e) * rise;
-  vec2 q = (p + vec2(uSlide, uSink)) / S;
-  float w = 0.6 * envDrift(q, tm, 5.0);
-  // The ore: broad bands slanting through the rock, where the crystal is;
-  // a faint mineral blue in them and a cold bloom deeper in.
-  vec2 b = mat2(0.87, -0.5, 0.5, 0.87) * q;
-  vec2 bw = b + 0.5 * vec2(vnoise(b * 1.1 + 3.0), vnoise(b * 1.1 - 4.0));
-  float ore = smoothstep(0.4, 0.72, fbm(vec2(bw.x * 1.2, bw.y * 3.6)));
-  col = mix(col, c2 * uLight, lit * 0.09 * ore * rock * e);
-  col += lit * c2 * (0.03 * ore * ore * rock * se);
-  // Far in the rock: finer faces, their seams dim and deep blue.
-  vec2 qf = (p + vec2(uSlide, 0.6 * uSink)) / S;
-  vec3 cf = veinCells(mat2(0.8, -0.6, 0.6, 0.8) * qf * vec2(10.5, 5.0) + 31.0);
-  float px = 10.5 / S;
-  float seamF = exp(-cf.x * cf.x / (2.0 * px * px)) * rise;
-  col += lit * envTone(c0, c1, c2, 0.78 + w) * (seamF * 0.14 + exp(-cf.x / 0.12) * 0.02) * ore * rock * se;
-  // Near: the faces, each catching a little more or less of the light.
-  vec2 xn = mat2(0.8, -0.6, 0.6, 0.8) * q * vec2(5.5, 2.6);
-  vec3 cn = veinCells(xn);
-  float face = cn.z;
-  // A sheen drifting slowly over the faces, as the light finds them.
-  float sheen = smoothstep(0.3, 0.8, vnoise(q * 1.6 + vec2(tm * 0.012, -tm * 0.008)));
-  col = mix(col, envTone(c0, c1, c2, 0.85 + w) * uLight, lit * ore * rock * e * 0.07 * face);
-  col += lit * c1 * (0.022 * face * face * sheen * ore * rock * se);
-  // Their seams: px wide at the screen (a cell is about S / 5.5 px across),
-  // opening from hairlines as it comes.
-  float pn = 5.5 / S;
-  float open = 0.4 + 0.6 * e;
-  float coreS = exp(-cn.x * cn.x / (2.0 * pow(1.3 * pn * open, 2.0)));
-  float bodyS = exp(-cn.x / (4.0 * pn * open + 1e-4));
-  float haloS = exp(-cn.x / 0.18);
-  // The light running slowly along them.
-  float run = 0.55 + 0.45 * sin(tm * 0.4 - 1.6 * (xn.x + 0.6 * xn.y) + 6.283 * face);
-  col *= 1.0 - 0.4 * e * (1.0 - e) * bodyS * ore * rock;
-  col += lit * ore * rock * (
-    envTone(c0, c1, c2, 1.0) * haloS * 0.05 * se +
-    envTone(c0, c1, c2, 0.6 + w) * bodyS * (0.22 + 0.14 * run) * se +
-    envTone(c0, c1, c2, 0.15 + 0.5 * w) * coreS * (0.35 + 0.3 * run) * e * rise);
-  // The crystals where three faces meet: a small point of light and a
-  // soft glow round it, each breathing slowly on a beat of its own.
-  float corner = cn.y / (pn * 1.0);
-  float breathe = 0.55 + 0.45 * sin(tm * (0.22 + 0.2 * face) + 6.283 * face);
-  float node = exp(-corner * corner / 4.0) + 0.25 * exp(-corner / 6.0);
-  col += lit * c0 * node * breathe * bodyS * 0.5 * ore * rock * e * rise;
-  // A cold mist low over the floor.
-  float low = smoothstep(0.72, 1.0, xy.y);
-  if (low > 0.0) {
-    vec2 mm = vec2(p.x / S * 1.4 - tm * 0.006, (p.y + 0.4 * uSink) / S * 4.2);
-    mm.x += 0.9 * vnoise(mm * 0.5 + vec2(3.1, tm * 0.01));
-    float mist = smoothstep(0.38, 0.8, fbm(mm));
-    col = mix(col, envTone(c0, c1, c2, 0.75 + w) * 0.7 * uLight, 0.06 * mist * low * e * (1.0 - 0.5 * dark));
-  }
-  return col;
+  float reach = 0.1 + 0.24 * v;
+  float wall = max(1.0 - smoothstep(reach * 0.3, reach, side), 0.8 * smoothstep(1.0 - 0.55 * reach, 1.0, xy.y));
+  if (wall <= 0.0) return col;
+  vec3 deep = rgb(22.0, 40.0, 140.0);
+  vec3 azure = rgb(40.0, 105.0, 255.0);
+  vec3 pale = rgb(150.0, 205.0, 255.0);
+  vec3 white = rgb(230.0, 245.0, 255.0);
+  // The dark of the depth and the clock dims it, as it does every glow.
+  float lit = wall * v * (1.0 - 0.8 * dark);
+  mat2 slant = mat2(0.8, -0.6, 0.6, 0.8);
+  // Deeper in the rock, behind: smaller faces, their seams dim and deep
+  // blue, going up slower than the near ones as the scene sinks.
+  vec2 qf = (p + vec2(0.7 * uSlide, 0.55 * uSink)) / S;
+  vec2 xf = slant * qf * vec2(9.0, 4.4) + 31.0;
+  vec4 ef = veinCells(xf);
+  float oreF = smoothstep(0.38, 0.7, fbm(qf * 1.7 + vec2(-2.6, 7.1)));
+  float runF = 0.65 + 0.35 * sin(tm * 0.3 - 1.3 * (xf.x + 0.5 * xf.y));
+  // (Wider and softer than the near seams, as if out of focus.)
+  float faceF = 0.4 + 0.6 * ef.z;
+  col += (deep * (0.24 * (1.0 - smoothstep(0.0, 0.34, ef.x)) + 0.05 * faceF * smoothstep(-0.6, 1.0, ef.w)) +
+    azure * (0.16 * runF * (1.0 - smoothstep(0.0, 0.11, ef.x)))) * (oreF * lit);
+  // The near seams: straight cracks between crystal faces, the faces drawn
+  // out on a slant so they run as veins, only where the ore runs (a band of
+  // slow noise), the walls going up with the scene (uSink) as it sinks.
+  vec2 q = (p + vec2(uSlide, 0.9 * uSink)) / S;
+  vec2 x = slant * q * vec2(5.5, 2.6);
+  vec4 e = veinCells(x);
+  float ore = smoothstep(0.42, 0.68, fbm(q * 2.2 + vec2(4.2, 1.3)));
+  if (ore <= 0.0) return col;
+  float face = e.z;
+  // The faces: each catches a little of the light, brighter toward the
+  // side it comes from, and a glint crosses each one slowly, on its own beat.
+  float catchL = (0.35 + 0.65 * face) * smoothstep(-0.6, 1.0, e.w);
+  float glint = exp(-pow(e.w - 0.9 * sin(tm * 0.11 + 6.283 * face), 2.0) / 0.05);
+  col += mix(azure, pale, 0.25 * glint) * ((0.075 * catchL + 0.05 * glint * face) * ore * lit);
+  // The seams swell and pinch along their length, as ore does.
+  float swell = 0.7 + 0.6 * vnoise(x * 1.3 + 9.0);
+  float seam = 1.0 - smoothstep(0.0, 0.045 * swell, e.x);
+  float body = 1.0 - smoothstep(0.0, 0.12 * swell, e.x);
+  float halo = 1.0 - smoothstep(0.0, 0.32, e.x);
+  // Crystals where three faces meet, each breathing over many seconds, with a soft bloom round it.
+  float node = (1.0 - smoothstep(0.0, 0.16, e.y)) * seam;
+  float bloom = 1.0 - smoothstep(0.0, 0.34, e.y);
+  float breathe = 0.7 + 0.3 * sin(tm * 0.35 + 6.283 * nhash(floor(x)));
+  // The light moving along the seams, slowly.
+  float run = 0.6 + 0.4 * sin(tm * 0.45 - 1.7 * (x.x + 0.6 * x.y));
+  vec3 add = azure * (0.14 * halo * halo + 0.16 * body * swell) + pale * (0.55 * seam * run) +
+    white * (0.85 * node + 0.12 * bloom * bloom * halo) * breathe;
+  return col + add * (ore * lit);
 }
 
 // The slot environment i (its index in ENVIRONMENTS) is drawn from, or ${NO_SLOT}: none.
