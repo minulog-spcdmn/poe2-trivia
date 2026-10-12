@@ -16,14 +16,18 @@
   let stats: Promise<Stats> | undefined;
   /** The tooltips once they're here: a tooltip drawn after that is drawn whole at once, never a moment of "…" first. */
   let loaded: Stats | null = null;
-  /**
-   * The tooltips, loaded once. ItemWindow waits for them before it unrolls,
-   * so what it unrolls is the whole tooltip, not the line that waits for it.
-   */
   /** Whether the tooltips are here already. */
   export const statsLoaded = () => !!loaded;
+  /** The game's tooltip font (app.css), fetched the first time it's needed: it waits with the tooltips, so they never show in another first. */
+  const fonts = () =>
+    Promise.all(['1rem "Fontin SmallCaps"', 'italic 1rem "Fontin"'].map((f) => document.fonts?.load(f).catch(() => {})));
+  /**
+   * The tooltips, loaded once, with their font. ItemWindow waits for them
+   * before it unrolls, so what it unrolls is the whole tooltip, not the line
+   * that waits for it.
+   */
   export const loadStats = () =>
-    (stats ??= import('../data/itemStats.json').then((m) => (loaded = m.default as unknown as Stats)));
+    (stats ??= Promise.all([import('../data/itemStats.json'), fonts()]).then(([m]) => (loaded = m.default as unknown as Stats)));
 
   /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */
   const COLOURS: Record<string, string> = { w: 'white', a: 'aug', p: 'white', f: 'fire', c: 'cold', l: 'lightning', h: 'chaos' };
@@ -107,11 +111,12 @@
 
 <style>
   /*
-   * The game's tooltip: centred small capitals, grey labels with white or
-   * blue values (each damage type in its own colour), blue mods, orange
-   * flavour text. Its colours are the game's (as poe2db has them), fire and
-   * cold lifted a little: theirs are too dark to read at this size on our
-   * black.
+   * The game's tooltip: centred, every line in Fontin's small capitals at
+   * one size (the name above it a little larger), grey labels with white
+   * or blue values (each damage type in its own colour), blue mods, orange
+   * flavour text in slanted small capitals, a gem's description in Fontin's
+   * italic. Its colours are the game's (as poe2db has them), fire and cold
+   * lifted a little: theirs are too dark to read at this size on our black.
    */
   .tooltip-body {
     --tt-grey: #8c8c8c;
@@ -119,18 +124,18 @@
     --tt-blue: #8888ff;
     --tt-unique: #af6025;
     text-align: center;
-    font-variant: small-caps;
+    font-family: var(--font-tooltip);
+    font-weight: 400;
     font-variant-numeric: lining-nums;
   }
   .section {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
   }
   .line {
     margin: 0;
-    font-size: 1.02rem;
-    line-height: 1.28;
+    font-size: 1rem;
+    line-height: 1.3;
     white-space: pre-line;
     text-wrap: balance;
     color: var(--tt-grey);
@@ -156,14 +161,15 @@
     color: #d02090;
   }
   .d {
+    font-family: var(--font-tooltip-italic);
+    font-style: italic;
     color: #c4beb4;
   }
   .c {
     color: #d20000;
   }
-  /* Flavour text: in italic lower case as the game sets it, each verse balanced on its own. */
+  /* Flavour text: the same small capitals, slanted, as the game sets it; each verse balanced on its own. */
   .f {
-    font-variant: normal;
     font-style: italic;
     color: var(--tt-unique);
     white-space: normal;
@@ -175,7 +181,7 @@
   /* A skill the gem brings: its name, as the game titles the gem's second tab. */
   .t {
     color: var(--tt-white);
-    font-size: 1.08rem;
+    font-size: 1.15rem;
     margin-bottom: 0.15rem;
   }
   .wait {
@@ -185,7 +191,7 @@
   /* The game's rule between sections: a plain line fading out at both ends, in the unique's colour. */
   .rule {
     height: 1px;
-    margin: 0.6rem auto;
+    margin: 0.5rem auto;
     width: 84%;
     background: linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.75) 22%, rgba(175, 96, 37, 0.75) 78%, transparent);
   }

@@ -27,6 +27,27 @@
   font-style: normal;
   font-display: swap;
 }
+/* A font by Jos Buivenga (exljbris) -> www.exljbris.com */
+/* Fontin, the font of the game's item tooltips (ItemDetails): its small caps
+   for nearly every line, its italic for a gem's description. Its license
+   allows @font-face embedding only with the notice above, kept beside the
+   declarations (in the build too: vite.config.ts puts it back there). The
+   small caps face draws its lower case as small capitals, so it's set without
+   font-variant: small-caps, which would fake them over its own. */
+@font-face {
+  font-family: 'Fontin SmallCaps';
+  src: url('./assets/fonts/fontin-smallcaps.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fontin';
+  src: url('./assets/fonts/fontin-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
 
 :root {
   --bg: #0a0908;
@@ -45,6 +66,9 @@
   /* Room codes, the in-game header and avatars. */
   --font-cinzel: 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-body: 'EB Garamond', Garamond, Georgia, serif;
+  /* Item tooltips, as the game sets them. */
+  --font-tooltip: 'Fontin SmallCaps', var(--font-body);
+  --font-tooltip-italic: 'Fontin', var(--font-body);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
   /* Bars pinned over the page on phones (the scoreboard at the top): nearly
