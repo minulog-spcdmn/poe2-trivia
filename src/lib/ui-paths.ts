@@ -10,12 +10,17 @@ export function artScale(w: number, h: number) {
   return cells(w) <= 2 && cells(h) <= 2 ? 4 : 2;
 }
 
+/** An item's picture's path from the site's base, full size (itemImage), or its `size` px copy (itemThumb). */
+export function itemFile(id: string, size?: (typeof ITEM_THUMBS)[number]) {
+  return size ? `items/${size}/${id}.avif` : `items/${id}.avif`;
+}
+
 /** Read when asked, not on import, so tests can import this module outside Vite. */
-const items = () => `${import.meta.env.BASE_URL}items/`;
+const base = () => import.meta.env.BASE_URL;
 
 /** An item's picture, full size (artScale): for the question and the codex's item page. */
 export function itemImage(id: string) {
-  return `${items()}${id}.avif`;
+  return `${base()}${itemFile(id)}`;
 }
 
 /** The smaller copies' longest sides, px (THUMBS in scripts/upscale-art.py and scripts/fetch-data.mjs). */
@@ -23,7 +28,7 @@ export const ITEM_THUMBS = [256, 128] as const;
 
 /** A smaller copy for a small spot: at most `size` px on its longest side (never larger than the full picture). */
 export function itemThumb(id: string, size: (typeof ITEM_THUMBS)[number]) {
-  return `${items()}${size}/${id}.avif`;
+  return `${base()}${itemFile(id, size)}`;
 }
 
 /**

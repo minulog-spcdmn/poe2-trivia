@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Measures every category card's emblem and the items behind it (lib/ui,
-// categoryIcons) and writes their fits to src/data/iconFits.json, and their
+// Measures every category card's emblem and the items behind it (as
+// lib/categoryArt picks them; tests/iconFits.test.ts checks they're all here) and writes their fits to src/data/iconFits.json, and their
 // clean masks to public/icons/masks/ (lossless WebP, through ffmpeg; PNG
 // without it), so the cards are laid out and drawn clean from their first
 // frame (lib/iconFit). Measured in
