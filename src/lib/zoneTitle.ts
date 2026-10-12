@@ -109,7 +109,7 @@ export const SUBTITLES: Record<string, string> = {
   'Fungal Caverns': 'Caps grow where miners fell',
   'Vaal Outpost': 'Blood channels in the floor',
   'Abyssal Depths': 'Light stops short of the floor',
-  'Petrified Forest': 'Birds still in the branches',
+  'Petrified Forest': 'Sap set hard mid-drip',
   'Sulphur Vents': 'Yellow crust on every lamp',
   'Abyssal City': 'Streets laid with bone',
   'Primeval Ruins': 'Blue fire in the old halls',
