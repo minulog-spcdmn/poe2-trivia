@@ -683,8 +683,9 @@
   .card.out .icon {
     filter: drop-shadow(0 0 20px var(--f-pulse));
   }
+  /* Drawn in the engraving instead: the place is kept, so a row's name keeps clear of it. */
   .card.out .icon.none {
-    display: none;
+    visibility: hidden;
   }
   .find-tag.out-tag {
     color: var(--f-hi);
