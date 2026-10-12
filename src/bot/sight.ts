@@ -141,7 +141,7 @@ async function seenVeiled(veil: VeilArt, patches: Record<number, ShownPatch>): P
   const [cover, mask] = canvas(veil.w, veil.h);
   mask.fillStyle = '#fff';
   for (const p of list) {
-    ctx.drawImage(await load(p.url), p.x, p.y, p.w, p.h);
+    ctx.drawImage(await p.picture(), p.x, p.y, p.w, p.h);
     mask.fillRect(p.x, p.y, p.w, p.h);
   }
   const weight = new Float32Array(SIZE * SIZE);

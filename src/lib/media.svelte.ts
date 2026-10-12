@@ -1,24 +1,20 @@
 // Question art. Guests never load an item's image file directly while a
 // question is open (its file name would identify the answer). Instead the
 // host sends a lightly altered copy (re-scaled, shifted, noised, re-encoded,
-// so it doesn't match the original file byte for byte), and for veiled
-// questions only the patches of it that have been uncovered so far.
+// so it doesn't match the original file byte for byte). A veiled picture
+// goes out whole, with which patch each of its pixels falls in, and the
+// host then says when each patch is uncovered; every device cuts the
+// patches' pictures from it itself.
 
 import { itemImage } from './ui-paths';
-import { cutPatches, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
+import { labelPatches, packLabels, patchShapes, spreadOrder, unpackLabels, veilSchedule, visibleBox, type PatchShape, type VeilPlan } from './patches';
 import type { MediaMsg } from './protocol';
 import type { Grayscale, Question, Veil } from './game';
 import { veilPlan } from './delve';
 
+/** A patch as the host lets it out: which one it is (its index in the cut, patchShapes). */
 export interface Patch {
   i: number;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  data: ArrayBuffer;
-  /** Where the item carries on into other patches (see RawPatch.edges). */
-  edges: ArrayBuffer;
 }
 
 /**
@@ -35,12 +31,18 @@ export interface VeilArt {
   box: [number, number, number, number];
 }
 
+/** A veiled picture as it goes out: what is told of it (VeilArt), the picture itself, and which patch each of its art pixels falls in (packLabels). */
+export interface VeilPicture extends VeilArt {
+  data: ArrayBuffer;
+  labels: ArrayBuffer;
+}
+
 /** Everything a question can show, prepared once by the host. */
 export interface PreparedMedia {
   qid: number;
   art: { w: number; h: number; data: ArrayBuffer } | null;
-  /** Veiled questions: the art cut into patches, in the order they uncover. */
-  veil: VeilArt | null;
+  /** Veiled questions: the art, and its patches in the order they uncover. */
+  veil: VeilPicture | null;
   patches: Patch[];
   /** Veiled questions, host only: when each patch goes out (ms after the clock starts), the gap up to the half, and each one's area (veilSchedule). */
   delays: number[];
@@ -111,8 +113,8 @@ export type ArtSizes = ReadonlyMap<string, { w: number; h: number }>;
 /**
  * At most how many pixels per art pixel a picture goes out with. The art to
  * name is shown big and alone, so it keeps all the file has (4 for items up
- * to 2 x 2: artScale); veiled patches (lossless, and only until the full
- * art takes over at the reveal) and the small tiles of a "find the art"
+ * to 2 x 2: artScale); veiled pictures (shown only until the full art
+ * takes over at the reveal) and the small tiles of a "find the art"
  * question with many options go out at 2, which keeps what every guest is
  * sent near what it was before the art went to 4.
  */
@@ -173,16 +175,14 @@ async function alteredCanvas(itemId: string, art: { w: number; h: number }, most
 }
 
 /**
- * Whole pictures go out as WebP, at a quality that keeps the upscaled art's
- * detail. Patches are lossless PNG: lossy encoding blurs them into blocks
- * with seams between neighbours. Encoded in a worker (encodeWorker.ts): on
- * the page's main thread, a veiled picture's patches held it up for a tenth
- * of a second or more as the question began. Where there is no worker or
- * OffscreenCanvas, a canvas does it here.
+ * Pictures go out as WebP, at a quality that keeps the upscaled art's
+ * detail. Encoded in a worker (encodeWorker.ts), so the page goes on as the
+ * question begins; where there is no worker or OffscreenCanvas, a canvas
+ * does it here.
  */
-function encode(pixels: ImageData, lossless = false): Promise<ArrayBuffer> {
-  const type = lossless ? 'image/png' : 'image/webp';
-  const quality = lossless ? undefined : rand(0.92, 0.95);
+function encode(pixels: ImageData): Promise<ArrayBuffer> {
+  const type = 'image/webp';
+  const quality = rand(0.92, 0.95);
   const worker = encoder();
   if (!worker) return encodeHere(pixels, type, quality);
   const id = ++encodeJobs;
@@ -265,12 +265,12 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
 }
 
 /**
- * A veiled picture as cut: what guests get told of it, its patches in the
- * order they uncover, and (host only) when each goes out, the gap between
- * them up to the half, and how much of the item each holds.
+ * A veiled picture as cut: the picture and what guests get told of it, its
+ * patches in the order they uncover, and (host only) when each goes out,
+ * the gap between them up to the half, and how much of the item each holds.
  */
 export interface CutVeil {
-  veil: VeilArt;
+  veil: VeilPicture;
   patches: Patch[];
   delays: number[];
   gap: number;
@@ -283,8 +283,9 @@ export interface CutVeil {
  * `plan` has it): half of the item in by VEIL_LEFT_MS before the clock ends
  * at the latest, the rest after. The patches are cut in art pixels (a copy
  * of the picture scaled down to them), so their shapes, seams and areas are
- * what they always were; each patch's own picture is then taken from the
- * full-resolution canvas, scale × scale pixels for each of its own.
+ * what they always were. The picture goes out whole, at full resolution,
+ * with the cut (its labels); each device takes each patch's own picture from
+ * it (patchPicture), scale × scale pixels for each of its own.
  */
 async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): Promise<CutVeil> {
   const W = Math.round(canvas.width / S);
@@ -296,10 +297,8 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   sg.imageSmoothingQuality = 'high';
   sg.drawImage(canvas, 0, 0, W, H);
   const pixels = sg.getImageData(0, 0, W, H).data;
-  // One 32-bit word per pixel, so each one copies without a subarray.
-  const fine = new Uint32Array(pixelsOf(canvas).data.buffer);
-  const FW = canvas.width;
-  const cut = cutPatches(pixels, W, H, v.size, v.seed);
+  const label = labelPatches(pixels, W, H, v.size, v.seed);
+  const cut = patchShapes(label, W, H);
   const order = spreadOrder(cut, v.seed);
   const areas = order.map((i) => cut[i].area);
   const schedule = veilSchedule(areas, plan);
@@ -309,38 +308,55 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
     burn: Math.round(schedule.burn),
     count: cut.length,
     box: visibleBox(pixels, W, H),
+    data: await encode(pixelsOf(canvas)),
+    labels: packLabels(label).buffer as ArrayBuffer,
   };
-  const patches = await Promise.all(
-    order.map(async (i) => {
-      const { x, y, w, h, pixels: own, edges } = cut[i];
-      // The patch's pixels at full resolution: wherever it has an art pixel.
-      const pw = w * S;
-      const ph = h * S;
-      const big = new Uint32Array(pw * ph);
-      for (let by = 0; by < ph; by++) {
-        const ay = (by / S) | 0;
-        const row = (y * S + by) * FW + x * S;
-        for (let bx = 0; bx < pw; bx++) {
-          if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
-        }
-      }
-      return { i, x, y, w, h, data: await encode(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), true), edges: edges.buffer as ArrayBuffer };
-    }),
-  );
-  return { veil, patches, delays: schedule.delays, gap: schedule.gap, areas };
+  return { veil, patches: order.map((i) => ({ i })), delays: schedule.delays, gap: schedule.gap, areas };
 }
 
 // ---- what this device shows -------------------------------------------
 
 export interface ShownPatch {
   i: number;
+  /** Its place in the picture, in art pixels. */
   x: number;
   y: number;
   w: number;
   h: number;
-  url: string;
-  /** (x, y, patch) triples: where this patch meets another (see RawPatch.edges). */
+  /** Its own picture, cut from the veiled one (patchPicture), made when first asked for. */
+  picture: () => Promise<HTMLCanvasElement>;
+  /** (x, y, patch) triples: where this patch meets another (see PatchShape.edges). */
   edges: Uint16Array;
+}
+
+/** A veiled picture as received: the picture, decoded, and its patches' shapes. */
+interface Cut {
+  w: number;
+  picture: Promise<HTMLImageElement>;
+  shapes: PatchShape[];
+}
+
+/**
+ * A patch's own picture, at the veiled picture's resolution: its part of the
+ * picture, everything outside its mask (its pixels and their 1px ring)
+ * transparent, as the host's patches were when each went out on its own.
+ */
+function patchPicture(img: HTMLImageElement, W: number, p: PatchShape): HTMLCanvasElement {
+  const S = Math.max(1, Math.round(img.naturalWidth / W));
+  const canvas = document.createElement('canvas');
+  canvas.width = p.w * S;
+  canvas.height = p.h * S;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, p.x * S, p.y * S, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // One 32-bit word per pixel, so each one clears in one go.
+  const px = new Uint32Array(data.data.buffer);
+  for (let by = 0; by < canvas.height; by++) {
+    const row = ((by / S) | 0) * p.w;
+    for (let bx = 0; bx < canvas.width; bx++) if (!p.mask[row + ((bx / S) | 0)]) px[by * canvas.width + bx] = 0;
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas;
 }
 
 /** Binary from the wire (an ArrayBuffer or a view of one) as 16-bit numbers. */
@@ -363,10 +379,11 @@ class Shown {
   /** When this question's first picture arrived (page clock), for the codex's answer times. */
   since = 0;
   private urls: string[] = [];
+  /** The veiled pictures received, by tile (-1: the question's own). */
+  private cuts = new Map<number, Cut>();
 
   private url(data: ArrayBuffer) {
-    // No type: patches are PNG, everything else WebP, and images are sniffed anyway.
-    const u = URL.createObjectURL(new Blob([data]));
+    const u = URL.createObjectURL(new Blob([data], { type: 'image/webp' }));
     this.urls.push(u);
     return u;
   }
@@ -376,6 +393,7 @@ class Shown {
     if (qid === this.qid) return;
     for (const u of this.urls) URL.revokeObjectURL(u);
     this.urls = [];
+    this.cuts.clear();
     this.qid = qid;
     this.since = performance.now();
     this.art = null;
@@ -394,13 +412,24 @@ class Shown {
         this.art = { url: this.url(m.data), w: m.w, h: m.h };
         break;
       case 'veil': {
+        const labels = unpackLabels(uint16s(m.labels), m.w * m.h);
+        if (!labels) return;
+        const url = this.url(m.data);
+        const img = new Image();
+        img.src = url;
+        this.cuts.set(m.tile ?? -1, { w: m.w, picture: img.decode().then(() => img), shapes: patchShapes(labels, m.w, m.h) });
         const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
         if (m.tile === undefined) this.veil = v;
         else this.tileVeils = { ...this.tileVeils, [m.tile]: v };
         break;
       }
       case 'patch': {
-        const p = { i: m.i, x: m.x, y: m.y, w: m.w, h: m.h, url: this.url(m.data), edges: uint16s(m.edges) };
+        const cut = this.cuts.get(m.tile ?? -1);
+        const shape = cut?.shapes[m.i];
+        if (!cut || !shape) return;
+        let made: Promise<HTMLCanvasElement> | null = null;
+        const picture = () => (made ??= cut.picture.then((img) => patchPicture(img, cut.w, shape)));
+        const p = { i: m.i, x: shape.x, y: shape.y, w: shape.w, h: shape.h, picture, edges: shape.edges };
         if (m.tile === undefined) this.patches = { ...this.patches, [m.i]: p };
         else this.tilePatches = { ...this.tilePatches, [m.tile]: { ...this.tilePatches[m.tile], [m.i]: p } };
         break;

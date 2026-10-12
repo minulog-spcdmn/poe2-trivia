@@ -87,21 +87,23 @@ test('rate limit allows bursts but not floods', () => {
   assert.equal(r.strikes, 80);
 });
 
-test('veiled art patches carry their edges, in whole (x, y, patch) triples', () => {
-  const patch = { t: 'patch', qid: 5, i: 3, x: 10, y: 20, w: 30, h: 40, data: new ArrayBuffer(8) };
-  assert.ok(parseHostMsg({ ...patch, edges: new Uint16Array([1, 2, 4, 3, 2, 4]).buffer }));
-  assert.ok(parseHostMsg({ ...patch, edges: new Uint8Array(12) }), 'a view of the bytes is fine');
-  assert.ok(parseHostMsg({ ...patch, edges: new ArrayBuffer(0) }), 'a patch may touch nothing');
-  assert.equal(parseHostMsg(patch), null);
-  assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(7) }), null);
-  assert.equal(parseHostMsg({ ...patch, edges: [1, 2, 3] }), null);
-  assert.equal(parseHostMsg({ ...patch, edges: new ArrayBuffer(6 * 20000) }), null);
-  const veil = { t: 'veil', qid: 5, w: 100, h: 120, burn: 900, count: 12, box: [4, 6, 90, 108] };
+test('a veiled picture goes out whole with its labels, and a patch only says which one is uncovered', () => {
+  const veil = { t: 'veil', qid: 5, w: 100, h: 120, burn: 900, count: 12, box: [4, 6, 90, 108], data: new ArrayBuffer(8), labels: new Uint16Array([1, 12000]).buffer };
   assert.ok(parseHostMsg(veil));
+  assert.ok(parseHostMsg({ ...veil, labels: new Uint8Array(8) }), 'a view of the bytes is fine');
+  assert.equal(parseHostMsg({ ...veil, data: undefined }), null);
+  assert.equal(parseHostMsg({ ...veil, labels: undefined }), null);
+  assert.equal(parseHostMsg({ ...veil, labels: new ArrayBuffer(6) }), null, 'whole (patch, length) pairs');
+  assert.equal(parseHostMsg({ ...veil, labels: new ArrayBuffer(4 * 300000) }), null);
   assert.equal(parseHostMsg({ ...veil, box: undefined }), null);
   assert.equal(parseHostMsg({ ...veil, box: [1, 2, 3] }), null);
   assert.equal(parseHostMsg({ ...veil, count: undefined }), null);
   assert.equal(parseHostMsg({ t: 'veil', qid: 5, w: 100, h: 120 }), null);
+  const patch = { t: 'patch', qid: 5, i: 3 };
+  assert.deepEqual(parseHostMsg(patch), patch);
+  assert.equal(parseHostMsg({ ...patch, i: 255 }), null);
+  assert.equal(parseHostMsg({ ...patch, i: -1 }), null);
+  assert.equal(parseHostMsg({ t: 'patch', qid: 5 }), null);
 });
 
 test('a version mismatch says which side has to reload', () => {
@@ -115,8 +117,8 @@ test('a version mismatch says which side has to reload', () => {
 });
 
 test('veiled "find the art" pictures say which option they belong to', () => {
-  const veil = { t: 'veil', qid: 5, w: 100, h: 80, burn: 900, count: 16, box: [0, 0, 100, 80] };
-  const patch = { t: 'patch', qid: 5, i: 3, x: 0, y: 0, w: 20, h: 20, data: new ArrayBuffer(8), edges: new ArrayBuffer(6) };
+  const veil = { t: 'veil', qid: 5, w: 100, h: 80, burn: 900, count: 16, box: [0, 0, 100, 80], data: new ArrayBuffer(8), labels: new ArrayBuffer(4) };
+  const patch = { t: 'patch', qid: 5, i: 3 };
   assert.ok(parseHostMsg(veil), 'the art of a name question has no tile');
   assert.ok(parseHostMsg({ ...veil, tile: 7 }));
   assert.ok(parseHostMsg({ ...patch, tile: 0 }));
@@ -134,8 +136,8 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 25: players say whether their game is on screen and in use (presence), and the host tells the lobby how each stands (standing); 24: a pointer goes with the anchors round its own, and many more parts of the screen are anchors (cursors.ts); 23: Delve together counts the team\'s streak (depths cleared in a row with nobody missing), which every screen\'s verdict burns with; 22: a new zone\'s cards are dealt as the plunge into it lands (dealAt), every screen holding them and their votes till then; 21: players send their pointers (cursor, cursors); 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 25);
+test('version 26: a veiled picture goes out whole with which patch each pixel falls in, and its patches are only named as they uncover; 25: players say whether their game is on screen and in use (presence), and the host tells the lobby how each stands (standing); 24: a pointer goes with the anchors round its own, and many more parts of the screen are anchors (cursors.ts); 23: Delve together counts the team\'s streak (depths cleared in a row with nobody missing), which every screen\'s verdict burns with; 22: a new zone\'s cards are dealt as the plunge into it lands (dealAt), every screen holding them and their votes till then; 21: players send their pointers (cursor, cursors); 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 26);
   // A host on 24 would take a guest's presence for a forged message and block them.
   assert.match(versionProblem(24)!, /^Your game is out of date/);
   // A host on 23 would take a pointer with more than one anchor, or on one it doesn't know, for a forged message and block its guest.

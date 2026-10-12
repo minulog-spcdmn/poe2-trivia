@@ -77,7 +77,8 @@ function chamfer(d: Float32Array, W: number, H: number) {
 }
 
 export interface BurnParams {
-  url: string;
+  /** The patch's own picture (media.svelte.ts patchPicture). */
+  picture: () => Promise<HTMLCanvasElement>;
   /** The patch's size in art pixels (its picture is finer, by the item's artScale). */
   w: number;
   h: number;
@@ -298,9 +299,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     raf = requestAnimationFrame(frame);
   };
 
-  const img = new Image();
-  img.src = params.url;
-  const begin = () => {
+  const begin = (img: HTMLCanvasElement) => {
     if (stopped) return;
     // Screen resolution (the canvas's own px times the stage's zoom, lib/stage.ts,
     // times the screen's density), but no more than the picture's own: it has
@@ -308,7 +307,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     // art pixels places the burn.
     const aw = params.w;
     const ah = params.h;
-    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), img.naturalWidth)));
+    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), img.width)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
@@ -321,7 +320,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     counted = true;
     burn(W / aw, H / ah);
   };
-  img.decode().then(begin, () => {});
+  params.picture().then(begin, () => {});
 
   return { destroy: stop };
 }

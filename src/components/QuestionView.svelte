@@ -1188,7 +1188,7 @@
                           style:width="{(p.w / tv.w) * 100}%"
                           style:height="{(p.h / tv.h) * 100}%"
                           use:appearTile={{
-                            url: p.url,
+                            picture: p.picture,
                             w: p.w,
                             h: p.h,
                             edges: p.edges,
@@ -1258,7 +1258,7 @@
                     style:width="{(p.w / v.w) * 100}%"
                     style:height="{(p.h / v.h) * 100}%"
                     use:appear={{
-                      url: p.url,
+                      picture: p.picture,
                       w: p.w,
                       h: p.h,
                       edges: p.edges,

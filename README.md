@@ -150,7 +150,7 @@ the same thing for everyone.
   "find the art" pictures: 1% of those questions at depth 24, one percent
   more every depth, all of them from depth 123. Each picture is cut much
   coarser than a whole item (at most 4 × 4), so ten of them stay a few
-  dozen patches each to send.
+  dozen patches each to burn in.
 - **Look-alike pictures.** From depth 49 a growing share of questions picks
   its look-alikes by their art instead of their names (1.4% at 49, as much
   more every depth, every question from 119): the wrong pictures of "find
@@ -700,8 +700,12 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **No image files to look up.** Guests never load an item's image file
   during a question. The host sends a lightly altered copy of the art
   (re-scaled, shifted, noised, re-encoded) straight over the connection. On
-  veiled difficulties it sends only the patches revealed so far, so the rest
-  of the picture isn't on the guest's machine at all.
+  veiled difficulties the altered picture goes out whole as the question
+  starts, with which patch each of its pixels falls in, and burns into view
+  as the host uncovers its patches. Cutting and sending every patch as a
+  picture of its own held the host's page up as each question began, so a
+  guest who digs into the page can now see a veiled picture before it has
+  burned in.
 - **Seats can't be taken over.** Each browser has a secret token that only
   its host ever sees; the IDs other players see are random public IDs.
   Rejoining needs the token and keeps your original name. The token is
