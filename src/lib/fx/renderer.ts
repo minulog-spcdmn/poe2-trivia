@@ -932,8 +932,13 @@ export function coverKey(boxes: readonly number[], view: readonly [number, numbe
   return key;
 }
 
-/** An open dialog (lib/behindDialog.ts): how far it dims the page, and its box and corner radius in CSS px. */
-export type DialogLight = { amount: number; box: DOMRect | null; radius: number };
+/**
+ * An open dialog (lib/behindDialog.ts): how far it dims the page, and its box
+ * and corner radius in CSS px. `hide`, when given, is how far the box hides
+ * the page's light instead of `amount`: a window over the page that doesn't
+ * dim it (lib/fx/core.ts hideLightIn) hides its light all the same.
+ */
+export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hide?: number };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 
 export class FxRenderer {
@@ -1222,7 +1227,7 @@ export class FxRenderer {
       if (b) gl.uniform4f(p.u('uDialogBox'), b.left, b.top, b.right, b.bottom);
       else gl.uniform4f(p.u('uDialogBox'), -1, -1, -1, -1);
       gl.uniform1f(p.u('uDialogR'), dialog.radius);
-      gl.uniform1f(p.u('uHide'), hide && b ? dialog.amount : 0);
+      gl.uniform1f(p.u('uHide'), hide && b ? (dialog.hide ?? dialog.amount) : 0);
       gl.uniform1f(p.u('uBlur'), DIALOG_BLUR * dialog.amount);
     };
 

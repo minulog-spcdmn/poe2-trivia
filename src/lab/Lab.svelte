@@ -38,7 +38,7 @@
     { label: 'Room busy', show: () => toast('The host is setting up a game. Try again in a moment.', 'warn', { title: 'Room busy' }) },
     { label: 'Refused (error)', show: () => toast("It's not your turn.", 'error') },
     { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
-    { label: 'Question set aside', show: () => toast('The host reloaded, so it cost nothing.', 'info', { title: 'Question set aside', who: someone() }) },
+    { label: 'Clock paused', show: () => toast('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' }) },
     { label: 'Fullscreen tip', show: showTip },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
@@ -136,7 +136,6 @@
 
   const ITEMS: { item: ItemKind; label: string }[] = [
     { item: 'wards', label: 'Wards' },
-    { item: 'shards', label: 'Shard' },
     { item: 'flares', label: 'Flares' },
     { item: 'dynamite', label: 'Dynamite' },
   ];
@@ -375,16 +374,14 @@
           </div>
         {/if}
         <span class="sub">Gain at once</span>
-        <div class="grid four">
+        <div class="grid three">
           <button onclick={() => L.gain('wards')} disabled={!!busy}>Ward</button>
-          <button onclick={() => L.gain('shards')} disabled={!!busy}>Shard</button>
           <button onclick={() => L.gain('flares')} disabled={!!busy}>Flare</button>
           <button onclick={() => L.gain('dynamite')} disabled={!!busy}>Dynamite</button>
         </div>
         <span class="sub">Find answered right</span>
-        <div class="grid">
-          <button onclick={() => L.findRight('azurite')} disabled={!!busy}>Vein, fast: ward</button>
-          <button onclick={() => L.findRight('azurite', true)} disabled={!!busy}>Vein, slow: shard</button>
+        <div class="grid three">
+          <button onclick={() => L.findRight('azurite')} disabled={!!busy}>Azurite Vein</button>
           <button onclick={() => L.findRight('flare')} disabled={!!busy}>Flare Cache</button>
           <button onclick={() => L.findRight('dynamite')} disabled={!!busy}>Dynamite Cache</button>
         </div>
@@ -411,7 +408,7 @@
         {:else}
           <p class="hint">{q && s?.phase === 'question' ? 'Waiting for the art; the clock starts once it is in.' : 'No question on the clock.'}</p>
         {/if}
-        <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count (a Vein's as fast).</p>
+        <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count.</p>
       </details>
 
       <details>
@@ -709,6 +706,9 @@
     gap: 0.3rem;
     margin: 0.4rem 0;
   }
+  .grid.three {
+    grid-template-columns: repeat(3, 1fr);
+  }
   .grid.four {
     grid-template-columns: repeat(4, 1fr);
   }
@@ -820,6 +820,7 @@
   }
 
   input[type='range'] {
+    --thumb: 14px;
     appearance: none;
     height: 4px;
     border-radius: 2px;
@@ -828,15 +829,15 @@
   }
   input[type='range']::-webkit-slider-thumb {
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   input[type='range']::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);

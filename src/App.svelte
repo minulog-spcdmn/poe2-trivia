@@ -145,7 +145,7 @@
   $effect.pre(() => followDeal(gs ?? null, session.hostNow()));
   // Delve: each new depth sinks the scene a little further as its cards are
   // dealt (not the run's first, nor the same depth's dealt again after a
-  // question set aside; see dealtDeeper). Into a new zone much further, with
+  // miss; see dealtDeeper). Into a new zone much further, with
   // the zone's sound and its title card, its cards dealt as it lands
   // (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
@@ -757,6 +757,7 @@
     }
   }
   .volume-pop input {
+    --thumb: 12px;
     display: block;
     writing-mode: vertical-lr;
     direction: rtl;
@@ -791,16 +792,16 @@
   }
   .volume-pop input::-webkit-slider-thumb {
     appearance: none;
-    width: 12px;
-    height: 12px;
+    width: var(--thumb);
+    height: var(--thumb);
     margin-left: -4px;
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   .volume-pop input::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: var(--thumb);
+    height: var(--thumb);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);

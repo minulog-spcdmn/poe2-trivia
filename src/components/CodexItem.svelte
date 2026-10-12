@@ -8,18 +8,26 @@
   import { itemImage, itemThumb } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
-  import { singular, type Item } from '../lib/game';
+  import { allArt, type DrawnItem, type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import ItemDetails from './ItemDetails.svelte';
+  import { readStored, writeStored } from '../lib/storage';
   import { calm } from '../lib/motion.svelte';
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
   const entry = $derived(codex.items[item.id]);
-  /** What it is, as one item: "Wand", "Ring". A gem's group is only its attribute, so gems say "Lineage Gem". */
-  const kind = $derived(singular(item.kind === 'gem' ? item.category : item.group));
+
+  /** Every way the item is drawn (Grand Spectrum's three jewels), and the one shown: its own, until another is picked. */
+  const arts = $derived(allArt(item));
+  let picked = $state({ id: '', i: 0 });
+  const drawn = $derived(arts[picked.id === item.id ? picked.i : 0] ?? arts[0]);
+  /** A variant's name in its picker: its base where they differ, else its place among them. */
+  const basesDiffer = $derived(new Set(arts.map((x) => x.base)).size === arts.length);
+  const artName = (a: DrawnItem, i: number) => (basesDiffer ? a.base : `${i + 1} of ${arts.length}`);
   const byCount = (pairs: [string, number][]) =>
     pairs
       .flatMap(([id, n]) => {
@@ -33,6 +41,15 @@
   const tookForIt = $derived(
     byCount(Object.entries(codex.items).flatMap(([id, e]) => (e.mixed[item.id] ? [[id, e.mixed[item.id]] as [string, number]] : []))),
   );
+
+  /** Which face shows: the item's tooltip or your record of it, as you last left it. */
+  type View = 'item' | 'record';
+  const VIEW_KEY = 'codexItemView';
+  let view = $state<View>(readStored(VIEW_KEY) === 'record' ? 'record' : 'item');
+  function show(v: View) {
+    view = v;
+    writeStored(VIEW_KEY, v);
+  }
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
@@ -112,7 +129,7 @@
       {#key item.id}
         <div class="head-text" in:fade={{ duration: 250 }}>
           <span class="iname" id="codex-item-name">{item.name}</span>
-          <span class="ibase">{item.base}</span>
+          <span class="ibase">{drawn.base}</span>
         </div>
       {/key}
       <button class="close" style:--socket="{SOCKET_X}px" onclick={onclose} aria-label="Close" title="Close">
@@ -120,50 +137,76 @@
       </button>
     </div>
 
-    <div class="art" bind:this={art}>
+    <div class="art" class:several={arts.length > 1} bind:this={art}>
       <ArcaneCircle />
       <div class="frame">
-        {#key item.id}
-          <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float />
+        {#key drawn.art}
+          <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />
         {/key}
       </div>
+      {#if arts.length > 1}
+        <!-- Drawn more than one way: each of its art, to look at in turn. -->
+        <div class="variants" role="group" aria-label="Its art">
+          {#each arts as a, i (a.art)}
+            <button class:on={a === drawn} aria-pressed={a === drawn} aria-label={artName(a, i)} title={artName(a, i)} onclick={() => (picked = { id: item.id, i })}>
+              <img src={itemThumb(a.art, 128)} alt="" loading="lazy" />
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
-    <div class="body">
-      <p class="kind">{kind}</p>
-      {#if entry}
-        <div class="sep" aria-hidden="true"></div>
-        <ul class="lines">
-          <li>Seen <b>{times(entry.seen)}</b></li>
-          <li>
-            {#if entry.first === entry.last}Seen on <b>{date(entry.first)}</b>{:else}First seen <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
-          </li>
-          <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
-          <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
-          {#if entry.delve}
-            {@const d = entry.delve}
-            {@const lives = livesCost(d)}
-            <li>
-              In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{shownDepth(d.deepest)}</b>{/if}
-            </li>
-            {#if d.n > d.ok}
-              <li>
-                {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{shownDepth(d.lostAt)}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
-              </li>
-            {/if}
-            {#if d.finds || d.blasted}
-              <li>
-                {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? '; dynamite' : 'Dynamite'} went off on it <b>{times(d.blasted)}</b>{/if}
-              </li>
-            {/if}
-          {/if}
-        </ul>
-      {/if}
-      {@render related('You took it for', tookItFor)}
-      {@render related('You took these for it', tookForIt)}
+    <!-- Two faces: the item as the game's tooltip shows it, and what you've done with it. -->
+    <div class="seg" role="tablist" aria-label="Show">
+      <button role="tab" id="codex-item-tab-item" aria-selected={view === 'item'} aria-controls="codex-item-face-item" class:on={view === 'item'} onclick={() => show('item')}>The item</button>
+      <button role="tab" id="codex-item-tab-record" aria-selected={view === 'record'} aria-controls="codex-item-face-record" class:on={view === 'record'} onclick={() => show('record')}>Your record</button>
+    </div>
+
+    <!-- Both faces in one place, the hidden one kept for its height: switching never resizes the card. -->
+    <div class="faces">
+      <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'}>
+        {#key drawn.art}
+          <ItemDetails item={drawn} />
+        {/key}
+      </div>
+      <div class="body face" class:on={view === 'record'} id="codex-item-face-record" role="tabpanel" aria-labelledby="codex-item-tab-record" inert={view !== 'record'}>
+        {@render record()}
+      </div>
     </div>
   </div>
 </div>
+
+{#snippet record()}
+  {#if entry}
+    <ul class="lines">
+      <li>Seen <b>{times(entry.seen)}</b></li>
+      <li>
+        {#if entry.first === entry.last}Seen on <b>{date(entry.first)}</b>{:else}First seen <b>{date(entry.first)}</b>, last <b>{date(entry.last)}</b>{/if}
+      </li>
+      <li>Named from its art: {#if entry.name.n}<b>{score(entry.name)}</b>{:else}<i>never asked</i>{/if}</li>
+      <li>Found from its name: {#if entry.art.n}<b>{score(entry.art)}</b>{:else}<i>never asked</i>{/if}</li>
+      {#if entry.delve}
+        {@const d = entry.delve}
+        {@const lives = livesCost(d)}
+        <li>
+          In Delve: <b>{d.n}</b> answered, <b>{d.ok}</b> right{#if d.deepest}, as deep as depth <b>{shownDepth(d.deepest)}</b>{/if}
+        </li>
+        {#if d.n > d.ok}
+          <li>
+            {#if lives}Cost you a life <b>{times(lives)}</b>{#if d.lostAt}, deepest at depth <b>{shownDepth(d.lostAt)}</b>{/if}{:else}Never cost you a life{/if}{#if d.warded}; it broke <b>{d.warded === 1 ? 'an Azurite Ward' : `${d.warded} Azurite Wards`}</b>{/if}
+          </li>
+        {/if}
+        {#if d.finds || d.blasted}
+          <li>
+            {#if d.finds}Asked from a find <b>{times(d.finds)}</b>{/if}{#if d.blasted}{d.finds ? '; dynamite' : 'Dynamite'} went off on it <b>{times(d.blasted)}</b>{/if}
+          </li>
+        {/if}
+      {/if}
+    </ul>
+  {/if}
+  {@render related('You took it for', tookItFor)}
+  {@render related('You took these for it', tookForIt)}
+{/snippet}
 
 <style>
   /* The page behind scrolls the dialog on a short screen, so it never shows a scrollbar of its own. */
@@ -288,21 +331,141 @@
     display: grid;
     place-items: center;
   }
+  /* An item drawn more than one way: its art in small, along the stage's foot, the picture above them. */
+  .several .frame {
+    bottom: 2.6rem;
+    height: 76%;
+  }
+  .variants {
+    position: absolute;
+    bottom: 0.35rem;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  .variants > button {
+    width: 34px;
+    height: 34px;
+    padding: 3px;
+    display: grid;
+    place-items: center;
+    background: rgba(12, 9, 7, 0.55);
+    border: 1px solid rgba(175, 96, 37, 0.35);
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition:
+      opacity 0.2s,
+      border-color 0.2s,
+      box-shadow 0.2s;
+  }
+  .variants > button:hover {
+    opacity: 0.9;
+  }
+  .variants > button.on {
+    opacity: 1;
+    border-color: var(--gold-hi);
+    box-shadow: 0 0 8px rgba(224, 168, 92, 0.45);
+  }
+  .variants img {
+    max-width: 100%;
+    max-height: 100%;
+  }
   .frame > :global(.art-slot) {
     position: absolute;
     inset: 0;
   }
 
+  .faces {
+    display: grid;
+  }
+  .face {
+    grid-area: 1 / 1;
+    visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity 0.2s,
+      visibility 0s 0.2s;
+  }
+  .face.on {
+    visibility: visible;
+    opacity: 1;
+    transition: opacity 0.2s;
+  }
+  /*
+   * The switch between the item and your record of it: two engraved labels
+   * (as the card's own headings, "You took it for") standing on a rule like
+   * the tooltip's, the one shown lit, and the rule lit under it.
+   */
+  .seg {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    gap: 2.2rem;
+    width: 84%;
+    margin: 0.5rem auto 0;
+  }
+  .seg::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.55) 22%, rgba(175, 96, 37, 0.55) 78%, transparent);
+  }
+  .seg > button {
+    position: relative;
+    padding: 0.55rem 0.15rem 0.5rem;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8a7560;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    transition:
+      color 0.25s,
+      text-shadow 0.25s;
+  }
+  .seg > button::after {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    left: -0.4rem;
+    right: -0.4rem;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-hi), transparent);
+    box-shadow: 0 0 8px rgba(224, 168, 92, 0.6);
+    opacity: 0;
+    scale: 0.4 1;
+    transition:
+      opacity 0.25s,
+      scale 0.3s var(--ease-out, ease-out);
+  }
+  .seg > button:hover,
+  .seg > button:focus-visible {
+    color: #d8a26a;
+  }
+  .seg > button:focus-visible {
+    outline: none;
+  }
+  .seg > button.on {
+    color: #f1d9a8;
+    text-shadow: 0 0 10px rgba(255, 210, 140, 0.35);
+  }
+  .seg > button.on::after,
+  .seg > button:focus-visible::after {
+    opacity: 1;
+    scale: 1 1;
+  }
   .body {
     padding: 0.9rem 1.2rem 1.1rem;
     text-align: center;
-  }
-  .kind {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: 0.82rem;
-    letter-spacing: 0.08em;
-    color: var(--muted);
   }
   /* The tooltip's separator: a hairline with a gem in the middle. */
   .sep {

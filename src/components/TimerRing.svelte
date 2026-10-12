@@ -3,7 +3,7 @@
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerGone, timerTick } from '../lib/fx/moments';
-  import { FLARE_MS, clockLeft, questionTimer, veinWindowMs } from '../lib/delve';
+  import { FLARE_MS, clockLeft, questionTimer } from '../lib/delve';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
   import { claimPressure, endHold, flareEase, flarePressure, pressureOf, resolveDark, type Pressure } from '../lib/darkness';
   import { darkOutcome } from '../lib/delveSession';
@@ -11,7 +11,8 @@
 
   /**
    * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
-   * the ring stays full. `warnFrom`: the seconds that tick and glow urgent.
+   * the ring stays full, or the host's reload holds it still at the time it
+   * had left (Question.paused). `warnFrom`: the seconds that tick and glow urgent.
    */
   let {
     deadline,
@@ -22,16 +23,10 @@
 
   // Delve: the ring spans the time the question started with (a find's is
   // always the shortest, whatever `total` says before its clock starts, and a
-  // flare's extra time fills it back up rather than stretching it). On an
-  // Azurite Vein its fast window (veinWindowMs: a right answer in it earns a
-  // ward) is drawn in azurite at the head of the ring.
+  // flare's extra time fills it back up rather than stretching it).
   const st = $derived(session.state);
   const q = $derived(st?.delve ? st.question : null);
-  const azurite = $derived(q?.find === 'azurite');
   const span = $derived(st?.delve && q ? questionTimer(st) : total);
-  /** Milliseconds left on the clock when the fast window closes. */
-  const fastMs = $derived(st ? veinWindowMs(st) : 0);
-  const fastEnd = $derived(deadline !== null && q?.clockAt !== undefined ? deadline - q.clockAt - fastMs : span * 1000 - fastMs);
 
   let remaining = $state(Infinity);
 
@@ -135,7 +130,10 @@
   // at once, before the flare's light has caught (the loop below holds it
   // while its streak flies).
   const delve = $derived(!!st?.delve);
-  const clocked = $derived(deadline !== null);
+  /** Delve: the time left on a clock the host's reload held still (null: none held). */
+  const pausedLeft = $derived(q?.paused?.left ?? null);
+  // A clock held still keeps the dark where it was, until it carries on.
+  const clocked = $derived(deadline !== null || pausedLeft !== null);
   let dark: Pressure | null = null;
   $effect(() => {
     if (!delve || !clocked || stopped) return;
@@ -175,7 +173,13 @@
 
   $effect(() => {
     if (deadline === null) {
-      remaining = span * 1000;
+      // Held still by the host's reload: the time it had left; not started yet: all of it.
+      remaining = pausedLeft ?? span * 1000;
+      // The dark as at that time, not as this screen's clock ran on while the host was away (a flare's light aside).
+      if (pausedLeft !== null && litAt === null) {
+        shownDark = pressureOf(pausedLeft, span * 1000, warnFrom);
+        dark?.set(shownDark);
+      }
       return;
     }
     const end = deadline;
@@ -233,15 +237,6 @@
   const frac = $derived(Math.min(1, remaining / (span * 1000)));
   const secs = $derived(Number.isFinite(remaining) ? Math.ceil(remaining / 1000) : span);
   const urgent = $derived(remaining <= warnFrom * 1000);
-  /** The fast window is still open: from where it closes on the ring up to the ring's head. */
-  const fast = $derived(azurite && remaining > fastEnd);
-  const fastFrom = $derived(Math.max(0, Math.min(1, fastEnd / (span * 1000))));
-  /** Where the window closes, as a notch across the ring (the svg is turned so 0° is the top). */
-  const notch = $derived.by(() => {
-    const a = fastFrom * 2 * Math.PI;
-    const at = (r: number) => `${(32 + r * Math.cos(a)).toFixed(2)} ${(32 + r * Math.sin(a)).toFixed(2)}`;
-    return `M${at(R - 4.5)}L${at(R + 4.5)}`;
-  });
 
   let el = $state<HTMLElement>();
 </script>
@@ -251,22 +246,16 @@
   class="timer"
   data-cursor="timer"
   bind:this={el}
-  class:urgent={urgent && !fast}
+  class:urgent
   class:stopped
-  class:azurite
-  class:fast
   class:flaring
   class:burning={lit && !stopped}
   role="timer"
-  aria-label={fast ? `${secs} seconds left, ${Math.ceil((remaining - fastEnd) / 1000)} to earn a ward` : `${secs} seconds left`}
+  aria-label={`${secs} seconds left`}
 >
   <svg viewBox="0 0 64 64">
     <circle class="track" cx="32" cy="32" r={R} />
     <circle class="fill" cx="32" cy="32" r={R} stroke-dasharray={C} stroke-dashoffset={C * (1 - frac)} />
-    {#if fast}
-      <circle class="window" cx="32" cy="32" r={R} stroke-dasharray="{C * Math.max(0, frac - fastFrom)} {C}" stroke-dashoffset={-C * fastFrom} />
-      <path class="notch" d={notch} />
-    {/if}
   </svg>
   <span>{secs}</span>
 </div>
@@ -314,25 +303,6 @@
   .urgent span {
     color: #ff9c86;
     animation: throb 1s ease-in-out infinite;
-  }
-  /* Azurite: the fast window in cold blue at the ring's head, a notch where
-     it closes; once it has, the ring goes on in gold. */
-  .azurite .track {
-    stroke: rgba(110, 170, 240, 0.12);
-  }
-  .window {
-    stroke: #6fb4ff;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 5px rgba(80, 150, 255, 0.85));
-  }
-  .notch {
-    stroke: #d4e9ff;
-    stroke-width: 1.4;
-    filter: drop-shadow(0 0 3px rgba(80, 150, 255, 0.9));
-  }
-  .fast span {
-    color: #d4e9ff;
-    text-shadow: 0 0 10px rgba(80, 150, 255, 0.8);
   }
   /* A flare: the ring fills back up in a burst of its red light. */
   .flaring .fill {

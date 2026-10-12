@@ -16,6 +16,27 @@ import { zoomOf } from './stage';
 export const FINALE_MS = 400;
 
 /**
+ * At most how many pixels per art pixel the veil's effects are drawn with
+ * (here and in frontier.ts): about what the largest screens show the art at
+ * (1.8 times its size, times the stage's zoom of up to 2.2). A dense screen
+ * on top of that (a large Retina one: about 5) gets a little less than its
+ * own, as every pixel costs work on each frame.
+ */
+export const FX_SCALE = 4;
+
+/**
+ * How many px wide an effect's canvas is drawn for a picture `artW` art
+ * pixels wide: the screen's (the canvas's own px times the stage's zoom,
+ * lib/stage.ts, times the screen's density), FX_SCALE per art pixel at
+ * most; 0 for a canvas not laid out yet.
+ */
+export function fxWidth(canvas: HTMLElement, artW: number): number {
+  const cw = canvas.clientWidth;
+  if (!cw) return 0;
+  return Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), artW * FX_SCALE);
+}
+
+/**
  * As fractions of the burn: the mist ahead of the front, the twinkling ahead
  * of that, how long each grain glints, and how long its light takes to cool
  * (in patches.ts, where the host paces the veil by them: burntShare).
@@ -94,7 +115,9 @@ export interface BurnParams {
 
 /**
  * Svelte action for a veiled patch's <canvas>, sized and placed by CSS: draws
- * the patch (at screen resolution, capped at the picture's own) and burns it in.
+ * the patch and burns it in, at the screen's resolution (FX_SCALE at most),
+ * the picture scaled up smoothly into it, so the burn's grains and glints are
+ * as fine as the screen however coarse the picture is.
  */
 export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   let W = 0;
@@ -115,9 +138,11 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     const art = ctx.getImageData(0, 0, W, H);
     const src = art.data.slice();
     const px = art.data;
-    const vis: number[] = [];
-    for (let i = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) vis.push(i);
-    if (!vis.length) return stop();
+    let n = 0;
+    for (let i = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) n++;
+    if (!n) return stop();
+    const vis = new Uint32Array(n);
+    for (let i = 0, j = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) vis[j++] = i;
 
     // The magic starts where this patch meets what's already there.
     const dist = new Float32Array(W * H).fill(Infinity);
@@ -166,15 +191,15 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     vis.forEach((i, j) => {
       const ax = (i % W) / sx;
       const ay = ((i / W) | 0) / sy;
-      const n = valueNoise(ax / 5, ay / 5, seed) * 0.65 + valueNoise(ax / 2, ay / 2, seed + 1) * 0.35;
-      const v = dist[i] / sx + (n - 0.5) * 2 * ROUGH + (Math.random() - 0.5) * 2 * GRAIN;
+      const rough = valueNoise(ax / 5, ay / 5, seed) * 0.65 + valueNoise(ax / 2, ay / 2, seed + 1) * 0.35;
+      const v = dist[i] / sx + (rough - 0.5) * 2 * ROUGH + (Math.random() - 0.5) * 2 * GRAIN;
       when[j] = v;
       if (v < lo) lo = v;
       if (v > hi) hi = v;
     });
     // Sorted by when they burn in, so each frame only visits the pixels that
     // are changing: those settled are done, those far ahead stay clear.
-    const rank = Uint32Array.from(vis.keys()).sort((a, b) => when[a] - when[b]);
+    const rank = Uint32Array.from({ length: n }, (_, j) => j).sort((a, b) => when[a] - when[b]);
     const span = hi - lo || 1;
     const lit = new Uint32Array(vis.length);
     const order = new Float32Array(vis.length);
@@ -217,6 +242,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       if (!start) start = last = now;
       const p = Math.min(1, (now - start) / duration);
       const t = from + (to - from) * p;
+      const was = settled;
       while (settled < lit.length && t - order[settled] >= LINE + COOL) {
         const o = lit[settled++] * 4;
         px[o] = src[o];
@@ -271,7 +297,22 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
         for (let c = 0; c < 3; c++) px[o + c] = src[o + c] + (LIGHT_COOL[c] + (LIGHT_HOT[c] - LIGHT_COOL[c]) * g) * k;
         px[o + 3] = src[o + 3];
       }
-      ctx.putImageData(art, 0, 0);
+      // Only the box this frame changes goes to the canvas: round the pixels
+      // from the first one settling to the last one sparkling ahead.
+      let x0 = W;
+      let y0 = H;
+      let x1 = -1;
+      let y1 = -1;
+      for (let j = was; j < ahead; j++) {
+        const i = lit[j];
+        const y = (i / W) | 0;
+        const x = i - y * W;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+      if (y1 >= 0) ctx.putImageData(art, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 
       // Sparks fly off the front, more the longer it is.
       const front = shown - line;
@@ -301,16 +342,18 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
 
   const begin = (img: HTMLCanvasElement) => {
     if (stopped) return;
-    // Screen resolution (the canvas's own px times the stage's zoom, lib/stage.ts,
-    // times the screen's density), but no more than the picture's own: it has
-    // no finer detail, and every pixel costs work on each frame. Its size in
-    // art pixels places the burn.
+    // Screen resolution, up to FX_SCALE (fxWidth): every pixel costs work on
+    // each frame. The quick ones at the reveal (many at once, for a moment)
+    // keep to the picture's own, as does a canvas not laid out yet. Its size
+    // in art pixels places the burn.
     const aw = params.w;
     const ah = params.h;
-    W = Math.max(1, Math.round(Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), img.width)));
+    const screen = fxWidth(canvas, aw);
+    W = Math.max(1, Math.round(screen && !params.quick ? screen : Math.min(screen || Infinity, img.width)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, W, H);
     if (reduce?.matches || burning >= MAX_BURNING) {
       canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduce?.matches ? 300 : 450, easing: 'ease-out' });

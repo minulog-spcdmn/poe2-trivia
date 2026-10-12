@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, isFake, type Item } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { createHash } from 'node:crypto';
+import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -43,6 +44,36 @@ test("the day's question is the same every time it is dealt", () => {
   }
 });
 
+/** A day's question, in short. */
+const dealt = (day: number) => {
+  const q = dailyQuestion(items, fakes, day);
+  return createHash('sha256').update(JSON.stringify([q.itemId, q.options, q.labels])).digest('hex').slice(0, 8);
+};
+
+test("a day's question never changes, twins and all", () => {
+  // The year from launch, each day as it was first dealt: a change to how
+  // questions are dealt (game.ts makeQuestion) must leave the daily's be,
+  // as twins (game.ts TWINS) do.
+  const first = utcDay(DAILY_LAUNCH);
+  const year = createHash('sha256')
+    .update(Array.from({ length: 366 }, (_, i) => dealt(first + i)).join())
+    .digest('hex')
+    .slice(0, 16);
+  assert.equal(year, '1b1d51fb22411642');
+});
+
+test('practice asks as the daily does: twins may meet', () => {
+  const byName = new Map(items.map((it) => [it.name, it.id]));
+  const engine = dailyEngine(items, fakes);
+  const game = dailyGame();
+  let met = 0;
+  for (let i = 0; i < 4000; i++) {
+    const q = askOne(engine, game);
+    if (TWINS.some((t) => t.names.filter((n) => q.options.includes(byName.get(n)!)).length > 1)) met++;
+  }
+  assert.ok(met > 0, 'twins met');
+});
+
 test('each day asks a named item among four names, one of them made up, never a gem', () => {
   const start = utcDay(DAILY_LAUNCH);
   const seen = new Set<string>();
@@ -61,15 +92,18 @@ test('each day asks a named item among four names, one of them made up, never a 
   assert.ok(seen.size > 45, `the days ask many items (${seen.size} in 60 days)`);
 });
 
-test('the items too thin for the start page are real items, and never asked there', () => {
+test('the pictures too thin for the start page are real items\' pictures, and never shown there', () => {
+  // By the art's id: an item's own, or one of its variants'.
+  const byArt = new Map(items.flatMap((it) => allArt(it).map((a) => [a.art, a])));
   const byId = new Map(items.map((it) => [it.id, it]));
   assert.ok(TOO_THIN.size > 0);
-  for (const id of TOO_THIN) assert.equal(byId.get(id)?.kind, 'unique', `${id} is an item`);
+  for (const id of TOO_THIN) assert.equal(byArt.get(id)?.kind, 'unique', `${id} is an item's picture`);
+  const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
   const start = utcDay(DAILY_LAUNCH);
-  for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(dailyQuestion(items, fakes, d).itemId), `day ${d}`);
+  for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
   const engine = new Engine(items, { fakes });
   const game = dailyGame();
-  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(askOne(engine, game).itemId), `practice question ${i}`);
+  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(shown(askOne(engine, game))), `practice question ${i}`);
 });
 
 test('a right answer starts or carries on a streak; a day skipped starts it over', () => {

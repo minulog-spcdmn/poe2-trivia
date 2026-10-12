@@ -6,7 +6,7 @@ import type { Action, GameState } from './game';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
 
-export const PROTOCOL_VERSION = 26;
+export const PROTOCOL_VERSION = 28;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';

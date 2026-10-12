@@ -310,12 +310,12 @@ export class Player {
     });
   }
 
-  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once a depth each, a moment after the cards are dealt). */
+  /** Delve together: gives a teammate who perished one of its lives, whenever it can (once an offer each, a moment after the cards are dealt). */
   private planRevive(s: GameState) {
     const me = session.myPlayerId!;
     for (const p of s.players) {
       if (p.id === me || reviveProblem(s, me, p.id)) continue;
-      const key = `revive:${p.id}:${s.round}`;
+      const key = `revive:${p.id}:${s.turnCount}`;
       if (this.decided.has(key)) continue;
       this.decided.add(key);
       const now = session.hostNow();
@@ -336,11 +336,15 @@ export class Player {
     }
   }
 
-  /** The question still open as it was asked, and still on the clock (a flare's time included). */
+  /**
+   * The question still open as it was asked, and still on the clock (a flare's
+   * time included). Delve: on the same clock, not held still by the host's
+   * reload nor carrying on after it (a new clockAt, planned afresh).
+   */
   private open(q: Question) {
     const cur = session.state;
     const o = cur?.question;
-    return cur?.phase === 'question' && o?.askedAt === q.askedAt && (!o.deadline || session.hostNow() <= o.deadline) ? o : null;
+    return cur?.phase === 'question' && o?.askedAt === q.askedAt && o.clockAt === q.clockAt && (!o.deadline || session.hostNow() <= o.deadline) ? o : null;
   }
 
   /**
@@ -382,7 +386,8 @@ export class Player {
    * then it makes up its mind (decide).
    */
   private planAnswer(s: GameState, q: Question) {
-    const key = `answer:${q.askedAt}`;
+    // A clock the host's reload held still carries on from a new clockAt: answered afresh.
+    const key = `answer:${q.askedAt}:${q.clockAt ?? ''}`;
     if (this.decided.has(key)) return;
     this.decided.add(key);
     const start = q.clockAt ?? q.askedAt;
@@ -487,7 +492,7 @@ export class Player {
     const run = () => {
       const cur = session.state;
       const o = cur?.question;
-      if (!cur || cur.phase !== 'question' || o?.askedAt !== q.askedAt || !o.deadline || o.struck?.some((x) => x.by === me)) return;
+      if (!cur || cur.phase !== 'question' || o?.askedAt !== q.askedAt || o.clockAt !== q.clockAt || !o.deadline || o.struck?.some((x) => x.by === me)) return;
       // Not near the end yet (or a flare moved it on): wait for it.
       if (o.deadline - margin > session.hostNow() + 300) return void this.plans.set(key, { at: o.deadline - margin, run });
       if (fuseDue(cur)) return log('holds: the dynamite goes off by itself');

@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { AUTO_NEXT_MS, autoNextLeft, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -35,9 +35,10 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
+  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
   /** Beta: no arcane circle behind the art (lib/switchedOff.ts), to see what it costs as a question appears. */
@@ -138,6 +139,8 @@
   const flareLine = $derived(coop && !reveal && q.flared && q.flaredBy ? flareText(q.flaredBy, nameOf, me) : '');
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
+  /** The answer as its picture drew it (Grand Spectrum's Emerald…): its art, base and tooltip. */
+  const drawn = $derived(item && answerDrawn(item, q));
   const race = $derived(s.settings.mode === 'race');
   /**
    * Turns: someone else is answering. The answers go grey and sit flat in the
@@ -148,6 +151,10 @@
   const theirs = $derived(!race && !coop && !session.myTurn && !reveal);
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
+  /** What Next leads to. Delve: the end once nobody stands, a depth deeper after a clear, and another question at the same depth after a miss. */
+  const nextLabel = $derived(
+    race ? 'Next question' : !s.delve ? 'Next turn' : !standingIds(s).length ? 'Results' : reveal?.correct ? 'Delve deeper' : 'Next question',
+  );
   const myMiss = $derived(race && me ? q.misses.find((m) => m.playerId === me) : undefined);
   const winner = $derived(reveal?.winnerId ? s.players.find((p) => p.id === reveal.winnerId) : undefined);
   /** Turns and race: you (or whoever answered) got it. Delve together: the team cleared the depth. */
@@ -162,17 +169,13 @@
   const gainName = $derived(gainerId ? nameOf(gainerId) : '');
   /**
    * Delve: what a right answer to a find earned, in words, and its engraving:
-   * a ward mined, a shard (too slow for a ward, from an Azurite Vein) or a
-   * ward forged from two, a flare or dynamite found.
+   * a ward mined, a flare or dynamite found.
    */
   const gainLine = $derived.by((): { glyph: GlyphKind; text: string } | null => {
     const got = reveal?.correct ? reveal.gained : undefined;
     if (!s.delve || !got) return null;
     const who = gainYou ? 'You' : gainName;
-    if (got === 'wards' && reveal?.forged) return { glyph: 'ward', text: `${gainYou ? 'Your' : `${gainName}'s`} two shards forged an Azurite Ward.` };
     if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
-    if (got === 'shards')
-      return { glyph: 'shard', text: q.find === 'azurite' ? `Too slow for a ward, but ${gainYou ? 'you' : gainName} mined a shard.` : `${who} found an azurite shard.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
@@ -259,7 +262,7 @@
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (your own;
   // together while you still have an answer to give) can blast it away for a
-  // new one at the same depth, twice a depth at most: its button (Detonate)
+  // new one at the same depth, twice per set of cards at most: its button (Detonate)
   // takes the place Next has after an answer. Once this question has dynamite
   // at hand its place is kept until the question ends, the button only
   // showing while it can be used, so nothing moves as it comes and goes. When
@@ -327,7 +330,7 @@
       blastProblem(s, session.mode === 'local' ? null : me) === null,
   );
   /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
-  // (Not when this depth has no blast left: on phones the place is a docked bar, which would hold nothing.)
+  // (Not when this offer has no blast left: on phones the place is a docked bar, which would hold nothing.)
   const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine && blastsLeft(s) > 0;
   // Taken from the first frame when it applies already, so the row never pops in under the answers.
   let blastSlot = $state(untrack(slotWanted));
@@ -389,7 +392,7 @@
   let fullLoaded = $state(false);
   let fullBox = $state<[number, number, number, number] | null>(null);
   $effect(() => {
-    if (!reveal || !item) {
+    if (!reveal || !drawn) {
       fullLoaded = false;
       fullBox = null;
       return;
@@ -397,13 +400,13 @@
     let live = true;
     const done = () => live && (fullLoaded = true);
     const img = new Image();
-    img.src = itemImage(item.id);
+    img.src = itemImage(drawn.art);
     img.decode().then(() => {
       if (!live) return;
       // Measured in art pixels, as the host measures the veiled copy.
       const c = document.createElement('canvas');
-      c.width = item.w;
-      c.height = item.h;
+      c.width = drawn.w;
+      c.height = drawn.h;
       const g = c.getContext('2d', { willReadFrequently: true })!;
       g.imageSmoothingQuality = 'high';
       g.drawImage(img, 0, 0, c.width, c.height);
@@ -427,7 +430,7 @@
   const veilFit = $derived.by(() => {
     const v = media?.veil;
     const slot = artEl?.querySelector('.frame');
-    if (!reveal || !v || !fullBox || !item || !slot) return null;
+    if (!reveal || !v || !fullBox || !drawn || !slot) return null;
     const cw = slot.clientWidth;
     const ch = slot.clientHeight;
     const place = (w: number, h: number, [bx, by, bw, bh]: number[]) => {
@@ -439,7 +442,7 @@
     const from = place(v.w, v.h, v.box);
     // A mirrored item starts the reveal mirrored, as it was shown.
     const fb = fullBox;
-    const to = place(item.w, item.h, mirrored(0) ? [item.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
+    const to = place(drawn.w, drawn.h, mirrored(0) ? [drawn.w - fb[0] - fb[2], fb[1], fb[2], fb[3]] : fb);
     const k = (to.w / from.w + to.h / from.h) / 2;
     if (!isFinite(k) || k <= 0) return null;
     return `translate(${to.x - k * from.x}px, ${to.y - k * from.y}px) scale(${k})`;
@@ -788,6 +791,8 @@
     const now = session.state;
     if (!now || (now.phase !== 'question' && now.phase !== 'reveal') || now.question?.askedAt !== shownAt) return;
     if (e.target instanceof HTMLInputElement) return;
+    // An item's window (ItemWindow) has buttons of its own: Enter there isn't Next.
+    if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     // 0 is the tenth option, the key after 9.
@@ -901,10 +906,7 @@
             left: (id) => (s.players.some((p) => p.id === id) ? livesOf(s, id) : null),
             nameOf,
             me,
-            gain:
-              reveal.correct && reveal.gained && gainerId
-                ? { kind: reveal.gained, by: gainerId, forged: !!reveal.forged, slow: q.find === 'azurite' && reveal.gained === 'shards' }
-                : undefined,
+            gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
           })}
           {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
           {#if gainLine}
@@ -1006,7 +1008,7 @@
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
         onclick={next}
       >
-        {race ? 'Next question' : coop ? 'Next depth' : 'Next turn'}
+        {nextLabel}
         {#if session.mode !== 'local'}
           <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}
@@ -1125,7 +1127,7 @@
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
           {#if reveal && item}
-            <span class="ibase" in:fade>{item.base}</span>
+            <span class="ibase" in:fade>{drawn?.base}</span>
           {:else}
             <span class="ibase">{questionTopic(q, true)}</span>
           {/if}
@@ -1148,26 +1150,34 @@
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
-          {@const option = known ? engine.byId.get(q.options[i]) : undefined}
-          {@const pic = option ? { url: itemImage(option.id), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
+          {@const found = known ? engine.byId.get(q.options[i]) : undefined}
+          <!-- As the picture drew it (Grand Spectrum's Emerald…). -->
+          {@const option = found && drawnAs(found, q.variant?.[i])}
+          <!-- Only a picture the reveal names opens its details: the untouched decoys stay anonymous (see named). -->
+          {@const shownItem = option && named(i) ? option : undefined}
+          {@const pic = option ? { url: itemImage(option.art), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
+          <!-- Once answered, each picture the reveal names opens that item's details. -->
           <button
             class="tile {st}"
             data-cursor="opt:{i}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
-            class:mine
+            class:mine={mine && !reveal}
+            class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
-            aria-label={struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
-            disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
-            onclick={() => answer(i)}
+            aria-label={shownItem ? `${shownItem.name}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            title={shownItem ? 'See its details' : undefined}
+            disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
+            onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
             <span class="sheen"></span>
-            <span class="key">{(i + 1) % 10}</span>
+            <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
+            <span class="key" class:lens-key={!!shownItem}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
             <span class="cue" aria-hidden="true"></span>
             {#if pic || tv}
               <span class="pic">
@@ -1228,7 +1238,7 @@
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname">{item.name}</span>
-              <span class="ibase">{item.base}</span>
+              <span class="ibase">{drawn?.base}</span>
               {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
           {:else}
@@ -1241,8 +1251,8 @@
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
           {#if !circleOff}<ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />{/if}
           <div class="frame">
-            {#if media?.veil && showFull && item}
-              <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float unflip={mirrored(0)} />
+            {#if media?.veil && showFull && drawn}
+              <ArtImage src={itemImage(drawn.art)} alt={drawn.name} w={drawn.w} h={drawn.h} float unflip={mirrored(0)} />
             {/if}
             {#if media?.veil && !showFull}
               {@const v = media.veil}
@@ -1271,15 +1281,24 @@
                 <canvas class="frontier" aria-hidden="true" use:frontier={{ w: v.w, h: v.h, burn: v.burn, quick: !!reveal, patches }}></canvas>
               </span>
               </span>
-            {:else if !media?.veil && ((showFull && item) || (media?.art && !waiting))}
+            {:else if !media?.veil && ((showFull && drawn) || (media?.art && !waiting))}
               <!-- One picture throughout: at the reveal the original art takes over in it, once loaded (ArtImage). -->
-              {@const full = showFull && item ? item : null}
-              {@const art = full ? { url: itemImage(full.id), w: full.w, h: full.h } : media!.art!}
+              {@const full = showFull && drawn ? drawn : null}
+              {@const art = full ? { url: itemImage(full.art), w: full.w, h: full.h } : media!.art!}
               <ArtImage src={art.url} alt={full ? full.name : 'The item to identify'} w={art.w} h={art.h} float unflip={!!full && mirrored(0)} />
             {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
+          {#if reveal && item}
+            <!-- Once answered, the art opens the item's details (ItemWindow). -->
+            <button class="details" onclick={() => drawn && inspect(drawn)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
+              <span class="lens">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>
+                Details
+              </span>
+            </button>
+          {/if}
         </div>
       </div>
 
@@ -1530,6 +1549,53 @@
   .frame > :global(.art-slot) {
     position: absolute;
     inset: 0;
+  }
+  /* Over the whole art once it's answered: a click opens the item's details, as the lens in its corner says. */
+  .details {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 0.6rem;
+    background: none;
+    border: 0;
+    cursor: zoom-in;
+  }
+  .lens {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem 0.2rem 0.4rem;
+    border: 1px solid rgba(107, 69, 32, 0.6);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.45);
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #d8a26a;
+    transition:
+      border-color 0.2s,
+      color 0.2s,
+      box-shadow 0.25s;
+  }
+  .lens svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+  .details:hover .lens,
+  .details:focus-visible .lens {
+    border-color: var(--gold-lo);
+    color: var(--gold-hi);
+    box-shadow: 0 0 12px rgba(201, 164, 92, 0.25);
+  }
+  .details:focus-visible {
+    outline: none;
   }
   .veil {
     /* Patches are absolutely positioned inside the box. */
@@ -2391,6 +2457,34 @@
   }
   .tile:not(.mine) {
     cursor: not-allowed;
+  }
+  /* Answered: a named picture opens its item's details. */
+  .tile.inspect:not(:disabled) {
+    cursor: zoom-in;
+  }
+  .tile.inspect:not(:disabled):hover .pic,
+  .tile.inspect:not(:disabled):focus-visible .pic {
+    transform: scale(1.04);
+  }
+  /* Bright enough to read on a picture dimmed at the reveal. */
+  .lens-key {
+    color: var(--gold-hi);
+    border-color: var(--gold);
+  }
+  .lens-key svg {
+    width: 14px;
+    height: 14px;
+    margin-top: -2px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+  .tile.inspect:not(:disabled):hover .lens-key,
+  .tile.inspect:not(:disabled):focus-visible .lens-key {
+    color: var(--gold-hi);
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(201, 164, 92, 0.3);
   }
   /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
      and the picture comes forward. */

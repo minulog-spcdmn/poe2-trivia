@@ -10,6 +10,7 @@
 import { accentAt, stratumName } from './descent.ts';
 import { biomeAt } from './backdrops.ts';
 import { delveLockout, delveRules, delveTimer, findChance, opensZone, shownDepth, FIND_FADE_FROM, FINDS_IN_ORDER, type FindKind } from './delve.ts';
+import { TWINS } from './game.ts';
 import { roman } from './roman.ts';
 import type { Sfx } from './sound.ts';
 
@@ -96,32 +97,35 @@ export const TREATMENTS: Record<string, Treatment> = {
 
 /**
  * One line under each place's name, as players will read it a hundred
- * times: plain, short and of the place, never more than SUBTITLE_MOST
- * characters (one line on a 375 px phone), with no full stop.
+ * times: one concrete thing seen there, said flat. No jokes, no warnings,
+ * no place that remembers or waits, no mood words, and never the name over
+ * again. Never more than SUBTITLE_MOST characters (one line on a 375 px
+ * phone), with no full stop. Past depth 100 a kind of place's line goes
+ * under every name it takes (lib/archetypes.ts), so it holds for all of them.
  */
 export const SUBTITLES: Record<string, string> = {
-  'The Mines': 'Where every delver starts',
-  'Magma Fissure': 'The rock is split, and it burns',
-  'Frozen Hollow': 'Nothing thaws this far down',
-  'Fungal Caverns': 'The rot here glows and breathes',
-  'Vaal Outpost': 'The Vaal dug here before you',
-  'Abyssal Depths': 'Here the deep begins to pull',
-  'Petrified Forest': 'The trees forgot they lived',
-  'Sulphur Vents': 'Every breath tastes of brimstone',
-  'Abyssal City': 'Its lamps still burn for no one',
-  'Primeval Ruins': 'Older than the first gods',
-  'Drowned temple': 'The water keeps their hymns',
-  'Ember forge': 'The anvils never cooled',
-  'Void bloom': 'Something flowers in the nothing',
-  'Frozen abyss': 'Ice over an endless fall',
-  'Sulphur marsh': 'The mire smoulders under mist',
-  'Lantern necropolis': 'The dead keep their lamps lit',
-  'Sunken garden': 'Flowers that never saw the sun',
-  'Blood eclipse': 'Light the colour of old blood',
-  'Glacial pyre': 'Fire sealed inside the ice',
-  'Ashen reliquary': 'The ash of saints, kept in stone',
-  'Starfall abyss': 'Stars fell here and kept falling',
-  'Witchfire grove': 'The old wood burns green',
+  'The Mines': 'The Eternals left in a hurry',
+  'Magma Fissure': 'Stone that never set',
+  'Frozen Hollow': 'Ice holds the last footprints',
+  'Fungal Caverns': 'Caps grow where miners fell',
+  'Vaal Outpost': 'Blood channels in the floor',
+  'Abyssal Depths': 'Light stops short of the floor',
+  'Petrified Forest': 'Sap set hard mid-drip',
+  'Sulphur Vents': 'Yellow crust on every lamp',
+  'Abyssal City': 'Streets laid with bone',
+  'Primeval Ruins': 'Blue fire in the old halls',
+  'Drowned temple': 'Bells ring under the water',
+  'Ember forge': 'Tongs left in the coals',
+  'Void bloom': 'Petals that cast no shadow',
+  'Frozen abyss': 'Snow falls and never lands',
+  'Sulphur marsh': 'Gas rising from old graves',
+  'Lantern necropolis': 'A lamp for every grave',
+  'Sunken garden': 'Vines holding up the ceiling',
+  'Blood eclipse': 'A red sun with no heat',
+  'Glacial pyre': 'Flames that melt nothing',
+  'Ashen reliquary': 'Relics under a foot of ash',
+  'Starfall abyss': 'Stars falling the wrong way',
+  'Witchfire grove': 'Green flame on bare branches',
 };
 
 /** The longest a subtitle may be (characters). */
@@ -210,6 +214,12 @@ function changesAt(x: number): News[] {
     if (starts && was === 0 && now > 0) out.push({ key: `${k}:start`, depth: x, rank: 2, mark: { sign: k }, all: false, label: starts, spoken: starts.toLowerCase() });
     if (everywhere && was < 1 && now >= 1) out.push({ key: `${k}:all`, depth: x, rank: 3, mark: { sign: k }, all: true, label: everywhere, spoken: everywhere.toLowerCase() });
   }
+  // Twins (game.ts TWINS) side by side from here: "Twin rings and gems".
+  const whats = [...new Set(TWINS.filter((t) => t.depth === x).map((t) => t.what))];
+  if (whats.length) {
+    const label = `Twin ${whats.join(' and ')}`;
+    out.push({ key: `twins:${x}`, depth: x, rank: 2, mark: { sign: 'looks' }, all: false, label, spoken: `${label.toLowerCase()} side by side` });
+  }
   const steps: [string, (d: number) => number, string, string][] = [
     ['options', (d) => delveRules(d).options, 'Options', 'options'],
     ['fakes', (d) => delveRules(d).fakes, 'Made-up names', 'made-up names'],
@@ -225,7 +235,8 @@ function changesAt(x: number): News[] {
 /**
  * What is new in the zone that depth `d0` opens, through its ten depths
  * (each compared with the one before): finds that turn up, or thin out past
- * depth 100; rules that start, or reach every question; the steps in the
+ * depth 100; rules that start, or reach every question; twins that start
+ * to meet; the steps in the
  * options, the made-up names and the lockout, each at the zone's last; and
  * the clock, at its shortest, if it is shorter by the zone's end. The
  * NEWS_MOST that matter most (by rank, then depth), in the order they come.

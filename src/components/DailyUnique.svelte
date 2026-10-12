@@ -12,9 +12,9 @@
   import { engine, session } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
   import { codexRoute } from '../lib/codexRoute.svelte';
-  import { isFake, questionTopic, type Item, type Question } from '../lib/game';
+  import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
-  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
+  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -60,7 +60,8 @@
   let rec = $state(loadDaily());
   const todays = $derived(answeredOn(rec, today));
 
-  // Practice: questions from the game's own engine, at random, kept apart from the daily.
+  // Practice: questions at random, asked as the daily is (twins may meet), kept apart from it.
+  const practiceEngine = dailyEngine(itemData as Item[], fakeNames);
   const practiceGame = dailyGame();
   let practice = $state<Question | null>(null);
   let practicePicked = $state<number | null>(null);
@@ -71,6 +72,8 @@
   const rightIdx = $derived(q.options.indexOf(q.itemId));
   const right = $derived(answered && picked === rightIdx);
   const item = $derived(engine.byId.get(q.itemId));
+  /** The item as the question draws it (Grand Spectrum's Emerald…): its art and base. */
+  const drawn = $derived(item && answerDrawn(item, q));
   const streak = $derived(streakOn(rec, today));
 
   /**
@@ -233,7 +236,7 @@
 
   function practiceMore() {
     practicePicked = null;
-    practice = askOne(engine, practiceGame);
+    practice = askOne(practiceEngine, practiceGame);
   }
 
   /** 1 to 4 answer, as in the game; not while typing, in a dialog, or once a game or the codex has the screen. */
@@ -271,8 +274,7 @@
                picture through it (fx/moments reveal) and shine from behind its outline. -->
           <div class="art frame" bind:this={artEl}>
             {#key q.itemId + (practice ? ':p' : '')}
-              {@const art = engine.byId.get(q.itemId)!}
-              <ArtImage src={itemImage(q.itemId)} w={art.w} h={art.h} alt="The item to name" scale={4} float round />
+              {#if drawn}<ArtImage src={itemImage(drawn.art)} w={drawn.w} h={drawn.h} alt="The item to name" scale={4} float round />{/if}
             {/key}
           </div>
         </div>
@@ -283,7 +285,7 @@
         <!-- Answered: the item named, over its base type. -->
         <div in:fade={{ duration: 300 }}>
           <h2 class="title" class:right>{item.name}</h2>
-          <p class="line">{item.base}</p>
+          <p class="line">{drawn?.base}</p>
         </div>
       {:else}
         <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>

@@ -4,6 +4,7 @@
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { DELVE_RULESET } from '../src/lib/delve.ts';
 import { readFileSync } from 'node:fs';
 import type { GameState, Item } from '../src/lib/game.ts';
 import { CODEX_KEY, emptyCodex, record, serializeCodex, type Encounter } from '../src/lib/codex.ts';
@@ -23,7 +24,7 @@ beforeEach(() => store.clear());
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const [a, b, c] = items;
 const byId = new Map(items.map((it) => [it.id, it]));
-const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: 1, mixed: false, ...o });
+const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: DELVE_RULESET, mixed: false, ...o });
 const wrong = (at: number, itemId: string, depth: number, who?: string, more: Partial<NonNullable<Encounter['delve']>> = {}): Encounter => ({
   at,
   itemId,
@@ -58,7 +59,7 @@ test('wards in a run are its own player\'s, not the other tab\'s', () => {
   const s = createGame('a');
   s.players = ['a', 'b'].map((id, hue) => ({ id, name: id, score: 0, recent: [], connected: true, hue }));
   s.phase = 'choosing';
-  s.delve = { entrants: ['a'], losses: { a: [2, 6] }, ruleset: 1, startedAt: 500, excused: [], graceUntil: 0 };
+  s.delve = { entrants: ['a'], losses: { a: [2, 6] }, ruleset: DELVE_RULESET, startedAt: 500, excused: [], graceUntil: 0 };
   const fell: GameState = { ...structuredClone(s), delve: { ...s.delve, losses: { a: [2, 6, 9] } } };
   assert.equal(runEvent(s, fell, 'a')!.wards, 2, 'a\'s and the one that doesn\'t say whose, not b\'s');
 });
@@ -117,7 +118,7 @@ test('records with only group runs from before co-op read as nothing at all: no 
     JSON.stringify({
       v: 1,
       runs: [{ ...run({ id: 6, at: 60, depth: 11, players: 2 }), won: true }, { ...run({ id: 8, at: 80, depth: 13, players: 3 }), hot: true }],
-      bests: { '1:group': { ...run({ id: 6, at: 60, depth: 11, players: 2 }), won: true } },
+      bests: { [`${DELVE_RULESET}:group`]: { ...run({ id: 6, at: 60, depth: 11, players: 2 }), won: true } },
       frontier: [{ depth: 11, at: 60 }, { depth: 13, at: 80 }],
     }),
   )!;

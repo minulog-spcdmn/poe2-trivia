@@ -419,11 +419,13 @@ function parseDepths(v: unknown, depth: number, max: number): number[] | undefin
 /**
  * Loss depths that can be true of a run at `depth`. Alone: up to three, a
  * run's third where it fell, so a fall's is at `depth` and a run left
- * standing has fewer. Together: lives given back can be lost again, but a
- * question takes two at most (a cave-in), so never more than two a depth.
+ * standing has fewer. Together: lives given back can be lost again, and a
+ * depth can take any number (a miss deals another question at it), but
+ * never more than the team set out with, as a life given is one less for
+ * its giver.
  */
-function parseLosses(v: unknown, depth: number, left: boolean, team: boolean): number[] | undefined {
-  if (team) return parseDepths(v, depth, 2 * depth);
+function parseLosses(v: unknown, depth: number, left: boolean, team: boolean, players: number): number[] | undefined {
+  if (team) return parseDepths(v, depth, DELVE_LIVES * players);
   const out = parseDepths(v, depth, left ? DELVE_LIVES - 1 : DELVE_LIVES);
   if (!out || (!out.length && !left)) return undefined;
   return out.length === DELVE_LIVES && out.at(-1) !== depth ? undefined : out;
@@ -443,10 +445,10 @@ function parseRun(v: unknown): DelveRun | null {
   const team = players > 1;
   if (preCoop(v)) return null;
   const left = v.left === true;
-  const losses = parseLosses(v.losses, depth, left, team);
+  const losses = parseLosses(v.losses, depth, left, team, players);
   const who = typeof v.who === 'string' && v.who.length > 0 && v.who.length <= 64 ? v.who : null;
   // Each perish is a life lost.
-  const perished = team ? (parseDepths(v.perished, depth, losses?.length ?? 2 * depth) ?? []) : [];
+  const perished = team ? (parseDepths(v.perished, depth, losses?.length ?? DELVE_LIVES * players) ?? []) : [];
   const given = team ? (int(v.given, 1, MAX_COUNT) ?? 0) : 0;
   const revived = team ? Math.min(perished.length, int(v.revived, 1, MAX_COUNT) ?? 0) : 0;
   const wards = int(v.wards, 1, 2 * MAX_DEPTH);

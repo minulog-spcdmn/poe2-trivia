@@ -40,7 +40,8 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 settings. Everyone plays the exact same rules, so "I reached depth 30" means
 the same thing for everyone.
 - Pick one of three categories and name the item, as in turns mode. Each
-  question goes one depth deeper.
+  question cleared goes one depth deeper; after a miss (or a time-out) the
+  next question is asked at the same depth, from a fresh offer of cards.
 - The depth counts the questions cleared: a run sets out at depth 0, where
   the banner shows a short line instead ("Your light is borrowed", "Solve
   et coagula"; over fifty, dealt like a shuffled deck on each device so one
@@ -161,6 +162,11 @@ the same thing for everyone.
   (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
   reaches depth 19 (finds ask from up to 20 depths deeper); until it
   arrives, look-alikes go by name.
+- **Twins.** Items whose art only a detail tells apart only meet in a
+  question from the start of a zone on, whose card says so: Berek's rings
+  and Uhtred's and Zarokh's gems from 50, the Guiding Palms from 60 (never
+  in grayscale), the Brotherhood rings from 70 (a find from its deeper
+  depth). Above it a question shows at most one of them.
 - **Endless.** From depth 100 the rules hold, but a growing share of name
   questions gets a fourth made-up name (2% at 100, 2% more every depth, all
   of them from 149), "find the art" pictures keep burning in more often
@@ -172,20 +178,24 @@ the same thing for everyone.
   blows up something you carry, the Flare Cache gives less time, the Vein
   caves in. The card shows only the find's name, and the note under the
   cards says what the item does and what the find risks. The finds turn
-  up one at a time, the strongest last: the Dynamite Cache from depth 10,
-  the Flare Cache from 25 and the Azurite Vein from 40. Each find's chance
-  rises evenly over the 20 depths after its first and then holds (the
-  Dynamite Cache from 8% to 9% by depth 30, the Flare Cache from 4% to 13%
-  by 45, the Vein from 4% to 11% by 60). From 10 to 24 the Dynamite Cache
-  is the only find, so it starts higher than the others to keep finds
-  turning up early. From 60 about one offer in three holds a find. From
+  up one at a time: the Dynamite Cache from depth 10, the Azurite Vein from
+  25 and the Flare Cache from 40. On its own first depth a find is certain:
+  the depth's first offer always holds it (for a player with room for its
+  item); one after a miss there rolls as any other. After
+  that each find's chance rises evenly over the 20 depths after its first
+  and then holds (the Dynamite Cache from 8% to 9% by depth 30, the Vein
+  from 4% to 11% by 45, the Flare Cache from 4% to 13% by 60). From 10 to
+  24 the Dynamite Cache is the only find, so it starts higher than the
+  others to keep finds turning up early. From 60 about one offer in three
+  holds a find. From
   100 they grow scarcer a little with every depth, down to half their chance at 199 (the Vein to a third, as a ward
   takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
-    by side are rare early on: never above depth 25, where the Flare Cache
-    joins the dynamite, then about 1 offer in 290 at 25 and 1 in 57 at 40,
-    and about 1 offer in 28 from depth 60.
+    by side are rare early on: never above depth 25, where the Vein joins
+    the dynamite; about 1 offer in 23 at 25 (beside the certain Vein), then
+    1 in 260 at 26 and 1 in 125 at 39; 1 in 11 at 40 (beside the certain
+    Flare Cache); and about 1 offer in 28 from depth 60.
   - A find is never offered for an item nobody could carry more of: alone,
     you; together, anyone standing.
   - A right answer sends sparks in the find's colour from the answer to
@@ -200,10 +210,11 @@ the same thing for everyone.
     the depth's full clock and rules (veil, pictures, grayscale, options,
     made-up names) as a fresh question, a flare works on it as usual, and
     it is never a find, even from a find's card (dynamite is no way to fish
-    for finds). Its card is locked out like a pick. At most two blasts a
-    depth (`DELVE_MAX_BLASTS`, the offer's other cards). As the clock hits
+    for finds). Its card is locked out like a pick. At most two blasts an
+    offer (`DELVE_MAX_BLASTS`, the offer's other cards; the fresh offer after
+    a miss at the same depth has its own). As the clock hits
     0, a flare burns first; only with none to burn does a stick go off by
-    itself (while the depth has a blast left), right at 0, in place of the
+    itself (while the offer has a blast left), right at 0, in place of the
     time-out, which then costs nothing. Its fuse warns of it: over the
     clock's last `DELVE_FUSE_MS` (1.8 s) before that 0 it hisses, and a bar
     burns down on Detonate as Next's does, reaching its end at 0 (every
@@ -229,8 +240,7 @@ the same thing for everyone.
     The cache itself is unstable: a miss on it (a wrong answer or a
     time-out) costs a life as usual, and then its blast destroys one thing
     you carry, drawn at random by the host, whose state tells every screen
-    what went (each ward, flare and stick one chance, a shard half of one,
-    as it is half a ward; a ward drawn goes whole). A ward that takes the
+    what went (each ward, flare and stick one chance). A ward that takes the
     life goes first, and the blast draws from what is left. Carrying
     nothing, or perishing on the miss (which drops the whole pack anyway),
     it takes nothing more. Together,
@@ -238,19 +248,18 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - A **Flare Cache** (from depth 25) gives a **flare**: time later for time
+  - An **Azurite Vein** (from depth 25): a right answer, at any speed,
+    mines a whole **Azurite Ward**, which takes your next lost life
+    instead. A wrong answer or a time-out on a vein caves in, with a sound
+    of its own: it costs two lives, a ward taking each loss first if you
+    hold one (on your last life you simply fall).
+  - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,
     rounded (never under 4 s, where its art still burns in, fast, with over
     3 s left once half of it is in). When your clock hits 0 a flare burns by
     itself, with a signal flare's hiss, and gives you 6 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
-  - An **Azurite Vein** (from depth 40): a right answer within the first half
-    of its clock mines an **Azurite Ward**, which takes your next lost life
-    instead; a slower one a shard (two make a ward; with three wards you
-    hold no shard). A wrong answer or a time-out on a vein caves in, with
-    a sound of its own: it costs two lives, a ward taking each loss first
-    if you hold one (on your last life you simply fall).
   - Flares and dynamite never work on a find's own question: finds lie
     down dangerous routes, with thicker walls and a darkness nothing can
     hold back, so there is no Detonate button and nothing happens at 0. You carry up to three of each item.
@@ -266,8 +275,10 @@ the same thing for everyone.
 - There's no time limit on picking a card: alone the cards wait for you,
   together the vote decides. Nobody can skip a turn by hand. After the host
   reloads, players who were cut off get a minute to come back (a vote waits
-  for them meanwhile), and a question one of them may have been answering
-  is set aside: the same cards come back, and it costs nobody anything.
+  for them meanwhile). A question one of them could still answer holds its
+  clock still: once they're back (or after 20 s at most), it carries on with
+  the time it had left (at least 5 s), and what was answered on it before
+  the reload stands.
 - A run starts from the lobby: alone in hot-seat or a room with one player,
   together in a room of two or more. Choosing Delve there shows its
   milestones, its rules in a few short lines (a run together's too, in a
@@ -280,13 +291,12 @@ the same thing for everyone.
   sends a wave of light through it; a life given to a teammate streams
   across into their phial.
   - Azurite Wards are crystal casings on the chambers, one each from the
-    base (a shard is half a casing), shimmering at rest: a ward
+    base, shimmering at rest: a ward
     crystallises on as it is mined, and bursts in blue sparks where it is
     when it takes a loss.
   - Flares and dynamite stand as small counts beside the phial.
   - The reveal says what happened in a few words: "You mined an Azurite
-    Ward.", "Too slow for a ward, but you mined a shard.", "Your ward
-    took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
+    Ward.", "Your ward took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
     "The darkness took you." Together it says who cleared it ("Ash cleared
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
@@ -346,7 +356,8 @@ the same thing for everyone.
   8% a depth. It is estimated for each depth from what the backdrop draws,
   with a measured correction table.
 - Each new depth sinks the scene a little further as its cards are dealt
-  (not a run's first depth, after a reload, or the same depth dealt again):
+  (not a run's first depth, after a reload, or the same depth dealt again,
+  as after a miss):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
   Into a new zone (its first depth) it plunges much further, 5 screens,
@@ -480,6 +491,19 @@ custom setup.
 Look-alike names form a cluster, and the answer's place in it is random: the
 name that looks most (or least) like the others is no more likely to be right
 than any other.
+
+Twins, items whose art only a detail tells apart (Call and Whisper of the
+Brotherhood; Berek's Grip, Pass and Respite; the three Guiding Palms;
+Uhtred's three gems; Zarokh's two), only meet in a question once every wrong
+answer is a look-alike name (Eternal, or Custom with All); before that a
+question shows at most one of a set, picked at random when the answer is none
+of them (`TWINS` in `src/lib/game.ts`). The Guiding Palms differ only in
+colour, so they never meet where the art is in grayscale. Today's unique
+leaves twins be: they may meet in it, as they could from its first day.
+New items are checked for twins by `tests/twins.test.ts`: it lists every
+pair in a group whose art looks very alike (the look-alike table, so rebuild
+it when items come in) or whose names share a word, until each is a set in
+`TWINS` or marked as looked at and told apart.
 
 **Codex:** a page (from the start page's corner, or at
 `poe2.quest/#codex`) listing every item you have seen, with your accuracy per
@@ -997,7 +1021,25 @@ npm run fetch-data
 
 Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
-doesn't reveal the answer.
+doesn't reveal the answer. The script also reads each unique's own page: for
+its art where the list leaves it out, and for the other ways the game draws
+it, which the list never shows. Those become the item's `variants` (its art,
+base and tooltip, under the same name): Grand Spectrum is a Ruby, an Emerald
+or a Sapphire, each its own colour, and Grip of Kulemak glows brighter with
+each desecrated mod it can take (five stages). A question shows any of an
+item's art, each as often (`Question.variant`, rolled with the mirroring);
+the answer is still just its name, and the codex shows them all. Other
+uniques have more than one version on their page too (each glove's Fists of
+Stone base, a league's changed mods), but they share one art, so they add
+nothing. A fetch that would leave noticeably fewer items than `items.json`
+has (a changed page layout, most likely) stops before it deletes any art;
+`npm run fetch-data -- --shrink` accepts it when poe2db really dropped them.
+
+Each item's tooltip (properties, requirements, mods, flavour text) comes from
+poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by
+fetching them, and `npm run fetch-stats` fetches them alone. The game loads
+that file only when a player opens an item's details (its art, clicked once a
+question is answered, or its card in the codex).
 
 poe2db's art is small (about 104 px per inventory cell, so 108 × 108 for a
 ring) and lossy, and the game draws it bigger than that. The site serves
@@ -1048,8 +1090,23 @@ python3 scripts/daily-art.py
 It writes `src/data/looks.json`: for every item, the fourteen items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
 edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,
-decoys are picked from it (`src/lib/looks.ts`). The output only changes when
+decoys are picked from it (`src/lib/looks.ts`). An item drawn more than one way
+has each of its art ranked on its own (Grand Spectrum's Sapphire looks most
+like Prism of Belief, its Ruby like Flesh Crucible), and such a question draws
+each picture's art before it picks the look-alikes, so they look like the art
+it shows. The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
+
+The category cards' emblems, and the items behind them, are laid out from
+fits measured ahead into `src/data/iconFits.json`, and drawn with clean masks
+baked into `public/icons/masks/` (`src/lib/iconFit.svelte.ts`).
+Bake them again after their art changes, or after a data refresh picks a
+different item for a card (needs Chromium, and ffmpeg for the masks' WebP;
+see `scripts/bake-icons.mjs`):
+
+```sh
+npm run bake-icons
+```
 
 ### Self-hosted signalling (optional)
 
@@ -1141,7 +1198,7 @@ More players' recordings make for more kinds of hands.
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the
 real game screen (the app itself, with its backdrop, effects, sounds and
 header) beside a panel that sets up and plays a run on this device. It sets
-the players (1 to 4), each one's lives, wards, shard, flares and dynamite,
+the players (1 to 4), each one's lives, wards, flares and dynamite,
 and the depth (any of 1 to 150, or a zone); deals cards with a find among
 them, and a second find if wanted; asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right

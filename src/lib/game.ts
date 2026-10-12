@@ -7,6 +7,7 @@ import type { Looks } from './looks.ts';
 import {
   DELVE_MAX_LOCKOUT,
   DELVE_RESUME_GRACE_MS,
+  DELVE_RESUME_MIN_MS,
   DELVE_RULESET,
   FINDS,
   FLARE_MS,
@@ -18,10 +19,14 @@ import {
   delveTileVeil,
   delveTimer,
   cavesIn,
+  clockLeft,
+  cutOffAnswering,
+  heldAhead,
   blastVictim,
   blowsUp,
   fellAt,
   findChance,
+  firstFindAt,
   findLosses,
   findReward,
   findRules,
@@ -36,7 +41,6 @@ import {
   reviveProblem,
   teamItemReady,
   tileVeilSize,
-  veinWindow,
   veilSeconds,
   voteClosesAt,
   voteDone,
@@ -47,8 +51,6 @@ import {
   unaskedCards,
   waitingIds,
   SECOND_FIND,
-  SHARDS_PER_WARD,
-  capShards,
   findOn,
   livesOf,
   standingIds,
@@ -70,7 +72,61 @@ export interface Item {
   /** Its art's size, in art pixels (poe2db's, about 104 per inventory cell); its picture is artScale times that (ui-paths.ts). */
   w: number;
   h: number;
+  /**
+   * The other ways the game draws it, each with its own base and tooltip:
+   * Grand Spectrum is a Ruby, an Emerald or a Sapphire, each its own colour,
+   * and Grip of Kulemak glows brighter with each desecrated mod it can take.
+   * A question shows any of its art, each as often (Question.variant).
+   */
+  variants?: ArtVariant[];
 }
+
+/** One more way an item is drawn (Item.variants): its art's id (its picture's file, as an item's id is), base and size. */
+export interface ArtVariant {
+  id: string;
+  base: string;
+  w: number;
+  h: number;
+}
+
+/**
+ * An item as one of its pictures draws it (drawnAs): `art` is the picture's
+ * id (its file, and its tooltip's key; the item's own id for its own art),
+ * and the base and size are that picture's. The rest, its id included, stay
+ * the item's.
+ */
+export interface DrawnItem extends Item {
+  art: string;
+}
+
+/** Each item's drawings, made once, so the same picture is always the same object. */
+const drawings = new WeakMap<Item, readonly DrawnItem[]>();
+
+/** Every picture the item is drawn with, its own first (Question.variant counts them so). */
+export function allArt(item: Item): readonly DrawnItem[] {
+  let all = drawings.get(item);
+  if (!all) {
+    all = [{ ...item, art: item.id }, ...(item.variants ?? []).map((v) => ({ ...item, art: v.id, base: v.base, w: v.w, h: v.h }))];
+    drawings.set(item, all);
+  }
+  return all;
+}
+
+/** The item as its picture `variant` draws it (Question.variant: 0, none, or one it lacks: its own art). */
+export const drawnAs = (item: Item, variant = 0): DrawnItem => allArt(item)[variant] ?? allArt(item)[0];
+
+/**
+ * The item ids a question's pictures show, in order (as Question.mirrored and
+ * .variant count them): the options' on an art question, the answer's alone
+ * on a name question.
+ */
+export const picturesOf = (q: Pick<Question, 'mode' | 'options' | 'itemId'>): string[] => (q.mode === 'art' ? q.options : [q.itemId]);
+
+/** Which of a question's pictures (picturesOf) is the answer's. */
+export const answerPicture = (q: Pick<Question, 'mode' | 'options' | 'itemId'>): number => (q.mode === 'art' ? q.options.indexOf(q.itemId) : 0);
+
+/** The answer `item` as the question's picture draws it (Grand Spectrum's Emerald…). */
+export const answerDrawn = (item: Item, q: Pick<Question, 'mode' | 'options' | 'itemId' | 'variant'>): DrawnItem => drawnAs(item, q.variant?.[answerPicture(q)]);
 
 /** The three ready-made difficulties. */
 export type Preset = 'cruel' | 'merciless' | 'eternal';
@@ -150,6 +206,11 @@ export interface DifficultyRules extends Omit<Knobs, 'veil'> {
    * colour, rolled for each question (Question.gray) in place of `grayscale`.
    */
   grayChance?: number;
+  /**
+   * Delve: the depth whose twins (TWINS) may meet, a find's deeper one.
+   * Missing elsewhere, where they meet once every wrong answer is a look-alike.
+   */
+  twins?: number;
 }
 
 /** Knobs from anywhere (an action, an old save): each one off the allowed steps takes its value in `fallback`. */
@@ -198,6 +259,35 @@ function harderKnobs(k: Knobs): Knobs {
 export const RARE_GROUPS: Record<string, number> = { Tablets: 0.25 };
 
 const weightOf = (it: Item) => RARE_GROUPS[it.group] ?? 1;
+
+/** The deepest twins (TWINS) that may meet under `rules`: Delve's depth, elsewhere all or none. */
+const twinReach = (rules: DifficultyRules) => rules.twins ?? (rules.similarNames >= 1 ? Infinity : 0);
+
+/**
+ * Items whose art only a detail tells apart, by name (each set from one
+ * group). Players found them a coin toss, but they can be learnt, so they
+ * meet in a question (one the answer and another a wrong option, or two
+ * wrong options) only where questions are at their hardest: in Delve from
+ * `depth`, elsewhere once every wrong answer is a look-alike (Eternal, or
+ * Custom with all look-alike names). Until then a question shows at most one
+ * of a set, picked at random when the answer is none of them, so seeing one
+ * says nothing about which option is right. A set told apart by its colours
+ * alone (`colour`) never meets in a question whose art is in grayscale,
+ * where nothing could tell them apart.
+ */
+export const TWINS: { names: readonly string[]; depth: number; colour?: true; what: string }[] = [
+  // Each comes in with a zone, whose card says so (lib/zoneTitle.ts, `what` they are).
+  // Two stones each, told apart mostly by their colours.
+  { names: ["Berek's Grip", "Berek's Pass", "Berek's Respite"], depth: 51, what: 'rings' },
+  // The same brooch, turned another way.
+  { names: ["Zarokh's Refrain", "Zarokh's Revolt"], depth: 51, what: 'gems' },
+  // The same lantern, at another angle or in another light.
+  { names: ["Uhtred's Omen", "Uhtred's Augury", "Uhtred's Exodus"], depth: 51, what: 'gems' },
+  // The same sceptre, its glow cyan, red or violet.
+  { names: ['Guiding Palm of the Eye', 'Guiding Palm of the Heart', 'Guiding Palm of the Mind'], depth: 61, colour: true, what: 'sceptres' },
+  // The same band, its blue and gold swapped and its glyph changed.
+  { names: ['Call of the Brotherhood', 'Whisper of the Brotherhood'], depth: 71, what: 'rings' },
+];
 
 /**
  * The most options a question about a rare group's item shows. Rare groups
@@ -427,18 +517,6 @@ export interface Delve {
   /** Co-op: every life given to bring a teammate back, oldest first (missing in solo runs and older saves). */
   revives?: Revive[];
   /**
-   * What the question in play can change, as it was when its card was picked
-   * (kept through a reask): a question set aside after a host reload puts it
-   * all back, so it costs nobody anything. Gone once the question is
-   * answered; missing between questions and in older saves.
-   */
-  snapshot?: DelveSnapshot;
-  /**
-   * Older saves only (now `snapshot.picks`): the lockout as it was before
-   * the question in play was picked.
-   */
-  picksBefore?: string[];
-  /**
    * The cards on this depth's offer asked so far (delve.ts askedCards): the
    * one picked, then each one a blast drew. Set at the pick, gone between
    * depths; missing in older saves.
@@ -455,7 +533,7 @@ export interface Delve {
   teamStreak?: number;
   /** Co-op: the longest `teamStreak` this run (missing for none). */
   bestTeamStreak?: number;
-  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone at the next depth. */
+  /** Co-op: someone answered wrong on this offer (the question picked, or one a blast drew from it); gone with the next offer, at this depth or the next. */
   missedHere?: true;
   /**
    * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
@@ -465,24 +543,6 @@ export interface Delve {
    * Missing for any other depth, and in older saves.
    */
   dealAt?: number;
-}
-
-/** Delve: everything a question can change, taken as its card is picked (see Delve.snapshot). */
-export interface DelveSnapshot {
-  /** The picks locked out: alone the player's `recent`, co-op the team's `recentCategories`. */
-  picks: string[];
-  /** Everyone's `losses` (lives, and where they perished). */
-  losses: Record<string, number[]>;
-  /** Everyone's pack: the wards a loss breaks, the flare or dynamite spent, all of it dropped by perishing. */
-  inventory: Record<string, Inventory>;
-  /** Each seated player's streak, which a loss ends. */
-  streaks: Record<string, number>;
-  /**
-   * Co-op: `missed` as it was before the vote that picked the question
-   * counted those who let it pass, so the vote again for the same cards
-   * doesn't count them twice (missing alone).
-   */
-  missed?: Record<string, number>;
 }
 
 /** One life passed in co-op: `by` gave one of theirs at depth `depth` to bring back `to`, who had perished at `fell`. */
@@ -520,7 +580,7 @@ export interface Player {
  * turns: players take turns choosing a category and answering.
  * race: everyone answers the same question; first correct answer scores,
  * wrong answers cost a point and lock that player out of the question.
- * delve: three lives and no settings, one depth deeper each question (see
+ * delve: three lives and no settings, one depth deeper each question cleared (see
  * delve.ts). Alone, a player's own turns; together (online), co-op: the team
  * votes for a card and answers one question, and nobody wins.
  */
@@ -621,6 +681,13 @@ export interface Question {
    * reveal (missing in games saved before it existed).
    */
   mirrored?: boolean[];
+  /**
+   * Which of its item's art each picture shows (drawnAs), counted as
+   * `mirrored` counts them: missing where every picture shows its item's own.
+   * Guests get it as the options: none until the reveal (an empty list), then
+   * for the pictures the reveal names.
+   */
+  variant?: number[];
   /** Delve: the art is shown without colour, as rolled against the rules' grayChance (see grayscaleFor). */
   gray?: boolean;
   /** Host-clock timestamp when the question was asked. */
@@ -629,6 +696,12 @@ export interface Question {
   deadline: number | null;
   /** Delve: host clock when the clock started, once the art has reached the player answering. */
   clockAt?: number;
+  /**
+   * Delve: the clock held still by the host's reload (a player was cut off):
+   * its `clockAt` as it was, when it stopped (`at`, host clock), and the time
+   * it has `left` when it starts again ('clock'). `deadline` is null meanwhile.
+   */
+  paused?: { clockAt: number; at: number; left: number };
   /**
    * Delve: asked from a find, under the rules and clock of deeper down; a
    * right answer earns its item (see delve.ts findReward).
@@ -642,8 +715,7 @@ export interface Question {
   /**
    * Older saves only: dynamite went off on this question at half its clock
    * (the dynamite before it blasted questions away), and the wrong options
-   * it blew away. Read only to give its stick back when the question is set
-   * aside.
+   * it blew away (the codex and achievements still read them).
    */
   blasted?: boolean;
   blownAway?: number[];
@@ -667,8 +739,6 @@ export interface Question {
   struck?: Struck[];
   /** Delve co-op: whose flare burnt on this question (alone: the player's own). */
   flaredBy?: string;
-  /** Older saves only (see `blasted`): whose dynamite went off on this question. */
-  blastedBy?: string;
 }
 
 /**
@@ -727,15 +797,13 @@ export interface Reveal {
   winnerId: string | null;
   /** Host-clock timestamp of the reveal, so every screen counts down to the same move on (missing in older saves). */
   at?: number;
-  /** Delve: the item this right answer to a find earned ('wards' for a shard that forged one). */
+  /** Delve: the item this right answer to a find earned. */
   gained?: ItemKind;
   /**
    * Delve co-op, with `gained`: who took the item. The winner, if they had
    * room for it; otherwise the first standing teammate in seat order who had.
    */
   gainedBy?: string;
-  /** Delve: the shard this answer earned forged a ward with the one held. */
-  forged?: boolean;
   /** Delve: Azurite Wards took this answer's whole loss, so no life was lost. */
   warded?: boolean;
   /**
@@ -852,8 +920,8 @@ export type Action =
   | { type: 'vote'; category: string }
   /** Delve co-op: a standing player gives one of their lives to bring back a teammate who perished. */
   | { type: 'revive'; target: string }
-  /** Host only (Delve): the host reopened its room after a reload. */
-  | { type: 'resumed' }
+  /** Host only (Delve): the host reopened its room after a reload; `at`: its last moment before it (host clock). */
+  | { type: 'resumed'; at?: number }
   /** Host only (Delve): the clock is about to run out, so one of the answering player's flares burns (co-op: a random holder's). */
   | { type: 'flare'; askedAt: number }
   /**
@@ -975,7 +1043,7 @@ export function publicView(s: GameState): GameState {
   const q = s.question;
   if (!q) return { ...s, used: [] };
   if (s.phase === 'question') {
-    const hidden = { ...q, itemId: '', options: [], mirrored: [] };
+    const hidden = { ...q, itemId: '', options: [], mirrored: [], variant: [] };
     // Delve: nothing to read off the clock either, until the art has reached the player answering.
     if (s.delve && q.deadline === null) return { ...s, used: [], question: { ...hidden, labels: q.labels.map(() => null), prompt: null, groups: [] } };
     return { ...s, used: [], question: hidden };
@@ -988,7 +1056,10 @@ export function publicView(s: GameState): GameState {
     ...q.misses.map((m) => m.index),
     ...(q.struck ?? []).map((m) => m.index),
   ]);
-  return { ...s, used: [], question: { ...q, options: q.options.map((id, i) => (known.has(i) ? id : '')) } };
+  // An art question's pictures are the options' (picturesOf); a name question's one is the answer's.
+  const variant = q.mode === 'art' ? q.variant?.map((v, i) => (known.has(i) ? v : 0)) : q.variant;
+  const { variant: _, ...rest } = q;
+  return { ...s, used: [], question: { ...rest, options: q.options.map((id, i) => (known.has(i) ? id : '')), ...(variant?.some(Boolean) ? { variant } : {}) } };
 }
 
 export function shuffle<T>(arr: T[], rng: Rng): T[] {
@@ -1031,7 +1102,7 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
  * going or loses it. Race: the winner's goes on and everyone else's breaks,
  * whether they guessed wrong or just weren't first. Delve co-op: whoever
  * cleared the depth keeps theirs going; a loss already broke anyone's it hit.
- * The team's goes on with a depth cleared with nobody missing on it.
+ * The team's goes on with a question cleared with nobody missing on its offer.
  */
 function countStreaks(s: GameState, r: Reveal) {
   if (s.delve && isGroupRun(s)) {
@@ -1066,12 +1137,15 @@ export class Engine {
   private now: () => number;
   /** Which items' art looks alike (src/lib/looks.ts), once it has been fetched. */
   private looks: Looks | null;
+  /** TWINS, as items (sets with fewer than two of them left out). */
+  private readonly twins: { items: Item[]; depth: number; colour?: true }[];
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
    * `looks`: the look-alike table, if at hand already (else see setLooks).
+   * `twins`: false lets twins (TWINS) meet anywhere (Today's unique).
    */
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null } = {}) {
+  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean } = {}) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
     this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
@@ -1085,6 +1159,8 @@ export class Engine {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
+    const byName = new Map(items.map((it) => [it.name, it]));
+    this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
 
   /**
@@ -1373,7 +1449,7 @@ export class Engine {
           flareDue = false;
         }
         // With no flare to burn, a stick of dynamite goes off by itself in
-        // place of the time-out, if the depth has a blast left (its fuse
+        // place of the time-out, if the offer has a blast left (its fuse
         // has hissed over the clock's last DELVE_FUSE_MS on every screen:
         // delve.ts fuseLeft): as the host's time-out comes (0 and the
         // allowance for answers in flight), or as a player's answer later
@@ -1399,15 +1475,14 @@ export class Engine {
           delete q.flaredAt;
         }
         let gained: ItemKind | undefined;
-        let forged = false;
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
         if (correct) {
           active.score += 1;
           // A right answer to a find earns its item (see delve.ts findReward): it is only offered to a player with room for it.
-          const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id), this.answeredFast(s, q, from)) : null;
-          if (reward) [gained, forged] = this.gain(s, active.id, reward);
+          const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
+          if (reward) gained = this.gain(s, active.id, reward);
         } else if (s.delve) {
           // An Azurite Vein caves in for two losses, each taken by a ward if
           // one is held; on the last life the first loss is the fall, and
@@ -1431,7 +1506,6 @@ export class Engine {
           timedOut,
           winnerId: correct ? active.id : null,
           ...(gained ? { gained } : {}),
-          ...(forged ? { forged } : {}),
           ...(warded ? { warded } : {}),
           ...caveIn,
           ...(blown ? { blown } : {}),
@@ -1484,7 +1558,8 @@ export class Engine {
         for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
         // Nor does it count toward the run of art and name questions.
         this.tallyMode(s, voided.mode, -1);
-        // Delve: nobody has answered yet (no clock), so the pick's snapshot still holds.
+        // Delve: no clock yet, or one paused by the host's reload whose art
+        // won't load again (what its wrong answers cost stands).
         s.question = this.makeQuestion(s, voided.category, voided);
         // One a blast asked stays one (never a find's, see blast).
         if (voided.blast) s.question.blast = voided.blast;
@@ -1535,8 +1610,25 @@ export class Engine {
         // Already running (a resumed host releasing the art again) or a question that is gone: nothing to start.
         if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline !== null) break;
         const now = this.now();
-        const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : now;
-        q.clockAt = Math.min(Math.max(at, now), now + 1000);
+        const at = timeOr(action.at, now);
+        const start = Math.min(Math.max(at, now), now + 1000);
+        const p = q.paused;
+        if (p) {
+          // Held still since the host's reload ('resumed') at `p.at`: it
+          // carries on with the time it had left. Everything timed on it
+          // moves on by as long as it was held, so what had gone of it stays
+          // gone (an Azurite Vein's fast window too); only the deadline gets
+          // the time it had left (with a hold still to come, see clockLeft).
+          const shift = start - p.at;
+          q.clockAt = p.clockAt + shift;
+          q.deadline = start + p.left + heldAhead(q.held, p.at);
+          if (q.flaredAt !== undefined) q.flaredAt += shift;
+          if (q.held) q.held = { from: q.held.from + shift, until: q.held.until + shift };
+          for (const x of q.struck ?? []) x.at += shift;
+          delete q.paused;
+          break;
+        }
+        q.clockAt = start;
         q.deadline = q.clockAt + questionTimer(s) * 1000;
         break;
       }
@@ -1555,72 +1647,22 @@ export class Engine {
         const dm = s.delve;
         if (!dm || s.phase === 'lobby' || s.phase === 'over') break;
         // Everyone the reload cut off gets a while to come back before a vote closes without them.
-        const cutOff = () => s.players.filter((p) => !p.connected && livesOf(s, p.id) > 0).map((p) => p.id);
-        dm.excused = cutOff();
+        dm.excused = s.players.filter((p) => !p.connected && livesOf(s, p.id) > 0).map((p) => p.id);
         dm.graceUntil = this.now() + DELVE_RESUME_GRACE_MS;
-        const coop = isGroupRun(s);
-        // A question someone cut off may have answered while the host was gone
-        // (co-op: anyone standing; alone, a guest can't have one): it is set
-        // aside, and the same cards come back. Its pictures don't. It can't be
-        // won any more, so it costs nobody anything either.
-        if (s.phase === 'question' && s.question && (coop ? dm.excused.length > 0 : active && !active.connected)) {
-          const voided = s.question;
-          const snap = dm.snapshot;
-          for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
-          this.tallyMode(s, voided.mode, -1);
-          // The lockout goes back to what it was before the pick (the pick may
-          // have pushed the oldest out of a full one; older saves: just undone).
-          const before = snap?.picks ?? dm.picksBefore ?? (coop ? s.recentCategories : active.recent).slice(0, -1);
-          if (coop) {
-            s.recentCategories = before;
-            dm.votes = {};
-            dm.voteFrom = null;
-          } else active.recent = before;
-          if (snap) {
-            // Everyone still here is put back as they were at the pick: the
-            // lives and wards its wrong picks cost (co-op), the pack dropped
-            // by perishing on it, a flare or dynamite spent on it, and their
-            // streak; co-op, also how many votes in a row they let pass, as
-            // the vote that picked it is held again. Someone who has left
-            // stays gone. (A revive is never given during a question, so
-            // none is undone.)
-            const packs = (dm.inventory ??= {});
-            const missed = snap.missed && (dm.missed ??= {});
-            for (const p of s.players) {
-              if (missed && snap.missed) {
-                if (Object.hasOwn(snap.missed, p.id)) missed[p.id] = snap.missed[p.id];
-                else delete missed[p.id];
-              }
-              if (Object.hasOwn(snap.losses, p.id)) dm.losses[p.id] = [...snap.losses[p.id]];
-              else delete dm.losses[p.id];
-              if (Object.hasOwn(snap.inventory, p.id)) packs[p.id] = { ...snap.inventory[p.id] };
-              else delete packs[p.id];
-              if (Object.hasOwn(snap.streaks, p.id)) p.streak = snap.streaks[p.id];
-            }
-            // Nobody has missed at this depth, as at the pick (the team's streak only moves at a reveal).
-            delete dm.missedHere;
-            // Back on their feet, those cut off among them get the grace too.
-            dm.excused = cutOff();
-          } else {
-            // Older saves: a flare or a stick of dynamite spent on it goes back
-            // to whoever's it was (alone: the player's own), if they still
-            // stand; losses stay.
-            const owner = (by: string | undefined) => by ?? (coop ? undefined : active?.id);
-            const flarer = voided.flared ? owner(voided.flaredBy) : undefined;
-            const blaster = voided.blasted ? owner(voided.blastedBy) : undefined;
-            if (flarer) this.gain(s, flarer, 'flares');
-            if (blaster) this.gain(s, blaster, 'dynamite');
-          }
-          // Its blasts are undone with it (the snapshot gave their sticks
-          // back): the same cards come back, none asked yet.
-          const blasted = askedCards(s).length - 1;
-          if (blasted > 0 && dm.blasts) dm.blasts = Math.max(0, dm.blasts - blasted);
-          if (dm.blasts === 0) delete dm.blasts;
-          delete dm.asked;
-          delete dm.snapshot;
-          delete dm.picksBefore;
-          s.question = null;
-          s.phase = 'choosing';
+        // A question on the clock that someone cut off could still answer
+        // (co-op: anyone standing yet to answer it; alone, a guest's) holds
+        // still: their answer may never have arrived, and the clock ran on
+        // while the host was gone. It starts again with the time it had left
+        // (at least DELVE_RESUME_MIN_MS) once the art is back on screens
+        // ('clock'). What was answered on it stands.
+        const q = s.question;
+        if (s.phase === 'question' && q && q.deadline !== null && q.clockAt !== undefined && cutOffAnswering(s).length > 0) {
+          // The host's last moment before the reload, never before the clock started nor after now.
+          const at = timeOr(action.at, this.now());
+          const stop = Math.min(Math.max(at, q.clockAt), this.now());
+          q.paused = { clockAt: q.clockAt, at: stop, left: Math.max(DELVE_RESUME_MIN_MS, clockLeft(q, stop)) };
+          q.deadline = null;
+          delete q.clockAt;
         }
         break;
       }
@@ -1659,11 +1701,6 @@ export class Engine {
     if (s.reveal && !prev.reveal) {
       s.reveal.at = this.now();
       countStreaks(s, s.reveal);
-      // Answered: what the question cost stands, and its snapshot goes.
-      if (s.delve) {
-        delete s.delve.snapshot;
-        delete s.delve.picksBefore;
-      }
     }
     s.version = prev.version + 1;
     return s;
@@ -1769,19 +1806,9 @@ export class Engine {
    * the host's own record, so a guest can't make one up. With two finds on
    * offer, the question is the picked card's find, if it holds one.
    */
-  private takePick(s: GameState, active: Player | null, category: string, missedBefore?: Record<string, number>) {
+  private takePick(s: GameState, active: Player | null, category: string) {
     let kind: Pick<Question, 'find'> = {};
     if (s.delve) {
-      // What the question can change, in case it is set aside (see 'resumed').
-      // A reask remakes the question without coming here, so it keeps this.
-      s.delve.snapshot = {
-        picks: [...(active ? active.recent : s.recentCategories)],
-        losses: structuredClone(s.delve.losses),
-        inventory: structuredClone(s.delve.inventory ?? {}),
-        streaks: Object.fromEntries(s.players.map((p) => [p.id, p.streak ?? 0])),
-        ...(missedBefore ? { missed: missedBefore } : {}),
-      };
-      delete s.delve.picksBefore;
       // The first card of this depth's asked (more come with blasts, see blast).
       s.delve.asked = [category];
       // Co-op locks out the team's picks, alone the player's own.
@@ -1809,27 +1836,20 @@ export class Engine {
     if (p) p.streak = 0;
     if (this.spend(s, id, 'wards')) return 'ward';
     (s.delve!.losses[id] ??= []).push(s.round);
-    if (livesOf(s, id) === 0 && s.delve!.inventory?.[id]) s.delve!.inventory[id] = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+    if (livesOf(s, id) === 0 && s.delve!.inventory?.[id]) s.delve!.inventory[id] = { wards: 0, flares: 0, dynamite: 0 };
     return 'life';
   }
 
   /**
    * One more of an item for a player still standing, if they have room for it
-   * (delve.ts hasRoom). A shard that makes SHARDS_PER_WARD forges a ward.
-   * Says what they gained (undefined for nothing) and whether a ward was forged.
+   * (delve.ts hasRoom). Says what they gained (undefined for nothing).
    */
-  private gain(s: GameState, id: string, item: ItemKind): [ItemKind | undefined, boolean] {
+  private gain(s: GameState, id: string, item: ItemKind): ItemKind | undefined {
     const inv = inventoryOf(s, id);
-    if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return [undefined, false];
-    let forged = false;
-    if (item === 'shards' && inv.shards + 1 >= SHARDS_PER_WARD) {
-      inv.shards = 0;
-      inv.wards++;
-      forged = true;
-    } else inv[item]++;
-    // With every ward a player can hold, no shard is kept (a fast Vein's ward or a forge may reach it).
-    (s.delve!.inventory ??= {})[id] = capShards(inv);
-    return [forged ? 'wards' : item, forged];
+    if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return undefined;
+    inv[item]++;
+    (s.delve!.inventory ??= {})[id] = inv;
+    return item;
   }
 
   /**
@@ -1931,31 +1951,22 @@ export class Engine {
   }
 
   /**
-   * An answer arrived within an Azurite Vein's fast window (delve.ts
-   * veinWindow) of the clock starting, measured on the host. A guest saw the clock start up to a one-way trip late and
-   * their answer takes another to arrive, so it gets the same allowance as an
-   * answer at the deadline; the host's own and hot-seat answers travel nowhere.
-   */
-  private answeredFast(s: GameState, q: Question, from: string | null): boolean {
-    if (q.clockAt === undefined) return false;
-    const guest = from !== null && from !== s.hostId;
-    return this.now() - q.clockAt <= veinWindow(delveQuestionTimer(s.round, q)) + (guest ? ANSWER_GRACE_MS : 0);
-  }
-
-  /**
    * Which of the cards on offer are finds, and of what: one roll against the
    * finds' slices at this depth (delve.ts findChance), and, if that found
    * one, a second for another kind on another card, at SECOND_FIND of its
-   * chance. Never more than two. A find whose item the player on turn
-   * (co-op: anyone standing, as anyone may answer it) can't carry any more
-   * of is never offered: its slice finds nothing, so the others' chances
-   * stay the depth's.
+   * chance. Never more than two. On a find's own first depth (delve.ts
+   * firstFindAt) the depth's first offer (`fresh`) holds that find, certain;
+   * one after a miss there rolls as any other. A find whose item the
+   * player on turn (co-op: anyone standing, as anyone may answer it) can't
+   * carry any more of is never offered: its slice finds nothing, so the
+   * others' chances stay the depth's.
    */
-  private rollFinds(s: GameState, takers: string[]): CardFind[] {
+  private rollFinds(s: GameState, takers: string[], fresh: boolean): CardFind[] {
     if (!s.delve || !takers.length || !s.offered.length) return [];
     const room = (item: ItemKind) => takers.some((id) => hasRoom(inventoryOf(s, id), item));
     const chances = (share: number, but?: FindKind) => FINDS.filter((f) => f.kind !== but).map((f) => ({ ...f, chance: findChance(f.kind, s.round) * share }));
-    const first = this.rollFind(chances(1), room, s.offered);
+    const certain = fresh ? FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item)) : undefined;
+    const first = certain ? { category: sample(s.offered, 1, this.rng)[0], kind: certain.kind } : this.rollFind(chances(1), room, s.offered);
     if (!first) return [];
     const second = this.rollFind(
       chances(SECOND_FIND, first.kind),
@@ -1978,11 +1989,12 @@ export class Engine {
   }
 
   /**
-   * Alone: moves on to the player's next turn, one depth deeper (the seat
-   * after `from` with lives left; one player, so their own), or ends the run
-   * with their last life: the depth is the result, nobody wins.
+   * Alone: moves on to the player's next turn (the seat after `from` with
+   * lives left; one player, so their own), one depth deeper if the question
+   * was `cleared` and at the same depth if not, or ends the run with their
+   * last life: the depth is the result, nobody wins.
    */
-  private advanceDelve(s: GameState, from: number) {
+  private advanceDelve(s: GameState, from: number, cleared: boolean) {
     const n = s.players.length;
     let next = from;
     let wrapped = false;
@@ -2002,9 +2014,10 @@ export class Engine {
       this.finish(s, []);
       return;
     }
-    if (wrapped) s.round++;
+    const deeper = wrapped && cleared;
+    if (deeper) s.round++;
     s.turn = next;
-    this.beginTurn(s, false, wrapped);
+    this.beginTurn(s, false, deeper);
   }
 
   // ---- delve co-op --------------------------------------------------------
@@ -2043,11 +2056,9 @@ export class Engine {
     const category = forced ?? (tickets.length ? tickets[Math.floor(this.rng() * tickets.length)] : undefined);
     if (category === undefined) return;
     const missed = (dm.missed ??= {});
-    // As it was before this vote counted (see DelveSnapshot.missed).
-    const missedBefore = { ...missed };
     for (const id of standingIds(s)) missed[id] = Object.hasOwn(votes, id) ? 0 : (missed[id] ?? 0) + 1;
     dm.voteFrom = null;
-    this.takePick(s, null, category, missedBefore);
+    this.takePick(s, null, category);
   }
 
   /**
@@ -2076,7 +2087,7 @@ export class Engine {
         return;
       }
       // With no flare to burn, a stick of dynamite goes off by itself, from
-      // a random standing holder's pack, if the depth has a blast left (its
+      // a random standing holder's pack, if the offer has a blast left (its
       // fuse has hissed over the clock's last seconds: delve.ts fuseLeft).
       // Nobody is hit, and the whole team gets the new question.
       if (fuseDue(s)) {
@@ -2132,16 +2143,14 @@ export class Engine {
   /**
    * Co-op: the question is over, cleared by `winner`'s right answer or by
    * nobody (all wrong, or the time-out's `hits`). The winner earns the find's
-   * item, if it is one, as alone (an Azurite Vein's fast window counted from
-   * the clock's start to their answer); with no room for it, a standing
-   * teammate who has room takes it (`gainedBy`).
+   * item, if it is one, as alone; with no room for it, a standing teammate
+   * who has room takes it (`gainedBy`).
    */
   private coopReveal(s: GameState, winner: { id: string; index: number } | null, timedOut: boolean, hits: Hit[]) {
     const q = s.question!;
     const struck = q.struck ?? [];
     let gained: ItemKind | undefined;
     let gainedBy: string | undefined;
-    let forged = false;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
       if (p) p.score += 1;
@@ -2159,12 +2168,11 @@ export class Engine {
       // first standing teammate in seat order who has: it was offered as
       // anyone standing had room, so it never pays nothing.
       if (q.find) {
-        const fast = this.answeredFast(s, q, winner.id);
         const takers = [winner.id, ...standingIds(s).filter((id) => id !== winner.id)];
         for (const id of takers) {
-          const reward = findReward(q.find, inventoryOf(s, id), fast);
+          const reward = findReward(q.find, inventoryOf(s, id));
           if (!reward) continue;
-          [gained, forged] = this.gain(s, id, reward);
+          gained = this.gain(s, id, reward);
           if (gained) {
             gainedBy = id;
             break;
@@ -2185,21 +2193,24 @@ export class Engine {
       timedOut,
       winnerId: winner?.id ?? null,
       ...(gained ? { gained, gainedBy } : {}),
-      ...(forged ? { forged } : {}),
       ...(q.find && cavesIn(q.find) && all.length ? { caveIn: true } : {}),
       hits: all,
     };
     s.phase = 'reveal';
   }
 
-  /** Co-op: after a reveal, one depth deeper for whoever stands (a revived player too), or the end of the run. */
-  private advanceCoop(s: GameState) {
+  /**
+   * Co-op: after a reveal, a new offer for whoever stands (a revived player
+   * too), one depth deeper if the team `cleared` the question and at the
+   * same depth if not, or the end of the run.
+   */
+  private advanceCoop(s: GameState, cleared: boolean) {
     if (!standingIds(s).length) {
       this.finish(s, []);
       return;
     }
-    s.round++;
-    this.beginTurn(s, false, true);
+    if (cleared) s.round++;
+    this.beginTurn(s, false, cleared);
   }
 
   // ---- turns mode -------------------------------------------------------
@@ -2223,7 +2234,8 @@ export class Engine {
     // In a deathmatch nobody picks their favourite: one random category.
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
     if (s.delve) {
-      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
+      // The depth's first offer (a new depth's, or the run's), not one after a miss at it.
+      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [], first || deeper);
       delete s.delve.find;
       delete s.delve.asked;
       delete s.delve.missedHere;
@@ -2237,8 +2249,6 @@ export class Engine {
       s.delve.finds = [];
       delete s.delve.find;
       if (s.delve.voteFrom !== undefined) s.delve.voteFrom = null;
-      delete s.delve.snapshot;
-      delete s.delve.picksBefore;
       delete s.delve.asked;
       delete s.delve.dealAt;
     }
@@ -2304,8 +2314,10 @@ export class Engine {
    */
   private advance(s: GameState, from = s.turn) {
     if (s.delve) {
-      if (isGroupRun(s)) this.advanceCoop(s);
-      else this.advanceDelve(s, from);
+      // Only a question cleared takes the run a depth deeper: after a miss (or a time-out) the next one is asked at the same depth.
+      const cleared = s.phase === 'reveal' && !!s.reveal?.correct;
+      if (isGroupRun(s)) this.advanceCoop(s, cleared);
+      else this.advanceDelve(s, from, cleared);
       return;
     }
     if (s.deathmatch) {
@@ -2365,12 +2377,16 @@ export class Engine {
    * outside it), so "the name that fits the others best" doesn't give it
    * away.
    */
-  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false): Item[] {
+  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt: boolean, arts: (it: Item) => readonly string[]): Item[] {
     if (count <= 0) return [];
     // By art only with the table at hand and the answer in it (items added
-    // since it was built have no look-alikes); by name otherwise.
-    const looks = byArt && this.looks?.looksLike(answer.id).length ? this.looks : null;
-    const like = looks ? (a: Item, b: Item) => looks.lookScore(a.id, b.id) : (a: Item, b: Item) => this.similarity(a, b);
+    // since it was built have no look-alikes); by name otherwise. By art,
+    // two items look as alike as the likest of their pictures (`arts`: the
+    // one the question shows, or each it could, Item.variants).
+    const looks = byArt && this.looks?.looksLike(arts(answer)[0]).length ? this.looks : null;
+    const like = looks
+      ? (a: Item, b: Item) => Math.max(...arts(a).flatMap((x) => arts(b).map((y) => looks.lookScore(x, y))))
+      : (a: Item, b: Item) => this.similarity(a, b);
     // The items most like `to`, with a few to spare so the pick still varies.
     const near = (to: Item, from: Item[]) =>
       shuffle(from, this.rng) // random order among equal scores
@@ -2442,6 +2458,31 @@ export class Engine {
       names.set(id, this.fakes.get(source)![n]);
     }
     return names;
+  }
+
+  /** The sets of twins (TWINS) that may not meet under `rules`, in a question whose art is `gray` or not. */
+  private apartTwins(rules: DifficultyRules, gray: boolean): Item[][] {
+    const reach = twinReach(rules);
+    return this.twins.flatMap((t) => (t.depth > reach || (t.colour && gray) ? [t.items] : []));
+  }
+
+  /**
+   * The twins that sit out a question about `answer`: of each set in `apart`,
+   * all but the answer, or, the answer being none of them, all but one of
+   * those in `unused` (the category's unseen items), picked at random, or
+   * of the whole set when all of them were seen (as a decoy once the unseen
+   * run out). A set from another category only comes up as the very last
+   * resort, from all items, so it keeps its first without a roll.
+   */
+  private benchTwins(answer: Item, apart: Item[][], unused: ReadonlySet<Item>): Set<string> {
+    const out = new Set<string>();
+    for (const set of apart) {
+      const open = set.filter((it) => unused.has(it));
+      const pick = open.length ? open : set[0].category === answer.category ? set : [];
+      const keep = set.includes(answer) ? answer : pick.length > 1 ? pick[Math.floor(this.rng() * pick.length)] : (pick[0] ?? set[0]);
+      for (const it of set) if (it !== keep) out.add(it.id);
+    }
+    return out;
   }
 
   private simCache = new Map<string, number>();
@@ -2557,19 +2598,38 @@ export class Engine {
     // none can be asked, the category starts over, except for its latest
     // answer.
     const answerable = (unused: Item[]) => {
-      const roomy = shareable(unused, fakes);
+      const roomy = shareable(unused, fakes, mode);
       if (roomy.length || !fakes) return roomy;
-      const any = shareable(unused, 0);
-      if (any.length && rules.artChance > 0) {
+      // Counted as the picture question it would turn into, its twins kept apart as there.
+      const asArt = rules.artChance > 0 ? shareable(unused, 0, 'art') : [];
+      if (asArt.length) {
         this.tallyMode(s, mode, -1);
         this.tallyMode(s, (mode = 'art'), 1);
         fakes = 0;
+        return asArt;
       }
-      return any;
+      return shareable(unused, 0, mode);
     };
-    const shareable = (unused: Item[], fakes: number) => {
+    // Delve: the art in grayscale or not, rolled for each question: here
+    // where twins told apart by their colours could meet (whether they may
+    // depends on it), else after the rest as before there were any.
+    const grayFirst = !!rules.grayChance && this.twins.some((t) => t.colour && t.depth <= twinReach(rules));
+    const grayRoll = grayFirst ? this.rng() < rules.grayChance! : undefined;
+    // Twins that may not meet yet, as a name or a picture question ("find the
+    // art" may be in grayscale where the art to name isn't): all but one of
+    // each set sit out, so they don't count.
+    const apart: Record<QuestionMode, Item[][]> = {
+      name: this.apartTwins(rules, grayRoll ?? rules.grayscale === 'all'),
+      art: this.apartTwins(rules, grayRoll ?? rules.grayscale !== 'off'),
+    };
+    const shareable = (unused: Item[], fakes: number, as: QuestionMode) => {
       const left = new Map<string, number>();
       for (const it of unused) left.set(it.group, (left.get(it.group) ?? 0) + 1);
+      const open = apart[as].length ? new Set(unused) : null;
+      for (const set of apart[as]) {
+        const n = set.filter((it) => open!.has(it)).length;
+        if (n > 1) left.set(set[0].group, left.get(set[0].group)! - (n - 1));
+      }
       const others = (group: string) => [...left].flatMap(([g, n]) => (g === group || Object.hasOwn(RARE_GROUPS, g) ? [] : [n]));
       return unused.filter((it) => {
         const siblings = left.get(it.group)! - 1;
@@ -2591,11 +2651,13 @@ export class Engine {
     const need = count - 1;
     fakes = Math.min(fakes, maxFakes(count));
 
-    const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group);
+    const benched = this.benchTwins(answer, apart[mode], new Set(unused));
+    const fits = (it: Item) => !benched.has(it.id);
+    const sameGroup = unused.filter((it) => it.id !== answer.id && it.group === answer.group && fits(it));
     // Decoys come from the answer's own group (all rings, all bows…): a flask
     // among tablets would stand out. Other groups only fill in when it runs
     // too low, evened out with it, and rare groups (tablets) not even then.
-    const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1);
+    const otherGroup = unused.filter((it) => it.id !== answer.id && it.group !== answer.group && weightOf(it) === 1 && fits(it));
     const pool = sameGroup.length >= need ? sameGroup : [...sameGroup, ...otherGroup];
 
     // Delve's look-alikes rise a little every depth: a share between two counts rolls for the one more.
@@ -2609,12 +2671,32 @@ export class Engine {
     // not (the same seed only asks the same question if it was there both
     // times or neither).
     const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
-    const decoys = this.lookalikes(answer, pool, simCount, count, byArt);
+    // An item drawn more than one way shows any of its art, each as often.
+    // By art, the pictures to be shown are drawn before the look-alikes are
+    // picked (only those items roll), so they look like the art the question
+    // shows: the answer's, and on an art question every picture's. A name
+    // question shows no decoy's art, so a decoy there counts as the likest of
+    // its own. Else each picture is drawn once the options are known
+    // (rollArt below).
+    const drawnWith = new Map<string, number>();
+    const rollArt = (it: Item) => {
+      const n = it.variants?.length ?? 0;
+      return n ? Math.floor(this.rng() * (n + 1)) : 0;
+    };
+    if (byArt) for (const it of mode === 'art' ? [answer, ...pool] : [answer]) if (it.variants) drawnWith.set(it.id, rollArt(it));
+    // Each item's art ids, worked out once: the look-alikes score many pairs.
+    const artIds = new Map<Item, readonly string[]>();
+    const arts = (it: Item) => {
+      let ids = artIds.get(it);
+      if (!ids) artIds.set(it, (ids = mode === 'art' || it === answer ? [drawnAs(it, drawnWith.get(it.id)).art] : allArt(it).map((a) => a.art)));
+      return ids;
+    };
+    const decoys = this.lookalikes(answer, pool, simCount, count, byArt, arts);
     // Rest at random, preferring the same group, then the category, then anything.
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
-      decoys.push(...sample(source.filter((it) => !taken.has(it.id)), need - decoys.length, this.rng));
+      decoys.push(...sample(source.filter((it) => !taken.has(it.id) && fits(it)), need - decoys.length, this.rng));
     }
     if (pool !== sameGroup) this.evenOut(answer, decoys, pool, fakes);
 
@@ -2641,10 +2723,14 @@ export class Engine {
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    // Delve: the art in grayscale or not, rolled for each question.
-    const gray = rules.grayChance ? { gray: this.rng() < rules.grayChance } : {};
+    const gray = rules.grayChance ? { gray: grayRoll ?? this.rng() < rules.grayChance } : {};
     const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
-    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, askedAt, deadline, misses: [], ...special };
+    // Each picture's art, as drawn for the look-alikes or rolled now (only
+    // items drawn more than one way roll, so a game without one asks what it
+    // always asked).
+    const variant = picturesOf({ mode, options, itemId: answer.id }).map((id) => drawnWith.get(id) ?? rollArt(this.byId.get(id)!));
+    const drawn = variant.some(Boolean) ? { variant } : {};
+    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, ...drawn, askedAt, deadline, misses: [], ...special };
   }
 }
 
@@ -2707,4 +2793,9 @@ export function nameSimilarity(a: string, b: string): number {
 
 function validIndex(index: unknown, count: number): number | null {
   return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < count ? index : null;
+}
+
+/** A host-clock time an action carries, or `fallback` when it has none (or a broken one). */
+function timeOr(at: unknown, fallback: number): number {
+  return typeof at === 'number' && Number.isFinite(at) ? at : fallback;
 }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, TWINS, allArt, drawnAs, picturesOf, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -321,7 +321,10 @@ test('difficulties scale options, decoy kind and question types', () => {
       const real = q.options.filter((id) => !isFake(id)).map((id) => engine.byId.get(id)!);
       const looks = q.options.map((id) => engine.byId.get(isFake(id) ? id.split(':')[1] : id)!.group);
       for (const it of real) assert.equal(it.category, answer.category, 'decoys share the category');
-      const sameGroupLeft = unused.filter((it) => it.group === answer.group && it.id !== answer.id).length;
+      // Twins (TWINS) may sit out, all but one of a set, so a set counts once (none with the answer in it).
+      const twinSet = (it: Item) => TWINS.find((t) => t.names.includes(it.name));
+      const sameGroup = unused.filter((it) => it.group === answer.group && it.id !== answer.id);
+      const sameGroupLeft = sameGroup.filter((it) => !twinSet(it)).length + new Set(sameGroup.flatMap((it) => (twinSet(it) && twinSet(it) !== twinSet(answer) ? [twinSet(it)] : []))).size;
       if (sameGroupLeft >= rules.options - 1) {
         for (const it of real) assert.equal(it.group, answer.group, 'decoys share the group');
       }
@@ -612,12 +615,78 @@ test('guests only learn which pictures were mirrored at the reveal', () => {
   assert.deepEqual(publicView(s).question!.mirrored, q.mirrored);
 });
 
+test('an item drawn more than one way shows each of its art about as often', () => {
+  const engine = new Engine(items, { rng: seeded(7), fakes });
+  const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'merciless', mode: 'turns', public: false, locked: false });
+  const drawn = new Map<string, number[]>();
+  for (let i = 0; i < 8000; i++) {
+    const q = engine.makeQuestion(s, i % 2 ? 'Rings' : 'Flasks, Charms, Jewels, Relics & Tablets');
+    const pictured = picturesOf(q);
+    // Missing where every picture shows its item's own art.
+    if (q.variant) assert.equal(q.variant.length, pictured.length, 'one per picture');
+    if (q.variant) assert.ok(q.variant.some(Boolean), 'only listed when some picture shows a variant');
+    const variant = q.variant ?? pictured.map(() => 0);
+    pictured.forEach((id, k) => {
+      const it = engine.byId.get(id);
+      if (!it?.variants) return assert.equal(variant[k], 0, `${id} is drawn one way`);
+      const counts = drawn.get(it.name) ?? drawn.set(it.name, Array(it.variants.length + 1).fill(0)).get(it.name)!;
+      counts[variant[k]]++;
+    });
+  }
+  assert.deepEqual([...drawn.keys()].sort(), ['Grand Spectrum', 'Grip of Kulemak']);
+  for (const [name, counts] of drawn) {
+    const even = counts.reduce((a, b) => a + b) / counts.length;
+    assert.ok(even > 40, `${name} came up enough to tell: ${counts.join(', ')}`);
+    for (const n of counts) assert.ok(n > even * 0.5 && n < even * 1.5, `${name}: ${counts.join(', ')}`);
+  }
+});
+
+test('a drawn item is its variant\'s picture, base and size under the item\'s name and id', () => {
+  const gs = items.find((it) => it.name === 'Grand Spectrum')!;
+  assert.deepEqual(allArt(gs).map((a) => a.base), ['Ruby', 'Emerald', 'Sapphire']);
+  assert.equal(drawnAs(gs).art, gs.id);
+  assert.equal(drawnAs(gs, 0), drawnAs(gs), 'the same picture, the same object');
+  const emerald = drawnAs(gs, 1);
+  assert.deepEqual([emerald.art, emerald.base, emerald.name, emerald.group], [gs.variants![0].id, 'Emerald', 'Grand Spectrum', gs.group]);
+  assert.equal(emerald.id, gs.id, 'its id stays the item\'s');
+  assert.equal(drawnAs(gs, 9), drawnAs(gs), 'a variant it lacks: its own art');
+  const ids = items.flatMap((it) => allArt(it).map((a) => a.art));
+  assert.equal(new Set(ids).size, ids.length, 'every art its own id');
+});
+
+test('guests only learn which art a picture showed at the reveal, and only for the pictures it names', () => {
+  let { engine, s } = setup(['Ash'], 99, 'merciless');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  let found = { name: false, art: false };
+  for (let i = 0; i < 2000 && !(found.name && found.art); i++) {
+    const category = s.offered.includes('Rings') ? 'Rings' : s.offered[0];
+    s = engine.apply(s, { type: 'pick', category }, 'p0');
+    const q = s.question!;
+    assert.deepEqual(publicView(s).question!.variant, [], 'nothing before the reveal');
+    s = engine.apply(s, { type: 'answer', index: wrongIdx(q) }, 'p0');
+    const seen = publicView(s).question!;
+    if (q.variant) {
+      found[q.mode] = true;
+      if (q.mode === 'name') assert.deepEqual(seen.variant, q.variant, 'the art named is the answer\'s');
+      else
+        q.variant.forEach((v, k) => {
+          const named = !!seen.options[k];
+          assert.equal(seen.variant?.[k] ?? 0, named ? v : 0, `picture ${k}: ${named ? 'named' : 'anonymous'}`);
+        });
+    } else assert.equal(seen.variant, undefined);
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  }
+  assert.ok(found.name && found.art, 'both kinds of question came up');
+});
+
 test('guests cannot act for others, join locked rooms, or impersonate', () => {
   let { engine, s } = setup(['Alva', 'Zana']);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p0', name: 'Xan' }, 'p1'), /Not allowed/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Host' }, 'p9'), /reserved/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'Zаna' }, 'p9'), /looks too much like/); // Cyrillic а
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'A1va' }, 'p9'), /looks too much like/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: 'HeilHitler' }, 'p9'), /name is not allowed/);
+  assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'n1gg3r' }, 'p1'), /name is not allowed/);
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'p9', name: '\u200b\u202e ' }, 'p9'), /at least one letter/);
   s = engine.apply(s, { type: 'join', playerId: 'p9', name: 'Dori\u202eevil\u200b' }, 'p9');
   assert.equal(s.players.find((p) => p.id === 'p9')!.name, 'Dorievil');

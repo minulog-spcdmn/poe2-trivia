@@ -17,6 +17,7 @@ import {
   DELVE_FUSE_MS,
   DELVE_LIVES,
   DELVE_MAX_BLASTS,
+  DELVE_RESUME_MIN_MS,
   FLARE_MS,
   askedCards,
   blastProblem,
@@ -45,7 +46,7 @@ import { addRun, emptyRecords, leftEvent, parseRecords, serializeRecords } from 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0, shards: 0 };
+const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrongs = (q: Question) => q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));
@@ -589,18 +590,28 @@ test('a host reload while the fuse burns neither loses the stick nor spends it t
   old.timeOut();
   assert.equal(old.s.question!.blast!.was.at, qo.askedAt);
   assert.equal(dynamiteOf(old.s, 'p0'), 0);
-  // Together, with someone cut off: the question is set aside mid-fuse; the stick stays in the pack.
+  // Together, with someone cut off: the clock holds still mid-fuse, the stick
+  // stays in the pack, and the fuse burns again as the clock nears 0 once more.
   const t = delve(3, { depth: 20 });
   t.give('p1', { dynamite: 1 });
-  t.ask();
+  const tq = t.ask();
   t.before0(DELVE_FUSE_MS / 2);
   t.act({ type: 'connection', playerId: 'p2', connected: false });
   t.act({ type: 'resumed' });
-  assert.equal(t.s.phase, 'choosing');
-  assert.equal(t.s.question, null);
+  assert.equal(t.s.phase, 'question');
   assert.equal(fuseLeft(t.s, t.clock.now), null);
   assert.equal(dynamiteOf(t.s, 'p1'), 1);
   assert.equal(t.s.delve!.blasts, undefined);
+  t.clock.now += 30_000;
+  t.act({ type: 'clock', askedAt: tq.askedAt });
+  assert.equal(t.s.question!.deadline, t.clock.now + DELVE_RESUME_MIN_MS, 'at least DELVE_RESUME_MIN_MS');
+  assert.equal(fuseLeft(t.s, t.clock.now), null);
+  t.before0(DELVE_FUSE_MS / 2);
+  assert.equal(fuseLeft(t.s, t.clock.now), 0.5);
+  t.timeOut();
+  assert.equal(t.s.question!.blast!.was.at, tq.askedAt);
+  assert.equal(dynamiteOf(t.s, 'p1'), 0);
+  assert.equal(t.s.delve!.blasts, 1);
 });
 
 test('alone and away, nothing goes off by itself: the time-out takes the life', () => {

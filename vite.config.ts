@@ -180,7 +180,7 @@ const hoverOnlyWhereHoverable = {
 
 /**
  * The app's own mouse pointer (src/lib/ownCursor.ts): every `cursor: pointer`,
- * `default`, `not-allowed` and `text` reads its picture from a variable, falling back to
+ * `default`, `not-allowed`, `text`, `zoom-in`, `grab` and `grabbing` reads its picture from a variable, falling back to
  * the system's own where it isn't set (pages that don't draw one).
  *
  * And every cursor is handed down as a variable rather than inherited:
@@ -190,7 +190,15 @@ const hoverOnlyWhereHoverable = {
  * it holds keeps taking the variable, unchanged, and isn't restyled. (An
  * inherited cursor changed on a big element restyles all it holds.)
  */
-const CURSOR_VARS: Record<string, string> = { pointer: '--cursor-pointer', default: '--cursor', 'not-allowed': '--cursor-disabled', text: '--cursor-text' };
+const CURSOR_VARS: Record<string, string> = {
+  pointer: '--cursor-pointer',
+  default: '--cursor',
+  'not-allowed': '--cursor-disabled',
+  text: '--cursor-text',
+  'zoom-in': '--cursor-zoom',
+  grab: '--cursor-grab',
+  grabbing: '--cursor-grabbing',
+};
 const HANDED_DOWN = 'var(--cursor-now)';
 
 const themedCursors = {

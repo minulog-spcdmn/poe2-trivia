@@ -391,7 +391,7 @@ test('Delve together: right for whoever cleared it, wrong for whoever struck, se
 test('Delve together: a ward that takes a struck answer\'s loss, and the time-out for whoever never answered', () => {
   let { engine, s } = coop();
   s = structuredClone(s);
-  s.delve!.inventory = { p1: { wards: 1, flares: 0, dynamite: 0, shards: 0 } };
+  s.delve!.inventory = { p1: { wards: 1, flares: 0, dynamite: 0 } };
   const q = s.question!;
   s = engine.apply(s, { type: 'answer', index: wrongIdx(q), askedAt: q.askedAt }, 'p1');
   const later = new Engine(items, { rng: seeded(3), now: () => q.deadline! + 1000, fakes });

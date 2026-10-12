@@ -28,7 +28,6 @@
     lifeLost,
     lostPoint,
     newFlame,
-    shardFound,
     turnsBlue,
     wardBlocked,
     wardFormed,
@@ -205,8 +204,6 @@
   const invSnapshot = (st: GameState) =>
     ({
       phase: st.phase,
-      // setAside (lib/delveSession.ts) tells a set-aside question by its turn.
-      turnCount: st.turnCount,
       players: st.players.map((p) => ({ id: p.id })),
       question: st.question && { askedAt: st.question.askedAt, struck: [...(st.question.struck ?? [])] },
       delve: st.delve && { startedAt: st.delve.startedAt, inventory: Object.fromEntries(Object.entries(st.delve.inventory ?? {}).map(([id, inv]) => [id, { ...inv }])) },
@@ -233,8 +230,7 @@
       // What the blast took is left to its own moment (a second ward gone with a ward that took the loss stays a shatter).
       const blownItem = blownBy.get(id);
       const changes = blownItem ? all.filter((c) => c.item !== blownItem || inventoryOf(was, id)[c.item] - inventoryOf(next, id)[c.item] > 1) : all;
-      // At a reveal it says whether a ward was forged (a third ward mined outright also drops the shard held).
-      const kind = momentOf(changes, atReveal ? !!next.reveal?.forged : undefined);
+      const kind = momentOf(changes);
       if (!kind) continue;
       // Perishing drops everything; only a ward breaking on the way (a cave-in) is a moment.
       if (kind !== 'shatter' && livesOf(next, id) === 0) continue;
@@ -255,8 +251,6 @@
   /** Moments of a find answered right, and the find each comes from. */
   const FOUND = new Map<InventoryMoment['kind'], FindKind>([
     ['ward', 'azurite'],
-    ['forge', 'azurite'],
-    ['shard', 'azurite'],
     ['flare', 'flare'],
     ['dynamite', 'dynamite'],
   ]);
@@ -266,10 +260,9 @@
    * from the right answer to the very place its item appears in player
    * `id`'s entry (findGained in lib/fx/moments.ts), as a point flows into
    * the bar in the other modes: a ward to the casing it forms on (round the
-   * first chamber without a ward, `wards` being how many they had), a shard
-   * to that casing's base half, where it forms, a flare or dynamite to its
-   * engraving beside the phial (or the avatar), its place kept for it
-   * meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
+   * first chamber without a ward, `wards` being how many they had), a flare
+   * or dynamite to its engraving beside the phial (or the avatar), its place
+   * kept for it meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
    * later, once the sparks do fly (with effects off, or no answer or place
    * to fly between, nothing does).
    */
@@ -291,7 +284,7 @@
       // Its slot (followed as the entry moves), and within it the exact part the item takes.
       const casing = phial?.phial.querySelector(`.slot[data-slot="${Math.min(wards, CASINGS.length - 1)}"]`);
       const slot = item ? counts?.querySelector(`[data-pip="${item}"]`) : casing;
-      const aim = item ? slot?.querySelector('.grow') : kind === 'shard' ? casing?.querySelector('.half') : casing;
+      const aim = item ? slot?.querySelector('.grow') : casing;
       if (!slot) return;
       findGained(answer, slot, find, aim ?? slot);
       flow.fed = true;
@@ -342,14 +335,10 @@
       if (!li) return;
       const { vessel, counts } = shownVessel(li);
       const pip = (sel: string) => vessel?.querySelector(sel) ?? null;
-      // A ward's casing and a shard are on the chambers; a breaking ward bursts off its own.
-      if (kind === 'ward' || kind === 'forge') {
+      // A ward's casing is on the chambers; a breaking ward bursts off its own.
+      if (kind === 'ward') {
         const el = pip('.casing.whole.fresh');
-        if (el) wardFormed(el, kind === 'forge', fed);
-        if (mine && !fed) sfx('findReward');
-      } else if (kind === 'shard') {
-        const el = pip('.casing.shard');
-        if (el) shardFound(el);
+        if (el) wardFormed(el, fed);
         if (mine && !fed) sfx('findReward');
       } else if (kind === 'shatter') {
         // Each barrier catches its blow in turn, and its casing breaks with it.
@@ -377,10 +366,10 @@
         // Everyone hears it: the clock everyone watches just got longer.
         sfx('flare');
       } else if (kind === 'blown' && item) {
-        // What it was: a ward's or shard's casing on the chambers (bursting
-        // off, Phial.svelte), a flare or stick beside the phial.
+        // What it was: a ward's casing on the chambers (bursting off,
+        // Phial.svelte), a flare or stick beside the phial.
         const el =
-          item === 'wards' || item === 'shards'
+          item === 'wards'
             ? (vessel?.querySelector('.casing.ghost.blown') ?? null)
             : (counts?.querySelector(`[data-pip="${item === 'flares' ? 'flare' : 'dynamite'}"]`) ?? null);
         if (el) itemBlown(el, li, item, mine);

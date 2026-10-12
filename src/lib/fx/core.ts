@@ -949,7 +949,32 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
 function dialogNow(): DialogLight {
   const { amount } = openDialog();
   const box = amount > 0 ? dialogBox() : null;
-  return { amount, box: box?.rect ?? null, radius: box?.radius ?? 0 };
+  if (box) return { amount, box: box.rect, radius: box.radius };
+  // With no dialog, a window over the page hides the page's light behind it the same way, and dims nothing.
+  for (const src of windows) {
+    const r = src();
+    if (r && r.width > 0 && r.height > 0) return { amount: 0, hide: 1, box: r, radius: 0 };
+  }
+  return { amount, box: null, radius: 0 };
+}
+
+const windows = new Set<() => DOMRect | null>();
+
+/**
+ * While the handle is up, the box `source` gives (asked every frame it's
+ * drawn; square cornered) hides the page's light as an open dialog does,
+ * without dimming the page: for a window that floats over the game (an
+ * item's, ItemWindow.svelte), opaque like a dialog. Only one box is drawn,
+ * an open dialog's first.
+ */
+export function hideLightIn(source: () => DOMRect | null): Handle {
+  // (Nothing to wake: with no light, there's none to hide, and while there is, every frame asks.)
+  windows.add(source);
+  return {
+    stop() {
+      windows.delete(source);
+    },
+  };
 }
 
 /**

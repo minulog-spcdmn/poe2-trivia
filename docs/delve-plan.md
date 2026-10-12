@@ -101,9 +101,10 @@ Everyone starts with 3. There is no regain, no checkpoint and no continue.
   - **Excused seats.** Standing players marked offline are *excused* until they reconnect.
     - An excused player's turn waits until at least 60 s after the reload (`DELVE_RESUME_GRACE_MS`), and their choice budget then runs as usual.
     - 60 s covers a guest's 15 s silence watchdog plus its retries every 3 s, each attempt allowed 10 s (session.svelte.ts:65-67, 913-924).
-  - **A guest's open question is set aside.** The guest goes back to the same three cards, loses no life, and gets a different question.
-    - This applies even if the deadline passed during the reload, because their answer may have been lost while the host was gone.
-    - Every device shows "The host reloaded, so {name}'s question was set aside; no life lost."
+  - **A guest's open question holds its clock still** (co-op: anyone standing, not idle, who was cut off and hasn't answered it yet). It's the same question; its clock stops at the host's last moment before the reload (kept in sessionStorage every ping and on `pagehide`).
+    - Once those of them are back (or after 20 s at most, `DELVE_RESUME_CLOCK_MS`, so nobody gets a minute to look up a question they've seen) and the art is on screens again, the clock carries on with the time it had left, at least 5 s (`DELVE_RESUME_MIN_MS`).
+    - What was answered on it before the reload stands: lives, wards, streaks, items spent. So a reload can't re-roll a hard question or take back a wrong answer.
+    - Every guest's screen shows "Clock paused: the host reloaded. The clock starts again with the time it had left once everyone is back."
   - **The host's own question and hot-seat games** keep their deadline.
     - If the deadline has passed, it fires at once, so a refresh can never re-roll a hard question.
     - A question whose clock had not started yet just has its art prepared again.
@@ -483,7 +484,7 @@ on top of today's blank `itemId`, `options` and `mirrored`.
 | `mayAutoReask(s, qid)` | True when it is a delve run, the same question is still open, and its deadline is null |
 | `expireIn(s, now)` | Ms until `pickBy`, or null |
 | `delveSounds(prev, next, me, local)` | The sound list of 8.6 |
-| `delveNotices(prev, next)` | "question set aside" after a host reload; "{name} missed their turn and lost a life" after an `expire` that cost a life |
+| `delveNotices(prev, next)` | "clock paused" after a host reload; "{name} missed their turn and lost a life" after an `expire` that cost a life |
 
 **Media and the clock** (`startMedia`, 688-724; `release`, 750-754)
 - **The answering player first.** In delve, `release(m)` sends to the active guest only, and keeps the message in `released`.
@@ -1196,7 +1197,7 @@ Each step is one PR that leaves the game working.
 | 4 | **Solo winners.** Rules: `[player]`. Network: `[]`. | **`[]`,** with explicit Delve branches in GameOver and the sounds, replacing the generic fallbacks (GameOver.svelte:19, session.svelte.ts:1122-1123). |
 | 5 | **Item pool.** Rules: fresh per run. Network: keep `used` across Play again. | **Fresh per run,** for comparability. README.md:27 promises no repeats only within a game. Groups still use it up faster; their depths are kept apart (2.7). |
 | 6 | **Idle player while choosing.** Rules: auto-pick at 30 s, no life. Network: a host skip button costing a life. | **One 20 s choice budget per turn, in the state** (revised after review). <ul><li>At its end, `expire` picks a random card for a connected player, or costs an offline player a life.</li><li>Reconnects do not refill it beyond one 10 s extension.</li><li>The host is included (today the host is exempt, session.svelte.ts:1232).</li><li>The engine refuses `skip` in Delve, so no host can take a life by hand.</li><li>It applies to online runs with 2+ entrants.</li></ul> |
-| 7 | **Host refresh mid-question.** Rules: keep the deadline. Network: `rewind` for a guest's question. | **Both, inside the trusted `resumed`** (revised after review). <ul><li>A guest's question is set aside.</li><li>The host's own question and hot-seat keep their deadline, so a refresh cannot re-roll.</li><li>Offline seats get a 60 s grace, so the host's reload cannot cost a guest a life.</li></ul> |
+| 7 | **Host refresh mid-question.** Rules: keep the deadline. Network: `rewind` for a guest's question. | **Both, inside the trusted `resumed`** (revised after review). <ul><li>A guest's question holds its clock still until those cut off are back, then carries on with the time it had left.</li><li>The host's own question and hot-seat keep their deadline, so a refresh cannot re-roll.</li><li>Offline seats get a 60 s grace for votes and turns, so a reload cannot cost a guest a life there; a question's clock waits 20 s at most for them, then a guest still away is timed out as usual.</li></ul> |
 | 8 | **Art failure.** Rules: automatic re-ask. Network: host button only. | **Automatic, with a backoff, for as long as it fails, plus the button** (revised after review). A Delve question can never sit with no deadline coming. A question with a deadline is never re-asked. |
 | 9 | **Constant name.** `DELVE_RULESET` vs `DELVE_RULES`. | **`DELVE_RULESET`,** which does not clash with `delveRules()`. |
 | 10 | **Visual thresholds.** <ul><li>Descent: blue 25-40, veins 16-28, abyss 50-70, milestones 10/18/25/40/50/75/100.</li><li>Gameplay strata: Merciless 13, Eternal 25, knobs at maximum 37, lockout at maximum 41, floor 61.</li></ul> | **Aligned to stratum starts:** <ul><li>milestones 13/21/25/41/61/81+;</li><li>blue starts at .15 at 25 and reaches 1 at 41;</li><li>veins 17-25, abyss 49-61, red 5-21.</li></ul> Each name up to 61 arrives with a rule change, and the Cold Fire shows blue at once (revised after review). |

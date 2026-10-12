@@ -1817,7 +1817,21 @@
   "category": "Flasks, Charms, Jewels, Relics & Tablets",
   "kind": "unique",
   "w": 108,
-  "h": 108
+  "h": 108,
+  "variants": [
+   {
+    "id": "629cc54d4ff6",
+    "base": "Emerald",
+    "w": 108,
+    "h": 108
+   },
+   {
+    "id": "989d30fa6887",
+    "base": "Sapphire",
+    "w": 108,
+    "h": 108
+   }
+  ]
  },
  {
   "id": "749e1e15a9b6",
@@ -1857,7 +1871,33 @@
   "category": "Rings",
   "kind": "unique",
   "w": 108,
-  "h": 108
+  "h": 108,
+  "variants": [
+   {
+    "id": "3743cb96cd7e",
+    "base": "Abyssal Signet",
+    "w": 108,
+    "h": 108
+   },
+   {
+    "id": "17bcedbea877",
+    "base": "Abyssal Signet",
+    "w": 108,
+    "h": 108
+   },
+   {
+    "id": "b4462256edf1",
+    "base": "Abyssal Signet",
+    "w": 108,
+    "h": 108
+   },
+   {
+    "id": "510f939462b2",
+    "base": "Abyssal Signet",
+    "w": 108,
+    "h": 108
+   }
+  ]
  },
  {
   "id": "f032b8547e53",

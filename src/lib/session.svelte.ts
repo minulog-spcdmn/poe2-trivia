@@ -41,7 +41,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -136,6 +136,8 @@ const DETONATE_FUSE_MS = 1500;
 /** Client: pause before trying again after a failed attempt or a hiccup of the signalling server. */
 const RETRY_SOON_MS = 1500;
 const PING_EVERY_MS = 3000;
+/** Delve: how often a question's clock looks again for those the host's reload cut off (waitForArrival). */
+const RETURN_POLL_MS = 250;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
 /** Errors from the signalling server that a later try can get past. */
@@ -357,7 +359,9 @@ class Session {
    * Delve: when this device first had the question (its askedAt) with its
    * clock running (page clock), which is when it opens to answers (noteClock).
    */
-  private clockSeen: { qid: number; at: number } | null = null;
+  private clockSeen: { qid: number; clockAt?: number; at: number; before?: number } | null = null;
+  /** Delve: how much of this question's clock was used before the host's reload held it still (pausedUsed). */
+  private usedBefore: { qid: number; ms: number } | null = null;
   /**
    * Delve: the art of this question goes first to those who answer it (the
    * player alone, or everyone standing in co-op), and to everyone else
@@ -516,9 +520,12 @@ class Session {
     this.delveLink = false;
     if (saved.mode === 'local') this.startLocal(soloHotSeat(underRuleset(renameCategories(saved.state))));
     else if (saved.mode === 'host') {
+      // The host's last moment before the reload, which reset() lets go of with the save ('resumed' reads it).
+      const alive = readStored(ALIVE, 'session');
       this.reset();
       // Kept while the room reopens, so neither a refresh nor a failed try loses the game.
       writeSaved(saved);
+      if (alive) writeStored(ALIVE, alive, 'session');
       this.mode = 'host';
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
@@ -567,8 +574,8 @@ class Session {
         // the game starts). Spectators rejoin as spectators when they reconnect.
         let s: GameState = { ...resumeState, spectators: [] };
         // Delve: marked away as they are, with none of a drop's effects (a
-        // drop closes a vote that no longer waits for them, and 'resumed'
-        // would then set its question aside, losing every vote cast).
+        // drop closes a vote that no longer waits for them, losing every
+        // vote cast; 'resumed' excuses them for a while instead).
         if (s.delve) s = markAway(s, me);
         else
           for (const p of s.players)
@@ -576,9 +583,10 @@ class Session {
         // A reveal counts down afresh, so the others can reconnect before it
         // moves on (moving on skips the seats still offline).
         if (s.reveal) s = { ...s, reveal: { ...s.reveal, at: Date.now() } };
-        // Delve: a question someone cut off may have answered is set aside
-        // (and it costs nobody anything), and everyone cut off gets a while to come back.
-        if (s.delve) s = engine.apply(s, { type: 'resumed' }, null);
+        // Delve: everyone cut off gets a while to come back, and a question
+        // one of them may have been answering holds its clock still from the
+        // host's last moment before the reload until it can start again.
+        if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
         this.setState(s);
       } else {
         let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
@@ -914,6 +922,7 @@ class Session {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = setInterval(() => {
       const now = Date.now();
+      this.noteAlive();
       for (const [conn, g] of this.guests) {
         if (!g.playerId) continue;
         if (now - g.lastPong > DEAD_AFTER_MS) {
@@ -1130,12 +1139,20 @@ class Session {
    * nobody to wait for (the host alone, hot-seat), at once.
    */
   private waitForArrival(qid: number) {
-    const releasedAt = Date.now();
+    let releasedAt = Date.now();
     const poll = () => {
       if (!mayAutoReask(this.state, qid)) return;
+      const now = Date.now();
+      // After the host's reload, not before everyone it cut off is back (or
+      // their grace is over); the art reaching them is waited for from then.
+      // Looked at less often meanwhile: that may take up to a minute.
+      if (awaitingReturn(this.state!, now)) {
+        releasedAt = now;
+        this.mediaTimers.push(setTimeout(poll, RETURN_POLL_MS));
+        return;
+      }
       const ids = this.held?.qid === qid ? this.held.ids : new Set<string>();
       const conns = [...this.guests].filter(([, g]) => !!g.playerId && ids.has(g.playerId));
-      const now = Date.now();
       const done = conns.every(([c]) => drained(c as unknown as Parameters<typeof drained>[0]));
       // The slowest of them still needs half a round trip for the last bytes and the deadline.
       const rtt = Math.max(0, ...conns.map(([, g]) => g.rtt));
@@ -1648,8 +1665,10 @@ class Session {
       // Timed on this device's clock from its first picture, or in Delve from
       // its clock running here if that came later (its art may come well
       // before, during a team's draw): only then does it open to answers.
-      const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
-      this.answered = { qid: q.askedAt, ms: performance.now() - Math.max(shown.since, clock), ...(share !== undefined ? { share } : {}) };
+      // A clock the host's reload held still adds what was used of it before.
+      const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
+      const ms = performance.now() - Math.max(shown.since, seen?.at ?? 0) + (seen?.before ?? 0);
+      this.answered = { qid: q.askedAt, ms, ...(share !== undefined ? { share } : {}) };
     }
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
@@ -1811,7 +1830,11 @@ class Session {
     const s = this.state;
     if (!s) return;
     if (this.mode === 'local' || this.labRoomless) writeSaved({ mode: 'local', state: s });
-    else if (this.mode === 'host') writeSaved({ mode: 'host', code: this.code, state: s, priv: this.priv });
+    else if (this.mode === 'host') {
+      writeSaved({ mode: 'host', code: this.code, state: s, priv: this.priv });
+      // Beside it, so a crash (no pagehide) never stops a held clock before what the save holds.
+      this.noteAlive();
+    }
   }
 
   /** Lists the room publicly while the host has it set to public. */
@@ -1882,10 +1905,32 @@ class Session {
    * the clock's start (clockAt) itself. Noted as it first does on this
    * device, to time its answer from (dispatch); on the host that is as it
    * goes out to everyone, a guest's answer taking a round trip at least (tooFast).
+   * One the host's reload held still is noted again as it carries on, with
+   * what was used of its clock before (`before`, for the answer's time; it
+   * opens to answers again only then); so is one that carried on unseen here
+   * (this device back after the grace, or idle and not waited for), from its
+   * new clockAt.
    */
   private noteClock(next: GameState) {
     const q = next.question;
-    if (next.delve && q && q.deadline !== null && this.clockSeen?.qid !== q.askedAt) this.clockSeen = { qid: q.askedAt, at: performance.now() };
+    if (!next.delve || !q) return;
+    // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
+    const dropLost = () => {
+      if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
+    };
+    if (q.paused) {
+      this.clockSeen = null;
+      this.usedBefore = { qid: q.askedAt, ms: pausedUsed(q.paused) };
+      dropLost();
+    } else if (q.deadline !== null) {
+      const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
+      if (seen && seen.clockAt === q.clockAt) return;
+      // Carried on unseen here (the pause never reached this device): so is one lost on its way.
+      if (seen) dropLost();
+      // Held still and seen so: what was used of it before; carried on unseen: what has gone of it by now.
+      const before = seen ? Math.max(0, this.hostNow() - (q.clockAt ?? this.hostNow())) : this.usedBefore?.qid === q.askedAt ? this.usedBefore.ms : 0;
+      this.clockSeen = { qid: q.askedAt, clockAt: q.clockAt, at: performance.now(), ...(before ? { before } : {}) };
+    }
   }
 
   /**
@@ -2115,18 +2160,15 @@ class Session {
 
   /**
    * Delve: one notice of a state change (delveSession.ts delveNotices). A
-   * question set aside goes out as a toast, room news like a player leaving;
-   * what befalls the team in play is said on the game screen itself
-   * (QuestionView's lines under the answers, Game's under the stage).
+   * clock the host's reload held still goes out as a toast, room news like a
+   * player leaving; what befalls the team in play is said on the game screen
+   * itself (QuestionView's lines under the answers, Game's under the stage).
    */
   private delveNotice(n: DelveNotice, s: GameState) {
     switch (n.kind) {
-      case 'setAside': {
-        const p = s.players.find((o) => o.id === n.playerId);
-        const who = p ? { name: p.name, hue: p.hue } : undefined;
-        this.flash(`The host reloaded, so ${n.playerId ? 'it cost nothing' : 'nobody lost anything'}.`, 'info', { title: 'Question set aside', ...(who ? { who } : {}) });
+      case 'paused':
+        this.flash('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' });
         break;
-      }
       case 'perished': {
         // Nobody left standing: the run ends next, and the end has its own
         // toll (onNewState). Before it, your own perishing is heard as it
@@ -2352,6 +2394,14 @@ class Session {
   }
 
   /**
+   * Host: when it was last here, for a reload to tell when its clock stopped
+   * (engine 'resumed'). Noted with the save, every ping and as the page goes.
+   */
+  noteAlive() {
+    if (this.mode === 'host' && this.state?.delve) writeStored(ALIVE, String(Date.now()), 'session');
+  }
+
+  /**
    * This player walks away (leaves the room, or the page goes): a game against
    * others they leave while losing still counts against a run of wins
    * (lib/versus.ts). Not on being removed or the room closing (fail), and
@@ -2465,6 +2515,14 @@ type Saved =
   | { mode: 'client'; code: string; name: string; watch?: boolean };
 /** The save's storage name, in sessionStorage (each tab its own; the room bot keeps a copy, src/bot/host.ts). */
 export const SAVE = 'session.v4';
+/** Beside the save, in sessionStorage: when the host was last here (Session.noteAlive; the room bot keeps a copy too). */
+export const ALIVE = 'session.alive';
+
+/** The host's last moment before its reload, as 'resumed' takes it (nothing when unknown). */
+function lastAlive(): { at?: number } {
+  const at = Number(readStored(ALIVE, 'session'));
+  return Number.isFinite(at) && at > 0 ? { at } : {};
+}
 /**
  * Before guests' tokens became per-room. A hosted room saved then can't be
  * resumed (its guests' tokens no longer match), and a guest's saved room
@@ -2521,7 +2579,10 @@ function readSaved(): Saved | null {
 
 function writeSaved(saved: Saved | null) {
   if (saved) writeStored(SAVE, JSON.stringify(saved), 'session');
-  else removeStored(SAVE, 'session');
+  else {
+    removeStored(SAVE, 'session');
+    removeStored(ALIVE, 'session');
+  }
 }
 
 export const session = new Session();
@@ -2529,6 +2590,7 @@ export const session = new Session();
 if (typeof window !== 'undefined') {
   // A run abandoned by closing the tab (or going elsewhere) is still recorded, and so is a game against others left losing.
   window.addEventListener('pagehide', () => {
+    session.noteAlive();
     session.recordLeaving();
     session.walkAway();
   });

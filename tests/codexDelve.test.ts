@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DELVE_RULESET } from '../src/lib/delve.ts';
 import { readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
 import { emptyCodex, parseCodex, record, serializeCodex, type Codex, type Encounter } from '../src/lib/codex.ts';
@@ -44,7 +45,7 @@ function codexOf(...es: Encounter[]): Codex {
 }
 
 const byId = new Map(items.map((it) => [it.id, it]));
-const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: 1, mixed: false, ...o });
+const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: DELVE_RULESET, mixed: false, ...o });
 /** A run together, as this player had it. */
 const team = (o: Partial<DelveRun>): DelveRun => run({ players: 3, perished: [], ...o });
 
@@ -214,7 +215,7 @@ test('medians come from counts, so a huge tally costs nothing', () => {
   assert.equal(medianOfCounts({ 7: 1, 8: 1 }), 7.5);
   assert.equal(medianOfCounts({ 3: 2, 9: 1 }), 3);
   assert.equal(medianOfCounts({ 1: 1, 5: 2, 100: 1 }), 5);
-  const raw = JSON.stringify({ v: 1, runs: [], bests: {}, tallies: { '1:solo': { ends: { 5: 3e15, 6: 2 }, lost: {} } }, frontier: [] });
+  const raw = JSON.stringify({ v: 1, runs: [], bests: {}, tallies: { [`${DELVE_RULESET}:solo`]: { ends: { 5: 3e15, 6: 2 }, lost: {} } }, frontier: [] });
   const started = Date.now();
   const s = delveSummary(parseRecords(raw)!, 'solo');
   assert.ok(Date.now() - started < 200);
@@ -282,13 +283,13 @@ test('finds and wards from the log: veins and caches taken and how they ended, w
   const find = (at: number, ok: boolean, more: NonNullable<Encounter['delve']>): Encounter => ({ ...dv(at, a.id, 20, ok), delve: { ...more } });
   const x = codexOf(
     find(1, true, { depth: 20, run: 1, find: 'azurite', gained: 'wards' }),
-    find(2, true, { depth: 20, run: 1, find: 'azurite', gained: 'shards' }),
+    find(2, true, { depth: 20, run: 1, find: 'azurite', gained: 'wards' }),
     find(3, false, { depth: 20, run: 1, find: 'azurite', warded: true, lost: { lives: 0, wards: 2 } }),
     find(4, true, { depth: 20, run: 1, find: 'flare', gained: 'flares', flared: true }),
     find(5, false, { depth: 20, run: 1, find: 'flare', warded: true }),
   );
   const f = findStats(x.log);
-  assert.deepEqual(f.finds.azurite, { taken: 3, ok: 2, gained: { wards: 1, shards: 1 }, lives: 0, wards: 2 });
+  assert.deepEqual(f.finds.azurite, { taken: 3, ok: 2, gained: { wards: 2 }, lives: 0, wards: 2 });
   assert.deepEqual(f.finds.flare, { taken: 2, ok: 1, gained: { flares: 1 }, lives: 0, wards: 1 });
   assert.equal(f.wardsBroke, 3);
   assert.equal(f.flaresBurnt, 1);
@@ -306,7 +307,7 @@ test('runs under other rules or resumed across a change are grouped apart, with 
   rec = addRun(rec, run({ id: 2, at: 2, depth: 40, ruleset: 7 })).records;
   rec = addRun(rec, team({ id: 3, at: 3, depth: 25, ruleset: 7, players: 2 })).records;
   rec = addRun(rec, run({ id: 4, at: 4, depth: 60, mixed: true })).records;
-  const groups = otherRules(rec, 1);
+  const groups = otherRules(rec, DELVE_RULESET);
   assert.deepEqual(
     groups.map((g) => [g.ruleset, g.runs.map((r) => r.id), g.solo, g.together]),
     [
@@ -386,7 +387,7 @@ test('a Delve reveal says what the question came from and whether a ward took it
   // A find among the cards, and two wards to take its cave-in.
   s = structuredClone(s);
   s.delve!.finds = [{ category: s.offered[0], kind: 'azurite' }];
-  s.delve!.inventory = { p0: { wards: 2, flares: 0, dynamite: 0, shards: 0 } };
+  s.delve!.inventory = { p0: { wards: 2, flares: 0, dynamite: 0 } };
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
   s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
   const q = s.question!;
@@ -474,8 +475,8 @@ test('the run log\'s short list holds ten runs at most, today\'s and the other r
   for (let i = 20; i <= 26; i++) rec = addRun(rec, run({ id: i, at: i, depth: 5, mixed: true })).records;
   // A ruleset with only a best left.
   rec = { ...rec, bests: { ...rec.bests, '3:solo': run({ id: 99, at: 0, depth: 40, ruleset: 3 }) } };
-  const today = [...rec.runs].filter((r) => r.ruleset === 1 && !r.mixed).reverse();
-  const groups = otherRules(rec, 1);
+  const today = [...rec.runs].filter((r) => r.ruleset === DELVE_RULESET && !r.mixed).reverse();
+  const groups = otherRules(rec, DELVE_RULESET);
   const short = runLog(today, groups, 10);
   const rows = short.shown.length + short.others.reduce((n, g) => n + g.runs.length, 0);
   assert.equal(rows, 10);
