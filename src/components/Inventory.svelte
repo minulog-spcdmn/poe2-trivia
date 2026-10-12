@@ -5,8 +5,8 @@
 
 <script lang="ts">
   // Delve: the finds a player carries beside their phial (Phial.svelte), each
-  // a small engraving with its count: flares and dynamite. (Azurite Wards and
-  // their shards are on the phial itself, encasing its chambers.) A `moment`
+  // a small engraving with its count: flares and dynamite. (Azurite Wards are
+  // on the phial itself, encasing its chambers.) A `moment`
   // plays on them: a find landing, a flare burning, a stick of dynamite going
   // off, one blown up by a Dynamite Cache missed (`blown`). A find on its way (`expect`: its sparks flying to it) has its place
   // kept, unseen, so they have somewhere to land.

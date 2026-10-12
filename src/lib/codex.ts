@@ -117,7 +117,7 @@ export interface Answer {
   warded?: true;
   /** Delve: asked from this find. */
   find?: FindKind;
-  /** Delve: what a right answer to a find earned ('wards' for a shard that forged one). */
+  /** Delve: what a right answer to a find earned. */
   gained?: ItemKind;
   /** Delve: a flare burnt on this question. */
   flared?: true;

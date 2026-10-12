@@ -22,11 +22,9 @@ import {
   DELVE_MAX_DYNAMITE,
   DELVE_MAX_FLARES,
   DELVE_MAX_WARDS,
-  SHARDS_PER_WARD,
   clockLeft,
   REVIVE_FROM,
   delveQuestionTimer,
-  capShards,
   findOffers,
   hasRoom,
   inventoryOf,
@@ -35,7 +33,6 @@ import {
   standingIds,
   tileVeilSize,
   veilSeconds,
-  veinWindowMs,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -51,7 +48,6 @@ export const MAX_DEPTH = 150;
 
 export const CAPS: Record<ItemKind, number> = {
   wards: DELVE_MAX_WARDS,
-  shards: SHARDS_PER_WARD - 1,
   flares: DELVE_MAX_FLARES,
   dynamite: DELVE_MAX_DYNAMITE,
 };
@@ -300,7 +296,7 @@ export function setLives(id: string, lives: number) {
 function invSet(s: GameState, id: string, change: (inv: Inventory) => void) {
   const inv = inventoryOf(s, id);
   change(inv);
-  (s.delve!.inventory ??= {})[id] = capShards(inv);
+  (s.delve!.inventory ??= {})[id] = inv;
 }
 
 export function setItem(id: string, item: ItemKind, n: number) {
@@ -481,38 +477,24 @@ const activeId = () => {
   return s?.players[s.turn]?.id ?? IDS[0];
 };
 
-/** Gains one of an item as a find would give it, at once (a second shard forges a ward). */
+/** Gains one of an item as a find would give it, at once. */
 export function gain(item: ItemKind) {
   const s = run();
   if (!s) return;
   const id = activeId();
-  const inv = inventoryOf(s, id);
-  const forge = item === 'shards' && inv.shards + 1 >= SHARDS_PER_WARD;
-  if (!hasRoom(inv, item)) {
-    note(`No room for more ${item === 'shards' ? 'wards' : item}.`);
+  if (!hasRoom(inventoryOf(s, id), item)) {
+    note(`No room for more ${item}.`);
     return;
   }
-  put((n) =>
-    invSet(n, id, (v) => {
-      if (forge) {
-        v.shards = 0;
-        v.wards++;
-      } else v[item]++;
-    }),
-  );
+  put((n) => invSet(n, id, (v) => v[item]++));
 }
 
-/** A find answered right: its reward and the line that says so. `slow`: a Vein answered after its fast window (a shard). */
-export const findRight = (kind: FindKind, slow = false) =>
+/** A find answered right: its reward and the line that says so. */
+export const findRight = (kind: FindKind) =>
   event(`${kind} answered right`, async () => {
     const q = await running((q) => q.find === kind, kind);
     if (q.find !== kind) throw new Error('could not ask that find');
-    if (slow) {
-      // Just past its fast window (half the clock, rounded up to a second).
-      setElapsed(veinWindowMs(state()!) + 200);
-      await sleep(120);
-    }
-    answer(state()!.question!, true);
+    answer(q, true);
   });
 
 /**
@@ -525,7 +507,7 @@ export const findWrong = (kind: 'flare' | 'dynamite') =>
   event(`${kind} answered wrong`, async () => {
     const id = activeId();
     const inv = inventoryOf(run()!, id);
-    if (kind === 'dynamite' && !(inv.wards || inv.shards || inv.flares || inv.dynamite)) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
+    if (kind === 'dynamite' && !(inv.wards || inv.flares || inv.dynamite)) put((s) => invSet(s, id, (v) => (v.flares = 1)), true);
     const q = await running((q) => q.find === kind, kind);
     if (q.find !== kind) throw new Error('could not ask that find');
     answer(q, false);

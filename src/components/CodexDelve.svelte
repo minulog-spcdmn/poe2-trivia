@@ -129,7 +129,7 @@
     const got = (n: number | undefined, one: string): [number, string][] => (n ? [[n, word(n, one)]] : []);
     if (dynamite.taken) out.push({ name: 'Dynamite Caches', value: fmt(dynamite.taken), note: [...got(dynamite.gained.dynamite, 'stick'), ...missed(dynamite, 'missed')] });
     if (cache.taken) out.push({ name: 'Flare Caches', value: fmt(cache.taken), note: [...got(cache.gained.flares, 'flare'), ...missed(cache, 'missed')] });
-    if (vein.taken) out.push({ name: 'Azurite Veins', value: fmt(vein.taken), note: [...got(vein.gained.wards, 'ward'), ...got(vein.gained.shards, 'shard'), ...missed(vein, 'caved in')] });
+    if (vein.taken) out.push({ name: 'Azurite Veins', value: fmt(vein.taken), note: [...got(vein.gained.wards, 'ward'), ...missed(vein, 'caved in')] });
     if (blasts) out.push({ name: 'Dynamite blasts', value: fmt(blasts), note: [[0, 'questions blasted away for new ones']] });
     if (f.flaresBurnt) out.push({ name: 'Flares burnt', value: fmt(f.flaresBurnt), note: [[FLARE_MS / 1000, 's more on the clock each']] });
     if (f.wardsBroke) out.push({ name: 'Lives warded', value: fmt(f.wardsBroke), note: [[0, 'a ward broke in its place']] });

@@ -282,13 +282,13 @@ test('finds and wards from the log: veins and caches taken and how they ended, w
   const find = (at: number, ok: boolean, more: NonNullable<Encounter['delve']>): Encounter => ({ ...dv(at, a.id, 20, ok), delve: { ...more } });
   const x = codexOf(
     find(1, true, { depth: 20, run: 1, find: 'azurite', gained: 'wards' }),
-    find(2, true, { depth: 20, run: 1, find: 'azurite', gained: 'shards' }),
+    find(2, true, { depth: 20, run: 1, find: 'azurite', gained: 'wards' }),
     find(3, false, { depth: 20, run: 1, find: 'azurite', warded: true, lost: { lives: 0, wards: 2 } }),
     find(4, true, { depth: 20, run: 1, find: 'flare', gained: 'flares', flared: true }),
     find(5, false, { depth: 20, run: 1, find: 'flare', warded: true }),
   );
   const f = findStats(x.log);
-  assert.deepEqual(f.finds.azurite, { taken: 3, ok: 2, gained: { wards: 1, shards: 1 }, lives: 0, wards: 2 });
+  assert.deepEqual(f.finds.azurite, { taken: 3, ok: 2, gained: { wards: 2 }, lives: 0, wards: 2 });
   assert.deepEqual(f.finds.flare, { taken: 2, ok: 1, gained: { flares: 1 }, lives: 0, wards: 1 });
   assert.equal(f.wardsBroke, 3);
   assert.equal(f.flaresBurnt, 1);
@@ -386,7 +386,7 @@ test('a Delve reveal says what the question came from and whether a ward took it
   // A find among the cards, and two wards to take its cave-in.
   s = structuredClone(s);
   s.delve!.finds = [{ category: s.offered[0], kind: 'azurite' }];
-  s.delve!.inventory = { p0: { wards: 2, flares: 0, dynamite: 0, shards: 0 } };
+  s.delve!.inventory = { p0: { wards: 2, flares: 0, dynamite: 0 } };
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
   s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
   const q = s.question!;

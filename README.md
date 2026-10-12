@@ -163,20 +163,23 @@ the same thing for everyone.
   blows up something you carry, the Flare Cache gives less time, the Vein
   caves in. The card shows only the find's name, and the note under the
   cards says what the item does and what the find risks. The finds turn
-  up one at a time, the strongest last: the Dynamite Cache from depth 10,
-  the Flare Cache from 25 and the Azurite Vein from 40. Each find's chance
-  rises evenly over the 20 depths after its first and then holds (the
-  Dynamite Cache from 8% to 9% by depth 30, the Flare Cache from 4% to 13%
-  by 45, the Vein from 4% to 11% by 60). From 10 to 24 the Dynamite Cache
-  is the only find, so it starts higher than the others to keep finds
-  turning up early. From 60 about one offer in three holds a find. From
+  up one at a time: the Dynamite Cache from depth 10, the Azurite Vein from
+  25 and the Flare Cache from 40. On its own first depth a find is certain:
+  that offer always holds it (for a player with room for its item). After
+  that each find's chance rises evenly over the 20 depths after its first
+  and then holds (the Dynamite Cache from 8% to 9% by depth 30, the Vein
+  from 4% to 11% by 45, the Flare Cache from 4% to 13% by 60). From 10 to
+  24 the Dynamite Cache is the only find, so it starts higher than the
+  others to keep finds turning up early. From 60 about one offer in three
+  holds a find. From
   100 they grow scarcer a little with every depth, down to half their chance at 199 (the Vein to a third, as a ward
   takes a whole loss), and hold there: about one offer in seven.
   - An offer that holds a find rolls once more for a second, of another
     kind and on another card, at half its chance; never a third. Two side
-    by side are rare early on: never above depth 25, where the Flare Cache
-    joins the dynamite, then about 1 offer in 290 at 25 and 1 in 57 at 40,
-    and about 1 offer in 28 from depth 60.
+    by side are rare early on: never above depth 25, where the Vein joins
+    the dynamite; about 1 offer in 23 at 25 (beside the certain Vein), then
+    1 in 260 at 26 and 1 in 125 at 39; 1 in 11 at 40 (beside the certain
+    Flare Cache); and about 1 offer in 28 from depth 60.
   - A find is never offered for an item nobody could carry more of: alone,
     you; together, anyone standing.
   - A right answer sends sparks in the find's colour from the answer to
@@ -220,8 +223,7 @@ the same thing for everyone.
     The cache itself is unstable: a miss on it (a wrong answer or a
     time-out) costs a life as usual, and then its blast destroys one thing
     you carry, drawn at random by the host, whose state tells every screen
-    what went (each ward, flare and stick one chance, a shard half of one,
-    as it is half a ward; a ward drawn goes whole). A ward that takes the
+    what went (each ward, flare and stick one chance). A ward that takes the
     life goes first, and the blast draws from what is left. Carrying
     nothing, or perishing on the miss (which drops the whole pack anyway),
     it takes nothing more. Together,
@@ -229,19 +231,18 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - A **Flare Cache** (from depth 25) gives a **flare**: time later for time
+  - An **Azurite Vein** (from depth 25): a right answer, at any speed,
+    mines a whole **Azurite Ward**, which takes your next lost life
+    instead. A wrong answer or a time-out on a vein caves in, with a sound
+    of its own: it costs two lives, a ward taking each loss first if you
+    hold one (on your last life you simply fall).
+  - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,
     rounded (never under 4 s, where its art still burns in, fast, with over
     3 s left once half of it is in). When your clock hits 0 a flare burns by
     itself, with a signal flare's hiss, and gives you 6 s more
     (once a question). An answer at any time before that keeps it; a guest's
     answer still on its way when it burns gives it back.
-  - An **Azurite Vein** (from depth 40): a right answer within the first half
-    of its clock mines an **Azurite Ward**, which takes your next lost life
-    instead; a slower one a shard (two make a ward; with three wards you
-    hold no shard). A wrong answer or a time-out on a vein caves in, with
-    a sound of its own: it costs two lives, a ward taking each loss first
-    if you hold one (on your last life you simply fall).
   - Flares and dynamite never work on a find's own question: finds lie
     down dangerous routes, with thicker walls and a darkness nothing can
     hold back, so there is no Detonate button and nothing happens at 0. You carry up to three of each item.
@@ -271,13 +272,12 @@ the same thing for everyone.
   sends a wave of light through it; a life given to a teammate streams
   across into their phial.
   - Azurite Wards are crystal casings on the chambers, one each from the
-    base (a shard is half a casing), shimmering at rest: a ward
+    base, shimmering at rest: a ward
     crystallises on as it is mined, and bursts in blue sparks where it is
     when it takes a loss.
   - Flares and dynamite stand as small counts beside the phial.
   - The reveal says what happened in a few words: "You mined an Azurite
-    Ward.", "Too slow for a ward, but you mined a shard.", "Your ward
-    took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
+    Ward.", "Your ward took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
     "The darkness took you." Together it says who cleared it ("Ash cleared
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
@@ -909,7 +909,7 @@ it apart from the live game:
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the
 real game screen (the app itself, with its backdrop, effects, sounds and
 header) beside a panel that sets up and plays a run on this device. It sets
-the players (1 to 4), each one's lives, wards, shard, flares and dynamite,
+the players (1 to 4), each one's lives, wards, flares and dynamite,
 and the depth (any of 1 to 150, or a zone); deals cards with a find among
 them, and a second find if wanted; asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right

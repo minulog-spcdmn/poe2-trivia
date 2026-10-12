@@ -686,29 +686,19 @@ const rectOf = (el: Element) => el.getBoundingClientRect();
 /**
  * Delve: an Azurite Ward crystallises onto a chamber of the phial (`pip`, its
  * casing): blue light gathers into it, and as it settles it flashes and
- * glints. `forged` from two shards: more light, and a ring of it running out.
- * `fed`: a find's sparks already gathered into it (findGained), so the light
- * doesn't gather again.
+ * glints. `fed`: a find's sparks already gathered into it (findGained), so
+ * the light doesn't gather again.
  */
-export function wardFormed(pip: Element, forged: boolean, fed = false) {
+export function wardFormed(pip: Element, fed = false) {
   if (!fxActive() || detached(pip)) return;
-  if (!fed) implode(pip, { count: forged ? 22 : 14, radius: forged ? 48 : 34, color: C.azurite, life: forged ? 0.55 : 0.45 });
-  after(forged ? 0.5 : 0.4, () => {
+  if (!fed) implode(pip, { count: 14, radius: 34, color: C.azurite, life: 0.45 });
+  after(0.4, () => {
     if (detached(pip)) return;
-    flash(pip, { radius: forged ? 26 : 16, color: C.azurite, intensity: forged ? 0.42 : 0.3, life: 0.55 });
-    glints(pip, { count: forged ? 3 : 2, area: 'centre', size: [6, 11], color: C.azuritePale, life: [0.5, 0.85], delay: [0, 0.25] });
-    sparks(pip, { count: forged ? 12 : 6, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [60, 200], gravity: -40, drag: 3, life: [0.25, 0.55] });
-    if (forged) ring(pip, { radius: 42, from: 6, thickness: 4, life: 0.6, color: C.azurite, breakup: 0.45, fill: 0, intensity: 0.6 });
-    light(pip, { color: [0.4, 0.65, 1], radius: forged ? 160 : 110, intensity: forged ? 0.3 : 0.2, decay: 0.9 });
+    flash(pip, { radius: 16, color: C.azurite, intensity: 0.3, life: 0.55 });
+    glints(pip, { count: 2, area: 'centre', size: [6, 11], color: C.azuritePale, life: [0.5, 0.85], delay: [0, 0.25] });
+    sparks(pip, { count: 6, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [60, 200], gravity: -40, drag: 3, life: [0.25, 0.55] });
+    light(pip, { color: [0.4, 0.65, 1], radius: 110, intensity: 0.2, decay: 0.9 });
   });
-}
-
-/** Delve: an azurite shard toward the next ward lands on its chamber (`pip`, the half casing). */
-export function shardFound(pip: Element) {
-  if (!fxActive() || detached(pip)) return;
-  flash(pip, { radius: 12, color: C.azurite, intensity: 0.22, life: 0.4 });
-  sparks(pip, { count: 8, colors: [C.azuritePale, C.azurite], cool: k3(C.azurite, 0.3), speed: [40, 150], gravity: 160, life: [0.25, 0.5] });
-  glints(pip, { count: 1, area: 'centre', size: [5, 8], color: C.azuritePale, delay: [0.15, 0.25] });
 }
 
 /**
@@ -858,16 +848,16 @@ export function wardBlocked(barrier: Element, pip: Element | null, pill: Element
  * carries (`pip`, its casing on the phial or its engraving beside it): a
  * small blast of its own, as the stick's on the art but close and light. A
  * white-hot pop and a ring of fire, sparks and chips of what it was (blue
- * crystal for a ward or a shard, the item's own warm colours for a flare or
+ * crystal for a ward, the item's own warm colours for a flare or
  * dynamite) thrown out and falling, a wisp of smoke, and the entry (`pill`)
  * flickering ember-red where the ward's breaking glows blue.
  */
-export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'shards' | 'flares' | 'dynamite', mine: boolean) {
+export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'flares' | 'dynamite', mine: boolean) {
   if (!fxActive() || detached(pip)) return;
   const at = rectOf(pip);
   const b = boxOf(at);
   const big = Math.max(b.w, b.h);
-  const crystal = item === 'wards' || item === 'shards';
+  const crystal = item === 'wards';
   const chips: Vec3[] = crystal ? [C.azuritePale, C.azurite, C.whiteHot] : item === 'flares' ? [[2.6, 1.2, 1.1], C.ember, C.gold] : [[2.4, 0.9, 0.6], C.ember, [0.55, 0.45, 0.38]];
   flash(at, { radius: big * 0.8 + 10, color: C.whiteHot, intensity: 0.5, life: 0.3 });
   ring(at, { radius: big * 0.9 + 14, from: 3, thickness: 4, life: 0.45, color: C.ember, breakup: 0.55, fill: 0.15, intensity: 0.75 });
@@ -899,7 +889,7 @@ export const FIND_COLORS: Record<FindKind, { main: Vec3; pale: Vec3 }> = {
 /**
  * Delve: a find answered right. As a point flows into the scorer's bar
  * (fillBar), the reward flows from the answer (`answer`) to the very place
- * its item appears (`slot`: the casing its ward or shard forms on, or the
+ * its item appears (`slot`: the casing its ward forms on, or the
  * engraving its flare or dynamite stands as; `aim`, inside it, narrows that
  * down where the slot is wider), in the find card's colours: a stream of
  * sparks that gathers on it between FIND_START and FIND_LANDS, wherever it

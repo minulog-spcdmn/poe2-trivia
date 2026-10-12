@@ -96,17 +96,13 @@
   const gainName = $derived(gainerId ? nameOf(gainerId) : '');
   /**
    * Delve: what a right answer to a find earned, in words, and its engraving:
-   * a ward mined, a shard (too slow for a ward, from an Azurite Vein) or a
-   * ward forged from two, a flare or dynamite found.
+   * a ward mined, a flare or dynamite found.
    */
   const gainLine = $derived.by((): { glyph: GlyphKind; text: string } | null => {
     const got = reveal?.correct ? reveal.gained : undefined;
     if (!s.delve || !got) return null;
     const who = gainYou ? 'You' : gainName;
-    if (got === 'wards' && reveal?.forged) return { glyph: 'ward', text: `${gainYou ? 'Your' : `${gainName}'s`} two shards forged an Azurite Ward.` };
     if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
-    if (got === 'shards')
-      return { glyph: 'shard', text: q.find === 'azurite' ? `Too slow for a ward, but ${gainYou ? 'you' : gainName} mined a shard.` : `${who} found an azurite shard.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
@@ -741,10 +737,7 @@
             left: (id) => (s.players.some((p) => p.id === id) ? livesOf(s, id) : null),
             nameOf,
             me,
-            gain:
-              reveal.correct && reveal.gained && gainerId
-                ? { kind: reveal.gained, by: gainerId, forged: !!reveal.forged, slow: q.find === 'azurite' && reveal.gained === 'shards' }
-                : undefined,
+            gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
           })}
           {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
           {#if gainLine}

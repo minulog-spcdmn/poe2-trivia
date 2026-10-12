@@ -128,7 +128,6 @@
 
   const ITEMS: { item: ItemKind; label: string }[] = [
     { item: 'wards', label: 'Wards' },
-    { item: 'shards', label: 'Shard' },
     { item: 'flares', label: 'Flares' },
     { item: 'dynamite', label: 'Dynamite' },
   ];
@@ -361,16 +360,14 @@
           </div>
         {/if}
         <span class="sub">Gain at once</span>
-        <div class="grid four">
+        <div class="grid three">
           <button onclick={() => L.gain('wards')} disabled={!!busy}>Ward</button>
-          <button onclick={() => L.gain('shards')} disabled={!!busy}>Shard</button>
           <button onclick={() => L.gain('flares')} disabled={!!busy}>Flare</button>
           <button onclick={() => L.gain('dynamite')} disabled={!!busy}>Dynamite</button>
         </div>
         <span class="sub">Find answered right</span>
-        <div class="grid">
-          <button onclick={() => L.findRight('azurite')} disabled={!!busy}>Vein, fast: ward</button>
-          <button onclick={() => L.findRight('azurite', true)} disabled={!!busy}>Vein, slow: shard</button>
+        <div class="grid three">
+          <button onclick={() => L.findRight('azurite')} disabled={!!busy}>Azurite Vein</button>
           <button onclick={() => L.findRight('flare')} disabled={!!busy}>Flare Cache</button>
           <button onclick={() => L.findRight('dynamite')} disabled={!!busy}>Dynamite Cache</button>
         </div>
@@ -397,7 +394,7 @@
         {:else}
           <p class="hint">{q && s?.phase === 'question' ? 'Waiting for the art; the clock starts once it is in.' : 'No question on the clock.'}</p>
         {/if}
-        <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count (a Vein's as fast).</p>
+        <p class="hint">The game runs on the wall clock, so there is no slow motion; pause and jump instead. While paused, answers still count.</p>
       </details>
 
       <details>
@@ -693,6 +690,9 @@
     grid-template-columns: 1fr 1fr;
     gap: 0.3rem;
     margin: 0.4rem 0;
+  }
+  .grid.three {
+    grid-template-columns: repeat(3, 1fr);
   }
   .grid.four {
     grid-template-columns: repeat(4, 1fr);

@@ -11,7 +11,6 @@ import {
   livesOf,
   standingIds,
   teamItemReady,
-  veinWindowMs,
   voteClosesAt,
   voteDone,
   type ItemKind,
@@ -143,17 +142,13 @@ export const HOST_HOLD_MARGIN_MS = 50;
  * (host clock): `handicap`, a typical guest's one-way trip, but never past
  * the moment that judges it, as the engine judges the host's answers by
  * when they arrive with no allowance: before the clock hits 0 (where a
- * flare would burn) and, on an Azurite Vein, before its fast window closes.
- * Anywhere else, `handicap` as it is.
+ * flare would burn). Anywhere else, `handicap` as it is.
  */
 export function hostAnswerHold(s: GameState, now: number, handicap: number): number {
   const q = s.question;
   if (handicap <= 0) return 0;
   if (!s.delve || !isGroupRun(s) || s.phase !== 'question' || !q || q.deadline === null) return handicap;
-  let cap = q.deadline - now;
-  const fastEnd = q.clockAt === undefined ? null : q.clockAt + veinWindowMs(s);
-  if (fastEnd !== null && q.find === 'azurite' && now <= fastEnd) cap = Math.min(cap, fastEnd - now);
-  return Math.max(0, Math.min(handicap, cap - HOST_HOLD_MARGIN_MS));
+  return Math.max(0, Math.min(handicap, q.deadline - now - HOST_HOLD_MARGIN_MS));
 }
 
 /**
@@ -278,9 +273,9 @@ export function livesLost(prev: GameState | null, next: GameState): { playerId: 
 
 /**
  * Items gained or used up by this change, per player and item, for the phial,
- * sounds and effects: a find answered right (two shards forging a ward show
- * as a shard used and a ward gained), a ward breaking, a flare burning, a
- * stick of dynamite going off, everything dropped by a player who perished.
+ * sounds and effects: a find answered right, a ward breaking, a flare
+ * burning, a stick of dynamite going off, everything dropped by a player who
+ * perished.
  * Nothing for a question set aside. `left`: how many they hold now.
  */
 export function inventoryChanges(prev: GameState | null, next: GameState): { playerId: string; item: ItemKind; change: 'gained' | 'used'; left: number }[] {
