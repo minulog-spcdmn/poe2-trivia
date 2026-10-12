@@ -11,6 +11,7 @@
 //   silhouette  effects shining from behind a picture's outline (they light its box instead)
 //   lights  the light the backdrop throws behind the UI (lib/lights.ts)
 //   fills   the UI's shadows and fills drawn by CSS, not the backdrop
+//   circle  the arcane circle behind a question's art
 //   backdraw  the backdrop drawn once a second (fills and shadows by CSS)
 //   handover  fills going back to CSS while their element moves or the page
 //           scrolls (lib/backdropShadow.ts): they stay with the backdrop
@@ -18,7 +19,7 @@
 
 import { CHANNEL } from './channel';
 
-export type Switch = 'press' | 'cursor' | 'webgl' | 'bloom' | 'rays' | 'flare' | 'outline' | 'ring' | 'flash' | 'particles' | 'silhouette' | 'lights' | 'handover' | 'fills' | 'backdraw';
+export type Switch = 'press' | 'cursor' | 'webgl' | 'bloom' | 'rays' | 'flare' | 'outline' | 'ring' | 'flash' | 'particles' | 'silhouette' | 'lights' | 'handover' | 'fills' | 'backdraw' | 'circle';
 
 /** The page's query, before the # and after it (poe2.quest/beta/#codex?off=press reads as well as ?off=press#codex). */
 const queries = () => [location.search, location.hash.slice(location.hash.indexOf('?') + 1 || location.hash.length)].map((q) => new URLSearchParams(q));

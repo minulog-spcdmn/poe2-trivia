@@ -13,6 +13,7 @@
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import ArcaneCircle from './ArcaneCircle.svelte';
+  import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
   import { motion } from '../lib/motion.svelte';
@@ -38,6 +39,9 @@
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
+
+  /** Beta: no arcane circle behind the art (lib/switchedOff.ts), to see what it costs as a question appears. */
+  const circleOff = switchedOff('circle');
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
@@ -1235,7 +1239,7 @@
           {/if}
         </div>
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
-          <ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />
+          {#if !circleOff}<ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />{/if}
           <div class="frame">
             {#if media?.veil && showFull && item}
               <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float unflip={mirrored(0)} />
