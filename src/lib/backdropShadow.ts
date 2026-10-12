@@ -357,7 +357,7 @@ export function measureShadows(
     let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
     // Why a fill goes back to CSS now (named in the beta's frame meter).
     const mover = ok && fillKind && flat && !keepFills && !scrolling && !shook ? movingOf(node) : null;
-    const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : mover ? `${movingName(node, mover)} moving` : '';
+    const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : mover ? 'moving' : '';
     if (ok && fillKind && !toCss) {
       const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
       const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
@@ -370,7 +370,8 @@ export function measureShadows(
       if (clear) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a: a!, b: b! };
     }
     const had = node.hasAttribute('data-bs-fill');
-    if (had !== !!fill) frameEvent(`backdrop: ${nameOf(node)}'s fill ${fill ? 'back from CSS' : `to CSS (${toCss || 'covered or gone'})`}`);
+    // (Named only as it's handed over: no text made each frame while something moves.)
+    if (had !== !!fill) frameEvent(`backdrop: ${nameOf(node)}'s fill ${fill ? 'back from CSS' : `to CSS (${mover ? `${movingName(node, mover)} moving` : toCss || 'covered or gone'})`}`);
 
     if (!ok || (!soft.length && !fill)) {
       if (!ok && node.hasAttribute('data-bs-on')) frameEvent(`backdrop: ${nameOf(node)}'s shadows to CSS (${opacity > 0 ? 'off screen or unmeasurable' : 'hidden'})`);

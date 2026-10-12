@@ -12,6 +12,8 @@ export interface CutHandle {
   places(): Promise<PatchPlace[] | null>;
   /** Patch `i`'s own picture. */
   picture(i: number): Promise<PatchImage>;
+  /** Done with before its question is (a veil sent again, cut otherwise): the worker lets go of it. */
+  drop(): void;
 }
 
 const canvasOnPage = (w: number, h: number) => {
@@ -74,6 +76,10 @@ class Cutting implements CutHandle {
 
   places() {
     return (this.placed ??= Promise.resolve().then(() => this.onPage()));
+  }
+
+  drop() {
+    if (this.key) worker?.postMessage({ t: 'forget', key: this.key } satisfies VeilJob);
   }
 
   async picture(i: number): Promise<PatchImage> {

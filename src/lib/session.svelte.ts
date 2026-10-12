@@ -75,6 +75,9 @@ import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
+/** The room is told how its players stand at most this often (Session.updateStandingPaced). */
+const STANDING_GAP_MS = 250;
+
 export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
 
 /**
@@ -289,8 +292,10 @@ class Session {
   standing = $state.raw<Record<string, Standing>>({});
   /** Follows this device's presence (set up on the first room opened or joined): a guest tells the host, a host the room. */
   private presenceWatch: (() => void) | null = null;
-  /** Host: the room is told how each away player stands once their grace is over. */
-  private standingTimers = new Set<ReturnType<typeof setTimeout>>();
+  /** Host: the room is told how each away player stands once their grace is over (by player; '' for the host). */
+  private standingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Host: the room was just told how everyone stands; a change meanwhile (`owed`) is told when this runs out (updateStandingPaced). */
+  private standingPace: { timer: ReturnType<typeof setTimeout>; owed: boolean } | null = null;
   /** Guest: the host turned down this device's answer to the question asked at `askedAt` (too quick), so it may be given again. */
   turnedDown = $state<{ askedAt: number } | null>(null);
   /** Host: the question (askedAt) whose art could not be loaded, so guests got no pictures. */
@@ -711,12 +716,13 @@ class Session {
         return;
       }
       // Presence is sent only when it changes, so one dropped would stand
-      // until the next change; a guest can't send it faster than its page
-      // goes away and back, and repeats change nothing.
+      // until the next change: it isn't rate-limited. Each is only noted;
+      // the room is told at a measured pace (standingSoon), however fast a
+      // guest flips it.
       if (msg.t === 'presence') {
         if (!guest.playerId || msg.p === guest.seen.presence) return;
         guest.seen = { presence: msg.p, since: Date.now() };
-        this.standingSoon(msg.p);
+        this.standingSoon(guest.playerId, msg.p);
         return;
       }
       if (!guest.limit.take()) {
@@ -920,7 +926,7 @@ class Session {
   private watchOwnPresence() {
     this.presenceWatch ??= watchPresence((p) => {
       if (this.mode === 'client' && this.hostConn?.open && this.welcomedOn === this.hostConn) this.hostConn.send({ t: 'presence', p });
-      else if (this.mode === 'host') this.standingSoon(p);
+      else if (this.mode === 'host') this.standingSoon('', p);
     });
   }
 
@@ -951,14 +957,36 @@ class Session {
    * at the next ping, and once more as an away player's grace runs out (each
    * player's own, however many go away at once).
    */
-  private standingSoon(p: Presence) {
-    this.updateStanding();
+  private standingSoon(who: string, p: Presence) {
+    this.updateStandingPaced();
+    const had = this.standingTimers.get(who);
+    if (had) clearTimeout(had);
+    this.standingTimers.delete(who);
     if (p !== 'away') return;
-    const t = setTimeout(() => {
-      this.standingTimers.delete(t);
-      this.updateStanding();
-    }, AWAY_AFTER_MS + 50);
-    this.standingTimers.add(t);
+    this.standingTimers.set(
+      who,
+      setTimeout(() => {
+        this.standingTimers.delete(who);
+        this.updateStandingPaced();
+      }, AWAY_AFTER_MS + 50),
+    );
+  }
+
+  /** updateStanding, at most every STANDING_GAP_MS: a guest flipping its presence over and over can't flood the room. The last change is always told. */
+  private updateStandingPaced() {
+    if (this.standingPace) {
+      this.standingPace.owed = true;
+      return;
+    }
+    this.updateStanding();
+    const pace = {
+      owed: false,
+      timer: setTimeout(() => {
+        this.standingPace = null;
+        if (pace.owed) this.updateStandingPaced();
+      }, STANDING_GAP_MS),
+    };
+    this.standingPace = pace;
   }
 
   /**
@@ -2475,8 +2503,10 @@ class Session {
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.standing = {};
-    for (const t of this.standingTimers) clearTimeout(t);
+    for (const t of this.standingTimers.values()) clearTimeout(t);
     this.standingTimers.clear();
+    if (this.standingPace) clearTimeout(this.standingPace.timer);
+    this.standingPace = null;
     this.cursorOut.clear();
     this.cursorPressed.clear();
     if (this.cursorTimer) clearTimeout(this.cursorTimer);

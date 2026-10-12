@@ -53,7 +53,12 @@
       shown = next;
       loaded = true;
     };
-    img.decode().then(go, go);
+    // One that won't decode (a fetch that failed, a picture let go of as the
+    // question changed) never goes up: the one before stays. Only where the
+    // browser loaded it but turned decode() down anyway does it go up.
+    img.decode().then(go, () => {
+      if (img.complete && img.naturalWidth) go();
+    });
     return () => {
       live = false;
     };

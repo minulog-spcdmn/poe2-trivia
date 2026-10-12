@@ -791,10 +791,7 @@ function frameUntimed(nowMs: number) {
   // calm, a few seconds on, and after a while even if it never is, or a slow
   // machine would wait at the old size, its quality never adapting, for as
   // long as it lasts.)
-  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)) {
-    resizeDue = false;
-    resize();
-  }
+  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)) resize();
   if (!busy) show(false);
 }
 
@@ -1018,6 +1015,8 @@ let ro: ResizeObserver | null = null;
 let deviceBox: { w: number; h: number } | null = null;
 
 function resize() {
+  // (Made at the quality now, any resize waiting for a calm moment is done too.)
+  resizeDue = false;
   if (!canvas || !renderer) return;
   viewW = Math.max(1, canvas.clientWidth);
   viewH = Math.max(1, canvas.clientHeight);

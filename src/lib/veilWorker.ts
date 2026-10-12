@@ -10,8 +10,8 @@ export type VeilJob =
   | { t: 'cut'; key: number; wire: VeilWire; own?: OwnVeil }
   /** Patch `i`'s picture; answered with a bitmap. */
   | { t: 'picture'; id: number; key: number; i: number }
-  /** A new question: the pictures cut so far are done with. */
-  | { t: 'forget' };
+  /** A new question: the pictures cut so far are done with (`key`: only that one). */
+  | { t: 'forget'; key?: number };
 
 export type VeilAnswer =
   /** A cut's places (null: its labels don't fit it), or why it couldn't be cut here. */
@@ -24,7 +24,8 @@ const cuts = new Map<number, VeilCut<OffscreenCanvas>>();
 
 self.onmessage = async ({ data: job }: MessageEvent<VeilJob>) => {
   if (job.t === 'forget') {
-    cuts.clear();
+    if (job.key === undefined) cuts.clear();
+    else cuts.delete(job.key);
     return;
   }
   if (job.t === 'cut') {

@@ -431,6 +431,7 @@ class Shown {
           // Cut in the worker (veilCutter.ts); the host's own device from what it cut.
           const own = ownCuts.get(m.data);
           ownCuts.delete(m.data);
+          had?.cut.drop();
           this.cuts.set(tile, { cut: startCut({ w: m.w, h: m.h, data: m.data, labels }, own), labels });
           if (had && m.tile === undefined) this.patches = {};
           else if (had) this.tilePatches = { ...this.tilePatches, [m.tile!]: {} };
@@ -456,7 +457,10 @@ class Shown {
           let made: Promise<PatchImage> | null = null;
           const picture = () =>
             (made ??= cut.picture(m.i).then((img) => {
-              if (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) bitmaps.push(img);
+              if (typeof ImageBitmap === 'undefined' || !(img instanceof ImageBitmap)) return img;
+              // One for a question already over is freed at once (nothing still showing it draws it).
+              if (bitmaps === this.bitmaps) bitmaps.push(img);
+              else img.close();
               return img;
             }));
           const p = { i: m.i, x: shape.x, y: shape.y, w: shape.w, h: shape.h, picture, edges: shape.edges };
