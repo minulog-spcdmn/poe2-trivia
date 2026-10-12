@@ -906,6 +906,8 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
 
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
+/** The backdrop draws at most this often (ms): every frame up to 80Hz, every other one above (see frame()). */
+const MIN_FRAME_MS = 1000 / 80;
 
 let delveWanted = false;
 let delveReadyNow = false;
@@ -1049,6 +1051,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     col: new Float32Array(MAX_MASKS * DROPS_PER_MASK * 4),
   };
   const shadowArrays = [...Object.values(el), ...Object.values(mk)];
+  /** What only colours the elements' shadows and fills (see measure): their changes can wait for a 30fps frame. */
+  const colourArrays = new Set<Float32Array>([el.c, el.d, el.e, el.col]);
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
   /** The drop-shadow atlases' sizes (uSharpSize, uBlurSize). */
   const atlasSize = new Float32Array([1, 1, 1, 1]);
@@ -1414,11 +1418,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
-  // Measures the shadowed elements; true if anything changed since last time.
-  // On phones and tablets there's nothing to measure: everything is let go
-  // to CSS once, and nothing changes until the pointer does.
+  // Measures the shadowed elements and says what changed since last time:
+  // 'now' when something must be drawn in this very frame (an element moved
+  // or changed size, or a shadow or fill was handed between CSS and the
+  // backdrop, which CSS stops or starts painting this frame), 'paced' when
+  // only colours changed (a fill or shadow easing to another colour), which
+  // 30fps draws as well, or false. On phones and tablets there's nothing to
+  // measure: everything is let go to CSS once, and nothing changes until the
+  // pointer does.
   let released = false;
-  function measure() {
+  function measure(): 'now' | 'paced' | false {
     let atlases: ReturnType<typeof measureDrops> = null;
     if (cssShadows.matches) {
       if (released) return false;
@@ -1426,12 +1435,13 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       for (const arr of shadowArrays) arr.fill(0);
       releaseAll();
       releaseAllDrops();
+      return 'now';
     } else {
       released = false;
       measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
       atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     }
-    let changed = false;
+    let changed: 'now' | 'paced' | false = false;
     if (atlases) {
       gl!.activeTexture(gl!.TEXTURE0);
       gl!.bindTexture(gl!.TEXTURE_2D, sharpTex);
@@ -1443,15 +1453,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
       atlasSize[2] = atlases.blurW;
       atlasSize[3] = atlases.blurH;
-      changed = true;
+      changed = 'now';
     }
     let k = 0;
     for (const arr of shadowArrays) {
+      const colour = colourArrays.has(arr);
       for (let i = 0; i < arr.length; i++, k++) {
-        if (prev[k] !== arr[i]) {
-          prev[k] = arr[i];
-          changed = true;
-        }
+        if (prev[k] === arr[i]) continue;
+        // A colour easing is paced; one coming or going (a fill's kind, a shadow's alpha from or to 0) is a handover.
+        const handover = !colour || (arr === el.c ? i % 4 === 0 : arr === el.col ? i % 4 === 3 && (prev[k] === 0 || arr[i] === 0) : false);
+        prev[k] = arr[i];
+        if (handover) changed = 'now';
+        else changed ||= 'paced';
       }
     }
     return changed;
@@ -1517,6 +1530,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       caughtUp();
       return;
     }
+    // Never more often than about 80 times a second: a 120 or 144Hz screen
+    // would draw this full-screen pass (and measure the UI for it) two or
+    // three times as often as a 60Hz one, for nothing the eye can follow,
+    // and with the effects overlay drawing over it, a big moment's frames
+    // would come late.
+    if (now - lastStep < MIN_FRAME_MS) return;
     // (A frame's time can come before the last one's; it never runs backwards here.)
     const dt = Math.max(0, Math.min(0.1, (now - lastStep) / 1000));
     const still = calm();
@@ -1570,7 +1589,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
     const soft = lights || moodState === 'moving';
-    const lit = homeMoving || (soft && !cssShadows.matches);
     if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     else if (descending) embers.step(0, canvas.clientWidth, canvas.clientHeight, true, true);
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
@@ -1583,8 +1601,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       delveIn = Math.min(1, delveIn + dt / DELVE_IN_S);
       dirty = true;
     }
-    const changed = measure() || dirty || lit || fading || !!warming;
-    if (!changed && ((still && !soft) || now - last < 33)) return;
+    // What must be drawn now: the UI's shadows and fills moving with it, the
+    // start page's scene, a dialog's dimming, the scene sinking or swinging,
+    // Delve's parts coming in. Lights, a mood easing and colours changing
+    // under the UI are slow enough for 30fps on every screen: a right
+    // answer's reveal (its light, its fills and glows easing to green and
+    // gold) would otherwise redraw this pass every frame, along with the
+    // effects overlay's own.
+    const measured = measure();
+    const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
+    if (!urgent && ((still && !soft && !measured) || now - last < 33)) return;
     last = now;
     dirty = false;
     draw();
