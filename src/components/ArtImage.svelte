@@ -9,7 +9,7 @@
   // between items, so its own size says nothing about how big to draw it.
   // It fades in once its first file has loaded, so a large one never draws in
   // bit by bit; a picture swapped in later (the original art at the reveal)
-  // fades in over it once it has loaded. `unflip` starts it mirrored (as it
+  // fades in over it once it has loaded (each decoded before it shows). `unflip` starts it mirrored (as it
   // was shown during the question) and turns it round. `round` lets it reach past the space into a
   // circle around its centre (as big across as --round times the space's
   // width), so a wide item can be as big as the circle allows, not only as
@@ -28,48 +28,55 @@
   let loaded = $state(false);
 
   /**
-   * What is on screen. A new picture (the original art at the reveal) is
-   * loaded and decoded first, while the one before stays, and then fades in
-   * over it, so the art never blinks out while the new file comes (a guest
-   * has never fetched it: its name would give the answer away).
+   * What is on screen. A picture is loaded and decoded first and only then
+   * put on the page: a large one decoded as the frame is drawn held that
+   * frame up for a tenth of a second or more (a new question's art). A new
+   * one (the original art at the reveal) waits the same way while the one
+   * before stays, then fades in over it, so the art never blinks out while
+   * the new file comes (a guest has never fetched it: its name would give
+   * the answer away).
    */
-  let shown = $state(untrack(() => ({ src, w, h, unflip })));
+  let shown = $state<{ src: string; w: number; h: number; unflip: boolean } | null>(null);
   $effect(() => {
     const next = { src, w, h, unflip };
     const cur = untrack(() => shown);
-    if (next.src === cur.src) {
+    if (next.src === cur?.src) {
       if (next.w !== cur.w || next.h !== cur.h || next.unflip !== cur.unflip) shown = next;
-      return;
-    }
-    // Nothing on screen yet: it loads in place, faded in once it has.
-    if (!untrack(() => loaded)) {
-      shown = next;
       return;
     }
     let live = true;
     const img = new Image();
     img.src = next.src;
-    const go = () => live && (shown = next);
+    // (Decoded, it is ready: its load event may already have gone by as it goes on the page.)
+    const go = () => {
+      if (!live) return;
+      shown = next;
+      loaded = true;
+    };
     img.decode().then(go, go);
     return () => {
       live = false;
     };
   });
+  /** The box's size: the picture's, or the one on its way's. */
+  const box = $derived(shown ?? { w, h });
 </script>
 
 <span class="art-slot">
-  <span class="art-fit" class:ready={loaded} class:float class:round style:--w={shown.w} style:--h={shown.h} style:--s={scale}>
-    {#key shown.src}
-      <img
-        src={shown.src}
-        {alt}
-        draggable="false"
-        class:unflip={shown.unflip}
-        in:fade={{ duration: 300 }}
-        out:fade={{ duration: 300 }}
-        onload={() => (loaded = true)}
-      />
-    {/key}
+  <span class="art-fit" class:ready={loaded} class:float class:round style:--w={box.w} style:--h={box.h} style:--s={scale}>
+    {#if shown}
+      {#key shown.src}
+        <img
+          src={shown.src}
+          {alt}
+          draggable="false"
+          decoding="async"
+          class:unflip={shown.unflip}
+          in:fade={{ duration: 300 }}
+          out:fade={{ duration: 300 }}
+        />
+      {/key}
+    {/if}
   </span>
 </span>
 
