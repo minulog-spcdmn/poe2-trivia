@@ -1071,9 +1071,11 @@ it shows. The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 
 The category cards' emblems, and the items behind them, are laid out from
-fits measured ahead into `src/data/iconFits.json` (`src/lib/iconFit.svelte.ts`).
+fits measured ahead into `src/data/iconFits.json`, and drawn with clean masks
+baked into `public/icons/masks/` (`src/lib/iconFit.svelte.ts`).
 Bake them again after their art changes, or after a data refresh picks a
-different item for a card (needs Chromium; see `scripts/bake-icons.mjs`):
+different item for a card (needs Chromium, and ffmpeg for the masks' WebP;
+see `scripts/bake-icons.mjs`):
 
 ```sh
 npm run bake-icons
