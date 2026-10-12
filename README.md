@@ -265,9 +265,11 @@ the same thing for everyone.
   before that.
 - There's no time limit on picking a card: alone the cards wait for you,
   together the vote decides. Nobody can skip a turn by hand. After the host
-  reloads, players who were cut off get a minute to come back (a vote waits
-  for them meanwhile), and a question one of them may have been answering
-  is set aside: the same cards come back, and it costs nobody anything.
+  reloads, players who were cut off get a minute to come back (a vote, or a
+  question's clock, waits for them meanwhile). A question one of them may
+  have been answering holds its clock still: once they're back, it carries
+  on with the time it had left (at least 5 s), and what was answered on it
+  before the reload stands.
 - A run starts from the lobby: alone in hot-seat or a room with one player,
   together in a room of two or more. Choosing Delve there shows its
   milestones, its rules in a few short lines (a run together's too, in a

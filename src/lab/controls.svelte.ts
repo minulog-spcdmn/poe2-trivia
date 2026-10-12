@@ -187,7 +187,6 @@ function deal(s: GameState) {
       s.delve.votes = {};
       s.delve.voteFrom = null;
     }
-    delete s.delve.snapshot;
     // Two finds go on different cards and must differ in kind (findOffers drops a second of the same kind).
     const first = opts.cardFind !== 'none' && s.offered.length ? [{ category: s.offered[1] ?? s.offered[0], kind: opts.cardFind }] : [];
     const second =
@@ -841,7 +840,6 @@ function finish(s: GameState) {
     dm.votes = {};
     dm.voteFrom = null;
   }
-  delete dm.snapshot;
   dm.finds = [];
   delete dm.find;
   s.phase = 'over';

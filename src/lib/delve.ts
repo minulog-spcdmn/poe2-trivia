@@ -42,6 +42,9 @@ export const REVIVE_FROM = 2;
 /** After the host reloads, players who were cut off get this long to come back before a vote closes without them. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
 
+/** A question the host's reload held still starts again with at least this long on its clock. */
+export const DELVE_RESUME_MIN_MS = 5_000;
+
 /** Depth as a whole number from 1 (anything odd counts as the surface). */
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.max(1, Math.floor(d)) : 1);
 
@@ -773,6 +776,14 @@ const inGrace = (s: GameState, p: Player, now: number) => !p.connected && !!s.de
 export function expectedVoters(s: GameState, now: number): string[] {
   if (!s.delve) return [];
   return s.players.filter((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && (p.connected || inGrace(s, p, now))).map((p) => p.id);
+}
+
+/**
+ * Someone standing whom the host's reload cut off may still come back at
+ * `now` (host clock): a question's clock doesn't start without them.
+ */
+export function awaitingReturn(s: GameState, now: number): boolean {
+  return s.players.some((p) => livesOf(s, p.id) > 0 && inGrace(s, p, now));
 }
 
 /** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */

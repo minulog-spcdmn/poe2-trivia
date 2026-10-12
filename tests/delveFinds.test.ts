@@ -1294,7 +1294,7 @@ test('leaving or being kicked takes your items with you, and a new run starts wi
   assert.equal(h.s.delve!.find, undefined);
 });
 
-test('a question asked again, or set aside by a host reload, keeps what it was', () => {
+test('a question asked again, or held still by a host reload, keeps what it was', () => {
   const h = delve(['Ash']);
   at(h, 20);
   const card = h.plant('flare');
@@ -1303,14 +1303,16 @@ test('a question asked again, or set aside by a host reload, keeps what it was',
   assert.equal(h.s.question!.find, 'flare');
   assert.equal(h.s.question!.category, card);
 
-  // A co-op question is set aside after a host reload, and the same cards come back.
+  // A co-op find's question on the clock holds still through a host reload, and stays the find's.
   const g = coop();
   const infused = g.plant();
   g.act({ type: 'pick', category: infused });
+  g.act({ type: 'clock', askedAt: g.s.question!.askedAt });
   g.act({ type: 'connection', playerId: 'p1', connected: false });
   g.act({ type: 'resumed' });
-  assert.equal(g.s.phase, 'choosing');
-  assert.deepEqual(findOffers(g.s), [{ category: infused, kind: 'azurite' }]);
+  assert.equal(g.s.phase, 'question');
+  assert.equal(g.s.question!.find, 'azurite');
+  assert.ok(g.s.question!.paused);
 });
 
 test('item changes are reported for the phial and its sounds', () => {
