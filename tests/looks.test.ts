@@ -1,37 +1,51 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import type { Item } from '../src/lib/game.ts';
+import { allArt, type Item } from '../src/lib/game.ts';
 import { loadLooks, readLooks } from '../src/lib/looks.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = JSON.parse(readFileSync(new URL('../src/data/looks.json', import.meta.url), 'utf8'));
 const { looksLike, lookScore, lookalikePool } = readLooks(raw);
 const byName = new Map(items.map((it) => [it.name, it]));
-const byId = new Map(items.map((it) => [it.id, it]));
+/** Every art, each its own entry (an item drawn more than one way: each of its variants too). */
+const arts = items.flatMap(allArt);
+const byId = new Map(arts.map((it) => [it.id, it]));
 const id = (name: string) => byName.get(name)!.id;
 const names = (looks: readonly { id: string }[]) => looks.map((l) => byId.get(l.id)!.name);
 
-/** Kept per item by scripts/looks.mjs. */
+/** Items kept per art by scripts/looks.mjs. */
 const KEEP = 14;
 
-test('every item has its closest look-alikes from its own group, and nothing else', () => {
+test('every art has its closest look-alikes from its own group, and nothing else', () => {
   assert.equal(raw.v, 1);
-  assert.deepEqual(Object.keys(raw.looks).sort(), items.map((it) => it.id).sort());
-  for (const it of items) {
+  assert.deepEqual(Object.keys(raw.looks).sort(), arts.map((it) => it.id).sort());
+  for (const it of arts) {
     const looks = looksLike(it.id);
     const group = items.filter((o) => o.group === it.group).length;
-    assert.equal(looks.length, Math.min(KEEP, group - 1), it.name);
+    // Another item drawn more than one way may come with several of its art.
+    assert.equal(new Set(looks.map((l) => byId.get(l.id)?.name)).size, Math.min(KEEP, group - 1), it.name);
     assert.equal(new Set(looks.map((l) => l.id)).size, looks.length, `${it.name}: no repeats`);
     for (const l of looks) {
-      assert.notEqual(l.id, it.id);
+      assert.notEqual(byId.get(l.id)?.name, it.name, `${it.name}: never its own art`);
       assert.equal(byId.get(l.id)?.group, it.group, `${it.name}: ${l.id} is in its group`);
     }
   }
 });
 
+test('each of an item\'s art is ranked on its own', () => {
+  const [ruby, emerald, sapphire] = allArt(byName.get('Grand Spectrum')!).map((a) => looksLike(a.id));
+  assert.notDeepEqual(ruby, sapphire);
+  assert.notDeepEqual(emerald, sapphire);
+  // A ring's list scores Grip of Kulemak's stages each by its own picture.
+  const kulemak = new Set(allArt(byName.get('Grip of Kulemak')!).map((a) => a.id));
+  const stages = arts.filter((it) => it.group === 'Rings').flatMap((it) => looksLike(it.id).filter((l) => kulemak.has(l.id)));
+  assert.ok(new Set(stages.map((l) => l.id)).size > 1, 'more than one stage ranks');
+  assert.ok(new Set(stages.map((l) => l.score)).size > 1, 'scored apart');
+});
+
 test('scores are in [0, 1], best first, and the same either way round', () => {
-  for (const it of items) {
+  for (const it of arts) {
     const looks = looksLike(it.id);
     looks.forEach((l, i) => {
       assert.ok(l.score >= 0 && l.score <= 1, `${it.name}: ${l.score}`);
@@ -81,8 +95,8 @@ test('lookalikePool puts the look-alikes first, keeps the rest in order, never r
 });
 
 test('the same input gives the same pool', () => {
-  for (const it of items.slice(0, 60)) {
-    const group = items.filter((o) => o.group === it.group);
+  for (const it of arts.filter((a, i) => i < 60 || a.name === 'Grand Spectrum' || a.group === 'Rings')) {
+    const group = arts.filter((o) => o.group === it.group);
     assert.deepEqual(lookalikePool(it.id, group, 7), lookalikePool(it.id, group, 7));
     assert.deepEqual(
       lookalikePool(it.id, group, 7).map((o) => o.id).slice(0, Math.min(7, looksLike(it.id).length)),

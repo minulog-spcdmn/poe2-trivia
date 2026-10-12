@@ -2352,12 +2352,14 @@ export class Engine {
    * outside it), so "the name that fits the others best" doesn't give it
    * away.
    */
-  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false): Item[] {
+  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false, art: (it: Item) => string = (it) => it.id): Item[] {
     if (count <= 0) return [];
     // By art only with the table at hand and the answer in it (items added
-    // since it was built have no look-alikes); by name otherwise.
-    const looks = byArt && this.looks?.looksLike(answer.id).length ? this.looks : null;
-    const like = looks ? (a: Item, b: Item) => looks.lookScore(a.id, b.id) : (a: Item, b: Item) => this.similarity(a, b);
+    // since it was built have no look-alikes); by name otherwise. By art,
+    // each item is compared as the question draws it (`art`: the id of the
+    // art it shows, Item.variants).
+    const looks = byArt && this.looks?.looksLike(art(answer)).length ? this.looks : null;
+    const like = looks ? (a: Item, b: Item) => looks.lookScore(art(a), art(b)) : (a: Item, b: Item) => this.similarity(a, b);
     // The items most like `to`, with a few to spare so the pick still varies.
     const near = (to: Item, from: Item[]) =>
       shuffle(from, this.rng) // random order among equal scores
@@ -2642,7 +2644,17 @@ export class Engine {
     // not (the same seed only asks the same question if it was there both
     // times or neither).
     const byArt = !!rules.lookalikes && this.rng() < rules.lookalikes;
-    const decoys = this.lookalikes(answer, pool, simCount, count, byArt);
+    // An item drawn more than one way shows any of its art, each as often.
+    // By art, each one's art is drawn before the look-alikes are picked (only
+    // those roll), so they look like the art the question shows; else when
+    // the options are known (rollArt below).
+    const drawnWith = new Map<string, number>();
+    const rollArt = (it: Item) => {
+      const n = it.variants?.length ?? 0;
+      return n ? Math.floor(this.rng() * (n + 1)) : 0;
+    };
+    if (byArt) for (const it of [answer, ...pool]) if (it.variants) drawnWith.set(it.id, rollArt(it));
+    const decoys = this.lookalikes(answer, pool, simCount, count, byArt, (it) => drawnAs(it, drawnWith.get(it.id)).id);
     // Rest at random, preferring the same group, then the category, then anything.
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;
@@ -2676,12 +2688,10 @@ export class Engine {
     const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
     const gray = rules.grayChance ? { gray: grayRoll ?? this.rng() < rules.grayChance } : {};
     const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
-    // An item drawn more than one way shows any of its art, each as often
-    // (only those roll, so a game without one asks what it always asked).
-    const variant = (mode === 'art' ? options : [answer.id]).map((id) => {
-      const n = this.byId.get(id)!.variants?.length ?? 0;
-      return n ? Math.floor(this.rng() * (n + 1)) : 0;
-    });
+    // Each picture's art, as drawn for the look-alikes or rolled now (only
+    // items drawn more than one way roll, so a game without one asks what it
+    // always asked).
+    const variant = (mode === 'art' ? options : [answer.id]).map((id) => drawnWith.get(id) ?? rollArt(this.byId.get(id)!));
     const drawn = variant.some(Boolean) ? { variant } : {};
     return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, ...drawn, askedAt, deadline, misses: [], ...special };
   }

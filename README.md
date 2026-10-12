@@ -1061,7 +1061,11 @@ python3 scripts/daily-art.py
 It writes `src/data/looks.json`: for every item, the fourteen items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
 edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,
-decoys are picked from it (`src/lib/looks.ts`). The output only changes when
+decoys are picked from it (`src/lib/looks.ts`). An item drawn more than one way
+has each of its art ranked on its own (Grand Spectrum's Sapphire looks most
+like Prism of Belief, its Ruby like Flesh Crucible), and such a question draws
+each picture's art before it picks the look-alikes, so they look like the art
+it shows. The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 
 ### Self-hosted signalling (optional)

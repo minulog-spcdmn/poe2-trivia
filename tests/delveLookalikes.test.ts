@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { LOOKALIKES_FROM, LOOKALIKES_TO, delveLookalikes } from '../src/lib/delve.ts';
-import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, createGame, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, createGame, drawnAs, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks, type Looks } from '../src/lib/looks.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -120,6 +120,37 @@ test('on average, the decoys look far more like the answer than look-alikes by n
   };
   const [art, name] = [alike(make(5, looks)), alike(make(5))];
   assert.ok(art > name + 0.15, `${art} vs ${name}`);
+});
+
+test('an item drawn more than one way gets the look-alikes of the art the question shows', () => {
+  // The table is asked about the answer as drawn, and scores each pair as both are drawn.
+  const asked: string[] = [];
+  const scored: string[] = [];
+  const spy: Looks = {
+    ...looks,
+    looksLike: (id) => (asked.push(id), looks.looksLike(id)),
+    lookScore: (a, b) => (scored.push(a, b), looks.lookScore(a, b)),
+  };
+  const engine = make(17, spy);
+  const seen = new Set<string>();
+  let n = 0;
+  for (let i = 0; i < 20000 && n < 60; i++) {
+    asked.length = scored.length = 0;
+    const q = ask(engine, 140, i % 2 ? 'Rings' : 'Flasks, Charms, Jewels, Relics & Tablets');
+    const answer = byId.get(q.itemId)!;
+    if (!asked.length || !answer.variants) continue;
+    n++;
+    const drawn = drawnAs(answer, q.variant?.[q.mode === 'art' ? q.options.indexOf(q.itemId) : 0]).id;
+    seen.add(drawn);
+    assert.deepEqual(asked, [drawn], `${answer.name}: asked about the art shown`);
+    // An option drawn more than one way is never scored by its own art while it shows another.
+    if (q.mode === 'art') {
+      const shown = new Set(q.options.map((o, k) => drawnAs(byId.get(o)!, q.variant?.[k]).id));
+      for (const [k, o] of q.options.entries()) if (byId.get(o)!.variants && !shown.has(o)) assert.ok(!scored.includes(o), `option ${k} scored by an art it doesn't show`);
+    }
+  }
+  assert.ok(n >= 60, `${n} questions`);
+  assert.ok(seen.size > 4, 'by more than one art');
 });
 
 test('without the table, or for an item it lacks, look-alikes go by name and the question rolls the same', () => {
