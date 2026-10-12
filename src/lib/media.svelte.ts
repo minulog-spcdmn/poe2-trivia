@@ -175,17 +175,63 @@ async function alteredCanvas(itemId: string, art: { w: number; h: number }, most
 /**
  * Whole pictures go out as WebP, at a quality that keeps the upscaled art's
  * detail. Patches are lossless PNG: lossy encoding blurs them into blocks
- * with seams between neighbours.
+ * with seams between neighbours. Encoded in a worker (encodeWorker.ts): on
+ * the page's main thread, a veiled picture's patches held it up for a tenth
+ * of a second or more as the question began. Where there is no worker or
+ * OffscreenCanvas, a canvas does it here.
  */
-function encode(canvas: HTMLCanvasElement, lossless = false): Promise<ArrayBuffer> {
+function encode(pixels: ImageData, lossless = false): Promise<ArrayBuffer> {
+  const type = lossless ? 'image/png' : 'image/webp';
+  const quality = lossless ? undefined : rand(0.92, 0.95);
+  const worker = encoder();
+  if (!worker) return encodeHere(pixels, type, quality);
+  const id = ++encodeJobs;
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    // Copied, not handed over: should the worker fail, they're encoded here.
+    encoding.set(id, { resolve, again: () => encodeHere(pixels, type, quality).then(resolve, reject) });
+    worker.postMessage({ id, w: pixels.width, h: pixels.height, pixels: pixels.data.buffer, type, quality });
+  });
+}
+
+function encodeHere(pixels: ImageData, type: string, quality?: number): Promise<ArrayBuffer> {
+  const canvas = document.createElement('canvas');
+  canvas.width = pixels.width;
+  canvas.height = pixels.height;
+  canvas.getContext('2d', { willReadFrequently: true })!.putImageData(pixels, 0, 0);
   return new Promise((resolve, reject) =>
-    canvas.toBlob(
-      (blob) => (blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('encode failed'))),
-      lossless ? 'image/png' : 'image/webp',
-      lossless ? undefined : rand(0.92, 0.95),
-    ),
+    canvas.toBlob((blob) => (blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('encode failed'))), type, quality),
   );
 }
+
+let worker: Worker | null | undefined;
+let encodeJobs = 0;
+const encoding = new Map<number, { resolve: (data: ArrayBuffer) => void; again: () => Promise<void> }>();
+/** The encoding worker, started on first use; null where it can't run. */
+function encoder(): Worker | null {
+  if (worker !== undefined) return worker;
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return (worker = null);
+  try {
+    worker = new Worker(new URL('./encodeWorker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    return (worker = null);
+  }
+  worker.onmessage = ({ data }: MessageEvent<{ id: number; data?: ArrayBuffer; error?: string }>) => {
+    const job = encoding.get(data.id);
+    encoding.delete(data.id);
+    if (data.data) job?.resolve(data.data);
+    else job?.again();
+  };
+  // A worker that won't start (or dies): what it had, and all that comes after, is encoded here.
+  worker.onerror = () => {
+    worker = null;
+    for (const job of encoding.values()) job.again();
+    encoding.clear();
+  };
+  return worker;
+}
+
+/** A canvas's pixels, for encode. */
+const pixelsOf = (canvas: HTMLCanvasElement) => canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, canvas.width, canvas.height);
 
 /**
  * Host side: builds the art for a question (full question, with the answer).
@@ -201,12 +247,12 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
     const pictures = await Promise.all(q.options.map((id, i) => alteredCanvas(id, art(id), most, grayscale !== 'off', !!q.mirrored?.[i])));
     // Each picture cut on its own seed, so no two burn in alike.
     if (q.veil) out.tiles = await Promise.all(pictures.map((p, i) => cutVeil(p, { ...q.veil!, seed: q.veil!.seed + i }, veilPlan(clock.secs, clock.share, true))));
-    else out.options = await Promise.all(pictures.map(async (p) => ({ w: p.canvas.width / p.scale, h: p.canvas.height / p.scale, data: await encode(p.canvas) })));
+    else out.options = await Promise.all(pictures.map(async (p) => ({ w: p.canvas.width / p.scale, h: p.canvas.height / p.scale, data: await encode(pixelsOf(p.canvas)) })));
     return out;
   }
   const picture = await alteredCanvas(q.itemId, art(q.itemId), q.veil ? LIGHT : SHARP, grayscale === 'all', !!q.mirrored?.[0]);
   if (!q.veil) {
-    out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(picture.canvas) };
+    out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(pixelsOf(picture.canvas)) };
     return out;
   }
   const cut = await cutVeil(picture, q.veil, veilPlan(clock.secs, clock.share, false));
@@ -251,7 +297,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
   sg.drawImage(canvas, 0, 0, W, H);
   const pixels = sg.getImageData(0, 0, W, H).data;
   // One 32-bit word per pixel, so each one copies without a subarray.
-  const fine = new Uint32Array(canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
+  const fine = new Uint32Array(pixelsOf(canvas).data.buffer);
   const FW = canvas.width;
   const cut = cutPatches(pixels, W, H, v.size, v.seed);
   const order = spreadOrder(cut, v.seed);
@@ -278,11 +324,7 @@ async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): 
           if (own[(ay * w + ((bx / S) | 0)) * 4 + 3]) big[by * pw + bx] = fine[row + bx];
         }
       }
-      const piece = document.createElement('canvas');
-      piece.width = pw;
-      piece.height = ph;
-      piece.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), 0, 0);
-      return { i, x, y, w, h, data: await encode(piece, true), edges: edges.buffer as ArrayBuffer };
+      return { i, x, y, w, h, data: await encode(new ImageData(new Uint8ClampedArray(big.buffer), pw, ph), true), edges: edges.buffer as ArrayBuffer };
     }),
   );
   return { veil, patches, delays: schedule.delays, gap: schedule.gap, areas };
