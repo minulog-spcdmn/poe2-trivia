@@ -82,7 +82,7 @@ export interface BurnParams {
   /** The patch's size in art pixels (its picture is finer, by the item's artScale). */
   w: number;
   h: number;
-  /** The patch's edges: (x, y, patch) triples (see RawPatch.edges). */
+  /** The patch's edges: (x, y, patch) triples (see PatchShape.edges). */
   edges: Uint16Array;
   /** Patches already there when this one arrived: the magic spreads in from them. */
   before: number[];

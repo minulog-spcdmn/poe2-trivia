@@ -417,7 +417,10 @@ class Shown {
         const url = this.url(m.data);
         const img = new Image();
         img.src = url;
-        this.cuts.set(m.tile ?? -1, { w: m.w, picture: img.decode().then(() => img), shapes: patchShapes(labels, m.w, m.h) });
+        const picture = img.decode().then(() => img);
+        // A picture that won't decode shows no patches; nothing more to say until one asks for it.
+        picture.catch(() => {});
+        this.cuts.set(m.tile ?? -1, { w: m.w, picture, shapes: patchShapes(labels, m.w, m.h) });
         const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
         if (m.tile === undefined) this.veil = v;
         else this.tileVeils = { ...this.tileVeils, [m.tile]: v };
