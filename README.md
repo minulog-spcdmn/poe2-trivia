@@ -40,7 +40,8 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 settings. Everyone plays the exact same rules, so "I reached depth 30" means
 the same thing for everyone.
 - Pick one of three categories and name the item, as in turns mode. Each
-  question goes one depth deeper.
+  question cleared goes one depth deeper; after a miss (or a time-out) the
+  next question is asked at the same depth, from a fresh offer of cards.
 - The depth counts the questions cleared: a run sets out at depth 0, where
   the banner shows a short line instead ("Your light is borrowed", "Solve
   et coagula"; over fifty, dealt like a shuffled deck on each device so one
@@ -179,7 +180,8 @@ the same thing for everyone.
   cards says what the item does and what the find risks. The finds turn
   up one at a time: the Dynamite Cache from depth 10, the Azurite Vein from
   25 and the Flare Cache from 40. On its own first depth a find is certain:
-  that offer always holds it (for a player with room for its item). After
+  that offer always holds it (for a player with room for its item), and so
+  does the one after a miss there. After
   that each find's chance rises evenly over the 20 depths after its first
   and then holds (the Dynamite Cache from 8% to 9% by depth 30, the Vein
   from 4% to 11% by 45, the Flare Cache from 4% to 13% by 60). From 10 to
@@ -351,7 +353,8 @@ the same thing for everyone.
   8% a depth. It is estimated for each depth from what the backdrop draws,
   with a measured correction table.
 - Each new depth sinks the scene a little further as its cards are dealt
-  (not a run's first depth, after a reload, or the same depth dealt again):
+  (not a run's first depth, after a reload, or the same depth dealt again,
+  as after a miss):
   for 1.9 s the walls, smoke and dust drift up past you, quick to start and
   slow to settle, the embers streak up, and the dark draws in and lets go.
   Into a new zone (its first depth) it plunges much further, 5 screens,

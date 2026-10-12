@@ -998,7 +998,7 @@
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
         onclick={next}
       >
-        {race ? 'Next question' : coop ? 'Next depth' : 'Next turn'}
+        {race ? 'Next question' : coop ? (reveal.correct ? 'Next depth' : 'Next question') : 'Next turn'}
         {#if session.mode !== 'local'}
           <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}

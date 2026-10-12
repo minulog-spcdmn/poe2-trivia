@@ -852,12 +852,42 @@ test('lives stay consistent through revives: lost, given and received, and a sec
 
 // ---- the end -----------------------------------------------------------------
 
+test('together, only a question cleared goes a depth deeper: all wrong or a time-out is followed by a fresh offer at the same depth', () => {
+  const h = team(3);
+  // All wrong: nobody cleared it.
+  let q = h.ask();
+  const [w0, w1, w2] = wrongs(q);
+  h.pickAs('p0', w0);
+  h.pickAs('p1', w1);
+  h.pickAs('p2', w2);
+  assert.equal(h.s.phase, 'reveal');
+  h.next();
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(h.s.round, 1);
+  // A time-out: the same.
+  h.ask();
+  h.timeOut();
+  h.next();
+  assert.equal(h.s.round, 1);
+  // A teammate's miss, then a right answer: cleared.
+  q = h.ask();
+  h.pickAs('p0', wrongs(q)[0]);
+  h.pickAs('p1', right(q));
+  h.next();
+  assert.equal(h.s.round, 2);
+});
+
 test('the run ends when nobody stands: no winner, one depth for the team, where the last of them perished', () => {
   const h = team(3);
   h.lives({ p0: 1, p1: 2, p2: 3 });
   for (let depth = 1; depth <= 3; depth++) {
     h.ask();
     h.timeOut();
+    h.next();
+    if (h.s.phase === 'over') break;
+    // A time-out clears nothing: the next question is asked at the same depth, and p2 clears it.
+    assert.equal(h.s.round, depth);
+    h.pickAs('p2', right(h.ask()));
     h.next();
   }
   assert.equal(h.s.phase, 'over');

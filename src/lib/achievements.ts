@@ -658,8 +658,9 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
       q.labels.length - gone.size >= OPEN_OPTIONS
     )
       out.push('elimination');
-    // The whole team at once, nobody walking away on their feet at this depth.
-    const fell = next.players.filter((p) => fellAt(next, p.id) === next.round).map((p) => p.id);
+    // The whole team at once, nobody walking away on their feet from this question (a miss before it, at
+    // the same depth, was another question's).
+    const fell = next.players.filter((p) => livesOf(next, p.id) === 0 && r.hits?.some((h) => h.playerId === p.id)).map((p) => p.id);
     if (r.winnerId === null && !standing.length && depth >= FALL_DEPTH && (d.leftAt ?? 0) < next.round && fell.length >= FALL_MANY && fell.includes(self))
       out.push('fell-as-one');
     // The last one standing, clean for LONE depths past the last of the others to fall or leave (and past

@@ -487,7 +487,7 @@ export interface Delve {
   teamStreak?: number;
   /** Co-op: the longest `teamStreak` this run (missing for none). */
   bestTeamStreak?: number;
-  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone at the next depth. */
+  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone with the next offer. */
   missedHere?: true;
   /**
    * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
@@ -552,7 +552,7 @@ export interface Player {
  * turns: players take turns choosing a category and answering.
  * race: everyone answers the same question; first correct answer scores,
  * wrong answers cost a point and lock that player out of the question.
- * delve: three lives and no settings, one depth deeper each question (see
+ * delve: three lives and no settings, one depth deeper each question cleared (see
  * delve.ts). Alone, a player's own turns; together (online), co-op: the team
  * votes for a card and answers one question, and nobody wins.
  */
@@ -1994,11 +1994,12 @@ export class Engine {
   }
 
   /**
-   * Alone: moves on to the player's next turn, one depth deeper (the seat
-   * after `from` with lives left; one player, so their own), or ends the run
-   * with their last life: the depth is the result, nobody wins.
+   * Alone: moves on to the player's next turn (the seat after `from` with
+   * lives left; one player, so their own), one depth deeper if the question
+   * was `cleared` and at the same depth if not, or ends the run with their
+   * last life: the depth is the result, nobody wins.
    */
-  private advanceDelve(s: GameState, from: number) {
+  private advanceDelve(s: GameState, from: number, cleared: boolean) {
     const n = s.players.length;
     let next = from;
     let wrapped = false;
@@ -2018,9 +2019,10 @@ export class Engine {
       this.finish(s, []);
       return;
     }
-    if (wrapped) s.round++;
+    const deeper = wrapped && cleared;
+    if (deeper) s.round++;
     s.turn = next;
-    this.beginTurn(s, false, wrapped);
+    this.beginTurn(s, false, deeper);
   }
 
   // ---- delve co-op --------------------------------------------------------
@@ -2204,14 +2206,18 @@ export class Engine {
     s.phase = 'reveal';
   }
 
-  /** Co-op: after a reveal, one depth deeper for whoever stands (a revived player too), or the end of the run. */
-  private advanceCoop(s: GameState) {
+  /**
+   * Co-op: after a reveal, a new offer for whoever stands (a revived player
+   * too), one depth deeper if the team `cleared` the question and at the
+   * same depth if not, or the end of the run.
+   */
+  private advanceCoop(s: GameState, cleared: boolean) {
     if (!standingIds(s).length) {
       this.finish(s, []);
       return;
     }
-    s.round++;
-    this.beginTurn(s, false, true);
+    if (cleared) s.round++;
+    this.beginTurn(s, false, cleared);
   }
 
   // ---- turns mode -------------------------------------------------------
@@ -2316,8 +2322,10 @@ export class Engine {
    */
   private advance(s: GameState, from = s.turn) {
     if (s.delve) {
-      if (isGroupRun(s)) this.advanceCoop(s);
-      else this.advanceDelve(s, from);
+      // Only a question cleared takes the run a depth deeper: after a miss (or a time-out) the next one is asked at the same depth.
+      const cleared = s.phase === 'reveal' && !!s.reveal?.correct;
+      if (isGroupRun(s)) this.advanceCoop(s, cleared);
+      else this.advanceDelve(s, from, cleared);
       return;
     }
     if (s.deathmatch) {

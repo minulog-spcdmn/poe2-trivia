@@ -1,5 +1,6 @@
-// Delve: a game with no settings. Everyone has three lives and each round goes
-// one depth deeper, where the questions get harder, the timer shorter and the
+// Delve: a game with no settings. Everyone has three lives and each question
+// cleared goes one depth deeper (a miss is followed by another question at the
+// same depth), where the questions get harder, the timer shorter and the
 // lockout longer. The rules at a depth are the same in every run, so "depth N"
 // means the same thing to everyone. Only types come from game.ts, so the engine
 // can import this module without a cycle.
