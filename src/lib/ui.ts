@@ -57,10 +57,10 @@ const ICON_GROUP: Record<string, string> = {
 // above, else the group's middle item.
 const COMPANIONS: Record<string, [group: string, name: string][]> = {
   'Gloves & Boots': [['Gloves', "Leopold's Applause"]],
-  'Amulets & Belts': [['Belts', 'Ingenuity']],
+  'Amulets & Belts': [['Belts', 'Mageblood']],
   'Flasks, Charms, Jewels, Relics & Tablets': [
-    ['Charms', "Arakaali's Gift"],
-    ['Jewels', 'Prism of Belief'],
+    ['Charms', "Valako's Roar"],
+    ['Jewels', 'Grand Spectrum'],
     ['Relics', 'The Desperate Alliance'],
     ['Tablets', 'Freedom of Faith'],
   ],
