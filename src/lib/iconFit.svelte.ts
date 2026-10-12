@@ -27,7 +27,7 @@ const INK = 5200;
 const MAX_W = 120;
 const MAX_H = 118;
 /** Room round the visible part for the art's soft edges (pixels under half opaque). */
-const PAD = 8;
+export const PAD = 8;
 /** The clean mask's edge: pixels less opaque than this go, more opaque than that stay whole, those between ramp up. */
 const EDGE = [72, 216] as const;
 

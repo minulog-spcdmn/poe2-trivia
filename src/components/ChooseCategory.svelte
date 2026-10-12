@@ -5,7 +5,7 @@
   import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
-  import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
+  import { PAD, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
@@ -301,18 +301,20 @@
   for (const url of categoryIcons()) measure(url);
 
   // A category that names several kinds of item shows one of each (lib/ui,
-  // categoryCompanions): its emblem in front, the others stacked close
-  // behind it and darker, each showing only the edge that says its kind
-  // (the stack fans out on hover). Each is set by eye to its items' shapes:
-  // the emblem's size and shift (px at a tall card's size, as its tweak's),
-  // and for each kind (its group) its item's offset from the window's
-  // middle (right and down), size and tilt (degrees, clockwise). A kind the
-  // data no longer has leaves its spot empty.
+  // categoryCompanions): its emblem in front, and behind it, a little
+  // smaller and darker, an item of each other kind, partly hidden but with
+  // the part that says its kind in view. MOONS sets how they lie together,
+  // by eye for their shapes: the emblem's size and shift, and for each kind
+  // (its group) its item's offset (right and down), size and tilt (degrees,
+  // clockwise), in px at a tall card's size. The heap as a whole is then
+  // drawn as one emblem would be: centred in the window and scaled to a
+  // single emblem's weight (see heapOf). A kind the data no longer has
+  // leaves its spot empty.
   type Spot = [x: number, y: number, k: number, turn: number];
   type Moons = { k: number; up: number; left: number; at: Record<string, Spot> };
   const MOONS: Record<string, Moons> = {
-    'Gloves & Boots': { k: 0.94, up: 6, left: 18, at: { Gloves: [40, 18, 0.78, -14] } },
-    'Amulets & Belts': { k: 0.82, up: 16, left: 0, at: { Belts: [0, 36, 1, 0] } },
+    'Gloves & Boots': { k: 1, up: 0, left: 0, at: { Gloves: [40, -26, 0.82, 0] } },
+    'Amulets & Belts': { k: 0.82, up: 0, left: 0, at: { Belts: [22, 34, 1.04, 0] } },
     'Flasks, Charms, Jewels, Relics & Tablets': {
       k: 1,
       up: 0,
@@ -325,8 +327,55 @@
       },
     },
   };
-  /** A category's heap, when it has companions to show. */
-  const heapOf = (cat: string) => (categoryCompanions(cat).length ? MOONS[cat] : undefined);
+  /**
+   * The heap's size, as a single emblem's (lib/iconFit: its visible part's
+   * typical size, and the most of the window it may take), a little larger
+   * as a heap has gaps a single item doesn't.
+   */
+  const HEAP = { weight: 118, w: 132, h: 126 };
+  /**
+   * A category's heap, when it has companions to show, laid out as one
+   * emblem: the box round all its items' visible parts (a tilted item's
+   * turned box) is centred in the window and scaled to HEAP. As set in
+   * MOONS until every item is measured.
+   */
+  function heapOf(cat: string): Moons | undefined {
+    const m = categoryCompanions(cat).length ? MOONS[cat] : undefined;
+    if (!m) return m;
+    const t = categoryIconTweak(cat);
+    const face = fits[categoryIcon(cat)];
+    if (!face) return m;
+    const ke = t.k * m.k;
+    /** Where the emblem's centre sits for a size and a shift (as .glyph.fit places it). */
+    const emblemAt = (k: number, up: number, left: number) => [-left, Math.min(0, ((1 - k) * face.h) / 2) - up];
+    const items: [x: number, y: number, w: number, h: number][] = [];
+    const add = (f: { w: number; h: number }, k: number, [x, y]: number[], turn: number) => {
+      const [w, h] = [(f.w - 2 * PAD) * k, (f.h - 2 * PAD) * k];
+      const r = (turn * Math.PI) / 180;
+      const [c, s] = [Math.abs(Math.cos(r)), Math.abs(Math.sin(r))];
+      items.push([x, y, w * c + h * s, w * s + h * c]);
+    };
+    add(face, ke, emblemAt(ke, t.up + m.up, t.left + m.left), 0);
+    for (const c of categoryCompanions(cat)) {
+      const spot = m.at[c.kind];
+      if (!spot) continue;
+      if (!fits[c.url]) return m;
+      add(fits[c.url], spot[2], spot, spot[3]);
+    }
+    const x0 = Math.min(...items.map(([x, , w]) => x - w / 2));
+    const x1 = Math.max(...items.map(([x, , w]) => x + w / 2));
+    const y0 = Math.min(...items.map(([, y, , h]) => y - h / 2));
+    const y1 = Math.max(...items.map(([, y, , h]) => y + h / 2));
+    const [W, H, cx, cy] = [x1 - x0, y1 - y0, (x0 + x1) / 2, (y0 + y1) / 2];
+    const s = Math.min(HEAP.weight / Math.sqrt(W * H), HEAP.w / W, HEAP.h / H);
+    const k = m.k * s;
+    const [ex, ey] = emblemAt(ke, t.up + m.up, t.left + m.left);
+    // The emblem's new centre, and the shift that puts it there at its new size.
+    const [nx, ny] = [(ex - cx) * s, (ey - cy) * s];
+    const up = Math.min(0, ((1 - t.k * k) * face.h) / 2) - ny - t.up;
+    const at = Object.fromEntries(Object.entries(m.at).map(([kind, [x, y, kk, turn]]) => [kind, [(x - cx) * s, (y - cy) * s, kk * s, turn] as Spot]));
+    return { k, up, left: -nx - t.left, at };
+  }
   /** The emblem's style for a category: its fit, made room for its companions. */
   function emblemStyle(cat: string) {
     const t = categoryIconTweak(cat);
