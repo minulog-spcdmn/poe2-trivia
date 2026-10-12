@@ -101,6 +101,12 @@ type LiveShape = ShapeSpec & {
   box: Box;
   /** How far the page was scrolled when `box` was measured (see placeCanvas). */
   scrollAt: number;
+  /**
+   * Where the anchor's centre was as measured, before update() moved `box`
+   * (a fire shifts it up over its flames): how far the anchor moved is told
+   * from this, or a shape that shifts its box would seem to move every frame.
+   */
+  seen: Point;
   /** Fade-out once stopped: remaining and total seconds. */
   fade: number;
   fadeTotal: number;
@@ -391,14 +397,16 @@ export function shape(spec: ShapeSpec): ShapeHandle {
     if (i < 0) return NOOP;
     shapes.splice(i, 1);
   }
+  const box = boxOf(spec.at);
   const s: LiveShape = {
     ...spec,
     behind: spec.behind || behindNow,
     group: groupNow,
     age: -(spec.delay ?? 0) - waited(),
     seed: Math.random() * 100,
-    box: boxOf(spec.at),
+    box,
     scrollAt: pageScroll()[1],
+    seen: { x: box.x, y: box.y },
     fade: 0,
     fadeTotal: 0,
     stopped: false,
@@ -862,11 +870,13 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       // where it was.
       if (s.at.isConnected) {
         const b = boxOf(s.at);
-        const [dx, dy, scrolled] = [b.x - s.box.x, b.y - s.box.y, scrollNow - s.scrollAt];
+        const [dx, dy, scrolled] = [b.x - s.seen.x, b.y - s.seen.y, scrollNow - s.scrollAt];
         onScreen = Math.abs(dx) + Math.abs(dy) > 0.25;
         inPage = Math.abs(dx) + Math.abs(dy + scrolled) > 0.25;
         follow = scrollFollow(dy, scrolled);
         s.box = b;
+        s.seen.x = b.x;
+        s.seen.y = b.y;
         s.scrollAt = scrollNow;
         if (s.followOpacity) s.opacity = opacityOf(s.at, opacities);
       } else if (!s.stopped) {
