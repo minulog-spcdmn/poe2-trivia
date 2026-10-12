@@ -13,11 +13,12 @@ import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShado
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { fxActive, fxUserOn, onFxChange } from './fx/core';
-import { COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
+import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
 import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
+import { onVein, veinLevel } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
 
@@ -71,6 +72,8 @@ uniform vec4 uFx[${FX_SLOTS * 3}];
 uniform vec4 uFxK;
 uniform vec4 uEddy;
 uniform vec2 uDark;
+// How far an Azurite Vein's scene has come in (lib/vein.ts), 0 to 1.
+uniform float uVein;
 `;
 
 /** Delve's noise, its environments, and the dark closing in. */
@@ -104,6 +107,71 @@ ${FX_NOISE_GLSL}
 ${ENV_GLSL}
 ${SPORES_GLSL}
 ${SHAFTS_GLSL}
+
+// An Azurite Vein being dug (lib/vein.ts, uVein): off the lit path the hall
+// goes cold and dark, and seams of azurite run through the rock of the
+// walls and the floor, glowing pale blue, with crystals clustered where
+// they meet. They grow in from the edges as the vein comes in (never over
+// the middle, behind the UI), and the light moves slowly along them.
+// Cracks in crystal: how near p is to the edge between two cells of a
+// jittered grid (0 on it), and to a corner where three meet (0 at it).
+vec2 veinCells(vec2 x) {
+  vec2 i = floor(x);
+  vec2 f = fract(x);
+  float d1 = 8.0;
+  float d2 = 8.0;
+  float d3 = 8.0;
+  for (int y = -1; y <= 1; y++)
+    for (int k = -1; k <= 1; k++) {
+      vec2 g = vec2(float(k), float(y));
+      vec2 o = vec2(nhash(i + g), nhash(i + g + 17.31));
+      vec2 r = g + 0.15 + 0.7 * o - f;
+      float d = dot(r, r);
+      if (d < d1) {
+        d3 = d2;
+        d2 = d1;
+        d1 = d;
+      } else if (d < d2) {
+        d3 = d2;
+        d2 = d;
+      } else if (d < d3) d3 = d;
+    }
+  return vec2(sqrt(d2) - sqrt(d1), sqrt(d3) - sqrt(d1));
+}
+
+vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float dark) {
+  float v = uVein;
+  vec2 xy = p / vec2(W, H);
+  // Cold and darker: the path's warm light is behind you.
+  col = mix(col, col * vec3(0.42, 0.58, 0.95), 0.75 * v);
+  col *= 1.0 - 0.3 * v;
+  // The rock the seams run in: the walls, then the floor, reaching further in as it comes.
+  float side = min(xy.x, 1.0 - xy.x);
+  float reach = 0.1 + 0.24 * v;
+  float wall = max(1.0 - smoothstep(reach * 0.3, reach, side), 0.8 * smoothstep(1.0 - 0.55 * reach, 1.0, xy.y));
+  if (wall <= 0.0) return col;
+  // The seams: straight cracks between crystal cells, the cells drawn out
+  // on a slant so they run as veins, only where the ore runs (a band of
+  // slow noise), the walls going up with the scene (uSink) as it sinks.
+  vec2 q = (p + vec2(uSlide, 0.9 * uSink)) / S;
+  vec2 x = mat2(0.8, -0.6, 0.6, 0.8) * q * vec2(5.5, 2.6);
+  vec2 e = veinCells(x);
+  float ore = smoothstep(0.42, 0.68, fbm(q * 2.2 + vec2(4.2, 1.3)));
+  if (ore <= 0.0) return col;
+  float seam = 1.0 - smoothstep(0.0, 0.045, e.x);
+  float halo = 1.0 - smoothstep(0.0, 0.32, e.x);
+  // Crystals where three cells meet, each breathing over many seconds.
+  float node = (1.0 - smoothstep(0.0, 0.16, e.y)) * seam;
+  float breathe = 0.7 + 0.3 * sin(tm * 0.35 + 6.283 * nhash(floor(x)));
+  // The light moving along the seams, slowly.
+  float run = 0.6 + 0.4 * sin(tm * 0.45 - 1.7 * (x.x + 0.6 * x.y));
+  vec3 azure = rgb(40.0, 105.0, 255.0);
+  vec3 pale = rgb(150.0, 205.0, 255.0);
+  vec3 white = rgb(230.0, 245.0, 255.0);
+  vec3 add = azure * (0.16 * halo) + pale * (0.6 * seam * run) + white * (0.9 * node * breathe);
+  // The dark of the depth and the clock dims it, as it does every glow.
+  return col + add * (ore * wall * v * (1.0 - 0.8 * dark));
+}
 
 // The slot environment i (its index in ENVIRONMENTS) is drawn from, or ${NO_SLOT}: none.
 int fxSlot(int i) {
@@ -267,6 +335,8 @@ const DELVE_DARK = `  // The light about you drawing in (see closing()). What gl
   dark = 1.0 - (1.0 - dark) * (1.0 - 0.9 * arms);
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
   if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(uSlide, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
+  // An Azurite Vein being dug.
+  if (uVein > 0.0) col = azuriteVein(col, p, S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
   // stratum's glow and all (and a right answer's light, a little under 0,
   // lifts it a touch). Never past black, however far it is pushed.
@@ -899,10 +969,13 @@ const CITY_TRACE = 0.002;
  * surface's look, outside Delve, where the lean programs draw exactly what
  * Delve's would.
  */
-export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pressure: number, city: number): boolean {
+export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pressure: number, city: number, vein = 0): boolean {
   // (The clock's dark is drawn either way from 0: a right answer's light is a little under it.)
-  return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE;
+  return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE || vein > 0;
 }
+
+/** The embers' halo in an Azurite Vein: azurite blue. */
+const VEIN_EMBERS = [0.3, 0.62, 1];
 
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
@@ -1117,6 +1190,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       uFxK: S('uFxK'),
       uEddy: S('uEddy'),
       uDark: S('uDark'),
+      uVein: S('uVein'),
       uGlowCol: S('uGlowCol'),
       uScene: S('uScene'),
       uBlobColor: S('uBlobColor'),
@@ -1255,6 +1329,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   /** The question's clock as the dark last drawn shows it (lib/darkness.ts). */
   let pressure = 0;
+  /** How far an Azurite Vein's scene has come in (lib/vein.ts). */
+  let vein = 0;
   function draw() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
@@ -1279,7 +1355,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
     // Which programs draw it: Delve's while any of Delve's parts show, once
     // they're ready; else the lean ones (the same picture without them).
-    const deep = delveScene(look, close, pressure, city);
+    const deep = delveScene(look, close, pressure, city, vein);
     if (deep && delveFailed) return lost();
     if (deep) wantDelveBackdrop();
     if (warming) warm(warming);
@@ -1295,7 +1371,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // to the stratum's dark, keeps all of itself while that isn't drawn.)
     const k = v === lean ? 1 : delveIn;
     const dark = v === lean ? 0 : delveIn * look.dark;
-    const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uGlowCol, uScene, uBlobColor } = v;
+    const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uVein, uGlowCol, uScene, uBlobColor } = v;
     const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
 
     // The soft light: into its own target first, or along with the rest.
@@ -1317,6 +1393,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uFxK, fxK);
     gl!.uniform4fv(uEddy, embers.eddies);
     gl!.uniform2f(uDark, close * k, pressure * k);
+    if (uVein) gl!.uniform1f(uVein, vein * k);
     gl!.uniform3f(uGlowCol, look.glow[0] / 255, look.glow[1] / 255, look.glow[2] / 255);
     gl!.uniform4f(uScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
@@ -1546,6 +1623,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       pressure = p;
       if (still) dirty = true;
     }
+    // An Azurite Vein's scene eases in and out by itself, as the dark does.
+    const vn = veinLevel(now, still);
+    if (vn !== vein) {
+      vein = vn;
+      dirty = true;
+    }
     embers.descend(currentDescent(), targetDescent());
     // A new depth dealt: the scene sinks a little further (plunge in descent.ts),
     // the embers and glints carried up with the walls; never while holding still.
@@ -1647,7 +1730,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     ro.observe(canvas);
   }
 
+  // An Azurite Vein's embers burn azure, and take their own colours back as it ends.
+  const offVein = onVein((on) => embers.tint(on ? VEIN_EMBERS : CALM));
   function stop() {
+    offVein();
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
     delveWaiters.delete(buildDelve);

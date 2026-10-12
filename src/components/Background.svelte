@@ -5,6 +5,7 @@
   import { ENVIRONMENTS, MAGMA, descent, emberTurn, lookOf, magmaHeat, onDescent, toneOf, type Descent } from '../lib/descent';
   import { stopsOf } from '../lib/backdropData';
   import DarkTendrils from './DarkTendrils.svelte';
+  import { onVein, veinOn } from '../lib/vein';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
   // backdrop draws its own embers; these CSS ones are for the fallback.
@@ -24,6 +25,9 @@
   // which this never reads, may be worked out only when read; see descent.)
   let dsc = $state.raw<Descent>(descent(0));
   onMount(() => onDescent((d) => (dsc = d)));
+  /** An Azurite Vein being dug (lib/vein.ts): its cold, and its seams at the walls. */
+  let vein = $state(veinOn());
+  onMount(() => onVein((on) => (vein = on)));
   const look = $derived(dsc.look);
   const css = (c: readonly number[], a = 1) => `rgba(${c.map(Math.round).join(', ')}, ${a})`;
   /** An environment's colour stop `k` as CSS channels (for rgba(var(--c1), a)). */
@@ -78,6 +82,7 @@
          (descent.ts's dim: its `light` is the WebGL hall's, and swings with
          what each stratum's features add). -->
     <div class="dim" style:opacity={dsc.dim}></div>
+    <div class="vein" class:on={vein}></div>
     <!-- And a question's clock running down: the dark reaching in (lib/darkness.ts). -->
     <DarkTendrils />
     <div class="grain"></div>
@@ -177,6 +182,22 @@
       opacity 4s,
       --floor 4s,
       --mist 4s;
+  }
+  /* An Azurite Vein: the hall gone cold and dark, azurite glowing at the walls. */
+  .vein {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 1.6s;
+    background:
+      radial-gradient(18% 34% at 0% 30%, rgba(90, 160, 255, 0.22), transparent),
+      radial-gradient(14% 26% at 100% 62%, rgba(90, 160, 255, 0.2), transparent),
+      radial-gradient(10% 18% at 2% 78%, rgba(170, 215, 255, 0.18), transparent),
+      radial-gradient(9% 16% at 98% 20%, rgba(170, 215, 255, 0.16), transparent),
+      linear-gradient(rgba(6, 14, 34, 0.45), rgba(6, 14, 34, 0.45));
+  }
+  .vein.on {
+    opacity: 1;
   }
   .floor {
     background: radial-gradient(

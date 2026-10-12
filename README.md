@@ -265,7 +265,11 @@ the same thing for everyone.
     you simply fall), and buries everything in hand. The dig stays at the
     vein's depth and its later strikes lock no category. Together the team
     votes between the two cards and answers each strike as any question;
-    each ward goes to whoever got it right. The rules are in
+    each ward goes to whoever got it right. While a vein is dug the scene
+    is its own (`src/lib/vein.ts`, `azuriteVein` in `src/lib/backdrop.ts`):
+    the hall goes cold and dark, cracks of azurite glow in the rock of the
+    walls and the floor with crystals where they meet, and the embers burn
+    azure; it fades back to the depth's own as the dig ends. The rules are in
     `src/lib/delve.ts` (the dig); `docs/vein-digging.md` has the design.
   - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,

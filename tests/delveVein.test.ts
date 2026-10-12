@@ -372,3 +372,24 @@ test('the codex counts a vein once however deep it was dug, and what a cave-in b
   const f = findStats(log).finds.azurite;
   assert.deepEqual([f.taken, f.ok, f.gained.wards, f.lives], [2, 2, 2, 2]);
 });
+
+test('the vein\'s scene: on from strike 1 through its cards and strikes, off with the way out; it eases in and out', async () => {
+  const { inVein, setVein, veinLevel, VEIN_IN_S } = await import('../src/lib/vein.ts');
+  const h = run();
+  assert.equal(inVein(h.s), false, 'ordinary cards');
+  h.vein();
+  assert.equal(inVein(h.s), true, 'strike 1');
+  h.answer(true);
+  assert.equal(inVein(h.s), true, 'its reveal');
+  h.next();
+  assert.equal(inVein(h.s), true, 'the two cards');
+  h.pick(WAY_OUT);
+  assert.equal(inVein(h.s), false, 'out of it');
+  // Eased in over VEIN_IN_S, smooth at both ends; at once when held still.
+  veinLevel(0);
+  setVein(true);
+  const half = veinLevel((VEIN_IN_S * 1000) / 2);
+  assert.ok(half > 0 && half < 1, String(half));
+  setVein(false);
+  assert.equal(veinLevel(VEIN_IN_S * 1000, true), 0);
+});
