@@ -84,8 +84,9 @@ export function visibleBox(rgba: Uint8ClampedArray, W: number, H: number): [numb
  */
 export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: number, seed: number): RawPatch[] {
   const rand = seededRandom(seed);
+  const shown = litMask(rgba, W, H);
   const lit: number[] = [];
-  for (let i = 0; i < W * H; i++) if (rgba[i * 4 + 3] > CLEAR) lit.push(i);
+  for (let i = 0; i < W * H; i++) if (shown[i]) lit.push(i);
   if (!lit.length) return [];
   const n = Math.max(1, Math.min(255, Math.round(((size * size) / (W * H)) * lit.length), lit.length));
 
@@ -273,7 +274,9 @@ export function litMask(rgba: Uint8ClampedArray, W: number, H: number): Uint8Arr
  * own art pixels come out whole (nothing next to them counts less than ½),
  * so patches still cover the item between them; the item's own outline is
  * left to its pixels' alpha, and a pixel off the item (`lit`, from litMask)
- * is never drawn, as before.
+ * is never drawn, as before. At one pixel per art pixel there's nothing to
+ * smooth: it holds its ring whole, as patches always did, so they overlap at
+ * their seams.
  */
 export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
   // What each art pixel counts, over the patch's box and one pixel round it.
@@ -292,6 +295,10 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
   const pw = w * S;
   const ph = h * S;
   const out = new Float32Array(pw * ph);
+  if (S === 1) {
+    for (let l = 0; l < w * h; l++) if (pixels[l * 4 + 3]) out[l] = 1;
+    return out;
+  }
   for (let by = 0; by < ph; by++) {
     const ly = (by / S) | 0;
     // Where the pixel's centre is, in the grid, from its art pixels' centres.
@@ -300,7 +307,11 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
     const ty = v - y0;
     for (let bx = 0; bx < pw; bx++) {
       const lx = (bx / S) | 0;
-      // Only the art pixels it holds: its own and its ring.
+      // Its own art pixels whole; of the rest, only those it holds: its ring.
+      if (own[ly * w + lx]) {
+        out[by * pw + bx] = 1;
+        continue;
+      }
       if (!pixels[(ly * w + lx) * 4 + 3]) continue;
       const u = (bx + 0.5) / S + 0.5;
       const x0 = Math.floor(u);

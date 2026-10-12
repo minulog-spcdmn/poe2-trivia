@@ -74,6 +74,8 @@ test('drawn finer, patches cover the whole item between them with smooth edges, 
     }
     // Finer than art pixels, the outlines are softened, not art pixels' steps.
     if (S > 1) assert.ok(soft > 0, `S ${S}: no soft edges`);
+    // At the art's own pixels, nothing to smooth: the ring is held whole, no half-drawn band.
+    else assert.equal(soft, 0, 'S 1: a half-drawn ring');
   }
 });
 

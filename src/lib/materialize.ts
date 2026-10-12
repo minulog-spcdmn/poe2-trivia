@@ -25,6 +25,16 @@ export const FINALE_MS = 400;
 export const FX_SCALE = 4;
 
 /**
+ * How many px wide an effect's canvas is drawn for a picture `artW` art
+ * pixels wide: the screen's (the canvas's own px times the stage's zoom,
+ * lib/stage.ts, times the screen's density), FX_SCALE per art pixel at
+ * most; 0 for a canvas not laid out yet.
+ */
+export function fxWidth(canvas: HTMLElement, artW: number): number {
+  return Math.min(canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1), artW * FX_SCALE);
+}
+
+/**
  * As fractions of the burn: the mist ahead of the front, the twinkling ahead
  * of that, how long each grain glints, and how long its light takes to cool
  * (in patches.ts, where the host paces the veil by them: burntShare).
@@ -125,9 +135,11 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     const art = ctx.getImageData(0, 0, W, H);
     const src = art.data.slice();
     const px = art.data;
-    const vis: number[] = [];
-    for (let i = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) vis.push(i);
-    if (!vis.length) return stop();
+    let n = 0;
+    for (let i = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) n++;
+    if (!n) return stop();
+    const vis = new Uint32Array(n);
+    for (let i = 0, j = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) vis[j++] = i;
 
     // The magic starts where this patch meets what's already there.
     const dist = new Float32Array(W * H).fill(Infinity);
@@ -184,7 +196,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     });
     // Sorted by when they burn in, so each frame only visits the pixels that
     // are changing: those settled are done, those far ahead stay clear.
-    const rank = Uint32Array.from(vis.keys()).sort((a, b) => when[a] - when[b]);
+    const rank = Uint32Array.from({ length: n }, (_, j) => j).sort((a, b) => when[a] - when[b]);
     const span = hi - lo || 1;
     const lit = new Uint32Array(vis.length);
     const order = new Float32Array(vis.length);
@@ -227,6 +239,15 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       if (!start) start = last = now;
       const p = Math.min(1, (now - start) / duration);
       const t = from + (to - from) * p;
+      // Only the rows this frame changes go to the canvas: those from the first pixel settling to the last sparkling ahead.
+      let y0 = H;
+      let y1 = -1;
+      const touch = (i: number) => {
+        const y = (i / W) | 0;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      };
+      const was = settled;
       while (settled < lit.length && t - order[settled] >= LINE + COOL) {
         const o = lit[settled++] * 4;
         px[o] = src[o];
@@ -281,7 +302,8 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
         for (let c = 0; c < 3; c++) px[o + c] = src[o + c] + (LIGHT_COOL[c] + (LIGHT_HOT[c] - LIGHT_COOL[c]) * g) * k;
         px[o + 3] = src[o + 3];
       }
-      ctx.putImageData(art, 0, 0);
+      for (let j = was; j < ahead; j++) touch(lit[j]);
+      if (y1 >= 0) ctx.putImageData(art, 0, 0, 0, y0, W, y1 - y0 + 1);
 
       // Sparks fly off the front, more the longer it is.
       const front = shown - line;
@@ -313,15 +335,14 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   img.src = params.url;
   const begin = () => {
     if (stopped) return;
-    // Screen resolution (the canvas's own px times the stage's zoom, lib/stage.ts,
-    // times the screen's density), up to FX_SCALE: every pixel costs work on
+    // Screen resolution, up to FX_SCALE (fxWidth): every pixel costs work on
     // each frame. The quick ones at the reveal (many at once, for a moment)
     // keep to the picture's own, as does a canvas not laid out yet. Its size
     // in art pixels places the burn.
     const aw = params.w;
     const ah = params.h;
-    const screen = canvas.clientWidth * zoomOf(canvas) * (window.devicePixelRatio || 1);
-    W = Math.max(1, Math.round(screen && !params.quick ? Math.min(screen, aw * FX_SCALE) : Math.min(screen || Infinity, img.naturalWidth)));
+    const screen = fxWidth(canvas, aw);
+    W = Math.max(1, Math.round(screen && !params.quick ? screen : Math.min(screen || Infinity, img.naturalWidth)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
