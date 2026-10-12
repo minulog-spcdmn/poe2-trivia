@@ -137,7 +137,7 @@
     font-size: 1rem;
     line-height: 1.3;
     white-space: pre-line;
-    text-wrap: balance;
+    text-wrap: pretty;
     color: var(--tt-grey);
   }
   .white {
@@ -168,7 +168,7 @@
   .c {
     color: #d20000;
   }
-  /* Flavour text: the same small capitals, slanted, as the game sets it; each verse balanced on its own. */
+  /* Flavour text: the same small capitals, slanted, as the game sets it; each verse wrapped on its own, no word left alone on its last line. */
   .f {
     font-style: italic;
     color: var(--tt-unique);
@@ -176,7 +176,7 @@
   }
   .verse {
     display: block;
-    text-wrap: balance;
+    text-wrap: pretty;
   }
   /* A skill the gem brings: its name, as the game titles the gem's second tab. */
   .t {
