@@ -18,7 +18,7 @@
 //   each computed from its section and hatched down the faces turned from
 //   the light (the upper left, as on the rest of the plate); the emblem in
 //   a crown of the same crystals standing out of a double ring like a
-//   geode's lining, long and short in turn, the long ones out through the
+//   geode's lining, grown unevenly in groups, the longest out through the
 //   arch to the panel, over a glory of fine rays. The back holds the crystal
 //   in that glory.
 // • Flare Cache: a flare's burst about the sign of fire, so large it breaks
@@ -268,7 +268,7 @@ function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: bool
 /**
  * The vein's crown round the emblem, as the flare's sun and the dynamite's
  * broken ring are theirs: a double ring, and out of it prisms of azurite
- * standing on it like crystals lining a geode, long and short in turn, each
+ * standing on it like crystals lining a geode, each
  * at its own `points` heading out to `end(a)` from the centre, cut and shaded
  * as the cluster's are, stopping short of `s`. Their outlines are kept clear
  * of the plate.
@@ -401,19 +401,33 @@ function veinTall(p: Plate, g: TallLayout) {
     { c: g.sol.c, r: g.sol.r + 3 },
     { c: g.luna.c, r: g.luna.r + 3 },
   ];
-  // Long at 40 and 100 degrees either side, short between, small ones in the gaps like a geode's lining
-  // (the one at the top would stand behind the emblem). On the right they stop short of the cluster.
-  const points = [-100, -85, -70, -55, -40, -20, 20, 40, 55, 70, 85, 100].map((a) => {
-    const size = Math.abs(a) === 40 || Math.abs(a) === 100 ? 'long' : Math.abs(a) === 70 ? 'short' : 'chip';
+  // Grown as crystals grow: in uneven groups, each at its own heading, length (past the ring, on a card
+  // 218 wide) and thickness, the longest out through the arch, none below the emblem's middle (the one
+  // at the top would stand behind it). They stop short of the panel's inner line, the seals in the
+  // spandrels and, on the right, the cluster.
+  const crystals: [number, number, number][] = [
+    [-128, 15, 2.4],
+    [-113, 44, 3.5],
+    [-99, 19, 2.4],
+    [-63, 32, 3],
+    [-37, 13, 2],
+    [-23, 25, 2.7],
+    [27, 38, 3.3],
+    [57, 14, 2.1],
+    [71, 48, 3.6],
+    [85, 20, 2.5],
+    [119, 23, 2.8],
+  ];
+  const points = crystals.map(([a, len, hw]) => {
     const u = at([0, 0], a, 1);
     const xs = u[0] > 0 ? (g.inner[2] - 2 - C[0]) / u[0] : (g.inner[0] + 2 - C[0]) / u[0];
     const ys = u[1] < 0 ? (g.inner[1] + 2 - C[1]) / u[1] : Infinity;
-    let end = size === 'long' ? Math.min(xs, ys, r0 + 54 * k) : size === 'short' ? Math.min(xs, ys, reachRay(C, a, g) + 4 * k) : r0 + 13 * k;
+    let end = Math.min(xs, ys, r0 + len * k);
     for (const h of holes) {
       const t = throughHole(C, a, h);
       if (t !== null) end = Math.min(end, t - 2);
     }
-    return { a, end, hw: (size === 'long' ? 3.4 : size === 'short' ? 2.8 : 1.9) * k };
+    return { a, end, hw: hw * k };
   });
   const shapes = prisms.map((pr) => grow(prismShape(pr).outline, 0.9));
   crystalCrown(p, C, r0, points, { polys: [...shapes, ground], holes }, k);
