@@ -394,7 +394,7 @@
               oninput={slide}
               onchange={() => sfx('click')}
               aria-label="Volume"
-              style:--fill="{(muted ? 0 : volume) * 100}%"
+              style:--level={muted ? 0 : volume}
             />
           </div>
         </div>
@@ -753,6 +753,8 @@
   .volume-pop input::-webkit-slider-runnable-track {
     width: 4px;
     border-radius: 2px;
+    /* Gold up to the thumb's middle, which runs from half a thumb in at either end. */
+    --fill: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--level, 0));
     background: linear-gradient(0deg, var(--gold) var(--fill), var(--line) var(--fill));
   }
   .volume-pop input::-moz-range-track {
@@ -769,7 +771,8 @@
     appearance: none;
     width: var(--thumb);
     height: var(--thumb);
-    margin-left: -4px;
+    /* Centred on the 4px track. */
+    margin-left: calc((4px - var(--thumb)) / 2);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);

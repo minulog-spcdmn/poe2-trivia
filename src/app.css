@@ -589,10 +589,11 @@ h3,
 }
 
 /* A range input's thumb length along its track, which its thumb rules use and the
-   sliding sparks (lib/fx/ui.ts) read. Registered, so it reads back in px whatever unit set it. */
+   sliding sparks (lib/fx/ui.ts) read. Registered, so it reads back in px whatever unit set it.
+   Inherited: the thumb is a pseudo-element of the input, and takes the input's. */
 @property --thumb {
   syntax: '<length>';
-  inherits: false;
+  inherits: true;
   initial-value: 16px;
 }
 
