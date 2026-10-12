@@ -1833,14 +1833,19 @@ class Session {
   private noteClock(next: GameState) {
     const q = next.question;
     if (!next.delve || !q) return;
+    // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
+    const dropLost = () => {
+      if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
+    };
     if (q.paused) {
       this.clockSeen = null;
       this.usedBefore = { qid: q.askedAt, ms: pausedUsed(q.paused) };
-      // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
-      if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
+      dropLost();
     } else if (q.deadline !== null) {
       const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
       if (seen && seen.clockAt === q.clockAt) return;
+      // Carried on unseen here (the pause never reached this device): so is one lost on its way.
+      if (seen) dropLost();
       // Held still and seen so: what was used of it before; carried on unseen: what has gone of it by now.
       const before = seen ? Math.max(0, this.hostNow() - (q.clockAt ?? this.hostNow())) : this.usedBefore?.qid === q.askedAt ? this.usedBefore.ms : 0;
       this.clockSeen = { qid: q.askedAt, clockAt: q.clockAt, at: performance.now(), ...(before ? { before } : {}) };

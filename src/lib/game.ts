@@ -1546,7 +1546,7 @@ export class Engine {
         // Already running (a resumed host releasing the art again) or a question that is gone: nothing to start.
         if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline !== null) break;
         const now = this.now();
-        const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : now;
+        const at = timeOr(action.at, now);
         const start = Math.min(Math.max(at, now), now + 1000);
         const p = q.paused;
         if (p) {
@@ -1594,7 +1594,7 @@ export class Engine {
         const q = s.question;
         if (s.phase === 'question' && q && q.deadline !== null && q.clockAt !== undefined && cutOffAnswering(s).length > 0) {
           // The host's last moment before the reload, never before the clock started nor after now.
-          const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : this.now();
+          const at = timeOr(action.at, this.now());
           const stop = Math.min(Math.max(at, q.clockAt), this.now());
           q.paused = { clockAt: q.clockAt, at: stop, left: Math.max(DELVE_RESUME_MIN_MS, clockLeft(q, stop)) };
           q.deadline = null;
@@ -2700,4 +2700,9 @@ export function nameSimilarity(a: string, b: string): number {
 
 function validIndex(index: unknown, count: number): number | null {
   return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < count ? index : null;
+}
+
+/** A host-clock time an action carries, or `fallback` when it has none (or a broken one). */
+function timeOr(at: unknown, fallback: number): number {
+  return typeof at === 'number' && Number.isFinite(at) ? at : fallback;
 }
