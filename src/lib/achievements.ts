@@ -647,7 +647,7 @@ export function momentsIn(prev: GameState | null, next: GameState, me: string | 
     const hit = r.hits?.find((h) => h.playerId === self);
     if (hit && hit.lives === 0 && hit.wards > 0 && lives === 1) out.push('saving-grace');
     const q = next.question!;
-    // Cleared it after every other teammate who stood at this depth struck an option, with options to spare:
+    // Cleared it after every other teammate who stood for this question struck an option, with options to spare:
     // those standing still, and those it took (who fell on it striking, as nobody's clock ran out on a clear).
     const strikers = new Set((q.struck ?? []).map((x) => x.by).filter((id) => others.some((p) => p.id === id)));
     const gone = new Set([...(q.struck ?? []).map((x) => x.index), ...(q.blownAway ?? [])]);

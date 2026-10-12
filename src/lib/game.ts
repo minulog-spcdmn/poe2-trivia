@@ -1061,7 +1061,7 @@ function sample<T>(arr: T[], n: number, rng: Rng): T[] {
  * going or loses it. Race: the winner's goes on and everyone else's breaks,
  * whether they guessed wrong or just weren't first. Delve co-op: whoever
  * cleared the depth keeps theirs going; a loss already broke anyone's it hit.
- * The team's goes on with a depth cleared with nobody missing on it.
+ * The team's goes on with a question cleared with nobody missing on its offer.
  */
 function countStreaks(s: GameState, r: Reveal) {
   if (s.delve && isGroupRun(s)) {
@@ -1408,7 +1408,7 @@ export class Engine {
           flareDue = false;
         }
         // With no flare to burn, a stick of dynamite goes off by itself in
-        // place of the time-out, if the depth has a blast left (its fuse
+        // place of the time-out, if the offer has a blast left (its fuse
         // has hissed over the clock's last DELVE_FUSE_MS on every screen:
         // delve.ts fuseLeft): as the host's time-out comes (0 and the
         // allowance for answers in flight), or as a player's answer later
@@ -2095,7 +2095,7 @@ export class Engine {
         return;
       }
       // With no flare to burn, a stick of dynamite goes off by itself, from
-      // a random standing holder's pack, if the depth has a blast left (its
+      // a random standing holder's pack, if the offer has a blast left (its
       // fuse has hissed over the clock's last seconds: delve.ts fuseLeft).
       // Nobody is hit, and the whole team gets the new question.
       if (fuseDue(s)) {

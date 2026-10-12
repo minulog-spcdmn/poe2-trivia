@@ -256,7 +256,7 @@
   // ---- dynamite ----
   // Delve: while the question is open, a stick of dynamite (your own;
   // together while you still have an answer to give) can blast it away for a
-  // new one at the same depth, twice a depth at most: its button (Detonate)
+  // new one at the same depth, twice per set of cards at most: its button (Detonate)
   // takes the place Next has after an answer. Once this question has dynamite
   // at hand its place is kept until the question ends, the button only
   // showing while it can be used, so nothing moves as it comes and goes. When
@@ -324,7 +324,7 @@
       blastProblem(s, session.mode === 'local' ? null : me) === null,
   );
   /** The button's place, kept from when dynamite is at hand on a question it works on until the question ends. */
-  // (Not when this depth has no blast left: on phones the place is a docked bar, which would hold nothing.)
+  // (Not when this offer has no blast left: on phones the place is a docked bar, which would hold nothing.)
   const slotWanted = () => !!s.delve && !reveal && itemsWorkOn(q) && sticks > 0 && mine && blastsLeft(s) > 0;
   // Taken from the first frame when it applies already, so the row never pops in under the answers.
   let blastSlot = $state(untrack(slotWanted));
