@@ -8,10 +8,13 @@
 // pointing (the system's pointer, engraved); pressed, the dart or the hand
 // sinks a little (the dart's hatched side struck solid, the hand's finger pushed into the page);
 // disabled, dull lead with a saltire beside the tip; the text cursor (a stem
-// with a lozenge, as on the category cards' divider); and middle-button
-// scrolling (upright darts, and a seal where the scroll began).
+// with a lozenge, as on the category cards' divider); middle-button
+// scrolling (upright darts, and a seal where the scroll began); over
+// something that opens a closer look, the hand with a lens beside its
+// talon; and over something that can be moved, the compass star's four
+// points round a seal (held, drawn in and struck solid).
 
-import { f, hatch, line, pt, ring, type Pt } from './arcane.ts';
+import { f, hatch, lerp, line, pt, ring, type Pt } from './arcane.ts';
 
 /** A dart with its tip at the origin, turned `turn` radians from upright (counter-clockwise when negative), at `k` times its size. */
 function dart(turn: number, k = 1) {
@@ -132,6 +135,8 @@ export interface Art {
   lines: { d: string; w: number; fine?: boolean; solid?: boolean }[];
   /** Fine lines with nothing round them: a thinner rim, no glow, no wash of colour, the inner lines unrimmed. */
   plain?: boolean;
+  /** How far a sharp corner's rim may reach out (the miter limit; 12 when not given): small, sharp points want less, or their rims run together. */
+  miter?: number;
 }
 
 const dartLines = (d: { outline: string; ridge: string; hatch: string }, k = 1): Art['lines'] => [
@@ -171,14 +176,75 @@ function textArt(): Art {
   };
 }
 
-/** Path data moved down by `dy` (its points are all "x y" pairs, as arcane.ts writes them). */
-const moved = (d: string, dy: number) => d.replace(/(-?\d+\.\d+) (-?\d+\.\d+)/g, (_, x, y) => `${x} ${(Number(y) + dy).toFixed(2)}`);
+/** Path data moved by `dx`, `dy` (its points are all "x y" pairs, as arcane.ts writes them). */
+const shifted = (d: string, dx: number, dy: number) => d.replace(/(-?\d+\.\d+) (-?\d+\.\d+)/g, (_, x, y) => `${(Number(x) + dx).toFixed(2)} ${(Number(y) + dy).toFixed(2)}`);
+/** Path data moved down by `dy`. */
+const moved = (d: string, dy: number) => shifted(d, 0, dy);
 const movedDart = (d: ReturnType<typeof dart>, dy: number) => ({ outline: moved(d.outline, dy), ridge: moved(d.ridge, dy), hatch: moved(d.hatch, dy) });
 
 /** A dart standing upright (or upside down) for middle-button scrolling, its middle on the hot spot. */
 function scrollArt(down: boolean): Art {
   const d = movedDart(dart(down ? Math.PI : 0, 0.8), down ? 8 : -8);
   return { size: [20, 26], hot: [10, 13], ground: d.outline, lines: dartLines(d, 0.9) };
+}
+
+/**
+ * A lens: a double ring with a cross in it (a closer look), its handle
+ * leaning off down and to the right, stopping short of the ring. Beside the
+ * hand's talon, clear of its knuckles.
+ */
+const LENS: Pt = [10.4, 2.4];
+const LENS_R = 3.3;
+function lens() {
+  const [cx, cy] = LENS;
+  const c = Math.SQRT1_2;
+  const arm = 1.25;
+  return {
+    rings: seal(LENS, LENS_R),
+    cross: line([cx - arm, cy], [cx + arm, cy]) + line([cx, cy - arm], [cx, cy + arm]),
+    handle: line([cx + (LENS_R + 0.5) * c, cy + (LENS_R + 0.5) * c], [cx + (LENS_R + 3.4) * c, cy + (LENS_R + 3.4) * c]),
+    ground: `M${pt([cx - LENS_R, cy])}A${f(LENS_R)} ${f(LENS_R)} 0 1 0 ${pt([cx + LENS_R, cy])}A${f(LENS_R)} ${f(LENS_R)} 0 1 0 ${pt([cx - LENS_R, cy])}Z` + line([cx + LENS_R * c, cy + LENS_R * c], [cx + (LENS_R + 3.4) * c, cy + (LENS_R + 3.4) * c]),
+  };
+}
+const LENS_ART = lens();
+const lensLines: Art['lines'] = [
+  { d: LENS_ART.rings, w: 0.7 },
+  { d: LENS_ART.handle, w: 1.1 },
+  { d: LENS_ART.cross, w: 0.6, fine: true },
+];
+
+/**
+ * Something to move: the compass star's four points (ridged, as the
+ * pointer) round a small double-ringed seal, its middle on the hot spot,
+ * each point stopping short of the seal. Held (`grip`), the points are
+ * drawn in a little and their hatched sides struck solid, as the pressed
+ * dart's.
+ */
+function compass(grip: boolean): Art {
+  // Slim points, short and well out from the seal, so they read as four ways to go rather than one star.
+  const R = grip ? 11 : 12;
+  const LEN = 5.6;
+  const HALF = 2.1;
+  const darts = [0, Math.PI / 2, Math.PI, -Math.PI / 2].map((turn) => {
+    const rot = ([x, y]: Pt): Pt => [x * Math.cos(turn) - y * Math.sin(turn) + R * Math.sin(turn), x * Math.sin(turn) + y * Math.cos(turn) - R * Math.cos(turn)];
+    // Plain triangles, not the pointer's notched dart: a notch's rim would reach in toward the seal and join the points into one star.
+    const [tip, l, base, r] = ([[0, 0], [-HALF, LEN], [0, LEN], [HALF, LEN]] as Pt[]).map(rot);
+    return { outline: `M${pt(tip)}L${pt(l)}L${pt(r)}Z`, ridge: line(tip, lerp(tip, base, 0.82)), side: `M${pt(tip)}L${pt(l)}L${pt(base)}Z` };
+  });
+  const outlines = darts.map((d) => d.outline).join('');
+  const sealR = 2.5;
+  return {
+    size: [28, 28],
+    hot: [14, 14],
+    miter: 3.5,
+    ground: outlines + `M${pt([-sealR, 0])}A${f(sealR)} ${f(sealR)} 0 1 0 ${pt([sealR, 0])}A${f(sealR)} ${f(sealR)} 0 1 0 ${pt([-sealR, 0])}Z`,
+    lines: [
+      ...(grip ? [{ d: darts.map((d) => d.side).join(''), w: 0, solid: true }] : []),
+      { d: outlines, w: WEIGHT.outline * 0.9 },
+      { d: darts.map((d) => d.ridge).join(''), w: WEIGHT.ridge * 0.75 },
+      { d: seal([0, 0], sealR), w: WEIGHT.ridge },
+    ],
+  };
 }
 
 export const ART = {
@@ -212,6 +278,19 @@ export const ART = {
     lines: [{ d: POINTER.outline, w: WEIGHT.outline }, { d: POINTER.ridge, w: WEIGHT.ridge }, { d: saltire(BADGE, 2.8), w: 1 }],
   },
   text: textArt(),
+  // Over something that opens a closer look (an item's details): the hand, a lens beside its talon.
+  inspect: { size: SIZE, hot: [PAD_X, PAD_Y], ground: HAND.outline + LENS_ART.ground, lines: [...handLines(HAND), ...lensLines], plain: true },
+  // Pressed on it: the finger pushing in, the lens as it was.
+  inspectPress: {
+    size: SIZE,
+    hot: [PAD_X, PAD_Y],
+    ground: HAND_PRESSED.outline + LENS_ART.ground,
+    lines: [{ d: HAND_PRESSED.finger, w: 0, solid: true }, ...handLines(HAND_PRESSED), ...lensLines],
+    plain: true,
+  },
+  // Over something that can be moved (a window's name plate), and holding it.
+  move: compass(false),
+  moving: compass(true),
   up: scrollArt(false),
   down: scrollArt(true),
   // Still (close to where the scroll began): a small seal with a dot in it.

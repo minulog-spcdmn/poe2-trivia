@@ -4,10 +4,11 @@
 // the system cursor, so it moves with no lag at all.
 //
 // The CSS never names these images: vite.config.ts turns every
-// `cursor: pointer`, `default`, `not-allowed` and `text` into
-// var(--cursor-pointer, pointer), var(--cursor, default),
-// var(--cursor-disabled, not-allowed) and var(--cursor-text, text), and
-// this sets those variables on <html>.
+// `cursor: pointer`, `default`, `not-allowed`, `text`, `zoom-in`, `grab`
+// and `grabbing` into var(--cursor-pointer, pointer), var(--cursor,
+// default), var(--cursor-disabled, not-allowed), var(--cursor-text, text),
+// var(--cursor-zoom, zoom-in), var(--cursor-grab, grab) and
+// var(--cursor-grabbing, grabbing), and this sets those variables on <html>.
 // Pages that don't call installCursor keep the system's cursors.
 
 import { ART, type Art, type ArtName } from './pointerArt';
@@ -47,7 +48,7 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
   };
   // Sharp claws would throw long mitres: the plain hand's corners are rounded.
   g.lineJoin = art.plain ? 'round' : 'miter';
-  g.miterLimit = 12;
+  g.miterLimit = art.miter ?? 12;
   // A dark rim and ground, so it reads on gold as well as on black.
   const ground = new Path2D(art.ground);
   g.fillStyle = 'rgba(10, 9, 8, 0.9)';
@@ -147,7 +148,7 @@ let applied = '';
 let dressed: { el: HTMLElement | SVGElement; was: string; priority: string } | null = null;
 /** Windows' high contrast and the like: the system's own cursors, which follow the user's settings. */
 const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: active)') : null;
-const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text'];
+const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text', '--cursor-zoom', '--cursor-grab', '--cursor-grabbing'];
 
 function apply() {
   if (typeof document === 'undefined' || switchedOff('cursor')) return;
@@ -165,9 +166,13 @@ function apply() {
   root.setProperty('--cursor-pointer', cursorValue('hover', 'lit', color, 'pointer'));
   root.setProperty('--cursor-disabled', cursorValue('disabled', 'dull', color, 'not-allowed'));
   root.setProperty('--cursor-text', cursorValue('text', 'rest', color, 'text'));
+  // A closer look (an item's details): the hand with a lens. Something to move: the compass's points, drawn in while held.
+  root.setProperty('--cursor-zoom', cursorValue('inspect', 'lit', color, 'zoom-in'));
+  root.setProperty('--cursor-grab', cursorValue('move', 'rest', color, 'grab'));
+  root.setProperty('--cursor-grabbing', cursorValue('moving', 'sunk', color, 'grabbing'));
 }
 
-/** The pressed look for what `el` shows: the hand's finger pushed in over something to click, the dart sunk a little elsewhere; null for the rest (text, disabled, a page's own). */
+/** The pressed look for what `el` shows: the hand's finger pushed in over something to click (lens and all), the compass drawn in over something to move, the dart sunk a little elsewhere; null for the rest (text, disabled, a page's own). */
 function pressedFor(el: Element): string | null {
   const shown = getComputedStyle(el).cursor;
   const is = (key: string) => {
@@ -175,6 +180,8 @@ function pressedFor(el: Element): string | null {
     return !!image && shown.includes(image);
   };
   if (is('hover:lit')) return cursorValue('press', 'press', color, 'pointer');
+  if (is('inspect:lit')) return cursorValue('inspectPress', 'press', color, 'zoom-in');
+  if (is('move:rest')) return cursorValue('moving', 'sunk', color, 'grabbing');
   if (is('rest:rest')) return cursorValue('sink', 'sunk', color, 'default');
   return null;
 }
@@ -263,4 +270,5 @@ function predraw() {
   if (typeof document === 'undefined' || applied === 'forced') return;
   cursorValue('press', 'press', color, 'pointer');
   cursorValue('sink', 'sunk', color, 'default');
+  cursorValue('inspectPress', 'press', color, 'zoom-in');
 }

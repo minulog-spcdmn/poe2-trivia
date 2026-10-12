@@ -37,6 +37,7 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, waitingIds } from '../lib/delve';
   import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
   const s = $derived(session.state!);
@@ -780,6 +781,8 @@
     const now = session.state;
     if (!now || (now.phase !== 'question' && now.phase !== 'reveal') || now.question?.askedAt !== shownAt) return;
     if (e.target instanceof HTMLInputElement) return;
+    // An item's window (ItemWindow) has buttons of its own: Enter there isn't Next.
+    if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     // 0 is the tenth option, the key after 9.
@@ -1138,25 +1141,31 @@
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
           {@const option = known ? engine.byId.get(q.options[i]) : undefined}
+          <!-- Only a picture the reveal names opens its details: the untouched decoys stay anonymous (see named). -->
+          {@const shownItem = option && named(i) ? option : undefined}
           {@const pic = option ? { url: itemImage(option.id), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
+          <!-- Once answered, each picture the reveal names opens that item's details. -->
           <button
             class="tile {st}"
             data-cursor="opt:{i}"
             data-sfx="none"
             data-fx="hover"
             bind:this={optionEls[i]}
-            class:mine
+            class:mine={mine && !reveal}
+            class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
-            aria-label={struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
-            disabled={!mine || !!reveal || chosen !== null || waiting || struckAt.has(i)}
-            onclick={() => answer(i)}
+            aria-label={shownItem ? `${shownItem.name}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            title={shownItem ? 'See its details' : undefined}
+            disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
+            onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
             <span class="sheen"></span>
-            <span class="key">{(i + 1) % 10}</span>
+            <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
+            <span class="key" class:lens-key={!!shownItem}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
             <span class="cue" aria-hidden="true"></span>
             {#if pic || tv}
               <span class="pic">
@@ -1266,6 +1275,15 @@
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
+          {#if reveal && item}
+            <!-- Once answered, the art opens the item's details (ItemWindow). -->
+            <button class="details" onclick={() => inspect(item)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
+              <span class="lens">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>
+                Details
+              </span>
+            </button>
+          {/if}
         </div>
       </div>
 
@@ -1516,6 +1534,53 @@
   .frame > :global(.art-slot) {
     position: absolute;
     inset: 0;
+  }
+  /* Over the whole art once it's answered: a click opens the item's details, as the lens in its corner says. */
+  .details {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 0.6rem;
+    background: none;
+    border: 0;
+    cursor: zoom-in;
+  }
+  .lens {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem 0.2rem 0.4rem;
+    border: 1px solid rgba(107, 69, 32, 0.6);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.45);
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #d8a26a;
+    transition:
+      border-color 0.2s,
+      color 0.2s,
+      box-shadow 0.25s;
+  }
+  .lens svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+  .details:hover .lens,
+  .details:focus-visible .lens {
+    border-color: var(--gold-lo);
+    color: var(--gold-hi);
+    box-shadow: 0 0 12px rgba(201, 164, 92, 0.25);
+  }
+  .details:focus-visible {
+    outline: none;
   }
   .veil {
     /* Patches are absolutely positioned inside the box. */
@@ -2377,6 +2442,34 @@
   }
   .tile:not(.mine) {
     cursor: not-allowed;
+  }
+  /* Answered: a named picture opens its item's details. */
+  .tile.inspect:not(:disabled) {
+    cursor: zoom-in;
+  }
+  .tile.inspect:not(:disabled):hover .pic,
+  .tile.inspect:not(:disabled):focus-visible .pic {
+    transform: scale(1.04);
+  }
+  /* Bright enough to read on a picture dimmed at the reveal. */
+  .lens-key {
+    color: var(--gold-hi);
+    border-color: var(--gold);
+  }
+  .lens-key svg {
+    width: 14px;
+    height: 14px;
+    margin-top: -2px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+  .tile.inspect:not(:disabled):hover .lens-key,
+  .tile.inspect:not(:disabled):focus-visible .lens-key {
+    color: var(--gold-hi);
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(201, 164, 92, 0.3);
   }
   /* Hovered, or picked and waiting for the verdict: lit like the answer rows,
      and the picture comes forward. */

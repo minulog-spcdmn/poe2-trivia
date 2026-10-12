@@ -25,11 +25,15 @@
   import { motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
+  import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
+  import ItemWindow from './ItemWindow.svelte';
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
   const local = $derived(session.mode === 'local');
+  // An item opened from a question stays open from one question to the next, until the game ends.
+  onMount(() => closeItemWindow);
 
 
   const race = $derived(s.settings.mode === 'race');
@@ -462,6 +466,8 @@
     </div>
   </div>
 {/if}
+
+{#if itemWindow.item}<ItemWindow item={itemWindow.item} />{/if}
 
 <style>
   .game {
