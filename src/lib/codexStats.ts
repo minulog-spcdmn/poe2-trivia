@@ -482,8 +482,9 @@ export function findStats(answers: Iterable<Answer>): FindStats {
     } else {
       f.lives += answerLives(a);
       f.wards += answerWards(a);
-      // What a cave-in buried was never carried out.
-      if (a.buried) f.gained.wards = Math.max(0, (f.gained.wards ?? 0) - a.buried);
+      // What a cave-in buried was never carried out. (Alone only: together
+      // the haul was the team's, dug out by answers other devices logged.)
+      if (a.buried && !a.team) f.gained.wards = Math.max(0, (f.gained.wards ?? 0) - a.buried);
     }
   }
   return out;

@@ -45,7 +45,7 @@
 // read is never written over (lib/keepAside.ts).
 
 import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
-import { ITEM_KINDS, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
+import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
 import { clearAside, openStored } from './keepAside.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
@@ -226,13 +226,13 @@ export const emptyCodex = (): Codex => ({ items: {}, log: [], byDifficulty: {}, 
 export const noTally = (): Tally => ({ n: 0, ok: 0 });
 export const add = (t: Tally, ok: boolean): Tally => ({ n: t.n + 1, ok: t.ok + (ok ? 1 : 0) });
 
+/** A vein's later strike, or a haul it buried: a small whole number (VEIN_MAX_STRIKES at most). */
+const isStrike = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= VEIN_MAX_STRIKES;
+
 /**
  * The encounter a reveal means for this device, or null when there is none.
  * `me`: this device's player online (null in hot-seat).
  */
-/** A vein's later strike, or a haul it buried: a small whole number (VEIN_MAX_STRIKES at most). */
-const isStrike = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 3;
-
 export function encounterAt(s: GameState, me: string | null, hotSeat: boolean, ms?: number): Encounter | null {
   const q = s.question;
   const r = s.reveal;

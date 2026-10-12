@@ -605,7 +605,7 @@
     <!-- A dig's two cards: the strike ahead and what a cave-in costs; what the way out takes. -->
     <div class="find-notes" data-cursor="notes">
       {#each s.offered as cat, i (cat)}
-        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1}>
+        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} id={isWayOut(cat) ? undefined : `${uid}-note-azurite`} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1}>
           {#if isWayOut(cat)}{out.note(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
         </p>
       {/each}

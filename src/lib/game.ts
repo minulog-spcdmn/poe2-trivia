@@ -1805,10 +1805,10 @@ export class Engine {
       // Co-op locks out the team's picks, alone the player's own. A vein's
       // later strikes lock nothing: so many picks at one depth would leave
       // too few cards for the next offer.
-      if (dig) {
-        // Only the vein runs on from a dig's cards (WAY_OUT taken above).
-      } else if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
-      else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
+      if (!dig) {
+        if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
+        else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
+      }
       const find = findOn(s, category);
       if (find) kind = dig && find === 'azurite' ? { find, strike: dig.strikes + 1, light: dig.light } : { find };
     } else if (active && !s.deathmatch) {
@@ -2044,6 +2044,8 @@ export class Engine {
       dm.votes = {};
       dm.voteFrom = null;
       if (this.now() >= dm.graceUntil) dm.excused = [];
+      // Whose seat the screens lean on: the first standing, as beginTurn has it (the strike may have felled the last).
+      s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
     }
     return true;
   }

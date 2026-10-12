@@ -29,7 +29,7 @@
   /**
    * An Azurite Vein's strike runs on the dig's lamp (delve.ts, the dig): the
    * ring is its light, out of the strike's whole deeper clock, so a lamp
-   * lit at four fifths, or burnt low by the strikes before, starts short of full.
+   * burnt low by the strikes before starts short of full.
    */
   const lamp = $derived(q?.find === 'azurite');
   const span = $derived(st?.delve && q ? (lamp ? Math.max(questionTimer(st), delveTimer(findDepth('azurite', st.round, q.strike ?? 1))) : questionTimer(st)) : total);

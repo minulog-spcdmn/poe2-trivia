@@ -390,7 +390,8 @@ export const lightText = (secs: number) => (secs >= 10 ? String(Math.floor(secs)
 export function digNote(next: number, light: number, haul: number, team = false): string {
   const whose = team ? "the team's" : 'your';
   const buries = haul ? ` and buries ${whose} ${haul === 1 ? 'ward' : `${words(haul)} wards`}` : '';
-  return `Strike ${next} of ${VEIN_MAX_STRIKES}, with ${lightText(light)} seconds of light. A miss costs ${caveInText('azurite')}${buries}.`;
+  const secs = lightText(light);
+  return `Strike ${next} of ${VEIN_MAX_STRIKES}, with ${secs} ${secs === '1' ? 'second' : 'seconds'} of light. A miss costs ${caveInText('azurite')}${buries}.`;
 }
 
 /** After a right strike: what is in hand ("Two wards in hand."). */

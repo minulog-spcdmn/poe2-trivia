@@ -192,7 +192,7 @@ export const VEIL_LEFT_MS = 3000;
  * VEIL_LEFT_MS before the end there too (veilPlan, patches.ts
  * veilSchedule, on the clock game.ts questionClock gives).
  * 0 on a clock too short for even an instant veil to leave VEIL_LEFT_MS
- * (shorter than any question's, FIND_MIN_TIMER being the least): the engine
+ * (a vein's strike on a lamp burnt low, down to VEIN_MIN_LIGHT): the engine
  * then shows the art plain.
  */
 export function veilSeconds(secs: number, share: number, size: number, tiles = false): number {

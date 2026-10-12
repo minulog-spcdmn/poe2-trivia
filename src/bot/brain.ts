@@ -279,7 +279,9 @@ export interface DigStake {
  */
 export function digsOn(p: Persona, d: DigStake, rng: Rng): boolean {
   let want = p.finds * (0.55 + 6 * d.affinity) - 0.18 * d.haul;
-  if (d.light < 6) want -= 0.2;
+  // Under about three seconds it can hardly answer in time (answerDelay's least is 0.7 to 1 s): a long shot.
+  if (d.light < 3) want -= 0.5;
+  else if (d.light < 6) want -= 0.2;
   const left = d.lives + d.wards - 2;
   if (left <= 0) want -= 0.35;
   else if (left === 1) want -= 0.15;
