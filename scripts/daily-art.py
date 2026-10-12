@@ -2,10 +2,11 @@
 # Finds the items too thin to be Today's unique: the start page shows the
 # day's item big in the arcane circle, as its eye-catcher, and a bare stick
 # (most staves, spears and quarterstaves) leaves the circle all but empty.
-# For every item that isn't a gem it measures how much of the art box the
-# picture covers, opaque pixels at the size the start page draws it, and
-# writes the items under MIN_COVER to src/data/dailyArt.json; the daily and
-# its practice questions never ask those (lib/daily.ts). Run it after
+# For every picture of an item that isn't a gem (its own, and each variant's)
+# it measures how much of the art box the picture covers, opaque pixels at
+# the size the start page draws it, and writes those under MIN_COVER to
+# src/data/dailyArt.json, by their art's id; the daily and its practice
+# questions never show those (lib/daily.ts). Run it after
 # scripts/upscale-art.py adds new art:
 #   python3 scripts/daily-art.py
 # (Pillow with AVIF and numpy, as in .venv-art from upscale-art.py.)
@@ -52,13 +53,15 @@ def cover(path: str) -> float:
 
 def main():
     items = [it for it in json.load(open(ITEMS)) if it['kind'] != 'gem']
-    measured = {it['id']: cover(os.path.join(ART, f"{it['id']}.avif")) for it in items}
+    # Every picture, by its art's id: each item's own, and its variants' (a
+    # question may show any of them; the daily draws again on a thin one).
+    names = {a['id']: it['name'] + (f" ({a['base']})" if a is not it else '') for it in items for a in [it, *it.get('variants', [])]}
+    measured = {i: cover(os.path.join(ART, f'{i}.avif')) for i in names}
     thin = sorted(i for i, c in measured.items() if c < MIN_COVER)
     with open(OUT, 'w') as f:
         json.dump({'minCover': MIN_COVER, 'thin': thin}, f, indent=1)
         f.write('\n')
-    names = {it['id']: it['name'] for it in items}
-    print(f'{len(thin)} of {len(items)} items are too thin for the daily:')
+    print(f'{len(thin)} of {len(measured)} pictures are too thin for the daily:')
     for i in sorted(thin, key=measured.get):
         print(f'  {measured[i]:.3f}  {names[i]}')
 

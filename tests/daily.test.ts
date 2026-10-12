@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { Engine, TWINS, isFake, type Item } from '../src/lib/game.ts';
+import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
 import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -92,15 +92,18 @@ test('each day asks a named item among four names, one of them made up, never a 
   assert.ok(seen.size > 45, `the days ask many items (${seen.size} in 60 days)`);
 });
 
-test('the items too thin for the start page are real items, and never asked there', () => {
+test('the pictures too thin for the start page are real items\' pictures, and never shown there', () => {
+  // By the art's id: an item's own, or one of its variants'.
+  const byArt = new Map(items.flatMap((it) => allArt(it).map((a) => [a.art, a])));
   const byId = new Map(items.map((it) => [it.id, it]));
   assert.ok(TOO_THIN.size > 0);
-  for (const id of TOO_THIN) assert.equal(byId.get(id)?.kind, 'unique', `${id} is an item`);
+  for (const id of TOO_THIN) assert.equal(byArt.get(id)?.kind, 'unique', `${id} is an item's picture`);
+  const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
   const start = utcDay(DAILY_LAUNCH);
-  for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(dailyQuestion(items, fakes, d).itemId), `day ${d}`);
+  for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
   const engine = new Engine(items, { fakes });
   const game = dailyGame();
-  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(askOne(engine, game).itemId), `practice question ${i}`);
+  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(shown(askOne(engine, game))), `practice question ${i}`);
 });
 
 test('a right answer starts or carries on a streak; a day skipped starts it over', () => {

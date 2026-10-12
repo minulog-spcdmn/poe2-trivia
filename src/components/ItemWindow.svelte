@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { type Item } from '../lib/game';
+  import { type DrawnItem } from '../lib/game';
   import { portal } from '../lib/portal';
   import { calm, motion } from '../lib/motion.svelte';
   import { phone } from '../lib/layout';
@@ -25,7 +25,7 @@
   // as it rolls: only the tooltip's height changes under it (a CSS
   // transition, on the compositor's clock, nothing measured meanwhile), and
   // there's always room below the plate to unroll into.
-  let { item }: { item: Item } = $props();
+  let { item }: { item: DrawnItem } = $props();
 
   /** Kept this far from the screen's edges (px). */
   const EDGE = 8;
@@ -96,11 +96,11 @@
     };
   });
 
-  // Another item opened unfolds it.
-  let shown = untrack(() => item.id);
+  // Another item (or another picture of it) opened unfolds it.
+  let shown = untrack(() => item.art);
   $effect.pre(() => {
-    if (item.id === shown) return;
-    shown = item.id;
+    if (item.art === shown) return;
+    shown = item.art;
     folded = false;
   });
 
@@ -166,7 +166,7 @@
   >
     <div class="head" bind:this={head} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation" title="Drag to move">
       <NamePlate start="empty" end="empty" />
-      {#key item.id}
+      {#key item.art}
         <div class="head-text" in:fade={{ duration: 200 }}>
           <span class="iname" id="item-window-name">{item.name}</span>
           <span class="ibase">{item.base}</span>
@@ -192,7 +192,7 @@
     <div class="roll" id="item-window-body" style:height="{folded ? 0 : rollH}px" inert={folded}>
       <div class="scroll" style:height="{rollH}px">
         <div class="body" bind:this={body}>
-          {#key item.id}
+          {#key item.art}
             <ItemDetails {item} />
           {/key}
         </div>

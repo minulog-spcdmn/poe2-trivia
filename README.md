@@ -994,7 +994,19 @@ npm run fetch-data
 
 Each item's group and category come from its art folder; see
 `CATEGORY_RULES` in `scripts/fetch-data.mjs`. Image files are named with a hash, so the URL
-doesn't reveal the answer.
+doesn't reveal the answer. The script also reads each unique's own page: for
+its art where the list leaves it out, and for the other ways the game draws
+it, which the list never shows. Those become the item's `variants` (its art,
+base and tooltip, under the same name): Grand Spectrum is a Ruby, an Emerald
+or a Sapphire, each its own colour, and Grip of Kulemak glows brighter with
+each desecrated mod it can take (five stages). A question shows any of an
+item's art, each as often (`Question.variant`, rolled with the mirroring);
+the answer is still just its name, and the codex shows them all. Other
+uniques have more than one version on their page too (each glove's Fists of
+Stone base, a league's changed mods), but they share one art, so they add
+nothing. A fetch that would leave noticeably fewer items than `items.json`
+has (a changed page layout, most likely) stops before it deletes any art;
+`npm run fetch-data -- --shrink` accepts it when poe2db really dropped them.
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from
 poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by
@@ -1051,7 +1063,11 @@ python3 scripts/daily-art.py
 It writes `src/data/looks.json`: for every item, the fourteen items of its
 group whose art looks most like it, each with a score from 0 to 1 (silhouette,
 edges and colour, mirror-blind; see `scripts/looks.mjs`). From depth 49 in Delve,
-decoys are picked from it (`src/lib/looks.ts`). The output only changes when
+decoys are picked from it (`src/lib/looks.ts`). An item drawn more than one way
+has each of its art ranked on its own (Grand Spectrum's Sapphire looks most
+like Prism of Belief, its Ruby like Flesh Crucible), and such a question draws
+each picture's art before it picks the look-alikes, so they look like the art
+it shows. The output only changes when
 the art does; items added without rerunning it just have no look-alikes.
 
 ### Self-hosted signalling (optional)

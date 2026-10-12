@@ -3,7 +3,7 @@
 // deals the same item and the same four names in the same order. The
 // answer and the run of days answered right stay in this browser.
 
-import { Engine, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
+import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { seededRandom } from './patches.ts';
 import { readStored, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
@@ -62,11 +62,15 @@ export const dailyGame = () => createGame(null, { ...DEFAULT_SETTINGS, difficult
 export const askable = (items: Item[]) => items.filter((it) => it.kind !== 'gem');
 
 /**
- * Items too thin to be the start page's eye-catcher: bare sticks that leave
+ * Pictures too thin to be the start page's eye-catcher, by their art's id
+ * (DrawnItem.art: an item's own id, or a variant's): bare sticks that leave
  * the circle all but empty (scripts/daily-art.py measures them). They are
- * never asked here, though they may be offered as decoys.
+ * never asked here, though their items may be offered as decoys.
  */
 export const TOO_THIN: ReadonlySet<string> = new Set(dailyArt.thin);
+
+/** Whether the question's picture is too thin for the start page (the art it draws the answer with). */
+const thin = (engine: Engine, q: Question) => TOO_THIN.has(answerDrawn(engine.byId.get(q.itemId)!, q).art);
 /** Draws past this many thin items in a row are given up on (they can't all be). */
 const THIN_TRIES = 12;
 
@@ -83,7 +87,8 @@ function hash(s: string): number {
  * draws the item and is the engine's too.
  */
 export function askOne(engine: Engine, game = dailyGame(), rng: () => number = Math.random): Question {
-  const pool = askable(engine.items).filter((it) => !TOO_THIN.has(it.id));
+  // Items with a picture fit to show (a thin picture of one is drawn again below).
+  const pool = askable(engine.items).filter((it) => allArt(it).some((a) => !TOO_THIN.has(a.art)));
   let q: Question;
   let tries = 0;
   do {
@@ -92,7 +97,7 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
     // As the game does: an answer isn't asked again, nor offered as a decoy, until its category starts over.
     game.used.push(q.itemId);
     // A thin one is put by (used, so not asked again) and another drawn.
-  } while (TOO_THIN.has(q.itemId) && ++tries < THIN_TRIES);
+  } while (thin(engine, q) && ++tries < THIN_TRIES);
   return q;
 }
 

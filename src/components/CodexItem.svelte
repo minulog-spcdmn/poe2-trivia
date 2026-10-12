@@ -8,7 +8,7 @@
   import { itemImage, itemThumb } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { artRevealed } from '../lib/fx/moments';
-  import { type Item } from '../lib/game';
+  import { allArt, type DrawnItem, type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
@@ -20,6 +20,14 @@
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
 
   const entry = $derived(codex.items[item.id]);
+
+  /** Every way the item is drawn (Grand Spectrum's three jewels), and the one shown: its own, until another is picked. */
+  const arts = $derived(allArt(item));
+  let picked = $state({ id: '', i: 0 });
+  const drawn = $derived(arts[picked.id === item.id ? picked.i : 0] ?? arts[0]);
+  /** A variant's name in its picker: its base where they differ, else its place among them. */
+  const basesDiffer = $derived(new Set(arts.map((x) => x.base)).size === arts.length);
+  const artName = (a: DrawnItem, i: number) => (basesDiffer ? a.base : `${i + 1} of ${arts.length}`);
   const byCount = (pairs: [string, number][]) =>
     pairs
       .flatMap(([id, n]) => {
@@ -121,7 +129,7 @@
       {#key item.id}
         <div class="head-text" in:fade={{ duration: 250 }}>
           <span class="iname" id="codex-item-name">{item.name}</span>
-          <span class="ibase">{item.base}</span>
+          <span class="ibase">{drawn.base}</span>
         </div>
       {/key}
       <button class="close" style:--socket="{SOCKET_X}px" onclick={onclose} aria-label="Close" title="Close">
@@ -129,13 +137,23 @@
       </button>
     </div>
 
-    <div class="art" bind:this={art}>
+    <div class="art" class:several={arts.length > 1} bind:this={art}>
       <ArcaneCircle />
       <div class="frame">
-        {#key item.id}
-          <ArtImage src={itemImage(item.id)} alt={item.name} w={item.w} h={item.h} float />
+        {#key drawn.art}
+          <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />
         {/key}
       </div>
+      {#if arts.length > 1}
+        <!-- Drawn more than one way: each of its art, to look at in turn. -->
+        <div class="variants" role="group" aria-label="Its art">
+          {#each arts as a, i (a.art)}
+            <button class:on={a === drawn} aria-pressed={a === drawn} aria-label={artName(a, i)} title={artName(a, i)} onclick={() => (picked = { id: item.id, i })}>
+              <img src={itemThumb(a.art, 128)} alt="" loading="lazy" />
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <!-- Two faces: the item as the game's tooltip shows it, and what you've done with it. -->
@@ -147,8 +165,8 @@
     <!-- Both faces in one place, the hidden one kept for its height: switching never resizes the card. -->
     <div class="faces">
       <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'}>
-        {#key item.id}
-          <ItemDetails {item} />
+        {#key drawn.art}
+          <ItemDetails item={drawn} />
         {/key}
       </div>
       <div class="body face" class:on={view === 'record'} id="codex-item-face-record" role="tabpanel" aria-labelledby="codex-item-tab-record" inert={view !== 'record'}>
@@ -312,6 +330,48 @@
     height: 84%;
     display: grid;
     place-items: center;
+  }
+  /* An item drawn more than one way: its art in small, along the stage's foot, the picture above them. */
+  .several .frame {
+    bottom: 2.6rem;
+    height: 76%;
+  }
+  .variants {
+    position: absolute;
+    bottom: 0.35rem;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  .variants > button {
+    width: 34px;
+    height: 34px;
+    padding: 3px;
+    display: grid;
+    place-items: center;
+    background: rgba(12, 9, 7, 0.55);
+    border: 1px solid rgba(175, 96, 37, 0.35);
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition:
+      opacity 0.2s,
+      border-color 0.2s,
+      box-shadow 0.2s;
+  }
+  .variants > button:hover {
+    opacity: 0.9;
+  }
+  .variants > button.on {
+    opacity: 1;
+    border-color: var(--gold-hi);
+    box-shadow: 0 0 8px rgba(224, 168, 92, 0.45);
+  }
+  .variants img {
+    max-width: 100%;
+    max-height: 100%;
   }
   .frame > :global(.art-slot) {
     position: absolute;

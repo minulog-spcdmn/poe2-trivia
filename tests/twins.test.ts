@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { delveRules, findRules, opensZone } from '../src/lib/delve.ts';
-import { Engine, PRESETS, TWINS, createGame, isFake, type Difficulty, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { Engine, PRESETS, TWINS, allArt, createGame, isFake, type Difficulty, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks } from '../src/lib/looks.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -85,8 +85,8 @@ const CHECKED: [string, string][] = [
 const ALIKE = 0.86;
 
 test('every item that could have a twin was looked at: new items, new art', () => {
-  // The table is what finds look-alikes, so every item needs its art in it.
-  const missing = items.filter((it) => !looks.looksLike(it.id).length).map((it) => it.name);
+  // The table is what finds look-alikes, so every picture needs to be in it (each of an item's variants too).
+  const missing = items.flatMap(allArt).filter((a) => !looks.looksLike(a.art).length).map((a) => `${a.name} (${a.base})`);
   assert.deepEqual(missing, [], 'rebuild the look-alike table (README, "npm run looks")');
   /** A name's longer words, "'s" taken off. */
   const words = (n: string) => new Set(n.toLowerCase().replace(/'s\b/g, '').replace(/[^a-z ]/g, '').split(' ').filter((w) => w.length > 3));
@@ -97,7 +97,9 @@ test('every item that could have a twin was looked at: new items, new art', () =
     for (const b of items) {
       // Tablets all look alike, but only ever meet each other (game.ts RARE_GROUPS).
       if (a.name >= b.name || a.group !== b.group || a.group === 'Tablets' || twins(a.name, b.name)) continue;
-      const alike = looks.lookScore(a.id, b.id) >= ALIKE || [...words(a.name)].some((w) => words(b.name).has(w));
+      // Any of one's pictures against any of the other's: a question may show any of them.
+      const pictures = allArt(a).some((x) => allArt(b).some((y) => looks.lookScore(x.art, y.art) >= ALIKE));
+      const alike = pictures || [...words(a.name)].some((w) => words(b.name).has(w));
       if (alike && !checked.has(`${a.name}|${b.name}`)) unchecked.push(`${a.name} / ${b.name}`);
     }
   }
