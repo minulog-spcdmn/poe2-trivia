@@ -18,9 +18,26 @@ let on = false;
 /** Notes a heavier step (a GPU upload, targets made anew), for the meter to name in a slow frame. Nothing unless ?fps. */
 export function frameEvent(what: string) {
   if (!on) return;
-  events.push([performance.now(), what]);
+  const now = performance.now();
+  events.push([now, what]);
   while (events.length > 100) events.shift();
-  console.info(`[fps] ${performance.now().toFixed(0)} ${what}`);
+  // A step of the game's own ends the one before: how smoothly that went.
+  if (what.startsWith('game: ')) {
+    if (phase) console.info(`[fps] ${phase.name} ${summary(phase.frames, now - phase.at)}`);
+    phase = { name: what.slice(6), at: now, frames: [] };
+  }
+  console.info(`[fps] ${now.toFixed(0)} ${what}`);
+}
+
+/** The game's step under way (the reveal, a question) and its frames' times, ms. */
+let phase: { name: string; at: number; frames: number[] } | null = null;
+
+/** How smoothly a stretch of frames went: their rate, the slowest, and how many took over 25 and 50 ms. */
+function summary(frames: number[], ms: number): string {
+  const sorted = [...frames].sort((a, b) => a - b);
+  const median = sorted[sorted.length >> 1] ?? 0;
+  const span = Math.min(ms, 2000);
+  return `${(ms / 1000).toFixed(1)}s, its first ${(span / 1000).toFixed(1)}s: ${((frames.length * 1000) / Math.max(1, span)).toFixed(0)} fps, median ${median.toFixed(0)}ms, worst ${(sorted.at(-1) ?? 0).toFixed(0)}ms, ${frames.filter((d) => d > 25).length} over 25ms, ${frames.filter((d) => d > 50).length} over 50ms`;
 }
 
 type Script = { duration: number; sourceURL: string; sourceFunctionName: string; invoker: string; forcedStyleAndLayoutDuration: number };
@@ -76,6 +93,8 @@ export function installFpsMeter() {
   const tick = (now: number) => {
     const ms = now - last;
     frames.push([now, ms]);
+    // (The first two seconds of a step: a question or reveal's own moments, not the wait after them.)
+    if (phase && now - phase.at < 2000) phase.frames.push(ms);
     last = now;
     while (frames.length && frames[0][0] < now - 2000) frames.shift();
     const max = Math.max(...frames.map(([, d]) => d));

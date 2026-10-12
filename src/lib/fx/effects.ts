@@ -414,8 +414,15 @@ function isPicture(el: Element): el is HTMLElement {
 /** A picture put together from pieces, drawn on one canvas, and when that was last brought up to date. */
 const assembled = new WeakMap<HTMLElement, { pic: HTMLCanvasElement; key: string; at: number }>();
 let assembledCount = 0;
-/** How often an assembled picture is redrawn while its pieces change (burning in), ms. */
-const ASSEMBLE_EVERY = 60;
+/**
+ * How often an assembled picture is redrawn while its pieces change
+ * (burning in), ms. Each time it is read from the page (every piece's
+ * style and place) and its silhouette made and uploaded anew: every 60ms,
+ * all through a veiled picture's reveal, that came to a dozen uploads and
+ * as many style flushes. A light shining from behind it can trail the
+ * burning a little.
+ */
+const ASSEMBLE_EVERY = 200;
 
 /** The pieces of `el` (see isPicture) on one canvas at most 256 px across, about as they're shown now. */
 function assemble(el: HTMLElement): { pic: HTMLCanvasElement; key: string } {
