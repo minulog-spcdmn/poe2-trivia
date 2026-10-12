@@ -487,7 +487,7 @@ export interface Delve {
   teamStreak?: number;
   /** Co-op: the longest `teamStreak` this run (missing for none). */
   bestTeamStreak?: number;
-  /** Co-op: someone answered wrong at this depth (on any question asked at it); gone with the next offer. */
+  /** Co-op: someone answered wrong on this offer (the question picked, or one a blast drew from it); gone with the next offer, at this depth or the next. */
   missedHere?: true;
   /**
    * Host clock the cards on offer are dealt at: a new zone's, ZONE_DESCENT_MS
