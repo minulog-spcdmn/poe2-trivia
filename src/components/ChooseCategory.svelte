@@ -569,6 +569,10 @@
             <span class="icon" class:none={isWayOut(cat)}>
               <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={fitStyle(iconOf(cat), tweakOf(cat))} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
             </span>
+            {#if kindOf(cat) === 'azurite'}
+              <!-- The vein's crystals in the corner stand in front of the item. -->
+              <CardEngraving side="face" find="azurite" front />
+            {/if}
             <span class="title"
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
                 >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span

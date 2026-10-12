@@ -14,7 +14,8 @@
   import type { FindKind } from '../lib/delve';
   import type { Variant } from '../lib/cardEngraving';
 
-  let { side, find = null, custom }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant } = $props();
+  // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
+  let { side, find = null, custom, front = false }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
@@ -24,12 +25,36 @@
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
   const knockout = $derived(plate?.knockout ? plate.knockout.split(/(?<=Z)(?=M)/) : []);
-  const motif = $derived(plate?.strokes.filter((s) => s.motif) ?? []);
+  /** The plate's strokes, or in front, those that stand in front of the emblem. */
+  const strokes = $derived(plate?.strokes.filter((s) => !!s.front === front) ?? []);
+  const motif = $derived(strokes.filter((s) => s.motif));
   const uid = $props.id();
 </script>
 
-<span class="engraving" data-find={find ?? undefined} bind:clientWidth={w} bind:clientHeight={h} bind:contentRect={box} aria-hidden="true">
-  {#if plate}
+<span class="engraving" class:front data-find={find ?? undefined} bind:clientWidth={w} bind:clientHeight={h} bind:contentRect={box} aria-hidden="true">
+  {#if plate && front}
+    {#if plate.solid}
+      <!-- Solid: whatever lies behind (the item, the plate) is hidden, the crystal's body faintly its colour. -->
+      <svg class="solid" viewBox="0 0 {w} {h}">
+        <path d={plate.solid} class="body" />
+        <path d={plate.solid} class="tint" />
+      </svg>
+    {/if}
+    {#each ['glow', 'lines'] as layer (layer)}
+      <svg class={layer} viewBox="0 0 {w} {h}">
+        {#each strokes as { cls, d } (cls)}<path {d} class={cls} />{/each}
+      </svg>
+    {/each}
+    {#if motif.length}
+      <span class="glint">
+        <span class="through" style:--w="{box?.width ?? w}px">
+          <svg viewBox="0 0 {w} {h}" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+            {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+          </svg>
+        </span>
+      </span>
+    {/if}
+  {:else if plate}
     {#if plate.window && plate.fade}
       <!-- The card's warm glow, behind the emblem and only inside the window. -->
       <svg class="window" viewBox="0 0 {w} {h}">
@@ -66,7 +91,7 @@
           </defs>
         {/if}
         <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-          {#each plate.strokes.filter((s) => !s.motif) as { cls, d } (cls)}
+          {#each strokes.filter((s) => !s.motif) as { cls, d } (cls)}
             <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
           {/each}
         </g>
@@ -209,6 +234,18 @@
   .glow .ray,
   .glow .lattice {
     stroke-width: 1.2;
+  }
+
+  /* What stands in front of the emblem: solid, the card's dark under it, faintly tinted its ink. */
+  .solid path {
+    stroke: none;
+  }
+  .solid .body {
+    fill: #0f0c0a;
+  }
+  .solid .tint {
+    fill: currentColor;
+    opacity: 0.07;
   }
 
   /* A gilded motif: the item's gold (ChooseCategory's .glyph, or the card's

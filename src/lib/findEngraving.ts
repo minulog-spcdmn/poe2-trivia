@@ -218,14 +218,18 @@ function above(ps: Pt[], y: number): Pt[] {
 /**
  * A cluster of prisms drawn back to front, each stopping short of those
  * before it; their outlines are kept clear of the plate, above `top` only
- * (below it they stand behind the plate's pedestal).
+ * (below it they stand behind the plate's pedestal). `solid`: it stands in
+ * front of the emblem too, its crystals hiding what is behind them (Plate.front).
  */
-function cluster(p: Plate, prisms: Prism[], extra: Shields = NONE, k = 1, top = Infinity) {
+function cluster(p: Plate, prisms: Prism[], extra: Shields = NONE, k = 1, top = Infinity, solid = false) {
   const shapes = prisms.map(prismShape);
+  p.front = solid;
   prisms.forEach((pr, i) => {
     const front = shapes.slice(i + 1).map((sh) => grow(sh.outline, 0.7));
     prism(p, pr, { polys: [...front, ...extra.polys], holes: extra.holes }, k);
   });
+  p.front = false;
+  if (solid) p.solid += shapes.map((sh) => poly(above(sh.outline, top))).join('');
   p.knockout += shapes
     .map((sh) => above(grow(sh.outline, 1.4), top))
     .filter((ps) => ps.length > 2)
@@ -431,7 +435,8 @@ function veinTall(p: Plate, g: TallLayout) {
   });
   const shapes = prisms.map((pr) => grow(prismShape(pr).outline, 0.9));
   crystalCrown(p, C, r0, points, { polys: [...shapes, ground], holes }, k);
-  cluster(p, prisms, { polys: [ground], holes: [{ c: g.luna.c, r: g.luna.r + 3 }] }, k);
+  // In front of the emblem: an item reaching into the corner passes behind the crystals.
+  cluster(p, prisms, { polys: [ground], holes: [{ c: g.luna.c, r: g.luna.r + 3 }] }, k, g.floor + 0.6, true);
 }
 
 /** The flare's sun round the emblem: long pointed rays out of the glory, breaking out through the arch to the panel, short ones between. */

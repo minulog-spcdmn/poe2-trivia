@@ -40,8 +40,8 @@ import {
 import { LUNA, LUNA_HATCH } from './alchemy.ts';
 
 export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattice' | 'sign' | 'fill';
-/** `motif`: drawn by a Variant over the plate (see Plate.knockout). */
-export type Stroke = { d: string; cls: Cls; motif?: boolean };
+/** `motif`: drawn by a Variant over the plate (see Plate.knockout). `front`: in front of the emblem too (see Plate.front). */
+export type Stroke = { d: string; cls: Cls; motif?: boolean; front?: boolean };
 /** Where the glory's rays fade in from its centre (from `from` on) and out again (by `r`). */
 export type Fade = { c: Pt; from: number; r: number };
 /**
@@ -146,8 +146,15 @@ export class Plate {
   knockout = '';
   /** The motif gilded, if it is (see Gilt). */
   gilt: Gilt | null = null;
+  /**
+   * While true, what is added stands in front of the emblem as well as the
+   * plate (CardEngraving's front layer, over the category's item), solid:
+   * `solid` (filled shapes, path data) hides whatever lies behind it.
+   */
+  front = false;
+  solid = '';
   add(d: string, cls: Cls) {
-    if (d) this.out.push(this.motif ? { d, cls, motif: true } : { d, cls });
+    if (d) this.out.push(this.front ? { d, cls, motif: true, front: true } : this.motif ? { d, cls, motif: true } : { d, cls });
   }
   /** A frame of two lines with notched corners, broken at `holes`. */
   frame(x0: number, y0: number, x1: number, y1: number, holes: Hole[] = []) {
@@ -649,12 +656,13 @@ export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant
   else tallFace(w, h, p, v);
   // Merge each class into one path (the motif's apart).
   const by = new Map<string, Stroke>();
-  for (const { d, cls, motif } of p.out) {
-    const key = motif ? `${cls}*` : cls;
+  for (const { d, cls, motif, front } of p.out) {
+    const key = front ? `${cls}!` : motif ? `${cls}*` : cls;
     const s = by.get(key);
     if (s) s.d += d;
-    else by.set(key, motif ? { d, cls, motif } : { d, cls });
+    else by.set(key, front ? { d, cls, motif, front } : motif ? { d, cls, motif } : { d, cls });
   }
-  const strokes = [...by.values()].sort((a, b) => Number(!!a.motif) - Number(!!b.motif)).map(({ cls, d, motif }) => (motif ? { cls, d, motif } : { cls, d }));
-  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt };
+  const rank = (s: Stroke) => (s.front ? 2 : s.motif ? 1 : 0);
+  const strokes = [...by.values()].sort((a, b) => rank(a) - rank(b)).map(({ cls, d, motif, front }) => (front ? { cls, d, motif, front } : motif ? { cls, d, motif } : { cls, d }));
+  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt, solid: p.solid || null };
 };
