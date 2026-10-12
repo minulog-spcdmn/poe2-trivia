@@ -44,6 +44,14 @@ export type Cls = 'main' | 'thin' | 'hair' | 'hatch' | 'shade' | 'ray' | 'lattic
 export type Stroke = { d: string; cls: Cls; motif?: boolean };
 /** Where the glory's rays fade in from its centre (from `from` on) and out again (by `r`). */
 export type Fade = { c: Pt; from: number; r: number };
+/**
+ * A motif gilded as a category's emblem is (CardEngraving): its parts filled,
+ * `body` in the emblem's gold running pale to deep from `span`'s top to its
+ * foot (y), `glass` in the same gold, faint, and `flame` white-hot; the
+ * motif's lines over the body cut in dark, as an item's details are. `light`:
+ * where it shines from and how far, the light that breathes round it.
+ */
+export type Gilt = { parts: { d: string; tone: 'glass' | 'body' | 'flame' }[]; span: [number, number]; light: { c: Pt; r: number } };
 
 // Where things sit, in pixels from the card's top left (inside its border).
 // ChooseCategory's CSS places the emblem and the name to match.
@@ -136,6 +144,8 @@ export class Plate {
   motif = false;
   /** Filled shapes (path data) where the plate's own lines are left out, so they stop short of the motif. */
   knockout = '';
+  /** The motif gilded, if it is (see Gilt). */
+  gilt: Gilt | null = null;
   add(d: string, cls: Cls) {
     if (d) this.out.push(this.motif ? { d, cls, motif: true } : { d, cls });
   }
@@ -646,5 +656,5 @@ export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant
     else by.set(key, motif ? { d, cls, motif } : { d, cls });
   }
   const strokes = [...by.values()].sort((a, b) => Number(!!a.motif) - Number(!!b.motif)).map(({ cls, d, motif }) => (motif ? { cls, d, motif } : { cls, d }));
-  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null };
+  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt };
 };

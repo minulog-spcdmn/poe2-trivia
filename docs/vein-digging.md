@@ -40,13 +40,14 @@ out, and what you lose if the rock comes down.
 
 1. **Strike 1.** Pick the vein's card. Its question is in that card's
    category, from further down, as now, and the **lamp is lit**.
-2. **A right strike** puts an Azurite Ward **in hand**. It glows over the
-   cards but isn't in the pack yet, so it takes no loss.
+2. **A right strike** puts an Azurite Ward **in hand**. It isn't in the
+   pack yet, so it takes no loss.
 3. **Two cards.** Instead of the usual three, the game deals:
    - **the vein**, running on into a random category you're allowed to
-     pick: the next strike;
-   - **the way out**, a new card (the lit path). It puts the haul into the
-     pack.
+     pick: the next strike, its plaque reading "Dig Deeper";
+   - **the way out**, a new card, **Back to the Light**: a gilded lantern,
+     its plaque saying what it keeps ("Keep 1 Ward"). It puts the haul into
+     the pack.
 4. **Strikes 2 and 3** work the same way, each from further down than the
    last. After a right third strike the haul goes into the pack by itself.
 5. **A cave-in.** A miss or a time-out on any strike:
@@ -145,19 +146,18 @@ for the whole team.
 
 ## Feel
 
-- **The two-card deal** is the moment: the hall's third card slot is dark
-  rock. The vein card glows azurite blue, the way out burns with the warm
-  light of the path.
+- **The two-card deal** is the moment, laid where the three cards always
+  lie. The vein card glows azurite blue; the way out is lamplight, its
+  lantern gilded as an item is, its light breathing round it, steady gold
+  under the pointer where other cards catch fire.
 - **The lamp** is the clock ring turned azurite: a light that stays lit
   from strike to strike, and gutters as it runs
   low. When it gutters, the darkness closes in from the edges of the screen.
-- **The haul** hangs over the cards as shards of light, one more each strike.
 - **Each strike** shakes the hall a little more, with the sound of a pick on
   stone and creaks and dust that grow with every strike.
 - **The way out** carries the haul into the pack with the ward sound: a
   release.
-- **A cave-in** with a haul in hand: the shards go dark and fall, and the
-  cave-in that follows is heavier than today's.
+- **A cave-in** with a haul in hand is heavier than today's.
 
 ## Rules details
 

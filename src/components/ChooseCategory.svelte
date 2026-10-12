@@ -8,7 +8,7 @@
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
-  import { wayOutDesign } from '../lib/wayOut/choice.svelte';
+  import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
   import { digOf, expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -18,7 +18,6 @@
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
   import Avatar from './Avatar.svelte';
-  import ItemGlyph from './ItemGlyph.svelte';
 
   let {
     drawn = null,
@@ -50,22 +49,18 @@
 
   // ---- the Azurite Vein's dig ----------------------------------------------
   // After a right strike the deal is two cards: the vein running on, and the
-  // way out with the haul. The haul glows over them, the wards in hand.
+  // way out, its plaque saying what it keeps (the haul in hand).
 
   /** The vein being dug, while its two cards are up. */
   const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
   const haul = $derived(dig?.haul.length ?? 0);
-  /** The way out's design (lib/wayOut: the lab picks among those being tried). */
-  const out = $derived(wayOutDesign());
-  $effect(() => {
-    if (out.emblem) measure(out.emblem);
-  });
-  const iconOf = (cat: string) => (isWayOut(cat) ? (out.emblem ?? '') : categoryIcon(cat));
-  const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1.05, up: 0, left: 0 } : categoryIconTweak(cat));
+  // (The way out's lantern hangs in its plate, gilded: no emblem stands in its window.)
+  const iconOf = (cat: string) => (isWayOut(cat) ? '' : categoryIcon(cat));
+  const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1, up: 0, left: 0 } : categoryIconTweak(cat));
   /** A card's name as players read it. */
   const cardName = (cat: string) => (isWayOut(cat) ? out.title : cat);
   /** The way out's colours, as custom properties on its card. */
-  const outInk = $derived(Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';'));
+  const outInk = Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';');
 
   // ---- the cards' effects ---------------------------------------------------
   // Everything the cards set off is one group: it ends with them (a short
@@ -206,6 +201,7 @@
       const others = cardEls.filter((c, j) => c && j !== target).map((c) => c.querySelector('.frame') ?? c);
       const kind = kindOf(category);
       if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
+      else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
       else if (frame) onCards(() => cardPicked(frame, card, others, false));
       sfx('draw');
     };
@@ -316,6 +312,46 @@
     light(card, { color: kind === 'azurite' ? [0.3, 0.6, 1] : kind === 'flare' ? [1, 0.25, 0.4] : [1, 0.45, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
   }
 
+  // The way out's effects: lamplight rather than fire. Its light swells round
+  // the lantern as it turns up, steadies and breathes under the pointer, and
+  // floods out as it is chosen; motes of it drift in the window (.icon, where
+  // the lantern hangs).
+  const LAMP: Vec3 = [1, 0.74, 0.38];
+  function outRevealed(frame: Element) {
+    if (!fxActive()) return;
+    const lantern = frame.querySelector('.icon') ?? frame;
+    outline(frame, { color: dim(C.gold, 0.75), width: 10, intensity: 0.8, life: 1.1, fadeIn: 0.1 });
+    glints(lantern, { count: 4, area: 'fill', color: C.goldPale, size: [3, 7], delay: [0.1, 0.5] });
+    light(lantern, { color: LAMP, radius: 280, intensity: 0.34, decay: 1.1 });
+  }
+  function outHover(frame: Element, card: Element): Handle {
+    if (!fxActive()) return { stop() {} };
+    const lantern = frame.querySelector('.icon') ?? frame;
+    const glow = outline(frame, { color: dim(C.gold, 0.65), width: 12, flame: 0.12, pulse: 0.5, intensity: 0.65, fadeIn: 0.35, base: card });
+    const motes = emitter(4, () => glints(lantern, { count: 1, area: 'fill', color: C.goldPale, size: [2, 5], life: [0.6, 1.1] }));
+    light(lantern, { color: LAMP, radius: 220, intensity: 0.18, decay: 0.8 });
+    return {
+      stop() {
+        glow.stop(0.45);
+        motes.stop();
+      },
+    };
+  }
+  /** The way out is chosen: the lamp's light floods out of it; the vein's card burns away. */
+  function outPicked(card: Element, base: Element, others: Element[]) {
+    if (!fxActive()) return;
+    const lantern = card.querySelector('.icon') ?? card;
+    for (const o of others) {
+      embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
+      puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
+    }
+    outline(card, { color: C.gold, width: 16, flame: 0.2, intensity: 1, life: 1.3, base });
+    ring(lantern, { radius: 300, thickness: 10, life: 0.9, color: C.goldPale, breakup: 0.2 });
+    flare(lantern, { size: 44, streak: 380, life: 0.8, color: C.goldPale });
+    glints(lantern, { count: 6, area: 'fill', color: C.goldPale, size: [4, 9] });
+    light(lantern, { color: LAMP, radius: 440, intensity: 0.85, decay: 1.3 });
+  }
+
   let picked = $state<string | null>(null);
 
   // Size each emblem by its visible shape (see lib/iconFit); measured while the cards lie face down.
@@ -378,10 +414,11 @@
     if (motion.still) return;
     // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
     const kind = kindOf(s.offered[i]);
+    const out = isWayOut(s.offered[i]);
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
-      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : cardRevealed(frame, dm)));
+      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : cardRevealed(frame, dm)));
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -406,7 +443,8 @@
     const card = cardEls[i];
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
-    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : cardHover(frame, card, !!s.deathmatch)));
+    const out = isWayOut(s.offered[i]);
+    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : cardHover(frame, card, !!s.deathmatch)));
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -442,6 +480,7 @@
     const others = cardEls.filter((c, j) => c && j !== i).map((c) => c.querySelector('.frame') ?? c);
     const kind = kindOf(category);
     if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
+    else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
     else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
     sfx('pick');
     session.dispatch({ type: 'pick', category });
@@ -479,13 +518,6 @@
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
   </p>
-  {#if dig && haul}
-    <!-- The haul in hand: what the way out takes, and what a cave-in buries. -->
-    <p class="haul" aria-label="{haul} {haul === 1 ? 'ward' : 'wards'} in hand">
-      {#each { length: haul } as _, i (i)}<span class="shard" style:--i={i} aria-hidden="true"><ItemGlyph kind="ward" /></span>{/each}
-      <span class="in-hand">in hand</span>
-    </p>
-  {/if}
 
   <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
@@ -497,7 +529,6 @@
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
         class:out={isWayOut(cat)}
-        data-out={isWayOut(cat) ? out.id : undefined}
         style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
@@ -531,15 +562,15 @@
             <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? `Strike ${dig.strikes + 1}` : FIND_TEXT[kind].name}</span>
+              <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
             {:else if isWayOut(cat)}
               <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
             {/if}
-            <span class="icon" class:none={isWayOut(cat) && !out.emblem}>
+            <span class="icon" class:none={isWayOut(cat)}>
               <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={fitStyle(iconOf(cat), tweakOf(cat))} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
             </span>
             <span class="title"
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? `Strike ${dig.strikes + 1}` : FIND_TEXT[kind].name}</span
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
                 >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
             >
           </span>
@@ -637,53 +668,8 @@
     font-size: 1.2rem;
     text-align: center;
   }
-  /* The haul in hand: its wards glowing azurite over the dig's two cards, flickering out of step. */
-  .haul {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    margin: -0.8rem 0 -0.6rem;
-    font-size: 0.85rem;
-    color: #9cc8ff;
-  }
-  .shard {
-    display: inline-flex;
-    --h: 26px;
-    filter: drop-shadow(0 0 6px rgba(90, 160, 255, 0.85));
-    animation: flicker 2.4s ease-in-out calc(var(--i) * -0.7s) infinite;
-  }
-  .in-hand {
-    margin-left: 0.2rem;
-    font-family: var(--font-display);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    font-size: 0.7rem;
-  }
-  @keyframes flicker {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    45% {
-      opacity: 0.72;
-    }
-    60% {
-      opacity: 0.95;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .shard {
-      animation: none;
-    }
-  }
   /* The way out: its design's colours (lib/wayOut, set on the card), as a find's are. */
-  .card.out .glyph {
-    background: var(--f-glyph);
-  }
-  .card.out .icon {
-    filter: drop-shadow(0 0 20px var(--f-pulse));
-  }
-  /* Drawn in the engraving instead: the place is kept, so a row's name keeps clear of it. */
+  /* Its lantern hangs in the engraving, gilded: the emblem's place is kept, so a row's name keeps clear of it. */
   .card.out .icon.none {
     visibility: hidden;
   }
@@ -917,6 +903,38 @@
   }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
+  }
+  /* The way out: no light runs across it; its lantern kindles, the light
+     round it swelling up and settling to breathe (CardEngraving's .lamp). */
+  .card.out .sheen {
+    display: none;
+  }
+  .card.out .turn:global(.dealt) :global(.gilt) {
+    animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
+  }
+  .card.out .turn:global(.dealt) :global(.engraving) {
+    animation: swell 1.6s ease-out var(--face, 0ms) backwards;
+  }
+  @keyframes kindle-gilt {
+    from {
+      opacity: 0.2;
+      filter: brightness(0.4) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+    }
+    40% {
+      opacity: 1;
+      filter: brightness(1.5) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 18px var(--f-pulse));
+    }
+    to {
+      filter: brightness(1) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+    }
+  }
+  @keyframes swell {
+    from {
+      filter: brightness(0.6);
+    }
+    35% {
+      filter: brightness(1.35);
+    }
   }
   @keyframes kindle {
     from {

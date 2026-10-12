@@ -18,8 +18,8 @@
 //   light the path leads back to; in Luna's, the lamp's star.
 // • The back hangs the lantern in the mandorla, in its light.
 //
-// Laid in a row the lantern hangs at the emblem's place on a link or two
-// from the card's top edge.
+// Laid in a row the lantern stands at the emblem's place, whole within the
+// row, without its chain.
 
 import { arc, at, f, lerp, line, pt, rad, type Cut, type Hole, type Pt } from '../arcane.ts';
 import type { BackLayout, Plate, RowLayout, TallLayout, Variant } from '../cardEngraving.ts';
@@ -180,13 +180,22 @@ function lancet(P: (x: number, y: number) => Pt, s: number, { foot, r, tip }: { 
 const RAYS = 96;
 const rayAngle = (k: number) => ((k + 0.5) / RAYS) * 360;
 
+/** A ring: a disc with a hole, as one path filled by its winding (the hole turned the other way). */
+const annulus = (c: Pt, R: number, r: number) =>
+  disc(c, R) + `M${pt([c[0] + r, c[1]])}A${f(r)} ${f(r)} 0 1 0 ${pt([c[0] - r, c[1]])}A${f(r)} ${f(r)} 0 1 0 ${pt([c[0] + r, c[1]])}Z`;
+
 /**
  * The lantern, its flame's heart at `C`, `s` times its own size; on a
  * chain from `chain` (the y it hangs from, with a staple there if
- * `staple`). Its outline is knocked out of the plate.
+ * `staple`). Its outline is knocked out of the plate. `gild`: on a face,
+ * gilded as an item's emblem is (Plate.gilt), the chain left engraved.
  */
-function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: number; staple: boolean }) {
+function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: number; staple: boolean }, gild = false) {
   const P = (x: number, y: number): Pt => [C[0] + x * s, C[1] + y * s];
+  const parts: NonNullable<Plate['gilt']>['parts'] = [];
+  const gilt = (d: string, tone: 'glass' | 'body' | 'flame') => {
+    if (gild) parts.push({ d, tone });
+  };
   /** A hexagon's corner at `th` degrees round (0 to the right, 90 to the front), radius `r`, height `y`. */
   const V = (r: number, th: number, y: number): Pt => P(r * Math.cos(rad(th)), y + FLAT * r * Math.sin(rad(th)));
   const ko: Pt[][] = [];
@@ -211,6 +220,7 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
       );
     }
     ko.push(hull(ALL.flatMap((th) => [V(t.r0, th, t.y0), V(t.r1, th, t.y1)])));
+    gilt(poly(ko[ko.length - 1]), 'body');
   }
   // The drop under the foot: a bead and a point.
   const bead = P(0, 51.2);
@@ -221,6 +231,7 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
   p.add(hatchFace(P(0.15, 53.3), P(0.1, 56.6), P(0.1, 56.6), P(0.85, 53.3), 2), 'hatch');
   p.knockout += disc(bead, 2 * s + 1.4);
   ko.push(drop);
+  gilt(disc(bead, 2 * s) + poly(drop), 'body');
 
   // The vent's piercings: round on its front face, narrowed on the sides.
   if (s > 0.45) {
@@ -244,6 +255,7 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
   p.add(line(tip, capBase[1], { holes: [knobHole] }) + line(tip, capBase[2], { holes: [knobHole] }), 'hair');
   p.add(hatchFace(capBase[0], tip, tip, capBase[1], Math.max(2, Math.round(7 * Math.min(1, s * 1.15))), 1.4, { polys: [], holes: [knobHole] }), 'hatch');
   ko.push(hull([tip, ...ALL.map((th) => V(10.4, th, -55))]));
+  gilt(poly(ko[ko.length - 1]), 'body');
 
   // The knob, shaded round its right side, and the ring on it.
   p.add(arc(knob, KNOB.r * s, 0, 360), 'thin');
@@ -259,6 +271,8 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
   for (let a = 30; a <= 150; a += 12) ringShade += line(at(ringC, a, (RING.r - RING.w + 0.35) * s), at(ringC, a, (RING.r - 0.35) * s));
   p.add(ringShade, 'hatch');
   p.knockout += disc(ringC, RING.r * s + 1.4) + disc(knob, KNOB.r * s + 1.4);
+  gilt(annulus(ringC, RING.r * s, (RING.r - RING.w) * s), 'body');
+  gilt(disc(knob, KNOB.r * s), 'body');
 
   // The chain, link by link: edge on and face on in turn, each edge-on link in front where it passes through the next.
   if (chain) {
@@ -350,6 +364,10 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
   }
   p.add(barLines, 'thin');
   ko.push(hull(ALL.flatMap((th) => [V(cr, th, cy0), V(cr, th, cy1)])));
+  // Gilded, its panes glow faintly behind its posts and bars.
+  gilt(poly(ko[ko.length - 1]), 'glass');
+  for (const ps of posts) gilt(poly(hull(ps)), 'body');
+  for (const [a, b] of bars) gilt(poly([[a[0] - 0.45 * s, a[1]], [a[0] + 0.45 * s, a[1]], [b[0] + 0.45 * s, b[1]], [b[0] - 0.45 * s, b[1]]]), 'body');
 
   // The burner the flame stands on: a round collar on a cone, on the cage's floor.
   const ell = (c: Pt, rx: number, t0: number, t1: number) => {
@@ -366,10 +384,12 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
   p.add(hatchFace(P(bR - 0.2, bTop + 0.3), P(bR - 0.2, bMid - 0.2), P(bR * 0.25, bMid), P(bR * 0.25, bTop + 0.3), 3, 1.4), 'hatch');
   p.add(hatchFace(P(bR - 0.1, bMid + 0.4), P(fR - 0.4, bFoot - 0.3), P(fR * 0.3, bFoot - 0.3), P(bR * 0.3, bMid + 0.6), Math.max(2, Math.round(6 * Math.min(1, s * 1.15))), 1.5), 'hatch');
   const burner: Pt[] = [P(-bR - 0.8, bTop - 0.8), P(bR + 0.8, bTop - 0.8), P(fR + 1, bFoot + 1), P(-fR - 1, bFoot + 1)];
+  gilt(poly([P(-bR, bTop), P(bR, bTop), P(bR, bMid), P(fR, bFoot), P(-fR, bFoot), P(-bR, bMid)]), 'body');
 
   // The flame: a lancet with its heart drawn within, and its wick.
   const flame = lancet(P, s, FLAME);
   const core = lancet(P, s, CORE);
+  gilt(flame.d, 'flame');
   p.add(flame.d, 'thin');
   p.add(lancet(P, s, MIDDLE).d + core.d, 'hair');
   // The flame's heart, darker than the flame round it: a few strokes down its right.
@@ -404,6 +424,11 @@ function lantern(p: Plate, C: Pt, s: number, chain?: { from: number; links: numb
   p.add(light, 'hatch');
 
   p.knockout += ko.map((ps) => poly(grow(ps, 1.4))).join('');
+  if (gild) {
+    // Glass first, the body over it, the flame over all.
+    const order = { glass: 0, body: 1, flame: 2 };
+    p.gilt = { parts: parts.sort((a, b) => order[a.tone] - order[b.tone]), span: [P(0, RING.y - RING.r)[1], P(0, 57.5)[1]], light: { c: C, r: 34 * s } };
+  }
 }
 
 // ---- the glory ------------------------------------------------------------------
@@ -474,14 +499,16 @@ function lampStar(p: Plate, c: Pt, r: number) {
 
 function face(p: Plate, g: TallLayout | RowLayout) {
   if (g.row) {
-    const s = Math.min(0.6, (g.h / 2 - 6) / 80);
-    lantern(p, g.emblem, s, { from: -2, links: 3, staple: false });
-    p.fade = { c: g.emblem, from: 13, r: 64 };
+    // From its ring's top (76 over the flame) to its drop's point (57.5 under), within the row, no chain.
+    const s = Math.min(0.6, (g.h - 18) / 133.5);
+    const c: Pt = [g.emblem[0], g.emblem[1] + 9.25 * s];
+    lantern(p, c, s, undefined, true);
+    p.fade = { c, from: 13, r: 64 };
     return;
   }
   const k = (g.w / 218) * 1.15;
   const { A, ri } = g.arch;
-  lantern(p, g.emblem, k, { from: A[1] - ri + 0.4, links: 3, staple: true });
+  lantern(p, g.emblem, k, { from: A[1] - ri + 0.4, links: 3, staple: true }, true);
   // The glory shows from close round the lantern.
   p.fade = { c: g.emblem, from: 26, r: 128 };
 }

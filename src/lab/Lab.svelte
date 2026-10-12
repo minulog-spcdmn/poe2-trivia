@@ -19,8 +19,6 @@
   import { showTip } from '../lib/fullscreenTip';
   import { ABLAZE_FROM, ABLAZE_FULL, BLUE_FROM, DELVE_ABLAZE_FULL, DELVE_FLAMES } from '../lib/fx/streaks';
   import DrawnMark from '../components/DrawnMark.svelte';
-  import { WAY_OUT_DESIGNS, pickWayOut, wayOutDesign } from '../lib/wayOut/choice.svelte';
-  import type { WayOutId } from '../lib/wayOut/design';
 
   const s = $derived(session.state);
 
@@ -281,12 +279,6 @@
             {#each FINDS as f (f.v)}<option value={f.v}>{f.label}</option>{/each}
           </select>
           <button class="small" onclick={L.dealCards} disabled={!!busy}>Deal cards</button>
-        </div>
-        <div class="line">
-          <span class="lbl">Way out</span>
-          <select value={wayOutDesign().id} onchange={(e) => pickWayOut(e.currentTarget.value as WayOutId)} aria-label="The way out's design">
-            {#each WAY_OUT_DESIGNS as d (d.id)}<option value={d.id}>{d.label}</option>{/each}
-          </select>
         </div>
         <div class="line">
           <span class="lbl">Vein dig</span>
