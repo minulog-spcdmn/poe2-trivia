@@ -312,15 +312,15 @@
   type Moons = { k: number; up: number; left: number; at: Record<string, Spot> };
   const MOONS: Record<string, Moons> = {
     'Gloves & Boots': { k: 0.9, up: -6, left: 18, at: { Gloves: [30, -22, 0.74, 14] } },
-    'Amulets & Belts': { k: 0.86, up: 10, left: -12, at: { Belts: [-18, 20, 0.92, 8] } },
+    'Amulets & Belts': { k: 0.82, up: 18, left: -14, at: { Belts: [-10, 34, 0.86, -6] } },
     'Flasks, Charms, Jewels, Relics & Tablets': {
       k: 0.9,
       up: -2,
       left: 0,
       at: {
         Charms: [-38, -32, 0.42, 0],
-        Jewels: [44, -32, 0.5, -10],
-        Relics: [-46, 35, 0.6, -10],
+        Jewels: [47, -30, 0.48, -26],
+        Relics: [-52, 27, 0.6, -6],
         Tablets: [40, 26, 0.54, 14],
       },
     },
@@ -837,6 +837,11 @@
       drop-shadow(0 0.75px 0 var(--ink)) drop-shadow(0 -0.75px 0 var(--ink));
     transition: translate 0.45s var(--ease-out);
   }
+  /* Dimmed, the gold's pale top would turn khaki: theirs starts warmer, so
+     it darkens to bronze (deathmatch and finds keep their own colours). */
+  .moon .glyph {
+    background: linear-gradient(180deg, #e2b872 0%, #c9a45c 45%, #6d4a1c 100%);
+  }
   /* The emblem stands clear of them: a dark edge is cut round it, so their
      lines stop short of it, as an engraver's would. */
   .moons + .lit {
@@ -1029,10 +1034,14 @@
     filter: brightness(1.15);
   }
   /* The companions draw out a little from behind the emblem, staying in
-     its shade (and in the window), so it still leads. Only their places
-     change; no filter of theirs fades as they go. */
+     its shade (and in the window); only the emblem grows and brightens, so
+     it still leads. */
   .card.mine:not(:global(.down)):hover .moon {
     --far: 1.1;
+  }
+  .card.mine:not(:global(.down)):hover .moon .glyph {
+    transform: none;
+    filter: none;
   }
   /* A soft highlight that follows the pointer across the card. */
   .glare {
