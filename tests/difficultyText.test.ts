@@ -77,10 +77,10 @@ test('the notes under a find: its tagline, then one short line of what its item 
   const { findNote, teamFindNote, FIND_TEXT, caveInLabel } = await import('../src/lib/difficultyText.ts');
   const none = { wards: 0, flares: 0, dynamite: 0 };
   const line = (k: 'azurite' | 'flare' | 'dynamite', inv = none) => `${FIND_TEXT[k].tag}. ${findNote(k, inv)}`;
-  assert.equal(line('azurite'), 'Answer right for a ward. A ward takes a lost life for you. A miss costs two lives.');
+  assert.equal(line('azurite'), 'Answer right to dig out a ward. A ward takes a lost life for you. A miss costs two lives and your haul.');
   assert.equal(line('flare'), 'Answer right for a flare. It adds six seconds when your time runs out. You get less time to answer.');
   assert.equal(line('dynamite'), 'Answer right for dynamite. It blasts a question away for a new one. A miss also blows up an item you carry.');
-  assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. A miss costs two lives.');
+  assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. A miss costs two lives and your haul.');
   assert.equal(findNote('flare', { ...none, flares: 3 }), "You can carry no more. You get less time to answer. Your flares can't be used on it.");
   // What the player carries won't go off on a find's question, and the note says so.
   assert.match(findNote('dynamite', { ...none, flares: 1 }), / Your flare can't be used on it\.$/);
@@ -88,7 +88,7 @@ test('the notes under a find: its tagline, then one short line of what its item 
   assert.match(findNote('azurite', { ...none, flares: 2, dynamite: 1 }), / Your flares and dynamite can't be used on it\.$/);
   assert.match(findNote('dynamite', { wards: 3, flares: 3, dynamite: 3 }), /^You can carry no more\./);
   assert.equal(teamFindNote('flare', false), 'It adds six seconds for everyone when time runs out. You get less time to answer.');
-  assert.equal(FIND_TEXT.azurite.others, 'A right answer wins a ward. A ward takes a lost life for you. A miss costs two lives.');
+  assert.equal(FIND_TEXT.azurite.others, 'A right answer digs out a ward. A ward takes a lost life for you. A miss costs two lives and your haul.');
   assert.equal(FIND_TEXT.flare.others, 'A right answer wins a flare. It adds six seconds when your time runs out. You get less time to answer.');
   assert.equal(caveInLabel('azurite'), 'A wrong answer loses two lives');
   // Plain words, read in a second: no depths, no digits, no bullets in these body-font lines, and short.
@@ -118,7 +118,7 @@ test("a find's risk is said from one table, so a new drawback is one edit; each 
     for (const t of [findNote(k, none), teamFindNote(k, false), FIND_TEXT[k].others, FIND_RULES[k].miss.toLowerCase()]) assert.ok(t.toLowerCase().includes(miss), `${k}: ${t}`);
   }
   assert.deepEqual(FIND_MISS, {
-    azurite: 'a miss costs two lives',
+    azurite: 'a miss costs two lives and your haul',
     flare: 'you get less time to answer',
     dynamite: 'a miss also blows up an item you carry',
   });
@@ -130,7 +130,7 @@ test("the lobby's finds: each in a line for someone who never played, what it gi
   // Where they start, the descent drawn beside them says.
   assert.equal(FINDS_LABEL, 'Finds • harder questions');
   const said = (k: keyof typeof FIND_RULES) => Object.values(FIND_RULES[k]).join(' ');
-  assert.equal(said('azurite'), 'A ward takes a lost life for you. A miss costs two lives.');
+  assert.equal(said('azurite'), 'Each right answer digs out a ward, which takes a lost life for you. Then dig deeper or take the way out, up to three strikes on one lamp whose unused light carries on. A miss costs two lives and your haul.');
   assert.equal(said('flare'), 'A flare adds six seconds when your time runs out. If you also carry dynamite, the flare burns first. You get less time to answer.');
   assert.equal(
     said('dynamite'),

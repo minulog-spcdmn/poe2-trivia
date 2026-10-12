@@ -34,8 +34,8 @@
   import { fxActive, type Handle } from '../lib/fx/core';
   import { dock, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
-  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
-  import { blownText, coopMissText, coopRevealText, flareText, namesOf, perishedText, wardText } from '../lib/difficultyText';
+  import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
+  import { blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -169,7 +169,9 @@
     const got = reveal?.correct ? reveal.gained : undefined;
     if (!s.delve || !got) return null;
     const who = gainYou ? 'You' : gainName;
-    if (got === 'wards') return { glyph: 'ward', text: `${who} mined an Azurite Ward.` };
+    // A vein's ward is in hand until the way out (delve.ts, the dig).
+    if (got === 'wards' && reveal?.dug) return { glyph: 'ward', text: `${who} dug out an Azurite Ward. ${inHandText(digOf(s)?.haul.length ?? 1)}` };
+    if (got === 'wards') return { glyph: 'ward', text: `${who} dug out an Azurite Ward.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
@@ -751,6 +753,8 @@
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
+      // A vein's ward dug out: it rings like struck azurite, into the hand (the pack hears it at the way out).
+      if (r.dug && gainYou) setTimeout(() => sfx('findReward'), 600);
     });
   });
 
@@ -901,6 +905,8 @@
             nameOf,
             me,
             gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
+            buried: reveal.buried,
+            inHand: reveal.dug ? (digOf(s)?.haul.length ?? 1) : undefined,
           })}
           {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
           {#if gainLine}
@@ -956,6 +962,7 @@
             {:else}
               {who} {you ? 'lose' : 'loses'} two lives.
             {/if}
+            {#if reveal.buried}{buriedText(reveal.buried, you ? 'you' : active.name)}{/if}
           {:else if reveal.warded}
             <!-- The ward that took the loss: a crystal splitting along its crack. -->
             <span class="lost-ward" aria-hidden="true"

@@ -3,7 +3,7 @@
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerGone, timerTick } from '../lib/fx/moments';
-  import { FLARE_MS, clockLeft, questionTimer } from '../lib/delve';
+  import { FLARE_MS, clockLeft, delveTimer, findDepth, questionTimer } from '../lib/delve';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
   import { claimPressure, endHold, flareEase, flarePressure, pressureOf, resolveDark, type Pressure } from '../lib/darkness';
   import { darkOutcome } from '../lib/delveSession';
@@ -26,7 +26,13 @@
   // flare's extra time fills it back up rather than stretching it).
   const st = $derived(session.state);
   const q = $derived(st?.delve ? st.question : null);
-  const span = $derived(st?.delve && q ? questionTimer(st) : total);
+  /**
+   * An Azurite Vein's strike runs on the dig's lamp (delve.ts, the dig): the
+   * ring is its light, out of the strike's whole deeper clock, so a lamp
+   * lit at four fifths, or burnt low by the strikes before, starts short of full.
+   */
+  const lamp = $derived(q?.find === 'azurite');
+  const span = $derived(st?.delve && q ? (lamp ? Math.max(questionTimer(st), delveTimer(findDepth('azurite', st.round, q.strike ?? 1))) : questionTimer(st)) : total);
 
   let remaining = $state(Infinity);
 
@@ -174,7 +180,7 @@
   $effect(() => {
     if (deadline === null) {
       // Held still by the host's reload: the time it had left; not started yet: all of it.
-      remaining = pausedLeft ?? span * 1000;
+      remaining = pausedLeft ?? (st?.delve && q ? questionTimer(st) : total) * 1000;
       // The dark as at that time, not as this screen's clock ran on while the host was away (a flare's light aside).
       if (pausedLeft !== null && litAt === null) {
         shownDark = pressureOf(pausedLeft, span * 1000, warnFrom);
@@ -250,6 +256,7 @@
   class:stopped
   class:flaring
   class:burning={lit && !stopped}
+  class:lamp
   role="timer"
   aria-label={`${secs} seconds left`}
 >
@@ -355,6 +362,38 @@
     text-shadow:
       0 0 8px rgba(236, 62, 92, 0.9),
       0 1px 2px rgba(0, 0, 0, 0.9);
+  }
+  /* A vein's lamp: azurite light that flickers as it burns down, guttering once it runs urgent. */
+  .lamp .track {
+    stroke: rgba(120, 170, 255, 0.12);
+  }
+  .lamp .fill {
+    stroke: #8fc0ff;
+    filter: drop-shadow(0 0 6px rgba(70, 140, 255, 0.85));
+    animation: lamp 1.9s ease-in-out infinite;
+  }
+  .lamp span {
+    color: #dcedff;
+  }
+  .lamp.urgent .fill {
+    stroke: #5d8fe0;
+    animation: gutter 0.5s steps(2, jump-none) infinite;
+  }
+  @keyframes lamp {
+    50% {
+      filter: drop-shadow(0 0 3px rgba(70, 140, 255, 0.6));
+    }
+  }
+  @keyframes gutter {
+    50% {
+      opacity: 0.55;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lamp .fill,
+    .lamp.urgent .fill {
+      animation: none;
+    }
   }
   .stopped {
     opacity: 0.4;

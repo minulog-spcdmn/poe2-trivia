@@ -248,11 +248,25 @@ the same thing for everyone.
     pick strikes (or at the time-out). The lost item bursts on the phial or
     beside it with a small blast of its own, a moment after the life, and
     the reveal says what went ("The blast destroyed your flare.").
-  - An **Azurite Vein** (from depth 25): a right answer, at any speed,
-    mines a whole **Azurite Ward**, which takes your next lost life
-    instead. A wrong answer or a time-out on a vein caves in, with a sound
-    of its own: it costs two lives, a ward taking each loss first if you
-    hold one (on your last life you simply fall).
+  - An **Azurite Vein** (from depth 25) is dug a strike at a time. Each
+    right answer digs out a whole **Azurite Ward** (one takes your next
+    lost life instead), but only into your hand: the next cards are two,
+    the vein running on into another category you may pick (the next
+    strike, from further down: 15, 20, then 25 depths) and **the way out**,
+    which puts what you dug out into your pack and takes the run a depth
+    deeper. At most three strikes, and only as far as your pack has room.
+    The whole dig runs on one **lamp**, the clock ring turned azurite:
+    lit with four fifths of strike 1's clock, it burns only while a strike
+    is open, and each right strike feeds it half of the next one's clock,
+    so a quick answer carries light on (under 4 s left, the dig ends there
+    and the haul goes into the pack by itself). A wrong answer or a
+    time-out on any strike caves in, with a sound of its own: it costs two
+    lives, a ward in the pack taking each loss first (on your last life
+    you simply fall), and buries everything in hand. The dig stays at the
+    vein's depth and its later strikes lock no category. Together the team
+    votes between the two cards and answers each strike as any question;
+    each ward goes to whoever got it right. The rules are in
+    `src/lib/delve.ts` (the dig); `docs/vein-digging.md` has the design.
   - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,
     rounded (never under 4 s, where its art still burns in, fast, with over
@@ -295,8 +309,8 @@ the same thing for everyone.
     crystallises on as it is mined, and bursts in blue sparks where it is
     when it takes a loss.
   - Flares and dynamite stand as small counts beside the phial.
-  - The reveal says what happened in a few words: "You mined an Azurite
-    Ward.", "Your ward took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
+  - The reveal says what happened in a few words: "You dug out an Azurite
+    Ward. A ward in hand.", "Your ward took the hit.", "The vein caves in. You lose two lives." or, on a time-out,
     "The darkness took you." Together it says who cleared it ("Ash cleared
     it.") and what it cost whom ("The darkness took Brea and Cara."),
     leaving a single lost life to the phial.
@@ -1146,7 +1160,8 @@ real game screen (the app itself, with its backdrop, effects, sounds and
 header) beside a panel that sets up and plays a run on this device. It sets
 the players (1 to 4), each one's lives, wards, flares and dynamite,
 and the depth (any of 1 to 150, or a zone); deals cards with a find among
-them, and a second find if wanted; asks questions (name the item or find
+them, and a second find if wanted; deals a vein's two cards after strike 1
+or 2 (the dig, with its haul and lamp); asks questions (name the item or find
 the art, a find's, mirrored, unveiled, in grayscale); plays events (a right
 or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
 a blast (Detonate), dynamite at 0 (its fuse), items gained, a find answered right, the last

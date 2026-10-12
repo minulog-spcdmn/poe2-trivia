@@ -3,6 +3,7 @@
 // so a knob reads the same wherever it shows up.
 
 import {
+  VEIN_MAX_STRIKES,
   DELVE_MAX_BLASTS,
   FLARE_MS,
   blowsUp,
@@ -162,7 +163,7 @@ export const FIND_MISS: Record<FindKind, string | null> = Object.fromEntries(
 ) as Record<FindKind, string | null>;
 
 function riskOf(kind: FindKind): string | null {
-  if (cavesIn(kind)) return `a miss costs ${caveInText(kind)}`;
+  if (cavesIn(kind)) return `a miss costs ${caveInText(kind)} and your haul`;
   const { clock } = findFor(kind);
   // Not how much less: the cut is smaller deep down, where the clock can't go under FIND_MIN_TIMER.
   if (clock < 1) return 'you get less time to answer';
@@ -195,7 +196,7 @@ export const FINDS_LABEL = 'Finds • harder questions';
  */
 export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
   azurite: {
-    gives: 'A ward takes a lost life for you.',
+    gives: `Each right answer digs out a ward, which takes a lost life for you. Then dig deeper or take the way out, up to ${words(VEIN_MAX_STRIKES)} strikes on one lamp whose unused light carries on.`,
     miss: `${cap(FIND_MISS.azurite ?? '')}.`,
   },
   flare: {
@@ -227,7 +228,7 @@ export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInTex
  * depth it asks, nor that it is harder (its card's mark says so).
  */
 export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: string }> = {
-  azurite: { name: 'Azurite Vein', tag: 'Answer right for a ward', others: `A right answer wins a ward. ${noteLine(does('azurite'), 'azurite')}` },
+  azurite: { name: 'Azurite Vein', tag: 'Answer right to dig out a ward', others: `A right answer digs out a ward. ${noteLine(does('azurite'), 'azurite')}` },
   flare: { name: 'Flare Cache', tag: 'Answer right for a flare', others: `A right answer wins a flare. ${noteLine(does('flare'), 'flare')}` },
   dynamite: { name: 'Dynamite Cache', tag: 'Answer right for dynamite', others: `A right answer wins dynamite. ${noteLine(does('dynamite'), 'dynamite')}` },
 };
@@ -324,14 +325,19 @@ export function coopRevealText(r: {
   me: string | null;
   /** What a find's right answer earned, and who got it (the winner, or a teammate with room for it). */
   gain?: GainText;
+  /** An Azurite Vein's cave-in: the wards in hand it buried. */
+  buried?: number;
+  /** A vein's ward dug out: the wards now in the team's hand. */
+  inHand?: number;
 }): string[] {
   const { nameOf, me } = r;
   const hits = r.hits.filter((h) => r.left(h.playerId) !== null);
   const left = (id: string) => r.left(id) ?? 0;
   const list = (ids: string[]) => namesOf(ids, nameOf, me);
   const out: string[] = [];
-  if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me));
+  if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me) + (r.inHand ? ` ${inHandText(r.inHand)}` : ''));
   else out.push(r.timedOut ? "Time's up; nobody found it." : 'Every answer was wrong.');
+  if (r.buried) out.push(buriedText(r.buried, 'the team'));
   const wrong = hits.filter((h) => !h.timedOut).map((h) => h.playerId);
   const late = hits.filter((h) => h.timedOut).map((h) => h.playerId);
   const perished = hits.filter((h) => h.lives > 0 && left(h.playerId) === 0).map((h) => h.playerId);
@@ -369,6 +375,38 @@ export function coopRevealText(r: {
   return out;
 }
 
+// ---- the Azurite Vein's dig ------------------------------------------------
+
+/** "a ward", "two wards": the haul in words. */
+export const wardsWord = (n: number) => (n === 1 ? 'a ward' : `${words(n)} wards`);
+
+/** Seconds of the lamp's light, as shown: whole, or to a tenth under ten. */
+export const lightText = (secs: number) => (secs >= 10 ? String(Math.floor(secs)) : (Math.floor(secs * 10) / 10).toFixed(1).replace(/\.0$/, ''));
+
+/**
+ * The note under the vein's card in a dig: which strike, the lamp's light
+ * for it, and what a cave-in would cost (`team`: the team's haul).
+ */
+export function digNote(next: number, light: number, haul: number, team = false): string {
+  const whose = team ? "the team's" : 'your';
+  const buries = haul ? ` and buries ${whose} ${haul === 1 ? 'ward' : `${words(haul)} wards`}` : '';
+  return `Strike ${next} of ${VEIN_MAX_STRIKES}, with ${lightText(light)} seconds of light. A miss costs ${caveInText('azurite')}${buries}.`;
+}
+
+/** The note under the way out: what it takes out of the vein. */
+export function wayOutNote(haul: number, team = false): string {
+  if (!haul) return 'Climb out and go a depth deeper.';
+  return `Take ${team ? "the team's" : 'your'} ${haul === 1 ? 'ward' : `${words(haul)} wards`} out and go a depth deeper.`;
+}
+
+/** After a right strike: what is in hand ("Two wards in hand."). */
+export const inHandText = (n: number) => `${cap(wardsWord(n))} in hand.`;
+
+/** A cave-in's haul: "The ward you dug out is buried." */
+export function buriedText(n: number, whose = 'you'): string {
+  return n === 1 ? `The ward ${whose} dug out is buried.` : `The ${words(n)} wards ${whose} dug out are buried.`;
+}
+
 /** A find's gain at a co-op reveal (see coopRevealText). */
 export interface GainText {
   kind: ItemKind;
@@ -386,7 +424,7 @@ function clearedText(winner: string, gain: GainText | undefined, nameOf: (id: st
   if (!gain) return `${who} cleared it.`;
   const { kind, by } = gain;
   if (by === winner) {
-    const did = kind === 'wards' ? 'mined an Azurite Ward' : kind === 'flares' ? 'found a flare' : 'found a stick of dynamite';
+    const did = kind === 'wards' ? 'dug out an Azurite Ward' : kind === 'flares' ? 'found a flare' : 'found a stick of dynamite';
     return `${who} cleared it and ${did}.`;
   }
   const to = namesOf([by], nameOf, me);

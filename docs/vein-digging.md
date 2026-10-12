@@ -1,8 +1,9 @@
 # Azurite Vein: keep digging (proposal)
 
-> **Draft.** A design for reworking the Azurite Vein into a push-your-luck
-> find. Nothing is built yet; the numbers are a hand model and are to be
-> checked with bot runs before tuning.
+> **Built, being tuned on the beta.** The rules live in `src/lib/delve.ts`
+> (the dig: VEIN_MAX_STRIKES, VEIN_DEEPER, LAMP_START, LAMP_FEED) and
+> `src/lib/game.ts`; the numbers below are the first playtest's. The lab
+> (`lab.html`) deals a dig's two cards after strike 1 or 2.
 
 ## The problem
 
@@ -51,8 +52,8 @@ out, and what you lose if the rock comes down.
    - **buries the haul in hand**.
 
 **Depth.** The whole vein is one depth's turn, however many strikes it
-takes. Taking the way out, or a cave-in, takes the run one depth deeper, as
-after any question.
+takes. Taking the way out takes the run one depth deeper; a cave-in is a
+miss, so the run asks again at the same depth, as after any miss.
 
 **Room.** The vein card is dealt again only while the pack plus the haul has
 room for another ward. Otherwise the haul goes into the pack by itself. So

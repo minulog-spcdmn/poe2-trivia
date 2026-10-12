@@ -7,8 +7,8 @@
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
-  import { expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused, wayOutNote } from '../lib/difficultyText';
+  import { digOf, expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -17,6 +17,7 @@
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
   import Avatar from './Avatar.svelte';
+  import ItemGlyph from './ItemGlyph.svelte';
 
   let {
     drawn = null,
@@ -45,6 +46,34 @@
   const dimmed = $derived(coop ? !me || livesOf(s, me) <= 0 : !mine);
   // The lockout in force (in Delve it grows with depth).
   const lockout = $derived(activeRules(s).lockout);
+
+  // ---- the Azurite Vein's dig ----------------------------------------------
+  // After a right strike the deal is two cards: the vein running on, and the
+  // way out with the haul. The haul glows over them, the wards in hand.
+
+  /** The vein being dug, while its two cards are up. */
+  const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
+  const haul = $derived(dig?.haul.length ?? 0);
+  /**
+   * The way out's emblem: an arched doorway at the head of its steps, the
+   * light of the path filling it (fainter in the mask, so paler in the gold).
+   */
+  const OUT_ICON =
+    'data:image/svg+xml,' +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="240" viewBox="0 0 100 120">` +
+        `<path d="M12 106V54Q12 14 50 6Q88 14 88 54V106H76V56Q76 26 50 19Q24 26 24 56V106Z"/>` +
+        `<path opacity=".5" d="M29 106V58Q29 33 50 26Q71 33 71 58V106Z"/>` +
+        `<path opacity=".8" d="M44 106L47 60H53L56 106Z"/>` +
+        `<path d="M4 110H96V120H4Z"/><path d="M8 103H92V107H8Z"/>` +
+        `<path d="M50 0L52 4L50 3L48 4Z"/>` +
+        `</svg>`,
+    );
+  measure(OUT_ICON);
+  const iconOf = (cat: string) => (isWayOut(cat) ? OUT_ICON : categoryIcon(cat));
+  const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1.05, up: 0, left: 0 } : categoryIconTweak(cat));
+  /** A card's name as players read it. */
+  const cardName = (cat: string) => (isWayOut(cat) ? 'The way out' : cat);
 
   // ---- the cards' effects ---------------------------------------------------
   // Everything the cards set off is one group: it ends with them (a short
@@ -434,6 +463,14 @@
   <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
       {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+    {:else if dig}
+      {#if coop ? canVote && !drawn : mine}
+        {coop && myVote ? 'Your vote is in' : 'Dig deeper, or get out?'}
+      {:else if coop}
+        <span class="muted">{drawn ? 'Drawing from the votes…' : 'The team is deciding whether to dig deeper…'}</span>
+      {:else}
+        <span class="muted">{active.name} is deciding whether to dig deeper…</span>
+      {/if}
     {:else if coop}
       {#if drawn}
         <span class="muted">Drawing from the votes…</span>
@@ -450,6 +487,13 @@
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
   </p>
+  {#if dig && haul}
+    <!-- The haul in hand: what the way out takes, and what a cave-in buries. -->
+    <p class="haul" aria-label="{haul} {haul === 1 ? 'ward' : 'wards'} in hand">
+      {#each { length: haul } as _, i (i)}<span class="shard" style:--i={i} aria-hidden="true"><ItemGlyph kind="ward" /></span>{/each}
+      <span class="in-hand">in hand</span>
+    </p>
+  {/if}
 
   <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
@@ -460,6 +504,7 @@
         data-fx="none"
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
+        class:out={isWayOut(cat)}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
@@ -468,7 +513,7 @@
         class:faded={(picked && picked !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
         class:passing={!landed && lit === i}
-        aria-label={coop ? `${cat}: ${voteWords(cat)}` : undefined}
+        aria-label={coop ? `${cardName(cat)}: ${voteWords(cat)}` : isWayOut(cat) ? cardName(cat) : undefined}
         aria-pressed={coop && canVote ? myVote === cat : undefined}
         disabled={!mine}
         onclick={() => pick(cat)}
@@ -492,13 +537,16 @@
             <span class="filigree"></span>
             {#if kindOf(cat)}
               {@const kind = kindOf(cat)!}
-              <span class="find-tag" data-zoom>{FIND_TEXT[kind].name}</span>
+              <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? `Strike ${dig.strikes + 1}` : FIND_TEXT[kind].name}</span>
+            {:else if isWayOut(cat)}
+              <span class="find-tag out-tag" data-zoom>{haul ? `${haul} in hand` : 'Back to the path'}</span>
             {/if}
             <span class="icon">
-              <span class="lit"><span class="glyph" class:fit={!!fits[categoryIcon(cat)]} style={fitStyle(categoryIcon(cat), categoryIconTweak(cat))} style:--src="url('{maskOf(categoryIcon(cat))}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={fitStyle(iconOf(cat), tweakOf(cat))} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
             </span>
             <span class="title"
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{FIND_TEXT[kind].name}</span>{/if}{cat}</span
+              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? `Strike ${dig.strikes + 1}` : FIND_TEXT[kind].name}</span
+                >{:else if isWayOut(cat)}<span class="find-tag-row">{haul ? `${haul} in hand` : 'Back to the path'}</span>{/if}{cardName(cat)}</span
             >
           </span>
           {#if coop}
@@ -524,7 +572,16 @@
     {/each}
   </div>
 
-  {#if finds.length && !s.deathmatch}
+  {#if dig}
+    <!-- A dig's two cards: the strike ahead and what a cave-in costs; what the way out takes. -->
+    <div class="find-notes" data-cursor="notes">
+      {#each s.offered as cat, i (cat)}
+        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} style:--col={i + 1}>
+          {#if isWayOut(cat)}{wayOutNote(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
+        </p>
+      {/each}
+    </div>
+  {:else if finds.length && !s.deathmatch}
     <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
     {@const two = finds.length > 1}
     {@const team = coop && !!me && livesOf(s, me) > 0}
@@ -565,6 +622,8 @@
 
   {#if s.deathmatch}
     <p class="note muted" data-cursor="note">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
+  {:else if dig}
+    <!-- (A dig's cards lock nothing.) -->
   {:else if coop && canVote && lockout > 0}
     <p class="note muted" data-cursor="note">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
@@ -583,6 +642,77 @@
     margin: 0;
     font-size: 1.2rem;
     text-align: center;
+  }
+  /* The haul in hand: its wards glowing azurite over the dig's two cards, flickering out of step. */
+  .haul {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: -0.8rem 0 -0.6rem;
+    font-size: 0.85rem;
+    color: #9cc8ff;
+  }
+  .shard {
+    display: inline-flex;
+    --h: 26px;
+    filter: drop-shadow(0 0 6px rgba(90, 160, 255, 0.85));
+    animation: flicker 2.4s ease-in-out calc(var(--i) * -0.7s) infinite;
+  }
+  .in-hand {
+    margin-left: 0.2rem;
+    font-family: var(--font-display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+  }
+  @keyframes flicker {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    45% {
+      opacity: 0.72;
+    }
+    60% {
+      opacity: 0.95;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .shard {
+      animation: none;
+    }
+  }
+  /* The way out: the path's warm light in its doorway, brighter than the plates' gold. */
+  .card.out .glyph {
+    background: linear-gradient(180deg, #fff6dc 0%, #f4c873 45%, #9a5a1c 100%);
+  }
+  .card.out .icon {
+    filter: drop-shadow(0 0 20px rgba(255, 186, 104, 0.7));
+  }
+  .card.out {
+    --f: #ffd18a;
+    --f-hi: #fff0d0;
+    --f-border: #9a6a2a;
+    --f-pulse: rgba(255, 170, 80, 0.36);
+    --f-glow: rgba(255, 170, 80, 0.24);
+  }
+  .card.out .title {
+    color: var(--f-hi);
+  }
+  .card.out .frame {
+    border-color: var(--f-border);
+  }
+  .card.out:not(:global(.down)) .frame {
+    --bs1: 0px 34px;
+    --bs1-color: var(--f-glow);
+  }
+  .card.out.mine:not(:global(.down)):hover .frame,
+  .card.out.mine:not(:global(.down)):focus-visible .frame {
+    border-color: var(--f);
+    --bs1-color: var(--f-pulse);
+  }
+  .find-note[data-find='out'] {
+    color: #f3d29a;
   }
   /* The cards take the room the question will: on a full-size window they
      stand as tall as its stage (1.36 x, 980 wide for three), smaller on

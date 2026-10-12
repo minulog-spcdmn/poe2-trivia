@@ -357,3 +357,18 @@ test('the lamp left on a strike is measured from its clock, held still or not', 
   h.clock.now = q.clockAt! + 1500;
   assert.equal(clockLeft(h.s.question!, h.clock.now), findTimer('azurite', 30) * 1000 - 1500);
 });
+
+test('the codex counts a vein once however deep it was dug, and what a cave-in buried as never carried out', async () => {
+  const { findStats } = await import('../src/lib/codexStats.ts');
+  const base = { mode: 'name' as const, difficulty: 'eternal' as const, race: false, depth: 30, run: 1, find: 'azurite' as const };
+  const log = [
+    // Dug twice and got out with two wards.
+    { ...base, t: 1, id: 'a', ok: true, gained: 'wards' as const },
+    { ...base, t: 2, id: 'b', ok: true, gained: 'wards' as const, strike: 2 },
+    // Dug once, then caved in on strike 2: the ward in hand buried.
+    { ...base, t: 3, id: 'c', ok: true, gained: 'wards' as const },
+    { ...base, t: 4, id: 'd', ok: false, strike: 2, buried: 1, lives: 2, wards: 0 },
+  ];
+  const f = findStats(log).finds.azurite;
+  assert.deepEqual([f.taken, f.ok, f.gained.wards, f.lives], [2, 2, 2, 2]);
+});
