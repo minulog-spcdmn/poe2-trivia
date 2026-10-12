@@ -151,7 +151,7 @@ the same thing for everyone.
   "find the art" pictures: 1% of those questions at depth 24, one percent
   more every depth, all of them from depth 123. Each picture is cut much
   coarser than a whole item (at most 4 × 4), so ten of them stay a few
-  dozen patches each to send.
+  dozen patches each to burn in.
 - **Look-alike pictures.** From depth 49 a growing share of questions picks
   its look-alikes by their art instead of their names (1.4% at 49, as much
   more every depth, every question from 119): the wrong pictures of "find
@@ -630,6 +630,24 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
     taking a seat when the next game starts (and **Play next game** to
     change their mind). A guest in the lobby can give up their seat the same
     way, and **Take a seat** again. The choice holds through reconnects.
+  - **Who's ready:** in the lobby, a player's chip carries a mark, where the
+    host has their banner, when they aren't simply there
+    (`src/components/StandingMark.svelte`): a closed eye when their game
+    isn't on their screen (another tab, a minimised window, or the screen
+    off, for more than a couple of seconds; another app's window over the
+    browser doesn't count, as the page can't tell), a crescent moon when they haven't touched it
+    for two minutes, signal bars with two lit when their game answers the host's
+    pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
+    unlit bars when they're offline, all in the same muted grey. Away, idle
+    and offline names dim, and idle and offline avatars grey as an offline
+    player's does in the game (away can be a look at another tab). Beside Begin the host sees "All 4 exiles here and ready" with
+    a tick, or who the game would begin without and why ("3 of 4 ready; Kai
+    is away"; never themselves); a guest waiting on an away or idle host is
+    told so. Coming back to the game counts as a sign of life, and the room
+    hears of each change at once (away once its grace is over). Each device tells
+    the host its own presence as it changes, once the host has welcomed it
+    (a host on another version wouldn't know the message), and the host tells the room
+    (`src/lib/presence.ts`).
   - **Live pointers:** in the lobby, in turns mode and Delve together, and
     on the screen that ends a game (any mode), everyone sees the other players' mouse pointers move over the room, in their colour and
     with their name; a tap on a phone shows where it landed, as the
@@ -707,8 +725,12 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **No image files to look up.** Guests never load an item's image file
   during a question. The host sends a lightly altered copy of the art
   (re-scaled, shifted, noised, re-encoded) straight over the connection. On
-  veiled difficulties it sends only the patches revealed so far, so the rest
-  of the picture isn't on the guest's machine at all.
+  veiled difficulties the altered picture goes out whole as the question
+  starts, with which patch each of its pixels falls in, and burns into view
+  as the host uncovers its patches. Cutting and sending every patch as a
+  picture of its own held the host's page up as each question began, so a
+  guest who digs into the page can now see a veiled picture before it has
+  burned in.
 - **Seats can't be taken over.** Each browser has a secret token that only
   its host ever sees; the IDs other players see are random public IDs.
   Rejoining needs the token and keeps your original name. The token is
@@ -861,7 +883,16 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   show before then, the lean programs stand in and Delve's parts come in over
   a moment once they're ready. The effects layer's renderer is made at the
   first idle moment after the first paint, or as soon as an effect is asked
-  for; effects asked for before it's ready wait for it.
+  for; effects asked for before it's ready wait for it. The game's own
+  screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
+  a quarter of the script, fetched at the first idle moment or at once on the
+  way into a room, so the start page loads and runs without them (tried once
+  more if the fetch fails; after that the game screen offers a reload, as
+  some browsers won't fetch a module that failed again). The host decodes
+  a question's pictures off the main thread (all of a "find the art"
+  question's at once), and every device cuts a veiled picture's patches in
+  a worker (`src/lib/veilWorker.ts`): their shapes as the question starts,
+  each one's picture as it uncovers.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

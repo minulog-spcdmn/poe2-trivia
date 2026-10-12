@@ -20,6 +20,8 @@ import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
+import { frameEvent, timed } from './fpsMeter';
+import { switchedOff } from './switchedOff';
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -904,6 +906,8 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
   return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE;
 }
 
+/** The most device pixels the backdrop draws (see scale() in startBackdrop): a 1440p screen's. */
+const MAX_PIXELS = 2560 * 1440;
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
 
@@ -1049,6 +1053,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     col: new Float32Array(MAX_MASKS * DROPS_PER_MASK * 4),
   };
   const shadowArrays = [...Object.values(el), ...Object.values(mk)];
+  /** What only colours the elements' shadows and fills (see measure): their changes can wait for a 30fps frame. */
+  const colourArrays = new Set<Float32Array>([el.c, el.d, el.e, el.col]);
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
   /** The drop-shadow atlases' sizes (uSharpSize, uBlurSize). */
   const atlasSize = new Float32Array([1, 1, 1, 1]);
@@ -1247,6 +1253,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
   // so there every element keeps its CSS shadow and the backdrop draws none.
   const cssShadows = matchMedia('(pointer: coarse)');
+  // Beta, to find what makes frames slow (lib/switchedOff.ts): the UI's shadows and fills left to CSS;
+  // the backdrop drawn once a second (and its shadows and fills left to CSS with it).
+  const drawnSlowly = switchedOff('backdraw');
+  const fillsToCss = drawnSlowly || switchedOff('fills');
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
@@ -1414,24 +1424,33 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
-  // Measures the shadowed elements; true if anything changed since last time.
-  // On phones and tablets there's nothing to measure: everything is let go
-  // to CSS once, and nothing changes until the pointer does.
+  // Measures the shadowed elements and says what changed since last time:
+  // 'now' when something must be drawn in this very frame (an element moved
+  // or changed size, or a shadow or fill was handed between CSS and the
+  // backdrop, which CSS stops or starts painting this frame), 'paced' when
+  // only colours changed (a fill or shadow easing to another colour), which
+  // 30fps draws as well, or false. On phones and tablets there's nothing to
+  // measure: everything is let go to CSS once, and nothing changes until the
+  // pointer does.
   let released = false;
-  function measure() {
+  function measure(): 'now' | 'paced' | false {
     let atlases: ReturnType<typeof measureDrops> = null;
-    if (cssShadows.matches) {
+    if (cssShadows.matches || fillsToCss) {
       if (released) return false;
       released = true;
+      // (What was last drawn is now these zeros too: measured again later,
+      // values that happen to equal those from before still count.)
       for (const arr of shadowArrays) arr.fill(0);
+      prev.fill(0);
       releaseAll();
       releaseAllDrops();
+      return 'now';
     } else {
       released = false;
       measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
       atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
     }
-    let changed = false;
+    let changed: 'now' | 'paced' | false = false;
     if (atlases) {
       gl!.activeTexture(gl!.TEXTURE0);
       gl!.bindTexture(gl!.TEXTURE_2D, sharpTex);
@@ -1443,15 +1462,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
       atlasSize[2] = atlases.blurW;
       atlasSize[3] = atlases.blurH;
-      changed = true;
+      frameEvent('backdrop: drop shadows upload');
+      changed = 'now';
     }
     let k = 0;
     for (const arr of shadowArrays) {
+      const colour = colourArrays.has(arr);
       for (let i = 0; i < arr.length; i++, k++) {
-        if (prev[k] !== arr[i]) {
-          prev[k] = arr[i];
-          changed = true;
-        }
+        if (prev[k] === arr[i]) continue;
+        // A colour easing is paced; one coming or going (a fill's kind, a shadow's alpha from or to 0) is a handover.
+        const handover = !colour || (arr === el.c ? i % 4 === 0 : arr === el.col ? i % 4 === 3 && (prev[k] === 0 || arr[i] === 0) : false);
+        prev[k] = arr[i];
+        if (handover) changed = 'now';
+        else changed ||= 'paced';
       }
     }
     return changed;
@@ -1464,6 +1487,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // embers drift a few pixels a frame), and while calm() nothing is drawn
   // until something changes.
   let dirty = false;
+  /** A change held back for the 30fps pace (see frame()). */
+  let owed = false;
   let wasDescending = false;
   // Calls that wait on the GPU process (whenGpuCaughtUp in fx/gl.ts), and
   // the fence after the last frame drawn before they asked: nothing new is
@@ -1503,7 +1528,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       }
     }
   }
-  function frame(now: number) {
+  /** One frame of the backdrop (timed for the beta's frame meter). */
+  const frame = (now: number) => timed('backdrop', frameUntimed, now);
+  function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
     if (catchingUp.size) {
       // (The backdrop's clock holds still meanwhile.)
@@ -1570,7 +1597,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
     const soft = lights || moodState === 'moving';
-    const lit = homeMoving || (soft && !cssShadows.matches);
     if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
     else if (descending) embers.step(0, canvas.clientWidth, canvas.clientHeight, true, true);
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
@@ -1583,10 +1609,24 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       delveIn = Math.min(1, delveIn + dt / DELVE_IN_S);
       dirty = true;
     }
-    const changed = measure() || dirty || lit || fading || !!warming;
-    if (!changed && ((still && !soft) || now - last < 33)) return;
+    // What must be drawn now: the UI's shadows and fills moving with it, the
+    // start page's scene, a dialog's dimming, the scene sinking or swinging,
+    // Delve's parts coming in. Lights, a mood easing and colours changing
+    // under the UI are slow enough for 30fps on every screen: a right
+    // answer's reveal (its light, its fills and glows easing to green and
+    // gold) would otherwise redraw this pass every frame, along with the
+    // effects overlay's own.
+    const measured = measure();
+    // A colour measured now isn't measured as changed again (measure() takes
+    // it as drawn), and a light or mood easing may stop in a frame held back:
+    // either is owed a frame, at the 30fps pace.
+    if (measured || soft) owed = true;
+    if (drawnSlowly && now - last < 1000) return;
+    const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
+    if (!urgent && ((still && !owed) || now - last < 33)) return;
     last = now;
     dirty = false;
+    owed = false;
     draw();
   }
 
@@ -1605,7 +1645,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // redrawn 30 times a second for as long as the page is open. The grain is
   // per CSS px anyway, the embers are soft glows, and the dither still hides
   // every band.
-  const scale = () => (cssShadows.matches && devicePixelRatio > 1 ? 1 / devicePixelRatio : 1);
+  //
+  // And on any screen, never more than MAX_PIXELS: a 4K screen's 8 million
+  // device pixels (or more) made this full-screen pass, drawn under the
+  // effects overlay's own, too much for the GPU in a reveal, and frames came
+  // a tenth of a second late. Up to a 1440p screen's worth it is drawn
+  // exact; past that, about one pixel per CSS px or a little more, which the
+  // crisp fills and shadows (under the UI's own 1px borders) still hold to.
+  const scale = () => {
+    if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
+    const device = canvas.clientWidth * canvas.clientHeight * devicePixelRatio * devicePixelRatio;
+    return device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
+  };
 
   // The canvas is as tall as the viewport with a phone's toolbars hidden, but
   // the scene is laid out for the height with them showing (--view-h in

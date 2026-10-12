@@ -1,5 +1,7 @@
-// Veiled art is revealed piece by piece, and guests only ever receive the
-// pieces uncovered so far. The pieces are organic patches of the item itself:
+// Veiled art is revealed piece by piece: the host cuts it (labelPatches),
+// sends the picture whole with its labels (packLabels), and then names each
+// piece as it uncovers; every device cuts the pieces' pictures from the
+// labels (patchShapes). The pieces are organic patches of the item itself:
 // its visible pixels split around seed points, with the borders warped by
 // noise so no grid or straight edge shows. Transparent pixels belong to no
 // patch, so every patch shows part of the item.
@@ -33,13 +35,14 @@ export function valueNoise(x: number, y: number, seed: number): number {
   return a + (b - a) * v;
 }
 
-export interface RawPatch {
+/** A patch's place and shape in its picture, all in art pixels. */
+export interface PatchShape {
   x: number;
   y: number;
   w: number;
   h: number;
-  /** RGBA, w × h: the patch's pixels, everything else transparent. */
-  pixels: Uint8ClampedArray;
+  /** w × h: 1 where the patch shows the picture (its own pixels and the 1px ring of its neighbours'), 0 elsewhere. */
+  mask: Uint8Array;
   /** w × h: 1 for the patch's own pixels, 0 for its ring of neighbours' and the rest. */
   own: Uint8Array;
   /**
@@ -51,6 +54,11 @@ export interface RawPatch {
   edges: Uint16Array;
   /** How many of the item's pixels are this patch's own (its ring of neighbours' not counted). */
   area: number;
+}
+
+export interface RawPatch extends PatchShape {
+  /** RGBA, w × h: the patch's pixels, everything else transparent. */
+  pixels: Uint8ClampedArray;
 }
 
 /** Pixels at or below this alpha count as transparent. */
@@ -84,10 +92,29 @@ export function visibleBox(rgba: Uint8ClampedArray, W: number, H: number): [numb
  * picture's litMask, for a caller that has it already.
  */
 export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: number, seed: number, shown = litMask(rgba, W, H)): RawPatch[] {
+  return patchShapes(labelPatches(W, H, size, seed, shown), W, H).map((p) => {
+    const pixels = new Uint8ClampedArray(p.w * p.h * 4);
+    for (let y = 0; y < p.h; y++)
+      for (let x = 0; x < p.w; x++) {
+        if (!p.mask[y * p.w + x]) continue;
+        const g = (p.y + y) * W + p.x + x;
+        pixels.set(rgba.subarray(g * 4, g * 4 + 4), (y * p.w + x) * 4);
+      }
+    return { ...p, pixels };
+  });
+}
+
+/**
+ * Which patch each pixel of a W × H picture falls in (cutPatches), the
+ * picture's visible pixels being `shown` (litMask): its index, or -1 for one
+ * that isn't. Patches are numbered from 0 with none left empty, so at most
+ * 255 of them.
+ */
+export function labelPatches(W: number, H: number, size: number, seed: number, shown: Uint8Array): Int16Array {
   const rand = seededRandom(seed);
   const lit: number[] = [];
   for (let i = 0; i < W * H; i++) if (shown[i]) lit.push(i);
-  if (!lit.length) return [];
+  if (!lit.length) return new Int16Array(W * H).fill(-1);
   const n = Math.max(1, Math.min(255, Math.round(((size * size) / (W * H)) * lit.length), lit.length));
 
   // Seeds spread evenly over the item: each the farthest of a few candidates
@@ -191,13 +218,27 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     label[p] = k;
   }
 
+  // Seeds can end up with no pixels; the rest are numbered as they come out.
+  const count = new Uint32Array(n);
+  for (const p of lit) count[label[p]]++;
+  const index = new Int16Array(n).fill(-1);
+  for (let k = 0, m = 0; k < n; k++) if (count[k]) index[k] = m++;
+  for (const p of lit) label[p] = index[label[p]];
+  return label;
+}
+
+/** The patches a picture's labels (labelPatches) make: each one's place, its mask with the 1px ring, its edges and its area. */
+export function patchShapes(label: Int16Array, W: number, H: number): PatchShape[] {
+  let n = 0;
+  for (let i = 0; i < W * H; i++) if (label[i] >= n) n = label[i] + 1;
   // Bounding boxes, grown by the 1px ring.
   const x0 = new Array(n).fill(W);
   const y0 = new Array(n).fill(H);
   const x1 = new Array(n).fill(-1);
   const y1 = new Array(n).fill(-1);
-  for (const p of lit) {
+  for (let p = 0; p < W * H; p++) {
     const k = label[p];
+    if (k < 0) continue;
     const x = p % W;
     const y = (p / W) | 0;
     if (x < x0[k]) x0[k] = x;
@@ -205,17 +246,14 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
     if (x > x1[k]) x1[k] = x;
     if (y > y1[k]) y1[k] = y;
   }
-  // Seeds can end up with no pixels; the rest are numbered as they come out.
-  const index = new Int16Array(n).fill(-1);
-  for (let k = 0, m = 0; k < n; k++) if (x1[k] >= 0) index[k] = m++;
-  const out: RawPatch[] = [];
+  const out: PatchShape[] = [];
   for (let k = 0; k < n; k++) {
     if (x1[k] < 0) continue;
     const px = Math.max(0, x0[k] - 1);
     const py = Math.max(0, y0[k] - 1);
     const w = Math.min(W - 1, x1[k] + 1) - px + 1;
     const h = Math.min(H - 1, y1[k] + 1) - py + 1;
-    const pixels = new Uint8ClampedArray(w * h * 4);
+    const mask = new Uint8Array(w * h);
     const ownPx = new Uint8Array(w * h);
     const edges: number[] = [];
     let area = 0;
@@ -243,12 +281,11 @@ export function cutPatches(rgba: Uint8ClampedArray, W: number, H: number, size: 
           }
         }
         if (!mine) continue;
-        const o = (y * w + x) * 4;
-        pixels.set(rgba.subarray(g * 4, g * 4 + 4), o);
-        if (own) for (const l of others) edges.push(x, y, index[l]);
+        mask[y * w + x] = 1;
+        if (own) for (const l of others) edges.push(x, y, l);
       }
     }
-    out.push({ x: px, y: py, w, h, pixels, own: ownPx, edges: Uint16Array.from(edges), area });
+    out.push({ x: px, y: py, w, h, mask, own: ownPx, edges: Uint16Array.from(edges), area });
   }
   return out;
 }
@@ -278,10 +315,10 @@ export function litMask(rgba: Uint8ClampedArray, W: number, H: number): Uint8Arr
  * smooth: it holds its ring whole, as patches always did, so they overlap at
  * their seams.
  */
-export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
+export function patchCoverage({ x, y, w, h, mask, own }: PatchShape, lit: Uint8Array, W: number, H: number, S: number): Float32Array {
   if (S === 1) {
     const whole = new Float32Array(w * h);
-    for (let l = 0; l < w * h; l++) if (pixels[l * 4 + 3]) whole[l] = 1;
+    for (let l = 0; l < w * h; l++) if (mask[l]) whole[l] = 1;
     return whole;
   }
   // What each art pixel counts, over the patch's box and one pixel round it.
@@ -294,7 +331,7 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
       if (ax < 0 || ay < 0 || ax >= W || ay >= H || !lit[ay * W + ax]) continue;
       const inBox = gx >= 1 && gy >= 1 && gx <= w && gy <= h;
       const l = (gy - 1) * w + gx - 1;
-      grid[gy * gw + gx] = inBox && own[l] ? 1 : inBox && pixels[l * 4 + 3] ? 0.5 : 0;
+      grid[gy * gw + gx] = inBox && own[l] ? 1 : inBox && mask[l] ? 0.5 : 0;
     }
   }
   const pw = w * S;
@@ -313,7 +350,7 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
         out[by * pw + bx] = 1;
         continue;
       }
-      if (!pixels[(ly * w + lx) * 4 + 3]) continue;
+      if (!mask[ly * w + lx]) continue;
       const u = (bx + 0.5) / S + 0.5;
       const x0 = Math.floor(u);
       const tx = u - x0;
@@ -327,6 +364,62 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
 }
 
 /**
+ * A picture's labels (labelPatches) as they go out to guests: runs along its
+ * rows, each a (patch + 1, length) pair, 0 standing for transparent, a run
+ * longer than 65535 split. A picture's patches are blobs, so this takes a few
+ * kB where the labels themselves take a byte or two a pixel.
+ */
+export function packLabels(label: Int16Array): Uint16Array {
+  const out: number[] = [];
+  for (let i = 0; i < label.length; ) {
+    const v = label[i];
+    let n = 1;
+    while (i + n < label.length && label[i + n] === v && n < 0xffff) n++;
+    out.push(v + 1, n);
+    i += n;
+  }
+  return Uint16Array.from(out);
+}
+
+/** Labels back from packLabels, for a picture of `size` pixels; null unless they make exactly that many, each a patch below 255 or transparent. */
+export function unpackLabels(runs: Uint16Array, size: number): Int16Array | null {
+  if (runs.length % 2) return null;
+  const label = new Int16Array(size);
+  let at = 0;
+  for (let j = 0; j < runs.length; j += 2) {
+    const [v, n] = [runs[j], runs[j + 1]];
+    if (v > 255 || !n || at + n > size) return null;
+    label.fill(v - 1, at, at + n);
+    at += n;
+  }
+  return at === size ? label : null;
+}
+
+/**
+ * How many patches packed labels (packLabels) make of a picture of `size`
+ * pixels; null unless they fit it and number the patches from 0 with none
+ * left out, as labelPatches does (so patchShapes' n-th is patch n).
+ */
+export function patchCount(runs: Uint16Array, size: number): number | null {
+  if (runs.length % 2) return null;
+  const seen = new Uint8Array(256);
+  let at = 0;
+  let n = 0;
+  let most = 0;
+  for (let j = 0; j < runs.length; j += 2) {
+    const [v, len] = [runs[j], runs[j + 1]];
+    if (v > 255 || !len) return null;
+    at += len;
+    if (v && !seen[v]) {
+      seen[v] = 1;
+      n++;
+      most = Math.max(most, v);
+    }
+  }
+  return at === size && n === most ? n : null;
+}
+
+/**
  * The order patches are revealed in: the reveal spreads through the item
  * like fire. It starts at a random patch, and each next one is a neighbour
  * of what's already revealed (one sharing more border with it is likelier,
@@ -334,7 +427,7 @@ export function patchCoverage({ x, y, w, h, pixels, own }: RawPatch, lit: Uint8A
  * nothing revealed touches the rest (an item in separate pieces) does it
  * start again somewhere new.
  */
-export function spreadOrder(patches: RawPatch[], seed: number): number[] {
+export function spreadOrder(patches: PatchShape[], seed: number): number[] {
   const n = patches.length;
   const rand = seededRandom(seed ^ 0x5bd1e995);
   // How many border pixels each pair of patches shares.

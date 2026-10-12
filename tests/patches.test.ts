@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { areaTime, burntShare, cutPatches, litMask, patchCoverage, spreadOrder, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, labelPatches, litMask, packLabels, patchCount, patchCoverage, patchShapes, spreadOrder, unpackLabels, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -206,4 +206,58 @@ test("a patch's area comes into view as its front sweeps across, from 6% to 68% 
   assert.ok(Math.abs(areaTime([0, 1000], 1000, [3, 1]) - ((2 / 3 + 0.1) / 1.61) * 1000) < 1e-3);
   // No burn: in at once.
   assert.equal(areaTime([400, 500], 0, [1, 1]), 400);
+});
+
+test("a guest's patches, cut from the labels the host sends, are the host's: places, masks, edges and areas", () => {
+  for (const [W, H, size, seed] of [
+    [90, 120, 5, 1234],
+    [200, 140, 9, 77],
+    [40, 40, 3, 5],
+  ]) {
+    const art = ellipse(W, H);
+    const host = cutPatches(art, W, H, size, seed);
+    const label = unpackLabels(packLabels(labelPatches(W, H, size, seed, litMask(art, W, H))), W * H);
+    assert.ok(label);
+    const guest = patchShapes(label, W, H);
+    assert.equal(guest.length, host.length);
+    guest.forEach((g, k) => {
+      const h = host[k];
+      assert.deepEqual([g.x, g.y, g.w, g.h, g.area], [h.x, h.y, h.w, h.h, h.area]);
+      assert.deepEqual([...g.edges], [...h.edges]);
+      for (let i = 0; i < g.w * g.h; i++) assert.equal(g.mask[i], h.pixels[i * 4 + 3] ? 1 : 0);
+    });
+    assert.deepEqual(spreadOrder(guest, seed), spreadOrder(host, seed));
+  }
+});
+
+test('the labels pack into runs and back, and anything that is not a whole picture of them is turned down', () => {
+  const W = 200;
+  const H = 140;
+  const label = labelPatches(W, H, 9, 77, litMask(ellipse(W, H), W, H));
+  const runs = packLabels(label);
+  assert.ok(runs.byteLength < W * H / 4, `${runs.byteLength} bytes`);
+  assert.deepEqual(unpackLabels(runs, W * H), label);
+  // A long transparent stretch splits at 65535.
+  const empty = new Int16Array(70000).fill(-1);
+  assert.deepEqual([...packLabels(empty)], [0, 65535, 0, 4465]);
+  assert.deepEqual(unpackLabels(packLabels(empty), 70000), empty);
+  assert.equal(unpackLabels(runs, W * H + 1), null, 'too few pixels');
+  assert.equal(unpackLabels(runs, W * H - 1), null, 'too many pixels');
+  assert.equal(unpackLabels(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
+  assert.equal(unpackLabels(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
+  assert.equal(unpackLabels(Uint16Array.from([1]), 1), null, 'half a pair');
+});
+
+test('the labels say how many patches they make, and a count they would get wrong is turned down', () => {
+  const W = 200;
+  const H = 140;
+  const label = labelPatches(W, H, 9, 77, litMask(ellipse(W, H), W, H));
+  const runs = packLabels(label);
+  assert.equal(patchCount(runs, W * H), patchShapes(label, W, H).length);
+  assert.equal(patchCount(packLabels(new Int16Array(50).fill(-1)), 50), 0);
+  assert.equal(patchCount(runs, W * H + 1), null, 'too few pixels');
+  assert.equal(patchCount(Uint16Array.from([1, 2, 3, 2]), 4), null, 'patch 1 left out');
+  assert.equal(patchCount(Uint16Array.from([2, 2, 0, 1, 1, 1]), 4), 2);
+  assert.equal(patchCount(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
+  assert.equal(patchCount(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
 });
