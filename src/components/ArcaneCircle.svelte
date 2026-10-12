@@ -1,4 +1,4 @@
-<script lang="ts">
+<script module lang="ts">
   import { LUNA, LUNA_HATCH, MARKS, PLANETS, SOL_RAYS } from '../lib/alchemy';
 
   // An alchemist's circle, engraved, that draws itself behind the item art
@@ -18,13 +18,6 @@
   // strokes underneath rather than a filter (which would repaint).
   // `size`, `color` and `strength` (opacity) override the stage defaults for
   // other places, like behind the winner on the victory screen.
-  let {
-    state = 'idle',
-    size,
-    color,
-    strength,
-  }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
-
   type Pt = [number, number];
   type Hole = { x: number; y: number; r: number };
   /** A strap: a straight band `w` either side of the line from `p` to `q`. */
@@ -51,8 +44,8 @@
     const when = (y: number) => 1 - Math.sqrt(1 - Math.min(1, Math.max(0, y)));
     return parts.map(({ d, from, to }) => ({
       d,
-      delay: sec(delay + when(from) * t),
-      t: sec(Math.max(0.03 * t, (when(to) - when(from)) * t)),
+      delay: delay + when(from) * t,
+      t: Math.max(0.03 * t, (when(to) - when(from)) * t),
     }));
   };
   type Stroke = ReturnType<typeof stroke>;
@@ -175,7 +168,6 @@
     }).join('');
   };
 
-
   // The band: seals on the planets' circle, the script between each pair.
   const BAND_IN = 81;
   const BAND_OUT = 94;
@@ -282,7 +274,7 @@
           stroke(parts, delay, long ? 0.6 : 0.4),
         ),
         hatch: hatch(base, l, tip, 0.55, opts),
-        delay: sec(delay + 0.25),
+        delay: delay + 0.25,
       };
     });
   // Fine rays between, half as long.
@@ -367,7 +359,6 @@
     wearing = worn;
     wearSeed = 5;
     return {
-      key: worn ? 'w' : 'c',
       band: [ringParts(97.5), ringParts(BAND_OUT, bandHoles), ringParts(BAND_IN, bandHoles)].map((parts, k) => stroke(parts, 0.55 + k * 0.1, 1.1)),
       straps: straps.flatMap((_, i) =>
         [1, -1].map((side) => stroke(lineParts(...edgeOf(i, side), { holes: starHoles, under: unders[i] }), 0.4 + i * 0.09, 0.5)),
@@ -379,12 +370,261 @@
       eyeRing: stroke(ringParts(EYE), 0.05, 0.7),
     };
   };
-  const CLEAN = drawing(false);
-  const WORN = drawing(true);
+
+  // ---- the markup, built once for every circle on the page ----------
+  //
+  // A circle is made of some six hundred lines, most of them pieces of a
+  // broken line, each drawn in by its own animation. Built as markup once
+  // (not as six hundred components each time a circle mounts) and put on
+  // the page a layer at a time, just before each draws, no frame carries
+  // much of it. Once a layer is drawn, its
+  // pieces give way to a still copy: the same lines merged into one path
+  // per weight, with nothing animated (finished animations keep holding
+  // their last frame and are styled again with every change of the
+  // circle's colour), so a reveal recolours a few dozen paths, not the
+  // whole drawing.
+
+  /** A drawing's lines as they draw in, the same lines still, and when the first of them starts and the last is drawn (s). */
+  type Plate = { drawing: string; still: string; start: number; end: number };
+
+  /** Maps a path of absolute commands (as the signs are drawn) point by point; `turn` (degrees) and `k` for its arcs. */
+  const mapPath = (d: string, m: (p: Pt) => Pt, turn = 0, k = 1) => {
+    const tok = d.match(/[A-Za-z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) ?? [];
+    let i = 0;
+    let cmd = '';
+    let cur: Pt = [0, 0];
+    let start: Pt = [0, 0];
+    let out = '';
+    const num = () => Number(tok[i++]);
+    const to = (p: Pt) => ((cur = p), pt(m(p)));
+    while (i < tok.length) {
+      if (/[A-Za-z]/.test(tok[i])) cmd = tok[i++];
+      switch (cmd) {
+        case 'M':
+          out += `M${to([num(), num()])}`;
+          start = cur;
+          cmd = 'L';
+          break;
+        case 'L':
+          out += `L${to([num(), num()])}`;
+          break;
+        case 'H':
+          out += `L${to([num(), cur[1]])}`;
+          break;
+        case 'V':
+          out += `L${to([cur[0], num()])}`;
+          break;
+        case 'C':
+          out += `C${pt(m([num(), num()]))} ${pt(m([num(), num()]))} ${to([num(), num()])}`;
+          break;
+        case 'S':
+          out += `S${pt(m([num(), num()]))} ${to([num(), num()])}`;
+          break;
+        case 'A': {
+          const [rx, ry, rot, large, sweep] = [num(), num(), num(), num(), num()];
+          out += `A${f(rx * k)} ${f(ry * k)} ${f(rot + turn)} ${large} ${sweep} ${to([num(), num()])}`;
+          break;
+        }
+        case 'Z':
+          out += 'Z';
+          cur = start;
+          cmd = '';
+          break;
+        default:
+          throw new Error(`ArcaneCircle: no ${cmd} in a sign's path`);
+      }
+    }
+    return out;
+  };
+  /** Turned `a` degrees about the origin (clockwise on screen, as SVG's rotate). */
+  const turned = (a: number) => {
+    const [c, s] = [Math.cos(rad(a)), Math.sin(rad(a))];
+    return ([x, y]: Pt): Pt => [x * c - y * s, x * s + y * c];
+  };
+  const circlePath = (r: number) => `M0 ${-r}A${r} ${r} 0 1 1 0 ${r}A${r} ${r} 0 1 1 0 ${-r}Z`;
+
+  /** Builds one drawing's markup, collecting the still copy's paths by their weight (class) as it goes. */
+  const engrave = (draw: (e: ReturnType<typeof engraver>) => void): Plate => {
+    const e = engraver();
+    draw(e);
+    return { drawing: e.drawing(), still: e.still(), start: e.start(), end: e.end() };
+  };
+  const engraver = () => {
+    let drawing = '';
+    let start = Infinity;
+    let end = 0;
+    const still = new Map<string, string>();
+    const keep = (cls: string, d: string) => still.set(cls, (still.get(cls) ?? '') + d);
+    /** A line that starts at `from` and is done at `to`. */
+    const span = (from: number, to: number) => {
+      start = Math.min(start, from);
+      end = Math.max(end, to);
+    };
+    const style = (delay: number, t: number) => `style="--d:${sec(delay)};--t:${sec(t)}"`;
+    return {
+      /** A line drawn in, eased, as one stroke. */
+      line(d: string, cls: string, delay: number, t: number) {
+        drawing += `<path d="${d}" class="draw ${cls}" ${style(delay, t)} pathLength="100"/>`;
+        keep(cls, d);
+        span(delay, delay + t);
+      },
+      /** A broken line drawn in one sweep of the pen, piece by piece (see stroke()). */
+      pieces(list: Stroke, cls: string) {
+        for (const { d, delay, t } of list) {
+          drawing += `<path d="${d}" class="draw piece ${cls}" ${style(delay, t)} pathLength="100"/>`;
+          keep(cls, d);
+          span(delay, delay + t);
+        }
+      },
+      /**
+       * A seal stamped in at `delay`: its double ring (`r`, the inner one
+       * `inner` inside it) drawn in `t`, its signs ([path, class, scale])
+       * set down after; `place` puts a point of it on the circle, as
+       * `transform` (turning it `turn` degrees) does.
+       */
+      seal(delay: number, place: (p: Pt) => Pt, transform: string, turn: number, r: number, inner: number, t: number, signs: [string, string, number][]) {
+        drawing += `<g class="seal" style="--d:${sec(delay)}"><g transform="${transform}">`;
+        drawing += `<circle r="${r}" class="draw" style="--t:${sec(t)}" pathLength="100"/>`;
+        drawing += `<circle r="${f(r - inner)}" class="draw hair" style="--t:${sec(t)}" pathLength="100"/>`;
+        for (const [d, cls, k] of signs) drawing += `<path d="${d}"${k === 1 ? '' : ` transform="scale(${k})"`} class="${cls} carve"/>`;
+        drawing += '</g></g>';
+        keep('', mapPath(circlePath(r), place));
+        keep('hair', mapPath(circlePath(r - inner), place));
+        for (const [d, cls, k] of signs) keep(k === 1 ? cls : `${cls} big`, mapPath(d, (p) => place([p[0] * k, p[1] * k]), turn, k));
+        span(delay, delay + Math.max(0.55, t, 0.3 + 0.6));
+      },
+      /** A mark of the script, written at `delay`, `transform` and `place` putting it on the band. */
+      mark(d: string, delay: number, transform: string, place: (p: Pt) => Pt, turn: number) {
+        drawing += `<path d="${d}" transform="${transform}" class="sign mark" style="--d:${sec(delay)}"/>`;
+        keep('sign', mapPath(d, place, turn));
+        span(delay, delay + 0.35);
+      },
+      drawing: () => drawing,
+      still: () => [...still].map(([cls, d]) => `<path d="${d}"${cls ? ` class="${cls}"` : ''}/>`).join(''),
+      start: () => start,
+      end: () => end,
+    };
+  };
+
+  // The layers, each drawn twice: worn for the lines, whole for the glow under them.
+  const layers = (p: ReturnType<typeof drawing>) => ({
+    band: engrave((e) => {
+      p.band.forEach((list, k) => e.pieces(list, k ? '' : 'thin'));
+      seals.forEach((seal, k) => {
+        const turn = turned(seal.a);
+        e.seal(0.95 + k * 0.07, (q) => {
+          const [x, y] = turn(q);
+          return [seal.x + x, seal.y + y];
+        }, `translate(${f(seal.x)} ${f(seal.y)}) rotate(${seal.a})`, seal.a, SEAL, 1.2, 0.5, [[seal.d, 'sign', 1.05]]);
+      });
+      SCRIPT.forEach((m, k) => {
+        const turn = turned(m.a);
+        e.mark(m.d, 1.15 + (k / SCRIPT.length) * 0.8, `rotate(${f(m.a)}) translate(0 -${BAND})`, (q) => turn([q[0], q[1] - BAND]), m.a);
+      });
+    }),
+    star: engrave((e) => {
+      e.pieces(p.starRing, 'thin');
+      for (const edge of p.straps) e.pieces(edge, 'thin');
+      for (const ray of p.rays) {
+        e.pieces(ray.lines, 'hair');
+        e.line(ray.hatch, 'hatch', ray.delay, 0.5);
+      }
+      e.line(FINE, 'hair', 1, 0.6);
+      const [sx, sy] = sol;
+      e.seal(1, (q) => [sx + q[0], sy + q[1]], `translate(${f(sx)} ${f(sy)})`, 0, BIG, 1.6, 0.6, [
+        [circlePath(5), 'sign', 1],
+        [circlePath(1.1), 'sign', 1],
+        [SOL_RAYS, 'sign', 1],
+      ]);
+      const [lx, ly] = luna;
+      e.seal(1.12, (q) => [lx - q[0], ly - q[1]], `translate(${f(lx)} ${f(ly)}) rotate(180)`, 180, BIG, 1.6, 0.6, [
+        [LUNA, 'sign', 1],
+        [LUNA_HATCH, 'sign hatch', 1],
+      ]);
+    }),
+    heart: engrave((e) => {
+      e.pieces(p.eyeRing, 'thin');
+      e.pieces(p.sun, 'thin');
+      e.pieces(p.sunInner, 'hair');
+      e.line(COMPASS, 'hair', 0.3, 0.9);
+    }),
+    glory: engrave((e) => e.line(GLORY, 'hair', 1.35, 0.7)),
+  });
+  const GLOW = layers(drawing(false));
+  const LINES = layers(drawing(true));
   wearing = false;
-  type Drawing = typeof WORN;
+  type Layer = keyof typeof LINES;
+  const LAYERS = Object.keys(LINES) as Layer[];
+  /** How long before its first line draws a layer's lines go on the page (s). */
+  const AHEAD = 0.2;
+  /** The layers that turn, outermost first; the glory stays still. */
+  const SPUN = ['band', 'star', 'heart'] as const;
+
+  // The eye, the same while drawn and after (it opens as a whole); `@id@`
+  // stands for the circle's own id, which names its clip.
+  const eye = (key: string) =>
+    `<defs><clipPath id="@id@-${key}"><path d="${ALMOND}"/></clipPath></defs>` +
+    `<g clip-path="url(#@id@-${key})"><g transform="translate(0 ${IRIS_Y})">` +
+    `<circle r="${IRIS_R}" class="iris"/><circle r="${f(IRIS_R - 0.7)}" class="hatch"/>` +
+    `<path d="${STREAKS}" class="hatch"/><path d="${COLLARETTE}" class="hatch"/><path d="${PUPIL}" class="pupil"/>` +
+    `</g><path d="${SHADOW}" class="hatch"/></g>` +
+    `<path d="${ALMOND}" class="lid"/><path d="${RIMS}" class="hatch"/><path d="${LID_HATCH}" class="hatch"/>`;
+  const EYE_GLOW = eye('c');
+  const EYE_LINES = eye('w');
+</script>
+
+<script lang="ts">
+  let {
+    state: mood = 'idle',
+    size,
+    color,
+    strength,
+  }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
   const uid = $props.id();
+  const eyeGlow = EYE_GLOW.replaceAll('@id@', uid);
+  const eyeLines = EYE_LINES.replaceAll('@id@', uid);
+
+  // Each layer's lines go on the page a moment before they start to draw,
+  // not all on the frame that shows the question; `late` says how long after
+  // the circle they came, which their delays leave out, so the summoning
+  // plays as if they had been there all along. Once drawn, a layer takes its
+  // still copy. Both are timed on the summoning's own clock (its settle
+  // animation's), not from when this ran: a slow first frame starts the CSS
+  // animations late, and a layer swapped on the page's clock would jump to
+  // drawn before its lines had finished.
+  const due = (name: Layer) => Math.max(0, Math.min(LINES[name].start, GLOW[name].start) - AHEAD);
+  let late = $state<Partial<Record<Layer, number>>>(Object.fromEntries(LAYERS.filter((name) => !due(name)).map((name) => [name, 0])));
+  let drawn = $state<Partial<Record<Layer, true>>>({});
+  let summon: HTMLDivElement;
+  $effect(() => {
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    let stopped = false;
+    /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
+    const time = (start: number) => {
+      if (stopped) return;
+      const at = (s: number, fn: () => void) => timers.push(setTimeout(fn, Math.max(0, s * 1000 - (performance.now() - start))));
+      for (const name of LAYERS) {
+        if (due(name)) at(due(name), () => (late[name] = (performance.now() - start) / 1000));
+        at(Math.max(LINES[name].end, GLOW[name].end) + 0.15, () => (drawn[name] = true));
+      }
+    };
+    // (Its only animation: the circle's settling in.)
+    const settle = summon.getAnimations()[0];
+    if (settle)
+      settle.ready.then(
+        () => time(performance.now() - Number(settle.currentTime ?? 0)),
+        () => {},
+      );
+    else time(performance.now());
+    return () => {
+      stopped = true;
+      timers.forEach(clearTimeout);
+      timers = [];
+    };
+  });
+  const plate = (p: Plate, name: Layer) => (drawn[name] ? p.still : late[name] === undefined ? '' : p.drawing);
+  const lateOf = (name: Layer) => `${(late[name] ?? 0).toFixed(3)}s`;
 </script>
 
 <!--
@@ -395,105 +635,22 @@
   layer winds into place meanwhile, and the glow swells up under it all.
 -->
 
-{#snippet strokes(list: Stroke, cls = '')}
-  {#each list as { d, delay, t }, k (k)}
-    <path {d} class="draw piece {cls}" style:--d={delay} style:--t={t} pathLength="100" />
-  {/each}
-{/snippet}
-
-{#snippet band(p: Drawing)}
-  {#each p.band as list, k (k)}
-    {@render strokes(list, k ? '' : 'thin')}
-  {/each}
-  {#each seals as seal, k (seal.a)}
-    <g class="seal" style:--d={sec(0.95 + k * 0.07)}>
-      <g transform="translate({f(seal.x)} {f(seal.y)}) rotate({seal.a})">
-        <circle r={SEAL} class="draw" style:--t="0.5s" pathLength="100" />
-        <circle r={SEAL - 1.2} class="draw hair" style:--t="0.5s" pathLength="100" />
-        <path d={seal.d} transform="scale(1.05)" class="sign" />
-      </g>
-    </g>
-  {/each}
-  {#each SCRIPT as m, k (m.a)}
-    <path d={m.d} transform="rotate({f(m.a)}) translate(0 -{BAND})" class="sign mark" style:--d={sec(1.15 + (k / SCRIPT.length) * 0.8)} />
-  {/each}
-{/snippet}
-
-{#snippet star(p: Drawing)}
-  {@render strokes(p.starRing, 'thin')}
-  {#each p.straps as edge, k (k)}
-    {@render strokes(edge, 'thin')}
-  {/each}
-  {#each p.rays as ray, k (k)}
-    {@render strokes(ray.lines, 'hair')}
-    <path d={ray.hatch} class="draw hatch" style:--d={ray.delay} style:--t="0.5s" pathLength="100" />
-  {/each}
-  <path d={FINE} class="draw hair" style:--d="1s" style:--t="0.6s" pathLength="100" />
-  <g class="seal" style:--d="1s">
-    <g transform="translate({f(sol[0])} {f(sol[1])})">
-      <circle r={BIG} class="draw" style:--t="0.6s" pathLength="100" />
-      <circle r={BIG - 1.6} class="draw hair" style:--t="0.6s" pathLength="100" />
-      <circle r="5" class="sign" />
-      <circle r="1.1" class="sign" />
-      <path d={SOL_RAYS} class="sign" />
-    </g>
-  </g>
-  <g class="seal" style:--d="1.12s">
-    <g transform="translate({f(luna[0])} {f(luna[1])}) rotate(180)">
-      <circle r={BIG} class="draw" style:--t="0.6s" pathLength="100" />
-      <circle r={BIG - 1.6} class="draw hair" style:--t="0.6s" pathLength="100" />
-      <path d={LUNA} class="sign" />
-      <path d={LUNA_HATCH} class="sign hatch" />
-    </g>
-  </g>
-{/snippet}
-
-{#snippet heart(p: Drawing)}
-  {@render strokes(p.eyeRing, 'thin')}
-  {@render strokes(p.sun, 'thin')}
-  {@render strokes(p.sunInner, 'hair')}
-  <path d={COMPASS} class="draw hair" style:--d="0.3s" style:--t="0.9s" pathLength="100" />
-{/snippet}
-
-{#snippet glory()}
-  <path d={GLORY} class="draw hair" style:--d="1.35s" style:--t="0.7s" pathLength="100" />
-{/snippet}
-
-{#snippet eye(p: Drawing)}
-  <defs>
-    <clipPath id="{uid}-{p.key}"><path d={ALMOND} /></clipPath>
-  </defs>
-  <g clip-path="url(#{uid}-{p.key})">
-    <g transform="translate(0 {IRIS_Y})">
-      <circle r={IRIS_R} class="iris" />
-      <circle r={IRIS_R - 0.7} class="hatch" />
-      <path d={STREAKS} class="hatch" />
-      <path d={COLLARETTE} class="hatch" />
-      <path d={PUPIL} class="pupil" />
-    </g>
-    <path d={SHADOW} class="hatch" />
-  </g>
-  <path d={ALMOND} class="lid" />
-  <path d={RIMS} class="hatch" />
-  <path d={LID_HATCH} class="hatch" />
-{/snippet}
-
-<div class="arcane {state}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
-  <div class="summon">
+<div class="arcane {mood}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
+  <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
-    {#each [band, star, heart] as layer, k (k)}
-      <div class="layer spin {['band', 'star', 'heart'][k]}">
-        <svg class="glow" viewBox="-100 -100 200 200">{@render layer(CLEAN)}</svg>
-        <svg viewBox="-100 -100 200 200">{@render layer(WORN)}</svg>
+    {#each SPUN as name (name)}
+      <div class="layer spin {name}">
+        <svg class="glow" viewBox="-100 -100 200 200" style:--late={lateOf(name)}>{@html plate(GLOW[name], name)}</svg>
+        <svg viewBox="-100 -100 200 200" style:--late={lateOf(name)}>{@html plate(LINES[name], name)}</svg>
       </div>
     {/each}
     <div class="layer">
-      <svg class="glow" viewBox="-100 -100 200 200">{@render glory()}</svg>
-      <svg viewBox="-100 -100 200 200">{@render glory()}</svg>
+      <svg class="glow" viewBox="-100 -100 200 200" style:--late={lateOf('glory')}>{@html plate(GLOW.glory, 'glory')}</svg>
+      <svg viewBox="-100 -100 200 200" style:--late={lateOf('glory')}>{@html plate(LINES.glory, 'glory')}</svg>
     </div>
     <div class="layer eye">
-      <svg class="glow" viewBox="-100 -100 200 200">{@render eye(CLEAN)}</svg>
-      <svg viewBox="-100 -100 200 200">{@render eye(WORN)}</svg>
+      <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
+      <svg viewBox="-100 -100 200 200">{@html eyeLines}</svg>
     </div>
     <div class="wave"></div>
   </div>
@@ -510,9 +667,12 @@
     pointer-events: none;
     opacity: 0.22;
     color: #d9a45a;
-    transition:
-      opacity 0.8s,
-      color 0.8s;
+    /* Only the opacity eases (on the compositor). The colour changes at
+       once: every stroke of the circle takes it (currentColor), and easing
+       it restyled and repainted each of those hundreds of strokes every
+       frame for most of a second, right as a reveal's effects began, which
+       made them stutter. The reveal's flare covers the change. */
+    transition: opacity 0.8s;
     --draw-ease: cubic-bezier(0.55, 0, 0.25, 1);
   }
   .arcane.good {
@@ -568,8 +728,10 @@
       falter 0.7s var(--ease-out) both;
   }
 
-  path,
-  circle {
+  /* The lines are put on the page as markup (see engrave()), so their
+     rules reach them as global ones within the circle. */
+  .arcane :global(path),
+  .arcane :global(circle) {
     fill: none;
     stroke: currentColor;
     stroke-width: 0.5;
@@ -578,32 +740,35 @@
     stroke-miterlimit: 12;
   }
   /* A circle has no ends, but its dash for the drawing does. */
-  circle {
+  .arcane :global(circle) {
     stroke-linecap: round;
   }
-  .thin {
+  .arcane :global(.thin) {
     stroke-width: 0.35;
   }
-  .hair {
+  .arcane :global(.hair) {
     stroke-width: 0.22;
   }
-  /* A sign drawn at k times its size keeps the same line. */
-  .sign {
-    stroke-width: calc(0.42px / var(--k, 1));
+  .arcane :global(.sign) {
+    stroke-width: 0.42;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .hatch {
+  /* A planet's sign is drawn 1.05 times its size, and its line with it. */
+  .arcane :global(.big) {
+    stroke-width: 0.441;
+  }
+  .arcane :global(.hatch) {
     stroke-width: 0.2;
     stroke-linecap: round;
   }
-  .lid {
+  .arcane :global(.lid) {
     stroke-width: 0.45;
   }
-  .iris {
+  .arcane :global(.iris) {
     stroke-width: 0.35;
   }
-  .pupil {
+  .arcane :global(.pupil) {
     fill: currentColor;
     fill-rule: evenodd;
     stroke: none;
@@ -612,10 +777,10 @@
     transition: transform 0.9s var(--ease-out);
   }
   /* The eye widens at a right answer and narrows at a wrong one. */
-  .good .pupil {
+  .good :global(.pupil) {
     transform: scale(1.3);
   }
-  .bad .pupil {
+  .bad :global(.pupil) {
     transform: scale(0.72);
   }
 
@@ -627,38 +792,38 @@
       glow-in 1.4s 0.8s ease-out both,
       breathe 6s 2.2s ease-in-out infinite alternate;
   }
-  .glow :global(*) {
+  .arcane .glow :global(*) {
     stroke-width: 2;
   }
-  .glow :global(.sign) {
-    stroke-width: calc(2px / var(--k, 1));
+  .arcane .glow :global(.big) {
+    stroke-width: 2.1;
   }
-  .glow :global(.hair),
-  .glow :global(.hatch) {
+  .arcane .glow :global(.hair),
+  .arcane .glow :global(.hatch) {
     stroke-width: 1;
   }
 
-  .draw {
+  .arcane :global(.draw) {
     stroke-dasharray: 100;
-    animation: draw var(--t, 1s) var(--d, 0s) var(--draw-ease) both;
+    animation: draw var(--t, 1s) calc(var(--d, 0s) - var(--late, 0s)) var(--draw-ease) both;
   }
   /* A piece of a longer stroke keeps the pen's pace (see stroke()). */
-  .piece {
+  .arcane :global(.piece) {
     animation-timing-function: linear;
   }
   /* Signs are set down once their lines are drawn. */
-  .sign {
-    animation: carve 0.6s calc(var(--d, 0s) + 0.3s) var(--ease-out) both;
+  .arcane :global(.carve) {
+    animation: carve 0.6s calc(var(--d, 0s) + 0.3s - var(--late, 0s)) var(--ease-out) both;
   }
-  .mark {
-    animation-duration: 0.35s;
-    animation-delay: var(--d);
+  /* The script is written mark by mark. */
+  .arcane :global(.mark) {
+    animation: carve 0.35s calc(var(--d) - var(--late, 0s)) var(--ease-out) both;
   }
   /* Seals are pressed in like a stamp. */
-  .seal {
+  .arcane :global(.seal) {
     transform-box: fill-box;
     transform-origin: center;
-    animation: stamp 0.55s var(--d) var(--ease-out) both;
+    animation: stamp 0.55s calc(var(--d) - var(--late, 0s)) var(--ease-out) both;
   }
 
   /* The eye opens last, and now and then it blinks. */

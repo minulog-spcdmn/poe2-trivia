@@ -29,6 +29,8 @@
   import { pinnedOut } from '../lib/stage';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
+  import { greyed, markOf, missingNote, notReady, type Mark, type Missing } from '../lib/presence';
+  import StandingMark from './StandingMark.svelte';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
@@ -227,6 +229,17 @@
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
+  /** Online: each player's mark, when not simply ready (lib/presence.ts: away, idle, lagging or offline). */
+  const marks = $derived(new Map<string, Mark | null>(s.players.map((p) => [p.id, local ? null : markOf(p.connected, session.standing[p.id])])));
+  /** Online: the players the game would begin without, and why (the host never counts themselves: they're the one reading it). */
+  const unready = $derived(
+    s.players.flatMap((p): { name: string; why: Missing }[] => {
+      const m = marks.get(p.id);
+      return notReady(m) && !(isHost && p.id === session.myPlayerId) ? [{ name: p.name, why: m }] : [];
+    }),
+  );
+  /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
+  const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
 </script>
 
 {#snippet startRow()}
@@ -239,13 +252,21 @@
     {:else if !local && s.players.length < 2}
       <p class="go-note">You can begin alone, or wait for your party.</p>
     {:else if s.players.length > 1}
-      <!-- A lone player knows they're here: Begin stands by itself. -->
-      <p class="go-note"><b class="num">{s.players.length}</b> exiles ready</p>
+      <!-- A lone player knows they're here: Begin stands by itself. With a party, whether everyone is
+           really there (lib/presence.ts): their game on screen and in use, or who it would begin without. -->
+      {#if unready.length}
+        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of {s.players.length} ready; {missingNote(unready)}</p>
+      {:else}
+        <p class="go-note all-ready">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>
+          {#if local}<b class="num">{s.players.length}</b> exiles ready{:else}All <b class="num">{s.players.length}</b> exiles here and ready{/if}
+        </p>
+      {/if}
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
-    <p class="muted waiting"><span class="pulse"></span>Waiting for the host to start…</p>
+    <p class="muted waiting"><span class="pulse"></span>{hostMark === 'away' || hostMark === 'idle' ? `Waiting for the host to start; they seem to be ${hostMark}…` : 'Waiting for the host to start…'}</p>
   {/if}
 {/snippet}
 
@@ -378,6 +399,7 @@
         <!-- The same chips the game shows along its top, two to a row. -->
         <ul class="chips">
           {#each s.players as p, i (p.id)}
+            {@const mark = marks.get(p.id)}
             <li
               data-cursor="row:{i}"
               use:arriving={p.name}
@@ -386,11 +408,12 @@
               out:kickOut
               data-id={p.id}
               class:armed={confirming === p.id}
+              class:absent={notReady(mark)}
               style:--c={playerColor(p.hue)}
             >
-              <Avatar name={p.name} hue={p.hue} size={32} />
+              <Avatar name={p.name} hue={p.hue} size={32} dim={greyed(mark)} />
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
-              {#if !p.connected}<span class="tag" title="Reconnecting. Their seat is let go if they're not back when the game starts.">Offline</span>{/if}
+              {#if mark}<StandingMark {mark} />{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
               {#if p.id === s.hostId && !local}<HostMark />{/if}
               {#if isHost && (local || p.id !== s.hostId)}
@@ -890,15 +913,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tag {
-    font-family: var(--font-display);
-    font-size: 0.62rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    padding: 0.2em 0.6em;
-    border-radius: 2px;
-    border: 1px solid var(--gold-lo);
-    color: var(--gold);
+  /* Away, idle or offline (lib/presence.ts, StandingMark): their name dims; idle (gone a couple of minutes) or offline, their avatar greys too, as an offline one does in the game. */
+  .chips li.absent .name {
+    opacity: 0.55;
   }
   /* Pointing at the kick: the chip it would remove warms red, so it is clear whose it is. */
   .chips li:has(:global(.kick:hover)),
@@ -1384,6 +1401,18 @@
   }
   .go-note.warn {
     color: #eab3a3;
+  }
+  /* Everyone there: a gold tick says so at a glance. */
+  .go-note.all-ready svg {
+    width: 1em;
+    height: 1em;
+    margin-right: 0.3em;
+    vertical-align: -0.12em;
+    fill: none;
+    stroke: var(--gold-hi);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .dock .go-note {
     text-align: center;

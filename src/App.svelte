@@ -6,7 +6,7 @@
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
   import ZoneCard from './components/zonecard/ZoneCard.svelte';
   import { ownRect, stageZoom } from './lib/stage';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Component } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
@@ -20,9 +20,9 @@
   import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
-  import Game from './components/Game.svelte';
-  import GameOver from './components/GameOver.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
+  import { whenIdle } from './lib/idle';
+  import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
   import { setCursorColor } from './lib/ownCursor';
@@ -230,6 +230,38 @@
   onMount(() => {
     const t = setTimeout(loadCodexPage, 2000);
     return () => clearTimeout(t);
+  });
+
+  // The game's screens (a question, the end of a game) are a chunk of their
+  // own, so the start page loads and runs without them: fetched in the first
+  // idle moment, or at once on the way into a room. A fetch that fails is
+  // tried once more while a room is open (a dropped connection may be back),
+  // but no more: some browsers keep a module that failed as failed, and a
+  // deploy that replaced the chunk fails every time. After that, only a
+  // reload brings it, which the game screen offers (a room carries on
+  // through one).
+  let Game = $state<Component | null>(null);
+  let GameOver = $state<Component | null>(null);
+  let gamePagesLost = $state(false);
+  let gamePages: Promise<unknown> | null = null;
+  let gamePagesFailed = 0;
+  const inRoom = () => screen !== 'home' && screen !== 'codex';
+  const loadGamePages = () =>
+    (gamePages ??= Promise.all([
+      import('./components/Game.svelte').then((m) => (Game = m.default)),
+      import('./components/GameOver.svelte').then((m) => (GameOver = m.default)),
+    ]).catch(() => {
+      if (++gamePagesFailed < 2) {
+        gamePages = null;
+        setTimeout(() => inRoom() && loadGamePages(), 1000);
+      } else {
+        gamePagesLost = true;
+        toasts.show("Part of the game couldn't be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
+      }
+    }));
+  onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
+  $effect(() => {
+    if (inRoom()) untrack(loadGamePages);
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join
@@ -448,14 +480,16 @@
         {:else if screen === 'lobby'}
           <Lobby />
         {:else if screen === 'game'}
-          <Game />
+          {#if Game}<Game />{:else}{@render gamePagesWait()}{/if}
         {:else if screen === 'codex'}
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
           {/await}
-        {:else}
+        {:else if GameOver}
           <GameOver />
+        {:else}
+          {@render gamePagesWait()}
         {/if}
       </div>
     {/key}
@@ -467,6 +501,18 @@
     </nav>
   {/if}
 </div>
+
+<!-- The game's screens still on their way (loadGamePages), or lost. -->
+{#snippet gamePagesWait()}
+  <div class="pages-wait">
+    {#if gamePagesLost}
+      <p>Part of the game couldn't be loaded.</p>
+      <button class="btn primary" onclick={() => location.reload()}>Reload</button>
+    {:else}
+      <span class="spinner" aria-label="Loading"></span>
+    {/if}
+  </div>
+{/snippet}
 
 {#snippet legalLinks()}
   <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
@@ -811,6 +857,40 @@
   .screen:has(> :global(.home)) {
     display: flex;
     flex-direction: column;
+  }
+
+  .pages-wait {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 4rem 16px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .pages-wait p {
+    margin: 0;
+  }
+  /* Only for a wait long enough to notice. */
+  .pages-wait .spinner {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid rgba(201, 164, 92, 0.15);
+    border-top-color: var(--gold);
+    animation:
+      pages-wait-in 0.3s 0.4s both,
+      pages-wait-spin 0.9s linear infinite;
+  }
+  @keyframes pages-wait-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pages-wait-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .legal {

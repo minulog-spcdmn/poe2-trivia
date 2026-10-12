@@ -23,6 +23,8 @@ import { dialogBox, openDialog } from '../behindDialog';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
+import { switchedOff, type Switch } from '../switchedOff';
+import { frameEvent, timed } from '../fpsMeter';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -186,6 +188,9 @@ let frameAvg = 16;
 let slowMs = 22;
 /** After a drop in quality: whether it made frames quicker (see frame()). */
 let probe: { from: number; before: number; time: number; frames: number } | null = null;
+/** The quality changed: the targets are made at its size once nothing is drawn (see frame()). */
+let resizeDue = false;
+let resizeDueAt = 0;
 
 /**
  * On phones, while everything alive is slow (glitter drifting down, rays
@@ -305,7 +310,7 @@ function waited(): number {
 }
 
 export function particle(p: ParticleSpec) {
-  if (!fxActive() || hidden) return;
+  if (!fxActive() || hidden || particlesOff) return;
   const late = waited();
   const spec = behindNow && !p.behind ? { ...p, behind: true } : p;
   pool!.spawn(late ? { ...spec, delay: (spec.delay ?? 0) + late } : spec, onPage(p), groupNow);
@@ -367,8 +372,20 @@ function leastNeeded(): number {
   return fading >= 0 ? fading : finite;
 }
 
+/** Beta: the kinds of shape switched off, to find which makes a moment slow (lib/switchedOff.ts). */
+const SHAPE_SWITCHES: [Switch, number[]][] = [
+  ['rays', [ShapeType.Rays]],
+  ['flare', [ShapeType.Flare]],
+  ['outline', [ShapeType.RectGlow, ShapeType.QuadGlow]],
+  ['ring', [ShapeType.Ring]],
+  ['flash', [ShapeType.Flash]],
+];
+const shapesOff = new Set(SHAPE_SWITCHES.flatMap(([name, types]) => (switchedOff(name) ? types : [])));
+const shapeOff = (type: number) => shapesOff.size > 0 && shapesOff.has(type);
+const particlesOff = switchedOff('particles');
+
 export function shape(spec: ShapeSpec): ShapeHandle {
-  if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life))) return NOOP;
+  if (!fxActive() || detached(spec.at) || (hidden && Number.isFinite(spec.life)) || shapeOff(spec.type)) return NOOP;
   if (shapes.length >= MAX_SHAPES) {
     const i = leastNeeded();
     if (i < 0) return NOOP;
@@ -696,7 +713,12 @@ function writeShape(i: number, s: LiveShape, t: number) {
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
+/** One frame of the effects (timed for the beta's frame meter). */
 function frame(nowMs: number) {
+  timed('effects', frameUntimed, nowMs);
+}
+
+function frameUntimed(nowMs: number) {
   // `raf` stays set while this frame runs: effects that tasks spawn during it
   // would otherwise wake() a second loop, and every such frame another one,
   // each drawing the whole overlay again.
@@ -719,10 +741,17 @@ function frame(nowMs: number) {
   // browser runs at a lower rate (30fps in a power-saving mode, say). Then
   // the drop is undone and frames that slow count as normal from then on.
   // (Gaps over 300ms are a background tab or a stall, not the effects.)
+  // The resolution itself changes only once nothing is drawn (resizeDue):
+  // making the targets anew stalls the GPU, which in the middle of a moment
+  // (a right answer's reveal) held several frames up at once. The moment
+  // plays out as it began; the next one is drawn at the new size, and only
+  // then are frames timed to see whether the drop helped.
   if (rawDt > 0 && rawDt < 0.3) {
     const ms = Math.min(rawDt, 0.1) * 1000;
     frameAvg += (ms - frameAvg) * 0.12;
-    if (probe) {
+    if (resizeDue) {
+      // (Waiting for the drop to take effect.)
+    } else if (probe) {
       probe.time += rawDt;
       probe.frames++;
       if (probe.time > 1) {
@@ -730,7 +759,8 @@ function frame(nowMs: number) {
         if (avg > probe.before * 0.85) {
           quality = probe.from;
           slowMs = Math.max(slowMs, avg * 1.3);
-          resize();
+          resizeDue = true;
+          resizeDueAt = nowMs;
         }
         probe = null;
         slowFor = 0;
@@ -742,7 +772,8 @@ function frame(nowMs: number) {
         probe = { from: quality, before: frameAvg, time: 0, frames: 0 };
         quality++;
         slowFor = 0;
-        resize();
+        resizeDue = true;
+        resizeDueAt = nowMs;
       }
     } else slowFor = Math.max(0, slowFor - rawDt * 0.5);
   }
@@ -756,6 +787,11 @@ function frame(nowMs: number) {
   } finally {
     raf = busy ? requestAnimationFrame(frame) : 0;
   }
+  // (Something endless, a streak's fire, may never let go: then once it's
+  // calm, a few seconds on, and after a while even if it never is, or a slow
+  // machine would wait at the old size, its quality never adapting, for as
+  // long as it lasts.)
+  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)) resize();
   if (!busy) show(false);
 }
 
@@ -972,10 +1008,15 @@ export function fxRealtime() {
 
 // ---------- setup ----------
 
+/** The most pixels the overlay draws at (see resize): a 1440p screen's. */
+const MAX_PIXELS = 2560 * 1440;
+
 let ro: ResizeObserver | null = null;
 let deviceBox: { w: number; h: number } | null = null;
 
 function resize() {
+  // (Made at the quality now, any resize waiting for a calm moment is done too.)
+  resizeDue = false;
   if (!canvas || !renderer) return;
   viewW = Math.max(1, canvas.clientWidth);
   viewH = Math.max(1, canvas.clientHeight);
@@ -983,10 +1024,17 @@ function resize() {
   // crisp), less as quality drops. Shapes, which are all soft, get about one
   // texel per CSS px.
   const cap = quality === 0 ? 1.5 : quality === 1 ? 1 : 0.75;
-  const k = Math.min(devicePixelRatio || 1, cap) / (devicePixelRatio || 1);
+  // And never more than MAX_PIXELS in all: on a 4K screen 1.5 per CSS px
+  // came to 8 million, in half-float targets and their bloom, under a
+  // backdrop as big: a reveal's frames waited on the GPU for a tenth of a
+  // second and more.
+  const dprNow = devicePixelRatio || 1;
+  const fit = Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
+  const k = Math.min(dprNow, cap, fit) / dprNow;
   const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * (devicePixelRatio || 1) * k);
   const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * (devicePixelRatio || 1) * k);
   dpr = w / viewW;
+  frameEvent(`effects at ${w}x${h} (quality ${quality})`);
   renderer.resize(w, h, Math.min(1, 1 / dpr));
   wake();
 }
@@ -1032,6 +1080,7 @@ function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
   probe = null;
+  resizeDue = false;
   waiting?.();
   waiting = null;
   if (typeof WebGL2RenderingContext === 'undefined' || webgl2Refused()) return;
@@ -1094,6 +1143,7 @@ function build(c: HTMLCanvasElement) {
 /** Takes the renderer made on `c` and follows its size; whatever waited for it plays. */
 function setup(c: HTMLCanvasElement, r: FxRenderer) {
   renderer = r;
+  if (switchedOff('bloom')) r.bloom = false;
   pool ??= new ParticlePool(coarse?.matches ? 2000 : 5000);
   ro?.disconnect();
   ro = new ResizeObserver(([entry]) => {

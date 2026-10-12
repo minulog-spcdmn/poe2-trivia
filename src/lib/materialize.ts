@@ -11,6 +11,7 @@
 import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 import { zoomOf } from './stage';
+import type { PatchImage } from './veilCut';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
 export const FINALE_MS = 400;
@@ -98,11 +99,12 @@ function chamfer(d: Float32Array, W: number, H: number) {
 }
 
 export interface BurnParams {
-  url: string;
+  /** The patch's own picture (veilCut.ts patchPicture). */
+  picture: () => Promise<PatchImage>;
   /** The patch's size in art pixels (its picture is finer, by the item's artScale). */
   w: number;
   h: number;
-  /** The patch's edges: (x, y, patch) triples (see RawPatch.edges). */
+  /** The patch's edges: (x, y, patch) triples (see PatchShape.edges). */
   edges: Uint16Array;
   /** Patches already there when this one arrived: the magic spreads in from them. */
   before: number[];
@@ -339,9 +341,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     raf = requestAnimationFrame(frame);
   };
 
-  const img = new Image();
-  img.src = params.url;
-  const begin = () => {
+  const begin = (img: PatchImage) => {
     if (stopped) return;
     // Screen resolution, up to FX_SCALE (fxWidth): every pixel costs work on
     // each frame. The quick ones at the reveal (many at once, for a moment)
@@ -350,7 +350,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     const aw = params.w;
     const ah = params.h;
     const screen = fxWidth(canvas, aw);
-    W = Math.max(1, Math.round(screen && !params.quick ? screen : Math.min(screen || Infinity, img.naturalWidth)));
+    W = Math.max(1, Math.round(screen && !params.quick ? screen : Math.min(screen || Infinity, img.width)));
     H = Math.max(1, Math.round((W * ah) / aw));
     canvas.width = W;
     canvas.height = H;
@@ -364,7 +364,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     counted = true;
     burn(W / aw, H / ah);
   };
-  img.decode().then(begin, () => {});
+  params.picture().then(begin, () => {});
 
   return { destroy: stop };
 }
