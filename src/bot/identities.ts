@@ -13,7 +13,8 @@ import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts
  * Made-up handles in the styles people pick here (none taken from real
  * people), and in a mix, so a few in one list don't read as a set: first
  * names and nicknames, gamer tags with numbers, game jokes and jargon, the
- * odd character name, in any case and spacing.
+ * odd character name, in any case and spacing, and some in other languages
+ * and scripts.
  */
 export const NAMES = [
   'mikey',
@@ -24,6 +25,7 @@ export const NAMES = [
   'pancake',
   'sorc_main',
   'Sanne',
+  'まったり',
   'nox77',
   'kitava_ate_me',
   'Tobi',
@@ -32,6 +34,7 @@ export const NAMES = [
   'velka',
   'Jonny92',
   'lagspike',
+  '小鱼',
   'hc_ssf_andy',
   'Matteo',
   'wobbly',
@@ -41,11 +44,13 @@ export const NAMES = [
   'NoAtlasPoints',
   'Bjarki',
   'Snacc',
+  '감자',
   'out of waystones',
   'Ellie',
   'Kaiser_91',
   'vaal_it_anyway',
   'Noodle',
+  'Саня',
   'andreas87',
   'xXsparkXx',
   'Deadeye_Dan',
@@ -53,9 +58,11 @@ export const NAMES = [
   'afk_again',
   'tabula_rasa_',
   'henrik',
+  '老王',
   'Meatball',
   'breach_addict',
   'tomek',
+  'joãozinho',
   'Jinxed',
   'regal_rat',
   'Aldric',
@@ -66,6 +73,7 @@ export const NAMES = [
   'ChronoNerd',
   'jess',
   'Pfannkuchen',
+  'ねこ丸',
   'toastyy',
   'Boneshatter',
   'carlitos',
@@ -73,6 +81,7 @@ export const NAMES = [
   'monk_btw',
   'thessa',
   'sleepy_owl',
+  '초보',
   'infernalist4life',
   'lena',
   'Hunterrr',
@@ -95,6 +104,7 @@ export const NAMES = [
   'Tarn_ok',
   '2h_mace_only',
   'Cheesy',
+  'Vovan',
   'kirbos',
   'Brannoc',
   'stormweaver_',
@@ -102,6 +112,7 @@ export const NAMES = [
   'wren',
   'ArbiterFarmer',
   'gato_loco',
+  'Tuấn',
   'sam',
   'witchhunter',
   'ahiru',
