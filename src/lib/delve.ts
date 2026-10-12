@@ -322,7 +322,8 @@ export const FIND_FADE_TO = 200;
  * others' chances. An offer that holds one rolls once more for a second find
  * on another card (see SECOND_FIND). Players see them in the order they
  * first turn up (FINDS_IN_ORDER). On its own first depth a find is certain
- * (firstFindAt): that offer always holds it, for a player with room for it.
+ * (firstFindAt): the depth's first offer always holds it, for a player with
+ * room for it (one after a miss there rolls as any other).
  *
  * They come one at a time. The Dynamite Cache comes first, from depth 11
  * (shown 10), and is the only find until the Azurite Vein comes, so it

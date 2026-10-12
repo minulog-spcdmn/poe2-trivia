@@ -1961,16 +1961,17 @@ export class Engine {
    * finds' slices at this depth (delve.ts findChance), and, if that found
    * one, a second for another kind on another card, at SECOND_FIND of its
    * chance. Never more than two. On a find's own first depth (delve.ts
-   * firstFindAt) the first is that find, certain. A find whose item the
+   * firstFindAt) the depth's first offer (`fresh`) holds that find, certain;
+   * one after a miss there rolls as any other. A find whose item the
    * player on turn (co-op: anyone standing, as anyone may answer it) can't
    * carry any more of is never offered: its slice finds nothing, so the
    * others' chances stay the depth's.
    */
-  private rollFinds(s: GameState, takers: string[]): CardFind[] {
+  private rollFinds(s: GameState, takers: string[], fresh: boolean): CardFind[] {
     if (!s.delve || !takers.length || !s.offered.length) return [];
     const room = (item: ItemKind) => takers.some((id) => hasRoom(inventoryOf(s, id), item));
     const chances = (share: number, but?: FindKind) => FINDS.filter((f) => f.kind !== but).map((f) => ({ ...f, chance: findChance(f.kind, s.round) * share }));
-    const certain = FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item));
+    const certain = fresh ? FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item)) : undefined;
     const first = certain ? { category: sample(s.offered, 1, this.rng)[0], kind: certain.kind } : this.rollFind(chances(1), room, s.offered);
     if (!first) return [];
     const second = this.rollFind(
@@ -2241,7 +2242,8 @@ export class Engine {
     // In a deathmatch nobody picks their favourite: one random category.
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
     if (s.delve) {
-      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : []);
+      // The depth's first offer (a new depth's, or the run's), not one after a miss at it.
+      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [], first || deeper);
       delete s.delve.find;
       delete s.delve.asked;
       delete s.delve.missedHere;

@@ -180,8 +180,8 @@ the same thing for everyone.
   cards says what the item does and what the find risks. The finds turn
   up one at a time: the Dynamite Cache from depth 10, the Azurite Vein from
   25 and the Flare Cache from 40. On its own first depth a find is certain:
-  that offer always holds it (for a player with room for its item), and so
-  does the one after a miss there. After
+  the depth's first offer always holds it (for a player with room for its
+  item); one after a miss there rolls as any other. After
   that each find's chance rises evenly over the 20 depths after its first
   and then holds (the Dynamite Cache from 8% to 9% by depth 30, the Vein
   from 4% to 11% by 45, the Flare Cache from 4% to 13% by 60). From 10 to
