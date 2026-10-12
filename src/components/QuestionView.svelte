@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { AUTO_NEXT_MS, answerPicture, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -136,7 +136,7 @@
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   /** The answer as its picture drew it (Grand Spectrum's Emerald…): its art, base and tooltip. */
-  const drawn = $derived(item && drawnAs(item, q.variant?.[answerPicture(q)]));
+  const drawn = $derived(item && answerDrawn(item, q));
   const race = $derived(s.settings.mode === 'race');
   /**
    * Turns: someone else is answering. The answers go grey and sit flat in the

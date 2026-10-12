@@ -12,10 +12,9 @@
 // Usage: npm run fetch-data (-- --shrink: see below)
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
 
-import { createHash } from 'node:crypto';
 import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
 import { webpSize } from './webp-size.mjs';
-import { decode as decodeText, fetchStats, pageBoxes, variantId } from './fetch-stats.mjs';
+import { decode as decodeText, fetchStats, hashId, pageBoxes } from './fetch-stats.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,9 +86,6 @@ const categorize = (img) => {
   return rule ? { group: rule[1], category: rule[2] } : null;
 };
 
-// Hash the file name so the image URL does not give the answer away.
-const makeId = (name) => createHash('sha1').update(name).digest('hex').slice(0, 12);
-
 async function fetchRetry(url, tries = 6) {
   for (let i = 0; ; i++) {
     try {
@@ -141,20 +137,21 @@ async function main() {
 
   const items = [];
   const skipped = [];
+  let pictureless = 0;
   for (const { name, base, slug, img, boxes } of entries) {
     const src = img ?? (boxes[0] && ART + boxes[0].art);
+    if (!src) pictureless++;
     const cat = src && categorize(src);
     if (!cat) {
       skipped.push(`${name} (${src ?? 'no picture'})`);
       continue;
     }
-    items.push({ id: makeId(name), name, base, ...cat, kind: 'unique', slug, src, boxes });
+    items.push({ id: hashId(name), name, base, ...cat, kind: 'unique', slug, src, boxes });
   }
   // Before anything is deleted: a page that changed its layout leaves most items without a picture or a category.
   if (items.length < 100) throw new Error(`Only ${items.length} items have their art; page layout changed?`);
-  const pictureless = skipped.filter((s) => s.endsWith('(no picture)'));
-  if (pictureless.length > entries.length / 20)
-    throw new Error(`${pictureless.length} of ${entries.length} uniques have no picture on the list or their page; page layout changed?`);
+  if (pictureless > entries.length / 20)
+    throw new Error(`${pictureless} of ${entries.length} uniques have no picture on the list or their page; page layout changed?`);
 
   console.log(`Fetching ${GEM_SOURCE}`);
   const gemHtml = await (await fetchRetry(GEM_SOURCE)).text();
@@ -165,7 +162,7 @@ async function main() {
     seen.add(name);
     const attr = GEM_COLOURS[colour] ?? 'Lineage';
     items.push({
-      id: makeId(name),
+      id: hashId(name),
       name,
       base: `${attr} Lineage Support`,
       group: attr,
@@ -186,12 +183,15 @@ async function main() {
   // Each unique's other art, from its own page: a box whose picture is
   // neither its own nor another item's. Boxes that differ only in their mods
   // (a league's version, a base it also drops as) share its art and add none.
+  // Nor does a picture two items' pages both show: it tells neither apart.
+  const pagesWith = new Map();
+  for (const it of quiz) for (const src of new Set((it.boxes ?? []).map((b) => ART + b.art))) pagesWith.set(src, (pagesWith.get(src) ?? 0) + 1);
   for (const it of quiz) {
     const variants = [];
     for (const { base, art, html } of it.boxes ?? []) {
       const src = ART + art;
-      if (artCount.has(src) || variants.some((v) => v.src === src)) continue;
-      variants.push({ id: variantId(art), base, src, html });
+      if (artCount.has(src) || pagesWith.get(src) > 1 || variants.some((v) => v.src === src)) continue;
+      variants.push({ id: hashId(art), base, src, html });
     }
     if (variants.length) it.variants = variants;
   }

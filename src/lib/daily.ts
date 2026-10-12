@@ -3,7 +3,7 @@
 // deals the same item and the same four names in the same order. The
 // answer and the run of days answered right stay in this browser.
 
-import { Engine, allArt, answerPicture, createGame, drawnAs, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
+import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { seededRandom } from './patches.ts';
 import { readStored, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
@@ -70,7 +70,7 @@ export const askable = (items: Item[]) => items.filter((it) => it.kind !== 'gem'
 export const TOO_THIN: ReadonlySet<string> = new Set(dailyArt.thin);
 
 /** Whether the question's picture is too thin for the start page (the art it draws the answer with). */
-const thin = (engine: Engine, q: Question) => TOO_THIN.has(drawnAs(engine.byId.get(q.itemId)!, q.variant?.[answerPicture(q)]).art);
+const thin = (engine: Engine, q: Question) => TOO_THIN.has(answerDrawn(engine.byId.get(q.itemId)!, q).art);
 /** Draws past this many thin items in a row are given up on (they can't all be). */
 const THIN_TRIES = 12;
 

@@ -125,6 +125,9 @@ export const picturesOf = (q: Pick<Question, 'mode' | 'options' | 'itemId'>): st
 /** Which of a question's pictures (picturesOf) is the answer's. */
 export const answerPicture = (q: Pick<Question, 'mode' | 'options' | 'itemId'>): number => (q.mode === 'art' ? q.options.indexOf(q.itemId) : 0);
 
+/** The answer `item` as the question's picture draws it (Grand Spectrum's Emerald…). */
+export const answerDrawn = (item: Item, q: Pick<Question, 'mode' | 'options' | 'itemId' | 'variant'>): DrawnItem => drawnAs(item, q.variant?.[answerPicture(q)]);
+
 /** The three ready-made difficulties. */
 export type Preset = 'cruel' | 'merciless' | 'eternal';
 /** A preset, or the host's own mix of the knobs. */
@@ -2374,7 +2377,7 @@ export class Engine {
    * outside it), so "the name that fits the others best" doesn't give it
    * away.
    */
-  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt = false, arts: (it: Item) => readonly string[] = (it) => [it.id]): Item[] {
+  private lookalikes(answer: Item, pool: Item[], count: number, options: number, byArt: boolean, arts: (it: Item) => readonly string[]): Item[] {
     if (count <= 0) return [];
     // By art only with the table at hand and the answer in it (items added
     // since it was built have no look-alikes); by name otherwise. By art,
@@ -2681,7 +2684,13 @@ export class Engine {
       return n ? Math.floor(this.rng() * (n + 1)) : 0;
     };
     if (byArt) for (const it of mode === 'art' ? [answer, ...pool] : [answer]) if (it.variants) drawnWith.set(it.id, rollArt(it));
-    const arts = (it: Item) => (mode === 'art' || it === answer ? [drawnAs(it, drawnWith.get(it.id)).art] : allArt(it).map((a) => a.art));
+    // Each item's art ids, worked out once: the look-alikes score many pairs.
+    const artIds = new Map<Item, readonly string[]>();
+    const arts = (it: Item) => {
+      let ids = artIds.get(it);
+      if (!ids) artIds.set(it, (ids = mode === 'art' || it === answer ? [drawnAs(it, drawnWith.get(it.id)).art] : allArt(it).map((a) => a.art)));
+      return ids;
+    };
     const decoys = this.lookalikes(answer, pool, simCount, count, byArt, arts);
     // Rest at random, preferring the same group, then the category, then anything.
     for (const source of [pool, unused, inCat, this.items]) {

@@ -157,10 +157,10 @@ export function pageBoxes(html) {
 }
 
 /**
- * A variant's id, as an item's is its name's (fetch-data makeId): a hash, of
- * its art's path, so its picture's URL doesn't give the item away.
+ * An id that names a picture's file: a hash, so its URL doesn't give the
+ * item away. An item's is its name's (fetch-data), a variant's its art's path.
  */
-export const variantId = (art) => createHash('sha1').update(art).digest('hex').slice(0, 12);
+export const hashId = (s) => createHash('sha1').update(s).digest('hex').slice(0, 12);
 
 async function fetchRetry(url, tries = 6) {
   for (let i = 0; ; i++) {
@@ -231,7 +231,7 @@ export async function fetchStats(variantBoxes = null) {
           const page = !variantBoxes && pages.get(it.name);
           const boxes = page ? pageBoxes(await (await fetchRetry(page)).text()) : [];
           for (const v of it.variants) {
-            const html = variantBoxes ? variantBoxes.get(v.id) : boxes.find((b) => b.art && variantId(b.art) === v.id)?.html;
+            const html = variantBoxes ? variantBoxes.get(v.id) : boxes.find((b) => b.art && hashId(b.art) === v.id)?.html;
             if (html) out[v.id] = tooltip(html, it);
             else missing.push(`${it.name} (${v.base}, ${v.id})`);
           }
