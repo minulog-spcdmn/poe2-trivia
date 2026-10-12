@@ -259,8 +259,9 @@ the same thing for everyone.
     The whole dig runs on one **lamp**, the clock ring turned azurite:
     lit with strike 1's whole clock, it burns only while a strike is open
     and is never fed, so every strike after the first is paid for by how
-    quickly the ones before it were answered (under 4 s left, the dig ends
-    there and the haul goes into the pack by itself). A wrong answer or a
+    quickly the ones before it were answered; with a second or more left
+    you may still dig on, a gamble on whatever light is left (under a
+    second, the dig ends there and the haul goes into the pack by itself). A wrong answer or a
     time-out on any strike caves in, with a sound of its own: it costs two
     lives, a ward in the pack taking each loss first (on your last life
     you simply fall), and buries everything in hand. The dig stays at the

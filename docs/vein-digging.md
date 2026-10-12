@@ -75,8 +75,10 @@ whole dig**, and the clock ring becomes its light:
 - **Nothing feeds it.** A quick answer carries time forward and a slow one
   leaves you digging in the dark: at shown depth 25 the lamp holds 10 s, so a
   third strike needs the first two answered in about 6 s together.
-- **Too little light to dig** (under FIND_MIN_TIMER, 4 s): the vein card
-  isn't dealt again, and the haul goes into the pack.
+- **Too little light to dig** (under VEIN_MIN_LIGHT, 1 s): the vein card
+  isn't dealt again, and the haul goes into the pack. With a second or
+  more, digging on is a gamble the player may take, on less time than any
+  other question gets.
 - **Running out is a cave-in.** The lamp hitting 0 is the time-out.
 
 What this does:

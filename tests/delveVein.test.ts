@@ -9,6 +9,7 @@ import {
   FIND_MIN_TIMER,
   LAMP_START,
   VEIN_MAX_STRIKES,
+  VEIN_MIN_LIGHT,
   WAY_OUT,
   clockLeft,
   delveLockout,
@@ -251,28 +252,30 @@ test('the dig goes no further than the pack has room: holding two wards, one str
   assert.deepEqual(inventoryOf(h.s, id), { ...NONE, wards: DELVE_MAX_WARDS });
 });
 
-test('the lamp: a quick answer carries its light on, a slow one deep down leaves too little to dig', () => {
-  assert.deepEqual([LAMP_START, FIND_MIN_TIMER], [1, 4]);
+test('the lamp: a quick answer carries its light on; down to a second left the dig may go on, a gamble', () => {
+  assert.deepEqual([LAMP_START, VEIN_MIN_LIGHT], [1, 1]);
   // Never more than the strike's whole deeper clock.
   assert.equal(lampAfter(30, 2, 100), delveTimer(findDepth('azurite', 30, 2)));
   assert.equal(lampAfter(30, 2, 0), 0);
   assert.equal(lampAfter(30, 2, 3.47), 3.4);
-  // Deep down the feed alone is under FIND_MIN_TIMER: a slow strike 1 ends the dig.
+  // Deep down, strike 1 answered with under a second left: too little to dig on, the ward goes into the pack.
   const h = run(1, 90);
   const id = h.id();
   h.vein();
-  h.answer(true, findTimer('azurite', 90) * 1000 - 100);
-  assert.ok(digOf(h.s)!.light < FIND_MIN_TIMER);
+  h.answer(true, findTimer('azurite', 90) * 1000 - 600);
+  assert.ok(digOf(h.s)!.light < VEIN_MIN_LIGHT);
   h.next();
   assert.equal(h.s.round, 91);
   assert.deepEqual(inventoryOf(h.s, id), { ...NONE, wards: 1 });
-  // A quick one leaves enough.
-  const q = run(1, 90);
-  q.vein();
-  q.answer(true, 500);
-  assert.ok(digOf(q.s)!.light >= FIND_MIN_TIMER);
-  q.next();
-  assert.equal(q.s.offered.length, 2);
+  // With a second and a half left (less than any question's clock), the vein is dealt again, on that light.
+  const g = run(1, 90);
+  g.vein();
+  g.answer(true, findTimer('azurite', 90) * 1000 - 1500);
+  assert.ok(digOf(g.s)!.light >= VEIN_MIN_LIGHT && digOf(g.s)!.light < FIND_MIN_TIMER);
+  g.next();
+  assert.equal(g.s.offered.length, 2);
+  g.pick(g.veinCard());
+  assert.equal(questionTimer(g.s), digOf(g.s)!.light);
 });
 
 test('a later strike is never the category of an earlier one, and the dig is public', () => {

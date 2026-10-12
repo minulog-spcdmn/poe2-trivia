@@ -445,9 +445,10 @@ export function findChance(kind: FindKind, d: number): number {
  * strike 1 with LAMP_START of its deeper depth's clock, burning only while a
  * strike is open, and never fed. What is left of it is the next strike's
  * clock, so every strike after the first is paid for by how quickly the ones
- * before it were answered. Too little light (under FIND_MIN_TIMER),
- * VEIN_MAX_STRIKES struck, or no room left for another ward, and the haul
- * goes into the pack by itself.
+ * before it were answered. Under VEIN_MIN_LIGHT left, VEIN_MAX_STRIKES
+ * struck, or no room left for another ward, and the haul goes into the pack
+ * by itself; with less light than any question gets, digging on is a gamble
+ * the player may take.
  */
 export const VEIN_MAX_STRIKES = 3;
 
@@ -456,6 +457,9 @@ export const VEIN_DEEPER = [20, 30, 40];
 
 /** The depths a vein's strike `strike` (1 on) asks from below its own. */
 export const veinDeeper = (strike: number) => VEIN_DEEPER[Math.min(VEIN_DEEPER.length, Math.max(1, Math.floor(strike) || 1)) - 1];
+
+/** The least light left that the vein may still be dug on with: a second, a gamble. */
+export const VEIN_MIN_LIGHT = 1;
 
 /** The lamp's light at strike 1, as a share of strike 1's deeper clock (FINDS `clock`, so findTimer gives it): the whole dig's. */
 export const LAMP_START = 1;
@@ -495,13 +499,13 @@ export const wardRoom = (s: GameState, id: string) => livesOf(s, id) > 0 && inve
 
 /**
  * Whether the vein being dug runs on after the strike just revealed: fewer
- * than VEIN_MAX_STRIKES struck, light enough for another (FIND_MIN_TIMER),
+ * than VEIN_MAX_STRIKES struck, light enough for another (VEIN_MIN_LIGHT),
  * and room for another ward (alone the player's, together anyone's
  * standing). Otherwise its haul goes into the pack by itself.
  */
 export function digRunsOn(s: GameState): boolean {
   const dig = digOf(s);
-  if (!dig || dig.strikes >= VEIN_MAX_STRIKES || dig.light < FIND_MIN_TIMER) return false;
+  if (!dig || dig.strikes >= VEIN_MAX_STRIKES || dig.light < VEIN_MIN_LIGHT) return false;
   const takers = isGroupRun(s) ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [];
   return takers.some((id) => wardRoom(s, id));
 }
