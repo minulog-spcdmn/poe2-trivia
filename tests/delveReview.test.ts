@@ -172,7 +172,7 @@ test('together: a reload holds the clock still, and nobody can answer meanwhile'
   assert.equal(held.askedAt, q.askedAt, 'the same question');
   assert.equal(held.deadline, null);
   assert.equal(held.clockAt, undefined);
-  assert.deepEqual(held.paused, { clockAt: q.clockAt, deadline: q.deadline, left: q.deadline! - q.clockAt! - 4000 });
+  assert.deepEqual(held.paused, { clockAt: q.clockAt, deadline: q.deadline, at: h.clock.now, left: q.deadline! - q.clockAt! - 4000 });
   silently(() => h.answer('p0', right(q)), /early/);
   silently(() => h.act({ type: 'answer', index: null, askedAt: q.askedAt }), /early/);
   // Long after its old deadline, it is still there.
@@ -236,6 +236,22 @@ test('a reload late on the clock leaves at least DELVE_RESUME_MIN_MS when it car
   h.clock.now = q.deadline! + 30_000;
   carryOn(h);
   assert.equal(h.s.question!.deadline, h.clock.now + DELVE_RESUME_MIN_MS);
+});
+
+test('the time added to reach DELVE_RESUME_MIN_MS goes on the deadline only: what had gone of the clock stays gone', () => {
+  const h = run(3);
+  const q = h.ask();
+  h.clock.now = q.deadline! - 1500;
+  h.answer('p1', wrongs(q)[0]);
+  h.clock.now += 1000;
+  reload(h, ['p2'], h.clock.now);
+  h.clock.now += 30_000;
+  carryOn(h);
+  const r = h.s.question!;
+  assert.equal(r.deadline, h.clock.now + DELVE_RESUME_MIN_MS);
+  // An Azurite Vein's fast window, timed from clockAt, doesn't open again.
+  assert.equal(h.clock.now - r.clockAt!, q.deadline! - q.clockAt! - 500);
+  assert.equal(r.struck![0].at, h.clock.now - 1000, 'the wrong answer stays in the past');
 });
 
 test("without the host's last moment, the clock stops as the room reopens; one out of range is kept to the clock's", () => {

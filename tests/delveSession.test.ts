@@ -117,7 +117,7 @@ test('notices: a clock the reload holds still (a life given, the board and the g
 
   // The host's reload holds the clock still: a toast says so, together and alone.
   const asking = run({ phase: 'question', question: question(5000) });
-  const held = run({ phase: 'question', question: { ...question(null), paused: { clockAt: 1000, deadline: 5000, left: 3000 } } });
+  const held = run({ phase: 'question', question: { ...question(null), paused: { clockAt: 1000, deadline: 5000, at: 2000, left: 3000 } } });
   assert.deepEqual(delveNotices(asking, held), [{ kind: 'paused' }]);
   assert.deepEqual(delveNotices(held, structuredClone(held)), [], 'once, as it stops');
   const alone = (o: Partial<GameState>) => {
@@ -183,7 +183,7 @@ test('co-op notices: only a perish (a wrong pick and a flare the question says i
 
 test("a clock the host's reload holds still is told by its question, the same one on the screen", () => {
   const asking = run({ phase: 'question', question: question(5000) });
-  const held = run({ phase: 'question', question: { ...question(null), paused: { clockAt: 1000, deadline: 5000, left: 3000 } } });
+  const held = run({ phase: 'question', question: { ...question(null), paused: { clockAt: 1000, deadline: 5000, at: 2000, left: 3000 } } });
   assert.equal(pausedNow(asking, held), true);
   assert.equal(pausedNow(null, held), false, "the host's own reload: nothing was on its screen");
   assert.equal(pausedNow(asking, { ...held, question: { ...held.question!, askedAt: 200 } }), false, 'another question');

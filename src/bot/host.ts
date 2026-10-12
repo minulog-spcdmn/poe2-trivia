@@ -10,7 +10,7 @@
 import type { GameState } from '../lib/game';
 import { joinable, makesWay, waitingAlone, type Role } from './wanted';
 import type { RoomInfo } from '../lib/rooms';
-import { SAVE, session } from '../lib/session.svelte';
+import { ALIVE, SAVE, session } from '../lib/session.svelte';
 import { readStored, removeStored, writeStored } from '../lib/storage';
 import { fiddled, lonelyLength, otherPrefs, type Identity, type Mode, type RoomPrefs } from './identities';
 import { hostEyes, moodOf, Player } from './player';
@@ -61,27 +61,43 @@ export interface Stint {
  * puts it back, so the room reopens with its game.
  */
 const SAVE_COPY = 'room-save';
+/** Beside it, when the host was last here (ALIVE), so a Delve clock held still by the crash stops then. */
+const ALIVE_COPY = 'room-alive';
 /** What the copy holds now (undefined: not looked at yet, so the first look sets it either way). */
 let lastCopy: string | null | undefined;
+let lastAlive: string | null | undefined;
 
 export function keepSaveCopy() {
   const save = readStored(SAVE, 'session');
-  if (save === lastCopy) return;
-  lastCopy = save;
-  if (save) writeStored(SAVE_COPY, save);
-  else removeStored(SAVE_COPY);
+  if (save !== lastCopy) {
+    lastCopy = save;
+    if (save) writeStored(SAVE_COPY, save);
+    else removeStored(SAVE_COPY);
+  }
+  const alive = readStored(ALIVE, 'session');
+  if (alive !== lastAlive) {
+    lastAlive = alive;
+    if (alive) writeStored(ALIVE_COPY, alive);
+    else removeStored(ALIVE_COPY);
+  }
 }
 
 /** Lets go of the room's save and its copy (the room is gone, or can't be got back). */
 export function dropSave() {
   removeStored(SAVE, 'session');
   removeStored(SAVE_COPY);
+  removeStored(ALIVE_COPY);
   lastCopy = undefined;
+  lastAlive = undefined;
 }
 
 function restoreSave() {
   const copy = readStored(SAVE_COPY);
-  if (copy && !readStored(SAVE, 'session')) writeStored(SAVE, copy, 'session');
+  if (copy && !readStored(SAVE, 'session')) {
+    writeStored(SAVE, copy, 'session');
+    const alive = readStored(ALIVE_COPY);
+    if (alive) writeStored(ALIVE, alive, 'session');
+  }
 }
 
 /** A host's rules, for the log (Delve has none to pick). */

@@ -603,10 +603,11 @@ export interface Question {
   clockAt?: number;
   /**
    * Delve: the clock held still by the host's reload (a player was cut off):
-   * its `clockAt` and `deadline` as they were, and the time it has `left`
-   * when it starts again ('clock'). `deadline` is null meanwhile.
+   * its `clockAt` and `deadline` as they were, when it stopped (`at`, host
+   * clock), and the time it has `left` when it starts again ('clock').
+   * `deadline` is null meanwhile.
    */
-  paused?: { clockAt: number; deadline: number; left: number };
+  paused?: { clockAt: number; deadline: number; at: number; left: number };
   /**
    * Delve: asked from a find, under the rules and clock of deeper down; a
    * right answer earns its item (see delve.ts findReward).
@@ -1515,11 +1516,16 @@ export class Engine {
         const start = Math.min(Math.max(at, now), now + 1000);
         const p = q.paused;
         if (p) {
-          // Held still since the host's reload ('resumed'): it carries on with
-          // the time it had left, everything timed on it moved on with it.
-          const shift = start + p.left - p.deadline;
+          // Held still since the host's reload ('resumed') at `p.at`: it
+          // carries on with the time it had left. Everything timed on it
+          // moves on by as long as it was held, so what had gone of it stays
+          // gone (an Azurite Vein's fast window too); only the deadline gets
+          // the time it had left (with a hold still to come, see clockLeft).
+          const shift = start - p.at;
+          const h = q.held;
+          const holding = h && p.at < h.until ? h.until - Math.max(p.at, h.from) : 0;
           q.clockAt = p.clockAt + shift;
-          q.deadline = p.deadline + shift;
+          q.deadline = start + p.left + holding;
           if (q.flaredAt !== undefined) q.flaredAt += shift;
           if (q.held) q.held = { from: q.held.from + shift, until: q.held.until + shift };
           for (const x of q.struck ?? []) x.at += shift;
@@ -1559,7 +1565,7 @@ export class Engine {
           // The host's last moment before the reload, never before the clock started nor after now.
           const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : this.now();
           const stop = Math.min(Math.max(at, q.clockAt), this.now());
-          q.paused = { clockAt: q.clockAt, deadline: q.deadline, left: Math.max(DELVE_RESUME_MIN_MS, clockLeft(q, stop)) };
+          q.paused = { clockAt: q.clockAt, deadline: q.deadline, at: stop, left: Math.max(DELVE_RESUME_MIN_MS, clockLeft(q, stop)) };
           q.deadline = null;
           delete q.clockAt;
         }

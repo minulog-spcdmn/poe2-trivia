@@ -134,6 +134,8 @@ const DETONATE_FUSE_MS = 1500;
 /** Client: pause before trying again after a failed attempt or a hiccup of the signalling server. */
 const RETRY_SOON_MS = 1500;
 const PING_EVERY_MS = 3000;
+/** Delve: how often a question's clock looks again for those the host's reload cut off (waitForArrival). */
+const RETURN_POLL_MS = 250;
 /** Guests: no message from the host for this long means it's gone. */
 const HOST_SILENCE_MS = 15000;
 /** Errors from the signalling server that a later try can get past. */
@@ -1066,9 +1068,10 @@ class Session {
       const now = Date.now();
       // After the host's reload, not before everyone it cut off is back (or
       // their grace is over); the art reaching them is waited for from then.
+      // Looked at less often meanwhile: that may take up to a minute.
       if (awaitingReturn(this.state!, now)) {
         releasedAt = now;
-        this.mediaTimers.push(setTimeout(poll, DRAIN_POLL_MS));
+        this.mediaTimers.push(setTimeout(poll, RETURN_POLL_MS));
         return;
       }
       const ids = this.held?.qid === qid ? this.held.ids : new Set<string>();
@@ -2281,7 +2284,7 @@ class Session {
 
   /**
    * Host: when it was last here, for a reload to tell when its clock stopped
-   * (engine 'resumed'). Kept with the save, every ping and as the page goes.
+   * (engine 'resumed'). Noted beside the save, every ping and as the page goes.
    */
   noteAlive() {
     if (this.mode === 'host' && this.state?.delve) writeStored(ALIVE, String(Date.now()), 'session');
@@ -2398,8 +2401,8 @@ type Saved =
   | { mode: 'client'; code: string; name: string; watch?: boolean };
 /** The save's storage name, in sessionStorage (each tab its own; the room bot keeps a copy, src/bot/host.ts). */
 export const SAVE = 'session.v4';
-/** Beside the save: when the host was last here (Session.noteAlive). */
-const ALIVE = 'session.alive';
+/** Beside the save, in sessionStorage: when the host was last here (Session.noteAlive; the room bot keeps a copy too). */
+export const ALIVE = 'session.alive';
 
 /** The host's last moment before its reload, as 'resumed' takes it (nothing when unknown). */
 function lastAlive(): { at?: number } {
