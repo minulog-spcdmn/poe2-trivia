@@ -393,12 +393,6 @@ export function digNote(next: number, light: number, haul: number, team = false)
   return `Strike ${next} of ${VEIN_MAX_STRIKES}, with ${lightText(light)} seconds of light. A miss costs ${caveInText('azurite')}${buries}.`;
 }
 
-/** The note under the way out: what it takes out of the vein. */
-export function wayOutNote(haul: number, team = false): string {
-  if (!haul) return 'Climb out and go a depth deeper.';
-  return `Take ${team ? "the team's" : 'your'} ${haul === 1 ? 'ward' : `${words(haul)} wards`} out and go a depth deeper.`;
-}
-
 /** After a right strike: what is in hand ("Two wards in hand."). */
 export const inHandText = (n: number) => `${cap(wardsWord(n))} in hand.`;
 

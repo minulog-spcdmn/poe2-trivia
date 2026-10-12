@@ -7,7 +7,8 @@
   import { categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused, wayOutNote } from '../lib/difficultyText';
+  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
+  import { wayOutDesign } from '../lib/wayOut/choice.svelte';
   import { digOf, expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -54,26 +55,17 @@
   /** The vein being dug, while its two cards are up. */
   const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
   const haul = $derived(dig?.haul.length ?? 0);
-  /**
-   * The way out's emblem: an arched doorway at the head of its steps, the
-   * light of the path filling it (fainter in the mask, so paler in the gold).
-   */
-  const OUT_ICON =
-    'data:image/svg+xml,' +
-    encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="240" viewBox="0 0 100 120">` +
-        `<path d="M12 106V54Q12 14 50 6Q88 14 88 54V106H76V56Q76 26 50 19Q24 26 24 56V106Z"/>` +
-        `<path opacity=".5" d="M29 106V58Q29 33 50 26Q71 33 71 58V106Z"/>` +
-        `<path opacity=".8" d="M44 106L47 60H53L56 106Z"/>` +
-        `<path d="M4 110H96V120H4Z"/><path d="M8 103H92V107H8Z"/>` +
-        `<path d="M50 0L52 4L50 3L48 4Z"/>` +
-        `</svg>`,
-    );
-  measure(OUT_ICON);
-  const iconOf = (cat: string) => (isWayOut(cat) ? OUT_ICON : categoryIcon(cat));
+  /** The way out's design (lib/wayOut: the lab picks among those being tried). */
+  const out = $derived(wayOutDesign());
+  $effect(() => {
+    if (out.emblem) measure(out.emblem);
+  });
+  const iconOf = (cat: string) => (isWayOut(cat) ? (out.emblem ?? '') : categoryIcon(cat));
   const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1.05, up: 0, left: 0 } : categoryIconTweak(cat));
   /** A card's name as players read it. */
-  const cardName = (cat: string) => (isWayOut(cat) ? 'The way out' : cat);
+  const cardName = (cat: string) => (isWayOut(cat) ? out.title : cat);
+  /** The way out's colours, as custom properties on its card. */
+  const outInk = $derived(Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';'));
 
   // ---- the cards' effects ---------------------------------------------------
   // Everything the cards set off is one group: it ends with them (a short
@@ -505,6 +497,8 @@
         class:dm={!!s.deathmatch}
         class:special={!!kindOf(cat)}
         class:out={isWayOut(cat)}
+        data-out={isWayOut(cat) ? out.id : undefined}
+        style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
@@ -527,11 +521,11 @@
       >
         <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
           <span class="back" aria-hidden="true">
-            <CardEngraving side="back" find={kindOf(cat)} />
+            <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="filigree"></span>
           </span>
           <span class="frame" use:backdropShadow>
-            <CardEngraving side="face" find={kindOf(cat)} />
+            <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="glare"></span>
             <span class="sheen"></span>
             <span class="filigree"></span>
@@ -539,14 +533,14 @@
               {@const kind = kindOf(cat)!}
               <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? `Strike ${dig.strikes + 1}` : FIND_TEXT[kind].name}</span>
             {:else if isWayOut(cat)}
-              <span class="find-tag out-tag" data-zoom>{haul ? `${haul} in hand` : 'Back to the path'}</span>
+              <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
             {/if}
-            <span class="icon">
+            <span class="icon" class:none={isWayOut(cat) && !out.emblem}>
               <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={fitStyle(iconOf(cat), tweakOf(cat))} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
             </span>
             <span class="title"
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? `Strike ${dig.strikes + 1}` : FIND_TEXT[kind].name}</span
-                >{:else if isWayOut(cat)}<span class="find-tag-row">{haul ? `${haul} in hand` : 'Back to the path'}</span>{/if}{cardName(cat)}</span
+                >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
             >
           </span>
           {#if coop}
@@ -576,8 +570,8 @@
     <!-- A dig's two cards: the strike ahead and what a cave-in costs; what the way out takes. -->
     <div class="find-notes" data-cursor="notes">
       {#each s.offered as cat, i (cat)}
-        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} style:--col={i + 1}>
-          {#if isWayOut(cat)}{wayOutNote(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
+        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1}>
+          {#if isWayOut(cat)}{out.note(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
         </p>
       {/each}
     </div>
@@ -682,25 +676,28 @@
       animation: none;
     }
   }
-  /* The way out: the path's warm light in its doorway, brighter than the plates' gold. */
+  /* The way out: its design's colours (lib/wayOut, set on the card), as a find's are. */
   .card.out .glyph {
-    background: linear-gradient(180deg, #fff6dc 0%, #f4c873 45%, #9a5a1c 100%);
+    background: var(--f-glyph);
   }
   .card.out .icon {
-    filter: drop-shadow(0 0 20px rgba(255, 186, 104, 0.7));
+    filter: drop-shadow(0 0 20px var(--f-pulse));
   }
-  .card.out {
-    --f: #ffd18a;
-    --f-hi: #fff0d0;
-    --f-border: #9a6a2a;
-    --f-pulse: rgba(255, 170, 80, 0.36);
-    --f-glow: rgba(255, 170, 80, 0.24);
+  .card.out .icon.none {
+    display: none;
+  }
+  .find-tag.out-tag {
+    color: var(--f-hi);
   }
   .card.out .title {
     color: var(--f-hi);
   }
+  .card.out .back {
+    border-color: var(--f-border);
+  }
   .card.out .frame {
     border-color: var(--f-border);
+    --bs-ring: color-mix(in srgb, var(--f-border) 45%, transparent);
   }
   .card.out:not(:global(.down)) .frame {
     --bs1: 0px 34px;
@@ -712,7 +709,7 @@
     --bs1-color: var(--f-pulse);
   }
   .find-note[data-find='out'] {
-    color: #f3d29a;
+    color: var(--f);
   }
   /* The cards take the room the question will: on a full-size window they
      stand as tall as its stage (1.36 x, 980 wide for three), smaller on

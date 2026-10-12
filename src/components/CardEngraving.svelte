@@ -10,11 +10,13 @@
   import { engrave } from '../lib/cardEngraving';
   import { findVariant } from '../lib/findEngraving';
   import type { FindKind } from '../lib/delve';
+  import type { Variant } from '../lib/cardEngraving';
 
-  let { side, find = null }: { side: 'face' | 'back'; find?: FindKind | null } = $props();
+  let { side, find = null, custom }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant } = $props();
   let w = $state(0);
   let h = $state(0);
-  const variant = $derived(find ? findVariant(find) : undefined);
+  // (custom: a card of its own, the way out of a vein: lib/wayOut.)
+  const variant = $derived(custom ?? (find ? findVariant(find) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
   const knockout = $derived(plate?.knockout ? plate.knockout.split(/(?<=Z)(?=M)/) : []);
