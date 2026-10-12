@@ -42,6 +42,14 @@ export const REVIVE_FROM = 2;
 /** After the host reloads, players who were cut off get this long to come back before a vote closes without them. */
 export const DELVE_RESUME_GRACE_MS = 60_000;
 
+/**
+ * After the host reloads, a question's clock waits this long at most for
+ * those it cut off who could still answer it (awaitingReturn): enough for a
+ * guest to notice and get back (it tries every 3 s), not a minute to look
+ * the answer up on a question it has seen.
+ */
+export const DELVE_RESUME_CLOCK_MS = 20_000;
+
 /** A question the host's reload held still starts again with at least this long on its clock. */
 export const DELVE_RESUME_MIN_MS = 5_000;
 
@@ -787,12 +795,23 @@ export function expectedVoters(s: GameState, now: number): string[] {
 }
 
 /**
- * Someone standing whom the host's reload cut off may still come back at
- * `now` (host clock): a question's clock doesn't start without them. Not
- * for someone idle, whom a vote doesn't wait for either (expectedVoters).
+ * Those the host's reload cut off who could still answer the question in
+ * play (or the next one): standing, not idle (a vote doesn't wait for them
+ * either, expectedVoters) and with no answer given to it yet.
+ */
+export function cutOffAnswering(s: GameState): string[] {
+  const done = new Set(answeredIds(s));
+  return (s.delve?.excused ?? []).filter((id) => livesOf(s, id) > 0 && !isIdle(s, id) && !done.has(id) && s.players.some((p) => p.id === id && !p.connected));
+}
+
+/**
+ * Someone the host's reload cut off who could still answer may yet come
+ * back at `now` (host clock): a question's clock doesn't start without them,
+ * for DELVE_RESUME_CLOCK_MS after the reload at most.
  */
 export function awaitingReturn(s: GameState, now: number): boolean {
-  return s.players.some((p) => livesOf(s, p.id) > 0 && !isIdle(s, p.id) && inGrace(s, p, now));
+  const dm = s.delve;
+  return !!dm && now < dm.graceUntil - DELVE_RESUME_GRACE_MS + DELVE_RESUME_CLOCK_MS && cutOffAnswering(s).length > 0;
 }
 
 /** Co-op, voting: someone voted, and everyone the vote waits for at `now` has. */

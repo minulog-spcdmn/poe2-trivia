@@ -20,6 +20,7 @@ import {
   delveTimer,
   cavesIn,
   clockLeft,
+  cutOffAnswering,
   heldAhead,
   blastVictim,
   blowsUp,
@@ -1551,15 +1552,14 @@ export class Engine {
         // Everyone the reload cut off gets a while to come back before a vote closes without them.
         dm.excused = s.players.filter((p) => !p.connected && livesOf(s, p.id) > 0).map((p) => p.id);
         dm.graceUntil = this.now() + DELVE_RESUME_GRACE_MS;
-        const coop = isGroupRun(s);
-        // A question on the clock that someone cut off may have been
-        // answering (co-op: anyone standing; alone, a guest's) holds still:
-        // their answer never arrived, and the clock ran on while the host was
-        // gone. It starts again with the time it had left (at least
-        // DELVE_RESUME_MIN_MS) once the art is back on screens ('clock').
-        // What was answered on it stands.
+        // A question on the clock that someone cut off could still answer
+        // (co-op: anyone standing yet to answer it; alone, a guest's) holds
+        // still: their answer may never have arrived, and the clock ran on
+        // while the host was gone. It starts again with the time it had left
+        // (at least DELVE_RESUME_MIN_MS) once the art is back on screens
+        // ('clock'). What was answered on it stands.
         const q = s.question;
-        if (s.phase === 'question' && q && q.deadline !== null && q.clockAt !== undefined && (coop ? dm.excused.length > 0 : active && !active.connected)) {
+        if (s.phase === 'question' && q && q.deadline !== null && q.clockAt !== undefined && cutOffAnswering(s).length > 0) {
           // The host's last moment before the reload, never before the clock started nor after now.
           const at = typeof action.at === 'number' && Number.isFinite(action.at) ? action.at : this.now();
           const stop = Math.min(Math.max(at, q.clockAt), this.now());

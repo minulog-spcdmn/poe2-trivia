@@ -6,7 +6,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DELVE_LIVES, DELVE_RESUME_MIN_MS, FLARE_MS, findOn, flaresOf, inventoryOf, livesOf, pausedUsed, type Inventory } from '../src/lib/delve.ts';
+import {
+  DELVE_IDLE_ROUNDS,
+  DELVE_LIVES,
+  DELVE_RESUME_CLOCK_MS,
+  DELVE_RESUME_GRACE_MS,
+  DELVE_RESUME_MIN_MS,
+  FLARE_MS,
+  awaitingReturn,
+  expectedVoters,
+  findOn,
+  flaresOf,
+  inventoryOf,
+  livesOf,
+  pausedUsed,
+  type Inventory,
+} from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, ActionError, Engine, createGame, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
@@ -358,4 +373,43 @@ test("a question held still whose art won't load again can be asked again; what 
   assert.equal(n.paused, undefined);
   assert.equal(n.struck, undefined);
   assert.equal(livesOf(h.s, 'p1'), DELVE_LIVES - 1);
+});
+
+test('only those cut off who could still answer hold the clock still', () => {
+  // Cut off after answering wrong: nothing left for them to give, so the clock runs on.
+  const h = run(3);
+  const q = h.ask();
+  h.answer('p2', wrongs(q)[0]);
+  reload(h, ['p2']);
+  assert.equal(h.s.question!.deadline, q.deadline);
+  assert.equal(h.s.question!.paused, undefined);
+  assert.equal(awaitingReturn(h.s, h.clock.now), false);
+  // Idle, and cut off: a vote doesn't wait for them, nor does the clock.
+  const idle = run(3);
+  idle.edit((c) => (c.delve!.missed = { p2: DELVE_IDLE_ROUNDS }));
+  const iq = idle.ask();
+  reload(idle, ['p2']);
+  assert.equal(idle.s.question!.deadline, iq.deadline);
+  // One of two cut off still to answer: it holds still, and waits for that one only.
+  const g = run(3);
+  const gq = g.ask();
+  g.answer('p2', wrongs(gq)[0]);
+  reload(g, ['p1', 'p2']);
+  assert.ok(g.s.question!.paused);
+  assert.equal(awaitingReturn(g.s, g.clock.now), true);
+  g.act({ type: 'join', playerId: 'p1', name: 'back', returning: true }, 'p1');
+  assert.equal(awaitingReturn(g.s, g.clock.now), false, 'p2, still away, has answered');
+});
+
+test('the clock waits DELVE_RESUME_CLOCK_MS at most for those cut off, while a vote waits the whole grace', () => {
+  const h = run(3);
+  h.ask();
+  reload(h, ['p2']);
+  assert.equal(awaitingReturn(h.s, h.clock.now), true);
+  h.clock.now += DELVE_RESUME_CLOCK_MS - 1;
+  assert.equal(awaitingReturn(h.s, h.clock.now), true);
+  h.clock.now += 1;
+  assert.equal(awaitingReturn(h.s, h.clock.now), false);
+  assert.ok(DELVE_RESUME_CLOCK_MS < DELVE_RESUME_GRACE_MS);
+  assert.deepEqual(expectedVoters(h.s, h.clock.now), ['p0', 'p1', 'p2'], 'the vote still waits for them');
 });

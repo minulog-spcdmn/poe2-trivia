@@ -101,8 +101,8 @@ Everyone starts with 3. There is no regain, no checkpoint and no continue.
   - **Excused seats.** Standing players marked offline are *excused* until they reconnect.
     - An excused player's turn waits until at least 60 s after the reload (`DELVE_RESUME_GRACE_MS`), and their choice budget then runs as usual.
     - 60 s covers a guest's 15 s silence watchdog plus its retries every 3 s, each attempt allowed 10 s (session.svelte.ts:65-67, 913-924).
-  - **A guest's open question holds its clock still** (co-op: anyone standing who was cut off). It's the same question; its clock stops at the host's last moment before the reload (kept in sessionStorage every ping and on `pagehide`).
-    - Once everyone cut off is back (or the grace is over) and the art is on screens again, the clock carries on with the time it had left, at least 5 s (`DELVE_RESUME_MIN_MS`).
+  - **A guest's open question holds its clock still** (co-op: anyone standing, not idle, who was cut off and hasn't answered it yet). It's the same question; its clock stops at the host's last moment before the reload (kept in sessionStorage every ping and on `pagehide`).
+    - Once those of them are back (or after 20 s at most, `DELVE_RESUME_CLOCK_MS`, so nobody gets a minute to look up a question they've seen) and the art is on screens again, the clock carries on with the time it had left, at least 5 s (`DELVE_RESUME_MIN_MS`).
     - What was answered on it before the reload stands: lives, wards, streaks, items spent. So a reload can't re-roll a hard question or take back a wrong answer.
     - Every guest's screen shows "Clock paused: the host reloaded. The clock starts again with the time it had left once everyone is back."
   - **The host's own question and hot-seat games** keep their deadline.
