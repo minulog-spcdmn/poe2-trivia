@@ -44,10 +44,10 @@ import type { FindKind } from './delve.ts';
 const sub = (p: Pt, q: Pt): Pt => [p[0] - q[0], p[1] - q[1]];
 const dot = (p: Pt, q: Pt) => p[0] * q[0] + p[1] * q[1];
 const centroid = (poly: Pt[]): Pt => [poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length];
-const poly = (ps: Pt[]) => `M${ps.map(pt).join('L')}Z`;
+export const poly = (ps: Pt[]) => `M${ps.map(pt).join('L')}Z`;
 
 /** The convex hull of `ps`, in order round it. */
-function hull(ps: Pt[]): Pt[] {
+export function hull(ps: Pt[]): Pt[] {
   const s = [...ps].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const half = (list: Pt[]) => {
@@ -62,7 +62,7 @@ function hull(ps: Pt[]): Pt[] {
 }
 
 /** A convex polygon grown outward by `d` (each side moved out, the corners where they meet). */
-function grow(ps: Pt[], d: number): Pt[] {
+export function grow(ps: Pt[], d: number): Pt[] {
   const c = centroid(ps);
   const sides = ps.map((a, i) => {
     const b = ps[(i + 1) % ps.length];
@@ -102,10 +102,10 @@ function inPoly(p: Pt, q: Pt, ps: Pt[]): Cut | null {
 }
 
 /** What a motif's lines stop short of: convex shapes standing in front, and discs. */
-type Shields = { polys: Pt[][]; holes: Hole[] };
-const NONE: Shields = { polys: [], holes: [] };
+export type Shields = { polys: Pt[][]; holes: Hole[] };
+export const NONE: Shields = { polys: [], holes: [] };
 /** A straight line, broken where it passes behind a shield. */
-const seg = (p: Pt, q: Pt, s: Shields = NONE) =>
+export const seg = (p: Pt, q: Pt, s: Shields = NONE) =>
   line(p, q, { holes: s.holes, cuts: s.polys.map((ps) => inPoly(p, q, ps)).filter((c): c is Cut => !!c) });
 
 /** Lines across the quadrilateral `a`, `b`, `c`, `d` parallel to its side `a` to `b`, stepping toward `d` to `c`, `gap` apart, kept 0.5 in from its ends. */

@@ -639,11 +639,14 @@
   .rule:last-child {
     background: linear-gradient(270deg, transparent, var(--c));
   }
+  /* The blur comes after the h2's own filter, so the two lists match up to it
+     and it eases out (a blur in place of the drop shadows would only swap
+     halfway, not ease). */
   @keyframes arrive {
     from {
       opacity: 0;
       letter-spacing: 0.4em;
-      filter: blur(6px);
+      filter: var(--drop-shadow-paint, var(--drop-shadow)) blur(6px);
     }
   }
   /* A run's start line arrives as a depth does, its spacing opening less:
@@ -655,7 +658,7 @@
     from {
       opacity: 0;
       letter-spacing: 0.06em;
-      filter: blur(6px);
+      filter: var(--drop-shadow-paint, var(--drop-shadow)) blur(6px);
     }
   }
   @keyframes grow {

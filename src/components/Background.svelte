@@ -183,18 +183,22 @@
       --floor 4s,
       --mist 4s;
   }
-  /* An Azurite Vein: the hall gone cold and dark, azurite glowing at the walls. */
+  /* An Azurite Vein: the hall gone cold and dark, azurite glowing at the walls.
+     A see-through dark layer with soft glows over the whole screen: dithered
+     (app.css, --dither), or it bands. */
   .vein {
     position: absolute;
     inset: 0;
     opacity: 0;
     transition: opacity 1.6s;
+    image-rendering: pixelated;
     background:
       radial-gradient(18% 34% at 0% 30%, rgba(90, 160, 255, 0.22), transparent),
       radial-gradient(14% 26% at 100% 62%, rgba(90, 160, 255, 0.2), transparent),
       radial-gradient(10% 18% at 2% 78%, rgba(170, 215, 255, 0.18), transparent),
       radial-gradient(9% 16% at 98% 20%, rgba(170, 215, 255, 0.16), transparent),
-      linear-gradient(rgba(6, 14, 34, 0.45), rgba(6, 14, 34, 0.45));
+      linear-gradient(rgba(6, 14, 34, 0.45), rgba(6, 14, 34, 0.45)),
+      var(--dither);
   }
   .vein.on {
     opacity: 1;

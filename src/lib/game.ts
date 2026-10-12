@@ -1878,6 +1878,8 @@ export class Engine {
     let kind: Pick<Question, 'find' | 'strike' | 'light'> = {};
     if (s.delve) {
       delete s.delve.banked;
+      // Whatever was picked, a way out's draw (closeVote) is over: left set, it would hold every later vote.
+      delete s.delve.leaving;
       const dig = digOf(s);
       if (dig && isWayOut(category)) {
         this.leaveVein(s);
@@ -2449,6 +2451,7 @@ export class Engine {
   private finish(s: GameState, winners: string[]) {
     if (s.delve) {
       delete s.delve.dig;
+      delete s.delve.leaving;
       s.delve.finds = [];
       delete s.delve.find;
       if (s.delve.voteFrom !== undefined) s.delve.voteFrom = null;

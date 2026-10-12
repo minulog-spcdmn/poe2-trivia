@@ -21,78 +21,16 @@
 // Laid in a row the lantern stands at the emblem's place, whole within the
 // row, without its chain.
 
-import { arc, at, f, lerp, line, pt, rad, type Cut, type Hole, type Pt } from '../arcane.ts';
+import { arc, at, f, lerp, line, pt, rad, type Hole, type Pt } from '../arcane.ts';
 import type { BackLayout, Plate, RowLayout, TallLayout, Variant } from '../cardEngraving.ts';
+import { NONE, grow, hull, poly, seg, type Shields } from '../findEngraving.ts';
 
 // ---- geometry -------------------------------------------------------------------
 
-const sub = (p: Pt, q: Pt): Pt => [p[0] - q[0], p[1] - q[1]];
-const dot = (p: Pt, q: Pt) => p[0] * q[0] + p[1] * q[1];
-const centroid = (ps: Pt[]): Pt => [ps.reduce((s, p) => s + p[0], 0) / ps.length, ps.reduce((s, p) => s + p[1], 0) / ps.length];
-const poly = (ps: Pt[]) => `M${ps.map(pt).join('L')}Z`;
+// (Convex shapes, and lines that stop short of them, as the finds' plates have them: lib/findEngraving.)
 const polyline = (ps: Pt[]) => `M${ps.map(pt).join('L')}`;
 /** A disc, as one closed path. */
 const disc = (c: Pt, r: number) => `M${pt([c[0] + r, c[1]])}A${f(r)} ${f(r)} 0 1 1 ${pt([c[0] - r, c[1]])}A${f(r)} ${f(r)} 0 1 1 ${pt([c[0] + r, c[1]])}Z`;
-
-/** The convex hull of `ps`, in order round it. */
-function hull(ps: Pt[]): Pt[] {
-  const s = [...ps].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const half = (list: Pt[]) => {
-    const out: Pt[] = [];
-    for (const p of list) {
-      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
-      out.push(p);
-    }
-    return out.slice(0, -1);
-  };
-  return [...half(s), ...half([...s].reverse())];
-}
-
-/** A convex polygon grown outward by `d`. */
-function grow(ps: Pt[], d: number): Pt[] {
-  const c = centroid(ps);
-  const sides = ps.map((a, i) => {
-    const b = ps[(i + 1) % ps.length];
-    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    let n: Pt = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
-    if (dot(n, sub(a, c)) < 0) n = [-n[0], -n[1]];
-    return { a: [a[0] + n[0] * d, a[1] + n[1] * d] as Pt, u: [(b[0] - a[0]) / len, (b[1] - a[1]) / len] as Pt };
-  });
-  return sides.map((s, i) => {
-    const prev = sides[(i + sides.length - 1) % sides.length];
-    const den = prev.u[0] * s.u[1] - prev.u[1] * s.u[0];
-    if (Math.abs(den) < 1e-9) return s.a;
-    const t = ((s.a[0] - prev.a[0]) * s.u[1] - (s.a[1] - prev.a[1]) * s.u[0]) / den;
-    return [prev.a[0] + prev.u[0] * t, prev.a[1] + prev.u[1] * t];
-  });
-}
-
-/** Where a line from `p` to `q` runs inside the convex polygon `ps`, as a cut in [0, 1]. */
-function inPoly(p: Pt, q: Pt, ps: Pt[]): Cut | null {
-  const c = centroid(ps);
-  const d = sub(q, p);
-  let [t0, t1] = [0, 1];
-  for (let i = 0; i < ps.length; i++) {
-    const [a, b] = [ps[i], ps[(i + 1) % ps.length]];
-    let n: Pt = [-(b[1] - a[1]), b[0] - a[0]];
-    if (dot(n, sub(c, a)) < 0) n = [-n[0], -n[1]];
-    const [num, den] = [dot(n, sub(p, a)), dot(n, d)];
-    if (Math.abs(den) < 1e-12) {
-      if (num < 0) return null;
-      continue;
-    }
-    const t = -num / den;
-    if (den > 0) t0 = Math.max(t0, t);
-    else t1 = Math.min(t1, t);
-  }
-  return t0 < t1 ? [t0, t1] : null;
-}
-
-/** What a line stops short of: convex shapes in front of it, and discs. */
-type Shields = { polys: Pt[][]; holes: Hole[] };
-const NONE: Shields = { polys: [], holes: [] };
-const seg = (p: Pt, q: Pt, s: Shields = NONE) => line(p, q, { holes: s.holes, cuts: s.polys.map((ps) => inPoly(p, q, ps)).filter((c): c is Cut => !!c) });
 
 /**
  * Lines across the face `a`, `b`, `c`, `d` parallel to its side `a` to `b`,
