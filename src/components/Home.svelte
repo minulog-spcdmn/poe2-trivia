@@ -178,10 +178,10 @@
     else session.startLocal();
   }
 
-  /** The entry that set off the connection, whose row shows it. */
-  let busy = $state<Entry | null>(null);
+  /** The entry that set off the connection, whose row shows it ('rooms': a room tapped in the Open rooms list, which shows it in that room's place). */
+  let busy = $state<Entry | 'rooms' | null>(null);
   /** The entry whose row shows the connection under way (the one that set it off, or the one a resumed connection belongs to). */
-  const busyEntry = $derived<Entry | null>(connecting ? (busy ?? (session.mode === 'host' ? 'create' : 'join')) : null);
+  const busyEntry = $derived<Entry | 'rooms' | null>(connecting ? (busy ?? (session.mode === 'host' ? 'create' : 'join')) : null);
 
   function choose(e: Entry) {
     if (connecting) return;
@@ -337,7 +337,11 @@
     document.getElementById('rooms-h')?.scrollIntoView({ behavior: motion.still ? 'auto' : 'smooth', block: 'start' });
   }
 
-  /** A room joined from the Open rooms list: its row is Join's. */
+  /**
+   * A room joined from the Open rooms list: with the list as a menu its row
+   * is Join's. In the actions layout the list sits below Today's unique, out
+   * of sight of Join's box, so the room tapped shows it in its own place.
+   */
   function joinListed(roomCode: string) {
     if (connecting) return;
     // Whole now: a Code too short notice still up goes.
@@ -349,15 +353,15 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n);
+    startJoin(roomCode, n, compact.current ? 'rooms' : 'join');
   }
 
   // A join that ends back here without a room (no such room, no answer):
   // its code is the one to check, and the toast (session.fail) says why.
   let joining: string | null = null;
-  function startJoin(roomCode: string, n: string) {
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
     joining = roomCode;
-    busy = 'join';
+    busy = from;
     session.join(roomCode, n);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
@@ -664,7 +668,7 @@
               <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
             {:else if roomCount && !connecting}
               <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
-                {roomSeats ? `${roomCount} open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount} ${roomCount === 1 ? 'game' : 'games'} to watch`}<span class="down"><DrawnMark shape="chevron" /></span>
+                {roomSeats ? `${roomCount} open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount} ${roomCount === 1 ? 'room' : 'rooms'} to watch`}<span class="down"><DrawnMark shape="chevron" /></span>
               </button>
             {/if}
           </div>
@@ -748,8 +752,8 @@
   </div>
 
   {#if !invite}
-    <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
-      <OpenRooms onJoin={joinListed} disabled={connecting} bind:count={roomCount} bind:seats={roomSeats} />
+    <div class="rooms" class:dimmed={connecting && busyEntry !== 'rooms'} inert={connecting && busyEntry !== 'rooms'} in:fly={{ y: 20, duration: 600, delay: 600 }}>
+      <OpenRooms onJoin={joinListed} disabled={connecting} joining={busyEntry === 'rooms' ? session.code : null} bind:count={roomCount} bind:seats={roomSeats} />
     </div>
   {/if}
 

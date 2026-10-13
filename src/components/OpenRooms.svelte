@@ -6,6 +6,7 @@
   import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
+  import Connecting from './Connecting.svelte';
 
   /** A room leaving the list fades where it stood, under the stage's zoom too. */
   const fadeOut = pinnedOut(fade);
@@ -13,14 +14,17 @@
   let {
     onJoin,
     disabled = false,
+    joining = null,
     count = $bindable(0),
     seats = $bindable(false),
   }: {
     onJoin: (code: string) => void;
     disabled?: boolean;
+    /** The code of a room tapped here that is being joined: it shows the connection in its place. */
+    joining?: string | null;
     /** How many rooms the list shows, for a page that points to them from further up. */
     count?: number;
-    /** Whether any of them has a seat to take (none: all are games under way, to watch). */
+    /** Whether any of them has a seat to take (none: all are rooms to watch). */
     seats?: boolean;
   } = $props();
 
@@ -34,33 +38,57 @@
   const MIN_SCAN_MS = 1500;
 
   /**
-   * What a room offers from here: a seat, a place to watch from and play the
-   * next game, or nothing (another version, locked, full, or its game has no
-   * room left to watch from). A full lobby has nothing: joining it from here
-   * asks for a seat.
+   * What a room on this version offers: a seat, a place to watch from (a
+   * game under way, to play the next one, or a full lobby, to take a seat
+   * once one is free), or nothing (locked, or no room left to watch from).
    */
-  const door = (r: RoomInfo): 'join' | 'watch' | null => (joinable(r) ? 'join' : r.phase !== 'lobby' && watchable(r) ? 'watch' : null);
+  const offer = (r: RoomInfo): 'join' | 'watch' | null => (joinable(r) ? 'join' : watchable(r) ? 'watch' : null);
+  /**
+   * What the list shows for a room: what it offers, or, for a host on an
+   * older version, that they need to reload (only for a room that would offer
+   * something once they have). A newer version's rooms are left out: this
+   * page reloading brings them in, which the list says once for them all.
+   */
+  function door(r: RoomInfo): 'join' | 'watch' | 'behind' | null {
+    const v = r.v ?? 0;
+    if (v === PROTOCOL_VERSION) return offer(r);
+    return v < PROTOCOL_VERSION && offer({ ...r, v: PROTOCOL_VERSION }) ? 'behind' : null;
+  }
+  const RANK = { join: 0, watch: 1, behind: 2 };
 
   /** Every room found, whatever it offers (what the scans merge). */
   let rooms = $state<RoomInfo[]>([]);
+  /** The room tapped, held so it stays in its place while it's joined even if a scan stops finding it. */
+  let tapped = $state<RoomInfo | null>(null);
   /**
-   * The rooms the list shows: only those that can be got into from here, to
-   * play or to watch and play the next game. Locked or full ones, and hosts
-   * on another version, are left out.
+   * The rooms the list shows: those that can be got into from here, to play
+   * or to watch, and those an older host's reload would open. Locked ones,
+   * ones with no room left, and newer hosts' are left out.
    */
-  const shown = $derived(rooms.flatMap((room) => {
-    const d = door(room);
-    return d ? [{ room, door: d }] : [];
-  }));
+  const shown = $derived.by(() => {
+    const list = rooms.flatMap((room) => {
+      const d = door(room);
+      return d ? [{ room, door: d }] : [];
+    });
+    if (joining && tapped?.code === joining && !list.some((s) => s.room.code === joining)) list.unshift({ room: tapped, door: 'join' });
+    return list;
+  });
 
   /** Rooms on a newer version than this page's that a reload would bring in (not locked or full ones, which it wouldn't). */
-  const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION && door({ ...r, v: PROTOCOL_VERSION }) !== null));
+  const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION && offer({ ...r, v: PROTOCOL_VERSION }) !== null));
+  /** How many rooms shown can be got into from here (not an older host's). */
+  const enterable = $derived(shown.filter((s) => s.door !== 'behind').length);
   /** Whether any room shown has a seat to take. */
   const seatFree = $derived(shown.some((s) => s.door === 'join'));
   $effect(() => {
-    count = shown.length;
+    count = enterable;
     seats = seatFree;
   });
+
+  function tap(r: RoomInfo) {
+    tapped = r;
+    onJoin(r.code);
+  }
 
   let scanning = $state(false);
   let scanned = $state(false);
@@ -97,9 +125,15 @@
       if (id === run) {
         scanning = false;
         scanned = true;
-        if (!destroyed) timer = setTimeout(scan, REFRESH_MS);
+        if (!destroyed) timer = setTimeout(refresh, REFRESH_MS);
       }
     }
+  }
+
+  /** The timed refresh, held off while a room is being joined: the list stays as it was tapped. */
+  function refresh() {
+    if (disabled) timer = setTimeout(refresh, REFRESH_MS);
+    else void scan();
   }
 
   // The refresh icon eases up to speed while scanning and coasts to a stop
@@ -128,8 +162,8 @@
   });
 
   function sortRooms(list: RoomInfo[]) {
-    const seat = (r: RoomInfo) => (joinable(r) ? 0 : 1);
-    return list.sort((a, b) => seat(a) - seat(b) || b.players - a.players || a.host.localeCompare(b.host));
+    const rank = (r: RoomInfo) => RANK[door(r) ?? 'behind'];
+    return list.sort((a, b) => rank(a) - rank(b) || b.players - a.players || a.host.localeCompare(b.host));
   }
 
   onMount(() => {
@@ -148,8 +182,8 @@
 <section class="rooms" aria-labelledby="rooms-h">
   <header>
     <h2 id="rooms-h">Open rooms</h2>
-    {#if shown.length}<span class="open" in:fade={{ duration: 200 }}><span class="num">{shown.length}</span> open</span>{/if}
-    <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
+    {#if enterable}<span class="open" in:fade={{ duration: 200 }}><span class="num">{enterable}</span> open</span>{/if}
+    <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning || disabled} aria-label="Refresh room list" title="Refresh">
       <!-- The arc is centred on the viewBox so the icon turns in place. The
            rotation lives inside the SVG, around its exact centre, rather than
            on the element: a rotated compositor layer gets snapped to device
@@ -161,7 +195,7 @@
         </g>
       </svg>
     </button>
-    {#if shown.length}<p class="note">{seatFree ? 'Anyone can join.' : 'Games under way: watch, and play the next one.'}</p>{/if}
+    {#if enterable}<p class="note">{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/if}
   </header>
   {#if newer && shown.length}
     <p class="newer">More rooms are open on a newer version of the game: {@render reload()} to see them.</p>
@@ -170,15 +204,22 @@
   {#if shown.length}
     <ul>
       {#each shown as { room: r, door: d } (r.code)}
-        <li animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
-          <div class="info">
-            <span class="host">{r.host}’s room</span>
-            <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
-          </div>
-          {#if d === 'join'}
-            <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
+        <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
+          {#if r.code === joining}
+            <!-- Joining it: the connection, with its Cancel, where the room was tapped. -->
+            <Connecting />
           {:else}
-            <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
+            <div class="info">
+              <span class="host">{r.host}’s room</span>
+              <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
+            </div>
+            {#if d === 'join'}
+              <button class="btn small" {disabled} onclick={() => tap(r)}>Join</button>
+            {:else if d === 'watch'}
+              <button class="btn small ghost" {disabled} onclick={() => tap(r)} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
+            {:else}
+              <span class="status" title="The host is on an older version of the game">Older version</span>
+            {/if}
           {/if}
         </li>
       {/each}
@@ -333,6 +374,10 @@
       0 0 16px rgba(201, 164, 92, 0.12),
       0 8px 22px rgba(0, 0, 0, 0.45);
   }
+  li.dimmed {
+    opacity: 0.45;
+    pointer-events: none;
+  }
   .info {
     flex: 1;
     min-width: 0;
@@ -348,6 +393,11 @@
     text-overflow: ellipsis;
   }
   .meta {
+    font-size: 15px;
+    color: var(--muted);
+  }
+  .status {
+    font-style: italic;
     font-size: 15px;
     color: var(--muted);
   }
