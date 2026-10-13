@@ -33,6 +33,14 @@
    */
   const MIN_SCAN_MS = 1500;
 
+  /**
+   * What a room offers from here: a seat, a place to watch from and play the
+   * next game, or nothing (another version, locked, full, or its game has no
+   * room left to watch from). A full lobby has nothing: joining it from here
+   * asks for a seat.
+   */
+  const door = (r: RoomInfo): 'join' | 'watch' | null => (joinable(r) ? 'join' : r.phase !== 'lobby' && watchable(r) ? 'watch' : null);
+
   /** Every room found, whatever it offers (what the scans merge). */
   let rooms = $state<RoomInfo[]>([]);
   /**
@@ -54,13 +62,6 @@
     seats = seatFree;
   });
 
-  /**
-   * What a room offers from here: a seat, a place to watch from and play the
-   * next game, or nothing (another version, locked, full, or its game has no
-   * room left to watch from). A full lobby has nothing: joining it from here
-   * asks for a seat.
-   */
-  const door = (r: RoomInfo): 'join' | 'watch' | null => (joinable(r) ? 'join' : r.phase !== 'lobby' && watchable(r) ? 'watch' : null);
   let scanning = $state(false);
   let scanned = $state(false);
   let failed = $state(false);

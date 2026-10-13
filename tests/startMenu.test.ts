@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ENTRIES, codexLine, cursorKey, moveCursor } from '../src/lib/startMenu.ts';
+import { ENTRIES, codexLine, codexLines, cursorKey, moveCursor } from '../src/lib/startMenu.ts';
 
 test('the menu has its four entries, Create first', () => {
   assert.deepEqual([...ENTRIES], ['create', 'join', 'hotseat', 'codex']);
@@ -23,4 +23,11 @@ test("the Codex entry tells what has been met, and the deepest delve once there 
   assert.equal(codexLine(3, 501, 0), 'Every unique you have met: 3 of 501.');
   assert.equal(codexLine(0, 501, 0), 'Every unique you meet in a game is kept here.');
   assert.equal(codexLine(null, 501, 5), 'Every unique you meet in a game is kept here.');
+});
+
+test('in one column the Codex says the same in shorter lines', () => {
+  assert.deepEqual(codexLines(212, 501, 14), ['212 of 501 met.', 'Deepest delve: 14.']);
+  assert.deepEqual(codexLines(3, 501, 0), ['3 of 501 met.']);
+  assert.deepEqual(codexLines(0, 501, 0), ['Kept as you play.']);
+  assert.deepEqual(codexLines(null, 501, 5), ['Kept as you play.']);
 });

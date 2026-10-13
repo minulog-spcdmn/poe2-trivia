@@ -15,7 +15,7 @@
   import { BETA, LOCAL } from '../lib/channel';
   import { deepestEver, loadRecords } from '../lib/delveRecord';
   import { shownDepth } from '../lib/delve';
-  import { ENTRIES, codexLine, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
+  import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
@@ -511,7 +511,7 @@
   /** The pair's lines in one column, short enough for half a phone's width. */
   const pairLines = $derived<Record<'hotseat' | 'codex', string[]>>({
     hotseat: ['Pass one screen around.'],
-    codex: discovered ? [`${discovered} of ${total} met.`, ...(deepest > 0 ? [`Deepest delve: ${deepest}.`] : [])] : ['Kept as you play.'],
+    codex: codexLines(discovered, total, deepest),
   });
 </script>
 
@@ -537,6 +537,21 @@
     autocorrect="off"
     enterkeyhint="go"
   />
+{/snippet}
+
+<!-- An invite's name and Join, in either layout (in the actions layout under its heading, as Join's row is set). -->
+{#snippet inviteJoin(act: boolean)}
+  <div class="under">
+    {#if connecting}
+      <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+    {:else}
+      <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint={act ? 'go' : undefined} autofocus />
+        <button class="btn primary" type="submit">Join</button>
+      </form>
+    {/if}
+  </div>
 {/snippet}
 
 <div class="home" class:invited={!!invite} class:compact={compact.current}>
@@ -599,17 +614,7 @@
           <div class="act-top">
             <h2 class="act-head" id="invite-label">{inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}</h2>
           </div>
-          <div class="under">
-            {#if connecting}
-              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
-            {:else}
-              <form class="slot row join" onsubmit={joinInvite} aria-labelledby="invite-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                <!-- svelte-ignore a11y_autofocus -->
-                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" autofocus />
-                <button class="btn primary" type="submit">Join</button>
-              </form>
-            {/if}
-          </div>
+          {@render inviteJoin(true)}
         </div>
         <div class="pair single" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 520 }}>
           <button class="pair-pick" onclick={leaveInvite}>
@@ -622,17 +627,7 @@
           <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
             {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
           </button>
-          <div class="under">
-            {#if connecting}
-              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
-            {:else}
-              <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                <!-- svelte-ignore a11y_autofocus -->
-                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autofocus />
-                <button class="btn primary" type="submit">Join</button>
-              </form>
-            {/if}
-          </div>
+          {@render inviteJoin(false)}
         </div>
         <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
           <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
@@ -907,10 +902,14 @@
      so a name wraps (or gives way to an ellipsis) only when its own words
      don't fit. Where it stands is unchanged: past the name, the gap between. */
   @media (hover: hover) {
-    .quill {
+    .you .quill {
       position: absolute;
       top: 50%;
-      left: calc(100% + 0.3em);
+      left: 100%;
+      /* The gap from the name is the quill's own padding, so the mouse on its
+         way across from the name keeps the greeting hovered. */
+      margin-left: 0;
+      padding-left: calc(0.3em + 6px);
       /* Centred on the name at its own height (translate is its slide in on hover). */
       transform: translateY(-50%);
       /* Its own width, not the name's: Change your name stays on one line. */
