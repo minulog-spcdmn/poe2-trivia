@@ -665,9 +665,14 @@
       color 0.25s,
       text-shadow 0.25s;
   }
+  /* Clipped, in case one word outgrows the tile, but on a box reaching past
+     the name by the hover glow's spread (cancelled by the margin, so nothing
+     moves), so the glow isn't cut off at the letters. */
   .name {
     display: block;
     overflow: hidden;
+    padding: 16px;
+    margin: -16px;
   }
   /* The made-up name, said so once it's over: a quiet line under the name,
      starting where it starts, so the name keeps its width and nothing wraps
