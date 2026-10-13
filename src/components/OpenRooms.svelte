@@ -17,7 +17,7 @@
   }: {
     onJoin: (code: string) => void;
     disabled?: boolean;
-    /** How many rooms the list shows, for a page that points to it from further up. */
+    /** How many listed rooms can be joined or watched from here, for a page that points to them from further up. */
     count?: number;
   } = $props();
 
@@ -32,8 +32,22 @@
 
   let rooms = $state<RoomInfo[]>([]);
   $effect(() => {
-    count = rooms.length;
+    count = rooms.filter((r) => door(r) === 'join' || door(r) === 'watch').length;
   });
+
+  /**
+   * What a listed room offers from here: another version to reload for
+   * (behind: the host's is older; ahead: this page's is), a seat, a place
+   * to watch from, or nothing (locked, full, or its game has no room left).
+   */
+  function door(r: RoomInfo): 'behind' | 'ahead' | 'join' | 'watch' | 'closed' {
+    const v = r.v ?? 0;
+    if (v < PROTOCOL_VERSION) return 'behind';
+    if (v > PROTOCOL_VERSION) return 'ahead';
+    if (r.phase === 'lobby' && r.players < r.maxPlayers) return 'join';
+    if (r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators) return 'watch';
+    return 'closed';
+  }
   let scanning = $state(false);
   let scanned = $state(false);
   let failed = $state(false);
@@ -137,11 +151,12 @@
     <ul>
       {#each rooms as r (r.code)}
         <!-- A room on another version can't be joined from here: say which side has to reload. -->
-        {@const behind = (r.v ?? 0) < PROTOCOL_VERSION}
-        {@const ahead = (r.v ?? 0) > PROTOCOL_VERSION}
-        {@const open = r.phase === 'lobby' && r.players < r.maxPlayers}
-        {@const watch = !open && r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators}
-        <li class:closed={!behind && !ahead && !open && !watch} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
+        {@const d = door(r)}
+        {@const behind = d === 'behind'}
+        {@const ahead = d === 'ahead'}
+        {@const open = d === 'join'}
+        {@const watch = d === 'watch'}
+        <li class:closed={d === 'closed'} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
           <div class="info">
             <span class="host">{r.host}’s room</span>
             <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>

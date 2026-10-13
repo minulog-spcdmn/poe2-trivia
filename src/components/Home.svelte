@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { flushSync, onDestroy, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
   import { MAX_NAME, cleanName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
@@ -87,12 +87,13 @@
   const connecting = $derived(session.status === 'connecting');
 
   /**
-   * One column (phones either way up, tablets, narrow windows) gets the menu
-   * as actions rather than a list: Create a room as the page's one big
-   * button, Join's code field always out, Hot-seat and the Codex as a pair
-   * under them. Two columns keep the list and its cursor.
+   * Phones (either way up), touch tablets in one column, and any window as
+   * narrow as a phone get the menu as actions rather than a list: Create a
+   * room as the page's one big button, Join's code field always out, Hot-seat
+   * and the Codex as a pair under them. A mouse keeps the list, its cursor
+   * and its arrow keys wherever there's room for them.
    */
-  const compact = new MediaQuery('max-width: 1080px');
+  const compact = new MediaQuery('(max-width: 640px), (pointer: coarse) and (max-width: 1080px)');
 
   // ---- names ----
 
@@ -125,11 +126,12 @@
   let renaming = $state(false);
   let draft = $state('');
   let renameField = $state<HTMLInputElement>();
-  async function startRename() {
+  function startRename() {
     if (connecting) return;
     draft = known;
     renaming = true;
-    await tick();
+    // Focused within the tap itself, so a phone's keyboard comes up with it.
+    flushSync();
     renameField?.focus();
     renameField?.select();
   }
@@ -180,7 +182,7 @@
   /** The entry whose row shows the connection under way (the one that set it off, or the one a resumed connection belongs to). */
   const busyEntry = $derived<Entry | null>(connecting ? (busy ?? (session.mode === 'host' ? 'create' : 'join')) : null);
 
-  async function choose(e: Entry) {
+  function choose(e: Entry) {
     if (connecting) return;
     cursor = ENTRIES.indexOf(e);
     rememberEntry(e);
@@ -189,7 +191,8 @@
     if (e === 'codex') return openCodex();
     if (e === 'create' && knownName()) return host();
     open = e;
-    await tick();
+    // Within the tap itself, so a phone's keyboard comes up with the focus.
+    flushSync();
     (known ? codeField : nameField)?.focus();
   }
 
@@ -267,22 +270,16 @@
   }
 
   /**
-   * Join in one column, its code field always out: a first visit is asked
-   * its name too (the field comes in under the code as Join's row opens),
-   * and the code typed so far waits.
+   * In one column a first visit's name field is out from the start, above the
+   * code: Enter in it goes on to the code while the code is still short.
    */
-  function phoneJoin(e: Event) {
+  function nameKeys(e: KeyboardEvent) {
+    if (e.key !== 'Enter' || code.length === CODE_LENGTH) return;
     e.preventDefault();
-    if (!knownName() && open !== 'join') return openJoinName();
-    join();
+    codeField?.focus();
   }
-  /** On a first visit, Join's row opens to ask the name, under the code. */
-  function openJoinName(focus = true) {
-    if (known || connecting) return;
-    open = 'join';
-    cursor = ENTRIES.indexOf('join');
-    if (focus) void tick().then(() => nameField?.focus());
-  }
+  /** Join's button is lit once a join can go: the code whole, and a name to join under. */
+  const joinReady = $derived(code.length === CODE_LENGTH && (!!known || !!nameInput.trim()));
 
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
@@ -299,7 +296,8 @@
       code = roomCode;
       open = 'join';
       cursor = ENTRIES.indexOf('join');
-      void tick().then(() => nameField?.focus());
+      flushSync();
+      nameField?.focus();
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
@@ -551,7 +549,7 @@
           <div class="under">
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
+                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
                 <button class="btn primary" type="submit">Create</button>
               </form>
             {:else}
@@ -581,9 +579,22 @@
             {#if busyEntry === 'join'}
               <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
             {:else}
-              {@const asking = open === 'join' && !known}
-              <!-- A first visit's name comes in under the code, so the field being typed in stays where it is. -->
-              <form class="slot row join" class:asking onsubmit={phoneJoin} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+              <!-- A first visit's name is out from the start, above the code: nothing comes in or moves while typing, so a phone's keyboard never hides what's still needed. -->
+              <form class="slot row join" onsubmit={join} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                {#if !known}
+                  <input
+                    class="field name"
+                    bind:this={nameField}
+                    bind:value={nameInput}
+                    maxlength={MAX_NAME}
+                    placeholder="Your name"
+                    aria-label="Your name"
+                    autocomplete="off"
+                    spellcheck="false"
+                    enterkeyhint="next"
+                    onkeydown={nameKeys}
+                  />
+                {/if}
                 <input
                   class="field code"
                   class:bad={codeError}
@@ -591,19 +602,18 @@
                   bind:value={code}
                   oninput={() => ((code = cleanCode(code)), (codeError = false))}
                   onpaste={pasteCode}
-                  onfocus={() => openJoinName(false)}
                   placeholder="Code"
                   maxlength={CODE_LENGTH}
                   autocomplete="off"
                   spellcheck="false"
                   aria-label="Room code"
                   aria-invalid={codeError}
+                  autocapitalize="characters"
+                  autocorrect="off"
+                  enterkeyhint="go"
                 />
-                {#if asking}
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" in:fly={SWAP_IN} />
-                {/if}
-                <!-- Lit once the code is whole: until then Create a room is the page's one lit button. -->
-                <button class="btn" class:primary={code.length === CODE_LENGTH} type="submit">Join</button>
+                <!-- Lit once a join can go: until then Create a room is the page's one lit button. -->
+                <button class="btn" class:primary={joinReady} type="submit">Join</button>
               </form>
             {/if}
           </div>
@@ -612,7 +622,7 @@
         <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
           {#each PAIR as { e, name } (e)}
             <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)}>
-              <span class="pair-name">{name}</span>
+              <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
               {#each pairLines[e] as line}<span class="pair-line">{line}</span>{/each}
             </button>
           {/each}
@@ -1050,15 +1060,40 @@
     gap: 12px;
     margin-bottom: 10px;
   }
-  /* Join, Hot-seat and the Codex in one voice: the list's entries, a size down. */
-  .act-head,
-  .pair-name {
+  /* Join's heading is a label, not a thing to tap: small spaced capitals,
+     as the kicker under the title is set, so it never reads as an entry. */
+  .act-head {
     margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #a99c86;
+  }
+  /* Hot-seat and the Codex as the list's entries are set, a size down, each
+     with a chevron that says it goes somewhere. */
+  .pair-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
     font-family: var(--font-display);
     font-weight: 400;
     font-size: 25px;
     line-height: 30px;
     color: #d9c08a;
+  }
+  .go {
+    --mark-size: 10px;
+    --mark-stroke: 1.6px;
+    color: var(--gold);
+    translate: 0 1px;
+    transition: translate 0.2s var(--ease-out);
+  }
+  .pair-pick:hover .go,
+  .pair-pick:active .go {
+    translate: 3px 1px;
   }
   .act-top + .under .slot {
     margin-top: 0;
@@ -1101,12 +1136,9 @@
     flex: 1 1 0;
     min-width: 0;
   }
-  /* Asking a name too: the code keeps its line, the name and Join share the next. */
-  .slot.row.join.asking .code {
-    flex-basis: 100%;
-  }
+  /* A first visit's name has a line of its own, above the code and Join. */
   .slot.row.join .name {
-    flex: 1 1 0;
+    flex: 1 1 100%;
     min-width: 0;
   }
   .slot.row.join .btn {
