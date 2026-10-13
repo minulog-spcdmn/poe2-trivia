@@ -15,10 +15,10 @@
 //   and room 1 stays.
 
 import { PROTOCOL_VERSION } from '../lib/protocol.ts';
-import { joinable, type RoomInfo } from '../lib/roomInfo.ts';
+import { joinable, watchable, type RoomInfo } from '../lib/roomInfo.ts';
 
-// What a room offers someone arriving: the list's rules too (lib/roomInfo.ts).
-export { joinable, watchable } from '../lib/roomInfo.ts';
+// What a room offers someone arriving, as the list goes by it too (lib/roomInfo.ts).
+export { joinable, watchable };
 
 /** Which of our rooms it is: 1, 2, 3 and on. */
 export type Role = number;
