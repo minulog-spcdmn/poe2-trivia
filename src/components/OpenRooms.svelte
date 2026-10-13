@@ -38,6 +38,10 @@
    * on another version, are left out.
    */
   const shown = $derived(rooms.filter((r) => door(r)));
+  /** Whether any room shown has a seat (or all are games under way, to watch). */
+  const seats = $derived(shown.some((r) => door(r) === 'join'));
+  /** Rooms on a newer version than this page's: left out, but a reload would bring them in. */
+  const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION));
   $effect(() => {
     count = shown.length;
   });
@@ -149,8 +153,11 @@
         </g>
       </svg>
     </button>
-    {#if shown.length}<p class="note">Anyone can join.</p>{/if}
+    {#if shown.length}<p class="note">{seats ? 'Anyone can join.' : 'Games under way: watch, and play the next one.'}</p>{/if}
   </header>
+  {#if newer && shown.length}
+    <p class="newer">More rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to see them.</p>
+  {/if}
 
   {#if shown.length}
     <ul>
@@ -172,6 +179,11 @@
     <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
   {:else if failed}
     <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
+  {:else if newer}
+    <!-- One span, so the tile (a flex row, for the searching dots) keeps the sentence whole around its button. -->
+    <p class="empty"><span>Rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to join them.</span></p>
+  {:else if rooms.length}
+    <p class="empty">No room has a free seat right now.</p>
   {:else}
     <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
   {/if}
@@ -212,6 +224,28 @@
     font-style: italic;
     font-size: 15px;
     color: #a99c86;
+  }
+  /* Rooms this page's version leaves out: a line under the heading. */
+  .newer {
+    margin: -6px 0 12px;
+    font-style: italic;
+    font-size: 15px;
+    color: #a99c86;
+  }
+  /* Reload, set as a link in its sentence. */
+  .reload {
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    color: var(--gold);
+    text-decoration: underline;
+    text-decoration-color: var(--gold-lo);
+    text-underline-offset: 3px;
+  }
+  .reload:hover {
+    color: var(--gold-hi);
   }
   .refresh {
     width: 32px;
@@ -376,6 +410,11 @@
     }
   }
   @media (pointer: coarse) {
+    /* A tap target of 44 px around the word, the line's spacing unchanged. */
+    .reload {
+      padding-block: 12px;
+      margin-block: -12px;
+    }
     .refresh {
       width: 44px;
       height: 44px;
