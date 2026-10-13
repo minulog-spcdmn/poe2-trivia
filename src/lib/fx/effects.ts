@@ -919,11 +919,6 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
   // shader's fade toward the quad's border begins. Flames barely reach below
   // the element, so the quad is shifted up over them rather than centred.
   const room = (r: number, z: number) => (r + 16 * z) / 0.72;
-  // The element's centre, and where the quad was put last frame: the box
-  // stops following the element once it's gone, so shift from the centre
-  // rather than again from the shifted box.
-  let centre = 0;
-  let placed = NaN;
   return shape({
     type: ShapeType.Fire,
     at: el,
@@ -952,8 +947,8 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
       f.q[4] = o.blue ?? 0;
       f.q[5] = -shift;
       f.q[6] = o.tint ? 1 : 0;
-      if (b.y !== placed) centre = b.y;
-      b.y = placed = centre + shift;
+      // (The box comes each frame centred on the element, see `seen` in core.ts.)
+      b.y += shift;
     },
   });
 }
