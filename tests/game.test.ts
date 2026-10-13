@@ -1079,6 +1079,14 @@ test('a guest waits for a seat in a full lobby, and gets one freed at the start'
   assert.deepEqual(s.spectators!.map((o) => o.id), ['new'], 'one seat freed, for the first to wait');
 });
 
+test('a full hot-seat lobby turns the thirteenth player down rather than seating them to watch', () => {
+  const engine = new Engine(items, { rng: seeded(42) });
+  let s: GameState = createGame(null, { targetScore: 3, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
+  const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
+  names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, null)));
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'x', name: 'Stranger' }, null), /lobby is full/);
+});
+
 test('a full lobby with no room left to watch from turns a newcomer away', () => {
   const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
   let { engine, s } = setup(names);

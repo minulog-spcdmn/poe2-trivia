@@ -12,7 +12,10 @@ import { shownDepth } from './delve.ts';
 export interface RoomInfo {
   code: string;
   host: string;
+  /** Seats held, someone on the way back included (what the engine counts against maxPlayers). */
   players: number;
+  /** Of them, the players connected now (missing from hosts before it: then as many as `players`). */
+  here?: number;
   maxPlayers: number;
   spectators: number;
   maxSpectators: number;
@@ -67,6 +70,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     // Extras that don't check out are dropped; the room is still listed.
     ...(delve && int(r.depth, 1, 9999) ? { depth: r.depth } : {}),
     ...(int(r.v, 0, 1e6) ? { v: r.v } : {}),
+    ...(int(r.here, 0, 64) && r.here <= r.players ? { here: r.here } : {}),
   };
 }
 
@@ -122,6 +126,9 @@ export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; wait
  * scan, hiding the rooms above it too).
  */
 export const listable = (room: RoomInfo) => !offensive(room.host);
+
+/** The players in a listed room now (seats held for someone on the way back left out). */
+export const playersHere = (r: Pick<RoomInfo, 'players' | 'here'>) => r.here ?? r.players;
 
 /** A room someone arriving could play in now (on this version: the list can't let anyone into the others, OpenRooms.svelte; the bot goes by it too, bot/wanted.ts). */
 export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;

@@ -33,6 +33,12 @@ test('other rooms are unchanged apart from the version', () => {
   assert.equal(wireRoomInfo(room).delve, undefined);
 });
 
+test('the players connected come through when they check out', () => {
+  assert.equal(parseRoomInfo({ ...wireRoomInfo({ ...room, here: 1 }) })!.here, 1);
+  assert.equal(parseRoomInfo({ ...wireRoomInfo(room), here: room.players + 1 })!.here, undefined, 'never more than the seats held');
+  assert.equal(parseRoomInfo({ ...wireRoomInfo(room), here: -1 })!.here, undefined);
+});
+
 test('a depth that does not check out is dropped, and the room kept', () => {
   for (const depth of [0, 10_000, 2.5, 'deep', -1]) {
     const parsed = parseRoomInfo({ ...wireRoomInfo({ ...room, mode: 'delve' }), depth });

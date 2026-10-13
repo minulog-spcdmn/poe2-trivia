@@ -15,7 +15,7 @@
 //   and room 1 stays.
 
 import { PROTOCOL_VERSION } from '../lib/protocol.ts';
-import { joinable, watchable, type RoomInfo } from '../lib/roomInfo.ts';
+import { joinable, playersHere, watchable, type RoomInfo } from '../lib/roomInfo.ts';
 
 // What a room offers someone arriving, as the list goes by it too (lib/roomInfo.ts).
 export { joinable, watchable };
@@ -41,13 +41,13 @@ export function notJoinable(r: RoomInfo, watching = false): string | null {
 }
 
 /** Someone's own room (not one of `ours`) with its host waiting alone in the lobby: the bot's players go to it first and soonest. */
-export const waitingAlone = (r: RoomInfo, ours: ReadonlySet<string>) => joinable(r) && !ours.has(r.code) && r.players === 1;
+export const waitingAlone = (r: RoomInfo, ours: ReadonlySet<string>) => joinable(r) && !ours.has(r.code) && playersHere(r) === 1;
 
 /** Players (the host counted) that make one of our lobbies busy enough for another room to open. */
 export const COMPANY = 3;
 
 /** A room still looking for players: joinable, and (one of `ours`, our own rooms' codes) without company yet. */
-export const looking = (r: RoomInfo, ours: ReadonlySet<string>) => joinable(r) && (!ours.has(r.code) || r.players < COMPANY);
+export const looking = (r: RoomInfo, ours: ReadonlySet<string>) => joinable(r) && (!ours.has(r.code) || playersHere(r) < COMPANY);
 
 /** Whether this room should open, given the other rooms listed (`ours`: which are our own). */
 export function wanted(role: Role, others: RoomInfo[], ours: ReadonlySet<string> = new Set()): boolean {

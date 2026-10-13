@@ -1262,7 +1262,9 @@ export class Engine {
         if (s.players.length >= MAX_PLAYERS) {
           // Every seat taken: watch, and take one once it is free (at the start
           // at the latest), as a game under way lets them watch for the next.
-          if (s.spectators.length < MAX_SPECTATORS) {
+          // Not on one screen (hot-seat, from null): nobody there watches, and
+          // the one being added is turned down instead.
+          if (from !== null && s.spectators.length < MAX_SPECTATORS) {
             s.spectators.push({ id: action.playerId, name });
             break;
           }

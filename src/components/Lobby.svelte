@@ -351,7 +351,7 @@
               {#if s.settings.locked}
                 Room locked: nobody new can join or watch. Players already in the game can still reconnect.
               {:else if closed}
-                Room full: a seat opens when someone leaves.
+                Room full: nobody new can come in until someone leaves.
               {:else if full}
                 Every seat is taken: anyone new watches, and takes the first seat that opens.
               {:else if s.settings.public}

@@ -357,7 +357,9 @@
   }
 
   // A join that ends back here without a room (no such room, no answer):
-  // its code is the one to check, and the toast (session.fail) says why.
+  // its code is the one to check, and the toast (session.fail) says why. Not
+  // one tapped in the Open rooms list in its own place: nobody typed that code,
+  // and Join's field is out of sight up the page.
   let joining: string | null = null;
   function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
     joining = roomCode;
@@ -367,7 +369,7 @@
     if (!connecting) settle();
   }
   function settle() {
-    if (joining && !session.state) {
+    if (joining && !session.state && busy !== 'rooms') {
       code = joining;
       codeError = true;
       if (!invite) open = 'join';
