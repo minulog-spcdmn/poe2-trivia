@@ -217,6 +217,10 @@
    */
   function fit(node: HTMLElement, _label: string | null) {
     const run = () => {
+      // Measured without the glow's room (.name), so the letters are held to
+      // the tile's own width whether or not a browser counts the end padding
+      // in scrollWidth.
+      node.style.padding = node.style.margin = '0';
       node.style.whiteSpace = 'nowrap';
       let size = NAME_PX;
       node.style.fontSize = `${size}px`;
@@ -225,6 +229,7 @@
         node.style.fontSize = `${size}px`;
       }
       if (node.scrollWidth > node.clientWidth + 0.5) node.style.whiteSpace = 'normal';
+      node.style.padding = node.style.margin = '';
     };
     run();
     // Again once the display font is in, and whenever the tile's width changes (a phone turned).
