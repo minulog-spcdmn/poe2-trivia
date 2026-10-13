@@ -218,11 +218,18 @@
   }
 
   /** A click anywhere but the open row's entry closes the row at once (what was typed is kept for next time). */
-  function outside(e: PointerEvent) {
+  function outside(e: Event) {
     if (!open || connecting) return;
+    const t = e.target as Node;
+    // Gone already: the tap that swapped it out (Create a room's button) is the one that opened the row.
+    if (!t.isConnected) return;
     const entry = boxes[ENTRIES.indexOf(open)];
-    if (entry && !entry.contains(e.target as Node)) closeRow('never');
+    if (entry && !entry.contains(t)) closeRow('never');
   }
+  /** A mouse closes the open row as it presses elsewhere... */
+  const outsidePress = (e: PointerEvent) => e.pointerType === 'mouse' && outside(e);
+  /** ...a finger only with a tap (a click), never as it starts a scroll. */
+  const outsideTap = (e: MouseEvent) => (e as Partial<PointerEvent>).pointerType !== 'mouse' && outside(e);
 
   /** How long an untouched row stays open once the mouse has left its entry. */
   const ROW_IDLE_MS = 4000;
@@ -495,7 +502,7 @@
   });
 </script>
 
-<svelte:window onkeydown={keys} onpointerdown={outside} />
+<svelte:window onkeydown={keys} onpointerdown={outsidePress} onclick={outsideTap} />
 
 <div class="home" class:invited={!!invite} class:compact={compact.current}>
   <div class="intro">
