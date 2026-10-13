@@ -292,10 +292,10 @@
    * visit its row then gives way, in place, to the name (the code waits).
    * One name field at a time, and nothing moves while typing.
    */
-  const asking = $derived(open === 'join' && !known);
+  const asking = $derived(open === 'join' && !known && code.length === CODE_LENGTH);
   function phoneJoin(e: Event) {
     e.preventDefault();
-    if (!asking && code.length < CODE_LENGTH) return codeShort();
+    if (code.length < CODE_LENGTH) return codeShort();
     if (!asking && !knownName()) {
       open = 'join';
       cursor = ENTRIES.indexOf('join');
@@ -1556,8 +1556,10 @@
     }
   }
   /* One column on a short screen (a phone on its side): the phone's title,
-     so the actions start within the first screen. */
-  @media (max-width: 1080px) and (max-height: 520px) {
+     so the actions start within the first screen. Not on a phone upright,
+     whose window some browsers shorten while the keyboard is up: the page
+     would shift under the field being typed in. */
+  @media (min-width: 641px) and (max-width: 1080px) and (max-height: 520px) {
     .home {
       padding-top: 16px;
     }
