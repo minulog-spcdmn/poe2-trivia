@@ -609,14 +609,17 @@
         at(Math.max(LINES[name].end, GLOW[name].end) + 0.15, () => (drawn[name] = true));
       }
     };
-    // (Its only animation: the circle's settling in.)
-    const settle = summon.getAnimations()[0];
-    if (settle)
-      settle.ready.then(
-        () => time(performance.now() - Number(settle.currentTime ?? 0)),
-        () => {},
-      );
-    else time(performance.now());
+    // (Its only animation: the circle's settling in.) Moved on the page
+    // before it starts, as a dialog's backdrop is to the end of <body>
+    // (lib/behindDialog), the circle starts over as new animations and the
+    // old one's `ready` rejects: then it's timed from the new one.
+    const follow = () => {
+      if (stopped) return;
+      const settle = summon.getAnimations()[0];
+      if (settle) settle.ready.then(() => time(performance.now() - Number(settle.currentTime ?? 0)), follow);
+      else time(performance.now());
+    };
+    follow();
     return () => {
       stopped = true;
       timers.forEach(clearTimeout);
