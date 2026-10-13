@@ -73,6 +73,10 @@ test("the invite screen says how the room stands, from what the room said", asyn
   assert.equal(inviteLine(room({})).text, '2 more exiles are in; you see them once you are in.');
   assert.equal(inviteLine(room({ players: 2 })).text, '1 more exile is in; you see them once you are in.');
   assert.equal(inviteLine(room({ players: 1 })).text, 'Nobody else is in yet.');
+  assert.equal(inviteLine(room({ players: 12 })).text, 'Every seat is taken; you watch until one is free.');
+  assert.equal(inviteLine(room({ players: 12, spectators: 12 })).text, 'The room is full; nobody new can join it now.', 'no room left to watch from either');
+  assert.equal(inviteLine(room({ phase: 'question', spectators: 12 })).text, 'The room is full; nobody new can join it now.');
+  assert.equal(inviteLine(room({ spectators: 12 })).text, '2 more exiles are in; you see them once you are in.', 'a free seat still takes them');
   for (const o of [{ phase: 'locked' }, { phase: 'question' }, { players: 12 }, { v: PROTOCOL_VERSION - 1 }, { v: PROTOCOL_VERSION + 1 }, { v: undefined }] as Partial<RoomInfo>[])
     assert.equal(inviteLine(room(o)).warn, true, JSON.stringify(o));
 });

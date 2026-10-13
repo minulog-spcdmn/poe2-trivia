@@ -109,6 +109,8 @@
       await scanRooms(
         (room) => {
           found.set(room.code, room);
+          // Not while a room tapped here is joined: the list stays as it was tapped.
+          if (disabled) return;
           // Show rooms as they are found; keep ones from the last scan until it ends.
           const merged = new Map(rooms.map((r) => [r.code, r]));
           merged.set(room.code, room);
@@ -116,7 +118,9 @@
         },
         () => destroyed || id !== run,
       );
-      if (id === run) rooms = sortRooms([...found.values()]);
+      // Run again once the join ends, rather than moving the list under it.
+      if (id === run && disabled) held = true;
+      else if (id === run) rooms = sortRooms([...found.values()]);
     } catch {
       failed = true;
     } finally {
@@ -130,7 +134,7 @@
     }
   }
 
-  /** A timed refresh that came due while a room was being joined, run once the join ends. */
+  /** A refresh that came due (or a scan that ended) while a room was being joined, run once the join ends. */
   let held = $state(false);
   /** The timed refresh, held off while a room is being joined: the list stays as it was tapped. */
   function refresh() {
@@ -139,7 +143,7 @@
     else void scan();
   }
   $effect(() => {
-    if (disabled || !held) return;
+    if (disabled || !held || scanning) return;
     held = false;
     untrack(() => void scan());
   });
@@ -212,7 +216,7 @@
   {#if shown.length}
     <ul>
       {#each shown as { room: r, door: d } (r.code)}
-        <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
+        <li class:dimmed={!!joining && r.code !== joining} class:behind={d === 'behind'} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
           {#if r.code === joining}
             <!-- Joining it: the connection, with its Cancel, where the room was tapped. -->
             <Connecting />
@@ -378,7 +382,8 @@
       box-shadow 0.25s,
       opacity 0.3s;
   }
-  li:hover {
+  /* Lit only where there is something to do: an older host's room has no button. */
+  li:hover:not(.behind) {
     border-color: var(--gold-lo);
     box-shadow:
       inset 0 1px 0 rgba(255, 220, 150, 0.06),

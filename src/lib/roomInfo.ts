@@ -106,6 +106,8 @@ export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; wait
   if (v < PROTOCOL_VERSION) return { text: 'The host is on an older version of the game; they need to reload before you can join.', warn: true };
   if (v > PROTOCOL_VERSION) return { text: 'This room is on a newer version of the game; reload this page to join.', warn: true };
   if (a.phase === 'locked') return { text: 'The room is locked; nobody new can join it now.', warn: true };
+  // No seat to take and no room left to watch from: the host turns them away.
+  if (!joinable(a) && !watchable(a)) return { text: 'The room is full; nobody new can join it now.', warn: true };
   if (a.phase !== 'lobby') return { text: 'A game is under way; you watch it, and play in the next.', warn: true };
   if (a.players >= a.maxPlayers) return { text: 'Every seat is taken; you watch until one is free.', warn: true };
   const others = a.players - 1;
