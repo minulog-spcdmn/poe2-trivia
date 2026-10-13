@@ -217,6 +217,10 @@
    */
   function fit(node: HTMLElement, _label: string | null) {
     const run = () => {
+      // Measured without the glow's room (.name), so the letters are held to
+      // the tile's own width whether or not a browser counts the end padding
+      // in scrollWidth.
+      node.style.padding = node.style.margin = '0';
       node.style.whiteSpace = 'nowrap';
       let size = NAME_PX;
       node.style.fontSize = `${size}px`;
@@ -225,6 +229,7 @@
         node.style.fontSize = `${size}px`;
       }
       if (node.scrollWidth > node.clientWidth + 0.5) node.style.whiteSpace = 'normal';
+      node.style.padding = node.style.margin = '';
     };
     run();
     // Again once the display font is in, and whenever the tile's width changes (a phone turned).
@@ -665,9 +670,14 @@
       color 0.25s,
       text-shadow 0.25s;
   }
+  /* Clipped, in case one word outgrows the tile, but on a box reaching past
+     the name by the hover glow's spread (cancelled by the margin, so nothing
+     moves), so the glow isn't cut off at the letters. */
   .name {
     display: block;
     overflow: hidden;
+    padding: 16px;
+    margin: -16px;
   }
   /* The made-up name, said so once it's over: a quiet line under the name,
      starting where it starts, so the name keeps its width and nothing wraps
