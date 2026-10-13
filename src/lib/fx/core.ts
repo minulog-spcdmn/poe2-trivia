@@ -104,7 +104,8 @@ type LiveShape = ShapeSpec & {
   /**
    * Where the anchor's centre was as measured, before update() moved `box`
    * (a fire shifts it up over its flames): how far the anchor moved is told
-   * from this, or a shape that shifts its box would seem to move every frame.
+   * from this, or a shape that shifts its box would seem to move every frame,
+   * and `box` is put back here before each update(), so a shift never adds up.
    */
   seen: Point;
   /** Fade-out once stopped: remaining and total seconds. */
@@ -885,6 +886,11 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       }
     }
     const t = Number.isFinite(s.life) ? s.age / s.life : 0;
+    // (update() is handed the anchor's centre as measured every pass, also
+    // once the element is gone or for a point: what it shifted last time
+    // never carries over.)
+    s.box.x = s.seen.x;
+    s.box.y = s.seen.y;
     s.update(s.f, t, s.age, s.box);
     if (s.f.k > 0) {
       visible.push([s, t]);
