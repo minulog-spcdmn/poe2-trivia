@@ -309,15 +309,16 @@
   function phoneJoin(e: Event) {
     e.preventDefault();
     if (code.length < CODE_LENGTH) return codeShort();
-    if (!asking && !knownName()) {
-      open = 'join';
-      cursor = ENTRIES.indexOf('join');
-      // Within the tap (or the Go key) itself, so a phone's keyboard stays up.
-      flushSync();
-      nameField?.focus();
-      return;
-    }
+    if (!asking && !knownName()) return askName();
     join();
+  }
+  /** Join's row asks the name (on one column, in the code's place). */
+  function askName() {
+    open = 'join';
+    cursor = ENTRIES.indexOf('join');
+    // Within the tap (or the Go key) itself, so a phone's keyboard comes up with the focus.
+    flushSync();
+    nameField?.focus();
   }
   /** Back from the name to the code. */
   function backToCode() {
@@ -344,10 +345,7 @@
     codeChanged();
     const n = knownName();
     if (!n) {
-      open = 'join';
-      cursor = ENTRIES.indexOf('join');
-      flushSync();
-      nameField?.focus();
+      askName();
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
@@ -414,7 +412,7 @@
       entryEls[next]?.focus();
     } else if (e.key === 'Enter' && (!t || t === document.body)) {
       e.preventDefault();
-      void choose(ENTRIES[cursor]);
+      choose(ENTRIES[cursor]);
     }
   }
 

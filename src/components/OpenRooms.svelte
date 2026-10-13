@@ -48,9 +48,11 @@
 
   /** Rooms on a newer version than this page's that a reload would bring in (not locked or full ones, which it wouldn't). */
   const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION && door({ ...r, v: PROTOCOL_VERSION }) !== null));
+  /** Whether any room shown has a seat to take. */
+  const seatFree = $derived(shown.some((s) => s.door === 'join'));
   $effect(() => {
     count = shown.length;
-    seats = shown.some((s) => s.door === 'join');
+    seats = seatFree;
   });
 
   /**
@@ -156,7 +158,7 @@
         </g>
       </svg>
     </button>
-    {#if shown.length}<p class="note">{seats ? 'Anyone can join.' : 'Games under way: watch, and play the next one.'}</p>{/if}
+    {#if shown.length}<p class="note">{seatFree ? 'Anyone can join.' : 'Games under way: watch, and play the next one.'}</p>{/if}
   </header>
   {#if newer && shown.length}
     <p class="newer">More rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to see them.</p>
@@ -182,12 +184,13 @@
     <!-- Kept up through the refreshes (the rooms found stay known while the next scan runs), so its reload never goes from under a finger.
          One span, so the tile (a flex row, for the searching dots) keeps the sentence whole around its button. -->
     <p class="empty"><span>Rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to join them.</span></p>
+  {:else if scanned && rooms.length && !failed}
+    <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
+    <p class="empty">No room can be joined from here right now.</p>
   {:else if scanning || !scanned}
     <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
   {:else if failed}
     <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
-  {:else if rooms.length}
-    <p class="empty">No room can be joined from here right now.</p>
   {:else}
     <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
   {/if}
