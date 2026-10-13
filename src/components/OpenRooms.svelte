@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
@@ -18,11 +18,12 @@
     count = $bindable(0),
     seats = $bindable(false),
   }: {
-    onJoin: (code: string) => void;
+    /** `watch`: a full lobby, which lets someone in only to watch (they take a seat from there once one is free). */
+    onJoin: (code: string, watch: boolean) => void;
     disabled?: boolean;
     /** The code of a room tapped here that is being joined: it shows the connection in its place. */
     joining?: string | null;
-    /** How many rooms the list shows, for a page that points to them from further up. */
+    /** How many rooms the list shows that can be got into (not an older host's), for a page that points to them from further up. */
     count?: number;
     /** Whether any of them has a seat to take (none: all are rooms to watch). */
     seats?: boolean;
@@ -58,8 +59,8 @@
 
   /** Every room found, whatever it offers (what the scans merge). */
   let rooms = $state<RoomInfo[]>([]);
-  /** The room tapped, held so it stays in its place while it's joined even if a scan stops finding it. */
-  let tapped = $state<RoomInfo | null>(null);
+  /** The room tapped and what it offered, held so it stays listed while it's joined even if a scan stops finding it. */
+  let tapped = $state<{ room: RoomInfo; door: 'join' | 'watch' } | null>(null);
   /**
    * The rooms the list shows: those that can be got into from here, to play
    * or to watch, and those an older host's reload would open. Locked ones,
@@ -70,7 +71,7 @@
       const d = door(room);
       return d ? [{ room, door: d }] : [];
     });
-    if (joining && tapped?.code === joining && !list.some((s) => s.room.code === joining)) list.unshift({ room: tapped, door: 'join' });
+    if (joining && tapped?.room.code === joining && !list.some((s) => s.room.code === joining)) list.unshift(tapped);
     return list;
   });
 
@@ -85,9 +86,10 @@
     seats = seatFree;
   });
 
-  function tap(r: RoomInfo) {
-    tapped = r;
-    onJoin(r.code);
+  function tap(r: RoomInfo, d: 'join' | 'watch') {
+    tapped = { room: r, door: d };
+    // A full lobby lets a newcomer in only as one who'd rather watch (game.ts, 'join').
+    onJoin(r.code, d === 'watch' && r.phase === 'lobby');
   }
 
   let scanning = $state(false);
@@ -130,11 +132,19 @@
     }
   }
 
+  /** A timed refresh that came due while a room was being joined, run once the join ends. */
+  let held = $state(false);
   /** The timed refresh, held off while a room is being joined: the list stays as it was tapped. */
   function refresh() {
-    if (disabled) timer = setTimeout(refresh, REFRESH_MS);
+    timer = null;
+    if (disabled) held = true;
     else void scan();
   }
+  $effect(() => {
+    if (disabled || !held) return;
+    held = false;
+    untrack(() => void scan());
+  });
 
   // The refresh icon eases up to speed while scanning and coasts to a stop
   // wherever it happens to be, instead of snapping back to its start angle.
@@ -177,7 +187,7 @@
 </script>
 
 <!-- Reload, set as a link in its sentence: a newer version's rooms come in with it. -->
-{#snippet reload()}<button class="reload" onclick={() => location.reload()}>reload</button>{/snippet}
+{#snippet reload()}<button class="reload" {disabled} onclick={() => location.reload()}>reload</button>{/snippet}
 
 <section class="rooms" aria-labelledby="rooms-h">
   <header>
@@ -214,9 +224,9 @@
               <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
             </div>
             {#if d === 'join'}
-              <button class="btn small" {disabled} onclick={() => tap(r)}>Join</button>
+              <button class="btn small" {disabled} onclick={() => tap(r, 'join')}>Join</button>
             {:else if d === 'watch'}
-              <button class="btn small ghost" {disabled} onclick={() => tap(r)} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
+              <button class="btn small ghost" {disabled} onclick={() => tap(r, 'watch')} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
             {:else}
               <span class="status" title="The host is on an older version of the game">Older version</span>
             {/if}
@@ -297,6 +307,9 @@
   }
   .reload:hover {
     color: var(--gold-hi);
+  }
+  .reload:disabled {
+    cursor: default;
   }
   .refresh {
     width: 32px;
@@ -392,14 +405,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .meta {
+  .meta,
+  .status {
     font-size: 15px;
     color: var(--muted);
   }
   .status {
     font-style: italic;
-    font-size: 15px;
-    color: var(--muted);
   }
   /* Nothing to list: one dashed tile across the row, as tall as a room's,
      so the first room to open doesn't move the page. */

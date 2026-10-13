@@ -331,7 +331,7 @@
 
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
-  /** Whether any of them has a seat (none: they are all games under way, to watch). */
+  /** Whether any of them has a seat (none: they are all rooms to watch, games under way or full lobbies). */
   let roomSeats = $state(false);
   function toRooms() {
     document.getElementById('rooms-h')?.scrollIntoView({ behavior: motion.still ? 'auto' : 'smooth', block: 'start' });
@@ -342,7 +342,7 @@
    * is Join's. In the actions layout the list sits below Today's unique, out
    * of sight of Join's box, so the room tapped shows it in its own place.
    */
-  function joinListed(roomCode: string) {
+  function joinListed(roomCode: string, watch: boolean) {
     if (connecting) return;
     // Whole now: a Code too short notice still up goes.
     code = roomCode;
@@ -353,16 +353,16 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n, compact.current ? 'rooms' : 'join');
+    startJoin(roomCode, n, compact.current ? 'rooms' : 'join', watch);
   }
 
   // A join that ends back here without a room (no such room, no answer):
   // its code is the one to check, and the toast (session.fail) says why.
   let joining: string | null = null;
-  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join', watch = false) {
     joining = roomCode;
     busy = from;
-    session.join(roomCode, n);
+    session.join(roomCode, n, watch);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
   }
