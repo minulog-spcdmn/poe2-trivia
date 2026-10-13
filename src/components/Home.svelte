@@ -903,12 +903,27 @@
     color: var(--gold);
   }
   .you {
+    position: relative;
     display: inline-flex;
     align-items: center;
     /* The greeting's own gap, between the name and its quill too. */
     gap: 0.3em;
     min-width: 0;
     max-width: 100%;
+  }
+  /* With a mouse the quill shows only on hover: it takes no room in the line,
+     so a name wraps (or gives way to an ellipsis) only when its own words
+     don't fit. Where it stands is unchanged: past the name, the gap between. */
+  @media (hover: hover) {
+    .quill {
+      position: absolute;
+      top: 50%;
+      left: calc(100% + 0.3em);
+      /* Centred on the name at its own height (translate is its slide in on hover). */
+      transform: translateY(-50%);
+      /* Its own width, not the name's: Change your name stays on one line. */
+      width: max-content;
+    }
   }
   .who {
     min-width: 0;
