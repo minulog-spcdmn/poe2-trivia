@@ -557,8 +557,32 @@
     <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
       <!-- One cursor for the menu: it glides to the entry under the mouse (or the
            keyboard's), and cools away once nothing is pointed at. -->
-      {#if invite || !compact.current}<MenuCursor at={cursor} {lit} />{/if}
-      {#if invite}
+      {#if !compact.current}<MenuCursor at={cursor} {lit} />{/if}
+      {#if invite && compact.current}
+        <!-- An invite in the actions layout: its join as Join's row is set, with the name, and the way to everything else as the pair's entries are. -->
+        <div class="act" in:fly={{ y: 12, duration: 500, delay: 450 }}>
+          <div class="act-top">
+            <h2 class="act-head" id="invite-label">{inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}</h2>
+          </div>
+          <div class="under">
+            {#if connecting}
+              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+            {:else}
+              <form class="slot row join" onsubmit={joinInvite} aria-labelledby="invite-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                <!-- svelte-ignore a11y_autofocus -->
+                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" autofocus />
+                <button class="btn primary" type="submit">Join</button>
+              </form>
+            {/if}
+          </div>
+        </div>
+        <div class="pair single" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 520 }}>
+          <button class="pair-pick" onclick={leaveInvite}>
+            <span class="pair-name">Something else<span class="go"><DrawnMark shape="chevron" /></span></span>
+            <span class="pair-line">Create your own room, play hot-seat, or open the Codex.</span>
+          </button>
+        </div>
+      {:else if invite}
         <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
           <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
             {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
@@ -1194,6 +1218,9 @@
     grid-template-columns: 1fr 1fr;
     transition: opacity 0.3s;
   }
+  .pair.single {
+    grid-template-columns: 1fr;
+  }
   .pair-pick {
     display: flex;
     flex-direction: column;
@@ -1462,6 +1489,10 @@
     }
     .compact .today {
       padding-top: 14px;
+    }
+    /* An invite's room starts with a heading, not the daily's art with its own air above it. */
+    .compact.invited .today {
+      padding-top: 40px;
     }
     .band {
       flex-direction: column;
