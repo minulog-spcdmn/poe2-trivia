@@ -128,7 +128,9 @@
       if (left > 0 && !destroyed) await new Promise((r) => setTimeout(r, left));
       if (id === run) {
         scanning = false;
-        scanned = true;
+        // A scan whose rooms were set aside for the join hasn't shown anything:
+        // the list still reads as searching, not as empty, until the next one.
+        if (!held) scanned = true;
         if (!destroyed) timer = setTimeout(refresh, REFRESH_MS);
       }
     }

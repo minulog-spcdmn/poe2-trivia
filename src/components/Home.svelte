@@ -320,12 +320,8 @@
     flushSync();
     nameField?.focus();
   }
-  /** Back from the name to the code. */
-  function backToCode() {
-    open = null;
-    flushSync();
-    codeField?.focus();
-  }
+  /** Back from the name to the code (closing Join's row brings the code field back, and focuses it). */
+  const backToCode = () => closeRow();
   /** Join's button is lit once it can go on: the code whole, and once asked, a name. */
   const joinReady = $derived(code.length === CODE_LENGTH && (!asking || !!nameInput.trim()));
 
@@ -344,16 +340,23 @@
    */
   function joinListed(roomCode: string) {
     if (connecting) return;
-    // Whole now: a Code too short notice still up goes.
-    code = roomCode;
-    codeChanged();
     const n = knownName();
+    const inPlace = !!n && compact.current;
+    if (inPlace) {
+      // Join's field up the page is left as it was (nobody typed this code); a Code too short notice still up goes.
+      if (shortNotice !== null) toasts.dismiss(shortNotice);
+      shortNotice = null;
+    } else {
+      // Join's row takes it on: the code in its field (whole now, so a Code too short notice still up goes).
+      code = roomCode;
+      codeChanged();
+    }
     if (!n) {
       askName();
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n, compact.current ? 'rooms' : 'join');
+    startJoin(roomCode, n, inPlace ? 'rooms' : 'join');
   }
 
   // A join that ends back here without a room (no such room, no answer):
