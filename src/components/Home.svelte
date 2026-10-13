@@ -342,7 +342,7 @@
    * is Join's. In the actions layout the list sits below Today's unique, out
    * of sight of Join's box, so the room tapped shows it in its own place.
    */
-  function joinListed(roomCode: string, watch: boolean) {
+  function joinListed(roomCode: string) {
     if (connecting) return;
     // Whole now: a Code too short notice still up goes.
     code = roomCode;
@@ -353,16 +353,16 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n, compact.current ? 'rooms' : 'join', watch);
+    startJoin(roomCode, n, compact.current ? 'rooms' : 'join');
   }
 
   // A join that ends back here without a room (no such room, no answer):
   // its code is the one to check, and the toast (session.fail) says why.
   let joining: string | null = null;
-  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join', watch = false) {
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
     joining = roomCode;
     busy = from;
-    session.join(roomCode, n, watch);
+    session.join(roomCode, n);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
   }

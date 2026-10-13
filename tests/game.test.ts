@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PALETTE } from '../src/lib/palette.ts';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, TWINS, allArt, drawnAs, picturesOf, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, TWINS, allArt, drawnAs, picturesOf, maxFakes, nameSimilarity, publicView, questionTopic, singular, renameCategories, MAX_PLAYERS, MAX_SPECTATORS, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -185,12 +185,14 @@ test('spectators waiting in a full lobby get the first free seat', () => {
   s = engine.apply(s, { type: 'remove', playerId: 'p5' }, 'p0');
   assert.ok(s.players.some((p) => p.id === 'w1'));
   assert.deepEqual(s.spectators!.map((o) => o.id), ['w2']);
-  // No one new can sit down in a full lobby, even under a spectator's name.
-  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'n', name: 'Nox' }, 'n'), /full/);
+  // No one new can sit down in a full lobby: they wait behind the others (and not under a spectator's name).
   assert.throws(() => engine.apply(s, { type: 'join', playerId: 'n', name: 'Yara' }, 'n'));
+  s = engine.apply(s, { type: 'join', playerId: 'n', name: 'Nox' }, 'n');
+  assert.equal(s.players.length, 12);
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w2', 'n']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   assert.equal(s.players.length, 12);
-  assert.deepEqual(s.spectators!.map((o) => o.id), ['w2'], 'still waiting, the table is full');
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w2', 'n'], 'still waiting, the table is full');
 });
 
 test('a spectator reconnecting to a locked room keeps their spot', () => {
@@ -1061,19 +1063,28 @@ test('seats kept for players who never came back are let go when the game starts
   assert.deepEqual(s.players.map((p) => p.id).sort(), ['p0', 'p1']);
 });
 
-test('a returning guest waits for a seat in a full lobby, and gets one freed at the start', () => {
+test('a guest waits for a seat in a full lobby, and gets one freed at the start', () => {
   const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
   let { engine, s } = setup(names);
   assert.equal(s.players.length, 12);
   // The host refreshed: p11 hasn't come back, and a former spectator reconnects.
   s = engine.apply(s, { type: 'connection', playerId: 'p11', connected: false }, null);
-  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new'), /lobby is full/);
   s = engine.apply(s, { type: 'join', playerId: 'w1', name: 'Watcher', returning: true }, 'w1');
-  assert.deepEqual(s.spectators!.map((o) => o.id), ['w1']);
+  // Someone new, from an invite or the room list, waits the same way.
+  s = engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new');
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['w1', 'new']);
   s = engine.apply(s, { type: 'start' }, 'p0');
   assert.ok(s.players.some((p) => p.id === 'w1'), 'the waiting guest takes the empty seat');
   assert.ok(!s.players.some((p) => p.id === 'p11'));
-  assert.deepEqual(s.spectators, []);
+  assert.deepEqual(s.spectators!.map((o) => o.id), ['new'], 'one seat freed, for the first to wait');
+});
+
+test('a full lobby with no room left to watch from turns a newcomer away', () => {
+  const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
+  let { engine, s } = setup(names);
+  for (let i = 0; i < MAX_SPECTATORS; i++) s = engine.apply(s, { type: 'join', playerId: `w${i}`, name: `Watcher ${'abcdefgh'[i]}` }, `w${i}`);
+  assert.equal(s.spectators!.length, MAX_SPECTATORS);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new'), /lobby is full/);
 });
 
 test('merciless and eternal swap decoys on name questions for made-up names', () => {

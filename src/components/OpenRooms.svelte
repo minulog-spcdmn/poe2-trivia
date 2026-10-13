@@ -18,8 +18,7 @@
     count = $bindable(0),
     seats = $bindable(false),
   }: {
-    /** `watch`: a full lobby, which lets someone in only to watch (they take a seat from there once one is free). */
-    onJoin: (code: string, watch: boolean) => void;
+    onJoin: (code: string) => void;
     disabled?: boolean;
     /** The code of a room tapped here that is being joined: it shows the connection in its place. */
     joining?: string | null;
@@ -88,8 +87,7 @@
 
   function tap(r: RoomInfo, d: 'join' | 'watch') {
     tapped = { room: r, door: d };
-    // A full lobby lets a newcomer in only as one who'd rather watch (game.ts, 'join').
-    onJoin(r.code, d === 'watch' && r.phase === 'lobby');
+    onJoin(r.code);
   }
 
   let scanning = $state(false);

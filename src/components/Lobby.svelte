@@ -218,10 +218,10 @@
   const delveCrowded = $derived(local && s.settings.mode === 'delve' && s.players.length > 1);
   const full = $derived(s.players.length >= MAX_PLAYERS);
   const alone = $derived(s.players.length < 2);
-  /** Nobody new can come in: locked, or every seat taken. */
+  /** Nobody new can come in to play: locked, or every seat taken (a full room lets them in to watch, while there's room). */
   const closed = $derived(!!s.settings.locked || full);
   const canStart = $derived(s.players.length >= 1 && !delveCrowded);
-  /** Spectators left over when the last game filled every seat. */
+  /** Spectators waiting for a seat: left over when the last game filled every seat, or come in while it was full. */
   const waiting = $derived((s.spectators ?? []).filter((o) => !o.stay));
   /** Spectators who chose to watch rather than play. */
   const watching = $derived((s.spectators ?? []).filter((o) => o.stay));
@@ -290,7 +290,7 @@
             <RoomCodeGlyphs code={session.code} hidden={session.hideCode} sparks />
           </div>
           <div class="invite-row">
-            <!-- A locked or full room takes nobody new: the link isn't offered then, and the button says why. -->
+            <!-- A locked or full room takes nobody new to play: the link isn't offered then, and the button says why. -->
             <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
               {s.settings.locked ? 'Room locked' : full ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
             </button>
