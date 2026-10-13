@@ -17,7 +17,7 @@
   }: {
     onJoin: (code: string) => void;
     disabled?: boolean;
-    /** How many listed rooms can be joined or watched from here, for a page that points to them from further up. */
+    /** How many rooms the list shows, for a page that points to them from further up. */
     count?: number;
   } = $props();
 
@@ -30,9 +30,16 @@
    */
   const MIN_SCAN_MS = 1500;
 
+  /** Every room found, whatever it offers (what the scans merge). */
   let rooms = $state<RoomInfo[]>([]);
+  /**
+   * The rooms the list shows: only those that can be got into from here, to
+   * play or to watch and play the next game. Locked or full ones, and hosts
+   * on another version, are left out.
+   */
+  const shown = $derived(rooms.filter((r) => door(r) === 'join' || door(r) === 'watch'));
   $effect(() => {
-    count = rooms.filter((r) => ['join', 'watch'].includes(door(r))).length;
+    count = shown.length;
   });
 
   /**
@@ -131,7 +138,7 @@
 <section class="rooms" aria-labelledby="rooms-h">
   <header>
     <h2 id="rooms-h">Open rooms</h2>
-    {#if rooms.length}<span class="open" in:fade={{ duration: 200 }}><span class="num">{rooms.length}</span> open</span>{/if}
+    {#if shown.length}<span class="open" in:fade={{ duration: 200 }}><span class="num">{shown.length}</span> open</span>{/if}
     <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning} aria-label="Refresh room list" title="Refresh">
       <!-- The arc is centred on the viewBox so the icon turns in place. The
            rotation lives inside the SVG, around its exact centre, rather than
@@ -144,31 +151,21 @@
         </g>
       </svg>
     </button>
-    {#if rooms.length}<p class="note">Anyone can join.</p>{/if}
+    {#if shown.length}<p class="note">Anyone can join.</p>{/if}
   </header>
 
-  {#if rooms.length}
+  {#if shown.length}
     <ul>
-      {#each rooms as r (r.code)}
-        <!-- A room on another version can't be joined from here: say which side has to reload. -->
-        {@const d = door(r)}
-        {@const behind = d === 'behind'}
-        {@const ahead = d === 'ahead'}
-        {@const open = d === 'join'}
-        {@const watch = d === 'watch'}
-        <li class:closed={d === 'closed'} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
+      {#each shown as r (r.code)}
+        <li animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
           <div class="info">
             <span class="host">{r.host}’s room</span>
             <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
           </div>
-          {#if behind || ahead}
-            <span class="status" title={behind ? 'The host is on an older version of the game' : 'Reload this page to join'}>{behind ? 'Older version' : 'Reload to join'}</span>
-          {:else if open}
+          {#if door(r) === 'join'}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
-          {:else if watch}
-            <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
           {:else}
-            <span class="status">{r.phase === 'locked' ? 'Locked' : r.phase === 'lobby' ? 'Full' : 'In a game'}</span>
+            <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
           {/if}
         </li>
       {/each}
@@ -287,15 +284,12 @@
       box-shadow 0.25s,
       opacity 0.3s;
   }
-  li:hover:not(.closed) {
+  li:hover {
     border-color: var(--gold-lo);
     box-shadow:
       inset 0 1px 0 rgba(255, 220, 150, 0.06),
       0 0 16px rgba(201, 164, 92, 0.12),
       0 8px 22px rgba(0, 0, 0, 0.45);
-  }
-  li.closed {
-    opacity: 0.55;
   }
   .info {
     flex: 1;
@@ -312,11 +306,6 @@
     text-overflow: ellipsis;
   }
   .meta {
-    font-size: 15px;
-    color: var(--muted);
-  }
-  .status {
-    font-style: italic;
     font-size: 15px;
     color: var(--muted);
   }
