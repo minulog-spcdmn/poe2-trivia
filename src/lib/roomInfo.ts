@@ -120,3 +120,9 @@ export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; wait
  * scan, hiding the rooms above it too).
  */
 export const listable = (room: RoomInfo) => !offensive(room.host);
+
+/** A room someone arriving could play in now (on this version: the list leaves the others out, OpenRooms.svelte; the bot goes by it too, bot/wanted.ts). */
+export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;
+
+/** A room someone could come in to watch: on this version, not locked, with a spectator's seat free (mid-game too). */
+export const watchable = (r: RoomInfo) => r.phase !== 'locked' && r.spectators < r.maxSpectators && (r.v ?? 0) === PROTOCOL_VERSION;

@@ -15,7 +15,10 @@
 //   and room 1 stays.
 
 import { PROTOCOL_VERSION } from '../lib/protocol.ts';
-import type { RoomInfo } from '../lib/roomInfo.ts';
+import { joinable, type RoomInfo } from '../lib/roomInfo.ts';
+
+// What a room offers someone arriving: the list's rules too (lib/roomInfo.ts).
+export { joinable, watchable } from '../lib/roomInfo.ts';
 
 /** Which of our rooms it is: 1, 2, 3 and on. */
 export type Role = number;
@@ -26,12 +29,6 @@ export function nextRole(taken: readonly Role[], rooms = Infinity): Role | null 
   while (taken.includes(role)) role++;
   return role <= rooms ? role : null;
 }
-
-/** A room someone arriving could play in now (on this version: the list leaves the others out, OpenRooms.svelte). */
-export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;
-
-/** A room someone could come in to watch: on this version, not locked, with a spectator's seat free (mid-game too). */
-export const watchable = (r: RoomInfo) => r.phase !== 'locked' && r.spectators < r.maxSpectators && (r.v ?? 0) === PROTOCOL_VERSION;
 
 /** Why a room listed can't be joined now (null: it can): for the log, when a guest finds nothing to join. */
 export function notJoinable(r: RoomInfo, watching = false): string | null {

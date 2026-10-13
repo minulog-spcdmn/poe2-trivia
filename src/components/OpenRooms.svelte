@@ -3,10 +3,9 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
-  import { roomMeta } from '../lib/roomInfo';
+  import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
-  import { joinable, watchable } from '../bot/wanted';
 
   /** A room leaving the list fades where it stood, under the stage's zoom too. */
   const fadeOut = pinnedOut(fade);
@@ -142,6 +141,9 @@
   });
 </script>
 
+<!-- Reload, set as a link in its sentence: a newer version's rooms come in with it. -->
+{#snippet reload()}<button class="reload" onclick={() => location.reload()}>reload</button>{/snippet}
+
 <section class="rooms" aria-labelledby="rooms-h">
   <header>
     <h2 id="rooms-h">Open rooms</h2>
@@ -161,7 +163,7 @@
     {#if shown.length}<p class="note">{seatFree ? 'Anyone can join.' : 'Games under way: watch, and play the next one.'}</p>{/if}
   </header>
   {#if newer && shown.length}
-    <p class="newer">More rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to see them.</p>
+    <p class="newer">More rooms are open on a newer version of the game: {@render reload()} to see them.</p>
   {/if}
 
   {#if shown.length}
@@ -180,10 +182,10 @@
         </li>
       {/each}
     </ul>
-  {:else if newer && scanned}
+  {:else if newer && scanned && !failed}
     <!-- Kept up through the refreshes (the rooms found stay known while the next scan runs), so its reload never goes from under a finger.
          One span, so the tile (a flex row, for the searching dots) keeps the sentence whole around its button. -->
-    <p class="empty"><span>Rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to join them.</span></p>
+    <p class="empty"><span>Rooms are open on a newer version of the game: {@render reload()} to join them.</span></p>
   {:else if scanned && rooms.length && !failed}
     <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
     <p class="empty">No room can be joined from here right now.</p>

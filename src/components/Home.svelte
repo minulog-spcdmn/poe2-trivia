@@ -517,6 +517,28 @@
 
 <svelte:window onkeydown={keys} onpointerdown={outsidePress} onclickcapture={outsideTap} />
 
+<!-- Join's code field, in either layout: capitals, no autocorrect, a Go key. -->
+{#snippet codeInput(short: boolean)}
+  <input
+    class="field code"
+    class:short
+    class:bad={codeError}
+    bind:this={codeField}
+    bind:value={code}
+    oninput={codeChanged}
+    onpaste={pasteCode}
+    placeholder="Code"
+    maxlength={CODE_LENGTH}
+    autocomplete="off"
+    spellcheck="false"
+    aria-label="Room code"
+    aria-invalid={codeError}
+    autocapitalize="characters"
+    autocorrect="off"
+    enterkeyhint="go"
+  />
+{/snippet}
+
 <div class="home" class:invited={!!invite} class:compact={compact.current}>
   <div class="intro">
     <div class="title">
@@ -644,7 +666,7 @@
             <h2 class="act-head" id="join-label">Join a room</h2>
             <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
             {#if asking}
-              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code {code} • change</button>
+              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
             {:else if roomCount && !connecting}
               <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
                 {roomSeats ? `${roomCount} open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount} ${roomCount === 1 ? 'game' : 'games'} to watch`}<span class="down"><DrawnMark shape="chevron" /></span>
@@ -660,23 +682,7 @@
                 {#if asking}
                   <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
                 {:else}
-                  <input
-                    class="field code"
-                    class:bad={codeError}
-                    bind:this={codeField}
-                    bind:value={code}
-                    oninput={codeChanged}
-                    onpaste={pasteCode}
-                    placeholder="Code"
-                    maxlength={CODE_LENGTH}
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="Room code"
-                    aria-invalid={codeError}
-                    autocapitalize="characters"
-                    autocorrect="off"
-                    enterkeyhint="go"
-                  />
+                  {@render codeInput(false)}
                 {/if}
                 <!-- Lit once a join can go: until then Create a room is the page's one lit button. -->
                 <button class="btn" class:primary={joinReady} type="submit">Join</button>
@@ -725,21 +731,7 @@
                   {#if !known}
                     <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
                   {/if}
-                  <input
-                    class="field code"
-                    class:short={!known}
-                    class:bad={codeError}
-                    bind:this={codeField}
-                    bind:value={code}
-                    oninput={codeChanged}
-                    onpaste={pasteCode}
-                    placeholder="Code"
-                    maxlength={CODE_LENGTH}
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="Room code"
-                    aria-invalid={codeError}
-                  />
+                  {@render codeInput(!known)}
                   <button class="btn primary" type="submit">Join</button>
                 </form>
               {:else}
@@ -1222,6 +1214,12 @@
   .to-rooms:hover {
     color: var(--gold-hi);
   }
+  /* A room code is set in Cinzel, as everywhere else. */
+  .shown-code {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    letter-spacing: 0.08em;
+  }
   .to-rooms .down {
     --mark-size: 9px;
     --mark-stroke: 1.4px;
@@ -1585,13 +1583,14 @@
      whose window some browsers shorten while the keyboard is up: the page
      would shift under the field being typed in. */
   @media (min-width: 641px) and (max-width: 1080px) and (max-height: 520px) {
-    .home {
+    /* The actions layout only: a mouse's list keeps its title. */
+    .home.compact {
       padding-top: 16px;
     }
-    .intro {
+    .compact .intro {
       --title-size: 54px;
     }
-    .greeting {
+    .compact .greeting {
       margin: 6px 0 4px;
     }
   }
