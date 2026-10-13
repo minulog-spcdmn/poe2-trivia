@@ -2,7 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fade, fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { MAX_PLAYERS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
+  import { MAX_PLAYERS, MAX_SPECTATORS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
   import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
@@ -218,8 +218,8 @@
   const delveCrowded = $derived(local && s.settings.mode === 'delve' && s.players.length > 1);
   const full = $derived(s.players.length >= MAX_PLAYERS);
   const alone = $derived(s.players.length < 2);
-  /** Nobody new can come in to play: locked, or every seat taken (a full room lets them in to watch, while there's room). */
-  const closed = $derived(!!s.settings.locked || full);
+  /** Nobody new can come in: locked, or every seat taken and no room left to watch from (a full room lets them in to watch, and take the first seat freed). */
+  const closed = $derived(!!s.settings.locked || (full && (s.spectators?.length ?? 0) >= MAX_SPECTATORS));
   const canStart = $derived(s.players.length >= 1 && !delveCrowded);
   /** Spectators waiting for a seat: left over when the last game filled every seat, or come in while it was full. */
   const waiting = $derived((s.spectators ?? []).filter((o) => !o.stay));
@@ -290,9 +290,9 @@
             <RoomCodeGlyphs code={session.code} hidden={session.hideCode} sparks />
           </div>
           <div class="invite-row">
-            <!-- A locked or full room takes nobody new to play: the link isn't offered then, and the button says why. -->
+            <!-- A locked room, or one with no seat and no room to watch, takes nobody new: the link isn't offered then, and the button says why. -->
             <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
-              {s.settings.locked ? 'Room locked' : full ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
+              {s.settings.locked ? 'Room locked' : closed ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
             </button>
             <!-- Hiding the code (for a stream) sits with the other ways of handing it on. -->
             <button
@@ -350,8 +350,10 @@
             <p class="vis-hint">
               {#if s.settings.locked}
                 Room locked: nobody new can join or watch. Players already in the game can still reconnect.
-              {:else if full}
+              {:else if closed}
                 Room full: a seat opens when someone leaves.
+              {:else if full}
+                Every seat is taken: anyone new watches, and takes the first seat that opens.
               {:else if s.settings.public}
                 Anyone can find this room under “Open rooms”.
               {:else}
