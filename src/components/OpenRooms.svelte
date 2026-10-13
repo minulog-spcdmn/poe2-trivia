@@ -46,8 +46,8 @@
     return d ? [{ room, door: d }] : [];
   }));
 
-  /** Rooms on a newer version than this page's: left out, but a reload would bring them in. */
-  const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION));
+  /** Rooms on a newer version than this page's that a reload would bring in (not locked or full ones, which it wouldn't). */
+  const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION && door({ ...r, v: PROTOCOL_VERSION }) !== null));
   $effect(() => {
     count = shown.length;
     seats = shown.some((s) => s.door === 'join');

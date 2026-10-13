@@ -229,14 +229,20 @@
     const entry = boxes[ENTRIES.indexOf(open)];
     if (entry && !entry.contains(e.target as Node)) closeRow('never');
   }
+  /** What the last press was made with: a click carries no pointer type on every browser. */
+  let pressedWith = '';
   /** A mouse closes the open row as it presses elsewhere... */
-  const outsidePress = (e: PointerEvent) => e.pointerType === 'mouse' && outside(e);
+  function outsidePress(e: PointerEvent) {
+    pressedWith = e.pointerType;
+    if (e.pointerType === 'mouse') outside(e);
+  }
   /**
    * ...a finger only with a tap (a click), never as it starts a scroll. Heard
    * as the click comes down (capture), before what was tapped acts: a row the
    * tap itself opens (Create a room's button, an open room's Join) stays open.
+   * A click from the keyboard (detail 0) leaves the row be, as a mouse's press does.
    */
-  const outsideTap = (e: MouseEvent) => (e as Partial<PointerEvent>).pointerType !== 'mouse' && outside(e);
+  const outsideTap = (e: MouseEvent) => e.detail > 0 && pressedWith !== 'mouse' && outside(e);
 
   /** How long an untouched row stays open once the mouse has left its entry. */
   const ROW_IDLE_MS = 4000;
@@ -333,9 +339,11 @@
   /** A room joined from the Open rooms list: its row is Join's. */
   function joinListed(roomCode: string) {
     if (connecting) return;
+    // Whole now: a Code too short notice still up goes.
+    code = roomCode;
+    codeChanged();
     const n = knownName();
     if (!n) {
-      code = roomCode;
       open = 'join';
       cursor = ENTRIES.indexOf('join');
       flushSync();
@@ -343,7 +351,6 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    code = roomCode;
     startJoin(roomCode, n);
   }
 
@@ -1160,6 +1167,9 @@
     font-size: 25px;
     line-height: 30px;
     color: #d9c08a;
+    transition:
+      color 1.2s ease,
+      text-shadow 1.2s ease;
   }
   .go {
     --mark-size: 10px;
@@ -1209,10 +1219,7 @@
   .act .code::placeholder {
     color: #8a7d68;
   }
-  .slot.row.join .code {
-    flex: 1 1 0;
-    min-width: 0;
-  }
+  .slot.row.join .code,
   .slot.row.join .name {
     flex: 1 1 0;
     min-width: 0;
@@ -1246,11 +1253,6 @@
     padding-left: 18px;
     border-left: 1px solid transparent;
     border-image: linear-gradient(180deg, transparent, rgba(125, 99, 51, 0.55) 30%, rgba(125, 99, 51, 0.55) 70%, transparent) 1;
-  }
-  .pair-name {
-    transition:
-      color 1.2s ease,
-      text-shadow 1.2s ease;
   }
   /* Lit as the list's entry under the cursor is: on hover, and while pressed. */
   .pair-pick:hover .pair-name,
