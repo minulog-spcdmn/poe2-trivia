@@ -1572,7 +1572,8 @@
      (its ring alone, in a tap target of 44 px), so renaming can be found. */
   @media (hover: none) {
     .named .quill:not(:disabled) {
-      margin: -8px -8px -8px -6px;
+      /* The 44 px target's padding stands clear of the name: the ring itself sits 8 px from it. */
+      margin: -8px -8px -8px 0;
       padding: 8px;
       opacity: 1;
       visibility: visible;
