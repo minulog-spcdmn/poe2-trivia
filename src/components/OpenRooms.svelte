@@ -6,6 +6,7 @@
   import { roomMeta } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
+  import { joinable, watchable } from '../bot/wanted';
 
   /** A room leaving the list fades where it stood, under the stage's zoom too. */
   const fadeOut = pinnedOut(fade);
@@ -14,11 +15,14 @@
     onJoin,
     disabled = false,
     count = $bindable(0),
+    seats = $bindable(false),
   }: {
     onJoin: (code: string) => void;
     disabled?: boolean;
     /** How many rooms the list shows, for a page that points to them from further up. */
     count?: number;
+    /** Whether any of them has a seat to take (none: all are games under way, to watch). */
+    seats?: boolean;
   } = $props();
 
   const REFRESH_MS = 20000;
@@ -37,26 +41,25 @@
    * play or to watch and play the next game. Locked or full ones, and hosts
    * on another version, are left out.
    */
-  const shown = $derived(rooms.filter((r) => door(r)));
-  /** Whether any room shown has a seat (or all are games under way, to watch). */
-  const seats = $derived(shown.some((r) => door(r) === 'join'));
+  const shown = $derived(rooms.flatMap((room) => {
+    const d = door(room);
+    return d ? [{ room, door: d }] : [];
+  }));
+
   /** Rooms on a newer version than this page's: left out, but a reload would bring them in. */
   const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION));
   $effect(() => {
     count = shown.length;
+    seats = shown.some((s) => s.door === 'join');
   });
 
   /**
    * What a room offers from here: a seat, a place to watch from and play the
    * next game, or nothing (another version, locked, full, or its game has no
-   * room left to watch from).
+   * room left to watch from). A full lobby has nothing: joining it from here
+   * asks for a seat.
    */
-  function door(r: RoomInfo): 'join' | 'watch' | null {
-    if ((r.v ?? 0) !== PROTOCOL_VERSION) return null;
-    if (r.phase === 'lobby' && r.players < r.maxPlayers) return 'join';
-    if (r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators) return 'watch';
-    return null;
-  }
+  const door = (r: RoomInfo): 'join' | 'watch' | null => (joinable(r) ? 'join' : r.phase !== 'lobby' && watchable(r) ? 'watch' : null);
   let scanning = $state(false);
   let scanned = $state(false);
   let failed = $state(false);
@@ -123,8 +126,8 @@
   });
 
   function sortRooms(list: RoomInfo[]) {
-    const joinable = (r: RoomInfo) => (r.phase === 'lobby' && r.players < r.maxPlayers ? 0 : 1);
-    return list.sort((a, b) => joinable(a) - joinable(b) || b.players - a.players || a.host.localeCompare(b.host));
+    const seat = (r: RoomInfo) => (joinable(r) ? 0 : 1);
+    return list.sort((a, b) => seat(a) - seat(b) || b.players - a.players || a.host.localeCompare(b.host));
   }
 
   onMount(() => {
@@ -161,13 +164,13 @@
 
   {#if shown.length}
     <ul>
-      {#each shown as r (r.code)}
+      {#each shown as { room: r, door: d } (r.code)}
         <li animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
           <div class="info">
             <span class="host">{r.host}’s room</span>
             <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
           </div>
-          {#if door(r) === 'join'}
+          {#if d === 'join'}
             <button class="btn small" {disabled} onclick={() => onJoin(r.code)}>Join</button>
           {:else}
             <button class="btn small ghost" {disabled} onclick={() => onJoin(r.code)} title="Watch this game and play in the next one">Watch</button>
@@ -175,15 +178,16 @@
         </li>
       {/each}
     </ul>
+  {:else if newer && scanned}
+    <!-- Kept up through the refreshes (the rooms found stay known while the next scan runs), so its reload never goes from under a finger.
+         One span, so the tile (a flex row, for the searching dots) keeps the sentence whole around its button. -->
+    <p class="empty"><span>Rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to join them.</span></p>
   {:else if scanning || !scanned}
     <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
   {:else if failed}
     <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
-  {:else if newer}
-    <!-- One span, so the tile (a flex row, for the searching dots) keeps the sentence whole around its button. -->
-    <p class="empty"><span>Rooms are open on a newer version of the game: <button class="reload" onclick={() => location.reload()}>reload</button> to join them.</span></p>
   {:else if rooms.length}
-    <p class="empty">No room has a free seat right now.</p>
+    <p class="empty">No room can be joined from here right now.</p>
   {:else}
     <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
   {/if}

@@ -324,6 +324,8 @@
 
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
+  /** Whether any of them has a seat (none: they are all games under way, to watch). */
+  let roomSeats = $state(false);
   function toRooms() {
     document.getElementById('rooms-h')?.scrollIntoView({ behavior: motion.still ? 'auto' : 'smooth', block: 'start' });
   }
@@ -640,7 +642,7 @@
               <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code {code} • change</button>
             {:else if roomCount && !connecting}
               <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
-                {roomCount} open {roomCount === 1 ? 'room' : 'rooms'}<span class="down"><DrawnMark shape="chevron" /></span>
+                {roomSeats ? `${roomCount} open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount} ${roomCount === 1 ? 'game' : 'games'} to watch`}<span class="down"><DrawnMark shape="chevron" /></span>
               </button>
             {/if}
           </div>
@@ -755,7 +757,7 @@
 
   {#if !invite}
     <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
-      <OpenRooms onJoin={joinListed} disabled={connecting} bind:count={roomCount} />
+      <OpenRooms onJoin={joinListed} disabled={connecting} bind:count={roomCount} bind:seats={roomSeats} />
     </div>
   {/if}
 
