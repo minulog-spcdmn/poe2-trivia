@@ -10,6 +10,7 @@ import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
+const MINUTE_MS = 60_000;
 
 /** Item kinds named as a pair, which take no article ("Gloves", "Gloves or boots"). */
 const PAIRS = /^(gloves|boots)\b/;
@@ -39,13 +40,18 @@ export const dayNumber = (ms: number) => utcDay(ms) - utcDay(DAILY_LAUNCH) + 1;
 /** Whole hours until the next UTC day, rounded up (1 to 24). */
 export const hoursLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / HOUR_MS));
 
+/** Whole minutes until the next UTC day, rounded up (1 to 1440). */
+export const minutesLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / MINUTE_MS));
+
 /**
- * "next in 11 hours", or with `what` named, "next daily in 11 hours". Always
- * the whole word: a lone "h" reads like a "b" in this font.
+ * "next in 11 hours", or with `what` named, "next daily in 11 hours"; in the
+ * last hour, minutes ("next in 25 minutes"). Always the whole word: a lone
+ * "h" reads like a "b" in this font.
  */
 export function nextIn(ms: number, what = ''): string {
-  const h = hoursLeft(ms);
-  return `next ${what ? `${what} ` : ''}in ${h} ${h === 1 ? 'hour' : 'hours'}`;
+  const m = minutesLeft(ms);
+  const [n, unit] = m < 60 ? [m, 'minute'] : [hoursLeft(ms), 'hour'];
+  return `next ${what ? `${what} ` : ''}in ${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 /**

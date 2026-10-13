@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -23,13 +23,20 @@ test('day numbers count from the launch, which is No. 1', () => {
   assert.equal(dayNumber(DAILY_LAUNCH + 213 * 24 * HOUR + 5 * HOUR), 214);
 });
 
-test('the next one is counted in whole hours, rounded up, and the word is spelled out', () => {
+test('the next one is counted in whole hours, rounded up, then minutes in the last hour, and the word is spelled out', () => {
   assert.equal(hoursLeft(at('2026-10-09T13:00:00Z')), 11);
   assert.equal(hoursLeft(at('2026-10-09T12:30:00Z')), 12);
   assert.equal(hoursLeft(at('2026-10-09T00:00:00Z')), 24);
   assert.equal(hoursLeft(at('2026-10-09T23:59:00Z')), 1);
   assert.equal(nextIn(at('2026-10-09T13:00:00Z')), 'next in 11 hours');
-  assert.equal(nextIn(at('2026-10-09T23:30:00Z')), 'next in 1 hour');
+  assert.equal(nextIn(at('2026-10-09T23:00:00Z')), 'next in 1 hour');
+  assert.equal(nextIn(at('2026-10-09T22:59:30Z')), 'next in 2 hours');
+  assert.equal(minutesLeft(at('2026-10-09T23:34:30Z')), 26);
+  assert.equal(nextIn(at('2026-10-09T23:00:01Z')), 'next in 1 hour');
+  assert.equal(nextIn(at('2026-10-09T23:01:00Z')), 'next in 59 minutes');
+  assert.equal(nextIn(at('2026-10-09T23:30:00Z')), 'next in 30 minutes');
+  assert.equal(nextIn(at('2026-10-09T23:59:30Z')), 'next in 1 minute');
+  assert.equal(nextIn(at('2026-10-09T23:50:00Z'), 'daily'), 'next daily in 10 minutes');
   assert.equal(nextIn(at('2026-10-09T13:00:00Z'), 'daily'), 'next daily in 11 hours');
   assert.doesNotMatch(nextIn(at('2026-10-09T13:00:00Z')), /\dh\b/);
 });
