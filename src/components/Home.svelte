@@ -905,6 +905,8 @@
   .you {
     display: inline-flex;
     align-items: center;
+    /* The greeting's own gap, between the name and its quill too. */
+    gap: 0.3em;
     min-width: 0;
     max-width: 100%;
   }
@@ -1583,7 +1585,7 @@
   @media (hover: none) {
     .named .quill:not(:disabled) {
       /* The 44 px target's padding stands clear of the name: the ring itself sits 8 px from it. */
-      margin: -8px -8px -8px 0;
+      margin: -8px -8px -8px -0.3em;
       padding: 8px;
       opacity: 1;
       visibility: visible;
