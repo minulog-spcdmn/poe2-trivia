@@ -10,7 +10,16 @@
   /** A room leaving the list fades where it stood, under the stage's zoom too. */
   const fadeOut = pinnedOut(fade);
 
-  let { onJoin, disabled = false }: { onJoin: (code: string) => void; disabled?: boolean } = $props();
+  let {
+    onJoin,
+    disabled = false,
+    count = $bindable(0),
+  }: {
+    onJoin: (code: string) => void;
+    disabled?: boolean;
+    /** How many rooms the list shows, for a page that points to it from further up. */
+    count?: number;
+  } = $props();
 
   const REFRESH_MS = 20000;
   /**
@@ -22,6 +31,9 @@
   const MIN_SCAN_MS = 1500;
 
   let rooms = $state<RoomInfo[]>([]);
+  $effect(() => {
+    count = rooms.length;
+  });
   let scanning = $state(false);
   let scanned = $state(false);
   let failed = $state(false);
