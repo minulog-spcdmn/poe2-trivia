@@ -503,7 +503,7 @@
                     </button>
                   {:else}
                     <span class="tile unknown" title="Not discovered yet">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} draggable="false" /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
                       <span class="name">Undiscovered</span>
                       <span class="status"></span>
                     </span>

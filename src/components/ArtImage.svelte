@@ -74,7 +74,6 @@
         <img
           src={shown.src}
           {alt}
-          draggable="false"
           decoding="async"
           class:unflip={shown.unflip}
           in:fade={{ duration: 300 }}
