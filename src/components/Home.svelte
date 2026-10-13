@@ -4,6 +4,7 @@
   import { fade, fly } from 'svelte/transition';
   import { MAX_NAME, cleanName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { refuseName } from '../lib/nameField';
+  import { motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
@@ -214,21 +215,27 @@
     codeError = false;
     rowFocus = false;
     clearTimeout(idleTimer);
-    if (refocus === 'always' || (refocus === 'if-focused' && hadFocus)) entryEls[i]?.focus({ preventScroll: true });
+    if (refocus === 'always' || (refocus === 'if-focused' && hadFocus)) {
+      // In one column the entry comes back in the row's place (Create a room's
+      // button), or has none but its code field (Join): render it first.
+      flushSync();
+      (entryEls[i] ?? (ENTRIES[i] === 'join' ? codeField : null))?.focus({ preventScroll: true });
+    }
   }
 
   /** A click anywhere but the open row's entry closes the row at once (what was typed is kept for next time). */
   function outside(e: Event) {
     if (!open || connecting) return;
-    const t = e.target as Node;
-    // Gone already: the tap that swapped it out (Create a room's button) is the one that opened the row.
-    if (!t.isConnected) return;
     const entry = boxes[ENTRIES.indexOf(open)];
-    if (entry && !entry.contains(t)) closeRow('never');
+    if (entry && !entry.contains(e.target as Node)) closeRow('never');
   }
   /** A mouse closes the open row as it presses elsewhere... */
   const outsidePress = (e: PointerEvent) => e.pointerType === 'mouse' && outside(e);
-  /** ...a finger only with a tap (a click), never as it starts a scroll. */
+  /**
+   * ...a finger only with a tap (a click), never as it starts a scroll. Heard
+   * as the click comes down (capture), before what was tapped acts: a row the
+   * tap itself opens (Create a room's button, an open room's Join) stays open.
+   */
   const outsideTap = (e: MouseEvent) => (e as Partial<PointerEvent>).pointerType !== 'mouse' && outside(e);
 
   /** How long an untouched row stays open once the mouse has left its entry. */
@@ -318,8 +325,7 @@
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
   function toRooms() {
-    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.getElementById('rooms-h')?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+    document.getElementById('rooms-h')?.scrollIntoView({ behavior: motion.still ? 'auto' : 'smooth', block: 'start' });
   }
 
   /** A room joined from the Open rooms list: its row is Join's. */
@@ -502,7 +508,7 @@
   });
 </script>
 
-<svelte:window onkeydown={keys} onpointerdown={outsidePress} onclick={outsideTap} />
+<svelte:window onkeydown={keys} onpointerdown={outsidePress} onclickcapture={outsideTap} />
 
 <div class="home" class:invited={!!invite} class:compact={compact.current}>
   <div class="intro">

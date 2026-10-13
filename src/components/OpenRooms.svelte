@@ -32,7 +32,7 @@
 
   let rooms = $state<RoomInfo[]>([]);
   $effect(() => {
-    count = rooms.filter((r) => door(r) === 'join' || door(r) === 'watch').length;
+    count = rooms.filter((r) => ['join', 'watch'].includes(door(r))).length;
   });
 
   /**
