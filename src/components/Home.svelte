@@ -259,27 +259,54 @@
       if (!nameField) void tick().then(() => nameField?.focus());
       return;
     }
-    if (code.length < CODE_LENGTH) {
-      codeError = true;
-      if (codeField) refuse(codeField);
-      codeField?.focus();
-      toasts.show(`Room codes have ${CODE_LENGTH} letters and digits.`, 'error', { title: 'Code too short' });
-      return;
-    }
+    if (code.length < CODE_LENGTH) return codeShort();
     startJoin(code, n);
+  }
+  /** The Code too short notice up, if one is: it goes once the code is whole. */
+  let shortNotice: number | null = null;
+  function codeShort() {
+    codeError = true;
+    if (codeField) refuse(codeField);
+    codeField?.focus();
+    shortNotice = toasts.show(`Room codes have ${CODE_LENGTH} letters and digits.`, 'error', { title: 'Code too short' });
+  }
+  /** The code as typed or pasted: kept clean, and a notice that it was short taken down once it isn't. */
+  function codeChanged() {
+    code = cleanCode(code);
+    codeError = false;
+    if (code.length === CODE_LENGTH && shortNotice !== null) {
+      toasts.dismiss(shortNotice);
+      shortNotice = null;
+    }
   }
 
   /**
-   * In one column a first visit's name field is out from the start, above the
-   * code: Enter in it goes on to the code while the code is still short.
+   * In one column Join asks as Create does: the code first, and on a first
+   * visit its row then gives way, in place, to the name (the code waits).
+   * One name field at a time, and nothing moves while typing.
    */
-  function nameKeys(e: KeyboardEvent) {
-    if (e.key !== 'Enter' || code.length === CODE_LENGTH) return;
+  const asking = $derived(open === 'join' && !known);
+  function phoneJoin(e: Event) {
     e.preventDefault();
+    if (!asking && code.length < CODE_LENGTH) return codeShort();
+    if (!asking && !knownName()) {
+      open = 'join';
+      cursor = ENTRIES.indexOf('join');
+      // Within the tap (or the Go key) itself, so a phone's keyboard stays up.
+      flushSync();
+      nameField?.focus();
+      return;
+    }
+    join();
+  }
+  /** Back from the name to the code. */
+  function backToCode() {
+    open = null;
+    flushSync();
     codeField?.focus();
   }
-  /** Join's button is lit once a join can go: the code whole, and a name to join under. */
-  const joinReady = $derived(code.length === CODE_LENGTH && (!!known || !!nameInput.trim()));
+  /** Join's button is lit once it can go on: the code whole, and once asked, a name. */
+  const joinReady = $derived(code.length === CODE_LENGTH && (!asking || !!nameInput.trim()));
 
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
@@ -339,9 +366,9 @@
     e.preventDefault();
     const field = e.currentTarget as HTMLInputElement;
     const linked = /[?&]room=([^&#\s]+)/.exec(text)?.[1];
-    if (linked) code = cleanCode(linked);
-    else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
-    codeError = false;
+    if (linked) code = linked;
+    else code = code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length);
+    codeChanged();
   }
 
   /** Arrows, Enter and Escape on the menu; not while typing (but Escape), in a dialog, or once something else has the screen. */
@@ -470,7 +497,7 @@
 
 <svelte:window onkeydown={keys} onpointerdown={outside} />
 
-<div class="home" class:invited={!!invite}>
+<div class="home" class:invited={!!invite} class:compact={compact.current}>
   <div class="intro">
     <div class="title">
       <GameTitle />
@@ -507,11 +534,14 @@
             <!-- An invite asks the name in its own row: the greeting only greets. -->
             <span class="who">{known || 'Exile'}.</span>
           {:else}
-            <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
-            <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
-              <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
-              <i>Change your name</i>
-            </button>
+            <!-- The name and its quill keep together, the name giving way (an ellipsis) before the quill would leave the screen. -->
+            <span class="you">
+              <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
+              <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
+                <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+                <i>Change your name</i>
+              </button>
+            </span>
           {/if}
         </p>
       {/if}
@@ -569,7 +599,9 @@
           <div class="act-top">
             <h2 class="act-head" id="join-label">Join a room</h2>
             <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
-            {#if roomCount && !connecting}
+            {#if asking}
+              <button class="to-rooms" onclick={backToCode} in:fade={{ duration: 300 }}>Code {code} • change</button>
+            {:else if roomCount && !connecting}
               <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
                 {roomCount} open {roomCount === 1 ? 'room' : 'rooms'}<span class="down"><DrawnMark shape="chevron" /></span>
               </button>
@@ -579,39 +611,29 @@
             {#if busyEntry === 'join'}
               <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
             {:else}
-              <!-- A first visit's name is out from the start, above the code: nothing comes in or moves while typing, so a phone's keyboard never hides what's still needed. -->
-              <form class="slot row join" onsubmit={join} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                {#if !known}
+              <!-- The code, or on a first visit once it's whole, the name in its place: one field, where the last one was. -->
+              <form class="slot row join" onsubmit={phoneJoin} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                {#if asking}
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                {:else}
                   <input
-                    class="field name"
-                    bind:this={nameField}
-                    bind:value={nameInput}
-                    maxlength={MAX_NAME}
-                    placeholder="Your name"
-                    aria-label="Your name"
+                    class="field code"
+                    class:bad={codeError}
+                    bind:this={codeField}
+                    bind:value={code}
+                    oninput={codeChanged}
+                    onpaste={pasteCode}
+                    placeholder="Code"
+                    maxlength={CODE_LENGTH}
                     autocomplete="off"
                     spellcheck="false"
-                    enterkeyhint="next"
-                    onkeydown={nameKeys}
+                    aria-label="Room code"
+                    aria-invalid={codeError}
+                    autocapitalize="characters"
+                    autocorrect="off"
+                    enterkeyhint="go"
                   />
                 {/if}
-                <input
-                  class="field code"
-                  class:bad={codeError}
-                  bind:this={codeField}
-                  bind:value={code}
-                  oninput={() => ((code = cleanCode(code)), (codeError = false))}
-                  onpaste={pasteCode}
-                  placeholder="Code"
-                  maxlength={CODE_LENGTH}
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-label="Room code"
-                  aria-invalid={codeError}
-                  autocapitalize="characters"
-                  autocorrect="off"
-                  enterkeyhint="go"
-                />
                 <!-- Lit once a join can go: until then Create a room is the page's one lit button. -->
                 <button class="btn" class:primary={joinReady} type="submit">Join</button>
               </form>
@@ -665,7 +687,7 @@
                     class:bad={codeError}
                     bind:this={codeField}
                     bind:value={code}
-                    oninput={() => ((code = cleanCode(code)), (codeError = false))}
+                    oninput={codeChanged}
                     onpaste={pasteCode}
                     placeholder="Code"
                     maxlength={CODE_LENGTH}
@@ -817,21 +839,36 @@
 
   /* ---- the greeting ---- */
   .greeting {
-    height: 44px;
+    /* A long name wraps the greeting onto a second line. */
+    min-height: 44px;
     margin: 16px 0;
     display: flex;
     align-items: center;
   }
   .hello {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.3em;
+    gap: 0 0.3em;
+    min-width: 0;
+    /* Inside the greeting's 44 px on one line; two lines keep clear of what's under them. */
+    padding-block: 6px;
     margin: 0;
     font-family: var(--font-display);
     font-size: 20px;
     color: var(--gold);
   }
+  .you {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+  }
   .who {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0;
     background: none;
     border: 0;
@@ -845,6 +882,7 @@
   }
   /* The rename affordance shows on hovering the greeting with a mouse, never at rest. */
   .quill {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -1136,9 +1174,8 @@
     flex: 1 1 0;
     min-width: 0;
   }
-  /* A first visit's name has a line of its own, above the code and Join. */
   .slot.row.join .name {
-    flex: 1 1 100%;
+    flex: 1 1 0;
     min-width: 0;
   }
   .slot.row.join .btn {
@@ -1382,7 +1419,7 @@
   }
 
   /* Too narrow for the two columns side by side: one column, at most 560 px
-     wide (the actions, Today's unique, then the open rooms). */
+     wide (the menu, the open rooms, then Today's unique). */
   @media (max-width: 1080px) {
     .home {
       grid-template-columns: minmax(0, 560px);
@@ -1390,16 +1427,33 @@
       grid-template-areas:
         '.'
         'intro'
-        'today'
         'rooms'
+        'today'
         '.'
         'foot';
       justify-content: center;
     }
     .rooms {
-      margin-top: 40px;
+      margin-top: 16px;
     }
     .today {
+      padding-top: 32px;
+    }
+    /* The actions layout: Today's unique straight after them, the open rooms
+       last (Join points down to them when there are any). */
+    .home.compact {
+      grid-template-areas:
+        '.'
+        'intro'
+        'today'
+        'rooms'
+        '.'
+        'foot';
+    }
+    .compact .rooms {
+      margin-top: 40px;
+    }
+    .compact .today {
       padding-top: 14px;
     }
     .band {
