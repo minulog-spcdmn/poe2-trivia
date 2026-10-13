@@ -1525,7 +1525,7 @@
       gap: 14px;
     }
   }
-  /* Phones: the column takes the width, a smaller title; no cursor. */
+  /* Phones: tighter gutters and a smaller title (the column stays at most 560 px); no cursor. */
   @media (max-width: 640px) {
     .home {
       padding: 28px 16px 20px;
