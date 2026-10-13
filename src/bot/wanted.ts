@@ -27,7 +27,7 @@ export function nextRole(taken: readonly Role[], rooms = Infinity): Role | null 
   return role <= rooms ? role : null;
 }
 
-/** A room someone arriving could play in now (on this version: the list greys out the others, OpenRooms.svelte). */
+/** A room someone arriving could play in now (on this version: the list leaves the others out, OpenRooms.svelte). */
 export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;
 
 /** A room someone could come in to watch: on this version, not locked, with a spectator's seat free (mid-game too). */

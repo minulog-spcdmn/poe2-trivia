@@ -37,23 +37,21 @@
    * play or to watch and play the next game. Locked or full ones, and hosts
    * on another version, are left out.
    */
-  const shown = $derived(rooms.filter((r) => door(r) === 'join' || door(r) === 'watch'));
+  const shown = $derived(rooms.filter((r) => door(r)));
   $effect(() => {
     count = shown.length;
   });
 
   /**
-   * What a listed room offers from here: another version to reload for
-   * (behind: the host's is older; ahead: this page's is), a seat, a place
-   * to watch from, or nothing (locked, full, or its game has no room left).
+   * What a room offers from here: a seat, a place to watch from and play the
+   * next game, or nothing (another version, locked, full, or its game has no
+   * room left to watch from).
    */
-  function door(r: RoomInfo): 'behind' | 'ahead' | 'join' | 'watch' | 'closed' {
-    const v = r.v ?? 0;
-    if (v < PROTOCOL_VERSION) return 'behind';
-    if (v > PROTOCOL_VERSION) return 'ahead';
+  function door(r: RoomInfo): 'join' | 'watch' | null {
+    if ((r.v ?? 0) !== PROTOCOL_VERSION) return null;
     if (r.phase === 'lobby' && r.players < r.maxPlayers) return 'join';
     if (r.phase !== 'locked' && r.phase !== 'lobby' && r.spectators < r.maxSpectators) return 'watch';
-    return 'closed';
+    return null;
   }
   let scanning = $state(false);
   let scanned = $state(false);
