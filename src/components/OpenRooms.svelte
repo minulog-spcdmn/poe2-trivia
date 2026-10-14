@@ -22,7 +22,7 @@
     disabled?: boolean;
     /** The code of a room tapped here that is being joined: it shows the connection in its place. */
     joining?: string | null;
-    /** How many rooms the list shows that can be got into (not an older host's), for a page that points to them from further up. */
+    /** How many rooms the list shows that can be got into (not a newer host's, which wait on a reload), for a page that points to them from further up. */
     count?: number;
     /** Whether any of them has a seat to take (none: all are rooms to watch). */
     seats?: boolean;
@@ -74,7 +74,7 @@
     return list;
   });
 
-  /** How many rooms shown can be got into from here (not an older host's). */
+  /** How many rooms shown can be got into from here (not a newer host's, which wait on a reload). */
   const enterable = $derived(shown.filter((s) => s.door !== 'ahead').length);
   /** Whether any room shown has a seat to take. */
   const seatFree = $derived(shown.some((s) => s.door === 'join'));
@@ -82,6 +82,13 @@
     count = enterable;
     seats = seatFree;
   });
+
+  /** Reloads this page into a newer host's room: its code in the address, as an invite link's, the newer version joins it on load. */
+  function reloadInto(code: string) {
+    const url = new URL(location.href);
+    url.searchParams.set('room', code);
+    location.assign(url);
+  }
 
   function tap(r: RoomInfo, d: 'join' | 'watch') {
     tapped = { room: r, door: d };
@@ -224,7 +231,9 @@
             {:else if d === 'watch'}
               <button class="btn small ghost" {disabled} onclick={() => tap(r, 'watch')} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
             {:else}
-              <button class="btn small ghost" {disabled} onclick={() => location.reload()} title="This room is on a newer version of the game">Reload to join</button>
+              <!-- Reloaded with the room's code in the address, so the newer version goes straight on into it. -->
+              {@const then = offer({ ...r, v: PROTOCOL_VERSION }) === 'join' ? 'join' : 'watch'}
+              <button class="btn small ghost" {disabled} onclick={() => reloadInto(r.code)} title="This room is on a newer version of the game">Reload to {then}</button>
             {/if}
           {/if}
         </li>
