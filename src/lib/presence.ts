@@ -100,7 +100,11 @@ function now() {
   return Date.now();
 }
 
+/** The room bot's say over its page's presence (it has no screen to look away from): null leaves it to the page. */
+let forced: Presence | null = null;
+
 function current(): Presence {
+  if (forced) return forced;
   if (document.visibilityState === 'hidden') return 'away';
   return now() - lastInput >= IDLE_AFTER_MS ? 'idle' : 'here';
 }
@@ -125,6 +129,18 @@ function start() {
   });
   setInterval(update, CHECK_MS);
 }
+
+/** The room bot: its player has the game behind another tab (away), or is back (null: as the page is). */
+export function forcePresence(p: Presence | null) {
+  if (p === forced) return;
+  forced = p;
+  // Back: as good as a sign of life.
+  if (!p) lastInput = now();
+  if (started) update();
+}
+
+/** Whether the room bot has its player away. */
+export const forcedAway = () => forced === 'away';
 
 /** The player did something (the room bot's hand counts too: it moves without the page's events). */
 export function noteInput() {

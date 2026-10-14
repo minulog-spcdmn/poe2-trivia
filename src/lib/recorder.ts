@@ -73,6 +73,8 @@ export interface Scene {
     askedAt: number;
     deadline: number | null;
     clockAt?: number;
+    /** The art burning in (its patches across, and the seconds it takes): how much of it was in view at the click, to fit the bots' timing by. */
+    veil?: { size: number; seconds: number };
   };
   reveal?: { correctIndex: number; chosenIndex: number | null; correct: boolean; timedOut: boolean; at?: number };
 }
@@ -104,6 +106,7 @@ export function sceneOf(s: GameState, me: string | null, t: number): Scene {
             askedAt: q.askedAt,
             deadline: q.deadline,
             ...(q.clockAt !== undefined ? { clockAt: q.clockAt } : {}),
+            ...(q.veil ? { veil: { size: q.veil.size, seconds: q.veil.seconds } } : {}),
           },
         }
       : {}),

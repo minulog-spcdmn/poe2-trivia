@@ -9,6 +9,7 @@ import { log } from './util';
 import { Seat } from './seat';
 import { session } from '../lib/session.svelte';
 import { modesFrom, namesFor } from './identities';
+import { visitorsFor } from './visitors';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
 
@@ -21,9 +22,11 @@ if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw ne
 const q = new URLSearchParams(location.search);
 const slot = Number(q.get('slot') ?? 1);
 const names = namesFor(slot, Number(q.get('of') ?? 1));
+// And the newcomers it may bring on now and then, a share of its own too.
+const visitors = visitorsFor(slot, Number(q.get('of') ?? 1));
 const watching = q.get('watch') === '1';
 const rooms = watching ? 0 : q.has('rooms') ? Math.max(0, Number(q.get('rooms')) || 0) : Infinity;
-const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0', watching);
+const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0', watching, visitors);
 // Where it plays (src/lib/channel.ts): on the dev server, its own local rooms, not the live game's.
 log(`playing in the ${CHANNEL} rooms`);
 bot.start();

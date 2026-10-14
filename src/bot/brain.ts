@@ -60,6 +60,15 @@ export interface Persona {
   picky: number;
   /** Its own touch on the recorded hand its pointer replays (motion.ts). */
   hand: HandStyle;
+  /**
+   * How much of an item burning into view it needs to see to name it, as a
+   * multiple of the typical player's (below 1: a sharp eye).
+   */
+  eye: number;
+  /** What its knowledge of each item is drawn from (its name): the same items known, or not, every time ('' for a fresh draw each time). */
+  seed: string;
+  /** New to the game (visitors.ts): a longer warm-up, and the odd thing tried that regulars know doesn't work. */
+  newcomer?: boolean;
 }
 
 /** What the bot sees of a question when it decides. */
@@ -78,8 +87,8 @@ export interface Ask {
   mode: 'turns' | 'race' | 'delve';
   /** It is one of the player's own favourites (a build's). */
   favourite?: boolean;
-  /** It saw this item revealed earlier on (the reveal stuck). */
-  remembered?: boolean;
+  /** It saw this item revealed earlier on (the reveal stuck): how well it stuck, 0 to 1 (true: fully, this sitting). */
+  remembered?: boolean | number;
   /** How far a run of misses has got to it, 0 (none) to 1 (three or more in a row). */
   tilt?: number;
   /** Still warming up (its first few answers on): a little slower. */
@@ -133,8 +142,13 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     sociable: rng(),
     picky: rng(),
     hand: PLAIN_HAND,
+    eye: 1,
+    seed: '',
   };
 }
+
+/** A sharp eye or a slow one (Persona.eye), rolled on its own so the rest of a persona stays as it was: most near the typical player, a few a good deal either way. */
+export const rollEye = (rng: Rng) => clamp(Math.exp(0.35 * gauss(rng)), 0.45, 2);
 
 /**
  * What a question piles on, as the share of known items it costs: about 0.1
@@ -166,8 +180,38 @@ export function knowChance(p: Persona, ask: Ask): number {
   const t = tilted(p, ask);
   let c = clamp(RECOGNISE + p.skill + (p.affinity[ask.category] ?? 0) - hardness(ask) - (ask.mode === 'race' ? 0.03 : 0) - 0.04 * p.haste + (t < 0 ? 0.03 * t : 0.01 * t), 0.3, 0.99);
   // Seen revealed earlier on: it mostly stuck.
-  if (ask.remembered) c += (0.99 - c) * 0.4;
+  if (ask.remembered) c += (0.99 - c) * 0.4 * Number(ask.remembered);
   return c - 0.015 * (ask.tired ?? 0);
+}
+
+/**
+ * A player's own draw for an item (0 to 1), the same every time: they know
+ * it whenever it's below their chance of knowing it (knowsIt). Without a
+ * seed, null (a fresh draw each time).
+ */
+export function itemDraw(seed: string, item: string | null): number | null {
+  if (!seed || !item) return null;
+  // FNV-1a, then one round of mulberry32 (as identities.ts seededBy).
+  let h = 2166136261;
+  const text = `${seed}:knows:${item}`;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  let t = ((h >>> 0) + 0x6d2b79f5) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
+}
+
+/** The share of the time a known item slips its mind, or an unknown one comes to it, all the same (a fresh draw over its own). */
+const LAPSE = 0.12;
+
+/**
+ * Whether it knows the item, as likely as `chance` all told: by its own
+ * draw for the item (`steady`, itemDraw), so the same player knows the same
+ * items and misses the same ones, but for the odd lapse or flash.
+ */
+export function knowsIt(chance: number, steady: number | null, rng: Rng): boolean {
+  const u = steady === null || rng() < LAPSE ? rng() : steady;
+  return u < chance;
 }
 
 /**
@@ -205,6 +249,42 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
   // A favourite is named in a flash (the art burning in or not).
   if (ask.favourite && knows) s *= 0.5;
   return Math.round(Math.max(ask.favourite ? 700 : 1000, s * 1000));
+}
+
+/**
+ * Burning in: how much of the item it needs in view to make up its mind
+ * (0 to 1). Knowing it, a fair share less than half typically, a favourite
+ * a sliver, more where look-alikes and made-up names crowd it; not knowing
+ * it, it watches most of it come in before it guesses. Spread wide, as
+ * people's are: a sharp eye (Persona.eye) on a good day goes on very little,
+ * and now and then a trigger-happy player goes before they're sure (`early`:
+ * then it's a guess more often than not).
+ */
+export function sightNeeded(p: Persona, ask: Ask, knows: boolean, rng: Rng): { share: number; early: boolean } {
+  const base = !knows ? 0.6 + 0.35 * rng() : (ask.favourite ? 0.09 : 0.24) * (1 + 2.5 * hardness({ ...ask, veil: 0 }));
+  let share = base * (knows ? p.eye * Math.exp(0.5 * gauss(rng)) : 1);
+  const early = knows && rng() < 0.25 * p.haste;
+  if (early) share *= 0.5;
+  return { share: clamp(share, 0.03, 1), early };
+}
+
+/** Milliseconds from making it out to the click landing (reading the options again, the reach): quicker for the keen and on a favourite. */
+export function afterSeeing(p: Persona, ask: Ask, knows: boolean, rng: Rng): number {
+  const s = (knows ? 0.9 : 1.4) * Math.exp(0.35 * gauss(rng)) * p.pace * (1 - 0.3 * p.haste) * (ask.favourite ? 0.75 : 1);
+  return Math.round(clamp(s, 0.35, 4) * 1000);
+}
+
+/**
+ * The share of a picture in view at `now`: its patches (`since`: when each
+ * came, ms) each burning in over `burn` ms (`burnt`: patches.ts
+ * burntShare), out of `count`. Patches differ a little in size; counted
+ * alike, they come out about even.
+ */
+export function shareInView(since: readonly number[], now: number, burn: number, count: number, burnt: (p: number) => number): number {
+  if (count <= 0) return 1;
+  let sum = 0;
+  for (const t of since) sum += burn > 0 ? burnt((now - t) / burn) : now >= t ? 1 : 0;
+  return Math.min(1, sum / count);
 }
 
 /** The seconds the clock ticks urgent before 0, as the game shows them (Game.svelte warnFrom). */
@@ -295,22 +375,26 @@ export function digsOn(p: Persona, d: DigStake, rng: Rng): boolean {
  * `names`: each option's name ('' when unknown); `ruledOut`: options it
  * won't pick (others' wrong guesses in a race).
  */
-export function chooseAnswer(names: string[], correct: number, knows: boolean, ask: Ask, ruledOut: number[], rng: Rng): number {
+export function chooseAnswer(names: string[], correct: number, knows: boolean, ask: Ask, ruledOut: number[], rng: Rng, looks?: (number | null)[]): number {
   if (knows || rng() < guessChance(ask)) return correct;
-  return wrongPick(names, correct, ruledOut, rng) ?? correct;
+  return wrongPick(names, correct, ruledOut, rng, looks) ?? correct;
 }
 
 /**
- * The wrong option the bot falls for: likelier the more its name looks like
- * the right one (made-up names copy real ones, so they tempt the most).
+ * The wrong option the bot falls for: likelier the more it looks like the
+ * right one, by its name (made-up names copy real ones, so they tempt the
+ * most) or by its art (`looks`: how alike each option's picture is to the
+ * right one's, 0 to 1, null where nobody can tell), whichever is closer.
  * `names`: each option's name ('' when unknown); `ruledOut`: options it
  * won't pick (others' wrong guesses in a race).
  */
-export function wrongPick(names: string[], correct: number, ruledOut: number[], rng: Rng): number | null {
+export function wrongPick(names: string[], correct: number, ruledOut: number[], rng: Rng, looks?: (number | null)[]): number | null {
   const right = names[correct] ?? '';
   const weights = names.map((n, i) => {
     if (i === correct || ruledOut.includes(i)) return 0;
-    const sim = right && n ? nameSimilarity(right, n) : 0.5;
+    const byName = right && n ? nameSimilarity(right, n) : null;
+    const byArt = looks?.[i] ?? null;
+    const sim = byName === null && byArt === null ? 0.5 : Math.max(byName ?? 0, byArt ?? 0);
     return (0.25 + sim) ** 2;
   });
   return weights.some((w) => w > 0) ? weighted(weights, rng) : null;

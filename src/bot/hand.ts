@@ -19,6 +19,7 @@ import type { GameState, Question } from '../lib/game';
 import { dealIn } from '../lib/delve';
 import { LIT, MOUSE, OFF, PRESSED, SCALE, SEND_EVERY_MS, actionOf, anchorCode, clickableFor, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
+import { forcedAway } from '../lib/presence';
 import type { Persona } from './brain';
 import { aimIn, layout as roomLayout, type Box, type Spot } from './reach';
 import { ROOM, STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
@@ -244,6 +245,26 @@ export class Hand {
     if (current === this && this.live()) this.send(true);
   }
 
+  /**
+   * Moves over to `anchor` without clicking, as a recorded reach went, and
+   * rests there till `until` (Date.now ms): in Delve together, out of a
+   * question, showing the team still answering what it now thinks it is.
+   */
+  point(anchor: string, until: number) {
+    const s = session.state;
+    if (!this.live(s) || this.dealing(s!)) return;
+    const box = layout(s!).get(anchor);
+    const e = box && pickClick('answer', 0, Math.random, { used: new Set(this.used) });
+    if (!box || !e) return;
+    this.remember(e);
+    this.pending = null;
+    this.presses = [];
+    const f = this.box('answers', s);
+    const now = Date.now();
+    this.follow(reachTrack(e, within(this.where(now), f, e.src), within(place(...this.held(e.aim as [number, number]), box), f, e.src), now, this.speed, waver(Math.random)), 'answers');
+    this.restUntil = Math.max(this.restUntil, until);
+  }
+
   /** A recorded spot on an answer or a card (thousandths of it), moved by the bot's own grip, and kept well on it. */
   private held([u, v]: [number, number]): [number, number] {
     const on = (x: number) => Math.min(920, Math.max(80, x));
@@ -275,6 +296,8 @@ export class Hand {
 
   /** Moves on, and sends where it is (only when it moved). */
   tick() {
+    // Its player is away (another tab, afk.ts): the pointer rests where it was.
+    if (forcedAway()) return;
     const s = session.state ?? this.s;
     if (!s) return this.send(false);
     this.s = s;

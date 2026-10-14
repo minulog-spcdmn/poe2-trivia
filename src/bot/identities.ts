@@ -7,7 +7,7 @@
 
 import { rollHandStyle } from './motion.ts';
 import type { Difficulty, Item } from '../lib/game.ts';
-import { gauss, makePersona, weighted, type Persona, type Rng } from './brain.ts';
+import { gauss, makePersona, rollEye, weighted, type Persona, type Rng } from './brain.ts';
 
 /**
  * Made-up handles in the styles people pick here (none taken from real
@@ -235,6 +235,9 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   Object.assign(persona, leaningsOf(name));
   // And its hand style, its own for good.
   persona.hand = rollHandStyle(seededBy(`${name}:hand-style`));
+  // How little of a burning-in item it needs to see, and the items it knows: its own too.
+  persona.eye = rollEye(seededBy(`${name}:eye`));
+  persona.seed = name;
   return { name, persona, prefs };
 }
 
@@ -262,12 +265,20 @@ export function namesFor(slot: number, of: number): string[] {
 /** How many of the last names wait before coming on again (at most half of those there are). */
 const RESTING = 8;
 
-/** The next to come on from `pool`: anyone but the last few, the keener (`keen`: a weight for each name) the likelier. */
+/**
+ * The next to come on from `pool`: anyone but the last few, the keener
+ * (`keen`: a weight for each name, 0 for one who won't come on now) the
+ * likelier; one of the last few only when nobody else would.
+ */
 export function nextName(recent: string[], rng: Rng, pool = NAMES, keen?: (name: string) => number): string {
   const resting = new Set(recent.slice(-Math.min(RESTING, Math.floor(pool.length / 2))));
   const free = pool.filter((n) => !resting.has(n));
-  const from = free.length ? free : pool;
-  return keen ? from[weighted(from.map(keen), rng)] : from[Math.floor(rng() * from.length)];
+  if (!keen) {
+    const from = free.length ? free : pool;
+    return from[Math.floor(rng() * from.length)];
+  }
+  const from = free.some((n) => keen(n) > 0) ? free : pool;
+  return from[weighted(from.map(keen), rng)];
 }
 
 const MIN = 60000;
