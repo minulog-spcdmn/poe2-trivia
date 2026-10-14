@@ -802,3 +802,18 @@ test('hosts lean to Delve a little, and mostly keep the game\'s own rules; newco
   // Where Delve isn't allowed, as they would anyway.
   for (const n of VISITORS) assert.notEqual(asNewcomer(identityOf(n, ['A'], ['turns']), ['turns']).prefs.mode, 'delve');
 });
+
+test('names read as players\' do: hardly any food, animals or game jokes; newcomers typed quicker than regulars', () => {
+  const share = (list: string[], re: RegExp) => list.filter((n) => re.test(n)).length / list.length;
+  // As on the PoE2 ladder (about 1% each, visitors.ts): a few at most, never a theme.
+  const food = /waffle|toast|pickle|noodle|muffin|bagel|taco|kebab|pretzel|mango|pierogi|gnocchi|nacho|schnitzel|wurst|kartoffel|ramen|potato|cheese|soup|coffee|snack|kimchi|dumpling/i;
+  const animal = /walrus|badger|hedgehog|gecko|otter|toad|raccoon|pigeon|hamster|snail|penguin|goose|sloth|bison|moose|squid|crab|turtle|hippo|goblin|gremlin/i;
+  const game = /poe|exile|ssf|slam|flask|waystone|breach|exalt|divine|chaos|loot|trade/i;
+  for (const list of [NAMES, VISITORS])
+    for (const re of [food, animal, game]) assert.ok(share(list, re) <= 0.03, `${re}: ${share(list, re)}`);
+  // A first visit's name: mostly lowercase and short; a regular's, a handle kept for years.
+  const lower = (list: string[]) => share(list, /^[^A-Z]*$/);
+  const avg = (list: string[]) => list.reduce((a, n) => a + Array.from(n).length, 0) / list.length;
+  assert.ok(lower(VISITORS) > 0.75 && lower(NAMES) < 0.5, `${lower(VISITORS)} ${lower(NAMES)}`);
+  assert.ok(avg(VISITORS) < avg(NAMES));
+});
