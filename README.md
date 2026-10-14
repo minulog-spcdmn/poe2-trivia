@@ -717,7 +717,9 @@ browser (`src/lib/achievements.ts`); erasing the codex erases them.
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. In that case, use hot-seat.
 - **Open rooms:** a host can set their room to **Public**, which lists it
-  under "Open rooms" on the start page (rooms are private by default).
+  under "Open rooms" on the start page. A first-time host's room starts
+  public (and in Delve); after that the room starts the way the host left
+  the last one.
   Without a server there's no central list, so a public room claims the
   lowest free numbered listing ID on the matchmaking service
   (`…-pub-1`, `…-pub-2`, …), and the start page checks those numbers in
