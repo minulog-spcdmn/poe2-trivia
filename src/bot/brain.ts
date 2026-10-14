@@ -255,6 +255,11 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
     if (ask.mode === 'race' && rng() < 0.6 * (1 - 0.7 * p.haste)) return null;
     if (ask.mode === 'turns' && ask.clock && rng() < 0.05 * (1 - p.haste)) return null;
   }
+  return thinkTime(p, ask, knows, rng);
+}
+
+/** Milliseconds it thinks before answering, once it answers at all (answerDelay). */
+export function thinkTime(p: Persona, ask: Ask, knows: boolean, rng: Rng): number {
   // Tilted, quicker; steadied, slower.
   const t = tilted(p, ask);
   let s = (MEDIAN_S + HARD_S * hardness(ask)) * Math.exp(0.4 * gauss(rng)) * p.pace * (1 - 0.3 * p.haste) * (t < 0 ? 1 + 0.15 * t : 1 + 0.2 * t);

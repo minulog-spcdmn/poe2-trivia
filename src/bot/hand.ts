@@ -240,8 +240,28 @@ export class Hand {
     return this.press(box, kind, anchor, by, wanted);
   }
 
-  /** Reaches into `box` and presses there (`anchor`: what that is, if it's something of the game's), as click does. */
+  /** A press under way, and how many reaches the hand has set off on (a newer one takes the hand over). */
+  private pressing: Promise<boolean> | null = null;
+  private reaches = 0;
+
+  /**
+   * Reaches into `box` and presses there (`anchor`: what that is, if it's
+   * something of the game's), as click does: one at a time, so a press under
+   * way (closing an item's details) is finished first.
+   */
   private async press(box: Box, kind: ClickStretch['kind'], anchor: string | null, by = Infinity, wanted?: () => boolean): Promise<boolean> {
+    while (this.pressing) await this.pressing;
+    const p = this.reach(box, kind, anchor, by, wanted);
+    this.pressing = p;
+    try {
+      return await p;
+    } finally {
+      if (this.pressing === p) this.pressing = null;
+    }
+  }
+
+  private async reach(box: Box, kind: ClickStretch['kind'], anchor: string | null, by: number, wanted?: () => boolean): Promise<boolean> {
+    const reach = ++this.reaches;
     const s = session.state;
     const e = this.pending?.kind === kind ? this.pending.e : this.own(pickClick(kind, 0, Math.random, { used: new Set(this.used) }));
     const w = this.pending?.kind === kind ? this.pending.w : waver(Math.random);
@@ -263,7 +283,7 @@ export class Hand {
     const end = this.track!.t[this.track!.t.length - 1];
     if (wanted) {
       const stop = between(...STOP_MS);
-      while (Date.now() < end) {
+      while (Date.now() < end && reach === this.reaches) {
         if (!wanted()) {
           // Seen gone: too close to the press to hold back, it goes in; else the hand stops a moment later, where it is.
           if (end - Date.now() <= stop) break;
@@ -278,6 +298,8 @@ export class Hand {
       }
       await wait(Math.max(0, end - Date.now()));
     } else await wait(Math.max(0, end - Date.now()));
+    // The hand taken elsewhere on the way (point): no press where it is now.
+    if (reach !== this.reaches) return false;
     const pressed = Date.now();
     this.pressedUntil = pressed + e.hold;
     this.send(true);
@@ -302,6 +324,7 @@ export class Hand {
     const e = box && this.own(pickClick('answer', 0, Math.random, { used: new Set(this.used) }));
     if (!box || !e) return;
     this.remember(e);
+    this.reaches++;
     this.pending = null;
     this.presses = [];
     const f = this.box('answers', s);
@@ -323,7 +346,8 @@ export class Hand {
    */
   async inspect(anchor: string, readMs: number) {
     if (!this.live()) return;
-    await this.click(anchor);
+    // Nothing opened (the hand went elsewhere, nothing there to click): nothing to read or close.
+    if (!(await this.click(anchor))) return;
     return this.closeAfter(readMs);
   }
 

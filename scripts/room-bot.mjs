@@ -300,9 +300,11 @@ for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 const TEAM_EVERY_MS = 5000;
 const team = bots > 1
   ? setInterval(async () => {
-      const codes = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.as === 'host' ? (s.code ?? '') : ''; }).catch(() => '') ?? ''));
-      const held = [...roles].map(([role, slot]) => ({ role, slot, code: codes[slot - 1] ?? '' }));
-      await Promise.all(all.map(({ page }, i) => page?.evaluate((t) => window.__bot?.setTeam(t), held.filter((h) => h.slot !== i + 1).map(({ role, code }) => ({ role, code }))).catch(() => {})));
+      const seats = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return { code: s?.as === 'host' ? (s.code ?? '') : '', id: s?.id ?? null, name: s?.name ?? null }; }).catch(() => null) ?? null));
+      const held = [...roles].map(([role, slot]) => ({ role, slot, code: seats[slot - 1]?.code ?? '' }));
+      // And who the others are on as: so a seat tells them from people by more than a name of the cast (src/bot/crew.ts).
+      const mates = (i) => seats.filter((s, j) => j !== i && s).map(({ id, name }) => ({ id, name }));
+      await Promise.all(all.map(({ page }, i) => page?.evaluate(([t, m]) => window.__bot?.setTeam(t, m), [held.filter((h) => h.slot !== i + 1).map(({ role, code }) => ({ role, code })), mates(i)]).catch(() => {})));
       const list = await all[0].page?.evaluate(() => window.__bot?.rooms()).catch(() => null);
       if (list?.at) await Promise.all(all.slice(1).map(({ page }) => page?.evaluate(({ rooms, at }) => window.__bot?.takeRooms(rooms, at), list).catch(() => {})));
     }, TEAM_EVERY_MS)

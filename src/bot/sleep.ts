@@ -136,10 +136,12 @@ export function activity(name: string, at: number, r = rhythmOf(name)): number {
 export function minutesAwake(name: string, at: number, r = rhythmOf(name)): number {
   const t = local(at, r.zone);
   if (asleepIn(name, r, t)) return 0;
+  // The soonest night to come (adrift, a night's bedtime can fall more than a day after the day it's of, past the next one's).
   const day = Math.floor(t / DAY);
-  for (let d = day - 1; d <= day + 2; d++) {
+  let next = Infinity;
+  for (let d = day - 2; d <= day + 2; d++) {
     const n = nightOf(name, r, d);
-    if (n.from > t) return (n.from - t) / 60000;
+    if (n.from > t) next = Math.min(next, n.from);
   }
-  return 24 * 60;
+  return next === Infinity ? 24 * 60 : (next - t) / 60000;
 }

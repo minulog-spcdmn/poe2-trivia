@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, glanceTime, inspects, readingTime, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, glanceTime, inspects, readingTime, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, thinkTime, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
@@ -725,6 +725,12 @@ test('everyone keeps their own hours: asleep some of each day, the same from one
       assert.equal(activity(n, t) === 0, minutesAwake(n, t) === 0, `${n} ${h}`);
     }
   }
+  // Up till the bedtime minutesAwake gives, and no longer: also for those adrift, whose bedtime can come more than a day after its night's day.
+  for (const n of [...NAMES, ...VISITORS].filter((n) => rhythmOf(n).habit === 'adrift'))
+    for (let t = monday; t < monday + 30 * 24 * HOUR; t += 3 * HOUR + 7 * 60000) {
+      const m = minutesAwake(n, t);
+      if (m) assert.ok(activity(n, t + (m - 5) * 60000) > 0 && activity(n, t + (m + 5) * 60000) === 0, `${n} ${new Date(t).toISOString()}: ${m}`);
+    }
   // Names that say where they're from are up at that place's hours.
   assert.equal(rhythmOf('まったり').zone, 9);
   assert.equal(rhythmOf('Саня').zone, 3);
@@ -781,10 +787,15 @@ test('away in a lobby: only with nothing to do, and back within seconds once wan
       if (wasAway) tabbed++;
       while (!afk.isAway && wasAway) afk.tick((t += 1000), true, false);
       if (!afk.isAway) continue;
-      // Someone joins: back within ten seconds; a game starts: within four.
+      // Someone joins and goes again before they notice: the next to join waits on them as long.
+      afk.tick((t += 1000), false, true);
+      afk.tick((t += 1000), true, false);
+      if (!afk.isAway) continue;
+      t += 60000;
+      // Someone joins: back within ten seconds (but not at once); a game starts: within four.
       const from = t;
       while (afk.isAway) afk.tick((t += 250), false, true);
-      assert.ok(t - from <= 10250, `${n}: ${t - from}`);
+      assert.ok(t - from <= 10250 && t - from >= 2500, `${n}: ${t - from}`);
       afk.stop();
     }
     assert.ok(tabbed > 10 && tabbed < 40, `${tabbed}`);
@@ -886,4 +897,9 @@ test('in a race, players answer quicker, as recorded', () => {
   const t = med(() => answerDelay(plain, a, true, rng)!);
   const r = med(() => answerDelay(plain, { ...a, mode: 'race' }, true, rng)!);
   assert.ok(r < t * 0.9, `${t} ${r}`);
+});
+
+test('the think time on the art shown whole, the floor of a burning-in answer: there even where a race would sit it out', () => {
+  const rng = seeded(91);
+  for (let i = 0; i < 500; i++) assert.ok(thinkTime(plain, ask({ mode: 'race', clock: 16 }), false, rng) >= 1000);
 });

@@ -8,15 +8,13 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, thinkTime, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
 import { looksOf } from './lookalike';
 import { Recall } from './recall';
-import { NAMES } from './identities';
-import { VISITORS } from './visitors';
+import { isBot } from './crew';
 
 /** The bots' names: anyone else in a room is a person. */
-const CAST = new Set([...NAMES, ...VISITORS]);
 export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
@@ -196,7 +194,7 @@ export class Player {
       seen.out *= FADING;
     }
     for (const p of s.players) {
-      if (p.id === session.myPlayerId || CAST.has(p.name)) continue;
+      if (isBot(p)) continue;
       const seen = this.people.get(p.id) ?? { right: 0, wrong: 0, out: 0 };
       if (r.winnerId === p.id) seen.right++;
       else if (q.struck?.some((x) => x.by === p.id)) seen.wrong++;
@@ -215,9 +213,9 @@ export class Player {
     if (!s.delve || !isGroupRun(s)) return 1;
     const standing = standingIds(s);
     const players = s.players.filter((p) => s.delve!.entrants.includes(p.id));
-    const people = players.filter((p) => !CAST.has(p.name) && p.id !== session.myPlayerId);
+    const people = players.filter((p) => !isBot(p));
     if (!people.length) return 1;
-    const bots = players.filter((p) => (CAST.has(p.name) || p.id === session.myPlayerId) && standing.includes(p.id)).length;
+    const bots = players.filter((p) => isBot(p) && standing.includes(p.id)).length;
     return carryCap(
       people.map((p) => skillShown(this.people.get(p.id) ?? { right: 0, wrong: 0, out: 0 })),
       Math.max(1, bots),
@@ -710,7 +708,7 @@ export class Player {
     const sure = need.early ? knows && Math.random() < 0.35 : knows;
     const react = afterSeeing(this.persona, ask, sure, Math.random);
     // Never sooner than it would think on the art shown whole (recorded: the click 3 to 7 s in, however fast the art burnt).
-    const floor = start + (answerDelay(this.persona, { ...ask, veil: 0 }, sure, Math.random) ?? 0);
+    const floor = start + thinkTime(this.persona, { ...ask, veil: 0 }, sure, Math.random);
     // When it expects to go (the art comes in about evenly over the veil's time), to look the question over until.
     const expected = Math.max(floor, start + 400 + need.share * q.veil!.seconds * 1000 + react);
     const panicked = panic(this.persona, ask, expected - start, Math.random);

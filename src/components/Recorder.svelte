@@ -106,19 +106,22 @@
     screen: [screen.width, screen.height],
     finePointer: matchMedia('(pointer: fine)').matches,
   });
-  let writing = false;
+  /** A write into the folder under way. */
+  let writing: Promise<boolean> | null = null;
   /** Into the folder, if there's one and something new; else, at a game's end (`end`), where the browser can't, a download. */
   async function autosave(end = false) {
-    if (!rec.unsaved || !rec.moves.length || writing) return;
+    while (writing) await writing;
+    if (!rec.unsaved || !rec.moves.length) return;
     if (folder) {
-      writing = true;
-      const ok = await writeTo(folder, fileName, rec.file(about()));
-      writing = false;
+      // Saved as of now: what comes in while it's written is new again.
+      rec.unsaved = false;
+      writing = writeTo(folder, fileName, rec.file(about()));
+      const ok = await writing;
+      writing = null;
       if (ok) {
-        rec.unsaved = false;
         saved = true;
         savedAt = Date.now();
-      }
+      } else rec.unsaved = true;
     } else if (end && !canPickFolder) save();
   }
   async function pickFolder() {
@@ -128,9 +131,12 @@
     waiting = null;
     void autosave();
   }
-  // A game over: saved at once.
+  // A game over: saved at once (once a game, not on each message while its scores are up).
+  let ended = false;
   $effect(() => {
-    if (session.state?.phase === 'over') void autosave(true);
+    const now = session.state?.phase === 'over';
+    if (now && !ended) void autosave(true);
+    ended = now;
   });
 
   function save() {

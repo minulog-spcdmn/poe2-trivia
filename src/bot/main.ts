@@ -10,6 +10,7 @@ import { Seat } from './seat';
 import { session } from '../lib/session.svelte';
 import { modesFrom, namesFor } from './identities';
 import { visitorsFor } from './visitors';
+import { setCrew } from './crew';
 
 if (!(import.meta.env.DEV || import.meta.env.VITE_BOT === '1') || !BOT) throw new Error('The bot only runs from bot.html, on the dev server or a bot build.');
 
@@ -29,6 +30,8 @@ const rooms = watching ? 0 : q.has('rooms') ? Math.max(0, Number(q.get('rooms'))
 const bot = new Seat(names, modesFrom(q.get('modes')), rooms, q.get('scout') !== '0', watching, visitors);
 // Where it plays (src/lib/channel.ts): on the dev server, its own local rooms, not the live game's.
 log(`playing in the ${CHANNEL} rooms`);
+// Alone, only its own player is a bot (crew.ts); with others, the runner says who they are.
+if (Number(q.get('of') ?? 1) <= 1) setCrew([]);
 bot.start();
 
 // For the runner (and a look in a headed browser); in development, the session too, for scripts that drive it (as src/main.ts gives it).

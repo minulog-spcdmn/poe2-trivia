@@ -53,7 +53,11 @@ export class Afk {
       if (wanted) {
         this.backAt ||= now + between(...(game ? TO_GAME : TO_COMPANY));
         if (now >= this.backAt) this.come(now, game ? 'back for the game' : 'back, someone joined');
-      } else if (now >= this.nextAt) this.come(now, 'looks back in');
+      } else {
+        // Whoever was waiting gone before they noticed: the next one waits as long again.
+        this.backAt = 0;
+        if (now >= this.nextAt) this.come(now, 'looks back in');
+      }
       return;
     }
     if (!bored || wanted) {
