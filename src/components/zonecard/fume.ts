@@ -14,27 +14,31 @@ import { IN, times, type FamilyMotion } from './family';
 
 // The fog's mask. Its fade is a Gaussian, the falloff a blur leaves (the
 // shape the fog always had), eased to nothing at the edge with no slope left,
-// so it ends without a line where it stops. So faint a glow over so much of
-// the screen bands in 8 bits, so the mask carries the dither too (app.css,
+// so it ends without a line where it stops (a stop every 2.5%, so the straight
+// runs between them leave no kink). So faint a glow over so much of the
+// screen bands in 8 bits, so the mask carries the dither too (app.css,
 // --dither): it stirs the fog's opacity a little, a different amount each
-// pixel, and the bands dissolve (a blur would average it away). Added on its
-// own the dither would also brighten the fog by its mean, out to the box's
-// hard edge, so it's weighted by a second ellipse that fades with the fog
-// (mask layers composite bottom up: the dither intersected with the weight,
-// then the fade added), and the fade is lowered by what the dither adds on
-// average: the dither only stirs it.
+// pixel, and the bands dissolve (a blur would average it away). Mask layers
+// composite bottom up, each over what is below: the dither cut by a weight,
+// then the fade laid over it. Over the fade, the dither only shows through
+// what the fade leaves, so the fade peaks at half (the colour twice as strong
+// to match) and the dither stirs the core too. On its own it would also
+// brighten the fog by its mean, out to the box's hard edge, so the fade is
+// lowered by that mean; in its last wisps, fainter than the mean, the weight
+// thins the dither just enough that the two still average to the fade.
 const DITHER_MEAN = 5 / 255; // the --dither tile's mean opacity
-const fade = (r: number) => Math.exp((-r * r) / 0.27) * (1 - r ** 8) ** 2;
-const weight = (a: number) => a / (a + DITHER_MEAN);
+const PEAK = 0.5;
+const fade = (r: number) => PEAK * Math.exp((-r * r) / 0.27) * (1 - r ** 8) ** 2;
+const weight = (r: number) => Math.min(1, fade(r) / DITHER_MEAN);
 const radial = (f: (r: number) => number) =>
-  `radial-gradient(closest-side, ${Array.from({ length: 21 }, (_, i) => `rgb(0 0 0 / ${f(i / 20).toFixed(4)}) ${i * 5}%`).join(', ')})`;
+  `radial-gradient(closest-side, ${Array.from({ length: 41 }, (_, i) => `rgb(0 0 0 / ${f(i / 40).toFixed(4)}) ${i * 2.5}%`).join(', ')})`;
 const FOG_MASK = [
   radial((r) => {
-    const k = DITHER_MEAN * weight(fade(r));
+    const k = DITHER_MEAN * weight(r);
     return (fade(r) - k) / (1 - k);
   }),
   'var(--dither)',
-  radial((r) => weight(fade(r))),
+  radial(weight),
 ].join(',');
 
 export const fume: FamilyMotion = {
@@ -45,7 +49,7 @@ export const fume: FamilyMotion = {
     fog.className = 'fog';
     fog.style.cssText = [
       'position:absolute;inset:-0.6em -1.2em;pointer-events:none;opacity:0',
-      'background:color-mix(in srgb, var(--accent) 34%, transparent)',
+      `background:color-mix(in srgb, var(--accent) ${34 / PEAK}%, transparent)`,
       `mask-image:${FOG_MASK}`,
       'mask-size:100% 100%,auto,100% 100%;mask-repeat:no-repeat,repeat,no-repeat;mask-composite:add,intersect;image-rendering:pixelated',
     ].join(';');
