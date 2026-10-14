@@ -8,7 +8,7 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { FADING, afterSeeing, answerDelay, carryCap, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
 import { looksOf } from './lookalike';
 import { Recall } from './recall';
@@ -242,7 +242,7 @@ export class Player {
       run: () => {
         if (session.state?.question?.askedAt !== q.askedAt || session.state.phase !== 'reveal') return;
         log(`looks at the item${how === 'missed' ? ' it missed' : ''}`);
-        return this.hand.inspect(anchor, readingTime(this.persona, Math.random, s.settings.mode === 'race' && !s.delve));
+        return this.hand.inspect(anchor, readingTime(this.persona, Math.random));
       },
     });
   }
@@ -547,12 +547,34 @@ export class Player {
       }
     }
     // The press lands before the clock's end (a little before, for the trip to the host).
-    await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity);
-    if (!this.open(q)) return;
+    const pressed = await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity, () => !!this.open(q));
+    if (!this.open(q)) return pressed ? this.tooLate(q, index) : log('holds back: answered already');
     this.answers++;
     const truth = o.itemId ? (index === o.options.indexOf(o.itemId) ? ' right' : ' wrong') : '';
     log(`${what}${truth} (option ${index + 1}) after ${((session.hostNow() - (q.clockAt ?? q.askedAt)) / 1000).toFixed(1)} s`);
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
+  }
+
+  /**
+   * A click that went in too late, the question answered before it landed
+   * (as recorded, beaten in a race, about one time in four). On a question of
+   * pictures, a picture the reveal names opens its details (QuestionView
+   * named): there by accident, it closes them after a glance.
+   */
+  private tooLate(q: Question, index: number) {
+    const cur = session.state;
+    const r = cur?.reveal;
+    if (!cur || cur.phase !== 'reveal' || !r || cur.question?.askedAt !== q.askedAt || q.mode !== 'art') return log('clicks too late');
+    const o = cur.question;
+    const me = session.myPlayerId;
+    const named =
+      index === r.correctIndex ||
+      (cur.settings.mode === 'race' ? o.misses.some((m) => m.playerId === me && m.index === index) : cur.delve && isGroupRun(cur) ? !!o.struck?.some((x) => x.index === index) : index === r.chosenIndex);
+    if (!named) return log('clicks too late');
+    log('clicks too late: the item\'s details come up');
+    // Seen now, it doesn't open them again to look.
+    this.plans.delete(`inspect:${q.askedAt}`);
+    return this.hand.closeAfter(glanceTime(this.persona, Math.random));
   }
 
   /**

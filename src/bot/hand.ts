@@ -31,6 +31,13 @@ const REACH_MS = 550;
 const SETTLE_MS = 1200;
 /** Between stretches of waiting or of the lobby, it rests this long (ms). */
 const REST_MS: [number, number] = [600, 4000];
+/**
+ * How long it takes to hold back a click once what it reached for is gone
+ * (someone else answered first): a press due sooner goes in anyway. As
+ * recorded, beaten in a race: a click 22 to 351 ms after the reveal, about
+ * one time in four; none later.
+ */
+const STOP_MS: [number, number] = [230, 380];
 const LOBBY_REST_MS: [number, number] = [2000, 12000];
 
 /**
@@ -220,24 +227,27 @@ export class Hand {
    * reach, onto its own pick); resolves as it lets go, for the action to go
    * then. At once when no pointer is shown. `by` (Date.now): when it must
    * have pressed at the latest (the clock's end), the hand hurrying to make it.
+   * `wanted`: whether what it reaches for is still there to click; once not,
+   * it holds back, unless the press comes too soon for that (STOP_MS).
+   * Whether it pressed, as others saw.
    */
-  async click(anchor: string, by = Infinity): Promise<void> {
+  async click(anchor: string, by = Infinity, wanted?: () => boolean): Promise<boolean> {
     const s = session.state;
-    if (!this.live(s) || this.dealing(s!)) return;
+    if (!this.live(s) || this.dealing(s!)) return false;
     const box = layout(s!).get(anchor);
-    if (!box) return;
+    if (!box) return false;
     const kind: ClickStretch['kind'] = anchor.startsWith('opt:') ? 'answer' : anchor.startsWith('card:') ? 'card' : 'next';
-    return this.press(box, kind, anchor, by);
+    return this.press(box, kind, anchor, by, wanted);
   }
 
   /** Reaches into `box` and presses there (`anchor`: what that is, if it's something of the game's), as click does. */
-  private async press(box: Box, kind: ClickStretch['kind'], anchor: string | null, by = Infinity): Promise<void> {
+  private async press(box: Box, kind: ClickStretch['kind'], anchor: string | null, by = Infinity, wanted?: () => boolean): Promise<boolean> {
     const s = session.state;
     const e = this.pending?.kind === kind ? this.pending.e : this.own(pickClick(kind, 0, Math.random, { used: new Set(this.used) }));
     const w = this.pending?.kind === kind ? this.pending.w : waver(Math.random);
     this.pending = null;
     this.presses = [];
-    if (!e) return;
+    if (!e) return false;
     this.remember(e);
     const frame: Frame = kind === 'card' ? 'cards' : 'answers';
     const f = this.box(frame, s);
@@ -251,7 +261,23 @@ export class Hand {
     this.on = anchor;
     this.follow(reachTrack(e, within(this.where(now), f, e.src), within(aim, f, e.src), now, speed, w), frame);
     const end = this.track!.t[this.track!.t.length - 1];
-    await wait(Math.max(0, end - Date.now()));
+    if (wanted) {
+      const stop = between(...STOP_MS);
+      while (Date.now() < end) {
+        if (!wanted()) {
+          // Seen gone: too close to the press to hold back, it goes in; else the hand stops a moment later, where it is.
+          if (end - Date.now() <= stop) break;
+          await wait(stop);
+          this.where(Date.now());
+          this.track = null;
+          this.on = null;
+          this.restUntil = Date.now() + between(...REST_MS) * (0.5 + this.persona.hand.still);
+          return false;
+        }
+        await wait(Math.min(40, end - Date.now()));
+      }
+      await wait(Math.max(0, end - Date.now()));
+    } else await wait(Math.max(0, end - Date.now()));
     const pressed = Date.now();
     this.pressedUntil = pressed + e.hold;
     this.send(true);
@@ -261,6 +287,7 @@ export class Hand {
     // The click is the letting go, as a browser's is: what it does happens then, with the press seen first.
     await wait(e.hold);
     if (current === this && this.live()) this.send(true);
+    return true;
   }
 
   /**
@@ -297,6 +324,12 @@ export class Hand {
   async inspect(anchor: string, readMs: number) {
     if (!this.live()) return;
     await this.click(anchor);
+    return this.closeAfter(readMs);
+  }
+
+  /** Details open (inspect, or a click that came too late): it reads them `readMs`, then closes them. */
+  async closeAfter(readMs: number) {
+    if (!this.live()) return;
     this.readingUntil = Date.now() + readMs;
     this.restUntil = Math.max(this.restUntil, this.readingUntil);
     while (Date.now() < this.readingUntil) await wait(150);

@@ -541,14 +541,22 @@ export function inspects(p: Persona, how: 'missed' | 'unknown' | 'known' | 'thei
 }
 
 /**
- * Milliseconds it reads an item's details for: as recorded, a glance (1.5
- * to 2.5 s, most in a race, the next question coming), a read (5 to 9 s,
- * about 6), now and then a good while (to 17 s); longer for the curious.
+ * Milliseconds it reads an item's details for, opened to look: as recorded,
+ * about 5 to 9 s (6 most), now and then a good while (to 17 s); longer for
+ * the curious.
  */
-export function readingTime(p: Persona, rng: Rng, race = false): number {
-  const glance = rng() < (race ? 0.7 : 0.15);
-  const ms = glance ? 1500 + rng() * 1000 : (3800 + rng() * 4500) * (0.8 + 0.6 * p.curious) * (rng() < 0.12 ? 2 : 1);
+export function readingTime(p: Persona, rng: Rng): number {
+  const ms = (3800 + rng() * 4500) * (0.8 + 0.6 * p.curious) * (rng() < 0.12 ? 2 : 1);
   return Math.round(ms * p.pace);
+}
+
+/**
+ * Milliseconds details opened by accident stay up (a click on a picture
+ * that came too late, the question already answered): long enough to see
+ * what came up and close it. Recorded: 1.5 to 2.3 s, each time.
+ */
+export function glanceTime(p: Persona, rng: Rng): number {
+  return Math.round((1450 + rng() * 850) * p.pace);
 }
 
 /** Milliseconds to look over the categories before picking. */

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, inspects, readingTime, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, glanceTime, inspects, readingTime, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
@@ -833,10 +833,10 @@ test('opening an item\'s details: now and then, most after a miss, more for the 
   // As recorded: about one in sixteen of the others' questions, for a fairly curious player.
   assert.ok(Math.abs(rate({ ...plain, curious: 0.35 }, 'theirs') - 0.062) < 0.02);
   const reads = Array.from({ length: 4000 }, () => readingTime({ ...plain, curious: 0.35 }, rng)).sort((a, b) => a - b);
-  assert.ok(reads[2000] > 4500 && reads[2000] < 7500 && reads[3900] > 12000 && reads[200] < 2600, `${reads[200]} ${reads[2000]} ${reads[3900]}`);
-  // In a race, mostly a glance.
-  const glances = Array.from({ length: 4000 }, () => readingTime({ ...plain, curious: 0.35 }, rng, true)).sort((a, b) => a - b);
-  assert.ok(glances[2000] < 2600, `${glances[2000]}`);
+  assert.ok(reads[2000] > 4500 && reads[2000] < 7500 && reads[3900] > 12000 && reads[100] > 3000, `${reads[100]} ${reads[2000]} ${reads[3900]}`);
+  // Opened by accident (a click too late): a glance, as recorded.
+  const glances = Array.from({ length: 1000 }, () => glanceTime({ ...plain, pace: 1 }, rng));
+  assert.ok(Math.min(...glances) >= 1450 && Math.max(...glances) <= 2300);
 });
 
 test('digging a vein on: careful players mostly get out, gamblers and the careless often dig on', () => {
