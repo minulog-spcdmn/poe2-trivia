@@ -34,11 +34,16 @@ const REST_MS: [number, number] = [600, 4000];
 const LOBBY_REST_MS: [number, number] = [2000, 12000];
 
 /**
- * The item window's close (ItemWindow.svelte), where the game first puts the
- * window (the screen's left, middling height), in the room's terms (reach.ts,
- * measured as it is): at the right of its name plate.
+ * The item window's close (ItemWindow.svelte), where the game puts the window
+ * (the screen's left), in the room's terms (reach.ts): at the right of its
+ * name plate, as measured, and as recorded closed (by a click, every time);
+ * how high depends on the item's tooltip (the window is centred on its
+ * height), so somewhere from near the top to about half way down.
  */
-const WINDOW_CLOSE: Box = [178, 419, 195, 451];
+const windowClose = (): Box => {
+  const top = between(130, 420);
+  return [180, top, 210, top + 32];
+};
 
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
@@ -284,8 +289,8 @@ export class Hand {
   /**
    * Opens an item's details once its question is answered: a click on what
    * opens them (`anchor`: the art's Details, or a picture), a while reading
-   * (`readMs`, the hand still), then closes them: by Escape now and then (no
-   * move), else on the window's close, at its top right. The window comes up
+   * (`readMs`, the hand still), then closes them: on the window's close, at
+   * its top right, or now and then by Escape (no move). The window comes up
    * at the screen's left, middling height, as the game first puts it
    * (ItemWindow.svelte): nobody else sees it, only the hand going there.
    */
@@ -296,8 +301,8 @@ export class Hand {
     this.restUntil = Math.max(this.restUntil, this.readingUntil);
     while (Date.now() < this.readingUntil) await wait(150);
     this.readingUntil = 0;
-    if (Math.random() < 0.4 || !this.live()) return;
-    await this.press(WINDOW_CLOSE, 'next', null);
+    if (Math.random() < 0.15 || !this.live()) return;
+    await this.press(windowClose(), 'next', null);
   }
 
   /** Still reading an item's details. */

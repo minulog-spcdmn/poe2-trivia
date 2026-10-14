@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, inspects, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, inspects, readingTime, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
@@ -828,9 +828,13 @@ test('opening an item\'s details: now and then, most after a miss, more for the 
   const rate = (p: Persona, how: 'missed' | 'unknown' | 'known') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
   const curious = { ...plain, curious: 0.9 };
   const not = { ...plain, curious: 0.05 };
-  assert.ok(rate(curious, 'missed') > rate(curious, 'unknown') && rate(curious, 'unknown') > rate(curious, 'known'));
+  assert.ok(rate(curious, 'missed') > rate(curious, 'unknown') && rate(curious, 'unknown') > rate(curious, 'theirs') && rate(curious, 'theirs') > rate(curious, 'known'));
   assert.ok(rate(curious, 'missed') > rate(not, 'missed'));
-  assert.ok(rate(curious, 'missed') < 0.5 && rate(not, 'known') < 0.02);
+  assert.ok(rate(curious, 'missed') < 0.8 && rate(not, 'known') < 0.02);
+  // As recorded: about one in sixteen of the others' questions, for a fairly curious player.
+  assert.ok(Math.abs(rate({ ...plain, curious: 0.35 }, 'theirs') - 0.062) < 0.02);
+  const reads = Array.from({ length: 4000 }, () => readingTime({ ...plain, curious: 0.35 }, rng)).sort((a, b) => a - b);
+  assert.ok(reads[2000] > 5000 && reads[2000] < 7500 && reads[3900] > 12000, `${reads[2000]} ${reads[3900]}`);
 });
 
 test('digging a vein on: careful players mostly get out, gamblers and the careless often dig on', () => {
@@ -871,4 +875,16 @@ test('the cast has its share of left hands, always the same people', () => {
   const left = leftHanders(cast);
   assert.equal(left.size, Math.round(0.04 * cast.length));
   assert.deepEqual([...leftHanders(cast)].sort(), [...left].sort());
+});
+
+test('in a race, players go on less of the art and answer quicker, as recorded', () => {
+  const rng = seeded(61);
+  const a = preset('eternal');
+  const med = (f: () => number) => Array.from({ length: 2001 }, f).sort((x, y) => x - y)[1000];
+  const turn = med(() => sightNeeded(plain, a, true, rng).share);
+  const race = med(() => sightNeeded(plain, { ...a, mode: 'race' }, true, rng).share);
+  assert.ok(race < turn * 0.7 && race > 0.25 && race < 0.5, `${turn} ${race}`);
+  const t = med(() => answerDelay(plain, a, true, rng)!);
+  const r = med(() => answerDelay(plain, { ...a, mode: 'race' }, true, rng)!);
+  assert.ok(r < t * 0.9, `${t} ${r}`);
 });

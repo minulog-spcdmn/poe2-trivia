@@ -178,7 +178,7 @@ export class Player {
     if (mine === true) this.misses = 0;
     else if (mine === false) this.misses++;
     if (s.delve && isGroupRun(s)) this.notePeople(s);
-    this.planInspect(s, mine === false ? 'missed' : this.knew?.askedAt === q.askedAt ? (this.knew.knows ? 'known' : 'unknown') : 'known');
+    this.planInspect(s, mine === false ? 'missed' : this.knew?.askedAt === q.askedAt ? (this.knew.knows ? 'known' : 'unknown') : 'theirs');
   }
 
   /**
@@ -230,7 +230,7 @@ export class Player {
    * reads a while and closes them (hand.ts inspect): most after a miss of
    * its own. Not in a race: nobody sees a pointer there.
    */
-  private planInspect(s: GameState, how: 'missed' | 'unknown' | 'known') {
+  private planInspect(s: GameState, how: 'missed' | 'unknown' | 'known' | 'theirs') {
     const q = s.question;
     const r = s.reveal;
     if (!q || !r || (s.settings.mode === 'race' && !s.delve) || !inspects(this.persona, how, Math.random)) return;

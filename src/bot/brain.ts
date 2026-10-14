@@ -264,6 +264,8 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
   s *= 1 + 0.1 * (ask.tired ?? 0);
   // A favourite is named in a flash (the art burning in or not).
   if (ask.favourite && knows) s *= 0.5;
+  // Racing someone, quicker (recorded: about 2.0 s in a race against 2.6 on a turn of one's own).
+  if (ask.mode === 'race' && knows) s *= 0.8;
   return Math.round(Math.max(ask.favourite ? 700 : 1000, s * 1000));
 }
 
@@ -274,13 +276,15 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
  * often still deciding once it was all in): knowing it, more than half,
  * nearly all of it where look-alikes and made-up names crowd it; a
  * favourite about half that; not knowing it, most of it before it guesses.
+ * In a race, about half as much (recorded, Eternal: 25 to 77% of the item,
+ * about 37% typically, all six right): someone may beat them to it.
  * Spread wide: a sharp eye (Persona.eye) on a good day goes on far less;
  * and now and then a trigger-happy player goes before they're sure
  * (`early`: then it's a guess more often than not).
  */
 export function sightNeeded(p: Persona, ask: Ask, knows: boolean, rng: Rng): { share: number; early: boolean } {
   const base = !knows ? 0.75 + 0.25 * rng() : (ask.favourite ? 0.29 : 0.53) * (1 + 3.5 * hardness({ ...ask, veil: 0 }));
-  let share = base * (knows ? p.eye * Math.exp(0.4 * gauss(rng)) : 1);
+  let share = base * (knows ? p.eye * Math.exp(0.4 * gauss(rng)) : 1) * (ask.mode === 'race' ? 0.55 : 1);
   const early = knows && rng() < 0.25 * p.haste;
   if (early) share *= 0.5;
   return { share: clamp(share, 0.03, 1), early };
@@ -522,17 +526,23 @@ export function chooseCard(p: Persona, offered: string[], finds: { category: str
 }
 
 /**
- * Once a question is answered, whether it opens the item's details: now
- * and then, as curious as it is; most after a miss of its own (what was
- * that?), less on an item it didn't know, hardly otherwise.
+ * Once a question is answered, whether it opens the item's details: as
+ * curious as it is. As recorded (15 minutes, take turns and a race): after
+ * each of its own misses, on about one in sixteen of the others' questions,
+ * never after its own right answers. Here: most after a miss of its own (what
+ * was that?), now and then on someone else's question or one it didn't know,
+ * hardly after one it got right.
  */
-export function inspects(p: Persona, how: 'missed' | 'unknown' | 'known', rng: Rng): boolean {
-  const odds = { missed: 0.06 + 0.4 * p.curious, unknown: 0.02 + 0.14 * p.curious, known: 0.005 + 0.025 * p.curious }[how];
+export function inspects(p: Persona, how: 'missed' | 'unknown' | 'known' | 'theirs', rng: Rng): boolean {
+  const odds = { missed: 0.15 + 0.6 * p.curious, unknown: 0.04 + 0.15 * p.curious, theirs: 0.02 + 0.12 * p.curious, known: 0.005 + 0.02 * p.curious }[how];
   return rng() < odds;
 }
 
-/** Milliseconds it reads an item's details for: a few seconds, longer for the curious. */
-export const readingTime = (p: Persona, rng: Rng) => Math.round((2200 + rng() * 4000) * (0.8 + 0.6 * p.curious) * p.pace);
+/** Milliseconds it reads an item's details for (recorded: 5 to 17 s, about 6 typically): longer for the curious, now and then a good while. */
+export function readingTime(p: Persona, rng: Rng): number {
+  const ms = (3800 + rng() * 4500) * (0.8 + 0.6 * p.curious) * p.pace;
+  return Math.round(rng() < 0.12 ? ms * 2 : ms);
+}
 
 /** Milliseconds to look over the categories before picking. */
 export function pickDelay(p: Persona, rng: Rng, cards = 3): number {
