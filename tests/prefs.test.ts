@@ -58,9 +58,19 @@ test('missing or bad entries fall back to the defaults and are rewritten', () =>
   assert.deepEqual(loadPrefs(), DEFAULT_PREFS);
   assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), DEFAULT_PREFS);
 
+  // A host who has been here before isn't put in a listed room.
+  const returning = { ...DEFAULT_PREFS, public: false };
   store.set(PREFS_KEY, JSON.stringify({ v: 0, targetScore: 99 }));
-  assert.deepEqual(loadPrefs(), DEFAULT_PREFS);
-  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), DEFAULT_PREFS);
+  assert.deepEqual(loadPrefs(), returning);
+  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), returning);
+});
+
+test('first-time visitors start a public Delve room', () => {
+  const p = loadPrefs();
+  assert.equal(p.mode, 'delve');
+  assert.equal(p.public, true);
+  assert.equal(roomSettings(p).mode, 'delve');
+  assert.equal(roomSettings(p).public, true);
 });
 
 test('first-time visitors get a hidden room code', () => {
@@ -75,6 +85,8 @@ test('first-time visitors get a hidden room code', () => {
   store.set('poe2trivia.hideCode', '1');
   try {
     assert.equal(loadPrefs().hideCode, true);
+    // Private couldn't be made to stick, so the room isn't listed either.
+    assert.equal(loadPrefs().public, false);
   } finally {
     ls.getItem = getItem;
   }

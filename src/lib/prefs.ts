@@ -27,8 +27,8 @@ export const DEFAULT_PREFS: RoomPrefs = {
   targetScore: DEFAULT_SETTINGS.targetScore,
   timer: DEFAULT_SETTINGS.timer,
   difficulty: DEFAULT_SETTINGS.difficulty,
-  mode: 'turns',
-  public: false,
+  mode: 'delve',
+  public: true,
   // Hidden until the host shows it, so a streamer can't put it on screen by accident.
   hideCode: true,
 };
@@ -85,6 +85,13 @@ function write(p: RoomPrefs): boolean {
 }
 
 /**
+ * The defaults with the room kept private: for a host who has been here before
+ * (their entry is there but unusable), or whose browser won't let a Private
+ * choice stick. Only a first-time visitor's room starts listed.
+ */
+const PRIVATE_PREFS: RoomPrefs = { ...DEFAULT_PREFS, public: false };
+
+/**
  * The saved settings. A missing, malformed or outdated entry is replaced with
  * the defaults (which hide the room code, so a streamer's code doesn't
  * suddenly show up on screen).
@@ -92,10 +99,10 @@ function write(p: RoomPrefs): boolean {
 export function loadPrefs(): RoomPrefs {
   const raw = tryReadStored(PREFS);
   // Unreadable isn't missing: leave whatever is stored alone.
-  if (raw === undefined) return { ...DEFAULT_PREFS };
+  if (raw === undefined) return { ...PRIVATE_PREFS };
   const saved = parsePrefs(raw);
   if (saved) return saved;
-  const fresh = { ...DEFAULT_PREFS };
+  const fresh = { ...(raw === null ? DEFAULT_PREFS : PRIVATE_PREFS) };
   // The old key goes only once the new entry holds its value.
   if (write(fresh)) removeLegacy(LEGACY_HIDE_KEY);
   return fresh;
