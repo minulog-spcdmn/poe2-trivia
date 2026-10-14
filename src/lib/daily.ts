@@ -37,11 +37,14 @@ export const utcDay = (ms: number) => Math.floor(ms / DAY_MS);
 /** Today's number, "No. N": 1 on the launch day. */
 export const dayNumber = (ms: number) => utcDay(ms) - utcDay(DAILY_LAUNCH) + 1;
 
+/** Whole `unit`s until the next UTC day, rounded up (at least 1). */
+const leftIn = (ms: number, unit: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / unit));
+
 /** Whole hours until the next UTC day, rounded up (1 to 24). */
-export const hoursLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / HOUR_MS));
+export const hoursLeft = (ms: number) => leftIn(ms, HOUR_MS);
 
 /** Whole minutes until the next UTC day, rounded up (1 to 1440). */
-export const minutesLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / MINUTE_MS));
+export const minutesLeft = (ms: number) => leftIn(ms, MINUTE_MS);
 
 /** Milliseconds until the next whole minute (1 to 60000), when minutesLeft next goes down. */
 export const untilNextMinute = (ms: number) => MINUTE_MS - (((ms % MINUTE_MS) + MINUTE_MS) % MINUTE_MS);
@@ -53,7 +56,7 @@ export const untilNextMinute = (ms: number) => MINUTE_MS - (((ms % MINUTE_MS) + 
  */
 export function nextIn(ms: number, what = ''): string {
   const m = minutesLeft(ms);
-  const [n, unit] = m < 60 ? [m, 'minute'] : [Math.ceil(m / 60), 'hour'];
+  const [n, unit] = m < 60 ? [m, 'minute'] : [hoursLeft(ms), 'hour'];
   return `next ${what ? `${what} ` : ''}in ${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
