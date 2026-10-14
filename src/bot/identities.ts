@@ -7,7 +7,7 @@
 
 import { rollHandStyle } from './motion.ts';
 import { DEFAULT_SETTINGS, type Difficulty, type Item } from '../lib/game.ts';
-import { gauss, makePersona, rollEye, weighted, type Persona, type Rng } from './brain.ts';
+import { gauss, makePersona, rollEye, rollNerveForRisk, weighted, type Persona, type Rng } from './brain.ts';
 
 /**
  * The regulars: people who keep coming back to a PoE2 quiz, so players who
@@ -265,6 +265,10 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   persona.hand = rollHandStyle(seededBy(`${name}:hand-style`));
   // How little of a burning-in item it needs to see, and the items it knows: its own too.
   persona.eye = rollEye(seededBy(`${name}:eye`));
+  // And how it takes a risk.
+  Object.assign(persona, rollNerveForRisk(seededBy(`${name}:risk`)));
+  // And how curious it is about items.
+  persona.curious = seededBy(`${name}:curious`)() ** 1.5;
   persona.seed = name;
   return { name, persona, prefs };
 }

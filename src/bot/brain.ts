@@ -67,6 +67,12 @@ export interface Persona {
   eye: number;
   /** What its knowledge of each item is drawn from (its name): the same items known, or not, every time ('' for a fresh draw each time). */
   seed: string;
+  /** How much it enjoys pushing its luck (0 to 1): most hardly, a few gamblers who dig a vein on whatever the odds. */
+  gamble: number;
+  /** How well it weighs what's at stake (0 to 1): most fairly well, some hardly at all, their choices more or less a whim. */
+  sense: number;
+  /** How curious it is about an item once it's shown (0 to 1): how often it opens its details, most after a miss. */
+  curious: number;
   /** New to the game (visitors.ts): a longer warm-up, and the odd thing tried that regulars know doesn't work. */
   newcomer?: boolean;
 }
@@ -144,8 +150,18 @@ export function makePersona(categories: string[], rng: Rng): Persona {
     hand: PLAIN_HAND,
     eye: 1,
     seed: '',
+    gamble: 0.3,
+    sense: 0.8,
+    curious: 0.3,
   };
 }
+
+/**
+ * How a player takes a risk (Persona.gamble, sense), rolled on its own so
+ * the rest of a persona stays as it was: most careful enough, a few
+ * gamblers; most weigh things up fairly well, some hardly.
+ */
+export const rollNerveForRisk = (rng: Rng): Pick<Persona, 'gamble' | 'sense'> => ({ gamble: rng() ** 2, sense: rng() ** 0.6 });
 
 /** A sharp eye or a slow one (Persona.eye), rolled on its own so the rest of a persona stays as it was: most near the typical player, a few a good deal either way. */
 export const rollEye = (rng: Rng) => clamp(Math.exp(0.35 * gauss(rng)), 0.45, 2);
@@ -352,21 +368,25 @@ export interface DigStake {
 }
 
 /**
- * Whether it digs deeper rather than take the way out: as keen as it is on
- * finds, more so into a category it knows, with light and lives to spare;
- * the bigger the haul in hand, the likelier it gets out with it. Teammates
- * still standing make it braver (one of them may know it).
+ * Whether it digs deeper rather than take the way out. What a sensible
+ * player would weigh: as keen as they are on finds, more so into a category
+ * they know, with light and lives to spare; the bigger the haul in hand, the
+ * likelier they get out with it; teammates still standing make them braver
+ * (one of them may know it). But not everyone weighs it so (Persona.sense):
+ * some go more or less on a whim; and a gambler (Persona.gamble) digs on
+ * for the thrill of it, whatever the lamp says.
  */
 export function digsOn(p: Persona, d: DigStake, rng: Rng): boolean {
-  let want = p.finds * (0.55 + 6 * d.affinity) - 0.18 * d.haul;
+  let weighed = p.finds * (0.55 + 6 * d.affinity) - 0.18 * d.haul;
   // Under about three seconds it can hardly answer in time (answerDelay's least is 0.7 to 1 s): a long shot.
-  if (d.light < 3) want -= 0.5;
-  else if (d.light < 6) want -= 0.2;
+  if (d.light < 3) weighed -= 0.5;
+  else if (d.light < 6) weighed -= 0.2;
   const left = d.lives + d.wards - 2;
-  if (left <= 0) want -= 0.35;
-  else if (left === 1) want -= 0.15;
-  if (d.teammates > 0) want += 0.1;
-  return rng() < clamp(want, 0.05, 0.9);
+  if (left <= 0) weighed -= 0.35;
+  else if (left === 1) weighed -= 0.15;
+  if (d.teammates > 0) weighed += 0.1;
+  const want = p.sense * weighed + (1 - p.sense) * 0.5 + 0.6 * (p.gamble - 0.25);
+  return rng() < clamp(want, 0.03, 0.95);
 }
 
 /**
@@ -461,6 +481,19 @@ export function chooseCard(p: Persona, offered: string[], finds: { category: str
   for (const f of on) if (rng() < f.appetite) return f.category;
   return pickCategory(p, offered, rng);
 }
+
+/**
+ * Once a question is answered, whether it opens the item's details: now
+ * and then, as curious as it is; most after a miss of its own (what was
+ * that?), less on an item it didn't know, hardly otherwise.
+ */
+export function inspects(p: Persona, how: 'missed' | 'unknown' | 'known', rng: Rng): boolean {
+  const odds = { missed: 0.06 + 0.4 * p.curious, unknown: 0.02 + 0.14 * p.curious, known: 0.005 + 0.025 * p.curious }[how];
+  return rng() < odds;
+}
+
+/** Milliseconds it reads an item's details for: a few seconds, longer for the curious. */
+export const readingTime = (p: Persona, rng: Rng) => Math.round((2200 + rng() * 4000) * (0.8 + 0.6 * p.curious) * p.pace);
 
 /** Milliseconds to look over the categories before picking. */
 export function pickDelay(p: Persona, rng: Rng, cards = 3): number {

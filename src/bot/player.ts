@@ -8,7 +8,7 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { afterSeeing, answerDelay, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { afterSeeing, answerDelay, inspects, readingTime, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
 import { looksOf } from './lookalike';
 import { Recall } from './recall';
@@ -98,6 +98,8 @@ export class Player {
   private answers = 0;
   /** A race question it let go by, not sure, and how it saw it then (calmPick). */
   private satOut: { askedAt: number; ask: Ask; seen: number | null } | null = null;
+  /** Whether it knew the item of the question it last made up its mind on (by its askedAt). */
+  private knew: { askedAt: number; knows: boolean } | null = null;
   /** Someone else's reveals it has seen (as a guest, in turns), and whether it has learned it can't move those on. */
   private othersRevealed = 0;
   private learnedNext = false;
@@ -139,6 +141,11 @@ export class Player {
     const now = session.hostNow();
     for (const [key, p] of this.plans)
       if (now >= p.at) {
+        // Reading an item's details, it closes them first when there's something to do.
+        if (this.hand.reading) {
+          this.hand.doneReading(between(300, 900));
+          continue;
+        }
         this.plans.delete(key);
         void p.run();
       }
@@ -162,6 +169,30 @@ export class Player {
     else if (s.players[s.turn]?.id === me) mine = r.correct;
     if (mine === true) this.misses = 0;
     else if (mine === false) this.misses++;
+    this.planInspect(s, mine === false ? 'missed' : this.knew?.askedAt === q.askedAt ? (this.knew.knows ? 'known' : 'unknown') : 'known');
+  }
+
+  /**
+   * Now and then, once a question is answered, it opens the item's details
+   * (the art's Details, or the right picture on a question of pictures),
+   * reads a while and closes them (hand.ts inspect): most after a miss of
+   * its own. Not in a race: nobody sees a pointer there.
+   */
+  private planInspect(s: GameState, how: 'missed' | 'unknown' | 'known') {
+    const q = s.question;
+    const r = s.reveal;
+    if (!q || !r || (s.settings.mode === 'race' && !s.delve) || !inspects(this.persona, how, Math.random)) return;
+    // Looking, it doesn't move the game on itself.
+    this.decided.add(`next:${q.askedAt}`);
+    const anchor = q.mode === 'art' ? `opt:${r.correctIndex}` : 'art';
+    this.plans.set(`inspect:${q.askedAt}`, {
+      at: session.hostNow() + between(600, 1800) * this.persona.pace,
+      run: () => {
+        if (session.state?.question?.askedAt !== q.askedAt || session.state.phase !== 'reveal') return;
+        log(`looks at the item${how === 'missed' ? ' it missed' : ''}`);
+        return this.hand.inspect(anchor, readingTime(this.persona, Math.random));
+      },
+    });
   }
 
   /**
@@ -530,6 +561,7 @@ export class Player {
     };
     // The same player knows the same items, and misses the same ones (but for a lapse now and then).
     const knows = knowsIt(knowChance(this.persona, ask), itemDraw(this.persona.seed, item), Math.random);
+    this.knew = { askedAt: q.askedAt, knows };
     const delay = answerDelay(this.persona, ask, knows, Math.random);
     if (delay === null) {
       log(`lets "${q.category}" go by`);

@@ -33,6 +33,13 @@ const SETTLE_MS = 1200;
 const REST_MS: [number, number] = [600, 4000];
 const LOBBY_REST_MS: [number, number] = [2000, 12000];
 
+/**
+ * The item window's close (ItemWindow.svelte), where the game first puts the
+ * window (the screen's left, middling height), in the room's terms (reach.ts,
+ * measured at 1440 by 900): at the right of its name plate.
+ */
+const WINDOW_CLOSE: Box = [232, 226, 258, 258];
+
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
 
@@ -215,6 +222,12 @@ export class Hand {
     const box = layout(s!).get(anchor);
     if (!box) return;
     const kind: ClickStretch['kind'] = anchor.startsWith('opt:') ? 'answer' : anchor.startsWith('card:') ? 'card' : 'next';
+    return this.press(box, kind, anchor, by);
+  }
+
+  /** Reaches into `box` and presses there (`anchor`: what that is, if it's something of the game's), as click does. */
+  private async press(box: Box, kind: ClickStretch['kind'], anchor: string | null, by = Infinity): Promise<void> {
+    const s = session.state;
     const e = this.pending?.kind === kind ? this.pending.e : pickClick(kind, 0, Math.random, { used: new Set(this.used) });
     const w = this.pending?.kind === kind ? this.pending.w : waver(Math.random);
     this.pending = null;
@@ -263,6 +276,38 @@ export class Hand {
     const now = Date.now();
     this.follow(reachTrack(e, within(this.where(now), f, e.src), within(place(...this.held(e.aim as [number, number]), box), f, e.src), now, this.speed, waver(Math.random)), 'answers');
     this.restUntil = Math.max(this.restUntil, until);
+  }
+
+  /** Reading an item's details (inspect) till then (Date.now). */
+  private readingUntil = 0;
+
+  /**
+   * Opens an item's details once its question is answered: a click on what
+   * opens them (`anchor`: the art's Details, or a picture), a while reading
+   * (`readMs`, the hand still), then closes them: by Escape now and then (no
+   * move), else on the window's close, at its top right. The window comes up
+   * at the screen's left, middling height, as the game first puts it
+   * (ItemWindow.svelte): nobody else sees it, only the hand going there.
+   */
+  async inspect(anchor: string, readMs: number) {
+    if (!this.live()) return;
+    await this.click(anchor);
+    this.readingUntil = Date.now() + readMs;
+    this.restUntil = Math.max(this.restUntil, this.readingUntil);
+    while (Date.now() < this.readingUntil) await wait(150);
+    this.readingUntil = 0;
+    if (Math.random() < 0.4 || !this.live()) return;
+    await this.press(WINDOW_CLOSE, 'next', null);
+  }
+
+  /** Still reading an item's details. */
+  get reading() {
+    return Date.now() < this.readingUntil;
+  }
+
+  /** Something of its own to do: it closes the details within `ms`. */
+  doneReading(ms: number) {
+    if (this.reading) this.readingUntil = Math.min(this.readingUntil, Date.now() + ms);
   }
 
   /** A recorded spot on an answer or a card (thousandths of it), moved by the bot's own grip, and kept well on it. */

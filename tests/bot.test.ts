@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOST_ODDS, afterSeeing, answerDelay, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, afterSeeing, answerDelay, digsOn, inspects, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
@@ -20,7 +20,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND, eye: 1, seed: '' };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND, eye: 1, seed: '', gamble: 0.3, sense: 0.8, curious: 0.3 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -816,4 +816,28 @@ test('names read as players\' do: hardly any food, animals or game jokes; newcom
   const avg = (list: string[]) => list.reduce((a, n) => a + Array.from(n).length, 0) / list.length;
   assert.ok(lower(VISITORS) > 0.75 && lower(NAMES) < 0.5, `${lower(VISITORS)} ${lower(NAMES)}`);
   assert.ok(avg(VISITORS) < avg(NAMES));
+});
+
+test('opening an item\'s details: now and then, most after a miss, more for the curious', () => {
+  const rng = seeded(41);
+  const rate = (p: Persona, how: 'missed' | 'unknown' | 'known') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
+  const curious = { ...plain, curious: 0.9 };
+  const not = { ...plain, curious: 0.05 };
+  assert.ok(rate(curious, 'missed') > rate(curious, 'unknown') && rate(curious, 'unknown') > rate(curious, 'known'));
+  assert.ok(rate(curious, 'missed') > rate(not, 'missed'));
+  assert.ok(rate(curious, 'missed') < 0.5 && rate(not, 'known') < 0.02);
+});
+
+test('digging a vein on: careful players mostly get out, gamblers and the careless often dig on', () => {
+  const rng = seeded(55);
+  const stake = { haul: 1, lives: 3, wards: 0, light: 5, affinity: 0, teammates: 0 };
+  const rate = (p: Persona, d = stake) => Array.from({ length: 4000 }, () => digsOn(p, d, rng)).filter(Boolean).length / 4000;
+  const careful = { ...plain, gamble: 0.05, sense: 0.95 };
+  const gambler = { ...plain, gamble: 0.95, sense: 0.8 };
+  const careless = { ...plain, gamble: 0.2, sense: 0.1 };
+  assert.ok(rate(careful) < 0.2, `${rate(careful)}`);
+  assert.ok(rate(gambler) > 0.4 && rate(careless) > 0.3, `${rate(gambler)} ${rate(careless)}`);
+  // On a lamp all but out, the careful hardly ever; the careless hardly mind.
+  const dark = { ...stake, light: 1.5 };
+  assert.ok(rate(careful, dark) < 0.06 && rate(careless, dark) > 0.25, `${rate(careful, dark)} ${rate(careless, dark)}`);
 });
