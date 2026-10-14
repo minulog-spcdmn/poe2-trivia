@@ -169,8 +169,8 @@ test('every name passes the name checks as it is, and none looks like another or
     assert.equal(nameProblem(n, []), null, n);
     assert.ok(!isHeldName(n), n);
     assert.ok(!/bot/i.test(n), n);
-    // Not to be used, however it's spelt.
-    assert.ok(!nameSkeleton(n).includes('zoe'), n);
+    // Not to be used, however they're spelt (people the game's players know).
+    for (const no of ['Zoe', 'KingOfNothing']) assert.ok(!nameSkeleton(n).includes(nameSkeleton(no)), n);
     assert.ok(!skeletons.has(nameSkeleton(n)), n);
     skeletons.add(nameSkeleton(n));
   }
