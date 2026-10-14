@@ -5,7 +5,7 @@
 import type { Difficulty, Item, QuestionMode } from './game.ts';
 import { RECENT, add, answerLives, answerWards, livesCost, noTally, type Answer, type Codex, type ItemEntry, type Tally } from './codex.ts';
 import { DELVE_RULESET, type FindKind, type ItemKind } from './delve.ts';
-import { MAX_DEPTH, bestKey, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
+import { MAX_DEPTH, bestKey, deepestEnd, isTogether, tallyOf as runsTally, type DelveRecords, type DelveRun, type DelveTally, type Frontier } from './delveRecord.ts';
 import { biomeAt } from './backdrops.ts';
 import { stratumName } from './descent.ts';
 import { roman } from './roman.ts';
@@ -239,13 +239,23 @@ export function delveSummary(r: DelveRecords, kind: DelveKind, ruleset = DELVE_R
     left,
     median: fell >= MIN_RUNS ? medianOfCounts(t.ends) : null,
     best,
-    deepest: best?.depth ?? (fell ? Math.max(...Object.keys(t.ends).map(Number)) : null),
+    deepest: deepestEnd(r, kind === 'solo', ruleset) || null,
     lives: livesLost(t, kind),
     warded: t.warded ?? 0,
     perished: sumOf(t.perished),
     given: t.given ?? 0,
     revived: t.revived ?? 0,
   };
+}
+
+/**
+ * The kind the Delve page leads with (its medallion and the figures around
+ * it): the one played most, runs ended and left; on a tie the one that got
+ * deeper, then alone.
+ */
+export function leadingKind(solo: DelveSummary, together: DelveSummary): DelveKind {
+  if (solo.runs !== together.runs) return solo.runs > together.runs ? 'solo' : 'together';
+  return (together.deepest ?? 0) > (solo.deepest ?? 0) ? 'together' : 'solo';
 }
 
 /**

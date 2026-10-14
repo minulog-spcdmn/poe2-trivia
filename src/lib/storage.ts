@@ -46,6 +46,18 @@ export type Area = 'local' | 'session';
 /** The whole key for a name, as other tabs see it in storage events. */
 export const storeKey = (name: string) => STORE + name;
 
+/**
+ * Calls each handler when another tab writes its value (by whole key, as
+ * storeKey gives it) or clears storage; returns what stops listening.
+ */
+export function onStoredElsewhere(handlers: Record<string, () => void>): () => void {
+  const on = (e: StorageEvent) => {
+    for (const [key, fn] of Object.entries(handlers)) if (e.key === key || e.key === null) fn();
+  };
+  addEventListener('storage', on);
+  return () => removeEventListener('storage', on);
+}
+
 const area = (where: Area) => (where === 'local' ? localStorage : sessionStorage);
 
 export function readKey(key: string, where: Area = 'local'): string | null {

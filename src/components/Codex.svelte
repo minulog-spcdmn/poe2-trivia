@@ -4,7 +4,7 @@
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
-  import { accuracy, codexStats, delveSummary, tallyOf } from '../lib/codexStats';
+  import { accuracy, codexStats, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
   import { categoryGlyph, itemSrcset, itemThumb } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
@@ -18,7 +18,8 @@
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
-  import { DELVE_RECORD_KEY, loadRecords, resetRecords } from '../lib/delveRecord';
+  import { DELVE_RECORD_KEY, deepestShown, loadRecords, resetRecords } from '../lib/delveRecord';
+  import { onStoredElsewhere } from '../lib/storage';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import CodexAchievements from './CodexAchievements.svelte';
@@ -31,18 +32,16 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
-  onMount(() => {
-    // A game in another tab may add to it meanwhile.
-    const reload = (e: StorageEvent) => {
-      if (e.key === CODEX_KEY || e.key === null) codex = loadCodex();
-      if (e.key === PRACTICE_KEY || e.key === null) practice = loadPractice();
-      if (e.key === DELVE_RECORD_KEY || e.key === null) delve = loadRecords();
-      if (e.key === ACHIEVEMENTS_KEY || e.key === null) achievements = loadAchievements();
-      if (e.key === WINS_KEY || e.key === null) wins = loadWins();
-    };
-    addEventListener('storage', reload);
-    return () => removeEventListener('storage', reload);
-  });
+  // A game in another tab may add to it meanwhile.
+  onMount(() =>
+    onStoredElsewhere({
+      [CODEX_KEY]: () => (codex = loadCodex()),
+      [PRACTICE_KEY]: () => (practice = loadPractice()),
+      [DELVE_RECORD_KEY]: () => (delve = loadRecords()),
+      [ACHIEVEMENTS_KEY]: () => (achievements = loadAchievements()),
+      [WINS_KEY]: () => (wins = loadWins()),
+    }),
+  );
 
   const stats = $derived(codexStats(codex, engine.items, engine.categories));
   const difficulties = $derived(
@@ -185,8 +184,8 @@
   ];
   const earnedCount = $derived(ACHIEVEMENTS.filter((a) => achievements.earned[a.id] !== undefined).length);
   let tab = $state<Tab>('items');
-  /** The tab's note: your best alone under the current rules (together, before a run alone). */
-  const delveBest = $derived(delveSummary(delve, 'solo').deepest ?? delveSummary(delve, 'together').deepest);
+  /** The tab's note, as players see depths (shownDepth): your deepest alone or together under the current rules, as the start page has it (none for 0). */
+  const delveBestShown = $derived(shownDepth(deepestShown(delve)));
   const delved = $derived(delve.runs.length > 0 || delve.frontier.length > 0 || Object.keys(delve.bests).length > 0);
 
   /**
@@ -283,7 +282,7 @@
         >
           <span class="tab-in">
             <span class="tab-label">{t.label}</span>
-            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if t.key === 'feats'}<span class="tab-note">{earnedCount}/{ACHIEVEMENTS.length}</span>{:else if delveBest}<span class="tab-note">{shownDepth(delveBest)}</span>{/if}
+            {#if t.key === 'items'}<span class="tab-note">{stats.seen}/{stats.total}</span>{:else if t.key === 'feats'}<span class="tab-note">{earnedCount}/{ACHIEVEMENTS.length}</span>{:else if delveBestShown > 0}<span class="tab-note">{delveBestShown}</span>{/if}
           </span>
         </button>
       {/each}
