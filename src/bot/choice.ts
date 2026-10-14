@@ -10,7 +10,7 @@
 // longer they look, the less they mind. Pure functions of their inputs and a
 // random source, so tests can pin them.
 
-import type { RoomInfo } from '../lib/roomInfo.ts';
+import { playersHere, type RoomInfo } from '../lib/roomInfo.ts';
 import type { Persona, Rng } from './brain.ts';
 import type { RoomPrefs } from './identities.ts';
 
@@ -127,13 +127,13 @@ const DIFFICULTIES = ['cruel', 'merciless', 'eternal'];
  * most); the company, a busy room for the sociable and a host on their own
  * for the rest; and how they got on with the host before (`warmth`, -1 to 1).
  */
-export function appeal(p: Pick<Persona, 'sociable' | 'picky'>, taste: Pick<RoomPrefs, 'mode' | 'difficulty'>, room: Pick<RoomInfo, 'mode' | 'difficulty' | 'players'>, warmth = 0): number {
+export function appeal(p: Pick<Persona, 'sociable' | 'picky'>, taste: Pick<RoomPrefs, 'mode' | 'difficulty'>, room: Pick<RoomInfo, 'mode' | 'difficulty' | 'players' | 'here'>, warmth = 0): number {
   const mode = room.mode === taste.mode ? 1 : room.mode === 'delve' || taste.mode === 'delve' ? 0.4 : 0.65;
   // Delve has no difficulty to pick; a custom room's is anyone's guess.
   const step = DIFFICULTIES.indexOf(room.difficulty);
   const difficulty = room.mode === 'delve' ? 1 : step < 0 ? 0.75 : 1 - 0.2 * Math.abs(step - DIFFICULTIES.indexOf(taste.difficulty));
   const rules = 1 - p.picky * (1 - mode * difficulty);
-  const company = 1 + 0.15 * (2 * p.sociable - 1) * (room.players > 1 ? 1 : -1);
+  const company = 1 + 0.15 * (2 * p.sociable - 1) * (playersHere(room) > 1 ? 1 : -1);
   return clamp(rules * company + 0.3 * warmth, 0, 1.5);
 }
 

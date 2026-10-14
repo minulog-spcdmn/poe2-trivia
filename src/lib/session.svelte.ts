@@ -1899,7 +1899,9 @@ class Session {
     return {
       code: this.code,
       host: s.players.find((p) => p.id === s.hostId)?.name ?? '?',
-      players: s.players.filter((p) => p.connected).length,
+      // Every seat held, someone on the way back included: the engine counts them too, so a room shows Join only when a seat is free.
+      players: s.players.length,
+      here: s.players.filter((p) => p.connected).length,
       maxPlayers: MAX_PLAYERS,
       spectators: s.spectators?.length ?? 0,
       maxSpectators: MAX_SPECTATORS,

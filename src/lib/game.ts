@@ -1260,9 +1260,11 @@ export class Engine {
           break;
         }
         if (s.players.length >= MAX_PLAYERS) {
-          // Someone who was already here (a spectator, after the host's refresh)
-          // waits for a free seat instead of being turned away.
-          if (action.returning && s.spectators.length < MAX_SPECTATORS) {
+          // Every seat taken: watch, and take one once it is free (at the start
+          // at the latest), as a game under way lets them watch for the next.
+          // Not on one screen (hot-seat, from null): nobody there watches, and
+          // the one being added is turned down instead.
+          if (from !== null && s.spectators.length < MAX_SPECTATORS) {
             s.spectators.push({ id: action.playerId, name });
             break;
           }

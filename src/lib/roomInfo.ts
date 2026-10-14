@@ -12,7 +12,10 @@ import { shownDepth } from './delve.ts';
 export interface RoomInfo {
   code: string;
   host: string;
+  /** Seats held, someone on the way back included (what the engine counts against maxPlayers). */
   players: number;
+  /** Of them, the players connected now (missing from hosts before it: then as many as `players`). */
+  here?: number;
   maxPlayers: number;
   spectators: number;
   maxSpectators: number;
@@ -67,6 +70,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     // Extras that don't check out are dropped; the room is still listed.
     ...(delve && int(r.depth, 1, 9999) ? { depth: r.depth } : {}),
     ...(int(r.v, 0, 1e6) ? { v: r.v } : {}),
+    ...(int(r.here, 0, 64) && r.here <= r.players ? { here: r.here } : {}),
   };
 }
 
@@ -106,6 +110,8 @@ export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; wait
   if (v < PROTOCOL_VERSION) return { text: 'The host is on an older version of the game; they need to reload before you can join.', warn: true };
   if (v > PROTOCOL_VERSION) return { text: 'This room is on a newer version of the game; reload this page to join.', warn: true };
   if (a.phase === 'locked') return { text: 'The room is locked; nobody new can join it now.', warn: true };
+  // No seat to take and no room left to watch from: the host turns them away.
+  if (!joinable(a) && !watchable(a)) return { text: 'The room is full; nobody new can join it now.', warn: true };
   if (a.phase !== 'lobby') return { text: 'A game is under way; you watch it, and play in the next.', warn: true };
   if (a.players >= a.maxPlayers) return { text: 'Every seat is taken; you watch until one is free.', warn: true };
   const others = a.players - 1;
@@ -120,3 +126,12 @@ export function inviteLine(a: InviteAnswer): { text: string; warn: boolean; wait
  * scan, hiding the rooms above it too).
  */
 export const listable = (room: RoomInfo) => !offensive(room.host);
+
+/** The players in a listed room now (seats held for someone on the way back left out). */
+export const playersHere = (r: Pick<RoomInfo, 'players' | 'here'>) => r.here ?? r.players;
+
+/** A room someone arriving could play in now (on this version: the list can't let anyone into the others, OpenRooms.svelte; the bot goes by it too, bot/wanted.ts). */
+export const joinable = (r: RoomInfo) => r.phase === 'lobby' && r.players < r.maxPlayers && (r.v ?? 0) === PROTOCOL_VERSION;
+
+/** A room someone could come in to watch: on this version, not locked, with a spectator's seat free (mid-game too). */
+export const watchable = (r: RoomInfo) => r.phase !== 'locked' && r.spectators < r.maxSpectators && (r.v ?? 0) === PROTOCOL_VERSION;

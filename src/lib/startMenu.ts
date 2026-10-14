@@ -34,3 +34,9 @@ export function codexLine(met: number | null, total: number, deepest: number): s
   if (!met) return 'Every unique you meet in a game is kept here.';
   return `Every unique you have met: ${met} of ${total}.${deepest > 0 ? ` Deepest delve: ${deepest}.` : ''}`;
 }
+
+/** The same in one column, where the Codex has half a phone's width: shorter, a line each. */
+export function codexLines(met: number | null, total: number, deepest: number): string[] {
+  if (!met) return ['Kept as you play.'];
+  return [`${met} of ${total} met.`, ...(deepest > 0 ? [`Deepest delve: ${deepest}.`] : [])];
+}

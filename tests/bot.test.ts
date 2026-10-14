@@ -278,6 +278,8 @@ test("someone waiting alone in their own lobby is the bot's to keep company firs
   assert.ok(!waitingAlone(room('lobby', 2), ours));
   assert.ok(!waitingAlone(room('question', 1), ours));
   assert.ok(!waitingAlone({ ...room('lobby', 1), code: 'OURS22' }, ours));
+  // A host back from a refresh, the others' seats held for them: alone for now.
+  assert.ok(waitingAlone({ ...room('lobby', 4), here: 1 }, ours));
 });
 
 test('room 1 opens only when no room is listed', () => {

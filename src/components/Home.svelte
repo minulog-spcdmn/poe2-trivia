@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { flushSync, onDestroy, tick, untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
   import { MAX_NAME, cleanName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { refuseName } from '../lib/nameField';
+  import { motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
@@ -13,13 +15,14 @@
   import { BETA, LOCAL } from '../lib/channel';
   import { deepestEver, loadRecords } from '../lib/delveRecord';
   import { shownDepth } from '../lib/delve';
-  import { ENTRIES, codexLine, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
+  import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
   import InviteRoom from './InviteRoom.svelte';
   import MenuCursor from './MenuCursor.svelte';
   import OpenRooms from './OpenRooms.svelte';
+  import DrawnMark from './DrawnMark.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -84,6 +87,15 @@
 
   const connecting = $derived(session.status === 'connecting');
 
+  /**
+   * Phones (either way up), touch tablets in one column, and any window as
+   * narrow as a phone get the menu as actions rather than a list: Create a
+   * room as the page's one big button, Join's code field always out, Hot-seat
+   * and the Codex as a pair under them. A mouse keeps the list, its cursor
+   * and its arrow keys wherever there's room for them.
+   */
+  const compact = new MediaQuery('(max-width: 640px), (pointer: coarse) and (max-width: 1080px)');
+
   // ---- names ----
 
   /** A name fit to play under (saved, and the greeting's from now on), or null after saying what's wrong with it. */
@@ -115,11 +127,12 @@
   let renaming = $state(false);
   let draft = $state('');
   let renameField = $state<HTMLInputElement>();
-  async function startRename() {
+  function startRename() {
     if (connecting) return;
     draft = known;
     renaming = true;
-    await tick();
+    // Focused within the tap itself, so a phone's keyboard comes up with it.
+    flushSync();
     renameField?.focus();
     renameField?.select();
   }
@@ -145,6 +158,8 @@
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
+  /** Each entry's whole box: a tap outside the open one closes it. */
+  let boxes: HTMLElement[] = $state([]);
 
   let nameInput = $state(''); // first visit: the name asked with Create or Join
   let code = $state('');
@@ -163,10 +178,12 @@
     else session.startLocal();
   }
 
-  /** The entry that set off the connection, whose row shows it. */
-  let busy = $state<Entry | null>(null);
+  /** The entry that set off the connection, whose row shows it ('rooms': a room tapped in the Open rooms list, which shows it in that room's place). */
+  let busy = $state<Entry | 'rooms' | null>(null);
+  /** The entry whose row shows the connection under way (the one that set it off, or the one a resumed connection belongs to). */
+  const busyEntry = $derived<Entry | 'rooms' | null>(connecting ? (busy ?? (session.mode === 'host' ? 'create' : 'join')) : null);
 
-  async function choose(e: Entry) {
+  function choose(e: Entry) {
     if (connecting) return;
     cursor = ENTRIES.indexOf(e);
     rememberEntry(e);
@@ -175,12 +192,13 @@
     if (e === 'codex') return openCodex();
     if (e === 'create' && knownName()) return host();
     open = e;
-    await tick();
+    // Within the tap itself, so a phone's keyboard comes up with the focus.
+    flushSync();
     (known ? codeField : nameField)?.focus();
   }
 
   /** The open row's element (its fields and button). */
-  const rowEl = () => (open ? entryEls[ENTRIES.indexOf(open)]?.parentElement?.querySelector('.slot') : null);
+  const rowEl = () => (open ? boxes[ENTRIES.indexOf(open)]?.querySelector('.slot') : null);
   /** Whether the open row has the focus (its field is being typed in). */
   const rowHasFocus = () => !!rowEl()?.contains(document.activeElement);
 
@@ -197,15 +215,34 @@
     codeError = false;
     rowFocus = false;
     clearTimeout(idleTimer);
-    if (refocus === 'always' || (refocus === 'if-focused' && hadFocus)) entryEls[i]?.focus({ preventScroll: true });
+    if (refocus === 'always' || (refocus === 'if-focused' && hadFocus)) {
+      // In one column the entry comes back in the row's place (Create a room's
+      // button), or has none but its code field (Join): render it first.
+      flushSync();
+      (entryEls[i] ?? (ENTRIES[i] === 'join' ? codeField : null))?.focus({ preventScroll: true });
+    }
   }
 
   /** A click anywhere but the open row's entry closes the row at once (what was typed is kept for next time). */
-  function outside(e: PointerEvent) {
+  function outside(e: Event) {
     if (!open || connecting) return;
-    const entry = entryEls[ENTRIES.indexOf(open)]?.parentElement;
+    const entry = boxes[ENTRIES.indexOf(open)];
     if (entry && !entry.contains(e.target as Node)) closeRow('never');
   }
+  /** What the last press was made with: a click carries no pointer type on every browser. */
+  let pressedWith = '';
+  /** A mouse closes the open row as it presses elsewhere... */
+  function outsidePress(e: PointerEvent) {
+    pressedWith = e.pointerType;
+    if (e.pointerType === 'mouse') outside(e);
+  }
+  /**
+   * ...a finger only with a tap (a click), never as it starts a scroll. Heard
+   * as the click comes down (capture), before what was tapped acts: a row the
+   * tap itself opens (Create a room's button, an open room's Join) stays open.
+   * A click from the keyboard (detail 0) leaves the row be, as a mouse's press does.
+   */
+  const outsideTap = (e: MouseEvent) => e.detail > 0 && pressedWith !== 'mouse' && outside(e);
 
   /** How long an untouched row stays open once the mouse has left its entry. */
   const ROW_IDLE_MS = 4000;
@@ -242,44 +279,100 @@
       if (!nameField) void tick().then(() => nameField?.focus());
       return;
     }
-    if (code.length < CODE_LENGTH) {
-      codeError = true;
-      if (codeField) refuse(codeField);
-      codeField?.focus();
-      toasts.show(`Room codes have ${CODE_LENGTH} letters and digits.`, 'error', { title: 'Code too short' });
-      return;
-    }
+    if (code.length < CODE_LENGTH) return codeShort();
     startJoin(code, n);
   }
+  /** The Code too short notice up, if one is: it goes once the code is whole. */
+  let shortNotice: number | null = null;
+  function codeShort() {
+    codeError = true;
+    if (codeField) refuse(codeField);
+    codeField?.focus();
+    shortNotice = toasts.show(`Room codes have ${CODE_LENGTH} letters and digits.`, 'error', { title: 'Code too short' });
+  }
+  /** The code as typed or pasted: kept clean, and a notice that it was short taken down once it isn't. */
+  function codeChanged() {
+    code = cleanCode(code);
+    codeError = false;
+    if (code.length === CODE_LENGTH && shortNotice !== null) {
+      toasts.dismiss(shortNotice);
+      shortNotice = null;
+    }
+  }
 
-  /** A room joined from the Open rooms list: its row is Join's. */
+  /**
+   * In one column Join asks as Create does: the code first, and on a first
+   * visit its row then gives way, in place, to the name (the code waits).
+   * One name field at a time, and nothing moves while typing.
+   */
+  const asking = $derived(open === 'join' && !known && code.length === CODE_LENGTH);
+  function phoneJoin(e: Event) {
+    e.preventDefault();
+    if (code.length < CODE_LENGTH) return codeShort();
+    if (!asking && !knownName()) return askName();
+    join();
+  }
+  /** Join's row asks the name (on one column, in the code's place). */
+  function askName() {
+    open = 'join';
+    cursor = ENTRIES.indexOf('join');
+    // Within the tap (or the Go key) itself, so a phone's keyboard comes up with the focus.
+    flushSync();
+    nameField?.focus();
+  }
+  /** Back from the name to the code (closing Join's row brings the code field back, and focuses it). */
+  const backToCode = () => closeRow();
+  /** Join's button is lit once it can go on: the code whole, and once asked, a name. */
+  const joinReady = $derived(code.length === CODE_LENGTH && (!asking || !!nameInput.trim()));
+
+  /** How many rooms the Open rooms list shows; Join points down to them. */
+  let roomCount = $state(0);
+  /** Whether any of them has a seat (none: they are all rooms to watch, games under way or full lobbies). */
+  let roomSeats = $state(false);
+  function toRooms() {
+    document.getElementById('rooms-h')?.scrollIntoView({ behavior: motion.still ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  /**
+   * A room joined from the Open rooms list: with the list as a menu its row
+   * is Join's. In the actions layout the list sits below Today's unique, out
+   * of sight of Join's box, so the room tapped shows it in its own place.
+   */
   function joinListed(roomCode: string) {
     if (connecting) return;
     const n = knownName();
-    if (!n) {
+    const inPlace = !!n && compact.current;
+    if (inPlace) {
+      // Join's field up the page is left as it was (nobody typed this code); a Code too short notice still up goes.
+      if (shortNotice !== null) toasts.dismiss(shortNotice);
+      shortNotice = null;
+    } else {
+      // Join's row takes it on: the code in its field (whole now, so a Code too short notice still up goes).
       code = roomCode;
-      open = 'join';
-      cursor = ENTRIES.indexOf('join');
-      void tick().then(() => nameField?.focus());
+      codeChanged();
+    }
+    if (!n) {
+      askName();
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    code = roomCode;
-    startJoin(roomCode, n);
+    startJoin(roomCode, n, inPlace ? 'rooms' : 'join');
   }
 
   // A join that ends back here without a room (no such room, no answer):
-  // its code is the one to check, and the toast (session.fail) says why.
+  // its code is the one to check, and the toast (session.fail) says why. Not
+  // one tapped in the Open rooms list in its own place: nobody typed that code,
+  // and Join's field is out of sight up the page.
   let joining: string | null = null;
-  function startJoin(roomCode: string, n: string) {
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
     joining = roomCode;
-    busy = 'join';
+    busy = from;
     session.join(roomCode, n);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
   }
   function settle() {
-    if (joining && !session.state) {
+    if (joining && !session.state && busy !== 'rooms') {
       code = joining;
       codeError = true;
       if (!invite) open = 'join';
@@ -302,9 +395,9 @@
     e.preventDefault();
     const field = e.currentTarget as HTMLInputElement;
     const linked = /[?&]room=([^&#\s]+)/.exec(text)?.[1];
-    if (linked) code = cleanCode(linked);
-    else code = cleanCode(code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length));
-    codeError = false;
+    if (linked) code = linked;
+    else code = code.slice(0, field.selectionStart ?? code.length) + text + code.slice(field.selectionEnd ?? code.length);
+    codeChanged();
   }
 
   /** Arrows, Enter and Escape on the menu; not while typing (but Escape), in a dialog, or once something else has the screen. */
@@ -320,7 +413,7 @@
       }
       return;
     }
-    if (typing || connecting || renaming) return;
+    if (typing || connecting || renaming || compact.current) return;
     const next = cursorKey(e.key, cursor);
     if (next !== null) {
       e.preventDefault();
@@ -328,7 +421,7 @@
       entryEls[next]?.focus();
     } else if (e.key === 'Enter' && (!t || t === document.body)) {
       e.preventDefault();
-      void choose(ENTRIES[cursor]);
+      choose(ENTRIES[cursor]);
     }
   }
 
@@ -420,11 +513,57 @@
     hotseat: 'Everyone at one screen, passing it around.',
     codex: codexLine(discovered, total, deepest),
   });
+  const PAIR = [
+    { e: 'hotseat', name: 'Hot-seat' },
+    { e: 'codex', name: 'Codex' },
+  ] as const;
+  /** The pair's lines in one column, short enough for half a phone's width. */
+  const pairLines = $derived<Record<'hotseat' | 'codex', string[]>>({
+    hotseat: ['Pass one screen around.'],
+    codex: codexLines(discovered, total, deepest),
+  });
 </script>
 
-<svelte:window onkeydown={keys} onpointerdown={outside} />
+<svelte:window onkeydown={keys} onpointerdown={outsidePress} onclickcapture={outsideTap} />
 
-<div class="home" class:invited={!!invite}>
+<!-- Join's code field, in either layout: capitals, no autocorrect, a Go key. -->
+{#snippet codeInput(short: boolean)}
+  <input
+    class="field code"
+    class:short
+    class:bad={codeError}
+    bind:this={codeField}
+    bind:value={code}
+    oninput={codeChanged}
+    onpaste={pasteCode}
+    placeholder="Code"
+    maxlength={CODE_LENGTH}
+    autocomplete="off"
+    spellcheck="false"
+    aria-label="Room code"
+    aria-invalid={codeError}
+    autocapitalize="characters"
+    autocorrect="off"
+    enterkeyhint="go"
+  />
+{/snippet}
+
+<!-- An invite's name and Join, in either layout (in the actions layout under its heading, as Join's row is set). -->
+{#snippet inviteJoin(act: boolean)}
+  <div class="under">
+    {#if connecting}
+      <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+    {:else}
+      <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint={act ? 'go' : undefined} autofocus />
+        <button class="btn primary" type="submit">Join</button>
+      </form>
+    {/if}
+  </div>
+{/snippet}
+
+<div class="home" class:invited={!!invite} class:compact={compact.current}>
   <div class="intro">
     <div class="title">
       <GameTitle />
@@ -455,17 +594,20 @@
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
-        <p class="hello">
+        <p class="hello" class:named={!!known}>
           {known ? 'Welcome back,' : 'Welcome,'}
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
             <span class="who">{known || 'Exile'}.</span>
           {:else}
-            <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
-            <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
-              <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
-              <i>Change your name</i>
-            </button>
+            <!-- The name and its quill keep together, the name giving way (an ellipsis) before the quill would leave the screen. -->
+            <span class="you">
+              <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
+              <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
+                <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+                <i>Change your name</i>
+              </button>
+            </span>
           {/if}
         </p>
       {/if}
@@ -474,35 +616,101 @@
     <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
       <!-- One cursor for the menu: it glides to the entry under the mouse (or the
            keyboard's), and cools away once nothing is pointed at. -->
-      <MenuCursor at={cursor} {lit} />
-      {#if invite}
+      {#if !compact.current}<MenuCursor at={cursor} {lit} />{/if}
+      {#if invite && compact.current}
+        <!-- An invite in the actions layout: its join as Join's row is set, with the name, and the way to everything else as the pair's entries are. -->
+        <div class="act" in:fly={{ y: 12, duration: 500, delay: 450 }}>
+          <div class="act-top">
+            <h2 class="act-head" id="invite-label">{inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}</h2>
+          </div>
+          {@render inviteJoin(true)}
+        </div>
+        <div class="pair single" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 520 }}>
+          <button class="pair-pick" onclick={leaveInvite}>
+            <span class="pair-name">Something else<span class="go"><DrawnMark shape="chevron" /></span></span>
+            <span class="pair-line">Create your own room, play hot-seat, or open the Codex.</span>
+          </button>
+        </div>
+      {:else if invite}
         <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 450 }}>
           <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
             {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
           </button>
-          <div class="under">
-            {#if connecting}
-              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
-            {:else}
-              <form class="slot row" onsubmit={joinInvite} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                <!-- svelte-ignore a11y_autofocus -->
-                <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autofocus />
-                <button class="btn primary" type="submit">Join</button>
-              </form>
-            {/if}
-          </div>
+          {@render inviteJoin(false)}
         </div>
         <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
           <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
           <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
         </div>
+      {:else if compact.current}
+        <!-- Create a room: the page's one big button. On a first visit its row asks the name. -->
+        <div class="act" bind:this={boxes[0]} class:dimmed={connecting && busyEntry !== 'create'} inert={connecting && busyEntry !== 'create'} in:fly={{ y: 12, duration: 500, delay: 450 }}>
+          <!-- On a first visit the button gives way to the name and its own Create, in its place. -->
+          <div class="under">
+            {#if open === 'create' && !connecting}
+              <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                <button class="btn primary" type="submit">Create</button>
+              </form>
+            {:else}
+              <button class="btn primary big" bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>Create a room</button>
+            {/if}
+          </div>
+          <div class="under">
+            {#if busyEntry === 'create'}
+              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+            {:else}
+              <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about.create}</p>
+            {/if}
+          </div>
+        </div>
+        <!-- Join a room: the code field is always out; a first visit's name joins it when it's needed. -->
+        <div class="act" bind:this={boxes[1]} class:dimmed={connecting && busyEntry !== 'join'} inert={connecting && busyEntry !== 'join'} in:fly={{ y: 12, duration: 500, delay: 520 }}>
+          <div class="act-top">
+            <h2 class="act-head" id="join-label">Join a room</h2>
+            <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
+            {#if asking}
+              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
+            {:else if roomCount && !connecting}
+              <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
+                {roomSeats ? `${roomCount} open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount} ${roomCount === 1 ? 'room' : 'rooms'} to watch`}<span class="down"><DrawnMark shape="chevron" /></span>
+              </button>
+            {/if}
+          </div>
+          <div class="under">
+            {#if busyEntry === 'join'}
+              <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+            {:else}
+              <!-- The code, or on a first visit once it's whole, the name in its place: one field, where the last one was. -->
+              <form class="slot row join" onsubmit={phoneJoin} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
+                {#if asking}
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                {:else}
+                  {@render codeInput(false)}
+                {/if}
+                <!-- Lit once a join can go: until then Create a room is the page's one lit button. -->
+                <button class="btn" class:primary={joinReady} type="submit">Join</button>
+              </form>
+            {/if}
+          </div>
+        </div>
+        <!-- Hot-seat and the Codex: set as the list's entries are, side by side. -->
+        <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
+          {#each PAIR as { e, name } (e)}
+            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)}>
+              <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
+              {#each pairLines[e] as line}<span class="pair-line">{line}</span>{/each}
+            </button>
+          {/each}
+        </div>
       {:else}
         {#each ENTRIES as e, i (e)}
           {@const isOpen = open === e && !connecting}
-          {@const isBusy = connecting && (busy ?? (session.mode === 'host' ? 'create' : 'join')) === e}
+          {@const isBusy = busyEntry === e}
           <div
             class="entry"
             role="presentation"
+            bind:this={boxes[i]}
             class:cur={cursor === i}
             class:dimmed={connecting && !isBusy}
             inert={connecting && !isBusy}
@@ -527,21 +735,7 @@
                   {#if !known}
                     <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
                   {/if}
-                  <input
-                    class="field code"
-                    class:short={!known}
-                    class:bad={codeError}
-                    bind:this={codeField}
-                    bind:value={code}
-                    oninput={() => ((code = cleanCode(code)), (codeError = false))}
-                    onpaste={pasteCode}
-                    placeholder="Code"
-                    maxlength={CODE_LENGTH}
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="Room code"
-                    aria-invalid={codeError}
-                  />
+                  {@render codeInput(!known)}
                   <button class="btn primary" type="submit">Join</button>
                 </form>
               {:else}
@@ -563,8 +757,8 @@
   </div>
 
   {#if !invite}
-    <div class="rooms" class:dimmed={connecting} inert={connecting} in:fly={{ y: 20, duration: 600, delay: 600 }}>
-      <OpenRooms onJoin={joinListed} disabled={connecting} />
+    <div class="rooms" class:dimmed={connecting && busyEntry !== 'rooms'} inert={connecting && busyEntry !== 'rooms'} in:fly={{ y: 20, duration: 600, delay: 600 }}>
+      <OpenRooms onJoin={joinListed} disabled={connecting} joining={busyEntry === 'rooms' ? session.code : null} bind:count={roomCount} bind:seats={roomSeats} />
     </div>
   {/if}
 
@@ -597,7 +791,7 @@
   /* One stage, at most 1440 px wide and centred: two columns (the menu,
      Today's unique) at their own sizes, 1200 px across in all, then the open
      rooms across it, then the footer. Narrower windows give up side padding
-     (down to 32 px) before anything else, then stack in the phone's order.
+     (down to 32 px) before anything else, then stack in one column.
      Columns and rooms sit in the middle of the window's height, the footer at
      its bottom. On large windows the whole app is scaled up (lib/stage.ts,
      App.svelte's shell). */
@@ -685,21 +879,57 @@
 
   /* ---- the greeting ---- */
   .greeting {
-    height: 44px;
+    /* A long name wraps the greeting onto a second line. */
+    min-height: 44px;
     margin: 16px 0;
     display: flex;
     align-items: center;
   }
   .hello {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.3em;
+    gap: 0 0.3em;
+    min-width: 0;
+    /* Inside the greeting's 44 px on one line; two lines keep clear of what's under them. */
+    padding-block: 6px;
     margin: 0;
     font-family: var(--font-display);
     font-size: 20px;
     color: var(--gold);
   }
+  .you {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    /* The greeting's own gap, between the name and its quill too. */
+    gap: 0.3em;
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* With a mouse the quill shows only on hover: it takes no room in the line,
+     so a name wraps (or gives way to an ellipsis) only when its own words
+     don't fit. Where it stands is unchanged: past the name, the gap between. */
+  @media (hover: hover) {
+    .you .quill {
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      /* The gap from the name is the quill's own padding, so the mouse on its
+         way across from the name keeps the greeting hovered. */
+      margin-left: 0;
+      padding-left: calc(0.3em + 6px);
+      /* Centred on the name at its own height (translate is its slide in on hover). */
+      transform: translateY(-50%);
+      /* Its own width, not the name's: Change your name stays on one line. */
+      width: max-content;
+    }
+  }
   .who {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0;
     background: none;
     border: 0;
@@ -713,6 +943,7 @@
   }
   /* The rename affordance shows on hovering the greeting with a mouse, never at rest. */
   .quill {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -890,6 +1121,177 @@
   .dimmed {
     opacity: 0.45;
     pointer-events: none;
+  }
+
+  /* ---- the menu in one column (only rendered there) ---- */
+  .act {
+    position: relative;
+    margin-bottom: 26px;
+    transition: opacity 0.3s;
+  }
+  .btn.big {
+    width: 100%;
+    height: 54px;
+    font-size: 15px;
+    letter-spacing: 0.14em;
+  }
+  .act .about {
+    margin: 8px 0 0;
+  }
+  .act .slot {
+    margin-top: 12px;
+  }
+  .act .slot.tall {
+    margin-top: 0;
+  }
+  .slot.row.tall .field,
+  .slot.row.tall .btn {
+    height: 54px;
+  }
+  .slot.row.tall .btn {
+    flex: none;
+    width: 120px;
+  }
+  .act-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  /* Join's heading is a label, not a thing to tap: small spaced capitals,
+     as the kicker under the title is set, so it never reads as an entry. */
+  .act-head {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #a99c86;
+  }
+  /* Hot-seat and the Codex as the list's entries are set, a size down, each
+     with a chevron that says it goes somewhere. */
+  .pair-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 25px;
+    line-height: 30px;
+    color: #d9c08a;
+    transition:
+      color 1.2s ease,
+      text-shadow 1.2s ease;
+  }
+  .go {
+    --mark-size: 10px;
+    --mark-stroke: 1.6px;
+    color: var(--gold);
+    translate: 0 1px;
+    transition: translate 0.2s var(--ease-out);
+  }
+  .pair-pick:hover .go,
+  .pair-pick:active .go {
+    translate: 3px 1px;
+  }
+  .act-top + .under .slot {
+    margin-top: 0;
+  }
+  /* The row's height while it connects too, so what's under it stays put. */
+  .act-top + .under {
+    min-height: 44px;
+  }
+  .to-rooms {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    /* A tap target of 44 px around one line of text. */
+    margin: -12px 0;
+    padding: 12px 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font-style: italic;
+    font-size: 15px;
+    color: var(--gold);
+    white-space: nowrap;
+  }
+  .to-rooms:hover {
+    color: var(--gold-hi);
+  }
+  /* A room code is set in Cinzel, as everywhere else. */
+  .shown-code {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    letter-spacing: 0.08em;
+  }
+  .to-rooms .down {
+    --mark-size: 9px;
+    --mark-stroke: 1.4px;
+    rotate: 90deg;
+  }
+  /* The code field reads as one to type in: its edge drawn, its placeholder lit a step. */
+  .act .code:not(.bad) {
+    border-color: var(--gold-lo);
+  }
+  .act .code::placeholder {
+    color: #8a7d68;
+  }
+  .slot.row.join .code,
+  .slot.row.join .name {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .slot.row.join .btn {
+    flex: none;
+    width: 104px;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    transition: opacity 0.3s;
+  }
+  .pair.single {
+    grid-template-columns: 1fr;
+  }
+  .pair-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-height: 44px;
+    padding: 2px 0;
+    text-align: left;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* A hairline between the two, fading out at both ends as the footer's rule does. */
+  .pair-pick + .pair-pick {
+    padding-left: 18px;
+    border-left: 1px solid transparent;
+    border-image: linear-gradient(180deg, transparent, rgba(125, 99, 51, 0.55) 30%, rgba(125, 99, 51, 0.55) 70%, transparent) 1;
+  }
+  /* Lit as the list's entry under the cursor is: on hover, and while pressed. */
+  .pair-pick:hover .pair-name,
+  .pair-pick:active .pair-name {
+    color: #fff1cf;
+    text-shadow: 0 0 18px rgba(241, 217, 155, 0.35);
+    transition:
+      color 0.2s,
+      text-shadow 0.25s;
+  }
+  .pair-pick:focus-visible {
+    outline-offset: 4px;
+  }
+  .pair-line {
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.3;
+    color: #ab9d88;
   }
 
   /* ---- the footer band ---- */
@@ -1081,8 +1483,8 @@
     }
   }
 
-  /* Too narrow for the two columns side by side: one column, in the phone's
-     order (the menu, the open rooms, then Today's unique). */
+  /* Too narrow for the two columns side by side: one column, at most 560 px
+     wide (the menu, the open rooms, then Today's unique). */
   @media (max-width: 1080px) {
     .home {
       grid-template-columns: minmax(0, 560px);
@@ -1102,15 +1504,35 @@
     .today {
       padding-top: 32px;
     }
+    /* The actions layout: Today's unique straight after them, the open rooms
+       last (Join points down to them when there are any). */
+    .home.compact {
+      grid-template-areas:
+        '.'
+        'intro'
+        'today'
+        'rooms'
+        '.'
+        'foot';
+    }
+    .compact .rooms {
+      margin-top: 40px;
+    }
+    .compact .today {
+      padding-top: 14px;
+    }
+    /* An invite's room starts with a heading, not the daily's art with its own air above it. */
+    .compact.invited .today {
+      padding-top: 40px;
+    }
     .band {
       flex-direction: column;
       gap: 14px;
     }
   }
-  /* Phones: the menu, the open rooms, then Today's unique; no cursor. */
+  /* Phones: tighter gutters and a smaller title (the column stays at most 560 px); no cursor. */
   @media (max-width: 640px) {
     .home {
-      grid-template-columns: minmax(0, 1fr);
       padding: 28px 16px 20px;
     }
     .intro {
@@ -1159,15 +1581,48 @@
     .slot.row .btn {
       flex: 1 0 auto;
     }
-    .rooms {
-      margin-top: 16px;
-    }
-    .today {
-      padding-top: 40px;
-    }
     .made {
       flex-direction: column;
       gap: 14px;
+    }
+  }
+  /* One column on a short screen (a phone on its side): the phone's title,
+     so the actions start within the first screen. Not on a phone upright,
+     whose window some browsers shorten while the keyboard is up: the page
+     would shift under the field being typed in. */
+  @media (min-width: 641px) and (max-width: 1080px) and (max-height: 520px) {
+    /* The actions layout only: a mouse's list keeps its title. */
+    .home.compact {
+      padding-top: 16px;
+    }
+    .compact .intro {
+      --title-size: 54px;
+    }
+    .compact .greeting {
+      margin: 6px 0 4px;
+    }
+  }
+  /* Touch never hovers the greeting: the quill shows at rest beside the name
+     (its ring alone, in a tap target of 44 px), so renaming can be found. */
+  @media (hover: none) {
+    .named .quill:not(:disabled) {
+      /* The 44 px target's padding stands clear of the name: the ring itself sits 8 px from it. */
+      margin: -8px -8px -8px -0.3em;
+      padding: 8px;
+      opacity: 1;
+      visibility: visible;
+      translate: 0 0;
+    }
+    .quill .ring {
+      width: 28px;
+      height: 28px;
+    }
+    .quill i {
+      display: none;
+    }
+    button.who {
+      margin: -10px 0;
+      padding: 10px 0;
     }
   }
   @media (pointer: coarse) {
