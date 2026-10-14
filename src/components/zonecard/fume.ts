@@ -11,13 +11,16 @@ import { C, glints, puffs } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
 import { IN, times, type FamilyMotion } from './family';
+import dither from '../../assets/dither.png';
 
 // The fog's mask. Its fade is a Gaussian, the falloff a blur leaves (the
 // shape the fog always had), eased to nothing at the edge with no slope left,
 // so it ends without a line where it stops (a stop every 2.5%, so the straight
 // runs between them leave no kink). So faint a glow over so much of the
 // screen bands in 8 bits, so the mask carries the dither too (app.css,
-// --dither): it stirs the fog's opacity a little, a different amount each
+// --dither, imported here: in an inline style the variable's url resolves
+// against the page, where the built tile isn't, and with that layer gone the
+// fog is the weight's flat ellipse): it stirs the fog's opacity a little, a different amount each
 // pixel, and the bands dissolve (a blur would average it away). Mask layers
 // composite bottom up, each over what is below: the dither cut by a weight,
 // then the fade laid over it. Over the fade, the dither only shows through
@@ -37,7 +40,7 @@ const FOG_MASK = [
     const k = DITHER_MEAN * weight(r);
     return (fade(r) - k) / (1 - k);
   }),
-  'var(--dither)',
+  `url(${dither})`,
   radial(weight),
 ].join(',');
 
