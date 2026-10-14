@@ -19,14 +19,17 @@ export const fume: FamilyMotion = {
     // its edge. So faint a glow over so much of the screen bands in 8 bits, so
     // the mask carries the dither too (app.css, --dither): it stirs the fog's
     // opacity a little, a different amount each pixel, and the bands dissolve
-    // (a blur would average it away).
+    // (a blur would average it away). Added on its own the dither would lift
+    // the whole box a little, out to its hard edge, so it's first cut to an
+    // ellipse that fades out at the same edge as the fog (mask layers composite
+    // bottom up: the dither intersected with that ellipse, then the fade added).
     const fog = document.createElement('span');
     fog.className = 'fog';
     fog.style.cssText = [
       'position:absolute;inset:-0.6em -1.2em;pointer-events:none;opacity:0',
       'background:color-mix(in srgb, var(--accent) 34%, transparent)',
-      'mask-image:radial-gradient(closest-side, #000, rgb(0 0 0 / 0.86) 20%, rgb(0 0 0 / 0.55) 40%, rgb(0 0 0 / 0.26) 60%, rgb(0 0 0 / 0.08) 80%, transparent),var(--dither)',
-      'mask-size:100% 100%,auto;mask-repeat:no-repeat,repeat;mask-composite:add;image-rendering:pixelated',
+      'mask-image:radial-gradient(closest-side, #000, rgb(0 0 0 / 0.86) 20%, rgb(0 0 0 / 0.55) 40%, rgb(0 0 0 / 0.26) 60%, rgb(0 0 0 / 0.08) 80%, transparent),var(--dither),radial-gradient(closest-side, #000 90%, transparent)',
+      'mask-size:100% 100%,auto,100% 100%;mask-repeat:no-repeat,repeat,no-repeat;mask-composite:add,intersect;image-rendering:pixelated',
     ].join(';');
     c.word.prepend(fog);
     c.play(fog, [{ opacity: 0, transform: 'scale(0.7, 0.5)' }, { opacity: 0.8, transform: 'scale(1)' }], { at: (c.tl.starts[0] ?? 1700) - 300, ms: 900, easing: 'ease-out' });
