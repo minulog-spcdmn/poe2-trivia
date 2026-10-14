@@ -44,17 +44,17 @@
    */
   const offer = (r: RoomInfo): 'join' | 'watch' | null => (joinable(r) ? 'join' : watchable(r) ? 'watch' : null);
   /**
-   * What the list shows for a room: what it offers, or, for a host on an
-   * older version, that they need to reload (only for a room that would offer
-   * something once they have). A newer version's rooms are left out: this
-   * page reloading brings them in, which the list says once for them all.
+   * What the list shows for a room: what it offers, or, for a host on a newer
+   * version, that this page has to reload first (only for a room that would
+   * offer something then). An older host's rooms are left out: only the host
+   * reloading could open them, nothing anyone here can do.
    */
-  function door(r: RoomInfo): 'join' | 'watch' | 'behind' | null {
+  function door(r: RoomInfo): 'join' | 'watch' | 'ahead' | null {
     const v = r.v ?? 0;
     if (v === PROTOCOL_VERSION) return offer(r);
-    return v < PROTOCOL_VERSION && offer({ ...r, v: PROTOCOL_VERSION }) ? 'behind' : null;
+    return v > PROTOCOL_VERSION && offer({ ...r, v: PROTOCOL_VERSION }) ? 'ahead' : null;
   }
-  const RANK = { join: 0, watch: 1, behind: 2 };
+  const RANK = { join: 0, watch: 1, ahead: 2 };
 
   /** Every room found, whatever it offers (what the scans merge). */
   let rooms = $state<RoomInfo[]>([]);
@@ -62,8 +62,8 @@
   let tapped = $state<{ room: RoomInfo; door: 'join' | 'watch' } | null>(null);
   /**
    * The rooms the list shows: those that can be got into from here, to play
-   * or to watch, and those an older host's reload would open. Locked ones,
-   * ones with no room left, and newer hosts' are left out.
+   * or to watch, and those this page's reload would open. Locked ones, ones
+   * with no room left, and older hosts' are left out.
    */
   const shown = $derived.by(() => {
     const list = rooms.flatMap((room) => {
@@ -74,10 +74,8 @@
     return list;
   });
 
-  /** Rooms on a newer version than this page's that a reload would bring in (not locked or full ones, which it wouldn't). */
-  const newer = $derived(rooms.some((r) => (r.v ?? 0) > PROTOCOL_VERSION && offer({ ...r, v: PROTOCOL_VERSION }) !== null));
   /** How many rooms shown can be got into from here (not an older host's). */
-  const enterable = $derived(shown.filter((s) => s.door !== 'behind').length);
+  const enterable = $derived(shown.filter((s) => s.door !== 'ahead').length);
   /** Whether any room shown has a seat to take. */
   const seatFree = $derived(shown.some((s) => s.door === 'join'));
   $effect(() => {
@@ -176,7 +174,7 @@
   });
 
   function sortRooms(list: RoomInfo[]) {
-    const rank = (r: RoomInfo) => RANK[door(r) ?? 'behind'];
+    const rank = (r: RoomInfo) => RANK[door(r) ?? 'ahead'];
     return list.sort((a, b) => rank(a) - rank(b) || b.players - a.players || a.host.localeCompare(b.host));
   }
 
@@ -189,9 +187,6 @@
     };
   });
 </script>
-
-<!-- Reload, set as a link in its sentence: a newer version's rooms come in with it. -->
-{#snippet reload()}<button class="reload" {disabled} onclick={() => location.reload()}>reload</button>{/snippet}
 
 <section class="rooms" aria-labelledby="rooms-h">
   <header>
@@ -211,14 +206,11 @@
     </button>
     {#if enterable}<p class="note">{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/if}
   </header>
-  {#if newer && shown.length}
-    <p class="newer">More rooms are open on a newer version of the game: {@render reload()} to see them.</p>
-  {/if}
 
   {#if shown.length}
     <ul>
       {#each shown as { room: r, door: d } (r.code)}
-        <li class:dimmed={!!joining && r.code !== joining} class:behind={d === 'behind'} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
+        <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
           {#if r.code === joining}
             <!-- Joining it: the connection, with its Cancel, where the room was tapped. -->
             <Connecting />
@@ -232,16 +224,12 @@
             {:else if d === 'watch'}
               <button class="btn small ghost" {disabled} onclick={() => tap(r, 'watch')} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
             {:else}
-              <span class="status" title="The host is on an older version of the game">Older version</span>
+              <button class="btn small ghost" {disabled} onclick={() => location.reload()} title="This room is on a newer version of the game">Reload to join</button>
             {/if}
           {/if}
         </li>
       {/each}
     </ul>
-  {:else if newer && scanned && !failed}
-    <!-- Kept up through the refreshes (the rooms found stay known while the next scan runs), so its reload never goes from under a finger.
-         One span, so the tile (a flex row, for the searching dots) keeps the sentence whole around its button. -->
-    <p class="empty"><span>Rooms are open on a newer version of the game: {@render reload()} to join them.</span></p>
   {:else if scanned && rooms.length && !failed}
     <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
     <p class="empty">No room can be joined from here right now.</p>
@@ -289,31 +277,6 @@
     font-style: italic;
     font-size: 15px;
     color: #a99c86;
-  }
-  /* Rooms this page's version leaves out: a line under the heading. */
-  .newer {
-    margin: -6px 0 12px;
-    font-style: italic;
-    font-size: 15px;
-    color: #a99c86;
-  }
-  /* Reload, set as a link in its sentence. */
-  .reload {
-    padding: 0;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    font: inherit;
-    color: var(--gold);
-    text-decoration: underline;
-    text-decoration-color: var(--gold-lo);
-    text-underline-offset: 3px;
-  }
-  .reload:hover {
-    color: var(--gold-hi);
-  }
-  .reload:disabled {
-    cursor: default;
   }
   .refresh {
     width: 32px;
@@ -384,8 +347,7 @@
       box-shadow 0.25s,
       opacity 0.3s;
   }
-  /* Lit only where there is something to do: an older host's room has no button. */
-  li:hover:not(.behind) {
+  li:hover {
     border-color: var(--gold-lo);
     box-shadow:
       inset 0 1px 0 rgba(255, 220, 150, 0.06),
@@ -410,13 +372,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .meta,
-  .status {
+  .meta {
     font-size: 15px;
     color: var(--muted);
-  }
-  .status {
-    font-style: italic;
   }
   /* Nothing to list: one dashed tile across the row, as tall as a room's,
      so the first room to open doesn't move the page. */
@@ -487,11 +445,6 @@
     }
   }
   @media (pointer: coarse) {
-    /* A tap target of 44 px around the word, the line's spacing unchanged. */
-    .reload {
-      padding-block: 12px;
-      margin-block: -12px;
-    }
     .refresh {
       width: 44px;
       height: 44px;
