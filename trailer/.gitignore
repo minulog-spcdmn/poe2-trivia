@@ -1,0 +1,6 @@
+# Rendered media stays out of git: the videos, the music, the game sounds, thumbnails and captures.
+*.mp4
+*.wav
+*.jpg
+*.png
+sfx/
