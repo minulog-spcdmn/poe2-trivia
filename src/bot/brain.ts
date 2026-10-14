@@ -269,16 +269,18 @@ export function answerDelay(p: Persona, ask: Ask, knows: boolean, rng: Rng): num
 
 /**
  * Burning in: how much of the item it needs in view to make up its mind
- * (0 to 1). Knowing it, a fair share less than half typically, a favourite
- * a sliver, more where look-alikes and made-up names crowd it; not knowing
- * it, it watches most of it come in before it guesses. Spread wide, as
- * people's are: a sharp eye (Persona.eye) on a good day goes on very little,
- * and now and then a trigger-happy player goes before they're sure (`early`:
- * then it's a guess more often than not).
+ * (0 to 1). As recorded (deep Delve, the game's maker: 15 of 16 right, yet
+ * never clicked on less than about 72% of the item, mostly on 90% and more,
+ * often still deciding once it was all in): knowing it, more than half,
+ * nearly all of it where look-alikes and made-up names crowd it; a
+ * favourite about half that; not knowing it, most of it before it guesses.
+ * Spread wide: a sharp eye (Persona.eye) on a good day goes on far less;
+ * and now and then a trigger-happy player goes before they're sure
+ * (`early`: then it's a guess more often than not).
  */
 export function sightNeeded(p: Persona, ask: Ask, knows: boolean, rng: Rng): { share: number; early: boolean } {
-  const base = !knows ? 0.6 + 0.35 * rng() : (ask.favourite ? 0.09 : 0.24) * (1 + 2.5 * hardness({ ...ask, veil: 0 }));
-  let share = base * (knows ? p.eye * Math.exp(0.5 * gauss(rng)) : 1);
+  const base = !knows ? 0.75 + 0.25 * rng() : (ask.favourite ? 0.29 : 0.53) * (1 + 3.5 * hardness({ ...ask, veil: 0 }));
+  let share = base * (knows ? p.eye * Math.exp(0.4 * gauss(rng)) : 1);
   const early = knows && rng() < 0.25 * p.haste;
   if (early) share *= 0.5;
   return { share: clamp(share, 0.03, 1), early };

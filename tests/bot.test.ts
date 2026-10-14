@@ -645,7 +645,7 @@ test('a wrong pick falls for look-alike art too', () => {
   assert.ok(c2[3] > c2[2] && c2[1] > c2[2], `${c2}`);
 });
 
-test('burning in, how much it needs to see: a sliver for a favourite, most of it when it doesn\'t know, spread wide', () => {
+test('burning in, how much it needs to see: more than half knowing it, about half that for a favourite, most of it not knowing it, spread wide', () => {
   const rng = seeded(5);
   const med = (f: () => number) => {
     const v = Array.from({ length: 2001 }, f).sort((a, b) => a - b);
@@ -655,12 +655,17 @@ test('burning in, how much it needs to see: a sliver for a favourite, most of it
   const fav = med(() => sightNeeded(plain, { ...a, favourite: true }, true, rng).share);
   const known = med(() => sightNeeded(plain, a, true, rng).share);
   const unknown = med(() => sightNeeded(plain, a, false, rng).share);
-  assert.ok(fav < 0.15 && fav < known && known < 0.45 && unknown > 0.6, `${fav} ${known} ${unknown}`);
-  // A sharp eye goes on less; now and then well under 15%.
+  // As recorded: knowing it, more than half of it; a favourite about half that; not knowing it, most of it.
+  assert.ok(fav < 0.4 && fav < known && known > 0.5 && known < 0.75 && unknown > 0.75, `${fav} ${known} ${unknown}`);
+  // Deep in Delve, crowded by look-alikes: nearly all of it.
+  // (Depth 100's rules: names alike, three made-up ones, art alike, grey and flipped.)
+  const deep = { ...a, gray: true, mirrored: true, rules: { ...a.rules, similarNames: 1, fakes: 3, lookalikes: 0.72 } };
+  assert.ok(med(() => sightNeeded(plain, deep, true, rng).share) > 0.8);
+  // A sharp eye goes on less; a favourite now and then on under 15%.
   const sharp = { ...plain, eye: 0.6 };
   assert.ok(med(() => sightNeeded(sharp, a, true, rng).share) < known);
-  const low = Array.from({ length: 2000 }, () => sightNeeded(sharp, a, true, rng).share).filter((x) => x < 0.15).length;
-  assert.ok(low > 200, `${low}`);
+  const low = Array.from({ length: 2000 }, () => sightNeeded(sharp, { ...a, favourite: true }, true, rng).share).filter((x) => x < 0.15).length;
+  assert.ok(low > 100, `${low}`);
   for (let i = 0; i < 500; i++) {
     const n = sightNeeded(plain, a, i % 2 === 0, rng).share;
     assert.ok(n >= 0.03 && n <= 1);
