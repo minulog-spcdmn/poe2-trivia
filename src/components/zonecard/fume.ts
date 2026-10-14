@@ -12,21 +12,46 @@ import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
 import { IN, times, type FamilyMotion } from './family';
 
+// The fog's mask. Its fade is a Gaussian, the falloff a blur leaves (the
+// shape the fog always had), eased to nothing at the edge with no slope left,
+// so it ends without a line where it stops (a stop every 2.5%, so the straight
+// runs between them leave no kink). So faint a glow over so much of the
+// screen bands in 8 bits, so the mask carries the dither too (app.css,
+// --dither): it stirs the fog's opacity a little, a different amount each
+// pixel, and the bands dissolve (a blur would average it away). Mask layers
+// composite bottom up, each over what is below: the dither cut by a weight,
+// then the fade laid over it. Over the fade, the dither only shows through
+// what the fade leaves, so the fade peaks at half (the colour twice as strong
+// to match) and the dither stirs the core too. On its own it would also
+// brighten the fog by its mean, out to the box's hard edge, so the fade is
+// lowered by that mean; in its last wisps, fainter than the mean, the weight
+// thins the dither just enough that the two still average to the fade.
+const DITHER_MEAN = 5 / 255; // the --dither tile's mean opacity
+const PEAK = 0.5;
+const fade = (r: number) => PEAK * Math.exp((-r * r) / 0.27) * (1 - r ** 8) ** 2;
+const weight = (r: number) => Math.min(1, fade(r) / DITHER_MEAN);
+const radial = (f: (r: number) => number) =>
+  `radial-gradient(closest-side, ${Array.from({ length: 41 }, (_, i) => `rgb(0 0 0 / ${f(i / 40).toFixed(4)}) ${i * 2.5}%`).join(', ')})`;
+const FOG_MASK = [
+  radial((r) => {
+    const k = DITHER_MEAN * weight(r);
+    return (fade(r) - k) / (1 - k);
+  }),
+  'var(--dither)',
+  radial(weight),
+].join(',');
+
 export const fume: FamilyMotion = {
   enter(c) {
     // The fog, soft from the first, only moved and faded: the zone's colour,
-    // shaped by a mask that falls off smoothly (as a blur would) to nothing at
-    // its edge. So faint a glow over so much of the screen bands in 8 bits, so
-    // the mask carries the dither too (app.css, --dither): it stirs the fog's
-    // opacity a little, a different amount each pixel, and the bands dissolve
-    // (a blur would average it away).
+    // shaped by the mask above.
     const fog = document.createElement('span');
     fog.className = 'fog';
     fog.style.cssText = [
       'position:absolute;inset:-0.6em -1.2em;pointer-events:none;opacity:0',
-      'background:color-mix(in srgb, var(--accent) 34%, transparent)',
-      'mask-image:radial-gradient(closest-side, #000, rgb(0 0 0 / 0.86) 20%, rgb(0 0 0 / 0.55) 40%, rgb(0 0 0 / 0.26) 60%, rgb(0 0 0 / 0.08) 80%, transparent),var(--dither)',
-      'mask-size:100% 100%,auto;mask-repeat:no-repeat,repeat;mask-composite:add;image-rendering:pixelated',
+      `background:color-mix(in srgb, var(--accent) ${34 / PEAK}%, transparent)`,
+      `mask-image:${FOG_MASK}`,
+      'mask-size:100% 100%,auto,100% 100%;mask-repeat:no-repeat,repeat,no-repeat;mask-composite:add,intersect;image-rendering:pixelated',
     ].join(';');
     c.word.prepend(fog);
     c.play(fog, [{ opacity: 0, transform: 'scale(0.7, 0.5)' }, { opacity: 0.8, transform: 'scale(1)' }], { at: (c.tl.starts[0] ?? 1700) - 300, ms: 900, easing: 'ease-out' });
