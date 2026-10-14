@@ -12,23 +12,41 @@ import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
 import { IN, times, type FamilyMotion } from './family';
 
+// The fog's mask. Its fade is a Gaussian, the falloff a blur leaves (the
+// shape the fog always had), eased to nothing at the edge with no slope left,
+// so it ends without a line where it stops. So faint a glow over so much of
+// the screen bands in 8 bits, so the mask carries the dither too (app.css,
+// --dither): it stirs the fog's opacity a little, a different amount each
+// pixel, and the bands dissolve (a blur would average it away). Added on its
+// own the dither would also brighten the fog by its mean, out to the box's
+// hard edge, so it's weighted by a second ellipse that fades with the fog
+// (mask layers composite bottom up: the dither intersected with the weight,
+// then the fade added), and the fade is lowered by what the dither adds on
+// average: the dither only stirs it.
+const DITHER_MEAN = 5 / 255; // the --dither tile's mean opacity
+const fade = (r: number) => Math.exp((-r * r) / 0.27) * (1 - r ** 8) ** 2;
+const weight = (a: number) => a / (a + DITHER_MEAN);
+const radial = (f: (r: number) => number) =>
+  `radial-gradient(closest-side, ${Array.from({ length: 21 }, (_, i) => `rgb(0 0 0 / ${f(i / 20).toFixed(4)}) ${i * 5}%`).join(', ')})`;
+const FOG_MASK = [
+  radial((r) => {
+    const k = DITHER_MEAN * weight(fade(r));
+    return (fade(r) - k) / (1 - k);
+  }),
+  'var(--dither)',
+  radial((r) => weight(fade(r))),
+].join(',');
+
 export const fume: FamilyMotion = {
   enter(c) {
     // The fog, soft from the first, only moved and faded: the zone's colour,
-    // shaped by a mask that falls off smoothly (as a blur would) to nothing at
-    // its edge. So faint a glow over so much of the screen bands in 8 bits, so
-    // the mask carries the dither too (app.css, --dither): it stirs the fog's
-    // opacity a little, a different amount each pixel, and the bands dissolve
-    // (a blur would average it away). Added on its own the dither would lift
-    // the whole box a little, out to its hard edge, so it's first cut to an
-    // ellipse that fades out at the same edge as the fog (mask layers composite
-    // bottom up: the dither intersected with that ellipse, then the fade added).
+    // shaped by the mask above.
     const fog = document.createElement('span');
     fog.className = 'fog';
     fog.style.cssText = [
       'position:absolute;inset:-0.6em -1.2em;pointer-events:none;opacity:0',
       'background:color-mix(in srgb, var(--accent) 34%, transparent)',
-      'mask-image:radial-gradient(closest-side, #000, rgb(0 0 0 / 0.86) 20%, rgb(0 0 0 / 0.55) 40%, rgb(0 0 0 / 0.26) 60%, rgb(0 0 0 / 0.08) 80%, transparent),var(--dither),radial-gradient(closest-side, #000 90%, transparent)',
+      `mask-image:${FOG_MASK}`,
       'mask-size:100% 100%,auto,100% 100%;mask-repeat:no-repeat,repeat,no-repeat;mask-composite:add,intersect;image-rendering:pixelated',
     ].join(';');
     c.word.prepend(fog);
