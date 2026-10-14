@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -39,6 +39,15 @@ test('the next one is counted in whole hours, rounded up, then minutes in the la
   assert.equal(nextIn(at('2026-10-09T23:50:00Z'), 'daily'), 'next daily in 10 minutes');
   assert.equal(nextIn(at('2026-10-09T13:00:00Z'), 'daily'), 'next daily in 11 hours');
   assert.doesNotMatch(nextIn(at('2026-10-09T13:00:00Z')), /\dh\b/);
+});
+
+test('the countdown is ticked on just as a minute ends', () => {
+  assert.equal(untilNextMinute(at('2026-10-09T23:12:59.000Z')), 1000);
+  assert.equal(untilNextMinute(at('2026-10-09T23:12:00.000Z')), 60_000);
+  assert.equal(untilNextMinute(at('2026-10-09T23:12:00.001Z')), 59_999);
+  // Where it ticks, the minutes left have just gone down.
+  const t = at('2026-10-09T23:12:34.567Z');
+  assert.equal(minutesLeft(t + untilNextMinute(t)), minutesLeft(t) - 1);
 });
 
 test("the day's question is the same every time it is dealt", () => {

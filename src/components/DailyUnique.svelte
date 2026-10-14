@@ -14,7 +14,7 @@
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
-  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, utcDay } from '../lib/daily';
+  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, untilNextMinute, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -26,30 +26,34 @@
   let { disabled = false }: { disabled?: boolean } = $props();
 
   // The clock moves on (the hours or minutes left, and past midnight UTC a new day):
-  // every minute, and at once when the tab is looked at again (a tab in the
-  // background ticks seldom). The server's time where it can say (lib/clock:
-  // asked once, and again only when it had no reply, or this device's clock
-  // has jumped since), and at once when the device is back online.
+  // just past each whole minute, when the minutes left go down, and at once
+  // when the tab is looked at again (a tab in the background ticks seldom).
+  // The server's time where it can say (lib/clock: asked once, and again only
+  // when it had no reply, or this device's clock has jumped since), and at
+  // once when the device is back online.
   let now = $state(clock.now());
   let alive = true;
   onMount(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
       now = clock.now();
       mendClockAhead();
+      // (Again from each tick, so a clock the server has just set right keeps to its minutes.)
+      clearTimeout(t);
+      if (alive) t = setTimeout(refresh, untilNextMinute(now) + 50);
     };
     const refresh = () => {
       tick();
       void clock.refresh()?.then(tick);
     };
     refresh();
-    const t = setInterval(refresh, 60_000);
     const seen = () => document.visibilityState === 'visible' && refresh();
     const online = () => void clock.sync().then(tick);
     document.addEventListener('visibilitychange', seen);
     addEventListener('online', online);
     return () => {
       alive = false;
-      clearInterval(t);
+      clearTimeout(t);
       document.removeEventListener('visibilitychange', seen);
       removeEventListener('online', online);
     };

@@ -43,6 +43,9 @@ export const hoursLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1)
 /** Whole minutes until the next UTC day, rounded up (1 to 1440). */
 export const minutesLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / MINUTE_MS));
 
+/** Milliseconds until the next whole minute (1 to 60000), when minutesLeft next goes down. */
+export const untilNextMinute = (ms: number) => MINUTE_MS - (((ms % MINUTE_MS) + MINUTE_MS) % MINUTE_MS);
+
 /**
  * "next in 11 hours", or with `what` named, "next daily in 11 hours"; in the
  * last hour, minutes ("next in 25 minutes"). Always the whole word: a lone
