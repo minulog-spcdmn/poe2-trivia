@@ -8,10 +8,15 @@
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { afterSeeing, answerDelay, inspects, readingTime, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { FADING, afterSeeing, answerDelay, carryCap, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
 import { looksOf } from './lookalike';
 import { Recall } from './recall';
+import { NAMES } from './identities';
+import { VISITORS } from './visitors';
+
+/** The bots' names: anyone else in a room is a person. */
+const CAST = new Set([...NAMES, ...VISITORS]);
 export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
@@ -98,6 +103,8 @@ export class Player {
   private answers = 0;
   /** A race question it let go by, not sure, and how it saw it then (calmPick). */
   private satOut: { askedAt: number; ask: Ask; seen: number | null } | null = null;
+  /** Delve together: what each of the people on the team has shown of their answers this run (carryCap). */
+  private people = new Map<string, Showing>();
   /** Whether it knew the item of the question it last made up its mind on (by its askedAt). */
   private knew: { askedAt: number; knows: boolean } | null = null;
   /** Someone else's reveals it has seen (as a guest, in turns), and whether it has learned it can't move those on. */
@@ -126,6 +133,7 @@ export class Player {
     if ((s.startedAt ?? 0) !== this.game) {
       this.game = s.startedAt ?? 0;
       this.misses = 0;
+      this.people.clear();
       this.reset();
     }
     if (s.phase === 'question' && s.question) watchVeil(s.question);
@@ -169,7 +177,51 @@ export class Player {
     else if (s.players[s.turn]?.id === me) mine = r.correct;
     if (mine === true) this.misses = 0;
     else if (mine === false) this.misses++;
+    if (s.delve && isGroupRun(s)) this.notePeople(s);
     this.planInspect(s, mine === false ? 'missed' : this.knew?.askedAt === q.askedAt ? (this.knew.knows ? 'known' : 'unknown') : 'known');
+  }
+
+  /**
+   * Delve together: how each of the people on the team did on this
+   * question, as anyone sees it: right, wrong, or out of time (cleared by
+   * someone else first, it says nothing of them). What they showed before
+   * counts for a little less each time: deeper down, it says less.
+   */
+  private notePeople(s: GameState) {
+    const q = s.question!;
+    const r = s.reveal!;
+    for (const seen of this.people.values()) {
+      seen.right *= FADING;
+      seen.wrong *= FADING;
+      seen.out *= FADING;
+    }
+    for (const p of s.players) {
+      if (p.id === session.myPlayerId || CAST.has(p.name)) continue;
+      const seen = this.people.get(p.id) ?? { right: 0, wrong: 0, out: 0 };
+      if (r.winnerId === p.id) seen.right++;
+      else if (q.struck?.some((x) => x.by === p.id)) seen.wrong++;
+      else if (r.hits?.some((h) => h.playerId === p.id && h.timedOut)) seen.out++;
+      this.people.set(p.id, seen);
+    }
+  }
+
+  /**
+   * Delve together with people: the most its chance of knowing an answer may
+   * be (carryCap), so the bots on the team play to the people's level and
+   * never carry them, however many bots there are. 1 (no cap) with no
+   * people on the team.
+   */
+  private capFor(s: GameState): number {
+    if (!s.delve || !isGroupRun(s)) return 1;
+    const standing = standingIds(s);
+    const players = s.players.filter((p) => s.delve!.entrants.includes(p.id));
+    const people = players.filter((p) => !CAST.has(p.name) && p.id !== session.myPlayerId);
+    if (!people.length) return 1;
+    const bots = players.filter((p) => (CAST.has(p.name) || p.id === session.myPlayerId) && standing.includes(p.id)).length;
+    return carryCap(
+      people.map((p) => skillShown(this.people.get(p.id) ?? { right: 0, wrong: 0, out: 0 })),
+      Math.max(1, bots),
+    );
   }
 
   /**
@@ -439,6 +491,8 @@ export class Player {
       const key = `revive:${p.id}:${s.turnCount}`;
       if (this.decided.has(key)) continue;
       this.decided.add(key);
+      // Most do, not all, not every time.
+      if (!revives(this.persona, Math.random)) continue;
       const now = session.hostNow();
       this.plans.set(key, {
         at: now + dealIn(s, now) + between(1500, 5000) * this.persona.pace,
@@ -560,7 +614,8 @@ export class Player {
       tired: tiredness((Date.now() - this.since) / 60000),
     };
     // The same player knows the same items, and misses the same ones (but for a lapse now and then).
-    const knows = knowsIt(knowChance(this.persona, ask), itemDraw(this.persona.seed, item), Math.random);
+    // With people on a Delve team, no more than their level allows (capFor).
+    const knows = knowsIt(Math.min(knowChance(this.persona, ask), this.capFor(s)), itemDraw(this.persona.seed, item), Math.random);
     this.knew = { askedAt: q.askedAt, knows };
     const delay = answerDelay(this.persona, ask, knows, Math.random);
     if (delay === null) {
@@ -676,6 +731,10 @@ export class Player {
       if (o.deadline - margin > session.hostNow() + 300) return void this.plans.set(key, { at: o.deadline - margin, run });
       if (fuseDue(cur)) return log('holds: the dynamite goes off by itself');
       if (teamItemReady(cur, 'flares') && !o.flared) return void this.plans.set(key, { at: o.deadline + 400, run });
+      // With people on the team, a bot of their level mostly has no idea, and lets it go rather than guess
+      // (bots guessing one after another, each striking an option, would find it for them).
+      const cap = this.capFor(cur);
+      if (cap < 1 && Math.random() >= cap) return log('has no idea, lets it go');
       return this.answer(s, q, false, ask, (o.struck ?? []).map((x) => x.index), 'guesses near the end:', seen);
     };
     const at = Math.max(start + 1000, q.deadline! - margin);

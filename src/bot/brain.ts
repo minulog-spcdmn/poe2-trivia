@@ -326,6 +326,43 @@ export function panic(p: Persona, ask: Ask, delay: number, rng: Rng): { at: numb
  */
 export const blasts = (p: Persona, rng: Rng) => rng() < p.boldness;
 
+/** What a bot has seen of one of the people it's on a Delve team with: their answers right, wrong, and timed out (each fading as the run goes on). */
+export interface Showing {
+  right: number;
+  wrong: number;
+  out: number;
+}
+
+/** How likely someone is to know an answer before they've shown anything: a fair player's. */
+const TYPICAL = 0.7;
+/** How many answers' worth that guess counts for, against what they show. */
+const TYPICAL_WEIGHT = 3;
+/** How much an answer seen counts once the next question is over (the run goes deeper: what they knew higher up says less). */
+export const FADING = 0.85;
+
+/** How likely they are to know an answer, by what they've shown: a fair player's to begin with, their own as they show it. */
+export const skillShown = (r: Showing) => (r.right + TYPICAL * TYPICAL_WEIGHT) / (r.right + r.wrong + r.out + TYPICAL_WEIGHT);
+
+/** The bots on a team with people may together count for at most this many more players of the people's own level. */
+export const BOTS_COUNT_AS = 1.5;
+
+/**
+ * Delve together with people (`people`: how likely each is to know an
+ * answer, skillShown): the most a bot's chance of knowing one may be, with
+ * `bots` bots standing, so the bots never carry the people. Together they
+ * do as much as BOTS_COUNT_AS more players of the people's level would,
+ * however many of them there are: a strong team stays strong, and a weak
+ * one goes no deeper than it should for a few more bots.
+ */
+export function carryCap(people: number[], bots: number): number {
+  if (!people.length || bots <= 0) return 1;
+  const level = people.reduce((a, k) => a + k, 0) / people.length;
+  return 1 - (1 - level) ** (BOTS_COUNT_AS / bots);
+}
+
+/** Delve together: whether it gives a teammate who perished one of its lives, this time (most do, not all, not always). */
+export const revives = (p: Persona, rng: Rng) => rng() < 0.45 + 0.45 * p.sociable;
+
 /** What a find would put at stake for the bot (Delve). */
 export interface FindStake {
   lives: number;

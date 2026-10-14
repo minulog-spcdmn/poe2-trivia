@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOST_ODDS, afterSeeing, answerDelay, digsOn, inspects, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, inspects, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
@@ -840,4 +840,23 @@ test('digging a vein on: careful players mostly get out, gamblers and the carele
   // On a lamp all but out, the careful hardly ever; the careless hardly mind.
   const dark = { ...stake, light: 1.5 };
   assert.ok(rate(careful, dark) < 0.06 && rate(careless, dark) > 0.25, `${rate(careful, dark)} ${rate(careless, dark)}`);
+});
+
+test('Delve together with people: however many bots, the team does as well as the people would with a little help', () => {
+  assert.equal(carryCap([], 4), 1);
+  const team = (k: number, n: number) => 1 - (1 - k) * (1 - carryCap([k], n)) ** n;
+  for (const k of [0.3, 0.5, 0.8]) {
+    const one = team(k, 1);
+    for (const n of [2, 3, 5, 8]) assert.ok(Math.abs(team(k, n) - one) < 1e-9, `${k} ${n}`);
+    // A little help, never a carry: well short of what a full table of good bots would do.
+    assert.ok(one < 1 - (1 - k) * 0.05 && one > k);
+  }
+  // What they show moves it: a fair player's to begin with.
+  assert.ok(Math.abs(skillShown({ right: 0, wrong: 0, out: 0 }) - 0.7) < 1e-9);
+  assert.ok(skillShown({ right: 0, wrong: 4, out: 2 }) < 0.3);
+  assert.ok(skillShown({ right: 8, wrong: 0, out: 0 }) > 0.9);
+  // Most give a life to a teammate who perished, not all, not always.
+  const rng = seeded(3);
+  const rate = (sociable: number) => Array.from({ length: 4000 }, () => revives({ ...plain, sociable }, rng)).filter(Boolean).length / 4000;
+  assert.ok(rate(0) > 0.35 && rate(0) < 0.55 && rate(1) > 0.8 && rate(1) < 0.95);
 });
