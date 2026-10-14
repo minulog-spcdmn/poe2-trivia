@@ -542,9 +542,9 @@ browser's localStorage only (`src/lib/codex.ts`).
 
 The Codex has two tabs: **Collection** (the above) and **Delve**, built
 from the same parts. Alone and together are kept apart and never summed:
-alone leads (together, before your first run alone). Delve shows your
-deepest alone in the rune circle with the zone it reached, beside your
-deepest together, your runs (alone and together), your usual depth (the
+the kind you played most leads (on a tie, the one that got deeper). Delve
+shows that kind's deepest in the rune circle with the zone it reached,
+beside the other's deepest, your runs (alone and together), your usual depth (the
 median, after 3 runs) and the lives you lost, with the wards that saved one
 counted over the same runs; your last run in one row (where each life went
 and what took it, and together what you gave and were given); after 3

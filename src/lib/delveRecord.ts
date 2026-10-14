@@ -395,8 +395,21 @@ export function climbOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET)
   return r.climbs[bestKey(ruleset, solo)] ?? [];
 }
 
-/** The deepest this browser has been, in any run under any rules (0 before the first). */
-export const deepestEver = (r: DelveRecords) => r.frontier.at(-1)?.depth ?? 0;
+/**
+ * The deepest end alone or together under a ruleset (this one by default):
+ * the best's, or (if the best was lost, records written by a broken build)
+ * the tally's; 0 for none.
+ */
+export function deepestEnd(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET): number {
+  return bestOf(r, solo, ruleset)?.depth ?? Math.max(0, ...Object.keys(tallyOf(r, solo, ruleset).ends).map(Number));
+}
+
+/**
+ * Your deepest, as the start page and the codex's Delve tab show it: the
+ * deeper end of alone and together under the current rules, the two numbers
+ * the codex's Delve page shows (0 for none).
+ */
+export const deepestShown = (r: DelveRecords) => Math.max(deepestEnd(r, true), deepestEnd(r, false));
 
 // ---- reading what was stored -------------------------------------------------
 
