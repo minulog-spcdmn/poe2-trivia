@@ -269,6 +269,15 @@ class Session {
   delveResult = $state<{ id: number; depth: number; previousBest: number | null; best: boolean } | null>(null);
   /** Delve: the deepest this device had gone (alone or in a group, as this run is) when the run began. */
   bestAtStart = $state<number | null>(null);
+  /** The achievements this device earned in the game under way or just over (its startedAt), oldest first: the end screen lists them. */
+  earned = $state<{ game: number; ids: string[] } | null>(null);
+  /** Notes what a check of the achievements earned, under the game it was earned in. */
+  private noteEarned(ids: string[]) {
+    const game = this.state?.phase !== 'lobby' ? this.state?.startedAt : undefined;
+    if (game === undefined || !ids.length) return;
+    const was = this.earned?.game === game ? this.earned.ids : [];
+    this.earned = { game, ids: [...was, ...ids.filter((id) => !was.includes(id))] };
+  }
   /**
    * Delve: the run (its startedAt) this device saw start, from the lobby or
    * after a game ended (delveSession.ts runSeenStarting); null after a reload
@@ -1714,6 +1723,8 @@ class Session {
       const ms = performance.now() - Math.max(shown.since, seen?.at ?? 0) + (seen?.before ?? 0);
       this.answered = { qid: q.askedAt, ms, ...(share !== undefined ? { share } : {}) };
     }
+    // The answer carries its own time, for the end screen's fastest answer (game.ts Recap).
+    if (action.type === 'answer' && action.index !== null && q && this.answered?.qid === q.askedAt) action = { ...action, ms: Math.round(this.answered.ms) };
     if (this.mode === 'client') {
       this.hostConn?.send({ t: 'action', action });
       return;
@@ -2030,6 +2041,7 @@ class Session {
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
         const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
+        this.noteEarned(earned.earned.map((a) => a.id));
         if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
         else announceAchievements(earned, 'game');
       })
@@ -2055,7 +2067,9 @@ class Session {
           () => {
             this.achievementsDue = false;
             try {
-              announceAchievements(checkAchievements(engine.items), 'game');
+              const check = checkAchievements(engine.items);
+              if (!check.first) this.noteEarned(check.earned.map((a) => a.id));
+              announceAchievements(check, 'game');
             } catch (err) {
               console.warn('achievements', err);
             }

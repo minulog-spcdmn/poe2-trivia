@@ -316,7 +316,7 @@
    * backdrop, held over the hidden ones as the page scrolls or the game
    * moves on behind the dialog.
    */
-  const legalHidden = $derived(screen === 'game' || screen === 'over');
+  const legalHidden = $derived(screen === 'game');
   let legalNav: HTMLElement | undefined = $state();
   function overLegal(node: HTMLElement) {
     let raf = 0;
@@ -498,7 +498,8 @@
     {/key}
   </main>
 
-  {#if headerOn}
+  <!-- The end of a game closes with the start page's footer, the legal links in it. -->
+  {#if headerOn && screen !== 'over'}
     <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav}>
       {@render legalLinks()}
     </nav>
@@ -857,7 +858,8 @@
   }
   /* The start page fills the height below the header, not the window's:
      while the header is still up behind it, it must not overflow. */
-  .screen:has(> :global(.home)) {
+  .screen:has(> :global(.home)),
+  .screen:has(> :global(.over)) {
     display: flex;
     flex-direction: column;
   }

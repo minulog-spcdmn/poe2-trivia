@@ -1,49 +1,175 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fly, scale } from 'svelte/transition';
-  import { session } from '../lib/session.svelte';
-  import { playerColor } from '../lib/ui';
+  import { fade, fly, scale } from 'svelte/transition';
+  import { MediaQuery } from 'svelte/reactivity';
+  import { engine, session } from '../lib/session.svelte';
+  import { itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
-  import { CREATOR, CREATOR_URL, DONATE_URL, SITE_URL } from '../lib/site';
+  import WatchToggle from './WatchToggle.svelte';
+  import WatchEye from './WatchEye.svelte';
+  import StandingMark from './StandingMark.svelte';
+  import Phial from './Phial.svelte';
+  import ItemGlyph from './ItemGlyph.svelte';
+  import HeartOfLight from './HeartOfLight.svelte';
+  import RunsChart from './RunsChart.svelte';
+  import SiteFooter from './SiteFooter.svelte';
+  import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
   import { victory } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
-  import { delveStandings, delveTeam, isGroupRun, shownDepth } from '../lib/delve';
-  import { BLUE_FROM, accentAt } from '../lib/descent';
-  import { zoneAt } from '../lib/zoneSigils';
-  import { delverText, lossDepths } from '../lib/difficultyText';
-  import WatchToggle from './WatchToggle.svelte';
+  import { dock, phone } from '../lib/layout';
+  import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
+  import { FIND_RULES, FIND_TEXT } from '../lib/difficultyText';
+  import { loadRecords } from '../lib/delveRecord';
+  import { namesList } from '../lib/presence';
+  import {
+    FIND_BRIEF,
+    chartRuns,
+    delveLine,
+    highlights,
+    livesLost,
+    missedAnswers,
+    party,
+    partyHighlights,
+    ranked,
+    runFacts,
+    scoreLine,
+    soloHighlights,
+    yourGame,
+    zoneOf,
+    type Icon,
+    type Line,
+    type Part,
+  } from '../lib/recap';
+  import type { Codex } from '../lib/codex';
+  import type { Achievement } from '../lib/achievements';
+
+  // The end of a game, as the lobby is laid out: on the left the result in
+  // the start page's rune circle (the winner, or the delvers, at its heart)
+  // and what the game meant for you under it; on the right a lobby panel
+  // with the mode's ranking or the party, the highlights everyone shares,
+  // and the start row. Phones stack it all, the start row docked at the
+  // foot of the screen. What it says comes from lib/recap.ts.
 
   const s = $derived(session.state!);
-  const won = (id: string) => s.winners.includes(id);
-  /** Delve: the depth the run ended at (alone, the delver's; together, the team's). */
-  const endDepth = $derived(s.delve ? (isGroupRun(s) ? delveTeam(s).depth : (delveStandings(s)[0]?.depth ?? s.round)) : 0);
-  // Delve: ranked by how deep each went, and alone there is no winner, only a depth.
+  const local = $derived(session.mode === 'local');
+  /** This device's player online (none in hot-seat). */
+  const me = $derived(local ? null : session.myPlayerId);
+  const seated = $derived(!!me && s.players.some((p) => p.id === me));
+  /** Online and not in the game: watching it. */
+  const watching = $derived(!local && !seated);
+  const host = $derived(s.players.find((p) => p.id === s.hostId)?.name ?? 'the host');
+  const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  const itemName = (id: string) => engine.byId.get(id)?.name ?? id;
+
+  // ---- Delve -------------------------------------------------------------
   const run = $derived(s.delve ?? null);
   const solo = $derived(!!run && !isGroupRun(s));
-  /** This run went deeper than every one before it of its kind, alone or together (lib/delveRecord.ts). */
-  const newBest = $derived(!!run && session.delveResult?.id === run.startedAt && session.delveResult.best);
-  const delveRows = $derived(run ? delveStandings(s) : []);
-  /** Delve together: one result for the team (its depth, where the last of them perished), and each delver's part in it. */
-  const team = $derived(run && !solo ? delveTeam(s) : null);
-  // Four faces fit the circle; a bigger team shows three and how many more.
-  const teamFaces = $derived(team ? (s.players.length > 4 ? s.players.slice(0, 3) : s.players) : []);
-  const teamMore = $derived(team ? s.players.length - teamFaces.length : 0);
-  const depthOf = (id: string) => delveRows.find((r) => r.id === id)?.depth ?? 0;
-  // Winners first among equal scores: a deathmatch can be won by the only duelist left, level on points.
-  const standings = $derived(
-    run
-      ? delveRows.map((r) => s.players.find((p) => p.id === r.id)!).filter(Boolean)
-      : [...s.players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id)),
-  );
-  const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? standings[0]);
-  /** Spectators who take a seat in the next game (not those who just watch; yours is a line of its own). */
-  const spectators = $derived((s.spectators ?? []).filter((o) => !o.stay && o.id !== session.myPlayerId));
+  const together = $derived(!!run && !solo);
+  /** Whose run this device tells: online its player, on one device its one delver. */
+  const self = $derived(local ? (s.players[0]?.id ?? null) : seated ? me : null);
+  /** The depth the run ended at: alone the delver's, together the team's. */
+  const endDepth = $derived(run ? (solo ? (delveStandings(s)[0]?.depth ?? s.round) : teamDepth(s)) : 0);
+  /** How the run measured up against this device's records of its kind (none for someone watching). */
+  const measured = $derived(run && self && session.delveResult?.id === run.startedAt ? session.delveResult : null);
+  /** Deeper than ever, or the very first: the circle and the depth in gold. */
+  const bright = $derived(!!measured?.best);
+  const first = $derived(!!measured && measured.previousBest === null);
+  /** Deeper than a best before it, for the effect's gleam. */
+  const deeper = $derived(!!measured?.best && measured.previousBest !== null);
+  const delvers = $derived(run ? party(s) : []);
+
+  // ---- a normal game ------------------------------------------------------
+  const rows = $derived(ranked(s.players, s.winners));
+  const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? rows[0]?.p);
+  const iWon = $derived(!local && !!winner && winner.id === me);
+  const iLost = $derived(!local && seated && !s.winners.includes(me!));
+  const mine = $derived(!run && seated && me ? yourGame(s, me) : null);
+  const hotMisses = $derived(!run && local ? missedAnswers(s) : []);
+  /** Something of yours under the circle (otherwise it stands centred against the panel): your game, hot-seat's misses, or where your lives went. */
+  const hasYours = $derived(run ? !!self : !!mine || hotMisses.length > 0);
+
+  const modeName = $derived(run ? (solo ? 'Delve alone' : 'Delve together') : s.settings.mode === 'race' ? 'Race' : 'Take turns');
+  const headline = $derived(run ? `Depth ${shownDepth(endDepth)}` : iWon ? 'You are victorious!' : `${winner?.name} wins!`);
+  const line = $derived(run ? delveLine(endDepth, together, measured, !!run.mixed) : scoreLine(s, winner));
+
+  // ---- sizes ---------------------------------------------------------------
+  const short = new MediaQuery('(max-height: 859px) and (min-width: 1081px)');
+  /** The rune circle's diameter. */
+  const circle = $derived(phone.current ? 340 : short.current ? 380 : 470);
+  /** How far up the circle the headline rides. */
+  const over = $derived(run ? (solo ? 0.3 : 0.25) : short.current ? 0.37 : 0.36);
+  const avatarSize = $derived(Math.round(circle * (solo ? 0.25 : 0.23)));
+  /** Together: every delver round the heart, as large as fits (at most 17% of the circle). */
+  const ring = $derived.by(() => {
+    const n = delvers.length;
+    const r = circle * (n <= 4 ? 0.13 : n <= 6 ? 0.17 : 0.2);
+    const chord = n > 1 ? 2 * r * Math.sin(Math.PI / n) : circle;
+    const size = Math.round(Math.min(0.17 * circle, 0.78 * chord));
+    // Two side by side; more from the top, clockwise, in the result's order.
+    const start = n === 2 ? -Math.PI / 2 : 0;
+    return {
+      size,
+      box: Math.round(2 * r + size),
+      faces: delvers.map((d, i) => {
+        const a = start + (i / n) * Math.PI * 2;
+        return { ...d, x: r * Math.sin(a), y: -r * Math.cos(a) };
+      }),
+    };
+  });
+  /** A run short of your best, and anyone watching one together: the circle in worn grey (the gold through saturate(.25) brightness(.85)). */
+  const dim = $derived(!!run && !bright);
+  const twoCols = $derived(!phone.current && s.players.length > (short.current ? 5 : 7));
+  const chartH = $derived(phone.current ? 136 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
+
+  // ---- what this device knows ------------------------------------------------
+  /** This device's codex (its own answers): read once the game's last answer is in it. */
+  let codex = $state<Codex | null>(null);
+  let byId = $state<Map<string, Achievement> | null>(null);
+  onMount(() => {
+    let alive = true;
+    const read = () =>
+      import('../lib/codex')
+        .then((m) => alive && (codex = m.loadCodex()))
+        .catch(() => {});
+    void read();
+    // The reveal's answer is written a moment after it, the run's end with it.
+    const t = setTimeout(read, 1500);
+    import('../lib/achievements')
+      .then((m) => alive && (byId = m.achievementById))
+      .catch(() => {});
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  });
+  /** Achievements this device earned in this game. */
+  const earned = $derived(byId && s.startedAt !== undefined && session.earned?.game === s.startedAt ? session.earned.ids.flatMap((id) => byId!.get(id) ?? []) : []);
+  /** This device's runs of the kind, for the chart, ending with this one; re-read once the run is recorded. */
+  const chart = $derived.by(() => {
+    if (!run || !self || !measured) return [];
+    return chartRuns(loadRecords().runs, run.startedAt, together, local ? null : self);
+  });
+  const lives = $derived(run && self && codex ? livesLost(s, local ? null : self, codex.log) : []);
+  /** The uniques met this run, and of those met for the first time. */
+  const met = $derived.by(() => {
+    const from = run?.startedAt ?? Infinity;
+    const items = codex ? Object.values(codex.items) : [];
+    return { met: items.filter((e) => e.last >= from).length, fresh: items.filter((e) => e.first >= from).length };
+  });
+  const facts = $derived(run ? runFacts(s, solo ? self : null) : []);
+  const lines = $derived<Line[]>(!run ? highlights(s) : solo && self ? soloHighlights(s, self, met, first) : partyHighlights(s));
+
+  // ---- the start row ---------------------------------------------------------
+  /** Spectators who take a seat in the next game (not those who just watch). */
+  const joinNext = $derived((s.spectators ?? []).filter((o) => !o.stay && o.id !== session.myPlayerId).map((o) => o.name));
+  const here = $derived(s.players.filter((p) => p.connected).length);
+  const presence = $derived(!local && s.players.length > 1);
 
   // One click only: a second one while this screen fades out would restart the new game.
   let leaving = $state(false);
@@ -54,50 +180,13 @@
     // Still here (the restart was refused)? Let the host try again.
     setTimeout(() => (leaving = false), 1500);
   }
-  const iWon = $derived(session.mode !== 'local' && winner?.id === session.myPlayerId);
-  // A descent has no victory: alone it ends where you fell, and a group's
-  // deepest delver went furthest before falling (or stood last), nothing more.
-  const headline = $derived.by(() => {
-    if (!run) return iWon ? 'You are victorious!' : `${winner?.name} wins!`;
-    if (solo) return `Depth ${shownDepth(winner ? depthOf(winner.id) : s.round)}`;
-    return `Depth ${shownDepth(team?.depth ?? s.round)}`;
-  });
-  /** Deeper than this browser has been before in a run of its kind (not the very first one). */
-  const deeper = $derived(newBest && session.delveResult?.previousBest !== null);
-  const kicker = $derived(!run ? 'Victory' : deeper ? (solo ? 'Deeper than ever' : 'Deeper than ever together') : solo ? 'Perished' : 'The descent ends');
-  /**
-   * Delve: how the run measured up against this browser's records of its
-   * kind (lib/delveRecord.ts), alone or together; nothing for a run whose
-   * rules changed as it was resumed.
-   */
-  const record = $derived.by(() => {
-    const r = run && session.delveResult?.id === run.startedAt ? session.delveResult : null;
-    if (!r || run!.mixed) return '';
-    const kind = solo ? '' : ' together';
-    if (!r.best) return r.previousBest === null ? '' : ` Your best${kind} is depth ${shownDepth(r.previousBest)}.`;
-    return r.previousBest === null ? ` Your first descent${kind}.` : ` Your previous best${kind} was ${shownDepth(r.previousBest)}.`;
-  });
-  /** Delve: what the depth means, and how a tie was settled. */
-  const delveSub = $derived.by(() => {
-    if (!run || !winner) return '';
-    const row = delveRows.find((r) => r.id === winner.id);
-    if (!row) return '';
-    // A new best, the kicker says.
-    if (solo) return ((row.losses.length ? `Lives lost at ${lossDepths(row.losses)}.` : '') + record).trim();
-    // Together: the team's depth is the result (the headline), nobody wins.
-    const given = team?.revives.length ?? 0;
-    const parts = [team?.perished ? 'You perished together.' : '', given ? `${given === 1 ? 'One life was' : `${given} lives were`} passed between you.` : ''].filter(Boolean);
-    return (parts.join(' ') + record).trim();
-  });
-  /** Delve together: the zone the team reached, in its colour. */
-  const zone = $derived(team ? { name: zoneAt(team.depth), accent: accentAt(team.depth) } : null);
 
   // Delve: dare someone to go deeper.
   let shared = $state(false);
   async function shareDepth() {
     if (!canShare) return;
     // Alone, your depth; together, the team's.
-    const text = team ? shareText(team.depth, true) : shareText(winner ? depthOf(winner.id) : s.round);
+    const text = shareText(endDepth, together);
     try {
       if (matchMedia('(pointer: coarse)').matches && navigator.share) await navigator.share({ text });
       else {
@@ -110,18 +199,25 @@
     }
   }
   // Only a delver shares a depth: on this device, the one who delved alone; online, a player of the run (never someone watching).
-  const canShare = $derived(
-    !!run && (session.mode === 'local' ? solo : !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId)),
-  );
+  const canShare = $derived(!!run && (local ? solo : seated));
 
+  // ---- the item window ------------------------------------------------------
+  let CodexItem = $state<typeof import('./CodexItem.svelte').default | null>(null);
+  let open = $state<import('../lib/game').Item | null>(null);
+  function inspect(id: string) {
+    const it = engine.byId.get(id);
+    if (!it) return;
+    void import('./CodexItem.svelte').then((m) => {
+      CodexItem = m.default;
+      open = it;
+    });
+  }
+
+  // ---- the effects ------------------------------------------------------------
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
   let title = $state<HTMLElement>();
   let standingsEl = $state<HTMLElement>();
-  // A player who lost (online) sees a quieter screen. (Delve has its own ending, below.)
-  const iLost = $derived(
-    session.mode !== 'local' && !!session.myPlayerId && s.players.some((p) => p.id === session.myPlayerId) && !s.winners.includes(session.myPlayerId),
-  );
 
   // The celebration: rays, fireworks and glitter (lib/fx/moments.ts). A
   // descent ends instead with its last embers going out (lib/fx/delveEnd.ts).
@@ -228,16 +324,52 @@
     };
   }
 
-  let rank = $derived.by(() => {
-    if (run) return delveRows.map((r) => r.rank);
-    const ranks: number[] = [];
-    // A winner never shares its rank with a player who didn't win.
-    standings.forEach((p, i) => {
-      const prev = standings[i - 1];
-      ranks.push(prev && p.score === prev.score && won(p.id) === won(prev.id) ? ranks[i - 1] : i + 1);
+  /** Svelte action: the headline on one line, its size shrunk to fit the column. */
+  function fit(node: HTMLElement, _text: string) {
+    const col = node.closest('.result') as HTMLElement | null;
+    const size = () => {
+      node.style.fontSize = '';
+      const room = col?.clientWidth ?? 0;
+      const w = node.scrollWidth;
+      if (room && w > room) node.style.fontSize = `${(parseFloat(getComputedStyle(node).fontSize) * room) / w}px`;
+    };
+    size();
+    // Again as its font comes in (it may only start loading once the headline asks for it), and as the column changes.
+    void document.fonts?.ready.then(size);
+    document.fonts?.addEventListener('loadingdone', size);
+    const ro = new ResizeObserver(size);
+    if (col) ro.observe(col);
+    return {
+      update: size,
+      destroy: () => {
+        ro.disconnect();
+        document.fonts?.removeEventListener('loadingdone', size);
+      },
+    };
+  }
+
+  // Phones: your row, when it is below the first screen, rides on the dock until the list brings it into place.
+  let dockH = $state(0);
+  let myRow = $state<HTMLElement>();
+  let pinned = $state(false);
+  const pinnable = $derived(phone.current && !run && seated && !s.winners.includes(me!) && rows.findIndex((x) => x.p.id === me) >= 6);
+  $effect(() => {
+    if (!pinnable || !myRow || !dockH) {
+      pinned = false;
+      return;
+    }
+    const io = new IntersectionObserver(([e]) => (pinned = !e.isIntersecting && e.boundingClientRect.top > 0), {
+      rootMargin: `0px 0px -${Math.round(dockH + 56)}px 0px`,
     });
-    return ranks;
+    io.observe(myRow);
+    return () => io.disconnect();
   });
+
+  /** A delver's zone at a depth, by name. */
+  const zone = (depth: number) => zoneOf(depth).name;
+  /** What a cave-in cost: "a ward and a life", "two lives". */
+  const cost = (lives: number, wards: number) =>
+    [wards ? (wards === 1 ? 'a ward' : 'two wards') : '', lives ? (lives === 1 ? 'a life' : 'two lives') : ''].filter(Boolean).join(' and ');
 </script>
 
 <!-- Fixed to the viewport, so it leaves the app shell (which camera shake moves).
@@ -245,118 +377,348 @@
      would be redone every frame. -->
 <canvas bind:this={canvas} class="sparks" use:portal={'dim'} aria-hidden="true"></canvas>
 
-<!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the winner's circle, each player's row,
-     and the lines round them. What's next is the host's buttons or a guest's wait for them: both are `actions`. -->
-<div class="over" class:delve={!!run} class:deeper data-cursor="game">
-  <p class="kicker" data-cursor="kicker" in:fly={{ y: -10, duration: 600 }}>{kicker}</p>
-  {#if winner}
-    <div class="crown" class:fallen={!!run} bind:this={crown} data-cursor="art" in:scale={{ start: 0.4, duration: 900, delay: 200 }}>
-      <!-- Delve: the deeper the run went, the colder the circle. -->
-      <ArcaneCircle
-        size="212px"
-        color={run && endDepth >= BLUE_FROM
-          ? `color-mix(in srgb, #a9bfdc ${Math.round(Math.min(1, 0.15 + ((endDepth - BLUE_FROM) / 16) * 0.85) * 100)}%, #f1d99b)`
-          : `color-mix(in srgb, ${playerColor(winner.hue)}, #f1d99b 45%)`}
-        strength={run ? (deeper ? 0.42 : 0.3) : iLost ? 0.35 : 0.6}
-      />
-      {#if team}
-        <!-- Together: the whole team in the circle, perished side by side. -->
-        <span class="team n{teamFaces.length + (teamMore ? 1 : 0)}">
-          {#each teamFaces as p (p.id)}<Avatar name={p.name} hue={p.hue} size={teamFaces.length > 2 ? 54 : 64} />{/each}
-          {#if teamMore}<span class="more" title="{teamMore} more">+{teamMore}</span>{/if}
-        </span>
-      {:else}
-        <Avatar name={winner.name} hue={winner.hue} size={110} />
-      {/if}
-    </div>
-    <h1 data-cursor="headline" bind:this={title} in:fly={{ y: 20, duration: 700, delay: 500 }}>
-      <span class="shade" aria-hidden="true">{headline}</span>
-      <span class="gold">{headline}</span>
-    </h1>
-    <p class="sub muted" data-cursor="sub" in:fly={{ y: 10, duration: 700, delay: 700 }}>
-      {#if run}
-        {delveSub}{#if run.mixed}{delveSub ? ' ' : ''}Finished under newer rules.{/if}
-        {#if zone}<span class="zone" style:--accent={zone.accent}>{zone.name}</span>{/if}
-        <!-- Together: the most depths the team cleared in a row with nobody missing. -->
-        {#if team && (run.bestTeamStreak ?? 0) >= 2}<span class="team-streak">Longest team streak: {run.bestTeamStreak}</span>{/if}
-      {:else}
-        {winner.score} {winner.score === 1 ? 'point' : 'points'} after {s.round} {s.settings.mode === 'race' ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds'}
-        {#if s.deathmatch}· won the deathmatch in round {s.deathmatch.round}{/if}
-      {/if}
-    </p>
-  {/if}
+<!-- A sentence's parts: numbers in Cinzel, players by name (yours marked), items in their own type. -->
+{#snippet say(parts: Part[])}
+  {#each parts as p, i (i)}
+    {#if typeof p === 'string'}{p}{:else if 'n' in p}<b class="n">{p.n}</b>{:else if 'who' in p}<span class="who"
+        ><PlayerName name={nameOf(p.who)} />{#if p.who === me}<em class="you">&nbsp;(you)</em>{/if}</span
+      >{:else if 'item' in p}<b class="it">{itemName(p.item)}</b>{:else}{p.cat}{/if}
+  {/each}
+{/snippet}
 
-  <ol class="standings panel" data-cursor="standings" bind:this={standingsEl} use:backdropShadow={{ fill: 'linear' }} in:fly={{ y: 30, duration: 700, delay: 900 }}>
-    {#each standings as p, i (p.id)}
-      {@const row = team?.players.find((r) => r.id === p.id)}
-      <li class:first={!team && rank[i] === 1} class:delver={!!row} data-cursor="row:{s.players.findIndex((o) => o.id === p.id)}" in:fly={{ x: -20, duration: 400, delay: 1100 + i * 100 }}>
-        {#if !team}<span class="rank">{rank[i]}</span>{/if}
-        <Avatar name={p.name} hue={p.hue} size={30} />
-        {#if row}
-          <!-- Together: what each of them lost, gave and was given; their number is where they last perished. -->
-          <span class="name">
-            <PlayerName name={p.name} />{#if p.id === session.myPlayerId && session.mode !== 'local'}<em>&nbsp;(you)</em>{/if}
-            <span class="detail"
-              >{#each delverText(row).split(/(\d+)/) as part, j (j)}{#if j % 2}<span class="n">{part}</span>{:else}{part}{/if}{/each}</span
-            >
-          </span>
-          <span class="pts depth" title={row.lives ? 'Still standing' : `Perished at depth ${shownDepth(row.depth)}`}>{shownDepth(row.depth)}</span>
-        {:else}
-        <span class="name"><PlayerName name={p.name} /></span>
-        {/if}
-        {#if team}
-          <!-- Its depth is beside the name, above. -->
-        {:else if run}
-          <span class="pts depth" title="Perished at depth {shownDepth(depthOf(p.id))}">{shownDepth(depthOf(p.id))}</span>
-        {:else}
-          <span class="pts">{p.score}</span>
-        {/if}
+<!-- The 30 px column in front of a line: an avatar, an item's thumb, a find's glyph, the heart of light, or the gold diamond. -->
+{#snippet icon(ic: Icon)}
+  <span class="ic" aria-hidden="true">
+    {#if 'avatar' in ic}
+      {@const p = s.players.find((x) => x.id === ic.avatar)}
+      {#if p}<Avatar name={p.name} hue={p.hue} size={24} />{:else}<i class="diamond"></i>{/if}
+    {:else if 'item' in ic}
+      <span class="mini"><img src={itemThumb(ic.item, 128)} alt="" /></span>
+    {:else if 'glyph' in ic}
+      <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
+    {:else if 'heart' in ic}
+      <span class="heart-ic"><HeartOfLight /></span>
+    {:else}
+      <i class="diamond"></i>
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet lineList(list: Line[])}
+  <ul class="fx">
+    {#each list as l, i (i)}
+      <li>{@render icon(l.icon)}<span class="txt">{@render say(l.parts)}</span></li>
+    {/each}
+  </ul>
+{/snippet}
+
+<!-- An item's thumb that opens its codex page, its name under it. -->
+{#snippet thumb(id: string, badge?: string)}
+  {@const by = badge ? s.players.find((p) => p.id === badge) : undefined}
+  <li>
+    <button class="thumb" onclick={() => inspect(id)} aria-label="{itemName(id)}, open in the codex">
+      <span class="art"><img src={itemThumb(id, 128)} srcset={itemSrcset(id)} alt="" /></span>
+      {#if by}<span class="badge"><Avatar name={by.name} hue={by.hue} size={20} /></span>{/if}
+    </button>
+    <span class="thumb-name">{itemName(id)}</span>
+  </li>
+{/snippet}
+
+{#snippet achievements(list: Achievement[])}
+  <ul class="earned">
+    {#each list as a (a.id)}
+      <li>
+        <AchievementSeal sign={a.sign} tier={a.tier} earned size={short.current ? 42 : 50} />
+        <span class="ach"><b>{a.title}</b><span>{a.text}</span></span>
       </li>
     {/each}
-  </ol>
+  </ul>
+{/snippet}
 
-  <div class="actions" data-cursor="actions" in:fly={{ y: 20, duration: 600, delay: 1300 }}>
-    {#if session.isHost}
-      <button class="btn primary big" data-cursor="again" disabled={leaving} onclick={() => again(true)}>Play again</button>
-      <button class="btn ghost" data-cursor="back" disabled={leaving} onclick={() => again(false)}>{#if run}<span><span class="roomy">Back to</span> lobby</span>{:else}Change settings{/if}</button>
-    {:else}
-      <p class="muted">Waiting for the host to start a new game…</p>
-    {/if}
-    {#if canShare}
-      <span class="share" data-cursor="share">
-        <button class="btn ghost" onclick={shareDepth} aria-label={team ? "Share the team's depth" : 'Share your depth'} title={team ? "Share the team's depth" : 'Share your depth'}>
-          {#if shared}
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+{#snippet startRow()}
+  {#if session.isHost}
+    {#if presence || joinNext.length}
+      <div class="status" data-cursor="status">
+        {#if presence}
+          {#if here === s.players.length}
+            <p class="note"><span class="ic"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg></span><span>All <b class="n">{here}</b> exiles still here</span></p>
           {:else}
-            <!-- Three linked seals: the share sign. -->
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="18" cy="5.5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="18.5" r="2.6" />
-              <path d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4" />
-            </svg>
+            <p class="note warn"><span class="ic"><StandingMark mark="offline" /></span><span><b class="n">{here}</b> of <b class="n">{s.players.length}</b> exiles still here</span></p>
           {/if}
-        </button>
-        {#if shared}<span class="copied" role="status" transition:fly={{ y: 4, duration: 200 }}>Copied</span>{/if}
-      </span>
+        {/if}
+        {#if joinNext.length}
+          <p class="note"><span class="ic eye"><WatchEye /></span><span>{namesList(joinNext)} join{joinNext.length === 1 ? 's' : ''} next</span></p>
+        {/if}
+      </div>
     {/if}
-  </div>
-  {#if spectators.length}
-    <p class="joining muted" data-cursor="joining" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
-      {spectators.map((o) => o.name).join(', ')} {spectators.length === 1 ? 'joins' : 'join'} the next game.
+    <span class="buttons" data-cursor="actions">
+      <button class="btn ghost back" data-cursor="back" disabled={leaving} onclick={() => again(false)}>Back to lobby</button>
+      <button class="btn primary big again" data-cursor="again" disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
+    </span>
+  {:else if session.spectating}
+    <p class="note spect" data-cursor="joining">
+      <span class="ic"><span class="pulse"></span></span>
+      <span
+        >{#if session.justWatching}You're watching; <b class="host">{host}</b> starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b
+            class="host">{host}</b
+          > starts it.{:else}You play in the next game once <b class="host">{host}</b> starts it.{/if}</span
+      >
     </p>
+    <WatchToggle />
+  {:else}
+    <p class="waiting" data-cursor="actions"><span class="pulse"></span><span>Waiting for <b class="host">{host}</b> to start the next {run ? 'run' : 'game'}…</span></p>
   {/if}
-  {#if session.spectating}
-    <p class="joining muted" data-cursor="joining" in:fly={{ y: 10, duration: 600, delay: 1400 }}>
-      {session.justWatching ? "You're just watching." : "You'll play in the next game."}
-      <WatchToggle />
-    </p>
-  {/if}
+{/snippet}
 
-  <p class="credit" data-cursor="credit" in:fly={{ y: 10, duration: 600, delay: 1600 }}>
-    <a href={SITE_URL} target="_blank" rel="noreferrer">poe2.quest</a> · made by
-    <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a>
-    · <a class="tip" href={DONATE_URL} target="_blank" rel="noopener noreferrer">♥ support the project</a>
-  </p>
+<!-- A row of the ranking (also pinned to the dock on a phone). -->
+{#snippet rankRow(x: { p: (typeof s.players)[number]; rank: number }, pin = false)}
+  {@const you = x.p.id === me}
+  {@const gone = !local && !x.p.connected}
+  <span class="rank">{x.rank}</span>
+  <Avatar name={x.p.name} hue={x.p.hue} size={28} dim={gone} />
+  <span class="name"><PlayerName name={x.p.name} />{#if you}<em class="you">&nbsp;(you)</em>{/if}</span>
+  {#if gone && !pin}<StandingMark mark="offline" />{/if}
+  <span class="pts">{x.p.score}</span>
+{/snippet}
+
+<!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the circle's heart, the headline and its line,
+     what is yours, the ranking (each row by its seat), the highlights, the runs, and the start row. -->
+<div class="over" class:delve={!!run} class:solo class:together class:bright class:short={short.current} class:phone={phone.current} data-cursor="game" style:--circle="{circle}px" style:--over={over}>
+  <div class="stage">
+    <div class="side" class:centred={!hasYours}>
+      <div class="result">
+        <div class="plate" aria-hidden="true" in:scale={{ start: 0.85, duration: 900 }}>
+          <div class="veil">
+            <div class="inner">
+              <!-- The start page's rune circle; a run short of your best in worn grey. -->
+              <ArcaneCircle size="100%" color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
+            </div>
+          </div>
+        </div>
+        {#if winner}
+          <div
+            class="heart"
+            class:ring={together}
+            bind:this={crown}
+            data-cursor="art"
+            style:width="{together ? ring.box : avatarSize}px"
+            style:height="{together ? ring.box : avatarSize}px"
+            in:scale={{ start: 0.4, duration: 900, delay: 200 }}
+          >
+            {#if together}
+              <!-- Together: every delver round the heart, you ringed in your orange. -->
+              {#each ring.faces as f (f.id)}
+                {@const p = s.players.find((x) => x.id === f.id)}
+                {#if p}
+                  <span class="face" class:you={f.id === me} style:left="calc(50% + {f.x}px)" style:top="calc(50% + {f.y}px)">
+                    <Avatar name={p.name} hue={p.hue} size={ring.size} />
+                  </span>
+                {/if}
+              {/each}
+            {:else}
+              {@const p = solo ? (s.players[0] ?? winner) : winner}
+              <Avatar name={p.name} hue={p.hue} size={avatarSize} />
+            {/if}
+          </div>
+          <div class="words">
+            <h1 data-cursor="headline" bind:this={title} use:fit={headline} in:fly={{ y: 20, duration: 700, delay: 500 }}>
+              <span class="shade" aria-hidden="true">{headline}</span>
+              <span class="gold">{headline}</span>
+            </h1>
+            <p class="sub" data-cursor="sub" in:fly={{ y: 10, duration: 700, delay: 700 }}>{@render say(line)}</p>
+          </div>
+        {/if}
+      </div>
+
+      {#if mine}
+        <section class="sec yours" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
+          <h3>Your game</h3>
+          {#if mine.place}
+            {@const p = s.players.find((x) => x.id === me)}
+            <p class="place">{#if p}<Avatar name={p.name} hue={p.hue} size={30} />{/if}<span>{@render say(mine.place)}</span></p>
+          {/if}
+          {#if mine.game}<p>{@render say(mine.game)}</p>{/if}
+          {#if mine.missed.length}
+            <p>{mine.missedLead}</p>
+            <ul class="thumbs">{#each mine.missed as id (id)}{@render thumb(id)}{/each}</ul>
+          {/if}
+          {#if earned.length}
+            <p>Earned this game:</p>
+            {@render achievements(earned)}
+          {/if}
+        </section>
+      {:else if hotMisses.length}
+        <section class="sec yours" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
+          <h3>Missed answers</h3>
+          <p>Kept in this device’s codex.</p>
+          <ul class="thumbs">{#each hotMisses as m (m.id)}{@render thumb(m.id, m.by)}{/each}</ul>
+        </section>
+      {:else if run && self && lives.length}
+        <section class="sec yours lives-sec" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
+          <h3>Where your lives went</h3>
+          <ul class="lives" class:many={lives.length >= 4}>
+            {#each lives as l, i (i)}
+              <li>
+                {#if l.kind === 'given'}
+                  <span class="thumb given"><span class="heart-big"><HeartOfLight /></span></span>
+                {:else if l.id}
+                  <button class="thumb" onclick={() => inspect(l.id!)} aria-label="{itemName(l.id)}, open in the codex">
+                    <span class="art"><img src={itemThumb(l.id, 128)} srcset={itemSrcset(l.id)} alt="" /></span>
+                    {#if l.back}<span class="badge heart-badge"><HeartOfLight /></span>{/if}
+                  </button>
+                {:else}
+                  <span class="thumb blank"></span>
+                {/if}
+                <span class="what">
+                  {#if l.kind === 'cave'}
+                    <b class="title">The vein caved in</b>
+                    <span class="where">{itemName(l.id!)} at depth {shownDepth(l.depth)}: {cost(l.lives, l.wards)}</span>
+                  {:else if l.kind === 'given'}
+                    <b class="title">Given to {nameOf(l.to!)}</b>
+                    <span class="where">Depth {shownDepth(l.depth)}, {zone(l.depth)}</span>
+                  {:else}
+                    <b class="title">{l.id ? itemName(l.id) : 'A life lost'}</b>
+                    <span class="where">Depth {shownDepth(l.depth)}, {zone(l.depth)}{#if l.back}. {nameOf(l.back)} brought you back.{/if}</span>
+                  {/if}
+                </span>
+                {#if l.wards && l.kind === 'cave'}
+                  <span class="broken-ward" aria-hidden="true"
+                    ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+                  >
+                {/if}
+                <span class="vial"><Phial lives={l.after} /></span>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+    </div>
+
+    <section class="board panel" use:backdropShadow={{ fill: 'linear', off: phone.current }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
+      <div class="main">
+        <header>
+          <h2>{modeName}</h2>
+          {#if canShare}
+            <span class="share-wrap">
+              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team's depth" : 'Share your depth'}>
+                {#if shared}
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                  Copied
+                {:else}
+                  <!-- Three linked seals: the share sign. -->
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="18" cy="5.5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="18.5" r="2.6" />
+                    <path d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4" />
+                  </svg>
+                  Share run
+                {/if}
+              </button>
+            </span>
+          {/if}
+        </header>
+
+        {#if !run}
+          <ol class="ranking" class:two={twoCols} style:--rows={Math.ceil(rows.length / 2)} data-cursor="standings" bind:this={standingsEl}>
+            {#each rows as x, i (x.p.id)}
+              <li
+                class:first={s.winners.includes(x.p.id) || (!s.winners.length && x.rank === 1)}
+                class:you={x.p.id === me}
+                class:gone={!local && !x.p.connected}
+                data-cursor="row:{s.players.indexOf(x.p)}"
+                in:fly={{ x: -16, duration: 400, delay: 500 + i * 70 }}
+              >
+                {#if x.p.id === me && pinnable}<span class="anchor" bind:this={myRow}></span>{/if}
+                {@render rankRow(x)}
+              </li>
+            {/each}
+          </ol>
+        {:else if together}
+          <ul class="plates" class:pair={delvers.length === 2} class:many={delvers.length > 6} data-cursor="standings" bind:this={standingsEl}>
+            {#each delvers as d, i (d.id)}
+              {@const p = s.players.find((x) => x.id === d.id)}
+              {#if p}
+                <li class:you={d.id === me} class:gone={!p.connected} data-cursor="row:{s.players.indexOf(p)}" in:fly={{ y: 8, duration: 400, delay: 500 + i * 60 }}>
+                  <Avatar name={p.name} hue={p.hue} size={delvers.length > 6 ? 30 : 34} dim={!p.connected} />
+                  <span class="who-col">
+                    <span class="name"><PlayerName name={p.name} />{#if d.id === me}<em class="you">&nbsp;(you)</em>{/if}</span>
+                    <span class="dep">Depth <b class="n">{shownDepth(d.depth)}</b></span>
+                  </span>
+                  {#if d.revived}<span class="revived" title="Brought back by a teammate"><HeartOfLight /></span>{/if}
+                </li>
+              {/if}
+            {/each}
+          </ul>
+        {/if}
+
+        {#if run}
+          <div class="runs" data-cursor="runs">
+            {#if first}
+              {#if earned.length}
+                <p class="cap">Earned this run</p>
+                {@render achievements(earned)}
+              {/if}
+              <p class="cap">Finds</p>
+              {#if facts.length > 1}
+                {@render lineList(facts.slice(1))}
+              {:else}
+                <p class="cap none">None turned up on this run. What you can find:</p>
+                <ul class="fx finds">
+                  {#each FINDS_IN_ORDER as f (f.kind)}
+                    <li data-find={f.kind}>
+                      <span class="ic"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span>
+                      <span class="txt">
+                        <b class="find-name">{FIND_TEXT[f.kind].name}</b>
+                        <span>From depth {shownDepth(f.from)}. {FIND_BRIEF[f.kind]}</span>
+                        <span class="miss">{FIND_RULES[f.kind].miss}</span>
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            {:else if chart.length >= 2}
+              <p class="cap">{together ? 'Your runs together, oldest first' : 'Your runs alone, oldest first'}</p>
+              <div class="chart-row">
+                <RunsChart runs={chart} height={chartH} width={phone.current ? 250 : 180} />
+                {@render lineList(facts)}
+              </div>
+            {:else}
+              <p class="cap">This run</p>
+              {@render lineList(facts)}
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      {#if lines.length}
+        <section class="sec highlights" data-cursor="highlights" in:fade={{ duration: 600, delay: 1000 }}>
+          <h3>Highlights</h3>
+          {@render lineList(lines)}
+        </section>
+      {/if}
+
+      {#if !phone.current}
+        <div class="start" class:centre={!session.isHost && !session.spectating}>{@render startRow()}</div>
+      {/if}
+    </section>
+  </div>
+
+  <div class="foot"><SiteFooter inRoom /></div>
 </div>
+
+{#if phone.current}
+  <!-- Phones: the start row docked at the foot of the screen, where the thumb rests (lib/layout's dock). -->
+  <div class="dock" class:host={session.isHost} use:portal use:dock bind:offsetHeight={dockH} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+    {#if pinned}
+      {@const x = rows.find((r) => r.p.id === me)}
+      {#if x}<div class="pinned"><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
+    {/if}
+    <div class="dock-row">{@render startRow()}</div>
+  </div>
+{/if}
+
+{#if open && CodexItem && codex}
+  <CodexItem item={open} {codex} onclose={() => (open = null)} onopen={(it) => (open = it)} />
+{/if}
 
 <style>
   .sparks {
@@ -367,42 +729,136 @@
     pointer-events: none;
     z-index: 5;
   }
+
+  /* ---- the page ---- */
+  /* The lobby's stage: 1200 wide in the middle of the window, the result's
+     column 440 and the panel 600, both on the lobby panel's top line, then
+     the start page's footer at the foot of the window. */
   .over {
+    --h1: 58px;
+    --sub: 18px;
+    --body: 17px;
+    --hl: 17px;
+    --fade: 50%, rgba(0, 0, 0, 0.3) 68.46%, transparent 79.23%;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .over.delve {
+    --h1: 66px;
+    --sub: 16px;
+    --hl: 16px;
+  }
+  .stage {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 33px max(20px, (min(100%, 1440px) - 1200px) / 2) 0;
+  }
+  .side {
     position: relative;
+    width: 440px;
+    flex: none;
+    font-size: var(--body);
+  }
+  /* Nothing under the circle: it stands centred against the panel. */
+  .side.centred {
+    align-self: center;
+  }
+  .board {
+    width: 600px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding: 1.4rem;
+  }
+  .foot {
+    margin-top: auto;
+    padding: 32px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
+  }
+
+  /* ---- the result: the circle, and the headline over its foot ---- */
+  .result {
+    position: relative;
+    padding-top: calc(var(--circle) * (1 - var(--over)));
+  }
+  .plate {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: var(--circle);
+    height: var(--circle);
+    translate: -50% 0;
+    pointer-events: none;
+  }
+  /* The circle fades downward so the headline and the column run over it,
+     on a box reaching 15% past it on every side so its glow is never cut. */
+  .veil {
+    position: absolute;
+    inset: -15%;
+    -webkit-mask-image: linear-gradient(180deg, #000 var(--fade));
+    mask-image: linear-gradient(180deg, #000 var(--fade));
+  }
+  .inner {
+    position: absolute;
+    inset: 11.5385%;
+  }
+  .heart {
+    position: absolute;
+    left: 50%;
+    top: calc(var(--circle) / 2);
+    translate: -50% -50%;
+  }
+  .heart.ring .face {
+    position: absolute;
+    translate: -50% -50%;
+    border-radius: 50%;
+  }
+  /* Your face among the delvers, ringed in your orange as on your plate. */
+  .heart.ring .face.you {
+    box-shadow:
+      0 0 0 2.5px #e08a44,
+      0 0 10px rgba(224, 138, 68, 0.7);
+  }
+  /* Alone, short of your best: the fallen delver's portrait has lost its colour. */
+  .solo:not(.bright) .heart :global(.avatar) {
+    filter: grayscale(0.75) brightness(0.8);
+  }
+  .words {
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 3rem 1rem 3rem;
     text-align: center;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
   }
-  .kicker {
-    /* Clear the rune circle, which reaches 51px beyond the avatar. */
-    margin: 0 0 calc(51px + 1.4rem);
-    font-family: var(--font-display);
-    letter-spacing: 0.6em;
-    /* Letter spacing also trails the last letter; balance it so the word is centred. */
-    padding-left: 0.6em;
-    text-transform: uppercase;
-    color: var(--unique-hi);
-  }
-  .crown {
-    position: relative;
-    isolation: isolate;
-    margin-bottom: calc(51px + 1rem);
-  }
-  /* On the avatar only: a filter over the turning rune circle would repaint it every frame. */
-  .crown :global(.avatar) {
-    filter: drop-shadow(0 0 30px rgba(241, 217, 155, 0.45));
-  }
-  /* The rune circle sits behind the avatar. */
-  .crown :global(.arcane) {
+  /* A soft dark scrim behind the words, over the circle: dithered (app.css), or it bands. */
+  .words::before {
+    content: '';
+    position: absolute;
     z-index: -1;
-    margin: auto;
-    inset: -51px;
+    inset: -10px -30px;
+    image-rendering: pixelated;
+    background:
+      radial-gradient(closest-side, rgba(10, 8, 6, 0.86), rgba(10, 8, 6, 0.6) 55%, rgba(10, 8, 6, 0)),
+      var(--dither);
+    -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent);
+    mask-image: radial-gradient(closest-side, #000 70%, transparent);
+    pointer-events: none;
   }
   h1 {
-    font-size: clamp(2.25rem, 6.7vw, 3.8rem);
+    margin: 0;
+    font-size: var(--h1);
     font-weight: 900;
+    line-height: 1.15;
+    white-space: nowrap;
+    width: max-content;
     /* The shadow and the gold are two copies of the text, stacked. */
     display: grid;
   }
@@ -447,219 +903,864 @@
         0 0;
     }
   }
-  /* Delve: no victory. The title is cold, worn metal and holds still; the
-     kicker is ash, warming to gold only for a run deeper than ever. */
-  .delve .kicker {
-    color: var(--muted);
-  }
-  .delve.deeper .kicker {
-    color: var(--gold-hi);
-    text-shadow: 0 0 14px rgba(241, 217, 155, 0.35);
-  }
+  /* Delve: no victory. The depth is cold silver and holds still, gold only for a new best or a first run. */
   .delve .gold {
     background: linear-gradient(180deg, #ece4d4 8%, #a89f90 55%, #5f574b);
     -webkit-background-clip: text;
     background-clip: text;
     animation: none;
   }
-  .delve.deeper .gold {
+  .delve.bright .gold {
     background: linear-gradient(180deg, #fbecc6 8%, #c9a45c 55%, #7a5a26);
     -webkit-background-clip: text;
     background-clip: text;
   }
-  /* Alone, the fallen delver's portrait has lost its colour. */
-  .crown.fallen :global(.avatar) {
-    filter: grayscale(0.75) brightness(0.8) drop-shadow(0 0 22px rgba(169, 191, 220, 0.25));
-  }
-  /* Together: the team's faces in the circle, two side by side, three or four in a cluster. */
-  .team {
-    display: grid;
-    grid-template-columns: repeat(2, auto);
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-    width: 110px;
-    height: 110px;
-    place-content: center;
-  }
-  .team.n1 {
-    grid-template-columns: auto;
-  }
-  .team.n3 > :global(:first-child) {
-    grid-column: 1 / -1;
-    justify-self: center;
-  }
-  .crown.fallen .team :global(.avatar) {
-    filter: grayscale(0.75) brightness(0.8);
-  }
-  /* The rest of a big team, as a count in the fourth place. */
-  .team .more {
-    display: grid;
-    place-items: center;
-    width: 54px;
-    height: 54px;
-    padding-top: 2px;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 1rem;
-    color: var(--gold-hi);
-    background: #1a130c;
-    border: 1px solid var(--gold-lo);
-    border-radius: 50%;
-  }
-  .detail .n {
-    font-family: var(--font-cinzel);
-    font-style: normal;
-    font-size: 0.92em;
-  }
-  .zone {
-    display: block;
-    margin-top: 0.5rem;
-    font-family: var(--font-display);
-    font-style: normal;
-    font-size: 0.78rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--accent);
-    text-shadow: 0 0 12px color-mix(in srgb, var(--accent), transparent 60%);
-  }
-  .detail {
-    display: block;
-    font-size: 0.85rem;
-    font-style: italic;
-    color: var(--muted);
-  }
-  .standings li.delver .name em {
-    color: var(--muted);
-    font-size: 0.85em;
-  }
-  .standings li.delver .pts {
-    font-family: var(--font-cinzel);
-  }
   .sub {
-    margin: 0.4rem 0 1.8rem;
+    margin: 0.15rem 0 0;
+    max-width: 440px;
+    font-size: var(--sub);
     font-style: italic;
-    font-size: 1.1rem;
+    line-height: 1.35;
+    color: var(--muted);
   }
-  .team-streak {
-    display: block;
-    margin-top: 0.3rem;
-    font-size: 0.95rem;
+
+  /* ---- words ---- */
+  /* Numbers among the words in Cinzel, bold gold, as everywhere in the game. */
+  .n {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    font-weight: 700;
+    font-size: 0.86em;
+    color: var(--gold-hi);
   }
-  .standings {
-    list-style: none;
+  .it {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: #f3c37e;
+  }
+  em.you {
+    font-size: 0.78em;
+    font-style: italic;
+    color: var(--muted);
+  }
+
+  /* ---- sections (the lobby's headings: display font, gold, a hairline under) ---- */
+  .sec h3,
+  .board header {
+    margin: 0 0 0.8rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid rgba(125, 99, 51, 0.35);
+  }
+  .sec h3,
+  .board h2 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 20px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--gold);
+  }
+  .board header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .board h2 {
     margin: 0;
-    padding: 0.8rem;
-    width: min(460px, 100%);
+  }
+  .yours {
+    margin-top: 1.6rem;
+  }
+  .yours p {
+    margin: 0 0 0.7rem;
+    line-height: 1.4;
+  }
+  .place {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  /* An item's thumb: the codex's square, its name under it in the display font. */
+  .thumbs {
+    list-style: none;
+    margin: 0 0 0.8rem;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem 6px;
+  }
+  /* A thumb every 94 px (at 60), its name wrapping within that. */
+  .thumbs li {
+    width: calc(var(--t) + 28px);
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 0.35rem;
   }
-  .standings li {
+  .yours {
+    --t: 60px;
+  }
+  .thumb {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--t);
+    height: var(--t);
+    padding: 0;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    cursor: zoom-in;
+    transition: border-color 0.2s;
+  }
+  .thumb:hover {
+    border-color: var(--gold-lo);
+  }
+  .thumb .art {
+    width: 86%;
+    height: 86%;
+  }
+  .thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .thumb-name {
+    font-family: var(--font-display);
+    font-size: 14px;
+    line-height: 1.15;
+    color: #f3c37e;
+  }
+  /* Hot-seat: whose miss it was, in the thumb's corner. */
+  .badge {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    display: grid;
+  }
+  .heart-badge {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Achievements, as the codex lists them: the seal, the title, what it asks. */
+  .earned {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.8rem;
+  }
+  .earned li {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-    padding: 0.45rem 0.7rem;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.25);
+    gap: 0.9rem;
   }
-  .standings li.first {
-    background: linear-gradient(90deg, rgba(201, 164, 92, 0.18), rgba(0, 0, 0, 0.2));
-    border: 1px solid rgba(201, 164, 92, 0.35);
+  .ach {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  /* As the codex lists an earned one (CodexAchievements). */
+  .ach b {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    color: var(--gold-hi);
+  }
+  .ach span {
+    font-size: 0.95rem;
+    line-height: 1.3;
+    color: #cbbfa8;
+  }
+
+  /* ---- where your lives went ---- */
+  .lives {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .lives.many {
+    gap: 6px;
+  }
+  .lives li {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+  }
+  .lives {
+    --t: 46px;
+  }
+  .lives .thumb {
+    flex: none;
+  }
+  .together .lives.many {
+    --t: 42px;
+  }
+  .thumb.given,
+  .thumb.blank {
+    cursor: default;
+  }
+  .heart-big {
+    width: 26px;
+    height: 26px;
+  }
+  .what {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+  .what .title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.05em;
+    color: #f3c37e;
+  }
+  .what .where {
+    font-size: 0.82em;
+    font-style: italic;
+    color: var(--muted);
+  }
+  .vial {
+    --phial-w: 50px;
+    flex: none;
+  }
+  /* A ward broken on the cave-in, its two halves apart, as the reveal leaves it (QuestionView .lost-ward). */
+  .broken-ward {
+    --h: 22px;
+    position: relative;
+    flex: none;
+    width: 16px;
+    height: 22px;
+    margin-right: -0.5rem;
+  }
+  .broken-ward .piece {
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0.58;
+    transform-origin: 50% 90%;
+  }
+  .broken-ward .l {
+    transform: translate(-3px, 1px) rotate(-14deg);
+  }
+  .broken-ward .r {
+    transform: translate(3px, 1px) rotate(11deg);
+  }
+
+  /* ---- the ranking: the lobby's chips as rows ---- */
+  .ranking {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .ranking.two {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(var(--rows), auto);
+    grid-auto-flow: column;
+    gap: 8px 10px;
+  }
+  .ranking li,
+  .ranking .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    height: 54px;
+    padding: 0 1rem;
+    border-radius: 3px;
+    background: rgba(12, 10, 8, 0.6);
+    border: 1px solid var(--line);
+  }
+  .ranking.two li {
+    height: 52px;
   }
   .rank {
-    width: 1.6rem;
-    font-family: var(--font-display);
-    font-weight: 900;
+    width: 1.1rem;
+    font-family: var(--font-body);
+    font-variant-numeric: lining-nums;
+    font-size: 1.05rem;
     color: var(--muted);
   }
-  .first .rank {
-    color: var(--gold-hi);
-  }
-  .name {
+  .ranking .name {
     flex: 1;
-    text-align: left;
-    font-size: 1.1rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1.05rem;
   }
   .pts {
-    font-family: var(--font-display);
-    font-weight: 900;
-    font-size: 1.2rem;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 1.1rem;
     color: var(--gold-hi);
   }
-  .actions {
-    display: flex;
-    gap: 0.8rem;
-    align-items: center;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-top: 1.8rem;
+  /* The winner's row in gold; yours outlined in your orange. */
+  .ranking li.first {
+    border-color: #c9a45c;
+    background: linear-gradient(90deg, rgba(201, 164, 92, 0.2), rgba(90, 64, 30, 0.12) 60%, rgba(12, 10, 8, 0.6));
+    box-shadow: 0 0 14px rgba(201, 164, 92, 0.18);
   }
-  .credit {
-    margin: 2.2rem 0 0;
-    font-size: 0.9rem;
+  .ranking li.you:not(.first),
+  .ranking .row.you {
+    border-color: rgba(224, 138, 68, 0.85);
+    box-shadow: 0 0 12px rgba(224, 138, 68, 0.3);
+  }
+  /* Someone who left: dimmed, the lobby's offline mark before the score. */
+  .ranking li.gone > :not(.anchor) {
+    opacity: 0.5;
+  }
+  .anchor {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* ---- the party: the in-game scoreboard's plates ---- */
+  .plates {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0 0 1rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    border-bottom: 1px solid rgba(125, 99, 51, 0.35);
+  }
+  .plates.pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .plates li {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    height: 48px;
+    padding: 0 0.7rem 0 0.35rem;
+    border-radius: 999px;
+    background: rgba(12, 10, 8, 0.75);
+    border: 1px solid var(--line);
+  }
+  .plates.many li {
+    height: 44px;
+  }
+  .plates li.you {
+    border-color: rgba(224, 138, 68, 0.85);
+    box-shadow: 0 0 12px rgba(224, 138, 68, 0.3);
+  }
+  .plates li.gone {
+    opacity: 0.5;
+  }
+  .who-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+  }
+  .who-col .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.95rem;
+  }
+  .dep {
+    font-size: 0.8rem;
+    font-style: italic;
     color: var(--muted);
   }
-  .credit a {
-    color: var(--gold);
-    text-decoration: none;
+  .revived {
+    flex: none;
+    width: 18px;
+    height: 18px;
   }
-  .credit .maker {
-    color: var(--gold-hi);
-    border-bottom: 1px dotted var(--gold-lo);
+
+  /* ---- the runs ---- */
+  .runs {
+    margin-bottom: 0.4rem;
   }
-  .credit .tip {
-    color: #e0907c;
-  }
-  .credit a:hover {
-    color: #fff1cf;
-  }
-  .joining {
-    margin: 1rem 0 0;
+  .cap {
+    margin: 0.2rem 0 0.7rem;
     font-style: italic;
+    font-size: 1rem;
+    color: #c4b69c;
   }
-  /* Share: an icon button the height of its neighbours, with a note when the text was copied. */
-  .share {
-    position: relative;
+  .cap.none {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .chart-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .chart-row .fx {
+    flex: 1;
+    min-width: 0;
+  }
+  .runs .earned {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(125, 99, 51, 0.35);
+  }
+
+  /* ---- lines with an icon in front: the highlights, the run's facts ---- */
+  .fx {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+    font-size: var(--hl);
+  }
+  .runs .fx {
+    gap: 8px;
+  }
+  .fx li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    line-height: 1.35;
+  }
+  .ic {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    min-height: 1.35em;
+  }
+  .mini {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin: -4px 0;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+  }
+  .mini img {
+    max-width: 26px;
+    max-height: 26px;
+    object-fit: contain;
+  }
+  .glyph-ic {
+    --h: 16px;
     display: inline-flex;
   }
-  .share .btn {
-    padding: 0.7em;
+  .heart-ic {
+    width: 22px;
+    height: 22px;
+  }
+  .diamond {
+    width: 10px;
+    height: 10px;
+    rotate: 45deg;
+    background: linear-gradient(135deg, #f3a565, #c06a2c);
+    box-shadow: 0 0 6px rgba(224, 138, 68, 0.45);
+  }
+  .txt {
+    min-width: 0;
+  }
+  /* The finds, as the lobby lists them. */
+  .finds li[data-find='azurite'] {
+    --find: #a9cdf5;
+  }
+  .finds li[data-find='flare'] {
+    --find: #f7a3b3;
+  }
+  .finds li[data-find='dynamite'] {
+    --find: #eebf96;
+  }
+  .finds .txt {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.93rem;
+    line-height: 1.3;
+    color: var(--text);
+  }
+  .find-name {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--find);
+  }
+  .finds .miss {
+    color: color-mix(in srgb, var(--find) 45%, var(--muted));
+  }
+
+  .highlights {
+    margin-top: 1.3rem;
+  }
+
+  /* Share run: the lobby's small Lock button. */
+  .share-wrap {
+    display: inline-flex;
+  }
+  .share {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    padding: 0.4em 0.8em;
+    border-radius: 3px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .share:hover {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
   }
   .share svg {
-    width: 1.45em;
-    height: 1.45em;
+    width: 13px;
+    height: 13px;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.6;
+    stroke-width: 1.8;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .copied {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 0.45rem);
-    translate: -50% 0;
-    padding: 0.2em 0.6em;
-    font-family: var(--font-display);
-    font-size: 0.68rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    color: var(--gold-hi);
-    background: rgba(13, 10, 7, 0.9);
-    border: 1px solid var(--gold-lo);
-    border-radius: 3px;
-    pointer-events: none;
+
+  /* ---- the start row: the lobby's Begin ---- */
+  .start {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.3rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line);
   }
-  /* A phone fits Delve's three actions on one row as Play again, Lobby and the share icon. */
-  @media (max-width: 420px) {
-    .roomy {
-      display: none;
-    }
+  .start.centre {
+    justify-content: center;
   }
-  .actions p {
+  .status {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 0.25rem;
+  }
+  .note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin: 0;
     font-style: italic;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .note.warn {
+    color: #eab3a3;
+  }
+  .note .ic {
+    min-height: 0;
+  }
+  .note.spect {
+    flex: 1;
+    font-size: 1rem;
+    font-style: normal;
+  }
+  /* Just watch: the size of the host's Back to lobby. */
+  .start :global(.btn.small) {
+    margin: 0;
+    padding: 0.7em 1.4em;
+    font-size: 0.85rem;
+  }
+  .check {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: var(--gold-hi);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .eye {
+    --eye-size: 18px;
+    color: var(--muted);
+  }
+  .buttons {
+    display: flex;
+    gap: 0.9rem;
+    margin-left: auto;
+  }
+  .host {
+    font-weight: 400;
+    color: var(--text);
+  }
+  .waiting {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin: 0;
+    color: var(--muted);
+  }
+  .pulse {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gold);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.25;
+      transform: scale(0.7);
+    }
+  }
+
+  /* ---- short windows (a 13-inch laptop): Home's ---- */
+  .over.short {
+    --h1: 44px;
+    --sub: 16px;
+    --body: 16px;
+    --hl: 16px;
+    --fade: 46.9%, rgba(0, 0, 0, 0.3) 63.85%, transparent 73.08%;
+  }
+  .over.short.delve {
+    --h1: 52px;
+    --sub: 15px;
+    --hl: 15px;
+  }
+  .short .stage {
+    padding-top: 17px;
+  }
+  .short .board {
+    padding-block: 16px;
+  }
+  .short .sec h3,
+  .short .board header {
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.45rem;
+  }
+  .short .yours {
+    margin-top: 1rem;
+  }
+  .short .yours p {
+    margin-bottom: 0.5rem;
+  }
+  .short .ranking li {
+    height: 40px;
+  }
+  .short .ranking.two li {
+    height: 36px;
+  }
+  .short .ranking {
+    gap: 6px;
+  }
+  .short .yours {
+    --t: 50px;
+  }
+  .short .lives {
+    --t: 42px;
+  }
+  .short.together .lives.many {
+    --t: 36px;
+  }
+  .short .plates li {
+    height: 42px;
+  }
+  .short .plates.many li {
+    height: 35px;
+  }
+  .short .plates.many {
+    gap: 5px;
+  }
+  .short .highlights {
+    margin-top: 0.9rem;
+  }
+  .short .fx {
+    gap: 8px;
+  }
+  .short .start {
+    margin-top: 0.9rem;
+    padding-top: 0.9rem;
+  }
+
+  /* ---- between a phone and a desktop: one column, 600 wide, the circle first ---- */
+  @media (max-width: 1080px) {
+    .stage {
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+      padding: 28px 20px 0;
+    }
+    .side,
+    .board {
+      width: min(600px, 100%);
+    }
+    .side.centred {
+      align-self: center;
+    }
+  }
+
+  /* ---- phones: one column, scrolling, the start row docked ---- */
+  .over.phone {
+    --h1: 36px;
+    --sub: 16px;
+    --body: 16px;
+    --hl: 16px;
+  }
+  .over.phone.solo {
+    --h1: 56px;
+  }
+  .over.phone.together {
+    --h1: 52px;
+  }
+  .phone .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.6rem;
+    padding: 16px 16px 0;
+  }
+  /* The two columns give their parts to the page's one: normal games the
+     ranking, your game, the highlights; Delve the lives, then the mode's block, then the highlights. */
+  .phone .side,
+  .phone .board {
+    display: contents;
+  }
+  .phone .board::before,
+  .phone .board::after {
+    display: none;
+  }
+  .phone .result {
+    order: 1;
+  }
+  .phone .main {
+    order: 2;
+  }
+  .phone .yours {
+    order: 3;
+    margin-top: 0;
+  }
+  .phone.delve .yours {
+    order: 2;
+  }
+  .phone.delve .main {
+    order: 3;
+  }
+  .phone .highlights {
+    order: 4;
+    margin-top: 0;
+  }
+  .phone .sub {
+    max-width: 358px;
+  }
+  .phone .ranking li {
+    height: 46px;
+    padding: 0 0.9rem;
+  }
+  .phone .yours {
+    --t: 64px;
+  }
+  .phone .plates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .phone .plates li {
+    height: 42px;
+  }
+  .phone .chart-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .phone .lives {
+    --t: 46px;
+  }
+  .phone .foot {
+    padding: 28px 16px 20px;
+  }
+  /* Past six players, the rows tighten. */
+  .phone .ranking:has(li:nth-child(7)) li {
+    height: 40px;
+  }
+
+  /* The dock: fixed to the bottom, opaque, a hairline on top and a short fade above it. */
+  .dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    padding: 0.6rem max(16px, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    background: #0b0907;
+    border-top: var(--pinned-line);
+  }
+  .dock::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 1px);
+    height: 22px;
+    background: linear-gradient(rgba(11, 9, 7, 0), #0b0907);
+    pointer-events: none;
+  }
+  .dock-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    min-height: 48px;
+  }
+  .dock-row .buttons {
+    flex: 1;
+    margin: 0;
+    gap: 0.6rem;
+  }
+  .dock-row .btn {
+    min-height: 48px;
+  }
+  .dock-row .back {
+    padding-inline: 0.8em;
+    font-size: 0.78rem;
+  }
+  .dock-row .again {
+    flex: 1;
+    padding-inline: 0.6em;
+  }
+  .dock-row .status {
+    display: none;
+  }
+  /* Your row riding on the dock's top edge, one opaque piece with it. */
+  .pinned {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    padding: 8px 16px 6px;
+    background: #0b0907;
+  }
+  .pinned .row {
+    height: 46px;
+    padding: 0 0.9rem;
+  }
+  .pinned .name {
+    flex: 1;
+  }
+
+  @media (pointer: coarse) {
+    .share {
+      min-height: 44px;
+    }
   }
 </style>

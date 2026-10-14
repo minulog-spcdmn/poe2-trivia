@@ -1,0 +1,330 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { Engine, createGame, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import {
+  CHART_RUNS,
+  chartLayout,
+  chartRuns,
+  delveLine,
+  highlights,
+  livesLost,
+  median,
+  missedAnswers,
+  partyHighlights,
+  plain,
+  ranked,
+  runFacts,
+  scoreLine,
+  soloHighlights,
+  yourGame,
+  zoneOf,
+} from '../src/lib/recap.ts';
+import { parseClientMsg } from '../src/lib/protocol.ts';
+import type { Answer } from '../src/lib/codex.ts';
+import type { DelveRun } from '../src/lib/delveRecord.ts';
+import { DELVE_RULESET } from '../src/lib/delve.ts';
+
+const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
+const byId = new Map(items.map((it) => [it.id, it]));
+const right = (q: Question) => q.options.indexOf(q.itemId);
+const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
+const text = (s: GameState) => (id: string) => s.players.find((p) => p.id === id)?.name ?? byId.get(id)?.name ?? id;
+
+function seeded(seed: number) {
+  return () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32;
+  };
+}
+
+function setup(names: string[], settings: Partial<GameState['settings']> = {}) {
+  const engine = new Engine(items, { rng: seeded(7) });
+  let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', ...settings });
+  names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
+  return { engine, s: engine.apply(s, { type: 'start' }, 'p0') };
+}
+
+test('take turns: the recap keeps each answer, its time, the categories and the misses', () => {
+  let { engine, s } = setup(['Ash', 'Bram']);
+  const first = s.players[s.turn].id;
+  const other = s.players.find((p) => p.id !== first)!.id;
+  // The first player gets theirs right in 2.4 s, the other misses.
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, first);
+  const cat = s.question!.category;
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), ms: 2400 }, first);
+  s = engine.apply(s, { type: 'next' }, first);
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, other);
+  const missed = s.question!.itemId;
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!), ms: 900 }, other);
+  const r = s.recap!;
+  assert.deepEqual(r.answers[first], { n: 1, ok: 1, ms: 2400 });
+  assert.deepEqual(r.answers[other], { n: 1, ok: 0 });
+  assert.deepEqual(r.fastest, { by: first, id: s.used[s.used.length - 2], ms: 2400 });
+  assert.deepEqual(r.misses, [{ by: other, id: missed }]);
+  assert.deepEqual(r.cats![cat][0] >= 1, true);
+  // A wrong answer's time never makes it the fastest.
+  assert.equal(r.fastest!.ms, 2400);
+  // Back to the lobby, the recap goes.
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(s.recap, undefined);
+});
+
+test('an answer time out of reason is dropped, and the protocol keeps a fair one', () => {
+  let { engine, s } = setup(['Ash']);
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), ms: 3 }, 'p0');
+  assert.equal(s.recap!.fastest, undefined);
+  const msg = parseClientMsg({ t: 'action', action: { type: 'answer', index: 1, askedAt: 5, ms: 1234.4 } });
+  assert.deepEqual(msg, { t: 'action', action: { type: 'answer', index: 1, askedAt: 5, ms: 1234 } });
+  const bad = parseClientMsg({ t: 'action', action: { type: 'answer', index: 1, ms: 'soon' } });
+  assert.deepEqual(bad, { t: 'action', action: { type: 'answer', index: 1, askedAt: undefined } });
+});
+
+test('race: firsts in a row, wrong guesses per item, and the lines they make', () => {
+  let { engine, s } = setup(['Ash', 'Bram', 'Cass'], { mode: 'race', timer: 20, targetScore: 50 });
+  // Bram first three times running, then Ash; Cass guesses wrong on the second.
+  const order = ['p1', 'p1', 'p1', 'p0'];
+  let wrongItem = '';
+  order.forEach((who, i) => {
+    if (i === 1) {
+      wrongItem = s.question!.itemId;
+      s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!), askedAt: s.question!.askedAt }, 'p2');
+    }
+    s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt, ms: 1500 + i * 100 }, who);
+    s = engine.apply(s, { type: 'next' }, 'p0');
+  });
+  const r = s.recap!;
+  assert.deepEqual(r.firsts, { by: 'p1', n: 3 });
+  assert.deepEqual(r.wrong, { [wrongItem]: 1 });
+  assert.deepEqual(r.answers.p2, { n: 1, ok: 0 });
+  const lines = highlights(s).map((l) => plain(l.parts, text(s)));
+  assert.equal(lines[0], `Bram answered fastest: 1.5s on ${byId.get(r.fastest!.id)!.name}.`);
+  assert.ok(lines.includes('Bram was first 3 times in a row.'));
+  // One wrong guess isn't "missed most".
+  assert.ok(!lines.some((l) => l.includes('missed most')));
+  // Cass's game: no firsts, one wrong guess.
+  s.players.find((p) => p.id === 'p2')!.score = -1;
+  const g = yourGame(s, 'p2');
+  assert.equal(plain(g.game!), 'First right on 0 of 5 questions; 1 wrong guess took a point back.');
+  assert.equal(g.missedLead, 'The one you guessed wrong, kept in your codex:');
+  assert.deepEqual(g.missed, [wrongItem]);
+});
+
+/** A finished game by hand: who scored what, and the recap the host kept. */
+function over(scores: number[], recap: GameState['recap'], extra: Partial<GameState> = {}): GameState {
+  const s = createGame('p0');
+  s.players = scores.map((score, i) => ({ id: `p${i}`, name: ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'][i], score, recent: [], connected: true, hue: i }));
+  s.phase = 'over';
+  s.round = 10;
+  s.winners = ['p0'];
+  s.recap = recap;
+  return Object.assign(s, extra);
+}
+
+test('your game: your place, your answers and your misses, in words', () => {
+  const s = over([10, 9, 9, 5], {
+    answers: { p0: { n: 10, ok: 10, ms: 2400 }, p1: { n: 10, ok: 9, ms: 2800 }, p2: { n: 10, ok: 9 } },
+    misses: [
+      { by: 'p1', id: 'kaoms-heart' },
+      { by: 'p2', id: 'headhunter' },
+    ],
+  });
+  assert.deepEqual(
+    ranked(s.players, s.winners).map((x) => x.rank),
+    [1, 2, 2, 4],
+  );
+  const win = yourGame(s, 'p0');
+  assert.equal(win.place, null);
+  assert.equal(plain(win.game!), '10 of 10 right, not one missed. Your fastest took 2.4s.');
+  assert.deepEqual(win.missed, []);
+  const second = yourGame(s, 'p1');
+  assert.equal(plain(second.place!), 'You came joint second with 9 points.');
+  assert.equal(plain(second.game!), '9 of 10 right. Your fastest took 2.8s.');
+  assert.equal(second.missedLead, 'The one you missed, kept in your codex:');
+  assert.equal(plain(scoreLine(s, s.players[0])), '10 points after 10 rounds');
+  assert.deepEqual(missedAnswers(s), [
+    { id: 'kaoms-heart', by: 'p1' },
+    { id: 'headhunter', by: 'p2' },
+  ]);
+});
+
+test('a deathmatch: tied on points, the duel told apart', () => {
+  const s = over([10, 10, 7], { answers: { p1: { n: 10, ok: 10, ms: 1800, dn: 3, dok: 2 } }, misses: [{ by: 'p1', id: 'death-rush', dm: true }] }, {
+    deathmatch: { alive: ['p0'], entrants: ['p0', 'p1'], round: 3, results: {}, eliminated: ['p1'], startedAt: 0 },
+  });
+  const g = yourGame(s, 'p1');
+  assert.equal(plain(g.place!), 'You came second, tied on 10.');
+  assert.equal(plain(g.game!), 'All 10 right, then 2 more in the deathmatch; you missed the third. Your fastest took 1.8s.');
+  assert.equal(g.missedLead, 'The deathmatch question you missed, kept in your codex:');
+  assert.equal(plain(scoreLine(s, s.players[0])), 'Tied on 10, won the deathmatch in round 3');
+});
+
+test('take turns: the hardest category and the one picked most', () => {
+  const s = over([10, 8], {
+    answers: { p1: { n: 10, ok: 8, ms: 1800 } },
+    fastest: { by: 'p1', id: 'atziris-disdain', ms: 1800 },
+    cats: { 'Amulets & Belts': [5, 3], 'Body Armours': [8, 7], Rings: [1, 0] },
+    misses: [],
+  });
+  const lines = highlights(s).map((l) => plain(l.parts, text(s)));
+  assert.deepEqual(lines.slice(1), ['The hardest category was Amulets & Belts: 3 of 5 answered right.', 'The category picked most was Body Armours, 8 times.']);
+});
+
+test('the line under a Delve depth, against this device’s records', () => {
+  // Depths as the game keeps them: shown one less.
+  assert.equal(plain(delveLine(23, false, { previousBest: 27, best: false })), 'Perished in the Frozen Hollow, four short of your best, 26.');
+  assert.equal(plain(delveLine(45, false, { previousBest: 37, best: true })), `Into ${zoneOf(45).the}, eight past your best, 36.`);
+  assert.equal(plain(delveLine(23, false, { previousBest: null, best: true })), 'Your first descent reached the Frozen Hollow, the third zone.');
+  assert.equal(plain(delveLine(27, true, { previousBest: 19, best: true })), 'Into the Frozen Hollow, eight past your best together, 18.');
+  assert.equal(plain(delveLine(27, true, { previousBest: 32, best: false })), 'Into the Frozen Hollow, five short of your best together, 31.');
+  assert.equal(plain(delveLine(27, true, null)), 'The party reached the Frozen Hollow.');
+  // A zone with "The" of its own keeps it.
+  assert.equal(zoneOf(1).the, /^the /i.test(zoneOf(1).name) ? zoneOf(1).name : `the ${zoneOf(1).name}`);
+});
+
+/** A Delve run alone, over: lives lost at the depths given. */
+function run(losses: number[], recap: Partial<NonNullable<GameState['recap']>> = {}, revives: GameState['delve'] extends infer D ? NonNullable<D>['revives'] : never = undefined, players = 1): GameState {
+  const s = createGame('p0', { mode: 'delve' });
+  s.players = Array.from({ length: players }, (_, i) => ({ id: `p${i}`, name: ['Kalguur', 'Doryani', 'Una of the Vaal'][i], score: 0, recent: [], connected: true, hue: i }));
+  s.phase = 'over';
+  s.round = Math.max(...losses, 1);
+  s.delve = {
+    entrants: s.players.map((p) => p.id),
+    losses: { p0: losses, ...(players > 1 ? { p1: [losses.at(-1)!, losses.at(-1)!, losses.at(-1)!], p2: [losses.at(-1)!, losses.at(-1)!, losses.at(-1)!] } : {}) },
+    ruleset: DELVE_RULESET,
+    startedAt: 1000,
+    excused: [],
+    graceUntil: 0,
+    ...(revives ? { revives } : {}),
+  };
+  s.recap = { answers: {}, misses: [], ...recap };
+  return s;
+}
+
+const miss = (t: number, id: string, depth: number, more: Partial<Answer> = {}): Answer => ({ t, id, mode: 'name', ok: false, difficulty: 'cruel', race: false, depth, run: 1000, ...more });
+
+test('where your lives went: one row a life, the phial draining, a cave-in told as one', () => {
+  const s = run([19, 21, 45]);
+  const log = [
+    miss(1100, 'atziris-disdain', 19),
+    miss(1200, 'headhunter', 20, { warded: true }),
+    miss(1300, 'briarpatch', 21),
+    miss(1400, 'kaoms-heart', 45, { find: 'azurite', lives: 1, wards: 1 }),
+    // Another run's, and a right answer: not here.
+    miss(1500, 'death-rush', 22, { run: 999 }),
+    { ...miss(1600, 'death-rush', 22), ok: true },
+  ];
+  const rows = livesLost(s, null, log);
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.id, r.depth, r.lives, r.wards, r.after]),
+    [
+      ['item', 'atziris-disdain', 19, 1, 0, 2],
+      ['item', 'briarpatch', 21, 1, 0, 1],
+      ['cave', 'kaoms-heart', 45, 1, 1, 0],
+    ],
+  );
+  // A loss the log is missing is still told, at its depth.
+  const short = livesLost(s, null, log.slice(0, 2));
+  assert.deepEqual(
+    short.map((r) => [r.kind, r.depth, r.after]),
+    [
+      ['item', 19, 2],
+      ['plain', 21, 1],
+      ['plain', 45, 0],
+    ],
+  );
+});
+
+test('together: a life given drains the phial, one brought back leaves it as it was', () => {
+  const revives = [
+    { by: 'p0', to: 'p1', depth: 22, fell: 22, at: 1250 },
+    { by: 'p2', to: 'p0', depth: 23, fell: 23, at: 1350 },
+  ];
+  const s = run([20, 23, 27], {}, revives, 3);
+  const log = [miss(1100, 'ingenuity', 20, { who: 'p0', team: true, lives: 1, wards: 0 }), miss(1300, 'death-rush', 23, { who: 'p0', team: true, lives: 1, wards: 0 }), miss(1400, 'headhunter', 27, { who: 'p0', team: true, lives: 1, wards: 0 })];
+  const rows = livesLost(s, 'p0', log);
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.id ?? r.to, r.back ?? null, r.after]),
+    [
+      ['item', 'ingenuity', null, 2],
+      ['given', 'p1', null, 1],
+      ['item', 'death-rush', 'p2', 1],
+      ['item', 'headhunter', null, 0],
+    ],
+  );
+  const lines = partyHighlights(s).map((l) => plain(l.parts, text(s)));
+  assert.deepEqual(lines, ['Kalguur gave a life to bring Doryani back at depth 21.', 'Una of the Vaal gave a life to bring Kalguur back at depth 22.']);
+});
+
+test("the run's facts: zones reached, and what its finds gave", () => {
+  const s = run([15, 18, 23], {
+    items: [
+      { kind: 'dynamite', at: 15, by: 'p0', used: 18, how: 'blast' },
+      { kind: 'wards', at: 23, by: 'p0' },
+      { kind: 'wards', at: 23, by: 'p0' },
+      { kind: 'flares', at: 23, by: 'p0' },
+    ],
+  });
+  assert.deepEqual(
+    runFacts(s, 'p0').map((l) => plain(l.parts)),
+    ['Three of ten zones reached.', 'Dynamite you won at depth 14 blasted a question away at depth 17.', 'An azurite vein at depth 22 gave you two wards.', 'A flare you won at depth 22 was never needed.'],
+  );
+});
+
+test('alone, the highlights are your own; the first run tells fewer', () => {
+  const s = run([20], { fastest: { by: 'p0', id: '0935a2ea4b46', ms: 1900 }, closest: { by: 'p0', id: '6c868f3fcde4', left: 420, depth: 17 } });
+  const lines = soloHighlights(s, 'p0', { met: 9, fresh: 3 }, false).map((l) => plain(l.parts, text(s)));
+  assert.deepEqual(lines, ['Your fastest answer: 1.9s on Headhunter.', 'Your closest call: Ingenuity at depth 16, right with 0.4s left.', 'You met 3 new uniques, now kept in your codex.']);
+  const firstRun = soloHighlights(s, 'p0', { met: 23, fresh: 23 }, true).map((l) => plain(l.parts, text(s)));
+  assert.deepEqual(firstRun, ['Your fastest answer: 1.9s on Headhunter.', 'All 23 uniques you met are now kept in your codex.']);
+});
+
+test('the runs chart: the runs of the kind up to this one, and columns that fit', () => {
+  const r = (id: number, players = 1, more: Partial<DelveRun> = {}): DelveRun => ({ id, at: id, depth: 10 + id, players, ruleset: DELVE_RULESET, mixed: false, ...more });
+  const runs = [r(1), r(2, 3), r(3, 1, { left: true }), r(4), r(5, 1, { mixed: true }), r(6), r(7)];
+  assert.deepEqual(
+    chartRuns(runs, 6, false, null).map((x) => x.id),
+    [1, 4, 6],
+  );
+  assert.deepEqual(chartRuns(runs, 99, false, null), []);
+  const many = Array.from({ length: 30 }, (_, i) => r(i + 1));
+  assert.equal(chartRuns(many, 30, false, null).length, CHART_RUNS);
+  assert.deepEqual(chartLayout(4), { col: 34, gap: 44 / 3 });
+  assert.deepEqual(chartLayout(3), { col: 34, gap: 22 });
+  assert.deepEqual(chartLayout(8), { col: 17, gap: 6 });
+  for (let n = 1; n <= CHART_RUNS; n++) {
+    const { col, gap } = chartLayout(n);
+    assert.ok(col >= 10 && n * col + (n - 1) * gap <= 180 + 1e-9, `${n} runs fit`);
+  }
+  assert.equal(median([3, 9, 4]), 4);
+  assert.equal(median([3, 9, 4, 10]), 7);
+});
+
+test('Delve: a find won goes into the recap, and what came of it; a right answer is a close call by its clock', () => {
+  const clock = { now: 1_000_000 };
+  const engine = new Engine(items, { rng: seeded(3), now: () => clock.now });
+  let s: GameState = createGame(null, { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false });
+  s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
+  s = engine.apply(s, { type: 'start' }, null);
+  s = structuredClone(s);
+  s.round = 20;
+  // A Dynamite Cache on the first card, answered right with 3 s of its clock left.
+  s.delve!.finds = [{ category: s.offered[0], kind: 'dynamite' }];
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  clock.now = s.question!.deadline! - 3000;
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt, ms: 2100 }, null);
+  assert.equal(s.reveal!.gained, 'dynamite');
+  assert.deepEqual(s.recap!.items, [{ kind: 'dynamite', at: 20, by: 'p0' }]);
+  assert.deepEqual(s.recap!.closest, { by: 'p0', id: s.question!.itemId, left: 3000, depth: 20 });
+  assert.deepEqual(s.recap!.fastest, { by: 'p0', id: s.question!.itemId, ms: 2100 });
+  // A depth on, the stick blasts a question away.
+  s = engine.apply(s, { type: 'next' }, null);
+  const card = s.offered.find((c) => !s.delve!.finds?.some((f) => f.category === c))!;
+  s = engine.apply(s, { type: 'pick', category: card }, null);
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  s = engine.apply(s, { type: 'blast', askedAt: s.question!.askedAt }, null);
+  assert.deepEqual(s.recap!.items, [{ kind: 'dynamite', at: 20, by: 'p0', used: 21, how: 'blast' }]);
+  assert.equal(plain(runFacts(s, 'p0')[1].parts), 'Dynamite you won at depth 19 blasted a question away at depth 20.');
+});
