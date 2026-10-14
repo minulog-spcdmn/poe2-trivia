@@ -5,7 +5,7 @@
 // being stored. Who comes on next, and for how long, is up to chance and
 // their own leanings; when a room opens, is up to the room list (wanted.ts).
 
-import { rollHandStyle } from './motion.ts';
+import { LEFT_HANDED, rollHandStyle } from './motion.ts';
 import { DEFAULT_SETTINGS, type Difficulty, type Item } from '../lib/game.ts';
 import { gauss, makePersona, rollEye, rollNerveForRisk, weighted, type Persona, type Rng } from './brain.ts';
 
@@ -272,6 +272,16 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   persona.curious = seededBy(`${name}:curious`)() ** 1.5;
   persona.seed = name;
   return { name, persona, prefs };
+}
+
+/**
+ * Who of `cast` mouses with the left hand: LEFT_HANDED of them (rounded),
+ * the same ones every time (those lowest on a draw of their own), so the
+ * cast has its share however the dice fell for each.
+ */
+export function leftHanders(cast: readonly string[]): Set<string> {
+  const draw = new Map(cast.map((n) => [n, seededBy(`${n}:left`)()]));
+  return new Set([...cast].sort((a, b) => draw.get(a)! - draw.get(b)!).slice(0, Math.round(LEFT_HANDED * cast.length)));
 }
 
 /**

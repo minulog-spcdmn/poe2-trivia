@@ -24,7 +24,7 @@ import type { GameState } from '../lib/game';
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
-import { identityOf, leaningsOf, NAMES, nextName, shiftLength, type Identity, type Mode } from './identities';
+import { identityOf, leaningsOf, leftHanders, NAMES, nextName, shiftLength, type Identity, type Mode } from './identities';
 import { joinable, nextRole, waitingAlone, wanted, watchable, type Role } from './wanted';
 import { afterHosting, afterVisit, hesitation, joinsAfter, keenTo, opensRoom, playsOn, urgeToHost, type HostExit, type Memory, type Visit } from './choice';
 import { dropSave, Host, keepSaveCopy, type Stint } from './host';
@@ -95,6 +95,8 @@ function load(): Saved {
 }
 
 const CAST = new Set([...NAMES, ...VISITORS]);
+/** Who of them mouses with the left hand (identities.ts leftHanders). */
+const LEFT = leftHanders([...CAST]);
 /** A newcomer not seen for this long is anyone's guess: someone else by that name, new all the same. */
 const FORGOTTEN_MS = 21 * 24 * 3600000;
 /** A newcomer who comes back does so a day or more later. */
@@ -172,6 +174,7 @@ export class Seat {
   /** Who `name` is: a regular, or a newcomer (visitors.ts). */
   private identity(name: string): Identity {
     const who = identityOf(name, engine.categories, this.modes, engine.items);
+    who.persona.hand = { ...who.persona.hand, left: LEFT.has(name) };
     return VISITORS.includes(name) ? asNewcomer(who, this.modes) : who;
   }
 

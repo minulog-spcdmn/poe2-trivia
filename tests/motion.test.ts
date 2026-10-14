@@ -155,3 +155,30 @@ test('a stretch of waiting now and then begins partway in, at a rest', () => {
   }
   assert.ok(starts.size > 1);
 });
+
+test('a left hand replays the recorded moves mirrored, but clicks and rests where the right hand did on what it was after', async () => {
+  const { mirrored, recordedOf, rollHandStyle, LEFT_HANDED } = await import('../src/bot/motion.ts');
+  const data = (await import('../src/data/botMotion.json', { with: { type: 'json' } })).default as { episodes: Record<string, unknown>[] };
+  const click = data.episodes.find((e) => e.kind === 'answer') as never as import('../src/bot/motion.ts').ClickStretch;
+  const m = mirrored(click);
+  assert.equal(mirrored(click), m);
+  assert.equal(recordedOf(m), click);
+  assert.equal(recordedOf(click), click);
+  for (let i = 0; i < click.lead.length; i += 2) {
+    assert.equal(m.lead[i], 1000 - click.lead[i]);
+    assert.equal(m.lead[i + 1], click.lead[i + 1]);
+  }
+  assert.equal(m.reach[0], 1000 - click.reach[0]);
+  assert.deepEqual(m.aim, click.aim);
+  assert.deepEqual(m.dwells, click.dwells);
+  const [l, t, r, b, w, h] = click.src;
+  assert.deepEqual(m.src, [w - r, t, w - l, b, w, h]);
+  const wait = data.episodes.find((e) => e.kind === 'wait') as never as import('../src/bot/motion.ts').StreamStretch;
+  assert.equal(mirrored(wait).path[0], 1000 - wait.path[0]);
+  // A few in a hundred.
+  let left = 0;
+  let x = 7;
+  const rng = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  for (let i = 0; i < 20000; i++) if (rollHandStyle(rng).left) left++;
+  assert.ok(Math.abs(left / 20000 - LEFT_HANDED) < 0.01, `${left}`);
+});

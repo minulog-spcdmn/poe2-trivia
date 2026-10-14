@@ -447,9 +447,44 @@ export function trackAt(tr: Track, now: number): [number, number, Src] {
 export interface HandStyle {
   speed: number;
   still: number;
+  /** A left hand on the mouse: the recorded (right) hand's moves replayed mirrored (mirrored). */
+  left?: boolean;
 }
 
-export const rollHandStyle = (rng: Rng): HandStyle => ({ speed: between(rng, 0.85, 1.25), still: rng() });
+/** How many players use the mouse with their left hand: few, fewer than are left-handed (most of them mouse with the right). */
+export const LEFT_HANDED = 0.04;
+
+export const rollHandStyle = (rng: Rng): HandStyle => ({ speed: between(rng, 0.85, 1.25), still: rng(), left: rng() < LEFT_HANDED });
 
 /** Before any is rolled (tests, bots made by hand): the recorded hand as it was. */
 export const PLAIN_HAND: HandStyle = { speed: 1, still: 0.5 };
+
+const flipped = new WeakMap<Stretch, Stretch>();
+const recorded = new WeakMap<Stretch, Stretch>();
+/** The stretch as it was recorded (itself, unless it's a mirrored one). */
+export const recordedOf = (e: Stretch): Stretch => recorded.get(e) ?? e;
+/** Pairs of across and down (thousandths of the frame), mirrored across it. */
+const flipPath = (p: number[]) => p.map((v, i) => (i % 2 ? v : 1000 - v));
+/** A frame's place on the screen (Src), mirrored across the room. */
+const flipSrc = ([l, t, r, b, w, h]: Src): Src => [w - r, t, w - l, b, w, h];
+
+/**
+ * A stretch as a left hand would have made it: the recorded moves mirrored
+ * left to right, and the frame's place on the screen with them, but not
+ * where the hand rests on or clicks in what it's after (a name is read from
+ * its left, whichever hand moves the mouse; and the rests go onto the bot's
+ * own picks by what they were, not where). The same mirrored stretch for
+ * the same recorded one, every time.
+ */
+export function mirrored<T extends Stretch>(e: T): T {
+  let m = flipped.get(e);
+  if (!m) {
+    m =
+      'path' in e
+        ? { ...e, src: flipSrc(e.src), ...(e.then ? { then: flipSrc(e.then) } : {}), path: flipPath(e.path) }
+        : { ...e, src: flipSrc(e.src), lead: flipPath(e.lead), reach: flipPath(e.reach) };
+    flipped.set(e, m);
+    recorded.set(m, e);
+  }
+  return m as T;
+}

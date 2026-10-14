@@ -22,7 +22,7 @@ import { session } from '../lib/session.svelte';
 import { forcedAway } from '../lib/presence';
 import type { Persona } from './brain';
 import { aimIn, layout as roomLayout, type Box, type Spot } from './reach';
-import { ROOM, STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
+import { ROOM, STEP, frameOf, leadTrack, mirrored, pickClick, pickStream, recordedOf, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
 import { between } from './util';
 
 /** A reach takes about this long (ms), as recorded: to begin a click early enough by. */
@@ -168,7 +168,7 @@ export class Hand {
     const from = Math.max(now, dealt);
     const at = this.where(now);
     const f = this.box(frame, s);
-    const e = pickClick(kind, until - from, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, x.src) });
+    const e = this.own(pickClick(kind, until - from, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, this.own(x).src) }));
     if (!e) return;
     this.remember(e);
     const w = waver(Math.random);
@@ -228,7 +228,7 @@ export class Hand {
   /** Reaches into `box` and presses there (`anchor`: what that is, if it's something of the game's), as click does. */
   private async press(box: Box, kind: ClickStretch['kind'], anchor: string | null, by = Infinity): Promise<void> {
     const s = session.state;
-    const e = this.pending?.kind === kind ? this.pending.e : pickClick(kind, 0, Math.random, { used: new Set(this.used) });
+    const e = this.pending?.kind === kind ? this.pending.e : this.own(pickClick(kind, 0, Math.random, { used: new Set(this.used) }));
     const w = this.pending?.kind === kind ? this.pending.w : waver(Math.random);
     this.pending = null;
     this.presses = [];
@@ -267,7 +267,7 @@ export class Hand {
     const s = session.state;
     if (!this.live(s) || this.dealing(s!)) return;
     const box = layout(s!).get(anchor);
-    const e = box && pickClick('answer', 0, Math.random, { used: new Set(this.used) });
+    const e = box && this.own(pickClick('answer', 0, Math.random, { used: new Set(this.used) }));
     if (!box || !e) return;
     this.remember(e);
     this.pending = null;
@@ -316,8 +316,16 @@ export class Hand {
     return [on(u + this.grip[0]), on(v + this.grip[1])];
   }
 
-  /** Keeps the last few stretches it replayed. */
-  private remember(e: Stretch) {
+  /** A recorded stretch as this hand makes it: a left hand's mirrored (motion.ts mirrored). */
+  private own<T extends Stretch>(e: T): T;
+  private own<T extends Stretch>(e: T | null): T | null;
+  private own<T extends Stretch>(e: T | null): T | null {
+    return e && this.persona.hand.left ? mirrored(e) : e;
+  }
+
+  /** Keeps the last few stretches it replayed (as recorded: a mirrored one is the same one). */
+  private remember(replayed: Stretch) {
+    const e = recordedOf(replayed);
     if (!this.used.includes(e)) this.used.push(e);
     if (this.used.length > 24) this.used.shift();
   }
@@ -369,7 +377,7 @@ export class Hand {
     // Nothing of its own to do (someone else's turn, the lobby, the end): it waits as the recorded player waited.
     if (!this.track && this.idle(s) && now >= this.restUntil) {
       const lobby = s.phase === 'lobby' || s.phase === 'over';
-      const e = pickStream(lobby ? 'lobby' : 'wait', Math.random, new Set(this.used));
+      const e = this.own(pickStream(lobby ? 'lobby' : 'wait', Math.random, new Set(this.used)));
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);

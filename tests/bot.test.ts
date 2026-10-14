@@ -4,7 +4,7 @@ import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, inspects, revive
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
-import { DEFAULT_RULES, MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { DEFAULT_RULES, MODES, NAMES, buildOf, leftHanders, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, nextRole, notJoinable, waitingAlone, wanted, watchable } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
@@ -859,4 +859,11 @@ test('Delve together with people: however many bots, the team does as well as th
   const rng = seeded(3);
   const rate = (sociable: number) => Array.from({ length: 4000 }, () => revives({ ...plain, sociable }, rng)).filter(Boolean).length / 4000;
   assert.ok(rate(0) > 0.35 && rate(0) < 0.55 && rate(1) > 0.8 && rate(1) < 0.95);
+});
+
+test('the cast has its share of left hands, always the same people', () => {
+  const cast = [...NAMES, ...VISITORS];
+  const left = leftHanders(cast);
+  assert.equal(left.size, Math.round(0.04 * cast.length));
+  assert.deepEqual([...leftHanders(cast)].sort(), [...left].sort());
 });
