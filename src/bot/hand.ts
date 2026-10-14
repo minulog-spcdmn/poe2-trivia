@@ -296,8 +296,9 @@ export class Hand {
 
   /** Moves on, and sends where it is (only when it moved). */
   tick() {
-    // Its player is away (another tab, afk.ts): the pointer rests where it was.
-    if (forcedAway()) return;
+    // Its player is away (another tab, afk.ts): gone from the others' screens, as a hidden tab's pointer is
+    // (PeerCursors.svelte); back where it was once it moves again.
+    if (forcedAway()) return this.send(false);
     const s = session.state ?? this.s;
     if (!s) return this.send(false);
     this.s = s;
