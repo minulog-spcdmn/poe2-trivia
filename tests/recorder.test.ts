@@ -40,3 +40,15 @@ test('the game is kept only when something a hand cares about changes, and the s
   assert.deepEqual(Object.keys(file), ['v', 'started', 'about', 'moves', 'at', 'happenings', 'peers', 'layouts', 'scenes']);
   assert.ok(!JSON.stringify(file.scenes).includes('"name"'));
 });
+
+test('a scene keeps what the bots are fitted by: the difficulty, tall or colourless art, whose wrong answers, whose win', () => {
+  const s = createGame('me');
+  const q = { mode: 'art', category: 'Staves', labels: [null, null, null, null], prompt: 'X', askedAt: 5, deadline: 9, tall: true, gray: true, struck: [{ index: 1, by: 'me', at: 6 }, { index: 2, by: 'you', at: 7 }] };
+  const sc = sceneOf({ ...s, phase: 'question', question: q } as never, 'me', 0);
+  assert.equal(sc.difficulty, s.settings.difficulty);
+  assert.equal(sc.question?.tall, true);
+  assert.equal(sc.question?.gray, true);
+  assert.deepEqual(sc.question?.struck, [{ index: 1, mine: true }, { index: 2, mine: false }]);
+  const rv = sceneOf({ ...s, phase: 'reveal', question: q, reveal: { correctIndex: 0, chosenIndex: 0, correct: true, timedOut: false, winnerId: 'me' } } as never, 'me', 0);
+  assert.equal(rv.reveal?.mine, true);
+});

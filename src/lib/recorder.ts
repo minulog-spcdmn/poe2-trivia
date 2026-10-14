@@ -51,6 +51,8 @@ export interface Scene {
   t: number;
   phase: GameState['phase'];
   mode: GameState['settings']['mode'];
+  /** The room's difficulty (outside Delve): what the questions pile on. */
+  difficulty?: string;
   round: number;
   /** Whose turn it is (index into the players), and whether it's this player's. */
   turn: number;
@@ -75,8 +77,13 @@ export interface Scene {
     clockAt?: number;
     /** The art burning in (its patches across, and the seconds it takes): how much of it was in view at the click, to fit the bots' timing by. */
     veil?: { size: number; seconds: number };
+    /** Pictures that stand tall (one row of tall tiles), or shown without colour. */
+    tall?: true;
+    gray?: true;
+    /** Delve together: the options struck wrong so far, and whether it was this player who did. */
+    struck?: { index: number; mine: boolean }[];
   };
-  reveal?: { correctIndex: number; chosenIndex: number | null; correct: boolean; timedOut: boolean; at?: number };
+  reveal?: { correctIndex: number; chosenIndex: number | null; correct: boolean; timedOut: boolean; at?: number; mine?: boolean };
 }
 
 export function sceneOf(s: GameState, me: string | null, t: number): Scene {
@@ -87,6 +94,7 @@ export function sceneOf(s: GameState, me: string | null, t: number): Scene {
     t,
     phase: s.phase,
     mode: s.settings.mode,
+    ...(s.delve ? {} : { difficulty: s.settings.difficulty }),
     round: s.round,
     turn,
     mine: !me || s.players[turn]?.id === me,
@@ -107,10 +115,13 @@ export function sceneOf(s: GameState, me: string | null, t: number): Scene {
             deadline: q.deadline,
             ...(q.clockAt !== undefined ? { clockAt: q.clockAt } : {}),
             ...(q.veil ? { veil: { size: q.veil.size, seconds: q.veil.seconds } } : {}),
+            ...(q.tall ? { tall: true as const } : {}),
+            ...(q.gray ? { gray: true as const } : {}),
+            ...(q.struck?.length ? { struck: q.struck.map((x) => ({ index: x.index, mine: x.by === me })) } : {}),
           },
         }
       : {}),
-    ...(r ? { reveal: { correctIndex: r.correctIndex, chosenIndex: r.chosenIndex, correct: r.correct, timedOut: r.timedOut, at: r.at } } : {}),
+    ...(r ? { reveal: { correctIndex: r.correctIndex, chosenIndex: r.chosenIndex, correct: r.correct, timedOut: r.timedOut, at: r.at, ...(me && r.winnerId === me ? { mine: true } : {}) } } : {}),
   };
 }
 
@@ -121,7 +132,11 @@ export type Happening =
   | [t: number, what: 'wheel', dy: number]
   | [t: number, what: 'scroll', scrollY: number]
   | [t: number, what: 'key', key: string]
-  | [t: number, what: 'pointer', type: string];
+  | [t: number, what: 'pointer', type: string]
+  /** Burning-in art: patches of picture `tile` (-1: a name question's art) shown so far, of `count`. */
+  | [t: number, what: 'patch', shown: number, count: number, tile: number]
+  /** The item window opened (1) or closed (0). */
+  | [t: number, what: 'item', open: 0 | 1];
 
 export class Recording {
   /** Date.now() at t = 0, to read the game's host-clock times against. */
