@@ -144,6 +144,9 @@ export class Seat {
   private ours = new Set<string>();
   /** The runner is stopping (its first Ctrl+C): a game with people in it plays to its end, and nothing new begins. */
   private winding = false;
+  /** Winding down: when the one on goes (windDown), and whether that time has come. */
+  private leaveAt = 0;
+  private left = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private scoutTimer: ReturnType<typeof setTimeout> | null = null;
   private copyTimer: ReturnType<typeof setInterval> | null = null;
@@ -236,15 +239,27 @@ export class Seat {
   }
 
   /**
-   * The runner is stopping (its first Ctrl+C). A game under way with real
-   * people in it (in this seat's room, or the room its guest is in) is
-   * played to its end, the scores left up a moment; everything else ends
-   * now, and nobody new comes on. Says what it plays on for, or null when
-   * nothing (settled, below, says when it is done).
+   * The runner is stopping (its first Ctrl+C): nobody new comes on, and
+   * whoever is on goes at a time of their own within `spreadMs` (people
+   * drift off; they don't all go at once), playing on as usual till then
+   * (finding no new room, opening none). When their time comes, a game
+   * under way with real people in it is played to its end first. Says when
+   * they'll go, for the runner (null: nobody on).
    */
-  windDown(): string | null {
+  windDown(spreadMs = 0): string | null {
     this.winding = true;
     this.opener = null;
+    const now = Date.now();
+    this.leaveAt = now + (spreadMs > 0 ? between(Math.min(15000, spreadMs), spreadMs) : 0);
+    const who = this.host?.who.name ?? this.guest?.who.name;
+    if (!who) return null;
+    if (this.leaveAt <= now) return this.leaveNow();
+    return `${who} goes around ${time(this.leaveAt)}`;
+  }
+
+  /** Their time to go: a game with people in it played to its end first, else at once. Says so when it's the game. */
+  private leaveNow(): string | null {
+    this.left = true;
     const s = session.state;
     const people = peopleIn(s);
     if (this.host && gameOn(s) && people.length) {
@@ -409,7 +424,19 @@ export class Seat {
   private tick() {
     if (this.busy) return;
     const now = Date.now();
-    if (this.winding) return this.windTick(now);
+    if (this.winding) {
+      if (this.left) return this.windTick(now);
+      if (now >= this.leaveAt) return void this.leaveNow();
+      // Till their time comes, the one on plays on as usual; nobody new comes on.
+      if (this.host) {
+        const gone = this.host.tick(now);
+        if (gone) this.hostGoes(now, gone.exit, gone.why);
+      } else if (this.guest && !this.guest.looking) {
+        const gone = this.guest.tick(now);
+        if (gone) this.guestGoes(now, gone.why, gone.visit, gone.host);
+      }
+      return;
+    }
     if (this.latest.at > this.considered) {
       this.considered = this.latest.at;
       this.see(this.latest.rooms, this.latest.at, now);
@@ -573,7 +600,7 @@ export class Seat {
     this.guest = null;
     this.opener = null;
     if (visit && host) this.remember(name, afterVisit(this.mind(name), visit, host, now));
-    if (visit && playsOn(visit, (guest.until - now) / MIN, Math.random)) return this.lookForRoom(guest.who, guest.until, '', 'again');
+    if (!this.winding && visit && playsOn(visit, (guest.until - now) / MIN, Math.random)) return this.lookForRoom(guest.who, guest.until, '', 'again');
     this.restUntil = this.rest(now);
   }
 
@@ -606,6 +633,6 @@ export class Seat {
     // Made way for someone waiting alone in their own room: they go and keep them company.
     const to = exit === 'made way' ? Host.wayTo(this.others, this.ours) : null;
     const forSomeone = !!to && waitingAlone(to, this.ours);
-    if (!this.handOver && (forSomeone || joinsAfter(this.urge(name, host.who.persona, until - now, now), exit, Math.random))) this.lookForRoom(host.who, until, to?.code, 'stays on');
+    if (!this.winding && !this.handOver && (forSomeone || joinsAfter(this.urge(name, host.who.persona, until - now, now), exit, Math.random))) this.lookForRoom(host.who, until, to?.code, 'stays on');
   }
 }

@@ -103,7 +103,7 @@ export const VISITORS = [
   'noob',
   'player1',
   'anon',
-  'nobody',
+  'justme',
   'random',
   'guest42',
   'hello123',
