@@ -36,9 +36,9 @@ const LOBBY_REST_MS: [number, number] = [2000, 12000];
 /**
  * The item window's close (ItemWindow.svelte), where the game first puts the
  * window (the screen's left, middling height), in the room's terms (reach.ts,
- * measured at 1440 by 900): at the right of its name plate.
+ * measured as it is): at the right of its name plate.
  */
-const WINDOW_CLOSE: Box = [232, 226, 258, 258];
+const WINDOW_CLOSE: Box = [178, 419, 195, 451];
 
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');

@@ -80,8 +80,8 @@ const smooth = (k: number) => {
   return x * x * (3 - 2 * x);
 };
 
-/** The bot's room (reach.ts): across, 0 to 1000; down, its screen's bottom (a 900 high screen, the room from 65 down). */
-export const ROOM: [number, number] = [1000, ((900 - 65) / 900) * 1000];
+/** The bot's room (reach.ts): across, 0 to 1000; down, its screen's bottom (a 977 high stage, the room from 65 down). */
+export const ROOM: [number, number] = [1000, ((977 - 65) / 977) * 1000];
 
 /**
  * One way across or down: from the recorded screen's (its frame from `a`
