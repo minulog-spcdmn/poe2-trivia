@@ -645,7 +645,7 @@ test('a wrong pick falls for look-alike art too', () => {
   assert.ok(c2[3] > c2[2] && c2[1] > c2[2], `${c2}`);
 });
 
-test('burning in, how much it needs to see: more than half knowing it, about half that for a favourite, most of it not knowing it, spread wide', () => {
+test('burning in, how much it needs to see: about a quarter knowing it, less for a favourite, most of it not knowing it, spread wide', () => {
   const rng = seeded(5);
   const med = (f: () => number) => {
     const v = Array.from({ length: 2001 }, f).sort((a, b) => a - b);
@@ -655,17 +655,16 @@ test('burning in, how much it needs to see: more than half knowing it, about hal
   const fav = med(() => sightNeeded(plain, { ...a, favourite: true }, true, rng).share);
   const known = med(() => sightNeeded(plain, a, true, rng).share);
   const unknown = med(() => sightNeeded(plain, a, false, rng).share);
-  // As recorded: knowing it, more than half of it; a favourite about half that; not knowing it, most of it.
-  assert.ok(fav < 0.4 && fav < known && known > 0.5 && known < 0.75 && unknown > 0.75, `${fav} ${known} ${unknown}`);
-  // Deep in Delve, crowded by look-alikes: nearly all of it.
-  // (Depth 100's rules: names alike, three made-up ones, art alike, grey and flipped.)
+  // As recorded: knowing it, about a quarter of it (13 to 32% on a slow burn); not knowing it, most of it.
+  assert.ok(fav < known && known > 0.2 && known < 0.35 && unknown > 0.75, `${fav} ${known} ${unknown}`);
+  // Crowded by look-alikes, a little more.
   const deep = { ...a, gray: true, mirrored: true, rules: { ...a.rules, similarNames: 1, fakes: 3, lookalikes: 0.72 } };
-  assert.ok(med(() => sightNeeded(plain, deep, true, rng).share) > 0.8);
-  // A sharp eye goes on less; a favourite now and then on under 15%.
+  assert.ok(med(() => sightNeeded(plain, deep, true, rng).share) > known);
+  // A sharp eye goes on less, now and then under 15%.
   const sharp = { ...plain, eye: 0.6 };
   assert.ok(med(() => sightNeeded(sharp, a, true, rng).share) < known);
-  const low = Array.from({ length: 2000 }, () => sightNeeded(sharp, { ...a, favourite: true }, true, rng).share).filter((x) => x < 0.15).length;
-  assert.ok(low > 100, `${low}`);
+  const low = Array.from({ length: 2000 }, () => sightNeeded(sharp, a, true, rng).share).filter((x) => x < 0.15).length;
+  assert.ok(low > 300, `${low}`);
   for (let i = 0; i < 500; i++) {
     const n = sightNeeded(plain, a, i % 2 === 0, rng).share;
     assert.ok(n >= 0.03 && n <= 1);
@@ -834,7 +833,10 @@ test('opening an item\'s details: now and then, most after a miss, more for the 
   // As recorded: about one in sixteen of the others' questions, for a fairly curious player.
   assert.ok(Math.abs(rate({ ...plain, curious: 0.35 }, 'theirs') - 0.062) < 0.02);
   const reads = Array.from({ length: 4000 }, () => readingTime({ ...plain, curious: 0.35 }, rng)).sort((a, b) => a - b);
-  assert.ok(reads[2000] > 5000 && reads[2000] < 7500 && reads[3900] > 12000, `${reads[2000]} ${reads[3900]}`);
+  assert.ok(reads[2000] > 4500 && reads[2000] < 7500 && reads[3900] > 12000 && reads[200] < 2600, `${reads[200]} ${reads[2000]} ${reads[3900]}`);
+  // In a race, mostly a glance.
+  const glances = Array.from({ length: 4000 }, () => readingTime({ ...plain, curious: 0.35 }, rng, true)).sort((a, b) => a - b);
+  assert.ok(glances[2000] < 2600, `${glances[2000]}`);
 });
 
 test('digging a vein on: careful players mostly get out, gamblers and the careless often dig on', () => {
@@ -877,13 +879,10 @@ test('the cast has its share of left hands, always the same people', () => {
   assert.deepEqual([...leftHanders(cast)].sort(), [...left].sort());
 });
 
-test('in a race, players go on less of the art and answer quicker, as recorded', () => {
+test('in a race, players answer quicker, as recorded', () => {
   const rng = seeded(61);
   const a = preset('eternal');
   const med = (f: () => number) => Array.from({ length: 2001 }, f).sort((x, y) => x - y)[1000];
-  const turn = med(() => sightNeeded(plain, a, true, rng).share);
-  const race = med(() => sightNeeded(plain, { ...a, mode: 'race' }, true, rng).share);
-  assert.ok(race < turn * 0.7 && race > 0.25 && race < 0.5, `${turn} ${race}`);
   const t = med(() => answerDelay(plain, a, true, rng)!);
   const r = med(() => answerDelay(plain, { ...a, mode: 'race' }, true, rng)!);
   assert.ok(r < t * 0.9, `${t} ${r}`);

@@ -242,7 +242,7 @@ export class Player {
       run: () => {
         if (session.state?.question?.askedAt !== q.askedAt || session.state.phase !== 'reveal') return;
         log(`looks at the item${how === 'missed' ? ' it missed' : ''}`);
-        return this.hand.inspect(anchor, readingTime(this.persona, Math.random));
+        return this.hand.inspect(anchor, readingTime(this.persona, Math.random, s.settings.mode === 'race' && !s.delve));
       },
     });
   }
@@ -673,10 +673,10 @@ export class Player {
 
   /**
    * The art burning in: it makes up its mind once enough of the item is in
-   * view for it (sightNeeded: a sliver for a favourite, more where it's
-   * crowded by look-alikes, most of it when it doesn't know), as its own
-   * screen shows it (glimpse.ts), then answers a moment later (afterSeeing),
-   * never sooner than reading the options takes. A trigger-happy player now
+   * view for it (sightNeeded: about a quarter knowing it, less for a
+   * favourite, most of it when it doesn't know), as its own screen shows it
+   * (glimpse.ts), then answers a moment later (afterSeeing), but never
+   * sooner than it would on the art shown whole. A trigger-happy player now
    * and then goes before they're sure; a nervous one may still panic into it
    * once the clock ticks urgent; and with the clock nearly out, it goes
    * with what it has.
@@ -687,7 +687,8 @@ export class Player {
     // Going early, it's as often as not a guess.
     const sure = need.early ? knows && Math.random() < 0.35 : knows;
     const react = afterSeeing(this.persona, ask, sure, Math.random);
-    const floor = start + Math.round(0.5 * (answerDelay(this.persona, { ...ask, veil: 0 }, true, Math.random) ?? 0));
+    // Never sooner than it would think on the art shown whole (recorded: the click 3 to 7 s in, however fast the art burnt).
+    const floor = start + (answerDelay(this.persona, { ...ask, veil: 0 }, sure, Math.random) ?? 0);
     // When it expects to go (the art comes in about evenly over the veil's time), to look the question over until.
     const expected = Math.max(floor, start + 400 + need.share * q.veil!.seconds * 1000 + react);
     const panicked = panic(this.persona, ask, expected - start, Math.random);
