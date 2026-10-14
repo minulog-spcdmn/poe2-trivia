@@ -169,7 +169,7 @@ export class Seat {
   /** Who `name` is: a regular, or a newcomer (visitors.ts). */
   private identity(name: string): Identity {
     const who = identityOf(name, engine.categories, this.modes, engine.items);
-    return VISITORS.includes(name) ? asNewcomer(who) : who;
+    return VISITORS.includes(name) ? asNewcomer(who, this.modes) : who;
   }
 
   /**

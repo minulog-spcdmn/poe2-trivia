@@ -6,7 +6,7 @@
 // their own leanings; when a room opens, is up to the room list (wanted.ts).
 
 import { rollHandStyle } from './motion.ts';
-import type { Difficulty, Item } from '../lib/game.ts';
+import { DEFAULT_SETTINGS, type Difficulty, type Item } from '../lib/game.ts';
 import { gauss, makePersona, rollEye, weighted, type Persona, type Rng } from './brain.ts';
 
 /**
@@ -126,7 +126,9 @@ export const NAMES = [
 export const MODES = ['turns', 'race', 'delve'] as const;
 export type Mode = (typeof MODES)[number];
 /** How often people host each (out of the modes allowed). */
-const MODE_WEIGHTS: Record<Mode, number> = { turns: 5, race: 2, delve: 3 };
+const MODE_WEIGHTS: Record<Mode, number> = { turns: 4, race: 2, delve: 6 };
+/** How likely a host keeps the game's own rules for a mode (difficulty, target, timer: lib/game.ts DEFAULT_SETTINGS), as most people do. */
+const KEEPS_DEFAULTS = 0.55;
 
 /** The modes in a list like "turns,delve" (case and spaces aside); all of them if it names none. */
 export function modesFrom(list: string | null | undefined): Mode[] {
@@ -165,17 +167,28 @@ export function seededBy(text: string): Rng {
 const pick = <T>(rng: Rng, options: T[], weights: number[]) => options[weighted(weights, rng)];
 
 /**
- * Rules to host with, as people pick them (mostly take turns or Delve, mostly
- * Cruel; Delve has no rules of its own to pick), among the modes allowed.
+ * Rules to host with, as people pick them, among the modes allowed: Delve a
+ * little more often than taking turns, racing least (Delve has no rules of
+ * its own to pick). Most keep the game's own rules for the mode; the rest
+ * set their own, easier or harder, longer or shorter.
  */
 export function rollPrefs(rng: Rng, modes: readonly Mode[] = MODES): RoomPrefs {
+  const mode = pick(rng, [...modes], modes.map((m) => MODE_WEIGHTS[m]));
+  if (rng() < KEEPS_DEFAULTS) return { mode, ...DEFAULT_RULES };
   return {
-    mode: pick(rng, [...modes], modes.map((m) => MODE_WEIGHTS[m])),
-    difficulty: pick(rng, ['cruel', 'merciless', 'eternal'] as const, [6, 3, 1]),
-    target: pick(rng, [5, 7, 10, 15], [2, 2, 4, 1]),
-    timer: pick(rng, [16, 32, 64], [2, 5, 1]),
+    mode,
+    difficulty: pick(rng, ['cruel', 'merciless', 'eternal'] as const, [4, 3, 2]),
+    target: pick(rng, [5, 7, 10, 15], [3, 3, 1, 2]),
+    timer: pick(rng, [16, 32, 64], [1, 4, 2]),
   };
 }
+
+/** The game's own rules for a mode, as a room starts with them. */
+export const DEFAULT_RULES: Omit<RoomPrefs, 'mode'> = {
+  difficulty: DEFAULT_SETTINGS.difficulty as RoomPrefs['difficulty'],
+  target: DEFAULT_SETTINGS.targetScore,
+  timer: DEFAULT_SETTINGS.timer,
+};
 
 /**
  * Other rules than `now`, among the modes allowed: a host who waited in vain

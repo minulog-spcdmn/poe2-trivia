@@ -15,7 +15,7 @@
 // play it a little worse and slower, try the button that moves someone
 // else's reveal on, and seldom host.
 
-import { seededBy, type Identity } from './identities.ts';
+import { DEFAULT_RULES, MODES, seededBy, type Identity, type Mode } from './identities.ts';
 
 export const VISITORS = [
   'Vexrin',
@@ -256,26 +256,27 @@ export function visitorsFor(slot: number, of: number): string[] {
 
 /** How likely someone who comes on is a newcomer rather than a regular. */
 export const NEWCOMERS = 0.25;
+/** How likely a newcomer who hosts keeps the room the game sets up for a first visit (Delve, public). */
+const FIRST_ROOM_KEPT = 0.85;
 /** How likely a newcomer comes back for another go later (once). */
 export const COMES_BACK = 0.15;
 
 /**
  * Someone new to the game: a little less sure of the items (the quiz's
  * tricks are new to them), a little slower, only a few items they know
- * cold yet, and unlikely to host.
+ * cold yet, and unlikely to host. If they do, mostly as the game sets a
+ * first room up: Delve (where `modes` allows it), with its own rules.
  */
-export function asNewcomer(who: Identity): Identity {
+export function asNewcomer(who: Identity, modes: readonly Mode[] = MODES): Identity {
   const rng = seededBy(`${who.name}:new`);
   const p = who.persona;
+  const skill = p.skill - 0.02 - 0.05 * rng();
+  const pace = p.pace * (1.05 + 0.2 * rng());
+  const favourites = p.favourites.slice(0, Math.floor(p.favourites.length * (0.2 + 0.4 * rng())));
+  const firstRoom = modes.includes('delve') && rng() < FIRST_ROOM_KEPT;
   return {
     ...who,
-    persona: {
-      ...p,
-      skill: p.skill - 0.02 - 0.05 * rng(),
-      pace: p.pace * (1.05 + 0.2 * rng()),
-      favourites: p.favourites.slice(0, Math.floor(p.favourites.length * (0.2 + 0.4 * rng()))),
-      hosting: p.hosting * 0.4,
-      newcomer: true,
-    },
+    persona: { ...p, skill, pace, favourites, hosting: p.hosting * 0.4, newcomer: true },
+    prefs: firstRoom ? { mode: 'delve', ...DEFAULT_RULES } : who.prefs,
   };
 }

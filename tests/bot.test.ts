@@ -4,7 +4,7 @@ import { HOST_ODDS, afterSeeing, answerDelay, itemDraw, knowsIt, rollEye, shareI
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
-import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { DEFAULT_RULES, MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, nextRole, notJoinable, waitingAlone, wanted, watchable } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
@@ -787,4 +787,18 @@ test('away in a lobby: only with nothing to do, and back within seconds once wan
   } finally {
     console.log = quiet;
   }
+});
+
+test('hosts lean to Delve a little, and mostly keep the game\'s own rules; newcomers keep the first room the game sets up', () => {
+  const rng = seeded(77);
+  const rolls = Array.from({ length: 4000 }, () => rollPrefs(rng));
+  const share = (f: (p: (typeof rolls)[number]) => boolean) => rolls.filter(f).length / rolls.length;
+  assert.ok(share((p) => p.mode === 'delve') > share((p) => p.mode === 'turns') && share((p) => p.mode === 'turns') > share((p) => p.mode === 'race'));
+  assert.ok(share((p) => p.mode === 'delve') < 0.6);
+  const own = share((p) => p.difficulty === DEFAULT_RULES.difficulty && p.target === DEFAULT_RULES.target && p.timer === DEFAULT_RULES.timer);
+  assert.ok(own > 0.5 && own < 0.7, `${own}`);
+  const firsts = VISITORS.map((n) => asNewcomer(identityOf(n, ['A'])).prefs);
+  assert.ok(firsts.filter((p) => p.mode === 'delve').length > VISITORS.length * 0.75);
+  // Where Delve isn't allowed, as they would anyway.
+  for (const n of VISITORS) assert.notEqual(asNewcomer(identityOf(n, ['A'], ['turns']), ['turns']).prefs.mode, 'delve');
 });
