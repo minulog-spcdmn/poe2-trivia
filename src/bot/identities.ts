@@ -18,7 +18,8 @@ import { gauss, makePersona, rollEye, rollNerveForRisk, weighted, type Persona, 
  * clear of every real handle in it: no five letters in a row in common), a
  * word or nickname with an ordinary number, words run together, a few short
  * letter strings, a surname or a name with digits, a little that's edgy, and
- * some in other languages and scripts as people write them there. Almost no
+ * a few in other languages and scripts as people write them there (few: the
+ * players here are mostly from Europe and the Americas). Almost no
  * food, animals or game jokes, as on the ladder. None is anyone's real handle.
  */
 export const NAMES = [
@@ -118,11 +119,11 @@ export const NAMES = [
   'hellbent86',
   'Nekro666',
   '새벽세시',
-  '그냥해봄',
-  'dlwjdgns7',
-  '夜雨',
-  'liuyang0920',
-  'ねむい',
+  'quietriot',
+  'brennick7',
+  'Halvard',
+  'sablejack',
+  'Thornwick',
   'Тень',
   'Kopfkino',
   'Tordenvær',

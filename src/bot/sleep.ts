@@ -30,17 +30,17 @@ export interface Rhythm {
   drift: number;
 }
 
-/** Where people here play from, for a name that doesn't say: hours ahead of UTC, and how many from each. */
+/** Where people here play from, for a name that doesn't say: hours ahead of UTC, and how many from each (most from Europe and the Americas). */
 const ZONES: [number, number][] = [
   [1, 30],
-  [2, 14],
-  [0, 8],
-  [-5, 17],
-  [-6, 6],
+  [2, 12],
+  [0, 10],
+  [-5, 20],
+  [-6, 8],
   [-8, 10],
-  [-3, 5],
-  [8, 5],
-  [10, 4],
+  [-3, 4],
+  [8, 2],
+  [10, 2],
 ];
 
 /** The time zone a name points to, if it does: its script, or letters of a language. */
