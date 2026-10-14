@@ -25,7 +25,7 @@
 
   let { disabled = false }: { disabled?: boolean } = $props();
 
-  // The clock moves on (the hours left, and past midnight UTC a new day):
+  // The clock moves on (the hours or minutes left, and past midnight UTC a new day):
   // every minute, and at once when the tab is looked at again (a tab in the
   // background ticks seldom). The server's time where it can say (lib/clock:
   // asked once, and again only when it had no reply, or this device's clock
@@ -335,7 +335,7 @@
     {#if !answered}
       {#if practice}
         <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
-        <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; {nextIn(now, 'daily')}.</p>
+        <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
       {:else}
         <p class="caption">Watch for look-alikes: one name may be made up.</p>
       {/if}
@@ -343,7 +343,7 @@
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
         {#if practice}
           <!-- Practice keeps out of the streak, so the streak keeps out of practice. -->
-          <span>{upper(nextIn(now, 'daily'))}</span>
+          <span aria-live="off">{upper(nextIn(now, 'daily'))}</span>
         {:else}
           {#if streak >= 1}
             <!-- The game's streak badge, counted in days, burning with the game's fire. -->
@@ -354,7 +354,7 @@
             <span>Missed today</span>
           {/if}
           <span class="sep" aria-hidden="true">·</span>
-          <span>{nextIn(now)}</span>
+          <span aria-live="off">{nextIn(now)}</span>
         {/if}
       </p>
       <!-- After the result, as in the game: what happened first, then the way on. -->

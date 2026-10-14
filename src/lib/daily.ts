@@ -50,7 +50,7 @@ export const minutesLeft = (ms: number) => Math.max(1, Math.ceil(((utcDay(ms) + 
  */
 export function nextIn(ms: number, what = ''): string {
   const m = minutesLeft(ms);
-  const [n, unit] = m < 60 ? [m, 'minute'] : [hoursLeft(ms), 'hour'];
+  const [n, unit] = m < 60 ? [m, 'minute'] : [Math.ceil(m / 60), 'hour'];
   return `next ${what ? `${what} ` : ''}in ${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
