@@ -180,7 +180,8 @@ test('the line under a Delve depth, against this device’s records', () => {
   assert.equal(plain(delveLine(27, true, { previousBest: 32, best: false })), 'Into the Frozen Hollow, five short of your best together, 31.');
   assert.equal(plain(delveLine(27, true, null)), 'The party reached the Frozen Hollow.');
   // A zone with "The" of its own keeps it.
-  assert.equal(zoneOf(1).the, /^the /i.test(zoneOf(1).name) ? zoneOf(1).name : `the ${zoneOf(1).name}`);
+  assert.equal(zoneOf(1).the, 'the Mines');
+  assert.equal(plain(delveLine(5, false, null)), 'Perished in the Mines.');
 });
 
 /** A Delve run alone, over: lives lost at the depths given. */
@@ -327,4 +328,62 @@ test('Delve: a find won goes into the recap, and what came of it; a right answer
   s = engine.apply(s, { type: 'blast', askedAt: s.question!.askedAt }, null);
   assert.deepEqual(s.recap!.items, [{ kind: 'dynamite', at: 20, by: 'p0', used: 21, how: 'blast' }]);
   assert.equal(plain(runFacts(s, 'p0')[1].parts), 'Dynamite you won at depth 19 blasted a question away at depth 20.');
+});
+
+test('a deathmatch of three ranks who lasted longer higher, and the engine keeps when each went out', () => {
+  const s = over([10, 10, 10, 5], { answers: {}, misses: [] }, {
+    deathmatch: { alive: ['p0'], entrants: ['p0', 'p1', 'p2'], round: 2, results: {}, eliminated: ['p2'], out: { p1: 1, p2: 2 }, startedAt: 0 },
+  });
+  assert.deepEqual(
+    ranked(s.players, s.winners, s.deathmatch!.out).map((x) => [x.p.id, x.rank]),
+    [
+      ['p0', 1],
+      ['p2', 2],
+      ['p1', 3],
+      ['p3', 4],
+    ],
+  );
+  assert.equal(plain(yourGame(s, 'p1').place!), 'You came third, tied on 10.');
+  // The engine: a round lost puts the round on the duelist.
+  let { engine, s: g } = setup(['Ash', 'Bram', 'Cass'], { targetScore: 1 });
+  for (let k = 0; k < 3; k++) {
+    g = engine.apply(g, { type: 'pick', category: g.offered[0] }, g.players[g.turn].id);
+    g = engine.apply(g, { type: 'answer', index: right(g.question!) }, g.players[g.turn].id);
+    g = engine.apply(g, { type: 'next' }, 'p0');
+  }
+  assert.ok(g.deathmatch, 'all three tied: a deathmatch');
+  const [a, b, c] = g.deathmatch!.alive;
+  const answer = (ok: boolean) => {
+    g = engine.apply(g, { type: 'pick', category: g.offered[0] }, g.players[g.turn].id);
+    g = engine.apply(g, { type: 'answer', index: ok ? right(g.question!) : wrongIdx(g.question!) }, g.players[g.turn].id);
+    g = engine.apply(g, { type: 'next' }, 'p0');
+  };
+  // Round 1: the first wrong, the others right; round 2: the second right, the third wrong.
+  for (const who of [a, b, c]) assert.equal(g.players[g.turn].id, who), answer(who !== a);
+  assert.deepEqual(g.deathmatch!.out, { [a]: 1 });
+  for (const who of [b, c]) assert.equal(g.players[g.turn].id, who), answer(who === b);
+  assert.equal(g.phase, 'over');
+  assert.deepEqual(g.deathmatch!.out, { [a]: 1, [c]: 2 });
+  assert.deepEqual(
+    ranked(g.players, g.winners, g.deathmatch!.out).map((x) => x.p.id),
+    [b, c, a],
+  );
+});
+
+test('a negative score has a minus sign; the hardest category is never the one picked most too; every life given is told', () => {
+  const s = over([3, -1], { answers: {}, misses: [] });
+  assert.equal(plain(yourGame(s, 'p1').place!), 'You came second with −1 points.');
+  const one = over([3, 1], { answers: {}, cats: { Rings: [4, 1] }, misses: [] });
+  assert.deepEqual(
+    highlights(one).map((l) => plain(l.parts)),
+    ['The hardest category was Rings: 1 of 4 answered right.'],
+  );
+  const revives = [22, 23, 24, 25].map((depth, i) => ({ by: 'p0', to: 'p1', depth, fell: depth, at: 1100 + i }));
+  const r = run([20, 23, 27], {}, revives, 3);
+  assert.deepEqual(
+    partyHighlights(r).map((l) => plain(l.parts, text(r))),
+    ['Kalguur gave a life to bring Doryani back at depth 21.', 'Kalguur gave a life to bring Doryani back at depth 22.', 'Two more lives were given to bring a teammate back.'],
+  );
+  const three = run([20, 23, 27], {}, revives.slice(0, 3), 3);
+  assert.equal(partyHighlights(three).length, 3);
 });

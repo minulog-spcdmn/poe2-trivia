@@ -26,6 +26,8 @@
   import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
   import { FIND_RULES, FIND_TEXT } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
+  import { accentAt } from '../lib/descent';
+  import { sigilOf, zoneAt } from '../lib/zoneSigils';
   import { namesList } from '../lib/presence';
   import {
     FIND_BRIEF,
@@ -38,6 +40,7 @@
     partyHighlights,
     ranked,
     runFacts,
+    score,
     scoreLine,
     soloHighlights,
     yourGame,
@@ -85,7 +88,7 @@
   const delvers = $derived(run ? party(s) : []);
 
   // ---- a normal game ------------------------------------------------------
-  const rows = $derived(ranked(s.players, s.winners));
+  const rows = $derived(ranked(s.players, s.winners, s.deathmatch?.out));
   const winner = $derived(s.players.find((p) => s.winners.includes(p.id)) ?? rows[0]?.p);
   const iWon = $derived(!local && !!winner && winner.id === me);
   const iLost = $derived(!local && seated && !s.winners.includes(me!));
@@ -479,7 +482,7 @@
   <Avatar name={x.p.name} hue={x.p.hue} size={28} dim={gone} />
   <span class="name"><PlayerName name={x.p.name} />{#if you}<em class="you">&nbsp;(you)</em>{/if}</span>
   {#if gone && !pin}<StandingMark mark="offline" />{/if}
-  <span class="pts">{x.p.score}</span>
+  <span class="pts">{score(x.p.score)}</span>
 {/snippet}
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the screen, the circle's heart, the headline and its line,
@@ -568,7 +571,13 @@
                     {#if l.back}<span class="badge heart-badge"><HeartOfLight /></span>{/if}
                   </button>
                 {:else}
-                  <span class="thumb blank"></span>
+                  <!-- A loss this device's codex doesn't have (another tab's, or lost): the zone it was in, by its emblem. -->
+                  {@const sg = sigilOf(zoneAt(l.depth))}
+                  <span class="thumb blank" style:--c={accentAt(l.depth)}
+                    ><svg viewBox="-12 -12 24 24" aria-hidden="true"
+                      >{#if sg.shade}<path class="s-shade" d={sg.shade} />{/if}<path class="s-fine" d={sg.fine} /><path d={sg.lines} /></svg
+                    ></span
+                  >
                 {/if}
                 <span class="what">
                   {#if l.kind === 'cave'}
@@ -1127,6 +1136,28 @@
   .thumb.given,
   .thumb.blank {
     cursor: default;
+  }
+  /* A loss without its item: the zone's emblem in the square, in the zone's colour, as the descent draws it. */
+  .thumb.blank svg {
+    position: absolute;
+    inset: 18%;
+    width: 64%;
+    height: 64%;
+    overflow: visible;
+  }
+  .thumb.blank path {
+    fill: none;
+    stroke: color-mix(in srgb, var(--c) 60%, #f0e0b8);
+    stroke-width: 0.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .thumb.blank .s-fine {
+    stroke-width: 0.6;
+  }
+  .thumb.blank .s-shade {
+    stroke: color-mix(in srgb, var(--c) 50%, #b08a4c);
+    stroke-width: 0.45;
   }
   .heart-big {
     width: 26px;
