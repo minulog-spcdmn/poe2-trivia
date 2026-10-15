@@ -91,7 +91,6 @@
   </div>
   <div class="toggles">
     <label><input type="checkbox" bind:checked={spatial.hoverDry} /> Dry hover</label>
-    <label><input type="checkbox" bind:checked={spatial.hoverRepeats} /> Quiet repeats</label>
   </div>
   <div class="toggles">
     <label><input type="checkbox" bind:checked={spatial.moving} /> Moving</label>

@@ -56,6 +56,20 @@ export function hoverStep(prev: { at: number; step: number } | null, now: number
 }
 
 /**
+ * A pointer's hover at `now` (s), after the last (`prev`), eased rather
+ * than stepped: how busy hovering is (each hover adds one, the whole fading
+ * by half every `recover` s), and how far (0 to 1) the hover is ducked for
+ * the busyness it finds: none after a pause, a little while browsing
+ * calmly, more the faster a sweep goes (`weight`: how quickly busyness
+ * turns into ducking), and easing back as the pointer slows, with no steps
+ * and no snap back.
+ */
+export function hoverEase(prev: { at: number; busy: number } | null, now: number, recover: number, weight: number): { at: number; busy: number; amount: number } {
+  const before = prev ? prev.busy * Math.pow(0.5, Math.max(0, now - prev.at) / recover) : 0;
+  return { at: now, busy: before + 1, amount: 1 - Math.exp(-before * weight) };
+}
+
+/**
  * The rooms at a Delve depth (with rooms `on`): the places sounding, each
  * with its share (as the beds have them), the next place down (its room
  * worked out ahead, as its bed is fetched), and the places whose rooms are

@@ -1392,6 +1392,20 @@ colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
 - **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
   the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
 
+### The hover tuning page
+
+`hover.html` (`src/hoverPage/`) is for tuning how the hover quietens over a
+sweep of the mouse across controls: rows of controls shaped as the game's
+(the header's small buttons, the cards, the answers, a menu, chips), their
+hovers played as the game plays them (`src/lib/spatial.svelte.ts`), and
+beside them the settings: **Off**, **Steps** (each hover 2 dB quieter, as
+the game has it) or **Eased** (ducked by how busy hovering is, with its
+depth, how much duller, how fast it recovers and how quickly speed ducks
+it), keys 1 to 3. A strip shows how far each hover was ducked.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/hover.html`; on
+  the beta, **poe2.quest/beta/hover.html**. The live build leaves it out.
+
 ### The spatial sound page
 
 `spatial.html` (`src/spatialPage/`) is the real game screen, full window, on

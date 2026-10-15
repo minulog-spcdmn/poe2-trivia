@@ -16,7 +16,7 @@
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
 import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
-import { hoverStep, roomPlan, screenX, travel } from './spatialPlan';
+import { hoverEase, hoverStep, roomPlan, screenX, travel } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -55,13 +55,21 @@ export type Spatial = {
    * The hover (the most frequent sound, now placed so it stands out more:
    * heard apart from the ambience, and from a new place each time): its
    * level (dB, against its own), dry (close and small: no brightening at the
-   * near ear, no side reverb and little room), and quieter on repeats (each
-   * in a quick sweep across controls a step quieter, spatialPlan.ts
-   * hoverStep). Its direction is as any sound's from the same control.
+   * near ear, no side reverb and little room), and how it quietens over a
+   * sweep across controls (`hoverRepeat`): not at all, a step for each
+   * hover (spatialPlan.ts hoverStep), or eased by how busy hovering is
+   * (hoverEase: down to `hoverDepth` dB, its highs `hoverSoften` dB down
+   * above 4 kHz, recovering by half every `hoverRecover` s, `hoverWeight`
+   * how quickly busyness ducks it). Its direction is as any sound's from
+   * the same control.
    */
   hoverDb: number;
   hoverDry: boolean;
-  hoverRepeats: boolean;
+  hoverRepeat: 'off' | 'steps' | 'eased';
+  hoverDepth: number;
+  hoverSoften: number;
+  hoverRecover: number;
+  hoverWeight: number;
 };
 
 /** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only), and the hover a touch quieter, dry and quieter on repeats. */
@@ -79,7 +87,11 @@ export const CHOSEN: Spatial = {
   mono: false,
   hoverDb: -2.5,
   hoverDry: true,
-  hoverRepeats: true,
+  hoverRepeat: 'steps',
+  hoverDepth: -4,
+  hoverSoften: -3,
+  hoverRecover: 0.4,
+  hoverWeight: 0.5,
 };
 
 /** The settings in play: the chosen mix; the lab's pages change them to tune it. */
@@ -246,6 +258,9 @@ const PLACES: Record<Renderer, (ac: AudioContext, plain?: boolean) => Place> = {
 const HOVER_ROOM = 0.3;
 /** The pointer's last hover, for its next to step down from in a sweep (spatialPlan.ts hoverStep). */
 let lastHover: ReturnType<typeof hoverStep> | null = null;
+let lastEased: ReturnType<typeof hoverEase> | null = null;
+/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep made it (for the hover tuning page). */
+export const hoverHeard = $state({ db: 0, soften: 0, n: 0 });
 
 /** The game's screen (the whole window, or left of the lab's panel), measured once and again only after it changes size: not for every sound. */
 let screenBox: DOMRect | null = null;
@@ -528,12 +543,29 @@ const placer: Placer = {
 
     const hover = name === 'hover';
     const dryHover = hover && s.hoverDry;
+    // A hover: at its level, quieter (and with `eased` duller) in a pointer's sweep (not the draw's hops, which pass no pointer).
+    let level = s.hoverDb;
+    let soften = 0;
+    if (hover && where?.x !== undefined) {
+      let ducked = 0;
+      if (s.hoverRepeat === 'steps') {
+        lastHover = hoverStep(lastHover, start);
+        ducked = lastHover.db;
+      } else if (s.hoverRepeat === 'eased') {
+        lastEased = hoverEase(lastEased, start, s.hoverRecover, s.hoverWeight);
+        ducked = s.hoverDepth * lastEased.amount;
+        soften = s.hoverSoften * lastEased.amount;
+      }
+      level += ducked;
+      Object.assign(hoverHeard, { db: ducked, soften, n: hoverHeard.n + 1 });
+    }
     const place = big ? wide(ac) : PLACES[s.renderer](ac, dryHover);
     place.output.connect(mixOf(ac));
     // Dry: far off (duller, quieter), then placed.
     const dry = ac.createGain();
     let chain: AudioNode = dry;
     if (far) chain = chain.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far)));
+    if (soften) chain = chain.connect(filter(ac, 'highshelf', 4000, 0.707, soften));
     chain.connect(place.input);
     // Wet: as far off, with more of the room the farther; from its side, or the middle.
     const wet = ac.createGain();
@@ -543,12 +575,7 @@ const placer: Placer = {
     toRoom.connect(sendPan).connect(wetOf(ac));
     const sendAz = (t: number) => (s.sideReverb && !dryHover ? clamp1(az(t)) * SIDE_REVERB : 0);
     if (hover) {
-      // At its level, a step quieter in a pointer's sweep (not the draw's hops, which pass no pointer), dry and close.
-      let level = s.hoverDb;
-      if (s.hoverRepeats && where?.x !== undefined) {
-        lastHover = hoverStep(lastHover, start);
-        level += lastHover.db;
-      }
+      // Dry and close: little of the room.
       dry.gain.value = db(level);
       wet.gain.value = db(level) * (dryHover ? HOVER_ROOM : 1);
     }
