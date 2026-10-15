@@ -57,7 +57,8 @@ export function plain(parts: Part[], nameOf: (id: string) => string = (id) => id
 export function zoneOf(depth: number) {
   const index = Math.max(0, Math.floor((depth - 1) / 10));
   const name = stratumName(index);
-  return { index, name, the: /^the /i.test(name) ? name : `the ${name}` };
+  // Mid-sentence a name's own "The" is lower case: "in the Mines".
+  return { index, name, the: /^the /i.test(name) ? `the ${name.slice(4)}` : `the ${name}` };
 }
 
 // ---- the line under the result ----------------------------------------------
@@ -104,18 +105,27 @@ export function delveLine(depth: number, together: boolean, measured: Measured |
 
 // ---- your game (a normal game) ---------------------------------------------------
 
-/** Players ranked as the end screen lists them: by score, a deathmatch's winner first among equals; ties share a rank. */
-export function ranked<P extends { id: string; score: number }>(players: P[], winners: string[]): { p: P; rank: number }[] {
+/**
+ * Players ranked as the end screen lists them: by score; among equals a
+ * deathmatch's winner first, then whoever lasted longer in it (`out`: the
+ * round each was knocked out in). Ties share a rank.
+ */
+export function ranked<P extends { id: string; score: number }>(players: P[], winners: string[], out: Record<string, number> = {}): { p: P; rank: number }[] {
   const won = (id: string) => winners.includes(id);
-  const sorted = [...players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id));
-  const out: { p: P; rank: number }[] = [];
+  const lasted = (id: string) => out[id] ?? Infinity;
+  const sorted = [...players].sort((a, b) => b.score - a.score || +won(b.id) - +won(a.id) || lasted(b.id) - lasted(a.id));
+  const ranks: { p: P; rank: number }[] = [];
   sorted.forEach((p, i) => {
-    const prev = out[i - 1];
-    // A winner never shares its rank with a player who didn't win.
-    out.push({ p, rank: prev && p.score === prev.p.score && won(p.id) === won(prev.p.id) ? prev.rank : i + 1 });
+    const prev = ranks[i - 1];
+    // A winner never shares its rank with a player who didn't win, nor a duelist with one who lasted longer.
+    const tied = prev && p.score === prev.p.score && won(p.id) === won(prev.p.id) && lasted(p.id) === lasted(prev.p.id);
+    ranks.push({ p, rank: tied ? prev.rank : i + 1 });
   });
-  return out;
+  return ranks;
 }
+
+/** A score as a number to set: a minus sign, not a hyphen, below zero. */
+export const score = (n: number) => (n < 0 ? `−${-n}` : String(n));
 
 export interface YourGame {
   /** Where you came, for a player who didn't win. */
@@ -131,15 +141,15 @@ export interface YourGame {
 export function yourGame(s: GameState, me: string): YourGame {
   const r = s.recap;
   const race = s.settings.mode === 'race';
-  const rows = ranked(s.players, s.winners);
+  const rows = ranked(s.players, s.winners, s.deathmatch?.out);
   const mine = rows.find((x) => x.p.id === me);
   let place: Part[] | null = null;
   if (mine && !s.winners.includes(me)) {
     const joint = rows.some((x) => x !== mine && x.rank === mine.rank) ? 'joint ' : '';
     const dm = s.deathmatch?.entrants.includes(me);
     place = dm
-      ? [`You came ${ordinal(mine.rank)}, tied on `, { n: mine.p.score }, '.']
-      : [`You came ${joint}${ordinal(mine.rank)} with `, { n: mine.p.score }, ` ${mine.p.score === 1 ? 'point' : 'points'}.`];
+      ? [`You came ${joint}${ordinal(mine.rank)}, tied on `, { n: score(mine.p.score) }, '.']
+      : [`You came ${joint}${ordinal(mine.rank)} with `, { n: score(mine.p.score) }, ` ${mine.p.score === 1 ? 'point' : 'points'}.`];
   }
   const t = r?.answers[me];
   let game: Part[] | null = null;
@@ -199,7 +209,8 @@ export function highlights(s: GameState): Line[] {
     // The hardest: the lowest share answered right among those asked twice or more (more asked first among equals).
     const hard = cats.filter(([, [n]]) => n >= 2).sort((a, b) => a[1][1] / a[1][0] - b[1][1] / b[1][0] || b[1][0] - a[1][0])[0];
     if (hard) out.push({ icon: { diamond: true }, parts: ['The hardest category was ', { cat: hard[0] }, ': ', { n: hard[1][1] }, ' of ', { n: hard[1][0] }, ' answered right.'] });
-    const most = [...cats].sort((a, b) => b[1][0] - a[1][0])[0];
+    // Picked most: never the hardest again (with few categories played they can be the same).
+    const most = cats.filter(([c]) => c !== hard?.[0]).sort((a, b) => b[1][0] - a[1][0])[0];
     if (most && most[1][0] >= 2) out.push({ icon: { diamond: true }, parts: ['The category picked most was ', { cat: most[0] }, ', ', { n: most[1][0] }, ' times.'] });
   }
   return out;
@@ -210,8 +221,14 @@ export function partyHighlights(s: GameState): Line[] {
   const r = s.recap;
   const out: Line[] = [];
   if (r?.fastest) out.push({ icon: { avatar: r.fastest.by }, parts: [{ who: r.fastest.by }, ' answered fastest: ', { n: secs(r.fastest.ms) }, 's on ', { item: r.fastest.id }, '.'] });
-  for (const v of (s.delve?.revives ?? []).slice(0, 2))
-    out.push({ icon: { heart: true }, parts: [{ who: v.by }, ' gave a life to bring ', { who: v.to }, ' back at depth ', { n: shownDepth(v.depth) }, '.'] });
+  // Every life given; past three, the first two and how many more.
+  const revives = s.delve?.revives ?? [];
+  const told = revives.length > 3 ? revives.slice(0, 2) : revives;
+  for (const v of told) out.push({ icon: { heart: true }, parts: [{ who: v.by }, ' gave a life to bring ', { who: v.to }, ' back at depth ', { n: shownDepth(v.depth) }, '.'] });
+  if (told.length < revives.length) {
+    const more = revives.length - told.length;
+    out.push({ icon: { heart: true }, parts: [cap(word(more)), ` more ${more === 1 ? 'life was' : 'lives were'} given to bring a teammate back.`] });
+  }
   const streak = s.delve?.bestTeamStreak ?? 0;
   if (streak >= 2) out.push({ icon: { diamond: true }, parts: ['The longest team streak: ', { n: streak }, ' depths cleared with nobody missing.'] });
   return out;

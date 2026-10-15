@@ -463,6 +463,8 @@ export interface Deathmatch {
   results: Record<string, boolean>;
   /** Knocked out at the end of the previous round. */
   eliminated: string[];
+  /** The round each duelist was knocked out in, by id (missing in older saves): who lasted longer ranks higher. */
+  out?: Record<string, number>;
   /** turnCount when it started (lets clients play the intro once). */
   startedAt: number;
 }
@@ -2630,6 +2632,7 @@ export class Engine {
     let alive = right.length > 0 && right.length < dm.alive.length ? right : dm.alive;
     if (stillHere(alive).length === 1) alive = stillHere(alive);
     dm.eliminated = dm.alive.filter((id) => !alive.includes(id));
+    for (const id of dm.eliminated) (dm.out ??= {})[id] = dm.round;
     dm.alive = alive;
     if (alive.length <= 1 || stillHere(alive).length === 0) {
       this.finish(s, alive.length ? alive : right);

@@ -119,7 +119,7 @@ const race = (extra: Partial<GameState> = {}) =>
 const deathmatch = () =>
   game([['Kalguur', 10], ['Doryani', 10], ['Una of the Vaal', 7], ['Rog', 5], ['Alva', 3]], {
     recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [pid('Doryani')]: { n: 10, ok: 10, ms: 1800, dn: 3, dok: 2 }, [K]: { n: 10, ok: 10, ms: 2000, dn: 3, dok: 3 } }, misses: misses('Doryani', ['Death Rush'], true) }),
-    extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani')], round: 3, results: {}, eliminated: [pid('Doryani')], startedAt: 0 } },
+    extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani')], round: 3, results: {}, eliminated: [pid('Doryani')], out: { [pid('Doryani')]: 3 }, startedAt: 0 } },
   });
 function left() {
   const s = game(FIVE, {
@@ -254,7 +254,7 @@ const threeWay = () =>
       answers: { [K]: { n: 10, ok: 10, ms: 2100, dn: 2, dok: 2 }, [pid('Doryani')]: { n: 10, ok: 10, ms: 2500, dn: 1, dok: 0 }, [una()]: { n: 10, ok: 10, ms: 1900, dn: 2, dok: 1 } },
       misses: [...misses('Doryani', ['Briarpatch'], true), ...misses('Una of the Vaal', ['Death Rush'], true)],
     }),
-    extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani'), una()], round: 2, results: {}, eliminated: [una()], startedAt: 0 } },
+    extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani'), una()], round: 2, results: {}, eliminated: [una()], out: { [pid('Doryani')]: 1, [una()]: 2 }, startedAt: 0 } },
   });
 /** A ranking of `n` players, scores falling. */
 const crowd = (n: number) =>
