@@ -203,4 +203,9 @@ test('a wait through a card and a question is replayed for the screen it is on, 
     // The part's own click at nothing.
     assert.deepEqual(presses, on === 'cards' ? [50] : [60]);
   }
+  // A part too short to replay alone: the whole, each sample in its own frame.
+  const short = { ...e, switchAt: 1 };
+  const { track } = streamTrack(short, (src) => within(hand, box, src), 0, 1, undefined, undefined, [0, 0], 'cards');
+  assert.equal(track.t.length, 8);
+  assert.ok(track.src[0] === e.src && track.src.slice(1).every((s) => s === e.then));
 });

@@ -8,7 +8,7 @@
 // anyone up. Some people never tab out at all.
 
 import { forcePresence } from '../lib/presence.ts';
-import { seededBy } from './identities.ts';
+import { seededBy } from './util.ts';
 import type { Persona } from './brain.ts';
 import { between, log } from './util.ts';
 

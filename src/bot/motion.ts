@@ -410,7 +410,8 @@ export function streamTrack(
   const sw = e.then ? Math.max(0, Math.min(all, e.switchAt ?? all)) : all;
   // Its part for this screen: the whole of it, unless it has two and the other one has more to show.
   const [lo, hi] = !e.then || !on ? [0, all] : on === 'cards' ? (sw >= 2 ? [0, sw] : [0, all]) : all - sw >= 2 ? [sw, all] : [0, all];
-  const frameSrc = e.then && on === 'answers' && lo === sw ? e.then : e.src;
+  // Each sample in the frame it was recorded in (one part: one frame; the whole of a two-part one: each its own).
+  const srcAt = (i: number) => (e.then && lo + i >= sw ? e.then : e.src);
   const pairs = e.path.slice(2 * lo, 2 * hi);
   const n = hi - lo;
   const mask = moving(pairs);
@@ -429,9 +430,9 @@ export function streamTrack(
     .filter((p) => p >= 0 && p < n * STEP)
     .map((p) => (p - skip * STEP) * speed * w.pace)
     .filter((p) => p >= 0);
-  const fromAt = typeof from === 'function' ? from(frameSrc) : from;
+  const fromAt = typeof from === 'function' ? from(srcAt(skip)) : from;
   return {
-    track: track(pairs, times, start, fromAt, null, Infinity, () => frameSrc, (i, tt) => {
+    track: track(pairs, times, start, fromAt, null, Infinity, srcAt, (i, tt) => {
       const [bu, bv] = w.bend(tt);
       return [aside[0] + bu * mask[i], aside[1] + bv * mask[i]];
     }),

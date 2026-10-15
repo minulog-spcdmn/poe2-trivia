@@ -258,6 +258,11 @@ export class Hand {
    * Whether it pressed, as others saw.
    */
   async click(anchor: string, by = Infinity, wanted?: () => boolean): Promise<boolean> {
+    // Details open: closed first (now, not read on), then the click.
+    while (this.closing) {
+      this.doneReading(0);
+      await this.closing;
+    }
     const kind: ClickStretch['kind'] = anchor.startsWith('opt:') ? 'answer' : anchor.startsWith('card:') ? 'card' : 'next';
     // Where it is on the screen as it is once the hand sets off (a press under way finished first).
     return this.press(() => {
@@ -407,6 +412,7 @@ export class Hand {
       this.restUntil = Math.max(this.restUntil, this.readingUntil);
       while (Date.now() < this.readingUntil) await wait(150);
       this.readingUntil = 0;
+      // Closed by Escape now and then (no move to see), else on the window's close.
       if (Math.random() < 0.15 || !this.live()) return;
       await this.press(windowClose, 'next', null);
     })();
@@ -422,7 +428,7 @@ export class Hand {
     return this.closing ?? this.pressing;
   }
 
-  /** Does `then` once the hand is free: details open are closed now, not read on. */
+  /** Does `then` once the hand is free: details open are closed now (by their close, or Escape), not read on. */
   private afterBusy(then: () => void): void {
     this.doneReading(0);
     void this.busy()!.then(() => (this.busy() ? this.afterBusy(then) : then()));
@@ -516,9 +522,10 @@ export class Hand {
         const on = frame === 'cards' || frame === 'answers' ? frame : undefined;
         const { track, presses } = streamTrack(e, (src) => within(at, box, src), now, this.speed, waver(Math.random), Math.random, aside, on);
         this.follow(track, frame);
-        // The recorded player clicked at nothing a lot; it, about half as often.
-        this.presses = presses.filter(() => Math.random() < 0.5);
-        const end = track.t[track.t.length - 1];
+        // The recorded player clicked at nothing a lot; it, about half as often: where they fall on the track as paced.
+        const pacedTrack = this.track!;
+        this.presses = presses.filter(() => Math.random() < 0.5).map((p) => retimed(track, pacedTrack, p));
+        const end = pacedTrack.t[pacedTrack.t.length - 1];
         this.restUntil = end + between(...(lobby ? LOBBY_REST_MS : REST_MS)) * (0.5 + this.persona.hand.still);
       }
     }
@@ -632,6 +639,17 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * recorded, half the reaches peak under 2, one in a hundred over 6.
  */
 const MAX_SPEED = 5;
+
+/** A time `at` on `track`, where it falls on `paced` (the same samples, retimed). */
+function retimed(track: Track, paced: Track, at: number): number {
+  const n = track.t.length;
+  if (paced === track || n < 2 || at <= track.t[0]) return at;
+  if (at >= track.t[n - 1]) return at + paced.t[n - 1] - track.t[n - 1];
+  let i = 0;
+  while (i + 2 < n && track.t[i + 1] <= at) i++;
+  const k = (at - track.t[i]) / Math.max(1e-6, track.t[i + 1] - track.t[i]);
+  return paced.t[i] + k * (paced.t[i + 1] - paced.t[i]);
+}
 
 /**
  * `track` laid onto `box`, slowed where it would go faster than MAX_SPEED

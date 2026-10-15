@@ -15,7 +15,8 @@
 // measured: no study of names on quick browser games turned up. None is
 // anyone's real handle.
 
-import { DEFAULT_RULES, MODES, NAMES, leftHanders, seededBy, type Identity, type Mode } from './identities.ts';
+import { DEFAULT_RULES, MODES, NAMES, leftHanders, type Identity, type Mode } from './identities.ts';
+import { seededBy } from './util.ts';
 
 export const VISITORS = [
   'asdf',

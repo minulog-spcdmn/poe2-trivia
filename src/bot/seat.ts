@@ -24,12 +24,12 @@ import type { GameState } from '../lib/game';
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
-import { identityOf, leaningsOf, nextName, seededBy, shiftLength, type Identity, type Mode } from './identities';
+import { identityOf, leaningsOf, nextName, shiftLength, type Identity, type Mode } from './identities';
 import { joinable, nextRole, waitingAlone, wanted, watchable, type Role } from './wanted';
 import { afterHosting, afterVisit, hesitation, joinsAfter, keenTo, opensRoom, playsOn, urgeToHost, type HostExit, type Memory, type Visit } from './choice';
 import { dropSave, Host, keepSaveCopy, type Stint } from './host';
 import { AGAIN_AFTER_MS, Guest } from './guest';
-import { between, log, time } from './util';
+import { between, log, seededBy, time } from './util';
 import { activity, awakeAt, minutesAwake } from './sleep';
 import { asNewcomer, COMES_BACK, NEWCOMERS, VISITORS } from './visitors';
 import { isBot, setCrew } from './crew';
@@ -499,12 +499,16 @@ export class Seat {
    * bed), the time they feel like hosting with. Null with everyone asleep.
    */
   private whoComesOn(to: 'host' | 'join', now: number): { name: string; free: number } | null {
-    // Now and then someone new (visitors.ts), if any are up.
-    const pool = Math.random() < NEWCOMERS ? this.newcomers(now) : [];
-    const up = new Map(pool.map((n) => [n, awakeAt(n, now)]));
-    const from = [...up.values()].some((a) => a.activity > 0) ? pool : this.names;
-    if (from === this.names) for (const n of this.names) up.set(n, awakeAt(n, now));
-    if (![...up.values()].some((a) => a.activity > 0)) return null;
+    // Now and then someone new (visitors.ts), else a regular; whoever's up, if those aren't (null: nobody at all).
+    const up = new Map<string, ReturnType<typeof awakeAt>>();
+    const anyUp = (names: string[]) => {
+      for (const n of names) if (!up.has(n)) up.set(n, awakeAt(n, now));
+      return names.some((n) => up.get(n)!.activity > 0);
+    };
+    const newcomers = this.newcomers(now);
+    const order = Math.random() < NEWCOMERS ? [newcomers, this.names] : [this.names, newcomers];
+    const from = order.find(anyUp);
+    if (!from) return null;
     const most = shiftLength(Math.random);
     const newcomer = from !== this.names;
     // Each one's time, and how keen they are with it, worked out once.

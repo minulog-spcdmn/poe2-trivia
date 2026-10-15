@@ -7,7 +7,7 @@
 
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
-import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
+import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady, voteClosesAt } from '../lib/delve';
 import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, thinkTime, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
 import { looksOf } from './lookalike';
@@ -27,6 +27,12 @@ export const hostEyes: Eyes = async (_s, q) => q.options.indexOf(q.itemId);
 interface Plan {
   at: number;
   run: () => void | Promise<void>;
+  /**
+   * Only a look (at the question, at how much of the art is in): nothing the
+   * hand does, so it goes on while details are read; and when what it looks
+   * for is expected to make the hand act (`actAt`), if it knows.
+   */
+  poll?: { actAt?: number };
 }
 
 import { between, log } from './util';
@@ -34,6 +40,8 @@ import { Hand, dealtAt } from './hand';
 
 /** Something of its own this soon (ms), it closes an item's details it's reading. */
 const CLOSE_AHEAD_MS = 1500;
+/** How long before a co-op vote closes it gets its own in, at the latest (ms). */
+const VOTE_MARGIN_MS: [number, number] = [600, 1600];
 /** New to the game, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn (regulars know). */
 const TRY_NEXT_FOR = 3;
 const TRY_NEXT_CHANCE = 0.25;
@@ -110,6 +118,9 @@ export class Player {
   /** Someone else's reveals it has seen (as a guest, in turns), and whether it has learned it can't move those on. */
   private othersRevealed = 0;
   private learnedNext = false;
+  /** Co-op votes it hurried for (logged once), and how long before this vote's close it gets in at the latest. */
+  private hurried = new Set<string>();
+  private voteMargin: { key: string; ms: number } | null = null;
   /** Its pointer, as the others see it: it moves to what it chooses, and clicks. */
   private readonly hand: Hand;
 
@@ -125,6 +136,7 @@ export class Player {
   reset() {
     this.plans.clear();
     this.decided.clear();
+    this.hurried.clear();
   }
 
   /** Looks at the game and makes up its mind about anything new; then does what is due. */
@@ -149,10 +161,11 @@ export class Player {
     const now = session.hostNow();
     // Reading an item's details (on, as people do, into the next screens), it closes them as something of its own comes
     // up, in time for it: closing takes a reach (a guess timed for the clock's end mustn't wait on it).
-    if (this.hand.reading && [...this.plans.values()].some((p) => p.at - now < CLOSE_AHEAD_MS)) this.hand.doneReading(between(0, 300));
+    const acts = (p: Plan) => (p.poll ? (p.poll.actAt ?? Infinity) : p.at);
+    if (this.hand.reading && [...this.plans.values()].some((p) => acts(p) - now < CLOSE_AHEAD_MS)) this.hand.doneReading(between(0, 300));
     for (const [key, p] of this.plans)
       if (now >= p.at) {
-        if (this.hand.reading) continue;
+        if (this.hand.reading && !p.poll) continue;
         this.plans.delete(key);
         void p.run();
       }
@@ -300,11 +313,6 @@ export class Player {
   }
 
   private race(s: GameState) {
-    // The category is still picked by whoever's turn it is.
-    if (s.phase === 'choosing') {
-      if (s.players[s.turn]?.id === session.myPlayerId) this.planCard(s, 'pick');
-      return;
-    }
     const q = s.question;
     if (s.phase !== 'question' || !q || q.misses.some((m) => m.playerId === session.myPlayerId)) return;
     this.planAnswer(s, q);
@@ -345,7 +353,10 @@ export class Player {
     if (s.phase === 'choosing') {
       if (!together) {
         if (s.players[s.turn]?.id === me) this.planCard(s, 'pick');
-      } else if (!s.delve?.votes?.[me]) this.planCard(s, 'vote');
+      } else if (!s.delve?.votes?.[me]) {
+        this.planCard(s, 'vote');
+        this.voteInTime(s);
+      }
     } else if (s.phase === 'question' && s.question) {
       const q = s.question;
       // The clock starts once the art has reached everyone answering.
@@ -459,6 +470,24 @@ export class Player {
         if (type === 'vote') this.planRethink(s, category);
       },
     });
+  }
+
+  /**
+   * Delve together: the vote closes a while after the first one's in
+   * (voteClosesAt), its countdown on everyone's screen; not yet sure, it
+   * makes up its mind in time, a moment before the close (VOTE_MARGIN_MS).
+   */
+  private voteInTime(s: GameState) {
+    const key = `vote:${s.round}:${s.turnCount}`;
+    const plan = this.plans.get(key);
+    const closes = voteClosesAt(s);
+    if (!plan || closes === null) return;
+    if (this.voteMargin?.key !== key) this.voteMargin = { key, ms: between(...VOTE_MARGIN_MS) };
+    const by = closes - this.voteMargin.ms - this.hand.lead();
+    if (by >= plan.at) return;
+    if (!this.hurried.has(key)) log('hurries to vote before it closes');
+    this.hurried.add(key);
+    plan.at = Math.max(session.hostNow(), by);
   }
 
   /** Delve together: second thoughts about its vote now and then, while the vote is open (mostly over to the team's). */
@@ -600,10 +629,10 @@ export class Player {
       const seen = await this.eyes(cur, o);
       // Burning in, the eyes may need a while to make anything out: they keep looking till near the end.
       const longer = !!o.veil && !!o.deadline && session.hostNow() < o.deadline - 3000;
-      if (seen === null && (tries++ < 8 || longer)) return void this.plans.set(key, { at: session.hostNow() + 500, run: look });
+      if (seen === null && (tries++ < 8 || longer)) return void this.plans.set(key, { at: session.hostNow() + 500, run: look, poll: {} });
       this.decide(key, cur, o, start, seen);
     };
-    this.plans.set(key, { at: Math.max(session.hostNow() + 300, start + 400), run: look });
+    this.plans.set(key, { at: Math.max(session.hostNow() + 300, start + 400), run: look, poll: {} });
   }
 
   /**
@@ -737,9 +766,9 @@ export class Player {
       if (goAt !== null && t >= goAt - lead()) return this.answerNow(s, q, sure, ask, what(), seen);
       // The clock all but out: it goes with what it has (all it needed, if it saw that much).
       if (o.deadline && t >= o.deadline - 900 - lead()) return this.answerNow(s, q, goAt !== null ? sure : sure && Math.random() < 0.5, ask, `${what()}, out of time`, seen);
-      this.plans.set(key, { at: Math.min(t + 150, goAt === null ? Infinity : goAt - lead()), run: check });
+      this.plans.set(key, { at: Math.min(t + 150, goAt === null ? Infinity : goAt - lead()), run: check, poll: { actAt: Math.min(goAt ?? expected, panicked ? start + panicked.at : Infinity) - lead() } });
     };
-    this.plans.set(key, { at: Math.max(now, start + 400), run: check });
+    this.plans.set(key, { at: Math.max(now, start + 400), run: check, poll: { actAt: Math.min(expected, panicked ? start + panicked.at : Infinity) - lead() } });
   }
 
   /**

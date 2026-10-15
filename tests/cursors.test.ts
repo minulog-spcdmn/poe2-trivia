@@ -332,4 +332,11 @@ test('a pointer drawn on another screen: a quick move is followed, a jump held',
   // Across a frame long in coming (a tab held up), it can't be told: none.
   let n = 0;
   assert.equal(run((t) => (t < 230 ? [500, 500, 16] : [900, 500, 16]), 800, () => (++n === 14 ? 400 : FRAME)).jumps, 0);
+  // A frame at no time gone by (the drawing loop begun anew), then a quick move onto another element: followed.
+  let m = 0;
+  assert.equal(run(reach, 600, () => (++m === 13 ? 0 : FRAME)).jumps, 0);
+  // Just come in (nothing to tell its way by), a quick step onto another element: followed; a leap: held.
+  const fresh = { px: 500, py: 500, qx: 500, qy: 500, pdt: 0, code: 16 };
+  assert.equal(moveOn({ ...fresh }, 570, 500, 17, FRAME), false);
+  assert.equal(moveOn({ ...fresh }, 700, 500, 17, FRAME), true);
 });

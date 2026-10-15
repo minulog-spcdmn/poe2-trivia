@@ -122,9 +122,13 @@ export interface PlaceWas {
  * `was` moved on to now (after a jump, from rest: the jump isn't a speed).
  */
 export function moveOn(was: PlaceWas, tx: number, ty: number, code: number, dt: number, check = true): boolean {
+  // No time gone by (a frame at once after the last): nothing to go on, and nothing kept of it.
+  if (dt <= 0) return false;
   const k = was.pdt > 0 ? Math.min(2, dt / was.pdt) : 0;
   const far = Math.hypot(tx - (was.px + (was.px - was.qx) * k), ty - (was.py + (was.py - was.qy) * k));
-  const jump = check && dt < LONG_FRAME_MS && ((code !== was.code && far > JUMP_PX) || far > LEAP_PX);
+  // Without a frame before to tell how it was going (just come in), only a leap is a jump.
+  const near = was.pdt > 0 ? JUMP_PX : LEAP_PX;
+  const jump = check && dt < LONG_FRAME_MS && ((code !== was.code && far > near) || far > LEAP_PX);
   was.qx = jump ? tx : was.px;
   was.qy = jump ? ty : was.py;
   was.pdt = dt;

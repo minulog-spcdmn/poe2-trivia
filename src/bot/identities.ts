@@ -164,7 +164,6 @@ export interface Identity {
   prefs: RoomPrefs;
 }
 
-export { seededBy };
 
 const pick = <T>(rng: Rng, options: T[], weights: number[]) => options[weighted(weights, rng)];
 
