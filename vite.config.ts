@@ -268,10 +268,10 @@ export default defineConfig(({ command, mode }) => {
           datenschutz: 'datenschutz.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool),
           // the zone tuning page (src/zonebanner), the descent's test page
-          // (src/descentPreview) and the daily streak's (src/streakPreview):
+          // (src/descentPreview), the daily streak's (src/streakPreview) and the end screen's (src/endscreenPreview):
           // the dev server serves them by itself; of the builds only the beta
           // has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html' } : {}),
+          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', endscreen: 'endscreen.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

@@ -1363,6 +1363,33 @@ colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
 - **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
   the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
 
+### The end screen's test page
+
+`endscreen.html` (`src/endscreenPreview/`) shows the end of a game
+(`src/components/GameOver.svelte`) in every state it can be in, in the real
+app: each one a finished game set into the session before the app mounts
+(who this device is, how its run measured up, what it earned, its codex log
+and Delve records), so nothing has to be played to reach it.
+
+- **The list** holds every board of the handoff (`docs/handoff/end-screen`)
+  and the edge cases round them: long names, the creator's, a tie for first,
+  no highlights, a race with no wrong guess, a player who never answered, a
+  team of two, many lives, a two-life cave-in, a first run with finds, a run
+  under newer rules, a solo run watched, someone gone, spectators joining,
+  one who just watches. ↑ and ↓ walk it.
+- **The window:** 1440 × 900, 1440 × 725, a tablet's, and phones at 390 and
+  375; the state shows in a frame of that size, scaled to fit or at **1:1**.
+- **Board** shows the handoff's board in its place, **Side by side** both.
+  **Replay** loads the state again (its entrance plays again); **Open alone**
+  opens it in a tab of its own (`endscreen.html?scene=<key>`).
+- Its buttons only say what they would do: there is no room behind it. The
+  address keeps the state and the window, to send a link to one.
+- **Open it:** `npm run dev`, then `http://localhost:5173/endscreen.html`; on
+  the beta, **poe2.quest/beta/endscreen.html**. The live build leaves it out,
+  and its page is marked (`<html data-endscreen>`), so `src/lib/storage.ts`
+  starts its keys apart and the codex and records it writes never reach the
+  game's.
+
 ---
 
 Fan project. Not affiliated with Grinding Gear Games. Item data and art from

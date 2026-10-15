@@ -330,7 +330,8 @@
     const size = () => {
       node.style.fontSize = '';
       const room = col?.clientWidth ?? 0;
-      const w = node.scrollWidth;
+      // The text's own width: the headline's box may be held to the column, its words running on past it.
+      const w = Math.max(node.scrollWidth, node.lastElementChild?.scrollWidth ?? 0);
       if (room && w > room) node.style.fontSize = `${(parseFloat(getComputedStyle(node).fontSize) * room) / w}px`;
     };
     size();
@@ -865,6 +866,12 @@
   h1 > span {
     grid-area: 1 / 1;
   }
+  /* Its size is set to fit (fit, above), and measured at once: never eased into, which reduced motion's
+     very short transitions on everything (app.css) would do, so it would measure the size before. */
+  h1,
+  h1 > span {
+    transition-property: none;
+  }
   /* The shadow on a layer of its own, painted once: as a filter on the gold
      it would be blurred again on every frame of the gleam. */
   .shade {
@@ -1018,9 +1025,10 @@
   .thumb:hover {
     border-color: var(--gold-lo);
   }
+  /* Sized from the thumb itself: a percentage of the button's height would be read as auto, and a tall item would run out of it. */
   .thumb .art {
-    width: 86%;
-    height: 86%;
+    width: calc(var(--t) * 0.86);
+    height: calc(var(--t) * 0.86);
   }
   .thumb img {
     display: block;

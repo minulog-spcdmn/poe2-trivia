@@ -20,6 +20,12 @@ export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documen
  */
 export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-zones');
 /**
+ * The end screen's test page (endscreen.html, src/endscreenPreview: dev and
+ * beta builds only) marks its page `<html data-endscreen>`: the codex and the
+ * Delve records it writes for each state start apart, never over the game's.
+ */
+export const END_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-endscreen');
+/**
  * The room bot (bot.html, src/bot: dev and bot builds only) marks its page
  * `<html data-bot>`: its keys start apart too, so a bot opened in someone's
  * own browser never takes over their saves, codex or settings.
@@ -39,7 +45,7 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '');
+export const STORE = (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '') + (END_PREVIEW ? 'endscreen.' : '');
 
 export type Area = 'local' | 'session';
 
