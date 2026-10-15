@@ -125,7 +125,7 @@
   /** A run short of your best, and anyone watching one together: the circle in worn grey (the gold through saturate(.25) brightness(.85)). */
   const dim = $derived(!!run && !bright);
   const twoCols = $derived(!phone.current && s.players.length > (short.current ? 5 : 7));
-  const chartH = $derived(phone.current ? 136 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
+  const chartH = $derived(phone.current ? 170 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
 
   // ---- what this device knows ------------------------------------------------
   /** This device's codex (its own answers): read once the game's last answer is in it. */
