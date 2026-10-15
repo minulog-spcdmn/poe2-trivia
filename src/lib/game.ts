@@ -904,6 +904,8 @@ export interface Recap {
   misses: RecapMiss[];
   /** Delve: each item a find gave, oldest first, and what became of it. */
   items?: RecapItem[];
+  /** Everyone the recap names, as they were when it named them: a player removed before the end is still told by name. */
+  people?: Record<string, { name: string; hue: number }>;
 }
 
 export interface RecapTally {
@@ -938,6 +940,25 @@ export interface RecapItem {
 export const RECAP_MISSES = 120;
 /** An answer's own time, as its device sends it: whole ms within reason, or nothing. */
 export const answerMs = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 50 && v <= 600_000 ? Math.round(v) : undefined);
+/** The quickest an answer is believed to be, whatever its device says. */
+export const ANSWER_MS_FLOOR = 250;
+/**
+ * How much sooner than the host saw the question open an answer's device may
+ * say its player saw it (the picture travelling, and loading there).
+ */
+export const ANSWER_MS_SLACK = 2500;
+
+/**
+ * An answer's time for the recap: what its device says (`ms`), held to what
+ * the host saw (`elapsed`, from the question opening to the answer reaching
+ * it): never longer, and never more than ANSWER_MS_SLACK shorter, nor under
+ * ANSWER_MS_FLOOR. So a device can't claim the room's fastest answer.
+ */
+export function heldMs(ms: number | undefined, elapsed: number): number | undefined {
+  if (ms === undefined || !Number.isFinite(elapsed)) return undefined;
+  const hi = Math.max(ANSWER_MS_FLOOR, Math.round(elapsed));
+  return Math.min(hi, Math.max(ms, ANSWER_MS_FLOOR, Math.round(elapsed) - ANSWER_MS_SLACK));
+}
 
 /** Someone watching: they joined a running game, or stepped aside to watch. */
 export interface Spectator {
@@ -1147,7 +1168,19 @@ function seat(s: GameState, id: string, name: string) {
  * Delve co-op: the votes, the struck options and who struck them are public;
  * which option is right stays hidden until the reveal.
  */
+/**
+ * What a guest receives of the state. The recap stays with the host until
+ * the game is over: only the end screen reads it, and it grows with every
+ * answer, so it would ride along on every change for nothing.
+ */
 export function publicView(s: GameState): GameState {
+  const v = guestView(s);
+  if (s.phase === 'over' || !v.recap) return v;
+  const { recap: _, ...rest } = v;
+  return rest;
+}
+
+function guestView(s: GameState): GameState {
   const q = s.question;
   if (!q) return { ...s, used: [] };
   if (s.phase === 'question') {
@@ -1522,6 +1555,8 @@ export class Engine {
         if (problem) throw new ActionError(problem, s.phase === 'question');
         const dm = s.delve!;
         (dm.revives ??= []).push({ by: from, to: action.target, depth: s.round, fell: fellAt(s, action.target) ?? s.round, at: this.now() });
+        this.person(s, from);
+        this.person(s, action.target);
         // Back with one life and nothing else (their pack was lost where they perished), counted in the next vote.
         if (dm.missed) dm.missed[action.target] = 0;
         break;
@@ -1687,6 +1722,7 @@ export class Engine {
         for (const m of voided.misses) {
           const p = s.players.find((p) => p.id === m.playerId);
           if (p) p.score += 1;
+          this.unnote(s, m.playerId, voided.itemId);
         }
         // None of its pictures come back in the new one (one of them didn't load).
         for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
@@ -2014,13 +2050,21 @@ export class Engine {
     if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return undefined;
     inv[item]++;
     (s.delve!.inventory ??= {})[id] = inv;
-    if (s.recap) (s.recap.items ??= []).push({ kind: item, at: s.round, by: id });
+    if (s.recap) {
+      (s.recap.items ??= []).push({ kind: item, at: s.round, by: id });
+      this.person(s, id);
+    }
     return item;
   }
 
-  /** A flare that burnt as a guest's answer in time crossed it goes back in its holder's pack, unspent. */
+  /**
+   * A flare that burnt as a guest's answer in time crossed it goes back in
+   * its holder's pack, unspent: if they still stand with room for it, as any
+   * item gained (one who perished since has no pack to put it in).
+   */
   private refund(s: GameState, id: string) {
     const inv = inventoryOf(s, id);
+    if (!hasRoom(inv, 'flares') || livesOf(s, id) <= 0) return;
     inv.flares++;
     (s.delve!.inventory ??= {})[id] = inv;
     const it = s.recap?.items?.findLast((x) => x.by === id && x.kind === 'flares' && x.how === 'flare');
@@ -2134,9 +2178,13 @@ export class Engine {
   // ---- the recap -----------------------------------------------------------
 
   /** An answer for the end screen (GameState.recap): `by`'s, on item `id`, right or not, `ms` its time on their device. */
-  private note(s: GameState, by: string, id: string, ok: boolean, ms: number | undefined) {
+  private note(s: GameState, by: string, id: string, ok: boolean, sent: number | undefined) {
     const r = s.recap;
     if (!r) return;
+    this.person(s, by);
+    const q0 = s.question;
+    // From the question opening (Delve: its clock starting) to now, as the host saw it.
+    const ms = q0 ? heldMs(sent, this.now() - (q0.clockAt ?? q0.askedAt)) : undefined;
     const t = (r.answers[by] ??= { n: 0, ok: 0 });
     if (s.deathmatch) {
       t.dn = (t.dn ?? 0) + 1;
@@ -2156,6 +2204,25 @@ export class Engine {
       const left = Math.max(0, q.deadline - this.now());
       if (!r.closest || left < r.closest.left) r.closest = { by, id, left, depth: s.round };
     }
+  }
+
+  /** A race's wrong guess taken back (its question thrown out, its point refunded): out of the recap as well. */
+  private unnote(s: GameState, by: string, id: string) {
+    const r = s.recap;
+    if (!r) return;
+    const t = r.answers[by];
+    if (t && t.n > 0) t.n--;
+    const i = r.misses.findLastIndex((m) => m.by === by && m.id === id);
+    if (i >= 0) r.misses.splice(i, 1);
+    if (r.wrong?.[id]) {
+      if (--r.wrong[id] <= 0) delete r.wrong[id];
+    }
+  }
+
+  /** Keeps a player's name and colour for the recap, as they are now. */
+  private person(s: GameState, id: string) {
+    const p = s.players.find((x) => x.id === id);
+    if (s.recap && p) (s.recap.people ??= {})[id] = { name: p.name, hue: p.hue };
   }
 
   /**

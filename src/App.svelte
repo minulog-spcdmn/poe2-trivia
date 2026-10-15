@@ -318,6 +318,19 @@
    */
   const legalHidden = $derived(screen === 'game');
   let legalNav: HTMLElement | undefined = $state();
+  /**
+   * Svelte action: the element's height in the shell's px, as a variable on
+   * the root (`--<name>`), kept as it changes and kept after it goes: the end
+   * of a game lines its panel up with the lobby's from the header's and the
+   * lobby's legal links' (GameOver.svelte), the links not showing there.
+   */
+  function heightVar(node: HTMLElement, name: string) {
+    const set = () => document.documentElement.style.setProperty(`--${name}`, `${ownRect(node).height.toFixed(2)}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(node);
+    return { destroy: () => ro.disconnect() };
+  }
+
   function overLegal(node: HTMLElement) {
     let raf = 0;
     const place = () => {
@@ -345,7 +358,7 @@
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
-    <header data-cursor="header" in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} inert={!!zoneCard}>
+    <header data-cursor="header" in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
       <button class="brand" data-cursor="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -500,7 +513,7 @@
 
   <!-- The end of a game closes with the start page's footer, the legal links in it. -->
   {#if headerOn && screen !== 'over'}
-    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav}>
+    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav} use:heightVar={'legal-h'}>
       {@render legalLinks()}
     </nav>
   {/if}

@@ -271,9 +271,12 @@ class Session {
   bestAtStart = $state<number | null>(null);
   /** The achievements this device earned in the game under way or just over (its startedAt), oldest first: the end screen lists them. */
   earned = $state<{ game: number; ids: string[] } | null>(null);
-  /** Notes what a check of the achievements earned, under the game it was earned in. */
-  private noteEarned(ids: string[]) {
-    const game = this.state?.phase !== 'lobby' ? this.state?.startedAt : undefined;
+  /**
+   * Notes what a check of the achievements earned, under the game it was
+   * earned in (`game`, its startedAt, as it stood when the check was asked
+   * for: the check is async, and a next game may have begun by its end).
+   */
+  private noteEarned(ids: string[], game: number | undefined) {
     if (game === undefined || !ids.length) return;
     const was = this.earned?.game === game ? this.earned.ids : [];
     this.earned = { game, ids: [...was, ...ids.filter((id) => !was.includes(id))] };
@@ -2041,7 +2044,7 @@ class Session {
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
         const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
-        this.noteEarned(earned.earned.map((a) => a.id));
+        this.noteEarned(earned.earned.map((a) => a.id), next.phase !== 'lobby' ? next.startedAt : undefined);
         if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
         else announceAchievements(earned, 'game');
       })
@@ -2061,6 +2064,8 @@ class Session {
   private noteAchievements() {
     if (this.achievementsDue) return;
     this.achievementsDue = true;
+    // The game the check is for: by the time it runs (an idle moment, up to a second on) a next one may have begun.
+    const game = this.state?.phase !== 'lobby' ? this.state?.startedAt : undefined;
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ checkAchievements }, { announceAchievements }]) =>
         whenIdle(
@@ -2068,7 +2073,7 @@ class Session {
             this.achievementsDue = false;
             try {
               const check = checkAchievements(engine.items);
-              if (!check.first) this.noteEarned(check.earned.map((a) => a.id));
+              if (!check.first) this.noteEarned(check.earned.map((a) => a.id), game);
               announceAchievements(check, 'game');
             } catch (err) {
               console.warn('achievements', err);

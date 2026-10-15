@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Engine, createGame, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { ANSWER_MS_FLOOR, ANSWER_MS_SLACK, Engine, createGame, heldMs, publicView, type GameState, type Item, type Question } from '../src/lib/game.ts';
 import {
   CHART_RUNS,
   chartLayout,
@@ -38,20 +38,23 @@ function seeded(seed: number) {
   };
 }
 
+/** A game on a clock the test moves (an answer's time is held to what the host saw: game.ts heldMs). */
 function setup(names: string[], settings: Partial<GameState['settings']> = {}) {
-  const engine = new Engine(items, { rng: seeded(7) });
+  const clock = { now: 1_000_000 };
+  const engine = new Engine(items, { rng: seeded(7), now: () => clock.now });
   let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', ...settings });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
-  return { engine, s: engine.apply(s, { type: 'start' }, 'p0') };
+  return { engine, clock, s: engine.apply(s, { type: 'start' }, 'p0') };
 }
 
 test('take turns: the recap keeps each answer, its time, the categories and the misses', () => {
-  let { engine, s } = setup(['Ash', 'Bram']);
+  let { engine, clock, s } = setup(['Ash', 'Bram']);
   const first = s.players[s.turn].id;
   const other = s.players.find((p) => p.id !== first)!.id;
   // The first player gets theirs right in 2.4 s, the other misses.
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, first);
   const cat = s.question!.category;
+  clock.now += 2500;
   s = engine.apply(s, { type: 'answer', index: right(s.question!), ms: 2400 }, first);
   s = engine.apply(s, { type: 'next' }, first);
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, other);
@@ -82,7 +85,7 @@ test('an answer time out of reason is dropped, and the protocol keeps a fair one
 });
 
 test('race: firsts in a row, wrong guesses per item, and the lines they make', () => {
-  let { engine, s } = setup(['Ash', 'Bram', 'Cass'], { mode: 'race', timer: 20, targetScore: 50 });
+  let { engine, clock, s } = setup(['Ash', 'Bram', 'Cass'], { mode: 'race', timer: 20, targetScore: 50 });
   // Bram first three times running, then Ash; Cass guesses wrong on the second.
   const order = ['p1', 'p1', 'p1', 'p0'];
   let wrongItem = '';
@@ -91,6 +94,7 @@ test('race: firsts in a row, wrong guesses per item, and the lines they make', (
       wrongItem = s.question!.itemId;
       s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!), askedAt: s.question!.askedAt }, 'p2');
     }
+    clock.now += 2000;
     s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt, ms: 1500 + i * 100 }, who);
     s = engine.apply(s, { type: 'next' }, 'p0');
   });
@@ -314,11 +318,12 @@ test('Delve: a find won goes into the recap, and what came of it; a right answer
   s.delve!.finds = [{ category: s.offered[0], kind: 'dynamite' }];
   s = engine.apply(s, { type: 'pick', category: s.offered[0] }, null);
   s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
-  clock.now = s.question!.deadline! - 3000;
+  clock.now = s.question!.clockAt! + 2300;
+  const left = s.question!.deadline! - clock.now;
   s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt, ms: 2100 }, null);
   assert.equal(s.reveal!.gained, 'dynamite');
   assert.deepEqual(s.recap!.items, [{ kind: 'dynamite', at: 20, by: 'p0' }]);
-  assert.deepEqual(s.recap!.closest, { by: 'p0', id: s.question!.itemId, left: 3000, depth: 20 });
+  assert.deepEqual(s.recap!.closest, { by: 'p0', id: s.question!.itemId, left, depth: 20 });
   assert.deepEqual(s.recap!.fastest, { by: 'p0', id: s.question!.itemId, ms: 2100 });
   // A depth on, the stick blasts a question away.
   s = engine.apply(s, { type: 'next' }, null);
@@ -386,4 +391,35 @@ test('a negative score has a minus sign; the hardest category is never the one p
   );
   const three = run([20, 23, 27], {}, revives.slice(0, 3), 3);
   assert.equal(partyHighlights(three).length, 3);
+});
+
+test("an answer's time is held to what the host saw: never longer, never much shorter", () => {
+  // Said 50 ms, but 3 s went by on the host: at most the slack sooner than that.
+  assert.equal(heldMs(50, 3000), 3000 - ANSWER_MS_SLACK > ANSWER_MS_FLOOR ? 3000 - ANSWER_MS_SLACK : ANSWER_MS_FLOOR);
+  // Never under the floor, never over what the host saw, the device's own time otherwise.
+  assert.equal(heldMs(50, 400), ANSWER_MS_FLOOR);
+  assert.equal(heldMs(9000, 4000), 4000);
+  assert.equal(heldMs(2400, 2500), 2400);
+  assert.equal(heldMs(undefined, 2500), undefined);
+});
+
+test('race: a question thrown out takes its wrong guesses out of the recap with their points', () => {
+  let { engine, s } = setup(['Ash', 'Bram'], { mode: 'race', timer: 20, targetScore: 50 });
+  const item = s.question!.itemId;
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!), askedAt: s.question!.askedAt }, 'p1');
+  assert.deepEqual([s.recap!.answers.p1, s.recap!.misses.length, s.recap!.wrong], [{ n: 1, ok: 0 }, 1, { [item]: 1 }]);
+  s = engine.apply(s, { type: 'reask' }, 'p0');
+  assert.deepEqual([s.recap!.answers.p1, s.recap!.misses.length, s.recap!.wrong], [{ n: 0, ok: 0 }, 0, {}]);
+});
+
+test('the recap keeps the names it tells, and stays with the host until the game is over', () => {
+  let { engine, clock, s } = setup(['Ash', 'Bram']);
+  const first = s.players[s.turn].id;
+  s = engine.apply(s, { type: 'pick', category: s.offered[0] }, first);
+  clock.now += 1800;
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), ms: 1700 }, first);
+  assert.equal(s.recap!.people![first].name, s.players.find((p) => p.id === first)!.name);
+  // A guest sees none of it mid-game, all of it at the end.
+  assert.equal(publicView(s).recap, undefined);
+  assert.deepEqual(publicView({ ...s, phase: 'over', question: null, reveal: null }).recap, s.recap);
 });

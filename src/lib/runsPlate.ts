@@ -77,8 +77,9 @@ export interface Plate {
 /** The margin left of the plot (the zones' seals, Sol), and the room right of it for "usual". */
 export const MARGIN = 24;
 export const SIDE = 54;
-/** Room over the ground for Sol, and under the deepest floor for its depth. */
-const TOP = 16;
+/** Room over the ground for Sol (the ground's level from the drawing's top: what stands beside it lines up with it), and under the deepest floor for its depth. */
+export const GROUND_Y = 16;
+const TOP = GROUND_Y;
 const FOOT = 26;
 const STAR_R = 6.2;
 /** The widest a shaft is. */

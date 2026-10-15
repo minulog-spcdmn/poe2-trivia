@@ -8,11 +8,12 @@
 // items in their own type: plain text, a number, a player (marked "(you)"
 // for the viewer), an item or a category.
 
-import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, livesOf, shownDepth, teamDepth, type FindKind, type ItemKind } from './delve.ts';
+import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, livesOf, shownDepth, teamDepth, type FindKind } from './delve.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
 import type { Answer } from './codex.ts';
+import { cap, words } from './difficultyText.ts';
 
 export type Part = string | { n: string | number } | { who: string } | { item: string } | { cat: string };
 /**
@@ -29,12 +30,10 @@ export interface Line {
 
 // ---- words ---------------------------------------------------------------
 
-const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
-/** A small number as a word, where a line reads as speech ("four short"); larger ones stay digits. */
-export const word = (n: number) => WORDS[n] ?? String(n);
+/** A small number as a word, where a line reads as speech ("four short"); larger ones stay digits (the reveal's own, difficultyText). */
+const word = words;
 const ORDINALS = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth'];
 export const ordinal = (n: number) => ORDINALS[n] ?? `${n}th`;
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** Seconds from ms, to a tenth. */
 export const secs = (ms: number) => (Math.round(ms / 100) / 10).toFixed(1);
 
@@ -367,9 +366,6 @@ export const FIND_BRIEF: Record<FindKind, string> = {
   azurite: 'Each right answer digs out a ward, which takes a lost life for you; then dig deeper or take the way out.',
   flare: `A flare adds ${word(FLARE_MS / 1000)} seconds when your time runs out.`,
 };
-
-/** The kind of item a find gives, for its glyph. */
-export const GLYPH: Record<ItemKind, 'ward' | 'flare' | 'dynamite'> = { wards: 'ward', flares: 'flare', dynamite: 'dynamite' };
 
 // ---- Delve: the runs chart ---------------------------------------------------
 

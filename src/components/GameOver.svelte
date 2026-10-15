@@ -26,6 +26,7 @@
   import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
   import { FIND_RULES, FIND_TEXT } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
+  import { GROUND_Y } from '../lib/runsPlate';
   import { accentAt } from '../lib/descent';
   import { sigilOf, zoneAt } from '../lib/zoneSigils';
   import { namesList } from '../lib/presence';
@@ -71,7 +72,9 @@
   const host = $derived(s.players.find((p) => p.id === s.hostId)?.name ?? 'the host');
   /** The marks in front of a line (the highlights, the run's facts): avatars, item thumbs and medallions, all this size. */
   const ICON = 26;
-  const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  /** A player by id: seated, or one the recap named who has since been removed (kicked before the end). */
+  const personOf = (id: string) => s.players.find((p) => p.id === id) ?? s.recap?.people?.[id];
+  const nameOf = (id: string) => personOf(id)?.name ?? '?';
   const itemName = (id: string) => engine.byId.get(id)?.name ?? id;
 
   // ---- Delve -------------------------------------------------------------
@@ -395,13 +398,13 @@
      find's item, the heart of a life given, a zone's emblem, a category's) at the size it is drawn for. -->
 {#snippet icon(ic: Icon)}
   <span class="ic" aria-hidden="true">
-    {#if 'avatar' in ic && s.players.some((x) => x.id === ic.avatar)}
-      {@const p = s.players.find((x) => x.id === ic.avatar)!}
+    {#if 'avatar' in ic && personOf(ic.avatar)}
+      {@const p = personOf(ic.avatar)!}
       <!-- Its rim reaches 3 px round it: inside that, the size of the thumbs and the medallions. -->
       <Avatar name={p.name} hue={p.hue} size={ICON - 4} />
     {:else if 'item' in ic}
       <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
-    {:else}
+    {:else if !('avatar' in ic)}
       <span class="mini sign">
         {#if 'glyph' in ic}
           <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
@@ -704,7 +707,7 @@
               {/if}
             {:else if chart.length >= 2}
               <p class="cap">{together ? 'Your runs together, oldest first' : 'Your runs alone, oldest first'}</p>
-              <div class="chart-row">
+              <div class="chart-row" style:--ground="{GROUND_Y}px">
                 <RunsChart runs={chart} height={chartH} width={phone.current ? 250 : 180} />
                 {@render lineList(facts)}
               </div>
@@ -784,9 +787,11 @@
     max-width: 1440px;
     margin: 0 auto;
     /* Both columns start on the lobby panel's top line, at every window height: the lobby centres its 724 px of columns in
-       what the header and the legal links under it leave of the window (64.6 and 44.1 px), and never goes nearer the
-       header than its own padding (Lobby.svelte, desktop). So going back to the lobby never moves the panel. */
-    padding: max(clamp(10px, 2.4vh, 40px), (100dvh / var(--stage-zoom, 1) - 64.6px - 44.1px - 724px) / 2) max(20px, (min(100%, 1440px) - 1200px) / 2) 0;
+       what the header and the legal links under it leave of the window (App.svelte measures both: --header-h, --legal-h;
+       their usual heights until it has), and never goes nearer the header than its own padding (Lobby.svelte, desktop).
+       So going back to the lobby never moves the panel. */
+    padding: max(clamp(10px, 2.4vh, 40px), (100dvh / var(--stage-zoom, 1) - var(--header-h, 64.6px) - var(--legal-h, 44.1px) - 724px) / 2)
+      max(20px, (min(100%, 1440px) - 1200px) / 2) 0;
   }
   .side {
     position: relative;
@@ -1416,7 +1421,7 @@
     font-size: 1rem;
     color: #c4b69c;
   }
-  /* The run's facts hang from the chart's ground line: the first one's mark centred on it (RunsChart's ground at 16 px). */
+  /* The run's facts hang from the chart's ground line: the first one's mark centred on it (--ground: lib/runsPlate's GROUND_Y). */
   .chart-row {
     display: flex;
     align-items: flex-start;
@@ -1425,7 +1430,7 @@
   .chart-row .fx {
     flex: 1;
     min-width: 0;
-    padding-top: calc(16px - var(--icon, 26px) / 2);
+    padding-top: calc(var(--ground) - var(--icon, 26px) / 2);
   }
   .runs .earned {
     margin-bottom: 1rem;
