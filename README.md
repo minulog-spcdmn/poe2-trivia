@@ -882,9 +882,11 @@ reflections, far slaps and a tail whose lows, mids and highs die at their
 own pace, worked out while the page is idle) in place of the one hall,
 cross-fading as the beds do. The hover, the most frequent sound and now
 the most noticeable, comes from where its control is like any other, but
-2.5 dB down, dry and close (no side reverb, little room), and a step
-quieter for each hover in a quick sweep across controls. The mix was
-chosen by ear in the lab (**Spatial sound**, below).
+2 dB down; a busy sweep across controls eases it down a little and dulls
+it, and within a sweep a quick flick over a control barely brushes it
+(quieter, duller, shorter), while the first hover after a pause always
+sounds in full. The mix was chosen by ear in the lab (**Spatial sound**,
+below), the hover on its own page (**The hover tuning page**).
 
 ### Visual effects
 
@@ -1398,18 +1400,13 @@ colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
 sweep of the mouse across controls: rows of controls shaped as the game's
 (the header's small buttons, the cards, the answers, a menu, chips), their
 hovers played as the game plays them (`src/lib/spatial.svelte.ts`), and
-beside them the settings: **Off**, **Steps** (each hover 2 dB quieter, as
-the game has it) or **Eased** (ducked by how busy hovering is, with its
+beside them the settings: **Off**, **Steps** (each hover 2 dB quieter) or
+**Eased** (ducked by how busy hovering is, as the game has it, with its
 depth, how much duller, how fast it recovers and how quickly speed ducks
-it), keys 1 to 3; **By pointer speed** (within a sweep, a quick flick over a
-control quieter, duller and shorter, a slow arrival in full, between two speeds in
-screen widths a second); and **Takes** (the hover in several takes made
-from its own two recordings, none twice running: nudged, each layer a
-little different in balance, timing, pitch, attack and tone;
-resynthesized, its tone and envelope kept and its fine detail made afresh;
-or granular, its attack kept and the rest rebuilt from grains,
-`src/lib/variations.ts`). A strip shows how far
-each hover was ducked, with the last one's speed and take.
+it), keys 1 to 3; and **By pointer speed** (within a sweep, a quick flick
+over a control quieter, duller and shorter, a slow arrival in full, between
+two speeds in screen widths a second). A strip shows how far each hover was
+ducked, with the last one's speed.
 
 - **Open it:** `npm run dev`, then `http://localhost:5173/hover.html`; on
   the beta, **poe2.quest/beta/hover.html**. The live build leaves it out.

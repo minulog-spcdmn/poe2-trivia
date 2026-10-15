@@ -15,9 +15,8 @@
 // ±30° from where you sit, about where a pair of stereo speakers stands. The
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
-import { HALL_SECONDS, db, filter, setPlacer, type LayerTweak, type Placer, type SoundPlace, type Sfx } from './sound';
-import { HOVER_SWEEP, hoverEase, hoverStep, nextTake, roomPlan, screenX, speedAmount, takes, travel } from './spatialPlan';
-import { granular, resynthesized } from './variations';
+import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
+import { HOVER_SWEEP, hoverEase, hoverStep, roomPlan, screenX, speedAmount, travel } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -85,18 +84,9 @@ export type Spatial = {
   hoverSpeedDb: number;
   hoverSpeedSoften: number;
   hoverShorter: number;
-  /**
-   * The hover in `hoverTakes` takes (none twice running; 0 or 1: as it is),
-   * made from its own recordings as `hoverTakeKind` has it: each layer
-   * nudged (spatialPlan.ts takes), resynthesized or rebuilt from grains
-   * (lib/variations.ts); `hoverVariety` (0 to 1) how far from the original.
-   */
-  hoverTakes: number;
-  hoverTakeKind: 'nudged' | 'resynthesized' | 'granular';
-  hoverVariety: number;
 };
 
-/** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only), and the hover a touch quieter, dry and quieter on repeats. */
+/** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only), and the hover a touch quieter, eased down in a busy sweep and brushed past on a quick flick (on the hover tuning page). */
 export const CHOSEN: Spatial = {
   today: false,
   renderer: 'head',
@@ -109,22 +99,19 @@ export const CHOSEN: Spatial = {
   rooms: true,
   crossfeed: false,
   mono: false,
-  hoverDb: -2.5,
-  hoverDry: true,
-  hoverRepeat: 'steps',
-  hoverDepth: -4,
-  hoverSoften: -3,
-  hoverRecover: 0.4,
-  hoverWeight: 0.5,
-  hoverSpeed: false,
-  hoverSlow: 0.4,
+  hoverDb: -2,
+  hoverDry: false,
+  hoverRepeat: 'eased',
+  hoverDepth: -2.5,
+  hoverSoften: -5,
+  hoverRecover: 0.5,
+  hoverWeight: 0.35,
+  hoverSpeed: true,
+  hoverSlow: 0.25,
   hoverFast: 2.5,
   hoverSpeedDb: -5,
-  hoverSpeedSoften: -5,
-  hoverShorter: 0.5,
-  hoverTakes: 0,
-  hoverTakeKind: 'resynthesized',
-  hoverVariety: 0.6,
+  hoverSpeedSoften: -2.5,
+  hoverShorter: 0.45,
 };
 
 /** The settings in play: the chosen mix; the lab's pages change them to tune it. */
@@ -287,43 +274,15 @@ function wide(ac: AudioContext): Place {
 /** The renderers; `plain` asks for no brightening (only the head model has any). */
 const PLACES: Record<Renderer, (ac: AudioContext, plain?: boolean) => Place> = { pan: panned, haas, head: headModel, hrtf: binaural };
 
-/** A layer played as it is (but for a recording of its own). */
-const AS_IS: LayerTweak = { gainDb: 0, delayMs: 0, rate: 1, offsetMs: 0, peakHz: 1000, peakDb: 0 };
-
 /** A dry hover's share of the room (a little: it is close). */
 const HOVER_ROOM = 0.3;
 /** The pointer's last hover, for its next to step down from in a sweep (spatialPlan.ts hoverStep). */
 let lastHover: ReturnType<typeof hoverStep> | null = null;
 let lastEased: ReturnType<typeof hoverEase> | null = null;
-/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep and speed made it, how fast it came (screen widths a second), and which take played (for the hover tuning page). */
-export const hoverHeard = $state({ db: 0, soften: 0, n: 0, speed: 0, take: -1 });
-/** The hover's nudged takes as made for the settings (`key`), and the last played. */
-let hoverTakes: { key: string; takes: LayerTweak[][] } | null = null;
-let lastTake = -1;
+/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep and speed made it, and how fast it came (screen widths a second) (for the hover tuning page). */
+export const hoverHeard = $state({ db: 0, soften: 0, n: 0, speed: 0 });
 /** When (the audio clock) the pointer last hovered a control, to tell a sweep from a first hover. */
 let lastPointerHover: number | null = null;
-/** Each recording's takes made afresh (resynthesized or granular), as made for the settings (`key`): the first is the recording itself. */
-const madeTakes = new WeakMap<AudioBuffer, { key: string; takes: AudioBuffer[] }>();
-
-/** A recording's `count` takes of `kind` (made the first time they are asked for: a few ms each), the first the recording itself. */
-function takesOf(buf: AudioBuffer, kind: 'resynthesized' | 'granular', count: number, variety: number): AudioBuffer[] {
-  const key = `${kind}:${count}:${variety}`;
-  const kept = madeTakes.get(buf);
-  if (kept?.key === key) return kept.takes;
-  const made = [buf];
-  for (let k = 1; k < count; k++) {
-    const take = new AudioBuffer({ length: buf.length, numberOfChannels: buf.numberOfChannels, sampleRate: buf.sampleRate });
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-      const data = buf.getChannelData(ch);
-      const seed = k * 101 + ch * 7 + 1;
-      take.copyToChannel(kind === 'resynthesized' ? resynthesized(data, variety, seed) : granular(data, buf.sampleRate, variety, seed), ch);
-    }
-    made.push(take);
-  }
-  madeTakes.set(buf, { key, takes: made });
-  return made;
-}
-
 /** The game's screen (the whole window, or left of the lab's panel), measured once and again only after it changes size: not for every sound. */
 let screenBox: DOMRect | null = null;
 let screenWatched = false;
@@ -557,20 +516,6 @@ function work(place: string) {
 
 const placer: Placer = {
   widen,
-  /** The hover in one of its takes, none twice running (with hoverTakes over 1); everything else as it is. */
-  vary(name, recordings) {
-    const s = spatial;
-    if (name !== 'hover' || s.today || s.hoverTakes < 2) return null;
-    lastTake = nextTake(lastTake, s.hoverTakes);
-    hoverHeard.take = lastTake;
-    if (s.hoverTakeKind === 'nudged') {
-      const key = `${s.hoverTakes}:${s.hoverVariety}:${recordings.length}`;
-      if (hoverTakes?.key !== key) hoverTakes = { key, takes: takes(s.hoverTakes, recordings.length, s.hoverVariety, 7) };
-      return hoverTakes.takes[lastTake];
-    }
-    const kind = s.hoverTakeKind;
-    return recordings.map((buf) => (buf ? { ...AS_IS, buffer: takesOf(buf, kind, s.hoverTakes, s.hoverVariety)[lastTake] } : null));
-  },
   depth(d) {
     depthNow = d;
     tuneRooms();

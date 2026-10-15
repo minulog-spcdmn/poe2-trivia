@@ -133,15 +133,6 @@ let bus: Bus | null = null;
 export type SoundPlace = { from?: Element | null; x?: number; speed?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
 
 /**
- * A take of a sound: for each of its layers, how much louder (dB), later
- * (ms) and faster it plays, how far into its recording it starts (ms), a
- * bump or dip in its tone (dB at Hz), and a recording of its own to play in
- * place of the layer's (`buffer`, made from it: lib/variations.ts).
- * Placer.vary hands them out.
- */
-export type LayerTweak = { gainDb: number; delayMs: number; rate: number; offsetMs: number; peakHz: number; peakDb: number; buffer?: AudioBuffer };
-
-/**
  * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
  * set as the game starts. `mount` is handed the bus once it is up: its mix,
  * its reverb send, its hall (`reverb`, fed by the send and playing into the
@@ -152,16 +143,13 @@ export type LayerTweak = { gainDb: number; delayMs: number; rate: number; offset
  * it (null: left as it is): it may hand back a second take of the loop
  * (`take`, not started), which is started half a loop on, follows the
  * loop's rate and stops with it. `depth` hears Delve's depth as the ambience does
- * (depthAmbience), once mounted and on every change, for its rooms. `vary`
- * may hand a moment a take of it (a tweak for each of its layers, whose
- * recordings it is handed, those loaded), or null to play it as it is.
+ * (depthAmbience), once mounted and on every change, for its rooms.
  */
 export type Placer = {
   mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode }): void;
   place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined): { dry: AudioNode; wet: AudioNode } | null;
   widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode } | null;
   depth(d: number): void;
-  vary(name: Sfx, recordings: (AudioBuffer | undefined)[]): (LayerTweak | null)[] | null;
 };
 let placer: Placer | null = null;
 
@@ -490,24 +478,13 @@ export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: 
  * should its recording run out sooner, and then fades out. `at` (s): the
  * moment starts that long from now, on the audio clock.
  */
-function playLayer(
-  b: Bus,
-  buf: AudioBuffer,
-  l: Layer,
-  soften: number,
-  pitch: number,
-  gainDb: number,
-  hold?: number,
-  at = 0,
-  into: { dry: AudioNode; wet: AudioNode } | null = null,
-  take: LayerTweak | null = null,
-) {
+function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number, at = 0, into: { dry: AudioNode; wet: AudioNode } | null = null) {
   const { ac } = b;
   const src = ac.createBufferSource();
-  src.buffer = take?.buffer ?? buf;
-  src.playbackRate.value = l.rate * pitch * (take?.rate ?? 1);
+  src.buffer = buf;
+  src.playbackRate.value = l.rate * pitch;
   const begin = ac.currentTime + at;
-  const start = begin + (l.delay + (take?.delayMs ?? 0)) / 1000;
+  const start = begin + l.delay / 1000;
   if (hold !== undefined && buf.duration / src.playbackRate.value < hold - l.delay / 1000) {
     // Too short to last: it loops, round its middle (the onset and the tail left out).
     src.loop = true;
@@ -515,17 +492,17 @@ function playLayer(
     src.loopEnd = Math.max(src.loopStart + 0.05, buf.duration - Math.min(buf.duration * 0.1, 0.1));
   }
   const g = ac.createGain();
-  g.gain.value = db(l.gain + gainDb + (take?.gainDb ?? 0));
-  let tone: AudioNode = src
+  g.gain.value = db(l.gain + gainDb);
+  src
     .connect(filter(ac, 'highpass', l.hp))
     .connect(filter(ac, 'lowpass', l.lp))
-    .connect(filter(ac, 'peaking', 3200, 1, -soften));
-  if (take?.peakDb) tone = tone.connect(filter(ac, 'peaking', take.peakHz, 1.2, take.peakDb));
-  tone.connect(g).connect(into?.dry ?? b.master);
+    .connect(filter(ac, 'peaking', 3200, 1, -soften))
+    .connect(g)
+    .connect(into?.dry ?? b.master);
   const send = ac.createGain();
   send.gain.value = l.send;
   g.connect(send).connect(into?.wet ?? b.wet);
-  src.start(start, take ? Math.min(take.offsetMs / 1000, buf.duration * 0.25) : 0);
+  src.start(start);
   if (hold !== undefined) {
     const end = Math.max(start, begin + hold);
     g.gain.setValueAtTime(g.gain.value, end);
@@ -590,14 +567,12 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   const inS = Math.max(0, opts.inMs ?? 0) / 1000;
   const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from) : null;
-  // A take of it (the placer's), each layer a little different.
-  const takes = placer?.vary(name, m.layers.map((l) => ready.get(l.file))) ?? null;
-  for (const [i, l] of m.layers.entries()) {
+  for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
     if (buf)
       layers.push(
-        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into, takes?.[i] ?? null),
+        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into),
       );
   }
   // One that failed to load as sound started (offline for a moment) is tried

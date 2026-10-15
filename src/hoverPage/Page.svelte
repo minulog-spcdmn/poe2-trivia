@@ -3,12 +3,10 @@
   // game's (its header's small buttons, the cards, the answers, a menu, a
   // grid of chips) to sweep the mouse across, their hovers played as the
   // game plays them (lib/spatial.svelte.ts), with the settings for how a
-  // hover quietens over a sweep beside them: as live (a step each), eased
-  // (by how busy hovering is), or not at all (1, 2 and 3 switch between
-  // them); by the pointer's speed as it came over the control, within a
-  // sweep; and in takes made from its own recordings (nudged, resynthesized
-  // or granular: lib/variations.ts), none twice running. Each hover's ducking
-  // shows in the strip below the settings.
+  // hover quietens over a sweep beside them: a step each, eased (by how busy
+  // hovering is, as live), or not at all (1, 2 and 3 switch between them);
+  // and by the pointer's speed as it came over the control, within a sweep.
+  // Each hover's ducking shows in the strip below the settings.
   import { untrack } from 'svelte';
   import { hoverHeard, spatial, CHOSEN } from '../lib/spatial.svelte';
   import { readStored, writeStored } from '../lib/storage';
@@ -16,8 +14,8 @@
   type Mode = typeof spatial.hoverRepeat;
   const MODES: { id: Mode; label: string; hint: string }[] = [
     { id: 'off', label: 'Off', hint: 'Every hover at the same level.' },
-    { id: 'steps', label: 'Steps (live)', hint: 'Each hover within half a second of the last 2 dB quieter, down to −8 dB; back to full after a pause.' },
-    { id: 'eased', label: 'Eased', hint: 'Ducked by how busy hovering is: deeper the faster a sweep goes, easing back as it slows; duller as well as quieter.' },
+    { id: 'steps', label: 'Steps', hint: 'Each hover within half a second of the last 2 dB quieter, down to −8 dB; back to full after a pause.' },
+    { id: 'eased', label: 'Eased (live)', hint: 'Ducked by how busy hovering is: deeper the faster a sweep goes, easing back as it slows; duller as well as quieter.' },
   ];
   const KEYS = [
     'hoverDb',
@@ -33,9 +31,6 @@
     'hoverSpeedDb',
     'hoverSpeedSoften',
     'hoverShorter',
-    'hoverTakes',
-    'hoverTakeKind',
-    'hoverVariety',
   ] as const;
 
   // The settings as tuned last time on this page.
@@ -54,18 +49,12 @@
 
   const mode = $derived(MODES.find((m) => m.id === spatial.hoverRepeat)!);
 
-  const TAKE_KINDS: { id: typeof spatial.hoverTakeKind; label: string; hint: string }[] = [
-    { id: 'nudged', label: 'Nudged', hint: 'The recordings as they are, each layer a little different in balance, timing, pitch, attack and tone.' },
-    { id: 'resynthesized', label: 'Resynthesized', hint: 'Each take new grain in the same sound: its tone and envelope kept, its fine detail made afresh (Variety: how much).' },
-    { id: 'granular', label: 'Granular', hint: 'The attack kept, the rest rebuilt from small grains of the recording, each from a little before or after (Variety: how far).' },
-  ];
-
   /** The last hovers' ducking (dB), newest last. */
-  let strip = $state<{ n: number; db: number; soften: number; speed: number; take: number }[]>([]);
+  let strip = $state<{ n: number; db: number; soften: number; speed: number }[]>([]);
   $effect(() => {
     const n = hoverHeard.n;
     if (!n) return;
-    const h = { n, db: hoverHeard.db, soften: hoverHeard.soften, speed: hoverHeard.speed, take: hoverHeard.take };
+    const h = { n, db: hoverHeard.db, soften: hoverHeard.soften, speed: hoverHeard.speed };
     // Added to, not read from: only a new hover runs this again.
     untrack(() => (strip = [...strip.slice(-39), h]));
   });
@@ -180,27 +169,6 @@
     <p class="hint">
       Within a sweep (the first hover after a pause always sounds in full), in screen widths a second: at Slow or below the hover sounds in full, at Fast or above it is all of Quieter, Duller and Shorter, eased between. Last
       hover came at <b>{(strip.at(-1)?.speed ?? 0).toFixed(2)}</b>.
-    </p>
-
-    <h2>Takes</h2>
-    <div class="seg" role="group" aria-label="Kind of take">
-      {#each TAKE_KINDS as k (k.id)}
-        <button class:on={spatial.hoverTakeKind === k.id} onclick={() => (spatial.hoverTakeKind = k.id)}>{k.label}</button>
-      {/each}
-    </div>
-    <p class="hint">{TAKE_KINDS.find((k) => k.id === spatial.hoverTakeKind)?.hint}</p>
-    <div class="line">
-      <span class="lbl">Takes</span>
-      <input type="range" min="0" max="8" step="1" bind:value={spatial.hoverTakes} style:--fill="{(spatial.hoverTakes / 8) * 100}%" aria-label="Takes" />
-      <i class="num">{spatial.hoverTakes < 2 ? 'off' : spatial.hoverTakes}</i>
-    </div>
-    <div class="line" class:dim={spatial.hoverTakes < 2}>
-      <span class="lbl">Variety</span>
-      <input type="range" min="0" max="1" step="0.05" bind:value={spatial.hoverVariety} style:--fill="{spatial.hoverVariety * 100}%" aria-label="Variety" />
-      <i class="num">{Math.round(spatial.hoverVariety * 100)}%</i>
-    </div>
-    <p class="hint">
-      Played in turn, none twice running; the first is the recording as it is. Last: take <b>{(strip.at(-1)?.take ?? -1) < 0 ? 'none' : strip.at(-1)!.take + 1}</b>.
     </p>
 
     <h2>The hover itself</h2>

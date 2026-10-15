@@ -67,8 +67,8 @@ export function roomSeed(key: string) {
   return h >>> 0;
 }
 
-/** A small seeded random, so a room sounds the same each time it is worked out (and a take of a sound, spatialPlan.ts takes). */
-export function seeded(seed: number) {
+/** A small seeded random, so a room sounds the same each time it is worked out. */
+function seeded(seed: number) {
   let s = seed >>> 0 || 1;
   return () => {
     s ^= s << 13;
