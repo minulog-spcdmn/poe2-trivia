@@ -15,10 +15,10 @@
 // ±30° from where you sit, about where a pair of stereo speakers stands. The
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
-import { bedsAt, hall, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
+import { HALL_SECONDS, bedsAt, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
-import { ROOMS, roomSteps } from './acoustics';
+import { ROOMS, roomSeed, roomSteps } from './acoustics';
 
 /**
  * How a sound is placed. pan: equal-power panning (by level). haas: by time
@@ -52,11 +52,11 @@ export type Spatial = {
   mono: boolean;
 };
 
-/** The mix chosen by ear (on the lab's pages): the head model at ±45°, teammates 35% off, everything else on but crossfeed (for headphones only). */
+/** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only). */
 export const CHOSEN: Spatial = {
   today: false,
   renderer: 'head',
-  width: 0.5,
+  width: 0.4,
   moving: true,
   far: 0.35,
   sideReverb: true,
@@ -85,7 +85,6 @@ const WIDE = new Set<Sfx>(['blast', 'caveIn']);
 /** Heard from far off already (lib/soundDesign.ts's distant()): no more distance on top. */
 const DISTANT = new Set<Sfx>(['fallenFar']);
 
-const db = (d: number) => Math.pow(10, d / 20);
 const HEAD = 0.0875;
 const SOUND = 343;
 /** Haas: how late (s) the far side is at 90°. */
@@ -96,14 +95,6 @@ const STEP = 0.03;
 /** A blast's shockwave: from its edge in toward the middle (to 0.3 of the way from it), over the time the new question takes to start in. */
 const BLAST_SWEEP = { to: 0.3, seconds: BLAST_IN_DELAY_MS / 1000 };
 
-function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
-  const f = ac.createBiquadFilter();
-  f.type = type;
-  f.frequency.value = frequency;
-  f.Q.value = q;
-  f.gain.value = gain;
-  return f;
-}
 function gainNode(ac: BaseAudioContext, value: number) {
   const g = ac.createGain();
   g.gain.value = value;
@@ -234,10 +225,21 @@ function wide(ac: AudioContext): Place {
 
 const PLACES: Record<Renderer, (ac: AudioContext) => Place> = { pan: panned, haas, head: headModel, hrtf: binaural };
 
-/** The game's screen (the whole window, or left of the lab's panel). */
+/** The game's screen (the whole window, or left of the lab's panel), measured once and again only after it changes size: not for every sound. */
+let screenBox: DOMRect | null = null;
+let screenWatched = false;
 function screen() {
-  const r = document.getElementById('app')?.getBoundingClientRect();
-  return r && r.width ? r : new DOMRect(0, 0, innerWidth, innerHeight);
+  if (screenBox) return screenBox;
+  const app = document.getElementById('app');
+  const r = app?.getBoundingClientRect();
+  screenBox = r && r.width ? r : new DOMRect(0, 0, innerWidth, innerHeight);
+  if (app && !screenWatched) {
+    screenWatched = true;
+    const stale = () => (screenBox = null);
+    new ResizeObserver(stale).observe(app);
+    addEventListener('resize', stale);
+  }
+  return screenBox;
 }
 
 /** A place on screen as -1..1 across the game's screen (left to right), or null for none: an element's middle, a point, or half way between the two. */
@@ -260,14 +262,17 @@ const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 
 let bus: { ac: AudioContext; master: AudioNode } | null = null;
 export const spatialMix = () => bus;
 
-/** The mix's output switches, and how much of each ambience loop is centred and how much spread (driving every loop's at once). */
-type Out = { ac: AudioContext; plain: GainNode; crossed: GainNode; stereo: GainNode; mono: GainNode; centred: ConstantSourceNode; spread: ConstantSourceNode };
+/** The mix's output switches. */
+type Out = { ac: AudioContext; plain: GainNode; crossed: GainNode; stereo: GainNode; mono: GainNode };
 let out: Out | null = null;
+/** The ambience loops spread wide, playing now (widen): how much of each is centred and how much spread. */
+const spreads = new Set<{ centred: GainNode; spread: GainNode }>();
+const spreadWanted = () => spatial.wideBeds && !spatial.today;
 // The mix and the reverb send of the bus, as mount was handed them.
 let mix: AudioNode | null = null;
-let reverb: AudioNode | null = null;
+let send: AudioNode | null = null;
 const mixOf = (ac: AudioContext) => mix ?? ac.destination;
-const wetOf = (ac: AudioContext) => reverb ?? ac.destination;
+const wetOf = (ac: AudioContext) => send ?? ac.destination;
 
 /** Takes up a change to the settings that act on the whole mix (crossfeed, one speaker, the ambience's spread, the rooms). */
 function applyMix() {
@@ -278,18 +283,32 @@ function applyMix() {
   out.crossed.gain.setTargetAtTime(cross ? 1 : 0, t, 0.02);
   out.stereo.gain.setTargetAtTime(spatial.mono ? 0 : 1, t, 0.02);
   out.mono.gain.setTargetAtTime(spatial.mono ? 1 : 0, t, 0.02);
-  const wideBeds = spatial.wideBeds && !spatial.today;
-  out.centred.offset.setTargetAtTime(wideBeds ? 0 : 1, t, 0.3);
-  out.spread.offset.setTargetAtTime(wideBeds ? 1 : 0, t, 0.3);
+  const wide = spreadWanted();
+  for (const s of spreads) {
+    s.centred.gain.setTargetAtTime(wide ? 0 : 1, t, 0.3);
+    s.spread.gain.setTargetAtTime(wide ? 1 : 0, t, 0.3);
+  }
   tuneRooms();
 }
 
 // ---------- the rooms ----------
 
-/** The reverb: the game's hall, and the rooms of the places sounding now, each at its share. */
-type Rooms = { ac: AudioContext; hall: GainNode; like: number; playing: Map<string, { conv: ConvolverNode; gain: GainNode; idle?: ReturnType<typeof setTimeout> }> };
+/**
+ * The reverb: the game's hall (`hallConv`, fed by the send while `hallFed`,
+ * at `hall`'s level), and the rooms of the places sounding now, each at its
+ * share. `like`: the energy a room is worked out to, the hall's as heard.
+ */
+type Rooms = {
+  ac: AudioContext;
+  hallConv: ConvolverNode;
+  hall: GainNode;
+  hallFed: boolean;
+  parking?: ReturnType<typeof setTimeout>;
+  like: number;
+  playing: Map<string, { conv: ConvolverNode; gain: GainNode; idle?: ReturnType<typeof setTimeout> }>;
+};
 let rooms: Rooms | null = null;
-/** Each place's room, once worked out (they keep: a few hundred kB each). */
+/** The rooms of the places sounding now, once worked out: a megabyte or two each, let go of with their convolvers once their places have gone by. */
 const roomBufs = new Map<string, AudioBuffer>();
 const working = new Set<string>();
 /** Delve's depth as the ambience hears it (0: not in Delve, the hall). */
@@ -338,23 +357,50 @@ function tuneRooms() {
       wetOf(r.ac).disconnect(p.conv);
       p.gain.disconnect();
       r.playing.delete(place);
+      roomBufs.delete(place);
     }, 12_000);
   }
-  r.hall.gain.setTargetAtTime(Math.sqrt(Math.max(0, 1 - covered)), t, ROOM_EASE);
+  const hallShare = Math.sqrt(Math.max(0, 1 - covered));
+  r.hall.gain.setTargetAtTime(hallShare, t, ROOM_EASE);
+  feedHall(r, hallShare > 0.001);
   heard.room = wanted.length ? wanted.map((w) => ROOMS[w.place].name).join(' into ') : spatial.rooms && !spatial.today ? 'The game’s hall (not in Delve)' : 'The game’s hall';
 }
 
-/** Works a place's room out a little at a time while the page is idle (lib/acoustics.ts roomSteps), then brings it in. */
+/**
+ * The hall heard (fed by the send), or not: once rooms have its whole share,
+ * it stops being fed, after its level has faded and its tail rung out, so it
+ * isn't convolving the send for nothing; fed again at once when wanted.
+ */
+function feedHall(r: Rooms, wanted: boolean) {
+  if (wanted) {
+    clearTimeout(r.parking);
+    r.parking = undefined;
+    if (!r.hallFed) wetOf(r.ac).connect(r.hallConv);
+    r.hallFed = true;
+  } else if (r.hallFed && !r.parking) {
+    r.parking = setTimeout(
+      () => {
+        r.parking = undefined;
+        wetOf(r.ac).disconnect(r.hallConv);
+        r.hallFed = false;
+      },
+      (ROOM_EASE * 6 + HALL_SECONDS) * 1000,
+    );
+  }
+}
+
+/** Works a place's room out a little at a time while the page is idle (lib/acoustics.ts roomSteps), then brings it in, if its place still sounds. */
 function work(place: string) {
   const r = rooms;
   if (!r || roomBufs.has(place) || working.has(place)) return;
   working.add(place);
-  const steps = roomSteps(r.ac, ROOMS[place], r.like, place.length * 31 + place.charCodeAt(1));
+  const steps = roomSteps(r.ac, ROOMS[place], r.like, roomSeed(place));
   const next = () => {
     const s = steps.next();
     if (!s.done) return whenIdle(next, { fallback: 300 });
-    roomBufs.set(place, s.value);
     working.delete(place);
+    if (!roomsWanted().some((w) => w.place === place)) return;
+    roomBufs.set(place, s.value);
     tuneRooms();
   };
   whenIdle(next, { fallback: 300 });
@@ -368,12 +414,12 @@ const placer: Placer = {
   },
   /**
    * The mix's output, through crossfeed (or not) and a sum to one speaker
-   * (or not), to the speakers; and the reverb send, through the hall and
-   * the rooms in place of the game's own hall.
+   * (or not), to the speakers; and the reverb send, through the game's hall
+   * at its share and the rooms beside it.
    */
-  mount({ ac, master, wet, out: user }) {
+  mount({ ac, master, wet, reverb, out: user }) {
     mix = master;
-    reverb = wet;
+    send = wet;
     user.disconnect();
     const plain = gainNode(ac, 1);
     const crossed = gainNode(ac, 0);
@@ -399,20 +445,13 @@ const placer: Placer = {
     }
     stereo.connect(ac.destination);
     mono.connect(ac.destination);
-    const centred = new ConstantSourceNode(ac, { offset: 1 });
-    const spread = new ConstantSourceNode(ac, { offset: 0 });
-    centred.start();
-    spread.start();
-    out = { ac, plain, crossed, stereo, mono, centred, spread };
+    out = { ac, plain, crossed, stereo, mono };
 
-    // The game's hall, as it has it, and the rooms beside it.
-    wet.disconnect();
-    const hallBuf = hall(ac, 2.8);
-    const conv = new ConvolverNode(ac, { disableNormalization: false });
-    conv.buffer = hallBuf;
+    // The game's own hall (its response set a moment after, lib/sound.ts audio), at its share, and the rooms beside it.
+    reverb.disconnect();
     const hallGain = gainNode(ac, 1);
-    wet.connect(conv).connect(hallGain).connect(master);
-    rooms = { ac, hall: hallGain, like: heardEnergy(hallBuf), playing: new Map() };
+    reverb.connect(hallGain).connect(master);
+    rooms = { ac, hallConv: reverb, hall: hallGain, hallFed: true, like: heardEnergy(Math.floor(ac.sampleRate * HALL_SECONDS), ac.sampleRate), playing: new Map() };
 
     heard.now = () => ac.currentTime;
     bus = { ac, master };
@@ -450,9 +489,9 @@ const placer: Placer = {
     // Wet: as far off, with more of the room the farther; from its side, or the middle.
     const wet = ac.createGain();
     const sendPan = ac.createStereoPanner();
-    let send: AudioNode = wet;
-    if (far) send = send.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far) * (1 + 0.6 * far)));
-    send.connect(sendPan).connect(wetOf(ac));
+    let toRoom: AudioNode = wet;
+    if (far) toRoom = toRoom.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far) * (1 + 0.6 * far)));
+    toRoom.connect(sendPan).connect(wetOf(ac));
     const sendAz = (t: number) => (s.sideReverb ? clamp1(az(t)) * SIDE_REVERB : 0);
 
     const set = (t: number, ramp: boolean) => {
@@ -468,41 +507,45 @@ const placer: Placer = {
 };
 
 /**
- * The energy (each channel's) of an impulse response as a normalizing
- * convolver plays it, as the game's hall is played: the Web Audio spec
- * scales it to 0.00125 over its RMS, times 44100 over the sample rate, which
- * comes to this whatever is in it. A room, played as it is, is worked out to
- * the same, so the reverb keeps its weight.
+ * The energy (each channel's) of an impulse response `length` samples long
+ * as a normalizing convolver plays it, as the game's hall is played: the Web
+ * Audio spec scales it to 0.00125 over its RMS, times 44100 over the sample
+ * rate, which comes to this whatever is in it. A room, played as it is, is
+ * worked out to the same, so the reverb keeps its weight.
  */
-function heardEnergy(buf: AudioBuffer) {
-  return buf.length * ((0.00125 * 44100) / buf.sampleRate) ** 2;
+function heardEnergy(length: number, sampleRate: number) {
+  return length * ((0.00125 * 44100) / sampleRate) ** 2;
 }
 
 /**
- * An ambience loop, centred as the game has it, or spread: its left the
- * loop, its right a second take of it half a loop on (`take`, which
- * lib/sound.ts starts there and keeps at the loop's rate). Nothing is
- * filtered or piled up, so it keeps its tone; and what passes on one side
- * only comes by on the other half a loop later, too far apart to be heard
- * as an echo. The two ways run side by side, their levels driven by Out's
- * centred and spread, so a change reaches loops already playing.
+ * An ambience loop spread wide: its left the loop, its right a second take
+ * of it half a loop on (`take`, which lib/sound.ts starts there, keeps at the
+ * loop's rate and stops with it). Nothing is filtered or piled up, so it
+ * keeps its tone; and what passes on one side only comes by on the other
+ * half a loop later, too far apart to be heard as an echo. A loop that
+ * starts with the spread off is left as it is (null), with no second take
+ * to play; one that starts with it on can be brought back to the middle
+ * and out again (applyMix: the lab's Today and Wide ambience), the two ways
+ * side by side. Once the loop has stopped, it is let go of.
  */
 function widen(ac: AudioContext, buf: AudioBuffer) {
+  if (!spreadWanted()) return null;
   const input = ac.createGain();
   const output = ac.createGain();
-  const centred = gainNode(ac, 0);
-  const spread = gainNode(ac, 0);
-  out?.centred.connect(centred.gain);
-  out?.spread.connect(spread.gain);
-  if (!out) centred.gain.value = 1;
-  input.connect(centred).connect(output);
+  const way = { centred: gainNode(ac, 0), spread: gainNode(ac, 1) };
+  input.connect(way.centred).connect(output);
   const take = ac.createBufferSource();
   take.buffer = buf;
   take.loop = true;
   const merge = ac.createChannelMerger(2);
   input.connect(merge, 0, 0);
   take.connect(merge, 0, 1);
-  merge.connect(spread).connect(output);
+  merge.connect(way.spread).connect(output);
+  spreads.add(way);
+  take.addEventListener('ended', () => {
+    spreads.delete(way);
+    output.disconnect();
+  });
   return { input, output, take };
 }
 

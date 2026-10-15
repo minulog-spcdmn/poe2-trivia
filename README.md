@@ -873,7 +873,7 @@ Every sound comes from where it happens on screen (`src/lib/spatial.svelte.ts`):
 each call of `sfx()` says where (a card, an answer, the clock, a player's
 entry, the edge a blast bursts in from, or the path its sparks fly), and a
 head model places it (the far ear hears it a fraction of a millisecond late
-and a little duller), the screen's edges at ±45°. Sparks are heard flying,
+and a little duller), the screen's edges at ±36°. Sparks are heard flying,
 teammates' sounds a little farther off, the reverb answers from the sound's
 side, and a blast or a cave-in fills the space round it. The ambience is
 spread wide (each ear its own take of the loop, half a loop apart), and in

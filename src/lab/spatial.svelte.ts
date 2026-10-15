@@ -17,12 +17,12 @@ export const PRESETS: { name: string; hint: string; set: Partial<Spatial> }[] = 
   { name: '3', hint: 'Head model and wide ambience: less stuck to one ear, the ambience all round.', set: { today: false, renderer: 'head', moving: true, far: 0.5, wideBeds: true, sideReverb: false, crossfeed: false } },
   { name: '4', hint: 'Crossfeed, for headphones: out of your head and in front of you.', set: { today: false, renderer: 'head', moving: true, far: 0.5, wideBeds: true, sideReverb: false, crossfeed: true } },
   { name: '5', hint: 'Side reverb: the room answers from the sound’s side.', set: { today: false, renderer: 'head', moving: true, far: 0.5, wideBeds: true, sideReverb: true, crossfeed: true } },
-  { name: 'Chosen', hint: 'The game’s mix: head model at ±45°, teammates 35% off, moving, Size, wide ambience, rooms and side reverb.', set: { ...CHOSEN } },
+  { name: 'Chosen', hint: 'The game’s mix: head model at ±36°, teammates 35% off, moving, Size, wide ambience, rooms and side reverb.', set: { ...CHOSEN } },
   { name: 'HRTF', hint: 'The browser’s binaural panner, for headphones only; compare its tone.', set: { today: false, renderer: 'hrtf', moving: true, far: 0.5, wideBeds: true, sideReverb: true, crossfeed: false } },
 ];
 
-/** Widths to flip between quickly: the screen's edges heard at 30°, 45° and 60°. */
-export const WIDTHS = [1 / 3, 0.5, 2 / 3];
+/** Widths to flip between quickly: the screen's edges heard at 30°, 36° (the game's) and 45°. */
+export const WIDTHS = [1 / 3, 0.4, 0.5];
 
 /** Where the settings are kept: the lab's, so its pages share them (the lab, spatial.html). */
 const KEY = LAB_STORE + 'spatial';

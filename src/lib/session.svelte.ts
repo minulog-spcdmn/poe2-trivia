@@ -2192,7 +2192,8 @@ class Session {
     // (your own is heard as you pick it, and in the phial).
     if (next.delve && next.phase === 'question' && next.question && prev.question?.askedAt === next.question.askedAt) {
       const before = prev.question.struck?.length ?? 0;
-      if ((next.question.struck ?? []).slice(before).some((x) => x.by !== me)) sfx('struck', { from: { far: true } });
+      // From farther off, unless everyone plays at this screen (hot-seat).
+      if ((next.question.struck ?? []).slice(before).some((x) => x.by !== me)) sfx('struck', { from: { far: this.mode !== 'local' } });
     }
     if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
       sfx(next.reveal.correct ? 'correct' : 'wrong');

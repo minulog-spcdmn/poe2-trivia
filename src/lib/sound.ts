@@ -117,7 +117,8 @@ export function setVolume(value: number) {
 /** Squared, so the slider feels even to the ear rather than bunching up at the top. */
 const userGain = () => volume * volume;
 
-type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode };
+/** `reverb`: the hall, fed by `wet` (its impulse response set a moment after the bus is made, see audio). */
+type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode; reverb: ConvolverNode };
 let bus: Bus | null = null;
 
 /**
@@ -128,24 +129,25 @@ let bus: Bus | null = null;
  * yours. Only the placer reads it (setPlacer); without one every sound
  * plays centred.
  */
-export type SoundPlace = { from?: Element | null; x?: number; y?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
+export type SoundPlace = { from?: Element | null; x?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
 
 /**
  * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
  * set as the game starts. `mount` is handed the bus once it is up: its mix,
- * its reverb send and its output (`out`, otherwise straight to the
- * speakers), to route through its own. `place` gives the nodes a moment's
- * layers play into, dry and to the reverb, in place of the mix's; null
- * leaves it as it is. `widen` is put on each ambience loop (mono) before
- * its filter, to spread it: it may hand back a second take of the loop
- * (`take`, not started), which is started half a loop on and follows the
- * loop's rate. `depth` hears Delve's depth as the ambience does
+ * its reverb send, its hall (`reverb`, fed by the send and playing into the
+ * mix) and its output (`out`, otherwise straight to the speakers), to route
+ * through its own. `place` gives the nodes a moment's layers play into, dry
+ * and to the reverb, in place of the mix's; null leaves it as it is.
+ * `widen` is put on each ambience loop (mono) before its filter, to spread
+ * it (null: left as it is): it may hand back a second take of the loop
+ * (`take`, not started), which is started half a loop on, follows the
+ * loop's rate and stops with it. `depth` hears Delve's depth as the ambience does
  * (depthAmbience), once mounted and on every change, for its rooms.
  */
 export type Placer = {
-  mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; out: GainNode }): void;
+  mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode }): void;
   place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined): { dry: AudioNode; wet: AudioNode } | null;
-  widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode };
+  widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode } | null;
   depth(d: number): void;
 };
 let placer: Placer | null = null;
@@ -154,7 +156,7 @@ let placer: Placer | null = null;
 export function setPlacer(p: Placer) {
   placer = p;
   if (bus) {
-    p.mount({ ac: bus.ac, master: bus.master, wet: bus.wet, out: bus.user });
+    p.mount({ ac: bus.ac, master: bus.master, wet: bus.wet, reverb: bus.reverb, out: bus.user });
     p.depth(depth);
   }
 }
@@ -165,7 +167,7 @@ const ready = new Map<string, AudioBuffer>();
 /** The files the moments play (see sfx). */
 const MOMENT_FILES = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
 
-const db = (d: number) => Math.pow(10, d / 20);
+export const db = (d: number) => Math.pow(10, d / 20);
 
 /** Browsers refuse audio before the first click or key press; sounds queued until then would all fire at once. */
 function allowed() {
@@ -195,13 +197,13 @@ function audio(): Bus | null {
     // The hall's impulse takes a moment to work out: not in the tap that
     // starts the sound (the first sounds just play dry).
     const reverb = ac.createConvolver();
-    setTimeout(() => (reverb.buffer = hall(ac, 2.8)), 300);
+    setTimeout(() => (reverb.buffer = hall(ac, HALL_SECONDS)), 300);
     const wet = ac.createGain();
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
 
-    bus = { ac, master, user, wet };
-    placer?.mount({ ac, master, wet, out: user });
+    bus = { ac, master, user, wet, reverb };
+    placer?.mount({ ac, master, wet, reverb, out: user });
     placer?.depth(depth);
     for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
     // Already in a Delve: work out its sounds now (see depthAmbience).
@@ -299,8 +301,11 @@ function inIdleSteps<T>(steps: Generator<void, T>): Promise<T> {
   });
 }
 
+/** How long (s) the hall's impulse response is. */
+export const HALL_SECONDS = 2.8;
+
 /** A dark stone-hall impulse response: stereo noise that decays and loses its highs as it goes. */
-export function hall(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>, seconds: number) {
+function hall(ac: AudioContext, seconds: number) {
   const len = Math.floor(ac.sampleRate * seconds);
   const buf = ac.createBuffer(2, len, ac.sampleRate);
   for (let ch = 0; ch < 2; ch++) {
@@ -456,7 +461,7 @@ function* caveInSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>)
   return buf;
 }
 
-function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
+export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
   const f = ac.createBiquadFilter();
   f.type = type;
   f.frequency.value = frequency;
@@ -595,8 +600,8 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
 
 /** A looping sound: AMBIENCE, FIRE, RUMBLE or a layer of a Delve place's bed (which has a rate and a send of its own). */
 type Loop = { file: string; gain: number; lp: number; rate?: number; send?: number };
-/** `takes`: the loop, and a second take of it when a placer spreads it (Placer.widen). */
-type Playing = { src: AudioBufferSourceNode; takes: AudioBufferSourceNode[]; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
+/** `takes`: the loop, and a second take of it when the placer spreads it (Placer.widen). */
+type Playing = { takes: AudioBufferSourceNode[]; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
 
 /** Delve's depth (0 outside it), and how fast (s) the sound follows it: about the backdrop's two seconds a depth. */
 let depth = 0;
@@ -892,7 +897,7 @@ function updateLoop(l: Loop) {
         lfo.start();
         nodes.push(lfo);
       }
-      const p: Playing = { src, takes, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()) };
+      const p: Playing = { takes, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()) };
       // In place at once, then the level fades up to where the depth wants it.
       shape(l, p, ac.currentTime, 0.001);
       gain.gain.cancelScheduledValues(ac.currentTime);

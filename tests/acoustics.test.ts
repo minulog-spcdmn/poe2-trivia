@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ROOMS, energy, roomIR, roomSteps, rt60 } from '../src/lib/acoustics.ts';
+import { ROOMS, energy, roomIR, roomSeed, roomSteps, rt60 } from '../src/lib/acoustics.ts';
 
 /** Just enough of an AudioContext to build a buffer. */
 const ac = {
@@ -45,12 +45,17 @@ test('a room dies away about as long as it is meant to, and is as loud as the ha
 
 test('a room never leans: its two sides as loud, its lows alike, so a deep sound stays where it is put', () => {
   for (const [key, room] of Object.entries(ROOMS)) {
-    const buf = roomIR(ac, room, 1, key.length * 31 + key.charCodeAt(1));
+    const buf = roomIR(ac, room, 1, roomSeed(key));
     const l = lows(buf.getChannelData(0)).subarray(0, Math.round(0.7 * sr));
     const r = lows(buf.getChannelData(1)).subarray(0, Math.round(0.7 * sr));
     const lean = 10 * Math.log10(energy(r) / energy(l));
     assert.ok(Math.abs(lean) < 2, `${key}: lows lean ${lean.toFixed(1)} dB`);
   }
+});
+
+test('each place’s room has a seed of its own', () => {
+  const seeds = Object.keys(ROOMS).map(roomSeed);
+  assert.equal(new Set(seeds).size, seeds.length);
 });
 
 test('a room worked out in steps is the room worked out at once, and pauses more than once on the way', () => {

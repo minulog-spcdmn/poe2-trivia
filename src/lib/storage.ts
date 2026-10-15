@@ -45,15 +45,17 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
+/** The channel's start, before any page's own. */
+const CHANNEL = BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.';
 export const STORE =
-  (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') +
+  CHANNEL +
   (LAB ? 'lab.' : '') +
   (ZONES_PREVIEW ? 'zones.' : '') +
   (SPATIAL_PAGE ? 'spatial.' : '') +
   (BACKDROP_TOOL ? 'backdrops.' : '') +
   (BOT ? 'bot.' : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
-export const LAB_STORE = (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') + 'lab.';
+export const LAB_STORE = CHANNEL + 'lab.';
 
 export type Area = 'local' | 'session';
 

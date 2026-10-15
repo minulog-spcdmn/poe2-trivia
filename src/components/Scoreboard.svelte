@@ -431,8 +431,8 @@
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       const target = to?.phial.querySelector(`.chamber[data-k="${into}"]`) ?? to?.phial;
       if (giver && taker && chamber && target) lifeGiven(chamber, giver, target, taker);
-      // Heard streaming across with the light, from a teammate's from farther off.
-      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: r.by !== session.myPlayerId } });
+      // Heard streaming across with the light; a teammate's (not one at this screen) from farther off.
+      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: session.mode !== 'local' && r.by !== session.myPlayerId } });
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);

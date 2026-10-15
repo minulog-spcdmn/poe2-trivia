@@ -60,6 +60,13 @@ export const ROOMS: Record<string, Room> = {
 
 type Ctx = Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>;
 
+/** A place's seed for its room (FNV-1a of its key): its own, so no two rooms share their noise. */
+export function roomSeed(key: string) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
 /** A small seeded random, so a room sounds the same each time it is worked out. */
 function seeded(seed: number) {
   let s = seed >>> 0 || 1;
