@@ -126,10 +126,18 @@ let bus: Bus | null = null;
  * (client px), both (half way between them), or a screen edge (-1 the
  * left, 1 the right). With `to` and `seconds` it travels there over that
  * long from its start, as sparks flying to a slot. `far`: a teammate's, not
- * yours. Only the placer reads it (setPlacer); without one every sound
+ * yours. `speed`: how fast (px/s) the pointer came over the control it
+ * hovers. Only the placer reads it (setPlacer); without one every sound
  * plays centred.
  */
-export type SoundPlace = { from?: Element | null; x?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
+export type SoundPlace = { from?: Element | null; x?: number; speed?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
+
+/**
+ * A take of a sound: for each of its layers, how much louder (dB), later
+ * (ms) and faster it plays, how far into its recording it starts (ms), and
+ * a bump or dip in its tone (dB at Hz). Placer.vary hands them out.
+ */
+export type LayerTweak = { gainDb: number; delayMs: number; rate: number; offsetMs: number; peakHz: number; peakDb: number };
 
 /**
  * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
@@ -142,13 +150,16 @@ export type SoundPlace = { from?: Element | null; x?: number; edge?: -1 | 1; to?
  * it (null: left as it is): it may hand back a second take of the loop
  * (`take`, not started), which is started half a loop on, follows the
  * loop's rate and stops with it. `depth` hears Delve's depth as the ambience does
- * (depthAmbience), once mounted and on every change, for its rooms.
+ * (depthAmbience), once mounted and on every change, for its rooms. `vary`
+ * may hand a moment a take of it (a tweak for each of its layers), or null
+ * to play it as it is.
  */
 export type Placer = {
   mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode }): void;
   place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined): { dry: AudioNode; wet: AudioNode } | null;
   widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode } | null;
   depth(d: number): void;
+  vary(name: Sfx, layers: number): LayerTweak[] | null;
 };
 let placer: Placer | null = null;
 
@@ -477,13 +488,24 @@ export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: 
  * should its recording run out sooner, and then fades out. `at` (s): the
  * moment starts that long from now, on the audio clock.
  */
-function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number, at = 0, into: { dry: AudioNode; wet: AudioNode } | null = null) {
+function playLayer(
+  b: Bus,
+  buf: AudioBuffer,
+  l: Layer,
+  soften: number,
+  pitch: number,
+  gainDb: number,
+  hold?: number,
+  at = 0,
+  into: { dry: AudioNode; wet: AudioNode } | null = null,
+  take: LayerTweak | null = null,
+) {
   const { ac } = b;
   const src = ac.createBufferSource();
   src.buffer = buf;
-  src.playbackRate.value = l.rate * pitch;
+  src.playbackRate.value = l.rate * pitch * (take?.rate ?? 1);
   const begin = ac.currentTime + at;
-  const start = begin + l.delay / 1000;
+  const start = begin + (l.delay + (take?.delayMs ?? 0)) / 1000;
   if (hold !== undefined && buf.duration / src.playbackRate.value < hold - l.delay / 1000) {
     // Too short to last: it loops, round its middle (the onset and the tail left out).
     src.loop = true;
@@ -491,17 +513,17 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
     src.loopEnd = Math.max(src.loopStart + 0.05, buf.duration - Math.min(buf.duration * 0.1, 0.1));
   }
   const g = ac.createGain();
-  g.gain.value = db(l.gain + gainDb);
-  src
+  g.gain.value = db(l.gain + gainDb + (take?.gainDb ?? 0));
+  let tone: AudioNode = src
     .connect(filter(ac, 'highpass', l.hp))
     .connect(filter(ac, 'lowpass', l.lp))
-    .connect(filter(ac, 'peaking', 3200, 1, -soften))
-    .connect(g)
-    .connect(into?.dry ?? b.master);
+    .connect(filter(ac, 'peaking', 3200, 1, -soften));
+  if (take?.peakDb) tone = tone.connect(filter(ac, 'peaking', take.peakHz, 1.2, take.peakDb));
+  tone.connect(g).connect(into?.dry ?? b.master);
   const send = ac.createGain();
   send.gain.value = l.send;
   g.connect(send).connect(into?.wet ?? b.wet);
-  src.start(start);
+  src.start(start, take ? Math.min(take.offsetMs / 1000, buf.duration * 0.25) : 0);
   if (hold !== undefined) {
     const end = Math.max(start, begin + hold);
     g.gain.setValueAtTime(g.gain.value, end);
@@ -566,12 +588,14 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   const inS = Math.max(0, opts.inMs ?? 0) / 1000;
   const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from) : null;
-  for (const l of m.layers) {
+  // A take of it (the placer's), each layer a little different.
+  const takes = placer?.vary(name, m.layers.length) ?? null;
+  for (const [i, l] of m.layers.entries()) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
     if (buf)
       layers.push(
-        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into),
+        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into, takes?.[i] ?? null),
       );
   }
   // One that failed to load as sound started (offline for a moment) is tried
@@ -926,6 +950,25 @@ const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[
  */
 export function installUiSounds() {
   let hovered: Element | null = null;
+  // The pointer's last few moves (client px, ms), for how fast it came over a control.
+  const trail: { x: number; y: number; t: number }[] = [];
+  addEventListener(
+    'pointermove',
+    (e) => {
+      if (e.pointerType !== 'mouse') return;
+      trail.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+      if (trail.length > 8) trail.shift();
+    },
+    { passive: true },
+  );
+  /** How fast (px/s) the pointer moved over the last 60 ms or so (its last two moves at least), as it reaches `e`. */
+  const speedAt = (e: PointerEvent) => {
+    const recent = trail.filter((p) => e.timeStamp - p.t < 60);
+    const from = recent.length >= 2 ? recent[0] : trail.at(-2);
+    if (!from) return 0;
+    const dt = (e.timeStamp - from.t) / 1000;
+    return dt > 0 ? Math.hypot(e.clientX - from.x, e.clientY - from.y) / Math.max(dt, 0.008) : 0;
+  };
   addEventListener(
     'pointerover',
     (e) => {
@@ -934,7 +977,7 @@ export function installUiSounds() {
       const el = (e.target as Element | null)?.closest?.(HOVERABLE) ?? null;
       // Half way between the control's middle and the pointer: a wide one sounds
       // a little to the side it is hovered on, not at the edge it came in over.
-      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX } });
+      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX, speed: speedAt(e) } });
       hovered = el;
     },
     { passive: true },

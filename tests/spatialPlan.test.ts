@@ -110,3 +110,45 @@ test('eased, the pointer slowing down brings the hover back gradually: no snap b
   assert.ok(after(0.3) < deep && after(0.3) > 0.2, 'a short pause eases it part of the way back');
   assert.ok(after(0.6) < after(0.3) && after(3) < 0.05, 'a longer one further, and a long one all the way');
 });
+
+const { speedAmount, takes, nextTake } = await import('../src/lib/spatialPlan.ts');
+
+test('by pointer speed: a slow arrival sounds in full, a quick flick barely brushes, eased between', () => {
+  assert.equal(speedAmount(0, 0.4, 2.5), 0);
+  assert.equal(speedAmount(0.4, 0.4, 2.5), 0);
+  assert.equal(speedAmount(2.5, 0.4, 2.5), 1);
+  assert.equal(speedAmount(9, 0.4, 2.5), 1);
+  let last = 0;
+  for (let v = 0.4; v <= 2.5; v += 0.05) {
+    const a = speedAmount(v, 0.4, 2.5);
+    assert.ok(a >= last && a <= 1, `at ${v}`);
+    last = a;
+  }
+  near(speedAmount(1.45, 0.4, 2.5), 0.5);
+});
+
+test('takes: the first as it is, the rest within their bounds, the same each time for the same seed, none with no variety', () => {
+  const t = takes(5, 2, 1, 7);
+  assert.equal(t.length, 5);
+  assert.deepEqual(t[0][0], { gainDb: 0, delayMs: 0, rate: 1, offsetMs: 0, peakHz: 1000, peakDb: 0 });
+  for (const take of t.slice(1))
+    for (const l of take) {
+      assert.ok(Math.abs(l.gainDb) <= 3 && l.delayMs >= 0 && l.delayMs <= 6 && Math.abs(l.rate - 1) <= 0.04 && l.offsetMs >= 0 && l.offsetMs <= 8);
+      assert.ok(l.peakHz >= 600 && l.peakHz <= 7000 && Math.abs(l.peakDb) <= 3);
+    }
+  assert.deepEqual(takes(5, 2, 1, 7), t);
+  for (const take of takes(4, 2, 0, 7)) for (const l of take) assert.deepEqual([l.gainDb, l.delayMs, l.rate, l.offsetMs, l.peakDb].map(Math.abs), [0, 0, 1, 0, 0]);
+});
+
+test('takes come in turn: never the same twice running, and every one of them in a while', () => {
+  let last = -1;
+  const seen = new Set<number>();
+  for (let i = 0; i < 400; i++) {
+    const k = nextTake(last, 5);
+    assert.ok(k !== last && k >= 0 && k < 5);
+    seen.add(k);
+    last = k;
+  }
+  assert.equal(seen.size, 5);
+  assert.equal(nextTake(0, 1), 0);
+});

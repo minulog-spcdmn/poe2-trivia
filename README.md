@@ -1401,7 +1401,12 @@ hovers played as the game plays them (`src/lib/spatial.svelte.ts`), and
 beside them the settings: **Off**, **Steps** (each hover 2 dB quieter, as
 the game has it) or **Eased** (ducked by how busy hovering is, with its
 depth, how much duller, how fast it recovers and how quickly speed ducks
-it), keys 1 to 3. A strip shows how far each hover was ducked.
+it), keys 1 to 3; **By pointer speed** (a quick flick over a control
+quieter, duller and shorter, a slow arrival in full, between two speeds in
+screen widths a second); and **Takes** (the hover in several takes made
+from its own two recordings, each layer a little different in balance,
+timing, pitch, attack and tone, none twice running). A strip shows how far
+each hover was ducked, with the last one's speed and take.
 
 - **Open it:** `npm run dev`, then `http://localhost:5173/hover.html`; on
   the beta, **poe2.quest/beta/hover.html**. The live build leaves it out.

@@ -4,8 +4,10 @@
   // grid of chips) to sweep the mouse across, their hovers played as the
   // game plays them (lib/spatial.svelte.ts), with the settings for how a
   // hover quietens over a sweep beside them: as live (a step each), eased
-  // (by how busy hovering is), or not at all. 1, 2 and 3 switch between
-  // them. Each hover's ducking shows in the strip below the settings.
+  // (by how busy hovering is), or not at all (1, 2 and 3 switch between
+  // them); by the pointer's speed as it came over the control; and in takes
+  // made from its own recordings, none twice running. Each hover's ducking
+  // shows in the strip below the settings.
   import { untrack } from 'svelte';
   import { hoverHeard, spatial, CHOSEN } from '../lib/spatial.svelte';
   import { readStored, writeStored } from '../lib/storage';
@@ -16,7 +18,23 @@
     { id: 'steps', label: 'Steps (live)', hint: 'Each hover within half a second of the last 2 dB quieter, down to −8 dB; back to full after a pause.' },
     { id: 'eased', label: 'Eased', hint: 'Ducked by how busy hovering is: deeper the faster a sweep goes, easing back as it slows; duller as well as quieter.' },
   ];
-  const KEYS = ['hoverDb', 'hoverDry', 'hoverRepeat', 'hoverDepth', 'hoverSoften', 'hoverRecover', 'hoverWeight'] as const;
+  const KEYS = [
+    'hoverDb',
+    'hoverDry',
+    'hoverRepeat',
+    'hoverDepth',
+    'hoverSoften',
+    'hoverRecover',
+    'hoverWeight',
+    'hoverSpeed',
+    'hoverSlow',
+    'hoverFast',
+    'hoverSpeedDb',
+    'hoverSpeedSoften',
+    'hoverShorter',
+    'hoverTakes',
+    'hoverVariety',
+  ] as const;
 
   // The settings as tuned last time on this page.
   try {
@@ -35,11 +53,11 @@
   const mode = $derived(MODES.find((m) => m.id === spatial.hoverRepeat)!);
 
   /** The last hovers' ducking (dB), newest last. */
-  let strip = $state<{ n: number; db: number; soften: number }[]>([]);
+  let strip = $state<{ n: number; db: number; soften: number; speed: number; take: number }[]>([]);
   $effect(() => {
     const n = hoverHeard.n;
     if (!n) return;
-    const h = { n, db: hoverHeard.db, soften: hoverHeard.soften };
+    const h = { n, db: hoverHeard.db, soften: hoverHeard.soften, speed: hoverHeard.speed, take: hoverHeard.take };
     // Added to, not read from: only a new hover runs this again.
     untrack(() => (strip = [...strip.slice(-39), h]));
   });
@@ -122,6 +140,54 @@
     <p class="hint">
       Depth: how far down a fast sweep goes. Duller: how much of its highs (above 4 kHz) go with it. Recovery: how long the busyness takes to halve once the pointer
       slows. Speed: how quickly busyness turns into ducking (higher: even calm browsing ducks).
+    </p>
+
+    <h2>By pointer speed</h2>
+    <label class="check"><input type="checkbox" bind:checked={spatial.hoverSpeed} /> A quick flick barely brushes a control</label>
+    <div class="line" class:dim={!spatial.hoverSpeed}>
+      <span class="lbl">Slow</span>
+      <input type="range" min="0.1" max="2" step="0.05" bind:value={spatial.hoverSlow} style:--fill="{((spatial.hoverSlow - 0.1) / 1.9) * 100}%" aria-label="Slow" />
+      <i class="num">{spatial.hoverSlow.toFixed(2)}</i>
+    </div>
+    <div class="line" class:dim={!spatial.hoverSpeed}>
+      <span class="lbl">Fast</span>
+      <input type="range" min="0.5" max="6" step="0.1" bind:value={spatial.hoverFast} style:--fill="{((spatial.hoverFast - 0.5) / 5.5) * 100}%" aria-label="Fast" />
+      <i class="num">{spatial.hoverFast.toFixed(1)}</i>
+    </div>
+    <div class="line" class:dim={!spatial.hoverSpeed}>
+      <span class="lbl">Quieter</span>
+      <input type="range" min="-10" max="0" step="0.5" bind:value={spatial.hoverSpeedDb} style:--fill="{((spatial.hoverSpeedDb + 10) / 10) * 100}%" aria-label="Quieter when fast" />
+      <i class="num">{spatial.hoverSpeedDb.toFixed(1)} dB</i>
+    </div>
+    <div class="line" class:dim={!spatial.hoverSpeed}>
+      <span class="lbl">Duller</span>
+      <input type="range" min="-10" max="0" step="0.5" bind:value={spatial.hoverSpeedSoften} style:--fill="{((spatial.hoverSpeedSoften + 10) / 10) * 100}%" aria-label="Duller when fast" />
+      <i class="num">{spatial.hoverSpeedSoften.toFixed(1)} dB</i>
+    </div>
+    <div class="line" class:dim={!spatial.hoverSpeed}>
+      <span class="lbl">Shorter</span>
+      <input type="range" min="0" max="1" step="0.05" bind:value={spatial.hoverShorter} style:--fill="{spatial.hoverShorter * 100}%" aria-label="Shorter when fast" />
+      <i class="num">{Math.round(spatial.hoverShorter * 100)}%</i>
+    </div>
+    <p class="hint">
+      Speeds in screen widths a second: at Slow or below the hover sounds in full, at Fast or above it is all of Quieter, Duller and Shorter, eased between. Last
+      hover came at <b>{(strip.at(-1)?.speed ?? 0).toFixed(2)}</b>.
+    </p>
+
+    <h2>Takes</h2>
+    <div class="line">
+      <span class="lbl">Takes</span>
+      <input type="range" min="0" max="8" step="1" bind:value={spatial.hoverTakes} style:--fill="{(spatial.hoverTakes / 8) * 100}%" aria-label="Takes" />
+      <i class="num">{spatial.hoverTakes < 2 ? 'off' : spatial.hoverTakes}</i>
+    </div>
+    <div class="line" class:dim={spatial.hoverTakes < 2}>
+      <span class="lbl">Variety</span>
+      <input type="range" min="0" max="1" step="0.05" bind:value={spatial.hoverVariety} style:--fill="{spatial.hoverVariety * 100}%" aria-label="Variety" />
+      <i class="num">{Math.round(spatial.hoverVariety * 100)}%</i>
+    </div>
+    <p class="hint">
+      Made from the hover's own two recordings: each take a little different in each layer's balance, timing, pitch, attack and tone, played in turn, none twice
+      running. Last: take <b>{(strip.at(-1)?.take ?? -1) < 0 ? 'none' : strip.at(-1)!.take + 1}</b>.
     </p>
 
     <h2>The hover itself</h2>

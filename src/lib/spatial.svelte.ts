@@ -15,8 +15,8 @@
 // ±30° from where you sit, about where a pair of stereo speakers stands. The
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
-import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
-import { hoverEase, hoverStep, roomPlan, screenX, travel } from './spatialPlan';
+import { HALL_SECONDS, db, filter, setPlacer, type LayerTweak, type Placer, type SoundPlace, type Sfx } from './sound';
+import { hoverEase, hoverStep, nextTake, roomPlan, screenX, speedAmount, takes, travel } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -70,6 +70,22 @@ export type Spatial = {
   hoverSoften: number;
   hoverRecover: number;
   hoverWeight: number;
+  /**
+   * The hover by the pointer's speed as it came over its control
+   * (`hoverSpeed`): from `hoverSlow` screen widths a second (sounded in
+   * full) to `hoverFast` (barely brushed), it comes down to `hoverSpeedDb`,
+   * its highs `hoverSpeedSoften` dB down, and with `hoverShorter` (0 to 1)
+   * its tail cut short (spatialPlan.ts speedAmount).
+   */
+  hoverSpeed: boolean;
+  hoverSlow: number;
+  hoverFast: number;
+  hoverSpeedDb: number;
+  hoverSpeedSoften: number;
+  hoverShorter: number;
+  /** The hover in `hoverTakes` takes, made from its own recordings (spatialPlan.ts takes), as different as `hoverVariety` (0 to 1) has them, none twice running; 0 or 1: as it is. */
+  hoverTakes: number;
+  hoverVariety: number;
 };
 
 /** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only), and the hover a touch quieter, dry and quieter on repeats. */
@@ -92,6 +108,14 @@ export const CHOSEN: Spatial = {
   hoverSoften: -3,
   hoverRecover: 0.4,
   hoverWeight: 0.5,
+  hoverSpeed: false,
+  hoverSlow: 0.4,
+  hoverFast: 2.5,
+  hoverSpeedDb: -5,
+  hoverSpeedSoften: -5,
+  hoverShorter: 0.5,
+  hoverTakes: 0,
+  hoverVariety: 0.6,
 };
 
 /** The settings in play: the chosen mix; the lab's pages change them to tune it. */
@@ -259,8 +283,11 @@ const HOVER_ROOM = 0.3;
 /** The pointer's last hover, for its next to step down from in a sweep (spatialPlan.ts hoverStep). */
 let lastHover: ReturnType<typeof hoverStep> | null = null;
 let lastEased: ReturnType<typeof hoverEase> | null = null;
-/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep made it (for the hover tuning page). */
-export const hoverHeard = $state({ db: 0, soften: 0, n: 0 });
+/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep and speed made it, how fast it came (screen widths a second), and which take played (for the hover tuning page). */
+export const hoverHeard = $state({ db: 0, soften: 0, n: 0, speed: 0, take: -1 });
+/** The hover's takes as made for the settings (`key`), and the last played. */
+let hoverTakes: { key: string; takes: LayerTweak[][] } | null = null;
+let lastTake = -1;
 
 /** The game's screen (the whole window, or left of the lab's panel), measured once and again only after it changes size: not for every sound. */
 let screenBox: DOMRect | null = null;
@@ -495,6 +522,16 @@ function work(place: string) {
 
 const placer: Placer = {
   widen,
+  /** The hover in one of its takes, none twice running (with hoverTakes over 1); everything else as it is. */
+  vary(name, layers) {
+    const s = spatial;
+    if (name !== 'hover' || s.today || s.hoverTakes < 2) return null;
+    const key = `${s.hoverTakes}:${s.hoverVariety}:${layers}`;
+    if (hoverTakes?.key !== key) hoverTakes = { key, takes: takes(s.hoverTakes, layers, s.hoverVariety, 7) };
+    lastTake = nextTake(lastTake, s.hoverTakes);
+    hoverHeard.take = lastTake;
+    return hoverTakes.takes[lastTake];
+  },
   depth(d) {
     depthNow = d;
     tuneRooms();
@@ -546,6 +583,7 @@ const placer: Placer = {
     // A hover: at its level, quieter (and with `eased` duller) in a pointer's sweep (not the draw's hops, which pass no pointer).
     let level = s.hoverDb;
     let soften = 0;
+    let shorter = 0;
     if (hover && where?.x !== undefined) {
       let ducked = 0;
       if (s.hoverRepeat === 'steps') {
@@ -556,8 +594,16 @@ const placer: Placer = {
         ducked = s.hoverDepth * lastEased.amount;
         soften = s.hoverSoften * lastEased.amount;
       }
+      // A quick flick barely brushes the control; a slow arrival sounds it in full.
+      const speed = (where.speed ?? 0) / screen().width;
+      if (s.hoverSpeed) {
+        const k = speedAmount(speed, s.hoverSlow, s.hoverFast);
+        ducked += s.hoverSpeedDb * k;
+        soften += s.hoverSpeedSoften * k;
+        shorter = s.hoverShorter * k;
+      }
       level += ducked;
-      Object.assign(hoverHeard, { db: ducked, soften, n: hoverHeard.n + 1 });
+      Object.assign(hoverHeard, { db: ducked, soften, n: hoverHeard.n + 1, speed });
     }
     const place = big ? wide(ac) : PLACES[s.renderer](ac, dryHover);
     place.output.connect(mixOf(ac));
@@ -578,6 +624,12 @@ const placer: Placer = {
       // Dry and close: little of the room.
       dry.gain.value = db(level);
       wet.gain.value = db(level) * (dryHover ? HOVER_ROOM : 1);
+      // Brushed past: its tail let go of sooner, the quicker the flick.
+      if (shorter > 0)
+        for (const g of [dry, wet]) {
+          g.gain.setValueAtTime(g.gain.value, start + 0.03);
+          g.gain.setTargetAtTime(0, start + 0.03, 0.02 + 0.2 * (1 - shorter));
+        }
     }
 
     const set = (t: number, ramp: boolean) => {
