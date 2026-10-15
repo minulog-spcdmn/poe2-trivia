@@ -271,7 +271,11 @@ the same thing for everyone.
     is its own (`src/lib/vein.ts`, `azuriteVein` in `src/lib/backdrop.ts`):
     the hall goes cold and dark, cracks of azurite glow in the rock of the
     walls and the floor with crystals where they meet, and the embers burn
-    azure; it fades back to the depth's own as the dig ends. The rules are in
+    azure; it fades back to the depth's own as the dig ends. Its sound is a
+    tunnel off the zone (`VEIN_AMBIENCE` in `src/lib/soundDesign.ts`): the
+    zone's ambience ducks and muffles behind its own loops. A pickaxe rings
+    as its card is chosen, the azurite breaks free on a right strike, and
+    while the dig runs on the walls crack, worse after strike 2. The rules are in
     `src/lib/delve.ts` (the dig); `docs/vein-digging.md` has the design.
   - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,
@@ -866,8 +870,9 @@ recordings from [Freesound](https://freesound.org) plus a quiet ambience loop
 (about 1.1 MB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
 WebAudio with a generated reverb. Delve's beds (about 360 KB each) are only
 fetched as a run nears them: the next place's while the page is idle, from
-the first depth of the zone before it. `src/lib/soundDesign.ts` sets the
-layers and the beds, as tuned on the ambience mix board.
+the first depth of the zone before it, and an Azurite Vein's tunnel loops from
+depth 20 on. `src/lib/soundDesign.ts` sets the layers and the beds, as tuned on
+the ambience mix board and the vein sound board.
 
 ### Visual effects
 

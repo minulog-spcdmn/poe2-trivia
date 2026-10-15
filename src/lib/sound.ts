@@ -8,7 +8,7 @@
 
 import { archetypeAt } from './backdrops.ts';
 import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
-import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, ZONE_AMBIENCE, type Bed, type Layer } from './soundDesign.ts';
+import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, ZONE_AMBIENCE, type Bed, type Layer } from './soundDesign.ts';
 import { whenIdle } from './idle.ts';
 import { readStored, writeStored } from './storage.ts';
 
@@ -64,6 +64,14 @@ export type Sfx =
   | 'revive'
   /** Delve: an Azurite Vein answered wrong caves in (two losses at once). */
   | 'caveIn'
+  /** Delve: an Azurite Vein's card chosen, for any of its strikes. */
+  | 'veinStrike'
+  /** Delve: a vein's strike answered right; the azurite breaks free (over the right-answer sound). */
+  | 'veinMined'
+  /** Delve: the dig runs on after strike 1; the walls crack. */
+  | 'veinStrain1'
+  /** ...and after strike 2, worse. */
+  | 'veinStrain2'
   /** Delve: a Dynamite Cache answered wrong; its blast destroys something the player carries. */
   | 'itemBlown'
   /** Delve: a new zone's title card (components/zonecard): a soft tick as each letter of its name lands. */
@@ -114,7 +122,11 @@ export function setVolume(value: number) {
 /** Squared, so the slider feels even to the ear rather than bunching up at the top. */
 const userGain = () => volume * volume;
 
-type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode };
+/**
+ * `hall` (and `hallWet`, its reverb send) is what Delve's zone loops play
+ * through: ducked and muffled while an Azurite Vein is dug (see veinAmbience).
+ */
+type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode; hall: GainNode; hallLp: BiquadFilterNode; hallWet: GainNode };
 let bus: Bus | null = null;
 /** Loaded or loading. Delve's beds are let go of once they fall silent (see evict); every other sound is kept. */
 const buffers = new Map<string, Promise<AudioBuffer>>();
@@ -158,7 +170,16 @@ function audio(): Bus | null {
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
 
-    bus = { ac, master, user, wet };
+    // The hall Delve's zone loops play in (see Bus).
+    const zone = ac.createGain();
+    const zoneLp = filter(ac, 'lowpass', 20000);
+    zone.connect(zoneLp).connect(master);
+    const zoneWet = ac.createGain();
+    zoneWet.connect(wet);
+
+    bus = { ac, master, user, wet, hall: zone, hallLp: zoneLp, hallWet: zoneWet };
+    // Sound starting in a vein: the hall is already behind.
+    if (inTunnel()) shapeHall(bus, 0.001);
     for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
     // Already in a Delve: work out its sounds now (see depthAmbience).
     if (depth > 0) prepareDelve(bus);
@@ -570,6 +591,21 @@ const FADES = new Map<Loop, { up: number; down: number }>([
  * go as quickly as AMBIENCE.
  */
 const BED_FADE = { up: DEPTH_EASE, down: DEPTH_EASE };
+/**
+ * Delve: an Azurite Vein's tunnel loops (VEIN_AMBIENCE), over the zone's
+ * from its hall (see veinAmbience). They come and go over its fadeIn and
+ * fadeOut (time constants of a third of each: most of the way by then).
+ */
+const VEIN_LAYERS = new Set<Loop>(VEIN_AMBIENCE.layers);
+const VEIN_FADE = { up: VEIN_AMBIENCE.fadeIn / 3, down: VEIN_AMBIENCE.fadeOut / 3 };
+/**
+ * The depth from which the tunnel's loops are fetched ahead and kept: a few
+ * before the first vein can turn up (from 26; delve.ts FINDS).
+ */
+export const VEIN_NEAR = 20;
+let vein = false;
+/** In a vein's tunnel, in Delve. */
+const inTunnel = () => vein && depth > 0;
 const playing = new Map<Loop, Playing>();
 const starting = new Set<Loop>();
 let fire = false;
@@ -637,20 +673,22 @@ let hearth = 1;
  * next zone arrives.
  */
 function prefetchBeds(b: Bus) {
-  for (const { file } of nextBed().layers) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));
+  // And, as veins come near, the tunnel's.
+  const ahead = [...nextBed().layers, ...(depth >= VEIN_NEAR ? VEIN_AMBIENCE.layers : [])];
+  for (const { file } of ahead) if (toFetch(file)) idle(() => bus === b && void load(file).catch(() => {}));
 }
 
 /** Delve: the next place's bed, fetched ahead (see prefetchBeds). */
 const nextBed = () => bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));
 
-/** Never let go of (see evict): every sound but Delve's beds. */
+/** Never let go of (see evict): every sound but Delve's beds and a vein's tunnel. */
 const KEPT = new Set([AMBIENCE.file, FIRE.file, RUMBLE.file, CAVE_IN.file, ...MOMENT_FILES]);
 
 /**
  * Lets go of the beds no longer wanted, once one falls silent: decoded, each
  * is several MB, and a long run passes through a couple of dozen. Kept are
  * those sounding or about to (at this depth, or loading to), still fading
- * out, and the next place's; asked for again later, a bed is fetched from
+ * out, the next place's, and the tunnel's where veins turn up; asked for again later, a bed is fetched from
  * the browser's cache. One let go of while it loads is handed to whoever
  * asked for it but not held (see load).
  */
@@ -659,6 +697,7 @@ function evict() {
   for (const l of [...playing.keys(), ...starting, ...beds.keys()]) held.add(l.file);
   for (const { file } of fading.values()) held.add(file);
   if (depth > 0) for (const { file } of nextBed().layers) held.add(file);
+  if (depth >= VEIN_NEAR) for (const { file } of VEIN_AMBIENCE.layers) held.add(file);
   for (const file of buffers.keys()) {
     if (held.has(file)) continue;
     buffers.delete(file);
@@ -689,6 +728,29 @@ export function depthAmbience(d: number) {
   updateAmbience();
   if (!bus) return;
   for (const [l, p] of playing) shape(l, p, bus.ac.currentTime, DEPTH_EASE);
+  shapeHall(bus, DEPTH_EASE);
+}
+
+/**
+ * Delve: in an Azurite Vein's tunnel or not (lib/vein.ts inVein): a side
+ * passage off the zone. In it the zone's loops duck and muffle behind, in
+ * the hall (VEIN_AMBIENCE's duck and muffle), and the tunnel's own play over
+ * them, all coming in over its fadeIn and going over its fadeOut.
+ */
+export function veinAmbience(on: boolean) {
+  if (on === vein) return;
+  vein = on;
+  if (bus) shapeHall(bus, (on ? VEIN_AMBIENCE.fadeIn : VEIN_AMBIENCE.fadeOut) / 3);
+  updateAmbience();
+}
+
+/** Moves the hall the zone's loops play in toward where the tunnel has it (`tc`: time constant in s). */
+function shapeHall(b: Bus, tc: number) {
+  const at = b.ac.currentTime;
+  const k = inTunnel() ? db(VEIN_AMBIENCE.duck) : 1;
+  b.hall.gain.setTargetAtTime(k, at, tc);
+  b.hallWet.gain.setTargetAtTime(k, at, tc);
+  b.hallLp.frequency.setTargetAtTime(inTunnel() ? VEIN_AMBIENCE.muffle : 20000, at, tc);
 }
 
 /**
@@ -708,8 +770,13 @@ const rumbles = () => descent(depth).deep > 0.12;
 /** Sound is on and the tab is visible. */
 const audible = () => !muted && document.visibilityState === 'visible';
 
-/** Each loop plays while audible (the fire only during a deathmatch, the rumble only deep in Delve, a bed only while its place sounds). */
-const wanted = (l: Loop) => audible() && (l !== FIRE || fire) && (l !== RUMBLE || rumbles()) && (FADES.has(l) || beds.has(l));
+/**
+ * Each loop plays while audible (the fire only during a deathmatch, the
+ * rumble only deep in Delve, a bed only while its place sounds, the tunnel's
+ * only in a vein).
+ */
+const wanted = (l: Loop) =>
+  audible() && (l !== FIRE || fire) && (l !== RUMBLE || rumbles()) && (FADES.has(l) || beds.has(l) || (VEIN_LAYERS.has(l) && inTunnel()));
 
 /** A loop's level, cutoff, speed and reverb send at the current depth. */
 function target(l: Loop) {
@@ -725,6 +792,7 @@ function target(l: Loop) {
     };
   }
   if (l === RUMBLE) return { gain: db(l.gain + RUMBLE.abyss * descent(depth).abyss), lp: l.lp, rate: 1, send: 0.3 };
+  if (VEIN_LAYERS.has(l)) return { gain: db(l.gain), lp: l.lp, rate: l.rate ?? 1, send: l.send ?? 0 };
   // The fire, or a bed's layer as much as its place sounds.
   return { gain: (l === FIRE ? 1 : (beds.get(l) ?? 0)) * db(l.gain), lp: l.lp, rate: l.rate ?? 1, send: l.send ?? 0 };
 }
@@ -740,7 +808,7 @@ function shape(l: Loop, p: Playing, at: number, tc: number) {
 
 /** Starts the loops that should play and fades out the ones that shouldn't. */
 function updateAmbience() {
-  for (const l of new Set([...FADES.keys(), ...playing.keys(), ...beds.keys()])) updateLoop(l);
+  for (const l of new Set([...FADES.keys(), ...playing.keys(), ...beds.keys(), ...VEIN_LAYERS])) updateLoop(l);
   if (!audible()) hurry();
   if (!wanted(AMBIENCE)) rest();
   else if (bus && depth > 0) prefetchBeds(bus);
@@ -777,7 +845,7 @@ function rest() {
 }
 
 function updateLoop(l: Loop) {
-  const fade = FADES.get(l) ?? BED_FADE;
+  const fade = FADES.get(l) ?? (VEIN_LAYERS.has(l) ? VEIN_FADE : BED_FADE);
   if (!wanted(l)) {
     const p = playing.get(l);
     if (!p || !bus) return;
@@ -818,8 +886,10 @@ function updateLoop(l: Loop) {
       gain.gain.value = 0;
       const send = ac.createGain();
       send.gain.value = 0;
-      src.connect(lp).connect(gain).connect(b.master);
-      gain.connect(send).connect(b.wet);
+      // The tunnel's loops play close; every other in the hall, behind it while in a vein.
+      const tunnel = VEIN_LAYERS.has(l);
+      src.connect(lp).connect(gain).connect(tunnel ? b.master : b.hall);
+      gain.connect(send).connect(tunnel ? b.wet : b.hallWet);
       const nodes: AudioScheduledSourceNode[] = [src];
       if (l === RUMBLE) {
         // The rumble breathes: a slow swell and ebb on its level.

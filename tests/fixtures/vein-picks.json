@@ -1,0 +1,200 @@
+{
+ "moments": {
+  "veinMined": {
+   "after": 0,
+   "layers": [
+    {
+     "delay": 0,
+     "file": "mined-542560",
+     "gain": -28,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.55,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "mined-524312",
+     "gain": -30,
+     "hp": 20,
+     "len": 0,
+     "lp": 6000,
+     "rate": 1,
+     "send": 0.4,
+     "start": 0
+    }
+   ],
+   "over": true,
+   "soften": 4,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  },
+  "veinStrain1": {
+   "after": 1100,
+   "layers": [
+    {
+     "delay": 0,
+     "file": "strain-262118",
+     "gain": -32,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    },
+    {
+     "delay": 300,
+     "file": "strain-348947",
+     "gain": -36,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    }
+   ],
+   "soften": 3,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  },
+  "veinStrain2": {
+   "after": 1000,
+   "layers": [
+    {
+     "delay": 0,
+     "file": "strain-222521",
+     "gain": -28,
+     "hp": 20,
+     "len": 3.5,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    },
+    {
+     "delay": 400,
+     "file": "strain-521956",
+     "gain": -32,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "layer-sub-2",
+     "gain": -32,
+     "hp": 20,
+     "len": 0,
+     "lp": 400,
+     "rate": 0.6,
+     "send": 0.5,
+     "start": 0
+    }
+   ],
+   "soften": 3,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  },
+  "veinStrike": {
+   "layers": [
+    {
+     "delay": 0,
+     "file": "strike-760566",
+     "gain": -27,
+     "hp": 227,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.45,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "strike-431019",
+     "gain": -27,
+     "hp": 20,
+     "len": 0,
+     "lp": 963,
+     "rate": 0.8,
+     "send": 0.75,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "click-5",
+     "gain": -32,
+     "hp": 20,
+     "len": 0,
+     "lp": 651,
+     "rate": 1,
+     "send": 0.4,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "mined-542565",
+     "gain": -32,
+     "hp": 145,
+     "len": 0,
+     "lp": 2381,
+     "rate": 1,
+     "send": 0.15,
+     "start": 0
+    }
+   ],
+   "soften": 4,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  }
+ },
+ "v": 1,
+ "vein": {
+  "duck": -10,
+  "fadeIn": 3,
+  "fadeOut": 1.5,
+  "layers": [
+   {
+    "delay": 0,
+    "file": "tunnel-871712",
+    "gain": -40,
+    "hp": 20,
+    "len": 0,
+    "lp": 1864,
+    "rate": 0.64,
+    "send": 0.5,
+    "start": 0
+   },
+   {
+    "delay": 0,
+    "file": "tunnel-735353",
+    "gain": -38,
+    "hp": 20,
+    "len": 0,
+    "lp": 20000,
+    "rate": 1.48,
+    "send": 0.9,
+    "start": 0
+   },
+   {
+    "delay": 0,
+    "file": "tunnel-636124",
+    "gain": -40,
+    "hp": 20,
+    "len": 0,
+    "lp": 222,
+    "rate": 1,
+    "send": 0.2,
+    "start": 0
+   }
+  ],
+  "muffle": 736
+ },
+ "zone": 8
+}

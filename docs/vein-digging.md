@@ -157,8 +157,11 @@ for the whole team.
 - **The lamp** is the clock ring turned azurite: a light that stays lit
   from strike to strike, and gutters as it runs
   low. When it gutters, the darkness closes in from the edges of the screen.
-- **Each strike** shakes the hall a little more, with the sound of a pick on
-  stone and creaks and dust that grow with every strike.
+- **Each strike** rings a pickaxe on stone as its card is chosen, and the
+  azurite breaks free when it comes out right. While the dig runs on, the
+  walls crack after strike 1 and worse after strike 2.
+- **The tunnel**: the dig is a side passage off the zone. The zone's sound
+  ducks and muffles behind the vein's own ambience until the dig ends.
 - **The way out** carries the haul into the pack with the ward sound: a
   release.
 - **A cave-in** with a haul in hand is heavier than today's.

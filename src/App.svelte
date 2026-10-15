@@ -9,7 +9,7 @@
   import { onMount, untrack, type Component } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
-  import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
+  import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { dialogBackdrop } from './lib/behindDialog';
@@ -134,8 +134,13 @@
     setDescent(depth);
     depthAmbience(depth);
   });
-  // Delve: an Azurite Vein being dug has a scene of its own (lib/vein.ts).
-  $effect(() => setVein(screen === 'game' && inVein(gs)));
+  // Delve: an Azurite Vein being dug has a scene of its own (lib/vein.ts), and
+  // a sound of its own: a tunnel off the zone, the zone behind it.
+  $effect(() => {
+    const dug = screen === 'game' && inVein(gs);
+    setVein(dug);
+    veinAmbience(dug);
+  });
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve
   // programs now, in the background, so they're ready when the run starts.

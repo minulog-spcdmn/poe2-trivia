@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ARCHETYPES } from '../src/lib/archetypes.ts';
 import { archetypeAt } from '../src/lib/backdrops.ts';
 import { settledAt, STRATA } from '../src/lib/descent.ts';
-import { AMBIENCE, ARCHETYPE_AMBIENCE, FIRE, RUMBLE, ZONE_AMBIENCE, type Bed } from '../src/lib/soundDesign.ts';
+import { AMBIENCE, ARCHETYPE_AMBIENCE, FIRE, RUMBLE, VEIN_AMBIENCE, ZONE_AMBIENCE, type Bed } from '../src/lib/soundDesign.ts';
 
 (globalThis as { localStorage?: unknown }).localStorage = { getItem: () => null, setItem() {} };
 const { bedOf, bedsAt, placeAt } = await import('../src/lib/sound.ts');
@@ -23,7 +23,7 @@ const OFF = -40;
 const SFX = join(import.meta.dirname, '..', 'public', 'sfx');
 const db = (d: number) => Math.pow(10, d / 20);
 const allBeds: Bed[] = [...ZONE_AMBIENCE, ...ARCHETYPE_AMBIENCE];
-const loops = () => [AMBIENCE.file, FIRE.file, ...allBeds.flatMap((b) => b.layers.map((l) => l.file))];
+const loops = () => [AMBIENCE.file, FIRE.file, ...allBeds.flatMap((b) => b.layers.map((l) => l.file)), ...VEIN_AMBIENCE.layers.map((l) => l.file)];
 
 test('the ambience is as picked on the mix board', () => {
   assert.deepEqual({ ...AMBIENCE }, PICKS.game);
