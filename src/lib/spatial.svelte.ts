@@ -15,8 +15,8 @@
 // ±30° from where you sit, about where a pair of stereo speakers stands. The
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
-import { HALL_SECONDS, bedsAt, db, filter, placeAt, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
-import { strataAt } from './descent';
+import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
+import { roomPlan, screenX, travel } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -243,22 +243,8 @@ function screen() {
   return screenBox;
 }
 
-/** A place on screen as -1..1 across the game's screen (left to right), or null for none: an element's middle, a point, or half way between the two. */
-function pointOf(el: Element | null | undefined, x?: number) {
-  let cx = x;
-  if (el) {
-    const r = el.getBoundingClientRect();
-    if (r.width || r.height) {
-      const mid = r.left + r.width / 2;
-      cx = x === undefined ? mid : (mid + x) / 2;
-    }
-  }
-  if (cx === undefined) return null;
-  const s = screen();
-  return { x: clamp1(((cx - s.left) / s.width) * 2 - 1) };
-}
-
-const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+/** A place on screen as -1..1 across the game's screen (spatialPlan.ts screenX), or null for none. */
+const pointOf = (el: Element | null | undefined, x?: number) => screenX(el ? el.getBoundingClientRect() : null, x, screen());
 
 /** The context and the mix, once mounted: for scripts to listen in on (the lab hands them out). */
 let bus: { ac: AudioContext; master: AudioNode } | null = null;
@@ -271,12 +257,17 @@ export const spatialMix = () => bus;
  * so its mix never runs through them.
  */
 type Aids = { input: GainNode; plain: GainNode; crossed: GainNode; stereo: GainNode; mono: GainNode };
-type Out = { ac: AudioContext; user: GainNode; aids: Aids | null; through: boolean };
+/**
+ * `straight`: the mix to the speakers as it is, faded out while it goes
+ * through the aids (their `input` faded in), so a switch never clicks; the
+ * mix is hooked to the aids (`linked`) only while one is on, or fading.
+ */
+type Out = { ac: AudioContext; user: GainNode; straight: GainNode; aids: Aids | null; through: boolean; linked: boolean; unlink?: ReturnType<typeof setTimeout> };
 let out: Out | null = null;
 
 /** The listening aids: crossfeed (or not), then a sum to one speaker (or not), to the speakers. */
 function aids(ac: AudioContext): Aids {
-  const input = ac.createGain();
+  const input = gainNode(ac, 0);
   const plain = gainNode(ac, 1);
   const crossed = gainNode(ac, 0);
   input.connect(plain);
@@ -327,8 +318,21 @@ function applyMix() {
   }
   if (through !== out.through) {
     out.through = through;
-    out.user.disconnect();
-    out.user.connect(through ? out.aids!.input : out.ac.destination);
+    const o = out;
+    const input = o.aids!.input;
+    clearTimeout(o.unlink);
+    // Faded across, both running meanwhile; once off, the aids are let go of the mix, so they don't run.
+    if (through && !o.linked) {
+      o.user.connect(input);
+      o.linked = true;
+    }
+    o.straight.gain.setTargetAtTime(through ? 0 : 1, t, 0.02);
+    input.gain.setTargetAtTime(through ? 1 : 0, t, 0.02);
+    if (!through)
+      o.unlink = setTimeout(() => {
+        o.user.disconnect(input);
+        o.linked = false;
+      }, 200);
   }
   const wide = spreadWanted();
   for (const s of spreads) {
@@ -363,28 +367,15 @@ let depthNow = 0;
 /** How fast (s, a time constant) one room gives way to the next: about as the beds cross-fade. */
 const ROOM_EASE = 0.8;
 
-/** The places sounding at the depth, with their shares (as the beds have them), or none outside Delve or with rooms off. */
-function roomsWanted() {
-  if (spatial.today || !spatial.rooms || depthNow < 1) return [];
-  return bedsAt(depthNow).beds.filter((b) => ROOMS[b.place]);
-}
-
-/** The next place down from the depth (null outside Delve or with rooms off): its room is worked out ahead, as its bed is fetched (lib/sound.ts prefetchBeds). */
-function roomNext() {
-  if (spatial.today || !spatial.rooms || depthNow < 1) return null;
-  const place = placeAt(strataAt(depthNow).stratum + 1);
-  return ROOMS[place] ? place : null;
-}
-
-/** A room worth keeping: its place sounds now, or comes next. */
-const roomKept = (place: string) => place === roomNext() || roomsWanted().some((w) => w.place === place);
+/** The rooms at the depth now (spatialPlan.ts roomPlan): sounding, next and worth keeping. */
+const plan = () => roomPlan(depthNow, spatial.rooms && !spatial.today);
 
 /** Brings the rooms to the depth and the settings: each place's at its share, the hall making up the rest (and standing in for one not yet worked out). */
 function tuneRooms() {
   const r = rooms;
   if (!r) return;
   const t = r.ac.currentTime;
-  const wanted = roomsWanted();
+  const { wanted, next, kept } = plan();
   let covered = 0;
   for (const { place, weight } of wanted) {
     const buf = roomBufs.get(place);
@@ -414,13 +405,12 @@ function tuneRooms() {
       wetOf(r.ac).disconnect(p.conv);
       p.gain.disconnect();
       r.playing.delete(place);
-      if (!roomKept(place)) roomBufs.delete(place);
+      if (!plan().kept.has(place)) roomBufs.delete(place);
     }, 12_000);
   }
   // The next place's room, worked out ahead; any other not playing, let go of.
-  const next = roomNext();
   if (next) work(next);
-  for (const place of roomBufs.keys()) if (!r.playing.has(place) && !roomKept(place)) roomBufs.delete(place);
+  for (const place of roomBufs.keys()) if (!r.playing.has(place) && !kept.has(place)) roomBufs.delete(place);
   const hallShare = Math.sqrt(Math.max(0, 1 - covered));
   r.hall.gain.setTargetAtTime(hallShare, t, ROOM_EASE);
   feedHall(r, hallShare > 0.001);
@@ -460,7 +450,7 @@ function work(place: string) {
     const s = steps.next();
     if (!s.done) return whenIdle(next, { fallback: 300 });
     working.delete(place);
-    if (!roomKept(place)) return;
+    if (!plan().kept.has(place)) return;
     roomBufs.set(place, s.value);
     tuneRooms();
   };
@@ -481,7 +471,10 @@ const placer: Placer = {
   mount({ ac, master, wet, reverb, out: user }) {
     mix = master;
     send = wet;
-    out = { ac, user, aids: null, through: false };
+    user.disconnect();
+    const straight = gainNode(ac, 1);
+    user.connect(straight).connect(ac.destination);
+    out = { ac, user, straight, aids: null, through: false, linked: false };
 
     // The game's own hall (its response set a moment after, lib/sound.ts audio), at its share, and the rooms beside it.
     reverb.disconnect();
@@ -498,21 +491,18 @@ const placer: Placer = {
     const s = spatial;
     if (s.today) return null;
     const edge = where?.edge;
-    const from = edge ? { x: edge } : pointOf(where?.from, where?.x);
-    const to = edge ? { x: edge * BLAST_SWEEP.to } : where?.to ? pointOf(where.to) : null;
-    const seconds = to ? (edge ? BLAST_SWEEP.seconds : (where?.seconds ?? 0)) : 0;
+    const from = edge ? edge : pointOf(where?.from, where?.x);
+    const to = edge ? edge * BLAST_SWEEP.to : where?.to ? pointOf(where.to) : null;
+    const seconds = to !== null ? (edge ? BLAST_SWEEP.seconds : (where?.seconds ?? 0)) : 0;
     const big = s.size && WIDE.has(name);
     const far = where?.far && !DISTANT.has(name) ? s.far : 0;
-    if (!from && !to && !big && !far) {
+    if (from === null && to === null && !big && !far) {
       listener?.({ begin: start, seconds: 0.8, az: () => 0, far: 0, wide: false });
       return null;
     }
 
     // Where it is at t s from its start: travelling, or where it lands (a blast: where it bursts in).
-    const a = from ?? to ?? { x: 0 };
-    const b = to ?? a;
-    const along = (t: number) => (seconds > 0 && s.moving ? ease(Math.min(1, t / seconds)) : to && !edge ? 1 : 0);
-    const xAt = (t: number) => a.x + (b.x - a.x) * along(t);
+    const xAt = travel(from, to, seconds, s.moving, !!edge);
     const az = (t: number) => xAt(t) * s.width;
 
     const place = big ? wide(ac) : PLACES[s.renderer](ac);

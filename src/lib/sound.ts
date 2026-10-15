@@ -694,7 +694,9 @@ function prefetchBeds(b: Bus) {
 }
 
 /** Delve: the next place's bed, fetched ahead (see prefetchBeds). */
-const nextBed = () => bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));
+/** The next place down from Delve's depth `d`: the next zone's (its bed fetched ahead, and its room worked out ahead: lib/spatialPlan.ts). */
+export const nextPlaceAt = (d: number) => placeAt(Math.floor((d - 1) / 10) + 1);
+const nextBed = () => bedOf(nextPlaceAt(depth));
 
 /** Never let go of (see evict): every sound but Delve's beds. */
 const KEPT = new Set([AMBIENCE.file, FIRE.file, RUMBLE.file, CAVE_IN.file, ...MOMENT_FILES]);
