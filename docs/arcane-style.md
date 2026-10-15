@@ -1,6 +1,6 @@
 # Arcane style: engraved alchemist's circles
 
-How the rune circle (`src/components/ArcaneCircle.svelte`) is drawn and moved, written so a new piece in the same style (a sigil, a seal, a loading ring, a frame ornament) comes out right on the first pass. The component is the reference implementation; read it before building anything similar.
+How the rune circle (`src/components/ArcaneCircle.svelte`) and its siblings (the other plates, below) are drawn and moved, written so a new piece in the same style (a sigil, a seal, a loading ring, a frame ornament) comes out right on the first pass. The component is the reference implementation; read it before building anything similar.
 
 ## The look in one paragraph
 
@@ -32,7 +32,7 @@ From the outside in. Radii are what worked; keep the proportions when scaling.
 1. **Band** (r 81 to 94, plus a lone hairline ring at 97.5).
    - Seven seals on the band's middle circle (r 87.5), each a double ring (r 7.2 and 6.0) holding one of the seven classical planets: ☉ gold, ☽ silver, ☿ quicksilver, ♀ copper, ♂ iron, ♃ tin, ♄ lead, drawn as small SVG paths (not font glyphs).
    - The band's rings are broken where they meet a seal.
-   - Between seals: an unreadable script. 14 small marks (element triangles, salt, sulphur, antimony, arsenic, dram, crescent, cross, a pen turn, a zigzag, an S), about ±2 units tall, picked from a fixed seed, in "words" of 2 to 4 with wider gaps between words, centred in each span.
+   - Between seals: an unreadable script, written as a language would be (`src/lib/tongue.ts`, below), each line justified to fill its span.
 2. **Heptagram** {7/2}, points just inside the band (R = 79.2), offset half a step from the seals.
    - Each line is a strap: two parallel lines 0.8 either side of the centre line.
    - Straps meet at the points with true miters (outer edges meet beyond the point, inner edges short of it).
@@ -115,6 +115,8 @@ The circle mounts with every question and some six hundred lines draw in, so how
 - **Still once drawn.** When a layer's last line is drawn, its pieces give way to a still copy: the same lines merged into one path per weight (`main`, `thin`, `hair`, `hatch`, `sign`), with the seals' and the script's transforms worked into the path data, and no animation on any of them. It looks the same; but a finished animation keeps holding its last frame, so every piece would otherwise be styled again whenever the circle's colour changes (the reveal), and listed by every `document.getAnimations()` for as long as the question is up.
 - **Colour changes at once.** The strokes all take `currentColor`; easing it restyles and repaints every stroke in every frame of the change. The reveal's flare covers the jump.
 - A new piece that draws in should do the same: its pieces as markup made once, swapped for a merged still copy when drawn.
+- **Heavy plates built when needed.** The other plates (below) take longer to compute than the eye (up to some 100 ms for Delve's); each builds its plate the first time a circle of it mounts, or sooner in an idle moment after the page loads (`whenIdle`), never during the page's first frames.
+- All of this machinery is shared: `src/lib/engraver.ts` builds a layer's markup and its still copy (`engrave`, `stroke`, seals), and `src/components/ArcaneStage.svelte` puts the layers on the page when due, turns them, lays the glow under them and plays the bloom, the reveal's flare and wave and the wrong answer's jar. A circle gives the stage its layers (each with its own turn) and draws its still heart itself.
 
 ### State changes
 
@@ -134,8 +136,75 @@ The circle mounts with every question and some six hundred lines draw in, so how
 
 > Make it in the engraved alchemist's circle style described in `docs/arcane-style.md` (reference: `src/components/ArcaneCircle.svelte`): gold `currentColor` on dark, fine sharp lines (0.2 to 0.5 in a 200 unit viewBox), shading by one-sided hatching only, exact computed geometry, lines stopping short of every seal and symbol, a soft unbroken glow under worn lines, alchemical iconography (planets, sun, moon, star polygons, an engraved eye), an unreadable invented script instead of text, layers turning slowly at their own speeds, and a short choreographed entrance where lines draw themselves from the centre outward.
 
+## The script
+
+The script nobody can read (`src/lib/tongue.ts`, `inscribe`) reads as writing, not a row of symbols, because it behaves like a script:
+
+- Twenty invented letters share a body: they hang from a headline and stand on a baseline, a few rise above it or drop below, each has its own width. Within a word the headline runs on over the letters, joining them (as in Devanagari or the Theban alphabet). None may read as a Latin letter; redraw one that does.
+- A few letters are used often and most seldom, as in a real alphabet; no letter twice running.
+- Words come from one fixed vocabulary of 90, of one to seven letters, mostly three to six; a few recur often, most are rare, so every circle writes in the same tongue. A small lozenge ends a phrase every few words.
+- A line holds whole words only, its spaces evened out so it runs its full span. Where a line has to end early, the line runs on as a double rule to whatever stops it, as a scribe fills out a short line, rather than leaving a gap.
+
+## The other plates
+
+The rune circle has three siblings, the same craft in other compositions, so one circle isn't behind everything. Each keeps every rule above (weights, glow, wear, cutting, hatching, the summoning's pace, its layers turning their own ways), and each has its own silhouette (a heptagram, a square over a hexagram, a pentagram in a briar, three interlaced rings), so they never read as one drawing reshuffled. Each is built around an idea of its own, not the eye circle's template reskinned: that read as cheap copies.
+
+Where each one stands:
+
+| Place | Circle |
+| --- | --- |
+| A question (not Delve) | The eye, the monad or the rose, by the question's `askedAt` (`circleFor` in `src/components/circles.ts`), the same for every player |
+| A Delve question, a Delve's end, the Codex's Delve page | The black sun |
+| The victory screen, the codex item window | The eye |
+| Today's unique, the Codex's achievements | The rose |
+| The Codex's collection | The monad |
+
+Where a plate has no eye, its heart's still part is a solid point at the very centre (the stage's `point`): set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
+
+### Motion within a ring
+
+Besides each ring's own turn, a part can move on its own while its ring carries it (`StageLayer` in `ArcaneStage.svelte`: a layer `within` another, about its own `pivot`), still a box moved on the compositor:
+
+- **Upright**: it turns back against its ring as fast as the ring turns, so it travels round but keeps its way up. Suns and moons have a right way up and keep it: the eye's Sol and Luna and the band's Luna, the monad's Luna, the rose's moons, Delve's eclipses; and the rose's key lies level.
+- **Turning about its own centre**: the eye's Sol turns slowly sunwise in his upright seal; the monad's ouroboros chases its tail head first; Delve's eclipse coronas and its black sun turn slowly.
+- **Swaying**: the rose's buds sway on their stems from the briar, each to its own beat.
+- **Breathing**: rays in two sets, long and short, swell and shrink a few percent out of step, so neighbouring rays keep changing length against each other (the monad's glory, Delve's coronas). Only rays that end in the open: rays that pass under a strap or a band would show where they are cut.
+- **Never**: anything whose lines are cut to fit something on another layer (a find breaking out of its seal ring, rays passing under bands) stays as it is set. And no blinking or flashing: the circles' light only breathes.
+
+### The monad's circle
+
+`src/components/MonadCircle.svelte`, the squared circle:
+
+- **Band**: four great seals of the elements (fire, air, water, earth; triangles with a ridge and one side hatched, air and earth barred) at the quarters, wider than the band, so all three of its rings break round them; the script runs in four long lines between.
+- **Square** (corners at r 78, at the diagonals): triple straps (two edges and a hairline between) laid over a glory of 72 fine rays from the inner circle to the band, which pass under the square. In each space between the square and the band, a seal: sulphur, the philosopher's stone, salt, the ouroboros.
+- **Inner circle** (doubled), holding the Seal of Solomon: two triangles woven over and under (`wovenPolygons` in `src/lib/arcane.ts`), each point with a ridge and hatched down one side, and the six lesser planets sealed between the points (Sol is the heart's).
+- **Heart**, still and upright like the eye: John Dee's hieroglyphic monad, the sun round the point at the very centre, the moon's cup above, the cross and the ram's horns below, each stroke with a hairline beside it on its shadow side (light from the upper left), in a glory of 40 rays that start just clear of it, inside a doubled ring.
+- **Motion**: band 220 s counter-clockwise, square 150 s clockwise, the Seal 110 s counter-clockwise; Luna upright, the ouroboros turning, the glory breathing. The summoning goes heart ring, inner circle and the Seal strap by strap, the planets stamped, the square laid side by side as its glory shoots out under it, the band swept and the elements stamped, the script written, and last the monad engraved stroke by stroke and its point set.
+
+### The rose
+
+`src/components/RoseCircle.svelte`, sub rosa, under the rose, the old sign of what is kept secret:
+
+- **Band**: the moon's eight phases in seals, full at the top, new at the bottom, waning down the right and waxing up the left, so light and dark lie unevenly round the circle; the script between them.
+- **A pentagram** of double straps woven over and under (`wovenPolygons`, one polygon crossing itself), its tips stopping short of the band and the full moon's seal. A rose leaf (a lens, a midrib, veins down one side) runs up each arm. A thorned briar is woven through the star, over and under.
+- **The key**, alone in the gap below, in the plate's one great seal, which breaks the briar: an ornate key (a quatrefoil bow, a shaded shaft, a warded bit), lying level.
+- **Four roses** in the other gaps, on stems from the briar, opening round from the key: closed, parting, half open, open, each a little larger and further open than the one before, the sepals spreading with them, all seen from the side, all ending at the same ring.
+- **A Tudor rose** at the heart, in the pentagon's ring: two rows of five round petals, each row's outline their union, each petal hatched down one side, a seeded disc at the centre, five hatched sepals behind.
+- **Motion**: band 240 s counter-clockwise, the star 160 s clockwise, the rose 100 s counter-clockwise; the moons and the key upright, the buds swaying.
+
+### The black sun (Delve)
+
+`src/components/BlackSunCircle.svelte`, the nigredo, built of great sweeping rings rather than straight lines:
+
+- **Three great bands**, interlaced as the Borromean rings are (each over the next, under the one after), the script written along the middle of each, passing under the band above. A fine line echoes each band along its outside.
+- **The finds**, as on their cards (`src/lib/findEngraving.ts`), in great seals where each band swings out furthest: a crown of azurite prisms round a crystal seen end on, the flare's burst, the small ring blown apart. Each breaks out of its seal's ring, which is cut where it crosses; everything else stops short of what breaks out.
+- **The glory**: fine rays in three lengths from the heart to the bands, under them, closer in the curved triangles where two rings overlap and fading outward there.
+- **Three eclipses** in seals set into the rim between the finds, breaking only the rim's inner line: the sun going dark, bitten, half gone, nearly gone (the darkest opposite the dynamite), as an eclipse is watched, the moon coming in from the right. The light left is cut in close strokes, the moon left dark. A double line, the sun's path, joins them on a circle and passes under the bands; outside it, by each sun, a line of the script, run out to the band or seal in a double rule.
+- **The black sun** at the heart, the eclipse whole: a void ringed in light, its corona even (long and short) as far as the heart's narrowest reach, so it fits as it turns.
+- **Motion**: the rings 240 s counter-clockwise as one; the black sun turning slowly against them; the eclipses upright, their coronas turning sunwise; the coronas breathing.
+
 ## Shared pieces
 
-- `src/lib/alchemy.ts` holds the signs (the script's marks, Sol's rays, Luna's crescent); `src/lib/arcane.ts` holds the engraver's routines in a general form: lines and rings broken at holes and under straps, arcs, wear, one-sided hatching, pointed rays, woven star polygons {n/m} and eight-pointed stars. New pieces should build on them rather than copy the circle's code.
+- `src/lib/alchemy.ts` holds the signs (small marks, Sol's rays, Luna's crescent, the hatched elements for seals); `src/lib/arcane.ts` holds the engraver's routines in a general form: lines and rings broken at holes and under straps or rings (also in pieces, `lineParts`/`ringParts`, for drawing in), arcs, wear, one-sided hatching, pointed rays, woven star polygons {n/m}, woven compound polygons (`wovenPolygons`: the Seal of Solomon, a square of straps) and eight-pointed stars. New pieces should build on them rather than copy the circle's code.
 - The achievements' seals (`src/components/AchievementSeal.svelte`) are the band's planet seals grown into badges: a worn double ring round a sign, a glory of fine rays between them on the harder ones (16, or 32 with a third ring round the sign), struck in the tier's metal, the alchemist's way from lead through copper and silver to gold; lead, for the very easy ones, is a dark, dull grey whose glow is a soft paler sheen, so it reads as metal rather than stone, and keeps the outer ring alone; silver is near white with a bright white lustre, so the two never meet. Gold is pale gold over a deep amber glow, like gilding. Now and then light passes over an earned seal, in the way of its metal (`METALS` in `src/lib/metals.ts`, run by `src/lib/glint.ts`, the same glint as on the creator's gold-foil name): a slanted slit holding a pale copy of the lines slides across while the copy slides back, both transforms, so nothing repaints and nothing moves between passes; a pass lights only the seals on screen, and none while motion is reduced or the effects are off. Lead gleams seldom, slowly and faintly in a wide soft band; copper warmly; silver in a quick, narrow white flash; gold in a warm sweep that leaves a small four-pointed spark flaring on its rim. Every seal of a metal catches the same light, each metal on its own beat, reaching seals further down the page a moment later. Earned, the lines sit on the glow; not yet, the seal is a dull impression whose outer ring is cut bright as far as its progress has come. Their signs are the planets, the marks and, in `src/lib/alchemy.ts`, more classic ones drawn from exact geometry: the Seal of Solomon woven over and under, the {7/2} star, the philosopher's stone, the eye, the hour, sublimation, the pelican, two linked rings, the retort, and the zodiac's signs as Ripley's twelve gates (Aries, Gemini, Cancer, Scorpio, Aquarius' waves, Pisces); Venus, sulphur and the ouroboros come from the planets, the marks and the descent. Where two strands cross, the one beneath stops short of the one on top. Only the tiers of one achievement share a sign.
 - The category cards (`src/lib/cardEngraving.ts`, drawn by `CardEngraving.svelte`) use this craft (fine exact lines, one-sided hatching, lines stopping short, a soft glow) but not the circle's composition: they are tarot cards, not circles, with no script or planet glyphs. The face is a window: a round arch with keystone and imposts, Sol and Luna in hatched spandrels, a glory of fine rays behind the emblem over a fluted pedestal, and a nameplate. The back is a diamond lattice with a mandorla holding a sun and two crescents. The site's filigree stays on their corners.

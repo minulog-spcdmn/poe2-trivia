@@ -1,8 +1,8 @@
-// The alchemist's signs, shared by the circle behind the item art
-// (ArcaneCircle), the plate behind the item's name (NamePlate) and the
+// The alchemist's signs, shared by the circles behind the item art
+// (ArcaneCircle and its siblings), the plate behind the item's name (NamePlate) and the
 // achievements' seals (AchievementSeal).
 
-import { angleOf, at as atAbout, meeting } from './arcane.ts';
+import { angleOf, at as atAbout, hatch, line, meeting } from './arcane.ts';
 
 type Pt = [number, number];
 const f = (v: number) => v.toFixed(2);
@@ -53,6 +53,27 @@ export const LUNA_HATCH = Array.from({ length: 13 }, (_, i) => {
   const x1 = 3.5 - Math.sqrt(7.2 ** 2 - y * y) - 0.7;
   return x1 - x0 > 0.3 ? `M${f(x0)} ${y}H${f(x1)}` : '';
 }).join('');
+
+/**
+ * An element for a seal, its triangle `R` from its middle: pointing up for
+ * fire and air, down for water and earth, air and earth barred (the bar
+ * reaching a little past the sides); a ridge down its middle and one side
+ * hatched, as the circles' rays are.
+ */
+export function element(up: boolean, barred: boolean, R = 5.6) {
+  const s = up ? 1 : -1;
+  const [apex, l, r] = [0, 120, 240].map((a) => at(up ? a : a + 180, R));
+  const base: Pt = [0, (s * R) / 2];
+  const bar = (-s * 1.1 * R) / 5.6;
+  const half = Math.abs(bar - apex[1]) * Math.tan(Math.PI / 6) + (1.3 * R) / 5.6;
+  const under = barred ? [{ p: [-half, bar] as Pt, q: [half, bar] as Pt, w: 0.55 }] : [];
+  return {
+    lines: `M${pt(apex)}L${pt(l)}L${pt(r)}Z` + (barred ? `M${f(-half)} ${f(bar)}H${f(half)}` : ''),
+    shade: line(base, apex, { under }) + hatch(base, up ? r : l, apex, 0.55, { under }),
+  };
+}
+/** Fire, air, water, earth. */
+export const ELEMENTS = [element(true, false), element(true, true), element(false, false), element(false, true)];
 
 // ---- signs for the achievements' seals ----------------------------------------
 // Classic alchemical signs beyond the planets and the marks, drawn on the
@@ -203,21 +224,23 @@ export const RINGS = (() => {
 })();
 
 /**
- * The ouroboros, the serpent that bites its tail, for what never ends: one
- * outline round a circle (radius 2.9), from the fine tail up the left and
- * over the top into a broad head that closes on the tail's tip, with an eye
- * and the line of the mouth. It runs clockwise, its head at the top.
+ * The ouroboros, the serpent that bites its tail, for what never ends, at
+ * `k` times the sign's size: one outline round a circle (radius 2.9k), from
+ * the fine tail up the left and over the top into a broad head that closes
+ * on the tail's tip, with an eye and the line of the mouth. It runs
+ * clockwise, its head at the top. `width(a)` is its half-width at `a`
+ * degrees round (0 past the snout, where only the tail's tip is).
  */
-export const OUROBOROS = (() => {
-  const r = 2.9;
+function serpent(k = 1) {
+  const r = 2.9 * k;
   /** The body's half-width from the neck (`-28`°) back round to the tail (`-347.5`°, just past the snout). */
   const NECK = -28;
   const TAIL = -347.5;
-  const body = (a: number) => 0.7 - 0.5 * ((NECK - a) / (NECK - TAIL)) ** 1.6;
+  const body = (a: number) => (0.7 - 0.5 * ((NECK - a) / (NECK - TAIL)) ** 1.6) * k;
   /** The head's half-width, `t` from the neck (0) to the snout (1): broad, then rounded off. */
   const SNOUT = 10;
   const head = (t: number) =>
-    (0.7 + 0.45 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.6))) * (t <= 0.62 ? 1 : Math.sqrt(Math.max(0, 1 - ((t - 0.62) / 0.38) ** 2)));
+    (0.7 + 0.45 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.6))) * (t <= 0.62 ? 1 : Math.sqrt(Math.max(0, 1 - ((t - 0.62) / 0.38) ** 2))) * k;
   const steps = (a0: number, a1: number, n: number) => Array.from({ length: n + 1 }, (_, i) => a0 + ((a1 - a0) * i) / n);
   const outer = [
     ...steps(TAIL, NECK, 64).map((a) => at(a, r + body(a))),
@@ -233,9 +256,23 @@ export const OUROBOROS = (() => {
       .slice(1)
       .map((a) => at(a, r - body(a))),
   ];
-  const outline = `M${[...outer, ...inner].map(pt).join('L')}Z`;
-  const mouth = `M${pt(at(SNOUT - 1, r))}L${pt(at(NECK + (SNOUT - NECK) * 0.6, r - 0.12))}`;
-  const eye = at(NECK + (SNOUT - NECK) * 0.5, r + 0.42);
+  const width = (a: number) => {
+    const b = ((((a - TAIL) % 360) + 360) % 360) + TAIL;
+    return b <= NECK ? body(b) : b <= SNOUT ? head((b - NECK) / (SNOUT - NECK)) : 0;
+  };
+  return {
+    r,
+    NECK,
+    TAIL,
+    SNOUT,
+    width,
+    outline: `M${[...outer, ...inner].map(pt).join('L')}Z`,
+    mouth: `M${pt(at(SNOUT - 1, r))}L${pt(at(NECK + (SNOUT - NECK) * 0.6, r - 0.12 * k))}`,
+    eye: at(NECK + (SNOUT - NECK) * 0.5, r + 0.42 * k),
+  };
+}
+export const OUROBOROS = (() => {
+  const { outline, mouth, eye } = serpent();
   return outline + mouth + circle(eye[0], eye[1], 0.26);
 })();
 

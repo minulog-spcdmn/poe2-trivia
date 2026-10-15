@@ -67,7 +67,7 @@ export const wear = (seed: number): Wear => {
 };
 
 /** Where a line from `p` to `q` runs inside a hole, as a cut in [0, 1]. */
-const inside = (p: Pt, q: Pt, { c, r }: Hole): Cut | null => {
+export const inside = (p: Pt, q: Pt, { c, r }: Hole): Cut | null => {
   const [dx, dy] = [q[0] - p[0], q[1] - p[1]];
   const [fx, fy] = [p[0] - c[0], p[1] - c[1]];
   const a = dx * dx + dy * dy;
@@ -77,7 +77,7 @@ const inside = (p: Pt, q: Pt, { c, r }: Hole): Cut | null => {
 };
 
 /** Where a line from `p` to `q` runs under a strap, as a cut in [0, 1]. */
-const underStrap = (p: Pt, q: Pt, { p: a, q: b, w }: Strap): Cut[] => {
+export const underStrap = (p: Pt, q: Pt, { p: a, q: b, w }: Strap): Cut[] => {
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const [ux, uy] = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
   const dist = (s: Pt) => (s[0] - a[0]) * -uy + (s[1] - a[1]) * ux;
@@ -89,24 +89,38 @@ const underStrap = (p: Pt, q: Pt, { p: a, q: b, w }: Strap): Cut[] => {
   return s < 0 || s > len ? [] : [[t0, t1]];
 };
 
-export type LineOpts = { holes?: Hole[]; under?: Strap[]; cuts?: Cut[]; wear?: Wear };
+/** A ring a line passes under: `w` either side of the circle about `c` of radius `r`. */
+export type Band = { c: Pt; r: number; w: number };
+export type LineOpts = { holes?: Hole[]; under?: Strap[]; rings?: Band[]; cuts?: Cut[]; wear?: Wear };
 
-/** A straight line from `p` to `q`, broken where it meets a hole, passes under a strap, or is worn. */
-export const line = (p: Pt, q: Pt, { holes = [], under = [], cuts = [], wear = null }: LineOpts = {}) => {
+/**
+ * A piece of a broken line, and where it runs along the whole (0 to 1), so a
+ * piece that draws in can be timed to the pen sweeping the whole (lib/engraver).
+ */
+export type Part = { d: string; from: number; to: number };
+export const joined = (parts: Part[]) => parts.map((p) => p.d).join('');
+
+/** A straight line from `p` to `q`, in pieces: broken where it meets a hole, passes under a strap or a ring, or is worn. */
+export const lineParts = (p: Pt, q: Pt, { holes = [], under = [], rings = [], cuts = [], wear = null }: LineOpts = {}): Part[] => {
   const all = [...cuts, ...under.flatMap((s) => underStrap(p, q, s))];
   for (const h of holes) {
     const c = inside(p, q, h);
     if (c) all.push(c);
   }
+  for (const { c, r, w } of rings) {
+    const outer = inside(p, q, { c, r: r + w });
+    const inner = inside(p, q, { c, r: r - w });
+    if (outer) all.push(...(inner ? ([[outer[0], inner[0]], [inner[1], outer[1]]] as Cut[]) : [outer]));
+  }
   if (wear) all.push(...wear(Math.hypot(q[0] - p[0], q[1] - p[1])));
-  return subtract(0, 1, all)
-    .map(([t0, t1]) => `M${pt(lerp(p, q, t0))}L${pt(lerp(p, q, t1))}`)
-    .join('');
+  return subtract(0, 1, all).map(([t0, t1]) => ({ d: `M${pt(lerp(p, q, t0))}L${pt(lerp(p, q, t1))}`, from: t0, to: t1 }));
 };
+/** A straight line from `p` to `q`, broken where it meets a hole, passes under a strap or a ring, or is worn. */
+export const line = (p: Pt, q: Pt, opts: LineOpts = {}) => joined(lineParts(p, q, opts));
 
-/** A circle about `c`, broken wherever it passes through a hole, and worn. */
-export const ring = (c: Pt, r: number, { holes = [], wear = null }: Pick<LineOpts, 'holes' | 'wear'> = {}) => {
-  const cuts: Cut[] = [];
+/** A circle about `c`, in pieces: broken wherever it passes through a hole or a cut (degrees round it), and worn. */
+export const ringParts = (c: Pt, r: number, { holes = [], wear = null, cuts: given = [] }: Pick<LineOpts, 'holes' | 'wear' | 'cuts'> = {}): Part[] => {
+  const cuts: Cut[] = given.flatMap(([a0, a1]): Cut[] => [-360, 0, 360].map((k) => [a0 + k, a1 + k]));
   for (const h of holes) {
     const [hx, hy] = [h.c[0] - c[0], h.c[1] - c[1]];
     const d = Math.hypot(hx, hy);
@@ -120,15 +134,15 @@ export const ring = (c: Pt, r: number, { holes = [], wear = null }: Pick<LineOpt
   const arcs = subtract(0, 360, cuts);
   // Join the arc that ends at the top to the one that starts there, so the ring has no seam.
   if (arcs.length > 1 && arcs[0][0] === 0 && arcs.at(-1)![1] === 360) arcs.push([arcs.pop()![0], arcs.shift()![1] + 360]);
-  return arcs
-    .map(([a0, a1]) => {
-      const n = Math.ceil((a1 - a0) / 170);
-      let d = `M${pt(at(c, a0, r))}`;
-      for (let k = 1; k <= n; k++) d += `A${f(r)} ${f(r)} 0 0 1 ${pt(at(c, a0 + ((a1 - a0) * k) / n, r))}`;
-      return a1 - a0 >= 360 ? d + 'Z' : d;
-    })
-    .join('');
+  return arcs.map(([a0, a1]) => {
+    const n = Math.ceil((a1 - a0) / 170);
+    let d = `M${pt(at(c, a0, r))}`;
+    for (let k = 1; k <= n; k++) d += `A${f(r)} ${f(r)} 0 0 1 ${pt(at(c, a0 + ((a1 - a0) * k) / n, r))}`;
+    return { d: a1 - a0 >= 360 ? d + 'Z' : d, from: a0 / 360, to: a1 / 360 };
+  });
 };
+/** A circle about `c`, broken wherever it passes through a hole, and worn. */
+export const ring = (c: Pt, r: number, opts: Pick<LineOpts, 'holes' | 'wear' | 'cuts'> = {}) => joined(ringParts(c, r, opts));
 
 /** An arc about `c` from `a0` to `a1` degrees (clockwise, `a0` < `a1`), broken wherever it passes through a hole, and worn. */
 export const arc = (c: Pt, r: number, a0: number, a1: number, { holes = [], wear = null }: Pick<LineOpts, 'holes' | 'wear'> = {}) => {
@@ -236,3 +250,66 @@ export const star8 = (c: Pt, r: number) => {
   };
 };
 
+
+/**
+ * Closed polygons drawn as straps (each side a band `w` either side of its
+ * centre line, mitred at the corners), woven where they cross (one polygon
+ * crossing itself too, as a pentagram's tips in drawing order): walking the
+ * first polygon, its straps go over and under in turn at each crossing, and
+ * every other strap goes under where the one it crosses went over (two
+ * triangles so make the Seal of Solomon), or over and under in turn where
+ * neither was walked yet. Every polygon is walked the same way round, so the
+ * same side of each strap faces out. Returns the straps, those each one
+ * passes under (widened `gap` either side, so it is cut clear of them), and
+ * `edge(i, side)`: strap `i`'s edge `side` (±1) of its centre line, or its
+ * centre line (0), mitred to its neighbours.
+ */
+export const wovenPolygons = (polys: Pt[][], w: number, gap: number) => {
+  const straps: (Strap & { poly: number; k: number })[] = polys.flatMap((tips, poly) =>
+    tips.map((p, k) => ({ p, q: tips[(k + 1) % tips.length], w, poly, k })),
+  );
+  const cross = (a: Strap, b: Strap) => {
+    const [r, s] = [
+      [a.q[0] - a.p[0], a.q[1] - a.p[1]],
+      [b.q[0] - b.p[0], b.q[1] - b.p[1]],
+    ];
+    const den = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(den) < 1e-9) return null;
+    const [ex, ey] = [b.p[0] - a.p[0], b.p[1] - a.p[1]];
+    const t = (ex * s[1] - ey * s[0]) / den;
+    const u = (ex * r[1] - ey * r[0]) / den;
+    return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99 ? t : null;
+  };
+  /** Whether strap `i` goes under strap `j` where they cross, as it's settled. */
+  const below = new Map<string, boolean>();
+  let k = 0;
+  for (let i = 0; i < straps.length; i++)
+    for (const { j } of straps
+      .map((b, j) => ({ j, t: i === j ? null : cross(straps[i], b) }))
+      .filter((x): x is { j: number; t: number } => x.t !== null)
+      .sort((x, y) => x.t - y.t)) {
+      const known = below.get(`${j}:${i}`);
+      const under = known === undefined ? k % 2 === 1 : !known;
+      below.set(`${i}:${j}`, under);
+      k = under ? 0 : 1;
+    }
+  const unders = straps.map((_, i) => straps.filter((_, j) => below.get(`${i}:${j}`)).map((s) => ({ p: s.p, q: s.q, w: w + gap })));
+  const normal = (s: Strap): Pt => {
+    const len = Math.hypot(s.q[0] - s.p[0], s.q[1] - s.p[1]);
+    return [-(s.q[1] - s.p[1]) / len, (s.q[0] - s.p[0]) / len];
+  };
+  const edge = (i: number, side: number): [Pt, Pt] => {
+    const { poly, k } = straps[i];
+    const n = polys[poly].length;
+    const of = (k: number) => straps.find((s) => s.poly === poly && s.k === (k + n) % n)!;
+    const [nx, ny] = normal(straps[i]);
+    const miter = (tip: Pt, other: Strap): Pt => {
+      const [ox, oy] = normal(other);
+      const [bx, by] = [nx + ox, ny + oy];
+      const s = (side * w) / (nx * bx + ny * by);
+      return [tip[0] + bx * s, tip[1] + by * s];
+    };
+    return [miter(straps[i].p, of(k - 1)), miter(straps[i].q, of(k + 1))];
+  };
+  return { straps, unders, below, edge };
+};

@@ -1,7 +1,8 @@
 <script lang="ts">
   // Today's unique: one item a day, the same for every exile (lib/daily.ts),
-  // in the rune circle with the game's own answer buttons under it. Once it
-  // is answered, "Practice more" asks further questions in the same spot;
+  // in the rose's circle (its moons the days' turning) with the game's own
+  // answer buttons under it. Once it is answered, "Practice more" asks
+  // further questions in the same spot;
   // they never touch the streak. Into the codex, today's unique goes as
   // found (its answer isn't counted) and a practice answer only into a
   // practice accuracy of its own (see pick).
@@ -19,7 +20,7 @@
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import RoseCircle from './RoseCircle.svelte';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -277,7 +278,7 @@
       <div class="veil">
         <div class="inner">
           <div class="circle">
-            <ArcaneCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
+            <RoseCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
           </div>
           <!-- "frame", as the game's art stage: the right answer's flare and rays find the
                picture through it (fx/moments reveal) and shine from behind its outline. -->
