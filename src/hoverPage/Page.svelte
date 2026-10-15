@@ -317,7 +317,10 @@
     top: 0;
     align-self: start;
     max-height: 100dvh;
-    overflow-y: auto;
+    /* Only ever up and down, with room kept for the bar: a readout changing
+       width then never brings a scrollbar in or out. */
+    overflow: hidden auto;
+    scrollbar-gutter: stable;
     padding: 1rem 1rem 2rem;
     border-left: 1px solid var(--gold-lo);
     background: rgba(12, 10, 8, 0.94);
@@ -432,6 +435,7 @@
     gap: 2px;
     height: 70px;
     padding: 4px;
+    overflow: hidden;
     border: 1px solid var(--line);
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.35);
