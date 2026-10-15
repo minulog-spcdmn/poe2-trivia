@@ -1368,11 +1368,14 @@
     flex-direction: column;
     line-height: 1.1;
   }
+  /* Clipped for its ellipsis, so its box reaches down past the descenders (a g, a y), as the lobby's chips do. */
   .who-col .name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.95rem;
+    padding-bottom: 0.2em;
+    margin-bottom: -0.2em;
   }
   .dep {
     font-size: 0.8rem;
