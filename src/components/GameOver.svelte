@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly, scale } from 'svelte/transition';
+  import { fade, fly, scale, slide } from 'svelte/transition';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
@@ -49,8 +49,10 @@
     type Line,
     type Part,
   } from '../lib/recap';
-  import type { Codex } from '../lib/codex';
-  import type { Achievement } from '../lib/achievements';
+  // Read as the screen comes in, not a moment after, so what they fill (your lives, what you earned) is there in its first
+  // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
+  import { loadCodex } from '../lib/codex';
+  import { achievementById, type Achievement } from '../lib/achievements';
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // the start page's rune circle (the winner, or the delvers, at its heart)
@@ -143,28 +145,14 @@
   const chartH = $derived(phone.current ? 170 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
 
   // ---- what this device knows ------------------------------------------------
-  /** This device's codex (its own answers): read once the game's last answer is in it. */
-  let codex = $state<Codex | null>(null);
-  let byId = $state<Map<string, Achievement> | null>(null);
+  /** This device's codex (its own answers), as the screen comes in; read again a moment later, should the game's last answer still have been on its way. */
+  let codex = $state(loadCodex());
   onMount(() => {
-    let alive = true;
-    const read = () =>
-      import('../lib/codex')
-        .then((m) => alive && (codex = m.loadCodex()))
-        .catch(() => {});
-    void read();
-    // The reveal's answer is written a moment after it, the run's end with it.
-    const t = setTimeout(read, 1500);
-    import('../lib/achievements')
-      .then((m) => alive && (byId = m.achievementById))
-      .catch(() => {});
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
+    const t = setTimeout(() => (codex = loadCodex()), 1500);
+    return () => clearTimeout(t);
   });
-  /** Achievements this device earned in this game. */
-  const earned = $derived(byId && s.startedAt !== undefined && session.earned?.game === s.startedAt ? session.earned.ids.flatMap((id) => byId!.get(id) ?? []) : []);
+  /** Achievements this device earned in this game (judged as it ends: they may come in a moment after the screen). */
+  const earned = $derived<Achievement[]>(s.startedAt !== undefined && session.earned?.game === s.startedAt ? session.earned.ids.flatMap((id) => achievementById.get(id) ?? []) : []);
   /** This device's runs of the kind, for the chart, ending with this one; re-read once the run is recorded. */
   const chart = $derived.by(() => {
     if (!run || !self || !measured) return [];
@@ -571,8 +559,11 @@
             <ul class="thumbs">{#each mine.missed as id (id)}{@render thumb(id)}{/each}</ul>
           {/if}
           {#if earned.length}
-            <p>Earned this game:</p>
-            {@render achievements(earned)}
+            <!-- Judged as the game ends, it can come in after the screen: it opens out rather than jumping in. -->
+            <div in:slide={{ duration: 450 }}>
+              <p>Earned this game:</p>
+              {@render achievements(earned)}
+            </div>
           {/if}
         </section>
       {:else if hotMisses.length}
@@ -688,8 +679,10 @@
           <div class="runs" data-cursor="runs">
             {#if first}
               {#if earned.length}
-                <p class="cap">Earned this run</p>
-                {@render achievements(earned)}
+                <div in:slide={{ duration: 450 }}>
+                  <p class="cap">Earned this run</p>
+                  {@render achievements(earned)}
+                </div>
               {/if}
               {#if facts.length > 1}
                 <p class="cap">This run</p>
