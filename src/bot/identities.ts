@@ -7,6 +7,7 @@
 
 import { LEFT_HANDED, rollHandStyle } from './motion.ts';
 import { DEFAULT_SETTINGS, type Difficulty, type Item } from '../lib/game.ts';
+import { seededBy } from './util.ts';
 import { gauss, makePersona, rollEye, rollNerveForRisk, weighted, type Persona, type Rng } from './brain.ts';
 
 /**
@@ -163,19 +164,7 @@ export interface Identity {
   prefs: RoomPrefs;
 }
 
-/** A random source fixed by a string (mulberry32 seeded with its FNV-1a hash). */
-export function seededBy(text: string): Rng {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-  let a = h >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
-  };
-}
+export { seededBy };
 
 const pick = <T>(rng: Rng, options: T[], weights: number[]) => options[weighted(weights, rng)];
 
@@ -262,8 +251,8 @@ export function identityOf(name: string, categories: string[], modes: readonly M
   const prefs = rollPrefs(rng, modes);
   persona.favourites = buildOf(items, seededBy(`${name}:build`));
   Object.assign(persona, leaningsOf(name));
-  // And its hand style, its own for good.
-  persona.hand = rollHandStyle(seededBy(`${name}:hand-style`));
+  // And its hand style, its own for good (left or right: its share of the regulars, leftHanders; a newcomer's, visitors.ts).
+  persona.hand = { ...rollHandStyle(seededBy(`${name}:hand-style`)), left: regularLefts().has(name) };
   // How little of a burning-in item it needs to see, and the items it knows: its own too.
   persona.eye = rollEye(seededBy(`${name}:eye`));
   // And how it takes a risk.
@@ -283,6 +272,10 @@ export function leftHanders(cast: readonly string[]): Set<string> {
   const draw = new Map(cast.map((n) => [n, seededBy(`${n}:left`)()]));
   return new Set([...cast].sort((a, b) => draw.get(a)! - draw.get(b)!).slice(0, Math.round(LEFT_HANDED * cast.length)));
 }
+
+let lefts: Set<string> | null = null;
+/** The regulars who mouse with the left hand. */
+const regularLefts = () => (lefts ??= leftHanders(NAMES));
 
 /**
  * How a name goes about rooms (Persona.hosting, sociable, picky), on its

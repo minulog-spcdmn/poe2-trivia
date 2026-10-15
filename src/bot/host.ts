@@ -294,6 +294,8 @@ export class Host {
     // Company at last: now and then the host fiddles with the rules before it starts, as people do.
     if (!key) this.fiddle = null;
     else if (!this.fiddle) this.fiddle = { at: Math.random() < FIDDLE_CHANCE && this.who.prefs.mode !== 'delve' ? now + between(3000, 8000) : 0 };
+    // (Not while away: the rules change from the room, by someone in it; once back, a little later.)
+    if (this.fiddle?.at && this.afk.isAway) this.fiddle.at = Math.max(this.fiddle.at, now + between(1500, 4000));
     if (this.fiddle?.at && now >= this.fiddle.at) {
       this.fiddle.at = 0;
       const c = (this.who.prefs = fiddled(this.who.prefs, Math.random));

@@ -15,7 +15,7 @@
 // measured: no study of names on quick browser games turned up. None is
 // anyone's real handle.
 
-import { DEFAULT_RULES, MODES, seededBy, type Identity, type Mode } from './identities.ts';
+import { DEFAULT_RULES, MODES, NAMES, leftHanders, seededBy, type Identity, type Mode } from './identities.ts';
 
 export const VISITORS = [
   'asdf',
@@ -213,6 +213,9 @@ export const VISITORS = [
   'copium',
 ];
 
+/** Everyone the bot plays as: the regulars and the newcomers. */
+export const CAST: ReadonlySet<string> = new Set([...NAMES, ...VISITORS]);
+
 /**
  * The newcomers one seat draws from when `of` seats run at once (`slot` 1
  * to `of`), as identities.ts namesFor shares the regulars.
@@ -222,6 +225,10 @@ export function visitorsFor(slot: number, of: number): string[] {
   const share = VISITORS.filter((_, i) => i % of === slot - 1);
   return share.length ? share : VISITORS;
 }
+
+let lefts: Set<string> | null = null;
+/** The newcomers who mouse with the left hand. */
+const newcomerLefts = () => (lefts ??= leftHanders(VISITORS));
 
 /** How likely someone who comes on is a newcomer rather than a regular. */
 export const NEWCOMERS = 0.25;
@@ -245,7 +252,8 @@ export function asNewcomer(who: Identity, modes: readonly Mode[] = MODES): Ident
   const firstRoom = modes.includes('delve') && rng() < FIRST_ROOM_KEPT;
   return {
     ...who,
-    persona: { ...p, skill, pace, favourites, hosting: p.hosting * 0.4, newcomer: true },
+    // Their share of left hands, among the newcomers (identities.ts leftHanders).
+    persona: { ...p, skill, pace, favourites, hosting: p.hosting * 0.4, newcomer: true, hand: { ...p.hand, left: newcomerLefts().has(who.name) } },
     prefs: firstRoom ? { mode: 'delve', ...DEFAULT_RULES } : who.prefs,
   };
 }

@@ -32,6 +32,8 @@ interface Plan {
 import { between, log } from './util';
 import { Hand, dealtAt } from './hand';
 
+/** Something of its own this soon (ms), it closes an item's details it's reading. */
+const CLOSE_AHEAD_MS = 1500;
 /** New to the game, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn (regulars know). */
 const TRY_NEXT_FOR = 3;
 const TRY_NEXT_CHANCE = 0.25;
@@ -145,13 +147,12 @@ export class Player {
       else this.turns(s);
     }
     const now = session.hostNow();
+    // Reading an item's details (on, as people do, into the next screens), it closes them as something of its own comes
+    // up, in time for it: closing takes a reach (a guess timed for the clock's end mustn't wait on it).
+    if (this.hand.reading && [...this.plans.values()].some((p) => p.at - now < CLOSE_AHEAD_MS)) this.hand.doneReading(between(0, 300));
     for (const [key, p] of this.plans)
       if (now >= p.at) {
-        // Reading an item's details, it closes them first when there's something to do.
-        if (this.hand.reading) {
-          this.hand.doneReading(between(300, 900));
-          continue;
-        }
+        if (this.hand.reading) continue;
         this.plans.delete(key);
         void p.run();
       }
@@ -299,6 +300,11 @@ export class Player {
   }
 
   private race(s: GameState) {
+    // The category is still picked by whoever's turn it is.
+    if (s.phase === 'choosing') {
+      if (s.players[s.turn]?.id === session.myPlayerId) this.planCard(s, 'pick');
+      return;
+    }
     const q = s.question;
     if (s.phase !== 'question' || !q || q.misses.some((m) => m.playerId === session.myPlayerId)) return;
     this.planAnswer(s, q);
@@ -720,15 +726,18 @@ export class Player {
     this.hand.ponder(q, Date.now() + Math.max(200, expected - lead() - now), torn(optionNames(q), seen, sure, seen === null ? undefined : looksOf(q, seen)));
     // The picture it's after, on a question of pictures each burning in: the one its eyes take for it.
     const tile = q.mode === 'art' ? seen : null;
+    // When it goes, once it has seen enough (still panicking first, or hurried by the clock).
+    let goAt: number | null = null;
     const check = () => {
       const o = this.open(q);
       if (!o) return;
       const t = session.hostNow();
       if (panicked && t >= start + panicked.at - lead()) return this.answerNow(s, q, sure && !panicked.fumble, ask, what(), seen);
-      if (inView(o, tile) >= need.share) return void this.plans.set(key, { at: Math.max(t + react, floor) - lead(), run: () => this.answerNow(s, q, sure, ask, what(), seen) });
-      // The clock all but out: it goes with what it has.
-      if (o.deadline && t >= o.deadline - 900 - lead()) return this.answerNow(s, q, sure && Math.random() < 0.5, ask, `${what()}, out of time`, seen);
-      this.plans.set(key, { at: t + 150, run: check });
+      if (goAt === null && inView(o, tile) >= need.share) goAt = Math.max(t + react, floor);
+      if (goAt !== null && t >= goAt - lead()) return this.answerNow(s, q, sure, ask, what(), seen);
+      // The clock all but out: it goes with what it has (all it needed, if it saw that much).
+      if (o.deadline && t >= o.deadline - 900 - lead()) return this.answerNow(s, q, goAt !== null ? sure : sure && Math.random() < 0.5, ask, `${what()}, out of time`, seen);
+      this.plans.set(key, { at: Math.min(t + 150, goAt === null ? Infinity : goAt - lead()), run: check });
     };
     this.plans.set(key, { at: Math.max(now, start + 400), run: check });
   }

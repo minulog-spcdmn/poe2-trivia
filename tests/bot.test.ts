@@ -888,6 +888,11 @@ test('the cast has its share of left hands, always the same people', () => {
   const left = leftHanders(cast);
   assert.equal(left.size, Math.round(0.04 * cast.length));
   assert.deepEqual([...leftHanders(cast)].sort(), [...left].sort());
+  // As they play: the regulars' share and the newcomers', each its own, from who they are alone.
+  const plays = (n: string) => (VISITORS.includes(n) ? asNewcomer(identityOf(n, ['A'])) : identityOf(n, ['A'])).persona.hand.left;
+  assert.equal(NAMES.filter(plays).length, Math.round(0.04 * NAMES.length));
+  assert.equal(VISITORS.filter(plays).length, Math.round(0.04 * VISITORS.length));
+  assert.deepEqual(cast.map(plays), cast.map(plays));
 });
 
 test('in a race, players answer quicker, as recorded', () => {

@@ -1,34 +1,38 @@
 // Which players in a room are the runner's own seats and which are people.
-// Told apart by what the runner says its seats are on as now (their player
-// ids and names), not by the cast's names: people go by names like alex or
-// noob too. With one seat, only its own player is a bot; with several, until
-// the runner first says, anyone by a name of the cast is taken for one.
+// Told apart by player id: the runner tells each seat the ids the others are
+// on as (every few seconds), and a seat keeps every id it's been told, so a
+// seat's player who left a game (still in it, gone) or a seat the runner
+// couldn't reach this time is still known for one of its own. Not by name:
+// people go by names like alex or noob too, a seat's included. With one seat,
+// only its own player is a bot; with several, until the runner first says,
+// anyone by a name of the cast is taken for one.
 
 import { session } from '../lib/session.svelte';
-import { NAMES } from './identities';
-import { VISITORS } from './visitors';
+import { CAST } from './visitors';
 
-const CAST = new Set([...NAMES, ...VISITORS]);
+/** Ids the seats have been on as, the others' and this one's (the most recent last). */
+const ids = new Set<string>();
+const KEPT = 500;
+let told = false;
 
-/** A seat as the runner tells it: its player now, if it's on in a room. */
-export interface Mate {
-  id: string | null;
-  name: string | null;
+/** The runner: the ids the other seats are on as now (none: this one is alone). */
+export function setCrew(now: (string | null)[]) {
+  told = true;
+  for (const id of now) {
+    if (!id) continue;
+    ids.delete(id);
+    ids.add(id);
+  }
+  for (const id of ids) {
+    if (ids.size <= KEPT) break;
+    ids.delete(id);
+  }
 }
 
-let crew: { ids: Set<string>; names: Set<string> } | null = null;
-
-/** The runner: the other seats, as they are now (none: this one is alone). */
-export function setCrew(mates: Mate[]) {
-  crew = {
-    ids: new Set(mates.map((m) => m.id).filter((id): id is string => !!id)),
-    names: new Set(mates.map((m) => m.name).filter((n): n is string => !!n)),
-  };
-}
-
-/** Whether `p` is one of the runner's own (this seat's player included). */
+/** Whether `p` is one of the runner's own (this seat's player included, and those it was on as before). */
 export function isBot(p: { id: string; name: string }): boolean {
-  if (p.id === session.myPlayerId) return true;
-  if (!crew) return CAST.has(p.name);
-  return crew.ids.has(p.id) || crew.names.has(p.name);
+  const me = session.myPlayerId;
+  if (me && !ids.has(me)) ids.add(me);
+  if (p.id === me) return true;
+  return told ? ids.has(p.id) : CAST.has(p.name);
 }

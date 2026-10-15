@@ -124,9 +124,10 @@ for (const file of files) {
     else {
       const dealt = s.dealAt ? layouts.find((l) => l.t >= s.t && l.t <= end && Object.keys(l.boxes).some(isCard))?.t : undefined;
       const t = dealt ?? s.t;
-      // Delve together (and a race), every card and question is the player's own to vote on or answer, whose
-      // seat the screens lean on or not (Scene.mine says only that); while they stand.
-      const together = (s.mode === 'delve' && s.players > 1) || s.mode === 'race';
+      // Delve together, every card and question is the player's own to vote on or answer, and in a race every
+      // question, whose seat the screens lean on or not (Scene.mine says only that); while they stand. (A race's
+      // card is picked by whoever's turn it is, as in turns.)
+      const together = (s.mode === 'delve' && s.players > 1) || (s.mode === 'race' && s.phase !== 'choosing');
       const own = s.lives === 0 ? false : s.mine || together;
       spans.push({ phase: s.phase, round: s.round, turn: s.turn, mine: own, together, players: s.players, mode: s.question?.mode, n: s.question?.labels.length ?? s.offered.length, t, end });
     }

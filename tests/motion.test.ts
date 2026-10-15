@@ -175,10 +175,32 @@ test('a left hand replays the recorded moves mirrored, but clicks and rests wher
   assert.deepEqual(m.src, [w - r, t, w - l, b, w, h]);
   const wait = data.episodes.find((e) => e.kind === 'wait') as never as import('../src/bot/motion.ts').StreamStretch;
   assert.equal(mirrored(wait).path[0], 1000 - wait.path[0]);
-  // A few in a hundred.
-  let left = 0;
-  let x = 7;
-  const rng = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-  for (let i = 0; i < 20000; i++) if (rollHandStyle(rng).left) left++;
-  assert.ok(Math.abs(left / 20000 - LEFT_HANDED) < 0.01, `${left}`);
+  // Which hand isn't the hand style's to roll: the cast has its share (identities.ts leftHanders, bot.test.ts).
+  assert.equal(rollHandStyle(Math.random).left, undefined);
+  assert.ok(LEFT_HANDED > 0 && LEFT_HANDED < 0.1);
+});
+
+test('a wait through a card and a question is replayed for the screen it is on, from where the hand is', () => {
+  // Recorded: four samples on the cards' frame, then four on the answers' (another frame on the recorded screen).
+  const e = {
+    kind: 'wait' as const,
+    src: [400, 300, 1600, 700, 2000, 1000],
+    then: [300, 250, 1700, 900, 2000, 1000],
+    switchAt: 4,
+    path: [100, 100, 120, 110, 140, 120, 160, 130, 500, 500, 520, 510, 540, 520, 560, 530],
+    presses: [50, 260],
+  };
+  const box: [number, number, number, number] = [250, 300, 750, 650];
+  const hand = { x: 300, y: 820 };
+  for (const on of ['cards', 'answers'] as const) {
+    const { track, presses } = streamTrack(e, (src) => within(hand, box, src), 0, 1, undefined, undefined, [0, 0], on);
+    // Its own part only, in that part's frame throughout.
+    assert.equal(track.t.length, 4);
+    assert.ok(track.src.every((s) => s === (on === 'cards' ? e.src : e.then)));
+    // Begun where the hand is: no jump.
+    const first = place(track.u[0], track.v[0], box, track.src[0]);
+    assert.ok(Math.hypot(first.x - hand.x, first.y - hand.y) < 1e-6, JSON.stringify(first));
+    // The part's own click at nothing.
+    assert.deepEqual(presses, on === 'cards' ? [50] : [60]);
+  }
 });

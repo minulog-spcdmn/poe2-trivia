@@ -387,21 +387,33 @@ export function reachTrack(e: ClickStretch, from: [number, number], to: [number,
 
 /**
  * A stream stretch (waiting, the lobby) from `start`, coming in from `from`
- * as it moves (track),
+ * as it moves (track; given in the terms of the frame it's placed on, or
+ * worked out from those),
  * wavered (`w`), begun partway in (at one of its rests, `rng`), shifted
  * `aside` (a bot's own place to wait); and when its clicks at nothing fall.
+ * A wait through someone's card and then their question (`then`) is
+ * replayed only for the screen it's on now (`on`): its part on the cards, or
+ * its part on the answers, each in its own frame (laid onto one, the other's
+ * places would land wrong, and the switch between them would be a jump).
  */
 export function streamTrack(
   e: StreamStretch,
-  from: [number, number],
+  from: [number, number] | ((src: Src) => [number, number]),
   start: number,
   speed = 1,
   w: Waver = STEADY,
   rng?: Rng,
   aside: [number, number] = [0, 0],
+  on?: 'cards' | 'answers',
 ): { track: Track; presses: number[] } {
-  const n = e.path.length / 2;
-  const mask = moving(e.path);
+  const all = e.path.length / 2;
+  const sw = e.then ? Math.max(0, Math.min(all, e.switchAt ?? all)) : all;
+  // Its part for this screen: the whole of it, unless it has two and the other one has more to show.
+  const [lo, hi] = !e.then || !on ? [0, all] : on === 'cards' ? (sw >= 2 ? [0, sw] : [0, all]) : all - sw >= 2 ? [sw, all] : [0, all];
+  const frameSrc = e.then && on === 'answers' && lo === sw ? e.then : e.src;
+  const pairs = e.path.slice(2 * lo, 2 * hi);
+  const n = hi - lo;
+  const mask = moving(pairs);
   // Begun at one of its rests (not the stir it begins with, which every hand would make at once).
   const rests = mask.map((m, i) => (m === 0 && (i === 0 || mask[i - 1] > 0) && i < n * 0.7 ? i : -1)).filter((i) => i > 0);
   const skip = rng && rests.length ? rests[Math.floor(rng() * rests.length)] : 0;
@@ -411,10 +423,15 @@ export function streamTrack(
     if (i) t += STEP * speed * w.pace * (mask[i] ? w.tempo(i) : 1);
     times.push(t);
   }
-  const src = (i: number) => (e.then && i >= (e.switchAt ?? Infinity) ? e.then : e.src);
-  const presses = (e.presses ?? []).map((p) => (p - skip * STEP) * speed * w.pace).filter((p) => p >= 0);
+  // Its clicks at nothing, from the part's start (and the rest it begins at).
+  const presses = (e.presses ?? [])
+    .map((p) => p - lo * STEP)
+    .filter((p) => p >= 0 && p < n * STEP)
+    .map((p) => (p - skip * STEP) * speed * w.pace)
+    .filter((p) => p >= 0);
+  const fromAt = typeof from === 'function' ? from(frameSrc) : from;
   return {
-    track: track(e.path, times, start, from, null, Infinity, src, (i, tt) => {
+    track: track(pairs, times, start, fromAt, null, Infinity, () => frameSrc, (i, tt) => {
       const [bu, bv] = w.bend(tt);
       return [aside[0] + bu * mask[i], aside[1] + bv * mask[i]];
     }),
@@ -454,7 +471,8 @@ export interface HandStyle {
 /** How many players use the mouse with their left hand: few, fewer than are left-handed (most of them mouse with the right). */
 export const LEFT_HANDED = 0.04;
 
-export const rollHandStyle = (rng: Rng): HandStyle => ({ speed: between(rng, 0.85, 1.25), still: rng(), left: rng() < LEFT_HANDED });
+/** A hand's own speed and stillness (which hand it is goes by the cast: identities.ts leftHanders). */
+export const rollHandStyle = (rng: Rng): HandStyle => ({ speed: between(rng, 0.85, 1.25), still: rng() });
 
 /** Before any is rolled (tests, bots made by hand): the recorded hand as it was. */
 export const PLAIN_HAND: HandStyle = { speed: 1, still: 0.5 };

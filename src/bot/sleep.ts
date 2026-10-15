@@ -115,27 +115,13 @@ function asleepIn(name: string, r: Rhythm, at: number) {
 
 /**
  * How likely they are to be on at `at` (0 to 1): 0 asleep; awake, more in
- * the evening, less in a busy weekday's working hours and first thing.
+ * the evening, less in a busy weekday's working hours and first thing; and
+ * how many minutes they have till bed (0 asleep). Both at once, as who comes
+ * on is weighed by both (seat.ts).
  */
-export function activity(name: string, at: number, r = rhythmOf(name)): number {
+export function awakeAt(name: string, at: number, r = rhythmOf(name)): { activity: number; minutes: number } {
   const t = local(at, r.zone);
-  if (asleepIn(name, r, t)) return 0;
-  const hour = (t % DAY) / HOUR;
-  const weekday = new Date(t).getUTCDay();
-  const weekend = weekday === 0 || weekday === 6;
-  if (r.habit === 'adrift') return 0.8;
-  // Off to bed soon: still on, less so.
-  if (minutesAwake(name, at, r) < 45) return 0.5;
-  if (r.busy && !weekend && hour >= 8 && hour < 17) return 0.12;
-  if (hour >= 6 && hour < 12) return weekend ? 0.55 : 0.3;
-  if (hour >= 12 && hour < 18) return weekend ? 0.85 : 0.6;
-  return 1;
-}
-
-/** Minutes until they go to bed, from `at` (0 when asleep). */
-export function minutesAwake(name: string, at: number, r = rhythmOf(name)): number {
-  const t = local(at, r.zone);
-  if (asleepIn(name, r, t)) return 0;
+  if (asleepIn(name, r, t)) return { activity: 0, minutes: 0 };
   // The soonest night to come (adrift, a night's bedtime can fall more than a day after the day it's of, past the next one's).
   const day = Math.floor(t / DAY);
   let next = Infinity;
@@ -143,5 +129,26 @@ export function minutesAwake(name: string, at: number, r = rhythmOf(name)): numb
     const n = nightOf(name, r, d);
     if (n.from > t) next = Math.min(next, n.from);
   }
-  return next === Infinity ? 24 * 60 : (next - t) / 60000;
+  const minutes = next === Infinity ? 24 * 60 : (next - t) / 60000;
+  return { activity: liveliness(r, t, minutes), minutes };
 }
+
+/** How likely someone awake is to be on, at local time `t`, `minutes` before bed. */
+function liveliness(r: Rhythm, t: number, minutes: number): number {
+  const hour = (t % DAY) / HOUR;
+  const weekday = new Date(t).getUTCDay();
+  const weekend = weekday === 0 || weekday === 6;
+  if (r.habit === 'adrift') return 0.8;
+  // Off to bed soon: still on, less so.
+  if (minutes < 45) return 0.5;
+  if (r.busy && !weekend && hour >= 8 && hour < 17) return 0.12;
+  if (hour >= 6 && hour < 12) return weekend ? 0.55 : 0.3;
+  if (hour >= 12 && hour < 18) return weekend ? 0.85 : 0.6;
+  return 1;
+}
+
+/** How likely they are to be on at `at` (awakeAt). */
+export const activity = (name: string, at: number, r = rhythmOf(name)): number => awakeAt(name, at, r).activity;
+
+/** Minutes until they go to bed, from `at` (0 when asleep; awakeAt). */
+export const minutesAwake = (name: string, at: number, r = rhythmOf(name)): number => awakeAt(name, at, r).minutes;

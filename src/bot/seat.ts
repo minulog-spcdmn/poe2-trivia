@@ -24,15 +24,15 @@ import type { GameState } from '../lib/game';
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
-import { identityOf, leaningsOf, leftHanders, NAMES, nextName, seededBy, shiftLength, type Identity, type Mode } from './identities';
+import { identityOf, leaningsOf, nextName, seededBy, shiftLength, type Identity, type Mode } from './identities';
 import { joinable, nextRole, waitingAlone, wanted, watchable, type Role } from './wanted';
 import { afterHosting, afterVisit, hesitation, joinsAfter, keenTo, opensRoom, playsOn, urgeToHost, type HostExit, type Memory, type Visit } from './choice';
 import { dropSave, Host, keepSaveCopy, type Stint } from './host';
 import { AGAIN_AFTER_MS, Guest } from './guest';
 import { between, log, time } from './util';
-import { activity, minutesAwake } from './sleep';
+import { activity, awakeAt, minutesAwake } from './sleep';
 import { asNewcomer, COMES_BACK, NEWCOMERS, VISITORS } from './visitors';
-import { isBot, setCrew, type Mate } from './crew';
+import { isBot, setCrew } from './crew';
 
 const TICK_MS = 200;
 /** The open-room list is checked this often (ms, from..to), by the seat that checks it: often enough that someone waiting alone in their lobby gets company within seconds. */
@@ -95,9 +95,6 @@ function load(): Saved {
   return { recent: [] };
 }
 
-const CAST = new Set([...NAMES, ...VISITORS]);
-/** Who of them mouses with the left hand (identities.ts leftHanders). */
-const LEFT = leftHanders([...CAST]);
 /** A newcomer not seen for this long is anyone's guess: someone else by that name, new all the same. */
 const FORGOTTEN_MS = 21 * 24 * 3600000;
 /** A newcomer who comes back does so a day or more later. */
@@ -175,7 +172,6 @@ export class Seat {
   /** Who `name` is: a regular, or a newcomer (visitors.ts). */
   private identity(name: string): Identity {
     const who = identityOf(name, engine.categories, this.modes, engine.items);
-    who.persona.hand = { ...who.persona.hand, left: LEFT.has(name) };
     return VISITORS.includes(name) ? asNewcomer(who, this.modes) : who;
   }
 
@@ -315,8 +311,8 @@ export class Seat {
     }
   }
 
-  /** The runner: the other seats' rooms, and who they are on as now (crew.ts). */
-  setTeam(team: TeamRoom[], mates?: Mate[]) {
+  /** The runner: the other seats' rooms, and the ids they are on as now (crew.ts). */
+  setTeam(team: TeamRoom[], mates?: (string | null)[]) {
     if (mates) setCrew(mates);
     this.team = team;
     this.ours = new Set(team.map((t) => t.code).filter(Boolean));
@@ -488,7 +484,8 @@ export class Seat {
     if (now >= this.restUntil || someoneWaits) {
       const on = this.whoComesOn('join', now);
       if (!on) {
-        this.restUntil = now + between(...NOBODY_UP);
+        // Everyone asleep: not looked at again till then, someone waiting or not.
+        this.restUntil = this.backAt = now + between(...NOBODY_UP);
         return;
       }
       this.lookForRoom(this.identity(on.name), now + on.free);
@@ -504,20 +501,29 @@ export class Seat {
   private whoComesOn(to: 'host' | 'join', now: number): { name: string; free: number } | null {
     // Now and then someone new (visitors.ts), if any are up.
     const pool = Math.random() < NEWCOMERS ? this.newcomers(now) : [];
-    const up = new Map(pool.map((n) => [n, activity(n, now)]));
-    const from = [...up.values()].some((a) => a > 0) ? pool : this.names;
-    if (from === this.names) for (const n of this.names) up.set(n, activity(n, now));
-    if (![...up.values()].some((a) => a > 0)) return null;
+    const up = new Map(pool.map((n) => [n, awakeAt(n, now)]));
+    const from = [...up.values()].some((a) => a.activity > 0) ? pool : this.names;
+    if (from === this.names) for (const n of this.names) up.set(n, awakeAt(n, now));
+    if (![...up.values()].some((a) => a.activity > 0)) return null;
     const most = shiftLength(Math.random);
     const newcomer = from !== this.names;
-    const free = new Map(from.filter((n) => (up.get(n) ?? 0) > 0).map((n) => [n, this.timeFor(n, now, most)]));
-    const name = nextName(this.saved.recent, Math.random, from, (n) => (free.has(n) ? up.get(n)! * keenTo(this.urge(n, newcomer ? { hosting: leaningsOf(n).hosting * 0.4 } : leaningsOf(n), free.get(n)!, now), to) : 0));
-    return name ? { name, free: free.get(name) ?? this.timeFor(name, now, most) } : null;
+    // Each one's time, and how keen they are with it, worked out once.
+    const free = new Map<string, number>();
+    const keen = new Map<string, number>();
+    for (const n of from) {
+      const a = up.get(n)!;
+      if (!a.activity) continue;
+      const time = this.timeFor(n, now, most, a.minutes);
+      free.set(n, time);
+      keen.set(n, a.activity * keenTo(this.urge(n, newcomer ? { hosting: leaningsOf(n).hosting * 0.4 } : leaningsOf(n), time, now), to));
+    }
+    const name = nextName(this.saved.recent, Math.random, from, (n) => keen.get(n) ?? 0);
+    return { name, free: free.get(name) ?? this.timeFor(name, now, most) };
   }
 
   /** How long `name` has (ms): as long as they feel like playing, unless bedtime comes first (they may stay on a little past it). */
-  private timeFor(name: string, now: number, most = shiftLength(Math.random)) {
-    const bed = (minutesAwake(name, now) + between(0, 25)) * MIN;
+  private timeFor(name: string, now: number, most = shiftLength(Math.random), awake = minutesAwake(name, now)) {
+    const bed = (awake + between(0, 25)) * MIN;
     return Math.max(10 * MIN, Math.min(most, bed));
   }
 

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { pack } from 'peerjs-js-binarypack';
 import {
   CursorOutbox,
+  moveOn,
   trailAt,
   GAME_ANCHOR,
   GAME_DEPTH,
@@ -293,4 +294,42 @@ test("a pointer over something shows whether its player can click it: their answ
   // Not a button at all.
   assert.equal(clickableFor({ ...s, phase: 'question' }, 'c', 'row:1'), null);
   assert.equal(clickableFor({ ...s, phase: 'question' }, 'c', 'game'), null);
+});
+
+test('a pointer drawn on another screen: a quick move is followed, a jump held', () => {
+  // At sixty frames a second, drawn as PeerCursors.svelte draws it: gliding after its place, which it trails the
+  // further the quicker it goes.
+  const FRAME = 1000 / 60;
+  const glide = (dt: number) => 1 - Math.exp(-dt / 35);
+  const run = (place: (t: number) => [number, number, number], ms: number, dt = () => FRAME) => {
+    let [px, py, code] = place(0);
+    const was = { px, py, qx: px, qy: py, pdt: 0, code };
+    let x = px;
+    let y = py;
+    let jumps = 0;
+    for (let t = 0; t < ms; ) {
+      const d = dt();
+      t += d;
+      [px, py, code] = place(t);
+      if (moveOn(was, px, py, code, d)) jumps++;
+      x += (px - x) * glide(d);
+      y += (py - y) * glide(d);
+    }
+    return { jumps, lag: Math.hypot(px - x, py - y) };
+  };
+  // A quick reach (a flick, 8 px a ms at its peak, eased in and out), on one element and then onto another.
+  const reach = (t: number): [number, number, number] => {
+    const k = Math.min(1, t / 300);
+    const e = k * k * (3 - 2 * k);
+    return [100 + 1600 * e, 500, e < 0.8 ? 16 : 17];
+  };
+  assert.equal(run(reach, 600).jumps, 0);
+  // Its place put onto another element 60 px apart on this screen, at rest: a jump; 20 px apart, not.
+  assert.equal(run((t) => (t < 200 ? [500, 500, 16] : [560, 500, 17]), 400).jumps, 1);
+  assert.equal(run((t) => (t < 200 ? [500, 500, 16] : [520, 500, 17]), 400).jumps, 0);
+  // Leaping on the same element (made anew elsewhere): a jump.
+  assert.equal(run((t) => (t < 200 ? [500, 500, 16] : [900, 500, 16]), 400).jumps, 1);
+  // Across a frame long in coming (a tab held up), it can't be told: none.
+  let n = 0;
+  assert.equal(run((t) => (t < 230 ? [500, 500, 16] : [900, 500, 16]), 800, () => (++n === 14 ? 400 : FRAME)).jumps, 0);
 });

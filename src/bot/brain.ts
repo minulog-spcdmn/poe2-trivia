@@ -18,6 +18,7 @@
 // Pure functions of their inputs and a random source, so tests can pin them.
 
 import { PLAIN_HAND, type HandStyle } from './motion.ts';
+import { seededBy } from './util.ts';
 import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
 
 export type Rng = () => number;
@@ -207,14 +208,7 @@ export function knowChance(p: Persona, ask: Ask): number {
  */
 export function itemDraw(seed: string, item: string | null): number | null {
   if (!seed || !item) return null;
-  // FNV-1a, then one round of mulberry32 (as identities.ts seededBy).
-  let h = 2166136261;
-  const text = `${seed}:knows:${item}`;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-  let t = ((h >>> 0) + 0x6d2b79f5) >>> 0;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
+  return seededBy(`${seed}:knows:${item}`)();
 }
 
 /** The share of the time a known item slips its mind, or an unknown one comes to it, all the same (a fresh draw over its own). */
