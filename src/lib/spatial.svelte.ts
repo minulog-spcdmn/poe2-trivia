@@ -15,7 +15,8 @@
 // ±30° from where you sit, about where a pair of stereo speakers stands. The
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
-import { HALL_SECONDS, bedsAt, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
+import { HALL_SECONDS, bedsAt, db, filter, placeAt, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
+import { strataAt } from './descent';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -247,9 +248,10 @@ function pointOf(el: Element | null | undefined, x?: number) {
   let cx = x;
   if (el) {
     const r = el.getBoundingClientRect();
-    if (!r.width && !r.height) return null;
-    const mid = r.left + r.width / 2;
-    cx = x === undefined ? mid : (mid + x) / 2;
+    if (r.width || r.height) {
+      const mid = r.left + r.width / 2;
+      cx = x === undefined ? mid : (mid + x) / 2;
+    }
   }
   if (cx === undefined) return null;
   const s = screen();
@@ -262,9 +264,45 @@ const ease = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 
 let bus: { ac: AudioContext; master: AudioNode } | null = null;
 export const spatialMix = () => bus;
 
-/** The mix's output switches. */
-type Out = { ac: AudioContext; plain: GainNode; crossed: GainNode; stereo: GainNode; mono: GainNode };
+/**
+ * The mix's output (`user`, the bus's), straight to the speakers, or while
+ * crossfeed or one speaker is on (the lab's listening aids, `aids`, built
+ * the first time) through them, their switches set; the game has both off,
+ * so its mix never runs through them.
+ */
+type Aids = { input: GainNode; plain: GainNode; crossed: GainNode; stereo: GainNode; mono: GainNode };
+type Out = { ac: AudioContext; user: GainNode; aids: Aids | null; through: boolean };
 let out: Out | null = null;
+
+/** The listening aids: crossfeed (or not), then a sum to one speaker (or not), to the speakers. */
+function aids(ac: AudioContext): Aids {
+  const input = ac.createGain();
+  const plain = gainNode(ac, 1);
+  const crossed = gainNode(ac, 0);
+  input.connect(plain);
+  const split = ac.createChannelSplitter(2);
+  const merge = ac.createChannelMerger(2);
+  input.connect(split);
+  for (const ch of [0, 1]) {
+    split.connect(merge, ch, ch);
+    const delay = ac.createDelay(0.01);
+    delay.delayTime.value = CROSSFEED.delay;
+    split.connect(filter(ac, 'lowpass', CROSSFEED.lp), ch).connect(delay).connect(gainNode(ac, CROSSFEED.gain)).connect(merge, 0, 1 - ch);
+  }
+  merge.connect(gainNode(ac, 1 / (1 + CROSSFEED.gain * 0.5))).connect(crossed);
+  const stereo = gainNode(ac, 1);
+  const mono = gainNode(ac, 0);
+  mono.channelCount = 1;
+  mono.channelCountMode = 'explicit';
+  mono.channelInterpretation = 'speakers';
+  for (const o of [plain, crossed]) {
+    o.connect(stereo);
+    o.connect(mono);
+  }
+  stereo.connect(ac.destination);
+  mono.connect(ac.destination);
+  return { input, plain, crossed, stereo, mono };
+}
 /** The ambience loops spread wide, playing now (widen): how much of each is centred and how much spread. */
 const spreads = new Set<{ centred: GainNode; spread: GainNode }>();
 const spreadWanted = () => spatial.wideBeds && !spatial.today;
@@ -279,10 +317,19 @@ function applyMix() {
   if (!out) return;
   const t = out.ac.currentTime;
   const cross = spatial.crossfeed && !spatial.today;
-  out.plain.gain.setTargetAtTime(cross ? 0 : 1, t, 0.02);
-  out.crossed.gain.setTargetAtTime(cross ? 1 : 0, t, 0.02);
-  out.stereo.gain.setTargetAtTime(spatial.mono ? 0 : 1, t, 0.02);
-  out.mono.gain.setTargetAtTime(spatial.mono ? 1 : 0, t, 0.02);
+  const through = cross || spatial.mono;
+  if (through) {
+    const a = (out.aids ??= aids(out.ac));
+    a.plain.gain.setTargetAtTime(cross ? 0 : 1, t, 0.02);
+    a.crossed.gain.setTargetAtTime(cross ? 1 : 0, t, 0.02);
+    a.stereo.gain.setTargetAtTime(spatial.mono ? 0 : 1, t, 0.02);
+    a.mono.gain.setTargetAtTime(spatial.mono ? 1 : 0, t, 0.02);
+  }
+  if (through !== out.through) {
+    out.through = through;
+    out.user.disconnect();
+    out.user.connect(through ? out.aids!.input : out.ac.destination);
+  }
   const wide = spreadWanted();
   for (const s of spreads) {
     s.centred.gain.setTargetAtTime(wide ? 0 : 1, t, 0.3);
@@ -308,7 +355,7 @@ type Rooms = {
   playing: Map<string, { conv: ConvolverNode; gain: GainNode; idle?: ReturnType<typeof setTimeout> }>;
 };
 let rooms: Rooms | null = null;
-/** The rooms of the places sounding now, once worked out: a megabyte or two each, let go of with their convolvers once their places have gone by. */
+/** The rooms of the places sounding now and the next one down, once worked out: a megabyte or two each, let go of once their places have gone by. */
 const roomBufs = new Map<string, AudioBuffer>();
 const working = new Set<string>();
 /** Delve's depth as the ambience hears it (0: not in Delve, the hall). */
@@ -321,6 +368,16 @@ function roomsWanted() {
   if (spatial.today || !spatial.rooms || depthNow < 1) return [];
   return bedsAt(depthNow).beds.filter((b) => ROOMS[b.place]);
 }
+
+/** The next place down from the depth (null outside Delve or with rooms off): its room is worked out ahead, as its bed is fetched (lib/sound.ts prefetchBeds). */
+function roomNext() {
+  if (spatial.today || !spatial.rooms || depthNow < 1) return null;
+  const place = placeAt(strataAt(depthNow).stratum + 1);
+  return ROOMS[place] ? place : null;
+}
+
+/** A room worth keeping: its place sounds now, or comes next. */
+const roomKept = (place: string) => place === roomNext() || roomsWanted().some((w) => w.place === place);
 
 /** Brings the rooms to the depth and the settings: each place's at its share, the hall making up the rest (and standing in for one not yet worked out). */
 function tuneRooms() {
@@ -357,9 +414,13 @@ function tuneRooms() {
       wetOf(r.ac).disconnect(p.conv);
       p.gain.disconnect();
       r.playing.delete(place);
-      roomBufs.delete(place);
+      if (!roomKept(place)) roomBufs.delete(place);
     }, 12_000);
   }
+  // The next place's room, worked out ahead; any other not playing, let go of.
+  const next = roomNext();
+  if (next) work(next);
+  for (const place of roomBufs.keys()) if (!r.playing.has(place) && !roomKept(place)) roomBufs.delete(place);
   const hallShare = Math.sqrt(Math.max(0, 1 - covered));
   r.hall.gain.setTargetAtTime(hallShare, t, ROOM_EASE);
   feedHall(r, hallShare > 0.001);
@@ -389,7 +450,7 @@ function feedHall(r: Rooms, wanted: boolean) {
   }
 }
 
-/** Works a place's room out a little at a time while the page is idle (lib/acoustics.ts roomSteps), then brings it in, if its place still sounds. */
+/** Works a place's room out a little at a time while the page is idle (lib/acoustics.ts roomSteps), then keeps it (bringing it in), if its place still sounds or comes next. */
 function work(place: string) {
   const r = rooms;
   if (!r || roomBufs.has(place) || working.has(place)) return;
@@ -399,7 +460,7 @@ function work(place: string) {
     const s = steps.next();
     if (!s.done) return whenIdle(next, { fallback: 300 });
     working.delete(place);
-    if (!roomsWanted().some((w) => w.place === place)) return;
+    if (!roomKept(place)) return;
     roomBufs.set(place, s.value);
     tuneRooms();
   };
@@ -413,39 +474,14 @@ const placer: Placer = {
     tuneRooms();
   },
   /**
-   * The mix's output, through crossfeed (or not) and a sum to one speaker
-   * (or not), to the speakers; and the reverb send, through the game's hall
-   * at its share and the rooms beside it.
+   * The mix's output, to the speakers as it is (through the listening aids
+   * only while one is on, applyMix); and the reverb send, through the game's
+   * hall at its share and the rooms beside it.
    */
   mount({ ac, master, wet, reverb, out: user }) {
     mix = master;
     send = wet;
-    user.disconnect();
-    const plain = gainNode(ac, 1);
-    const crossed = gainNode(ac, 0);
-    user.connect(plain);
-    const split = ac.createChannelSplitter(2);
-    const merge = ac.createChannelMerger(2);
-    user.connect(split);
-    for (const ch of [0, 1]) {
-      split.connect(merge, ch, ch);
-      const delay = ac.createDelay(0.01);
-      delay.delayTime.value = CROSSFEED.delay;
-      split.connect(filter(ac, 'lowpass', CROSSFEED.lp), ch).connect(delay).connect(gainNode(ac, CROSSFEED.gain)).connect(merge, 0, 1 - ch);
-    }
-    merge.connect(gainNode(ac, 1 / (1 + CROSSFEED.gain * 0.5))).connect(crossed);
-    const stereo = gainNode(ac, 1);
-    const mono = gainNode(ac, 0);
-    mono.channelCount = 1;
-    mono.channelCountMode = 'explicit';
-    mono.channelInterpretation = 'speakers';
-    for (const o of [plain, crossed]) {
-      o.connect(stereo);
-      o.connect(mono);
-    }
-    stereo.connect(ac.destination);
-    mono.connect(ac.destination);
-    out = { ac, plain, crossed, stereo, mono };
+    out = { ac, user, aids: null, through: false };
 
     // The game's own hall (its response set a moment after, lib/sound.ts audio), at its share, and the rooms beside it.
     reverb.disconnect();
@@ -467,7 +503,7 @@ const placer: Placer = {
     const seconds = to ? (edge ? BLAST_SWEEP.seconds : (where?.seconds ?? 0)) : 0;
     const big = s.size && WIDE.has(name);
     const far = where?.far && !DISTANT.has(name) ? s.far : 0;
-    if (!from && !big && !far) {
+    if (!from && !to && !big && !far) {
       listener?.({ begin: start, seconds: 0.8, az: () => 0, far: 0, wide: false });
       return null;
     }
