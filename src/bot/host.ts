@@ -16,6 +16,7 @@ import { fiddled, lonelyLength, otherPrefs, type Identity, type Mode, type RoomP
 import { hostEyes, moodOf, Player } from './player';
 import { HOST_ODDS, staysOn } from './brain';
 import type { HostExit } from './choice';
+import { Afk } from './afk';
 import { between, log, playersLine, time } from './util';
 
 /** Everyone else gone mid-game this long (they may only be reloading): back to the lobby. */
@@ -127,6 +128,8 @@ export class Host {
   private sulking = false;
   /** Whether (and when) the host fiddles with the rules in this lobby, once someone is there. */
   private fiddle: { at: number } | null = null;
+  /** Tabbing out while the lobby is empty (afk.ts). */
+  private readonly afk: Afk;
 
   /**
    * `stint`: theirs (saved through `keep` whenever it changes); `modes`: the
@@ -140,6 +143,7 @@ export class Host {
   ) {
     who.prefs = stint.prefs;
     this.player = new Player(who.persona, hostEyes);
+    this.afk = new Afk(who.persona);
   }
 
   get role() {
@@ -170,6 +174,7 @@ export class Host {
 
   /** Closes the room: everyone is told, and nothing is saved to reopen. */
   close() {
+    this.afk.stop();
     session.leave();
     dropSave();
   }
@@ -230,13 +235,15 @@ export class Host {
       if (gone) return gone;
     }
     if (s.phase !== 'lobby' || anyone) this.lonelySince = 0;
+    // Alone in the lobby, now and then another tab; back soon once someone comes (or a game is on).
+    this.afk.tick(now, s.phase === 'lobby' && !anyone, anyone || s.phase !== 'lobby', s.phase !== 'lobby');
     let exit: { exit: HostExit; why: string } | null = null;
     if (s.phase === 'lobby') this.lobby(s, humans.map((p) => p.id), now);
     else if (s.phase === 'over') exit = this.over(s, now, anyone, timeUp);
     else this.inGame(now, humans.length > 0);
     if (exit) return exit;
-    // As things stand after the host's own moves just now (a start, a restart).
-    if (session.state) this.player.play(session.state);
+    // As things stand after the host's own moves just now (a start, a restart); nothing while away.
+    if (session.state && !this.afk.isAway) this.player.play(session.state);
     return null;
   }
 
@@ -287,6 +294,8 @@ export class Host {
     // Company at last: now and then the host fiddles with the rules before it starts, as people do.
     if (!key) this.fiddle = null;
     else if (!this.fiddle) this.fiddle = { at: Math.random() < FIDDLE_CHANCE && this.who.prefs.mode !== 'delve' ? now + between(3000, 8000) : 0 };
+    // (Not while away: the rules change from the room, by someone in it; once back, a little later.)
+    if (this.fiddle?.at && this.afk.isAway) this.fiddle.at = Math.max(this.fiddle.at, now + between(1500, 4000));
     if (this.fiddle?.at && now >= this.fiddle.at) {
       this.fiddle.at = 0;
       const c = (this.who.prefs = fiddled(this.who.prefs, Math.random));
@@ -295,6 +304,8 @@ export class Host {
       log(`changes the rules to ${rulesText(c)}`);
       this.startAt = Math.max(this.startAt, now + between(3000, 7000));
     }
+    // Away when someone came: they start only a while after they're back.
+    if (this.afk.isAway) this.startAt = Math.max(this.startAt, now + between(3000, 6000));
     if (key && now >= this.startAt && !this.lastGame) {
       log(`starting with ${s.players.length} players`);
       this.lobbyKey = '';

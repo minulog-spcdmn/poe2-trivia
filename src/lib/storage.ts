@@ -20,6 +20,12 @@ export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documen
  */
 export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-zones');
 /**
+ * The spatial sound page (spatial.html, src/spatialPage: dev and beta builds
+ * only) runs the lab's game too, marked `<html data-lab data-spatial>`: its
+ * keys start apart from the lab's in the same way.
+ */
+export const SPATIAL_PAGE = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-spatial');
+/**
  * The end screen's test page (endscreen.html, src/endscreenPreview: dev and
  * beta builds only) marks its page `<html data-endscreen>`: the codex and the
  * Delve records it writes for each state start apart, never over the game's.
@@ -45,12 +51,35 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '') + (END_PREVIEW ? 'endscreen.' : '');
+/** The channel's start, before any page's own. */
+const CHANNEL = BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.';
+export const STORE =
+  CHANNEL +
+  (LAB ? 'lab.' : '') +
+  (ZONES_PREVIEW ? 'zones.' : '') +
+  (SPATIAL_PAGE ? 'spatial.' : '') +
+  (BACKDROP_TOOL ? 'backdrops.' : '') +
+  (BOT ? 'bot.' : '') +
+  (END_PREVIEW ? 'endscreen.' : '');
+/** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
+export const LAB_STORE = CHANNEL + 'lab.';
 
 export type Area = 'local' | 'session';
 
 /** The whole key for a name, as other tabs see it in storage events. */
 export const storeKey = (name: string) => STORE + name;
+
+/**
+ * Calls each handler when another tab writes its value (by whole key, as
+ * storeKey gives it) or clears storage; returns what stops listening.
+ */
+export function onStoredElsewhere(handlers: Record<string, () => void>): () => void {
+  const on = (e: StorageEvent) => {
+    for (const [key, fn] of Object.entries(handlers)) if (e.key === key || e.key === null) fn();
+  };
+  addEventListener('storage', on);
+  return () => removeEventListener('storage', on);
+}
 
 const area = (where: Area) => (where === 'local' ? localStorage : sessionStorage);
 

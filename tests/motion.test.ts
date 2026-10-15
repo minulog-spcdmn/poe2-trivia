@@ -155,3 +155,57 @@ test('a stretch of waiting now and then begins partway in, at a rest', () => {
   }
   assert.ok(starts.size > 1);
 });
+
+test('a left hand replays the recorded moves mirrored, but clicks and rests where the right hand did on what it was after', async () => {
+  const { mirrored, recordedOf, rollHandStyle, LEFT_HANDED } = await import('../src/bot/motion.ts');
+  const data = (await import('../src/data/botMotion.json', { with: { type: 'json' } })).default as { episodes: Record<string, unknown>[] };
+  const click = data.episodes.find((e) => e.kind === 'answer') as never as import('../src/bot/motion.ts').ClickStretch;
+  const m = mirrored(click);
+  assert.equal(mirrored(click), m);
+  assert.equal(recordedOf(m), click);
+  assert.equal(recordedOf(click), click);
+  for (let i = 0; i < click.lead.length; i += 2) {
+    assert.equal(m.lead[i], 1000 - click.lead[i]);
+    assert.equal(m.lead[i + 1], click.lead[i + 1]);
+  }
+  assert.equal(m.reach[0], 1000 - click.reach[0]);
+  assert.deepEqual(m.aim, click.aim);
+  assert.deepEqual(m.dwells, click.dwells);
+  const [l, t, r, b, w, h] = click.src;
+  assert.deepEqual(m.src, [w - r, t, w - l, b, w, h]);
+  const wait = data.episodes.find((e) => e.kind === 'wait') as never as import('../src/bot/motion.ts').StreamStretch;
+  assert.equal(mirrored(wait).path[0], 1000 - wait.path[0]);
+  // Which hand isn't the hand style's to roll: the cast has its share (identities.ts leftHanders, bot.test.ts).
+  assert.equal(rollHandStyle(Math.random).left, undefined);
+  assert.ok(LEFT_HANDED > 0 && LEFT_HANDED < 0.1);
+});
+
+test('a wait through a card and a question is replayed for the screen it is on, from where the hand is', () => {
+  // Recorded: four samples on the cards' frame, then four on the answers' (another frame on the recorded screen).
+  const e = {
+    kind: 'wait' as const,
+    src: [400, 300, 1600, 700, 2000, 1000],
+    then: [300, 250, 1700, 900, 2000, 1000],
+    switchAt: 4,
+    path: [100, 100, 120, 110, 140, 120, 160, 130, 500, 500, 520, 510, 540, 520, 560, 530],
+    presses: [50, 260],
+  };
+  const box: [number, number, number, number] = [250, 300, 750, 650];
+  const hand = { x: 300, y: 820 };
+  for (const on of ['cards', 'answers'] as const) {
+    const { track, presses } = streamTrack(e, (src) => within(hand, box, src), 0, 1, undefined, undefined, [0, 0], on);
+    // Its own part only, in that part's frame throughout.
+    assert.equal(track.t.length, 4);
+    assert.ok(track.src.every((s) => s === (on === 'cards' ? e.src : e.then)));
+    // Begun where the hand is: no jump.
+    const first = place(track.u[0], track.v[0], box, track.src[0]);
+    assert.ok(Math.hypot(first.x - hand.x, first.y - hand.y) < 1e-6, JSON.stringify(first));
+    // The part's own click at nothing.
+    assert.deepEqual(presses, on === 'cards' ? [50] : [60]);
+  }
+  // A part too short to replay alone: the whole, each sample in its own frame.
+  const short = { ...e, switchAt: 1 };
+  const { track } = streamTrack(short, (src) => within(hand, box, src), 0, 1, undefined, undefined, [0, 0], 'cards');
+  assert.equal(track.t.length, 8);
+  assert.ok(track.src[0] === e.src && track.src.slice(1).every((s) => s === e.then));
+});

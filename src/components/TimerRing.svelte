@@ -228,7 +228,7 @@
         const crossed = lastSecs !== null && secs < lastSecs;
         lastSecs = secs;
         if (crossed && secs <= warn && secs > 0) {
-          sfx('tick');
+          sfx('tick', { from: { from: el } });
           if (el) timerTick((tickedOn = el), secs, !delve);
         }
       }

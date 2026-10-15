@@ -12,6 +12,7 @@
     delveDeaths,
     delveSummary,
     findStats,
+    leadingKind,
     mergeClimbs,
     milestones,
     otherRules,
@@ -38,7 +39,7 @@
   // one panel per topic (what kills you and the deadliest items, then where
   // you fall, your runs together, finds and wards, the zones you reached),
   // and every run in the Collection's table. Alone and together are never
-  // summed: alone leads (together, before a run alone), and each figure says
+  // summed: the kind played most leads (codexStats.ts leadingKind), and each figure says
   // which it counts. Under the current rules only (runs under others are only
   // listed), but for what the codex keeps by item or in its log, not by run:
   // what kills you, the deadliest items, finds and wards (their notes say
@@ -51,13 +52,12 @@
   const usual = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
   const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
 
-  // ---- alone first, together beside it ----
+  // ---- the kind played most first, the other beside it ----
 
   const solo = $derived(delveSummary(records, 'solo'));
   const together = $derived(delveSummary(records, 'together'));
-  /** Alone leads, unless there is only together. */
-  const alone = $derived(solo.runs > 0 || !!solo.best || !(together.runs > 0 || together.best));
-  const kind: DelveKind = $derived(alone ? 'solo' : 'together');
+  const kind: DelveKind = $derived(leadingKind(solo, together));
+  const alone = $derived(kind === 'solo');
   const main = $derived(alone ? solo : together);
   const other = $derived(alone ? together : solo);
   const kindWord = $derived(alone ? 'alone' : 'together');
@@ -101,7 +101,7 @@
   /** A note's parts, joined by bullets: a number (none for 0) and its words. */
   type Row = { name: string; value: string; note: [number, string][] };
 
-  /** Together: your part in the team's runs (what the summary leaves to alone, when alone leads). */
+  /** Together: your part in the team's runs (what the summary leaves out, when alone leads). */
   const teamRows = $derived.by(() => {
     const t = together;
     const out: Row[] = [];

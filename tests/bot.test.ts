@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HOST_ODDS, answerDelay, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
+import { HOST_ODDS, afterSeeing, answerDelay, carryCap, digsOn, glanceTime, inspects, readingTime, revives, skillShown, itemDraw, knowsIt, rollEye, shareInView, sightNeeded, thinkTime, blasts, chooseAnswer, chooseCard, findAppetite, guessChance, misclicks, moodOf, movesOn, panic, pickDelay, rethinks, staysOn, tiredness, urgentSeconds, withTheHerd, knowChance, makePersona, pickCategory, weighted, wrongPick, type Ask, type Persona } from '../src/bot/brain.ts';
 import { createGame, rulesFor, type GameState, type Item, type Preset } from '../src/lib/game.ts';
 import { PLAIN_HAND } from '../src/bot/motion.ts';
 import { readFileSync } from 'node:fs';
-import { MODES, NAMES, buildOf, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
+import { DEFAULT_RULES, MODES, NAMES, buildOf, leftHanders, fiddled, identityOf, leaningsOf, lonelyLength, modesFrom, namesFor, nextName, otherPrefs, rollPrefs, shiftLength } from '../src/bot/identities.ts';
 import { joinable, makesWay, nextRole, notJoinable, waitingAlone, wanted, watchable } from '../src/bot/wanted.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 import { afterHosting, afterVisit, appeal, hesitation, joinsAfter, keenTo, opensRoom, playsOn, settlesFor, sourNow, urgeToHost } from '../src/bot/choice.ts';
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
+import { VISITORS, asNewcomer, visitorsFor } from '../src/bot/visitors.ts';
+import { activity, minutesAwake, nightOf, rhythmOf } from '../src/bot/sleep.ts';
 
 function seeded(seed: number) {
   return () => {
@@ -18,7 +20,7 @@ function seeded(seed: number) {
   };
 }
 
-const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND };
+const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND, eye: 1, seed: '', gamble: 0.3, sense: 0.8, curious: 0.3 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
 const ask = (over: Partial<Ask> = {}): Ask => ({ rules: plainRules, category: 'Rings', veil: 0, gray: false, mirrored: false, clock: 32, mode: 'turns', ...over });
 /** A question as a preset room asks it (a deathmatch's with `harder`). */
@@ -161,12 +163,14 @@ test('weighted picks follow the weights', () => {
 
 test('every name passes the name checks as it is, and none looks like another or says bot', () => {
   const skeletons = new Set<string>();
-  for (const n of NAMES) {
+  for (const n of [...NAMES, ...VISITORS]) {
     assert.equal(cleanName(n), n);
     assert.ok(Array.from(n).length <= MAX_NAME, n);
     assert.equal(nameProblem(n, []), null, n);
     assert.ok(!isHeldName(n), n);
     assert.ok(!/bot/i.test(n), n);
+    // Not to be used, however they're spelt (people the game's players know).
+    for (const no of ['Zoe', 'KingOfNothing']) assert.ok(!nameSkeleton(n).includes(nameSkeleton(no)), n);
     assert.ok(!skeletons.has(nameSkeleton(n)), n);
     skeletons.add(nameSkeleton(n));
   }
@@ -608,4 +612,299 @@ test('a seat opens the lowest numbered room free, as many as it takes, or up to 
   assert.equal(nextRole([1], 2), 2);
   assert.equal(nextRole([1, 2], 2), null);
   assert.equal(nextRole([], 0), null);
+});
+
+test('knowing an item is the player\'s own: the same items known every time, as often as the chance says', () => {
+  assert.equal(itemDraw('Morgrim', 'abc'), itemDraw('Morgrim', 'abc'));
+  assert.notEqual(itemDraw('Morgrim', 'abc'), itemDraw('Velka', 'abc'));
+  assert.equal(itemDraw('', 'abc'), null);
+  assert.equal(itemDraw('Morgrim', null), null);
+  const rng = seeded(31);
+  // All told, as likely as the chance.
+  let known = 0;
+  const items = Array.from({ length: 4000 }, (_, i) => `item${i}`);
+  for (const it of items) if (knowsIt(0.8, itemDraw('Morgrim', it), rng)) known++;
+  assert.ok(Math.abs(known / items.length - 0.8) < 0.03, `${known}`);
+  // One item, asked again and again: nearly always the same way.
+  const again = (it: string) => Array.from({ length: 400 }, () => knowsIt(0.8, itemDraw('Morgrim', it), rng)).filter(Boolean).length / 400;
+  const odds = items.slice(0, 40).map(again);
+  assert.ok(odds.every((o) => o > 0.85 || o < 0.15), `${odds}`);
+});
+
+test('a wrong pick falls for look-alike art too', () => {
+  const rng = seeded(12);
+  const names = ['', '', '', ''];
+  const counts = [0, 0, 0, 0];
+  for (let i = 0; i < 3000; i++) counts[wrongPick(names, 0, [], rng, [null, 0.1, 0.9, 0.1])!]++;
+  assert.equal(counts[0], 0);
+  assert.ok(counts[2] > 2 * counts[1] && counts[2] > 2 * counts[3], `${counts}`);
+  // Names and art: whichever is closer counts.
+  const named = ['Ventor\'s Gamble', 'Ventor\'s Gambit', 'Kaom\'s Heart', 'Andvarius'];
+  const c2 = [0, 0, 0, 0];
+  for (let i = 0; i < 3000; i++) c2[wrongPick(named, 0, [], rng, [null, 0, 0, 1])!]++;
+  assert.ok(c2[3] > c2[2] && c2[1] > c2[2], `${c2}`);
+});
+
+test('burning in, how much it needs to see: about a quarter knowing it, less for a favourite, most of it not knowing it, spread wide', () => {
+  const rng = seeded(5);
+  const med = (f: () => number) => {
+    const v = Array.from({ length: 2001 }, f).sort((a, b) => a - b);
+    return v[1000];
+  };
+  const a = preset('merciless');
+  const fav = med(() => sightNeeded(plain, { ...a, favourite: true }, true, rng).share);
+  const known = med(() => sightNeeded(plain, a, true, rng).share);
+  const unknown = med(() => sightNeeded(plain, a, false, rng).share);
+  // As recorded: knowing it, about a quarter of it (13 to 32% on a slow burn); not knowing it, most of it.
+  assert.ok(fav < known && known > 0.2 && known < 0.35 && unknown > 0.75, `${fav} ${known} ${unknown}`);
+  // Crowded by look-alikes, a little more.
+  const deep = { ...a, gray: true, mirrored: true, rules: { ...a.rules, similarNames: 1, fakes: 3, lookalikes: 0.72 } };
+  assert.ok(med(() => sightNeeded(plain, deep, true, rng).share) > known);
+  // A sharp eye goes on less, now and then under 15%.
+  const sharp = { ...plain, eye: 0.6 };
+  assert.ok(med(() => sightNeeded(sharp, a, true, rng).share) < known);
+  const low = Array.from({ length: 2000 }, () => sightNeeded(sharp, a, true, rng).share).filter((x) => x < 0.15).length;
+  assert.ok(low > 300, `${low}`);
+  for (let i = 0; i < 500; i++) {
+    const n = sightNeeded(plain, a, i % 2 === 0, rng).share;
+    assert.ok(n >= 0.03 && n <= 1);
+  }
+  // Only the trigger-happy go before they're sure.
+  assert.ok(Array.from({ length: 500 }, () => sightNeeded(plain, a, true, rng)).every((x) => !x.early));
+  assert.ok(Array.from({ length: 500 }, () => sightNeeded({ ...plain, haste: 1 }, a, true, rng)).some((x) => x.early));
+  // Eyes: most near the typical player's.
+  const eyes = Array.from({ length: 1000 }, () => rollEye(rng));
+  assert.ok(eyes.every((e) => e >= 0.45 && e <= 2));
+  assert.ok(eyes.filter((e) => e > 0.7 && e < 1.4).length > 600);
+});
+
+test('after making it out, a moment to click: quicker knowing it', () => {
+  const rng = seeded(8);
+  const a = preset('merciless');
+  const avg = (knows: boolean) => Array.from({ length: 2000 }, () => afterSeeing(plain, a, knows, rng)).reduce((x, y) => x + y) / 2000;
+  assert.ok(avg(true) < avg(false));
+  assert.ok(avg(true) > 500 && avg(true) < 1500, `${avg(true)}`);
+});
+
+test('the share of a burning-in picture in view grows with each patch\'s burn', () => {
+  const lin = (p: number) => Math.min(1, Math.max(0, p));
+  assert.equal(shareInView([], 1000, 500, 10, lin), 0);
+  assert.equal(shareInView([0, 0], 1000, 500, 4, lin), 0.5);
+  assert.equal(shareInView([0, 750], 1000, 500, 4, lin), 0.375);
+  assert.equal(shareInView([0], 0, 0, 0, lin), 1);
+});
+
+test('newcomers: a share for each seat, and a little less sure, slower, keen on hosting less', () => {
+  const shares = [1, 2, 3].map((slot) => visitorsFor(slot, 3));
+  assert.deepEqual(shares.flat().sort(), [...VISITORS].sort());
+  const items: Pick<Item, 'id' | 'group' | 'category'>[] = Array.from({ length: 60 }, (_, i) => ({ id: `i${i}`, group: `g${i % 5}`, category: i % 2 ? 'One Hand Weapons' : 'Rings' }));
+  for (const n of VISITORS.slice(0, 30)) {
+    const who = identityOf(n, ['A'], undefined, items);
+    const fresh = asNewcomer(who);
+    assert.deepEqual(asNewcomer(who), fresh);
+    assert.ok(fresh.persona.newcomer && !who.persona.newcomer);
+    assert.ok(fresh.persona.skill < who.persona.skill);
+    assert.ok(fresh.persona.pace > who.persona.pace);
+    assert.ok(fresh.persona.hosting <= who.persona.hosting);
+    assert.ok(fresh.persona.favourites.length < Math.max(1, who.persona.favourites.length));
+  }
+});
+
+test('everyone keeps their own hours: asleep some of each day, the same from one look to the next', () => {
+  const HOUR = 3600000;
+  const monday = Date.UTC(2026, 9, 12);
+  for (const n of [...NAMES, ...VISITORS]) {
+    assert.deepEqual(rhythmOf(n), rhythmOf(n));
+    const hours = Array.from({ length: 24 * 7 }, (_, h) => activity(n, monday + h * HOUR));
+    const asleep = hours.filter((a) => a === 0).length;
+    // Five to twelve hours a night on average, whatever their habits.
+    assert.ok(asleep >= 7 * 4 && asleep <= 7 * 13, `${n}: ${asleep}`);
+    assert.ok(hours.every((a) => a >= 0 && a <= 1));
+    for (let h = 0; h < 24 * 7; h += 5) {
+      const t = monday + h * HOUR;
+      assert.equal(activity(n, t) === 0, minutesAwake(n, t) === 0, `${n} ${h}`);
+    }
+  }
+  // Up till the bedtime minutesAwake gives, and no longer: also for those adrift, whose bedtime can come more than a day after its night's day.
+  for (const n of [...NAMES, ...VISITORS].filter((n) => rhythmOf(n).habit === 'adrift'))
+    for (let t = monday; t < monday + 30 * 24 * HOUR; t += 3 * HOUR + 7 * 60000) {
+      const m = minutesAwake(n, t);
+      if (m) assert.ok(activity(n, t + (m - 5) * 60000) > 0 && activity(n, t + (m + 5) * 60000) === 0, `${n} ${new Date(t).toISOString()}: ${m}`);
+    }
+  // Names that say where they're from are up at that place's hours.
+  assert.equal(rhythmOf('まったり').zone, 9);
+  assert.equal(rhythmOf('Саня').zone, 3);
+  assert.equal(rhythmOf('老王').zone, 8);
+});
+
+test('late nights: now and then on a weeknight, more often at the weekend', () => {
+  const late = (weekend: boolean) => {
+    let n = 0;
+    let all = 0;
+    for (const name of NAMES) {
+      const r = rhythmOf(name);
+      if (r.habit === 'adrift') continue;
+      for (let d = 20000; d < 20280; d++) {
+        const wd = new Date(d * 86400000).getUTCDay();
+        if ((wd === 5 || wd === 6) !== weekend) continue;
+        all++;
+        if (nightOf(name, r, d).from - d * 86400000 > (r.bed + 1.5) * 3600000) n++;
+      }
+    }
+    return n / all;
+  };
+  const [weeknight, weekend] = [late(false), late(true)];
+  assert.ok(weeknight > 0.05 && weekend > 2 * weeknight, `${weeknight} ${weekend}`);
+});
+
+test('the next to come on is never one who wouldn\'t, while anyone would', () => {
+  const rng = seeded(4);
+  const pool = ['a', 'b', 'c', 'd', 'e', 'f'];
+  for (let i = 0; i < 200; i++) assert.equal(nextName(['b', 'c'], rng, pool, (n) => (n === 'b' ? 1 : 0)), 'b');
+  for (let i = 0; i < 200; i++) assert.ok(['d', 'e'].includes(nextName(['b'], rng, pool, (n) => (n === 'd' || n === 'e' || n === 'b' ? 1 : 0))));
+});
+
+test('away in a lobby: only with nothing to do, and back within seconds once wanted', async () => {
+  const { Afk } = await import('../src/bot/afk.ts');
+  const quiet = console.log;
+  console.log = () => {};
+  try {
+    let tabbed = 0;
+    for (const n of NAMES.slice(0, 40)) {
+      const afk = new Afk({ ...plain, seed: n });
+      let t = 0;
+      // A busy lobby: never away.
+      for (; t < 20 * 60000; t += 1000) {
+        afk.tick(t, false, true);
+        assert.ok(!afk.isAway);
+      }
+      // Alone for half an hour: some tab out.
+      let wasAway = false;
+      for (; t < 50 * 60000; t += 1000) {
+        afk.tick(t, true, false);
+        wasAway ||= afk.isAway;
+      }
+      if (wasAway) tabbed++;
+      while (!afk.isAway && wasAway) afk.tick((t += 1000), true, false);
+      if (!afk.isAway) continue;
+      // Someone joins and goes again before they notice: the next to join waits on them as long.
+      afk.tick((t += 1000), false, true);
+      afk.tick((t += 1000), true, false);
+      if (!afk.isAway) continue;
+      t += 60000;
+      // Someone joins: back within ten seconds (but not at once); a game starts: within four.
+      const from = t;
+      while (afk.isAway) afk.tick((t += 250), false, true);
+      assert.ok(t - from <= 10250 && t - from >= 2500, `${n}: ${t - from}`);
+      afk.stop();
+    }
+    assert.ok(tabbed > 10 && tabbed < 40, `${tabbed}`);
+  } finally {
+    console.log = quiet;
+  }
+});
+
+test('hosts lean to Delve a little, and mostly keep the game\'s own rules; newcomers keep the first room the game sets up', () => {
+  const rng = seeded(77);
+  const rolls = Array.from({ length: 4000 }, () => rollPrefs(rng));
+  const share = (f: (p: (typeof rolls)[number]) => boolean) => rolls.filter(f).length / rolls.length;
+  assert.ok(share((p) => p.mode === 'delve') > share((p) => p.mode === 'turns') && share((p) => p.mode === 'turns') > share((p) => p.mode === 'race'));
+  assert.ok(share((p) => p.mode === 'delve') < 0.6);
+  const own = share((p) => p.difficulty === DEFAULT_RULES.difficulty && p.target === DEFAULT_RULES.target && p.timer === DEFAULT_RULES.timer);
+  assert.ok(own > 0.5 && own < 0.7, `${own}`);
+  const firsts = VISITORS.map((n) => asNewcomer(identityOf(n, ['A'])).prefs);
+  assert.ok(firsts.filter((p) => p.mode === 'delve').length > VISITORS.length * 0.75);
+  // Where Delve isn't allowed, as they would anyway.
+  for (const n of VISITORS) assert.notEqual(asNewcomer(identityOf(n, ['A'], ['turns']), ['turns']).prefs.mode, 'delve');
+});
+
+test('names read as players\' do: hardly any food, animals or game jokes; newcomers typed quicker than regulars', () => {
+  const share = (list: string[], re: RegExp) => list.filter((n) => re.test(n)).length / list.length;
+  // As on the PoE2 ladder (about 1% each, visitors.ts): a few at most, never a theme.
+  const food = /waffle|toast|pickle|noodle|muffin|bagel|taco|kebab|pretzel|mango|pierogi|gnocchi|nacho|schnitzel|wurst|kartoffel|ramen|potato|cheese|soup|coffee|snack|kimchi|dumpling/i;
+  const animal = /walrus|badger|hedgehog|gecko|otter|toad|raccoon|pigeon|hamster|snail|penguin|goose|sloth|bison|moose|squid|crab|turtle|hippo|goblin|gremlin/i;
+  const game = /poe|exile|ssf|slam|flask|waystone|breach|exalt|divine|chaos|loot|trade/i;
+  for (const list of [NAMES, VISITORS])
+    for (const re of [food, animal, game]) assert.ok(share(list, re) <= 0.03, `${re}: ${share(list, re)}`);
+  // A first visit's name: mostly lowercase and short; a regular's, a handle kept for years.
+  const lower = (list: string[]) => share(list, /^[^A-Z]*$/);
+  const avg = (list: string[]) => list.reduce((a, n) => a + Array.from(n).length, 0) / list.length;
+  assert.ok(lower(VISITORS) > 0.75 && lower(NAMES) < 0.5, `${lower(VISITORS)} ${lower(NAMES)}`);
+  assert.ok(avg(VISITORS) < avg(NAMES));
+});
+
+test('opening an item\'s details: now and then, most after a miss, more for the curious', () => {
+  const rng = seeded(41);
+  const rate = (p: Persona, how: 'missed' | 'unknown' | 'known') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
+  const curious = { ...plain, curious: 0.9 };
+  const not = { ...plain, curious: 0.05 };
+  assert.ok(rate(curious, 'missed') > rate(curious, 'unknown') && rate(curious, 'unknown') > rate(curious, 'theirs') && rate(curious, 'theirs') > rate(curious, 'known'));
+  assert.ok(rate(curious, 'missed') > rate(not, 'missed'));
+  assert.ok(rate(curious, 'missed') < 0.8 && rate(not, 'known') < 0.02);
+  // As recorded: about one in sixteen of the others' questions, for a fairly curious player.
+  assert.ok(Math.abs(rate({ ...plain, curious: 0.35 }, 'theirs') - 0.062) < 0.02);
+  const reads = Array.from({ length: 4000 }, () => readingTime({ ...plain, curious: 0.35 }, rng)).sort((a, b) => a - b);
+  assert.ok(reads[2000] > 4500 && reads[2000] < 7500 && reads[3900] > 12000 && reads[100] > 3000, `${reads[100]} ${reads[2000]} ${reads[3900]}`);
+  // Opened by accident (a click too late): a glance, as recorded.
+  const glances = Array.from({ length: 1000 }, () => glanceTime({ ...plain, pace: 1 }, rng));
+  assert.ok(Math.min(...glances) >= 1450 && Math.max(...glances) <= 2300);
+});
+
+test('digging a vein on: careful players mostly get out, gamblers and the careless often dig on', () => {
+  const rng = seeded(55);
+  const stake = { haul: 1, lives: 3, wards: 0, light: 5, affinity: 0, teammates: 0 };
+  const rate = (p: Persona, d = stake) => Array.from({ length: 4000 }, () => digsOn(p, d, rng)).filter(Boolean).length / 4000;
+  const careful = { ...plain, gamble: 0.05, sense: 0.95 };
+  const gambler = { ...plain, gamble: 0.95, sense: 0.8 };
+  const careless = { ...plain, gamble: 0.2, sense: 0.1 };
+  assert.ok(rate(careful) < 0.2, `${rate(careful)}`);
+  assert.ok(rate(gambler) > 0.4 && rate(careless) > 0.3, `${rate(gambler)} ${rate(careless)}`);
+  // On a lamp all but out, the careful hardly ever; the careless hardly mind.
+  const dark = { ...stake, light: 1.5 };
+  assert.ok(rate(careful, dark) < 0.06 && rate(careless, dark) > 0.25, `${rate(careful, dark)} ${rate(careless, dark)}`);
+});
+
+test('Delve together with people: however many bots, the team does as well as the people would with a little help', () => {
+  assert.equal(carryCap([], 4), 1);
+  const team = (k: number, n: number) => 1 - (1 - k) * (1 - carryCap([k], n)) ** n;
+  for (const k of [0.3, 0.5, 0.8]) {
+    const one = team(k, 1);
+    for (const n of [2, 3, 5, 8]) assert.ok(Math.abs(team(k, n) - one) < 1e-9, `${k} ${n}`);
+    // A little help, never a carry: well short of what a full table of good bots would do.
+    assert.ok(one < 1 - (1 - k) * 0.05 && one > k);
+  }
+  // What they show moves it: a fair player's to begin with.
+  assert.ok(Math.abs(skillShown({ right: 0, wrong: 0, out: 0 }) - 0.7) < 1e-9);
+  assert.ok(skillShown({ right: 0, wrong: 4, out: 2 }) < 0.3);
+  assert.ok(skillShown({ right: 8, wrong: 0, out: 0 }) > 0.9);
+  // Most give a life to a teammate who perished, not all, not always.
+  const rng = seeded(3);
+  const rate = (sociable: number) => Array.from({ length: 4000 }, () => revives({ ...plain, sociable }, rng)).filter(Boolean).length / 4000;
+  assert.ok(rate(0) > 0.35 && rate(0) < 0.55 && rate(1) > 0.8 && rate(1) < 0.95);
+});
+
+test('the cast has its share of left hands, always the same people', () => {
+  const cast = [...NAMES, ...VISITORS];
+  const left = leftHanders(cast);
+  assert.equal(left.size, Math.round(0.04 * cast.length));
+  assert.deepEqual([...leftHanders(cast)].sort(), [...left].sort());
+  // As they play: the regulars' share and the newcomers', each its own, from who they are alone.
+  const plays = (n: string) => (VISITORS.includes(n) ? asNewcomer(identityOf(n, ['A'])) : identityOf(n, ['A'])).persona.hand.left;
+  assert.equal(NAMES.filter(plays).length, Math.round(0.04 * NAMES.length));
+  assert.equal(VISITORS.filter(plays).length, Math.round(0.04 * VISITORS.length));
+  assert.deepEqual(cast.map(plays), cast.map(plays));
+});
+
+test('in a race, players answer quicker, as recorded', () => {
+  const rng = seeded(61);
+  const a = preset('eternal');
+  const med = (f: () => number) => Array.from({ length: 2001 }, f).sort((x, y) => x - y)[1000];
+  const t = med(() => answerDelay(plain, a, true, rng)!);
+  const r = med(() => answerDelay(plain, { ...a, mode: 'race' }, true, rng)!);
+  assert.ok(r < t * 0.9, `${t} ${r}`);
+});
+
+test('the think time on the art shown whole, the floor of a burning-in answer: there even where a race would sit it out', () => {
+  const rng = seeded(91);
+  for (let i = 0; i < 500; i++) assert.ok(thinkTime(plain, ask({ mode: 'race', clock: 16 }), false, rng) >= 1000);
 });

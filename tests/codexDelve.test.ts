@@ -10,6 +10,7 @@ import {
   delveDeaths,
   delveSummary,
   findStats,
+  leadingKind,
   livesLost,
   medianOfCounts,
   mergeClimbs,
@@ -196,6 +197,25 @@ test('the summary counts from tallies: ends and runs left, a usual depth from MI
     [2, 1, null, 60, 6, 1, 2, 3, 1],
   );
   assert.equal('wins' in together, false, 'nobody wins');
+});
+
+test('the page leads with the kind played most; on a tie the deeper, then alone', () => {
+  let rec = emptyRecords();
+  const lead = () => leadingKind(delveSummary(rec, 'solo'), delveSummary(rec, 'together'));
+  assert.equal(lead(), 'solo', 'nothing yet');
+  rec = addRun(rec, team({ id: 1, at: 1, depth: 20, losses: [20] })).records;
+  assert.equal(lead(), 'together', 'never alone');
+  rec = addRun(rec, run({ id: 2, at: 2, depth: 5, losses: [1, 2, 5] })).records;
+  assert.equal(lead(), 'together', 'one each, together deeper');
+  rec = addRun(rec, team({ id: 3, at: 3, depth: 8, losses: [8], left: true })).records;
+  rec = addRun(rec, run({ id: 4, at: 4, depth: 40, losses: [1, 2, 40] })).records;
+  assert.equal(lead(), 'solo', 'two each, alone deeper');
+  rec = addRun(rec, team({ id: 5, at: 5, depth: 3, losses: [3] })).records;
+  assert.equal(lead(), 'together', 'played together most, though alone went deeper');
+  rec = emptyRecords();
+  rec = addRun(rec, run({ id: 6, at: 6, depth: 9, losses: [1, 2, 9] })).records;
+  rec = addRun(rec, team({ id: 7, at: 7, depth: 9, losses: [9] })).records;
+  assert.equal(lead(), 'solo', 'a tie all round: alone');
 });
 
 test('lives lost and wards saved count over the same runs: those of one kind, under these rules', () => {

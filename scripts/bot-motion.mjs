@@ -23,6 +23,8 @@
 // themselves stay out of the repo: only these paths go in.
 //
 //   node scripts/bot-motion.mjs recording.json [more.json...]
+//   node scripts/bot-motion.mjs --add recording.json [...]   (adds to the library as it is,
+//   for recordings made since: the earlier ones stay out of the repo)
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -33,12 +35,15 @@ const PAUSE_MS = 150;
 const REST_SAMPLES = 4;
 const OUT = new URL('../src/data/botMotion.json', import.meta.url);
 
-const files = process.argv.slice(2);
+const args = process.argv.slice(2);
+const adding = args.includes('--add');
+const files = args.filter((a) => a !== '--add');
 if (!files.length) {
-  console.error('usage: node scripts/bot-motion.mjs recording.json [more.json...]');
+  console.error('usage: node scripts/bot-motion.mjs [--add] recording.json [more.json...]');
   process.exit(2);
 }
 
+const before = adding ? JSON.parse(readFileSync(OUT, 'utf8')).episodes : [];
 const episodes = [];
 for (const file of files) {
   const r = JSON.parse(readFileSync(file, 'utf8'));
@@ -119,7 +124,11 @@ for (const file of files) {
     else {
       const dealt = s.dealAt ? layouts.find((l) => l.t >= s.t && l.t <= end && Object.keys(l.boxes).some(isCard))?.t : undefined;
       const t = dealt ?? s.t;
-      spans.push({ phase: s.phase, round: s.round, turn: s.turn, mine: s.mine, players: s.players, mode: s.question?.mode, n: s.question?.labels.length ?? s.offered.length, t, end });
+      // Delve together (and a race, whose categories the game draws), every card and question is the player's own
+      // to vote on or answer, whose seat the screens lean on or not (Scene.mine says only that); while they stand.
+      const together = (s.mode === 'delve' && s.players > 1) || s.mode === 'race';
+      const own = s.lives === 0 ? false : s.mine || together;
+      spans.push({ phase: s.phase, round: s.round, turn: s.turn, mine: own, together, players: s.players, mode: s.question?.mode, n: s.question?.labels.length ?? s.offered.length, t, end });
     }
   });
 
@@ -135,7 +144,8 @@ for (const file of files) {
     const reachAt = Math.max(span.t, Math.min(T[Math.max(0, i)], d[0] - 120));
     const lead = path(span.t, reachAt, () => f);
     const reach = path(reachAt, d[0], () => f);
-    if (!lead || !reach) return;
+    // (A click the moment the screen came: no reach to replay.)
+    if (!lead || !reach || reach.length < 4) return;
     const hit = prefix ? boxAt(d[0], d[3], d[4], prefix) : null;
     const aim = hit ? rel(d[3], d[4], hit[1]) : rel(d[3], d[4], f);
     // Where the lead rested: [first sample, last sample, on which (its index; -1: none), where on it across, down].
@@ -170,7 +180,7 @@ for (const file of files) {
   // Someone else's turn: their card and their question, as one stretch, with its clicks at nothing.
   for (let i = 0; i < spans.length; i++) {
     const a = spans[i];
-    if (a.mine || a.players < 2 || a.phase !== 'choosing') continue;
+    if (a.mine || a.together || a.players < 2 || a.phase !== 'choosing') continue;
     const b = spans[i + 1]?.phase === 'question' && !spans[i + 1].mine ? spans[i + 1] : a;
     const from = a.t + 300;
     const to = b.end;
@@ -203,6 +213,9 @@ for (const file of files) {
   }
 }
 
-const count = (kind) => episodes.filter((e) => e.kind === kind).length;
-writeFileSync(OUT, JSON.stringify({ v: 1, step: STEP, episodes }) + '\n');
-console.log(`${episodes.length} stretches: ${['card', 'answer', 'next', 'wait', 'lobby'].map((k) => `${count(k)} ${k}`).join(', ')}`);
+const count = (list, kind) => list.filter((e) => e.kind === kind).length;
+const all = [...before, ...episodes];
+writeFileSync(OUT, JSON.stringify({ v: 1, step: STEP, episodes: all }) + '\n');
+const kinds = ['card', 'answer', 'next', 'wait', 'lobby'];
+console.log(`${episodes.length} stretches cut: ${kinds.map((k) => `${count(episodes, k)} ${k}`).join(', ')}`);
+if (adding) console.log(`the library now: ${all.length} (${kinds.map((k) => `${count(all, k)} ${k}`).join(', ')})`);

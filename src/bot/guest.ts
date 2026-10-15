@@ -23,6 +23,7 @@ import { appeal, settlesFor, type Visit } from './choice';
 import { joinable, notJoinable, waitingAlone, watchable } from './wanted';
 import { moodOf, Player } from './player';
 import { lastReading, sight } from './sight';
+import { Afk } from './afk';
 import { between, log, playersLine } from './util';
 
 /** A host alone in their lobby this long (ms, from..to, rolled for each room) gets company. */
@@ -35,6 +36,8 @@ const ASK_AGAIN: [number, number] = [3000, 8000];
 const WAIT_PREFERRED: [number, number] = [3000, 10000];
 /** Games played in a room before leaving (from..to). */
 const GAMES: [number, number] = [1, 3];
+/** A newcomer's: trying it out. */
+const NEW_GAMES: [number, number] = [1, 2];
 /** A room left isn't joined again from the same seat for this long. */
 export const AGAIN_AFTER_MS = 60 * 60000;
 /** The chance, each game, that they have to go before the end. */
@@ -45,6 +48,8 @@ const JOIN_GIVE_UP_MS = 45000;
 const HOST_GONE_MS = 30000;
 /** A lobby whose host doesn't start in this long is left (ms, from..to). */
 const LOBBY_PATIENCE: [number, number] = [5 * 60000, 9 * 60000];
+/** Waiting in a lobby this long before they may tab out. */
+const LOBBY_BORED_MS = 45000;
 /** Nothing to join for this long (ms, from..to): they give up looking. */
 const LOOK_PATIENCE: [number, number] = [4 * 60000, 10 * 60000];
 
@@ -89,6 +94,8 @@ export class Guest {
   private played = 0;
   private won = false;
   private lastMood: Mood = 'even';
+  /** Tabbing out while a host takes their time to start (afk.ts). */
+  private readonly afk: Afk;
 
   /**
    * `visited`: the rooms the seat was in, and when it left (shared by
@@ -107,7 +114,9 @@ export class Guest {
     readonly until: number,
     private readonly prefer = '',
     private readonly watching = false,
-  ) {}
+  ) {
+    this.afk = new Afk(who.persona);
+  }
 
   /** A room they could come into: to play, or (watching) to watch. */
   private canJoin(r: RoomInfo) {
@@ -215,7 +224,7 @@ export class Guest {
     this.player = this.watching ? null : new Player(this.who.persona, sight);
     this.room = room;
     this.waiting.delete(room.code);
-    this.gamesLeft = between(...GAMES);
+    this.gamesLeft = between(...(this.who.persona.newcomer ? NEW_GAMES : GAMES));
     this.doing = 'joining';
     this.joinBy = Date.now() + JOIN_GIVE_UP_MS;
     log(`${this.who.name} ${this.watching ? 'watches' : 'joins'} ${room.host}'s room ${room.code} (${room.mode}), for ${this.gamesLeft} game${this.gamesLeft > 1 ? 's' : ''}`);
@@ -246,6 +255,7 @@ export class Guest {
   /** Leaves the room they're in (or on their way into), if any. */
   leave(now: number) {
     this.gone = true;
+    this.afk.stop();
     if (this.room) {
       this.visited.set(this.room.code, now);
       void releaseRoom?.(this.room.code);
@@ -297,7 +307,9 @@ export class Guest {
     }
     this.lostSince = 0;
     if (!s || session.status !== 'ready') return null;
-    this.player?.play(s);
+    // Long in a lobby whose host hasn't started, now and then another tab; back quickly once the game starts.
+    this.afk.tick(now, s.phase === 'lobby' && !!this.lobbySince && now - this.lobbySince > LOBBY_BORED_MS, s.phase !== 'lobby', true);
+    if (!this.afk.isAway) this.player?.play(s);
     this.notePhase(s.phase);
     if (s.phase === 'lobby') {
       this.lobbySince ||= now;
