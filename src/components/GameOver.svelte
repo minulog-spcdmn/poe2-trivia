@@ -106,7 +106,14 @@
   /** The rune circle's diameter. */
   const circle = $derived(phone.current ? 340 : short.current ? 380 : 470);
   /** How far up the circle the headline rides. */
-  const over = $derived(run ? (solo ? 0.3 : 0.25) : short.current ? 0.37 : 0.36);
+  /**
+   * Rows under "Where your lives went", from the run itself (the codex that
+   * names them is read a moment later): each life lost, each given. Many of
+   * them, and the rows close up (and from five the headline rides a little
+   * higher on the circle), so the page still fits the window.
+   */
+  const lifeRows = $derived(run && self ? (run.losses[self]?.length ?? 0) + (run.revives ?? []).filter((v) => v.by === self).length : 0);
+  const over = $derived(run ? (solo ? 0.3 : lifeRows >= 5 ? 0.3 : 0.25) : short.current ? 0.37 : 0.36);
   const avatarSize = $derived(Math.round(circle * (solo ? 0.25 : 0.23)));
   /** Together: every delver round the heart, as large as fits (at most 17% of the circle). */
   const ring = $derived.by(() => {
@@ -127,6 +134,8 @@
   });
   /** A run short of your best, and anyone watching one together: the circle in worn grey (the gold through saturate(.25) brightness(.85)). */
   const dim = $derived(!!run && !bright);
+  /** The party's plates: the avatar as large as the plate leaves room for, with the same space round it on the left as above and below. */
+  const plateAvatar = $derived(phone.current ? 30 : short.current ? (delvers.length > 6 ? 25 : 30) : delvers.length > 6 ? 30 : 34);
   const twoCols = $derived(!phone.current && s.players.length > (short.current ? 5 : 7));
   const chartH = $derived(phone.current ? 170 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
 
@@ -560,7 +569,7 @@
       {:else if run && self && lives.length}
         <section class="sec yours lives-sec" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
           <h3>Where your lives went</h3>
-          <ul class="lives" class:many={lives.length >= 4}>
+          <ul class="lives" class:many={Math.max(lives.length, lifeRows) >= 4} class:lots={Math.max(lives.length, lifeRows) >= 5}>
             {#each lives as l, i (i)}
               <li>
                 {#if l.kind === 'given'}
@@ -643,12 +652,12 @@
             {/each}
           </ol>
         {:else if together}
-          <ul class="plates" class:pair={delvers.length === 2} class:many={delvers.length > 6} data-cursor="standings" bind:this={standingsEl}>
+          <ul class="plates" class:pair={delvers.length === 2} class:many={delvers.length > 6} style:--av="{plateAvatar}px" data-cursor="standings" bind:this={standingsEl}>
             {#each delvers as d, i (d.id)}
               {@const p = s.players.find((x) => x.id === d.id)}
               {#if p}
                 <li class:you={d.id === me} class:gone={!p.connected} data-cursor="row:{s.players.indexOf(p)}" in:fly={{ y: 8, duration: 400, delay: 500 + i * 60 }}>
-                  <Avatar name={p.name} hue={p.hue} size={delvers.length > 6 ? 30 : 34} dim={!p.connected} />
+                  <Avatar name={p.name} hue={p.hue} size={plateAvatar} dim={!p.connected} />
                   <span class="who-col">
                     <span class="name"><PlayerName name={p.name} />{#if d.id === me}<em class="you">&nbsp;(you)</em>{/if}</span>
                     <span class="dep">Depth <b class="n">{shownDepth(d.depth)}</b></span>
@@ -778,6 +787,11 @@
   .side.centred {
     align-self: center;
   }
+  /* Nothing under it: the circle stands whole, not fading into a column that isn't there. */
+  .side.centred .veil {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
   .board {
     width: 600px;
     flex: none;
@@ -861,6 +875,13 @@
     -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent);
     mask-image: radial-gradient(closest-side, #000 70%, transparent);
     pointer-events: none;
+    /* It only darkens the circle's lines behind the words: it comes in as the circle draws itself, or it shows as a dark smudge first. */
+    animation: scrim-in 1.4s 0.5s ease-out both;
+  }
+  @keyframes scrim-in {
+    from {
+      opacity: 0;
+    }
   }
   h1 {
     margin: 0;
@@ -1117,7 +1138,22 @@
     gap: 10px;
   }
   .lives.many {
-    gap: 6px;
+    gap: 5px;
+  }
+  .lives.lots {
+    gap: 3px;
+  }
+  .lives-sec:has(.many) {
+    margin-top: 1rem;
+  }
+  .lives.many .what {
+    line-height: 1.1;
+  }
+  .lives.lots .title {
+    font-size: 0.98em;
+  }
+  .lives.lots .where {
+    font-size: 0.78em;
   }
   .lives li {
     display: flex;
@@ -1130,8 +1166,11 @@
   .lives .thumb {
     flex: none;
   }
-  .together .lives.many {
-    --t: 42px;
+  .lives.many {
+    --t: 38px;
+  }
+  .lives.lots {
+    --t: 32px;
   }
   .thumb.given,
   .thumb.blank {
@@ -1293,19 +1332,21 @@
   .plates.pair {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* The avatar inset from the plate's left end as far as from its top and bottom (--av, the avatar's size). */
   .plates li {
+    --ph: 48px;
     display: flex;
     align-items: center;
     gap: 0.55rem;
     min-width: 0;
-    height: 48px;
-    padding: 0 0.7rem 0 0.35rem;
+    height: var(--ph);
+    padding: 0 0.7rem 0 calc((var(--ph) - 2px - var(--av)) / 2);
     border-radius: 999px;
     background: rgba(12, 10, 8, 0.75);
     border: 1px solid var(--line);
   }
   .plates.many li {
-    height: 44px;
+    --ph: 44px;
   }
   .plates li.you {
     border-color: rgba(224, 138, 68, 0.85);
@@ -1634,14 +1675,17 @@
   .short .lives {
     --t: 42px;
   }
-  .short.together .lives.many {
-    --t: 36px;
+  .short .lives.many {
+    --t: 32px;
+  }
+  .short .lives.lots {
+    --t: 28px;
   }
   .short .plates li {
-    height: 42px;
+    --ph: 42px;
   }
   .short .plates.many li {
-    height: 35px;
+    --ph: 35px;
   }
   .short .plates.many {
     gap: 5px;
@@ -1738,13 +1782,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .phone .plates li {
-    height: 42px;
+    --ph: 42px;
   }
   .phone .chart-row {
     flex-direction: column;
     align-items: flex-start;
   }
-  .phone .lives {
+  .phone .lives:not(.many) {
     --t: 46px;
   }
   .phone .foot {
