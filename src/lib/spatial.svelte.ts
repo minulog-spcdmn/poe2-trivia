@@ -16,7 +16,7 @@
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
 import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
-import { roomPlan, screenX, travel } from './spatialPlan';
+import { hoverStep, roomPlan, screenX, travel } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -51,9 +51,20 @@ export type Spatial = {
   crossfeed: boolean;
   /** Heard as one speaker would (a phone's): both sides summed. */
   mono: boolean;
+  /**
+   * The hover (the most frequent sound, now placed so it stands out more:
+   * heard apart from the ambience, and from a new place each time): its
+   * level (dB, against its own), dry (close and small: no brightening at the
+   * near ear, no side reverb and little room), and quieter on repeats (each
+   * in a quick sweep across controls a step quieter, spatialPlan.ts
+   * hoverStep). Its direction is as any sound's from the same control.
+   */
+  hoverDb: number;
+  hoverDry: boolean;
+  hoverRepeats: boolean;
 };
 
-/** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only). */
+/** The mix chosen by ear (on the lab's pages): the head model at ±36°, teammates 35% off, everything else on but crossfeed (for headphones only), and the hover a touch quieter, dry and quieter on repeats. */
 export const CHOSEN: Spatial = {
   today: false,
   renderer: 'head',
@@ -66,6 +77,9 @@ export const CHOSEN: Spatial = {
   rooms: true,
   crossfeed: false,
   mono: false,
+  hoverDb: -2.5,
+  hoverDry: true,
+  hoverRepeats: true,
 };
 
 /** The settings in play: the chosen mix; the lab's pages change them to tune it. */
@@ -167,7 +181,7 @@ function haas(ac: AudioContext): Place {
  * the near ear a touch brighter. No change in tone for a sound in front,
  * unlike HRTF.
  */
-function headModel(ac: AudioContext): Place {
+function headModel(ac: AudioContext, plain = false): Place {
   const e = ears(ac, 0.002);
   return {
     input: e.input,
@@ -175,7 +189,8 @@ function headModel(ac: AudioContext): Place {
     at(az, t, r) {
       const theta = clamp1(az) * (Math.PI / 2);
       const s = Math.abs(Math.sin(theta));
-      e.set(clamp1(az), t, r, (HEAD / SOUND) * (Math.abs(theta) + s), -10 * s, 1 - 0.3 * s, 2 * s);
+      // (`plain`: the near ear not brightened, for a dry hover.)
+      e.set(clamp1(az), t, r, (HEAD / SOUND) * (Math.abs(theta) + s), -10 * s, 1 - 0.3 * s, plain ? 0 : 2 * s);
     },
   };
 }
@@ -224,7 +239,13 @@ function wide(ac: AudioContext): Place {
   return { input, output: p, at: (az, t, r) => move(p.pan, clamp1(az), t, r) };
 }
 
-const PLACES: Record<Renderer, (ac: AudioContext) => Place> = { pan: panned, haas, head: headModel, hrtf: binaural };
+/** The renderers; `plain` asks for no brightening (only the head model has any). */
+const PLACES: Record<Renderer, (ac: AudioContext, plain?: boolean) => Place> = { pan: panned, haas, head: headModel, hrtf: binaural };
+
+/** A dry hover's share of the room (a little: it is close). */
+const HOVER_ROOM = 0.3;
+/** The pointer's last hover, for its next to step down from in a sweep (spatialPlan.ts hoverStep). */
+let lastHover: ReturnType<typeof hoverStep> | null = null;
 
 /** The game's screen (the whole window, or left of the lab's panel), measured once and again only after it changes size: not for every sound. */
 let screenBox: DOMRect | null = null;
@@ -505,7 +526,9 @@ const placer: Placer = {
     const xAt = travel(from, to, seconds, s.moving, !!edge);
     const az = (t: number) => xAt(t) * s.width;
 
-    const place = big ? wide(ac) : PLACES[s.renderer](ac);
+    const hover = name === 'hover';
+    const dryHover = hover && s.hoverDry;
+    const place = big ? wide(ac) : PLACES[s.renderer](ac, dryHover);
     place.output.connect(mixOf(ac));
     // Dry: far off (duller, quieter), then placed.
     const dry = ac.createGain();
@@ -518,7 +541,17 @@ const placer: Placer = {
     let toRoom: AudioNode = wet;
     if (far) toRoom = toRoom.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far) * (1 + 0.6 * far)));
     toRoom.connect(sendPan).connect(wetOf(ac));
-    const sendAz = (t: number) => (s.sideReverb ? clamp1(az(t)) * SIDE_REVERB : 0);
+    const sendAz = (t: number) => (s.sideReverb && !dryHover ? clamp1(az(t)) * SIDE_REVERB : 0);
+    if (hover) {
+      // At its level, a step quieter in a pointer's sweep (not the draw's hops, which pass no pointer), dry and close.
+      let level = s.hoverDb;
+      if (s.hoverRepeats && where?.x !== undefined) {
+        lastHover = hoverStep(lastHover, start);
+        level += lastHover.db;
+      }
+      dry.gain.value = db(level);
+      wet.gain.value = db(level) * (dryHover ? HOVER_ROOM : 1);
+    }
 
     const set = (t: number, ramp: boolean) => {
       place.at(az(t), start + t, ramp);

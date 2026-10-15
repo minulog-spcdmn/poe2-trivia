@@ -84,6 +84,15 @@
     <input type="range" min="0" max="1" step="0.05" bind:value={spatial.far} aria-label="How far off teammates are" style:--fill="{spatial.far * 100}%" />
     <i class="num">{Math.round(spatial.far * 100)}% off</i>
   </div>
+  <div class="line">
+    <span class="lbl">Hover</span>
+    <input type="range" min="-8" max="0" step="0.5" bind:value={spatial.hoverDb} aria-label="Hover level" style:--fill="{((spatial.hoverDb + 8) / 8) * 100}%" />
+    <i class="num">{spatial.hoverDb.toFixed(1)} dB</i>
+  </div>
+  <div class="toggles">
+    <label><input type="checkbox" bind:checked={spatial.hoverDry} /> Dry hover</label>
+    <label><input type="checkbox" bind:checked={spatial.hoverRepeats} /> Quiet repeats</label>
+  </div>
   <div class="toggles">
     <label><input type="checkbox" bind:checked={spatial.moving} /> Moving</label>
     <label><input type="checkbox" bind:checked={spatial.size} /> Size (blast, cave-in)</label>

@@ -39,6 +39,22 @@ export function travel(from: number | null, to: number | null, seconds: number, 
   return (t) => a + (b - a) * along(t);
 }
 
+/** A pointer's hovers this close together (s) are a sweep across controls. */
+export const HOVER_SWEEP = 0.5;
+/** How much quieter (dB) each hover in a sweep comes than the one before, and how many steps down it goes at most. */
+export const HOVER_STEP = 2;
+export const HOVER_STEPS = 4;
+
+/**
+ * A pointer's hover at `now` (s), after the one before (`prev`): in a sweep
+ * across controls each comes a step quieter than the last, down to a floor;
+ * after a pause it is back to full. Its step, and how much quieter (dB).
+ */
+export function hoverStep(prev: { at: number; step: number } | null, now: number): { at: number; step: number; db: number } {
+  const step = prev && now - prev.at < HOVER_SWEEP ? Math.min(prev.step + 1, HOVER_STEPS) : 0;
+  return { at: now, step, db: step ? -HOVER_STEP * step : 0 };
+}
+
 /**
  * The rooms at a Delve depth (with rooms `on`): the places sounding, each
  * with its share (as the beds have them), the next place down (its room
