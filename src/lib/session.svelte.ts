@@ -2161,7 +2161,9 @@ class Session {
     const me = this.myPlayerId;
     for (const n of delveNotices(prev, next)) this.delveNotice(n, next);
     // Delve: dynamite blasted the question away for a new one, heard on every screen.
-    if (blastedAway(prev, next)) sfx('blast');
+    // It bursts in from the screen edge the new question comes from (lib/blastAway.ts).
+    const blast = blastedAway(prev, next);
+    if (blast) sfx('blast', { from: { edge: blast.side } });
     const started = runSeenStarting(prev, next);
     if (started !== null) this.runStarted = started;
     if ((prev.phase === 'lobby' || prev.phase === 'over') && (next.phase === 'choosing' || next.phase === 'question')) {
@@ -2191,7 +2193,8 @@ class Session {
     // (your own is heard as you pick it, and in the phial).
     if (next.delve && next.phase === 'question' && next.question && prev.question?.askedAt === next.question.askedAt) {
       const before = prev.question.struck?.length ?? 0;
-      if ((next.question.struck ?? []).slice(before).some((x) => x.by !== me)) sfx('struck');
+      // From farther off, unless everyone plays at this screen (hot-seat).
+      if ((next.question.struck ?? []).slice(before).some((x) => x.by !== me)) sfx('struck', { from: { far: this.mode !== 'local' } });
     }
     if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
       const r = next.reveal;

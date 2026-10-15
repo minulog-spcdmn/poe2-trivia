@@ -142,7 +142,7 @@
   function vote(category: string) {
     const i = s.offered.indexOf(category);
     if (!canVote || !faceUp(i) || myVote === category) return;
-    sfx('vote');
+    sfx('vote', { from: { from: cardEls[i] } });
     // The card's hover fire goes out: it stands lit as yours now (.voted).
     burning?.stop();
     burning = null;
@@ -203,7 +203,7 @@
       if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
       else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
       else if (frame) onCards(() => cardPicked(frame, card, others, false));
-      sfx(kind === 'azurite' ? 'veinStrike' : 'draw');
+      sfx(kind === 'azurite' ? 'veinStrike' : 'draw', { from: { from: card } });
     };
     // The cards in the draw: those with votes, in their order.
     const tickets = s.offered.flatMap((c, i) => (votersOf(c).length ? [i] : []));
@@ -238,7 +238,7 @@
         lit = i;
         const frame = cardEls[i]?.querySelector('.frame');
         if (frame) onCards(() => raffleHop(frame));
-        sfx('hover');
+        sfx('hover', { from: { from: cardEls[i] } });
       }
       drawFrame = requestAnimationFrame(step);
     };
@@ -579,7 +579,7 @@
     if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
     else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
     else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
-    sfx(kind === 'azurite' ? 'veinStrike' : 'pick');
+    sfx(kind === 'azurite' ? 'veinStrike' : 'pick', { from: { from: cardEls[i] } });
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
