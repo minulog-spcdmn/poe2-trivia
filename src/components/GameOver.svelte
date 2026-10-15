@@ -790,7 +790,10 @@
     width: 100%;
     max-width: 1440px;
     margin: 0 auto;
-    padding: 33px max(20px, (min(100%, 1440px) - 1200px) / 2) 0;
+    /* Both columns start on the lobby panel's top line, at every window height: the lobby centres its 724 px of columns in
+       what the header and the legal links under it leave of the window (64.6 and 44.1 px), and never goes nearer the
+       header than its own padding (Lobby.svelte, desktop). So going back to the lobby never moves the panel. */
+    padding: max(clamp(10px, 2.4vh, 40px), (100dvh / var(--stage-zoom, 1) - 64.6px - 44.1px - 724px) / 2) max(20px, (min(100%, 1440px) - 1200px) / 2) 0;
   }
   .side {
     position: relative;
@@ -1707,11 +1710,12 @@
     --sub: 15px;
     --hl: 15px;
   }
-  .short .stage {
-    padding-top: 17px;
-  }
   .short .board {
     padding-block: 16px;
+  }
+  .short .foot {
+    padding-top: 10px;
+    padding-bottom: 14px;
   }
   .short .sec h3,
   .short .board header {
