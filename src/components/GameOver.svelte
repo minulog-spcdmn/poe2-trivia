@@ -401,9 +401,9 @@
   {/each}
 {/snippet}
 
-<!-- The column in front of a line, every mark in it the same size (ICON): an avatar, an item's thumb, or a sign (a find's
-     glyph, the heart of light, the gold diamond) set in a round medallion the size of an avatar, so each line's words start
-     the same distance from what stands before them. -->
+<!-- The column in front of a line, every mark in it about the same size (ICON): an avatar, an item's thumb, or a sign (a
+     find's glyph, the heart of light, the gold diamond) drawn as large, on its own (a round frame would read as a button),
+     so each line's words start the same distance from what stands before them. -->
 {#snippet icon(ic: Icon)}
   <span class="ic" aria-hidden="true">
     {#if 'avatar' in ic && s.players.some((x) => x.id === ic.avatar)}
@@ -1457,15 +1457,12 @@
     width: 26px;
     min-height: 1.35em;
   }
-  /* A sign's medallion: round and dark like an avatar's disc, a fine ring round it. */
+  /* A sign's box: as large as an avatar or a thumb, with nothing drawn round it. */
   .medal {
     display: grid;
     place-items: center;
     width: 26px;
     height: 26px;
-    border-radius: 50%;
-    background: rgba(12, 10, 8, 0.75);
-    border: 1px solid rgba(125, 99, 51, 0.55);
   }
   .mini {
     position: relative;
@@ -1490,16 +1487,17 @@
     object-fit: contain;
   }
   .glyph-ic {
-    --h: 14px;
+    --h: 22px;
     display: inline-flex;
   }
   .heart-ic {
-    width: 18px;
-    height: 18px;
+    width: 26px;
+    height: 26px;
   }
+  /* Turned, its corners reach as far as an avatar's rim. */
   .diamond {
-    width: 8px;
-    height: 8px;
+    width: 15px;
+    height: 15px;
     rotate: 45deg;
     background: linear-gradient(135deg, #f3a565, #c06a2c);
     box-shadow: 0 0 6px rgba(224, 138, 68, 0.45);
