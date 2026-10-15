@@ -787,8 +787,9 @@
   .side.centred {
     align-self: center;
   }
-  /* Nothing under it: the circle stands whole, not fading into a column that isn't there. */
-  .side.centred .veil {
+  /* A normal game with nothing under it (someone watching): the circle stands whole, not fading into a column that isn't
+     there. Delve keeps its fade: its depth rides lower on the circle, so the fade still reads as the circle's foot. */
+  .over:not(.delve) .side.centred .veil {
     -webkit-mask-image: none;
     mask-image: none;
   }
