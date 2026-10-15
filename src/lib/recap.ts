@@ -8,7 +8,7 @@
 // items in their own type: plain text, a number, a player (marked "(you)"
 // for the viewer), an item or a category.
 
-import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, livesOf, shownDepth, teamDepth, type FindKind } from './delve.ts';
+import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, shownDepth, teamDepth, type FindKind } from './delve.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
@@ -33,7 +33,8 @@ export interface Line {
 /** A small number as a word, where a line reads as speech ("four short"); larger ones stay digits (the reveal's own, difficultyText). */
 const word = words;
 const ORDINALS = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth'];
-export const ordinal = (n: number) => ORDINALS[n] ?? `${n}th`;
+/** "first" to "twelfth" in words, past that in figures with their suffix: 13th, 21st, 22nd, 23rd, 111th. */
+export const ordinal = (n: number) => ORDINALS[n] ?? `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 /** Seconds from ms, to a tenth. */
 export const secs = (ms: number) => (Math.round(ms / 100) / 10).toFixed(1);
 
@@ -406,5 +407,5 @@ export function median(xs: number[]): number {
 
 /** Delve together: the delvers in the result's order, each with the depth they last reached and whether they were brought back. */
 export function party(s: GameState) {
-  return delveStandings(s).map((r) => ({ id: r.id, depth: r.depth, revived: r.revived > 0, standing: livesOf(s, r.id) > 0 }));
+  return delveStandings(s).map((r) => ({ id: r.id, depth: r.depth, revived: r.revived > 0 }));
 }

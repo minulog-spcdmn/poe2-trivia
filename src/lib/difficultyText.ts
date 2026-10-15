@@ -16,9 +16,12 @@ import {
   type Inventory,
   type ItemKind,
 } from './delve.ts';
-import { knobsOf, maxFakes, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
+import { knobsOf, maxFakes, type Difficulty, type GameMode, type Knobs, type Settings, type VeilSpeed } from './game.ts';
 
 /** Display names, in the order the lobby offers them. */
+/** The modes by name, as the lobby offers them and the end screen heads its panel. */
+export const MODE_NAMES: Record<GameMode, string> = { turns: 'Take turns', race: 'Race', delve: 'Delve' };
+
 export const DIFFICULTY_NAMES: Record<Difficulty, string> = {
   cruel: 'Cruel',
   merciless: 'Merciless',

@@ -24,7 +24,7 @@
   import { portal } from '../lib/portal';
   import { dock, phone } from '../lib/layout';
   import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
-  import { FIND_RULES, FIND_TEXT } from '../lib/difficultyText';
+  import { FIND_RULES, FIND_TEXT, MODE_NAMES } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
   import { GROUND_Y } from '../lib/runsPlate';
   import { accentAt } from '../lib/descent';
@@ -104,7 +104,7 @@
   /** Something of yours under the circle (otherwise it stands centred against the panel): your game, hot-seat's misses, or where your lives went. */
   const hasYours = $derived(run ? !!self : !!mine || hotMisses.length > 0);
 
-  const modeName = $derived(run ? (solo ? 'Delve alone' : 'Delve together') : s.settings.mode === 'race' ? 'Race' : 'Take turns');
+  const modeName = $derived(run ? `${MODE_NAMES.delve} ${solo ? 'alone' : 'together'}` : MODE_NAMES[s.settings.mode === 'race' ? 'race' : 'turns']);
   const headline = $derived(run ? `Depth ${shownDepth(endDepth)}` : iWon ? 'You are victorious!' : `${winner?.name} wins!`);
   const line = $derived(run ? delveLine(endDepth, together, measured, !!run.mixed) : scoreLine(s, winner));
 
@@ -433,7 +433,7 @@
 
 <!-- An item's thumb that opens its codex page, its name under it. -->
 {#snippet thumb(id: string, badge?: string)}
-  {@const by = badge ? s.players.find((p) => p.id === badge) : undefined}
+  {@const by = badge ? personOf(badge) : undefined}
   <li>
     <button class="thumb" onclick={() => inspect(id)} aria-label="{itemName(id)}, open in the codex">
       <span class="art"><img src={itemThumb(id, 128)} srcset={itemSrcset(id)} alt="" /></span>
@@ -1883,7 +1883,9 @@
     right: 0;
     bottom: calc(100% + 1px);
     height: 22px;
-    background: linear-gradient(rgba(11, 9, 7, 0), #0b0907);
+    /* A see-through dark layer over the page scrolling under it: dithered (app.css), or it bands. */
+    image-rendering: pixelated;
+    background: linear-gradient(rgba(11, 9, 7, 0), #0b0907), var(--dither);
     pointer-events: none;
   }
   .dock-row {

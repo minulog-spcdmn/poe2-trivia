@@ -882,9 +882,9 @@ export interface Reveal {
 
 /**
  * A game told back at its end (GameOver.svelte, lib/recap.ts): kept by the
- * host as it goes, the same for everyone in the room. Small: a line per
- * player, per category and per item a find gave, and the misses (at most
- * RECAP_MISSES).
+ * host as it goes, the same for everyone in the room: a line per player,
+ * per category and per item a find gave, and the misses. Guests get it only
+ * with the end (publicView).
  */
 export interface Recap {
   /** Each player's answers on their own turn (a race's guesses, a run's answers), by id. */
@@ -936,28 +936,30 @@ export interface RecapItem {
   how?: 'blast' | 'flare' | 'ward' | 'blown';
 }
 
-/** The most misses a recap keeps. */
-export const RECAP_MISSES = 120;
 /** An answer's own time, as its device sends it: whole ms within reason, or nothing. */
 export const answerMs = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 50 && v <= 600_000 ? Math.round(v) : undefined);
 /** The quickest an answer is believed to be, whatever its device says. */
 export const ANSWER_MS_FLOOR = 250;
 /**
- * How much sooner than the host saw the question open an answer's device may
- * say its player saw it (the picture travelling, and loading there).
+ * How much sooner than the host's clock says a device may report its answer:
+ * the picture travelling and loading there (outside Delve, where the clock
+ * starts as the question is asked, not as its art arrives).
  */
-export const ANSWER_MS_SLACK = 2500;
+export const ANSWER_MS_SLACK = 5000;
 
 /**
  * An answer's time for the recap: what its device says (`ms`), held to what
- * the host saw (`elapsed`, from the question opening to the answer reaching
- * it): never longer, and never more than ANSWER_MS_SLACK shorter, nor under
- * ANSWER_MS_FLOOR. So a device can't claim the room's fastest answer.
+ * the host saw. Never longer than since the question was asked (`asked`: no
+ * device saw it sooner, a clock held still by a reload included), and never
+ * more than ANSWER_MS_SLACK shorter than its clock has run (`clock`: Delve's
+ * from its art reaching the player, which the host knows; otherwise the same
+ * as `asked`), nor under ANSWER_MS_FLOOR. So a device can't claim the room's
+ * fastest answer, and a slow picture or a reload doesn't cut an honest one.
  */
-export function heldMs(ms: number | undefined, elapsed: number): number | undefined {
-  if (ms === undefined || !Number.isFinite(elapsed)) return undefined;
-  const hi = Math.max(ANSWER_MS_FLOOR, Math.round(elapsed));
-  return Math.min(hi, Math.max(ms, ANSWER_MS_FLOOR, Math.round(elapsed) - ANSWER_MS_SLACK));
+export function heldMs(ms: number | undefined, asked: number, clock = asked): number | undefined {
+  if (ms === undefined || !Number.isFinite(asked) || !Number.isFinite(clock)) return undefined;
+  const hi = Math.max(ANSWER_MS_FLOOR, Math.round(asked));
+  return Math.min(hi, Math.max(ms, ANSWER_MS_FLOOR, Math.round(clock) - ANSWER_MS_SLACK));
 }
 
 /** Someone watching: they joined a running game, or stepped aside to watch. */
@@ -2183,8 +2185,8 @@ export class Engine {
     if (!r) return;
     this.person(s, by);
     const q0 = s.question;
-    // From the question opening (Delve: its clock starting) to now, as the host saw it.
-    const ms = q0 ? heldMs(sent, this.now() - (q0.clockAt ?? q0.askedAt)) : undefined;
+    // As the host saw it: since the question was asked, and since its clock started (Delve: as its art reached the player).
+    const ms = q0 ? heldMs(sent, this.now() - q0.askedAt, this.now() - (q0.clockAt ?? q0.askedAt)) : undefined;
     const t = (r.answers[by] ??= { n: 0, ok: 0 });
     if (s.deathmatch) {
       t.dn = (t.dn ?? 0) + 1;
@@ -2198,7 +2200,8 @@ export class Engine {
       if (!r.fastest || ms < r.fastest.ms) r.fastest = { by, id, ms };
     }
     // Delve's misses are lives, which each device tells from its own codex.
-    if (!ok && !s.delve && r.misses.length < RECAP_MISSES) r.misses.push({ by, id, ...(s.deathmatch ? { dm: true as const } : {}) });
+    // All of them: they go to the guests once, with the end (publicView).
+    if (!ok && !s.delve) r.misses.push({ by, id, ...(s.deathmatch ? { dm: true as const } : {}) });
     const q = s.question;
     if (ok && s.delve && q?.deadline != null) {
       const left = Math.max(0, q.deadline - this.now());

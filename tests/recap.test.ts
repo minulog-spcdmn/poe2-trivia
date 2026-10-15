@@ -11,6 +11,7 @@ import {
   livesLost,
   median,
   missedAnswers,
+  ordinal,
   partyHighlights,
   plain,
   ranked,
@@ -23,7 +24,7 @@ import {
 import { parseClientMsg } from '../src/lib/protocol.ts';
 import type { Answer } from '../src/lib/codex.ts';
 import type { DelveRun } from '../src/lib/delveRecord.ts';
-import { DELVE_RULESET } from '../src/lib/delve.ts';
+import { DELVE_RULESET, inventoryOf, livesOf } from '../src/lib/delve.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const byId = new Map(items.map((it) => [it.id, it]));
@@ -422,4 +423,46 @@ test('the recap keeps the names it tells, and stays with the host until the game
   // A guest sees none of it mid-game, all of it at the end.
   assert.equal(publicView(s).recap, undefined);
   assert.deepEqual(publicView({ ...s, phase: 'over', question: null, reveal: null }).recap, s.recap);
+});
+
+test("an honest time stands: a slow picture outside Delve, a clock held still by a reload", () => {
+  // 0.9 s on a device whose picture came 3.5 s after the question was asked.
+  assert.equal(heldMs(900, 4400), 900);
+  // Delve: 9 s used in all, the clock started again 3 s ago after a reload.
+  assert.equal(heldMs(9000, 20_000, 3000), 9000);
+  // But never less than the clock has run, past the slack.
+  assert.equal(heldMs(300, 20_000, 9000), 9000 - ANSWER_MS_SLACK);
+});
+
+test('ordinals: in words to twelve, then figures with the right suffix', () => {
+  assert.deepEqual([1, 3, 12, 13, 21, 22, 23, 111, 112].map(ordinal), ['first', 'third', 'twelfth', '13th', '21st', '22nd', '23rd', '111th', '112th']);
+});
+
+test('together: a flare given back goes only to a holder still standing', () => {
+  const clock = { now: 1_000_000 };
+  const engine = new Engine(items, { rng: seeded(5), now: () => clock.now });
+  let s: GameState = createGame('p0', { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false });
+  for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'join', playerId: id, name: id.toUpperCase() }, id);
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  // p1 holds the only flare, on their last life.
+  s = structuredClone(s);
+  s.round = 20;
+  s.delve!.finds = [];
+  s.delve!.inventory = { p1: { wards: 0, flares: 1, dynamite: 0 } };
+  s.delve!.losses = { p1: [5, 9] };
+  for (const id of ['p0', 'p1', 'p2']) if (s.phase === 'choosing') s = engine.apply(s, { type: 'vote', category: s.offered[0] }, id);
+  if (s.phase === 'choosing') s = engine.apply(s, { type: 'expire' }, null);
+  s = engine.apply(s, { type: 'clock', askedAt: s.question!.askedAt }, null);
+  // At 0 the flare burns; p1 then strikes wrong and perishes; p2's right answer, sent before 0, crosses the flare.
+  clock.now = s.question!.deadline!;
+  s = engine.apply(s, { type: 'answer', index: null }, null);
+  assert.equal(s.question!.flaredBy, 'p1');
+  clock.now += 100;
+  s = engine.apply(s, { type: 'answer', index: wrongIdx(s.question!), askedAt: s.question!.askedAt }, 'p1');
+  assert.equal(livesOf(s, 'p1'), 0);
+  clock.now += 100;
+  s = engine.apply(s, { type: 'answer', index: right(s.question!), askedAt: s.question!.askedAt }, 'p2');
+  assert.equal(s.reveal!.correct, true);
+  // No flare back into a pack that perished with them.
+  assert.equal(inventoryOf(s, 'p1').flares, 0);
 });
