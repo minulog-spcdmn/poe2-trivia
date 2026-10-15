@@ -6,7 +6,7 @@
 // is hosting and the room's save, so it comes back as the same player in
 // the same room.
 //
-//   npm run bot -- [--bots 4] [--rooms N | --watch] [--mode turns,race,delve] [--per-room N] [--beta | --localhost] [--headed] [--no-build]
+//   npm run bot -- [--bots 4] [--rooms N | --watch] [--mode turns,race,delve] [--per-room N] [--beta | --localhost] [--wind-down 10] [--headed] [--no-build]
 //   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve beta (or localhost),
 //   or npm run bot 2, work too)
 //
@@ -36,9 +36,10 @@
 // else's dev server. (Not --local: from PowerShell, npm takes that one for
 // itself and the bots would quietly play live; the bare word `local` works.)
 //
-// Ctrl+C: games under way with real people in them are played to their end
-// first (our rooms close after, our guests leave); everything else stops at
-// once. Ctrl+C again quits straight away.
+// Ctrl+C: nobody new comes on, and everyone on goes within --wind-down N
+// minutes (10 by default, 0 for all at once), each at a time of their own;
+// a game under way with real people in it is played to its end first.
+// Ctrl+C again quits straight away.
 //
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by BOT_CHROMIUM.
@@ -69,6 +70,7 @@ const { values: args, positionals } = parseArgs({
     localhost: { type: 'boolean' },
     headed: { type: 'boolean' },
     'no-build': { type: 'boolean' },
+    'wind-down': { type: 'string' },
   },
   allowPositionals: true,
 });
@@ -95,7 +97,14 @@ const opts = {
   localhost: args.localhost ?? (words.includes('localhost') || words.includes('local') || env.npm_config_localhost === 'true'),
   headed: args.headed ?? env.npm_config_headed === 'true',
   'no-build': args['no-build'] ?? (env.npm_config_build === 'false' || env.npm_config_no_build === 'true'),
+  windDown: numberOf('wind-down'),
 };
+/** Ctrl+C: everyone on goes within this many minutes, each at a time of their own (--wind-down; 0: all at once). */
+const windDownMin = opts.windDown === undefined ? 10 : Number(opts.windDown);
+if (!Number.isFinite(windDownMin) || windDownMin < 0) {
+  console.error('--wind-down takes a number of minutes (0 or more).');
+  process.exit(2);
+}
 const joiners = Number(opts.joiners ?? (opts.join ? 1 : 0));
 if (!Number.isInteger(joiners) || joiners < 0) {
   console.error('--joiners takes a number of seats.');
@@ -291,9 +300,11 @@ for (let slot = 1; slot <= bots; slot++) all.push(await runSeat(slot));
 const TEAM_EVERY_MS = 5000;
 const team = bots > 1
   ? setInterval(async () => {
-      const codes = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return s?.as === 'host' ? (s.code ?? '') : ''; }).catch(() => '') ?? ''));
-      const held = [...roles].map(([role, slot]) => ({ role, slot, code: codes[slot - 1] ?? '' }));
-      await Promise.all(all.map(({ page }, i) => page?.evaluate((t) => window.__bot?.setTeam(t), held.filter((h) => h.slot !== i + 1).map(({ role, code }) => ({ role, code }))).catch(() => {})));
+      const seats = await Promise.all(all.map(({ page }) => page?.evaluate(() => { const s = window.__bot?.status(); return { code: s?.as === 'host' ? (s.code ?? '') : '', id: s?.id ?? null }; }).catch(() => null) ?? null));
+      const held = [...roles].map(([role, slot]) => ({ role, slot, code: seats[slot - 1]?.code ?? '' }));
+      // And the ids the others are on as: so a seat tells them from people (src/bot/crew.ts keeps them all).
+      const mates = (i) => seats.flatMap((s, j) => (j !== i && s?.id ? [s.id] : []));
+      await Promise.all(all.map(({ page }, i) => page?.evaluate(([t, m]) => window.__bot?.setTeam(t, m), [held.filter((h) => h.slot !== i + 1).map(({ role, code }) => ({ role, code })), mates(i)]).catch(() => {})));
       const list = await all[0].page?.evaluate(() => window.__bot?.rooms()).catch(() => null);
       if (list?.at) await Promise.all(all.slice(1).map(({ page }) => page?.evaluate(({ rooms, at }) => window.__bot?.takeRooms(rooms, at), list).catch(() => {})));
     }, TEAM_EVERY_MS)
@@ -313,10 +324,13 @@ const status = setInterval(async () => {
 }, STATUS_EVERY_MS);
 
 /**
- * Ctrl+C: a game under way with real people in it (in one of our rooms, or
- * one our guest is in) is played to its end first, the scores left up a
- * moment; everything else stops now, and nobody new comes on. A second
- * Ctrl+C (or SIGTERM, from a supervisor) quits at once.
+ * Ctrl+C: nobody new comes on, and everyone on goes within --wind-down
+ * minutes (10 by default), each at a time of their own, as people drift off
+ * rather than all leave at once; till then they play on as usual. When
+ * their time comes, a game under way with real people in it (in one of our
+ * rooms, or one our guest is in) is played to its end first, the scores
+ * left up a moment. A second Ctrl+C (or SIGTERM, from a supervisor) quits
+ * at once.
  */
 let winding = false;
 async function stop() {
@@ -324,10 +338,12 @@ async function stop() {
   winding = true;
   // No page reopens from here on (open, reopen): a fresh one would bring someone new on.
   stopping = true;
-  if (team) clearInterval(team);
-  const plays = (await Promise.all(all.map(({ page }) => page?.evaluate(() => window.__bot?.windDown() ?? null).catch(() => null)))).filter(Boolean);
-  if (!plays.length) return quit();
-  log(`finishing ${plays.length === 1 ? 'a game' : `${plays.length} games`} with players in ${plays.length === 1 ? 'it' : 'them'} first; Ctrl+C again to quit now`);
+  // (The room list goes round still: those on play on as usual till their time.)
+  const spread = windDownMin * 60000;
+  const says = (await Promise.all(all.map(({ page }) => page?.evaluate((ms) => window.__bot?.windDown(ms) ?? null, spread).catch(() => null)))).filter(Boolean);
+  if (!says.length) return quit();
+  for (const s of says) log(s);
+  log(spread ? `winding down: everyone goes within ${windDownMin} minutes, each in their own time (a game with people in it plays to its end); Ctrl+C again to quit now` : `finishing ${says.length === 1 ? 'a game' : `${says.length} games`} with players in ${says.length === 1 ? 'it' : 'them'} first; Ctrl+C again to quit now`);
   for (;;) {
     await new Promise((r) => setTimeout(r, 2000));
     if (quitting) return;

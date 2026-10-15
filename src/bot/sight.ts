@@ -168,8 +168,8 @@ function idsNamed(name: string | null): string[] {
   return name ? (byName.get(name) ?? []) : [];
 }
 
-/** The eyes' last reading (for the log): which option, and by how much it beat the next best. */
-export let lastReading: { qid: number; index: number; margin: number } | null = null;
+/** The eyes' last reading: which option, by how much it beat the next best (for the log), and how alike each option came out (-1 to 1). */
+export let lastReading: { qid: number; index: number; margin: number; scores: number[] } | null = null;
 
 /** Which option the art shows, or null with nothing (enough) to go on yet. */
 export const sight: Eyes = async (s: GameState, q: Question) => {
@@ -208,6 +208,6 @@ export const sight: Eyes = async (s: GameState, q: Question) => {
   }
   const order = scores.map((v, i) => [v, i] as const).sort((a, b) => b[0] - a[0]);
   if (!order.length || order[0][0] <= -1) return null;
-  lastReading = { qid: q.askedAt, index: order[0][1], margin: order[0][0] - (order[1]?.[0] ?? -1) };
+  lastReading = { qid: q.askedAt, index: order[0][1], margin: order[0][0] - (order[1]?.[0] ?? -1), scores };
   return order[0][1];
 };

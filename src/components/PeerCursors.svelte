@@ -13,7 +13,7 @@
   import { session } from '../lib/session.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { peerCursors } from '../lib/peerCursors.svelte';
-  import { LIT, MOUSE, POINTER_BURST, POINTER_RATE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { LIT, MOUSE, POINTER_BURST, POINTER_RATE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, moveOn, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portalToPage } from '../lib/portal';
   import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
@@ -30,15 +30,12 @@
   const BEHIND_MS = 90;
   const GLIDE_MS = 35;
   /**
-   * Placed on another element far from where it's drawn (px; the two
-   * screens place things apart: another layout, a bot's picture of the
-   * page), or leaping as far on the same one (made anew, come back to), it
-   * doesn't jump: it stays where it's drawn, and the difference fades as it
-   * moves (the further it goes, the more of it; this many px for most of
-   * it), and, more slowly, as time goes by (ms).
+   * A pointer that jumped (cursors.ts moveOn: placed on another element far
+   * from where it was going, the two screens placing things apart, or leaping
+   * on the same one) doesn't jump here: it stays where it's drawn, and the
+   * difference fades as it moves (the further it goes, the more of it; this
+   * many px for most of it), and, more slowly, as time goes by (ms).
    */
-  const JUMP_PX = 40;
-  const LEAP_PX = 160;
   const FADE_PX = 180;
   const FADE_MS = 2500;
   /** A pointer that hasn't moved for this long dims (ms); it's only hidden once its player leaves the page. */
@@ -196,7 +193,8 @@
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
   /**
-   * Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame; its press shown until;
+   * Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame, the one
+   * before, and the time between them; its press shown until;
    * whether it's set in the page (stuck: its places are then the page's, not the screen's), and whether its element scrolls with the page;
    * its element's top and the page's scroll last frame.
    */
@@ -211,6 +209,9 @@
       oy: number;
       px: number;
       py: number;
+      qx: number;
+      qy: number;
+      pdt: number;
       pressUntil: number;
       page: boolean;
       follows: boolean;
@@ -282,9 +283,11 @@
     let raf = 0;
     let last = performance.now();
     const frame = (now: number) => {
-      const dt = now - last;
+      // (A frame's time can be from before this loop began, when it begins anew with the game's next turn: never
+      // backwards, which would throw the pointers away from where they're going.)
+      const dt = Math.max(0, now - last);
       const step = 1 - Math.exp(-dt / GLIDE_MS);
-      last = now;
+      last = Math.max(last, now);
       const boxes = new Map<number, Found | null>();
       const screenH = screenHeight();
       for (const c of list) {
@@ -355,28 +358,26 @@
           d.y += ky;
           d.px += kx;
           d.py += ky;
+          d.qx += kx;
+          d.qy += ky;
         }
         const tx = cx + sx;
         const ty = cy + sy;
         // A tap lands where it is; a pointer just come in starts where it is.
         if (!d || touch)
-          drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, pressUntil: d?.pressUntil ?? 0, page, follows, top, scroll: scrollY }));
+          drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, qx: tx, qy: ty, pdt: 0, pressUntil: d?.pressUntil ?? 0, page, follows, top, scroll: scrollY }));
         else {
-          // Placed on another element far from where it's drawn, or leaping: it stays where it's drawn (JUMP_PX).
-          const far = Math.hypot(tx + d.ox - d.x, ty + d.oy - d.y);
-          if (!clicking && ((code !== d.code && far > JUMP_PX) || far > LEAP_PX)) {
+          // Placed on another element far from where it was going, or leaping: it stays where it's drawn (cursors.ts moveOn).
+          const moved = Math.hypot(tx - d.px, ty - d.py);
+          if (moveOn(d, tx, ty, code, dt, !clicking)) {
             d.ox = d.x - tx;
             d.oy = d.y - ty;
           } else {
-            // The difference fades as it moves, and slowly as time goes by; at once for a press, so the click lands where it is.
-            const moved = Math.hypot(tx - d.px, ty - d.py);
-            const fade = clicking ? Math.exp(-dt / 60) : Math.exp(-moved / FADE_PX - dt / FADE_MS);
+            // The difference fades as it moves, and slowly as time goes by; gone at a press, so the click lands where it is.
+            const fade = clicking ? 0 : Math.exp(-moved / FADE_PX - dt / FADE_MS);
             d.ox *= fade;
             d.oy *= fade;
           }
-          d.code = code;
-          d.px = tx;
-          d.py = ty;
           d.x += (tx + d.ox - d.x) * step;
           d.y += (ty + d.oy - d.y) * step;
         }

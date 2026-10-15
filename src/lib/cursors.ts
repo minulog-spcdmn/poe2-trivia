@@ -91,6 +91,53 @@ export function trailAt(ps: [number, number][], ts: number[], t: number): [numbe
 export function fromAnchor(anchor: number, x: number, y: number, r: AnchorBox, screenH: number): [number, number] {
   return [r.left + (x / SCALE) * r.width, r.top + (y / SCALE) * (anchor === GAME_ANCHOR ? screenH : r.height)];
 }
+/**
+ * A pointer drawn on another screen (PeerCursors.svelte) placed onto
+ * another element further than this from where it was going (px: the two
+ * screens place things apart, another layout, a bot's picture of the page),
+ * or leaping as far on the same one (made anew, come back to), has jumped:
+ * it stays where it's drawn, and the difference fades away.
+ */
+export const JUMP_PX = 40;
+export const LEAP_PX = 160;
+/** A frame this long (ms) after the last: a pointer's leap and its move can't be told apart across it. */
+export const LONG_FRAME_MS = 100;
+
+/** Where a drawn pointer's place was the last two frames (`pdt` ms apart), and what it was on. */
+export interface PlaceWas {
+  px: number;
+  py: number;
+  qx: number;
+  qy: number;
+  pdt: number;
+  code: number;
+}
+
+/**
+ * A pointer whose place was `was` now at `tx`, `ty` on `code`, `dt` ms on:
+ * whether it jumped (JUMP_PX; only looked at with `check`), measured from
+ * where its place would be now going on as it went, not from where it's
+ * drawn, which trails it as it moves, the further the quicker (a quick move
+ * isn't a jump), and never after a long frame, where it can't be told. And
+ * `was` moved on to now (after a jump, from rest: the jump isn't a speed).
+ */
+export function moveOn(was: PlaceWas, tx: number, ty: number, code: number, dt: number, check = true): boolean {
+  // No time gone by (a frame at once after the last): nothing to go on, and nothing kept of it.
+  if (dt <= 0) return false;
+  const k = was.pdt > 0 ? Math.min(2, dt / was.pdt) : 0;
+  const far = Math.hypot(tx - (was.px + (was.px - was.qx) * k), ty - (was.py + (was.py - was.qy) * k));
+  // Without a frame before to tell how it was going (just come in), only a leap is a jump.
+  const near = was.pdt > 0 ? JUMP_PX : LEAP_PX;
+  const jump = check && dt < LONG_FRAME_MS && ((code !== was.code && far > near) || far > LEAP_PX);
+  was.qx = jump ? tx : was.px;
+  was.qy = jump ? ty : was.py;
+  was.pdt = dt;
+  was.px = tx;
+  was.py = ty;
+  was.code = code;
+  return jump;
+}
+
 /** A guest sends its pointer at most this often (ms), and the host its batches. */
 export const SEND_EVERY_MS = 50;
 export const FLUSH_EVERY_MS = 50;

@@ -24,12 +24,15 @@ import type { GameState } from '../lib/game';
 import { engine, session } from '../lib/session.svelte';
 import { scanRooms, type RoomInfo } from '../lib/rooms';
 import { readStored, writeStored } from '../lib/storage';
-import { identityOf, leaningsOf, NAMES, nextName, shiftLength, type Identity, type Mode } from './identities';
+import { identityOf, leaningsOf, nextName, shiftLength, type Identity, type Mode } from './identities';
 import { joinable, nextRole, waitingAlone, wanted, watchable, type Role } from './wanted';
 import { afterHosting, afterVisit, hesitation, joinsAfter, keenTo, opensRoom, playsOn, urgeToHost, type HostExit, type Memory, type Visit } from './choice';
 import { dropSave, Host, keepSaveCopy, type Stint } from './host';
 import { AGAIN_AFTER_MS, Guest } from './guest';
-import { between, log, time } from './util';
+import { between, log, seededBy, time } from './util';
+import { activity, awakeAt, minutesAwake } from './sleep';
+import { asNewcomer, COMES_BACK, NEWCOMERS, VISITORS } from './visitors';
+import { isBot, setCrew } from './crew';
 
 const TICK_MS = 200;
 /** The open-room list is checked this often (ms, from..to), by the seat that checks it: often enough that someone waiting alone in their lobby gets company within seconds. */
@@ -53,6 +56,10 @@ const ONE_MORE: [number, number] = [15 * 60000, 40 * 60000];
 /** Someone switching from looking to hosting hosts at least this long. */
 const MIN_HOSTING_MS = 20 * 60000;
 const MIN = 60000;
+/** With everyone asleep, the seat looks again this soon (ms, from..to). */
+const NOBODY_UP: [number, number] = [5 * MIN, 15 * MIN];
+/** How many of the cast tend to be on at the busiest hours (a weekend evening in Europe, sleep.ts activity, on average): the hour the seat's rests are as REST says. */
+const BUSIEST = 0.7;
 
 /** The runner's say over which seat opens which room (scripts/room-bot.mjs), when it gives one. */
 const {
@@ -74,6 +81,8 @@ interface Saved {
   host?: Stint & { name: string };
   recent: string[];
   minds?: Record<string, Memory>;
+  /** Newcomers who came on (visitors.ts): how many times, and when last. */
+  visitors?: Record<string, { n: number; at: number }>;
 }
 
 function load(): Saved {
@@ -86,10 +95,13 @@ function load(): Saved {
   return { recent: [] };
 }
 
-const CAST = new Set(NAMES);
+/** A newcomer not seen for this long is anyone's guess: someone else by that name, new all the same. */
+const FORGOTTEN_MS = 21 * 24 * 3600000;
+/** A newcomer who comes back does so a day or more later. */
+const BACK_AFTER_MS = 24 * 3600000;
 
-/** The real people (anyone not of the cast) playing in the room, connected, besides this seat's own player. */
-const peopleIn = (s: GameState | null) => s?.players.filter((p) => p.id !== session.myPlayerId && p.connected && !CAST.has(p.name)).map((p) => p.name) ?? [];
+/** The real people (none of the runner's seats: crew.ts) playing in the room, connected. */
+const peopleIn = (s: GameState | null) => s?.players.filter((p) => p.connected && !isBot(p)).map((p) => p.name) ?? [];
 
 /** A game on in the room, or its scores up. */
 const gameOn = (s: GameState | null) => !!s && s.phase !== 'lobby';
@@ -132,6 +144,9 @@ export class Seat {
   private ours = new Set<string>();
   /** The runner is stopping (its first Ctrl+C): a game with people in it plays to its end, and nothing new begins. */
   private winding = false;
+  /** Winding down: when the one on goes (windDown), and whether that time has come. */
+  private leaveAt = 0;
+  private left = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private scoutTimer: ReturnType<typeof setTimeout> | null = null;
   private copyTimer: ReturnType<typeof setInterval> | null = null;
@@ -151,7 +166,28 @@ export class Seat {
     private readonly maxRooms: number,
     private readonly checks = true,
     private readonly watching = false,
+    private readonly visitors: string[] = [],
   ) {}
+
+  /** Who `name` is: a regular, or a newcomer (visitors.ts). */
+  private identity(name: string): Identity {
+    const who = identityOf(name, engine.categories, this.modes, engine.items);
+    return VISITORS.includes(name) ? asNewcomer(who, this.modes) : who;
+  }
+
+  /**
+   * The newcomers who might come on now: anyone of the seat's share who
+   * hasn't yet, or not for weeks; now and then one who came once, a day or
+   * more ago, back for another go.
+   */
+  private newcomers(now: number): string[] {
+    const seen = this.saved.visitors ?? {};
+    return this.visitors.filter((n) => {
+      const v = seen[n];
+      // Whether they come back is theirs to decide once, after that visit (not again at each look).
+      return !v || now - v.at > FORGOTTEN_MS || (v.n === 1 && now - v.at > BACK_AFTER_MS && seededBy(`${n}:back:${v.at}`)() < COMES_BACK);
+    });
+  }
 
   start() {
     this.timer = setInterval(() => this.tick(), TICK_MS);
@@ -181,7 +217,7 @@ export class Seat {
       return;
     }
     const { name, ...stint } = back;
-    this.host = new Host(identityOf(name, engine.categories, this.modes, engine.items), stint, (s) => this.keep({ name, ...s }), this.modes);
+    this.host = new Host(this.identity(name), stint, (s) => this.keep({ name, ...s }), this.modes);
     this.host.above = this.above(back.role);
     this.host.resume();
   }
@@ -204,15 +240,27 @@ export class Seat {
   }
 
   /**
-   * The runner is stopping (its first Ctrl+C). A game under way with real
-   * people in it (in this seat's room, or the room its guest is in) is
-   * played to its end, the scores left up a moment; everything else ends
-   * now, and nobody new comes on. Says what it plays on for, or null when
-   * nothing (settled, below, says when it is done).
+   * The runner is stopping (its first Ctrl+C): nobody new comes on, and
+   * whoever is on goes at a time of their own within `spreadMs` (people
+   * drift off; they don't all go at once), playing on as usual till then
+   * (finding no new room, opening none). When their time comes, a game
+   * under way with real people in it is played to its end first. Says when
+   * they'll go, for the runner (null: nobody on).
    */
-  windDown(): string | null {
+  windDown(spreadMs = 0): string | null {
     this.winding = true;
     this.opener = null;
+    const now = Date.now();
+    this.leaveAt = now + (spreadMs > 0 ? between(Math.min(15000, spreadMs), spreadMs) : 0);
+    const who = this.host?.who.name ?? this.guest?.who.name;
+    if (!who) return null;
+    if (this.leaveAt <= now) return this.leaveNow();
+    return `${who} goes around ${time(this.leaveAt)}`;
+  }
+
+  /** Their time to go: a game with people in it played to its end first, else at once. Says so when it's the game. */
+  private leaveNow(): string | null {
+    this.left = true;
     const s = session.state;
     const people = peopleIn(s);
     if (this.host && gameOn(s) && people.length) {
@@ -263,8 +311,9 @@ export class Seat {
     }
   }
 
-  /** The runner: the other seats' rooms. */
-  setTeam(team: TeamRoom[]) {
+  /** The runner: the other seats' rooms, and the ids they are on as now (crew.ts). */
+  setTeam(team: TeamRoom[], mates?: (string | null)[]) {
+    if (mates) setCrew(mates);
     this.team = team;
     this.ours = new Set(team.map((t) => t.code).filter(Boolean));
     if (this.host) this.host.above = this.above(this.host.role);
@@ -285,6 +334,7 @@ export class Seat {
     return {
       as: this.host ? 'host' : this.guest ? 'guest' : null,
       name: on?.who.name ?? null,
+      id: on ? session.myPlayerId : null,
       ...(this.host?.status() ?? {}),
       ...(this.guest?.status() ?? {}),
       back: on ? null : time(Math.max(this.restUntil, Date.now())),
@@ -323,7 +373,13 @@ export class Seat {
   }
 
   private cameOn(name: string) {
-    if (this.saved.recent.at(-1) !== name) this.saved = { ...this.saved, recent: [...this.saved.recent, name].slice(-20) };
+    if (this.saved.recent.at(-1) !== name) {
+      this.saved = { ...this.saved, recent: [...this.saved.recent, name].slice(-20) };
+      if (VISITORS.includes(name)) {
+        const v = this.saved.visitors?.[name];
+        this.saved.visitors = { ...this.saved.visitors, [name]: { n: (v?.n ?? 0) + 1, at: Date.now() } };
+      }
+    }
     writeStored('seat', JSON.stringify(this.saved));
   }
 
@@ -371,7 +427,19 @@ export class Seat {
   private tick() {
     if (this.busy) return;
     const now = Date.now();
-    if (this.winding) return this.windTick(now);
+    if (this.winding) {
+      if (this.left) return this.windTick(now);
+      if (now >= this.leaveAt) return void this.leaveNow();
+      // Till their time comes, the one on plays on as usual; nobody new comes on.
+      if (this.host) {
+        const gone = this.host.tick(now);
+        if (gone) this.hostGoes(now, gone.exit, gone.why);
+      } else if (this.guest && !this.guest.looking) {
+        const gone = this.guest.tick(now);
+        if (gone) this.guestGoes(now, gone.why, gone.visit, gone.host);
+      }
+      return;
+    }
     if (this.latest.at > this.considered) {
       this.considered = this.latest.at;
       this.see(this.latest.rooms, this.latest.at, now);
@@ -392,10 +460,16 @@ export class Seat {
     // A room wanted: whoever feels most like hosting is likeliest to come on and open it.
     if (this.wantedRole() && now >= this.backAt) {
       if (!this.opener) {
-        const free = shiftLength(Math.random);
-        const name = nextName(this.saved.recent, Math.random, this.names, (n) => keenTo(this.urge(n, leaningsOf(n), free, now), 'host'));
-        const who = identityOf(name, engine.categories, this.modes, engine.items);
-        const at = this.handOver ? now : now + hesitation(this.urge(name, who.persona, free, now), Math.random);
+        const on = this.whoComesOn('host', now);
+        // Everyone asleep: nobody to open it till someone's up.
+        if (!on) {
+          this.backAt = now + between(...NOBODY_UP);
+          return;
+        }
+        const { name, free } = on;
+        const who = this.identity(name);
+        // In the small hours, with few up, a room is longer coming.
+        const at = this.handOver ? now : now + hesitation(this.urge(name, who.persona, free, now), Math.random) / this.liveliness(now);
         this.opener = { who, at, for: free };
       }
       if (now >= this.opener.at) void this.open(this.opener.who, this.opener.for);
@@ -408,10 +482,64 @@ export class Seat {
     // their lobby (and the seat isn't just handing over).
     const someoneWaits = !this.watching && now >= this.backAt && this.others.some((r) => waitingAlone(r, this.ours) && !this.recentlyIn(r.code, now));
     if (now >= this.restUntil || someoneWaits) {
-      const free = shiftLength(Math.random);
-      const name = nextName(this.saved.recent, Math.random, this.names, (n) => keenTo(this.urge(n, leaningsOf(n), free, now), 'join'));
-      this.lookForRoom(identityOf(name, engine.categories, this.modes, engine.items), now + free);
+      const on = this.whoComesOn('join', now);
+      if (!on) {
+        // Everyone asleep: not looked at again till then, someone waiting or not.
+        this.restUntil = this.backAt = now + between(...NOBODY_UP);
+        return;
+      }
+      this.lookForRoom(this.identity(on.name), now + on.free);
     }
+  }
+
+  /**
+   * Who comes on now to host or to join: whoever feels most like it, among
+   * those up (sleep.ts), the likelier the more they tend to be on at this
+   * hour, and how long they have (timeFor: what they feel like, or till
+   * bed), the time they feel like hosting with. Null with everyone asleep.
+   */
+  private whoComesOn(to: 'host' | 'join', now: number): { name: string; free: number } | null {
+    // Now and then someone new (visitors.ts), else a regular; whoever's up, if those aren't (null: nobody at all).
+    const up = new Map<string, ReturnType<typeof awakeAt>>();
+    const anyUp = (names: string[]) => {
+      for (const n of names) if (!up.has(n)) up.set(n, awakeAt(n, now));
+      return names.some((n) => up.get(n)!.activity > 0);
+    };
+    const newcomers = this.newcomers(now);
+    const order = Math.random() < NEWCOMERS ? [newcomers, this.names] : [this.names, newcomers];
+    const from = order.find(anyUp);
+    if (!from) return null;
+    const most = shiftLength(Math.random);
+    const newcomer = from !== this.names;
+    // Each one's time, and how keen they are with it, worked out once.
+    const free = new Map<string, number>();
+    const keen = new Map<string, number>();
+    for (const n of from) {
+      const a = up.get(n)!;
+      if (!a.activity) continue;
+      const time = this.timeFor(n, now, most, a.minutes);
+      free.set(n, time);
+      keen.set(n, a.activity * keenTo(this.urge(n, newcomer ? { hosting: leaningsOf(n).hosting * 0.4 } : leaningsOf(n), time, now), to));
+    }
+    const name = nextName(this.saved.recent, Math.random, from, (n) => keen.get(n) ?? 0);
+    return { name, free: free.get(name) ?? this.timeFor(name, now, most) };
+  }
+
+  /** How long `name` has (ms): as long as they feel like playing, unless bedtime comes first (they may stay on a little past it). */
+  private timeFor(name: string, now: number, most = shiftLength(Math.random), awake = minutesAwake(name, now)) {
+    const bed = (awake + between(0, 25)) * MIN;
+    return Math.max(10 * MIN, Math.min(most, bed));
+  }
+
+  /** How busy this hour is for the seat's cast, as a share of the busiest (0.15 to 1). */
+  private liveliness(now: number) {
+    const on = this.names.reduce((a, n) => a + activity(n, now), 0) / Math.max(1, this.names.length);
+    return Math.min(1, Math.max(0.15, on / BUSIEST));
+  }
+
+  /** The seat empty this long after someone goes: longer the fewer are up. */
+  private rest(now: number) {
+    return now + between(...REST) / this.liveliness(now);
   }
 
   /**
@@ -492,8 +620,8 @@ export class Seat {
     this.guest = null;
     this.opener = null;
     if (visit && host) this.remember(name, afterVisit(this.mind(name), visit, host, now));
-    if (visit && playsOn(visit, (guest.until - now) / MIN, Math.random)) return this.lookForRoom(guest.who, guest.until, '', 'again');
-    this.restUntil = now + between(...REST);
+    if (!this.winding && visit && playsOn(visit, (guest.until - now) / MIN, Math.random)) return this.lookForRoom(guest.who, guest.until, '', 'again');
+    this.restUntil = this.rest(now);
   }
 
   /**
@@ -519,12 +647,12 @@ export class Seat {
     this.wanted = this.handOver ? { role: host.role, checks: wantedChecks(host.role) } : null;
     this.opener = null;
     this.backAt = now + HAND_OVER_MS;
-    this.restUntil = now + between(...REST);
+    this.restUntil = this.rest(now);
     // A room still wanted has nobody to join, so only without one do they look around.
-    const until = exit === 'done' ? now + between(...ONE_MORE) : Math.max(host.until, now + ONE_MORE[0]);
+    const until = Math.min(exit === 'done' ? now + between(...ONE_MORE) : Math.max(host.until, now + ONE_MORE[0]), now + this.timeFor(name, now, Infinity));
     // Made way for someone waiting alone in their own room: they go and keep them company.
     const to = exit === 'made way' ? Host.wayTo(this.others, this.ours) : null;
     const forSomeone = !!to && waitingAlone(to, this.ours);
-    if (!this.handOver && (forSomeone || joinsAfter(this.urge(name, host.who.persona, until - now, now), exit, Math.random))) this.lookForRoom(host.who, until, to?.code, 'stays on');
+    if (!this.winding && !this.handOver && (forSomeone || joinsAfter(this.urge(name, host.who.persona, until - now, now), exit, Math.random))) this.lookForRoom(host.who, until, to?.code, 'stays on');
   }
 }
