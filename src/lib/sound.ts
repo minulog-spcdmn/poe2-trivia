@@ -920,6 +920,20 @@ function updateLoop(l: Loop) {
 const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled)';
 
 /**
+ * How fast (px/s) the pointer came to (`x`, `y`) at `t` (ms) over its last
+ * moves (`trail`, oldest first): from the oldest within 60 ms. The hover
+ * comes before the move that brought the pointer over its control, so that
+ * move is (`x`, `y`) itself, not in the trail; with no move that recent (it
+ * rested, then jumped there at once), the jump is taken as one quick move.
+ */
+export function pointerSpeed(trail: readonly { x: number; y: number; t: number }[], x: number, y: number, t: number): number {
+  const from = trail.find((p) => t - p.t < 60) ?? trail.at(-1);
+  if (!from) return 0;
+  const dt = Math.min(Math.max(t - from.t, 8), 60) / 1000;
+  return Math.hypot(x - from.x, y - from.y) / dt;
+}
+
+/**
  * UI sounds for every control: a faint brush when the mouse moves onto one,
  * and a click when it's pressed. Controls that play their own sound (or none)
  * opt out of the click with `data-sfx="none"`. Also starts the ambience with
@@ -938,14 +952,6 @@ export function installUiSounds() {
     },
     { passive: true },
   );
-  /** How fast (px/s) the pointer moved over the last 60 ms or so (its last two moves at least), as it reaches `e`. */
-  const speedAt = (e: PointerEvent) => {
-    const recent = trail.filter((p) => e.timeStamp - p.t < 60);
-    const from = recent.length >= 2 ? recent[0] : trail.at(-2);
-    if (!from) return 0;
-    const dt = (e.timeStamp - from.t) / 1000;
-    return dt > 0 ? Math.hypot(e.clientX - from.x, e.clientY - from.y) / Math.max(dt, 0.008) : 0;
-  };
   addEventListener(
     'pointerover',
     (e) => {
@@ -954,7 +960,7 @@ export function installUiSounds() {
       const el = (e.target as Element | null)?.closest?.(HOVERABLE) ?? null;
       // Half way between the control's middle and the pointer: a wide one sounds
       // a little to the side it is hovered on, not at the edge it came in over.
-      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX, speed: speedAt(e) } });
+      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX, speed: pointerSpeed(trail, e.clientX, e.clientY, e.timeStamp) } });
       hovered = el;
     },
     { passive: true },

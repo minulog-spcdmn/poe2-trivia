@@ -111,7 +111,8 @@ test('eased, the pointer slowing down brings the hover back gradually: no snap b
   assert.ok(after(0.6) < after(0.3) && after(3) < 0.05, 'a longer one further, and a long one all the way');
 });
 
-const { speedAmount } = await import('../src/lib/spatialPlan.ts');
+const { speedAmount, hoverDuck } = await import('../src/lib/spatialPlan.ts');
+const { pointerSpeed } = await import('../src/lib/sound.ts');
 
 test('by pointer speed: a slow arrival sounds in full, a quick flick barely brushes, eased between', () => {
   assert.equal(speedAmount(0, 0.4, 2.5), 0);
@@ -125,4 +126,50 @@ test('by pointer speed: a slow arrival sounds in full, a quick flick barely brus
     last = a;
   }
   near(speedAmount(1.45, 0.4, 2.5), 0.5);
+});
+
+const TUNED = {
+  hoverRepeat: 'eased',
+  hoverDepth: -2.5,
+  hoverSoften: -5,
+  hoverRecover: 0.5,
+  hoverWeight: 0.35,
+  hoverSpeed: true,
+  hoverSlow: 0.25,
+  hoverFast: 2.5,
+  hoverSpeedDb: -5,
+  hoverSpeedSoften: -2.5,
+  hoverShorter: 0.45,
+} as const;
+
+test('the first hover after a pause sounds in full however fast it came; a quick flick within a sweep barely brushes', () => {
+  const first = hoverDuck(null, 10, 5, TUNED);
+  assert.deepEqual([first.db, first.soften, first.shorter], [0, 0, 0]);
+  const flick = hoverDuck(first.memory, 10.1, 5, TUNED);
+  assert.ok(flick.db < -5 && flick.soften < -2.5 && flick.shorter === 0.45, `${flick.db}, ${flick.soften}, ${flick.shorter}`);
+  const slow = hoverDuck(first.memory, 10.1, 0.1, TUNED);
+  assert.ok(slow.db > -2.5 && slow.shorter === 0, 'a slow arrival in a sweep is only eased');
+  const afterPause = hoverDuck(flick.memory, 10.1 + HOVER_SWEEP + 0.1, 5, TUNED);
+  assert.equal(afterPause.shorter, 0);
+  assert.ok(afterPause.db > -1, 'after a pause: back near full');
+});
+
+test('repeats are kept whichever way they are heard, so switching mid-sweep carries on', () => {
+  let m = hoverDuck(null, 0, 0, TUNED).memory;
+  for (let i = 1; i <= 3; i++) m = hoverDuck(m, i * 0.1, 0, TUNED).memory;
+  const stepped = hoverDuck(m, 0.4, 0, { ...TUNED, hoverRepeat: 'steps', hoverSpeed: false });
+  assert.equal(stepped.db, -HOVER_STEP * 4);
+  const off = hoverDuck(m, 0.4, 0, { ...TUNED, hoverRepeat: 'off', hoverSpeed: false });
+  assert.deepEqual([off.db, off.soften], [0, 0]);
+});
+
+test('pointer speed: from the oldest move within 60 ms to where the hover lands, a lone jump as one quick move', () => {
+  const trail = [
+    { x: 0, y: 0, t: 0 },
+    { x: 100, y: 0, t: 960 },
+    { x: 120, y: 0, t: 980 },
+  ];
+  near(pointerSpeed(trail, 160, 0, 1000), 60 / 0.04);
+  near(pointerSpeed([{ x: 0, y: 0, t: 0 }], 300, 400, 5000), 500 / 0.06);
+  assert.equal(pointerSpeed([], 10, 10, 100), 0);
 });

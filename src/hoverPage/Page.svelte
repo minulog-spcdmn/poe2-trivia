@@ -8,7 +8,7 @@
   // and by the pointer's speed as it came over the control, within a sweep.
   // Each hover's ducking shows in the strip below the settings.
   import { untrack } from 'svelte';
-  import { hoverHeard, spatial, CHOSEN } from '../lib/spatial.svelte';
+  import { hoverHeard, spatial, watchHovers, CHOSEN } from '../lib/spatial.svelte';
   import { readStored, writeStored } from '../lib/storage';
 
   type Mode = typeof spatial.hoverRepeat;
@@ -48,6 +48,8 @@
   }
 
   const mode = $derived(MODES.find((m) => m.id === spatial.hoverRepeat)!);
+
+  watchHovers();
 
   /** The last hovers' ducking (dB), newest last. */
   let strip = $state<{ n: number; db: number; soften: number; speed: number }[]>([]);

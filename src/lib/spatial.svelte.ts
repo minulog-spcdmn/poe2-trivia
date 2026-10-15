@@ -16,7 +16,7 @@
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
 import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
-import { HOVER_SWEEP, hoverEase, hoverStep, roomPlan, screenX, speedAmount, travel } from './spatialPlan';
+import { hoverDuck, roomPlan, screenX, travel, type HoverMemory } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -276,13 +276,15 @@ const PLACES: Record<Renderer, (ac: AudioContext, plain?: boolean) => Place> = {
 
 /** A dry hover's share of the room (a little: it is close). */
 const HOVER_ROOM = 0.3;
-/** The pointer's last hover, for its next to step down from in a sweep (spatialPlan.ts hoverStep). */
-let lastHover: ReturnType<typeof hoverStep> | null = null;
-let lastEased: ReturnType<typeof hoverEase> | null = null;
-/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep and speed made it, and how fast it came (screen widths a second) (for the hover tuning page). */
+/** The pointer's last hover, for the next to be ducked from (spatialPlan.ts hoverDuck). */
+let lastHover: HoverMemory | null = null;
+/** The pointer's last hover, as heard: how much quieter (dB) and duller (dB above 4 kHz) its sweep and speed made it, and how fast it came (screen widths a second). Kept only once the hover tuning page watches it (watchHovers). */
 export const hoverHeard = $state({ db: 0, soften: 0, n: 0, speed: 0 });
-/** When (the audio clock) the pointer last hovered a control, to tell a sweep from a first hover. */
-let lastPointerHover: number | null = null;
+let hoversWatched = false;
+/** Keeps hoverHeard from now on (the hover tuning page): the game itself never reads it. */
+export function watchHovers() {
+  hoversWatched = true;
+}
 /** The game's screen (the whole window, or left of the lab's panel), measured once and again only after it changes size: not for every sound. */
 let screenBox: DOMRect | null = null;
 let screenWatched = false;
@@ -564,33 +566,18 @@ const placer: Placer = {
 
     const hover = name === 'hover';
     const dryHover = hover && s.hoverDry;
-    // A hover: at its level, quieter (and with `eased` duller) in a pointer's sweep (not the draw's hops, which pass no pointer).
+    // A hover: at its level, ducked over a pointer's sweep and for a quick flick
+    // (not the draw's hops, which pass no pointer).
     let level = s.hoverDb;
     let soften = 0;
     let shorter = 0;
     if (hover && where?.x !== undefined) {
-      let ducked = 0;
-      if (s.hoverRepeat === 'steps') {
-        lastHover = hoverStep(lastHover, start);
-        ducked = lastHover.db;
-      } else if (s.hoverRepeat === 'eased') {
-        lastEased = hoverEase(lastEased, start, s.hoverRecover, s.hoverWeight);
-        ducked = s.hoverDepth * lastEased.amount;
-        soften = s.hoverSoften * lastEased.amount;
-      }
-      // Within a sweep, a quick flick barely brushes the control; a slow arrival
-      // sounds it in full, and so does the first after a pause, however fast.
       const speed = (where.speed ?? 0) / screen().width;
-      const sweeping = lastPointerHover !== null && start - lastPointerHover < HOVER_SWEEP;
-      lastPointerHover = start;
-      if (s.hoverSpeed && sweeping) {
-        const k = speedAmount(speed, s.hoverSlow, s.hoverFast);
-        ducked += s.hoverSpeedDb * k;
-        soften += s.hoverSpeedSoften * k;
-        shorter = s.hoverShorter * k;
-      }
-      level += ducked;
-      Object.assign(hoverHeard, { db: ducked, soften, n: hoverHeard.n + 1, speed });
+      const duck = hoverDuck(lastHover, start, speed, s);
+      lastHover = duck.memory;
+      ({ soften, shorter } = duck);
+      level += duck.db;
+      if (hoversWatched) Object.assign(hoverHeard, { db: duck.db, soften, n: hoverHeard.n + 1, speed });
     }
     const place = big ? wide(ac) : PLACES[s.renderer](ac, dryHover);
     place.output.connect(mixOf(ac));
@@ -605,10 +592,12 @@ const placer: Placer = {
     const sendPan = ac.createStereoPanner();
     let toRoom: AudioNode = wet;
     if (far) toRoom = toRoom.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far) * (1 + 0.6 * far)));
+    // A ducked hover's room as dull as the hover.
+    if (soften) toRoom = toRoom.connect(filter(ac, 'highshelf', 4000, 0.707, soften));
     toRoom.connect(sendPan).connect(wetOf(ac));
     const sendAz = (t: number) => (s.sideReverb && !dryHover ? clamp1(az(t)) * SIDE_REVERB : 0);
     if (hover) {
-      // Dry and close: little of the room.
+      // At its level; dry and close (hoverDry), with little of the room.
       dry.gain.value = db(level);
       wet.gain.value = db(level) * (dryHover ? HOVER_ROOM : 1);
       // Brushed past: its tail let go of sooner, the quicker the flick.

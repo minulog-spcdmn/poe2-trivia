@@ -4,6 +4,7 @@
 
 import { bedsAt, nextPlaceAt } from './sound.ts';
 import { ROOMS } from './acoustics.ts';
+import type { Spatial } from './spatial.svelte.ts';
 
 /** The part of a box (an element's, or the screen's) that placing reads. */
 type Box = { left: number; width: number; height: number };
@@ -78,6 +79,40 @@ export function hoverEase(prev: { at: number; busy: number } | null, now: number
 export function speedAmount(speed: number, slow: number, fast: number): number {
   const u = Math.max(0, Math.min(1, (speed - slow) / Math.max(1e-6, fast - slow)));
   return u * u * (3 - 2 * u);
+}
+
+/** The pointer's last hover, as the next reads it: when (s), its step and how busy hovering was, kept whichever way repeats are heard. */
+export type HoverMemory = { at: number; step: number; busy: number };
+
+/**
+ * A pointer's hover at `now` (s), after the last (`prev`), coming at `speed`
+ * (screen widths a second), with the settings `s`: how much quieter (dB) and
+ * duller (dB above 4 kHz) it comes, how much shorter (0 to 1), and what the
+ * next hover reads. Repeats as `hoverRepeat` has them (a step each, or eased
+ * by how busy hovering is); within a sweep a quick flick barely brushes the
+ * control, but the first hover after a pause sounds in full however fast it
+ * came.
+ */
+export function hoverDuck(
+  prev: HoverMemory | null,
+  now: number,
+  speed: number,
+  s: Pick<Spatial, 'hoverRepeat' | 'hoverDepth' | 'hoverSoften' | 'hoverRecover' | 'hoverWeight' | 'hoverSpeed' | 'hoverSlow' | 'hoverFast' | 'hoverSpeedDb' | 'hoverSpeedSoften' | 'hoverShorter'>,
+): { db: number; soften: number; shorter: number; memory: HoverMemory } {
+  const stepped = hoverStep(prev, now);
+  const eased = hoverEase(prev, now, s.hoverRecover, s.hoverWeight);
+  let db = s.hoverRepeat === 'steps' ? stepped.db : s.hoverRepeat === 'eased' ? s.hoverDepth * eased.amount : 0;
+  let soften = s.hoverRepeat === 'eased' ? s.hoverSoften * eased.amount : 0;
+  let shorter = 0;
+  const sweeping = prev !== null && now - prev.at < HOVER_SWEEP;
+  if (s.hoverSpeed && sweeping) {
+    const k = speedAmount(speed, s.hoverSlow, s.hoverFast);
+    db += s.hoverSpeedDb * k;
+    soften += s.hoverSpeedSoften * k;
+    shorter = s.hoverShorter * k;
+  }
+  // (+ 0: none ducked is 0, not -0.)
+  return { db: db + 0, soften: soften + 0, shorter, memory: { at: now, step: stepped.step, busy: eased.busy } };
 }
 
 /**
