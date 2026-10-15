@@ -382,7 +382,7 @@
   {#each parts as p, i (i)}
     {#if typeof p === 'string'}{p}{:else if 'n' in p}<b class="n">{p.n}</b>{:else if 'who' in p}<span class="who"
         ><PlayerName name={nameOf(p.who)} />{#if p.who === me}<em class="you">&nbsp;(you)</em>{/if}</span
-      >{:else if 'item' in p}<b class="it">{itemName(p.item)}</b>{:else}{p.cat}{/if}
+      >{:else if 'item' in p}<button class="it" onclick={() => inspect(p.item)} title="Open in the codex">{itemName(p.item)}</button>{:else}{p.cat}{/if}
   {/each}
 {/snippet}
 
@@ -393,7 +393,7 @@
       {@const p = s.players.find((x) => x.id === ic.avatar)}
       {#if p}<Avatar name={p.name} hue={p.hue} size={24} />{:else}<i class="diamond"></i>{/if}
     {:else if 'item' in ic}
-      <span class="mini"><img src={itemThumb(ic.item, 128)} alt="" /></span>
+      <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
     {:else if 'glyph' in ic}
       <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
     {:else if 'heart' in ic}
@@ -933,10 +933,23 @@
     font-size: 0.86em;
     color: var(--gold-hi);
   }
+  /* An item named in a line opens its codex page, as its thumb does. */
   .it {
+    display: inline;
+    padding: 0;
+    font: inherit;
     font-family: var(--font-display);
     font-weight: 700;
     color: #f3c37e;
+    background: none;
+    border: 0;
+    cursor: zoom-in;
+    transition: color 0.2s;
+  }
+  .it:hover {
+    color: #ffe0ad;
+    text-decoration: underline dotted rgba(243, 195, 126, 0.6);
+    text-underline-offset: 3px;
   }
   em.you {
     font-size: 0.78em;
@@ -1004,8 +1017,8 @@
   }
   .thumb {
     position: relative;
-    display: grid;
-    place-items: center;
+    display: block;
+    flex: none;
     width: var(--t);
     height: var(--t);
     padding: 0;
@@ -1018,9 +1031,10 @@
   .thumb:hover {
     border-color: var(--gold-lo);
   }
+  /* The art fits a box inside the square, however tall or wide it is (a staff, a belt). */
   .thumb .art {
-    width: 86%;
-    height: 86%;
+    position: absolute;
+    inset: 7%;
   }
   .thumb img {
     display: block;
@@ -1341,18 +1355,26 @@
     min-height: 1.35em;
   }
   .mini {
-    display: grid;
-    place-items: center;
+    position: relative;
+    display: block;
     width: 30px;
     height: 30px;
     margin: -4px 0;
+    padding: 0;
     background: rgba(0, 0, 0, 0.45);
     border: 1px solid var(--line);
     border-radius: 2px;
+    cursor: zoom-in;
+    transition: border-color 0.2s;
+  }
+  .mini:hover {
+    border-color: var(--gold-lo);
   }
   .mini img {
-    max-width: 26px;
-    max-height: 26px;
+    position: absolute;
+    inset: 2px;
+    width: calc(100% - 4px);
+    height: calc(100% - 4px);
     object-fit: contain;
   }
   .glyph-ic {
