@@ -15,7 +15,13 @@ import { counts, isTogether, type DelveRun } from './delveRecord.ts';
 import type { Answer } from './codex.ts';
 
 export type Part = string | { n: string | number } | { who: string } | { item: string } | { cat: string };
-export type Icon = { avatar: string } | { item: string } | { glyph: 'ward' | 'flare' | 'dynamite' } | { heart: true } | { diamond: true };
+/**
+ * The mark before a line, always one that means something there: a player,
+ * an item, a find's item, the heart of a life given, a zone's emblem (at a
+ * depth, as the game counts it) or a category's. (Never the gold diamond:
+ * in the game it says "you are here".)
+ */
+export type Icon = { avatar: string } | { item: string } | { glyph: 'ward' | 'flare' | 'dynamite' } | { heart: true } | { zone: number } | { cat: string };
 export interface Line {
   icon: Icon;
   parts: Part[];
@@ -208,10 +214,10 @@ export function highlights(s: GameState): Line[] {
     const cats = Object.entries(r.cats ?? {});
     // The hardest: the lowest share answered right among those asked twice or more (more asked first among equals).
     const hard = cats.filter(([, [n]]) => n >= 2).sort((a, b) => a[1][1] / a[1][0] - b[1][1] / b[1][0] || b[1][0] - a[1][0])[0];
-    if (hard) out.push({ icon: { diamond: true }, parts: ['The hardest category was ', { cat: hard[0] }, ': ', { n: hard[1][1] }, ' of ', { n: hard[1][0] }, ' answered right.'] });
+    if (hard) out.push({ icon: { cat: hard[0] }, parts: ['The hardest category was ', { cat: hard[0] }, ': ', { n: hard[1][1] }, ' of ', { n: hard[1][0] }, ' answered right.'] });
     // Picked most: never the hardest again (with few categories played they can be the same).
     const most = cats.filter(([c]) => c !== hard?.[0]).sort((a, b) => b[1][0] - a[1][0])[0];
-    if (most && most[1][0] >= 2) out.push({ icon: { diamond: true }, parts: ['The category picked most was ', { cat: most[0] }, ', ', { n: most[1][0] }, ' times.'] });
+    if (most && most[1][0] >= 2) out.push({ icon: { cat: most[0] }, parts: ['The category picked most was ', { cat: most[0] }, ', ', { n: most[1][0] }, ' times.'] });
   }
   return out;
 }
@@ -230,7 +236,7 @@ export function partyHighlights(s: GameState): Line[] {
     out.push({ icon: { heart: true }, parts: [cap(word(more)), ` more ${more === 1 ? 'life was' : 'lives were'} given to bring a teammate back.`] });
   }
   const streak = s.delve?.bestTeamStreak ?? 0;
-  if (streak >= 2) out.push({ icon: { diamond: true }, parts: ['The longest team streak: ', { n: streak }, ' depths cleared with nobody missing.'] });
+  if (streak >= 2) out.push({ icon: { zone: teamDepth(s) }, parts: ['The longest team streak: ', { n: streak }, ' depths cleared with nobody missing.'] });
   return out;
 }
 
@@ -240,7 +246,7 @@ export function partyHighlights(s: GameState): Line[] {
  * time (`met`: items asked this run, `fresh`: of those, new to the codex).
  * The very first run tells only the first and the last.
  */
-export function soloHighlights(s: GameState, me: string, met: { met: number; fresh: number }, first: boolean): Line[] {
+export function soloHighlights(s: GameState, me: string, met: { met: number; fresh: number; newest?: string }, first: boolean): Line[] {
   const r = s.recap;
   const out: Line[] = [];
   if (r?.fastest?.by === me) out.push({ icon: { item: r.fastest.id }, parts: ['Your fastest answer: ', { n: secs(r.fastest.ms) }, 's on ', { item: r.fastest.id }, '.'] });
@@ -249,9 +255,11 @@ export function soloHighlights(s: GameState, me: string, met: { met: number; fre
       icon: { item: r.closest.id },
       parts: ['Your closest call: ', { item: r.closest.id }, ' at depth ', { n: shownDepth(r.closest.depth) }, ', right with ', { n: secs(r.closest.left) }, 's left.'],
     });
-  if (met.fresh > 0 && met.fresh === met.met && met.met > 1) out.push({ icon: { diamond: true }, parts: ['All ', { n: met.fresh }, ' uniques you met are now kept in your codex.'] });
-  else if (met.fresh === 1) out.push({ icon: { diamond: true }, parts: ['You met one new unique, now kept in your codex.'] });
-  else if (met.fresh > 1) out.push({ icon: { diamond: true }, parts: ['You met ', { n: met.fresh }, ' new uniques, now kept in your codex.'] });
+  // Its mark: the last of them met (the run's own depth's emblem, should the codex not say which).
+  const icon: Icon = met.newest ? { item: met.newest } : { zone: s.round };
+  if (met.fresh > 0 && met.fresh === met.met && met.met > 1) out.push({ icon, parts: ['All ', { n: met.fresh }, ' uniques you met are now kept in your codex.'] });
+  else if (met.fresh === 1) out.push({ icon, parts: ['You met one new unique, now kept in your codex.'] });
+  else if (met.fresh > 1) out.push({ icon, parts: ['You met ', { n: met.fresh }, ' new uniques, now kept in your codex.'] });
   return out;
 }
 
@@ -332,7 +340,7 @@ export function runFacts(s: GameState, me: string | null): Line[] {
   const zones = zoneOf(depth).index + 1;
   const out: Line[] = [
     {
-      icon: { diamond: true },
+      icon: { zone: depth },
       parts: [zones <= STRATA.length ? `${cap(word(zones))} of ${word(STRATA.length)} zones reached.` : `All ${word(STRATA.length)} zones reached, and ${word(zones - STRATA.length)} past them.`],
     },
   ];

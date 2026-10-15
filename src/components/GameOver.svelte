@@ -3,7 +3,7 @@
   import { fade, fly, scale } from 'svelte/transition';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
-  import { itemSrcset, itemThumb, playerColor } from '../lib/ui';
+  import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import ArcaneCircle from './ArcaneCircle.svelte';
@@ -173,8 +173,9 @@
   /** The uniques met this run, and of those met for the first time. */
   const met = $derived.by(() => {
     const from = run?.startedAt ?? Infinity;
-    const items = codex ? Object.values(codex.items) : [];
-    return { met: items.filter((e) => e.last >= from).length, fresh: items.filter((e) => e.first >= from).length };
+    const items = codex ? Object.entries(codex.items) : [];
+    const fresh = items.filter(([, e]) => e.first >= from).sort((a, b) => b[1].first - a[1].first);
+    return { met: items.filter(([, e]) => e.last >= from).length, fresh: fresh.length, newest: fresh[0]?.[0] };
   });
   const facts = $derived(run ? runFacts(s, solo ? self : null) : []);
   const lines = $derived<Line[]>(!run ? highlights(s) : solo && self ? soloHighlights(s, self, met, first) : partyHighlights(s));
@@ -401,9 +402,9 @@
   {/each}
 {/snippet}
 
-<!-- The column in front of a line, every mark in it about the same size (ICON): an avatar, an item's thumb, or a sign (a
-     find's glyph, the heart of light, the gold diamond) drawn as large, on its own (a round frame would read as a button),
-     so each line's words start the same distance from what stands before them. -->
+<!-- The column in front of a line: an avatar, an item's thumb, or a sign (a find's item, the heart of a life given, a zone's
+     emblem, a category's), each at the size it is drawn for, with nothing round it (a round frame reads as a button). Every
+     mark stands against the column's right edge, so each line's words start the same distance from it. -->
 {#snippet icon(ic: Icon)}
   <span class="ic" aria-hidden="true">
     {#if 'avatar' in ic && s.players.some((x) => x.id === ic.avatar)}
@@ -412,12 +413,17 @@
       <Avatar name={p.name} hue={p.hue} size={ICON - 4} />
     {:else if 'item' in ic}
       <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
-    {:else}
-      <span class="medal">
-        {#if 'glyph' in ic}<span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
-        {:else if 'heart' in ic}<span class="heart-ic"><HeartOfLight /></span>
-        {:else}<i class="diamond"></i>{/if}
-      </span>
+    {:else if 'glyph' in ic}
+      <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
+    {:else if 'heart' in ic}
+      <span class="heart-ic"><HeartOfLight /></span>
+    {:else if 'zone' in ic}
+      {@const sg = sigilOf(zoneAt(Math.max(1, ic.zone)))}
+      <svg class="zone-ic" viewBox="-11 -11 22 22" style:--c={accentAt(Math.max(1, ic.zone))}
+        >{#if sg.shade}<path class="s-shade" d={sg.shade} />{/if}<path class="s-fine" d={sg.fine} /><path d={sg.lines} /></svg
+      >
+    {:else if 'cat' in ic}
+      <span class="cat-ic" style:--src="url('{categoryGlyph(ic.cat)}')"></span>
     {/if}
   </span>
 {/snippet}
@@ -689,7 +695,7 @@
                 <ul class="fx finds">
                   {#each FINDS_IN_ORDER as f (f.kind)}
                     <li data-find={f.kind}>
-                      <span class="ic"><span class="medal"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span></span>
+                      <span class="ic"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span>
                       <span class="txt">
                         <b class="find-name">{FIND_TEXT[f.kind].name}</b>
                         <span>From depth {shownDepth(f.from)}. {FIND_BRIEF[f.kind]}</span>
@@ -1453,16 +1459,9 @@
   .ic {
     flex: none;
     display: grid;
-    place-items: center;
+    place-items: center end;
     width: 26px;
-    min-height: 1.35em;
-  }
-  /* A sign's box: as large as an avatar or a thumb, with nothing drawn round it. */
-  .medal {
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
+    min-height: 26px;
   }
   .mini {
     position: relative;
@@ -1486,21 +1485,42 @@
     height: calc(100% - 4px);
     object-fit: contain;
   }
+  /* A find's item at the size it is drawn for (the lobby's finds list, the reveal's lines). */
   .glyph-ic {
-    --h: 22px;
+    --h: 16px;
     display: inline-flex;
   }
   .heart-ic {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
   }
-  /* Turned, its corners reach as far as an avatar's rim. */
-  .diamond {
-    width: 15px;
-    height: 15px;
-    rotate: 45deg;
-    background: linear-gradient(135deg, #f3a565, #c06a2c);
-    box-shadow: 0 0 6px rgba(224, 138, 68, 0.45);
+  /* A zone's emblem, as the descent and the runs chart draw it, in the zone's colour. */
+  .zone-ic {
+    width: 22px;
+    height: 22px;
+    overflow: visible;
+  }
+  .zone-ic path {
+    fill: none;
+    stroke: color-mix(in srgb, var(--c) 60%, #f0e0b8);
+    stroke-width: 0.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .zone-ic .s-fine {
+    stroke-width: 0.55;
+  }
+  .zone-ic .s-shade {
+    stroke: color-mix(in srgb, var(--c) 50%, #b08a4c);
+    stroke-width: 0.4;
+  }
+  /* A category's emblem, in gold, as the codex shows it. */
+  .cat-ic {
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
+    -webkit-mask: var(--src) center / contain no-repeat;
+    mask: var(--src) center / contain no-repeat;
   }
   .txt {
     min-width: 0;
