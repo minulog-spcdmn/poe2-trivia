@@ -2,7 +2,7 @@
 // arrives from the other side. Anything that doesn't match is dropped and the
 // sender disconnected: a real client never sends malformed messages.
 
-import type { Action, GameState } from './game';
+import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
 
@@ -125,7 +125,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
           const index = a.index === null ? null : isInt(a.index, 0, 16) ? a.index : undefined;
           const askedAt = a.askedAt === undefined ? undefined : isInt(a.askedAt, 0, Number.MAX_SAFE_INTEGER) ? a.askedAt : NaN;
           if (index === undefined || Number.isNaN(askedAt)) return null;
-          return { t: 'action', action: { type: 'answer', index, askedAt } };
+          // Its time on the guest's device, for the end screen: dropped if it isn't one (game.ts answerMs).
+          const ms = answerMs(a.ms);
+          return { t: 'action', action: { type: 'answer', index, askedAt, ...(ms !== undefined ? { ms } : {}) } };
         }
         case 'next':
           return { t: 'action', action: { type: 'next' } };

@@ -4,7 +4,10 @@
 // darker and lower the deeper the run, over a rumble, with a bed of its own
 // for each place, cross-fading as the scene turns). What plays for each
 // moment lives in soundDesign.ts; this file is the mixer, and matches the
-// audition page and the ambience mix board the design was tuned on.
+// audition page and the ambience mix board the design was tuned on. Each
+// sound is placed where it happens on screen, the ambience spread wide and
+// each place in Delve given a room of its own in place of the hall, by the
+// placer (lib/spatial.svelte.ts, see Placer).
 
 import { archetypeAt } from './backdrops.ts';
 import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
@@ -114,8 +117,50 @@ export function setVolume(value: number) {
 /** Squared, so the slider feels even to the ear rather than bunching up at the top. */
 const userGain = () => volume * volume;
 
-type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode };
+/** `reverb`: the hall, fed by `wet` (its impulse response set a moment after the bus is made, see audio). */
+type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode; reverb: ConvolverNode };
 let bus: Bus | null = null;
+
+/**
+ * Where a sound comes from on screen: an element (its centre), a point
+ * (client px), both (half way between them), or a screen edge (-1 the
+ * left, 1 the right). With `to` and `seconds` it travels there over that
+ * long from its start, as sparks flying to a slot. `far`: a teammate's, not
+ * yours. `speed`: how fast (px/s) the pointer came over the control it
+ * hovers. Only the placer reads it (setPlacer); without one every sound
+ * plays centred.
+ */
+export type SoundPlace = { from?: Element | null; x?: number; speed?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
+
+/**
+ * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
+ * set as the game starts. `mount` is handed the bus once it is up: its mix,
+ * its reverb send, its hall (`reverb`, fed by the send and playing into the
+ * mix) and its output (`out`, otherwise straight to the speakers), to route
+ * through its own. `place` gives the nodes a moment's layers play into, dry
+ * and to the reverb, in place of the mix's; null leaves it as it is.
+ * `widen` is put on each ambience loop (mono) before its filter, to spread
+ * it (null: left as it is): it may hand back a second take of the loop
+ * (`take`, not started), which is started half a loop on, follows the
+ * loop's rate and stops with it. `depth` hears Delve's depth as the ambience does
+ * (depthAmbience), once mounted and on every change, for its rooms.
+ */
+export type Placer = {
+  mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode }): void;
+  place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined): { dry: AudioNode; wet: AudioNode } | null;
+  widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode } | null;
+  depth(d: number): void;
+};
+let placer: Placer | null = null;
+
+/** Sets the placer (see Placer), once, as the game starts. */
+export function setPlacer(p: Placer) {
+  placer = p;
+  if (bus) {
+    p.mount({ ac: bus.ac, master: bus.master, wet: bus.wet, reverb: bus.reverb, out: bus.user });
+    p.depth(depth);
+  }
+}
 /** Loaded or loading. Delve's beds are let go of once they fall silent (see evict); every other sound is kept. */
 const buffers = new Map<string, Promise<AudioBuffer>>();
 /** Decoded and ready to play right now. */
@@ -123,7 +168,7 @@ const ready = new Map<string, AudioBuffer>();
 /** The files the moments play (see sfx). */
 const MOMENT_FILES = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
 
-const db = (d: number) => Math.pow(10, d / 20);
+export const db = (d: number) => Math.pow(10, d / 20);
 
 /** Browsers refuse audio before the first click or key press; sounds queued until then would all fire at once. */
 function allowed() {
@@ -153,12 +198,14 @@ function audio(): Bus | null {
     // The hall's impulse takes a moment to work out: not in the tap that
     // starts the sound (the first sounds just play dry).
     const reverb = ac.createConvolver();
-    setTimeout(() => (reverb.buffer = hall(ac, 2.8)), 300);
+    setTimeout(() => (reverb.buffer = hall(ac, HALL_SECONDS)), 300);
     const wet = ac.createGain();
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
 
-    bus = { ac, master, user, wet };
+    bus = { ac, master, user, wet, reverb };
+    placer?.mount({ ac, master, wet, reverb, out: user });
+    placer?.depth(depth);
     for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
     // Already in a Delve: work out its sounds now (see depthAmbience).
     if (depth > 0) prepareDelve(bus);
@@ -254,6 +301,9 @@ function inIdleSteps<T>(steps: Generator<void, T>): Promise<T> {
     next();
   });
 }
+
+/** How long (s) the hall's impulse response is. */
+export const HALL_SECONDS = 2.8;
 
 /** A dark stone-hall impulse response: stereo noise that decays and loses its highs as it goes. */
 function hall(ac: AudioContext, seconds: number) {
@@ -412,7 +462,7 @@ function* caveInSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>)
   return buf;
 }
 
-function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
+export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
   const f = ac.createBiquadFilter();
   f.type = type;
   f.frequency.value = frequency;
@@ -428,7 +478,7 @@ function filter(ac: AudioContext, type: BiquadFilterType, frequency: number, q =
  * should its recording run out sooner, and then fades out. `at` (s): the
  * moment starts that long from now, on the audio clock.
  */
-function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number, at = 0) {
+function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: number, gainDb: number, hold?: number, at = 0, into: { dry: AudioNode; wet: AudioNode } | null = null) {
   const { ac } = b;
   const src = ac.createBufferSource();
   src.buffer = buf;
@@ -448,10 +498,10 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
     .connect(filter(ac, 'lowpass', l.lp))
     .connect(filter(ac, 'peaking', 3200, 1, -soften))
     .connect(g)
-    .connect(b.master);
+    .connect(into?.dry ?? b.master);
   const send = ac.createGain();
   send.gain.value = l.send;
-  g.connect(send).connect(b.wet);
+  g.connect(send).connect(into?.wet ?? b.wet);
   src.start(start);
   if (hold !== undefined) {
     const end = Math.max(start, begin + hold);
@@ -495,9 +545,10 @@ const lastPlayed = new Map<Sfx, number>();
  * layer looped should its recording be shorter (a fuse burning for as long
  * as it has left). `inMs`: it starts that long from now, timed on the audio
  * clock rather than a timer (a row of ticks keeps its spacing however busy
- * the page is).
+ * the page is). `from`: where on screen it comes from (SoundPlace), for the
+ * placer to put it there.
  */
-export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number } = {}): (() => void) | undefined {
+export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: SoundPlace } = {}): (() => void) | undefined {
   // Out of sight (a co-op tab in the background) nothing plays: a sound
   // would wake the audio context that rest() put to sleep, and keep it running.
   if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
@@ -514,12 +565,14 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number } = {}): (
   const pitch = 1 + (Math.random() * 2 - 1) * m.varyPitch;
   const gainDb = (Math.random() * 2 - 1) * m.varyGain;
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
+  const inS = Math.max(0, opts.inMs ?? 0) / 1000;
+  const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from) : null;
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
     if (buf)
       layers.push(
-        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, Math.max(0, opts.inMs ?? 0) / 1000),
+        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into),
       );
   }
   // One that failed to load as sound started (offline for a moment) is tried
@@ -548,7 +601,8 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number } = {}): (
 
 /** A looping sound: AMBIENCE, FIRE, RUMBLE or a layer of a Delve place's bed (which has a rate and a send of its own). */
 type Loop = { file: string; gain: number; lp: number; rate?: number; send?: number };
-type Playing = { src: AudioBufferSourceNode; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
+/** `takes`: the loop, and a second take of it when the placer spreads it (Placer.widen). */
+type Playing = { takes: AudioBufferSourceNode[]; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
 
 /** Delve's depth (0 outside it), and how fast (s) the sound follows it: about the backdrop's two seconds a depth. */
 let depth = 0;
@@ -641,7 +695,9 @@ function prefetchBeds(b: Bus) {
 }
 
 /** Delve: the next place's bed, fetched ahead (see prefetchBeds). */
-const nextBed = () => bedOf(placeAt(Math.floor((depth - 1) / 10) + 1));
+/** The next place down from Delve's depth `d`: the next zone's (its bed fetched ahead, and its room worked out ahead: lib/spatialPlan.ts). */
+export const nextPlaceAt = (d: number) => placeAt(Math.floor((d - 1) / 10) + 1);
+const nextBed = () => bedOf(nextPlaceAt(depth));
 
 /** Never let go of (see evict): every sound but Delve's beds. */
 const KEPT = new Set([AMBIENCE.file, FIRE.file, RUMBLE.file, CAVE_IN.file, ...MOMENT_FILES]);
@@ -682,6 +738,7 @@ export function fireAmbience(on: boolean) {
 export function depthAmbience(d: number) {
   if (d === depth) return;
   depth = d;
+  placer?.depth(d);
   const now = bedsAt(d);
   beds = new Map(now.beds.flatMap(({ bed, weight }) => bed.layers.map((l): [Loop, number] => [l, weight])));
   hearth = now.fire;
@@ -734,7 +791,7 @@ function shape(l: Loop, p: Playing, at: number, tc: number) {
   const t = target(l);
   p.gain.gain.setTargetAtTime(t.gain, at, tc);
   p.lp.frequency.setTargetAtTime(t.lp, at, tc);
-  p.src.playbackRate.setTargetAtTime(t.rate, at, tc);
+  for (const s of p.takes) s.playbackRate.setTargetAtTime(t.rate, at, tc);
   p.send.gain.setTargetAtTime(t.send, at, tc);
 }
 
@@ -818,9 +875,17 @@ function updateLoop(l: Loop) {
       gain.gain.value = 0;
       const send = ac.createGain();
       send.gain.value = 0;
-      src.connect(lp).connect(gain).connect(b.master);
+      // (The rumble is wide already, worked out in stereo.)
+      const wide = placer && l !== RUMBLE ? placer.widen(ac, buf) : null;
+      if (wide) {
+        src.connect(wide.input);
+        wide.output.connect(lp);
+      } else src.connect(lp);
+      lp.connect(gain);
+      const takes = wide?.take ? [src, wide.take] : [src];
+      gain.connect(b.master);
       gain.connect(send).connect(b.wet);
-      const nodes: AudioScheduledSourceNode[] = [src];
+      const nodes: AudioScheduledSourceNode[] = [...takes];
       if (l === RUMBLE) {
         // The rumble breathes: a slow swell and ebb on its level.
         const breath = ac.createGain();
@@ -835,14 +900,16 @@ function updateLoop(l: Loop) {
         lfo.start();
         nodes.push(lfo);
       }
-      const p: Playing = { src, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()) };
+      const p: Playing = { takes, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()) };
       // In place at once, then the level fades up to where the depth wants it.
       shape(l, p, ac.currentTime, 0.001);
       gain.gain.cancelScheduledValues(ac.currentTime);
       gain.gain.setValueAtTime(0, ac.currentTime);
       gain.gain.setTargetAtTime(target(l).gain, ac.currentTime, fade.up);
       // The rumble and the beds start anywhere in their loop, so no two runs sound alike.
-      src.start(0, l === AMBIENCE || l === FIRE ? 0 : Math.random() * buf.duration);
+      const from = l === AMBIENCE || l === FIRE ? 0 : Math.random() * buf.duration;
+      src.start(0, from);
+      wide?.take?.start(0, (from + buf.duration / 2) % buf.duration);
       playing.set(l, p);
     })
     .catch(() => {
@@ -853,6 +920,20 @@ function updateLoop(l: Loop) {
 const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled)';
 
 /**
+ * How fast (px/s) the pointer came to (`x`, `y`) at `t` (ms) over its last
+ * moves (`trail`, oldest first): from the oldest within 60 ms. The hover
+ * comes before the move that brought the pointer over its control, so that
+ * move is (`x`, `y`) itself, not in the trail; with no move that recent (it
+ * rested, then jumped there at once), the jump is taken as one quick move.
+ */
+export function pointerSpeed(trail: readonly { x: number; y: number; t: number }[], x: number, y: number, t: number): number {
+  const from = trail.find((p) => t - p.t < 60) ?? trail.at(-1);
+  if (!from) return 0;
+  const dt = Math.min(Math.max(t - from.t, 8), 60) / 1000;
+  return Math.hypot(x - from.x, y - from.y) / dt;
+}
+
+/**
  * UI sounds for every control: a faint brush when the mouse moves onto one,
  * and a click when it's pressed. Controls that play their own sound (or none)
  * opt out of the click with `data-sfx="none"`. Also starts the ambience with
@@ -860,13 +941,26 @@ const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[
  */
 export function installUiSounds() {
   let hovered: Element | null = null;
+  // The pointer's last few moves (client px, ms), for how fast it came over a control.
+  const trail: { x: number; y: number; t: number }[] = [];
+  addEventListener(
+    'pointermove',
+    (e) => {
+      if (e.pointerType !== 'mouse') return;
+      trail.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+      if (trail.length > 8) trail.shift();
+    },
+    { passive: true },
+  );
   addEventListener(
     'pointerover',
     (e) => {
       // Touch "hovers" right before the tap, which already clicks.
       if (e.pointerType !== 'mouse') return;
       const el = (e.target as Element | null)?.closest?.(HOVERABLE) ?? null;
-      if (el && el !== hovered) sfx('hover');
+      // Half way between the control's middle and the pointer: a wide one sounds
+      // a little to the side it is hovered on, not at the edge it came in over.
+      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX, speed: pointerSpeed(trail, e.clientX, e.clientY, e.timeStamp) } });
       hovered = el;
     },
     { passive: true },
@@ -876,7 +970,7 @@ export function installUiSounds() {
     (e) => {
       const el = (e.target as Element | null)?.closest?.('button, a[href]');
       if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]')) return;
-      sfx('click');
+      sfx('click', { from: { from: el } });
     },
     { capture: true },
   );

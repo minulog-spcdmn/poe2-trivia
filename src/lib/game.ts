@@ -463,6 +463,8 @@ export interface Deathmatch {
   results: Record<string, boolean>;
   /** Knocked out at the end of the previous round. */
   eliminated: string[];
+  /** The round each duelist was knocked out in, by id (missing in older saves): who lasted longer ranks higher. */
+  out?: Record<string, number>;
   /** turnCount when it started (lets clients play the intro once). */
   startedAt: number;
 }
@@ -878,6 +880,88 @@ export interface Reveal {
   hits?: Hit[];
 }
 
+/**
+ * A game told back at its end (GameOver.svelte, lib/recap.ts): kept by the
+ * host as it goes, the same for everyone in the room: a line per player,
+ * per category and per item a find gave, and the misses. Guests get it only
+ * with the end (publicView).
+ */
+export interface Recap {
+  /** Each player's answers on their own turn (a race's guesses, a run's answers), by id. */
+  answers: Record<string, RecapTally>;
+  /** The fastest right answer of the game: who, the item, and its time on their own device. */
+  fastest?: { by: string; id: string; ms: number };
+  /** Delve: the right answer given with the least of its clock left (ms), at which depth. */
+  closest?: { by: string; id: string; left: number; depth: number };
+  /** Take turns: each category picked, as [questions, answered right]. */
+  cats?: Record<string, [number, number]>;
+  /** Race: wrong guesses on each item. */
+  wrong?: Record<string, number>;
+  /** Race: the longest run of questions one player was first on, and the run under way. */
+  firsts?: { by: string; n: number };
+  run?: { by: string; n: number };
+  /** Every miss outside Delve (a wrong answer, a turn run out, a race's wrong guess), oldest first. */
+  misses: RecapMiss[];
+  /** Delve: each item a find gave, oldest first, and what became of it. */
+  items?: RecapItem[];
+  /** Everyone the recap names, as they were when it named them: a player removed before the end is still told by name. */
+  people?: Record<string, { name: string; hue: number }>;
+}
+
+export interface RecapTally {
+  /** Answers given (a turn run out counts), and right. */
+  n: number;
+  ok: number;
+  /** The fastest right one, in ms on their device. */
+  ms?: number;
+  /** The same in a deathmatch, kept apart (its answers aren't in `n`). */
+  dn?: number;
+  dok?: number;
+}
+
+export interface RecapMiss {
+  by: string;
+  id: string;
+  /** In the deathmatch. */
+  dm?: true;
+}
+
+export interface RecapItem {
+  kind: ItemKind;
+  /** The depth (round) it was won at, and by whom. */
+  at: number;
+  by: string;
+  /** The depth it went at, and how: set off, burnt, broken taking a loss, or blown up by a Dynamite Cache's blast. */
+  used?: number;
+  how?: 'blast' | 'flare' | 'ward' | 'blown';
+}
+
+/** An answer's own time, as its device sends it: whole ms within reason, or nothing. */
+export const answerMs = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 50 && v <= 600_000 ? Math.round(v) : undefined);
+/** The quickest an answer is believed to be, whatever its device says. */
+export const ANSWER_MS_FLOOR = 250;
+/**
+ * How much sooner than the host's clock says a device may report its answer:
+ * the picture travelling and loading there (outside Delve, where the clock
+ * starts as the question is asked, not as its art arrives).
+ */
+export const ANSWER_MS_SLACK = 5000;
+
+/**
+ * An answer's time for the recap: what its device says (`ms`), held to what
+ * the host saw. Never longer than since the question was asked (`asked`: no
+ * device saw it sooner, a clock held still by a reload included), and never
+ * more than ANSWER_MS_SLACK shorter than its clock has run (`clock`: Delve's
+ * from its art reaching the player, which the host knows; otherwise the same
+ * as `asked`), nor under ANSWER_MS_FLOOR. So a device can't claim the room's
+ * fastest answer, and a slow picture or a reload doesn't cut an honest one.
+ */
+export function heldMs(ms: number | undefined, asked: number, clock = asked): number | undefined {
+  if (ms === undefined || !Number.isFinite(asked) || !Number.isFinite(clock)) return undefined;
+  const hi = Math.max(ANSWER_MS_FLOOR, Math.round(asked));
+  return Math.min(hi, Math.max(ms, ANSWER_MS_FLOOR, Math.round(clock) - ANSWER_MS_SLACK));
+}
+
 /** Someone watching: they joined a running game, or stepped aside to watch. */
 export interface Spectator {
   id: string;
@@ -926,6 +1010,8 @@ export interface GameState {
    * hosts): which game it is, and which answers in a codex log belong to it.
    */
   startedAt?: number;
+  /** What the end screen tells of the game, kept by the host as it goes (missing in the lobby and older saves). */
+  recap?: Recap;
   /** Bumped on every change so clients can ignore stale messages. */
   version: number;
 }
@@ -943,7 +1029,8 @@ export type Action =
   | { type: 'settings'; settings: Partial<Omit<Settings, 'custom'>> & { custom?: Partial<Knobs> } }
   | { type: 'start' }
   | { type: 'pick'; category: string }
-  | { type: 'answer'; index: number | null; askedAt?: number }
+  /** `ms`: how long it took on the device that gave it (the end screen's fastest answer). */
+  | { type: 'answer'; index: number | null; askedAt?: number; ms?: number }
   | { type: 'next' }
   | { type: 'skip' }
   /** Host: swap the open question for a new one in the same category (its art failed to load). */
@@ -1083,7 +1170,19 @@ function seat(s: GameState, id: string, name: string) {
  * Delve co-op: the votes, the struck options and who struck them are public;
  * which option is right stays hidden until the reveal.
  */
+/**
+ * What a guest receives of the state. The recap stays with the host until
+ * the game is over: only the end screen reads it, and it grows with every
+ * answer, so it would ride along on every change for nothing.
+ */
 export function publicView(s: GameState): GameState {
+  const v = guestView(s);
+  if (s.phase === 'over' || !v.recap) return v;
+  const { recap: _, ...rest } = v;
+  return rest;
+}
+
+function guestView(s: GameState): GameState {
   const q = s.question;
   if (!q) return { ...s, used: [] };
   if (s.phase === 'question') {
@@ -1400,6 +1499,7 @@ export class Engine {
         s.artLean = {};
         s.delve = null;
         s.startedAt = this.now();
+        s.recap = { answers: {}, misses: [] };
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
           s.used = [];
@@ -1457,6 +1557,8 @@ export class Engine {
         if (problem) throw new ActionError(problem, s.phase === 'question');
         const dm = s.delve!;
         (dm.revives ??= []).push({ by: from, to: action.target, depth: s.round, fell: fellAt(s, action.target) ?? s.round, at: this.now() });
+        this.person(s, from);
+        this.person(s, action.target);
         // Back with one life and nothing else (their pack was lost where they perished), counted in the next vote.
         if (dm.missed) dm.missed[action.target] = 0;
         break;
@@ -1517,7 +1619,7 @@ export class Engine {
         // clock hit 0, as the host's allowance for answers in flight has it)
         // keeps the flare: it goes back in their pack.
         if (!timedOut && q.flared && q.flaredAt !== undefined && from !== null && from !== s.hostId && this.now() <= q.flaredAt + ANSWER_GRACE_MS) {
-          this.gain(s, active.id, 'flares');
+          this.refund(s, active.id);
           delete q.flared;
           delete q.flaredAt;
         }
@@ -1558,6 +1660,13 @@ export class Engine {
         }
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
+        this.note(s, active.id, q.itemId, correct, answerMs(action.ms));
+        // Take turns: how each category picked went (a deathmatch's is drawn, not picked).
+        if (s.recap && !s.delve && !s.deathmatch) {
+          const c = ((s.recap.cats ??= {})[q.category] ??= [0, 0]);
+          c[0]++;
+          if (correct) c[1]++;
+        }
         s.reveal = {
           correctId: q.itemId,
           chosenId: timedOut ? null : chosenId,
@@ -1615,6 +1724,7 @@ export class Engine {
         for (const m of voided.misses) {
           const p = s.players.find((p) => p.id === m.playerId);
           if (p) p.score += 1;
+          this.unnote(s, m.playerId, voided.itemId);
         }
         // None of its pictures come back in the new one (one of them didn't load).
         for (const id of voided.options) if (this.byId.has(id) && !s.used.includes(id)) s.used.push(id);
@@ -1643,6 +1753,7 @@ export class Engine {
         fresh.used = s.used;
         Object.assign(s, fresh);
         delete s.startedAt;
+        delete s.recap;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
@@ -1786,7 +1897,7 @@ export class Engine {
 
     if (from === null) {
       // Host timer: time is up, nobody got it.
-      s.reveal = this.noWinner(q, true);
+      s.reveal = this.noWinner(q, true, s);
       s.phase = 'reveal';
       return;
     }
@@ -1799,6 +1910,12 @@ export class Engine {
 
     if (q.options[index] === q.itemId) {
       player.score += 1;
+      this.note(s, player.id, q.itemId, true, answerMs(action.ms));
+      if (s.recap) {
+        const r = s.recap;
+        r.run = r.run?.by === player.id ? { by: player.id, n: r.run.n + 1 } : { by: player.id, n: 1 };
+        if (!r.firsts || r.run.n > r.firsts.n) r.firsts = { ...r.run };
+      }
       s.reveal = {
         correctId: q.itemId,
         chosenId: q.itemId,
@@ -1813,12 +1930,16 @@ export class Engine {
     }
     player.score -= 1;
     q.misses.push({ playerId: player.id, index });
+    this.note(s, player.id, q.itemId, false, undefined);
+    if (s.recap) (s.recap.wrong ??= {})[q.itemId] = (s.recap.wrong[q.itemId] ?? 0) + 1;
     const chosenId = q.options[index];
     if (isFake(chosenId) && !s.used.includes(chosenId)) s.used.push(chosenId);
     this.checkRaceDone(s);
   }
 
-  private noWinner(q: Question, timedOut: boolean): Reveal {
+  private noWinner(q: Question, timedOut: boolean, s?: GameState): Reveal {
+    // Nobody first on it: a run of firsts ends.
+    if (s?.recap) delete s.recap.run;
     return {
       correctId: q.itemId,
       chosenId: null,
@@ -1837,7 +1958,7 @@ export class Engine {
     const missed = new Set(q.misses.map((m) => m.playerId));
     const waiting = s.players.filter((p) => p.connected && !missed.has(p.id));
     if (waiting.length === 0) {
-      s.reveal = this.noWinner(q, false);
+      s.reveal = this.noWinner(q, false, s);
       s.phase = 'reveal';
     }
   }
@@ -1916,7 +2037,7 @@ export class Engine {
     if (livesOf(s, id) <= 0) return null;
     const p = s.players.find((p) => p.id === id);
     if (p) p.streak = 0;
-    if (this.spend(s, id, 'wards')) return 'ward';
+    if (this.spend(s, id, 'wards', 'ward')) return 'ward';
     (s.delve!.losses[id] ??= []).push(s.round);
     if (livesOf(s, id) === 0 && s.delve!.inventory?.[id]) s.delve!.inventory[id] = { wards: 0, flares: 0, dynamite: 0 };
     return 'life';
@@ -1931,7 +2052,28 @@ export class Engine {
     if (!hasRoom(inv, item) || livesOf(s, id) <= 0) return undefined;
     inv[item]++;
     (s.delve!.inventory ??= {})[id] = inv;
+    if (s.recap) {
+      (s.recap.items ??= []).push({ kind: item, at: s.round, by: id });
+      this.person(s, id);
+    }
     return item;
+  }
+
+  /**
+   * A flare that burnt as a guest's answer in time crossed it goes back in
+   * its holder's pack, unspent: if they still stand with room for it, as any
+   * item gained (one who perished since has no pack to put it in).
+   */
+  private refund(s: GameState, id: string) {
+    const inv = inventoryOf(s, id);
+    if (!hasRoom(inv, 'flares') || livesOf(s, id) <= 0) return;
+    inv.flares++;
+    (s.delve!.inventory ??= {})[id] = inv;
+    const it = s.recap?.items?.findLast((x) => x.by === id && x.kind === 'flares' && x.how === 'flare');
+    if (it) {
+      delete it.used;
+      delete it.how;
+    }
   }
 
   /**
@@ -1952,7 +2094,7 @@ export class Engine {
     const dm = s.delve!;
     const was = s.question!;
     const cards = unaskedCards(s);
-    if (!cards.length || !this.spend(s, stick, 'dynamite')) return;
+    if (!cards.length || !this.spend(s, stick, 'dynamite', 'blast')) return;
     const votes = Object.values(dm.votes ?? {});
     const backing = (c: string) => votes.filter((v) => v === c).length;
     // Drawn, then (the sort is stable) those with the most votes to the front.
@@ -2000,7 +2142,7 @@ export class Engine {
   private burnFlare(s: GameState, holder: string, onTime = false) {
     const q = s.question!;
     const now = this.now();
-    if (!this.spend(s, holder, 'flares')) return;
+    if (!this.spend(s, holder, 'flares', 'flare')) return;
     q.flared = true;
     q.flaredBy = holder;
     q.flaredAt = q.deadline!;
@@ -2020,16 +2162,70 @@ export class Engine {
     const inv = inventoryOf(s, id);
     if (!blastVictim(inv, 0)) return null;
     const item = blastVictim(inv, this.rng())!;
-    return this.spend(s, id, item) ? item : null;
+    return this.spend(s, id, item, 'blown') ? item : null;
   }
 
-  /** Uses up one of an item; false when the player has none. */
-  private spend(s: GameState, id: string, item: ItemKind): boolean {
+  /** Uses up one of an item (`how`, for the recap); false when the player has none. */
+  private spend(s: GameState, id: string, item: ItemKind, how: NonNullable<RecapItem['how']>): boolean {
     const inv = inventoryOf(s, id);
     if (inv[item] <= 0) return false;
     inv[item]--;
     (s.delve!.inventory ??= {})[id] = inv;
+    // The oldest of theirs still unspent: what went first.
+    const it = s.recap?.items?.find((x) => x.by === id && x.kind === item && x.used === undefined);
+    if (it) Object.assign(it, { used: s.round, how });
     return true;
+  }
+
+  // ---- the recap -----------------------------------------------------------
+
+  /** An answer for the end screen (GameState.recap): `by`'s, on item `id`, right or not, `ms` its time on their device. */
+  private note(s: GameState, by: string, id: string, ok: boolean, sent: number | undefined) {
+    const r = s.recap;
+    if (!r) return;
+    this.person(s, by);
+    const q0 = s.question;
+    // As the host saw it: since the question was asked, and since its clock started (Delve: as its art reached the player).
+    const ms = q0 ? heldMs(sent, this.now() - q0.askedAt, this.now() - (q0.clockAt ?? q0.askedAt)) : undefined;
+    const t = (r.answers[by] ??= { n: 0, ok: 0 });
+    if (s.deathmatch) {
+      t.dn = (t.dn ?? 0) + 1;
+      if (ok) t.dok = (t.dok ?? 0) + 1;
+    } else {
+      t.n++;
+      if (ok) t.ok++;
+    }
+    if (ok && ms !== undefined) {
+      if (t.ms === undefined || ms < t.ms) t.ms = ms;
+      if (!r.fastest || ms < r.fastest.ms) r.fastest = { by, id, ms };
+    }
+    // Delve's misses are lives, which each device tells from its own codex.
+    // All of them: they go to the guests once, with the end (publicView).
+    if (!ok && !s.delve) r.misses.push({ by, id, ...(s.deathmatch ? { dm: true as const } : {}) });
+    const q = s.question;
+    if (ok && s.delve && q?.deadline != null) {
+      const left = Math.max(0, q.deadline - this.now());
+      if (!r.closest || left < r.closest.left) r.closest = { by, id, left, depth: s.round };
+    }
+  }
+
+  /** A race's wrong guess taken back (its question thrown out, its point refunded): out of the recap as well. */
+  private unnote(s: GameState, by: string, id: string) {
+    const r = s.recap;
+    if (!r) return;
+    const t = r.answers[by];
+    if (t && t.n > 0) t.n--;
+    const i = r.misses.findLastIndex((m) => m.by === by && m.id === id);
+    if (i >= 0) r.misses.splice(i, 1);
+    if (r.wrong?.[id]) {
+      if (--r.wrong[id] <= 0) delete r.wrong[id];
+    }
+  }
+
+  /** Keeps a player's name and colour for the recap, as they are now. */
+  private person(s: GameState, id: string) {
+    const p = s.players.find((x) => x.id === id);
+    if (s.recap && p) (s.recap.people ??= {})[id] = { name: p.name, hue: p.hue };
   }
 
   /**
@@ -2309,9 +2505,11 @@ export class Engine {
     if (!flareDue && now > q.deadline + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
     if (struck.some((x) => x.index === index)) throw new ActionError('Someone already picked that.', true);
     if (q.options[index] === q.itemId) {
+      this.note(s, from, q.itemId, true, answerMs(action.ms));
       this.coopReveal(s, { id: from, index }, false, []);
       return;
     }
+    this.note(s, from, q.itemId, false, undefined);
     const took = this.hit(s, from);
     struck.push({ index, by: from, at: now, ...took });
     s.delve!.missedHere = true;
@@ -2352,7 +2550,7 @@ export class Engine {
       // the flare's time (it travels nowhere).
       const guest = winner.id !== s.hostId;
       if (guest && q.flared && q.flaredAt !== undefined && q.flaredBy && this.now() <= q.flaredAt + ANSWER_GRACE_MS && !struck.some((x) => x.by === s.hostId && x.at >= q.flaredAt!)) {
-        this.gain(s, q.flaredBy, 'flares');
+        this.refund(s, q.flaredBy);
         delete q.flared;
         delete q.flaredAt;
         delete q.flaredBy;
@@ -2504,6 +2702,7 @@ export class Engine {
     let alive = right.length > 0 && right.length < dm.alive.length ? right : dm.alive;
     if (stillHere(alive).length === 1) alive = stillHere(alive);
     dm.eliminated = dm.alive.filter((id) => !alive.includes(id));
+    for (const id of dm.eliminated) (dm.out ??= {})[id] = dm.round;
     dm.alive = alive;
     if (alive.length <= 1 || stillHere(alive).length === 0) {
       this.finish(s, alive.length ? alive : right);

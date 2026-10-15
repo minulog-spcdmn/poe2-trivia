@@ -19,9 +19,10 @@ import type { GameState, Question } from '../lib/game';
 import { dealIn } from '../lib/delve';
 import { LIT, MOUSE, OFF, PRESSED, SCALE, SEND_EVERY_MS, actionOf, anchorCode, clickableFor, cursorsLive, type CursorAt, type PointerKind } from '../lib/cursors';
 import { session } from '../lib/session.svelte';
+import { forcedAway } from '../lib/presence';
 import type { Persona } from './brain';
 import { aimIn, layout as roomLayout, type Box, type Spot } from './reach';
-import { ROOM, STEP, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
+import { ROOM, STEP, frameOf, leadTrack, mirrored, pickClick, pickStream, recordedOf, place, reachTrack, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch, type Track, type Waver } from './motion';
 import { between } from './util';
 
 /** A reach takes about this long (ms), as recorded: to begin a click early enough by. */
@@ -30,7 +31,32 @@ const REACH_MS = 550;
 const SETTLE_MS = 1200;
 /** Between stretches of waiting or of the lobby, it rests this long (ms). */
 const REST_MS: [number, number] = [600, 4000];
+/**
+ * How long it takes to hold back a click once what it reached for is gone
+ * (someone else answered first): a press due sooner goes in anyway. As
+ * recorded, beaten in a race: a click 22 to 351 ms after the reveal, about
+ * one time in four; none later.
+ */
+const STOP_MS: [number, number] = [230, 380];
 const LOBBY_REST_MS: [number, number] = [2000, 12000];
+/** The room's units in px, on the screen they were measured on (reach.ts: 1925 by 977). */
+const PX: [number, number] = [1.925, 0.977];
+/** It goes on another element only once it's this much nearer that one than the one it's on (px). */
+const SWITCH_PX = 60;
+/** At rest, what it's on looked at again this often (ms), as a person's page does (PeerCursors.svelte). */
+const RECHECK_MS = 500;
+
+/**
+ * The item window's close (ItemWindow.svelte), where the game puts the window
+ * (the screen's left), in the room's terms (reach.ts): at the right of its
+ * name plate, as measured, and as recorded closed (by a click, every time);
+ * how high depends on the item's tooltip (the window is centred on its
+ * height), so somewhere from near the top to about half way down.
+ */
+const windowClose = (): Box => {
+  const top = between(130, 420);
+  return [180, top, 210, top + 32];
+};
 
 /** Where things are for the player on this page. */
 const layout = (s: GameState) => roomLayout(s, session.myPlayerId ?? '');
@@ -83,9 +109,21 @@ export class Hand {
   private restUntil = 0;
   private sentAt = 0;
   private sent = 'null';
+  private sentPlaced = 'null';
   private sentPressed = false;
-  /** The anchor it's clicking, while it reaches for it. */
+  /** The anchor it's clicking, while it reaches for it (or pointing at). */
   private on: string | null = null;
+  /** What its place last went on (the others' screens keep it on that element, wherever it goes there). */
+  private anchor: string | null = null;
+  /**
+   * Just clicked, and not moved since: its place goes on the room as a whole,
+   * not on what it clicked, which then moves off (a card picked flies away,
+   * the answers change at the reveal) and on the others' screens would carry
+   * it along, to slip back slowly once it moved again.
+   */
+  private stillAfterClick = false;
+  /** The screen its place was last sent on. */
+  private sentScreen = '';
   /** The screen it last clicked its pick on: done there, it waits as on anyone else's turn. */
   private acted = '';
   /** Which screen that is, and since when. */
@@ -132,11 +170,17 @@ export class Hand {
     return s.phase === 'choosing' ? 'cards' : s.phase === 'question' || s.phase === 'reveal' ? 'answers' : 'room';
   }
 
-  /** Sets off on `track`, laid onto `frame`. */
-  private follow(track: Track, frame: Frame) {
-    this.track = track;
+  /**
+   * Sets off on `track`, laid onto `frame`, never quicker than a hand goes
+   * (MAX_SPEED): a recorded stretch fitted to a longer way here (from far
+   * off, onto something further) would otherwise cover it in a flash; done
+   * by `by` (Date.now) all the same, hurrying for the clock.
+   */
+  private follow(track: Track, frame: Frame, by = Infinity) {
+    this.stillAfterClick = false;
     this.frame = frame;
     this.trackBox = this.box(frame);
+    this.track = paced(track, this.trackBox, by);
   }
 
   /** Looks the cards over, as the recorded player did, from when they are dealt (`dealt`) until it reaches for one at `until`. */
@@ -153,14 +197,16 @@ export class Hand {
     this.lookOver('answer', 'answers', until, { torn, mode: q.mode, n: q.labels.length });
   }
 
-  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, { torn = [], mode, n, dealt = Date.now() }: { torn?: number[]; mode?: string; n?: number; dealt?: number } = {}) {
+  private lookOver(kind: 'card' | 'answer', frame: Frame, until: number, { torn = [], mode, n, dealt = Date.now() }: { torn?: number[]; mode?: string; n?: number; dealt?: number } = {}): void {
+    // Its hand busy (an item's details open, a press under way): those closed and done first, then it looks.
+    if (this.busy()) return this.afterBusy(() => void (until - Date.now() > 300 && this.lookOver(kind, frame, until, { torn, mode, n, dealt })));
     const s = this.s ?? session.state;
     if (!s) return;
     const now = Date.now();
     const from = Math.max(now, dealt);
     const at = this.where(now);
     const f = this.box(frame, s);
-    const e = pickClick(kind, until - from, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, x.src) });
+    const e = this.own(pickClick(kind, until - from, Math.random, { mode, n, used: new Set(this.used), near: (x) => within(at, f, this.own(x).src) }));
     if (!e) return;
     this.remember(e);
     const w = waver(Math.random);
@@ -207,18 +253,58 @@ export class Hand {
    * reach, onto its own pick); resolves as it lets go, for the action to go
    * then. At once when no pointer is shown. `by` (Date.now): when it must
    * have pressed at the latest (the clock's end), the hand hurrying to make it.
+   * `wanted`: whether what it reaches for is still there to click; once not,
+   * it holds back, unless the press comes too soon for that (STOP_MS).
+   * Whether it pressed, as others saw.
    */
-  async click(anchor: string, by = Infinity): Promise<void> {
-    const s = session.state;
-    if (!this.live(s) || this.dealing(s!)) return;
-    const box = layout(s!).get(anchor);
-    if (!box) return;
+  async click(anchor: string, by = Infinity, wanted?: () => boolean): Promise<boolean> {
+    // Details open: closed first (now, not read on), then the click.
+    while (this.closing) {
+      this.doneReading(0);
+      await this.closing;
+    }
     const kind: ClickStretch['kind'] = anchor.startsWith('opt:') ? 'answer' : anchor.startsWith('card:') ? 'card' : 'next';
-    const e = this.pending?.kind === kind ? this.pending.e : pickClick(kind, 0, Math.random, { used: new Set(this.used) });
-    const w = this.pending?.kind === kind ? this.pending.w : waver(Math.random);
-    this.pending = null;
+    // Where it is on the screen as it is once the hand sets off (a press under way finished first).
+    return this.press(() => {
+      const s = session.state;
+      return this.live(s) && !this.dealing(s!) ? (layout(s!).get(anchor) ?? null) : null;
+    }, kind, anchor, by, wanted);
+  }
+
+  /** A press under way, and how many times the hand has set off on something of its own (a newer one takes the hand over). */
+  private pressing: Promise<boolean> | null = null;
+  private reaches = 0;
+
+  /**
+   * Reaches into the box `where` gives as it sets off (none: nothing to
+   * press) and presses there (`anchor`: what that is, if it's something of
+   * the game's), as click does: one at a time, so a press under way (closing
+   * an item's details) is finished first.
+   */
+  private async press(where: () => Box | null, kind: ClickStretch['kind'], anchor: string | null, by = Infinity, wanted?: () => boolean): Promise<boolean> {
+    while (this.pressing) await this.pressing;
+    // Gone while it waited: it doesn't set off for it.
+    const box = where();
+    if (!box || (wanted && !wanted())) return false;
+    const p = this.reach(box, kind, anchor, by, wanted);
+    this.pressing = p;
+    try {
+      return await p;
+    } finally {
+      if (this.pressing === p) this.pressing = null;
+    }
+  }
+
+  private async reach(box: Box, kind: ClickStretch['kind'], anchor: string | null, by: number, wanted?: () => boolean): Promise<boolean> {
+    const reach = ++this.reaches;
+    const s = session.state;
+    // The stretch it looked things over with, if for this (a lead onto the cards is kept for the card, whatever comes between).
+    const mine = this.pending?.kind === kind ? this.pending : null;
+    if (mine) this.pending = null;
+    const e = mine?.e ?? this.own(pickClick(kind, 0, Math.random, { used: new Set(this.used) }));
+    const w = mine?.w ?? waver(Math.random);
     this.presses = [];
-    if (!e) return;
+    if (!e) return false;
     this.remember(e);
     const frame: Frame = kind === 'card' ? 'cards' : 'answers';
     const f = this.box(frame, s);
@@ -230,18 +316,132 @@ export class Hand {
     const natural = (e.reach.length / 2 - 1) * STEP * this.speed;
     const speed = natural > room * 0.9 ? this.speed * Math.max(0.3, (room * 0.9) / natural) : this.speed;
     this.on = anchor;
-    this.follow(reachTrack(e, within(this.where(now), f, e.src), within(aim, f, e.src), now, speed, w), frame);
+    this.follow(reachTrack(e, within(this.where(now), f, e.src), within(aim, f, e.src), now, speed, w), frame, by - 30);
     const end = this.track!.t[this.track!.t.length - 1];
-    await wait(Math.max(0, end - Date.now()));
+    if (wanted) {
+      const stop = between(...STOP_MS);
+      while (Date.now() < end && reach === this.reaches) {
+        if (!wanted()) {
+          // Seen gone: too close to the press to hold back, it goes in; else the hand stops a moment later, where it is.
+          if (end - Date.now() <= stop) break;
+          await wait(stop);
+          // (Taken elsewhere meanwhile: that goes on.)
+          if (reach !== this.reaches) return false;
+          this.where(Date.now());
+          this.track = null;
+          this.on = null;
+          this.restUntil = Date.now() + between(...REST_MS) * (0.5 + this.persona.hand.still);
+          return false;
+        }
+        await wait(Math.min(40, end - Date.now()));
+      }
+      await wait(Math.max(0, end - Date.now()));
+    } else await wait(Math.max(0, end - Date.now()));
+    // The hand taken elsewhere on the way (point): no press where it is now.
+    if (reach !== this.reaches) return false;
     const pressed = Date.now();
     this.pressedUntil = pressed + e.hold;
     this.send(true);
     this.acted = this.screen;
     // Then a while before its hand drifts off, as when waiting.
     this.restUntil = pressed + between(...REST_MS) * (0.5 + this.persona.hand.still);
-    // The click is the letting go, as a browser's is: what it does happens then, with the press seen first.
+    // The click is the letting go, as a browser's is: what it does happens then, with the press seen first; and with it,
+    // its place goes on the room (stillAfterClick).
     await wait(e.hold);
+    if (reach === this.reaches) {
+      this.on = null;
+      this.stillAfterClick = true;
+    }
     if (current === this && this.live()) this.send(true);
+    return true;
+  }
+
+  /**
+   * Moves over to `anchor` without clicking, as a recorded reach went, and
+   * rests there till `until` (Date.now ms): in Delve together, out of a
+   * question, showing the team still answering what it now thinks it is.
+   */
+  point(anchor: string, until: number): void {
+    if (this.busy()) return this.afterBusy(() => void (Date.now() < until && this.point(anchor, until)));
+    const s = session.state;
+    if (!this.live(s) || this.dealing(s!)) return;
+    const box = layout(s!).get(anchor);
+    const e = box && this.own(pickClick('answer', 0, Math.random, { used: new Set(this.used) }));
+    if (!box || !e) return;
+    this.remember(e);
+    this.reaches++;
+    this.on = anchor;
+    this.pending = null;
+    this.presses = [];
+    const f = this.box('answers', s);
+    const now = Date.now();
+    this.follow(reachTrack(e, within(this.where(now), f, e.src), within(place(...this.held(e.aim as [number, number]), box), f, e.src), now, this.speed, waver(Math.random)), 'answers');
+    this.restUntil = Math.max(this.restUntil, until);
+  }
+
+  /** Reading an item's details (inspect) till then (Date.now). */
+  private readingUntil = 0;
+
+  /**
+   * Opens an item's details once its question is answered: a click on what
+   * opens them (`anchor`: the art's Details, or a picture), a while reading
+   * (`readMs`, the hand still), then closes them: on the window's close, at
+   * its top right, or now and then by Escape (no move). The window comes up
+   * at the screen's left, middling height, as the game first puts it
+   * (ItemWindow.svelte): nobody else sees it, only the hand going there.
+   */
+  async inspect(anchor: string, readMs: number) {
+    if (!this.live()) return;
+    // Nothing opened (the hand went elsewhere, nothing there to click): nothing to read or close.
+    if (!(await this.click(anchor))) return;
+    return this.closeAfter(readMs);
+  }
+
+  /** Details open and their close (closeAfter): what else the hand does waits for it. */
+  private closing: Promise<void> | null = null;
+
+  /**
+   * Details open (inspect, or a click that came too late): it reads them
+   * `readMs`, then closes them. Something of its own to do meanwhile (a
+   * question to look over, a card), it closes them first.
+   */
+  closeAfter(readMs: number): Promise<void> {
+    if (!this.live()) return Promise.resolve();
+    const p = (async () => {
+      this.readingUntil = Date.now() + readMs;
+      this.restUntil = Math.max(this.restUntil, this.readingUntil);
+      while (Date.now() < this.readingUntil) await wait(150);
+      this.readingUntil = 0;
+      // Closed by Escape now and then (no move to see), else on the window's close.
+      if (Math.random() < 0.15 || !this.live()) return;
+      await this.press(windowClose, 'next', null);
+    })();
+    this.closing = p;
+    void p.finally(() => {
+      if (this.closing === p) this.closing = null;
+    });
+    return p;
+  }
+
+  /** What the hand is busy with (details open, a press under way), if anything. */
+  private busy(): Promise<unknown> | null {
+    return this.closing ?? this.pressing;
+  }
+
+  /** Does `then` once the hand is free: details open are closed now (by their close, or Escape), not read on. */
+  private afterBusy(then: () => void): void {
+    this.doneReading(0);
+    void this.busy()!.then(() => (this.busy() ? this.afterBusy(then) : then()));
+  }
+
+  /** Still reading an item's details. */
+  get reading() {
+    return Date.now() < this.readingUntil;
+  }
+
+  /** Something of its own to do: it closes the details within `ms`. */
+  doneReading(ms: number) {
+    if (this.reading) this.readingUntil = Math.min(this.readingUntil, Date.now() + ms);
   }
 
   /** A recorded spot on an answer or a card (thousandths of it), moved by the bot's own grip, and kept well on it. */
@@ -250,8 +450,16 @@ export class Hand {
     return [on(u + this.grip[0]), on(v + this.grip[1])];
   }
 
-  /** Keeps the last few stretches it replayed. */
-  private remember(e: Stretch) {
+  /** A recorded stretch as this hand makes it: a left hand's mirrored (motion.ts mirrored). */
+  private own<T extends Stretch>(e: T): T;
+  private own<T extends Stretch>(e: T | null): T | null;
+  private own<T extends Stretch>(e: T | null): T | null {
+    return e && this.persona.hand.left ? mirrored(e) : e;
+  }
+
+  /** Keeps the last few stretches it replayed (as recorded: a mirrored one is the same one). */
+  private remember(replayed: Stretch) {
+    const e = recordedOf(replayed);
     if (!this.used.includes(e)) this.used.push(e);
     if (this.used.length > 24) this.used.shift();
   }
@@ -275,6 +483,9 @@ export class Hand {
 
   /** Moves on, and sends where it is (only when it moved). */
   tick() {
+    // Its player is away (another tab, afk.ts): gone from the others' screens, as a hidden tab's pointer is
+    // (PeerCursors.svelte); back where it was once it moves again.
+    if (forcedAway()) return this.send(false);
     const s = session.state ?? this.s;
     if (!s) return this.send(false);
     this.s = s;
@@ -300,17 +511,21 @@ export class Hand {
     // Nothing of its own to do (someone else's turn, the lobby, the end): it waits as the recorded player waited.
     if (!this.track && this.idle(s) && now >= this.restUntil) {
       const lobby = s.phase === 'lobby' || s.phase === 'over';
-      const e = pickStream(lobby ? 'lobby' : 'wait', Math.random, new Set(this.used));
+      const e = this.own(pickStream(lobby ? 'lobby' : 'wait', Math.random, new Set(this.used)));
       const frame = lobby ? 'room' : this.waitFrame(s);
       if (e) {
         this.remember(e);
         const seat = ASIDES[Math.max(0, s.players.findIndex((p) => p.id === session.myPlayerId)) % ASIDES.length];
         const aside: [number, number] = [seat[0] + this.nudge[0], seat[1] + this.nudge[1]];
-        const { track, presses } = streamTrack(e, within(this.where(now), this.box(frame, s), e.src), now, this.speed, waver(Math.random), Math.random, aside);
+        const box = this.box(frame, s);
+        const at = this.where(now);
+        const on = frame === 'cards' || frame === 'answers' ? frame : undefined;
+        const { track, presses } = streamTrack(e, (src) => within(at, box, src), now, this.speed, waver(Math.random), Math.random, aside, on);
         this.follow(track, frame);
-        // The recorded player clicked at nothing a lot; it, about half as often.
-        this.presses = presses.filter(() => Math.random() < 0.5);
-        const end = track.t[track.t.length - 1];
+        // The recorded player clicked at nothing a lot; it, about half as often: where they fall on the track as paced.
+        const pacedTrack = this.track!;
+        this.presses = presses.filter(() => Math.random() < 0.5).map((p) => retimed(track, pacedTrack, p));
+        const end = pacedTrack.t[pacedTrack.t.length - 1];
         this.restUntil = end + between(...(lobby ? LOBBY_REST_MS : REST_MS)) * (0.5 + this.persona.hand.still);
       }
     }
@@ -337,13 +552,17 @@ export class Hand {
   }
 
   /**
-   * Where a spot goes on the wire: on the element nearest it (an answer, a
-   * card, the art, Next, a row; the one it's clicking first), in that
-   * element's terms even when off it, so on every screen it keeps its place
-   * beside what's there; on the room as a whole when nothing's near, or while
-   * the screen's elements are still coming in.
+   * Where a spot goes on the wire: on the element it's clicking or pointing
+   * at, or the one under it, or the one nearest it (an answer, a card, the
+   * art, Next, a row), in that element's terms even when off it, so on every
+   * screen it keeps its place beside what's there; on the room as a whole
+   * when nothing's near, or while the screen's elements are still coming in.
+   * It stays on the element it last went on, while it's still about as near
+   * as any (SWITCH_PX): each change of element can put it somewhere a little
+   * else on another screen, which then fades the difference away as it
+   * moves (PeerCursors.svelte), so a change seen there is a slow drift.
    */
-  private placed(spot: Spot, boxes: Map<string, Box>, now: number): [number, number, number] | null {
+  private placed(spot: Spot, boxes: Map<string, Box>, now: number): [string, number, number] {
     const s = this.s;
     const settled = now - this.screenAt > SETTLE_MS;
     const rel = (b: Box): [number, number] => [((spot.x - b[0]) / (b[2] - b[0])) * SCALE, ((spot.y - b[1]) / (b[3] - b[1])) * SCALE];
@@ -353,55 +572,111 @@ export class Hand {
     // its place beside them on every screen, however wide; in the lobby and at the end, the rows and the modes too.
     const game = s?.phase === 'choosing' || s?.phase === 'question' || s?.phase === 'reveal';
     const big = (k: string) => k.startsWith('opt:') || k.startsWith('card:') || k === 'art' || k === 'next' || (!game && k.startsWith('row:'));
-    let best: [string, [number, number]] | null = null;
-    if (this.on && boxes.has(this.on) && fits(rel(boxes.get(this.on)!))) best = [this.on, rel(boxes.get(this.on)!)];
-    if (!best && settled) {
+    const away = (b: Box) => Math.hypot(Math.max(b[0] - spot.x, 0, spot.x - b[2]) * PX[0], Math.max(b[1] - spot.y, 0, spot.y - b[3]) * PX[1]);
+    const ok = (k: string | null): k is string => !!k && boxes.has(k) && fits(rel(boxes.get(k)!));
+    if (ok(this.on)) return [this.on, ...rel(boxes.get(this.on)!)];
+    if (this.stillAfterClick) return ['game', Math.min(SCALE, Math.max(0, spot.x)), Math.min(SCALE, Math.max(0, spot.y))];
+    const kept = ok(this.anchor) ? this.anchor : null;
+    if (settled) {
+      let best: string | null = null;
       let d = Infinity;
       for (const [k, b] of boxes) {
-        if (!big(k)) continue;
-        const r = rel(b);
-        const far = Math.hypot(Math.max(b[0] - spot.x, 0, spot.x - b[2]), Math.max(b[1] - spot.y, 0, spot.y - b[3]));
-        if (far < d && fits(r)) {
-          d = far;
-          best = [k, r];
-        }
+        if (!big(k) || !fits(rel(b))) continue;
+        const far = away(b);
+        if (far < d) [best, d] = [k, far];
       }
-    }
-    if (best) {
-      const code = anchorCode(best[0]);
-      if (code !== null) return [code, Math.round(best[1][0]), Math.round(best[1][1])];
-    }
-    const code = anchorCode('game');
-    const clamp = (v: number) => Math.round(Math.min(SCALE, Math.max(0, v)));
-    return code === null ? null : [code, clamp(spot.x), clamp(spot.y)];
+      // On nothing yet, onto another, or well nearer another than the one it's on: that one.
+      const onto = d === 0 && best !== kept;
+      if (best && (!kept || onto || d + SWITCH_PX < away(boxes.get(kept)!))) return [best, ...rel(boxes.get(best)!)];
+      if (kept) return [kept, ...rel(boxes.get(kept)!)];
+      if (best) return [best, ...rel(boxes.get(best)!)];
+    } else if (kept) return [kept, ...rel(boxes.get(kept)!)];
+    return ['game', Math.min(SCALE, Math.max(0, spot.x)), Math.min(SCALE, Math.max(0, spot.y))];
   }
 
   /** Sends where the pointer is, if it moved (`on`: on the page). */
   private send(on: boolean) {
     const now = Date.now();
     let at: CursorAt | null = null;
+    let p: [string, number, number] | null = null;
     if (on && this.s) {
       // A hand at rest sends nothing (a mouse lying still doesn't move): the others' screens dim it, as they do anyone's.
       const spot = this.where(now);
       const boxes = layout(this.s);
-      const p = this.placed(spot, boxes, now);
+      p = this.placed(spot, boxes, now);
+      const code = anchorCode(p[0]);
       // Over something it can click (its answer, its card, Next when it may), its cursor would be the hand: so it shows.
       const me = session.myPlayerId ?? '';
       const lit = [...boxes].some(([k, b]) => spot.x >= b[0] && spot.x <= b[2] && spot.y >= b[1] && spot.y <= b[3] && clickableFor(this.s!, me, k) === true);
-      if (p) at = [p[0], p[1], p[2], ((now < this.pressedUntil ? PRESSED : MOUSE) + (lit ? LIT : 0)) as PointerKind];
+      if (code !== null) at = [code, Math.round(p[1]), Math.round(p[2]), ((now < this.pressedUntil ? PRESSED : MOUSE) + (lit ? LIT : 0)) as PointerKind];
     }
-    // Only when the hand moved, or pressed, or came or went: not because what it's placed on changed (a new screen),
-    // which on another screen could put it somewhere else, every bot at once.
+    // When the hand moved, or pressed, or came or went; and, at rest, when the screen changed under it, what it's on
+    // now, as a person's page sends theirs (PeerCursors.svelte RECHECK_MS): the others' screens keep it on what it was
+    // on, wherever that goes (a new question's answer, somewhere else), till told.
     const spot = at ? this.at : null;
     const key = spot && at ? `${Math.round(spot.x)},${Math.round(spot.y)},${at[3]}` : 'null';
+    const placedKey = at ? at.join(',') : 'null';
     const pressed = !!at && actionOf(at[3]) === PRESSED;
-    // A press, or its release, always goes; anything else only when it changed, and not too often.
-    if (key === this.sent || (!pressed && !this.sentPressed && at && now - this.sentAt < SEND_EVERY_MS - 10)) return;
+    const moved = key !== this.sent;
+    // (The screen just changed under it: at once, not at the next look, so the others' screens carry it no further.)
+    if (!moved && (placedKey === this.sentPlaced || (now - this.sentAt < RECHECK_MS && this.sentScreen === this.screen))) return;
+    // A press, or its release, always goes; anything else not too often.
+    if (moved && !pressed && !this.sentPressed && at && now - this.sentAt < SEND_EVERY_MS - 10) return;
     this.sent = key;
+    this.sentPlaced = placedKey;
+    this.sentScreen = this.screen;
     this.sentAt = now;
     this.sentPressed = pressed;
+    if (p && at) this.anchor = p[0];
     session.pointAt(at);
   }
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The fastest a hand moves, px a ms on the screen measured (reach.ts): as
+ * recorded, half the reaches peak under 2, one in a hundred over 6.
+ */
+const MAX_SPEED = 5;
+
+/** A time `at` on `track`, where it falls on `paced` (the same samples, retimed). */
+function retimed(track: Track, paced: Track, at: number): number {
+  const n = track.t.length;
+  if (paced === track || n < 2 || at <= track.t[0]) return at;
+  if (at >= track.t[n - 1]) return at + paced.t[n - 1] - track.t[n - 1];
+  let i = 0;
+  while (i + 2 < n && track.t[i + 1] <= at) i++;
+  const k = (at - track.t[i]) / Math.max(1e-6, track.t[i + 1] - track.t[i]);
+  return paced.t[i] + k * (paced.t[i + 1] - paced.t[i]);
+}
+
+/**
+ * `track` laid onto `box`, slowed where it would go faster than MAX_SPEED
+ * (each step given the time it needs, those after it later by as much),
+ * but done by `by` (Date.now) at the latest, if that comes first.
+ */
+function paced(track: Track, box: Box, by: number): Track {
+  const n = track.t.length;
+  if (n < 2) return track;
+  const at = (i: number) => place(track.u[i], track.v[i], box, track.src[i]);
+  const t = [track.t[0]];
+  let added = 0;
+  let prev = at(0);
+  for (let i = 1; i < n; i++) {
+    const p = at(i);
+    const dt = track.t[i] - track.t[i - 1];
+    const need = Math.hypot((p.x - prev.x) * PX[0], (p.y - prev.y) * PX[1]) / MAX_SPEED;
+    added += Math.max(0, need - dt);
+    t.push(track.t[i] + added);
+    prev = p;
+  }
+  if (!added) return track;
+  // In a hurry: only as much slower as there's time for.
+  const late = t[n - 1] - by;
+  if (late > 0) {
+    const keep = Math.max(0, added - late) / added;
+    for (let i = 1; i < n; i++) t[i] = track.t[i] + (t[i] - track.t[i]) * keep;
+  }
+  return { ...track, t };
+}

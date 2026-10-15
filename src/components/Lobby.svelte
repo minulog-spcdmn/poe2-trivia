@@ -3,7 +3,7 @@
   import { fade, fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_SPECTATORS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
-  import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, MODE_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
@@ -34,9 +34,9 @@
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
-    { id: 'turns', name: 'Take turns' },
-    { id: 'race', name: 'Race' },
-    { id: 'delve', name: 'Delve', isNew: true },
+    { id: 'turns', name: MODE_NAMES.turns },
+    { id: 'race', name: MODE_NAMES.race },
+    { id: 'delve', name: MODE_NAMES.delve, isNew: true },
   ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 

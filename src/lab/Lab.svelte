@@ -19,6 +19,7 @@
   import { showTip } from '../lib/fullscreenTip';
   import { ABLAZE_FROM, ABLAZE_FULL, BLUE_FROM, DELVE_ABLAZE_FULL, DELVE_FLAMES } from '../lib/fx/streaks';
   import DrawnMark from '../components/DrawnMark.svelte';
+  import SpatialControls from './SpatialControls.svelte';
 
   const s = $derived(session.state);
 
@@ -424,6 +425,12 @@
           <button onclick={clearToasts}>Clear all</button>
         </div>
         <p class="hint">The notices the game shows in the stack, as it words them. Hover one to hold it. In play, gameplay news shows under the question instead.</p>
+      </details>
+
+      <details open>
+        <summary>Spatial sound</summary>
+        <SpatialControls />
+        <p class="hint">Each sound comes from where it happens on the game's screen: the cards, the answers, the clock, each player's entry; sparks flying to a slot travel with them.</p>
       </details>
 
       <details open>

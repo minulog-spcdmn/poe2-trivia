@@ -7,8 +7,14 @@
 
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
-import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady } from '../lib/delve';
-import { answerDelay, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, knowChance, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady, voteClosesAt } from '../lib/delve';
+import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, thinkTime, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
+import { inView, watchVeil } from './glimpse';
+import { looksOf } from './lookalike';
+import { Recall } from './recall';
+import { isBot } from './crew';
+
+/** The bots' names: anyone else in a room is a person. */
 export { moodOf } from './brain';
 
 /** How the bot finds the right option: its index, or null when it can't tell. */
@@ -21,14 +27,26 @@ export const hostEyes: Eyes = async (_s, q) => q.options.indexOf(q.itemId);
 interface Plan {
   at: number;
   run: () => void | Promise<void>;
+  /**
+   * Only a look (at the question, at how much of the art is in): nothing the
+   * hand does, so it goes on while details are read; and when what it looks
+   * for is expected to make the hand act (`actAt`), if it knows.
+   */
+  poll?: { actAt?: number };
 }
 
 import { between, log } from './util';
 import { Hand, dealtAt } from './hand';
 
-/** New to it, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn. */
+/** Something of its own this soon (ms), it closes an item's details it's reading. */
+const CLOSE_AHEAD_MS = 1500;
+/** How long before a co-op vote closes it gets its own in, at the latest (ms). */
+const VOTE_MARGIN_MS: [number, number] = [600, 1600];
+/** New to the game, a guest tries the button to move on through someone else's reveal at most this many reveals in, each time this likely; once is enough to learn (regulars know). */
 const TRY_NEXT_FOR = 3;
 const TRY_NEXT_CHANCE = 0.25;
+/** Delve together, out of a question after a wrong answer: how often it points out what it now thinks the answer is. */
+const HINT_CHANCE = 0.4;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -38,7 +56,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * the look-alikes it might fall for, either of the first two its lean. Its
  * eyes none the wiser: a few of them at random.
  */
-function torn(names: string[], seen: number | null, knows: boolean): number[] {
+function torn(names: string[], seen: number | null, knows: boolean, looks?: (number | null)[]): number[] {
   const all = names.map((_, i) => i);
   if (seen === null) {
     for (let i = all.length - 1; i > 0; i--) {
@@ -50,7 +68,7 @@ function torn(names: string[], seen: number | null, knows: boolean): number[] {
   if (knows) return [seen];
   const out = [seen];
   for (let k = 0; k < 2; k++) {
-    const other = wrongPick(names, seen, out, Math.random);
+    const other = wrongPick(names, seen, out, Math.random, looks);
     if (other !== null) out.push(other);
   }
   if (out.length > 1 && Math.random() < 0.5) [out[0], out[1]] = [out[1], out[0]];
@@ -82,6 +100,8 @@ export class Player {
   private game = 0;
   /** Items it has seen revealed while it was on (they stick, mostly). */
   private revealed = new Set<string>();
+  /** And the ones it saw on earlier visits, fading (recall.ts): kept by its name. */
+  private readonly recall: Recall | null;
   /** Its own misses in a row (wrong or out of time), this game. */
   private misses = 0;
   /** The question whose reveal it has taken in. */
@@ -89,9 +109,18 @@ export class Player {
   /** When it came on, and how many answers it has given since (warming up, tiring). */
   private readonly since = Date.now();
   private answers = 0;
+  /** A race question it let go by, not sure, and how it saw it then (calmPick). */
+  private satOut: { askedAt: number; ask: Ask; seen: number | null } | null = null;
+  /** Delve together: what each of the people on the team has shown of their answers this run (carryCap). */
+  private people = new Map<string, Showing>();
+  /** Whether it knew the item of the question it last made up its mind on (by its askedAt). */
+  private knew: { askedAt: number; knows: boolean } | null = null;
   /** Someone else's reveals it has seen (as a guest, in turns), and whether it has learned it can't move those on. */
   private othersRevealed = 0;
   private learnedNext = false;
+  /** Co-op votes it hurried for (logged once), and how long before this vote's close it gets in at the latest. */
+  private hurried = new Set<string>();
+  private voteMargin: { key: string; ms: number } | null = null;
   /** Its pointer, as the others see it: it moves to what it chooses, and clicks. */
   private readonly hand: Hand;
 
@@ -100,12 +129,14 @@ export class Player {
     private readonly eyes: Eyes,
   ) {
     this.hand = new Hand(persona);
+    this.recall = persona.seed ? new Recall(persona.seed) : null;
   }
 
   /** Forgets what it was about to do (the room went back to the lobby, or it left). */
   reset() {
     this.plans.clear();
     this.decided.clear();
+    this.hurried.clear();
   }
 
   /** Looks at the game and makes up its mind about anything new; then does what is due. */
@@ -114,8 +145,10 @@ export class Player {
     if ((s.startedAt ?? 0) !== this.game) {
       this.game = s.startedAt ?? 0;
       this.misses = 0;
+      this.people.clear();
       this.reset();
     }
+    if (s.phase === 'question' && s.question) watchVeil(s.question);
     if (s.phase === 'reveal') {
       this.takeIn(s);
       this.planMoveOn(s);
@@ -126,8 +159,13 @@ export class Player {
       else this.turns(s);
     }
     const now = session.hostNow();
+    // Reading an item's details (on, as people do, into the next screens), it closes them as something of its own comes
+    // up, in time for it: closing takes a reach (a guess timed for the clock's end mustn't wait on it).
+    const acts = (p: Plan) => (p.poll ? (p.poll.actAt ?? Infinity) : p.at);
+    if (this.hand.reading && [...this.plans.values()].some((p) => acts(p) - now < CLOSE_AHEAD_MS)) this.hand.doneReading(between(0, 300));
     for (const [key, p] of this.plans)
       if (now >= p.at) {
+        if (this.hand.reading && !p.poll) continue;
         this.plans.delete(key);
         void p.run();
       }
@@ -139,7 +177,10 @@ export class Player {
     const r = s.reveal;
     if (!q || !r || this.takenIn === q.askedAt) return;
     this.takenIn = q.askedAt;
-    if (r.correctId) this.revealed.add(r.correctId);
+    if (r.correctId) {
+      this.revealed.add(r.correctId);
+      this.recall?.saw(r.correctId);
+    }
     const me = session.myPlayerId!;
     let mine: boolean | null = null;
     if (r.winnerId === me) mine = true;
@@ -148,6 +189,74 @@ export class Player {
     else if (s.players[s.turn]?.id === me) mine = r.correct;
     if (mine === true) this.misses = 0;
     else if (mine === false) this.misses++;
+    if (s.delve && isGroupRun(s)) this.notePeople(s);
+    this.planInspect(s, mine === false ? 'missed' : this.knew?.askedAt === q.askedAt ? (this.knew.knows ? 'known' : 'unknown') : 'theirs');
+  }
+
+  /**
+   * Delve together: how each of the people on the team did on this
+   * question, as anyone sees it: right, wrong, or out of time (cleared by
+   * someone else first, it says nothing of them). What they showed before
+   * counts for a little less each time: deeper down, it says less.
+   */
+  private notePeople(s: GameState) {
+    const q = s.question!;
+    const r = s.reveal!;
+    for (const seen of this.people.values()) {
+      seen.right *= FADING;
+      seen.wrong *= FADING;
+      seen.out *= FADING;
+    }
+    for (const p of s.players) {
+      if (isBot(p)) continue;
+      const seen = this.people.get(p.id) ?? { right: 0, wrong: 0, out: 0 };
+      if (r.winnerId === p.id) seen.right++;
+      else if (q.struck?.some((x) => x.by === p.id)) seen.wrong++;
+      else if (r.hits?.some((h) => h.playerId === p.id && h.timedOut)) seen.out++;
+      this.people.set(p.id, seen);
+    }
+  }
+
+  /**
+   * Delve together with people: the most its chance of knowing an answer may
+   * be (carryCap), so the bots on the team play to the people's level and
+   * never carry them, however many bots there are. 1 (no cap) with no
+   * people on the team.
+   */
+  private capFor(s: GameState): number {
+    if (!s.delve || !isGroupRun(s)) return 1;
+    const standing = standingIds(s);
+    const players = s.players.filter((p) => s.delve!.entrants.includes(p.id));
+    const people = players.filter((p) => !isBot(p));
+    if (!people.length) return 1;
+    const bots = players.filter((p) => isBot(p) && standing.includes(p.id)).length;
+    return carryCap(
+      people.map((p) => skillShown(this.people.get(p.id) ?? { right: 0, wrong: 0, out: 0 })),
+      Math.max(1, bots),
+    );
+  }
+
+  /**
+   * Now and then, once a question is answered, it opens the item's details
+   * (the art's Details, or the right picture on a question of pictures),
+   * reads a while and closes them (hand.ts inspect): most after a miss of
+   * its own. Not in a race: nobody sees a pointer there.
+   */
+  private planInspect(s: GameState, how: 'missed' | 'unknown' | 'known' | 'theirs') {
+    const q = s.question;
+    const r = s.reveal;
+    if (!q || !r || (s.settings.mode === 'race' && !s.delve) || !inspects(this.persona, how, Math.random)) return;
+    // Looking, it doesn't move the game on itself.
+    this.decided.add(`next:${q.askedAt}`);
+    const anchor = q.mode === 'art' ? `opt:${r.correctIndex}` : 'art';
+    this.plans.set(`inspect:${q.askedAt}`, {
+      at: session.hostNow() + between(600, 1800) * this.persona.pace,
+      run: () => {
+        if (session.state?.question?.askedAt !== q.askedAt || session.state.phase !== 'reveal') return;
+        log(`looks at the item${how === 'missed' ? ' it missed' : ''}`);
+        return this.hand.inspect(anchor, readingTime(this.persona, Math.random));
+      },
+    });
   }
 
   /**
@@ -166,7 +275,7 @@ export class Player {
     if (this.decided.has(key)) return;
     this.decided.add(key);
     if (!mine) {
-      if (s.delve || s.hostId === me || this.learnedNext || !s.players.some((p) => p.id === me)) return;
+      if (s.delve || s.hostId === me || this.learnedNext || !this.persona.newcomer || !s.players.some((p) => p.id === me)) return;
       if (++this.othersRevealed > TRY_NEXT_FOR) this.learnedNext = true;
       else if (Math.random() < TRY_NEXT_CHANCE) {
         this.learnedNext = true;
@@ -207,6 +316,27 @@ export class Player {
     const q = s.question;
     if (s.phase !== 'question' || !q || q.misses.some((m) => m.playerId === session.myPlayerId)) return;
     this.planAnswer(s, q);
+    this.calmPick(s, q);
+  }
+
+  /**
+   * A race question it let go by, not sure: once everyone else has missed,
+   * nobody can beat it to it any more, and with time left most think it
+   * over without the pressure and pick (as sure as on a turn of their own,
+   * the options the others got wrong out).
+   */
+  private calmPick(s: GameState, q: Question) {
+    const sat = this.satOut;
+    if (!sat || sat.askedAt !== q.askedAt || !q.deadline) return;
+    const me = session.myPlayerId!;
+    const others = s.players.filter((p) => p.id !== me && p.connected);
+    if (!others.length || !others.every((p) => q.misses.some((m) => m.playerId === p.id))) return;
+    this.satOut = null;
+    const think = Math.round(between(1500, 4500) * this.persona.pace);
+    if (q.deadline - session.hostNow() < think + 1200 || Math.random() < 0.15) return log('lets it go, even with the rest out');
+    const ask: Ask = { ...sat.ask, mode: 'turns' };
+    const knows = knowsIt(knowChance(this.persona, ask), itemDraw(this.persona.seed, itemOf(q, sat.seen)), Math.random);
+    this.plans.set(`calm:${q.askedAt}`, { at: session.hostNow() + think, run: () => this.answerNow(s, q, knows, ask, 'picks, the rest all out', sat.seen) });
   }
 
   /**
@@ -223,14 +353,53 @@ export class Player {
     if (s.phase === 'choosing') {
       if (!together) {
         if (s.players[s.turn]?.id === me) this.planCard(s, 'pick');
-      } else if (!s.delve?.votes?.[me]) this.planCard(s, 'vote');
+      } else if (!s.delve?.votes?.[me]) {
+        this.planCard(s, 'vote');
+        this.voteInTime(s);
+      }
     } else if (s.phase === 'question' && s.question) {
       const q = s.question;
       // The clock starts once the art has reached everyone answering.
       if (q.deadline === null) return;
-      if (together ? q.struck?.some((x) => x.by === me) : s.players[s.turn]?.id !== me) return;
+      if (together && q.struck?.some((x) => x.by === me)) return this.planHint(s, q);
+      if (!together && s.players[s.turn]?.id !== me) return;
       this.planAnswer(s, q);
     }
+  }
+
+  /**
+   * Delve together, its own answer struck wrong: now and then, with the
+   * others still at it and time left, it rests its pointer on what it now
+   * thinks the answer is, for them to see. Seeing it again, it may make it
+   * out now; otherwise its next guess is a look-alike of the one it had.
+   * Not always, and not at once: a person takes a moment over a miss.
+   */
+  private planHint(s: GameState, q: Question) {
+    const key = `hint:${q.askedAt}`;
+    if (this.decided.has(key)) return;
+    this.decided.add(key);
+    const me = session.myPlayerId!;
+    const struck = (q.struck ?? []).map((x) => x.index);
+    const answering = standingIds(s).filter((id) => id !== me && !q.struck?.some((x) => x.by === id));
+    if (!answering.length || !q.deadline || Math.random() >= HINT_CHANCE) return;
+    const at = session.hostNow() + between(1200, 3500) * this.persona.pace;
+    if (q.deadline - at < 3500) return;
+    this.plans.set(key, {
+      at,
+      run: async () => {
+        const cur = session.state;
+        const o = this.open(q);
+        if (!cur || !o) return;
+        const seen = await this.eyes(cur, o);
+        if (seen === null) return;
+        const out = [...struck, ...(o.struck ?? []).map((x) => x.index)];
+        const names = optionNames(o);
+        const think = !out.includes(seen) && Math.random() < 0.35 ? seen : wrongPick(names, seen, out, Math.random, looksOf(o, seen));
+        if (think === null || out.includes(think)) return;
+        log(`points at option ${think + 1} for the others`);
+        this.hand.point(`opt:${think}`, Date.now() + Math.max(0, o.deadline! - session.hostNow()));
+      },
+    });
   }
 
   /** Picks a card on its turn, or votes for one (Delve together). */
@@ -303,6 +472,24 @@ export class Player {
     });
   }
 
+  /**
+   * Delve together: the vote closes a while after the first one's in
+   * (voteClosesAt), its countdown on everyone's screen; not yet sure, it
+   * makes up its mind in time, a moment before the close (VOTE_MARGIN_MS).
+   */
+  private voteInTime(s: GameState) {
+    const key = `vote:${s.round}:${s.turnCount}`;
+    const plan = this.plans.get(key);
+    const closes = voteClosesAt(s);
+    if (!plan || closes === null) return;
+    if (this.voteMargin?.key !== key) this.voteMargin = { key, ms: between(...VOTE_MARGIN_MS) };
+    const by = closes - this.voteMargin.ms - this.hand.lead();
+    if (by >= plan.at) return;
+    if (!this.hurried.has(key)) log('hurries to vote before it closes');
+    this.hurried.add(key);
+    plan.at = Math.max(session.hostNow(), by);
+  }
+
   /** Delve together: second thoughts about its vote now and then, while the vote is open (mostly over to the team's). */
   private planRethink(s: GameState, voted: string) {
     const after = rethinks(this.persona, Math.random);
@@ -337,6 +524,8 @@ export class Player {
       const key = `revive:${p.id}:${s.turnCount}`;
       if (this.decided.has(key)) continue;
       this.decided.add(key);
+      // Most do, not all, not every time.
+      if (!revives(this.persona, Math.random)) continue;
       const now = session.hostNow();
       this.plans.set(key, {
         at: now + dealIn(s, now) + between(1500, 5000) * this.persona.pace,
@@ -381,7 +570,7 @@ export class Player {
     if (seen === null) {
       const left = names.map((_, i) => i).filter((i) => !ruledOut.includes(i));
       index = left[Math.floor(Math.random() * left.length)] ?? 0;
-    } else index = chooseAnswer(names, seen, knows && seen !== null, ask, ruledOut, Math.random);
+    } else index = chooseAnswer(names, seen, knows && seen !== null, ask, ruledOut, Math.random, looksOf(o, seen));
     // Now and then the click lands next door.
     if (misclicks(this.persona, Math.random)) {
       const next = [index - 1, index + 1].filter((i) => i >= 0 && i < names.length && !ruledOut.includes(i));
@@ -391,12 +580,34 @@ export class Player {
       }
     }
     // The press lands before the clock's end (a little before, for the trip to the host).
-    await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity);
-    if (!this.open(q)) return;
+    const pressed = await this.hand.click(`opt:${index}`, o.deadline ? Date.now() + (o.deadline - session.hostNow()) - 250 : Infinity, () => !!this.open(q));
+    if (!this.open(q)) return pressed ? this.tooLate(q, index) : log('holds back: answered already');
     this.answers++;
     const truth = o.itemId ? (index === o.options.indexOf(o.itemId) ? ' right' : ' wrong') : '';
     log(`${what}${truth} (option ${index + 1}) after ${((session.hostNow() - (q.clockAt ?? q.askedAt)) / 1000).toFixed(1)} s`);
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
+  }
+
+  /**
+   * A click that went in too late, the question answered before it landed
+   * (as recorded, beaten in a race, about one time in four). On a question of
+   * pictures, a picture the reveal names opens its details (QuestionView
+   * named): there by accident, it closes them after a glance.
+   */
+  private tooLate(q: Question, index: number) {
+    const cur = session.state;
+    const r = cur?.reveal;
+    if (!cur || cur.phase !== 'reveal' || !r || cur.question?.askedAt !== q.askedAt || q.mode !== 'art') return log('clicks too late');
+    const o = cur.question;
+    const me = session.myPlayerId;
+    const named =
+      index === r.correctIndex ||
+      (cur.settings.mode === 'race' ? o.misses.some((m) => m.playerId === me && m.index === index) : cur.delve && isGroupRun(cur) ? !!o.struck?.some((x) => x.index === index) : index === r.chosenIndex);
+    if (!named) return log('clicks too late');
+    log('clicks too late: the item\'s details come up');
+    // Seen now, it doesn't open them again to look.
+    this.plans.delete(`inspect:${q.askedAt}`);
+    return this.hand.closeAfter(glanceTime(this.persona, Math.random));
   }
 
   /**
@@ -416,10 +627,12 @@ export class Player {
       const o = this.open(q);
       if (!cur || !o) return;
       const seen = await this.eyes(cur, o);
-      if (seen === null && tries++ < 8) return void this.plans.set(key, { at: session.hostNow() + 500, run: look });
+      // Burning in, the eyes may need a while to make anything out: they keep looking till near the end.
+      const longer = !!o.veil && !!o.deadline && session.hostNow() < o.deadline - 3000;
+      if (seen === null && (tries++ < 8 || longer)) return void this.plans.set(key, { at: session.hostNow() + 500, run: look, poll: {} });
       this.decide(key, cur, o, start, seen);
     };
-    this.plans.set(key, { at: Math.max(session.hostNow() + 300, start + 400), run: look });
+    this.plans.set(key, { at: Math.max(session.hostNow() + 300, start + 400), run: look, poll: {} });
   }
 
   /**
@@ -447,16 +660,23 @@ export class Player {
       clock: q.deadline ? (q.deadline - start) / 1000 : 0,
       mode: s.delve ? 'delve' : s.settings.mode === 'race' ? 'race' : 'turns',
       favourite: !!item && this.persona.favourites.includes(item),
-      remembered: !!item && this.revealed.has(item),
+      // This sitting's reveals stick; earlier visits' fade.
+      remembered: !item ? 0 : this.revealed.has(item) ? 1 : (this.recall?.strength(item) ?? 0),
       // Two misses in a row start to tell, three or more fully.
       tilt: Math.min(1, Math.max(0, (this.misses - 1) / 2)),
-      warming: this.answers < 3,
+      // New to the game, it takes longer to get into it.
+      warming: this.answers < (this.persona.newcomer ? 8 : 3),
       tired: tiredness((Date.now() - this.since) / 60000),
     };
-    const knows = Math.random() < knowChance(this.persona, ask);
+    // The same player knows the same items, and misses the same ones (but for a lapse now and then).
+    // With people on a Delve team, no more than their level allows (capFor).
+    const knows = knowsIt(Math.min(knowChance(this.persona, ask), this.capFor(s)), itemDraw(this.persona.seed, item), Math.random);
+    this.knew = { askedAt: q.askedAt, knows };
     const delay = answerDelay(this.persona, ask, knows, Math.random);
     if (delay === null) {
       log(`lets "${q.category}" go by`);
+      // In a race, it may still pick once the rest have all missed (calmPick).
+      if (ask.mode === 'race') this.satOut = { askedAt: q.askedAt, ask, seen };
       return;
     }
     if (ask.mode === 'delve' && !knows && isGroupRun(s)) return this.lateGuess(key, s, q, ask, start, seen);
@@ -472,29 +692,83 @@ export class Player {
       });
       return;
     }
+    if (q.veil) return this.waitForSight(key, s, q, start, seen, ask, knows);
     const panicked = panic(this.persona, ask, delay, Math.random);
-    const how = [
-      ask.favourite && 'one of its own',
-      ask.remembered && 'seen it before',
-      ask.tilt && (this.persona.temper < 0 ? 'tilted' : 'steadied'),
-      panicked && (panicked.fumble ? 'panics and fumbles' : 'panics'),
-    ]
-      .filter(Boolean)
-      .join(', ');
+    const how = this.how(ask, panicked);
     // The hand starts for the answer early enough to click on time, looking the question over until then.
     const at = Math.max(now + 200, start + (panicked ? panicked.at : delay) - this.hand.lead());
-    this.hand.ponder(q, Date.now() + (at - now), torn(optionNames(q), seen, knows));
+    this.hand.ponder(q, Date.now() + (at - now), torn(optionNames(q), seen, knows, seen === null ? undefined : looksOf(q, seen)));
     this.plans.set(key, {
       // Picked up after a reload: not all at once.
       at,
-      run: () => {
-        const o = this.open(q);
-        if (!o) return;
-        // Options already shown wrong (others' guesses in a race, the team's in Delve) are out.
-        const ruledOut = [...o.misses.map((m) => m.index), ...(o.struck ?? []).map((x) => x.index)];
-        return this.answer(s, q, knows && !panicked?.fumble, ask, ruledOut, how ? `answers (${how})` : 'answers', seen);
-      },
+      run: () => this.answerNow(s, q, knows && !panicked?.fumble, ask, how ? `answers (${how})` : 'answers', seen),
     });
+  }
+
+  /** What made the answer what it was, for the log. */
+  private how(ask: Ask, panicked: { fumble: boolean } | null, more: (string | false)[] = []) {
+    return [
+      ask.favourite && 'one of its own',
+      Number(ask.remembered) >= 0.3 && 'seen it before',
+      ask.tilt && (this.persona.temper < 0 ? 'tilted' : 'steadied'),
+      panicked && (panicked.fumble ? 'panics and fumbles' : 'panics'),
+      ...more,
+    ]
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  /** Answers now, if the question is still open: options already shown wrong (others' guesses in a race, the team's in Delve) are out. */
+  private answerNow(s: GameState, q: Question, knows: boolean, ask: Ask, what: string, seen: number | null) {
+    const o = this.open(q);
+    if (!o) return;
+    const ruledOut = [...o.misses.map((m) => m.index), ...(o.struck ?? []).map((x) => x.index)];
+    return this.answer(s, q, knows, ask, ruledOut, what, seen);
+  }
+
+  /**
+   * The art burning in: it makes up its mind once enough of the item is in
+   * view for it (sightNeeded: about a quarter knowing it, less for a
+   * favourite, most of it when it doesn't know), as its own screen shows it
+   * (glimpse.ts), then answers a moment later (afterSeeing), but never
+   * sooner than it would on the art shown whole. A trigger-happy player now
+   * and then goes before they're sure; a nervous one may still panic into it
+   * once the clock ticks urgent; and with the clock nearly out, it goes
+   * with what it has.
+   */
+  private waitForSight(key: string, s: GameState, q: Question, start: number, seen: number | null, ask: Ask, knows: boolean) {
+    const now = session.hostNow();
+    const need = sightNeeded(this.persona, ask, knows, Math.random);
+    // Going early, it's as often as not a guess.
+    const sure = need.early ? knows && Math.random() < 0.35 : knows;
+    const react = afterSeeing(this.persona, ask, sure, Math.random);
+    // Never sooner than it would think on the art shown whole (recorded: the click 3 to 7 s in, however fast the art burnt).
+    const floor = start + thinkTime(this.persona, { ...ask, veil: 0 }, sure, Math.random);
+    // When it expects to go (the art comes in about evenly over the veil's time), to look the question over until.
+    const expected = Math.max(floor, start + 400 + need.share * q.veil!.seconds * 1000 + react);
+    const panicked = panic(this.persona, ask, expected - start, Math.random);
+    const lead = () => this.hand.lead();
+    const what = () => {
+      const how = this.how(ask, panicked, [need.early && 'goes early', `on ${Math.round(100 * need.share)}% of the art`]);
+      return `answers (${how})`;
+    };
+    this.hand.ponder(q, Date.now() + Math.max(200, expected - lead() - now), torn(optionNames(q), seen, sure, seen === null ? undefined : looksOf(q, seen)));
+    // The picture it's after, on a question of pictures each burning in: the one its eyes take for it.
+    const tile = q.mode === 'art' ? seen : null;
+    // When it goes, once it has seen enough (still panicking first, or hurried by the clock).
+    let goAt: number | null = null;
+    const check = () => {
+      const o = this.open(q);
+      if (!o) return;
+      const t = session.hostNow();
+      if (panicked && t >= start + panicked.at - lead()) return this.answerNow(s, q, sure && !panicked.fumble, ask, what(), seen);
+      if (goAt === null && inView(o, tile) >= need.share) goAt = Math.max(t + react, floor);
+      if (goAt !== null && t >= goAt - lead()) return this.answerNow(s, q, sure, ask, what(), seen);
+      // The clock all but out: it goes with what it has (all it needed, if it saw that much).
+      if (o.deadline && t >= o.deadline - 900 - lead()) return this.answerNow(s, q, goAt !== null ? sure : sure && Math.random() < 0.5, ask, `${what()}, out of time`, seen);
+      this.plans.set(key, { at: Math.min(t + 150, goAt === null ? Infinity : goAt - lead()), run: check, poll: { actAt: Math.min(goAt ?? expected, panicked ? start + panicked.at : Infinity) - lead() } });
+    };
+    this.plans.set(key, { at: Math.max(now, start + 400), run: check, poll: { actAt: Math.min(expected, panicked ? start + panicked.at : Infinity) - lead() } });
   }
 
   /**
@@ -516,6 +790,10 @@ export class Player {
       if (o.deadline - margin > session.hostNow() + 300) return void this.plans.set(key, { at: o.deadline - margin, run });
       if (fuseDue(cur)) return log('holds: the dynamite goes off by itself');
       if (teamItemReady(cur, 'flares') && !o.flared) return void this.plans.set(key, { at: o.deadline + 400, run });
+      // With people on the team, a bot of their level mostly has no idea, and lets it go rather than guess
+      // (bots guessing one after another, each striking an option, would find it for them).
+      const cap = this.capFor(cur);
+      if (cap < 1 && Math.random() >= cap) return log('has no idea, lets it go');
       return this.answer(s, q, false, ask, (o.struck ?? []).map((x) => x.index), 'guesses near the end:', seen);
     };
     const at = Math.max(start + 1000, q.deadline! - margin);

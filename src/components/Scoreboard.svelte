@@ -34,7 +34,7 @@
     itemBlown,
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
-  import { flareStrike } from '../lib/flareBurn';
+  import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
   import { kickConfirm } from '../lib/kick';
@@ -46,10 +46,10 @@
   import Gallery from './Gallery.svelte';
   import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
+  import HeartOfLight from './HeartOfLight.svelte';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
-  const uid = $props.id();
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -92,11 +92,11 @@
   }
   /** Cave-ins already heard: one per player per vein, however their losses interleave (several on one device). */
   const cavesHeard = new Set<string>();
-  /** The cave-in's sound, once per cave-in (`key` from caveInOf). */
-  function caveInHeard(key: string) {
+  /** The cave-in's sound, once per cave-in (`key` from caveInOf), from the entry it caves in on. */
+  function caveInHeard(key: string, from: Element | null) {
     if (cavesHeard.has(key)) return;
     cavesHeard.add(key);
-    sfx('caveIn');
+    sfx('caveIn', { from: { from } });
   }
   // Delve: a life lost makes the player's entry flinch, and the chamber of the
   // phial pours its light out, in step with the reveal's verdict, a moment
@@ -160,8 +160,8 @@
             if (li) lifeLost(li, chamber ?? li, left, mine, flow ?? undefined);
             // A cave-in rumbles once; each life it takes still sounds as it goes.
             if (mine) {
-              if (caved) caveInHeard(caved);
-              sfx('lifeLost');
+              if (caved) caveInHeard(caved, li);
+              sfx('lifeLost', { from: { from: chamber ?? li } });
             }
             later(() => {
               if (hit[id] === left) delete hit[id];
@@ -298,7 +298,11 @@
       findGained(answer, slot, find, aim ?? slot);
       flow.fed = true;
       if (session.mode === 'local' || id === session.myPlayerId)
-        later(() => sfx('findReward'), Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)));
+        later(
+          // Heard flying in with the sparks, the ring landing on the slot.
+          () => sfx('findReward', { from: { from: answer, to: aim ?? slot, seconds: ringAt / 1000 } }),
+          Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)),
+        );
     });
     return flow;
   }
@@ -348,7 +352,7 @@
       if (kind === 'ward') {
         const el = pip('.casing.whole.fresh');
         if (el) wardFormed(el, fed);
-        if (mine && !fed) sfx('findReward');
+        if (mine && !fed) sfx('findReward', { from: { from: el ?? li } });
       } else if (kind === 'shatter') {
         // Each barrier catches its blow in turn, and its casing breaks with it.
         const barriers = vessel?.querySelectorAll('.aegis') ?? [];
@@ -359,21 +363,22 @@
         }
         // A cave-in rumbles once; each ward it breaks still shatters, in step with its barrier.
         if (mine) {
-          if (caved) caveInHeard(caved);
-          for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter'), i * WARD_NEXT * 1000);
+          if (caved) caveInHeard(caved, li);
+          for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter', { from: { from: barriers[i] ?? vessel ?? li } }), i * WARD_NEXT * 1000);
         }
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
         if (el && kind === 'flare') flareFound(el);
-        if (mine && !fed) sfx('findReward');
+        if (mine && !fed) sfx('findReward', { from: { from: el ?? li } });
       } else if (kind === 'burn') {
         // The ring on screen (the last one: an old one may still be fading
         // out). The flare flares here and its light streaks to it; the ring
         // burns on (TimerRing.svelte).
         const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
-        flareStrike({ timer, pill: li, icon: counts?.querySelector('[data-pip="flare"]') ?? null });
-        // Everyone hears it: the clock everyone watches just got longer.
-        sfx('flare');
+        const icon = counts?.querySelector('[data-pip="flare"]') ?? null;
+        flareStrike({ timer, pill: li, icon });
+        // Everyone hears it: the clock everyone watches just got longer. It streaks from the entry to the clock.
+        sfx('flare', { from: { from: icon ?? li, to: timer, seconds: FLARE_IGNITE_MS / 1000, far: !mine } });
       } else if (kind === 'blown' && item) {
         // What it was: a ward's casing on the chambers (bursting off,
         // Phial.svelte), a flare or stick beside the phial.
@@ -382,7 +387,7 @@
             ? (vessel?.querySelector('.casing.ghost.blown') ?? null)
             : (counts?.querySelector(`[data-pip="${item === 'flares' ? 'flare' : 'dynamite'}"]`) ?? null);
         if (el) itemBlown(el, li, item, mine);
-        if (mine) sfx('itemBlown');
+        if (mine) sfx('itemBlown', { from: { from: el ?? li } });
       }
       // A blast is heard as the question it blasted away gives way (session.svelte.ts).
     });
@@ -426,7 +431,8 @@
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       const target = to?.phial.querySelector(`.chamber[data-k="${into}"]`) ?? to?.phial;
       if (giver && taker && chamber && target) lifeGiven(chamber, giver, target, taker);
-      sfx('revive');
+      // Heard streaming across with the light; a teammate's (not one at this screen) from farther off.
+      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: session.mode !== 'local' && r.by !== session.myPlayerId } });
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);
@@ -660,31 +666,6 @@
   });
 </script>
 
-<!-- The revive's glyph: a heart of the phial's rose light, set in gold, a
-     cross of pale light in it, in a glory of fine rays (in a 24 unit box
-     round its centre). -->
-{#snippet heartOfLight(id: string)}
-  <svg viewBox="-12 -12 24 24">
-    <defs>
-      <radialGradient {id} cx="0.45" cy="0.42" r="0.62">
-        <stop offset="0" stop-color="#ffe4cf" />
-        <stop offset="0.3" stop-color="#ff8a68" />
-        <stop offset="0.62" stop-color="#ec3a48" />
-        <stop offset="1" stop-color="#6e0820" />
-      </radialGradient>
-    </defs>
-    <g class="rays">
-      {#each Array.from({ length: 16 }, (_, i) => i) as i (i)}
-        {@const a = (i / 16) * Math.PI * 2}
-        {@const r1 = i % 2 ? 10.1 : 11.3}
-        <path d="M{(Math.sin(a) * 8.6).toFixed(2)} {(-Math.cos(a) * 8.6).toFixed(2)}L{(Math.sin(a) * r1).toFixed(2)} {(-Math.cos(a) * r1).toFixed(2)}" />
-      {/each}
-    </g>
-    <path class="body" fill="url(#{id})" d="M0 6.6C0 6.6-6.9 2.2-6.9-2.5C-6.9-4.9-5.2-6.4-3.2-6.4C-1.8-6.4-0.6-5.6 0-4.4C0.6-5.6 1.8-6.4 3.2-6.4C5.2-6.4 6.9-4.9 6.9-2.5C6.9 2.2 0 6.6 0 6.6Z" />
-    <path class="hair" d="M0 4.9C0 4.9-5.3 1.5-5.3-2.3C-5.3-4-4.1-5-2.8-5C-1.6-5-0.6-4.2 0-3.1C0.6-4.2 1.6-5 2.8-5C4.1-5 5.3-4 5.3-2.3C5.3 1.5 0 4.9 0 4.9Z" />
-    <path class="cross" d="M0-3.6V1.8M-2.7-0.9H2.7" />
-  </svg>
-{/snippet}
 
 <!-- While the offer to give a life is open, Escape closes it and hands focus back to its heart. -->
 <!-- Escape closes the revive question, or takes an armed kick back; a press anywhere but the armed Kick takes it back too. -->
@@ -778,7 +759,7 @@
             onclick={() => (asking = asking === p.id ? null : p.id)}
             aria-label="Revive {p.name}: give them one of your lives"
             aria-expanded={asking === p.id}
-            ><span class="heart" aria-hidden="true">{@render heartOfLight(`${uid}-heart-${i}`)}</span></button
+            ><span class="heart" aria-hidden="true"><HeartOfLight /></span></button
           >
         {/if}
       </li>
@@ -1073,36 +1054,6 @@
     width: 100%;
     height: 100%;
     animation: heartbeat-glyph 1.3s ease-out infinite;
-  }
-  .heart svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-    filter: drop-shadow(0 0 2px rgba(255, 110, 90, 0.65));
-  }
-  .heart .rays path {
-    stroke: #e9c983;
-    stroke-width: 0.6;
-    stroke-linecap: butt;
-    opacity: 0.7;
-  }
-  .heart .body {
-    stroke: #e9c983;
-    stroke-width: 0.9;
-    stroke-linejoin: miter;
-  }
-  .heart .hair {
-    fill: none;
-    stroke: rgba(255, 236, 214, 0.45);
-    stroke-width: 0.4;
-  }
-  .heart .cross {
-    fill: none;
-    stroke: #fff6ea;
-    stroke-width: 1.5;
-    stroke-linecap: butt;
-    filter: drop-shadow(0 0 1px rgba(110, 8, 32, 0.9));
   }
   @keyframes heartbeat {
     0% {

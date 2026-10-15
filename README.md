@@ -869,6 +869,25 @@ fetched as a run nears them: the next place's while the page is idle, from
 the first depth of the zone before it. `src/lib/soundDesign.ts` sets the
 layers and the beds, as tuned on the ambience mix board.
 
+Every sound comes from where it happens on screen (`src/lib/spatial.svelte.ts`):
+each call of `sfx()` says where (a card, an answer, the clock, a player's
+entry, the edge a blast bursts in from, or the path its sparks fly), and a
+head model places it (the far ear hears it a fraction of a millisecond late
+and a little duller), the screen's edges at ±36°. Sparks are heard flying,
+teammates' sounds a little farther off, the reverb answers from the sound's
+side, and a blast or a cave-in fills the space round it. The ambience is
+spread wide (each ear its own take of the loop, half a loop apart), and in
+Delve each place rings in a room of its own (`src/lib/acoustics.ts`: early
+reflections, far slaps and a tail whose lows, mids and highs die at their
+own pace, worked out while the page is idle) in place of the one hall,
+cross-fading as the beds do. The hover, the most frequent sound and now
+the most noticeable, comes from where its control is like any other, but
+2 dB down; a busy sweep across controls eases it down a little and dulls
+it, and within a sweep a quick flick over a control barely brushes it
+(quieter, duller, shorter), while the first hover after a pause always
+sounds in full. The mix was chosen by ear in the lab (**Spatial sound**,
+below), the hover on its own page (**The hover tuning page**).
+
 ### Visual effects
 
 Everything is drawn in WebGL2 with float precision and dithered once at the
@@ -1237,6 +1256,18 @@ switches effects, sound and reduced motion. Events go through the engine
 and the session as a game's would; setup changes start the run afresh
 under a new id, so they play nothing themselves.
 
+**Spatial sound** tunes the game's spatial sound (`src/lib/spatial.svelte.ts`)
+by ear: presets climb a ladder from *Today* (every sound centred, in the
+one hall, as the game played before) through panning, travelling sounds and
+teammates farther off, the ambience spread wide, a head model and crossfeed
+for headphones, and a reverb fed from the sound's side, to *Chosen* (the
+game's mix) and *HRTF*; *Haas* places by time alone. **Size** lets a blast
+and a cave-in fill the space, **Rooms** gives each place its own reverb,
+and **A** flips to today's sound and back. A half circle draws where each
+sound is heard from. Its settings are kept (`src/lab/spatial.svelte.ts`)
+and shared with the spatial sound page (`spatial.html`, below), which plays
+the same with the screen full window.
+
 With two players or more the run is co-op:
 
 - **Screen** picks whose screen the app is (its own taps vote and answer
@@ -1362,6 +1393,80 @@ colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
 - `streak.html?days=30` opens it at a run of 30 days.
 - **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
   the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
+
+### The end screen's test page
+
+`endscreen.html` (`src/endscreenPreview/`) shows the end of a game
+(`src/components/GameOver.svelte`) in every state it can be in, in the real
+app: each one a finished game set into the session before the app mounts
+(who this device is, how its run measured up, what it earned, its codex log
+and Delve records), so nothing has to be played to reach it.
+
+- **The list** holds each state of the handoff's boards
+  (`docs/handoff/end-screen`) once, and the edge cases round them: in
+  normal games long names, the creator's, a game to 1 point, scores below
+  nothing, ties, deathmatches won and of three, a winner who missed, many
+  misses, the ranking from seven to eleven players, a room emptied, a host
+  alone, hot-seat with no miss, no highlights, spectators; in Delve a run
+  level with the best, past the tenth zone, gone at depth 0, a two-life
+  cave-in, more finds than fit, tall art, charts of two and of a dozen runs,
+  lives missing from the codex, teams of two to seven, lives given and
+  brought back, a run never recorded, someone gone. ↑ and ↓ walk it.
+- **The window:** 1440 × 900, 1440 × 725, a tablet's, phones at 390 and 375,
+  1100 × 900, 2560 × 1440 and a phone on its side; the state shows in a
+  frame of that size, scaled to fit or at **1:1**.
+- **Board** shows the handoff's board for that window in its place (a state
+  drawn at several sizes has a board for each), **Side by side** both.
+  **Replay** shows the state afresh (its entrance plays again); **Open alone**
+  opens it in a tab of its own (`endscreen.html?scene=<key>`). The frame is
+  made once and each state set in it in place: a frame made afresh for every
+  pick started the backdrop's shaders over while the last ones were still
+  being built, which held up the browser for most of a minute.
+- Its buttons only say what they would do: there is no room behind it. The
+  address keeps the state and the window, to send a link to one.
+- **Open it:** `npm run dev`, then `http://localhost:5173/endscreen.html`; on
+  the beta, **poe2.quest/beta/endscreen.html**. The live build leaves it out,
+  and its page is marked (`<html data-endscreen>`), so `src/lib/storage.ts`
+  starts its keys apart and the codex and records it writes never reach the
+  game's.
+
+### The hover tuning page
+
+`hover.html` (`src/hoverPage/`) is for tuning how the hover quietens over a
+sweep of the mouse across controls: rows of controls shaped as the game's
+(the header's small buttons, the cards, the answers, a menu, chips), their
+hovers played as the game plays them (`src/lib/spatial.svelte.ts`), and
+beside them the settings: **Off**, **Steps** (each hover 2 dB quieter) or
+**Eased** (ducked by how busy hovering is, as the game has it, with its
+depth, how much duller, how fast it recovers and how quickly speed ducks
+it), keys 1 to 3; and **By pointer speed** (within a sweep, a quick flick
+over a control quieter, duller and shorter, a slow arrival in full, between
+two speeds in screen widths a second). A strip shows how far each hover was
+ducked, with the last one's speed.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/hover.html`; on
+  the beta, **poe2.quest/beta/hover.html**. The live build leaves it out.
+
+### The spatial sound page
+
+`spatial.html` (`src/spatialPage/`) is the real game screen, full window, on
+a Delve run of the lab's, with a menu over it for tuning the game's spatial
+sound on any sound by hand. The screen keeps the whole window (the menu
+floats over it, and **M** hides it), so every sound comes from where it
+would in a game, at any window size; a narrow window lays it out as a
+phone does.
+
+- **Players**, **Deal cards** and **Ask** set up the screen; **Ambience**
+  moves the run to a zone, for its bed (to hear **Wide ambience** on).
+- **Placed sounds** play the game's sounds from the elements on screen they
+  come from (hovering the cards or answers with the mouse does too, as in
+  the game); **The scene's sounds** belong to the whole scene, to hear
+  **Size** on.
+- **Space** plays a round of Delve together over and over; **A** flips to
+  today's sound and back. The settings are the lab's, and its run is its
+  own (`<html data-lab data-spatial>`, `src/lib/storage.ts`).
+- **Open it:** `npm run dev`, then `http://localhost:5173/spatial.html`; on
+  the beta, **poe2.quest/beta/spatial.html**. The live build leaves it out.
 
 ---
 

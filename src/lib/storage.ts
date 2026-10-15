@@ -20,6 +20,18 @@ export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documen
  */
 export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-zones');
 /**
+ * The spatial sound page (spatial.html, src/spatialPage: dev and beta builds
+ * only) runs the lab's game too, marked `<html data-lab data-spatial>`: its
+ * keys start apart from the lab's in the same way.
+ */
+export const SPATIAL_PAGE = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-spatial');
+/**
+ * The end screen's test page (endscreen.html, src/endscreenPreview: dev and
+ * beta builds only) marks its page `<html data-endscreen>`: the codex and the
+ * Delve records it writes for each state start apart, never over the game's.
+ */
+export const END_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-endscreen');
+/**
  * The room bot (bot.html, src/bot: dev and bot builds only) marks its page
  * `<html data-bot>`: its keys start apart too, so a bot opened in someone's
  * own browser never takes over their saves, codex or settings.
@@ -39,7 +51,18 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  * start; the *Key versions take a whole key, for the few the beta must share
  * with the live game or leave alone.
  */
-export const STORE = (BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.') + (LAB ? 'lab.' : '') + (ZONES_PREVIEW ? 'zones.' : '') + (BACKDROP_TOOL ? 'backdrops.' : '') + (BOT ? 'bot.' : '');
+/** The channel's start, before any page's own. */
+const CHANNEL = BETA ? 'poe2trivia.beta.' : LOCAL ? 'poe2trivia.local.' : 'poe2trivia.';
+export const STORE =
+  CHANNEL +
+  (LAB ? 'lab.' : '') +
+  (ZONES_PREVIEW ? 'zones.' : '') +
+  (SPATIAL_PAGE ? 'spatial.' : '') +
+  (BACKDROP_TOOL ? 'backdrops.' : '') +
+  (BOT ? 'bot.' : '') +
+  (END_PREVIEW ? 'endscreen.' : '');
+/** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
+export const LAB_STORE = CHANNEL + 'lab.';
 
 export type Area = 'local' | 'session';
 
