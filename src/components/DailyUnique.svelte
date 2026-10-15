@@ -1,6 +1,6 @@
 <script lang="ts">
   // Today's unique: one item a day, the same for every exile (lib/daily.ts),
-  // in the rose's circle (its moons the days' turning) with the game's own
+  // in one of the rune circles (a different one each day) with the game's own
   // answer buttons under it. Once it is answered, "Practice more" asks
   // further questions in the same spot;
   // they never touch the streak. Into the codex, today's unique goes as
@@ -20,7 +20,7 @@
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
-  import RoseCircle from './RoseCircle.svelte';
+  import { circleFor, DAILY_CIRCLES } from './circles';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -60,6 +60,8 @@
     };
   });
   const today = $derived(utcDay(now));
+  // A different one of the circles from day to day, the same for every exile.
+  const Circle = $derived(circleFor(today, DAILY_CIRCLES));
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 
   let rec = $state(loadDaily());
@@ -278,7 +280,7 @@
       <div class="veil">
         <div class="inner">
           <div class="circle">
-            <RoseCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
+            <Circle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
           </div>
           <!-- "frame", as the game's art stage: the right answer's flare and rays find the
                picture through it (fx/moments reveal) and shine from behind its outline. -->

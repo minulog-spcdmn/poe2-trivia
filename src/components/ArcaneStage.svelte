@@ -19,7 +19,10 @@
    * moon, which have a right way up). `breathe`: it swells and shrinks about
    * its pivot (the centre, unless given) between full size and `low`, once
    * each way in `period` seconds, so rays seem to lengthen and shorten.
-   * Each is still a box of its own, moved on the compositor.
+   * `flutter`: once every `period` seconds it narrows toward its pivot to
+   * `fold` of its width and back, twice in quick succession, as a resting
+   * moth stirs its wings. Each is still a box of its own, moved on the
+   * compositor.
    */
   export type StageLayer = {
     name: string;
@@ -32,6 +35,7 @@
     sway?: { swing: number; period: number; delay?: number };
     upright?: boolean;
     breathe?: { low: number; period: number; delay?: number };
+    flutter?: { fold: number; period: number; delay?: number };
   };
 
   /** How long before its first line draws a layer's lines go on the page (s). */
@@ -119,6 +123,7 @@
         class:upright={!!parent}
         class:swaying={!!l.sway}
         class:breathing={!!l.breathe}
+        class:fluttering={!!l.flutter}
         style:--turn={spin && `${spin.turn}s`}
         style:--from={spin && `${spin.from}deg`}
         style:--dir={spin && (spin.reverse ? 'reverse' : 'normal')}
@@ -128,6 +133,9 @@
         style:--swing={l.sway && `${l.sway.swing}deg`}
         style:--period={l.sway && `${l.sway.period}s`}
         style:--sway-delay={l.sway && `${l.sway.delay ?? 0}s`}
+        style:--fold={l.flutter?.fold}
+        style:--flutter={l.flutter && `${l.flutter.period}s`}
+        style:--flutter-delay={l.flutter && `${l.flutter.delay ?? 0}s`}
         style:transform-origin={l.pivot && `${(l.pivot[0] + 100) / 2}% ${(l.pivot[1] + 100) / 2}%`}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
       >
@@ -225,6 +233,9 @@
   }
   .breathing {
     animation: swell var(--breath) var(--breath-delay) ease-in-out infinite alternate;
+  }
+  .fluttering {
+    animation: flutter var(--flutter) var(--flutter-delay) ease-in-out infinite;
   }
   /* A wrong answer jars the circle. */
   .bad .spin {
@@ -414,6 +425,26 @@
     }
     to {
       scale: var(--low);
+    }
+  }
+  /* Still most of the time, then two quick stirs. */
+  @keyframes flutter {
+    0%,
+    88%,
+    100% {
+      scale: 1 1;
+    }
+    91% {
+      scale: var(--fold) 1;
+    }
+    94% {
+      scale: 1 1;
+    }
+    96.5% {
+      scale: calc((1 + var(--fold)) / 2) 1;
+    }
+    99% {
+      scale: 1 1;
     }
   }
   @keyframes sway {

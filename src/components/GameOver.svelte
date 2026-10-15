@@ -5,8 +5,8 @@
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
-  import ArcaneCircle from './ArcaneCircle.svelte';
   import BlackSunCircle from './BlackSunCircle.svelte';
+  import RoseCircle from './RoseCircle.svelte';
   import { CREATOR, CREATOR_URL, DONATE_URL, SITE_URL } from '../lib/site';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
@@ -26,8 +26,8 @@
   const endDepth = $derived(s.delve ? (isGroupRun(s) ? delveTeam(s).depth : (delveStandings(s)[0]?.depth ?? s.round)) : 0);
   // Delve: ranked by how deep each went, and alone there is no winner, only a depth.
   const run = $derived(s.delve ?? null);
-  // The circle crowning the winner: the eye, or after a Delve its black sun.
-  const Circle = $derived(run ? BlackSunCircle : ArcaneCircle);
+  // The circle crowning the winner: the rose, or after a Delve its black sun.
+  const Circle = $derived(run ? BlackSunCircle : RoseCircle);
   const solo = $derived(!!run && !isGroupRun(s));
   /** This run went deeper than every one before it of its kind, alone or together (lib/delveRecord.ts). */
   const newBest = $derived(!!run && session.delveResult?.id === run.startedAt && session.delveResult.best);
