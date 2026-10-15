@@ -58,8 +58,8 @@
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the rose or Delve's black sun (the winner, or the
-  // delvers, at its heart)
-  // and what the game meant for you under it; on the right a lobby panel
+  // delvers, at its heart), and what the game meant for you under it; on
+  // the right a lobby panel
   // with the mode's ranking or the party, the highlights everyone shares,
   // and the start row. Phones stack it all, the start row docked at the
   // foot of the screen. What it says comes from lib/recap.ts.
