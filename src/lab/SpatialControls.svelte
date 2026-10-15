@@ -14,6 +14,11 @@
     { id: 'head', label: 'Head model' },
     { id: 'hrtf', label: 'HRTF' },
   ];
+  const HOVER_REPEATS: { id: typeof spatial.hoverRepeat; label: string }[] = [
+    { id: 'off', label: 'Off' },
+    { id: 'steps', label: 'Steps' },
+    { id: 'eased', label: 'Eased' },
+  ];
   const deg = (w: number) => Math.round(w * 90);
   /** The angle the screen's edges are heard at. */
   const edge = $derived((spatial.today ? 0 : spatial.width) * (Math.PI / 2));
@@ -91,7 +96,16 @@
   </div>
   <div class="toggles">
     <label><input type="checkbox" bind:checked={spatial.hoverDry} /> Dry hover</label>
-    <label><input type="checkbox" bind:checked={spatial.hoverRepeats} /> Quiet repeats</label>
+    <label><input type="checkbox" bind:checked={spatial.hoverSpeed} /> Hover by speed</label>
+  </div>
+  <!-- How repeats in a sweep are heard; the rest of the hover's settings on hover.html. -->
+  <div class="line">
+    <span class="lbl">Repeats</span>
+    <div class="seg" role="group" aria-label="Hover repeats">
+      {#each HOVER_REPEATS as r (r.id)}
+        <button class:on={spatial.hoverRepeat === r.id} onclick={() => (spatial.hoverRepeat = r.id)}>{r.label}</button>
+      {/each}
+    </div>
   </div>
   <div class="toggles">
     <label><input type="checkbox" bind:checked={spatial.moving} /> Moving</label>

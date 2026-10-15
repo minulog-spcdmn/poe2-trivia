@@ -882,9 +882,11 @@ reflections, far slaps and a tail whose lows, mids and highs die at their
 own pace, worked out while the page is idle) in place of the one hall,
 cross-fading as the beds do. The hover, the most frequent sound and now
 the most noticeable, comes from where its control is like any other, but
-2.5 dB down, dry and close (no side reverb, little room), and a step
-quieter for each hover in a quick sweep across controls. The mix was
-chosen by ear in the lab (**Spatial sound**, below).
+2 dB down; a busy sweep across controls eases it down a little and dulls
+it, and within a sweep a quick flick over a control barely brushes it
+(quieter, duller, shorter), while the first hover after a pause always
+sounds in full. The mix was chosen by ear in the lab (**Spatial sound**,
+below), the hover on its own page (**The hover tuning page**).
 
 ### Visual effects
 
@@ -1427,6 +1429,23 @@ and Delve records), so nothing has to be played to reach it.
   and its page is marked (`<html data-endscreen>`), so `src/lib/storage.ts`
   starts its keys apart and the codex and records it writes never reach the
   game's.
+
+### The hover tuning page
+
+`hover.html` (`src/hoverPage/`) is for tuning how the hover quietens over a
+sweep of the mouse across controls: rows of controls shaped as the game's
+(the header's small buttons, the cards, the answers, a menu, chips), their
+hovers played as the game plays them (`src/lib/spatial.svelte.ts`), and
+beside them the settings: **Off**, **Steps** (each hover 2 dB quieter) or
+**Eased** (ducked by how busy hovering is, as the game has it, with its
+depth, how much duller, how fast it recovers and how quickly speed ducks
+it), keys 1 to 3; and **By pointer speed** (within a sweep, a quick flick
+over a control quieter, duller and shorter, a slow arrival in full, between
+two speeds in screen widths a second). A strip shows how far each hover was
+ducked, with the last one's speed.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/hover.html`; on
+  the beta, **poe2.quest/beta/hover.html**. The live build leaves it out.
 
 ### The spatial sound page
 
