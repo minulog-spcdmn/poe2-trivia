@@ -28,7 +28,11 @@
   let reload = $state(0);
 
   const view = $derived(VIEWPORTS.find((v) => v.key === (picked ?? current.view)) ?? VIEWPORTS[0]);
-  const board = $derived(current.board ? BOARDS[current.board] : undefined);
+  /** The board drawn at this window, if there is one. */
+  const boardName = $derived(current.boards?.[view.key]);
+  const board = $derived(boardName ? BOARDS[boardName] : undefined);
+  /** The windows this state has boards for. */
+  const drawnAt = $derived(VIEWPORTS.filter((v) => current.boards?.[v.key]));
   /** The board's height at the window's width (a phone's whole page is taller than its window). */
   let boardH = $state(0);
   $effect(() => {
@@ -85,7 +89,7 @@
           <li>
             <button class:on={s === current} data-key={s.key} onclick={() => pick(s)}>
               <span class="s-label">{s.label}</span>
-              <span class="s-tag">{s.board ?? s.key}</span>
+              <span class="s-tag">{s.key}{#if s.boards}&nbsp;• board{Object.keys(s.boards).length > 1 ? 's' : ''}{/if}</span>
             </button>
           </li>
         {/each}
@@ -110,7 +114,11 @@
         <button onclick={() => reload++} title="Load the state afresh (its entrance and effects play again)">Replay</button>
         <a href={src} target="_blank" rel="noopener">Open alone ↗</a>
       </div>
-      {#if !board}<span class="note">No board for this one: an edge case.</span>{:else if picked && picked !== current.view}<span class="note">The board was drawn at another size.</span>{/if}
+      {#if !board && drawnAt.length}
+        <span class="note"
+          >Boards at {#each drawnAt as v, i (v.key)}{i ? ', ' : ''}<button class="link" onclick={() => (picked = v.key)}>{v.label}</button>{/each}</span
+        >
+      {:else if !board}<span class="note">No board for this one: an edge case.</span>{/if}
     </header>
 
     <div class="panes" class:scroll={!fit} bind:clientWidth={paneW} bind:clientHeight={paneH}>
@@ -125,7 +133,7 @@
       {#if showing !== 'screen' && board}
         <figure class="board" style:width="{view.w * scale}px" style:height="{boardH * scale}px">
           <img src={board} alt="The handoff's board for {current.label}" style:width="{view.w * scale}px" />
-          <figcaption>The board • {current.board}</figcaption>
+          <figcaption>The board • {boardName}</figcaption>
         </figure>
       {/if}
     </div>
@@ -258,6 +266,16 @@
   .seg button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+  .link {
+    padding: 0;
+    font: inherit;
+    color: var(--gold);
+    background: none;
+    border: 0;
+    text-decoration: underline;
+    text-decoration-color: var(--gold-lo);
+    cursor: pointer;
   }
   .note {
     font-size: 14px;

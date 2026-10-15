@@ -1371,15 +1371,21 @@ app: each one a finished game set into the session before the app mounts
 (who this device is, how its run measured up, what it earned, its codex log
 and Delve records), so nothing has to be played to reach it.
 
-- **The list** holds every board of the handoff (`docs/handoff/end-screen`)
-  and the edge cases round them: long names, the creator's, a tie for first,
-  no highlights, a race with no wrong guess, a player who never answered, a
-  team of two, many lives, a two-life cave-in, a first run with finds, a run
-  under newer rules, a solo run watched, someone gone, spectators joining,
-  one who just watches. ↑ and ↓ walk it.
-- **The window:** 1440 × 900, 1440 × 725, a tablet's, and phones at 390 and
-  375; the state shows in a frame of that size, scaled to fit or at **1:1**.
-- **Board** shows the handoff's board in its place, **Side by side** both.
+- **The list** holds each state of the handoff's boards
+  (`docs/handoff/end-screen`) once, and the edge cases round them: in
+  normal games long names, the creator's, a game to 1 point, scores below
+  nothing, ties, deathmatches won and of three, a winner who missed, many
+  misses, the ranking from seven to eleven players, a room emptied, a host
+  alone, hot-seat with no miss, no highlights, spectators; in Delve a run
+  level with the best, past the tenth zone, gone at depth 0, a two-life
+  cave-in, more finds than fit, tall art, charts of two and of a dozen runs,
+  lives missing from the codex, teams of two to seven, lives given and
+  brought back, a run never recorded, someone gone. ↑ and ↓ walk it.
+- **The window:** 1440 × 900, 1440 × 725, a tablet's, phones at 390 and 375,
+  1100 × 900, 2560 × 1440 and a phone on its side; the state shows in a
+  frame of that size, scaled to fit or at **1:1**.
+- **Board** shows the handoff's board for that window in its place (a state
+  drawn at several sizes has a board for each), **Side by side** both.
   **Replay** loads the state again (its entrance plays again); **Open alone**
   opens it in a tab of its own (`endscreen.html?scene=<key>`).
 - Its buttons only say what they would do: there is no room behind it. The
