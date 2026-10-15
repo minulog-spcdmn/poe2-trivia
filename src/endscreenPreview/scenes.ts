@@ -435,6 +435,20 @@ export function scenes(): Scene[] {
       runs: runs([], 23, false),
       earned: ['depth-10'],
     },
+    {
+      key: 'e-tall-art',
+      group: 'Edge cases',
+      label: 'Alone: a staff and a bow took lives (tall art)',
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo({
+        recap: { fastest: { by: K, id: id("Atziri's Rule"), ms: 1700 }, closest: { by: K, id: id('Chainsting'), left: 600, depth: 18 } },
+      }),
+      delveResult: measured(23, 27, false),
+      log: [miss(10, "Atziri's Rule", 19), miss(20, 'Chainsting', 21), miss(30, 'The Burden of Shadows', 23)],
+      runs: soloRuns(),
+    },
     { key: 'e-mixed', group: 'Edge cases', label: 'Alone: a run finished under newer rules', view: D, mode: 'local', me: null, state: solo({ mixed: true }), delveResult: measured(23, 27, false), log: soloLog(), runs: soloRuns() },
     { key: 'e-watch-solo', group: 'Edge cases', label: 'Watching someone delve alone', view: D, mode: 'client', me: pid('Watcher'), state: watched(solo({ host: K })) },
     {
