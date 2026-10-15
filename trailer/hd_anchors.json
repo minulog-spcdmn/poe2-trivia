@@ -1,0 +1,20 @@
+{
+ "swap": [
+  "home4",
+  "revive3",
+  "flaredet",
+  "vein3",
+  "toasts3",
+  "stitle"
+ ],
+ "rep": [
+  [
+   "'flaredet_hd', 9.36, at=BIG",
+   "'flaredet_hd', 9.38, at=BIG"
+  ],
+  [
+   "'vein3_hd', 7.72, at=33.63",
+   "'vein3_hd', 7.66, at=33.63"
+  ]
+ ]
+}

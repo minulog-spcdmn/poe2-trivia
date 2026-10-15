@@ -15,12 +15,24 @@ import { veilSpan, type VeilPlan } from './patches.ts';
 export const DELVE_LIVES = 3;
 
 /**
- * Bumped whenever the curve below changes, together with PROTOCOL_VERSION:
- * guests read parts of the curve from their own copy, and records made under
- * one ruleset aren't compared with another. While Delve was unreleased its
- * changes stayed at 1 (the beta keeps records of its own); 1 is the rules
- * Delve opens with, frozen from its public release: every change to them
- * after that bumps it.
+ * Which runs compare. Records made under one ruleset are never compared
+ * with another's: a run under an older one counts toward no number that
+ * compares runs (no best, no usual depth, not on the start page), and is
+ * only listed apart in the codex's run log. So every bump sets everyone's
+ * bests back to nothing. What a run did still counts, under any rules: the
+ * achievements (earned or on their way), the codex's answers by item, finds
+ * and wards. A bump resets the comparisons, never a player's history.
+ *
+ * Delve is live (since 2026-10-08), so it is bumped only when a change makes
+ * depths not remotely comparable any more: a miss going deeper or not, the
+ * lives, a much steeper clock. A smaller change to the curve (a find a few
+ * depths on, a second on a clock, which questions are dealt) keeps it, and
+ * bumps only PROTOCOL_VERSION: guests read parts of the curve from their own
+ * copy. Several small changes that add up to a big one are still small each.
+ *
+ * 1: the rules Delve opened with. 2 (live 2026-10-12): a miss asks another
+ * question at the same depth in place of going deeper, with twins, the
+ * Azurite Vein's dig and the finds reordered.
  */
 export const DELVE_RULESET = 2;
 

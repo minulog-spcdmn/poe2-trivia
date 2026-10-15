@@ -13,7 +13,8 @@
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA, LOCAL } from '../lib/channel';
-  import { deepestEver, loadRecords } from '../lib/delveRecord';
+  import { CODEX_NAMES, DELVE_RECORD_KEY, deepestShown, loadRecords } from '../lib/delveRecord';
+  import { onStoredElsewhere, storeKey } from '../lib/storage';
   import { shownDepth } from '../lib/delve';
   import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
@@ -69,11 +70,23 @@
   const total = engine.items.length;
   /** Null until the codex is read. */
   let discovered = $state<number | null>(null);
-  void import('../lib/codex').then(({ loadCodex }) => {
-    const seen = loadCodex().items;
-    discovered = engine.items.filter((it) => seen[it.id]).length;
-  });
-  const deepest = shownDepth(deepestEver(loadRecords()));
+  const readDiscovered = () =>
+    import('../lib/codex').then(({ loadCodex }) => {
+      const seen = loadCodex().items;
+      discovered = engine.items.filter((it) => seen[it.id]).length;
+    });
+  void readDiscovered();
+  /** Your deepest as players see depths, as the codex's Delve tab has it. */
+  const readDeepest = () => shownDepth(deepestShown(loadRecords()));
+  let deepest = $state(readDeepest());
+  // A game in another tab may add to both meanwhile (the codex by the name
+  // lib/codex.ts writes, read raw so it stays out of the first download).
+  $effect(() =>
+    onStoredElsewhere({
+      [storeKey(CODEX_NAMES[0])]: () => void readDiscovered(),
+      [DELVE_RECORD_KEY]: () => (deepest = readDeepest()),
+    }),
+  );
   // Achievements catch up with the codex here: the first time quietly (those
   // earned in games from before them get one notice, here or owed from a game),
   // and any missed since. Not once a game has taken over the screen.

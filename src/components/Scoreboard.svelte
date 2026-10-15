@@ -34,7 +34,7 @@
     itemBlown,
   } from '../lib/fx/moments';
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
-  import { flareStrike } from '../lib/flareBurn';
+  import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
   import { phone } from '../lib/layout';
   import { kickConfirm } from '../lib/kick';
@@ -92,11 +92,11 @@
   }
   /** Cave-ins already heard: one per player per vein, however their losses interleave (several on one device). */
   const cavesHeard = new Set<string>();
-  /** The cave-in's sound, once per cave-in (`key` from caveInOf). */
-  function caveInHeard(key: string) {
+  /** The cave-in's sound, once per cave-in (`key` from caveInOf), from the entry it caves in on. */
+  function caveInHeard(key: string, from: Element | null) {
     if (cavesHeard.has(key)) return;
     cavesHeard.add(key);
-    sfx('caveIn');
+    sfx('caveIn', { from: { from } });
   }
   // Delve: a life lost makes the player's entry flinch, and the chamber of the
   // phial pours its light out, in step with the reveal's verdict, a moment
@@ -160,8 +160,8 @@
             if (li) lifeLost(li, chamber ?? li, left, mine, flow ?? undefined);
             // A cave-in rumbles once; each life it takes still sounds as it goes.
             if (mine) {
-              if (caved) caveInHeard(caved);
-              sfx('lifeLost');
+              if (caved) caveInHeard(caved, li);
+              sfx('lifeLost', { from: { from: chamber ?? li } });
             }
             later(() => {
               if (hit[id] === left) delete hit[id];
@@ -298,7 +298,11 @@
       findGained(answer, slot, find, aim ?? slot);
       flow.fed = true;
       if (session.mode === 'local' || id === session.myPlayerId)
-        later(() => sfx('findReward'), Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)));
+        later(
+          // Heard flying in with the sparks, the ring landing on the slot.
+          () => sfx('findReward', { from: { from: answer, to: aim ?? slot, seconds: ringAt / 1000 } }),
+          Math.max(0, FIND_LANDS * 1000 - ringAt - (performance.now() - startAt)),
+        );
     });
     return flow;
   }
@@ -348,7 +352,7 @@
       if (kind === 'ward') {
         const el = pip('.casing.whole.fresh');
         if (el) wardFormed(el, fed);
-        if (mine && !fed) sfx('findReward');
+        if (mine && !fed) sfx('findReward', { from: { from: el ?? li } });
       } else if (kind === 'shatter') {
         // Each barrier catches its blow in turn, and its casing breaks with it.
         const barriers = vessel?.querySelectorAll('.aegis') ?? [];
@@ -359,21 +363,22 @@
         }
         // A cave-in rumbles once; each ward it breaks still shatters, in step with its barrier.
         if (mine) {
-          if (caved) caveInHeard(caved);
-          for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter'), i * WARD_NEXT * 1000);
+          if (caved) caveInHeard(caved, li);
+          for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter', { from: { from: barriers[i] ?? vessel ?? li } }), i * WARD_NEXT * 1000);
         }
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
         if (el && kind === 'flare') flareFound(el);
-        if (mine && !fed) sfx('findReward');
+        if (mine && !fed) sfx('findReward', { from: { from: el ?? li } });
       } else if (kind === 'burn') {
         // The ring on screen (the last one: an old one may still be fading
         // out). The flare flares here and its light streaks to it; the ring
         // burns on (TimerRing.svelte).
         const timer = [...document.querySelectorAll('.timer')].filter((t) => t.getClientRects().length).at(-1) ?? null;
-        flareStrike({ timer, pill: li, icon: counts?.querySelector('[data-pip="flare"]') ?? null });
-        // Everyone hears it: the clock everyone watches just got longer.
-        sfx('flare');
+        const icon = counts?.querySelector('[data-pip="flare"]') ?? null;
+        flareStrike({ timer, pill: li, icon });
+        // Everyone hears it: the clock everyone watches just got longer. It streaks from the entry to the clock.
+        sfx('flare', { from: { from: icon ?? li, to: timer, seconds: FLARE_IGNITE_MS / 1000, far: !mine } });
       } else if (kind === 'blown' && item) {
         // What it was: a ward's casing on the chambers (bursting off,
         // Phial.svelte), a flare or stick beside the phial.
@@ -382,7 +387,7 @@
             ? (vessel?.querySelector('.casing.ghost.blown') ?? null)
             : (counts?.querySelector(`[data-pip="${item === 'flares' ? 'flare' : 'dynamite'}"]`) ?? null);
         if (el) itemBlown(el, li, item, mine);
-        if (mine) sfx('itemBlown');
+        if (mine) sfx('itemBlown', { from: { from: el ?? li } });
       }
       // A blast is heard as the question it blasted away gives way (session.svelte.ts).
     });
@@ -426,7 +431,8 @@
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       const target = to?.phial.querySelector(`.chamber[data-k="${into}"]`) ?? to?.phial;
       if (giver && taker && chamber && target) lifeGiven(chamber, giver, target, taker);
-      sfx('revive');
+      // Heard streaming across with the light; a teammate's (not one at this screen) from farther off.
+      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: session.mode !== 'local' && r.by !== session.myPlayerId } });
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);

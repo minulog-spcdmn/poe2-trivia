@@ -11,7 +11,7 @@ import {
   leftEvent,
   recordLeft,
   bestOf,
-  deepestEver,
+  deepestShown,
   findsMet,
   measure,
   emptyRecords,
@@ -445,7 +445,7 @@ test('each run keeps the wards that broke in its player\'s place: logged in the 
 
 test('the frontier marks each new deepest, under any rules', () => {
   let rec = emptyRecords();
-  assert.equal(deepestEver(rec), 0);
+  assert.equal(rec.frontier.at(-1)?.depth ?? 0, 0);
   for (const [id, depth, mixed] of [[1, 8, false], [2, 5, false], [3, 12, true], [4, 12, false], [5, 20, false]] as const)
     rec = addRun(rec, r({ id, at: id * 10, depth, mixed })).records;
   assert.deepEqual(rec.frontier, [
@@ -453,7 +453,26 @@ test('the frontier marks each new deepest, under any rules', () => {
     { depth: 12, at: 30 },
     { depth: 20, at: 50 },
   ]);
-  assert.equal(deepestEver(rec), 20);
+  assert.equal(rec.frontier.at(-1)?.depth ?? 0, 20);
+});
+
+test('the deepest shown (start page, codex tab) is the deeper end of alone and together, under these rules', () => {
+  let rec = emptyRecords();
+  assert.equal(deepestShown(rec), 0);
+  const team = { players: 2, perished: [] };
+  // Runs alone only ever left: none of them is an end, so together's shows.
+  rec = addRun(rec, r({ id: 1, at: 10, depth: 9, ...team })).records;
+  rec = addRun(rec, r({ id: 2, at: 20, depth: 30, left: true })).records;
+  assert.equal(deepestShown(rec), 9);
+  // An end alone, not as deep: together's still. Mixed runs and older rules never count.
+  rec = addRun(rec, r({ id: 3, at: 30, depth: 6 })).records;
+  rec = addRun(rec, r({ id: 4, at: 40, depth: 25, mixed: true })).records;
+  rec = addRun(rec, r({ id: 5, at: 50, depth: 40, ruleset: DELVE_RULESET - 1 })).records;
+  assert.equal(deepestShown(rec), 9);
+  // Deeper alone: alone's.
+  rec = addRun(rec, r({ id: 6, at: 60, depth: 14 })).records;
+  assert.equal(deepestShown(rec), 14);
+  assert.equal(rec.frontier.at(-1)!.depth, 40, 'the frontier still knows');
 });
 
 test('records stored before tallies, losses and the frontier are read whole, bests and all', () => {
@@ -472,7 +491,7 @@ test('records stored before tallies, losses and the frontier are read whole, bes
   assert.deepEqual(parseRecords(serializeRecords(rec)), rec);
   const next = addRun(rec, r({ id: 8, at: 80, depth: 30, losses: [3, 20, 30] })).records;
   assert.deepEqual(tallyOf(next, true).ends, { 7: 1, 23: 1, 30: 1 });
-  assert.equal(deepestEver(next), 30);
+  assert.equal(next.frontier.at(-1)?.depth ?? 0, 30);
 });
 
 test('a frontier that missed a run (an older build wrote it) is made whole again', () => {
@@ -522,7 +541,7 @@ test('alone, a run left standing is recorded as left, never a best, and its fall
   assert.equal(out.best, false);
   assert.equal(bestOf(out.records, true), null);
   assert.deepEqual(tallyOf(out.records, true), { ends: {}, lost: { 3: 1, 8: 1 }, left: { 12: 1 } });
-  assert.equal(deepestEver(out.records), 12, 'it did get that deep');
+  assert.equal(out.records.frontier.at(-1)?.depth ?? 0, 12, 'it did get that deep');
   // It goes on after all (a rejoin) and falls: the fall replaces it.
   out = addRun(out.records, { ...left, at: 2, left: undefined, depth: 15, losses: [3, 8, 15] });
   assert.equal(out.records.runs.length, 1);
@@ -568,7 +587,7 @@ test('depths and counts no run could reach are dropped or capped, so nothing is 
   assert.deepEqual(rec.runs.map((x) => x.id), [3]);
   assert.deepEqual(rec.bests, {});
   assert.deepEqual(rec.tallies[`${DELVE_RULESET}:solo`], { ends: { 5: MAX_COUNT }, lost: { 4: MAX_COUNT }, left: { 3: MAX_COUNT }, warded: MAX_COUNT });
-  assert.equal(deepestEver(rec), MAX_DEPTH);
+  assert.equal(rec.frontier.at(-1)?.depth ?? 0, MAX_DEPTH);
   // A run from the game deeper than that is held at it.
   assert.equal(runEvent(run({ a: [2, 5] }), run({ a: [2, 5, 5000] }), 'a')!.depth, MAX_DEPTH);
 });
