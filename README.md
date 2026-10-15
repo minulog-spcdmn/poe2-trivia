@@ -869,6 +869,20 @@ fetched as a run nears them: the next place's while the page is idle, from
 the first depth of the zone before it. `src/lib/soundDesign.ts` sets the
 layers and the beds, as tuned on the ambience mix board.
 
+Every sound comes from where it happens on screen (`src/lib/spatial.svelte.ts`):
+each call of `sfx()` says where (a card, an answer, the clock, a player's
+entry, the edge a blast bursts in from, or the path its sparks fly), and a
+head model places it (the far ear hears it a fraction of a millisecond late
+and a little duller), the screen's edges at ±45°. Sparks are heard flying,
+teammates' sounds a little farther off, the reverb answers from the sound's
+side, and a blast or a cave-in fills the space round it. The ambience is
+spread wide (each ear its own take of the loop, half a loop apart), and in
+Delve each place rings in a room of its own (`src/lib/acoustics.ts`: early
+reflections, far slaps and a tail whose lows, mids and highs die at their
+own pace, worked out while the page is idle) in place of the one hall,
+cross-fading as the beds do. The mix was chosen by ear in the lab
+(**Spatial sound**, below).
+
 ### Visual effects
 
 Everything is drawn in WebGL2 with float precision and dithered once at the
@@ -1237,6 +1251,18 @@ switches effects, sound and reduced motion. Events go through the engine
 and the session as a game's would; setup changes start the run afresh
 under a new id, so they play nothing themselves.
 
+**Spatial sound** tunes the game's spatial sound (`src/lib/spatial.svelte.ts`)
+by ear: presets climb a ladder from *Today* (every sound centred, in the
+one hall, as the game played before) through panning, travelling sounds and
+teammates farther off, the ambience spread wide, a head model and crossfeed
+for headphones, and a reverb fed from the sound's side, to *Chosen* (the
+game's mix) and *HRTF*; *Haas* places by time alone. **Size** lets a blast
+and a cave-in fill the space, **Rooms** gives each place its own reverb,
+and **A** flips to today's sound and back. A half circle draws where each
+sound is heard from. Its settings are kept (`src/lab/spatial.svelte.ts`)
+and shared with the spatial sound page (`spatial.html`, below), which plays
+the same with the screen full window.
+
 With two players or more the run is co-op:
 
 - **Screen** picks whose screen the app is (its own taps vote and answer
@@ -1362,6 +1388,27 @@ colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
 - `streak.html?days=30` opens it at a run of 30 days.
 - **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
   the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
+
+### The spatial sound page
+
+`spatial.html` (`src/spatialPage/`) is the real game screen, full window, on
+a Delve run of the lab's, with a menu over it for tuning the game's spatial
+sound on any sound by hand. The screen keeps the whole window (the menu
+floats over it, and **M** hides it), so every sound comes from where it
+would in a game, at any window size; a narrow window lays it out as a
+phone does.
+
+- **Players**, **Deal cards** and **Ask** set up the screen; **Ambience**
+  moves the run to a zone, for its bed (to hear **Wide ambience** on).
+- **Placed sounds** play the game's sounds from the elements on screen they
+  come from (hovering the cards or answers with the mouse does too, as in
+  the game); **The scene's sounds** belong to the whole scene, to hear
+  **Size** on.
+- **Space** plays a round of Delve together over and over; **A** flips to
+  today's sound and back. The settings are the lab's, and its run is its
+  own (`<html data-lab data-spatial>`, `src/lib/storage.ts`).
+- **Open it:** `npm run dev`, then `http://localhost:5173/spatial.html`; on
+  the beta, **poe2.quest/beta/spatial.html**. The live build leaves it out.
 
 ---
 

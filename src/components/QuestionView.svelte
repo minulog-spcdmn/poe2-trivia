@@ -688,7 +688,7 @@
 
   /** Svelte action: a patch of veiled art burns in (the quick ones at the reveal leave the sound to it). */
   function appear(node: HTMLCanvasElement, params: BurnParams) {
-    if (!params.quick) sfx('burn');
+    if (!params.quick) sfx('burn', { from: { from: node } });
     return materialize(node, params);
   }
 
@@ -697,7 +697,7 @@
   function appearTile(node: HTMLCanvasElement, params: BurnParams) {
     if (!params.quick && performance.now() - tileBurnAt > 260) {
       tileBurnAt = performance.now();
-      sfx('burn');
+      sfx('burn', { from: { from: node } });
     }
     return materialize(node, params);
   }
@@ -774,7 +774,7 @@
         warded: coop ? (r.hits ?? []).some((h) => h.playerId === me && h.lives === 0 && h.wards > 0) : !!s.delve && !!r.warded,
       });
       // Your point streaming into the bar. Without effects the bar just jumps, and 'correct' says it all.
-      if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill'), FILL_START * 1000 - FILL_LEAD);
+      if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill', { from: { from: optionEls[r.correctIndex], to: pill, seconds: FILL_LEAD / 1000 } }), FILL_START * 1000 - FILL_LEAD);
       // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
       // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
     });
@@ -789,7 +789,7 @@
     chosen = index;
     charge?.stop();
     if (optionEls[index]) charge = answerCharging(optionEls[index]);
-    sfx('select');
+    sfx('select', { from: { from: optionEls[index] } });
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     // Only the latest answer's: one turned down and given again stays on its way.
     clearTimeout(fallback);

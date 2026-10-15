@@ -2,6 +2,7 @@ import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';
 import { installUiSounds } from './lib/sound';
+import { installSpatial } from './lib/spatial.svelte';
 import { installUiFx } from './lib/fx/ui';
 import * as fxCore from './lib/fx/core';
 import * as fxEffects from './lib/fx/effects';
@@ -14,6 +15,7 @@ import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
 
 installUiSounds();
+installSpatial();
 installUiFx();
 watchFullscreen();
 if (!switchedOff('cursor')) installCursor();
