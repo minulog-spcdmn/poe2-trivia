@@ -10,7 +10,7 @@
 
 import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, livesOf, shownDepth, teamDepth, type FindKind, type ItemKind } from './delve.ts';
 import type { GameState, RecapItem } from './game.ts';
-import { STRATA, stratumName } from './descent.ts';
+import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
 import type { Answer } from './codex.ts';
 
@@ -332,18 +332,13 @@ export function livesLost(s: GameState, me: string | null, log: readonly Answer[
 
 /**
  * What the run's finds gave and what came of it, oldest first: alone (and
- * `me`) this player's, together the party's. With the zones reached first.
+ * `me`) this player's, together the party's. First the zone it reached (by
+ * name: the descent never ends, so there is no "of ten").
  */
 export function runFacts(s: GameState, me: string | null): Line[] {
   const together = isGroupRun(s);
   const depth = teamDepth(s);
-  const zones = zoneOf(depth).index + 1;
-  const out: Line[] = [
-    {
-      icon: { zone: depth },
-      parts: [zones <= STRATA.length ? `${cap(word(zones))} of ${word(STRATA.length)} zones reached.` : `All ${word(STRATA.length)} zones reached, and ${word(zones - STRATA.length)} past them.`],
-    },
-  ];
+  const out: Line[] = [{ icon: { zone: depth }, parts: [`Reached ${zoneOf(depth).the}.`] }];
   const items = (s.recap?.items ?? []).filter((x) => together || !me || x.by === me);
   const you = together ? '' : ' you';
   const at = (n: number): Part[] => [' at depth ', { n: shownDepth(n) }];
