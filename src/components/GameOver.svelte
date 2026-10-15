@@ -402,9 +402,8 @@
   {/each}
 {/snippet}
 
-<!-- The column in front of a line: an avatar, an item's thumb, or a sign (a find's item, the heart of a life given, a zone's
-     emblem, a category's), each at the size it is drawn for, with nothing round it (a round frame reads as a button). Every
-     mark stands against the column's right edge, so each line's words start the same distance from it. -->
+<!-- The column in front of a line: a player's avatar, or a square box as an item's thumb is, holding the item or a sign (a
+     find's item, the heart of a life given, a zone's emblem, a category's) at the size it is drawn for. -->
 {#snippet icon(ic: Icon)}
   <span class="ic" aria-hidden="true">
     {#if 'avatar' in ic && s.players.some((x) => x.id === ic.avatar)}
@@ -413,17 +412,21 @@
       <Avatar name={p.name} hue={p.hue} size={ICON - 4} />
     {:else if 'item' in ic}
       <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
-    {:else if 'glyph' in ic}
-      <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
-    {:else if 'heart' in ic}
-      <span class="heart-ic"><HeartOfLight /></span>
-    {:else if 'zone' in ic}
-      {@const sg = sigilOf(zoneAt(Math.max(1, ic.zone)))}
-      <svg class="zone-ic" viewBox="-11 -11 22 22" style:--c={accentAt(Math.max(1, ic.zone))}
-        >{#if sg.shade}<path class="s-shade" d={sg.shade} />{/if}<path class="s-fine" d={sg.fine} /><path d={sg.lines} /></svg
-      >
-    {:else if 'cat' in ic}
-      <span class="cat-ic" style:--src="url('{categoryGlyph(ic.cat)}')"></span>
+    {:else}
+      <span class="mini sign">
+        {#if 'glyph' in ic}
+          <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
+        {:else if 'heart' in ic}
+          <span class="heart-ic"><HeartOfLight /></span>
+        {:else if 'zone' in ic}
+          {@const sg = sigilOf(zoneAt(Math.max(1, ic.zone)))}
+          <svg class="zone-ic" viewBox="-11 -11 22 22" style:--c={accentAt(Math.max(1, ic.zone))}
+            >{#if sg.shade}<path class="s-shade" d={sg.shade} />{/if}<path class="s-fine" d={sg.fine} /><path d={sg.lines} /></svg
+          >
+        {:else if 'cat' in ic}
+          <span class="cat-ic" style:--src="url('{categoryGlyph(ic.cat)}')"></span>
+        {/if}
+      </span>
     {/if}
   </span>
 {/snippet}
@@ -695,7 +698,7 @@
                 <ul class="fx finds">
                   {#each FINDS_IN_ORDER as f (f.kind)}
                     <li data-find={f.kind}>
-                      <span class="ic"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span>
+                      <span class="ic"><span class="mini sign"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span></span>
                       <span class="txt">
                         <b class="find-name">{FIND_TEXT[f.kind].name}</b>
                         <span>From depth {shownDepth(f.from)}. {FIND_BRIEF[f.kind]}</span>
@@ -1459,9 +1462,18 @@
   .ic {
     flex: none;
     display: grid;
-    place-items: center end;
+    place-items: center;
     width: 26px;
     min-height: 26px;
+  }
+  /* A sign in an item's box, centred in it. */
+  .mini.sign {
+    display: grid;
+    place-items: center;
+    cursor: default;
+  }
+  .mini.sign:hover {
+    border-color: var(--line);
   }
   .mini {
     position: relative;
@@ -1487,17 +1499,17 @@
   }
   /* A find's item at the size it is drawn for (the lobby's finds list, the reveal's lines). */
   .glyph-ic {
-    --h: 16px;
+    --h: 15px;
     display: inline-flex;
   }
   .heart-ic {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
   /* A zone's emblem, as the descent and the runs chart draw it, in the zone's colour. */
   .zone-ic {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
     overflow: visible;
   }
   .zone-ic path {
@@ -1516,8 +1528,8 @@
   }
   /* A category's emblem, in gold, as the codex shows it. */
   .cat-ic {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
     -webkit-mask: var(--src) center / contain no-repeat;
     mask: var(--src) center / contain no-repeat;
