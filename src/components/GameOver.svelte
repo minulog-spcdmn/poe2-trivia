@@ -113,7 +113,7 @@
    * higher on the circle), so the page still fits the window.
    */
   const lifeRows = $derived(run && self ? (run.losses[self]?.length ?? 0) + (run.revives ?? []).filter((v) => v.by === self).length : 0);
-  const over = $derived(run ? (solo ? 0.3 : lifeRows >= 5 ? 0.3 : 0.25) : short.current ? 0.37 : 0.36);
+  const over = $derived(run ? (solo ? 0.3 : lifeRows >= 5 ? 0.3 : 0.25) : !hasYours ? 0.25 : short.current ? 0.37 : 0.36);
   const avatarSize = $derived(Math.round(circle * (solo ? 0.25 : 0.23)));
   /** Together: every delver round the heart, as large as fits (at most 17% of the circle). */
   const ring = $derived.by(() => {
@@ -787,11 +787,16 @@
   .side.centred {
     align-self: center;
   }
-  /* A normal game with nothing under it (someone watching): the circle stands whole, not fading into a column that isn't
-     there. Delve keeps its fade: its depth rides lower on the circle, so the fade still reads as the circle's foot. */
-  .over:not(.delve) .side.centred .veil {
-    -webkit-mask-image: none;
-    mask-image: none;
+  /* A normal game with nothing under the circle (someone watching) stands as Delve's does: high beside the panel, the
+     headline low on the circle's foot (--over), which fades out under it. */
+  @media (min-width: 1081px) {
+    .over:not(.delve) .side.centred {
+      align-self: flex-start;
+      margin-top: 42px;
+    }
+    .over.short:not(.delve) .side.centred {
+      margin-top: 26px;
+    }
   }
   .board {
     width: 600px;
