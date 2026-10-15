@@ -67,6 +67,8 @@
   /** Online and not in the game: watching it. */
   const watching = $derived(!local && !seated);
   const host = $derived(s.players.find((p) => p.id === s.hostId)?.name ?? 'the host');
+  /** The marks in front of a line (the highlights, the run's facts): avatars, item thumbs and medallions, all this size. */
+  const ICON = 26;
   const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
   const itemName = (id: string) => engine.byId.get(id)?.name ?? id;
 
@@ -399,20 +401,23 @@
   {/each}
 {/snippet}
 
-<!-- The 30 px column in front of a line: an avatar, an item's thumb, a find's glyph, the heart of light, or the gold diamond. -->
+<!-- The column in front of a line, every mark in it the same size (ICON): an avatar, an item's thumb, or a sign (a find's
+     glyph, the heart of light, the gold diamond) set in a round medallion the size of an avatar, so each line's words start
+     the same distance from what stands before them. -->
 {#snippet icon(ic: Icon)}
   <span class="ic" aria-hidden="true">
-    {#if 'avatar' in ic}
-      {@const p = s.players.find((x) => x.id === ic.avatar)}
-      {#if p}<Avatar name={p.name} hue={p.hue} size={24} />{:else}<i class="diamond"></i>{/if}
+    {#if 'avatar' in ic && s.players.some((x) => x.id === ic.avatar)}
+      {@const p = s.players.find((x) => x.id === ic.avatar)!}
+      <!-- Its rim reaches 3 px round it: inside that, the size of the thumbs and the medallions. -->
+      <Avatar name={p.name} hue={p.hue} size={ICON - 4} />
     {:else if 'item' in ic}
       <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
-    {:else if 'glyph' in ic}
-      <span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
-    {:else if 'heart' in ic}
-      <span class="heart-ic"><HeartOfLight /></span>
     {:else}
-      <i class="diamond"></i>
+      <span class="medal">
+        {#if 'glyph' in ic}<span class="glyph-ic"><ItemGlyph kind={ic.glyph} /></span>
+        {:else if 'heart' in ic}<span class="heart-ic"><HeartOfLight /></span>
+        {:else}<i class="diamond"></i>{/if}
+      </span>
     {/if}
   </span>
 {/snippet}
@@ -684,7 +689,7 @@
                 <ul class="fx finds">
                   {#each FINDS_IN_ORDER as f (f.kind)}
                     <li data-find={f.kind}>
-                      <span class="ic"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span>
+                      <span class="ic"><span class="medal"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span></span>
                       <span class="txt">
                         <b class="find-name">{FIND_TEXT[f.kind].name}</b>
                         <span>From depth {shownDepth(f.from)}. {FIND_BRIEF[f.kind]}</span>
@@ -847,11 +852,14 @@
     translate: -50% -50%;
     border-radius: 50%;
   }
-  /* Your face among the delvers, ringed in your orange as on your plate. */
-  .heart.ring .face.you {
+  /* Your face among the delvers, ringed in your orange as on your plate: outside the avatar's own dark rim, which would
+     cover a ring drawn on its wrapper. */
+  .heart.ring .face.you :global(.avatar) {
     box-shadow:
-      0 0 0 2.5px #e08a44,
-      0 0 10px rgba(224, 138, 68, 0.7);
+      0 0 0 2px #0c0a08,
+      0 0 0 4.5px #e08a44,
+      0 0 12px 3px rgba(224, 138, 68, 0.55),
+      0 4px 10px rgba(0, 0, 0, 0.5);
   }
   /* Alone, short of your best: the fallen delver's portrait has lost its colour. */
   .solo:not(.bright) .heart :global(.avatar) {
@@ -1402,14 +1410,16 @@
     color: var(--muted);
     font-size: 0.95rem;
   }
+  /* The run's facts hang from the chart's ground line: the first one's mark centred on it (RunsChart's ground at 16 px). */
   .chart-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 16px;
   }
   .chart-row .fx {
     flex: 1;
     min-width: 0;
+    padding-top: calc(16px - var(--icon, 26px) / 2);
   }
   .runs .earned {
     margin-bottom: 1rem;
@@ -1430,24 +1440,38 @@
     gap: 8px;
   }
   .fx li {
+    --icon: 26px;
     display: flex;
     align-items: flex-start;
     gap: 10px;
     line-height: 1.35;
   }
+  /* A line's first row of words centred on its mark. */
+  .fx .txt {
+    padding-top: calc((var(--icon) - 1.35em) / 2);
+  }
   .ic {
     flex: none;
     display: grid;
     place-items: center;
-    width: 30px;
+    width: 26px;
     min-height: 1.35em;
+  }
+  /* A sign's medallion: round and dark like an avatar's disc, a fine ring round it. */
+  .medal {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(12, 10, 8, 0.75);
+    border: 1px solid rgba(125, 99, 51, 0.55);
   }
   .mini {
     position: relative;
     display: block;
-    width: 30px;
-    height: 30px;
-    margin: -4px 0;
+    width: 26px;
+    height: 26px;
     padding: 0;
     background: rgba(0, 0, 0, 0.45);
     border: 1px solid var(--line);
@@ -1466,16 +1490,16 @@
     object-fit: contain;
   }
   .glyph-ic {
-    --h: 16px;
+    --h: 14px;
     display: inline-flex;
   }
   .heart-ic {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
   }
   .diamond {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     rotate: 45deg;
     background: linear-gradient(135deg, #f3a565, #c06a2c);
     box-shadow: 0 0 6px rgba(224, 138, 68, 0.45);
