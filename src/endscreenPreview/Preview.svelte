@@ -4,7 +4,9 @@
   // fit, or at 1:1), and the handoff's board for that state beside it or in
   // its place. The state and the window are in the address, so a link opens
   // the same view; the arrow keys walk the list.
+  import { untrack } from 'svelte';
   import { VIEWPORTS, scenes, type Scene } from './scenes';
+  import type { ReadyMessage, SceneMessage } from './main';
 
   /** The handoff's boards, by name (docs/handoff/end-screen/screens). */
   const BOARDS: Record<string, string> = Object.fromEntries(
@@ -24,8 +26,22 @@
   let picked = $state<string | null>(params.get('v'));
   let show = $state<Show>((params.get('show') as Show) ?? 'screen');
   let fit = $state(params.get('fit') !== '0');
-  /** Bumped to load the frame afresh. */
-  let reload = $state(0);
+  /**
+   * The frame: made once, with the first state, and kept (main.ts says
+   * why); every state after it is posted to it and set in place.
+   */
+  let frameEl = $state<HTMLIFrameElement>();
+  const firstSrc = untrack(() => `endscreen.html?scene=${encodeURIComponent(current.key)}`);
+  /** Shows `key` in the frame (again, for Replay: its entrance plays anew). */
+  const send = (key: string) => frameEl?.contentWindow?.postMessage({ endscreen: 'scene', key } satisfies SceneMessage, location.origin);
+  // The frame says when it listens, and what it shows: a state picked while it loaded follows then.
+  $effect(() => {
+    const ready = (e: MessageEvent<ReadyMessage>) => {
+      if (e.origin === location.origin && e.source === frameEl?.contentWindow && e.data?.endscreen === 'ready' && e.data.key !== current.key) send(current.key);
+    };
+    addEventListener('message', ready);
+    return () => removeEventListener('message', ready);
+  });
 
   const view = $derived(VIEWPORTS.find((v) => v.key === (picked ?? current.view)) ?? VIEWPORTS[0]);
   /** The board drawn at this window, if there is one. */
@@ -53,7 +69,7 @@
   function pick(s: Scene) {
     current = s;
     picked = null;
-    reload++;
+    send(s.key);
   }
   $effect(() => {
     const p = new URLSearchParams();
@@ -111,7 +127,7 @@
       </div>
       <div class="seg">
         <button class:on={fit} onclick={() => (fit = !fit)}>{fit ? 'Fit' : '1:1'}</button>
-        <button onclick={() => reload++} title="Load the state afresh (its entrance and effects play again)">Replay</button>
+        <button onclick={() => send(current.key)} title="Show the state afresh (its entrance and effects play again)">Replay</button>
         <a href={src} target="_blank" rel="noopener">Open alone ↗</a>
       </div>
       {#if !board && drawnAt.length}
@@ -122,14 +138,11 @@
     </header>
 
     <div class="panes" class:scroll={!fit} bind:clientWidth={paneW} bind:clientHeight={paneH}>
-      {#if showing !== 'board'}
-        <figure style:width="{view.w * scale}px" style:height="{view.h * scale}px">
-          {#key `${current.key}:${view.key}:${reload}`}
-            <iframe title={current.label} {src} width={view.w} height={view.h} style:scale={scale}></iframe>
-          {/key}
-          <figcaption>The screen • {view.w} × {view.h}</figcaption>
-        </figure>
-      {/if}
+      <!-- Hidden, not removed, while only the board shows: the frame is made once. -->
+      <figure class:hidden={showing === 'board'} style:width="{view.w * scale}px" style:height="{view.h * scale}px">
+        <iframe bind:this={frameEl} title={current.label} src={firstSrc} width={view.w} height={view.h} style:scale={scale}></iframe>
+        <figcaption>The screen • {view.w} × {view.h}</figcaption>
+      </figure>
       {#if showing !== 'screen' && board}
         <figure class="board" style:width="{view.w * scale}px" style:height="{boardH * scale}px">
           <img src={board} alt="The handoff's board for {current.label}" style:width="{view.w * scale}px" />
@@ -294,6 +307,9 @@
   }
   .panes.scroll {
     justify-content: flex-start;
+  }
+  figure.hidden {
+    display: none;
   }
   figure {
     position: relative;

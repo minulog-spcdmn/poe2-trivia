@@ -1386,8 +1386,11 @@ and Delve records), so nothing has to be played to reach it.
   frame of that size, scaled to fit or at **1:1**.
 - **Board** shows the handoff's board for that window in its place (a state
   drawn at several sizes has a board for each), **Side by side** both.
-  **Replay** loads the state again (its entrance plays again); **Open alone**
-  opens it in a tab of its own (`endscreen.html?scene=<key>`).
+  **Replay** shows the state afresh (its entrance plays again); **Open alone**
+  opens it in a tab of its own (`endscreen.html?scene=<key>`). The frame is
+  made once and each state set in it in place: a frame made afresh for every
+  pick started the backdrop's shaders over while the last ones were still
+  being built, which held up the browser for most of a minute.
 - Its buttons only say what they would do: there is no room behind it. The
   address keeps the state and the window, to send a link to one.
 - **Open it:** `npm run dev`, then `http://localhost:5173/endscreen.html`; on
