@@ -138,7 +138,8 @@
   const dim = $derived(!!run && !bright);
   /** The party's plates: the avatar as large as the plate leaves room for, with the same space round it on the left as above and below. */
   const plateAvatar = $derived(phone.current ? 30 : short.current ? (delvers.length > 6 ? 25 : 30) : delvers.length > 6 ? 28 : 34);
-  const twoCols = $derived(!phone.current && s.players.length > (short.current ? 5 : 7));
+  /** Two columns of ranking from seven players (from six on a short window): one a row short beats a page that scrolls. */
+  const twoCols = $derived(!phone.current && s.players.length > (short.current ? 5 : 6));
   const chartH = $derived(phone.current ? 170 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
 
   // ---- what this device knows ------------------------------------------------

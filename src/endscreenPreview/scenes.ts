@@ -411,7 +411,7 @@ export function scenes(): Scene[] {
         }),
       }),
     },
-    { key: 'e-seven', group: NG, label: 'Seven players: the most in one column', view: D, mode: 'client', me: doryani, state: crowd(7) },
+    { key: 'e-seven', group: NG, label: 'Seven players: two columns, one short', view: D, mode: 'client', me: doryani, state: crowd(7) },
     { key: 'e-eight-short', group: NG, label: 'Eight on a 13-inch window: two columns', view: A, mode: 'client', me: doryani, state: crowd(8) },
     { key: 'e-nine', group: NG, label: 'Nine players: two columns, one short', view: D, mode: 'client', me: doryani, state: crowd(9) },
     { key: 'e-eleven', group: NG, label: 'Eleven players', view: D, mode: 'client', me: doryani, state: crowd(11) },
