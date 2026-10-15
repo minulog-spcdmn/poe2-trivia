@@ -173,6 +173,8 @@ const MORE = [
   'task', 'timer', 'item', 'plate', 'options', 'footer', 'result', 'verdict', 'outcome', 'blast', 'hint',
   // The end: the headline, the standings, what's next.
   'kicker', 'headline', 'sub', 'standings', 'actions', 'again', 'back', 'share', 'joining', 'credit',
+  // The end, as it is now: what the game meant for you (or where your lives went), the highlights, the runs chart, the status by the buttons.
+  'yours', 'highlights', 'runs', 'status',
 ];
 /** Every anchor there's one of, by name. */
 export const SINGLE_ANCHORS: readonly string[] = [...FIRST, ...MORE];
