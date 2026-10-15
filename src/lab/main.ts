@@ -8,6 +8,8 @@ import '../app.css';
 import App from '../App.svelte';
 import Lab from './Lab.svelte';
 import { installUiSounds } from '../lib/sound';
+import { installSpatial } from '../lib/spatial.svelte';
+import { tuneSpatial } from './spatial.svelte';
 import { installUiFx } from '../lib/fx/ui';
 import * as fxCore from '../lib/fx/core';
 import * as fxEffects from '../lib/fx/effects';
@@ -21,6 +23,8 @@ import { wantDelveBackdrop } from '../lib/backdrop';
 if (!(import.meta.env.DEV || BETA) || !LAB) throw new Error('The lab only runs on the dev server and the beta, from lab.html.');
 
 installUiSounds();
+installSpatial();
+tuneSpatial();
 installUiFx();
 
 // Handles for scripts (and the console), as src/main.ts gives them in dev.
