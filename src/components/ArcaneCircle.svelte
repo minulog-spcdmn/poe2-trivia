@@ -1,6 +1,5 @@
 <script module lang="ts">
   import { at as atAbout, f, hatch, joined, lineParts, pt, rad, ringParts, seeded, wear, type Hole, type LineOpts, type Pt, type Strap, type Wear } from '../lib/arcane';
-  import { LUNA, LUNA_HATCH, PLANETS, SOL_RAYS } from '../lib/alchemy';
   import { circlePath, engrave, mapPath, stroke, turned } from '../lib/engraver';
   import { inscribe } from '../lib/tongue';
   import type { StageLayer } from './ArcaneStage.svelte';
@@ -12,7 +11,8 @@
   // • a heptagram of double straps woven over and under, one point per
   //   planet, with Sol and Luna sealed between its arms, and a sun whose
   //   long rays run out under the straps into the arms;
-  // • at the heart, a hatched compass star around an eye that stays upright.
+  // • at the heart, within the sun, an eye that stays upright and now and
+  //   then looks aside, in a glory of its own.
   // Lines stop short of every seal they meet, as if drawn around it, and
   // carry the odd nick, like a worn plate.
   // `state` colours it at the reveal. It is set on the ArcaneStage, which
@@ -27,6 +27,44 @@
   const BAND_OUT = 94;
   const BAND = (BAND_IN + BAND_OUT) / 2;
   const SEAL = 7.2;
+  const ring = (x: number, y: number, r: number) => `M${f(x)} ${f(y - r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y + r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y - r)}Z`;
+  // The seven planets and their metals, drawn on a grid of about ±4.5 with
+  // the pen's curves and flicks, each with about as much line as the next.
+  const PLANETS = [
+    // Sol: a round with its point, crowned with eight short pointed rays.
+    ring(0, 0, 2.4) + ring(0, 0, 0.45) + Array.from({ length: 8 }, (_, k) => {
+      const a = k * 45 + 22.5;
+      return `M${pt(at(a - 10, 3.0))}L${pt(at(a, k % 2 ? 4.2 : 4.75))}L${pt(at(a + 10, 3.0))}`;
+    }).join(''),
+    // Luna: a crescent, horns to the right, an arc along its back.
+    (() => {
+      const [R, r, off] = [4.15, 3.35, 1.8];
+      const hx = (R * R - r * r + off * off) / (2 * off);
+      const hy = Math.sqrt(R * R - hx * hx);
+      const d = `M${f(hx)} ${f(-hy)}A${R} ${R} 0 1 0 ${f(hx)} ${f(hy)}A${r} ${r} 0 1 1 ${f(hx)} ${f(-hy)}Z`;
+      const rr = R - 0.85;
+      const c = (rr * rr - off * off - (r + 0.45) ** 2) / (2 * off * (r + 0.45));
+      const a = (Math.PI - Math.acos(Math.max(-1, Math.min(1, -c)))) * 0.7;
+      return d + `M${f(-rr * Math.cos(a))} ${f(-rr * Math.sin(a))}A${f(rr)} ${f(rr)} 0 0 0 ${f(-rr * Math.cos(a))} ${f(rr * Math.sin(a))}`;
+    })(),
+    // Mercury: horns flicked out at their tips over a round, a cross below.
+    'M-2.1 -4.6C-2.1 -3.3 -1.2 -2.75 0 -2.75C1.2 -2.75 2.1 -3.3 2.1 -4.6M-2.1 -4.6C-2.35 -4.95 -2.85 -4.8 -2.75 -4.3M2.1 -4.6C2.35 -4.95 2.85 -4.8 2.75 -4.3' + ring(0, -0.85, 1.85) + 'M0 1V4.6M-1.75 2.75H1.75',
+    // Venus: a round over a cross whose arms bow down at their ends.
+    ring(0, -1.9, 2.5) + 'M0 0.6V4.6M-2.1 2.45C-1.4 2.65 -0.7 2.75 0 2.75C0.7 2.75 1.4 2.65 2.1 2.45',
+    // Mars: a round, and from it the spear out to the upper right, barbed both sides.
+    (() => {
+      const c: Pt = [-1.1, 1.1];
+      const r = 2.6;
+      const u = Math.SQRT1_2;
+      const from: Pt = [c[0] + r * u, c[1] - r * u];
+      const tip: Pt = [3.6, -3.6];
+      return ring(c[0], c[1], r) + `M${pt(from)}L${pt(tip)}M${pt([tip[0] - 2.1, tip[1] + 0.15])}L${pt(tip)}L${pt([tip[0] - 0.15, tip[1] + 2.1])}`;
+    })(),
+    // Jupiter: a hook swept down from a curl into its foot, crossed by the staff.
+    'M-2.9 -2.6C-3.5 -3.6 -2.6 -4.5 -1.5 -4.3C-0.2 -4.1 0.2 -2.9 -0.4 -1.6C-0.9 -0.5 -2 0.6 -3 1.3H3.4M1.7 -4.3V4.5M0.9 4.5H2.5',
+    // Saturn: a cross over a sickle, its blade curling under to a hook.
+    'M-1.4 -4.8V1.9M-3.3 -3.1H0.5M-1.4 -0.4C-0.3 -2.1 3.1 -2.1 3.1 0.4C3.1 2.2 0.9 2.7 1.2 3.9C1.45 4.8 2.5 4.9 3 4.2M-2.2 1.9H-0.6',
+  ];
   const seals = PLANETS.map((d, k) => {
     const a = (k / 7) * 360;
     const [x, y] = at(a, BAND);
@@ -35,6 +73,7 @@
   /** The band's seal holding Luna. */
   const LUNA_SEAL = 1;
   const bandHoles: Hole[] = seals.map(({ x, y }) => ({ c: [x, y], r: SEAL + 1.2 }));
+
 
   // Between the seals, a script nobody can read (lib/tongue).
   const rnd = seeded(11);
@@ -48,9 +87,17 @@
   const R = BAND_IN - 1.8;
   const INNER = R * Math.cos((2 * Math.PI) / 7);
   const BIG = 13;
-  const sol = at(0, 65.5);
-  const luna = at(180, 65.5);
-  const starHoles: Hole[] = [sol, luna].map((c) => ({ c, r: BIG + 1.4 }));
+  /** Sol's seal is the larger of the two. */
+  const SOL_BIG = 15.5;
+  const sol = at(0, 64.5);
+  // Luna stands off the axis Sol stands on, in the space between two points
+  // lower left: the one thing in the plate that isn't even.
+  const LUNA_AT = (4 / 7) * 360;
+  const luna = at(LUNA_AT, 65.5);
+  const starHoles: Hole[] = [
+    { c: sol, r: SOL_BIG + 1.4 },
+    { c: luna, r: BIG + 1.4 },
+  ];
   const tips = Array.from({ length: 7 }, (_, k) => at(((k + 0.5) / 7) * 360, R));
   const straps: Strap[] = Array.from({ length: 7 }, (_, i) => ({ p: tips[(i * 2) % 7], q: tips[(i * 2 + 2) % 7], w: W }));
   const cross = (a: Strap, b: Strap) => {
@@ -95,7 +142,109 @@
   };
   const STAR_RING = INNER - W - GAP;
 
-  // Sol and Luna (lib/alchemy), kept upright as the star turns (see the layers).
+  // The star's points, each its tip and the two corners where its sides
+  // cross the strap across its foot; and the star's middle, the heptagon
+  // of those corners.
+  const meet = (a: Strap, b: Strap): Pt => {
+    const t = cross(a, b) ?? 0;
+    return [a.p[0] + (a.q[0] - a.p[0]) * t, a.p[1] + (a.q[1] - a.p[1]) * t];
+  };
+  const same = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6;
+  const POINTS = tips.map((tip, k) => {
+    const foot = straps.find((s) => (same(s.p, tips[(k + 6) % 7]) && same(s.q, tips[(k + 1) % 7])) || (same(s.q, tips[(k + 6) % 7]) && same(s.p, tips[(k + 1) % 7])))!;
+    const sides = straps.filter((s) => same(s.p, tip) || same(s.q, tip));
+    const corners = sides.map((s) => meet(s, foot));
+    // Clockwise first.
+    const ang = (q: Pt) => (((Math.atan2(q[0], -q[1]) * 180) / Math.PI + 360) % 360);
+    const a = ((k + 0.5) / 7) * 360;
+    corners.sort((x, y) => (((ang(x) - a + 540) % 360) - 180) - (((ang(y) - a + 540) % 360) - 180));
+    return { a, tip, cw: corners[1], ccw: corners[0] };
+  });
+  const MIDDLE = POINTS.map(({ cw }) => cw);
+  /** Whether `q` lies inside polygon `ps`. */
+  const inPoly = (q: Pt, ps: Pt[]) => {
+    let inside = false;
+    for (let i = 0, j = ps.length - 1; i < ps.length; j = i++) {
+      const [a, b] = [ps[i], ps[j]];
+      if (a[1] > q[1] !== b[1] > q[1] && q[0] < ((b[0] - a[0]) * (q[1] - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+    }
+    return inside;
+  };
+  /** How far `q` lies from the segment `a` to `b`. */
+  const toSeg = (q: Pt, a: Pt, b: Pt) => {
+    const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+    const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(q[0] - a[0] - dx * t, q[1] - a[1] - dy * t);
+  };
+  /** Whether `q` lies within the star or `m` of its outline. */
+  const inStar = (q: Pt, m: number) =>
+    inPoly(q, MIDDLE) || POINTS.some(({ tip, cw, ccw }) => inPoly(q, [tip, cw, ccw])) || straps.some((s) => toSeg(q, s.p, s.q) < m);
+  /** The straight runs along `p` to `q` whose points satisfy `ok`. */
+  const runs = (p: Pt, q: Pt, ok: (q: Pt) => boolean, step = 0.25) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
+    let d = '';
+    let from: Pt | null = null;
+    let last: Pt | null = null;
+    for (let i = 0; i <= n; i++) {
+      const x: Pt = [p[0] + ((q[0] - p[0]) * i) / n, p[1] + ((q[1] - p[1]) * i) / n];
+      if (ok(x)) {
+        from ??= x;
+        last = x;
+      } else if (from && last) {
+        if (Math.hypot(last[0] - from[0], last[1] - from[1]) > 0.6) d += `M${pt(from)}L${pt(last)}`;
+        from = last = null;
+      }
+    }
+    if (from && last && Math.hypot(last[0] - from[0], last[1] - from[1]) > 0.6) d += `M${pt(from)}L${pt(last)}`;
+    return d;
+  };
+
+  // Sol and Luna, the two great seals, kept upright as the star turns (see
+  // the layers), drawn for a ring of radius 13 (about ±10 inside it).
+  // Sol: a disc streaked from its point, ringed twice, and sixteen rays,
+  // straight and flaming in turn: the straight ones pointed, ridged and
+  // hatched down one side, the four at the quarters longest; the flames
+  // curved blades all bending the same way, so the sun seems to turn.
+  const SOL_FACE = (() => {
+    let lines = circlePath(4.3) + circlePath(3.4) + circlePath(0.85);
+    let hatched = '';
+    for (let k = 0; k < 28; k++) {
+      const a = (k / 28) * 360;
+      hatched += `M${pt(at(a, 1.4))}L${pt(at(a, k % 2 ? 2.6 : 3.0))}`;
+    }
+    for (let k = 0; k < 8; k++) {
+      const a = k * 45;
+      const [base, l, r, tip] = [at(a, 5), at(a - 8, 5), at(a + 8, 5), at(a, k % 2 ? 8.6 : 10.1)];
+      lines += `M${pt(l)}L${pt(tip)}L${pt(r)}M${pt(base)}L${pt(tip)}`;
+      hatched += hatch(base, l, tip, 0.42);
+      // The flame after it: a blade of two curves from a base on the disc's ring to a tip bent sunwise.
+      const b = a + 22.5;
+      const [fl, fr, ft] = [at(b - 6, 5), at(b + 6, 5), at(b + 9, 9.1)];
+      const [cl, cr] = [at(b + 1, 7.4), at(b + 8, 7)];
+      lines += `M${pt(fl)}C${pt(cl)} ${pt(cl)} ${pt(ft)}C${pt(cr)} ${pt(cr)} ${pt(fr)}`;
+    }
+    return { lines, hatched };
+  })();
+  // Luna: the crescent, its horns to the right, shaded in arcs that follow
+  // its inner curve, and the rest of her round in a hairline, as the old
+  // moon is seen in the new moon's arms.
+  const LUNA_FACE = (() => {
+    const [R, r, off] = [8.6, 7, 3.6];
+    const hx = (R * R - r * r + off * off) / (2 * off);
+    const hy = Math.sqrt(R * R - hx * hx);
+    const crescent = `M${f(hx)} ${f(-hy)}A${R} ${R} 0 1 0 ${f(hx)} ${f(hy)}A${r} ${r} 0 1 1 ${f(hx)} ${f(-hy)}Z`;
+    const ghost = `M${f(hx)} ${f(-hy)}A${R} ${R} 0 0 1 ${f(hx)} ${f(hy)}`;
+    let shade = '';
+    const edge = R - 0.55;
+    for (let rho = r + 0.6; rho < off + edge - 0.6; rho += 0.55) {
+      const c = (edge * edge - off * off - rho * rho) / (2 * off * rho);
+      if (c > 1 || c < -1) continue;
+      const th = Math.acos(c);
+      const [x, y] = [off + rho * Math.cos(th), rho * Math.sin(th)];
+      shade += `M${f(x)} ${f(-y)}A${f(rho)} ${f(rho)} 0 ${th < Math.PI / 2 ? 1 : 0} 0 ${f(x)} ${f(y)}`;
+    }
+    return { crescent, ghost, shade };
+  })();
 
   // The sun: seven long pointed rays out into the star's arms, passing
   // under the inner ring and the straps, and seven short ones between,
@@ -123,30 +272,38 @@
     return joined(lineParts(at(a, SUN + 1), at(a, SUN + 10)));
   }).join('');
 
-  // The heart: a compass star of eight points from a ring round the eye,
-  // each hatched down one side.
-  const EYE = 15;
-  const COMPASS = Array.from({ length: 8 }, (_, k) => {
-    const a = k * 45;
-    const tip = at(a, k % 2 ? 22 : 28.5);
-    const base = at(a, EYE);
-    const l = at(a - 22.5, EYE / Math.cos(rad(22.5)));
-    const r = at(a + 22.5, EYE / Math.cos(rad(22.5)));
-    return `M${pt(l)}L${pt(tip)}L${pt(r)}M${pt(base)}L${pt(tip)}` + hatch(base, l, tip, 0.6);
+  // In the spaces between the points, out to the band: a glory of fine
+  // rays, long and short in turn, clear of the star, the seals and Luna.
+  const sealHoles: Hole[] = seals.map(({ x, y }) => ({ c: [x, y], r: SEAL + 1.4 }));
+  const GAPS_GLORY = Array.from({ length: 7 }, (_, k) => {
+    const mid = (k / 7) * 360;
+    return Array.from({ length: 21 }, (_, j) => {
+      const a = mid + (j - 10) * 2.1;
+      const end = j % 2 ? BAND_IN - 6 : BAND_IN - 2;
+      const ok = (q: Pt) =>
+        !inStar(q, W + GAP + 0.3) &&
+        ![...starHoles, ...sealHoles].some(({ c, r }) => Math.hypot(q[0] - c[0], q[1] - c[1]) < r + 0.2);
+      return runs(at(a, STAR_RING), at(a, end), ok);
+    }).join('');
   }).join('');
+
+  // The heart: the eye itself, as wide as the sun's inner ring lets it be.
+  const EYE = SUN - 1.6;
 
   // The eye, after the Eye of Providence: an almond whose upper lid is cut
   // twice and shades the eyeball below it in fine arcs; the iris half
   // hooded, ringed and streaked, with a catchlight in the pupil; and a glory
   // of fine rays about it. Each lid is an arc of a circle through the
-  // corners (±12, 0) and the given height at the middle.
+  // corners (±CORNER, 0) and the given height at the middle.
+  const CORNER = 22;
   const lid = (h: number) => {
-    const r = (144 + h * h) / (2 * Math.abs(h));
+    const r = (CORNER * CORNER + h * h) / (2 * Math.abs(h));
     return { r, cy: h + Math.sign(-h) * r };
   };
-  const [UPPER, LOWER, UPPER_RIM, LOWER_RIM] = [lid(-6.6), lid(5.4), lid(-7.7), lid(6.1)];
-  const ALMOND = `M-12 0A${f(UPPER.r)} ${f(UPPER.r)} 0 0 1 12 0A${f(LOWER.r)} ${f(LOWER.r)} 0 0 1 -12 0Z`;
-  const RIMS = `M-12 0A${f(UPPER_RIM.r)} ${f(UPPER_RIM.r)} 0 0 1 12 0M12 0A${f(LOWER_RIM.r)} ${f(LOWER_RIM.r)} 0 0 1 -12 0`;
+  const [UPPER, LOWER, UPPER_RIM, LOWER_RIM] = [lid(-12.1), lid(9.9), lid(-14.1), lid(11.2)];
+  const C = f(CORNER);
+  const ALMOND = `M-${C} 0A${f(UPPER.r)} ${f(UPPER.r)} 0 0 1 ${C} 0A${f(LOWER.r)} ${f(LOWER.r)} 0 0 1 -${C} 0Z`;
+  const RIMS = `M-${C} 0A${f(UPPER_RIM.r)} ${f(UPPER_RIM.r)} 0 0 1 ${C} 0M${C} 0A${f(LOWER_RIM.r)} ${f(LOWER_RIM.r)} 0 0 1 -${C} 0`;
   /** How far from `p` along the unit `u` a ray leaves the circle about (0, cy). */
   const exit = (p: Pt, u: Pt, { r, cy }: { r: number; cy: number }) => {
     const [fx, fy] = [p[0], p[1] - cy];
@@ -154,42 +311,42 @@
     return -b + Math.sqrt(b * b - (fx * fx + fy * fy - r * r));
   };
   // Short strokes across the upper lid, from its edge to its rim.
-  const LID_HATCH = Array.from({ length: 23 }, (_, k) => {
-    const phi = -44 + k * 4;
+  const LID_HATCH = Array.from({ length: 45 }, (_, k) => {
+    const phi = -44 + k * 2;
     const u: Pt = [Math.sin(rad(phi)), -Math.cos(rad(phi))];
     const p: Pt = [UPPER.r * u[0], UPPER.cy + UPPER.r * u[1]];
     const len = exit(p, u, UPPER_RIM);
     return len > 0.25 ? `M${pt(p)}L${pt([p[0] + u[0] * len, p[1] + u[1] * len])}` : '';
   }).join('');
   // The lid's shadow on the eyeball: arcs under its edge, shorter as they fall.
-  const SHADOW = [1, 2, 3, 4]
+  const SHADOW = [1, 2, 3, 4, 5, 6]
     .map((k) => {
-      const r = UPPER.r - k * 0.75;
-      const span = 40 - k * 8;
+      const r = UPPER.r - k * 0.8;
+      const span = 42 - k * 6;
       const p = (phi: number) => pt([r * Math.sin(rad(phi)), UPPER.cy - r * Math.cos(rad(phi))]);
       return `M${p(-span)}A${f(r)} ${f(r)} 0 0 1 ${p(span)}`;
     })
     .join('');
-  const IRIS_Y = -1;
-  const IRIS_R = 6.2;
-  const STREAKS = Array.from({ length: 44 }, (_, k) => {
-    const a = (k / 44) * 360;
-    const [p, q] = [at(a, 2.5), at(a, k % 2 ? 4.6 : IRIS_R - 0.9)];
+  const IRIS_Y = -1.8;
+  const IRIS_R = 11.4;
+  const STREAKS = Array.from({ length: 96 }, (_, k) => {
+    const a = (k / 96) * 360;
+    const [p, q] = [at(a, 4.6), at(a, k % 2 ? 8.4 : IRIS_R - 1.6)];
     return `M${pt(p)}L${pt(q)}`;
   }).join('');
   const COLLARETTE =
     'M' +
     Array.from({ length: 73 }, (_, k) => {
       const a = (k / 72) * 360;
-      return pt(at(a, 3.5 + 0.28 * Math.sin(rad(a * 9))));
+      return pt(at(a, 6.4 + 0.5 * Math.sin(rad(a * 11))));
     }).join('L');
-  const PUPIL = 'M0 -2.2A2.2 2.2 0 1 1 0 2.2A2.2 2.2 0 1 1 0 -2.2ZM-0.8 -1.45A0.55 0.55 0 1 0 -0.8 -0.35A0.55 0.55 0 1 0 -0.8 -1.45Z';
+  const PUPIL = 'M0 -3.5A3.5 3.5 0 1 1 0 3.5A3.5 3.5 0 1 1 0 -3.5ZM-1.3 -2.35A0.9 0.9 0 1 0 -1.3 -0.55A0.9 0.9 0 1 0 -1.3 -2.35Z';
   // The glory: rays from just off the lids out to the ring, long and short.
-  const GLORY = Array.from({ length: 48 }, (_, k) => {
-    const a = ((k + 0.5) / 48) * 360;
+  const GLORY = Array.from({ length: 72 }, (_, k) => {
+    const a = ((k + 0.5) / 72) * 360;
     const u = at(a, 1);
     const from = exit([0, 0], u, u[1] < 0 ? UPPER_RIM : LOWER_RIM) + 1.4;
-    const to = k % 2 ? EYE - 2.6 : EYE - 1.2;
+    const to = k % 2 ? EYE - 3.4 : EYE - 1.2;
     return to - from > 1 ? `M${pt([u[0] * from, u[1] * from])}L${pt([u[0] * to, u[1] * to])}` : '';
   }).join('');
 
@@ -208,8 +365,7 @@
       starRing: stroke(ringParts(O, STAR_RING, { holes: starHoles, wear: w }), 0.3, 0.9),
       rays: rays(w),
       sun: stroke(ringParts(O, SUN, { wear: w }), 0.15, 0.8),
-      sunInner: stroke(ringParts(O, SUN - 1.6, { wear: w }), 0.2, 0.8),
-      eyeRing: stroke(ringParts(O, EYE, { wear: w }), 0.05, 0.7),
+      sunInner: stroke(ringParts(O, EYE, { wear: w }), 0.05, 0.8),
     };
   };
 
@@ -224,7 +380,7 @@
         e.seal(0.95 + k * 0.07, (q) => {
           const [x, y] = turn(q);
           return [seal.x + x, seal.y + y];
-        }, `translate(${f(seal.x)} ${f(seal.y)}) rotate(${seal.a})`, seal.a, SEAL, 1.2, 0.5, [[seal.d, 'sign', 1.05]]);
+        }, `translate(${f(seal.x)} ${f(seal.y)}) rotate(${seal.a})`, seal.a, SEAL, 1.2, 0.5, [[seal.d, 'sign', 1.1]]);
       });
       SCRIPT.forEach((m, k) => {
         const turn = turned(m.a);
@@ -239,34 +395,36 @@
         e.line(ray.hatch, 'hatch', ray.delay, 0.5);
       }
       e.line(FINE, 'hair', 1, 0.6);
+      e.line(GAPS_GLORY, 'hair', 1.2, 0.7);
     }),
     // The band's Luna, upright on the page as the band carries her round.
     bandLuna: engrave((e) => {
       const seal = seals[LUNA_SEAL];
-      e.seal(0.95 + LUNA_SEAL * 0.07, (q) => [seal.x + q[0], seal.y + q[1]], `translate(${f(seal.x)} ${f(seal.y)})`, 0, SEAL, 1.2, 0.5, [[seal.d, 'sign', 1.05]]);
+      e.seal(0.95 + LUNA_SEAL * 0.07, (q) => [seal.x + q[0], seal.y + q[1]], `translate(${f(seal.x)} ${f(seal.y)})`, 0, SEAL, 1.2, 0.5, [[seal.d, 'sign', 1.1]]);
     }),
     // Sol's seal, upright as the star carries it round; his face in it
     // turning slowly sunwise.
     sol: engrave((e) => {
       const [sx, sy] = sol;
-      e.seal(1, (q) => [sx + q[0], sy + q[1]], `translate(${f(sx)} ${f(sy)})`, 0, BIG, 1.6, 0.6, []);
+      e.seal(1, (q) => [sx + q[0], sy + q[1]], `translate(${f(sx)} ${f(sy)})`, 0, SOL_BIG, 1.7, 0.6, []);
     }),
     solFace: engrave((e) => {
-      const at = (d: string) => mapPath(d, ([x, y]) => [sol[0] + x, sol[1] + y]);
-      e.line(at(circlePath(5)) + at(circlePath(1.1)) + at(SOL_RAYS), 'sign', 1.3, 0.6);
+      const k = SOL_BIG / BIG;
+      const at = (d: string) => mapPath(d, ([x, y]) => [sol[0] + x * k, sol[1] + y * k], 0, k);
+      e.line(at(SOL_FACE.lines), 'sign', 1.3, 0.6);
+      e.line(at(SOL_FACE.hatched), 'hatch', 1.6, 0.5);
     }),
     luna: engrave((e) => {
       const [lx, ly] = luna;
       e.seal(1.12, (q) => [lx + q[0], ly + q[1]], `translate(${f(lx)} ${f(ly)})`, 0, BIG, 1.6, 0.6, [
-        [LUNA, 'sign', 1],
-        [LUNA_HATCH, 'sign hatch', 1],
+        [LUNA_FACE.crescent, 'sign', 1],
+        [LUNA_FACE.shade, 'hatch', 1],
+        [LUNA_FACE.ghost, 'hair', 1],
       ]);
     }),
     heart: engrave((e) => {
-      e.pieces(p.eyeRing, 'thin');
       e.pieces(p.sun, 'thin');
       e.pieces(p.sunInner, 'hair');
-      e.line(COMPASS, 'hair', 0.3, 0.9);
     }),
     glory: engrave((e) => e.line(GLORY, 'hair', 1.35, 0.7)),
   });
@@ -290,10 +448,10 @@
   // stands for the circle's own id, which names its clip.
   const eye = (key: string) =>
     `<defs><clipPath id="@id@-${key}"><path d="${ALMOND}"/></clipPath></defs>` +
-    `<g clip-path="url(#@id@-${key})"><g transform="translate(0 ${IRIS_Y})">` +
-    `<circle r="${IRIS_R}" class="iris"/><circle r="${f(IRIS_R - 0.7)}" class="hatch"/>` +
+    `<g clip-path="url(#@id@-${key})"><g class="gaze"><g transform="translate(0 ${IRIS_Y})">` +
+    `<circle r="${IRIS_R}" class="iris"/><circle r="${f(IRIS_R - 1)}" class="hatch"/>` +
     `<path d="${STREAKS}" class="hatch"/><path d="${COLLARETTE}" class="hatch"/><path d="${PUPIL}" class="pupil"/>` +
-    `</g><path d="${SHADOW}" class="hatch"/></g>` +
+    `</g></g><path d="${SHADOW}" class="hatch"/></g>` +
     `<path d="${ALMOND}" class="lid"/><path d="${RIMS}" class="hatch"/><path d="${LID_HATCH}" class="hatch"/>`;
   const EYE_GLOW = eye('c');
   const EYE_LINES = eye('w');
@@ -349,7 +507,11 @@
     transform: scale(0.72);
   }
 
-  /* The eye opens last, and now and then it blinks. */
+  /* The eye opens last; now and then it blinks, and now and then it looks
+     aside, one way and later the other, and back. */
+  .eye :global(.gaze) {
+    animation: gaze 23s 7s ease-in-out infinite;
+  }
   .eye {
     animation: open 0.8s 1.55s cubic-bezier(0.3, 1.35, 0.5, 1) both;
   }
@@ -370,6 +532,24 @@
     }
     30% {
       opacity: 1;
+    }
+  }
+  @keyframes gaze {
+    0%,
+    30%,
+    46%,
+    72%,
+    86%,
+    100% {
+      translate: 0 0;
+    }
+    34%,
+    42% {
+      translate: -5px 0.5px;
+    }
+    76%,
+    82% {
+      translate: 4px -0.3px;
     }
   }
   @keyframes blink {
