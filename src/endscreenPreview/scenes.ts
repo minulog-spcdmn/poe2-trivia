@@ -659,5 +659,197 @@ export function scenes(): Scene[] {
     { key: 'e-unmeasured', group: DG, label: 'Together: a run this device never recorded', view: D, mode: 'client', me: doryani, state: teamRun(TEAM6), delveResult: null, log: guestLog() },
     { key: 'e-team-left', group: DG, label: 'Together: Rog went offline', view: D, mode: 'host', me: K, state: teamRun(TEAM6, { left: 'Rog', streak: 5 }), ...host6() },
     { key: 'e-phone-delve-guest', group: DG, label: 'Phone: a guest of six, waiting', view: P, mode: 'client', me: doryani, state: teamRun(TEAM6), delveResult: measured(27, 32, false), log: guestLog(), runs: runs([17, 32, 15], 27, true, doryani) },
+    // Further round the edges.
+    {
+      key: 'e-winner-gone',
+      group: NG,
+      label: 'The winner went offline',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: (() => {
+        const s = game([['Rog', 10], ['Kalguur', 8], ['Doryani', 7], ['Alva', 4]], { recap: turnsRecap('Rog', 'Headhunter', { answers: { [K]: { n: 10, ok: 8, ms: 2500 } }, misses: misses('Kalguur', ['Ingenuity', 'Death Rush']) }) });
+        s.players[0].connected = false;
+        return s;
+      })(),
+    },
+    {
+      key: 'e-dm-default',
+      group: NG,
+      label: 'A deathmatch won by default: the rival left',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: game([['Kalguur', 10], ['Una of the Vaal', 7], ['Rog', 5]], {
+        recap: turnsRecap('Kalguur', 'Headhunter', { answers: { [K]: { n: 10, ok: 10, ms: 2200, dn: 1, dok: 1 } } }),
+        extra: { deathmatch: { alive: [K], entrants: [K, doryani], round: 1, results: {}, eliminated: [], startedAt: 0 } },
+      }),
+      earned: ['first-victory'],
+    },
+    {
+      key: 'e-gems',
+      group: NG,
+      label: 'Gems and many-pictured items: the fastest, the misses',
+      view: D,
+      mode: 'client',
+      me: una(),
+      state: game(FIVE, {
+        recap: turnsRecap('Doryani', "Ahn's Citadel", {
+          cats: { 'Lineage Gems': [5, 1], Rings: [4, 3] },
+          answers: { [una()]: { n: 10, ok: 7, ms: 2900 } },
+          misses: misses('Una of the Vaal', ["Ailith's Chimes", 'Grand Spectrum', "Amanamu's Tithe"]),
+        }),
+      }),
+    },
+    {
+      key: 'e-scripts',
+      group: NG,
+      label: 'Names in other scripts and with digits',
+      view: D,
+      mode: 'client',
+      me: pid('Exile42'),
+      state: (() => {
+        const names = ['桜子', 'Ярослава', 'Exile42', 'Ἀθηνᾶ', 'Zoë'];
+        const s = game(
+          names.map((n, i) => [n, 10 - i * 2] as [string, number]),
+          { host: pid('Exile42'), recap: { fastest: { by: pid('Ярослава'), id: id('Headhunter'), ms: 1900 }, answers: { [pid('Exile42')]: { n: 10, ok: 6, ms: 3300 } }, misses: misses('Exile42', ['Ingenuity']) } },
+        );
+        // pid keeps Latin letters only: the others get ids of their own.
+        s.players.forEach((p, i) => (p.id = p.name === 'Exile42' ? pid('Exile42') : `id-name-${i}`));
+        s.winners = [s.players[0].id];
+        s.hostId = s.players[0].id;
+        s.recap!.fastest = { by: s.players[1].id, id: id('Headhunter'), ms: 1900 };
+        return s;
+      })(),
+    },
+    {
+      key: 'e-gallery',
+      group: NG,
+      label: 'Eight watching: five join next, three just watch',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: { ...won(), spectators: [...['Finn', 'Renly', 'Oswin', 'Zelina', 'Dannig'].map((n) => spectator(n)), ...['Hooded One', 'Sekhema Asala', 'Watcher'].map((n) => spectator(n, true))] },
+    },
+    {
+      key: 'e-team-dropped',
+      group: DG,
+      label: 'Together: one of three left the run',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: (() => {
+        const s = delve(['Kalguur', 'Doryani'], { depth: 26, host: K, losses: { [K]: [20, 24, 26], [doryani]: [18, 22, 25] }, recap: { fastest: { by: doryani, id: id('Ingenuity'), ms: 2000 } } });
+        s.delve!.entrants = [K, doryani, una()];
+        s.delve!.leftAt = 17;
+        return s;
+      })(),
+      delveResult: measured(26, 30, false),
+      log: [miss(10, 'Headhunter', 20, team('Kalguur')), miss(20, 'Ingenuity', 24, team('Kalguur')), miss(30, 'Briarpatch', 26, team('Kalguur'))],
+      runs: runs([30, 21], 26, true, K),
+    },
+    { key: 'e-phone-twelve-delve', group: DG, label: 'Phone: twelve delvers', view: P, mode: 'host', me: K, state: teamRun(TEAM12), ...host6() },
+    {
+      key: 'e-long-team',
+      group: DG,
+      label: 'Together: long names, a life given and one brought back',
+      view: D,
+      mode: 'client',
+      me: pid(LONG[1]),
+      state: delve(LONG.slice(0, 3), {
+        depth: 21,
+        host: pid(LONG[0]),
+        losses: { [pid(LONG[0])]: [12, 17, 21], [pid(LONG[1])]: [8, 11, 14, 20], [pid(LONG[2])]: [10, 15, 19] },
+        revives: [
+          { by: pid(LONG[0]), to: pid(LONG[1]), depth: 14, fell: 14, at: RUN + 35 },
+          { by: pid(LONG[1]), to: pid(LONG[2]), depth: 19, fell: 19, at: RUN + 55 },
+        ],
+        recap: { fastest: { by: pid(LONG[2]), id: id('Guiding Palm of the Heart'), ms: 2300 } },
+      }),
+      delveResult: measured(21, 25, false),
+      log: [miss(10, 'Headhunter', 8, team(LONG[1])), miss(20, 'Ingenuity', 11, team(LONG[1])), miss(30, 'Guiding Palm of the Heart', 14, team(LONG[1])), miss(60, 'Briarpatch', 20, team(LONG[1]))],
+      runs: runs([25, 16], 21, true, pid(LONG[1])),
+    },
+    {
+      key: 'e-wards-saved',
+      group: DG,
+      label: 'Alone: wards took a whole cave-in and a last life (no rows for them)',
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo({
+        depth: 47,
+        losses: { [K]: [36, 41, 47] },
+        recap: {
+          fastest: { by: K, id: id('Ingenuity'), ms: 1600 },
+          items: [
+            { kind: 'wards', at: 30, by: K, used: 33, how: 'ward' },
+            { kind: 'wards', at: 30, by: K, used: 33, how: 'ward' },
+            { kind: 'wards', at: 38, by: K, used: 44, how: 'ward' },
+          ],
+        },
+      }),
+      delveResult: measured(47, 50, false),
+      log: [
+        miss(5, 'Mageblood', 33, { find: 'azurite', lives: 0, wards: 2 }),
+        miss(10, 'Headhunter', 36),
+        miss(20, 'Ingenuity', 41),
+        miss(25, 'Chainsting', 44, { warded: true }),
+        miss(30, 'Briarpatch', 47),
+      ],
+      runs: runs([50, 31], 47, false),
+    },
+    { key: 'e-chart-flat', group: DG, label: 'Alone: every run ended at the same depth', view: D, mode: 'local', me: null, state: solo({ depth: 16, losses: { [K]: [11, 14, 16] } }), delveResult: measured(16, 16, false), log: [miss(10, 'Headhunter', 11), miss(20, 'Ingenuity', 14), miss(30, 'Briarpatch', 16)], runs: runs([16, 16, 16, 16], 16, false) },
+    {
+      key: 'e-chart-zero',
+      group: DG,
+      label: 'Alone: every run gone at depth 0',
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo({ depth: 1, losses: { [K]: [1, 1, 1] }, recap: {} }),
+      delveResult: measured(1, 1, false),
+      log: [miss(10, 'Headhunter', 1), miss(20, 'Ingenuity', 1), miss(30, 'Briarpatch', 1)],
+      runs: runs([1, 1, 1], 1, false),
+    },
+    {
+      key: 'e-zone-edge',
+      group: DG,
+      label: 'Alone: a first run ending at depth 10 (a zone edge)',
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo({ depth: 11, losses: { [K]: [6, 9, 11] }, recap: { fastest: { by: K, id: id('Headhunter'), ms: 2600 } } }),
+      delveResult: measured(11, null, true),
+      log: [miss(10, 'Headhunter', 6), miss(20, 'Ingenuity', 9), miss(30, 'Briarpatch', 11)],
+      runs: runs([], 11, false),
+      earned: ['depth-10'],
+    },
+    {
+      key: 'e-delve-joiners',
+      group: DG,
+      label: 'Together: three join the next run',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: { ...teamRun(TEAM6), spectators: ['Finn', 'Renly', 'Oswin'].map((n) => spectator(n)) },
+      ...host6(),
+    },
+    {
+      key: 'e-team-norecap',
+      group: DG,
+      label: 'Together: no summary from the host (an older host)',
+      view: D,
+      mode: 'client',
+      me: doryani,
+      state: (() => {
+        const s = teamRun(TEAM6);
+        delete s.recap;
+        return s;
+      })(),
+      delveResult: measured(27, 32, false),
+      log: guestLog(),
+      runs: runs([17, 32, 15], 27, true, doryani),
+    },
   ];
 }
