@@ -5,8 +5,9 @@
   // game plays them (lib/spatial.svelte.ts), with the settings for how a
   // hover quietens over a sweep beside them: as live (a step each), eased
   // (by how busy hovering is), or not at all (1, 2 and 3 switch between
-  // them); by the pointer's speed as it came over the control; and in takes
-  // made from its own recordings, none twice running. Each hover's ducking
+  // them); by the pointer's speed as it came over the control, within a
+  // sweep; and in takes made from its own recordings (nudged, resynthesized
+  // or granular: lib/variations.ts), none twice running. Each hover's ducking
   // shows in the strip below the settings.
   import { untrack } from 'svelte';
   import { hoverHeard, spatial, CHOSEN } from '../lib/spatial.svelte';
@@ -33,6 +34,7 @@
     'hoverSpeedSoften',
     'hoverShorter',
     'hoverTakes',
+    'hoverTakeKind',
     'hoverVariety',
   ] as const;
 
@@ -51,6 +53,12 @@
   }
 
   const mode = $derived(MODES.find((m) => m.id === spatial.hoverRepeat)!);
+
+  const TAKE_KINDS: { id: typeof spatial.hoverTakeKind; label: string; hint: string }[] = [
+    { id: 'nudged', label: 'Nudged', hint: 'The recordings as they are, each layer a little different in balance, timing, pitch, attack and tone.' },
+    { id: 'resynthesized', label: 'Resynthesized', hint: 'Each take new grain in the same sound: its tone and envelope kept, its fine detail made afresh (Variety: how much).' },
+    { id: 'granular', label: 'Granular', hint: 'The attack kept, the rest rebuilt from small grains of the recording, each from a little before or after (Variety: how far).' },
+  ];
 
   /** The last hovers' ducking (dB), newest last. */
   let strip = $state<{ n: number; db: number; soften: number; speed: number; take: number }[]>([]);
@@ -170,11 +178,17 @@
       <i class="num">{Math.round(spatial.hoverShorter * 100)}%</i>
     </div>
     <p class="hint">
-      Speeds in screen widths a second: at Slow or below the hover sounds in full, at Fast or above it is all of Quieter, Duller and Shorter, eased between. Last
+      Within a sweep (the first hover after a pause always sounds in full), in screen widths a second: at Slow or below the hover sounds in full, at Fast or above it is all of Quieter, Duller and Shorter, eased between. Last
       hover came at <b>{(strip.at(-1)?.speed ?? 0).toFixed(2)}</b>.
     </p>
 
     <h2>Takes</h2>
+    <div class="seg" role="group" aria-label="Kind of take">
+      {#each TAKE_KINDS as k (k.id)}
+        <button class:on={spatial.hoverTakeKind === k.id} onclick={() => (spatial.hoverTakeKind = k.id)}>{k.label}</button>
+      {/each}
+    </div>
+    <p class="hint">{TAKE_KINDS.find((k) => k.id === spatial.hoverTakeKind)?.hint}</p>
     <div class="line">
       <span class="lbl">Takes</span>
       <input type="range" min="0" max="8" step="1" bind:value={spatial.hoverTakes} style:--fill="{(spatial.hoverTakes / 8) * 100}%" aria-label="Takes" />
@@ -186,8 +200,7 @@
       <i class="num">{Math.round(spatial.hoverVariety * 100)}%</i>
     </div>
     <p class="hint">
-      Made from the hover's own two recordings: each take a little different in each layer's balance, timing, pitch, attack and tone, played in turn, none twice
-      running. Last: take <b>{(strip.at(-1)?.take ?? -1) < 0 ? 'none' : strip.at(-1)!.take + 1}</b>.
+      Played in turn, none twice running; the first is the recording as it is. Last: take <b>{(strip.at(-1)?.take ?? -1) < 0 ? 'none' : strip.at(-1)!.take + 1}</b>.
     </p>
 
     <h2>The hover itself</h2>

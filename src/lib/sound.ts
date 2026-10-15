@@ -134,10 +134,12 @@ export type SoundPlace = { from?: Element | null; x?: number; speed?: number; ed
 
 /**
  * A take of a sound: for each of its layers, how much louder (dB), later
- * (ms) and faster it plays, how far into its recording it starts (ms), and
- * a bump or dip in its tone (dB at Hz). Placer.vary hands them out.
+ * (ms) and faster it plays, how far into its recording it starts (ms), a
+ * bump or dip in its tone (dB at Hz), and a recording of its own to play in
+ * place of the layer's (`buffer`, made from it: lib/variations.ts).
+ * Placer.vary hands them out.
  */
-export type LayerTweak = { gainDb: number; delayMs: number; rate: number; offsetMs: number; peakHz: number; peakDb: number };
+export type LayerTweak = { gainDb: number; delayMs: number; rate: number; offsetMs: number; peakHz: number; peakDb: number; buffer?: AudioBuffer };
 
 /**
  * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
@@ -151,15 +153,15 @@ export type LayerTweak = { gainDb: number; delayMs: number; rate: number; offset
  * (`take`, not started), which is started half a loop on, follows the
  * loop's rate and stops with it. `depth` hears Delve's depth as the ambience does
  * (depthAmbience), once mounted and on every change, for its rooms. `vary`
- * may hand a moment a take of it (a tweak for each of its layers), or null
- * to play it as it is.
+ * may hand a moment a take of it (a tweak for each of its layers, whose
+ * recordings it is handed, those loaded), or null to play it as it is.
  */
 export type Placer = {
   mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode }): void;
   place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined): { dry: AudioNode; wet: AudioNode } | null;
   widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode } | null;
   depth(d: number): void;
-  vary(name: Sfx, layers: number): LayerTweak[] | null;
+  vary(name: Sfx, recordings: (AudioBuffer | undefined)[]): (LayerTweak | null)[] | null;
 };
 let placer: Placer | null = null;
 
@@ -502,7 +504,7 @@ function playLayer(
 ) {
   const { ac } = b;
   const src = ac.createBufferSource();
-  src.buffer = buf;
+  src.buffer = take?.buffer ?? buf;
   src.playbackRate.value = l.rate * pitch * (take?.rate ?? 1);
   const begin = ac.currentTime + at;
   const start = begin + (l.delay + (take?.delayMs ?? 0)) / 1000;
@@ -589,7 +591,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   const inS = Math.max(0, opts.inMs ?? 0) / 1000;
   const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from) : null;
   // A take of it (the placer's), each layer a little different.
-  const takes = placer?.vary(name, m.layers.length) ?? null;
+  const takes = placer?.vary(name, m.layers.map((l) => ready.get(l.file))) ?? null;
   for (const [i, l] of m.layers.entries()) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
