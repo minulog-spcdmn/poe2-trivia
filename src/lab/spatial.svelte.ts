@@ -17,7 +17,7 @@ export const PRESETS: { name: string; hint: string; set: Partial<Spatial> }[] = 
   { name: '3', hint: 'Head model and wide ambience: less stuck to one ear, the ambience all round.', set: { today: false, renderer: 'head', moving: true, far: 0.5, wideBeds: true, sideReverb: false, crossfeed: false } },
   { name: '4', hint: 'Crossfeed, for headphones: out of your head and in front of you.', set: { today: false, renderer: 'head', moving: true, far: 0.5, wideBeds: true, sideReverb: false, crossfeed: true } },
   { name: '5', hint: 'Side reverb: the room answers from the sound’s side.', set: { today: false, renderer: 'head', moving: true, far: 0.5, wideBeds: true, sideReverb: true, crossfeed: true } },
-  { name: 'Chosen', hint: 'The game’s mix: head model at ±36°, teammates 35% off, moving, Size, wide ambience, rooms and side reverb.', set: { ...CHOSEN } },
+  { name: 'Chosen', hint: 'The game’s mix: head model at ±36°, teammates 35% off, moving, Size, wide ambience, rooms and side reverb; the hover 2.5 dB down, dry, quieter on repeats.', set: { ...CHOSEN } },
   { name: 'HRTF', hint: 'The browser’s binaural panner, for headphones only; compare its tone.', set: { today: false, renderer: 'hrtf', moving: true, far: 0.5, wideBeds: true, sideReverb: true, crossfeed: false } },
 ];
 

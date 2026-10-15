@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 (globalThis as { localStorage?: unknown }).localStorage = { getItem: () => null, setItem() {} };
-const { screenX, travel, roomPlan } = await import('../src/lib/spatialPlan.ts');
+const { screenX, travel, roomPlan, hoverStep, HOVER_SWEEP, HOVER_STEP, HOVER_STEPS } = await import('../src/lib/spatialPlan.ts');
 
 const SCREEN = { left: 0, width: 1000 };
 const box = (left: number, width: number, height = 40) => ({ left, width, height });
@@ -72,4 +72,18 @@ test('every room a depth needs was already kept a step before: it is worked out 
     const before = roomPlan(d - 0.5, true).kept;
     for (const w of roomPlan(d, true).wanted) assert.ok(before.has(w.place), `${w.place} at ${d} wasn't kept at ${d - 0.5}`);
   }
+});
+
+test('a sweep across controls steps each hover quieter, down to a floor; after a pause the next is back to full', () => {
+  let h = hoverStep(null, 10);
+  assert.equal(h.db, 0);
+  const steps = [h.db];
+  for (let i = 1; i <= HOVER_STEPS + 2; i++) {
+    h = hoverStep(h, 10 + i * 0.1);
+    steps.push(h.db);
+  }
+  assert.deepEqual(steps.slice(0, 3), [0, -HOVER_STEP, -2 * HOVER_STEP]);
+  assert.equal(Math.min(...steps), -HOVER_STEP * HOVER_STEPS);
+  // A pause, then a deliberate hover sounds as ever.
+  assert.equal(hoverStep(h, h.at + HOVER_SWEEP + 0.01).db, 0);
 });

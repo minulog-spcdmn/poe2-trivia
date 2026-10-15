@@ -880,8 +880,11 @@ spread wide (each ear its own take of the loop, half a loop apart), and in
 Delve each place rings in a room of its own (`src/lib/acoustics.ts`: early
 reflections, far slaps and a tail whose lows, mids and highs die at their
 own pace, worked out while the page is idle) in place of the one hall,
-cross-fading as the beds do. The mix was chosen by ear in the lab
-(**Spatial sound**, below).
+cross-fading as the beds do. The hover, the most frequent sound and now
+the most noticeable, comes from where its control is like any other, but
+2.5 dB down, dry and close (no side reverb, little room), and a step
+quieter for each hover in a quick sweep across controls. The mix was
+chosen by ear in the lab (**Spatial sound**, below).
 
 ### Visual effects
 
