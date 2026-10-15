@@ -137,7 +137,7 @@
   /** A run short of your best, and anyone watching one together: the circle in worn grey (the gold through saturate(.25) brightness(.85)). */
   const dim = $derived(!!run && !bright);
   /** The party's plates: the avatar as large as the plate leaves room for, with the same space round it on the left as above and below. */
-  const plateAvatar = $derived(phone.current ? 30 : short.current ? (delvers.length > 6 ? 25 : 30) : delvers.length > 6 ? 30 : 34);
+  const plateAvatar = $derived(phone.current ? 30 : short.current ? (delvers.length > 6 ? 25 : 30) : delvers.length > 6 ? 28 : 34);
   const twoCols = $derived(!phone.current && s.players.length > (short.current ? 5 : 7));
   const chartH = $derived(phone.current ? 170 : solo ? (short.current ? 150 : 190) : delvers.length > 6 ? (short.current ? 89 : 120) : short.current ? 110 : 150);
 
@@ -690,19 +690,19 @@
                 <p class="cap">Earned this run</p>
                 {@render achievements(earned)}
               {/if}
-              <p class="cap">Finds</p>
               {#if facts.length > 1}
+                <p class="cap">This run</p>
                 {@render lineList(facts.slice(1))}
               {:else}
-                <p class="cap none">None turned up on this run. What you can find:</p>
+                <!-- Never the depth a find first turns up at: that is for the descent to show. -->
+                <p class="cap">No finds turned up on this run. What you can find:</p>
                 <ul class="fx finds">
                   {#each FINDS_IN_ORDER as f (f.kind)}
                     <li data-find={f.kind}>
                       <span class="ic"><span class="mini sign"><span class="glyph-ic"><ItemGlyph kind={f.kind === 'azurite' ? 'ward' : f.kind} /></span></span></span>
                       <span class="txt">
                         <b class="find-name">{FIND_TEXT[f.kind].name}</b>
-                        <span>From depth {shownDepth(f.from)}. {FIND_BRIEF[f.kind]}</span>
-                        <span class="miss">{FIND_RULES[f.kind].miss}</span>
+                        <span>{FIND_BRIEF[f.kind]} <span class="miss">{FIND_RULES[f.kind].miss}</span></span>
                       </span>
                     </li>
                   {/each}
@@ -819,9 +819,10 @@
     flex-direction: column;
     padding: 1.4rem;
   }
+  /* Closer under the columns than on the start page, so a long end still fits the window without scrolling. */
   .foot {
     margin-top: auto;
-    padding: 32px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
+    padding: 18px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
   }
 
   /* ---- the result: the circle, and the headline over its foot ---- */
@@ -1368,8 +1369,11 @@
     background: rgba(12, 10, 8, 0.75);
     border: 1px solid var(--line);
   }
+  .plates.many {
+    gap: 6px;
+  }
   .plates.many li {
-    --ph: 44px;
+    --ph: 40px;
   }
   .plates li.you {
     border-color: rgba(224, 138, 68, 0.85);
@@ -1414,10 +1418,6 @@
     font-style: italic;
     font-size: 1rem;
     color: #c4b69c;
-  }
-  .cap.none {
-    color: var(--muted);
-    font-size: 0.95rem;
   }
   /* The run's facts hang from the chart's ground line: the first one's mark centred on it (RunsChart's ground at 16 px). */
   .chart-row {
