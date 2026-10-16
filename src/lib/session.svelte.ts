@@ -41,7 +41,8 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, shownDepth, standingIds } from './delve';
+import { countEvent, delveEndEvent, playEvent } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -1943,9 +1944,18 @@ class Session {
     if (!run) return;
     const r = recordRun(run);
     if (!r) return;
+    countEvent(delveEndEvent(shownDepth(run.depth)));
     this.noteAchievements();
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
+  }
+
+  /** A game this device plays in starting, from the lobby or the last one's end (not one joined or resumed underway), counted (count.ts). */
+  private notePlay(prev: GameState | null, next: GameState) {
+    const playing = (p: GameState['phase']) => p !== 'lobby' && p !== 'over';
+    if (!prev || playing(prev.phase) || !playing(next.phase)) return;
+    const hotSeat = this.mode === 'local';
+    if (hotSeat || next.players.some((p) => p.id === this.myPlayerId)) countEvent(playEvent(next, hotSeat));
   }
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
@@ -1953,6 +1963,7 @@ class Session {
     // (Named in the beta's frame meter, so a slow frame can be placed in the game.)
     if (prev?.phase !== next.phase || prev?.question?.askedAt !== next.question?.askedAt) frameEvent(`game: ${next.phase}${next.reveal && !prev?.reveal ? (next.reveal.correct ? ' (right)' : ' (wrong)') : ''}`);
     this.noteClock(next);
+    this.notePlay(prev, next);
     this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
