@@ -170,7 +170,8 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
   }
   try {
     const r = await new Prober(peer).probe(PEER_PREFIX + code);
-    return r === 'free' ? 'gone' : r;
+    // Only this room's own listing: another room's, signed for the held name, passed on by this one, would show it as theirs.
+    return r === 'free' ? 'gone' : r && r.code !== code ? null : r;
   } finally {
     peer.destroy();
   }

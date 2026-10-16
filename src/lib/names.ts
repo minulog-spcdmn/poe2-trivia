@@ -55,7 +55,8 @@ export function nameSkeleton(name: string): string {
     .map((c) => CONFUSABLES[c] ?? lookalikeOf(c) ?? c)
     .join('')
     .replace(/\p{M}/gu, '')
-    .replace(/\P{L}/gu, '')
+    // Modifier letters (ـ ʼ ˑ) are letters to Unicode but draw as signs: no part of a name's look.
+    .replace(/[\P{L}\p{Lm}]/gu, '')
     .replace(/(.)\1+/gu, '$1') // "Hoost" ~ "Host"
     .replace(/rn/g, 'm')
     .replace(/vv/g, 'w')
@@ -74,7 +75,9 @@ export const unlockHeldName = (words: string, key = OWNER_PUBLIC_KEY) => unlockO
 
 /** Whether a name is the held one, in any spelling the name check treats as the same ("Zoe Arcana"). */
 export function isHeldName(name: string): boolean {
-  return nameSkeleton(cleanName(name)) === HELD_NAME;
+  const skel = nameSkeleton(cleanName(name));
+  // Read without other scripts' letters too: some draw as a stroke or a dot (一, ㅡ), and "zoe一arcana" passes for it.
+  return skel === HELD_NAME || skel.replace(/[^a-z]/g, '').replace(/(.)\1+/g, '$1') === HELD_NAME;
 }
 
 /** True when the name is held and this device doesn't hold the owner key. */

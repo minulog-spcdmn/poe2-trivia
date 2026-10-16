@@ -8,7 +8,7 @@
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
-  import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
+  import { MAX_NAME, isHeldName, nameRefusal, nameTooShort } from '../lib/names';
   import { creatorShown } from '../lib/creator';
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
@@ -85,8 +85,16 @@
   /** Svelte action: a new player's row arrives with a flash (zoe_arcana's is her own). */
   function arriving(node: HTMLElement, name: string) {
     if (!settled) return;
-    const t = setTimeout(() => (creatorShown(name) ? creatorArrived(node) : playerArrived(node)), 120);
-    return { destroy: () => clearTimeout(t) };
+    let gone = false;
+    const flash = () => !gone && (creatorShown(name) ? creatorArrived(node) : playerArrived(node));
+    // A guest has the creator proven through the host first (session.svelte.ts noteOwner): her entrance waits for it.
+    const t = setTimeout(() => (isHeldName(name) && !creatorShown(name) ? void session.creatorProof().then(flash) : flash()), 120);
+    return {
+      destroy: () => {
+        gone = true;
+        clearTimeout(t);
+      },
+    };
   }
 
   let copyBtn = $state<HTMLButtonElement>();

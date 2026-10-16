@@ -27,6 +27,9 @@ test('look-alike letters from any script count as the Latin letters they pass fo
   assert.equal(nameProblem('هاني', ['هادي']), null);
   assert.equal(nameProblem('حامد', ['דוד']), null);
   assert.match(nameProblem('هادي', ['هادي']) ?? '', /looks too much like/);
+  // Modifier letters draw as signs (a tatweel, an apostrophe), and some letters as a stroke: none make another name.
+  for (const fake of ['zoeـarcana', 'zoe_arcanaʼ', 'zoe一arcana', 'zoeㅡarcana']) assert.ok(isHeldName(fake), fake);
+  assert.match(nameProblem('Boـb', ['Bob']) ?? '', /looks too much like/);
 });
 
 test('characters that draw nothing, or many letters wide, are taken out of a name', () => {

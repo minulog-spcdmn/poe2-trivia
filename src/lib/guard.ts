@@ -17,6 +17,8 @@ export type FrameVerdict = 'ok' | 'flood' | 'bad';
 
 /** Deeper than any message a real client sends (hello, pong, action, cursor). */
 const MAX_PACK_DEPTH = 8;
+/** Well past the deepest a host sends (a game's state reaches about 7), and still a bound on the walk. */
+const MAX_HOST_PACK_DEPTH = 16;
 
 /**
  * Whether `bytes` is exactly one well-formed binarypack value whose declared
@@ -25,7 +27,7 @@ const MAX_PACK_DEPTH = 8;
  * allocate and fill before anything else could look at it. Every element
  * takes at least one byte, so an honest count never exceeds the bytes left.
  */
-export function plausiblePack(bytes: Uint8Array): boolean {
+export function plausiblePack(bytes: Uint8Array, maxDepth = MAX_PACK_DEPTH): boolean {
   let i = 0;
   const left = () => bytes.length - i;
   const uint = (n: number) => {
@@ -35,7 +37,7 @@ export function plausiblePack(bytes: Uint8Array): boolean {
     return v;
   };
   const value = (depth: number): boolean => {
-    if (depth > MAX_PACK_DEPTH || left() < 1) return false;
+    if (depth > maxDepth || left() < 1) return false;
     const type = bytes[i++];
     let size: number;
     if (type < 0x80 || type >= 0xe0 || (type >= 0xc0 && type <= 0xc3)) return true;
@@ -151,7 +153,7 @@ const CHUNK_BYTES = 16300;
  */
 export function frameFits(data: unknown, max: number): boolean {
   const bytes = asBytes(data);
-  return !!bytes && bytes.length <= max && plausiblePack(bytes);
+  return !!bytes && bytes.length <= max && plausiblePack(bytes, MAX_HOST_PACK_DEPTH);
 }
 
 /**
@@ -246,7 +248,6 @@ export function capped<T>(list: T[], max: number): T[] {
   return list.length > max ? list.slice(list.length - max) : list;
 }
 
-
 /**
  * The token a browser shows the host of room `code`: an HMAC of its own
  * secret and the room code. Each host only learns a token for its own room,
@@ -260,4 +261,3 @@ export async function roomSecret(secret: string, code: string): Promise<string> 
   const key = await subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return base64url(new Uint8Array(await subtle.sign('HMAC', key, enc.encode(`room:${code}`))));
 }
-
