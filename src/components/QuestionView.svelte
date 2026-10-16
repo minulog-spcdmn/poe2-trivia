@@ -12,7 +12,7 @@
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { questionCircle } from './circles';
+  import { questionCircle } from './gameCircles';
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';

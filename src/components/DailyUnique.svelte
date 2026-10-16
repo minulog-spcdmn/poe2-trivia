@@ -6,7 +6,7 @@
   // they never touch the streak. Into the codex, today's unique goes as
   // found (its answer isn't counted) and a practice answer only into a
   // practice accuracy of its own (see pick).
-  import { onMount } from 'svelte';
+  import { onMount, untrack, type Component } from 'svelte';
   import { fade, fly, scale, slide } from 'svelte/transition';
   import itemData from '../data/items.json';
   import fakeNames from '../data/fakes.json';
@@ -20,7 +20,8 @@
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
-  import { circleAt, DAILY_CIRCLES } from './circles';
+  import { whenIdle } from '../lib/idle';
+  import { turnOf } from '../lib/turns';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -61,7 +62,22 @@
   });
   const today = $derived(utcDay(now));
   // A different one of the circles from day to day, the same for every exile.
-  const Circle = $derived(circleAt(today, DAILY_CIRCLES));
+  // (DAILY_CIRCLES in circles.ts, in its order, loaded only when it's today's,
+  // so the start page carries none of the others.)
+  const DAILY = [
+    () => import('./ArcaneCircle.svelte'),
+    () => import('./MonadCircle.svelte'),
+    () => import('./RoseCircle.svelte'),
+    () => import('./ForbiddenCircle.svelte'),
+  ];
+  // Loaded and put on the page in the first idle moment after the start
+  // page's first frames (half a second at most), as its plate is built when
+  // it mounts.
+  let Circle = $state.raw<Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> | null>(null);
+  $effect(() => {
+    const day = today;
+    return whenIdle(() => void DAILY[turnOf(day, [0, 1, 2, 3])]().then((m) => day === untrack(() => today) && (Circle = m.default)), { timeout: 500, fallback: 100 });
+  });
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 
   let rec = $state(loadDaily());
@@ -280,7 +296,7 @@
       <div class="veil">
         <div class="inner">
           <div class="circle">
-            <Circle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
+            {#if Circle}<Circle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />{/if}
           </div>
           <!-- "frame", as the game's art stage: the right answer's flare and rays find the
                picture through it (fx/moments reveal) and shine from behind its outline. -->

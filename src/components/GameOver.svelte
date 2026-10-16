@@ -6,8 +6,7 @@
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
-  import ForbiddenCircle from './ForbiddenCircle.svelte';
-  import { anyOf, END_CIRCLES } from './circles';
+  import { anyOf, END_CIRCLES, PERISHED_CIRCLE } from './circles';
   import WatchToggle from './WatchToggle.svelte';
   import WatchEye from './WatchEye.svelte';
   import StandingMark from './StandingMark.svelte';
@@ -85,7 +84,7 @@
   // The circle behind the result: the monad or the eye, or after a Delve,
   // where everyone perished, the moth.
   const endCircle = anyOf(END_CIRCLES);
-  const Circle = $derived(run ? ForbiddenCircle : endCircle);
+  const Circle = $derived(run ? PERISHED_CIRCLE : endCircle);
   const solo = $derived(!!run && !isGroupRun(s));
   const together = $derived(!!run && !solo);
   /** Whose run this device tells: online its player, on one device its one delver. */

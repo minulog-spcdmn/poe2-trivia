@@ -1,3 +1,11 @@
+<script module lang="ts">
+  import { warmCircle } from './circles';
+  import MonadCircle from './MonadCircle.svelte';
+
+  // The collection's circle, built ahead in an idle moment as this page loads (before it's opened).
+  warmCircle(MonadCircle);
+</script>
+
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -15,7 +23,8 @@
   import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
-  import MonadCircle from './MonadCircle.svelte';
+  import RoseCircle from './RoseCircle.svelte';
+  import { warm as warmBlackSun } from './BlackSunCircle.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -33,6 +42,11 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
+  // The achievements' and Delve's circles, built ahead in idle moments once the Codex is open.
+  onMount(() => {
+    warmCircle(RoseCircle);
+    warmBlackSun();
+  });
   // A game in another tab may add to it meanwhile.
   onMount(() =>
     onStoredElsewhere({

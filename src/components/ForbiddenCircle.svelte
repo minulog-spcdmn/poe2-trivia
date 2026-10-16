@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import { angleOf, at as atAbout, f, hatch, lerp, line, lineParts, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Part, type Pt, type Strap, type Wear } from '../lib/arcane';
+  import { angleOf, at as atAbout, clearFrom, f, hatch, lerp, line, lineParts, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Part, type Pt, type Strap, type Wear } from '../lib/arcane';
   import { engrave, mapPath, stroke, turned, type Engraver, type Plate } from '../lib/engraver';
   import { inscribe } from '../lib/tongue';
   import { whenIdle } from '../lib/idle';
@@ -589,8 +589,7 @@
     const MOTH_GLORY = Array.from({ length: 56 }, (_, k) => {
       const a = ((k + 0.5) / 56) * 360;
       const u = at(a, 1);
-      let from = 0;
-      for (let t = 0; t < HEART; t += 0.1) if (MOTH_PTS.some(([x, y]) => Math.hypot(x - u[0] * t, y - u[1] * t) < 1.3)) from = t + 0.1;
+      const from = clearFrom(u, MOTH_PTS, 1.3, HEART);
       const to = HEART_IN - (k % 2 ? 2.6 : 1.2);
       return to - from > 1.2 ? `M${pt(at(a, from))}L${pt(at(a, to))}` : '';
     });

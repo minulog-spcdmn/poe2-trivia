@@ -100,6 +100,23 @@ export type LineOpts = { holes?: Hole[]; under?: Strap[]; rings?: Band[]; cuts?:
 export type Part = { d: string; from: number; to: number };
 export const joined = (parts: Part[]) => parts.map((p) => p.d).join('');
 
+/**
+ * How far out from the centre a ray along the unit direction `u` must
+ * start to keep `clear` of every one of the points `pts` (0 if none comes
+ * near it), as far as `limit` at most: for a glory whose rays start just
+ * clear of a figure at its heart. Each point holds the ray off for the
+ * stretch it comes within `clear` of; the ray starts past the furthest.
+ */
+export const clearFrom = (u: Pt, pts: Pt[], clear: number, limit: number) => {
+  let from = 0;
+  for (const [x, y] of pts) {
+    const s = x * u[0] + y * u[1];
+    const d2 = x * x + y * y - s * s;
+    if (d2 < clear * clear) from = Math.max(from, s + Math.sqrt(clear * clear - d2));
+  }
+  return Math.min(from, limit);
+};
+
 /** A straight line from `p` to `q`, in pieces: broken where it meets a hole, passes under a strap or a ring, or is worn. */
 export const lineParts = (p: Pt, q: Pt, { holes = [], under = [], rings = [], cuts = [], wear = null }: LineOpts = {}): Part[] => {
   const all = [...cuts, ...under.flatMap((s) => underStrap(p, q, s))];

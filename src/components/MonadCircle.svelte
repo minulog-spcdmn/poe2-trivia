@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import { at as atAbout, f, hatch, joined, line, lineParts, meeting, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Pt, type Wear } from '../lib/arcane';
+  import { at as atAbout, clearFrom, f, hatch, joined, line, lineParts, meeting, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Pt, type Wear } from '../lib/arcane';
   import { engrave, mapPath, stroke, turned, type Engraver } from '../lib/engraver';
   import { inscribe } from '../lib/tongue';
   import * as ouro from '../lib/ouroborosArt';
@@ -329,17 +329,16 @@
     const MONAD_GLORY = Array.from({ length: 64 }, (_, k) => {
       const a = ((k + 0.5) / 64) * 360;
       const u = at(a, 1);
-      let from = 0;
-      for (let t = 0; t < REACH; t += 0.1) if (MONAD_PTS.some(([x, y]) => Math.hypot(x - u[0] * t, y - u[1] * t) < 2.1)) from = t;
+      const from = clearFrom(u, MONAD_PTS, 2.1, REACH);
       // (Short of the ring's body; where a head passes, the layer's mask
       // stops them short of it as it goes by.)
       const to = OURO_BODY_IN - 1.3 - (k % 2 ? 3 : 0);
       return to - from > 1.2 ? `M${pt(at(a, from))}L${pt(at(a, to))}` : '';
     });
-    // (In sixteen sectors of four rays, which swell one after another, so a
+    // (In eight sectors of eight rays, which swell one after another, so a
     // slow swell of light runs round the sun.)
-    const SECTORS = 16;
-    const MONAD_GLORY_SETS = Array.from({ length: SECTORS }, (_, n) => MONAD_GLORY.slice(n * 4, n * 4 + 4).join(''));
+    const SECTORS = 8;
+    const MONAD_GLORY_SETS = Array.from({ length: SECTORS }, (_, n) => MONAD_GLORY.slice(n * 8, n * 8 + 8).join(''));
 
     // Everything that wears, drawn twice: worn for the lines, whole for the
     // glow under them. The wear is one seeded run through the lines in this

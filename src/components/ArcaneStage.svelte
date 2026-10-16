@@ -86,6 +86,17 @@
   // animation's), not from when this ran: a slow first frame starts the CSS
   // animations late, and a layer swapped on the page's clock would jump to
   // drawn before its lines had finished.
+  /** The outermost layers in order, those side by side under the same mask together. */
+  const groups = untrack(() => layers)
+    .filter((l) => !l.within)
+    .reduce((out: StageLayer[][], l) => {
+      const last = out.at(-1)?.[0];
+      const same = !!l.mask && !!last?.mask && last.mask.d === l.mask.d && last.mask.grow === l.mask.grow && last.mask.with === l.mask.with;
+      if (same) out.at(-1)!.push(l);
+      else out.push([l]);
+      return out;
+    }, []);
+
   const due = (l: StageLayer) => {
     if (!l.lines || !l.glow) throw new Error(`ArcaneStage: layer "${l.name}" has no plate (is it named as its plate is?)`);
     return Math.max(0, Math.min(l.lines.start, l.glow.start) - AHEAD);
@@ -164,28 +175,37 @@
       </div>
     {/snippet}
     <!-- A masked layer sits in a box that turns with the layer it follows and carries the mask, inside one that turns back the
-         same, so the layer keeps its own way and only the mask moves; all on the compositor. -->
-    {#snippet layer(l: StageLayer)}
-      {@const by = l.mask && layers.find((p) => p.name === l.mask?.with)?.spin}
-      {#if l.mask && by}
+         same, so the layer keeps its own way and only the mask moves; all on the compositor. Layers side by side with the same
+         mask (a glory in sectors) share the one box, so the mask is drawn once. -->
+    {#snippet masked(group: StageLayer[])}
+      {@const m = group[0].mask}
+      {@const by = m && layers.find((p) => p.name === m.with)?.spin}
+      {#if m && by}
         <div
           class="layer spin"
           style:--turn="{by.turn}s"
           style:--from="{by.from}deg"
           style:--dir={by.reverse ? 'reverse' : 'normal'}
-          style:mask-image={maskOf(l.mask)}
-          style:-webkit-mask-image={maskOf(l.mask)}
+          style:mask-image={maskOf(m)}
+          style:-webkit-mask-image={maskOf(m)}
         >
           <div class="layer upright" style:--turn="{by.turn}s" style:--from="{-by.from}deg" style:--dir={by.reverse ? 'normal' : 'reverse'}>
-            {@render plain(l)}
+            {#each group as l (l.name)}
+              {@render plain(l)}
+            {/each}
           </div>
         </div>
       {:else}
-        {@render plain(l)}
+        {#each group as l (l.name)}
+          {@render plain(l)}
+        {/each}
       {/if}
     {/snippet}
-    {#each layers.filter((l) => !l.within) as l (l.name)}
-      {@render layer(l)}
+    {#snippet layer(l: StageLayer)}
+      {@render masked([l])}
+    {/snippet}
+    {#each groups as group (group[0].name)}
+      {@render masked(group)}
     {/each}
     {@render heart?.()}
     {#if point}

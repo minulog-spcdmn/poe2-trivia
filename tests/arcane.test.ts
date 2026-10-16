@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { at, wovenPolygons, type Pt } from '../src/lib/arcane.ts';
+import { at, clearFrom, wovenPolygons, type Pt } from '../src/lib/arcane.ts';
 
 const O: Pt = [0, 0];
 const triangle = (turn: number): Pt[] => [0, 120, 240].map((a) => at(O, a + turn, 50));
@@ -48,5 +48,17 @@ test('a pentagram walked in one stroke is woven over and under in turn', () => {
   for (let i = 0; i < straps.length; i++) {
     const mine = [...below].filter(([key]) => key.startsWith(`${i}:`)).map(([, u]) => u);
     assert.deepEqual(mine.sort(), [false, true], `side ${i}`);
+  }
+});
+
+test('a glory ray starts just clear of the figure at its heart', () => {
+  const pts: Pt[] = Array.from({ length: 200 }, (_, k) => [6 * Math.sin(k * 1.7) * Math.cos(k * 0.3), 4 * Math.cos(k * 1.1)]);
+  for (let k = 0; k < 64; k++) {
+    const u = at(O, (k / 64) * 360, 1);
+    const from = clearFrom(u, pts, 1.3, 20);
+    // Stepping out from the centre, the last point still too near lies just short of where the ray starts.
+    let last = 0;
+    for (let t = 0; t < 20; t += 0.01) if (pts.some(([x, y]) => Math.hypot(x - u[0] * t, y - u[1] * t) < 1.3)) last = t;
+    assert.ok(Math.abs(from - last) < 0.02, `ray ${k}: starts at ${from}, the figure ends at ${last}`);
   }
 });
