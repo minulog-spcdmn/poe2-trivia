@@ -57,8 +57,9 @@
   import { achievementById, type Achievement } from '../lib/achievements';
 
   // The end of a game, as the lobby is laid out: on the left the result in
-  // a rune circle, the rose or Delve's black sun (the winner, or the
-  // delvers, at its heart), and what the game meant for you under it; on
+  // a rune circle, the monad or the eye, or after a Delve the moth (the
+  // winner, or the delvers, at its heart), and what the game meant for you
+  // under it; on
   // the right a lobby panel with the mode's ranking or the party, the
   // highlights everyone shares, and the start row. Phones stack it all,
   // the start row docked at the foot of the screen. What it says comes
@@ -515,7 +516,7 @@
         <div class="plate" aria-hidden="true" in:scale={{ start: 0.85, duration: 900 }}>
           <div class="veil">
             <div class="inner">
-              <!-- The rose, or Delve's black sun; a run short of your best in worn grey. -->
+              <!-- The monad or the eye, or after a Delve the moth; a run short of your best in worn grey. -->
               <Circle size="100%" color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
             </div>
           </div>

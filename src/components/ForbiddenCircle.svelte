@@ -1,13 +1,14 @@
 <script module lang="ts">
-  import { angleOf, at as atAbout, f, hatch, lerp, line, lineParts, pt, ringParts, seeded, wear, wovenPolygons, type Hole, type Part, type Pt, type Strap, type Wear } from '../lib/arcane';
+  import { angleOf, at as atAbout, f, hatch, lerp, line, lineParts, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Part, type Pt, type Strap, type Wear } from '../lib/arcane';
   import { engrave, mapPath, stroke, turned, type Engraver, type Plate } from '../lib/engraver';
   import { inscribe } from '../lib/tongue';
   import { whenIdle } from '../lib/idle';
   import type { StageLayer } from './ArcaneStage.svelte';
 
   // The plate is built once, the first time a circle is mounted, or before
-  // that in an idle moment after the page has loaded, so its geometry
-  // never weighs on the page's first frames.
+  // that in an idle moment when a page about to show it asks (`warm`, through
+  // circles.ts), so its geometry never weighs on a page's first frames and
+  // a page never builds a circle it won't show.
   let built: StageLayer[] | undefined;
   const build = (): StageLayer[] => {
     // The forbidden circle, a sibling of the rune circle (ArcaneCircle; see
@@ -159,7 +160,7 @@
     const rnd = seeded(97);
     const SCRIPT = seals.flatMap(({ a }) => inscribe(a + 7.5, a + 360 / 7 - 7.5, BAND, rnd, 1.2));
     /** A circle about (`x`, `y`), as path data. */
-    const ring = (x: number, y: number, r: number) => `M${f(x)} ${f(y - r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y + r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y - r)}Z`;
+    const ring = (x: number, y: number, r: number) => round([x, y], r);
     // The black of the work, the nigredo, in seven signs of the old tables,
     // read clockwise from the top as the matter goes down into it, each on a
     // grid of about ±4.5 and drawn with the pen's curves, as the planets'
@@ -741,7 +742,7 @@
     return LAYERS;
   };
   const plate = () => (built ??= build());
-  whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
+  export const warm = () => whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
 </script>
 
 <script lang="ts">

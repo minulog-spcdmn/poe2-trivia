@@ -27,9 +27,13 @@
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
   import ItemWindow from './ItemWindow.svelte';
+  import { questionCircle, warmCircle } from './circles';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const s = $derived(session.state!);
+  // The circle behind the coming question (this turn's while a category is
+  // chosen, the next one's once a question is up), built ahead in an idle moment.
+  $effect(() => warmCircle(questionCircle(s, s.question ? 1 : 0)));
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
   const local = $derived(session.mode === 'local');

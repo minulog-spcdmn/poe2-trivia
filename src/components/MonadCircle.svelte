@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import { at as atAbout, f, hatch, joined, line, lineParts, meeting, pt, ringParts, seeded, wear, wovenPolygons, type Hole, type Pt, type Wear } from '../lib/arcane';
+  import { at as atAbout, f, hatch, joined, line, lineParts, meeting, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Pt, type Wear } from '../lib/arcane';
   import { engrave, mapPath, stroke, turned, type Engraver } from '../lib/engraver';
   import { inscribe } from '../lib/tongue';
   import * as ouro from '../lib/ouroborosArt';
@@ -7,8 +7,9 @@
   import { whenIdle } from '../lib/idle';
 
   // The plate is built once, the first time a circle is mounted, or before
-  // that in an idle moment after the page has loaded, so its geometry
-  // never weighs on the page's first frames.
+  // that in an idle moment when a page about to show it asks (`warm`, through
+  // circles.ts), so its geometry never weighs on a page's first frames and
+  // a page never builds a circle it won't show.
   let built: StageLayer[] | undefined;
   const build = (): StageLayer[] => {
 
@@ -43,7 +44,7 @@
     const BAND = (BAND_IN + BAND_OUT) / 2;
     const RIM = 97.5;
     /** A circle about (`x`, `y`), as path data. */
-    const ring = (x: number, y: number, r: number) => `M${f(x)} ${f(y - r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y + r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y - r)}Z`;
+    const ring = (x: number, y: number, r: number) => round([x, y], r);
     // The four archangels of the quarters in great seals, wider than the band
     // and upright as it turns: Michael, Gabriel, Samael and Raphael, each by
     // the character the Heptameron (1559) gives him, written on a line, as a
@@ -290,8 +291,8 @@
     /** An arc about `c` of radius `r` over the top from `x0` to `x1` (its ends level with `c`). */
     const over = (c: Pt, r: number, x0: number, x1: number) => `M${f(x0)} ${f(c[1])}A${f(r)} ${f(r)} 0 0 ${x0 < x1 ? 1 : 0} ${f(x1)} ${f(c[1])}`;
     const MONAD = {
-      sun: `M0 ${-SUN}A${SUN} ${SUN} 0 1 1 0 ${SUN}A${SUN} ${SUN} 0 1 1 0 ${-SUN}Z`,
-      sunInner: `M0 ${-(SUN - 0.7)}A${SUN - 0.7} ${SUN - 0.7} 0 1 1 0 ${SUN - 0.7}A${SUN - 0.7} ${SUN - 0.7} 0 1 1 0 ${-(SUN - 0.7)}Z`,
+      sun: round([0, 0], SUN),
+      sunInner: round([0, 0], SUN - 0.7),
       // Within the sun, fine streaks out from round its point, long and short in turn.
       streaks: Array.from({ length: 32 }, (_, k) => `M${pt(at((k / 32) * 360, 1.35))}L${pt(at((k / 32) * 360, k % 2 ? SUN - 1.9 : SUN - 1.25))}`).join(''),
       stem: `M0 ${SUN}V${FOOT}`,
@@ -462,7 +463,7 @@
     return LAYERS;
   };
   const plate = () => (built ??= build());
-  whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
+  export const warm = () => whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
 </script>
 
 <script lang="ts">

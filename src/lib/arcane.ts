@@ -135,7 +135,7 @@ export const ringParts = (c: Pt, r: number, { holes = [], wear = null, cuts: giv
   // Join the arc that ends at the top to the one that starts there, so the ring has no seam.
   if (arcs.length > 1 && arcs[0][0] === 0 && arcs.at(-1)![1] === 360) arcs.push([arcs.pop()![0], arcs.shift()![1] + 360]);
   return arcs.map(([a0, a1]) => {
-    const n = Math.ceil((a1 - a0) / 170);
+    const n = Math.ceil((a1 - a0) / 120);
     let d = `M${pt(at(c, a0, r))}`;
     for (let k = 1; k <= n; k++) d += `A${f(r)} ${f(r)} 0 0 1 ${pt(at(c, a0 + ((a1 - a0) * k) / n, r))}`;
     return { d: a1 - a0 >= 360 ? d + 'Z' : d, from: a0 / 360, to: a1 / 360 };

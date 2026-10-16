@@ -1,13 +1,14 @@
 <script module lang="ts">
-  import { angleOf, at as atAbout, f, hatch, lerp, pt, ringParts, seeded, wear, type Cut, type Hole, type Part, type Pt, type Wear } from '../lib/arcane';
+  import { angleOf, at as atAbout, f, hatch, lerp, pt, ring as round, ringParts, seeded, wear, type Cut, type Hole, type Part, type Pt, type Wear } from '../lib/arcane';
   import { engrave, mapPath, stroke, turned, type Engraver, type Plate } from '../lib/engraver';
   import { glyph, inscribe } from '../lib/tongue';
   import type { StageLayer } from './ArcaneStage.svelte';
   import { whenIdle } from '../lib/idle';
 
   // The plate is built once, the first time a circle is mounted, or before
-  // that in an idle moment after the page has loaded, so its geometry
-  // never weighs on the page's first frames.
+  // that in an idle moment when a page about to show it asks (`warm`, through
+  // circles.ts), so its geometry never weighs on a page's first frames and
+  // a page never builds a circle it won't show.
   let built: StageLayer[] | undefined;
   const build = (): StageLayer[] => {
     // The rose, a sibling of the rune circle (ArcaneCircle; see
@@ -44,7 +45,7 @@
     const O: Pt = [0, 0];
     /** The point at `a` degrees clockwise from the top, `r` from the centre. */
     const at = (a: number, r: number) => atAbout(O, a, r);
-    const circle = (r: number) => `M0 ${f(-r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(r)}A${f(r)} ${f(r)} 0 1 1 0 ${f(-r)}Z`;
+    const circle = (r: number) => round(O, r);
     const dist = (p: Pt, q: Pt) => Math.hypot(p[0] - q[0], p[1] - q[1]);
     const len = (p: Pt) => Math.hypot(p[0], p[1]);
     /** What's left of [lo, hi] once the `cuts` are taken out. */
@@ -498,7 +499,7 @@
       const R = 1.25;
       const [dy, dx] = [5.5, 4];
       const pts = rows.map((n, i) => (n === 1 ? [[0, (i - 1.5) * dy]] : [[-dx, (i - 1.5) * dy], [dx, (i - 1.5) * dy]]) as Pt[]);
-      const points = pts.flat().map(([x, y]) => `M${f(x)} ${f(y - R)}A${R} ${R} 0 1 1 ${f(x)} ${f(y + R)}A${R} ${R} 0 1 1 ${f(x)} ${f(y - R)}Z`).join('');
+      const points = pts.flat().map((q) => round(q, R)).join('');
       const joins = pts
         .slice(1)
         .flatMap((row, i) => row.flatMap((q) => pts[i].map((p) => [p, q] as [Pt, Pt])))
@@ -648,7 +649,6 @@
       const da = ((a1 - a0 + 540) % 360) - 180;
       return Array.from({ length: n + 1 }, (_, i) => atAbout(c, a0 + (da * i) / n, dist(c, p)));
     };
-    const ring = (c: Pt, r: number) => `M${pt([c[0], c[1] - r])}A${f(r)} ${f(r)} 0 1 1 ${pt([c[0], c[1] + r])}A${f(r)} ${f(r)} 0 1 1 ${pt([c[0], c[1] - r])}Z`;
     // The lancet: as wide as the bars let it be at its foot, its sides
     // parallel, its arch two arcs each struck from the other's springing.
     const SPAN = FOOT_R * Math.sin((HALF * Math.PI) / 180) - BAR;
@@ -714,8 +714,8 @@
       for (let k = 0; k < LIGHTS; k++) {
         const a = k * 2 * HALF;
         const [g, sm] = [at(a + HALF, great.rc), at(a, small.rc)];
-        roundels += ring(g, great.rho) + ring(sm, small.rho);
-        mould += ring(g, great.rho - MOULD);
+        roundels += round(g, great.rho) + round(sm, small.rho);
+        mould += round(g, great.rho - MOULD);
         cusps += foils(g, a + HALF, great.rho - MOULD - 0.32, 4, 1.25);
       }
       // The morning star in the oculus.
@@ -906,7 +906,7 @@
     return LAYERS;
   };
   const plate = () => (built ??= build());
-  whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
+  export const warm = () => whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
 </script>
 
 <script lang="ts">

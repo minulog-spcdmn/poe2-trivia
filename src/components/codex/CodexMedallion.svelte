@@ -1,14 +1,13 @@
 <script lang="ts">
   import type { Component, Snippet } from 'svelte';
-  import MonadCircle from '../MonadCircle.svelte';
 
   // The medallion at the heart of each Codex page's summary, between its four
-  // figures: a rune circle (`circle`, each page its own; the monad's unless
-  // told) round a dark disc and its track, the page's
+  // figures: a rune circle (`circle`, each page its own) round a dark disc
+  // and its track, the page's
   // figure inside (the children, styled by the page). `share` (0 to 1) fills
   // an arc along the track; without it there is none (Delve: depth has no end
   // to fill to). It takes its place in the summary's grid, the same on every page.
-  let { share, circle: Circle = MonadCircle, children }: { share?: number; circle?: Component<{ size?: string; strength?: number }>; children: Snippet } = $props();
+  let { share, circle: Circle, children }: { share?: number; circle: Component<{ size?: string; strength?: number }>; children: Snippet } = $props();
   const uid = $props.id();
 </script>
 

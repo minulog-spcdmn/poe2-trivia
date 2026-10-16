@@ -23,14 +23,16 @@ const blockOf = <T>(from: T[], seed: number, block: number) => {
 /**
  * The `n`th turn in a run of `from` seeded `seed`: each one once in every
  * block of as many turns as there are things, shuffled, and never the same
- * twice running.
+ * twice running (of two, simply in turn; of one, always that one).
  */
 export function turnOf<T>(n: number, from: T[], seed = 0): T {
   const size = from.length;
+  if (!size) throw new Error('turnOf: nothing to take turns');
+  if (size < 3) return from[(((n + (mix(seed, 0) % size)) % size) + size) % size];
   const block = Math.floor(n / size);
   const order = blockOf(from, seed, block);
   // (A block's first is never the last before it: swapping its first two
   // leaves its own last where it was, so each block's last is its own.)
-  if (size > 2 && order[0] === blockOf(from, seed, block - 1)[size - 1]) [order[0], order[1]] = [order[1], order[0]];
+  if (order[0] === blockOf(from, seed, block - 1)[size - 1]) [order[0], order[1]] = [order[1], order[0]];
   return order[((n % size) + size) % size];
 }

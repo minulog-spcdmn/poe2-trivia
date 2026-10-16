@@ -15,3 +15,9 @@ test('taking turns: never the same twice running, each once in every few', () =>
   }
   assert.equal(turnOf(5, things, 7), turnOf(5, things, 7));
 });
+
+test('taking turns of two, and of one', () => {
+  for (let n = -5; n < 50; n++) assert.notEqual(turnOf(n, ['monad', 'eye'], 3), turnOf(n + 1, ['monad', 'eye'], 3));
+  assert.equal(turnOf(9, ['eye']), 'eye');
+  assert.throws(() => turnOf(0, []));
+});

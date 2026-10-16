@@ -2,7 +2,7 @@
 // (ArcaneCircle and its siblings), the plate behind the item's name (NamePlate) and the
 // achievements' seals (AchievementSeal).
 
-import { angleOf, at as atAbout, hatch, line, meeting } from './arcane.ts';
+import { angleOf, at as atAbout, hatch, line, meeting, ring } from './arcane.ts';
 
 type Pt = [number, number];
 const f = (v: number) => v.toFixed(2);
@@ -42,7 +42,7 @@ export const PLANETS = [
 ];
 
 /** A circle about (x, y), as path data. */
-const round = (x: number, y: number, r: number) => `M${f(x)} ${f(y - r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y + r)}A${f(r)} ${f(r)} 0 1 1 ${f(x)} ${f(y - r)}Z`;
+const round = (x: number, y: number, r: number) => ring([x, y], r);
 /**
  * The seven planets again, as the rune circle's band and the monad's star
  * hold them: drawn on a grid of about ±4.5 with the pen's curves and flicks,
@@ -174,7 +174,7 @@ function woven(polys: Pt[][]): string {
     .join('');
 }
 
-const circle = (cx: number, cy: number, r: number) => `M${f(cx)} ${f(cy - r)}A${f(r)} ${f(r)} 0 1 1 ${f(cx)} ${f(cy + r)}A${f(r)} ${f(r)} 0 1 1 ${f(cx)} ${f(cy - r)}Z`;
+const circle = (cx: number, cy: number, r: number) => ring([cx, cy], r);
 
 /** An arc of the circle about (cx, cy) from `a0` to `a1` degrees, clockwise from the top. */
 function arcPath(cx: number, cy: number, r: number, a0: number, a1: number): string {

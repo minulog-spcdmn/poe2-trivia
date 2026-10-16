@@ -12,8 +12,7 @@
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { circleAt, QUESTION_CIRCLES } from './circles';
-  import BlackSunCircle from './BlackSunCircle.svelte';
+  import { questionCircle } from './circles';
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
@@ -49,7 +48,7 @@
   const q = $derived(s.question!);
   // The circle behind the art: Delve's own black sun in a Delve, else a
   // different one from question to question (the same for every player).
-  const Circle = $derived(s.delve ? BlackSunCircle : circleAt(s.turnCount, QUESTION_CIRCLES, s.startedAt ?? 0));
+  const Circle = $derived(questionCircle(s));
   const reveal = $derived(s.phase === 'reveal' ? s.reveal : null);
   /** The question's timer, at the task line's right end (phones have it in the pinned scoreboard, Game.svelte). */
   let { timer }: { timer?: Snippet } = $props();

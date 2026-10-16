@@ -8,8 +8,9 @@
   import { whenIdle } from '../lib/idle';
 
   // The plate is built once, the first time a circle is mounted, or before
-  // that in an idle moment after the page has loaded, so its geometry
-  // never weighs on the page's first frames.
+  // that in an idle moment when a page about to show it asks (`warm`, through
+  // circles.ts), so its geometry never weighs on a page's first frames and
+  // a page never builds a circle it won't show.
   let built: StageLayer[] | undefined;
   const build = (): StageLayer[] => {
 
@@ -453,7 +454,7 @@
     return LAYERS;
   };
   const plate = () => (built ??= build());
-  whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
+  export const warm = () => whenIdle(() => plate(), { timeout: 5000, fallback: 1500 });
 </script>
 
 <script lang="ts">

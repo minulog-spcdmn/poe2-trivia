@@ -86,7 +86,10 @@
   // animation's), not from when this ran: a slow first frame starts the CSS
   // animations late, and a layer swapped on the page's clock would jump to
   // drawn before its lines had finished.
-  const due = (l: StageLayer) => Math.max(0, Math.min(l.lines.start, l.glow.start) - AHEAD);
+  const due = (l: StageLayer) => {
+    if (!l.lines || !l.glow) throw new Error(`ArcaneStage: layer "${l.name}" has no plate (is it named as its plate is?)`);
+    return Math.max(0, Math.min(l.lines.start, l.glow.start) - AHEAD);
+  };
   // (A circle's layers are fixed: it is drawn once, as it mounts.)
   let late = $state<Record<string, number>>(Object.fromEntries(untrack(() => layers).filter((l) => !due(l)).map((l) => [l.name, 0])));
   let drawn = $state<Record<string, true>>({});
