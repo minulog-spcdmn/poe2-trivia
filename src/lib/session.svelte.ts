@@ -32,9 +32,9 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
-import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, playerIdFor, roomSecret } from './guard';
+import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
-import { checkOwner, ownerProof, roomProof, type OwnerProof } from './ownerKey';
+import { checkJoin, checkVouch, joinProof, newChallenge, ownerUnlocked, roomProof, vouchProof } from './ownerKey';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -154,6 +154,13 @@ const MIN_HUMAN_MS = 200;
 const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
 /** The held name without the owner key's signature (names.ts): turned down like any name that isn't allowed. */
 const HELD_REFUSAL = 'That name is not allowed. Pick another name.';
+/** How long a hello under the held name waits for the host's challenge (hi), and a guest for the owner's answer to its own (ms). */
+const HI_WAIT_MS = 4000;
+const VOUCH_WAIT_MS = 8000;
+/** A check of the owner that came to nothing (the owner away, a host that doesn't pass it on) is tried again after this (ms). */
+const VOUCH_AGAIN_MS = 30000;
+/** Host: guests' challenges passed on to the owner and not yet answered, at most. */
+const MAX_VOUCHING = 64;
 /** Cap on the delay added to the host's own race answers. */
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
@@ -220,6 +227,8 @@ interface Guest {
   tab: string | null;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
+  /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
+  challenge: string;
   /** When the connection came in. */
   since: number;
   /** Whether its game is on screen and in use, as it last said (presence.ts). */
@@ -321,11 +330,29 @@ class Session {
   private seen = new Set<string>();
   /** Whom the state change under way announces, if anyone: their notice replaces the plain "joined" one. */
   private heralded: string | null = null;
-  /** The room's owner (GameState owner) once this device checked the signature: its code and id (noteOwner). */
+  /** The room's owner (GameState owner) once this device has it proven: its code and id (noteOwner). */
   private ownerChecked = $state<string | null>(null);
-  private ownerCheck: { key: string; result: Promise<boolean> } | null = null;
-  /** Guest under the held name: the owner key's signature for the room it joins, sent with its hello. */
-  private helloOwner: Promise<OwnerProof | null> | null = null;
+  /** Guest: its challenge out to the owner (vouch), and what the check comes to. */
+  private ownerCheck: { key: string; id: string; c: string; at: number; result: Promise<boolean>; answer: (sig: string) => void } | null = null;
+  /** Guest: the challenge the host sent as the link opened (hi). */
+  private hostHi: { conn: DataConnection; c: string } | null = null;
+  /** Host: guests' challenges passed on to the owner, and whom to tell the answer. */
+  private vouching = new Map<string, DataConnection>();
+  /** The owner's device: how fast it signs challenges a host passes on. */
+  private vouchLimit = new RateLimit(2, 30);
+  /**
+   * The name of the one player or spectator shown as the creator here
+   * (creator.ts): under the held name, with the owner proven on this device,
+   * and the only one under it (with a second spelling of it beside them,
+   * which only a lying host could seat, nobody is).
+   */
+  readonly creatorName = $derived.by(() => {
+    const s = this.state;
+    const o = s?.owner;
+    if (!s || !o || this.ownerChecked !== `${this.code} ${o.id}`) return null;
+    const held = [...s.players, ...(s.spectators ?? [])].filter((p) => isHeldName(p.name));
+    return held.length === 1 && held[0].id === o.id ? held[0].name : null;
+  });
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -628,7 +655,7 @@ class Session {
         }
         this.setState(s);
       }
-      void this.signOwnRoom(code);
+      this.signOwnRoom(code);
       this.startPings();
       this.watchOwnPresence();
     });
@@ -716,13 +743,17 @@ class Session {
       since: Date.now(),
       seen: { presence: 'here', since: Date.now() },
       slow: false,
+      challenge: newChallenge(),
     };
     this.guests.set(conn, guest);
     // The hello's clock starts once the connection is open; until then, only a much longer limit.
     let helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), OPEN_TIMEOUT_MS);
     conn.on('open', () => {
       clearTimeout(helloTimer);
-      if (this.guests.has(conn)) helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+      if (!this.guests.has(conn)) return;
+      helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+      // For a hello under the held name to sign (ownerKey.ts joinProof): fresh, so a signature seen once is of no use again.
+      this.send(conn, { t: 'hi', c: guest.challenge });
     });
     this.guardFrames(conn);
     conn.on('data', (raw) => {
@@ -758,29 +789,15 @@ class Session {
           if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
-          // (A guest on another version is told so first, whatever its name.)
-          if (!versionProblem(msg.v) && isHeldName(cleanName(msg.name))) {
-            // The held name only with the owner key's signature for this room and
-            // the id this guest plays under: the one it had, or the one its token
-            // makes (playerIdFor), which nobody else's token does.
-            guest.checking = true;
-            const { secret, owner } = msg;
-            void (async () => {
-              const id = this.secretToPlayer.get(secret) ?? (await playerIdFor(secret));
-              const ok = await checkOwner(this.code, id, owner);
-              guest.checking = false;
-              if (!this.guests.has(conn) || guest.playerId || !this.state) return;
-              try {
-                if (!ok || !owner) throw new ActionError(HELD_REFUSAL);
-                this.handleHello(conn, guest, secret, msg.name, msg.v, !!msg.watch, { id, sig: owner });
-              } catch (err) {
-                const message = err instanceof ActionError ? err.message : 'Something went wrong.';
-                this.dismiss(conn, { t: 'error', message });
-              }
-            })();
-            return;
-          }
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, msg.owner);
+        } else if (msg.t === 'vouch') {
+          if (guest.playerId) this.passVouch(conn, msg.c);
+        } else if (msg.t === 'vouched') {
+          // Only from the owner's own link, and only to whoever asked.
+          const asker = this.vouching.get(msg.c);
+          if (!asker || !guest.playerId || guest.playerId !== this.state.owner?.id) return;
+          this.vouching.delete(msg.c);
+          if (this.guests.has(asker)) this.send(asker, { t: 'vouched', c: msg.c, sig: msg.sig });
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -891,8 +908,8 @@ class Session {
     this.drop(conn);
   }
 
-  /** `owner`: the owner key's signature (checked) for the held name, and the id it names. */
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, owner?: { id: string; sig: OwnerProof }) {
+  /** `owner`: under the held name, the owner key's signature over this link's challenge (hi), checked here. */
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, owner?: string) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
@@ -908,17 +925,36 @@ class Session {
       this.dismiss(conn, { t: 'busy', message: busy });
       return;
     }
-    // (A signature names one id: the guest's own, should it have come in meanwhile under another name.)
-    if (owner && known && known !== owner.id) {
-      this.joins.rejected(secret, true);
-      throw new ActionError(HELD_REFUSAL);
+    if (isHeldName(cleanName(name))) {
+      // The held name only with the owner key's signature over this link's challenge (ownerKey.ts), checked first.
+      guest.checking = true;
+      void checkJoin(this.code, guest.challenge, owner).then((ok) => {
+        guest.checking = false;
+        if (!this.guests.has(conn) || guest.playerId || !this.state) return;
+        try {
+          if (!ok) {
+            this.joins.rejected(secret, !!known);
+            throw new ActionError(HELD_REFUSAL);
+          }
+          this.seat(conn, guest, secret, name, watch, true);
+        } catch (err) {
+          this.dismiss(conn, { t: 'error', message: err instanceof ActionError ? err.message : 'Something went wrong.' });
+        }
+      });
+      return;
     }
-    const playerId = known ?? owner?.id ?? newPlayerId();
+    this.seat(conn, guest, secret, name, watch, false);
+  }
+
+  /** A hello let in so far: the seat (or a spectator's place) it gets. `owner`: under the held name, its signature checked. */
+  private seat(conn: DataConnection, guest: Guest, secret: string, name: string, watch: boolean, owner: boolean) {
+    const known = this.secretToPlayer.get(secret);
+    const playerId = known ?? newPlayerId();
     let next: GameState;
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: owner.sig } : {}) }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -934,6 +970,8 @@ class Session {
         else this.drop(c);
       }
     guest.playerId = playerId;
+    // Its signature checked here: proven on this device as it comes in (noteOwner).
+    if (owner && next.owner?.id === playerId) this.ownerChecked = `${this.code} ${playerId}`;
     this.send(conn, { t: 'welcome', playerId });
     // Even when nobody is marked: a guest coming back may still hold marks from before it dropped.
     this.send(conn, { t: 'standing', s: this.standing });
@@ -1408,8 +1446,6 @@ class Session {
     this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
-    // Under the held name: signed for the id this guest's token makes, which the host gives it (guard.ts playerIdFor).
-    this.helloOwner = isHeldName(cleanName(name)) ? this.helloSecret.then((secret) => playerIdFor(secret)).then((id) => ownerProof(room, id)) : null;
     this.joinedAt = Date.now();
     this.armConnectTimeout();
     this.startClientPeer();
@@ -1662,6 +1698,15 @@ class Session {
       const msg = parseHostMsg(raw);
       if (!msg) return;
       switch (msg.t) {
+        case 'hi':
+          this.hostHi = { conn, c: msg.c };
+          break;
+        case 'vouch':
+          void this.answerVouch(conn, msg.c);
+          break;
+        case 'vouched':
+          this.ownerCheck?.c === msg.c && this.ownerCheck.answer(msg.sig);
+          break;
         case 'welcome': {
           this.myPlayerId = msg.playerId;
           // Only now: a host on another version turns the hello down, and would
@@ -1739,7 +1784,7 @@ class Session {
       else this.planAttempt(RETRY_SOON_MS);
     });
     const secret = await this.helloSecret;
-    const owner = await this.helloOwner;
+    const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
       conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(owner ? { owner } : {}) });
     this.watchOwnPresence();
@@ -2260,37 +2305,87 @@ class Session {
   }
 
   /**
-   * Checks, once, the signature of whoever plays under the held name in this
-   * room (GameState owner, ownerKey.ts): the host passes it on, but a host
-   * can't be taken at its word either. The foil (creatorShown) and the
-   * creator's notice wait on it.
+   * Whether whoever the game says plays under the held name here (GameState
+   * owner) is proven on this device, finding out if it isn't yet. The host
+   * proves the owner as they come in (handleHello), or is the owner itself;
+   * a guest can't take the host at its word, and asks for its own challenge
+   * to be signed (vouch), which the host passes on to the owner's device.
+   * The foil (creatorName) and the creator's notice wait on it.
    */
   private noteOwner(s: GameState): Promise<boolean> {
     const o = s.owner;
     const code = this.code;
-    if (!o || !code || this.mode === 'local') return Promise.resolve(false);
-    const key = `${code} ${o.id} ${o.sig}`;
-    if (this.ownerCheck?.key === key) return this.ownerCheck.result;
-    const result = checkOwner(code, o.id, o.sig).then((ok) => {
-      if (ok && this.ownerCheck?.key === key) this.ownerChecked = `${code} ${o.id}`;
-      return ok;
+    if (!o || !code || (this.mode !== 'host' && this.mode !== 'client')) return Promise.resolve(false);
+    const key = `${code} ${o.id}`;
+    if (this.ownerChecked === key) return Promise.resolve(true);
+    if (this.mode === 'host') return Promise.resolve(false);
+    // This device's own player: its own word.
+    if (o.id === this.myPlayerId) {
+      if (ownerUnlocked()) this.ownerChecked = key;
+      return Promise.resolve(this.ownerChecked === key);
+    }
+    const was = this.ownerCheck;
+    if (was?.key === key && performance.now() - was.at < VOUCH_AGAIN_MS) return was.result;
+    const conn = this.hostConn;
+    if (!conn?.open || this.welcomedOn !== conn) return Promise.resolve(false);
+    const c = newChallenge();
+    let answer: (sig: string) => void = () => {};
+    const result = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), VOUCH_WAIT_MS);
+      answer = (sig) => {
+        clearTimeout(timer);
+        void checkVouch(code, o.id, c, sig).then((ok) => {
+          if (ok && this.code === code) this.ownerChecked = key;
+          resolve(ok);
+        });
+      };
     });
-    this.ownerCheck = { key, result };
+    this.ownerCheck = { key, id: o.id, c, at: performance.now(), result, answer };
+    conn.send({ t: 'vouch', c });
     return result;
   }
 
-  /** Whether the player or spectator `id` plays under the held name with a signature this device checked. */
+  /** Whether the player or spectator `id` is the owner, proven on this device. */
   ownerProven(id: string) {
     return this.ownerChecked === `${this.code} ${id}` && this.state?.owner?.id === id;
   }
 
-  /** Host under the held name (as the game has it: a reopened room keeps it, with no name typed): signs for its own player. */
-  private async signOwnRoom(code: string) {
+  /** Host: a guest's challenge for the owner, signed here when the host is the owner, or passed on to the owner's link. */
+  private passVouch(asker: DataConnection, c: string) {
+    const o = this.state?.owner;
+    if (!o || !this.ownerProven(o.id)) return;
+    if (o.id === this.priv.myPlayerId) {
+      void vouchProof(this.code, o.id, c).then((sig) => sig && this.guests.has(asker) && this.send(asker, { t: 'vouched', c, sig }));
+      return;
+    }
+    const owner = [...this.guests].find(([, g]) => g.playerId === o.id)?.[0];
+    if (!owner) return;
+    if (this.vouching.size >= MAX_VOUCHING) this.vouching.delete(this.vouching.keys().next().value!);
+    this.vouching.set(c, asker);
+    this.send(owner, { t: 'vouch', c });
+  }
+
+  /** The owner's device, as a guest: signs a challenge its host passed on, for the player it is here. */
+  private async answerVouch(conn: DataConnection, c: string) {
+    const me = this.myPlayerId;
+    if (!me || this.state?.owner?.id !== me || !this.vouchLimit.take()) return;
+    const sig = await vouchProof(this.code, me, c);
+    if (sig && this.hostConn === conn && conn.open) conn.send({ t: 'vouched', c, sig });
+  }
+
+  /** Guest under the held name: the host's challenge (hi) on this link, signed; null without it, or without the owner key. */
+  private async signHello(conn: DataConnection) {
+    const until = performance.now() + HI_WAIT_MS;
+    while (this.hostHi?.conn !== conn && performance.now() < until && this.hostConn === conn) await new Promise((r) => setTimeout(r, 50));
+    return this.hostHi?.conn === conn ? joinProof(this.code, this.hostHi.c) : null;
+  }
+
+  /** Host under the held name (as the game has it: a reopened room keeps it, with no name typed), holding the owner key. */
+  private signOwnRoom(code: string) {
     const me = this.priv.myPlayerId;
-    if (!isHeldName(this.state?.players.find((p) => p.id === me)?.name ?? '')) return;
-    const proof = await ownerProof(code, me);
-    if (!proof || this.mode !== 'host' || this.code !== code || !this.state) return;
-    this.setState(engine.apply(this.state, { type: 'owner', playerId: me, proof }, null));
+    if (!this.state || this.code !== code || !isHeldName(this.state.players.find((p) => p.id === me)?.name ?? '') || !ownerUnlocked()) return;
+    this.ownerChecked = `${code} ${me}`;
+    this.setState(engine.apply(this.state, { type: 'owner', playerId: me }, null));
   }
 
   /** The room's info for a probe: under the held name, signed over the probe's challenge (ownerKey.ts roomProof). */
@@ -2710,7 +2805,8 @@ class Session {
     this.heralded = null;
     this.ownerChecked = null;
     this.ownerCheck = null;
-    this.helloOwner = null;
+    this.hostHi = null;
+    this.vouching.clear();
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();
     this.helloSecret = null;

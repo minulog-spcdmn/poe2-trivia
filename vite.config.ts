@@ -254,9 +254,12 @@ export default defineConfig(({ command, mode }) => {
   // A channel named wrongly stops here, rather than quietly playing in the live game. The local
   // one's rooms are this machine's: set before Vite reads the env, so the app sees import.meta.env.VITE_LOCAL_ID.
   if (channelOf({ VITE_CHANNEL: env.VITE_CHANNEL, DEV: command === 'serve' }) === 'local') process.env.VITE_LOCAL_ID ??= localId();
-  // The live game never goes out without the owner key's public half: nobody, the creator included, could play under the held name.
-  if (command === 'build' && channelOf({ VITE_CHANNEL: env.VITE_CHANNEL }) === 'live' && /OWNER_PUBLIC_KEY = ''/.test(readFileSync(`${process.cwd()}/src/lib/ownerKey.ts`, 'utf8')))
-    throw new Error('OWNER_PUBLIC_KEY in src/lib/ownerKey.ts is empty. Run node --experimental-strip-types scripts/owner-key.mjs "<the owner words>" and paste what it prints there.');
+  // Without the owner key's public half, nobody (the creator included) can play under the held name. Said loudly, in the
+  // deploy's summary too, but not in the way: everything else goes out as it should.
+  if (command === 'build' && channelOf({ VITE_CHANNEL: env.VITE_CHANNEL }) === 'live' && /OWNER_PUBLIC_KEY = ''/.test(readFileSync(`${process.cwd()}/src/lib/ownerKey.ts`, 'utf8'))) {
+    const text = 'OWNER_PUBLIC_KEY in src/lib/ownerKey.ts is empty, so nobody can play under the held name. Run node --experimental-strip-types scripts/owner-key.mjs "<the owner words>" and paste what it prints there.';
+    console.warn(process.env.GITHUB_ACTIONS ? `::warning::${text}` : `\x1b[33m${text}\x1b[0m`);
+  }
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',

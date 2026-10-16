@@ -9,7 +9,7 @@ const player = (id: string, name: string, hue = 0): Player => ({ id, name, score
 /** A room, its held name signed for (the signature itself is the session's to check, ownerKey.ts), unless `signed` is false. */
 function room(players: Player[], spectators: { id: string; name: string }[] = [], phase: GameState['phase'] = 'lobby', signed = true): GameState {
   const held = [...players, ...spectators].find((o) => isHeldName(o.name));
-  const owner = signed && held ? { owner: { id: held.id, sig: 'x'.repeat(86) } } : {};
+  const owner = signed && held ? { owner: { id: held.id } } : {};
   return { ...createGame('host'), phase, players, spectators, ...owner };
 }
 
@@ -87,6 +87,6 @@ test("the held name without the owner key's signature for that player is nobody'
   assert.equal(creatorArrival(before, room([host, zoe], [], 'lobby', false), seen), null);
   const other = new Set<string>();
   creatorArrival(null, before, other);
-  const signedForAnother = { ...room([host, zoe]), owner: { id: 'host', sig: 'x'.repeat(86) } };
+  const signedForAnother = { ...room([host, zoe]), owner: { id: 'host' } };
   assert.equal(creatorArrival(before, signedForAnother, other), null);
 });

@@ -5,7 +5,7 @@
 import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
-import { isOwnerProof, type OwnerProof } from './ownerKey.ts';
+import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
 export const PROTOCOL_VERSION = 31;
 
@@ -28,7 +28,7 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
-   * `owner`: the owner key's signature for this room and the id this guest's token makes, to play under the held name (ownerKey.ts).
+   * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
@@ -36,11 +36,20 @@ export type ClientMsg =
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
   | { t: 'cursor'; at: CursorAt | null }
   /** Whether this player's game is on screen and in use (presence.ts), sent when it changes. */
-  | { t: 'presence'; p: Presence };
+  | { t: 'presence'; p: Presence }
+  /** Asks for the owner key's signature, over this challenge, on the player under the held name (ownerKey.ts vouchProof). */
+  | { t: 'vouch'; c: string }
+  /** The owner's device: its signature over a challenge the host passed on (vouch). */
+  | { t: 'vouched'; c: string; sig: OwnerProof };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
+  /** As a link opens: a challenge for a hello under the held name to be signed over (ownerKey.ts joinProof). */
+  | { t: 'hi'; c: string }
   | { t: 'welcome'; playerId: string }
+  /** To the owner's device: a guest's challenge to sign (vouchProof). To that guest: the signature. */
+  | { t: 'vouch'; c: string }
+  | { t: 'vouched'; c: string; sig: OwnerProof }
   | { t: 'state'; state: GameState; now: number }
   /**
    * `askedAt`: an answer to that question was turned down, so it may be
@@ -118,6 +127,10 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
     }
     case 'presence':
       return raw.p === 'here' || raw.p === 'idle' || raw.p === 'away' ? { t: 'presence', p: raw.p } : null;
+    case 'vouch':
+      return isChallenge(raw.c) ? { t: 'vouch', c: raw.c } : null;
+    case 'vouched':
+      return isChallenge(raw.c) && isOwnerProof(raw.sig) ? { t: 'vouched', c: raw.c, sig: raw.sig } : null;
     case 'action': {
       const a = raw.action;
       if (!isObj(a)) return null;
@@ -163,6 +176,11 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   const tile = raw.tile === undefined || isInt(raw.tile, 0, 16);
   switch (raw.t) {
+    case 'hi':
+    case 'vouch':
+      return isChallenge(raw.c) ? { t: raw.t, c: raw.c } : null;
+    case 'vouched':
+      return isChallenge(raw.c) && isOwnerProof(raw.sig) ? { t: 'vouched', c: raw.c, sig: raw.sig } : null;
     case 'welcome':
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {

@@ -209,3 +209,16 @@ test("a host's state with a clock that isn't a time is dropped", () => {
   for (const now of [NaN, Infinity, -Infinity, '1'])
     assert.equal(parseHostMsg({ t: 'state', state, now }), null);
 });
+
+test("the owner key's challenges and signatures pass only in shape", () => {
+  const c = 'c'.repeat(22);
+  const sig = 's'.repeat(86);
+  assert.deepEqual(parseClientMsg({ t: 'vouch', c }), { t: 'vouch', c });
+  assert.deepEqual(parseClientMsg({ t: 'vouched', c, sig }), { t: 'vouched', c, sig });
+  assert.equal(parseClientMsg({ t: 'vouch', c: 'short' }), null);
+  assert.equal(parseClientMsg({ t: 'vouched', c, sig: 'x' }), null);
+  assert.deepEqual(parseHostMsg({ t: 'hi', c }), { t: 'hi', c });
+  assert.deepEqual(parseHostMsg({ t: 'vouch', c }), { t: 'vouch', c });
+  assert.deepEqual(parseHostMsg({ t: 'vouched', c, sig }), { t: 'vouched', c, sig });
+  assert.equal(parseHostMsg({ t: 'hi', c: '<script>' }), null);
+});

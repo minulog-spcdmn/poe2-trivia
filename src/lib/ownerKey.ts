@@ -4,15 +4,13 @@
 // The key is a few random words. Opening the site once with ?owner=<words>
 // turns them (PBKDF2, slow on purpose) into an Ed25519 signing key, and the
 // device keeps it if its public half is OWNER_PUBLIC_KEY, the only part in
-// the source. Online, the owner's device signs the room's code with the
-// player id it plays under there (ownerProof; a guest's id is the one its
-// room token makes, guard.ts playerIdFor, so nobody else can play under the
-// id a signature names). The host lets the held name in only with a
-// signature that checks out, and passes it on in the game (GameState
-// owner), where every device checks it again (checkOwner). A room's listing
-// is signed afresh for each probe, over a challenge the prober picks
-// (roomProof), so an old one can't be shown again. Hot-seat, nobody else
-// looks: there it is this device's own word (ownerUnlocked).
+// the source. Whoever needs to know signs nothing over: they send a fresh
+// challenge, and the owner's device signs that, so no signature is ever of
+// use again. A host lets the held name in only with its challenge signed
+// (joinProof); every guest that sees the name asks, through the host, for
+// its own challenge to be signed for the player under it (vouchProof); and
+// a room's listing is signed over each probe's (roomProof). Hot-seat,
+// nobody else looks: there it is this device's own word (ownerUnlocked).
 //
 // Ed25519 comes from @noble/ed25519 (it needs no more of Web Crypto than
 // SHA-512, which every browser the game runs in has, unlike Ed25519 itself).
@@ -34,7 +32,7 @@ const STORED = 'poe2trivia.owner';
 
 /** A signature in base64url (64 bytes). */
 const SIG = /^[A-Za-z0-9_-]{86}$/;
-/** A probe's challenge: random, base64url. */
+/** A challenge: random, base64url (newChallenge). */
 const CHALLENGE = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** The owner key's signature (base64url). */
@@ -43,11 +41,12 @@ export type OwnerProof = string;
 export const isOwnerProof = (v: unknown): v is OwnerProof => typeof v === 'string' && SIG.test(v);
 export const isChallenge = (v: unknown): v is string => typeof v === 'string' && CHALLENGE.test(v);
 
-/** A fresh challenge for a probe to have a listing signed over. */
+/** A fresh challenge, for the owner key to sign over. */
 export const newChallenge = () => base64url(crypto.getRandomValues(new Uint8Array(16)));
 
-/** What the owner signs: playing in room `code` as player `what`, or hosting it, over a prober's challenge. */
-const signed = (what: 'player' | 'room', code: string, about: string) => new TextEncoder().encode(`poe2.quest ${what} ${code} ${about}`);
+/** What the owner signs: joining room `code`, playing in it as a player, or hosting it; always over someone's challenge. */
+type What = 'join' | 'player' | 'room';
+const signed = (what: What, code: string, about: string) => new TextEncoder().encode(`poe2.quest ${what} ${code} ${about}`);
 
 /** The signing key's 32-byte seed from the words. Case, spaces and dashes don't count ("Ember Tower" is "ember-tower"). */
 async function seedOf(words: string): Promise<Uint8Array> {
@@ -95,7 +94,7 @@ export async function unlockOwner(words: string, key = OWNER_PUBLIC_KEY): Promis
   }
 }
 
-async function sign(what: 'player' | 'room', code: string, about: string, key: string): Promise<OwnerProof | null> {
+async function sign(what: What, code: string, about: string, key: string): Promise<OwnerProof | null> {
   const seed = storedSeed(key);
   if (!seed) return null;
   try {
@@ -105,13 +104,7 @@ async function sign(what: 'player' | 'room', code: string, about: string, key: s
   }
 }
 
-/** This device's signature for playing in room `code` as player `playerId`; null unless it holds the owner key. */
-export const ownerProof = (code: string, playerId: string, key = OWNER_PUBLIC_KEY) => sign('player', code, playerId, key);
-
-/** This device's signature on its room's listing, over a prober's challenge; null unless it holds the owner key. */
-export const roomProof = (code: string, challenge: string, key = OWNER_PUBLIC_KEY) => sign('room', code, challenge, key);
-
-async function check(what: 'player' | 'room', code: string, about: string, proof: unknown, key: string): Promise<boolean> {
+async function check(what: What, code: string, about: string, proof: unknown, key: string): Promise<boolean> {
   if (!key || !isOwnerProof(proof)) return false;
   const pub = fromBase64url(key);
   const sig = fromBase64url(proof);
@@ -123,8 +116,19 @@ async function check(what: 'player' | 'room', code: string, about: string, proof
   }
 }
 
-/** Whether `proof` is the owner's signature for playing in room `code` as player `playerId`. */
-export const checkOwner = (code: string, playerId: string, proof: unknown, key = OWNER_PUBLIC_KEY) => check('player', code, playerId, proof, key);
+/** This device's signature for joining room `code` under the held name, over the host's challenge; null unless it holds the owner key. */
+export const joinProof = (code: string, challenge: string, key = OWNER_PUBLIC_KEY) => sign('join', code, challenge, key);
+/** Whether `proof` is the owner's signature for joining room `code`, over this host's `challenge`. */
+export const checkJoin = (code: string, challenge: string, proof: unknown, key = OWNER_PUBLIC_KEY) => check('join', code, challenge, proof, key);
 
+/** This device's signature that it plays as `playerId` in room `code`, over a guest's challenge; null unless it holds the owner key. */
+export const vouchProof = (code: string, playerId: string, challenge: string, key = OWNER_PUBLIC_KEY) =>
+  sign('player', code, `${playerId} ${challenge}`, key);
+/** Whether `proof` is the owner's signature that it plays as `playerId` in room `code`, over this guest's `challenge`. */
+export const checkVouch = (code: string, playerId: string, challenge: string, proof: unknown, key = OWNER_PUBLIC_KEY) =>
+  check('player', code, `${playerId} ${challenge}`, proof, key);
+
+/** This device's signature on its room's listing, over a prober's challenge; null unless it holds the owner key. */
+export const roomProof = (code: string, challenge: string, key = OWNER_PUBLIC_KEY) => sign('room', code, challenge, key);
 /** Whether `proof` is the owner's signature on room `code`'s listing, over this prober's `challenge`. */
 export const checkRoom = (code: string, challenge: string, proof: unknown, key = OWNER_PUBLIC_KEY) => check('room', code, challenge, proof, key);

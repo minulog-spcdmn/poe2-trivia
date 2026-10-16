@@ -21,9 +21,12 @@ test('look-alike letters from any script count as the Latin letters they pass fo
   assert.equal(nameSkeleton('νoid'), nameSkeleton('Void'));
   assert.equal(nameSkeleton('ηova'), nameSkeleton('Nova'));
   assert.match(nameProblem('Ᏼob', ['Bob']) ?? '', /looks too much like/);
-  // Names of their own in other scripts stay theirs.
+  // Names of their own in other scripts stay theirs, told apart by their own letters.
   assert.equal(nameProblem('Мария', ['Bob']), null);
   assert.equal(nameProblem('さくら', ['Bob']), null);
+  assert.equal(nameProblem('هاني', ['هادي']), null);
+  assert.equal(nameProblem('حامد', ['דוד']), null);
+  assert.match(nameProblem('هادي', ['هادي']) ?? '', /looks too much like/);
 });
 
 test('characters that draw nothing, or many letters wide, are taken out of a name', () => {

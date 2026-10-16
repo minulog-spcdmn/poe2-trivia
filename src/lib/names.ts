@@ -45,14 +45,18 @@ export function cleanName(raw: unknown): string {
 /** A name's first letter, capitalised, for its avatar ('' for none). */
 export const initialOf = (name: string) => (Array.from(name.trim())[0] ?? '').toUpperCase();
 
-/** What a name "looks like": lowercase ASCII-ish letters only. */
+/**
+ * What a name "looks like": its letters, lower case, each that passes for a
+ * Latin one as that one. Letters of other scripts that don't stay as they
+ * are, so names written in them are told apart by their own letters.
+ */
 export function nameSkeleton(name: string): string {
   const folded = Array.from(name.normalize('NFKD').toLowerCase())
     .map((c) => CONFUSABLES[c] ?? lookalikeOf(c) ?? c)
     .join('')
     .replace(/\p{M}/gu, '')
-    .replace(/[^a-z]/g, '')
-    .replace(/(.)\1+/g, '$1') // "Hoost" ~ "Host"
+    .replace(/\P{L}/gu, '')
+    .replace(/(.)\1+/gu, '$1') // "Hoost" ~ "Host"
     .replace(/rn/g, 'm')
     .replace(/vv/g, 'w')
     .replace(/i/g, 'l');

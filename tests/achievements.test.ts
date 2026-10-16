@@ -638,7 +638,7 @@ test('Through the Veil: race questions taken before a quarter of the art burned 
 });
 
 test('Usurper: a win over the creator, never as the creator, nor over the name without her signature', () => {
-  const signed = (s: GameState): GameState => ({ ...s, owner: { id: 'p1', sig: 'x'.repeat(86) } });
+  const signed = (s: GameState): GameState => ({ ...s, owner: { id: 'p1' } });
   const { engine, s } = setup(['Ash', 'zoe_arcana']);
   const r = play(engine, signed(s), 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q)));
   assert.ok(r.earned.includes('usurper'));

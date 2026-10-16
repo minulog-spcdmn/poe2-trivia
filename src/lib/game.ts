@@ -2,7 +2,6 @@
 // place this runs; everyone else just renders the state it broadcasts.
 
 import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
-import type { OwnerProof } from './ownerKey.ts';
 import { RUBY } from './palette.ts';
 import type { Looks } from './looks.ts';
 import {
@@ -978,11 +977,12 @@ export interface GameState {
   /** Watching this game; they get a seat when the host starts the next one unless they `stay` (missing in older saves). */
   spectators?: Spectator[];
   /**
-   * Online: who plays under the held name (names.ts), with the owner key's
-   * signature for this room, which the host checked before letting them in
-   * and every device checks again (ownerKey.ts) before showing the foil.
+   * Online: who plays under the held name (names.ts), as the host says. The
+   * host let them in only with the owner key's signature over its own
+   * challenge; every other device asks for its own before it shows the foil
+   * (ownerKey.ts, session.svelte.ts noteOwner).
    */
-  owner?: { id: string; sig: OwnerProof };
+  owner?: { id: string };
   settings: Settings;
   /** Index into players of whose turn it is. */
   turn: number;
@@ -1028,10 +1028,10 @@ export type Action =
    * `returning`: set by the host for someone who was already in this room (may pass the lock).
    * `watch`: they'd rather watch than play (a spectator who stays one, see 'watch').
    */
-  /** `owner`: the owner key's signature, for the held name (the host checks it first, session.svelte.ts). */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: OwnerProof }
-  /** Host: its own player plays under the held name, with the owner key's signature for the room. */
-  | { type: 'owner'; playerId: string; proof: OwnerProof }
+  /** `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true }
+  /** Host: its own player plays under the held name (the host holds the owner key). */
+  | { type: 'owner'; playerId: string }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -1343,7 +1343,7 @@ export class Engine {
         if (from !== null && from !== action.playerId) throw new ActionError('Not allowed.');
         // The owner key's signature names whoever joins under the held name (a seat coming back keeps its own name, so it must be that).
         const own = (name: string) => {
-          if (action.owner && isHeldName(name)) s.owner = { id: action.playerId, sig: action.owner };
+          if (action.owner && isHeldName(name)) s.owner = { id: action.playerId };
         };
         const existing = s.players.find((p) => p.id === action.playerId);
         if (existing) {
@@ -1395,7 +1395,7 @@ export class Engine {
       }
       case 'owner': {
         if (!isHost) throw new ActionError('Not allowed.');
-        s.owner = { id: action.playerId, sig: action.proof };
+        s.owner = { id: action.playerId };
         break;
       }
       case 'rename': {

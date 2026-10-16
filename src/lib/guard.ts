@@ -261,14 +261,3 @@ export async function roomSecret(secret: string, code: string): Promise<string> 
   return base64url(new Uint8Array(await subtle.sign('HMAC', key, enc.encode(`room:${code}`))));
 }
 
-/**
- * The player id a host gives a newcomer under the held name (names.ts):
- * one its token (roomSecret) makes, which the newcomer can work out before
- * it joins, so the owner key can sign for that very id (ownerKey.ts
- * ownerProof). Nobody can find another token that makes the same id, so a
- * signature seen in the room is of no use to anyone else.
- */
-export async function playerIdFor(secret: string): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`player:${secret}`));
-  return base64url(new Uint8Array(hash)).slice(0, 16);
-}
