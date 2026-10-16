@@ -1,8 +1,7 @@
 // Visits and a few game events, counted by GoatCounter (poe2quest.goatcounter.com):
 // no cookies, nothing kept in the browser, no IP addresses stored. Only the
-// game's own page at poe2.quest counts; the beta, the dev server, the dev
-// pages and anyone asking not to be tracked (Global Privacy Control, Do Not
-// Track) never do. datenschutz.html says what is sent.
+// game's own page at poe2.quest counts; the beta, the dev server and the dev
+// pages never do. datenschutz.html says what is sent.
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
@@ -12,12 +11,11 @@ import type { GameState } from './game.ts';
 
 const ENDPOINT = 'https://poe2quest.goatcounter.com/count';
 
-/** Whether this page counts: the live game at poe2.quest, no robot driving it, nobody opted out. */
+/** Whether this page counts: the live game at poe2.quest, no robot driving it. */
 function counting(): boolean {
   if (CHANNEL !== 'live' || typeof location === 'undefined' || typeof navigator === 'undefined') return false;
   if (location.hostname !== 'poe2.quest' || (location.pathname !== '/' && location.pathname !== '/index.html')) return false;
-  const nav = navigator as Navigator & { globalPrivacyControl?: boolean };
-  return !nav.webdriver && !nav.globalPrivacyControl && nav.doNotTrack !== '1';
+  return !navigator.webdriver;
 }
 
 function send(params: Record<string, string>) {
