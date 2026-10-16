@@ -25,7 +25,7 @@
   import DrawnMark from './DrawnMark.svelte';
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
-  import { countEvent, type JoinVia } from '../lib/count';
+  import { LISTED_PARAM, countArrival, type JoinVia } from '../lib/count';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -33,7 +33,13 @@
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
   let invite = $state(cleanCode(params.get('room') ?? ''));
-  if (params.get('room')) countEvent('open/invite-link');
+  /** How a join of the room in the address started: an invite link, or a room tapped in the Open rooms list whose newer host it reloaded into. */
+  const inviteVia: JoinVia = params.has(LISTED_PARAM) ? 'open-rooms' : 'invite-link';
+  if (params.has(LISTED_PARAM)) {
+    const url = new URL(location.href);
+    url.searchParams.delete(LISTED_PARAM);
+    history.replaceState(history.state, '', url);
+  } else if (params.get('room')) countArrival('open/invite-link');
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -56,7 +62,7 @@
   // chosen in the lobby they open. Not over a game that's being resumed:
   // App resumes it on mount, after this, so look once that's had its turn.
   if (params.has(DELVE_LINK_PARAM)) {
-    countEvent('open/delve-link');
+    countArrival('open/delve-link');
     const url = new URL(location.href);
     url.searchParams.delete(DELVE_LINK_PARAM);
     history.replaceState(history.state, '', url);
@@ -481,7 +487,7 @@
     e?.preventDefault();
     const n = checkName(inviteName, inviteField);
     if (!n) return;
-    startJoin(invite, n, 'join', 'invite-link');
+    startJoin(invite, n, 'join', inviteVia);
   }
   function leaveInvite() {
     const url = new URL(location.href);
@@ -507,7 +513,7 @@
     leaveInvite();
     cursor = ENTRIES.indexOf('join');
     setTimeout(() => {
-      if (session.status === 'idle' && !session.state) startJoin(code, name, 'join', 'invite-link');
+      if (session.status === 'idle' && !session.state) startJoin(code, name, 'join', inviteVia);
     });
   } else if (opened.code) {
     // A first visit: the room is asked whose it is and how it stands, so the
