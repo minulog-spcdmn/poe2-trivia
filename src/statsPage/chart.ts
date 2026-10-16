@@ -1,4 +1,4 @@
-// What the ledger's charts share: round steps up the axis, and how numbers
+// What Analytics' charts share: round steps up the axis, and how numbers
 // and days are written on them.
 
 /** A round step for an axis that reaches `max` in about `ticks` steps. */

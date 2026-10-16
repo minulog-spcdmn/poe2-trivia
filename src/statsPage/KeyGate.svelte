@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The ledger's door: the GoatCounter API key it reads with, asked once and
+  // Analytics' door: the GoatCounter API key it reads with, asked once and
   // kept in this browser alone. Says where to make one (read-only), and why
   // it's safe on a page anyone could open.
   import { KEY_PAGE } from './api';
@@ -16,8 +16,8 @@
 </script>
 
 <form class="gate" onsubmit={submit}>
-  <h2>Open the ledger</h2>
-  <p>The ledger reads PoE2.Quest's counts from GoatCounter with an API key of yours. It stays in this browser and never leaves it for anywhere but GoatCounter.</p>
+  <h2>Open Analytics</h2>
+  <p>Analytics reads PoE2.Quest's counts from GoatCounter with an API key of yours. It stays in this browser and never leaves it for anywhere but GoatCounter.</p>
   <ol>
     <li>Open <a href={KEY_PAGE} target="_blank" rel="noreferrer">GoatCounter's API settings</a> (you may need to sign in).</li>
     <li>Make a new key with only <b>Read statistics</b> ticked.</li>
@@ -35,10 +35,10 @@
 <style>
   .gate {
     position: relative;
-    width: min(32rem, 100%);
+    width: min(36rem, 100%);
     margin: 3rem auto 0;
     padding: 1.8rem 1.6rem 1.6rem;
-    background: var(--plate);
+    background: var(--a-surface);
     border: 1px solid var(--line);
     border-radius: var(--radius);
   }
@@ -50,13 +50,13 @@
     pointer-events: none;
   }
   h2 {
-    font-size: 1.35rem;
+    font-size: 1.6rem;
     color: var(--gold-hi);
     margin-bottom: 0.6rem;
   }
   p,
   li {
-    color: var(--text);
+    color: var(--a-text);
   }
   ol {
     padding-left: 1.3rem;
@@ -77,12 +77,8 @@
   }
   label span {
     display: block;
-    font-family: var(--font-cinzel);
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
+    font-weight: 600;
+    color: var(--a-ink);
     margin-bottom: 0.35rem;
   }
   input {
@@ -92,9 +88,7 @@
     background: #0d0b08;
     border: 1px solid var(--line);
     border-radius: 3px;
-    /* Not Cinzel: a key's letters are case-sensitive, and Cinzel has capitals only. */
-    font-family: var(--font-body);
-    font-size: 1rem;
+    font: inherit;
   }
   input:focus {
     outline: none;
@@ -110,7 +104,7 @@
   }
   .small {
     margin: 1rem 0 0;
-    font-size: 0.88rem;
-    color: var(--muted);
+    font-size: 1rem;
+    color: var(--a-muted);
   }
 </style>

@@ -1,4 +1,4 @@
-// The ledger's numbers (stats.html): what GoatCounter counted for each path
+// Analytics' numbers (stats.html): what GoatCounter counted for each path
 // (lib/count.ts names them) worked into what the page shows. Pure, so the
 // tests can feed it.
 
@@ -15,9 +15,19 @@ export type Mode = 'turns' | 'race' | 'delve';
 export type Where = 'online' | 'hotseat';
 export const MODES: readonly Mode[] = ['turns', 'race', 'delve'];
 export const WHERES: readonly Where[] = ['online', 'hotseat'];
-/** The party sizes count.ts sorts games into, fewest first. */
-export const SIZES = ['1p', '2p', '3-4p', '5-8p', '9-12p'] as const;
-export type Size = (typeof SIZES)[number];
+/**
+ * How many played a game: exactly (`from` = `to`, "size/race-online-5p"), or,
+ * counted before sizes were exact, a range ("size/race-online-5-8p").
+ */
+export interface PartySize {
+  from: number;
+  to: number;
+}
+/** "5", or "5–8" for an older range. */
+export const sizeName = (s: PartySize) => (s.from === s.to ? String(s.from) : `${s.from}–${s.to}`);
+const sizeKey = (s: PartySize) => `${s.from}-${s.to}`;
+/** Exact sizes first, fewest first; a range after them, by where it starts. */
+const bySize = (a: PartySize, b: PartySize) => Number(a.from !== a.to) - Number(b.from !== b.to) || a.from - b.from || a.to - b.to;
 
 export const MODE_NAMES: Record<Mode, string> = { turns: 'Take turns', race: 'Race', delve: 'Delve' };
 
@@ -44,10 +54,10 @@ export interface ModeRow {
   where: Where;
   started: number;
   finished: number;
-  sizes: Record<Size, number>;
+  sizes: (PartySize & { count: number })[];
 }
 
-export interface Ledger {
+export interface Counts {
   days: string[];
   visitors: { total: number; perDay: number[] };
   games: { started: number; finished: number; perDay: number[]; finishedPerDay: number[]; rows: ModeRow[] };
@@ -71,7 +81,7 @@ export function daysBetween(from: string, to: string): string[] {
   return out;
 }
 
-export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
+export function countsOf(paths: PathCount[], days: string[]): Counts {
   const byPath = new Map(paths.map((p) => [p.path, p]));
   const count = (path: string) => byPath.get(path)?.count ?? 0;
   const perDay = (match: (path: string) => boolean) => {
@@ -85,8 +95,13 @@ export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
   for (const mode of MODES)
     for (const where of WHERES) {
       const key = `${mode}-${where}`;
-      const sizes = Object.fromEntries(SIZES.map((s) => [s, count(`size/${key}-${s}`)])) as Record<Size, number>;
-      const row = { mode, where, started: count(`play/${key}`), finished: count(`end/${key}`), sizes };
+      const sizes: ModeRow['sizes'] = [];
+      for (const p of paths) {
+        if (!p.path.startsWith(`size/${key}-`) || p.count <= 0) continue;
+        const m = /^(\d+)(?:-(\d+))?p$/.exec(p.path.slice(`size/${key}-`.length));
+        if (m) sizes.push({ from: Number(m[1]), to: Number(m[2] ?? m[1]), count: p.count });
+      }
+      const row = { mode, where, started: count(`play/${key}`), finished: count(`end/${key}`), sizes: sizes.sort(bySize) };
       if (row.started || row.finished) rows.push(row);
     }
 
@@ -131,14 +146,13 @@ export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
   };
 }
 
-/** A mode over both places it's played: games started and finished, where, and how many played. */
+/** A mode over both places it's played: games started and finished, and where. */
 export interface ModeSummary {
   mode: Mode;
   started: number;
   finished: number;
   online: number;
   hotseat: number;
-  sizes: Record<Size, number>;
 }
 
 export function modesOf(rows: ModeRow[]): ModeSummary[] {
@@ -151,9 +165,27 @@ export function modesOf(rows: ModeRow[]): ModeSummary[] {
       finished: sum((r) => r.finished),
       online: sum((r) => (r.where === 'online' ? r.started : 0)),
       hotseat: sum((r) => (r.where === 'hotseat' ? r.started : 0)),
-      sizes: Object.fromEntries(SIZES.map((s) => [s, sum((r) => r.sizes[s])])) as Record<Size, number>,
     };
   });
+}
+
+/** One size of party (or an older range of them) and how many games each mode had of it, played anywhere. */
+export interface SizeRow extends PartySize {
+  modes: Record<Mode, number>;
+  total: number;
+}
+
+/** Games by how many played them, a row for each size that came up, fewest first (older ranges last). */
+export function sizesOf(rows: ModeRow[]): SizeRow[] {
+  const out = new Map<string, SizeRow>();
+  for (const r of rows)
+    for (const s of r.sizes) {
+      const row = out.get(sizeKey(s)) ?? { from: s.from, to: s.to, modes: { turns: 0, race: 0, delve: 0 }, total: 0 };
+      row.modes[r.mode] += s.count;
+      row.total += s.count;
+      out.set(sizeKey(s), row);
+    }
+  return [...out.values()].sort(bySize);
 }
 
 /** Each ten depths of the descent: how many runs got there (ended there or deeper) and how many ended there. */
@@ -221,4 +253,51 @@ export function pointsChange(part: number, whole: number, partBefore: number, wh
 export function change(now: number, before: number): number | null {
   if (before <= 0) return null;
   return Math.round((100 * (now - before)) / before);
+}
+
+/** A day of Today's unique: how many answered (each player once), and the share who named the item, as a whole percent. */
+export interface DailyDay {
+  day: string;
+  right: number;
+  wrong: number;
+  answers: number;
+  named: number | null;
+}
+
+export function dailyDays(c: Counts): DailyDay[] {
+  return c.days.map((day, i) => {
+    const right = c.daily.rightPerDay[i] ?? 0;
+    const wrong = c.daily.wrongPerDay[i] ?? 0;
+    const answers = right + wrong;
+    return { day, right, wrong, answers, named: answers ? Math.round((100 * right) / answers) : null };
+  });
+}
+
+/**
+ * The hardest and easiest days' items, by the share who named them, `top` of
+ * each: days with at least `min` answers (all days answered, if none has so
+ * many), today left out as it's still going. More answers first between
+ * equal shares; a day is in only one of the two.
+ */
+export function hardestAndEasiest(days: DailyDay[], min = 3, top = 5): { hardest: DailyDay[]; easiest: DailyDay[] } {
+  const over = days.slice(0, -1).filter((d) => d.answers > 0);
+  const pool = over.some((d) => d.answers >= min) ? over.filter((d) => d.answers >= min) : over;
+  const rank = (dir: 1 | -1) => [...pool].sort((a, b) => dir * ((a.named ?? 0) - (b.named ?? 0)) || b.answers - a.answers || a.day.localeCompare(b.day));
+  const hardest = rank(1).slice(0, Math.min(top, Math.ceil(pool.length / 2)));
+  const easiest = rank(-1)
+    .filter((d) => !hardest.includes(d))
+    .slice(0, top);
+  return { hardest, easiest };
+}
+
+/** An average a day over the whole days (the last, still going, left out unless it's the only one). */
+export function perDay(values: number[]): number {
+  const whole = values.length > 1 ? values.slice(0, -1) : values;
+  return whole.length ? whole.reduce((n, v) => n + v, 0) / whole.length : 0;
+}
+
+/** Players of Today's unique a day on average, over the days it `asked` (the day still going left out), or null with none. */
+export function dailyAverage(c: Counts, asked: (day: string) => boolean = () => true): number | null {
+  const days = dailyDays(c).filter((d) => asked(d.day));
+  return days.length ? perDay(days.map((d) => d.answers)) : null;
 }

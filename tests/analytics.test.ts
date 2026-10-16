@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
-import { change, daysBetween, descentOf, deviceOf, grouped, ledgerOf, medianRange, modesOf, percent, pointsChange, sharePerDay, type PathCount } from '../src/statsPage/model.ts';
+import { change, countsOf, dailyAverage, dailyDays, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, perDay, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -18,13 +18,14 @@ test('days run from the first to the last, both included, across a month', () =>
 });
 
 test('the counts land where the page shows them', () => {
-  const l = ledgerOf(
+  const l = countsOf(
     [
       path('/', [10, 20, 30], false),
       path('play/race-online', [2, 3, 1]),
       path('end/race-online', [1, 3, 1]),
       path('size/race-online-3-4p', [2, 2, 0]),
       path('size/race-online-2p', [0, 1, 1]),
+      path('size/race-online-7p', [0, 0, 0]),
       path('play/delve-hotseat', [1, 0, 0]),
       path('daily/right', [3, 0, 1]),
       path('daily/wrong', [1, 1, 0]),
@@ -42,7 +43,12 @@ test('the counts land where the page shows them', () => {
   assert.equal(l.games.finished, 5);
   assert.deepEqual(l.games.perDay, [3, 3, 1]);
   const race = l.games.rows.find((r) => r.mode === 'race')!;
-  assert.deepEqual([race.started, race.finished, race.sizes['3-4p'], race.sizes['2p'], race.sizes['1p']], [6, 5, 4, 2, 0]);
+  assert.deepEqual([race.started, race.finished], [6, 5]);
+  // Exact sizes first, an older range after; none counted, none listed.
+  assert.deepEqual(race.sizes, [
+    { from: 2, to: 2, count: 2 },
+    { from: 3, to: 4, count: 4 },
+  ]);
   // Modes nobody played aren't listed.
   assert.deepEqual(
     l.games.rows.map((r) => `${r.mode}-${r.where}`),
@@ -64,14 +70,14 @@ test('the counts land where the page shows them', () => {
 });
 
 test('Delve ranges run from the top to the deepest one reached, gaps as zero', () => {
-  const l = ledgerOf([path('delve/depth-0-9', [5, 0, 0]), path('delve/depth-20-29', [1, 0, 0]), path('delve/depth-40-49', [0, 0, 0])], DAYS);
+  const l = countsOf([path('delve/depth-0-9', [5, 0, 0]), path('delve/depth-20-29', [1, 0, 0]), path('delve/depth-40-49', [0, 0, 0])], DAYS);
   assert.deepEqual(l.delve.ranges, [
     { from: 0, count: 5 },
     { from: 10, count: 0 },
     { from: 20, count: 1 },
   ]);
   assert.equal(l.delve.total, 6);
-  assert.deepEqual(ledgerOf([], DAYS).delve.ranges, []);
+  assert.deepEqual(countsOf([], DAYS).delve.ranges, []);
 });
 
 test('half the runs end by the median range', () => {
@@ -105,12 +111,12 @@ test('shares and changes', () => {
 });
 
 test('a mode adds up both places it is played', () => {
-  const l = ledgerOf(
-    [path('play/delve-online', [2, 0, 0]), path('play/delve-hotseat', [5, 0, 0]), path('end/delve-hotseat', [4, 0, 0]), path('size/delve-hotseat-1p', [5, 0, 0]), path('size/delve-online-2p', [2, 0, 0])],
+  const l = countsOf(
+    [path('play/delve-online', [2, 0, 0]), path('play/delve-hotseat', [5, 0, 0]), path('end/delve-hotseat', [4, 0, 0])],
     DAYS,
   );
   const delve = modesOf(l.games.rows).find((m) => m.mode === 'delve')!;
-  assert.deepEqual([delve.started, delve.finished, delve.online, delve.hotseat, delve.sizes['1p'], delve.sizes['2p']], [7, 4, 2, 5, 5, 2]);
+  assert.deepEqual([delve.started, delve.finished, delve.online, delve.hotseat], [7, 4, 2, 5]);
   // Every mode is there, played or not.
   assert.deepEqual(
     modesOf(l.games.rows).map((m) => [m.mode, m.started]),
@@ -191,10 +197,82 @@ test('a share per day carries over a day with nothing to share', () => {
 });
 
 test('games finished per day count the modes the page knows', () => {
-  const l = ledgerOf([path('play/race-online', [2, 2, 0]), path('end/race-online', [1, 2, 0]), path('end/foo-online', [5, 5, 5])], DAYS);
+  const l = countsOf([path('play/race-online', [2, 2, 0]), path('end/race-online', [1, 2, 0]), path('end/foo-online', [5, 5, 5])], DAYS);
   assert.deepEqual(l.games.finishedPerDay, [1, 2, 0]);
 });
 
 test('a share per day stops at 100, with more finished than started', () => {
   assert.deepEqual(sharePerDay([3], [1]), [100]);
+});
+
+test('games by how many played, every mode and place together, exactly', () => {
+  const l = countsOf(
+    [
+      path('play/delve-hotseat', [5, 0, 0]),
+      path('size/delve-hotseat-1p', [5, 0, 0]),
+      path('play/delve-online', [2, 0, 0]),
+      path('size/delve-online-2p', [2, 0, 0]),
+      path('play/race-online', [9, 0, 0]),
+      path('size/race-online-2p', [1, 0, 0]),
+      path('size/race-online-11p', [3, 0, 0]),
+      path('size/race-online-9-12p', [5, 0, 0]),
+    ],
+    DAYS,
+  );
+  assert.deepEqual(
+    sizesOf(l.games.rows).map((r) => [sizeName(r), r.modes.turns, r.modes.race, r.modes.delve, r.total]),
+    [
+      ['1', 0, 0, 5, 5],
+      ['2', 0, 1, 2, 3],
+      ['11', 0, 3, 0, 3],
+      ['9–12', 0, 5, 0, 5],
+    ],
+  );
+});
+
+test("Today's unique by day: the hardest and easiest items, today left out", () => {
+  const days = daysBetween('2026-10-10', '2026-10-16');
+  const l = countsOf(
+    [
+      { path: 'daily/right', event: true, count: 0, days: { '2026-10-10': 1, '2026-10-11': 9, '2026-10-12': 2, '2026-10-13': 5, '2026-10-14': 0, '2026-10-16': 0 } },
+      { path: 'daily/wrong', event: true, count: 0, days: { '2026-10-10': 0, '2026-10-11': 1, '2026-10-12': 8, '2026-10-13': 5, '2026-10-14': 4, '2026-10-16': 9 } },
+    ],
+    days,
+  );
+  const d = dailyDays(l);
+  assert.deepEqual(
+    d.map((x) => [x.answers, x.named]),
+    [
+      [1, 100],
+      [10, 90],
+      [10, 20],
+      [10, 50],
+      [4, 0],
+      [0, null],
+      [9, 0],
+    ],
+  );
+  const { hardest, easiest } = hardestAndEasiest(d, 3, 2);
+  // The 10th has a single answer, under the 3 the rest have: not ranked. Nor today (the 16th).
+  assert.deepEqual(
+    hardest.map((x) => x.day),
+    ['2026-10-14', '2026-10-12'],
+  );
+  assert.deepEqual(
+    easiest.map((x) => x.day),
+    ['2026-10-11', '2026-10-13'],
+  );
+});
+
+test('an average a day leaves out the day still going', () => {
+  assert.equal(perDay([4, 6, 1]), 5);
+  assert.equal(perDay([3]), 3);
+  assert.equal(perDay([]), 0);
+});
+
+test('daily players on average count only the days it asked', () => {
+  const l = countsOf([path('daily/right', [0, 4, 1]), path('daily/wrong', [0, 2, 0])], DAYS);
+  assert.equal(dailyAverage(l), 3);
+  assert.equal(dailyAverage(l, (d) => d !== '2026-10-14'), 6);
+  assert.equal(dailyAverage(l, () => false), null);
 });

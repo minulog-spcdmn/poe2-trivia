@@ -1,4 +1,4 @@
-// Which point of a chart is being read, for both of the ledger's charts: a
+// Which point of a chart is being read, for Analytics' charts: a
 // mouse reads where it passes; a finger reads where it touches, and the note
 // stays until a touch lands outside the chart; the arrow keys step through
 // once the chart has focus, Escape puts the note away.

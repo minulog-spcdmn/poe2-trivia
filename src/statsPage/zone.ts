@@ -1,5 +1,5 @@
 // Days in the GoatCounter account's time zone: GoatCounter buckets its days
-// there, so the ledger cuts its periods at that zone's midnights, not this
+// there, so Analytics cuts its periods at that zone's midnights, not this
 // browser's, and every day it asks for lines up with a day it gets back.
 
 /** The IANA zone in GoatCounter's setting ("DE.Europe/Berlin": country, a dot, the zone), or UTC when it isn't one this browser knows. */

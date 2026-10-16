@@ -1,4 +1,4 @@
-// The ledger's line to GoatCounter's API (stats.html): read-only, with the
+// Analytics' line to GoatCounter's API (stats.html): read-only, with the
 // API key the owner pasted once, which stays in this browser
 // (lib/storage.ts) and is never in the code. GoatCounter lets a page call its
 // API from anywhere (CORS); the site's CSP lets this one reach it
@@ -9,21 +9,19 @@
 // two requests. So calls go out one at a time, 600ms apart. A preflight it
 // turns away fails as CORS, so the page sees no answer at all, not its 429;
 // a call that gets none is tried again, later each time. Every request is
-// written down (requestsLastHour), shared by the ledger's tabs, so updating
+// written down (requestsLastHour), shared by the page's tabs, so updating
 // by itself can stop well short of the hour's 500.
 
 import { COUNTER_ORIGIN } from '../lib/counter';
-import { readStored, readStoredStarting, removeStored, writeStored } from '../lib/storage';
+import { readStored, readStoredStarting, removeStored, removeStoredStarting, writeStored } from '../lib/storage';
 import type { PathCount } from './model';
 import { zoneOf } from './zone';
 
-const KEY = 'ledger.key';
-/**
- * Each tab's own log, `ledger.requests.<tab>` (so two tabs never write over
- * each other's), all read together, an older build's single
- * `ledger.requests` with them.
- */
-const LOG = 'ledger.requests';
+const KEY = 'analytics.key';
+/** What the page kept while it was called the ledger (on the beta only): the key is taken over, the rest cleared away. */
+const OLD = 'ledger.';
+/** Each tab's own log, `analytics.requests.<tab>` (so two tabs never write over each other's), all read together. */
+const LOG = 'analytics.requests';
 const TAB = `.${Math.random().toString(36).slice(2, 10)}`;
 /** GoatCounter's requests an hour from an address. */
 export const HOUR_LIMIT = 500;
@@ -37,7 +35,7 @@ const times = (raw: string, since: number): number[] => {
     return [];
   }
 };
-/** When each request of the last hour went out, this browser's ledger tabs together. */
+/** When each request of the last hour went out, this browser's Analytics tabs together. */
 export function requestsLastHour(): number[] {
   const since = Date.now() - HOUR;
   return readStoredStarting(LOG).flatMap(([, raw]) => times(raw, since));
@@ -58,7 +56,12 @@ function noteCall() {
 
 /** A read given up (a newer one took its place): its calls not yet sent never go. */
 export class Cancelled extends Error {}
-export const savedKey = () => readStored(KEY) ?? '';
+export function savedKey(): string {
+  const old = readStored(`${OLD}key`);
+  if (old !== null && readStored(KEY) === null) writeStored(KEY, old);
+  removeStoredStarting(OLD);
+  return readStored(KEY) ?? '';
+}
 export const saveKey = (key: string) => writeStored(KEY, key.trim());
 export const forgetKey = () => removeStored(KEY);
 

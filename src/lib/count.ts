@@ -116,10 +116,9 @@ export function countArrival(name: string) {
 
 // ---- games -------------------------------------------------------------------
 
-/** How many play, roughly: Delve its entrants, other games their seats. */
+/** How many play ("5p"): Delve its entrants, other games their seats. */
 function partySize(s: GameState): string {
-  const n = s.delve?.entrants.length ?? s.players.length;
-  return n <= 2 ? `${Math.max(1, n)}p` : n <= 4 ? '3-4p' : n <= 8 ? '5-8p' : '9-12p';
+  return `${Math.max(1, s.delve?.entrants.length ?? s.players.length)}p`;
 }
 
 /** A game's key: its mode, and on one device or online ("race-online", "turns-hotseat"). */
@@ -139,7 +138,7 @@ export function delveEndEvent(depth: number): string {
 /**
  * What a state change counts, on the device that runs the game (the host, or
  * hot-seat): a game starting, from the lobby or the last one's end
- * ("play/race-online", with "size/race-online-3-4p" for how many play), and
+ * ("play/race-online", with "size/race-online-3p" for how many play), and
  * a game decided ("end/race-online", a Delve run with its depths). The two
  * keys side by side say how many games are left unfinished. Nothing for a
  * game picked up after a reload (no `prev`): what it had reached was counted
