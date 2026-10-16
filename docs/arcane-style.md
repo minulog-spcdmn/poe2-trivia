@@ -147,7 +147,7 @@ The script nobody can read (`src/lib/tongue.ts`, `inscribe`) reads as writing, n
 
 ## The other plates
 
-The rune circle has three siblings, the same craft in other compositions, so one circle isn't behind everything. Each keeps every rule above (weights, glow, wear, cutting, hatching, the summoning's pace, its layers turning their own ways), and each has its own silhouette (a heptagram, a square over a hexagram, a pentagram in a briar, three interlaced rings), so they never read as one drawing reshuffled. Each is built around an idea of its own, not the eye circle's template reskinned: that read as cheap copies.
+The rune circle has three siblings, the same craft in other compositions, so one circle isn't behind everything. Each keeps every rule above (weights, glow, wear, cutting, hatching, the summoning's pace, its layers turning their own ways), and each has its own silhouette (a heptagram, a square over a hexagram, the rose of Venus's five loops, three interlaced rings), so they never read as one drawing reshuffled. Each is built around an idea of its own, not the eye circle's template reskinned: that read as cheap copies.
 
 Where each one stands:
 
@@ -159,15 +159,15 @@ Where each one stands:
 | Today's unique, the Codex's achievements | The rose |
 | The Codex's collection | The monad |
 
-Where a plate's heart has no eye or other living part (the rose), its still part is a solid point at the very centre (the stage's `point`): set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
+Every heart has a living part of its own (the eye's glance, the monad's turning sun, the rose's window and its swelling star), so none needs a solid point at the very centre. The stage's `point` is there for a plate that does: set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
 
 ### Motion within a ring
 
 Besides each ring's own turn, a part can move on its own while its ring carries it (`StageLayer` in `ArcaneStage.svelte`: a layer `within` another, about its own `pivot`), still a box moved on the compositor:
 
-- **Upright**: it turns back against its ring as fast as the ring turns, so it travels round but keeps its way up. Suns and moons have a right way up and keep it: the eye's Sol and Luna and the band's Luna, the rose's moons, Delve's eclipses; and the rose's key lies level, and the monad's seals (its angels, its letters, its great seal) stand upright.
-- **Turning about its own centre**: the eye's Sol turns slowly sunwise in his upright seal, as does the monad's sun within its ring; the monad's ouroboros chases its tails head first; Delve's eclipse coronas and its black sun turn slowly.
-- **Swaying**: the rose's buds sway on their stems from the briar, each to its own beat; the monad's moon rocks on its sun.
+- **Upright**: it turns back against its ring as fast as the ring turns, so it travels round but keeps its way up. Suns and moons have a right way up and keep it: the eye's Sol and Luna and the band's Luna, the rose's moons, Delve's eclipses; and the rose's seals and its cipher wheel, and the monad's seals (its angels, its letters, its great seal) stand upright.
+- **Turning about its own centre**: the eye's Sol turns slowly sunwise in his upright seal, as does the monad's sun within its ring; the inner ring of the rose's cipher wheel turns in its seal; the monad's ouroboros chases its tails head first; Delve's eclipse coronas and its black sun turn slowly.
+- **Swaying**: the monad's moon rocks on its sun.
 - **Breathing**: rays in two sets, long and short, swell and shrink a few percent out of step, so neighbouring rays keep changing length against each other (Delve's coronas); or in sectors one after another, so a slow swell runs round (the monad's glory). Only rays that end in the open: rays that pass under a strap or a band would show where they are cut.
 - **Giving way**: rays whose ends something on another layer turns past (the monad's glory under the ouroboros' heads, its square's glory under the band's seals) carry that thing's outline as a mask (`mask` on a `StageLayer`). The masked layer sits in a box turning with the layer it gives way to, which carries the mask as a CSS image, inside a box turning back the same, so the rays stay where they are and only the mask moves, all on the compositor; a ray is cut short only while something passes over it. Mask only what needs it: the square's own corners and the great seal are set to clear the band's seals instead.
 - **Never**: anything whose lines are cut to fit something on another layer (a find breaking out of its seal ring, rays passing under bands) stays as it is set. And no blinking or flashing: the circles' light only breathes.
@@ -185,14 +185,13 @@ Besides each ring's own turn, a part can move on its own while its ring carries 
 
 ### The rose
 
-`src/components/RoseCircle.svelte`, sub rosa, under the rose, the old sign of what is kept secret:
+`src/components/RoseCircle.svelte`, the rose of Venus and sub rosa, under the rose, the old sign of what is kept secret:
 
-- **Band**: the moon's eight phases in seals, full at the top, new at the bottom, waning down the right and waxing up the left, so light and dark lie unevenly round the circle; the script between them.
-- **A pentagram** of double straps woven over and under (`wovenPolygons`, one polygon crossing itself), its tips stopping short of the band and the full moon's seal. A rose leaf (a lens, a midrib, veins down one side) runs up each arm. A thorned briar is woven through the star, over and under.
-- **The key**, alone in the gap below, in the plate's one great seal, which breaks the briar: an ornate key (a quatrefoil bow, a shaded shaft, a warded bit), lying level.
-- **Four roses** in the other gaps, on stems from the briar, opening round from the key: closed, parting, half open, open, each a little larger and further open than the one before, the sepals spreading with them, all seen from the side, all ending at the same ring.
-- **A Tudor rose** at the heart, in the pentagon's ring: two rows of five round petals, each row's outline their union, each petal hatched down one side, a seeded disc at the centre, five hatched sepals behind.
-- **Motion**: band 240 s counter-clockwise, the star 160 s clockwise, the rose 100 s counter-clockwise; the moons and the key upright, the buds swaying.
+- **Band**: the moon's eight phases in seals, for the octaeteris (eight years after which the moon's phases and Venus come round together): full at the top, new at the bottom, waning down the right and waxing up the left, so light and dark lie unevenly round the circle; each drawn flat, the dark part cut in level strokes (never curved shading, which reads as a 3D globe); the script between them.
+- **The Sun's round** (r 73), a strap, and within it **Venus's path** as seen from the Earth, from her real periods (13 of her years to 8 of ours) and the real size of her orbit: an epitrochoid of five loops, drawn as a strap woven over and under itself, running in under the Sun's round wherever she is further out than he is.
+- **Seals in her five petals**, upright: below, the plate's one great seal, a cipher wheel (Alberti, Trithemius) laid over the petal and the Sun's round, a fixed ring of the script's letters round a ring that turns (`glyph` in `src/lib/tongue.ts`), an index, an eight-pointed star at its hub; above, the seal of Hagith (the Arbatel's Olympic spirit of Venus) and the nine chambers (AIQ BKR), the cipher such seals are written in; at the sides, Venus's two geomantic figures, Puella and Amissio, their points cut solid.
+- **Heart**: the rose made stone, a Gothic rose window struck with the compass: ten slender lancets radiating from the oculus, each closed by an equilateral pointed arch with a moulding inside; ten great roundels between their heads, each cusped into a pointed quatrefoil; a small plain roundel beyond each head; Venus's morning star in the oculus, five points ridged and hatched down one side. Between her five loops, five rays from its ring, ridged and hatched down one side, in a glory of fine rays that keeps to the open heart.
+- **Motion**: band 240 s counter-clockwise, the path 160 s clockwise, the window 100 s counter-clockwise, the oculus 60 s clockwise with the star swelling and ebbing in it; the moons, the seals and the wheel upright, the wheel's inner ring turning 70 s; the glory breathing in two sets.
 
 ### The black sun (Delve)
 

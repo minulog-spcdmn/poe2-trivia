@@ -134,3 +134,19 @@ export function inscribe(from: number, to: number, r: number, rnd: () => number,
   }
   return out;
 }
+
+/**
+ * Letter `i` of the script alone, without its headline, centred on 0, 0 at
+ * `k` times its drawn size (its letters stand about 2.4 high): for a
+ * cipher wheel's cells.
+ */
+export function glyph(i: number, k = 1) {
+  const { w, d } = LETTERS[((i % LETTERS.length) + LETTERS.length) % LETTERS.length];
+  return d.replace(/([MLHVCA])([^MLHVCAZ]*)/g, (_, cmd: string, args: string) => {
+    const n = args.trim().split(/[ ,]+/).filter(Boolean).map(Number);
+    if (cmd === 'H') return `H${f((n[0] - w / 2) * k)}`;
+    if (cmd === 'V') return `V${f(n[0] * k)}`;
+    if (cmd === 'A') return `A${f(n[0] * k)} ${f(n[1] * k)} ${n[2]} ${n[3]} ${n[4]} ${f((n[5] - w / 2) * k)} ${f(n[6] * k)}`;
+    return cmd + n.map((v, j) => f((j % 2 ? v : v - w / 2) * k)).join(' ');
+  });
+}
