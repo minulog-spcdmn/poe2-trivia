@@ -11,11 +11,17 @@ export const PROTOCOL_VERSION = 30;
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
 
+const GUEST_BEHIND = 'Your game is out of date. Reload the page to join.';
+const HOST_BEHIND = "The host's game is out of date. Ask them to reload the page.";
+
 /** Why a guest on protocol `v` can't join this host, or null when it can. */
 export function versionProblem(v: number): string | null {
   if (v === PROTOCOL_VERSION) return null;
-  return v < PROTOCOL_VERSION ? 'Your game is out of date. Reload the page to join.' : "The host's game is out of date. Ask them to reload the page.";
+  return v < PROTOCOL_VERSION ? GUEST_BEHIND : HOST_BEHIND;
 }
+
+/** Whether a host's refusal is about the versions (versionProblem's, or an older host's LEGACY_VERSION_TEXT), not the room (full, locked, a name). */
+export const isVersionRefusal = (message: string) => message === GUEST_BEHIND || message === HOST_BEHIND || message === LEGACY_VERSION_TEXT;
 
 /** The refusal a guest shows: an older host can't say which side is behind, so the guest says it for them. */
 export function versionRefusal(message: string): string {

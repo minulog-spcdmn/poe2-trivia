@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, referrerOf } from '../src/lib/count.ts';
+import { GameCounts, countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, referrerOf } from '../src/lib/count.ts';
+import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, versionProblem } from '../src/lib/protocol.ts';
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 
@@ -48,6 +49,15 @@ test('a referrer is another site without its query; this site, which may carry a
   assert.equal(referrerOf('https://www.reddit.com/r/PathOfExile2/comments/abc/?utm_source=x#top', 'https://poe2.quest/'), 'https://www.reddit.com/r/PathOfExile2/comments/abc/');
   assert.equal(referrerOf('https://poe2.quest/?room=ABC123', 'https://poe2.quest/'), '');
   assert.equal(referrerOf('', 'https://poe2.quest/'), '');
+  // An app's has no origin: its name, not "null".
+  assert.equal(referrerOf('android-app://com.reddit.frontpage/', 'https://poe2.quest/'), 'android-app://com.reddit.frontpage/');
+});
+
+test("a join turned down for the versions counts apart from one turned down by the room", () => {
+  assert.ok(isVersionRefusal(versionProblem(PROTOCOL_VERSION - 1)!));
+  assert.ok(isVersionRefusal(versionProblem(PROTOCOL_VERSION + 1)!));
+  assert.ok(isVersionRefusal(LEGACY_VERSION_TEXT));
+  assert.ok(!isVersionRefusal('The lobby is full.'));
 });
 
 test('a game counts as it starts, with how many play, and as it ends, under the same key', () => {
@@ -78,10 +88,25 @@ test('a Delve run ends as its last life goes, at the depth it went, once', () =>
   assert.deepEqual(gameEvents(fell, { ...fell, phase: 'over' }, true), []);
 });
 
-test("a Delve run with the host sitting it out still ends: it's the entrants' lives that count", () => {
-  const run = delve(game('delve', 2, 'question'), ['p1'], { p1: [4, 6] });
-  const fell = delve(game('delve', 2, 'reveal'), ['p1'], { p1: [4, 6, 9] });
+test('a run ends as the engine ends it: once nobody seated stands, whoever left', () => {
+  // p1 left the room still standing; p0, the one seated, has just perished.
+  const run = { ...delve(game('delve', 2, 'question'), ['p0', 'p1'], { p0: [2, 3] }), players: [player('p0')] };
+  const fell = { ...delve(game('delve', 2, 'reveal'), ['p0', 'p1'], { p0: [2, 3, 7] }), players: [player('p0')] };
   assert.deepEqual(gameEvents(run, fell, false), ['end/delve-online', 'delve/depth-0-9']);
+});
+
+test("a run's end counts once, even if someone comes back standing and falls again", () => {
+  const counts = new GameCounts();
+  const run = { ...delve(game('delve', 2, 'question'), ['p0', 'p1'], { p0: [2, 3] }), players: [player('p0')] };
+  const fell = { ...delve(game('delve', 2, 'reveal'), ['p0', 'p1'], { p0: [2, 3, 7] }), players: [player('p0')] };
+  assert.equal(counts.events(run, fell, false).length, 2);
+  const back = delve(game('delve', 2, 'question'), ['p0', 'p1'], { p0: [2, 3, 7], p1: [4] });
+  const fellAgain = delve(game('delve', 2, 'reveal'), ['p0', 'p1'], { p0: [2, 3, 7], p1: [4, 8, 9] });
+  assert.deepEqual(counts.events(fell, back, false), []);
+  assert.deepEqual(counts.events(back, fellAgain, false), []);
+  // The next run ends on its own.
+  const next = delve(game('delve', 2, 'question'), ['p0', 'p1'], { p0: [1], p1: [1, 2] }, 2);
+  assert.equal(counts.events(next, delve(game('delve', 2, 'reveal'), ['p0', 'p1'], { p0: [1, 2, 3], p1: [1, 2, 3] }, 2), false).length, 2);
 });
 
 test('a run together ends once nobody stands, not while someone does', () => {

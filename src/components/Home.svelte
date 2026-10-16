@@ -33,13 +33,14 @@
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
   let invite = $state(cleanCode(params.get('room') ?? ''));
-  /** How a join of the room in the address started: an invite link, or a room tapped in the Open rooms list whose newer host it reloaded into. */
+  /**
+   * How a join of the room in the address started: an invite link, or a room
+   * tapped in the Open rooms list whose newer host it reloaded into (its
+   * marker stays in the address with the room, through a reload, until
+   * leaveInvite takes both out).
+   */
   const inviteVia: JoinVia = params.has(LISTED_PARAM) ? 'open-rooms' : 'invite-link';
-  if (params.has(LISTED_PARAM)) {
-    const url = new URL(location.href);
-    url.searchParams.delete(LISTED_PARAM);
-    history.replaceState(history.state, '', url);
-  } else if (params.get('room')) countArrival('open/invite-link');
+  if (params.get('room') && inviteVia === 'invite-link') countArrival('open/invite-link');
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -492,6 +493,7 @@
   function leaveInvite() {
     const url = new URL(location.href);
     url.searchParams.delete('room');
+    url.searchParams.delete(LISTED_PARAM);
     // Older invite links named their host (?by=): the room says that now.
     url.searchParams.delete('by');
     url.searchParams.delete('first');

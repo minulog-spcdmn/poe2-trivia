@@ -8,7 +8,7 @@
 // invite link's carries the room's code. This sends only what's named here.
 
 import { CHANNEL, type Channel } from './channel.ts';
-import { livesOf, shownDepth, teamDepth } from './delve.ts';
+import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { SITE_URL } from './site.ts';
@@ -19,10 +19,11 @@ export function countsOn(at: { hostname: string; pathname: string }, channel: Ch
   return channel === 'live' && !robot && at.hostname === live.hostname && (at.pathname === live.pathname || at.pathname === `${live.pathname}index.html`);
 }
 
-const counting = () => typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
+/** Whether this page counts, settled as it loads (its address changes only in its query and hash after). */
+export const counting = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
 
 function send(params: Record<string, string>) {
-  if (!counting()) return;
+  if (!counting) return;
   const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
   try {
     if (navigator.sendBeacon?.(url)) return;
@@ -32,30 +33,18 @@ function send(params: Record<string, string>) {
   new Image().src = url;
 }
 
-/** This page was reloaded rather than arrived at: what came with the arrival was counted then. */
-const reloaded = () => (performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
-
 /**
- * Where a visitor came from, as counted: another site's address without its
- * query (a link elsewhere may carry anything), nothing for this site's own
- * (an address here may carry a room's code) or none.
+ * This page was come back to rather than arrived at: reloaded, gone back or
+ * forward to, or reloaded by the Open rooms list into a newer host's room
+ * (LISTED_PARAM). What came with the arrival was counted then.
  */
-export function referrerOf(referrer: string, here: string): string {
-  try {
-    const from = new URL(referrer);
-    return from.origin === new URL(here).origin ? '' : `${from.origin}${from.pathname}`;
-  } catch {
-    return '';
-  }
-}
+const cameBack = () => {
+  const type = (performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined)?.type;
+  return type === 'reload' || type === 'back_forward' || new URLSearchParams(location.search).has(LISTED_PARAM);
+};
 
-/** A visit to the start page, once it is first seen (a tab opened in the background counts when it's looked at); not a reload. */
-export function countVisit() {
-  if (!counting() || reloaded()) return;
-  const go = () => {
-    const r = referrerOf(document.referrer, location.href);
-    send({ p: '/', t: document.title, ...(r ? { r } : {}) });
-  };
+/** `go` once the page is first seen: a tab opened in the background and closed unseen counts nothing. */
+function whenSeen(go: () => void) {
   if (document.visibilityState === 'visible') return go();
   const seen = () => {
     if (document.visibilityState !== 'visible') return;
@@ -65,17 +54,42 @@ export function countVisit() {
   document.addEventListener('visibilitychange', seen);
 }
 
+/**
+ * Where a visitor came from, as counted: another site's or app's address
+ * without its query (a link elsewhere may carry anything), nothing for this
+ * site's own (an address here may carry a room's code) or none.
+ */
+export function referrerOf(referrer: string, here: string): string {
+  try {
+    const from = new URL(referrer);
+    if (from.origin === new URL(here).origin) return '';
+    // (An app's, android-app://com.reddit.frontpage/, has no origin of its own.)
+    return `${from.origin === 'null' ? `${from.protocol}//${from.host}` : from.origin}${from.pathname}`;
+  } catch {
+    return '';
+  }
+}
+
+/** A visit to the start page, once it is first seen; not one come back to (cameBack). */
+export function countVisit() {
+  if (!counting || cameBack()) return;
+  whenSeen(() => {
+    const r = referrerOf(document.referrer, location.href);
+    send({ p: '/', t: document.title, ...(r ? { r } : {}) });
+  });
+}
+
 /** An event: its name is the path GoatCounter lists it under. */
 export function countEvent(name: string) {
   send({ p: name, t: name, e: 'true' });
 }
 
 const arrivals = new Set<string>();
-/** An event that comes with arriving (a link opened): once a page load, and not again on a reload. */
+/** An event that comes with arriving (a link opened): once a page load, once it is first seen, as its visit is; not on coming back. */
 export function countArrival(name: string) {
-  if (arrivals.has(name) || !counting() || reloaded()) return;
+  if (arrivals.has(name) || !counting || cameBack()) return;
   arrivals.add(name);
-  countEvent(name);
+  whenSeen(() => countEvent(name));
 }
 
 // ---- games -------------------------------------------------------------------
@@ -91,8 +105,8 @@ export const gameKey = (s: GameState, hotSeat: boolean) => `${s.settings.mode ??
 
 const playing = (s: GameState) => s.phase !== 'lobby' && s.phase !== 'over';
 
-/** A game decided: over, or a Delve run where no entrant has a life left (alone, as they perish; before anyone looks at the results). */
-const decided = (s: GameState) => s.phase === 'over' || (!!s.delve && s.phase !== 'lobby' && s.delve.entrants.every((id) => livesOf(s, id) === 0));
+/** A game decided: over, or a Delve run nobody stands in any more (alone, as they perish; before anyone looks at the results). */
+const decided = (s: GameState) => s.phase === 'over' || (s.phase !== 'lobby' && nobodyStands(s));
 
 /** The event for a Delve run's end, by the ten depths it ended in, as players see them ("delve/depth-20-29"). */
 export function delveEndEvent(shownDepth: number): string {
@@ -117,6 +131,20 @@ export function gameEvents(prev: GameState | null, next: GameState, hotSeat: boo
   return next.delve ? [`end/${key}`, delveEndEvent(shownDepth(teamDepth(next)))] : [`end/${key}`];
 }
 
+/** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after. */
+export class GameCounts {
+  private ended: number | null = null;
+
+  events(prev: GameState | null, next: GameState, hotSeat: boolean): string[] {
+    const out = gameEvents(prev, next, hotSeat);
+    const run = next.delve?.startedAt;
+    if (run === undefined || !out.some((e) => e.startsWith('end/'))) return out;
+    if (this.ended === run) return [];
+    this.ended = run;
+    return out;
+  }
+}
+
 // ---- joining -----------------------------------------------------------------
 
 /** In the address of a page the Open rooms list reloads into a newer host's room: that join started in the list, not at an invite link. */
@@ -126,9 +154,11 @@ export const LISTED_PARAM = 'listed';
 export type JoinVia = 'code' | 'invite-link' | 'open-rooms';
 
 /**
- * A failure counted ("error/…"): a room that couldn't be opened or reached,
- * or a guest's link to its host lost. A guest removed, a room closed or a
- * game moved to another tab isn't one: nothing failed.
+ * A failure counted ("error/…"): a room that couldn't be opened or reached
+ * or turned a join down (full, locked, a name: "join-refused"), or a guest's
+ * link to its host lost for good (not a host's reload, which it comes back
+ * from). A guest removed, a room closed or a game moved to another tab isn't
+ * one: nothing failed.
  */
 export type Failure =
   | 'host-no-connection'
@@ -139,6 +169,7 @@ export type Failure =
   | 'join-no-such-room'
   | 'join-turned-away'
   | 'join-version-mismatch'
+  | 'join-refused'
   | 'connection-lost'
   | 'reconnect-gave-up';
 

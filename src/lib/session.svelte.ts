@@ -31,7 +31,7 @@ import {
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
-import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
+import { isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
 import { cleanName, nameSkeleton, nameUsable } from './names';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
@@ -42,7 +42,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
-import { countEvent, countFailure, gameEvents, type Failure, type JoinVia } from './count';
+import { GameCounts, countEvent, countFailure, counting, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -130,6 +130,8 @@ const NEXT_ATTEMPT_MS = 4000;
 const ATTEMPT_LIFE_MS = 15000;
 /** Client: joining gives up if the room hasn't let us in by then (each "busy" buys more time, up to the cap). */
 const JOIN_GIVE_UP_MS = 30000;
+/** How long a guest's link to its host is down before it counts as lost (count.ts): longer than a host's reload takes. */
+const LOST_COUNTED_AFTER_MS = 20_000;
 const JOIN_GIVE_UP_CAP_MS = 60000;
 /** Client: the server says an attempt's room isn't there within this time (it holds an offer ~5 s). */
 const EXPIRE_MS = 7000;
@@ -1356,6 +1358,10 @@ class Session {
 
   /** Where the join under way started (count.ts), counted once it's let in; none for a guest's reload getting back in. */
   private joinVia: JoinVia | null = null;
+  /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
+  private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
+  /** When a guest's link to its host went (0: it hasn't): counted as lost only if it isn't back soon (LOST_COUNTED_AFTER_MS). */
+  private lostAt = 0;
 
   join(code: string, name: string, watch = false, via?: JoinVia) {
     // The host's room has its own settings: a shared link's Delve is moot.
@@ -1429,7 +1435,7 @@ class Session {
         this.pruneAttempts();
         this.planAttempt(RETRY_SOON_MS);
       }
-      else if (!NETWORK_ERRORS.has(err.type)) this.fail(this.networkHint(err.type), 'No connection', { failure: 'join-no-connection' });
+      else if (!NETWORK_ERRORS.has(err.type)) this.fail(this.networkHint(err.type), 'No connection', { failure: this.joinFailure('join-no-connection') });
       else {
         // The signalling server hiccuped. A peer that had reached it reconnects
         // on its own ('disconnected'); one that never did is destroyed right
@@ -1452,8 +1458,8 @@ class Session {
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
     this.connectTimer = setTimeout(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
-      if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: 'join-no-answer' });
-      else this.fail(this.networkHint('timeout'), 'No connection', { failure: 'join-no-connection' });
+      if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
+      else this.fail(this.networkHint('timeout'), 'No connection', { failure: this.joinFailure('join-no-connection') });
     }, wait);
   }
 
@@ -1466,7 +1472,7 @@ class Session {
   private roomUnavailable() {
     if (this.hostConn?.open) return;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
-      this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room', { failure: 'join-no-such-room' });
+      this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room', { failure: this.joinFailure('join-no-such-room') });
       return;
     }
     if (!this.unavailableUntil) this.unavailableUntil = Math.max(Date.now(), ...this.attempts.map((a) => a.at)) + EXPIRE_MS;
@@ -1628,6 +1634,7 @@ class Session {
           }
           if (this.status === 'connecting' && this.joinVia) countEvent(`joined/${this.joinVia}`);
           this.joinVia = null;
+          this.lostAt = 0;
           this.status = 'ready';
           if (this.state) this.noteWatch(this.state);
           break;
@@ -1637,7 +1644,8 @@ class Session {
             if (this.answered?.qid === msg.askedAt) this.answered = null;
             this.turnedDown = { askedAt: msg.askedAt };
           }
-          if (this.status === 'connecting') this.fail(versionRefusal(msg.message), "Couldn't join", { failure: 'join-version-mismatch' });
+          if (this.status === 'connecting')
+            this.fail(versionRefusal(msg.message), "Couldn't join", { failure: this.joinFailure(isVersionRefusal(msg.message) ? 'join-version-mismatch' : 'join-refused') });
           else this.flash(msg.message, 'error');
           break;
         case 'kicked':
@@ -1676,7 +1684,7 @@ class Session {
       // Closed before the room let us in. A host that turns a link away
       // without a word does so every time (a dropped network link rarely
       // does, three times running): try again, then say so.
-      if (!heard && ++this.silentCloses >= 3) this.fail(`Room ${this.code} turned the connection away. Try again in a moment.`, "Couldn't join", { failure: 'join-turned-away' });
+      if (!heard && ++this.silentCloses >= 3) this.fail(`Room ${this.code} turned the connection away. Try again in a moment.`, "Couldn't join", { failure: this.joinFailure('join-turned-away') });
       else this.planAttempt(RETRY_SOON_MS);
     });
     const secret = await this.helloSecret;
@@ -1687,7 +1695,7 @@ class Session {
 
   private hostLost(conn: DataConnection) {
     if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
-      countFailure('connection-lost');
+      this.lostAt = Date.now();
       this.status = 'lost';
       this.retries = 0;
       // A link that came back on its own after giving up starts a fresh count.
@@ -1700,6 +1708,11 @@ class Session {
     if (this.retry) clearTimeout(this.retry);
     this.retry = setTimeout(() => {
       if (this.mode !== 'client' || this.status === 'ready') return;
+      // Not back by now: more than a host's reload, which a guest gets over in a few seconds.
+      if (this.lostAt && Date.now() - this.lostAt >= LOST_COUNTED_AFTER_MS) {
+        countFailure('connection-lost');
+        this.lostAt = 0;
+      }
       if (this.retries++ >= 20) {
         countFailure('reconnect-gave-up');
         this.gaveUp = true;
@@ -1958,9 +1971,11 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
-  /** A game starting or decided, counted once a game by the device that runs it (count.ts gameEvents). */
+  private gameCounts = new GameCounts();
+  /** A game starting or decided, counted once a game by the device that runs it (count.ts gameEvents); nothing to work out where nothing counts. */
   private notePlay(prev: GameState | null, next: GameState) {
-    if (this.mode === 'local' || this.mode === 'host') for (const e of gameEvents(prev, next, this.mode === 'local')) countEvent(e);
+    if (!counting || (this.mode !== 'local' && this.mode !== 'host')) return;
+    for (const e of this.gameCounts.events(prev, next, this.mode === 'local')) countEvent(e);
   }
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
@@ -2453,16 +2468,12 @@ class Session {
   /**
    * Gives up on the room with a notice that stays up. `reopening`: the room a
    * reload couldn't reopen (session.code stays empty until a room is open),
-   * which stays saved so a refresh tries again.
-   */
-  /**
-   * `reopening`: the room a host's reload couldn't reopen. `failure`: what is
-   * counted (count.ts), a join's only when the join was (not a guest's
-   * reload getting back in).
+   * which stays saved so a refresh tries again. `failure`: what is counted
+   * (count.ts; a join's through joinFailure).
    */
   private fail(message: string, title?: string, { reopening, failure }: { reopening?: string; failure?: Failure } = {}) {
     const mode = this.mode;
-    if (failure && (!failure.startsWith('join-') || this.joinVia)) countFailure(failure);
+    if (failure) countFailure(failure);
     // A game walked away from in this room by a reload that couldn't get back into it (it closed, or never
     // reopened) wasn't walked away from.
     forgiveLeaving({ room: reopening ?? this.code });
@@ -2573,6 +2584,7 @@ class Session {
     this.myPlayerId = null;
     this.watchOnly = false;
     this.joinVia = null;
+    this.lostAt = 0;
     // A guest's offset to its host's clock means nothing for the next room.
     this.clockOffset = 0;
     this.clockSynced = false;
