@@ -2,6 +2,7 @@
 // "zalgo" stacks, catch names that impersonate the host or another player,
 // and turn down slurs and the like (offensive.ts).
 
+import { foldLookalikes } from './lookalikes.ts';
 import { offensive } from './offensive.ts';
 import { readKey, writeKey } from './storage.ts';
 
@@ -10,7 +11,9 @@ export const MIN_NAME = 2;
 
 const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 'moderator', 'mod', 'you', 'ggg']);
 
-// Common look-alike letters from other scripts and digits, folded to ASCII.
+// Digits and signs that pass for letters, and common look-alike letters
+// from other scripts, folded to ASCII (after lookalikes.ts, which folds the
+// look-alikes Unicode lists).
 const CONFUSABLES: Record<string, string> = {
   а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
   і: 'i', ї: 'i', ј: 'j', ѕ: 's', ԁ: 'd', ɡ: 'g', ո: 'n', ս: 'u',
@@ -25,8 +28,10 @@ const CONFUSABLES: Record<string, string> = {
 export function cleanName(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   let s = raw.slice(0, 200).normalize('NFKC');
-  // Control and format characters: zero-width joiners, bidi overrides, etc.
-  s = s.replace(/[\p{Cc}\p{Cf}\p{Co}\p{Cn}\u2028\u2029]/gu, '');
+  // Control and format characters: zero-width joiners, bidi overrides, etc.;
+  // characters that draw nothing yet count as letters (the Hangul fillers);
+  // and a few that draw many letters wide.
+  s = s.replace(/[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}\u2028\u2029\u2800\u2E3A\u2E3B\uFDFD\u{12000}-\u{1254F}]/gu, '');
   // At most one combining mark per letter (no zalgo towers).
   s = s.replace(/(\p{M})\p{M}+/gu, '$1');
   s = s.replace(/\s+/g, ' ').trim();
@@ -41,7 +46,7 @@ export const initialOf = (name: string) => (Array.from(name.trim())[0] ?? '').to
 
 /** What a name "looks like": lowercase ASCII-ish letters only. */
 export function nameSkeleton(name: string): string {
-  const folded = Array.from(name.normalize('NFKD').toLowerCase())
+  const folded = Array.from(foldLookalikes(name.normalize('NFKD').toLowerCase()))
     .map((c) => CONFUSABLES[c] ?? c)
     .join('')
     .replace(/\p{M}/gu, '')
