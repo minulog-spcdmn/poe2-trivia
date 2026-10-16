@@ -3,15 +3,16 @@
 import type { Component } from 'svelte';
 import ArcaneCircle from './ArcaneCircle.svelte';
 import BlackSunCircle from './BlackSunCircle.svelte';
+import ForbiddenCircle from './ForbiddenCircle.svelte';
 import MonadCircle from './MonadCircle.svelte';
 import RoseCircle from './RoseCircle.svelte';
 
 type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number }>;
 
-/** Behind a question's art (not Delve's): the eye and the monad, taking turns. */
-export const QUESTION_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle];
-/** Behind today's unique: any of the four. */
-export const DAILY_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, BlackSunCircle];
+/** All five. */
+export const ALL_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, BlackSunCircle, ForbiddenCircle];
+/** Behind a question's art, Delve's too: for now, while the circles find their places, any of the five. */
+export const QUESTION_CIRCLES: Circle[] = ALL_CIRCLES;
 
 /** The circle of `from` for `n` (a question's time, a day): the same for everyone who has the same `n`. */
 export function circleFor(n: number | string, from: Circle[] = QUESTION_CIRCLES) {

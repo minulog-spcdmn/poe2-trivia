@@ -6,8 +6,7 @@
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
-  import BlackSunCircle from './BlackSunCircle.svelte';
-  import RoseCircle from './RoseCircle.svelte';
+  import RandomCircle from './RandomCircle.svelte';
   import WatchToggle from './WatchToggle.svelte';
   import WatchEye from './WatchEye.svelte';
   import StandingMark from './StandingMark.svelte';
@@ -81,8 +80,9 @@
 
   // ---- Delve -------------------------------------------------------------
   const run = $derived(s.delve ?? null);
-  // The circle behind the result: the rose, or after a Delve its black sun.
-  const Circle = $derived(run ? BlackSunCircle : RoseCircle);
+  // The circle behind the result: for now, while the circles find their
+  // places, any of the five.
+  const Circle = RandomCircle;
   const solo = $derived(!!run && !isGroupRun(s));
   const together = $derived(!!run && !solo);
   /** Whose run this device tells: online its player, on one device its one delver. */

@@ -11,7 +11,7 @@
   import { allArt, type DrawnItem, type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import RandomCircle from './RandomCircle.svelte';
   import ItemDetails from './ItemDetails.svelte';
   import { readStored, writeStored } from '../lib/storage';
   import { calm, motion } from '../lib/motion.svelte';
@@ -155,7 +155,7 @@
       </div>
 
       <div class="art" class:several={arts.length > 1} bind:this={art}>
-        <ArcaneCircle />
+        <RandomCircle />
         <div class="frame">
           {#key drawn.art}
             <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />

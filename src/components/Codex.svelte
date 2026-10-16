@@ -15,7 +15,7 @@
   import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
-  import RoseCircle from './RoseCircle.svelte';
+  import RandomCircle from './RandomCircle.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -313,7 +313,7 @@
       </div>
     {/if}
 
-    <CodexMedallion share={found} circle={RoseCircle}>
+    <CodexMedallion share={found} circle={RandomCircle}>
       <span class="medal-value">{stats.seen}</span>
       <span class="medal-of">of {stats.total}</span>
       <span class="medal-label">discovered</span>
