@@ -8,7 +8,9 @@
 // and counts the browser's preflight too: each call, sent with the key, is
 // two requests. So calls go out one at a time, 600ms apart. A preflight it
 // turns away fails as CORS, so the page sees no answer at all, not its 429;
-// a call that gets none is tried again, later each time.
+// a call that gets none is tried again, later each time. Every request is
+// written down (requestsLastHour), shared by the ledger's tabs, so updating
+// by itself can stop well short of the hour's 500.
 
 import { COUNTER_ORIGIN } from '../lib/counter';
 import { readStored, removeStored, writeStored } from '../lib/storage';
@@ -16,6 +18,25 @@ import type { PathCount } from './model';
 import { zoneOf } from './zone';
 
 const KEY = 'ledger.key';
+const LOG = 'ledger.requests';
+/** GoatCounter's requests an hour from an address. */
+export const HOUR_LIMIT = 500;
+
+/** When each request of the last hour went out, this browser's ledger tabs together. */
+export function requestsLastHour(): number[] {
+  const since = Date.now() - 3_600_000;
+  try {
+    const list = JSON.parse(readStored(LOG) ?? '[]') as unknown;
+    return Array.isArray(list) ? list.filter((t): t is number => typeof t === 'number' && t > since) : [];
+  } catch {
+    return [];
+  }
+}
+/** A call sent: two requests, its preflight and itself. */
+function noteCall() {
+  const now = Date.now();
+  writeStored(LOG, JSON.stringify([...requestsLastHour(), now, now]));
+}
 export const savedKey = () => readStored(KEY) ?? '';
 export const saveKey = (key: string) => writeStored(KEY, key.trim());
 export const forgetKey = () => removeStored(KEY);
@@ -59,7 +80,10 @@ async function get<T>(key: string, path: string, query: Record<string, string> =
     await sleep(1500 * 2 ** tried);
     return get<T>(key, path, query, tried + 1);
   };
-  const res = await paced(() => fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => null));
+  const res = await paced(() => {
+    noteCall();
+    return fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => null);
+  });
   // No answer: most often a preflight GoatCounter turned away for coming too fast, now and then an ad blocker.
   if (!res) {
     if (tried + 1 < TRIES) return again();

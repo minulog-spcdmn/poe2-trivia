@@ -24,7 +24,7 @@ export const MODE_NAMES: Record<Mode, string> = { turns: 'Take turns', race: 'Ra
 /** How a join started (count.ts JoinVia). */
 export type Via = 'invite-link' | 'code' | 'open-rooms';
 export const VIAS: readonly Via[] = ['invite-link', 'code', 'open-rooms'];
-export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', code: 'Room code', 'open-rooms': 'Open rooms list' };
+export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', code: 'Room code', 'open-rooms': 'Open rooms' };
 
 /** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room. */
 export const FAILURES: Record<string, { label: string; host?: true }> = {
