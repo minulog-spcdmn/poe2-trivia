@@ -1146,6 +1146,9 @@ export interface DelveTeam {
   revives: Revive[];
 }
 
+/** Nobody in the run stands any more: the run is over, as the engine ends it (Engine.advanceCoop), before the results are shown. */
+export const nobodyStands = (s: GameState) => !!s.delve && standingIds(s).length === 0;
+
 export function delveTeam(s: GameState): DelveTeam {
-  return { depth: teamDepth(s), perished: !!s.delve && standingIds(s).length === 0, players: delveStandings(s), revives: [...(s.delve?.revives ?? [])] };
+  return { depth: teamDepth(s), perished: nobodyStands(s), players: delveStandings(s), revives: [...(s.delve?.revives ?? [])] };
 }
