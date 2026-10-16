@@ -1,6 +1,7 @@
 <script lang="ts">
   import { playerColor } from '../lib/ui';
-  import { initialOf, isHeldName } from '../lib/names';
+  import { initialOf } from '../lib/names';
+  import { creatorShown } from '../lib/creator';
   import { arcaneAura } from '../lib/fx/aura';
   import { CREATOR_TITLE } from '../lib/site';
 
@@ -11,7 +12,7 @@
   const dy = $derived(initial === 'A' ? '0.31em' : '0.35em');
   // zoe_arcana made the game: her avatar wears a gilded ring and, with
   // effects on, a living aura (lib/fx/aura.ts).
-  const creator = $derived(isHeldName(name));
+  const creator = $derived(creatorShown(name));
 </script>
 
 <span

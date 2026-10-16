@@ -259,7 +259,7 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   // The Azurite Vein's dig: how many strikes, how deep each asks, and the lamp.
   table.push(['vein', VEIN_MAX_STRIKES, VEIN_DEEPER, LAMP_START, DEPTHS.slice(0, 100).map((d) => [2, 3].map((k) => [findRules('azurite', d, k), lampAfter(d, k, 2.5)]))]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
-  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [2, 30, PINNED_HASH]);
+  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [2, 31, PINNED_HASH]);
 });
 
 const PINNED_HASH = '13a63b9853d0bb48';

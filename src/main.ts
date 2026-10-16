@@ -1,6 +1,6 @@
 import { mount } from 'svelte';
 import './app.css';
-import App from './App.svelte';
+import Root from './Root.svelte';
 import { installUiSounds } from './lib/sound';
 import { installSpatial } from './lib/spatial.svelte';
 import { installUiFx } from './lib/fx/ui';
@@ -41,7 +41,7 @@ addEventListener('dragstart', (e) => {
 // app uses, which a fresh import during hot reloading wouldn't be).
 if (import.meta.env.DEV) Object.assign(window, { __fx: fxCore, __e: fxEffects, __m: fxMoments, __s: session });
 
-const app = mount(App, {
+const app = mount(Root, {
   target: document.getElementById('app')!,
 });
 

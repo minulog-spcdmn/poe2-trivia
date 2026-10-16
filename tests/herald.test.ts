@@ -2,11 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { creatorArrival } from '../src/lib/herald.ts';
+import { isHeldName } from '../src/lib/names.ts';
 
 const player = (id: string, name: string, hue = 0): Player => ({ id, name, score: 0, recent: [], connected: true, hue });
 
-function room(players: Player[], spectators: { id: string; name: string }[] = [], phase: GameState['phase'] = 'lobby'): GameState {
-  return { ...createGame('host'), phase, players, spectators };
+/** A room, its held name signed for (the signature itself is the session's to check, ownerKey.ts), unless `signed` is false. */
+function room(players: Player[], spectators: { id: string; name: string }[] = [], phase: GameState['phase'] = 'lobby', signed = true): GameState {
+  const held = [...players, ...spectators].find((o) => isHeldName(o.name));
+  const owner = signed && held ? { owner: { id: held.id } } : {};
+  return { ...createGame('host'), phase, players, spectators, ...owner };
 }
 
 const host = player('host', 'Doryani', 0);
@@ -74,4 +78,15 @@ test('a new seat under a new id is a new arrival (hot-seat: her name typed in ag
   assert.ok(creatorArrival(a, room([zoe]), seen));
   assert.equal(creatorArrival(room([zoe]), a, seen), null);
   assert.equal(creatorArrival(a, room([player('z2', 'zoe_arcana', 11)]), seen)?.id, 'z2');
+});
+
+test("the held name without the owner key's signature for that player is nobody's arrival", () => {
+  const seen = new Set<string>();
+  const before = room([host]);
+  creatorArrival(null, before, seen);
+  assert.equal(creatorArrival(before, room([host, zoe], [], 'lobby', false), seen), null);
+  const other = new Set<string>();
+  creatorArrival(null, before, other);
+  const signedForAnother = { ...room([host, zoe]), owner: { id: 'host' } };
+  assert.equal(creatorArrival(before, signedForAnother, other), null);
 });

@@ -1,9 +1,9 @@
 // zoe_arcana made PoE2.Quest, and when she walks into an online room
 // everyone else gets a notice saying so (session.svelte.ts, Toasts.svelte).
-// This decides when a state change is that arrival. She is recognised by
-// name (isHeldName), which only a device unlocked with the owner key can
-// take; the host can't verify a guest's claim, so this is a deterrent like
-// the hold itself.
+// This decides when a state change is that arrival: the held name
+// (isHeldName) on the player the room's owner key signature names
+// (GameState owner), which the session checks on this device before the
+// notice shows.
 
 import type { GameState } from './game.ts';
 import { isHeldName } from './names.ts';
@@ -33,12 +33,12 @@ export function creatorArrival(prev: GameState | null, next: GameState, seen: Se
   for (const p of next.players) {
     if (seen.has(p.id)) continue;
     seen.add(p.id);
-    if (prev && isHeldName(p.name)) found = { id: p.id, name: p.name, hue: p.hue, watching: false };
+    if (prev && isHeldName(p.name) && next.owner?.id === p.id) found = { id: p.id, name: p.name, hue: p.hue, watching: false };
   }
   for (const o of next.spectators ?? []) {
     if (seen.has(o.id)) continue;
     seen.add(o.id);
-    if (prev && isHeldName(o.name)) found = { id: o.id, name: o.name, watching: true };
+    if (prev && isHeldName(o.name) && next.owner?.id === o.id) found = { id: o.id, name: o.name, watching: true };
   }
   return found;
 }
