@@ -148,17 +148,20 @@ The script nobody can read (`src/lib/tongue.ts`, `inscribe`) reads as writing, n
 
 ## The other plates
 
-The rune circle has three siblings, the same craft in other compositions, so one circle isn't behind everything. Each keeps every rule above (weights, glow, wear, cutting, hatching, the summoning's pace, its layers turning their own ways), and each has its own silhouette (a heptagram, a square over a hexagram, the rose of Venus's five loops, three interlaced rings), so they never read as one drawing reshuffled. Each is built around an idea of its own, not the eye circle's template reskinned: that read as cheap copies.
+The rune circle has four siblings, the same craft in other compositions, so one circle isn't behind everything. Each keeps every rule above (weights, glow, wear, cutting, hatching, the summoning's pace, its layers turning their own ways), and each has its own silhouette (a heptagram, a square over a hexagram, the rose of Venus's five loops, three interlaced rings, a heptagon walling a triangle), so they never read as one drawing reshuffled. Each is built around an idea of its own, not the eye circle's template reskinned: that read as cheap copies.
 
 Where each one stands:
 
 | Place | Circle |
 | --- | --- |
-| A question (not Delve) | The eye, the monad or the rose, by the question's `askedAt` (`circleFor` in `src/components/circles.ts`), the same for every player |
-| A Delve question, a Delve's end, the Codex's Delve page | The black sun |
-| The victory screen, the codex item window | The eye |
-| Today's unique, the Codex's achievements | The rose |
+| A question (not Delve) | The eye, the monad, the rose or the moth, a different one from question to question and never the same twice running (`circleAt` in `src/components/circles.ts`, `src/lib/turns.ts`), the same for every player |
+| Today's unique | The same four, a different one from day to day, never the same two days running |
+| A Delve question, the Codex's Delve page | The black sun |
+| A Delve's end, where everyone perished | The moth |
+| The end of a game (not Delve) | The monad or the eye, at random |
+| The codex item window | The eye |
 | The Codex's collection | The monad |
+| The Codex's achievements | The rose |
 
 Every heart has a living part of its own (the eye's glance, the monad's turning sun, the rose's window and its swelling star), so none needs a solid point at the very centre. The stage's `point` is there for a plate that does: set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
 

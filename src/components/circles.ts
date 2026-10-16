@@ -1,23 +1,22 @@
 // The rune circles: one craft in several plates (docs/arcane-style.md), so
 // the same circle isn't behind everything. All take the same props.
 import type { Component } from 'svelte';
+import { turnOf } from '../lib/turns';
 import ArcaneCircle from './ArcaneCircle.svelte';
-import BlackSunCircle from './BlackSunCircle.svelte';
 import ForbiddenCircle from './ForbiddenCircle.svelte';
 import MonadCircle from './MonadCircle.svelte';
 import RoseCircle from './RoseCircle.svelte';
 
-type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number }>;
+export type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number }>;
 
-/** All five. */
-export const ALL_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, BlackSunCircle, ForbiddenCircle];
-/** Behind a question's art, Delve's too: for now, while the circles find their places, any of the five. */
-export const QUESTION_CIRCLES: Circle[] = ALL_CIRCLES;
+/** Behind today's unique: any but Delve's black sun, a different one from day to day. */
+export const DAILY_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, ForbiddenCircle];
+/** Behind a question's art (not Delve's): the same four, a different one from question to question. */
+export const QUESTION_CIRCLES: Circle[] = DAILY_CIRCLES;
+/** Behind the end of a game (not Delve's): the monad or the eye. */
+export const END_CIRCLES: Circle[] = [MonadCircle, ArcaneCircle];
 
-/** The circle of `from` for `n` (a question's time, a day): the same for everyone who has the same `n`. */
-export function circleFor(n: number | string, from: Circle[] = QUESTION_CIRCLES) {
-  let k = 0;
-  if (typeof n === 'number') k = Math.floor(n);
-  else for (const ch of n) k = (k * 31 + ch.charCodeAt(0)) | 0;
-  return from[((k % from.length) + from.length) % from.length];
-}
+/** The `n`th circle (a day, a question's turn) of `from` in a run seeded `seed`, never the same twice running (lib/turns). */
+export const circleAt = (n: number, from: Circle[], seed = 0) => turnOf(n, from, seed);
+/** One of `from`, at random. */
+export const anyOf = (from: Circle[]) => from[Math.floor(Math.random() * from.length)];

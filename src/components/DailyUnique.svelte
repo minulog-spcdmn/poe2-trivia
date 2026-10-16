@@ -20,7 +20,7 @@
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
-  import RandomCircle from './RandomCircle.svelte';
+  import { circleAt, DAILY_CIRCLES } from './circles';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -60,8 +60,8 @@
     };
   });
   const today = $derived(utcDay(now));
-  // For now, while the circles find their places, any of the five.
-  const Circle = RandomCircle;
+  // A different one of the circles from day to day, the same for every exile.
+  const Circle = $derived(circleAt(today, DAILY_CIRCLES));
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 
   let rec = $state(loadDaily());

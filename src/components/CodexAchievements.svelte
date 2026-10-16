@@ -6,7 +6,7 @@
   import { METALS, TIERS } from '../lib/metals';
   import { backdropShadow } from '../lib/backdropShadow';
   import CodexMedallion from './codex/CodexMedallion.svelte';
-  import RandomCircle from './RandomCircle.svelte';
+  import RoseCircle from './RoseCircle.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
 
   // The Codex's third page: every achievement, earned or not, by group, each
@@ -52,7 +52,7 @@
     {@render metal(metals[1])}
   </div>
 
-  <CodexMedallion {share} circle={RandomCircle}>
+  <CodexMedallion {share} circle={RoseCircle}>
     <span class="medal-value">{earned.length}</span>
     <span class="medal-of">of {ACHIEVEMENTS.length}</span>
     <span class="medal-label">earned</span>
