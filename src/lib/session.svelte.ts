@@ -31,8 +31,10 @@ import {
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
-import { isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
+import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
+import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
+import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { cleanName, nameSkeleton, nameUsable } from './names';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
@@ -166,6 +168,8 @@ const EARLY_MS = 250;
 const CURSOR_BACKLOG_BYTES = 64 * 1024;
 /** Batches sent for a click (a press or a release) are this far apart at least (ms): a frame. */
 const CLICK_GAP_MS = 16;
+/** Development only: a far link played on a near one, set with the `fakeLink` setting (artLane.ts parseFakeLink). */
+const FAKE_LINK = import.meta.env.DEV ? parseFakeLink(readStored('fakeLink')) : null;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -208,10 +212,16 @@ interface Guest {
   /** Its newest pointer past `pointer`, waiting until it may go (undefined when none is), and when it's looked at again. */
   pointerLate?: CursorAt | null;
   pointerTimer?: ReturnType<typeof setTimeout> | null;
-  /** Round-trip time estimate (ms). */
+  /** Round-trip time estimate (ms), from its pongs: what it answers to (tooFast, slowLink). */
   rtt: number;
+  /** Its recent ping times (ms), and the round trip its browser measures (linkRtt.ts): what timing that could favour it leans on (honestRtt). */
+  pingTimes: number[];
+  linkRtt: number | null;
   lastPong: number;
   pings: Map<number, number>;
+  /** Its art lane (artLane.ts), and whether it said it opened its end (hello's `lane`); without both, media go on the main channel. */
+  lane: LaneSender | null;
+  laneWanted: boolean;
   /** When this guest was sent the current question's first picture (page clock). */
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
@@ -699,7 +709,11 @@ class Session {
       limit: new RateLimit(10, 20),
       pointer: new RateLimit(POINTER_RATE, POINTER_BURST),
       rtt: 150,
+      pingTimes: [],
+      linkRtt: null,
       lastPong: Date.now(),
+      lane: null,
+      laneWanted: false,
       pings: new Map(),
       mediaAt: null,
       tab: null,
@@ -712,7 +726,14 @@ class Session {
     let helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), OPEN_TIMEOUT_MS);
     conn.on('open', () => {
       clearTimeout(helloTimer);
-      if (this.guests.has(conn)) helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+      if (!this.guests.has(conn)) return;
+      helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+      // The art lane: host to guest only, so anything sent up it is no real client.
+      const lane = openLane(conn.peerConnection);
+      if (lane) {
+        guest.lane = new LaneSender(lane, FAKE_LINK);
+        lane.addEventListener('message', () => this.guests.has(conn) && this.block(conn));
+      }
     });
     this.guardFrames(conn);
     conn.on('data', (raw) => {
@@ -747,6 +768,7 @@ class Session {
         if (msg.t === 'hello') {
           if (guest.playerId) return;
           guest.tab = msg.tab ?? null;
+          guest.laneWanted = !!msg.lane;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
         } else if (msg.t === 'pong') {
@@ -755,6 +777,8 @@ class Session {
             guest.pings.delete(msg.n);
             guest.lastPong = Date.now();
             guest.rtt = guest.rtt * 0.7 + (Date.now() - sent) * 0.3;
+            guest.pingTimes.push(Date.now() - sent);
+            if (guest.pingTimes.length > PING_SAMPLES) guest.pingTimes.shift();
           }
         } else if (msg.t === 'action') {
           if (!guest.playerId) return;
@@ -963,6 +987,9 @@ class Session {
         if (g.pings.size > 10) g.pings.delete(g.pings.keys().next().value!);
         this.send(conn, { t: 'ping', n });
         g.slow = slowLink(g.slow, g.rtt, now - g.lastPong);
+        void measuredRtt(conn.peerConnection).then((rtt) => {
+          if (rtt !== null && this.guests.get(conn) === g) g.linkRtt = rtt;
+        });
       }
       this.updateStanding();
     }, PING_EVERY_MS);
@@ -1034,7 +1061,7 @@ class Session {
     const racing = new Set(this.state ? racerIds(this.state) : []);
     const rtts = [...this.guests.values()]
       .filter((g) => g.playerId && racing.has(g.playerId))
-      .map((g) => g.rtt)
+      .map((g) => honestRtt(g))
       .sort((a, b) => a - b);
     if (!rtts.length) return 0;
     return Math.min(MAX_HOST_HANDICAP_MS, rtts[Math.floor(rtts.length / 2)] / 2);
@@ -1131,6 +1158,15 @@ class Session {
 
   private send(conn: DataConnection, msg: HostMsg) {
     if (!conn.open) return;
+    if (FAKE_LINK) {
+      setTimeout(() => this.sendNow(conn, msg), FAKE_LINK.delayMs);
+      return;
+    }
+    this.sendNow(conn, msg);
+  }
+
+  private sendNow(conn: DataConnection, msg: HostMsg) {
+    if (!conn.open) return;
     try {
       conn.send(msg);
     } catch {
@@ -1204,9 +1240,9 @@ class Session {
       }
       const ids = this.held?.qid === qid ? this.held.ids : new Set<string>();
       const conns = [...this.guests].filter(([, g]) => !!g.playerId && ids.has(g.playerId));
-      const done = conns.every(([c]) => drained(c as unknown as Parameters<typeof drained>[0]));
+      const done = conns.every(([c, g]) => drained(c as unknown as Parameters<typeof drained>[0]) && !g.lane?.backlog);
       // The slowest of them still needs half a round trip for the last bytes and the deadline.
-      const rtt = Math.max(0, ...conns.map(([, g]) => g.rtt));
+      const rtt = Math.max(0, ...conns.map(([, g]) => honestRtt(g)));
       // Together, after a vote: not before its draw has played out on the cards, theirs starting that half trip late.
       const hold = this.drawHold?.qid === qid ? drawClockFrom(this.drawHold.until, rtt) : 0;
       if ((done || now - releasedAt >= DELVE_CLOCK_CAP_MS) && now >= hold - 500) {
@@ -1343,7 +1379,9 @@ class Session {
     // in after.
     const reached = m.t !== 'veil' || !!this.state?.delve;
     if (reached && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: performance.now() };
-    this.send(conn, m);
+    // On its own lane, so the art never holds up what the main channel carries.
+    if (g.laneWanted && g.lane?.usable) g.lane.send(m);
+    else this.send(conn, m);
   }
 
   private stopMedia(keepReleased = false) {
@@ -1606,6 +1644,20 @@ class Session {
         conn.close();
       }
     }, 2000);
+    // The art lane (artLane.ts), opened before the hello says so: the room's pictures come down it.
+    const lane = openLane(conn.peerConnection);
+    if (lane) {
+      const frames = new LaneReceiver((raw) => {
+        const msg = parseHostMsg(raw);
+        if (msg && this.hostConn === conn && isMedia(msg)) shown.receive(msg);
+      });
+      lane.addEventListener('message', (e) => {
+        if (this.hostConn !== conn) return;
+        lastHeard = Date.now();
+        // A broken frame: the lane is closed, and the host sends the rest on the main channel.
+        if (!frames.take(e.data)) lane.close();
+      });
+    }
     conn.on('data', (raw) => {
       if (this.hostConn !== conn) return;
       lastHeard = Date.now();
@@ -1687,7 +1739,7 @@ class Session {
     });
     const secret = await this.helloSecret;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}) });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}) });
     this.watchOwnPresence();
   }
 

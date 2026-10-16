@@ -6,7 +6,7 @@ import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
 
-export const PROTOCOL_VERSION = 30;
+export const PROTOCOL_VERSION = 31;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -38,8 +38,9 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
+   * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -83,6 +84,10 @@ export type MediaMsg =
   /** `w`, `h`: its size in art pixels (the picture is finer, by the item's artScale). */
   | { t: 'option'; qid: number; index: number; w: number; h: number; data: ArrayBuffer };
 
+const MEDIA = new Set(['art', 'veil', 'patch', 'option']);
+/** A question's pictures and their patches: what the art lane carries (artLane.ts). */
+export const isMedia = (msg: HostMsg): msg is MediaMsg => MEDIA.has(msg.t);
+
 /** A veiled picture's labels: (patch, length) pairs of 16-bit numbers, a run per patch per row or so. */
 const MAX_LABEL_BYTES = 4 * 262144;
 
@@ -110,6 +115,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
+      if (raw.lane !== undefined && typeof raw.lane !== 'boolean') return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -117,6 +123,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
+        ...(raw.lane ? { lane: true } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

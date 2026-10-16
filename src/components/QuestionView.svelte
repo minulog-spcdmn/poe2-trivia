@@ -792,10 +792,15 @@
     sfx('select', { from: { from: optionEls[index] } });
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     // Only the latest answer's: one turned down and given again stays on its way.
+    // A far host's word can take a while: a timed question's comes by its
+    // end at the latest (the reveal), so it waits till a moment after that.
     clearTimeout(fallback);
-    fallback = setTimeout(() => {
-      if (!session.state?.reveal) chosen = null;
-    }, 2500);
+    fallback = setTimeout(
+      () => {
+        if (!session.state?.reveal) chosen = null;
+      },
+      q.deadline ? Math.max(2500, q.deadline - session.hostNow() + 2000) : 6000,
+    );
   }
 
   function next() {
