@@ -240,9 +240,9 @@
   const sealHoles: Hole[] = seals.map(({ x, y }) => ({ c: [x, y], r: SEAL + 1.4 }));
   const GAPS_GLORY = Array.from({ length: 7 }, (_, k) => {
     const mid = (k / 7) * 360;
-    return Array.from({ length: 21 }, (_, j) => {
-      const a = mid + (j - 10) * 2.1;
-      const end = j % 2 ? BAND_IN - 6 : BAND_IN - 2;
+    return Array.from({ length: 11 }, (_, j) => {
+      const a = mid + (j - 5) * 4;
+      const end = (j + 1) % 2 ? BAND_IN - 6 : BAND_IN - 2;
       const ok = (q: Pt) =>
         !inStar(q, W + GAP + 0.3) &&
         ![...starHoles, ...sealHoles].some(({ c, r }) => Math.hypot(q[0] - c[0], q[1] - c[1]) < r + 0.2);
@@ -304,14 +304,17 @@
       return pt(at(a, 6.4 + 0.5 * Math.sin(rad(a * 11))));
     }).join('L');
   const PUPIL = 'M0 -3.5A3.5 3.5 0 1 1 0 3.5A3.5 3.5 0 1 1 0 -3.5ZM-1.3 -2.35A0.9 0.9 0 1 0 -1.3 -0.55A0.9 0.9 0 1 0 -1.3 -2.35Z';
-  // The glory: rays from just off the lids out to the ring, long and short.
+  // The glory: rays from just off the lids out to the ring, long and short,
+  // in two sets (the long rays and the short) that swell and shrink out of
+  // step.
   const GLORY = Array.from({ length: 72 }, (_, k) => {
     const a = ((k + 0.5) / 72) * 360;
     const u = at(a, 1);
     const from = exit([0, 0], u, u[1] < 0 ? UPPER_RIM : LOWER_RIM) + 1.4;
     const to = k % 2 ? EYE - 3.4 : EYE - 1.2;
     return to - from > 1 ? `M${pt([u[0] * from, u[1] * from])}L${pt([u[0] * to, u[1] * to])}` : '';
-  }).join('');
+  });
+  const GLORY_SETS = [0, 1].map((n) => GLORY.filter((_, k) => k % 2 === n).join(''));
 
   // Everything that wears, drawn twice: worn for the lines, whole for
   // the glow under them. The wear is one seeded run through the lines in
@@ -389,13 +392,15 @@
       e.pieces(p.sun, 'thin');
       e.pieces(p.sunInner, 'hair');
     }),
-    glory: engrave((e) => e.line(GLORY, 'hair', 1.35, 0.7)),
+    glory0: engrave((e) => e.line(GLORY_SETS[0], 'hair', 1.35, 0.7)),
+    glory1: engrave((e) => e.line(GLORY_SETS[1], 'hair', 1.4, 0.7)),
   });
   const GLOW = layers(drawing(false));
   const LINES = layers(drawing(true));
   const layer = (name: keyof typeof LINES, spin?: StageLayer['spin'], more: Partial<StageLayer> = {}): StageLayer => ({ name, lines: LINES[name], glow: GLOW[name], spin, ...more });
   // Each ring turns its own way and speed, and first winds into place; the
-  // glory stays still, and Sol and Luna ride the star upright.
+  // glory swells and shrinks, its long rays and its short out of step, and
+  // Sol and Luna ride the star upright.
   const LAYERS = [
     layer('band', { turn: 240, from: -24 }),
     layer('star', { turn: 160, from: 40, reverse: true }),
@@ -404,7 +409,8 @@
     layer('solFace', { turn: 180, from: 0 }, { within: 'sol', pivot: sol }),
     layer('luna', undefined, { within: 'star', pivot: luna, upright: true }),
     layer('heart', { turn: 100, from: -70 }),
-    layer('glory'),
+    layer('glory0', undefined, { breathe: { low: 0.96, period: 4.4 } }),
+    layer('glory1', undefined, { breathe: { low: 0.93, period: 3.6, delay: -1.8 } }),
   ];
 
   // The eye, the same while drawn and after (it opens as a whole); `@id@`

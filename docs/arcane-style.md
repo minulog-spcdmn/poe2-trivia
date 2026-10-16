@@ -57,7 +57,7 @@ From the outside in. Radii are what worked; keep the proportions when scaling.
      - a wavy collarette at r 3.5;
      - a solid pupil (r 2.2) with a small round catchlight cut out (even-odd fill).
    - Everything inside the almond is clipped to it.
-   - A glory of 48 fine rays from just off the lids out to the ring, long and short in turn.
+   - A glory of 72 fine rays from just off the lids out to the ring, long and short in turn, the long and the short swelling and shrinking out of step.
 
 ## Engraving techniques
 
@@ -168,7 +168,7 @@ Besides each ring's own turn, a part can move on its own while its ring carries 
 - **Upright**: it turns back against its ring as fast as the ring turns, so it travels round but keeps its way up. Suns and moons have a right way up and keep it: the eye's Sol and Luna and the band's Luna, the rose's moons, Delve's eclipses; and the rose's seals and its cipher wheel, and the monad's seals (its angels, its letters, its great seal) stand upright.
 - **Turning about its own centre**: the eye's Sol turns slowly sunwise in his upright seal, as does the monad's sun within its ring; the inner ring of the rose's cipher wheel turns in its seal; the monad's ouroboros chases its tails head first; Delve's eclipse coronas and its black sun turn slowly.
 - **Swaying**: the monad's moon rocks on its sun.
-- **Breathing**: rays in two sets, long and short, swell and shrink a few percent out of step, so neighbouring rays keep changing length against each other (Delve's coronas); or in sectors one after another, so a slow swell runs round (the monad's glory). Only rays that end in the open: rays that pass under a strap or a band would show where they are cut.
+- **Breathing**: rays in two sets, long and short, swell and shrink a few percent out of step, so neighbouring rays keep changing length against each other (Delve's coronas, the eye's glory); or in sectors one after another, so a slow swell runs round (the monad's glory). Only rays that end in the open: rays that pass under a strap or a band would show where they are cut.
 - **Giving way**: rays whose ends something on another layer turns past (the monad's glory under the ouroboros' heads, its square's glory under the band's seals) carry that thing's outline as a mask (`mask` on a `StageLayer`). The masked layer sits in a box turning with the layer it gives way to, which carries the mask as a CSS image, inside a box turning back the same, so the rays stay where they are and only the mask moves, all on the compositor; a ray is cut short only while something passes over it. Mask only what needs it: the square's own corners and the great seal are set to clear the band's seals instead.
 - **Never**: anything whose lines are cut to fit something on another layer (a find breaking out of its seal ring, rays passing under bands) stays as it is set. And no blinking or flashing: the circles' light only breathes.
 
