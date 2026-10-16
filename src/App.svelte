@@ -32,6 +32,9 @@
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
 
+  /** Shown again after a crash (Root.svelte). */
+  let { recovered = false }: { recovered?: boolean } = $props();
+
   // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
   let recording = $state(wantsRecording());
   let muted = $state(isMuted());
@@ -74,7 +77,8 @@
   }
 
   onMount(() => {
-    session.resume();
+    // (Not after a crash (Root.svelte): what was there is still there, or was left on purpose.)
+    if (!recovered) session.resume();
     // Camera shake moves the UI (#app clips it, so it can't add scrolling).
     // Anything fixed to the viewport must live outside .shell: App's own
     // overlays sit after it, and the screens' go to <body> with use:portal.

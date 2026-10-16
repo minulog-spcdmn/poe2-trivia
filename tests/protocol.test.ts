@@ -202,3 +202,10 @@ test('presence: a guest says only how it is, and the host lists only those not s
   assert.equal(parseHostMsg({ t: 'standing', s: [] }), null);
   assert.equal(parseHostMsg({ t: 'standing', s: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`p${i}`, 'away'])) }), null);
 });
+
+test("a host's state with a clock that isn't a time is dropped", () => {
+  const state = { players: [], settings: {} };
+  assert.ok(parseHostMsg({ t: 'state', state, now: 1790642896195 }));
+  for (const now of [NaN, Infinity, -Infinity, '1'])
+    assert.equal(parseHostMsg({ t: 'state', state, now }), null);
+});

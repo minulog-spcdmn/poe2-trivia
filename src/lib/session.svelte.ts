@@ -1635,7 +1635,15 @@ class Session {
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
-            this.noteChange(this.state, msg.state);
+            try {
+              this.noteChange(this.state, msg.state);
+            } catch (err) {
+              // Only shape-checked: a game this one can't follow is left, as one it can't show is (crashed).
+              console.error(err);
+              this.crashed(false);
+              conn.close();
+              return;
+            }
             this.state = msg.state;
           }
           this.status = 'ready';
@@ -1794,6 +1802,29 @@ class Session {
     this.dispatch({ type: 'remove', playerId });
     if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue } });
     else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
+  }
+
+  /**
+   * The page crashed showing the game (Root.svelte shows it afresh), or a
+   * guest couldn't follow what its host sent. A guest leaves the room: the
+   * host's game may be what can't be shown, and a reload would only put it
+   * back in. Crashing again soon after (`again`), any game is left, so the
+   * page can be used again.
+   */
+  crashed(again: boolean) {
+    if (this.mode !== 'client' && !(again && this.mode)) return;
+    try {
+      if (this.mode === 'client') this.fail("The host's game sent something this page can't show, so you left the room.", 'Left the room');
+      else {
+        this.leave();
+        this.flash('The game ran into a problem it could not get past, so it was closed.', 'error', { title: 'Game closed', sticky: true });
+      }
+    } catch (err) {
+      // Leaving needs the game too (its records): without it, the page starts over, the game not saved to come back to.
+      console.error(err);
+      writeSaved(null);
+      location.reload();
+    }
   }
 
   leave() {

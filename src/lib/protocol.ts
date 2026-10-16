@@ -163,7 +163,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
-      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && typeof raw.now === 'number'
+      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now)
         ? (raw as HostMsg)
         : null;
     }
