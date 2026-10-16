@@ -40,6 +40,7 @@ import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { cleanName, nameSkeleton, nameUsable } from './names';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
+import { drawAhead, takeAhead, type Ahead } from './drawAhead';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -248,6 +249,23 @@ interface Guest {
   slow: boolean;
 }
 
+/** Host: a question's art as prepared (unsealed: its pictures and patches), and sealed for the room. */
+interface PreparedArt {
+  media: PreparedMedia;
+  plain: MediaMsg[];
+  sealing: { qid: number; key: SealKey | null; sealed: SealedMsg[]; open: boolean };
+}
+
+/**
+ * Host, race: a next question drawn ahead (drawAhead.ts), its art once
+ * prepared and sealed, and the guests it has gone to, with where it began on
+ * each one's lane (LaneSender.mark; null: not on a lane).
+ */
+interface AheadArt extends Ahead {
+  ready: Promise<PreparedArt>;
+  sent: Map<Guest, number | null>;
+}
+
 /** Host-only data that must survive a page refresh but never reach guests. */
 interface HostPrivate {
   myPlayerId: string;
@@ -374,6 +392,16 @@ class Session {
    * sent a view of.
    */
   private sealing: { qid: number; key: SealKey | null; sealed: SealedMsg[]; open: boolean } | null = null;
+  /**
+   * Host, race: the next question, drawn ahead as the reveal starts, on a
+   * copy of the state (drawAhead.ts), its art being prepared and sealed
+   * (`ready`), and sent to everyone (`sent`) while the reveal plays. Taken at
+   * 'next' if nothing changed meanwhile (stepNext), thrown away by any change
+   * before. Never in GameState, as the sealing isn't.
+   */
+  private ahead: AheadArt | null = null;
+  /** Host: the question drawn ahead being taken at 'next', for the state change under way to pick up (startMedia). */
+  private taking: AheadArt | null = null;
   /** Host: by player, how many questions running the clock's cap ran out before the art reached them (delveSession.ts capStrikes). */
   private strikes = new Map<string, number>();
   /** Guest: the room's sealed pictures, held until their key comes as the clock starts, then shown (seal.ts). */
@@ -1221,27 +1249,26 @@ class Session {
    * Host: new question → prepare its art, seal it (seal.ts) and send it to
    * everyone at once, spectators too: nothing in it can be seen before its
    * key, which goes out as its clock starts (waitForArrival, startClock).
-   * The host's own screen waits for that too.
+   * The host's own screen waits for that too. A race's question drawn ahead
+   * (`ahead`) comes with its art prepared and mostly sent already.
    */
-  private async startMedia(s: GameState) {
+  private async startMedia(s: GameState, ahead: AheadArt | null = null) {
     const q = s.question!;
     this.stopMedia();
     const gen = this.mediaGen;
     shown.clear();
-    // What hasn't gone yet of the question before is of no use any more: this one's goes first.
-    for (const g of this.guests.values()) g.lane?.clear();
+    // What hasn't gone yet of the question before (or of one drawn ahead and
+    // thrown away) is of no use any more: this one's goes first. One drawn
+    // ahead keeps its own, sent behind it.
+    for (const g of this.guests.values()) {
+      const from = ahead?.sent.get(g);
+      if (from === undefined) g.lane?.clear();
+      else if (from !== null) g.lane?.clearBefore(from);
+    }
     const qid = q.askedAt;
-    let media: PreparedMedia;
-    let plain: MediaMsg[];
-    let sealing: NonNullable<Session['sealing']>;
+    let prepared: PreparedArt;
     try {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
-      });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
-      plain = picturesOf(media);
-      sealing = await this.sealMedia(qid, plain);
+      prepared = await (ahead?.ready ?? this.prepareArt(s));
     } catch (err) {
       console.warn('media', err);
       if (gen === this.mediaGen && this.state?.question?.askedAt === qid && this.state.phase === 'question') {
@@ -1252,16 +1279,14 @@ class Session {
       }
       return;
     }
+    const { media, plain, sealing } = prepared;
     // The question as it is now: the clock may have run on meanwhile.
     const cur = this.state;
     if (gen !== this.mediaGen || cur?.question?.askedAt !== qid || cur.phase !== 'question') return;
     this.media = media;
     this.released = plain;
     this.sealing = sealing;
-    // Those the clock waits for first, so the others' copies don't go ahead of theirs on the host's uplink.
-    const first = new Set(clockWaitsFor(cur));
-    const guests = [...this.guests].filter(([, g]) => !!g.playerId).sort(([, a], [, b]) => Number(first.has(b.playerId!)) - Number(first.has(a.playerId!)));
-    for (const [conn, g] of guests) for (const m of sealing.sealed) this.sendMedia(conn, g, m);
+    this.sendSealed(cur, sealing.sealed, ahead?.sent ?? new Map());
     if (!clockRuns(cur.question)) {
       this.waitForArrival(qid);
       return;
@@ -1270,6 +1295,79 @@ class Session {
     // the veil (or the pictures) burning in from that clock's start.
     this.openSeal(qid);
     if (media.veil || media.tiles.length) this.burnVeil(qid, cur.question.clockAt!);
+  }
+
+  /** Prepares a question's art (media.svelte.ts), within MEDIA_TIMEOUT_MS, and seals it. */
+  private async prepareArt(s: GameState): Promise<PreparedArt> {
+    const q = s.question!;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
+    });
+    const media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
+    const plain = picturesOf(media);
+    return { media, plain, sealing: await this.sealMedia(q.askedAt, plain) };
+  }
+
+  /**
+   * A question's sealed pictures to everyone in the room not `sent` them yet
+   * (noted there, with where they begin on each one's lane), those its clock
+   * waits for first, so the others' copies don't go ahead of theirs on the
+   * host's uplink.
+   */
+  private sendSealed(s: GameState, sealed: SealedMsg[], sent: Map<Guest, number | null>) {
+    const first = new Set(clockWaitsFor(s));
+    const guests = [...this.guests]
+      .filter(([, g]) => !!g.playerId && !sent.has(g))
+      .sort(([, a], [, b]) => Number(first.has(b.playerId!)) - Number(first.has(a.playerId!)));
+    for (const [conn, g] of guests) {
+      sent.set(g, g.laneWanted && g.lane?.usable ? g.lane.mark : null);
+      for (const m of sealed) this.sendMedia(conn, g, m);
+    }
+  }
+
+  /**
+   * Race, as the reveal starts: the next question is drawn ahead on a copy of
+   * the state (drawAhead.ts), and its art prepared, sealed and sent to
+   * everyone while the reveal plays, so that by 'next' it is mostly there.
+   * Sent once the reveal's own last patches are on their way (`after`), never
+   * ahead of them: on each lane, they'd wait behind it. Nothing of it can be seen before its
+   * clock starts, like any question's, and nothing of it is in the live
+   * state until then.
+   */
+  private drawAhead(s: GameState, after: Promise<void>) {
+    this.ahead = null;
+    if (this.mode !== 'host' || this.labRoomless) return;
+    const drawn = drawAhead(s, (st) => engine.apply(st, { type: 'next' }, null));
+    if (!drawn) return;
+    const a: AheadArt = { ...drawn, ready: this.prepareArt(drawn.state), sent: new Map() };
+    this.ahead = a;
+    a.ready.then(
+      async ({ sealing }) => {
+        // (Should they never go, the next question was asked first: startMedia sends it.)
+        await after;
+        if (this.ahead === a) this.sendSealed(a.state, sealing.sealed, a.sent);
+      },
+      (err) => {
+        // Drawn again at 'next', as before (and asked again by itself should that fail too).
+        console.warn('media ahead', err);
+        if (this.ahead === a) this.ahead = null;
+      },
+    );
+  }
+
+  /**
+   * Host: the step to the next question. A race's drawn ahead is taken if the
+   * room is just as it was when it was drawn (takeAhead), its art with it;
+   * otherwise it's drawn now, as before.
+   */
+  private stepNext(cur: GameState, from: string | null): GameState {
+    const a = this.ahead;
+    this.ahead = null;
+    const taken = takeAhead(cur, a);
+    if (!taken) return engine.apply(cur, { type: 'next' }, from);
+    this.taking = a;
+    return taken;
   }
 
   /**
@@ -1467,18 +1565,25 @@ class Session {
    * The rest of a veiled picture goes out now (the answer is out), a few
    * tens of ms apart: it burns in
    * quickly, still spreading from what's there, and every device starts each
-   * patch's burn in a different frame.
+   * patch's burn in a different frame. Settles once the last has gone (by
+   * its timer, which a busy page may hold up well past its time; never, if
+   * the next question came first).
    */
-  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
+  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>): Promise<void> {
     const gap = Math.min(30, 300 / Math.max(1, rest.length));
+    let done = () => {};
+    const out = new Promise<void>((resolve) => (done = resolve));
     rest.forEach((patch, k) => {
       const go = () => {
         const s = this.state;
         if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
+        if (k === rest.length - 1) done();
       };
       if (k === 0) go();
       else this.mediaTimers.push(setTimeout(go, k * gap));
     });
+    if (!rest.length) done();
+    return out;
   }
 
   /**
@@ -1934,7 +2039,7 @@ class Session {
     const run = () => {
       if (!this.state) return;
       try {
-        this.setState(engine.apply(this.state, action, from));
+        this.setState(action.type === 'next' ? this.stepNext(this.state, from) : engine.apply(this.state, action, from));
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
         this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
@@ -2041,6 +2146,11 @@ class Session {
 
   private setState(next: GameState) {
     const prev = this.state;
+    // The room changed since the next question was drawn ahead: it's thrown away (drawAhead.ts).
+    if (this.ahead && next.version !== this.ahead.from) this.ahead = null;
+    const taking = this.taking;
+    this.taking = null;
+    let patchesOut: Promise<void> | null = null;
     this.noteChange(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
@@ -2050,7 +2160,7 @@ class Session {
       // A question asked again in its place while the draw plays keeps its hold.
       const until = drawHoldUntil(prev, next, this.drawHold);
       this.drawHold = until === null ? null : { qid: next.question.askedAt, until };
-      void this.startMedia(next);
+      void this.startMedia(next, taking?.qid === next.question.askedAt ? taking : null);
     } else if (next.phase === 'reveal') {
       // Only as the reveal begins: a later change during it (someone joining,
       // the room going public) would cancel the patches still on their way.
@@ -2060,7 +2170,7 @@ class Session {
         if (next.question) this.openSeal(next.question.askedAt);
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
         this.stopMedia(true);
-        this.finishVeil(rest);
+        patchesOut = this.finishVeil(rest);
       }
     } else if (next.phase !== 'question') {
       this.stopMedia();
@@ -2071,6 +2181,9 @@ class Session {
       const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
     }
+    // Race: the next question is known as the reveal starts, so it's drawn now (once the reveal has gone
+    // out), and its art goes out while the reveal plays, after the reveal's own last patches.
+    if (patchesOut) this.drawAhead(next, patchesOut);
     this.scheduleTimers(next);
     this.syncBeacon(next);
     this.save();
@@ -2577,7 +2690,7 @@ class Session {
       const cur = this.state;
       if (!cur || cur.phase !== 'reveal' || cur.question?.askedAt !== key) return;
       try {
-        this.setState(engine.apply(cur, { type: 'next' }, null));
+        this.setState(this.stepNext(cur, null));
       } catch {
         /* already moved on */
       }
@@ -2734,6 +2847,8 @@ class Session {
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     this.drawHold = null;
+    this.ahead = null;
+    this.taking = null;
     this.strikes.clear();
     this.sealedArt.clear();
     this.labRoomless = false;

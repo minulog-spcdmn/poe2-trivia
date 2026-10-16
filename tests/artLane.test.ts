@@ -118,6 +118,44 @@ test("what hasn't gone yet of a question gone by is dropped, and the next one's 
   assert.deepEqual(new Uint8Array(got[0].data as ArrayBuffer), new Uint8Array(next.data));
 });
 
+test("a race's next question sent ahead stays when what is left of the one before is dropped", () => {
+  const ch = new FakeChannel();
+  const sender = new LaneSender(ch);
+  const got: Record<string, unknown>[] = [];
+  const receiver = new LaneReceiver((m) => got.push(m));
+  sender.send({ t: 'sealed', kid: '5-a', iv: bytes(12), data: bytes(300_000) });
+  sender.send({ t: 'patch', qid: 5, i: 2 });
+  for (const f of ch.sent.splice(0)) assert.ok(receiver.take(f));
+  // The next question's art, drawn ahead, goes behind it.
+  const from = sender.mark;
+  const ahead = [
+    { t: 'sealed', kid: '6-b', iv: bytes(12), data: bytes(90_000, 3) },
+    { t: 'sealed', kid: '6-b', iv: bytes(12), data: bytes(20_000, 4) },
+  ];
+  for (const m of ahead) sender.send(m);
+  const before = sender.backlog;
+  // The next question is asked: only the question gone by makes way.
+  sender.clearBefore(from);
+  assert.ok(sender.backlog < before);
+  assert.ok(sender.backlog >= 110_000, "the next one's art is all still to go");
+  while (ch.sent.length || sender.backlog) {
+    for (const f of ch.sent.splice(0)) assert.ok(receiver.take(f), 'a message cut short gives way to the next');
+    ch.drain();
+  }
+  assert.deepEqual(
+    got.map((m) => m.kid),
+    ['6-b', '6-b'],
+  );
+  assert.deepEqual(new Uint8Array(got[0].data as ArrayBuffer), new Uint8Array(ahead[0].data));
+  assert.deepEqual(new Uint8Array(got[1].data as ArrayBuffer), new Uint8Array(ahead[1].data));
+  // With nothing of the one before left, it drops nothing.
+  sender.send({ t: 'patch', qid: 6, i: 1 });
+  const m = sender.mark;
+  sender.send({ t: 'patch', qid: 7, i: 1 });
+  sender.clearBefore(m);
+  assert.equal(ch.sent.length, 2, 'what the lane had room for went at once');
+});
+
 test('frames no real host sends are turned down', () => {
   const r = new LaneReceiver(() => assert.fail('nothing should come out'));
   const frame = (n: number, total: number, at: number, body = 0) => {

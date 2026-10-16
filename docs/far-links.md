@@ -186,18 +186,65 @@ Left:
 
 Race has no choosing phase, so the next question is known early.
 
-- Once the current question's sealed art has drained to everyone, the host
-  draws the next race question on a copy of the state and prepares and sends
-  its sealed art, during the answering time and the 4 s reveal (about 10 s
-  or more, enough for eight options on the worst link).
+- As the reveal starts, the host draws the next race question on a copy of
+  the state and prepares and sends its sealed art while the 4 s reveal
+  plays. Not earlier: answers change the state until the reveal (scores,
+  misses, what is used), so a copy drawn during the question could never be
+  taken as it stands.
 - On `next`, if nothing changed since (same state version: nobody joined,
-  left, was kicked; no restart), the copy is taken with `askedAt` set anew;
-  otherwise it is thrown away and drawn as today. Nothing of it touches the
-  live state before then (`used`, `artLean`, `lastAskedAt`).
+  left, was kicked; no restart, settings change or game end), the copy is
+  taken; otherwise it is thrown away and drawn as today. Nothing of it
+  touches the live state before then (`used`, `artLean`, `lastAskedAt`).
 - Guests keep sealed bytes per key id apart from what is on screen, so the
   reveal's art and its last patches are untouched.
 - Not for Delve's dig (its sizes would tell the team how hard the next depth
   is before they choose to leave) or turns (three cards).
+
+Built, still at `PROTOCOL_VERSION` 31 (nothing new on the wire: the next
+question's art is sealed pictures like any other):
+
+- **Drawing ahead** (`drawAhead.ts`): `mayDrawAhead` (a race's reveal, no
+  Delve, no deathmatch), `drawAhead` (the engine's own `next` on the state,
+  which it clones; none where the race is won), `takeAhead` (the copy, if
+  the live state is still the very reveal it was drawn from).
+- **Host** (`session.svelte.ts`): as the reveal starts, once its state has
+  gone out, `drawAhead` takes the step, `prepareArt` prepares and seals its
+  pictures under a key of their own, and they go to everyone, those racing
+  first, once the reveal's last patches are on their way (`finishVeil`
+  settles then), so they never queue ahead of them. Any state change before
+  `next` throws it away. `stepNext` (the auto-advance and the host's Next)
+  takes it if `takeAhead` allows; `startMedia` then uses its art instead of
+  preparing it again, sends it only to whoever didn't have it yet, and drops
+  from each lane only what is left of the question before
+  (`LaneSender.clearBefore`, from where the next question's art began).
+  The usual pending clock follows: with the bytes there it starts at once.
+- **`askedAt` stays as drawn** (about 4 s before `next`): it is the
+  question's id inside its sealed pictures, it is later than any question
+  asked before, and in a race nothing is timed from it, only from the clock.
+  `lastAskedAt` changes only as the copy is taken, so a late answer to the
+  question revealed still reads "Too late!".
+
+Checked with two headless browsers on the fake far link (350 ms, 40 KB/s),
+race, 20 s clock, 10 questions a run. Every question from the second on was
+drawn ahead and taken. Name questions (21 to 85 KB) were all on the guest
+before the question started (0.25 to 3.4 s before; the least right after an
+art question of 466 KB that was still going out), and their clocks started
+as they were asked (0 to 1 ms; the guest never saw them pending). Art
+questions with six options (130 to 466 KB) mostly don't fit in 4 s at
+40 KB/s: one of 143 KB was there in time, others of 130 to 227 KB waited
+1.5 to 2.2 s (before: the whole transfer, 3 to 6 s), and those of 290 KB or
+more waited for the cap (3.2 s), as in phase 2. A
+watcher joining during a reveal threw the drawn question away; the next was
+drawn as before (clock after 0.9 s), and the watcher saw nothing before
+its key. Without the fake link, clocks started about 60 ms after `next`
+(170 ms for a question not drawn ahead).
+
+Left:
+
+- Art questions on the worst link still wait for the clock's cap. Drawing
+  during the question would need a looser test than the state version (what
+  the step reads: scores against the target, `used`, `artLean`, the players
+  connected), proven to cover every change answers make.
 
 ## Phase 4: knowing a link is far, and better relays
 

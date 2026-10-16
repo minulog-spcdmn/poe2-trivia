@@ -187,6 +187,21 @@ export class LaneSender {
     this.waiting = 0;
   }
 
+  /** Where the next message sent goes in the lane's order, for clearBefore. */
+  get mark() {
+    return this.seq;
+  }
+
+  /**
+   * As clear, but only for the messages sent before `mark` (read then):
+   * what is still to go of the question gone by is dropped, while the next
+   * question's art, sent after it (drawn ahead in a race), stays.
+   */
+  clearBefore(mark: number) {
+    this.frames = this.frames.filter((f) => new DataView(f.buffer).getUint32(0) >= mark >>> 0);
+    this.waiting = this.frames.reduce((n, f) => n + f.byteLength, 0);
+  }
+
   /** Hands frames to the lane while its buffer has room. */
   pump() {
     const ch = this.channel;
