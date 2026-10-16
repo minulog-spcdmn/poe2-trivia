@@ -4,7 +4,7 @@
 
 import { foldLookalikes } from './lookalikes.ts';
 import { offensive } from './offensive.ts';
-import { readKey, writeKey } from './storage.ts';
+import { OWNER_PUBLIC_KEY, ownerUnlocked, unlockOwner } from './ownerKey.ts';
 
 export const MAX_NAME = 20;
 export const MIN_NAME = 2;
@@ -58,52 +58,23 @@ export function nameSkeleton(name: string): string {
   return folded || name.toLowerCase();
 }
 
-// A name held back for one person. Opening the site once with ?owner=<key>
-// unlocks it on that device (remembered in localStorage). The key is a few
-// random words; only its PBKDF2-SHA256 hash is in the source, and
-// scripts/held-key-hash.mjs makes the hash for a new key. Case, spaces and
-// dashes don't count, so "Ember Tower" and "ember-tower" are the same key.
-// A deterrent against impersonation, not security: the check only runs in
-// the fields where names are typed (the start page and hot-seat lobby).
+// A name held back for one person: only a device holding the owner key
+// (ownerKey.ts) can take it, in the fields where names are typed, and
+// online only with that key's signature, which the host and every device
+// in the room check.
 const HELD_NAME = 'zoearcana';
-const HELD_KEY_HASH = '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607';
-const HELD_SALT = 'poe2trivia.held-name';
-const HELD_ITERATIONS = 600_000;
-// A whole key, not a name under STORE: a device unlocked for the live game is unlocked for the beta too.
-const OWNER_KEY = 'poe2trivia.owner';
 
-/** Hex PBKDF2 hash of a key. Throws where Web Crypto is missing (plain http). */
-export async function heldKeyHash(key: string): Promise<string> {
-  const enc = new TextEncoder();
-  const plain = key.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-  const base = await crypto.subtle.importKey('raw', enc.encode(plain), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(HELD_SALT), iterations: HELD_ITERATIONS },
-    base,
-    256,
-  );
-  return Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** Remembers this device as the owner's when the key is right. */
-export async function unlockHeldName(key: string, hash = HELD_KEY_HASH): Promise<boolean> {
-  try {
-    if ((await heldKeyHash(key)) !== hash) return false;
-  } catch {
-    return false;
-  }
-  return writeKey(OWNER_KEY, hash);
-}
+/** Keeps the owner key on this device when the words (?owner=<words>) make it. */
+export const unlockHeldName = (words: string, key = OWNER_PUBLIC_KEY) => unlockOwner(words, key);
 
 /** Whether a name is the held one, in any spelling the name check treats as the same ("Zoe Arcana"). */
 export function isHeldName(name: string): boolean {
   return nameSkeleton(cleanName(name)) === HELD_NAME;
 }
 
-/** True when the name is held and this device is not unlocked. */
-export function nameHeld(name: string, hash = HELD_KEY_HASH): boolean {
-  if (!isHeldName(name)) return false;
-  return readKey(OWNER_KEY) !== hash;
+/** True when the name is held and this device doesn't hold the owner key. */
+export function nameHeld(name: string, key = OWNER_PUBLIC_KEY): boolean {
+  return isHeldName(name) && !ownerUnlocked(key);
 }
 
 /** True when a name is too short to be a name (counted in characters, after cleanup). */

@@ -5,8 +5,9 @@
 import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
+import { isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
-export const PROTOCOL_VERSION = 30;
+export const PROTOCOL_VERSION = 31;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -27,8 +28,9 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
+   * `owner`: the owner key's signature for this room, to play under the held name (ownerKey.ts).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -98,6 +100,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
+      if (raw.owner !== undefined && !isOwnerProof(raw.owner)) return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -105,6 +108,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
+        ...(raw.owner !== undefined ? { owner: { n: raw.owner.n, sig: raw.owner.sig } } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

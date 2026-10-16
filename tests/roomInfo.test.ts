@@ -86,3 +86,12 @@ test("the invite screen says how the room stands, from what the room said", asyn
   for (const o of [{ phase: 'locked' }, { phase: 'question' }, { players: 12 }, { v: PROTOCOL_VERSION - 1 }, { v: PROTOCOL_VERSION + 1 }, { v: undefined }] as Partial<RoomInfo>[])
     assert.equal(inviteLine(room(o)).warn, true, JSON.stringify(o));
 });
+
+test("a room hosted under the held name is listed only with a signature, which goes out and comes back with it", () => {
+  const owner = { n: 'nonce-1234', sig: 'x'.repeat(86) };
+  assert.equal(parseRoomInfo(wireRoomInfo({ ...room, host: 'Zoe Arcana' })), null);
+  assert.equal(parseRoomInfo({ ...wireRoomInfo({ ...room, host: 'Zoe Arcana' }), owner: { n: 'x', sig: 'y' } }), null);
+  // (Whether the signature checks out is the scan's to see, rooms.ts.)
+  assert.deepEqual(parseRoomInfo(wireRoomInfo({ ...room, host: 'Zoe Arcana', owner }))?.owner, owner);
+  assert.equal(parseRoomInfo(wireRoomInfo(room))?.owner, undefined);
+});

@@ -9,6 +9,8 @@
 import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
+import { isHeldName } from './names';
+import { checkRoom } from './ownerKey';
 
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 export { ProbeDesk, isProbe } from './probeDesk';
@@ -88,7 +90,9 @@ class Prober {
         const msg = raw as { t?: string; room?: unknown };
         if (msg?.t !== 'info') return;
         const room = parseRoomInfo(msg.room);
-        done(room ?? null);
+        // A host under the held name is listed only with the owner key's signature for its room.
+        if (room && isHeldName(room.host)) void checkRoom(room.code, room.owner).then((ok) => done(ok ? room : null));
+        else done(room ?? null);
       });
       conn.on('open', () => {
         if (settled) return;

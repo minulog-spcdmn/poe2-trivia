@@ -2,6 +2,7 @@
 // place this runs; everyone else just renders the state it broadcasts.
 
 import { cleanName, nameProblem, nameSkeleton } from './names.ts';
+import type { OwnerProof } from './ownerKey.ts';
 import { RUBY } from './palette.ts';
 import type { Looks } from './looks.ts';
 import {
@@ -976,6 +977,12 @@ export interface GameState {
   players: Player[];
   /** Watching this game; they get a seat when the host starts the next one unless they `stay` (missing in older saves). */
   spectators?: Spectator[];
+  /**
+   * Online: who plays under the held name (names.ts), with the owner key's
+   * signature for this room, which the host checked before letting them in
+   * and every device checks again (ownerKey.ts) before showing the foil.
+   */
+  owner?: { id: string } & OwnerProof;
   settings: Settings;
   /** Index into players of whose turn it is. */
   turn: number;
@@ -1021,7 +1028,10 @@ export type Action =
    * `returning`: set by the host for someone who was already in this room (may pass the lock).
    * `watch`: they'd rather watch than play (a spectator who stays one, see 'watch').
    */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean }
+  /** `owner`: the owner key's signature, for the held name (the host checks it first, session.svelte.ts). */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: OwnerProof }
+  /** Host: its own player plays under the held name, with the owner key's signature for the room. */
+  | { type: 'owner'; playerId: string; proof: OwnerProof }
   | { type: 'rename'; playerId: string; name: string }
   | { type: 'remove'; playerId: string }
   | { type: 'connection'; playerId: string; connected: boolean }
@@ -1331,6 +1341,8 @@ export class Engine {
     switch (action.type) {
       case 'join': {
         if (from !== null && from !== action.playerId) throw new ActionError('Not allowed.');
+        // (A join turned down below leaves the state as it was, this with it.)
+        if (action.owner) s.owner = { id: action.playerId, n: action.owner.n, sig: action.owner.sig };
         const existing = s.players.find((p) => p.id === action.playerId);
         if (existing) {
           // Rejoining keeps the original name, so a seat can't be renamed on the way back.
@@ -1370,6 +1382,11 @@ export class Engine {
           throw new ActionError('The lobby is full.');
         }
         seat(s, action.playerId, name);
+        break;
+      }
+      case 'owner': {
+        if (!isHost) throw new ActionError('Not allowed.');
+        s.owner = { id: action.playerId, n: action.proof.n, sig: action.proof.sig };
         break;
       }
       case 'rename': {

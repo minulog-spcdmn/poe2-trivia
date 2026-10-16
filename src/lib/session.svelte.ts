@@ -33,7 +33,8 @@ import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
-import { cleanName, nameSkeleton, nameUsable } from './names';
+import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
+import { checkOwner, ownerProof, roomProof, type OwnerProof } from './ownerKey';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
@@ -151,6 +152,8 @@ const DEAD_AFTER_MS = 15000;
 const MIN_HUMAN_MS = 200;
 /** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
 const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
+/** The held name without the owner key's signature (names.ts): turned down like any name that isn't allowed. */
+const HELD_REFUSAL = 'That name is not allowed. Pick another name.';
 /** Cap on the delay added to the host's own race answers. */
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
@@ -215,6 +218,8 @@ interface Guest {
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
+  /** Its hello, under the held name, waits on the owner key's signature being checked. */
+  checking?: boolean;
   /** When the connection came in. */
   since: number;
   /** Whether its game is on screen and in use, as it last said (presence.ts). */
@@ -316,6 +321,13 @@ class Session {
   private seen = new Set<string>();
   /** Whom the state change under way announces, if anyone: their notice replaces the plain "joined" one. */
   private heralded: string | null = null;
+  /** The room's owner (GameState owner) once this device checked the signature: its code and id (noteOwner). */
+  private ownerChecked = $state<string | null>(null);
+  private ownerCheck: { key: string; result: Promise<boolean> } | null = null;
+  /** Host under the held name: the owner key's signature on its room's listing (roomInfo). */
+  private listingProof: { code: string; proof: OwnerProof } | null = null;
+  /** Guest under the held name: the owner key's signature for the room it joins, sent with its hello. */
+  private helloOwner: Promise<OwnerProof | null> | null = null;
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -618,6 +630,7 @@ class Session {
         }
         this.setState(s);
       }
+      void this.signOwnRoom(code);
       this.startPings();
       this.watchOwnPresence();
     });
@@ -744,9 +757,25 @@ class Session {
       }
       try {
         if (msg.t === 'hello') {
-          if (guest.playerId) return;
+          if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
+          if (isHeldName(cleanName(msg.name))) {
+            // The held name only with the owner key's signature for this room (ownerKey.ts), checked first.
+            guest.checking = true;
+            void checkOwner(this.code, msg.owner).then((ok) => {
+              guest.checking = false;
+              if (!this.guests.has(conn) || guest.playerId || !this.state) return;
+              try {
+                if (!ok) throw new ActionError(HELD_REFUSAL);
+                this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, msg.owner);
+              } catch (err) {
+                const message = err instanceof ActionError ? err.message : 'Something went wrong.';
+                this.dismiss(conn, { t: 'error', message });
+              }
+            });
+            return;
+          }
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
@@ -858,7 +887,7 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean) {
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, owner?: OwnerProof) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
@@ -879,7 +908,7 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}) }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1369,6 +1398,7 @@ class Session {
     this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
+    this.helloOwner = isHeldName(cleanName(name)) ? ownerProof(room) : null;
     this.joinedAt = Date.now();
     this.armConnectTimeout();
     this.startClientPeer();
@@ -1698,8 +1728,9 @@ class Session {
       else this.planAttempt(RETRY_SOON_MS);
     });
     const secret = await this.helloSecret;
+    const owner = await this.helloOwner;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}) });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(owner ? { owner } : {}) });
     this.watchOwnPresence();
   }
 
@@ -1973,6 +2004,7 @@ class Session {
       target: s.settings.targetScore,
       phase: s.settings.locked ? 'locked' : s.phase,
       ...(s.delve && s.phase !== 'lobby' ? { depth: s.round } : {}),
+      ...(this.listingProof?.code === this.code ? { owner: this.listingProof.proof } : {}),
     };
   }
 
@@ -1999,6 +2031,7 @@ class Session {
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
+    void this.noteOwner(next);
     // (Named in the beta's frame meter, so a slow frame can be placed in the game.)
     if (prev?.phase !== next.phase || prev?.question?.askedAt !== next.question?.askedAt) frameEvent(`game: ${next.phase}${next.reveal && !prev?.reveal ? (next.reveal.correct ? ' (right)' : ' (wrong)') : ''}`);
     this.noteClock(next);
@@ -2216,17 +2249,57 @@ class Session {
     light(s);
   }
 
+  /**
+   * Checks, once, the signature of whoever plays under the held name in this
+   * room (GameState owner, ownerKey.ts): the host passes it on, but a host
+   * can't be taken at its word either. The foil (creatorShown) and the
+   * creator's notice wait on it.
+   */
+  private noteOwner(s: GameState): Promise<boolean> {
+    const o = s.owner;
+    const code = this.code;
+    if (!o || !code || this.mode === 'local') return Promise.resolve(false);
+    const key = `${code} ${o.id} ${o.n} ${o.sig}`;
+    if (this.ownerCheck?.key === key) return this.ownerCheck.result;
+    const result = checkOwner(code, o).then((ok) => {
+      if (ok && this.ownerCheck?.key === key) this.ownerChecked = `${code} ${o.id}`;
+      return ok;
+    });
+    this.ownerCheck = { key, result };
+    return result;
+  }
+
+  /** Whether the player or spectator `id` plays under the held name with a signature this device checked. */
+  ownerProven(id: string) {
+    return this.ownerChecked === `${this.code} ${id}` && this.state?.owner?.id === id;
+  }
+
+  /** Host under the held name: signs its room, for the game (its own player) and for its listing. */
+  private async signOwnRoom(code: string) {
+    const me = this.priv.myPlayerId;
+    if (!isHeldName(cleanName(this.joinName))) return;
+    const [proof, listing] = await Promise.all([ownerProof(code), roomProof(code)]);
+    if (!proof || !listing || this.mode !== 'host' || this.code !== code || !this.state) return;
+    this.listingProof = { code, proof: listing };
+    this.setState(engine.apply(this.state, { type: 'owner', playerId: me, proof }, null));
+  }
+
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
   private onNewState(prev: GameState | null, next: GameState) {
     const arrival = creatorArrival(prev, next, this.seen);
     this.heralded = arrival?.id ?? null;
     // Online, everyone but herself is told who walked in. Her colour is
     // ruby even while she only watches and has none yet.
+    // Only once the owner key's signature checks out on this device too (noteOwner).
+    const room = this.code;
     if (arrival && this.mode !== 'local' && arrival.id !== this.myPlayerId)
-      this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
-        title: CREATOR_TITLE,
-        who: { name: arrival.name, hue: arrival.hue ?? RUBY },
-        herald: true,
+      void this.noteOwner(next).then((ok) => {
+        if (!ok || this.code !== room) return;
+        this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
+          title: CREATOR_TITLE,
+          who: { name: arrival.name, hue: arrival.hue ?? RUBY },
+          herald: true,
+        });
       });
     // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
     this.hissFuse(next);
@@ -2616,6 +2689,10 @@ class Session {
     this.priv = noPrivate();
     this.seen.clear();
     this.heralded = null;
+    this.ownerChecked = null;
+    this.ownerCheck = null;
+    this.listingProof = null;
+    this.helloOwner = null;
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();
     this.helloSecret = null;
