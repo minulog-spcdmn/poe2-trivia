@@ -21,8 +21,10 @@
    * each way in `period` seconds, so rays seem to lengthen and shorten.
    * `flutter`: once every `period` seconds it narrows toward its pivot to
    * `fold` of its width and back, twice in quick succession, as a resting
-   * moth stirs its wings. Each is still a box of its own, moved on the
-   * compositor.
+   * moth stirs its wings. `mask`: its lines stop short of the shape `d`
+   * (grown by `grow`) as that turns with the layer named `with`, so a ray
+   * gives way to a head only while the head passes over it. Each is still a
+   * box of its own, moved on the compositor.
    */
   export type StageLayer = {
     name: string;
@@ -36,6 +38,7 @@
     upright?: boolean;
     breathe?: { low: number; period: number; delay?: number };
     flutter?: { fold: number; period: number; delay?: number };
+    mask?: { d: string; grow: number; with: string };
   };
 
   /** How long before its first line draws a layer's lines go on the page (s). */
@@ -63,6 +66,17 @@
     color,
     strength,
   }: { layers: StageLayer[]; heart?: Snippet; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
+
+  /**
+   * A layer's mask, as a CSS image: the whole plate, less the shape grown
+   * (see StageLayer).
+   */
+  const maskOf = ({ d, grow }: NonNullable<StageLayer['mask']>) =>
+    `url("data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 -100 200 200"><mask id="m"><rect x="-100" y="-100" width="200" height="200" fill="#fff"/>` +
+        `<path d="${d}" fill="#000" stroke="#000" stroke-width="${2 * grow}" stroke-linejoin="round"/></mask>` +
+        `<rect x="-100" y="-100" width="200" height="200" fill="#fff" mask="url(#m)"/></svg>`,
+    )}")`;
 
   // Each layer's lines go on the page a moment before they start to draw,
   // not all on the frame that shows the question; `late` says how long after
@@ -113,7 +127,7 @@
 <div class="arcane {mood}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
   <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
-    {#snippet layer(l: StageLayer)}
+    {#snippet plain(l: StageLayer)}
       {@const parent = l.upright ? layers.find((p) => p.name === l.within)?.spin : undefined}
       {@const spin = parent ? { turn: parent.turn, from: -parent.from, reverse: !parent.reverse } : l.spin}
       <div
@@ -145,6 +159,27 @@
           {@render layer(child)}
         {/each}
       </div>
+    {/snippet}
+    <!-- A masked layer sits in a box that turns with the layer it follows and carries the mask, inside one that turns back the
+         same, so the layer keeps its own way and only the mask moves; all on the compositor. -->
+    {#snippet layer(l: StageLayer)}
+      {@const by = l.mask && layers.find((p) => p.name === l.mask?.with)?.spin}
+      {#if l.mask && by}
+        <div
+          class="layer spin"
+          style:--turn="{by.turn}s"
+          style:--from="{by.from}deg"
+          style:--dir={by.reverse ? 'reverse' : 'normal'}
+          style:mask-image={maskOf(l.mask)}
+          style:-webkit-mask-image={maskOf(l.mask)}
+        >
+          <div class="layer upright" style:--turn="{by.turn}s" style:--from="{-by.from}deg" style:--dir={by.reverse ? 'normal' : 'reverse'}>
+            {@render plain(l)}
+          </div>
+        </div>
+      {:else}
+        {@render plain(l)}
+      {/if}
     {/snippet}
     {#each layers.filter((l) => !l.within) as l (l.name)}
       {@render layer(l)}
@@ -205,6 +240,10 @@
   }
   .summon :global(.layer) {
     will-change: transform;
+    mask-size: 100% 100%;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
   }
 
   /* Each ring turns its own way and speed, and first winds into place. */
@@ -278,6 +317,26 @@
     stroke-width: 0.2;
     stroke-linecap: round;
   }
+  /* The monad's ouroboros, at the descent woodcut's own weights (its 5.8
+     and 3.8 px lines, lib/ouroborosArt, drawn at 0.131 of its size), and
+     its heads' ink: shapes cut solid, set down once the lines round them are
+     drawn. */
+  .arcane :global(.ouro) {
+    stroke-width: 0.76;
+    stroke-linejoin: round;
+  }
+  .arcane :global(.ouro-divider) {
+    stroke-width: 0.5;
+    stroke-linejoin: round;
+  }
+  .arcane :global(.ink) {
+    fill: currentColor;
+    fill-rule: evenodd;
+    stroke: none;
+  }
+  .arcane :global(.draw.ink) {
+    animation: carve 0.6s calc(var(--d, 0s) - var(--late, 0s)) var(--ease-out) both;
+  }
 
   /* The glow: the same strokes, wide and faint, on their own layer so it
      can breathe without repainting. It swells up as the circle is drawn. */
@@ -296,6 +355,11 @@
   .arcane .summon :global(.glow .hair),
   .arcane .summon :global(.glow .hatch) {
     stroke-width: 1;
+  }
+  /* Shapes cut solid glow round their edges as lines do. */
+  .arcane .summon :global(.glow .ink) {
+    stroke: currentColor;
+    stroke-width: 1.4;
   }
 
   .arcane :global(.draw) {
