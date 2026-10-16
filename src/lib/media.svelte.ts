@@ -7,7 +7,9 @@
 // patches' pictures from it itself.
 
 import { itemImage } from './ui-paths';
-import { labelPatches, litMask, packLabels, patchCount, patchShapes, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
+import { patchCount } from './patches';
+import { prepare, type PrepJob, type Prepped } from './prepArt';
+import type { PrepAnswer, PrepRequest } from './prepWorker';
 import type { OwnVeil, PatchImage } from './veilCut';
 import { forgetCuts, startCut, type CutHandle } from './veilCutter';
 import type { MediaMsg } from './protocol';
@@ -57,6 +59,7 @@ export interface PreparedMedia {
 }
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
+const fileCache = new Map<string, Promise<Blob>>();
 
 /** A request that neither loads nor fails by then has stalled. */
 const IMAGE_TIMEOUT_MS = 8000;
@@ -92,22 +95,38 @@ function fetchImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Loads an image, trying again after a hiccup (a dropped request would leave everyone without art). */
-function loadImage(src: string): Promise<HTMLImageElement> {
-  let p = imageCache.get(src);
+/**
+ * Loads a picture's file as it is, for a worker to decode (prepWorker.ts):
+ * an image element's pixels would have to be copied out on the main thread
+ * (createImageBitmap) to get there, a few ms a picture.
+ */
+async function fetchFile(src: string): Promise<Blob> {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), IMAGE_TIMEOUT_MS);
+  try {
+    const res = await fetch(src, { signal: stop.signal });
+    if (!res.ok) throw new Error(`Could not load ${src}`);
+    return await res.blob();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Loads a picture once, trying again after a hiccup (a dropped request would leave everyone without art). */
+function loadOnce<T>(cache: Map<string, Promise<T>>, src: string, load: (src: string) => Promise<T>): Promise<T> {
+  let p = cache.get(src);
   if (!p) {
-    const attempt = (left: number): Promise<HTMLImageElement> =>
-      fetchImage(src).catch((err) =>
-        left > 0 ? new Promise((r) => setTimeout(r, 600)).then(() => attempt(left - 1)) : Promise.reject(err),
-      );
+    const attempt = (left: number): Promise<T> =>
+      load(src).catch((err) => (left > 0 ? new Promise((r) => setTimeout(r, 600)).then(() => attempt(left - 1)) : Promise.reject(err)));
     p = attempt(2);
-    imageCache.set(src, p);
-    p.catch(() => imageCache.delete(src));
+    cache.set(src, p);
+    p.catch(() => cache.delete(src));
   }
   return p;
 }
 
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
+const loadImage = (src: string) => loadOnce(imageCache, src, fetchImage);
+const loadFile = (src: string) => loadOnce(fileCache, src, fetchFile);
 
 /** The items, by id: their art, its size (art pixels; Item.w, Item.h) and their other art (Item.variants). */
 export type ItemsById = ReadonlyMap<string, Item>;
@@ -125,121 +144,115 @@ const LIGHT = 2;
 /** A "find the art" question with more options than this shows them small. */
 const FEW_OPTIONS = 4;
 
-/** A picture drawn for a question, with its pixels per art pixel. */
-interface Altered {
-  canvas: HTMLCanvasElement;
-  scale: number;
-}
-
 /**
- * Draws the item onto a canvas with small random changes (and flipped left to
- * right if `mirror`), so it matches no file byte for byte. The canvas has as
- * many pixels per art pixel as the item's file (its own size over the art's:
- * artScale), but no more than `most`, and its size is a whole number of art
- * pixels. The changes keep clear of the art's sharpness: it is shifted by
- * whole pixels and not turned, only its size is resampled.
+ * One picture of a question, prepared (prepArt.ts: drawn lightly altered,
+ * cut if veiled, encoded as WebP). In a worker (prepWorker.ts), from the
+ * item's file as it is, so the page goes on as the question begins; where
+ * there is no worker, OffscreenCanvas or createImageBitmap, or where the
+ * file can't be fetched or a worker fails, the page does it itself from the
+ * item's image.
  */
-async function alteredCanvas(art: { art: string; w: number; h: number }, most: number, grayscale: boolean, mirror = false): Promise<Altered> {
-  const img = await loadImage(itemImage(art.art));
-  const S = Math.max(1, Math.min(most, Math.round(img.naturalWidth / art.w)));
-  const scale = rand(0.9, 1.0);
-  const w = Math.round(art.w * scale);
-  const h = Math.round(art.h * scale);
-  const pad = Math.round(rand(2, 8));
-  const canvas = document.createElement('canvas');
-  canvas.width = (w + pad * 2) * S;
-  canvas.height = (h + pad * 2) * S;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.translate(Math.round(canvas.width / 2 + rand(-1.5, 1.5) * S), Math.round(canvas.height / 2 + rand(-1.5, 1.5) * S));
-  if (mirror) ctx.scale(-1, 1);
-  ctx.filter = `brightness(${rand(0.97, 1.03)}) saturate(${rand(0.96, 1.04)})`;
-  ctx.drawImage(img, (-w / 2) * S, (-h / 2) * S, w * S, h * S);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.filter = 'none';
-
-  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const d = pixels.data;
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] === 0) continue;
-    const n = (Math.random() - 0.5) * 6;
-    if (grayscale) {
-      const g = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2] + n;
-      d[i] = d[i + 1] = d[i + 2] = g;
-    } else {
-      d[i] += n;
-      d[i + 1] += n;
-      d[i + 2] += n;
-    }
-  }
-  ctx.putImageData(pixels, 0, 0);
-  return { canvas, scale: S };
-}
-
-/**
- * Pictures go out as WebP, at a quality that keeps the upscaled art's
- * detail. Encoded in a worker (encodeWorker.ts), so the page goes on as the
- * question begins; where there is no worker or OffscreenCanvas, a canvas
- * does it here.
- */
-function encode(pixels: ImageData): Promise<ArrayBuffer> {
-  const type = 'image/webp';
-  const quality = rand(0.92, 0.95);
-  const worker = encoder();
-  if (!worker) return encodeHere(pixels, type, quality);
-  const id = ++encodeJobs;
-  return new Promise<ArrayBuffer>((resolve, reject) => {
-    // Copied, not handed over: should the worker fail, they're encoded here.
-    encoding.set(id, { resolve, again: () => encodeHere(pixels, type, quality).then(resolve, reject) });
-    worker.postMessage({ id, w: pixels.width, h: pixels.height, pixels: pixels.data.buffer, type, quality });
+async function prepPicture(art: { art: string; w: number; h: number }, job: Omit<PrepJob, 'w' | 'h'>): Promise<Prepped> {
+  const src = itemImage(art.art);
+  const full: PrepJob = { ...job, w: art.w, h: art.h };
+  const here = async () => {
+    const img = await loadImage(src);
+    return prepare(img, img.naturalWidth, full, canvasOnPage, encodeHere);
+  };
+  if (!preparers()?.length) return here();
+  const file = await loadFile(src).catch(() => null);
+  // (Picked only now: one may have failed meanwhile.)
+  const p = leastBusy();
+  if (!file || !p) return here();
+  const id = ++prepJobs;
+  return new Promise<Prepped>((resolve, reject) => {
+    p.jobs.set(id, { resolve, again: () => here().then(resolve, reject) });
+    p.worker.postMessage({ t: 'prep', id, file, job: full } satisfies PrepRequest);
   });
 }
 
-function encodeHere(pixels: ImageData, type: string, quality?: number): Promise<ArrayBuffer> {
+const canvasOnPage = (w: number, h: number) => {
   const canvas = document.createElement('canvas');
-  canvas.width = pixels.width;
-  canvas.height = pixels.height;
-  canvas.getContext('2d', { willReadFrequently: true })!.putImageData(pixels, 0, 0);
+  canvas.width = w;
+  canvas.height = h;
+  return canvas;
+};
+
+function encodeHere(canvas: HTMLCanvasElement, type: string, quality: number): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('encode failed'))), type, quality),
   );
 }
 
-let worker: Worker | null | undefined;
-let encodeJobs = 0;
-const encoding = new Map<number, { resolve: (data: ArrayBuffer) => void; again: () => Promise<void> }>();
-/** The encoding worker, started on first use; null where it can't run. */
-function encoder(): Worker | null {
-  if (worker !== undefined) return worker;
-  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return (worker = null);
-  try {
-    worker = new Worker(new URL('./encodeWorker.ts', import.meta.url), { type: 'module' });
-  } catch {
-    return (worker = null);
-  }
-  worker.onmessage = ({ data }: MessageEvent<{ id: number; data?: ArrayBuffer; error?: string }>) => {
-    const job = encoding.get(data.id);
-    encoding.delete(data.id);
-    if (data.data) job?.resolve(data.data);
-    else job?.again();
-  };
-  // A worker that won't start (or dies): what it had, and all that comes after, is encoded here.
-  worker.onerror = () => {
-    worker = null;
-    for (const job of encoding.values()) job.again();
-    encoding.clear();
-  };
-  return worker;
+/**
+ * How many workers prepare pictures side by side: a "find the art" question's
+ * eight are ready sooner, while a phone keeps cores for the page and the
+ * link.
+ */
+const PREPARERS = 3;
+
+/** A preparing worker and the pictures it hasn't answered yet, by job. */
+interface Preparer {
+  worker: Worker;
+  jobs: Map<number, { resolve: (p: Prepped) => void; again: () => Promise<void> }>;
 }
 
-/** A canvas's pixels, for encode. */
-const pixelsOf = (canvas: HTMLCanvasElement) => canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, canvas.width, canvas.height);
+let pool: Preparer[] | null | undefined;
+let prepJobs = 0;
+
+/** The preparing workers, started on first use (or by warmMedia); null (or none left) where they can't run. */
+function preparers(): Preparer[] | null {
+  if (pool !== undefined) return pool;
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return (pool = null);
+  const cores = typeof navigator === 'undefined' ? 2 : navigator.hardwareConcurrency || 2;
+  pool = [];
+  for (let k = 0; k < Math.max(1, Math.min(PREPARERS, cores - 1)); k++) {
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('./prepWorker.ts', import.meta.url), { type: 'module' });
+    } catch {
+      break;
+    }
+    const p: Preparer = { worker, jobs: new Map() };
+    worker.onmessage = ({ data }: MessageEvent<PrepAnswer>) => {
+      const job = p.jobs.get(data.id);
+      p.jobs.delete(data.id);
+      if (data.prepped) job?.resolve(data.prepped);
+      else job?.again();
+    };
+    // A worker that won't start (or dies): what it had is prepared here, and it is given no more.
+    worker.onerror = () => {
+      pool = pool?.filter((q) => q !== p) ?? null;
+      for (const job of p.jobs.values()) job.again();
+      p.jobs.clear();
+    };
+    pool.push(p);
+  }
+  return pool;
+}
+
+/** The worker with the fewest pictures in hand; null if none can run. */
+function leastBusy(): Preparer | null {
+  return (preparers() ?? []).reduce<Preparer | null>((a, b) => (!a || b.jobs.size < a.jobs.size ? b : a), null);
+}
+
+/**
+ * Host: gets the art's preparing ready before the first question needs it,
+ * starting its workers and running each through a tiny picture once, so the
+ * first question's art isn't the one that waits for their script to load and
+ * their encoder to start. Call it as a game starts; calling it again does
+ * nothing more.
+ */
+export function warmMedia() {
+  if (pool !== undefined) return;
+  for (const p of preparers() ?? []) p.worker.postMessage({ t: 'warm' } satisfies PrepRequest);
+}
 
 /**
  * Host side: builds the art for a question (full question, with the answer).
  * `clock`: the question's seconds (game.ts questionClock) and the veil's
- * share of them, which each veiled picture's pace is fitted to once it is
- * cut (cutVeil).
+ * share of them, which each veiled picture's pace is fitted to as it is cut
+ * (prepArt.ts cutArt).
  */
 export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, items: ItemsById): Promise<PreparedMedia> {
   // Each picture as the question draws its item (Question.variant).
@@ -247,18 +260,29 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [] };
   if (q.mode === 'art') {
     const most = q.veil || q.options.length > FEW_OPTIONS ? LIGHT : SHARP;
-    const pictures = await Promise.all(q.options.map((id, i) => alteredCanvas(art(id, i), most, grayscale !== 'off', !!q.mirrored?.[i])));
-    // Each picture cut on its own seed, so no two burn in alike.
-    if (q.veil) out.tiles = await Promise.all(pictures.map((p, i) => cutVeil(p, { ...q.veil!, seed: q.veil!.seed + i }, veilPlan(clock.secs, clock.share, true))));
-    else out.options = await Promise.all(pictures.map(async (p) => ({ w: p.canvas.width / p.scale, h: p.canvas.height / p.scale, data: await encode(pixelsOf(p.canvas)) })));
+    const plan = q.veil && veilPlan(clock.secs, clock.share, true);
+    const pictures = await Promise.all(
+      q.options.map((id, i) =>
+        prepPicture(art(id, i), {
+          most,
+          grayscale: grayscale !== 'off',
+          mirror: !!q.mirrored?.[i],
+          // Each picture cut on its own seed, so no two burn in alike.
+          veil: q.veil && plan ? { size: q.veil.size, seed: q.veil.seed + i, plan } : undefined,
+        }),
+      ),
+    );
+    if (q.veil) out.tiles = pictures.map(cutVeil);
+    else out.options = pictures.map(({ w, h, data }) => ({ w, h, data }));
     return out;
   }
-  const picture = await alteredCanvas(art(q.itemId, 0), q.veil ? LIGHT : SHARP, grayscale === 'all', !!q.mirrored?.[0]);
-  if (!q.veil) {
-    out.art = { w: picture.canvas.width / picture.scale, h: picture.canvas.height / picture.scale, data: await encode(pixelsOf(picture.canvas)) };
+  const veil = q.veil ? { size: q.veil.size, seed: q.veil.seed, plan: veilPlan(clock.secs, clock.share, false) } : undefined;
+  const picture = await prepPicture(art(q.itemId, 0), { most: q.veil ? LIGHT : SHARP, grayscale: grayscale === 'all', mirror: !!q.mirrored?.[0], veil });
+  if (!picture.cut) {
+    out.art = { w: picture.w, h: picture.h, data: picture.data };
     return out;
   }
-  const cut = await cutVeil(picture, q.veil, veilPlan(clock.secs, clock.share, false));
+  const cut = cutVeil(picture);
   out.veil = cut.veil;
   out.patches = cut.patches;
   out.delays = cut.delays;
@@ -281,46 +305,21 @@ export interface CutVeil {
 }
 
 /**
- * A picture cut into `size` × `size`-ish patches, in the order they uncover,
- * paced for the patches it really has and their areas (veilSchedule, as
- * `plan` has it): half of the item in by VEIL_LEFT_MS before the clock ends
- * at the latest, the rest after. The patches are cut in art pixels (a copy
- * of the picture scaled down to them), so their shapes, seams and areas are
- * what they always were. The picture goes out whole, at full resolution,
- * with the cut (its labels); each device takes each patch's own picture from
- * it (veilCut.ts patchPicture), scale × scale pixels for each of its own (and
- * of its ring, its outline smoothed through it: patchCoverage). The host's
- * own device takes them from what it cut here (ownCuts), not the encoded
- * picture.
+ * A picture prepared veiled, as it goes out: cut into `size` × `size`-ish
+ * patches, in the order they uncover, paced for the patches it really has
+ * and their areas (prepArt.ts cutArt, veilSchedule): half of the item in by
+ * VEIL_LEFT_MS before the clock ends at the latest, the rest after. The
+ * picture goes out whole, at full resolution, with the cut (its labels);
+ * each device takes each patch's own picture from it (veilCut.ts
+ * patchPicture), scale × scale pixels for each of its own (and of its ring,
+ * its outline smoothed through it: patchCoverage). The host's own device
+ * takes them from what was cut (ownCuts), not the encoded picture.
  */
-async function cutVeil({ canvas, scale: S }: Altered, v: Veil, plan: VeilPlan): Promise<CutVeil> {
-  const W = Math.round(canvas.width / S);
-  const H = Math.round(canvas.height / S);
-  const small = document.createElement('canvas');
-  small.width = W;
-  small.height = H;
-  const sg = small.getContext('2d', { willReadFrequently: true })!;
-  sg.imageSmoothingQuality = 'high';
-  sg.drawImage(canvas, 0, 0, W, H);
-  const pixels = sg.getImageData(0, 0, W, H).data;
-  const lit = litMask(pixels, W, H);
-  const label = labelPatches(W, H, v.size, v.seed, lit);
-  const cut = patchShapes(label, W, H);
-  const order = spreadOrder(cut, v.seed);
-  const areas = order.map((i) => cut[i].area);
-  const schedule = veilSchedule(areas, plan);
-  const full = pixelsOf(canvas);
-  const veil = {
-    w: W,
-    h: H,
-    burn: Math.round(schedule.burn),
-    count: cut.length,
-    box: visibleBox(pixels, W, H),
-    data: await encode(full),
-    labels: packLabels(label).buffer as ArrayBuffer,
-  };
-  ownCuts.set(veil.data, { shapes: cut, lit, pixels: full });
-  return { veil, patches: order.map((i) => ({ i })), delays: schedule.delays, gap: schedule.gap, areas };
+function cutVeil({ data, cut }: Prepped): CutVeil {
+  if (!cut) throw new Error('a veiled picture prepared uncut');
+  const veil = { w: cut.w, h: cut.h, burn: cut.burn, count: cut.count, box: cut.box, data, labels: cut.labels };
+  ownCuts.set(veil.data, { shapes: cut.shapes, lit: cut.lit, pixels: cut.pixels });
+  return { veil, patches: cut.order.map((i) => ({ i })), delays: cut.delays, gap: cut.gap, areas: cut.areas };
 }
 
 // ---- what this device shows -------------------------------------------
