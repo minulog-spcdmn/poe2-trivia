@@ -22,6 +22,7 @@
   import { doused, reveal } from '../lib/fx/moments';
   import { whenIdle } from '../lib/idle';
   import { turnOf } from '../lib/turns';
+  import { loadPlate } from '../lib/plateStore.svelte';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -65,17 +66,19 @@
   // (DAILY_CIRCLES in circles.ts, in its order, loaded only when it's today's,
   // so the start page carries none of the others.)
   const DAILY = [
-    () => import('./ArcaneCircle.svelte'),
-    () => import('./MonadCircle.svelte'),
-    () => import('./RoseCircle.svelte'),
-    () => import('./ForbiddenCircle.svelte'),
-  ];
-  // Loaded and put on the page in the first idle moment after the start
-  // page's first frames (half a second at most).
+    [() => import('./ArcaneCircle.svelte'), 'eye'],
+    [() => import('./MonadCircle.svelte'), 'monad'],
+    [() => import('./RoseCircle.svelte'), 'rose'],
+    [() => import('./ForbiddenCircle.svelte'), 'moth'],
+  ] as const;
+  // Loaded, its plate built away from the page, and put on the page in the
+  // first idle moment after the start page's first frames (half a second at
+  // most), once both are at hand.
   let Circle = $state.raw<Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> | null>(null);
   $effect(() => {
     const day = today;
-    return whenIdle(() => void DAILY[turnOf(day, [0, 1, 2, 3])]().then((m) => day === untrack(() => today) && (Circle = m.default)), { timeout: 500, fallback: 100 });
+    const [load, name] = DAILY[turnOf(day, [0, 1, 2, 3])];
+    return whenIdle(() => void Promise.all([load(), loadPlate(name)]).then(([m]) => day === untrack(() => today) && (Circle = m.default)), { timeout: 500, fallback: 100 });
   });
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 

@@ -1,17 +1,12 @@
-<script module lang="ts">
-  import type { StageLayer } from './ArcaneStage.svelte';
-  import { plate } from 'virtual:plate/monad';
-
-  // Its plate is built with the site (src/lib/plates/monad.ts), and read the
-  // first time a circle of it mounts.
-</script>
-
 <script lang="ts">
-  import ArcaneStage from './ArcaneStage.svelte';
+  import ArcaneStage, { type StageLayer } from './ArcaneStage.svelte';
+  import { usePlate } from '../lib/plateStore.svelte';
 
   let { state, size, color, strength }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
-  const LAYERS: StageLayer[] = plate();
+  // Its plate (src/lib/plates/monad.ts), built away from the page; the circle
+  // is put on the page as soon as it's at hand.
+  const plate = usePlate<StageLayer[]>('monad');
 </script>
 
 <!--
@@ -24,4 +19,4 @@
   the monad is engraved stroke by stroke, its sun's face and point last.
 -->
 
-<ArcaneStage layers={LAYERS} {state} {size} {color} {strength} />
+{#if plate.value}<ArcaneStage layers={plate.value} {state} {size} {color} {strength} />{/if}

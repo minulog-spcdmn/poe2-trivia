@@ -1,7 +1,6 @@
 // The plate of the rune circle (the eye) (src/components/ArcaneCircle.svelte; see
-// docs/arcane-style.md): its geometry, worked out when the site is built
-// (vite.config.ts, plates) rather than in every browser, and read by the
-// circle as `virtual:plate/eye`.
+// docs/arcane-style.md): its geometry, built away from the page, in a
+// worker, and kept (lib/plateStore.svelte.ts).
 import { at as atAbout, f, hatch, joined, lineParts, pt, rad, ringParts, seeded, wear, type Hole, type LineOpts, type Pt, type Strap, type Wear } from '../arcane.ts';
 import { PLANET_SIGNS } from '../alchemy.ts';
 import { circlePath, engrave, mapPath, stroke, turned, type StageLayer } from '../engraver.ts';

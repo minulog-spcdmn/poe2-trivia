@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { PLATES } from '../src/lib/plates/index.ts';
 import type { StageLayer } from '../src/lib/engraver.ts';
 
-// Every rune circle's plate builds (as the site's build builds it,
-// vite.config.ts), each layer with its lines and glow, named once, riding
-// and giving way only to layers there are, and the whole small enough to
-// ship in the circle's chunk.
+// Every rune circle's plate builds (as the browser builds it, in a worker:
+// lib/plateStore.svelte.ts), each layer with its lines and glow, named
+// once, riding and giving way only to layers there are, and the whole small
+// enough to keep in the browser's cache.
 for (const [name, build] of Object.entries(PLATES)) {
-  test(`the ${name}'s plate`, () => {
-    const built = build() as StageLayer[] | { layers: StageLayer[] };
+  test(`the ${name}'s plate`, async () => {
+    const built = (await build()) as StageLayer[] | { layers: StageLayer[] };
     const layers = Array.isArray(built) ? built : built.layers;
     const names = new Set(layers.map((l) => l.name));
     assert.equal(names.size, layers.length, 'every layer named once');

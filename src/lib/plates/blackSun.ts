@@ -1,7 +1,6 @@
 // The plate of Delve's black sun (src/components/BlackSunCircle.svelte; see
-// docs/arcane-style.md): its geometry, worked out when the site is built
-// (vite.config.ts, plates) rather than in every browser, and read by the
-// circle as `virtual:plate/blackSun`.
+// docs/arcane-style.md): its geometry, built away from the page, in a
+// worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, f, joined, lineParts, pointedRay, pt, ringParts, seeded, wear, type Cut, type Hole, type Pt, type Wear } from '../arcane.ts';
 import { Plate } from '../cardEngraving.ts';
 import { engrave, mapPath, stroke, turned, type Plate as Engraved, type StageLayer } from '../engraver.ts';

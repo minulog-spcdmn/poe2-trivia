@@ -1,7 +1,6 @@
 // The plate of the rose (src/components/RoseCircle.svelte; see
-// docs/arcane-style.md): its geometry, worked out when the site is built
-// (vite.config.ts, plates) rather than in every browser, and read by the
-// circle as `virtual:plate/rose`.
+// docs/arcane-style.md): its geometry, built away from the page, in a
+// worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, f, hatch, lerp, pt, ring as round, ringParts, seeded, wear, type Cut, type Hole, type Part, type Pt, type Wear } from '../arcane.ts';
 import { engrave, mapPath, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
 import { glyph, inscribe } from '../tongue.ts';

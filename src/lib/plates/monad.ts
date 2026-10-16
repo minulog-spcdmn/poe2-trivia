@@ -1,7 +1,6 @@
 // The plate of the monad (src/components/MonadCircle.svelte; see
-// docs/arcane-style.md): its geometry, worked out when the site is built
-// (vite.config.ts, plates) rather than in every browser, and read by the
-// circle as `virtual:plate/monad`.
+// docs/arcane-style.md): its geometry, built away from the page, in a
+// worker, and kept (lib/plateStore.svelte.ts).
 import { at as atAbout, clearFrom, f, hatch, line, lineParts, meeting, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Pt, type Wear } from '../arcane.ts';
 import { engrave, mapPath, stroke, turned, type Engraver, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';

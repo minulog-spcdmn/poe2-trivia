@@ -1,20 +1,15 @@
-<script module lang="ts">
-  import type { StageLayer } from './ArcaneStage.svelte';
-  import { plate } from 'virtual:plate/eye';
-
-  // Its plate is built with the site (src/lib/plates/eye.ts), and read the
-  // first time a circle of it mounts.
-</script>
-
 <script lang="ts">
-  import ArcaneStage from './ArcaneStage.svelte';
+  import ArcaneStage, { type StageLayer } from './ArcaneStage.svelte';
+  import { usePlate } from '../lib/plateStore.svelte';
 
   let { state, size, color, strength }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
-  const { layers: LAYERS, eye: [EYE_GLOW, EYE_LINES] }: { layers: StageLayer[]; eye: [string, string] } = plate();
+  // Its plate (src/lib/plates/eye.ts), built away from the page; the circle
+  // is put on the page as soon as it's at hand.
+  const plate = usePlate<{ layers: StageLayer[]; eye: [string, string] }>('eye');
   const uid = $props.id();
-  const eyeGlow = EYE_GLOW.replaceAll('@id@', uid);
-  const eyeLines = EYE_LINES.replaceAll('@id@', uid);
+  const eyeGlow = $derived(plate.value?.eye[0].replaceAll('@id@', uid) ?? '');
+  const eyeLines = $derived(plate.value?.eye[1].replaceAll('@id@', uid) ?? '');
 </script>
 
 <!--
@@ -25,14 +20,16 @@
   layer winds into place meanwhile, and the glow swells up under it all.
 -->
 
-<ArcaneStage layers={LAYERS} {state} {size} {color} {strength}>
-  {#snippet heart()}
-    <div class="layer eye">
-      <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
-      <svg viewBox="-100 -100 200 200">{@html eyeLines}</svg>
-    </div>
-  {/snippet}
-</ArcaneStage>
+{#if plate.value}
+  <ArcaneStage layers={plate.value.layers} {state} {size} {color} {strength}>
+    {#snippet heart()}
+      <div class="layer eye">
+        <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
+        <svg viewBox="-100 -100 200 200">{@html eyeLines}</svg>
+      </div>
+    {/snippet}
+  </ArcaneStage>
+{/if}
 
 <style>
   .eye :global(.lid) {

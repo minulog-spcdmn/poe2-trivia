@@ -1,3 +1,10 @@
+<script module lang="ts">
+  import { loadPlate } from '../lib/plateStore.svelte';
+
+  // The collection's circle, built ahead away from the page as this page loads (before it's opened).
+  loadPlate('monad').catch(() => {});
+</script>
+
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -33,6 +40,10 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
+  // The other pages' circles, and the item window's eye, built ahead away from the page once the Codex is open.
+  onMount(() => {
+    for (const name of ['rose', 'blackSun', 'eye'] as const) loadPlate(name).catch(() => {});
+  });
   // A game in another tab may add to it meanwhile.
   onMount(() =>
     onStoredElsewhere({

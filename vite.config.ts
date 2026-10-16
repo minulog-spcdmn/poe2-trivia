@@ -1,11 +1,12 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
 import type { AtRule, Node, Rule } from 'postcss';
-import { defineConfig, loadEnv, runnerImport, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { glslMinify } from './glslMinify.ts';
@@ -120,38 +121,17 @@ function fontinNotice(): Plugin {
 }
 
 /**
- * The rune circles' plates (src/lib/plates), worked out here, as the site is
- * built, rather than in every browser: `virtual:plate/<name>` exports
- * `plate()`, which reads the finished plate (JSON, parsed the first time it's
- * asked for), so each lands in its circle's own chunk. The plates run through
- * Vite's own module runner, fresh each time, and on the dev server a change
- * to anything in src/lib builds them again and reloads the page.
+ * Which build of the rune circles' plates this is (src/lib/plates, built in
+ * the browser: lib/plateStore.svelte.ts): a hash of all of src/lib, which
+ * they draw on, so a device keeps a plate it built until any of it changes.
  */
-function plates(): Plugin {
-  const PREFIX = 'virtual:plate/';
-  const LIB = fileURLToPath(new URL('./src/lib/', import.meta.url)).replaceAll('\\', '/');
-  return {
-    name: 'plates',
-    resolveId: (id) => (id.startsWith(PREFIX) ? `\0${id}` : undefined),
-    async load(id) {
-      if (!id.startsWith(`\0${PREFIX}`)) return;
-      const name = id.slice(PREFIX.length + 1);
-      const { module } = await runnerImport<{ PLATES: Record<string, () => unknown> }>('/src/lib/plates/index.ts');
-      const build = module.PLATES[name];
-      if (!build) this.error(`plates: no plate "${name}" (src/lib/plates/index.ts)`);
-      const json = JSON.stringify(build());
-      return `let read;\nexport const plate = () => (read ??= JSON.parse(${JSON.stringify(json)}));\n`;
-    },
-    configureServer(server) {
-      server.watcher.on('change', (file) => {
-        if (!file.replaceAll('\\', '/').startsWith(LIB)) return;
-        const built = [...server.moduleGraph.idToModuleMap.values()].filter((m) => m.id?.startsWith(`\0${PREFIX}`));
-        if (!built.length) return;
-        for (const m of built) server.moduleGraph.invalidateModule(m);
-        server.ws.send({ type: 'full-reload' });
-      });
-    },
-  };
+function platesVersion() {
+  const lib = fileURLToPath(new URL('./src/lib/', import.meta.url));
+  const hash = createHash('sha256');
+  for (const file of (readdirSync(lib, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts')).sort()) {
+    hash.update(file).update(readFileSync(join(lib, file)));
+  }
+  return hash.digest('hex').slice(0, 12);
 }
 
 /** Where the backdrop tool saves to (and the game reads its zones' looks from). */
@@ -289,11 +269,14 @@ export default defineConfig(({ command, mode }) => {
   // A channel named wrongly stops here, rather than quietly playing in the live game. The local
   // one's rooms are this machine's: set before Vite reads the env, so the app sees import.meta.env.VITE_LOCAL_ID.
   if (channelOf({ VITE_CHANNEL: env.VITE_CHANNEL, DEV: command === 'serve' }) === 'local') process.env.VITE_LOCAL_ID ??= localId();
+  process.env.VITE_PLATES_VERSION = platesVersion();
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), plates(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
+    worker: { format: 'es' },
     build: {
       rollupOptions: {
         // Legal pages are plain static pages so they work without JavaScript.
