@@ -51,7 +51,10 @@
       </p>
 
       <h2>4. Online-Spiel: Verbindungsaufbau (PeerJS, STUN/TURN)</h2>
-      <p>Nur wenn Sie einen Online-Raum eröffnen, ihm beitreten, einen Einladungslink öffnen oder die Liste offener Räume ansehen:</p>
+      <p>
+        Wenn Sie einen Online-Raum eröffnen, ihm beitreten oder einen Einladungslink öffnen, und auch schon beim Aufruf
+        der Startseite: Sie sucht von selbst nach offenen Räumen, um sie in der Liste offener Räume zu zeigen.
+      </p>
       <ul>
         <li>
           <strong>Vermittlungsserver:</strong> Damit sich Geräte finden, wird der öffentliche Vermittlungsserver des
@@ -71,9 +74,10 @@
         </li>
         <li>
           <strong>Direkte Verbindung zum Host (WebRTC):</strong> Wer einem Raum beitritt, verbindet sich direkt mit dem
-          Gerät des Hosts; die Mitspielenden untereinander verbinden sich nicht. Auch das Ansehen der Liste offener Räume
-          baut kurz eine solche Verbindung zu jedem gelisteten Host auf, um die Rauminformationen abzurufen, ebenso das
-          Öffnen eines Einladungslinks zum Host dieses Raums.
+          Gerät des Hosts; die Mitspielenden untereinander verbinden sich nicht. Die Liste offener Räume auf der
+          Startseite baut beim Aufruf der Seite, und danach in Abständen, solange sie geöffnet ist, kurz eine solche
+          Verbindung zu jedem gelisteten Host auf, um die Rauminformationen abzurufen, ohne dass Sie etwas anklicken
+          müssen; ebenso das Öffnen eines Einladungslinks zum Host dieses Raums.
           <strong>Dadurch kann der Host Ihre IP-Adresse sehen und Sie die des Hosts</strong>, außer die Verbindung läuft
           über einen Relay-Server; dann sieht die Gegenseite nur dessen Adresse.
         </li>
@@ -81,8 +85,9 @@
       <p>
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels) bzw.
         lit. f DSGVO (berechtigtes Interesse an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten
-        kann eine Verarbeitung außerhalb der EU, insbesondere in den USA, stattfinden. Wer das vermeiden möchte, kann den
-        Modus „Hot-Seat“ auf einem Gerät nutzen: Dabei findet kein Verbindungsaufbau statt.
+        kann eine Verarbeitung außerhalb der EU, insbesondere in den USA, stattfinden. Im Modus „Hot-Seat“ auf einem
+        Gerät findet kein Verbindungsaufbau statt; die Suche nach offenen Räumen läuft aber, solange die Startseite
+        geöffnet ist.
       </p>
 
       <h2>5. Daten im Spiel</h2>
@@ -162,10 +167,11 @@
           <li>
             <strong>Online play only:</strong> the PeerJS matchmaking server (0.peerjs.com), Google's STUN server
             (stun.l.google.com) and, if needed, PeerJS relay servers (TURN) process your IP address to connect players.
-            Guests connect directly to the host (also briefly while browsing the open rooms list, or on opening an invite
-            link), so <strong>the host can
-            see your IP address</strong> and you can see the host's, unless the connection runs through a relay.
-            Hot-seat mode on one device avoids all of this.
+            Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
+            the host's, unless the connection runs through a relay. <strong>The start page does this on its own:</strong>
+            to show the open rooms list, it briefly connects to every listed host as soon as it opens, and again every so
+            often while it stays open, without you clicking anything; so does opening an invite link, to that room's
+            host. Hot-seat mode on one device connects to nobody, but the start page's search runs while it is open.
           </li>
           <li>
             <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
