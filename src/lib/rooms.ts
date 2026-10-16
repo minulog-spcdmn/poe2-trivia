@@ -93,7 +93,7 @@ class Prober {
         if (msg?.t !== 'info') return;
         const room = parseRoomInfo(msg.room);
         // A host under the held name is listed only with the owner key's signature for its room.
-        if (room && isHeldName(room.host)) void checkRoom(room.code, challenge, room.owner).then((ok) => done(ok ? room : null));
+        if (room && isHeldName(room.host)) void checkRoom(PEER_PREFIX + room.code, challenge, room.owner).then((ok) => done(ok ? room : null));
         else done(room ?? null);
       });
       conn.on('open', () => {

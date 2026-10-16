@@ -44,7 +44,11 @@ export const isChallenge = (v: unknown): v is string => typeof v === 'string' &&
 /** A fresh challenge, for the owner key to sign over. */
 export const newChallenge = () => base64url(crypto.getRandomValues(new Uint8Array(16)));
 
-/** What the owner signs: joining room `code`, playing in it as a player, or hosting it; always over someone's challenge. */
+/**
+ * What the owner signs: joining room `code`, playing in it as a player, or hosting it; always over someone's challenge.
+ * `code` is the room's peer id (PEER_PREFIX and its code): the live game, the beta and a local one share the key but
+ * not their rooms, so a signature drawn out in a beta room must be of no use in the live room of the same code.
+ */
 type What = 'join' | 'player' | 'room';
 const signed = (what: What, code: string, about: string) => new TextEncoder().encode(`poe2.quest ${what} ${code} ${about}`);
 

@@ -161,6 +161,8 @@ const VOUCH_WAIT_MS = 8000;
 const VOUCH_AGAIN_MS = 30000;
 /** Host: guests' challenges passed on to the owner and not yet answered, at most. */
 const MAX_VOUCHING = 64;
+/** Host: how often one guest may ask (noteOwner asks once per VOUCH_AGAIN_MS); more would only spend the owner's signatures, which every guest shares (ms). */
+const VOUCH_EVERY_MS = 5000;
 /** Cap on the delay added to the host's own race answers. */
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
@@ -225,6 +227,8 @@ interface Guest {
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
+  /** When it last asked for the owner's signature (vouch). */
+  vouchAt?: number;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
@@ -793,7 +797,11 @@ class Session {
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, msg.owner);
         } else if (msg.t === 'vouch') {
-          if (guest.playerId) this.passVouch(conn, msg.c);
+          // One guest asking over and over would use up the owner's signatures (vouchLimit), and the others' checks with them.
+          if (guest.playerId && performance.now() - (guest.vouchAt ?? -Infinity) >= VOUCH_EVERY_MS) {
+            guest.vouchAt = performance.now();
+            this.passVouch(conn, msg.c);
+          }
         } else if (msg.t === 'vouched') {
           // Only from the owner's own link, and only to whoever asked.
           const asker = this.vouching.get(msg.c);
@@ -930,7 +938,7 @@ class Session {
     if (isHeldName(cleanName(name))) {
       // The held name only with the owner key's signature over this link's challenge (ownerKey.ts), checked first.
       guest.checking = true;
-      void checkJoin(this.code, guest.challenge, owner).then((ok) => {
+      void checkJoin(PEER_PREFIX + this.code, guest.challenge, owner).then((ok) => {
         guest.checking = false;
         if (!this.guests.has(conn) || guest.playerId || !this.state) return;
         try {
@@ -2337,7 +2345,7 @@ class Session {
       const timer = setTimeout(() => resolve(false), VOUCH_WAIT_MS);
       answer = (sig) => {
         clearTimeout(timer);
-        void checkVouch(code, o.id, c, sig).then((ok) => {
+        void checkVouch(PEER_PREFIX + code, o.id, c, sig).then((ok) => {
           if (ok && this.code === code) this.ownerChecked = key;
           resolve(ok);
         });
@@ -2365,7 +2373,7 @@ class Session {
     if (o.id === this.priv.myPlayerId) {
       // As fast as the owner signs as a guest (answerVouch): each is a signature, and guests may ask over and over.
       if (!this.vouchLimit.take()) return;
-      void vouchProof(this.code, o.id, c).then((sig) => sig && this.guests.has(asker) && this.send(asker, { t: 'vouched', c, sig }));
+      void vouchProof(PEER_PREFIX + this.code, o.id, c).then((sig) => sig && this.guests.has(asker) && this.send(asker, { t: 'vouched', c, sig }));
       return;
     }
     const owner = [...this.guests].find(([, g]) => g.playerId === o.id)?.[0];
@@ -2379,7 +2387,7 @@ class Session {
   private async answerVouch(conn: DataConnection, c: string) {
     const me = this.myPlayerId;
     if (!me || this.state?.owner?.id !== me || !this.vouchLimit.take()) return;
-    const sig = await vouchProof(this.code, me, c);
+    const sig = await vouchProof(PEER_PREFIX + this.code, me, c);
     if (sig && this.hostConn === conn && conn.open) conn.send({ t: 'vouched', c, sig });
   }
 
@@ -2396,7 +2404,7 @@ class Session {
         this.onHi = done;
       });
     const hi = this.hostHi;
-    return hi?.conn === conn && this.hostConn === conn ? joinProof(this.code, hi.c) : null;
+    return hi?.conn === conn && this.hostConn === conn ? joinProof(PEER_PREFIX + this.code, hi.c) : null;
   }
 
   /** Host under the held name (as the game has it: a reopened room keeps it, with no name typed), holding the owner key. */
@@ -2411,7 +2419,7 @@ class Session {
   private listing(challenge: string | null): RoomInfo | null | Promise<RoomInfo | null> {
     const info = this.roomInfo();
     if (!info || !challenge || !isHeldName(info.host)) return info;
-    return roomProof(info.code, challenge).then((owner) => (owner ? { ...info, owner } : info));
+    return roomProof(PEER_PREFIX + info.code, challenge).then((owner) => (owner ? { ...info, owner } : info));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
