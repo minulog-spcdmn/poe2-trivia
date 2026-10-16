@@ -130,6 +130,53 @@ export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
   };
 }
 
+/** A mode over both places it's played: games started and finished, where, and how many played. */
+export interface ModeSummary {
+  mode: Mode;
+  started: number;
+  finished: number;
+  online: number;
+  hotseat: number;
+  sizes: Record<Size, number>;
+}
+
+export function modesOf(rows: ModeRow[]): ModeSummary[] {
+  return MODES.map((mode) => {
+    const of = rows.filter((r) => r.mode === mode);
+    const sum = (f: (r: ModeRow) => number) => of.reduce((n, r) => n + f(r), 0);
+    return {
+      mode,
+      started: sum((r) => r.started),
+      finished: sum((r) => r.finished),
+      online: sum((r) => (r.where === 'online' ? r.started : 0)),
+      hotseat: sum((r) => (r.where === 'hotseat' ? r.started : 0)),
+      sizes: Object.fromEntries(SIZES.map((s) => [s, sum((r) => r.sizes[s])])) as Record<Size, number>,
+    };
+  });
+}
+
+/** Each ten depths of the descent: how many runs got there (ended there or deeper) and how many ended there. */
+export function descentOf(ranges: { from: number; count: number }[]): { from: number; reached: number; ended: number }[] {
+  let below = ranges.reduce((n, r) => n + r.count, 0);
+  return ranges.map((r) => {
+    const reached = below;
+    below -= r.count;
+    return { from: r.from, reached, ended: r.count };
+  });
+}
+
+/** Days grouped `size` at a time, the last group ending on the last day (so the newest is whole): each group's first day and sum. */
+export function grouped(days: string[], values: number[], size: number): { days: string[]; values: number[] } {
+  if (size <= 1) return { days, values };
+  const out = { days: [] as string[], values: [] as number[] };
+  for (let end = days.length; end > 0; end -= size) {
+    const start = Math.max(0, end - size);
+    out.days.unshift(days[start]);
+    out.values.unshift(values.slice(start, end).reduce((n, v) => n + v, 0));
+  }
+  return out;
+}
+
 /** The depth range a run ends in by the middle of all runs (half end there or shallower), or null with none. */
 export function medianRange(ranges: { from: number; count: number }[]): number | null {
   const total = ranges.reduce((n, r) => n + r.count, 0);
@@ -152,6 +199,12 @@ export function deviceOf(system: string): 'Phone or tablet' | 'Computer' | 'Othe
 
 /** A share as a whole percent, "–" with nothing to share. */
 export const percent = (part: number, whole: number) => (whole > 0 ? `${Math.round((100 * part) / whole)}%` : '–');
+
+/** A rate's change against the period before, in percentage points, or null when either had nothing to rate. */
+export function pointsChange(part: number, whole: number, partBefore: number, wholeBefore: number): number | null {
+  if (!whole || !wholeBefore) return null;
+  return Math.round((100 * part) / whole - (100 * partBefore) / wholeBefore);
+}
 
 /** A change against the period before, as a signed whole percent, or null when there was nothing before. */
 export function change(now: number, before: number): number | null {

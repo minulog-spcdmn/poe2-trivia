@@ -27,8 +27,14 @@
   // finger dragged across, or the arrow keys once it has focus) to the
   // nearest day, and a note there reads out every series that day. The axis
   // has a few round steps on a hairline grid; the dates run along the foot.
-  let { days, series, kind = 'area', height = 150, label }: { days: string[]; series: Series[]; kind?: 'area' | 'columns'; height?: number; label: string } =
-    $props();
+  let {
+    days,
+    series,
+    kind = 'area',
+    height = 150,
+    weekly = false,
+    label,
+  }: { days: string[]; series: Series[]; kind?: 'area' | 'columns'; height?: number; weekly?: boolean; label: string } = $props();
 
   let width = $state(0);
   let at = $state<number | null>(null);
@@ -183,7 +189,7 @@
 
     {#if at !== null}
       <div class="tip" style:left="{tipLeft}px" role="status">
-        <div class="when">{longDay(days[at])}</div>
+        <div class="when">{weekly ? `Week of ${dayName(days[at])}` : longDay(days[at])}</div>
         {#each [...series].reverse() as s (s.name)}
           <div class="row"><i class="key {s.tone}"></i><b>{fmt(s.values[at] ?? 0)}</b> <span>{s.name}</span></div>
         {/each}

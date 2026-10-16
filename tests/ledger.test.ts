@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { change, daysBetween, deviceOf, ledgerOf, medianRange, percent, type PathCount } from '../src/statsPage/model.ts';
+import { change, daysBetween, descentOf, deviceOf, grouped, ledgerOf, medianRange, modesOf, percent, pointsChange, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -100,4 +100,49 @@ test('shares and changes', () => {
   assert.equal(change(150, 100), 50);
   assert.equal(change(50, 100), -50);
   assert.equal(change(10, 0), null);
+});
+
+test('a mode adds up both places it is played', () => {
+  const l = ledgerOf(
+    [path('play/delve-online', [2, 0, 0]), path('play/delve-hotseat', [5, 0, 0]), path('end/delve-hotseat', [4, 0, 0]), path('size/delve-hotseat-1p', [5, 0, 0]), path('size/delve-online-2p', [2, 0, 0])],
+    DAYS,
+  );
+  const delve = modesOf(l.games.rows).find((m) => m.mode === 'delve')!;
+  assert.deepEqual([delve.started, delve.finished, delve.online, delve.hotseat, delve.sizes['1p'], delve.sizes['2p']], [7, 4, 2, 5, 5, 2]);
+  // Every mode is there, played or not.
+  assert.deepEqual(
+    modesOf(l.games.rows).map((m) => [m.mode, m.started]),
+    [
+      ['turns', 0],
+      ['race', 0],
+      ['delve', 7],
+    ],
+  );
+});
+
+test('the descent: how many got each ten depths deep, and ended there', () => {
+  assert.deepEqual(
+    descentOf([
+      { from: 0, count: 5 },
+      { from: 10, count: 0 },
+      { from: 20, count: 2 },
+    ]),
+    [
+      { from: 0, reached: 7, ended: 5 },
+      { from: 10, reached: 2, ended: 0 },
+      { from: 20, reached: 2, ended: 2 },
+    ],
+  );
+});
+
+test('weeks are summed back from the last day, so the newest week is whole', () => {
+  const days = daysBetween('2026-10-01', '2026-10-10');
+  const g = grouped(days, [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 7);
+  assert.deepEqual(g, { days: ['2026-10-01', '2026-10-04'], values: [3, 7] });
+  assert.deepEqual(grouped(days.slice(0, 2), [4, 5], 1), { days: days.slice(0, 2), values: [4, 5] });
+});
+
+test('a rate moves in percentage points', () => {
+  assert.equal(pointsChange(70, 100, 75, 100), -5);
+  assert.equal(pointsChange(1, 2, 0, 0), null);
 });
