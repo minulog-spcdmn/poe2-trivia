@@ -1,45 +1,9 @@
 <script module lang="ts">
   import { untrack, type Snippet } from 'svelte';
-  import type { Plate } from '../lib/engraver';
+  import type { Plate, StageLayer } from '../lib/engraver';
 
-  /**
-   * One layer of a rune circle: its lines drawn twice, worn (`lines`) and
-   * whole for the glow under them (`glow`), and, if it turns, how: once
-   * round in `turn` seconds, the other way if `reverse`, after winding in
-   * from `from` degrees. `tint`: a colour its lines lean toward (mixed with
-   * the circle's own, so they still warm and cool with it), as the Delve
-   * circle's azurite is blue.
-   *
-   * A layer can ride `within` another (named), turning or swaying about its
-   * own `pivot` (a point in the plate, -100 to 100) as its parent carries it
-   * round: a seal turning in its ring, a bud swaying on its stem. `sway`:
-   * back and forth `swing` degrees either side, once in `period` seconds.
-   * `upright`: it turns back against its parent as fast as the parent turns,
-   * so it travels round with it but keeps facing the same way (a sun or a
-   * moon, which have a right way up). `breathe`: it swells and shrinks about
-   * its pivot (the centre, unless given) between full size and `low`, once
-   * each way in `period` seconds, so rays seem to lengthen and shorten.
-   * `flutter`: once every `period` seconds it narrows toward its pivot to
-   * `fold` of its width and back, twice in quick succession, as a resting
-   * moth stirs its wings. `mask`: its lines stop short of the shape `d`
-   * (grown by `grow`) as that turns with the layer named `with`, so a ray
-   * gives way to a head only while the head passes over it. Each is still a
-   * box of its own, moved on the compositor.
-   */
-  export type StageLayer = {
-    name: string;
-    lines: Plate;
-    glow: Plate;
-    spin?: { turn: number; from: number; reverse?: boolean };
-    tint?: string;
-    within?: string;
-    pivot?: [number, number];
-    sway?: { swing: number; period: number; delay?: number };
-    upright?: boolean;
-    breathe?: { low: number; period: number; delay?: number };
-    flutter?: { fold: number; period: number; delay?: number };
-    mask?: { d: string; grow: number; with: string };
-  };
+  export type { StageLayer };
+
 
   /** How long before its first line draws a layer's lines go on the page (s). */
   const AHEAD = 0.2;

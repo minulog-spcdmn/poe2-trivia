@@ -1,6 +1,6 @@
 # Arcane style: engraved alchemist's circles
 
-How the rune circle (`src/components/ArcaneCircle.svelte`) and its siblings (the other plates, below) are drawn and moved, written so a new piece in the same style (a sigil, a seal, a loading ring, a frame ornament) comes out right on the first pass. The component is the reference implementation; read it before building anything similar.
+How the rune circle (`src/components/ArcaneCircle.svelte`, its geometry in `src/lib/plates/eye.ts`) and its siblings (the other plates, below, each with its geometry in `src/lib/plates`) are drawn and moved, written so a new piece in the same style (a sigil, a seal, a loading ring, a frame ornament) comes out right on the first pass. The eye is the reference implementation; read it before building anything similar.
 
 ## The look in one paragraph
 
@@ -111,12 +111,12 @@ It plays every time the circle mounts (every question), so the shape has to read
 
 The circle mounts with every question and some six hundred lines draw in, so how it is built matters as much as how it looks:
 
-- **Built once.** The geometry and the markup are made once per page load (`<script module>`), as strings, and each circle puts them on the page with `{@html}`; six hundred Svelte elements, each with its own styles to set, took tens of ms to mount.
+- **Built once.** The geometry and the markup are made once, as strings, when the site is built (below), and each circle puts them on the page with `{@html}`; six hundred Svelte elements, each with its own styles to set, took tens of ms to mount.
 - **Each layer when it is due.** A layer's lines go on the page 0.2 s before the first of them draws (the heart and the eye at once, the star at 0.1 s, the band at 0.35 s, the glory at 1.15 s), so the frame that shows the question carries only the heart. The layer's SVGs say how late they came (`--late`), and every delay in the drawing subtracts it, so the summoning plays exactly as if all of it had been there from the start.
 - **Still once drawn.** When a layer's last line is drawn, its pieces give way to a still copy: the same lines merged into one path per weight (`main`, `thin`, `hair`, `hatch`, `sign`), with the seals' and the script's transforms worked into the path data, and no animation on any of them. It looks the same; but a finished animation keeps holding its last frame, so every piece would otherwise be styled again whenever the circle's colour changes (the reveal), and listed by every `document.getAnimations()` for as long as the question is up.
 - **Colour changes at once.** The strokes all take `currentColor`; easing it restyles and repaints every stroke in every frame of the change. The reveal's flare covers the jump.
 - A new piece that draws in should do the same: its pieces as markup made once, swapped for a merged still copy when drawn.
-- **Heavy plates built when needed.** The other plates (below) take longer to compute than the eye (up to some 100 ms for Delve's); each builds its plate the first time a circle of it mounts, or sooner in an idle moment when a page about to show it asks (`warmCircle` in `src/components/circles.ts`: the game warms the coming question's circle and those that may stand at its end, `gameCircles.ts`; the Codex its collection's as its page loads and its other pages' once open), never during the page's first frames, and never for a circle the page won't show.
+- **Plates built with the site.** A plate is the same in every browser, so none builds one: each circle's geometry lives in `src/lib/plates/<name>.ts`, and the build (the `plates` plugin in `vite.config.ts`, which on the dev server builds them again when anything in `src/lib` changes) works it out and hands the circle the finished plate as `virtual:plate/<name>`, JSON in the circle's own chunk, parsed the first time a circle of it mounts (a few ms). A page loads only the circles it shows (today's unique loads today's in the first idle moment after the start page's first frames). `tests/plates.test.ts` builds every plate and checks its layers.
 - All of this machinery is shared: `src/lib/engraver.ts` builds a layer's markup and its still copy (`engrave`, `stroke`, seals), and `src/components/ArcaneStage.svelte` puts the layers on the page when due, turns them, lays the glow under them and plays the bloom, the reveal's flare and wave and the wrong answer's jar. A circle gives the stage its layers (each with its own turn) and draws its still heart itself.
 
 ### State changes
@@ -135,7 +135,7 @@ The circle mounts with every question and some six hundred lines draw in, so how
 
 ## Brief for a new piece
 
-> Make it in the engraved alchemist's circle style described in `docs/arcane-style.md` (reference: `src/components/ArcaneCircle.svelte`): gold `currentColor` on dark, fine sharp lines (0.2 to 0.5 in a 200 unit viewBox), shading by one-sided hatching only, exact computed geometry, lines stopping short of every seal and symbol, a soft unbroken glow under worn lines, alchemical iconography (planets, sun, moon, star polygons, an engraved eye), an unreadable invented script instead of text, layers turning slowly at their own speeds, and a short choreographed entrance where lines draw themselves from the centre outward.
+> Make it in the engraved alchemist's circle style described in `docs/arcane-style.md` (reference: `src/lib/plates/eye.ts` and `src/components/ArcaneCircle.svelte`): gold `currentColor` on dark, fine sharp lines (0.2 to 0.5 in a 200 unit viewBox), shading by one-sided hatching only, exact computed geometry, lines stopping short of every seal and symbol, a soft unbroken glow under worn lines, alchemical iconography (planets, sun, moon, star polygons, an engraved eye), an unreadable invented script instead of text, layers turning slowly at their own speeds, and a short choreographed entrance where lines draw themselves from the centre outward.
 
 ## The script
 
@@ -178,7 +178,7 @@ Besides each ring's own turn, a part can move on its own while its ring carries 
 
 ### The monad's circle
 
-`src/components/MonadCircle.svelte`, the squared circle, John Dee's plate:
+`src/components/MonadCircle.svelte` (`src/lib/plates/monad.ts`), the squared circle, John Dee's plate:
 
 - **Band**: the archangels of the four quarters (Michael, Gabriel, Samael, Raphael) in great seals at the quarters, each by the character the Heptameron (1559) gives him, written on a line as a name is signed, upright as the band turns; wider than the band, so its rings break round them; the script runs in four long lines between.
 - **Square** (corners at r 76, mitred out to 77.6, clear of the band's seals): triple straps (two edges and a hairline between) laid over a glory of 72 fine rays from the inner circle to the band, which pass under the square and give way to the band's seals as they pass. In each space between the square and the band, the monad taken apart as Dee builds it: the moon's cup (above), the sun with its point (right), the ram's horns (below), the cross of the elements (left). Over the square's upper left corner, the plate's one great seal and the one thing off its quarters: the squared circle after Maier (Atalanta fugiens, emblem XXI), a circle, a triangle, a square, a circle and its point, upright.
@@ -189,7 +189,7 @@ Besides each ring's own turn, a part can move on its own while its ring carries 
 
 ### The rose
 
-`src/components/RoseCircle.svelte`, the rose of Venus and sub rosa, under the rose, the old sign of what is kept secret:
+`src/components/RoseCircle.svelte` (`src/lib/plates/rose.ts`), the rose of Venus and sub rosa, under the rose, the old sign of what is kept secret:
 
 - **Band**: the moon's eight phases in seals, for the octaeteris (eight years after which the moon's phases and Venus come round together): full at the top, new at the bottom, waning down the right and waxing up the left, so light and dark lie unevenly round the circle; each drawn flat, the dark part cut in level strokes (never curved shading, which reads as a 3D globe); the script between them.
 - **The Sun's round** (r 73), a strap, and within it **Venus's path** as seen from the Earth, from her real periods (13 of her years to 8 of ours) and the real size of her orbit: an epitrochoid of five loops, drawn as a strap woven over and under itself, running in under the Sun's round wherever she is further out than he is.
@@ -199,7 +199,7 @@ Besides each ring's own turn, a part can move on its own while its ring carries 
 
 ### The black sun (Delve)
 
-`src/components/BlackSunCircle.svelte`, the nigredo, built of great sweeping rings rather than straight lines:
+`src/components/BlackSunCircle.svelte` (`src/lib/plates/blackSun.ts`), the nigredo, built of great sweeping rings rather than straight lines:
 
 - **Three great bands**, interlaced as the Borromean rings are (each over the next, under the one after), the script written along the middle of each, passing under the band above. A fine line echoes each band along its outside.
 - **The finds**, as on their cards (`src/lib/findEngraving.ts`), in great seals where each band swings out furthest: a crown of azurite prisms round a crystal seen end on, the flare's burst, the small ring blown apart. Each breaks out of its seal's ring, which is cut where it crosses; everything else stops short of what breaks out.

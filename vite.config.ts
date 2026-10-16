@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
 import type { AtRule, Node, Rule } from 'postcss';
-import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { defineConfig, loadEnv, runnerImport, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { glslMinify } from './glslMinify.ts';
@@ -115,6 +115,41 @@ function fontinNotice(): Plugin {
         if (file.type !== 'asset' || !file.fileName.endsWith('.css') || typeof file.source !== 'string') continue;
         file.source = file.source.replace(/@font-face\s*\{\s*font-family:\s*["']?Fontin\b/g, (face) => FONTIN_NOTICE + face);
       }
+    },
+  };
+}
+
+/**
+ * The rune circles' plates (src/lib/plates), worked out here, as the site is
+ * built, rather than in every browser: `virtual:plate/<name>` exports
+ * `plate()`, which reads the finished plate (JSON, parsed the first time it's
+ * asked for), so each lands in its circle's own chunk. The plates run through
+ * Vite's own module runner, fresh each time, and on the dev server a change
+ * to anything in src/lib builds them again and reloads the page.
+ */
+function plates(): Plugin {
+  const PREFIX = 'virtual:plate/';
+  const LIB = fileURLToPath(new URL('./src/lib/', import.meta.url)).replaceAll('\\', '/');
+  return {
+    name: 'plates',
+    resolveId: (id) => (id.startsWith(PREFIX) ? `\0${id}` : undefined),
+    async load(id) {
+      if (!id.startsWith(`\0${PREFIX}`)) return;
+      const name = id.slice(PREFIX.length + 1);
+      const { module } = await runnerImport<{ PLATES: Record<string, () => unknown> }>('/src/lib/plates/index.ts');
+      const build = module.PLATES[name];
+      if (!build) this.error(`plates: no plate "${name}" (src/lib/plates/index.ts)`);
+      const json = JSON.stringify(build());
+      return `let read;\nexport const plate = () => (read ??= JSON.parse(${JSON.stringify(json)}));\n`;
+    },
+    configureServer(server) {
+      server.watcher.on('change', (file) => {
+        if (!file.replaceAll('\\', '/').startsWith(LIB)) return;
+        const built = [...server.moduleGraph.idToModuleMap.values()].filter((m) => m.id?.startsWith(`\0${PREFIX}`));
+        if (!built.length) return;
+        for (const m of built) server.moduleGraph.invalidateModule(m);
+        server.ws.send({ type: 'full-reload' });
+      });
     },
   };
 }
@@ -257,7 +292,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
+    plugins: [svelte(), plates(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     build: {
       rollupOptions: {

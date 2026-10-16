@@ -3,9 +3,9 @@
 import type { Component } from 'svelte';
 import { turnOf } from '../lib/turns';
 import ArcaneCircle from './ArcaneCircle.svelte';
-import ForbiddenCircle, { warm as warmMoth } from './ForbiddenCircle.svelte';
-import MonadCircle, { warm as warmMonad } from './MonadCircle.svelte';
-import RoseCircle, { warm as warmRose } from './RoseCircle.svelte';
+import ForbiddenCircle from './ForbiddenCircle.svelte';
+import MonadCircle from './MonadCircle.svelte';
+import RoseCircle from './RoseCircle.svelte';
 
 export type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number }>;
 
@@ -20,25 +20,6 @@ export const PERISHED_CIRCLE: Circle = ForbiddenCircle;
 
 /** The `n`th circle (a day, a question's turn) of `from` in a run seeded `seed`, never the same twice running (lib/turns). */
 export const circleAt = (n: number, from: Circle[], seed = 0) => turnOf(n, from, seed);
-
-// Each circle but the eye (whose plate is built as it's loaded) builds its
-// plate in an idle moment once asked, so a page builds only what it will show.
-// (Delve's black sun is added where the game and the Codex load it, so the
-// start page never loads it.)
-const WARM = new Map<Circle, () => void>([
-  [MonadCircle, warmMonad],
-  [RoseCircle, warmRose],
-  [ForbiddenCircle, warmMoth],
-]);
-/** Lets `warmCircle` warm `circle`, a circle not loaded here. */
-export const canWarm = (circle: Circle, warm: () => void) => void WARM.set(circle, warm);
-const warmed = new Set<Circle>();
-/** Has `circle`'s plate built in the next idle moment, ahead of its showing. */
-export function warmCircle(circle: Circle) {
-  if (warmed.has(circle)) return;
-  warmed.add(circle);
-  WARM.get(circle)?.();
-}
 
 /** One of `from`, at random. */
 export const anyOf = (from: Circle[]) => from[Math.floor(Math.random() * from.length)];

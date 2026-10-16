@@ -71,8 +71,7 @@
     () => import('./ForbiddenCircle.svelte'),
   ];
   // Loaded and put on the page in the first idle moment after the start
-  // page's first frames (half a second at most), as its plate is built when
-  // it mounts.
+  // page's first frames (half a second at most).
   let Circle = $state.raw<Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> | null>(null);
   $effect(() => {
     const day = today;
