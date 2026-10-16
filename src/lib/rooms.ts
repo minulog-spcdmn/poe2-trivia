@@ -8,6 +8,7 @@
 
 import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
+import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 export { ProbeDesk, isProbe } from './probeDesk';
@@ -80,6 +81,9 @@ class Prober {
       let timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
       this.waiting.set(id, done);
       conn = this.peer.connect(id, { reliable: true, metadata: { probe: true } });
+      // Whoever holds a slot is a stranger: what it sends is checked before
+      // PeerJS decodes it, and a probe's answer is never split.
+      hookFrames(conn, (data) => frameFits(data, MAX_PROBE_BYTES) || (done(null), false), () => (done(null), false));
       conn.on('data', (raw) => {
         const msg = raw as { t?: string; room?: unknown };
         if (msg?.t !== 'info') return;

@@ -32,7 +32,7 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
-import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
+import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { cleanName, nameSkeleton, nameUsable } from './names';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
 import { sfx } from './sound';
@@ -805,7 +805,7 @@ class Session {
       else if (verdict === 'flood') this.drop(conn);
       return verdict === 'ok';
     };
-    if (hookFrames(conn, check, () => this.block(conn))) return;
+    if (hookFrames(conn, check, () => (this.block(conn), false))) return;
     // A PeerJS without those hooks (tests/guard.test.ts should have caught the
     // upgrade): frames are then only checked after PeerJS has decoded them.
     console.warn('PeerJS changed: raw frames are checked only after decoding');
@@ -1557,6 +1557,7 @@ class Session {
     }
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     if (!conn) return;
+    this.guardHostFrames(conn);
     // The host would turn the oldest away anyway.
     this.pruneAttempts();
     while (this.attempts.length >= MAX_PENDING_PER_PEER) this.attempts.shift()!.conn.close();
@@ -1568,6 +1569,23 @@ class Session {
       this.planAttempt(RETRY_SOON_MS);
     });
     conn.on('open', () => this.adopt(conn));
+  }
+
+  /**
+   * Checks what the host sends before PeerJS decodes (or buffers) it: a host
+   * is anyone who opened a room, so a few bytes announcing billions of
+   * entries must not freeze the guest. A host that sends one is left.
+   */
+  private guardHostFrames(conn: DataConnection) {
+    const chunks = new ChunkGuard();
+    const refuse = () => {
+      if (this.hostConn === conn) this.fail('The host sent something this game can\'t read, so you left the room.', 'Left the room');
+      conn.close();
+      return false;
+    };
+    const check = (data: unknown) => frameFits(data, MAX_HOST_MSG_BYTES) || refuse();
+    if (hookFrames(conn, check, (chunk) => chunks.check(chunk) || refuse())) return;
+    console.warn('PeerJS changed: what the host sends is decoded unchecked');
   }
 
   /** The first attempt to open becomes the link to the host; the rest make way. */

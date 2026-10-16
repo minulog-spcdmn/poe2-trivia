@@ -67,6 +67,14 @@ export function plausiblePack(bytes: Uint8Array): boolean {
   return value(0) && i === bytes.length;
 }
 
+/** A frame's bytes, or null when it isn't binary. */
+const asBytes = (data: unknown) =>
+  data instanceof ArrayBuffer
+    ? new Uint8Array(data)
+    : ArrayBuffer.isView(data)
+      ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+      : null;
+
 /**
  * Budget for the raw frames a guest sends, checked before PeerJS decodes
  * them (see `hookFrames`). PeerJS reassembles chunked messages on its own and
@@ -87,12 +95,7 @@ export class FrameGuard {
 
   check(data: unknown): FrameVerdict {
     // Binary connections only ever carry bytes.
-    const bytes =
-      data instanceof ArrayBuffer
-        ? new Uint8Array(data)
-        : ArrayBuffer.isView(data)
-          ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-          : null;
+    const bytes = asBytes(data);
     if (!bytes || bytes.length > MAX_FRAME_BYTES) return 'bad';
     if (!this.frames.take() || !this.bytes.take(bytes.length)) return 'flood';
     return plausiblePack(bytes) ? 'ok' : 'bad';
@@ -108,20 +111,82 @@ interface Decoder {
 /**
  * Puts `check` in front of a PeerJS binary connection's decoding: its data
  * channel listener calls `_handleDataMessage` for every frame, before
- * unpacking it. Chunks of a split message go to `onChunk` instead of being
- * buffered: real guests never send messages big enough to be split, so
- * unfinished ones could only pile up. Returns false when this PeerJS doesn't
- * have those methods (the caller must then fall back, and say so).
+ * unpacking it, and again for a split message once its chunks are put back
+ * together. Each chunk of a split message goes to `onChunk` first, and on to
+ * PeerJS's own buffering only if that returns true (a host's guests never
+ * send messages big enough to be split, so for them it never does). Returns
+ * false when this PeerJS doesn't have those methods (the caller must then
+ * fall back, and say so).
  */
-export function hookFrames(conn: object, check: (data: unknown) => boolean, onChunk: () => void): boolean {
+export function hookFrames(conn: object, check: (data: unknown) => boolean, onChunk: (chunk: unknown) => boolean): boolean {
   const c = conn as Decoder;
   const decode = c._handleDataMessage;
-  if (typeof decode !== 'function' || typeof c._handleChunk !== 'function') return false;
+  const buffer = c._handleChunk;
+  if (typeof decode !== 'function' || typeof buffer !== 'function') return false;
   c._handleDataMessage = (e) => {
     if (check(e.data)) decode.call(conn, e);
   };
-  c._handleChunk = () => onChunk();
+  c._handleChunk = (data) => {
+    if (onChunk(data)) buffer.call(conn, data);
+  };
   return true;
+}
+
+/**
+ * Largest message a host sends a guest, put back together: a picture, or a
+ * veil with its labels (at most 1 MB, protocol.ts), fits several times over.
+ */
+export const MAX_HOST_MSG_BYTES = 8 * 1024 * 1024;
+/** The most a probe's answer (a room's info, roomInfo.ts) ever takes. */
+export const MAX_PROBE_BYTES = 2048;
+/** How much of a split message each chunk carries (PeerJS's chunkedMTU). */
+const CHUNK_BYTES = 16300;
+
+/**
+ * Whether a frame from a host (or a room answering a probe) may be decoded:
+ * bytes, at most `max` of them, and one well-formed binarypack value. A host
+ * is no more to be trusted than a guest: a few bytes announcing billions of
+ * entries would freeze anyone who joins it, or merely scans the room list.
+ */
+export function frameFits(data: unknown, max: number): boolean {
+  const bytes = asBytes(data);
+  return !!bytes && bytes.length <= max && plausiblePack(bytes);
+}
+
+/**
+ * The chunks of the split messages a host sends, checked before PeerJS
+ * buffers them: each in shape, from a message no bigger than
+ * MAX_HOST_MSG_BYTES, never twice, and only a couple of messages unfinished
+ * at once (a host sends one message's chunks back to back), so what PeerJS
+ * holds can't grow without end.
+ */
+export class ChunkGuard {
+  private open = new Map<number, { total: number; seen: Set<number> }>();
+  private maxChunks: number;
+  private maxOpen: number;
+
+  constructor(maxBytes = MAX_HOST_MSG_BYTES, maxOpen = 2) {
+    this.maxChunks = Math.ceil(maxBytes / CHUNK_BYTES);
+    this.maxOpen = maxOpen;
+  }
+
+  check(chunk: unknown): boolean {
+    if (typeof chunk !== 'object' || chunk === null) return false;
+    const { __peerData: id, n, total, data } = chunk as Record<string, unknown>;
+    const int = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+    if (!int(id, 0, 2 ** 32) || !int(total, 1, this.maxChunks) || !int(n, 0, total - 1)) return false;
+    const bytes = asBytes(data);
+    if (!bytes || bytes.length > CHUNK_BYTES) return false;
+    let message = this.open.get(id);
+    if (!message) {
+      if (this.open.size >= this.maxOpen) return false;
+      this.open.set(id, (message = { total, seen: new Set() }));
+    }
+    if (message.total !== total || message.seen.has(n)) return false;
+    message.seen.add(n);
+    if (message.seen.size === total) this.open.delete(id);
+    return true;
+  }
 }
 
 /** Most tokens the join gate keeps a budget for; the oldest go first. */

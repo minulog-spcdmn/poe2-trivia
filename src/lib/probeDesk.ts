@@ -4,6 +4,7 @@
 // tests can reach it.
 
 import type { DataConnection } from 'peerjs';
+import { hookFrames } from './guard.ts';
 import { wireRoomInfo, type RoomInfo } from './roomInfo.ts';
 
 /** Probes answered at once / per 10 seconds before refusing more. */
@@ -32,6 +33,9 @@ export class ProbeDesk {
   }
 
   answer(conn: DataConnection) {
+    // Probes only listen: anything one sends hangs it up, before PeerJS decodes it.
+    const hangUp = () => (conn.close(), false);
+    hookFrames(conn, hangUp, hangUp);
     const now = Date.now();
     this.recent = this.recent.filter((t) => now - t < 10000);
     if (this.open >= MAX_OPEN || this.recent.length >= MAX_PER_10S) {
@@ -52,7 +56,6 @@ export class ProbeDesk {
       conn.close();
       release();
     }, LONGEST_MS);
-    // Probes only need to listen; anything they send is ignored.
     conn.on('open', () => {
       const room = this.info();
       if (room) conn.send({ t: 'info', room: wireRoomInfo(room) });
