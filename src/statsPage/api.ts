@@ -2,9 +2,13 @@
 // API key the owner pasted once, which stays in this browser
 // (lib/storage.ts) and is never in the code. GoatCounter lets a page call its
 // API from anywhere (CORS); the site's CSP lets this one reach it
-// (lib/counter.ts). It allows 4 calls a second and 500 an hour: calls go out
-// three at a time at most and a quarter second apart, and one turned away
-// waits longer each time (its Retry-After isn't readable from another site).
+// (lib/counter.ts).
+//
+// GoatCounter takes 4 requests a second from an address (and 500 an hour),
+// and counts the browser's preflight too: each call, sent with the key, is
+// two requests. So calls go out one at a time, 600ms apart. A preflight it
+// turns away fails as CORS, so the page sees no answer at all, not its 429;
+// a call that gets none is tried again, later each time.
 
 import { COUNTER_ORIGIN } from '../lib/counter';
 import { readStored, removeStored, writeStored } from '../lib/storage';
@@ -30,42 +34,42 @@ export class ApiError extends Error {
   }
 }
 
-const AT_ONCE = 3;
-const APART_MS = 260;
-let running = 0;
+/** Between the starts of two calls: each is two requests (preflight and call), GoatCounter takes 4 a second. */
+const APART_MS = 600;
+const TRIES = 4;
+let queue: Promise<unknown> = Promise.resolve();
 let lastStart = 0;
-const waiting: (() => void)[] = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** `go` once a place is free (a call finishing hands its place straight on) and a quarter second after the last call began. */
-async function paced<T>(go: () => Promise<T>): Promise<T> {
-  if (running < AT_ONCE) running++;
-  else await new Promise<void>((r) => waiting.push(r));
-  try {
+/** `go` once every call before it has finished, and APART_MS after the last one began. */
+function paced<T>(go: () => Promise<T>): Promise<T> {
+  const turn = queue.then(async () => {
     const wait = lastStart + APART_MS - Date.now();
-    lastStart = Math.max(Date.now(), lastStart + APART_MS);
     if (wait > 0) await sleep(wait);
-    return await go();
-  } finally {
-    const next = waiting.shift();
-    if (next) next();
-    else running--;
-  }
+    lastStart = Date.now();
+    return go();
+  });
+  queue = turn.catch(() => undefined);
+  return turn;
 }
 
-async function get<T>(key: string, path: string, query: Record<string, string> = {}, tries = 4): Promise<T> {
+async function get<T>(key: string, path: string, query: Record<string, string> = {}, tried = 0): Promise<T> {
   const url = `${COUNTER_ORIGIN}/api/v0${path}${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ''}`;
-  const res = await paced(() =>
-    fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => {
-      throw new ApiError("GoatCounter couldn't be reached. Check the connection and try again.", 'network');
-    }),
-  );
-  if (res.status === 429 && tries > 1) {
-    await sleep(1200 * 2 ** (4 - tries));
-    return get(key, path, query, tries - 1);
+  const again = async () => {
+    await sleep(1500 * 2 ** tried);
+    return get<T>(key, path, query, tried + 1);
+  };
+  const res = await paced(() => fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => null));
+  // No answer: most often a preflight GoatCounter turned away for coming too fast, now and then an ad blocker.
+  if (!res) {
+    if (tried + 1 < TRIES) return again();
+    throw new ApiError("GoatCounter didn't answer. It may be busy (4 requests a second, 500 an hour), or an ad blocker may stop it. Try again in a minute.", 'network');
+  }
+  if (res.status === 429) {
+    if (tried + 1 < TRIES) return again();
+    throw new ApiError('GoatCounter asked to slow down (500 requests an hour). Try again in a few minutes.', 'busy');
   }
   if (res.status === 401 || res.status === 403) throw new ApiError('GoatCounter turned the key down. It may have been deleted, or lack "Read statistics".', 'key');
-  if (res.status === 429) throw new ApiError('GoatCounter asked to slow down (500 calls an hour). Try again in a few minutes.', 'busy');
   if (!res.ok) throw new ApiError(`GoatCounter answered ${res.status}. Try again in a moment.`, 'other');
   return (await res.json()) as T;
 }
