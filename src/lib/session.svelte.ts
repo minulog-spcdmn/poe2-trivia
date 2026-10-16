@@ -130,8 +130,6 @@ const NEXT_ATTEMPT_MS = 4000;
 const ATTEMPT_LIFE_MS = 15000;
 /** Client: joining gives up if the room hasn't let us in by then (each "busy" buys more time, up to the cap). */
 const JOIN_GIVE_UP_MS = 30000;
-/** How long a guest's link to its host is down before it counts as lost (count.ts): longer than a host's reload takes. */
-const LOST_COUNTED_AFTER_MS = 20_000;
 const JOIN_GIVE_UP_CAP_MS = 60000;
 /** Client: the server says an attempt's room isn't there within this time (it holds an offer ~5 s). */
 const EXPIRE_MS = 7000;
@@ -863,7 +861,10 @@ class Session {
 
   private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean) {
     const outdated = versionProblem(v);
-    if (outdated) throw new ActionError(outdated);
+    if (outdated) {
+      this.dismiss(conn, { t: 'error', message: outdated, version: true });
+      return;
+    }
     const known = this.secretToPlayer.get(secret);
     // A kicked player stays out, under their old token or (as a newcomer) their old name.
     if (this.priv.bannedSecrets.includes(secret)) {
@@ -1360,8 +1361,6 @@ class Session {
   private joinVia: JoinVia | null = null;
   /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
   private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
-  /** When a guest's link to its host went (0: it hasn't): counted as lost only if it isn't back soon (LOST_COUNTED_AFTER_MS). */
-  private lostAt = 0;
 
   join(code: string, name: string, watch = false, via?: JoinVia) {
     // The host's room has its own settings: a shared link's Delve is moot.
@@ -1634,7 +1633,6 @@ class Session {
           }
           if (this.status === 'connecting' && this.joinVia) countEvent(`joined/${this.joinVia}`);
           this.joinVia = null;
-          this.lostAt = 0;
           this.status = 'ready';
           if (this.state) this.noteWatch(this.state);
           break;
@@ -1645,7 +1643,7 @@ class Session {
             this.turnedDown = { askedAt: msg.askedAt };
           }
           if (this.status === 'connecting')
-            this.fail(versionRefusal(msg.message), "Couldn't join", { failure: this.joinFailure(isVersionRefusal(msg.message) ? 'join-version-mismatch' : 'join-refused') });
+            this.fail(versionRefusal(msg.message), "Couldn't join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           else this.flash(msg.message, 'error');
           break;
         case 'kicked':
@@ -1695,7 +1693,6 @@ class Session {
 
   private hostLost(conn: DataConnection) {
     if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
-      this.lostAt = Date.now();
       this.status = 'lost';
       this.retries = 0;
       // A link that came back on its own after giving up starts a fresh count.
@@ -1708,13 +1705,7 @@ class Session {
     if (this.retry) clearTimeout(this.retry);
     this.retry = setTimeout(() => {
       if (this.mode !== 'client' || this.status === 'ready') return;
-      // Not back by now: more than a host's reload, which a guest gets over in a few seconds.
-      if (this.lostAt && Date.now() - this.lostAt >= LOST_COUNTED_AFTER_MS) {
-        countFailure('connection-lost');
-        this.lostAt = 0;
-      }
       if (this.retries++ >= 20) {
-        countFailure('reconnect-gave-up');
         this.gaveUp = true;
         return;
       }
@@ -2584,7 +2575,6 @@ class Session {
     this.myPlayerId = null;
     this.watchOnly = false;
     this.joinVia = null;
-    this.lostAt = 0;
     // A guest's offset to its host's clock means nothing for the next room.
     this.clockOffset = 0;
     this.clockSynced = false;

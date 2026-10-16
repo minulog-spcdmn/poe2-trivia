@@ -25,22 +25,18 @@
   import DrawnMark from './DrawnMark.svelte';
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
-  import { LISTED_PARAM, countArrival, type JoinVia } from '../lib/count';
+  import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
-  let invite = $state(cleanCode(params.get('room') ?? ''));
-  /**
-   * How a join of the room in the address started: an invite link, or a room
-   * tapped in the Open rooms list whose newer host it reloaded into (its
-   * marker stays in the address with the room, through a reload, until
-   * leaveInvite takes both out).
-   */
-  const inviteVia: JoinVia = params.has(LISTED_PARAM) ? 'open-rooms' : 'invite-link';
-  if (params.get('room') && inviteVia === 'invite-link') countArrival('open/invite-link');
+  const linked = cleanCode(params.get('room') ?? '');
+  let invite = $state(linked);
+  /** How a join of the room in the address started: an invite link, or a room tapped in the Open rooms list whose newer host it reloaded into (count.ts cameFromThisSite). */
+  const inviteVia: JoinVia = cameFromThisSite ? 'open-rooms' : 'invite-link';
+  if (linked && inviteVia === 'invite-link') countArrival('open/invite-link');
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -493,7 +489,6 @@
   function leaveInvite() {
     const url = new URL(location.href);
     url.searchParams.delete('room');
-    url.searchParams.delete(LISTED_PARAM);
     // Older invite links named their host (?by=): the room says that now.
     url.searchParams.delete('by');
     url.searchParams.delete('first');

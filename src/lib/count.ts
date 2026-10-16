@@ -22,9 +22,7 @@ export function countsOn(at: { hostname: string; pathname: string }, channel: Ch
 /** Whether this page counts, settled as it loads (its address changes only in its query and hash after). */
 export const counting = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
 
-function send(params: Record<string, string>) {
-  if (!counting) return;
-  const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
+function beacon(url: string) {
   try {
     if (navigator.sendBeacon?.(url)) return;
   } catch {
@@ -33,50 +31,69 @@ function send(params: Record<string, string>) {
   new Image().src = url;
 }
 
-/**
- * This page was come back to rather than arrived at: reloaded, gone back or
- * forward to, or reloaded by the Open rooms list into a newer host's room
- * (LISTED_PARAM). What came with the arrival was counted then.
- */
-const cameBack = () => {
-  const type = (performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined)?.type;
-  return type === 'reload' || type === 'back_forward' || new URLSearchParams(location.search).has(LISTED_PARAM);
-};
-
-/** `go` once the page is first seen: a tab opened in the background and closed unseen counts nothing. */
-function whenSeen(go: () => void) {
-  if (document.visibilityState === 'visible') return go();
-  const seen = () => {
+/** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
+let seen = typeof document === 'undefined' || document.visibilityState === 'visible';
+const waiting: string[] = [];
+if (counting && !seen) {
+  const look = () => {
     if (document.visibilityState !== 'visible') return;
-    document.removeEventListener('visibilitychange', seen);
-    go();
+    document.removeEventListener('visibilitychange', look);
+    seen = true;
+    for (const url of waiting.splice(0)) beacon(url);
   };
-  document.addEventListener('visibilitychange', seen);
+  document.addEventListener('visibilitychange', look);
 }
 
+function send(params: Record<string, string>) {
+  if (!counting) return;
+  const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
+  if (seen) beacon(url);
+  else waiting.push(url);
+}
+
+const sameSite = (referrer: string, here: string) => {
+  try {
+    return new URL(referrer).origin === new URL(here).origin;
+  } catch {
+    return false;
+  }
+};
+
 /**
- * Where a visitor came from, as counted: another site's or app's address
- * without its query (a link elsewhere may carry anything), nothing for this
- * site's own (an address here may carry a room's code) or none.
+ * This page was reached from this site's own pages: a room in the address
+ * then comes from the Open rooms list reloading into a newer host's room
+ * (OpenRooms reloadInto, any build's), never from an invite link, which
+ * comes from elsewhere. A reload keeps the referrer, a copied address loses it.
+ */
+export const cameFromThisSite = typeof document !== 'undefined' && sameSite(document.referrer, location.href);
+
+/** This page was come back to rather than arrived at: reloaded, gone back or forward to, or reached from this site's own pages. What came with the arrival was counted then. */
+const cameBack = () => {
+  const type = (performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined)?.type;
+  return type === 'reload' || type === 'back_forward' || cameFromThisSite;
+};
+
+/**
+ * Where a visitor came from, as counted: another site's or app's name alone
+ * (its path and query may name a private thread, a document, anything), none
+ * for this site's own (an address here may carry a room's code) or none.
  */
 export function referrerOf(referrer: string, here: string): string {
+  if (sameSite(referrer, here)) return '';
   try {
     const from = new URL(referrer);
-    if (from.origin === new URL(here).origin) return '';
     // (An app's, android-app://com.reddit.frontpage/, has no origin of its own.)
-    return `${from.origin === 'null' ? `${from.protocol}//${from.host}` : from.origin}${from.pathname}`;
+    return from.origin === 'null' ? (from.host ? `${from.protocol}//${from.host}` : '') : from.origin;
   } catch {
     return '';
   }
 }
 
-/** A visit to the start page, once it is first seen; not one come back to (cameBack). */
+/** A visit to the start page; not one come back to (cameBack). */
 export function countVisit() {
   if (!counting || cameBack()) return;
-  whenSeen(() => {
-    const r = referrerOf(document.referrer, location.href);
-    send({ p: '/', t: document.title, ...(r ? { r } : {}) });
-  });
+  const r = referrerOf(document.referrer, location.href);
+  send({ p: '/', t: document.title, ...(r ? { r } : {}) });
 }
 
 /** An event: its name is the path GoatCounter lists it under. */
@@ -85,11 +102,11 @@ export function countEvent(name: string) {
 }
 
 const arrivals = new Set<string>();
-/** An event that comes with arriving (a link opened): once a page load, once it is first seen, as its visit is; not on coming back. */
+/** An event that comes with arriving (a link opened): once a page load, not on coming back. */
 export function countArrival(name: string) {
   if (arrivals.has(name) || !counting || cameBack()) return;
   arrivals.add(name);
-  whenSeen(() => countEvent(name));
+  countEvent(name);
 }
 
 // ---- games -------------------------------------------------------------------
@@ -109,8 +126,8 @@ const playing = (s: GameState) => s.phase !== 'lobby' && s.phase !== 'over';
 const decided = (s: GameState) => s.phase === 'over' || (s.phase !== 'lobby' && nobodyStands(s));
 
 /** The event for a Delve run's end, by the ten depths it ended in, as players see them ("delve/depth-20-29"). */
-export function delveEndEvent(shownDepth: number): string {
-  const from = Math.floor(Math.max(0, shownDepth) / 10) * 10;
+export function delveEndEvent(depth: number): string {
+  const from = Math.floor(Math.max(0, depth) / 10) * 10;
   return `delve/depth-${from}-${from + 9}`;
 }
 
@@ -147,18 +164,16 @@ export class GameCounts {
 
 // ---- joining -----------------------------------------------------------------
 
-/** In the address of a page the Open rooms list reloads into a newer host's room: that join started in the list, not at an invite link. */
-export const LISTED_PARAM = 'listed';
-
 /** Where a join started: a code typed, an invite link, the Open rooms list. Counted as tried ("join/…") and as let in ("joined/…"). */
 export type JoinVia = 'code' | 'invite-link' | 'open-rooms';
 
 /**
- * A failure counted ("error/…"): a room that couldn't be opened or reached
- * or turned a join down (full, locked, a name: "join-refused"), or a guest's
- * link to its host lost for good (not a host's reload, which it comes back
- * from). A guest removed, a room closed or a game moved to another tab isn't
- * one: nothing failed.
+ * A failure counted ("error/…"): a room that couldn't be opened, or reached,
+ * or that turned a join down (full, locked, a name: "join-refused"). A guest
+ * removed, a room closed or a game moved to another tab isn't one: nothing
+ * failed. Nor is a guest's link to its host going mid-game: from the guest's
+ * side a host closing its tab, a host reloading and a network failing look
+ * the same, so a count of them would mostly count hosts leaving.
  */
 export type Failure =
   | 'host-no-connection'
@@ -169,8 +184,6 @@ export type Failure =
   | 'join-no-such-room'
   | 'join-turned-away'
   | 'join-version-mismatch'
-  | 'join-refused'
-  | 'connection-lost'
-  | 'reconnect-gave-up';
+  | 'join-refused';
 
 export const countFailure = (failure: Failure) => countEvent(`error/${failure}`);

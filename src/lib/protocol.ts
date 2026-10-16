@@ -20,8 +20,13 @@ export function versionProblem(v: number): string | null {
   return v < PROTOCOL_VERSION ? GUEST_BEHIND : HOST_BEHIND;
 }
 
-/** Whether a host's refusal is about the versions (versionProblem's, or an older host's LEGACY_VERSION_TEXT), not the room (full, locked, a name). */
-export const isVersionRefusal = (message: string) => message === GUEST_BEHIND || message === HOST_BEHIND || message === LEGACY_VERSION_TEXT;
+/**
+ * Whether a host's refusal is about the versions, not the room (full, locked,
+ * a name): flagged so (`version`), or, from a host older than the flag, in
+ * the words it used (versionProblem's then, or LEGACY_VERSION_TEXT).
+ */
+export const isVersionRefusal = (msg: { message: string; version?: true }) =>
+  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === LEGACY_VERSION_TEXT;
 
 /** The refusal a guest shows: an older host can't say which side is behind, so the guest says it for them. */
 export function versionRefusal(message: string): string {
@@ -50,7 +55,8 @@ export type HostMsg =
    * `askedAt`: an answer to that question was turned down, so it may be
    * given again. A guest that doesn't know the field just shows the message.
    */
-  | { t: 'error'; message: string; askedAt?: number }
+  /** `version`: turned away for the versions (isVersionRefusal). */
+  | { t: 'error'; message: string; askedAt?: number; version?: true }
   | { t: 'kicked' }
   | { t: 'closed' }
   /** The same player connected again (another tab): this connection is dropped. */
@@ -174,7 +180,9 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
         : null;
     }
     case 'error':
-      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) ? (raw as HostMsg) : null;
+      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) && (raw.version === undefined || raw.version === true)
+        ? (raw as HostMsg)
+        : null;
     case 'busy':
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
     case 'kicked':

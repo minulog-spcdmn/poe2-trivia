@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { GameCounts, countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, referrerOf } from '../src/lib/count.ts';
-import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, versionProblem } from '../src/lib/protocol.ts';
+import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, versionProblem } from '../src/lib/protocol.ts';
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 
@@ -46,18 +46,26 @@ test('the CSP lets the counts out', () => {
 });
 
 test('a referrer is another site without its query; this site, which may carry a room code, is none', () => {
-  assert.equal(referrerOf('https://www.reddit.com/r/PathOfExile2/comments/abc/?utm_source=x#top', 'https://poe2.quest/'), 'https://www.reddit.com/r/PathOfExile2/comments/abc/');
+  // Only the site: a path may name a private thread or a document.
+  assert.equal(referrerOf('https://www.reddit.com/r/PathOfExile2/comments/abc/?utm_source=x#top', 'https://poe2.quest/'), 'https://www.reddit.com');
+  assert.equal(referrerOf('https://docs.google.com/document/d/secret-id/edit', 'https://poe2.quest/'), 'https://docs.google.com');
   assert.equal(referrerOf('https://poe2.quest/?room=ABC123', 'https://poe2.quest/'), '');
   assert.equal(referrerOf('', 'https://poe2.quest/'), '');
   // An app's has no origin: its name, not "null".
-  assert.equal(referrerOf('android-app://com.reddit.frontpage/', 'https://poe2.quest/'), 'android-app://com.reddit.frontpage/');
+  assert.equal(referrerOf('android-app://com.reddit.frontpage/', 'https://poe2.quest/'), 'android-app://com.reddit.frontpage');
 });
 
 test("a join turned down for the versions counts apart from one turned down by the room", () => {
-  assert.ok(isVersionRefusal(versionProblem(PROTOCOL_VERSION - 1)!));
-  assert.ok(isVersionRefusal(versionProblem(PROTOCOL_VERSION + 1)!));
-  assert.ok(isVersionRefusal(LEGACY_VERSION_TEXT));
-  assert.ok(!isVersionRefusal('The lobby is full.'));
+  // Flagged, whatever its words (a later build may say it otherwise).
+  assert.ok(isVersionRefusal({ message: 'Anything at all.', version: true }));
+  // From hosts older than the flag, by the words they used.
+  assert.ok(isVersionRefusal({ message: versionProblem(PROTOCOL_VERSION - 1)! }));
+  assert.ok(isVersionRefusal({ message: versionProblem(PROTOCOL_VERSION + 1)! }));
+  assert.ok(isVersionRefusal({ message: LEGACY_VERSION_TEXT }));
+  assert.ok(!isVersionRefusal({ message: 'The lobby is full.' }));
+  // The flag goes through the guest's check of what a host sends.
+  assert.deepEqual(parseHostMsg({ t: 'error', message: 'x', version: true }), { t: 'error', message: 'x', version: true });
+  assert.equal(parseHostMsg({ t: 'error', message: 'x', version: 'yes' }), null);
 });
 
 test('a game counts as it starts, with how many play, and as it ends, under the same key', () => {
