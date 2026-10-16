@@ -105,6 +105,7 @@ It plays every time the circle mounts (every question), so the shape has to read
 - Lines draw with `pathLength="100"`, `stroke-dasharray: 100` and an animated `stroke-dashoffset`.
 - A broken line (pieces between nicks, holes and underpasses) must not draw each piece from its own start, or it looks like scattered dashes. The browser restarts the dash at every subpath, so give each piece its own `<path>` with a delay and duration taken from where it sits along the whole. The pen then sweeps once, eased (fast start, slow end), and runs on across the gaps (`stroke()` in the component).
 - Symbols fade in 0.3 s after their lines.
+- Once drawn, a layer gives way to its still copy, and nothing may move at that moment. A ring drawn as two half arcs is the trap: rounding its ends to two places a hair closer than its radius swings each half's middle well off to one side, so the ring bulges into an oval. The engraver writes such an arc's radii a hair short of what its ends need, so the browser fits it exactly (`radii()` in `src/lib/engraver.ts`, `tests/engraver.test.ts`), and a seal's sign drawn at 1.1 times its size keeps its line in the still copy (`.big`).
 
 ### Keeping it light
 

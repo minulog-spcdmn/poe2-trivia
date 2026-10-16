@@ -36,6 +36,26 @@ export type Stroke = ReturnType<typeof stroke>;
 /** A drawing's lines as they draw in, the same lines still, and when the first of them starts and the last is drawn (s). */
 export type Plate = { drawing: string; still: string; start: number; end: number };
 
+/**
+ * An arc's radii as written, for an arc from `p` to `q` as written. Where
+ * the arc is all but half its ellipse (a ring drawn in two halves, a
+ * moon's terminator), ends rounded a hair closer than the radii would
+ * swing its middle well off to one side, and a ring would bulge into an
+ * oval; so there the radii are written a hair short of what the ends
+ * need, and the browser grows them to fit exactly.
+ */
+const radii = (rx: number, ry: number, rot: number, p: Pt, q: Pt) => {
+  const [c, s] = [Math.cos(rad(rot)), Math.sin(rad(rot))];
+  const [dx, dy] = [(p[0] - q[0]) / 2, (p[1] - q[1]) / 2];
+  const [x, y] = [c * dx + s * dy, -s * dx + c * dy];
+  const fill = (x * x) / (rx * rx) + (y * y) / (ry * ry);
+  if (fill > 0.97 && fill < 1) {
+    const k = Math.sqrt(fill) * 0.9995;
+    return `${(rx * k).toFixed(4)} ${(ry * k).toFixed(4)}`;
+  }
+  return `${f(rx)} ${f(ry)}`;
+};
+
 /** Maps a path of absolute commands (as the signs are drawn) point by point; `turn` (degrees) and `k` for its arcs. */
 export const mapPath = (d: string, m: (p: Pt) => Pt, turn = 0, k = 1) => {
   const tok = d.match(/[A-Za-z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) ?? [];
@@ -43,15 +63,24 @@ export const mapPath = (d: string, m: (p: Pt) => Pt, turn = 0, k = 1) => {
   let cmd = '';
   let cur: Pt = [0, 0];
   let start: Pt = [0, 0];
+  /** Where the pen is on the page, as written, and where the figure began. */
+  let at: Pt = [0, 0];
+  let home: Pt = [0, 0];
   let out = '';
   const num = () => Number(tok[i++]);
-  const to = (p: Pt) => ((cur = p), pt(m(p)));
+  const to = (p: Pt) => {
+    cur = p;
+    const s = pt(m(p));
+    at = s.split(' ').map(Number) as Pt;
+    return s;
+  };
   while (i < tok.length) {
     if (/[A-Za-z]/.test(tok[i])) cmd = tok[i++];
     switch (cmd) {
       case 'M':
         out += `M${to([num(), num()])}`;
         start = cur;
+        home = at;
         cmd = 'L';
         break;
       case 'L':
@@ -71,12 +100,15 @@ export const mapPath = (d: string, m: (p: Pt) => Pt, turn = 0, k = 1) => {
         break;
       case 'A': {
         const [rx, ry, rot, large, sweep] = [num(), num(), num(), num(), num()];
-        out += `A${f(rx * k)} ${f(ry * k)} ${f(rot + turn)} ${large} ${sweep} ${to([num(), num()])}`;
+        const from = at;
+        const end = to([num(), num()]);
+        out += `A${radii(rx * k, ry * k, rot + turn, from, at)} ${f(rot + turn)} ${large} ${sweep} ${end}`;
         break;
       }
       case 'Z':
         out += 'Z';
         cur = start;
+        at = home;
         cmd = '';
         break;
       default:
@@ -111,16 +143,20 @@ const engraver = () => {
     end = Math.max(end, to);
   };
   const style = (delay: number, t: number) => `style="--d:${sec(delay)};--t:${sec(t)}"`;
+  /** A path with its arcs kept true (see radii()), as it is drawn and kept. */
+  const trued = (d: string) => (d.includes('A') ? mapPath(d, (p) => p) : d);
   return {
     /** A line drawn in, eased, as one stroke. */
     line(d: string, cls: string, delay: number, t: number) {
+      d = trued(d);
       drawing += `<path d="${d}" class="draw ${cls}" ${style(delay, t)} pathLength="100"/>`;
       keep(cls, d);
       span(delay, delay + t);
     },
     /** A broken line drawn in one sweep of the pen, piece by piece (see stroke()). */
     pieces(list: Stroke, cls: string) {
-      for (const { d, delay, t } of list) {
+      for (const { d: raw, delay, t } of list) {
+        const d = trued(raw);
         drawing += `<path d="${d}" class="draw piece ${cls}" ${style(delay, t)} pathLength="100"/>`;
         keep(cls, d);
         span(delay, delay + t);
@@ -136,7 +172,7 @@ const engraver = () => {
       drawing += `<g class="seal" style="--d:${sec(delay)}"><g transform="${transform}">`;
       drawing += `<circle r="${r}" class="draw" style="--t:${sec(t)}" pathLength="100"/>`;
       drawing += `<circle r="${f(r - inner)}" class="draw hair" style="--t:${sec(t)}" pathLength="100"/>`;
-      for (const [d, cls, k] of signs) drawing += `<path d="${d}"${k === 1 ? '' : ` transform="scale(${k})"`} class="${cls} carve"/>`;
+      for (const [d, cls, k] of signs) drawing += `<path d="${trued(d)}"${k === 1 ? '' : ` transform="scale(${k})"`} class="${cls} carve"/>`;
       drawing += '</g></g>';
       keep('', mapPath(circlePath(r), place));
       keep('hair', mapPath(circlePath(r - inner), place));
@@ -145,7 +181,7 @@ const engraver = () => {
     },
     /** A mark of the script, written at `delay`, `transform` and `place` putting it on the band. */
     mark(d: string, delay: number, transform: string, place: (p: Pt) => Pt, turn: number) {
-      drawing += `<path d="${d}" transform="${transform}" class="sign mark" style="--d:${sec(delay)}"/>`;
+      drawing += `<path d="${trued(d)}" transform="${transform}" class="sign mark" style="--d:${sec(delay)}"/>`;
       keep('sign', mapPath(d, place, turn));
       span(delay, delay + 0.35);
     },

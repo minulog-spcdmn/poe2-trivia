@@ -309,9 +309,10 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  /* A seal's sign drawn 1.05 times its size, and its line with it. */
+  /* A seal's sign drawn 1.1 times its size (the eye's planets), and its
+     line with it, as the drawing's scale(1.1) draws it. */
   .arcane :global(.big) {
-    stroke-width: 0.441;
+    stroke-width: 0.462;
   }
   .arcane :global(.hatch) {
     stroke-width: 0.2;
@@ -350,7 +351,7 @@
     stroke-width: 2;
   }
   .arcane .summon :global(.glow .big) {
-    stroke-width: 2.1;
+    stroke-width: 2.2;
   }
   .arcane .summon :global(.glow .hair),
   .arcane .summon :global(.glow .hatch) {
