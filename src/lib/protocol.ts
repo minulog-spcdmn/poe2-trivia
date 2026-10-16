@@ -5,6 +5,7 @@
 import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
+import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 
 export const PROTOCOL_VERSION = 31;
 
@@ -39,8 +40,9 @@ export type ClientMsg =
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
    * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
+   * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -69,6 +71,13 @@ export type HostMsg =
   | { t: 'cursors'; c: CursorEntry[] }
   /** Lobby: how each player who isn't simply ready stands (presence.ts), by id; sent when it changes. */
   | { t: 'standing'; s: Record<string, Standing> }
+  /**
+   * A question's picture, sealed (seal.ts): sent as soon as it's ready, on the
+   * art lane like the plain ones; nothing in it can be read until its key comes.
+   */
+  | SealedMsg
+  /** The key to a question's sealed pictures, on the main channel to everyone as its clock starts, before the state that starts it. */
+  | KeyMsg
   | MediaMsg;
 
 export type MediaMsg =
@@ -116,6 +125,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
       if (raw.lane !== undefined && typeof raw.lane !== 'boolean') return null;
+      if (raw.seal !== undefined && typeof raw.seal !== 'boolean') return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -124,6 +134,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
         ...(raw.lane ? { lane: true } : {}),
+        ...(raw.seal ? { seal: true } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
@@ -226,6 +237,11 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return qid && tile && isInt(raw.i, 0, 254) ? (raw as HostMsg) : null;
     case 'option':
       return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+    // What's inside is checked as it opens (it goes through here again then).
+    case 'sealed':
+      return parseSealed(raw);
+    case 'key':
+      return parseKey(raw);
     default:
       return null;
   }

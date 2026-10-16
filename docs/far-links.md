@@ -122,6 +122,66 @@ One release (pending without sealing would let near players look early).
   ~85 direct pick-then-answer tests keep working; new tests cover pending,
   too-early, guestView stripping, the clock per mode and sealing.
 
+Built, still at `PROTOCOL_VERSION` 31:
+
+- **Engine** (`game.ts`): `clockRuns`, `clockMs`, the `clock` action in every
+  mode, `autoClock` for tests and tools.
+- **Sealing** (`seal.ts`): `makeSealKey`, `sealMsg`, `keyMsg`, and on the
+  guest a `SealedStore` that holds what it can't open yet, within caps, and
+  opens in order once the key comes. The key id is the question's `askedAt`
+  and a random part, new each time the art is prepared.
+- **Host** (`session.svelte.ts`): `startMedia` prepares, seals (`sealMedia`)
+  and sends the sealed pictures to everyone in the room, those the clock
+  waits for first. The plain copies stay on the host (`released`), and the
+  key and sealed bytes in `sealing`, never in `GameState`. A new question
+  first drops what hasn't gone yet of the last one's art from every lane
+  (`LaneSender.clear`), so it doesn't queue behind it.
+  - `waitForArrival` looks again every 50 ms at whom the clock waits for
+    (`clockWaitsFor`, those connected, less anyone with `CAP_STRIKES`). The
+    clock starts once the main channel and the art lane to each of them are
+    empty, or at `clockCap`, plus half of the slowest one's `honestRtt`.
+    Those left out are watched until the cap, and draining within it lets
+    them back in (`capStrikes`).
+  - `startClock` sends the key to everyone on the main channel (`openSeal`),
+    then the state that starts the clock. The host's own screen gets its
+    pictures at the same moment. A question that ends before its clock
+    started sends its key at the reveal.
+  - Late joiners and reconnects get the sealed bytes again, the key if it
+    went out, and the patches sent so far (`replayMedia`).
+  - Patches stay unsealed and only go out after the key. On the guest, a
+    patch that overtakes its still-sealed picture waits for it (`Shown`'s
+    `early`).
+- **Baselines**: `mediaAt` is set as a guest's key goes out, so the
+  too-quick check counts from it. An answer before the clock is left to the
+  engine's silent refusal. `noteClock` runs in every mode, and the recap's
+  answer time counts from when the art opened on the guest (`shown.since`).
+  Idle-skip counts from the clock's start, not from the question.
+- **Failing art** is asked again by itself in every mode (`reaskLater`'s
+  backoff, then the host's "Ask another question").
+- **WebCrypto**: hosting and joining are refused up front on a page without
+  it, with the reason. The hello says `seal: true`, and the host turns away
+  a hello without it.
+- `warmMedia` runs as the host's game leaves the lobby.
+
+Checked with two headless browsers on the fake far link (350 ms, 40 KB/s)
+in race, turns and co-op Delve, plus a spectator joining mid-game. No
+picture showed before its key, and no labels before the clock. Every
+answer sent before the clock was turned down. Clocks started 0.8 to 2.5 s
+after the sealed art went out, once it had drained, or at the cap (3.2 s
+for a 16 s clock) for six full-size pictures. Art failing for 7 s was asked
+again by itself. Art failing for good was asked again at about 0, 2, 5 and
+10 s, after which the question waited for the host. On the fake link,
+`honestRtt` reads the real local link (about 1 ms), so the half trip added
+there is about 0.
+
+Left:
+
+- The guest's own ring doesn't end early by its own one-way estimate yet.
+- Outside Delve, a question opens at the clock even if its pictures are
+  still on the way after the cap (Delve's `waiting` also waits for them).
+  That's by design ("late art shows when it lands"), but on the worst link
+  a guest can face a name question's labels a few seconds before its art.
+
 ## Phase 3: race draws its next question ahead
 
 Race has no choosing phase, so the next question is known early.

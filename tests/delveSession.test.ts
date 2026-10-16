@@ -2,12 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTO_REASKS,
+  CAP_STRIKES,
   CLOCK_CAP_MAX_MS,
   CLOCK_CAP_MIN_MS,
   COOP_DRAW_MS,
   DELVE_CLOCK_CAP_MS,
   artFirst,
   blastedAway,
+  capStrikes,
   clockCap,
   clockStart,
   clockWaitsFor,
@@ -24,6 +26,7 @@ import {
   mayAutoReask,
   pausedNow,
   reaskDelay,
+  stillWaitedFor,
 } from '../src/lib/delveSession.ts';
 import { DELVE_RULESET, VOTE_WINDOW_MS, questionTimer } from '../src/lib/delve.ts';
 import { DEFAULT_SETTINGS, createGame, type GameState, type Question } from '../src/lib/game.ts';
@@ -85,6 +88,30 @@ test('the clock waits for the art to reach those who answer: the player on turn,
   assert.deepEqual(clockWaitsFor(s), ['a', 'b'], 'Delve together: everyone standing');
   assert.deepEqual(clockWaitsFor({ ...s, delve: null, turn: 1 }), ['b'], 'turns: the player on turn');
   assert.deepEqual(clockWaitsFor({ ...s, delve: null, settings: { ...s.settings, mode: 'race' } }), ['a', 'b'], 'race: everyone seated');
+});
+
+test("one throttled link can't hold every question up: the cap running out on someone twice running leaves them out of the wait, until their art is out in time again", () => {
+  let strikes = new Map<string, number>();
+  const ids = ['a', 'b', 'c'];
+  // b's link is slow: the cap runs out on it.
+  strikes = capStrikes(strikes, ['a', 'c'], ['b']);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ids, 'once is not yet');
+  strikes = capStrikes(strikes, ['a', 'c'], ['b']);
+  assert.equal(CAP_STRIKES, 2);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ['a', 'c'], 'twice running: left out');
+  // Left out, not waited for: nothing new against them while the clock starts without them.
+  strikes = capStrikes(strikes, ['a', 'c'], []);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ['a', 'c']);
+  // Their art out within the cap again: waited for again.
+  strikes = capStrikes(strikes, ['a', 'b', 'c'], []);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ids);
+  // In between, a question in time starts the count afresh.
+  strikes = capStrikes(capStrikes(capStrikes(strikes, [], ['c']), ['c'], []), [], ['c']);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ids, 'not twice running');
+  // The map it was given is left as it was.
+  const was = new Map([['a', 1]]);
+  capStrikes(was, [], ['a']);
+  assert.equal(was.get('a'), 1);
 });
 
 test('only a question whose clock has not started is asked again by itself, in every mode', () => {

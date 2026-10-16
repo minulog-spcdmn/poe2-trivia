@@ -368,6 +368,9 @@ function uint16s(data: ArrayBuffer | ArrayBufferView): Uint16Array {
   return new Uint16Array(bytes.slice(0, bytes.length & ~1).buffer);
 }
 
+/** The most patches held waiting for their picture: every patch of a "find the art" question's pictures, and then some. */
+const MAX_EARLY = 1024;
+
 class Shown {
   qid = $state(0);
   art = $state<{ url: string; w: number; h: number } | null>(null);
@@ -378,13 +381,23 @@ class Shown {
   /** Veiled "find the art" pictures (Delve), by option: their size and burn, and the patches in so far. */
   tileVeils = $state<Record<number, VeilArt>>({});
   tilePatches = $state<Record<number, Record<number, ShownPatch>>>({});
-  /** When this question's first picture arrived (page clock), for the codex's answer times. */
+  /**
+   * When this question's first picture came to be shown (page clock), for the
+   * codex's answer times: as it opened with its key on a guest (seal.ts), as
+   * its clock started on the host.
+   */
   since = 0;
   private urls: string[] = [];
   /** The veiled pictures received, by tile (-1: the question's own), and their labels. */
   private cuts = new Map<number, { cut: CutHandle; labels: Uint16Array }>();
   /** This question's patch pictures from the worker, freed when it's over (the drawn patches have them on their own canvases by then). */
   private bitmaps: ImageBitmap[] = [];
+  /**
+   * Patches named before their veiled picture is here: on a guest it comes
+   * sealed and opens only as the clock starts (seal.ts), while its patches
+   * come plain, so one can overtake it. They wait for it, in order.
+   */
+  private early: { qid: number; tile: number; i: number }[] = [];
 
   private url(data: ArrayBuffer) {
     const u = URL.createObjectURL(new Blob([data], { type: imageType(data) }));
@@ -401,6 +414,7 @@ class Shown {
     forgetCuts();
     for (const b of this.bitmaps) b.close();
     this.bitmaps = [];
+    this.early = this.early.filter((p) => p.qid === qid);
     this.qid = qid;
     this.since = performance.now();
     this.art = null;
@@ -413,6 +427,11 @@ class Shown {
 
   receive(m: MediaMsg) {
     if (m.qid < this.qid) return;
+    if (m.t === 'patch' && (m.qid !== this.qid || !this.cuts.has(m.tile ?? -1))) {
+      // Its picture isn't here yet (still sealed, or opening): it waits for it.
+      if (this.early.length < MAX_EARLY) this.early.push({ qid: m.qid, tile: m.tile ?? -1, i: m.i });
+      return;
+    }
     this.ensure(m.qid);
     switch (m.t) {
       case 'art':
@@ -438,6 +457,11 @@ class Shown {
         const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
         if (m.tile === undefined) this.veil = v;
         else this.tileVeils = { ...this.tileVeils, [m.tile]: v };
+        // The patches that came ahead of it burn in now.
+        const ahead = this.early.filter((p) => p.qid === m.qid && p.tile === tile);
+        if (!ahead.length) break;
+        this.early = this.early.filter((p) => !ahead.includes(p));
+        for (const p of ahead) this.receive({ t: 'patch', qid: p.qid, ...(m.tile === undefined ? {} : { tile: m.tile }), i: p.i });
         break;
       }
       case 'patch': {
@@ -477,6 +501,7 @@ class Shown {
   clear() {
     this.ensure(-1);
     this.qid = 0;
+    this.early = [];
   }
 }
 

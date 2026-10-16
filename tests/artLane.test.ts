@@ -94,6 +94,30 @@ test('nothing goes out before the lane opens, and all of it once it does', () =>
   assert.equal(ch.sent.length, 1);
 });
 
+test("what hasn't gone yet of a question gone by is dropped, and the next one's art still comes through whole", () => {
+  const ch = new FakeChannel();
+  const sender = new LaneSender(ch);
+  const got: Record<string, unknown>[] = [];
+  const receiver = new LaneReceiver((m) => got.push(m));
+  sender.send({ t: 'sealed', kid: '5-a', iv: bytes(12), data: bytes(300_000) });
+  // Some of it is on its way already: the guest has the start of it.
+  for (const f of ch.sent.splice(0)) assert.ok(receiver.take(f));
+  ch.drain();
+  for (const f of ch.sent.splice(0)) assert.ok(receiver.take(f));
+  assert.ok(sender.backlog > 100_000);
+  sender.clear();
+  assert.equal(sender.backlog, ch.bufferedAmount, 'only what the lane holds is left');
+  const next = { t: 'sealed', kid: '6-b', iv: bytes(12), data: bytes(40_000, 3) };
+  sender.send(next);
+  while (ch.sent.length || sender.backlog) {
+    for (const f of ch.sent.splice(0)) assert.ok(receiver.take(f), 'a message cut short gives way to the next');
+    ch.drain();
+  }
+  assert.equal(got.length, 1);
+  assert.equal(got[0].kid, '6-b');
+  assert.deepEqual(new Uint8Array(got[0].data as ArrayBuffer), new Uint8Array(next.data));
+});
+
 test('frames no real host sends are turned down', () => {
   const r = new LaneReceiver(() => assert.fail('nothing should come out'));
   const frame = (n: number, total: number, at: number, body = 0) => {

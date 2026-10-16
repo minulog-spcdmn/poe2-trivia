@@ -18,7 +18,7 @@ import {
 import { clockMs, clockRuns, type Blast, type GameState } from './game.ts';
 import type { DarkOutcome } from './darkness.ts';
 
-/** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
+/** clockStart's cap when it's given none (the session gives it the question's own, clockCap). */
 export const DELVE_CLOCK_CAP_MS = 3000;
 
 /** The bounds of clockCap (ms): no shorter than this, so a short clock still gives the art a fair wait... */
@@ -208,6 +208,30 @@ export function clockWaitsFor(s: GameState): string[] {
   if (s.settings.mode === 'race') return s.players.map((p) => p.id);
   const p = s.players[s.turn];
   return p ? [p.id] : [];
+}
+
+/**
+ * Whoever the cap (clockCap) ran out on this many questions running is left
+ * out of the wait, so one throttled link can't hold every question up, until
+ * their queue drains within the cap again.
+ */
+export const CAP_STRIKES = 2;
+
+/** Of those a question's clock waits for (clockWaitsFor), the ones it still waits for given their strikes (capStrikes). */
+export function stillWaitedFor(ids: string[], strikes: ReadonlyMap<string, number>): string[] {
+  return ids.filter((id) => (strikes.get(id) ?? 0) < CAP_STRIKES);
+}
+
+/**
+ * The cap's strikes after a question's wait, by player: those whose queue
+ * drained within the cap (`inTime`) start again from none, those it ran out
+ * on (`late`) have one more, anyone else keeps theirs.
+ */
+export function capStrikes(was: ReadonlyMap<string, number>, inTime: Iterable<string>, late: Iterable<string>): Map<string, number> {
+  const out = new Map(was);
+  for (const id of late) out.set(id, (out.get(id) ?? 0) + 1);
+  for (const id of inTime) out.delete(id);
+  return out;
 }
 
 /**

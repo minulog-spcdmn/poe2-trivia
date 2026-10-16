@@ -176,6 +176,17 @@ export class LaneSender {
     this.pump();
   }
 
+  /**
+   * Drops every frame not handed to the lane yet: what is still to go of a
+   * question gone by, so the next one's art doesn't queue behind it. A
+   * message cut short this way is let go by the guest as the next one starts
+   * (LaneReceiver: a frame at 0 begins afresh).
+   */
+  clear() {
+    this.frames = [];
+    this.waiting = 0;
+  }
+
   /** Hands frames to the lane while its buffer has room. */
   pump() {
     const ch = this.channel;
