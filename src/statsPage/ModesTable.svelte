@@ -223,8 +223,8 @@
       transition: none;
     }
   }
-  /* A phone: each mode a block, a line for each column, its header as a label. */
-  @media (max-width: 640px) {
+  /* Narrow (the table needs some 46rem): each mode a block, a line for each column, its header as a label. */
+  @media (max-width: 860px) {
     .modes {
       display: block;
     }

@@ -50,7 +50,7 @@ export interface ModeRow {
 export interface Ledger {
   days: string[];
   visitors: { total: number; perDay: number[] };
-  games: { started: number; finished: number; perDay: number[]; rows: ModeRow[] };
+  games: { started: number; finished: number; perDay: number[]; finishedPerDay: number[]; rows: ModeRow[] };
   /** Delve runs by where they ended: every ten depths from 0 up to the deepest reached, as players see them. */
   delve: { total: number; ranges: { from: number; count: number }[] };
   daily: { right: number; wrong: number; rightPerDay: number[]; wrongPerDay: number[] };
@@ -115,6 +115,7 @@ export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
       finished: rows.reduce((n, r) => n + r.finished, 0),
       // The modes and places it knows, as started and finished are: a path from elsewhere would make them disagree.
       perDay: perDay((p) => played.has(p)),
+      finishedPerDay: perDay((p) => p.startsWith('end/') && played.has(`play/${p.slice('end/'.length)}`)),
       rows,
     },
     delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges },
@@ -195,6 +196,12 @@ export function deviceOf(system: string): 'Phone or tablet' | 'Computer' | 'Othe
   if (/ios|ipados|android|harmony|kaios/.test(s)) return 'Phone or tablet';
   if (/windows|mac|linux|chrome ?os|ubuntu|fedora|freebsd/.test(s)) return 'Computer';
   return 'Other';
+}
+
+/** A share per day as a whole percent, a day with nothing to share taking the one before (0 before any). */
+export function sharePerDay(part: number[], whole: number[]): number[] {
+  let last = 0;
+  return whole.map((w, i) => (last = w > 0 ? Math.round((100 * (part[i] ?? 0)) / w) : last));
 }
 
 /** A share as a whole percent, "–" with nothing to share. */

@@ -13,30 +13,42 @@
 // by itself can stop well short of the hour's 500.
 
 import { COUNTER_ORIGIN } from '../lib/counter';
-import { readStored, removeStored, writeStored } from '../lib/storage';
+import { readStored, readStoredStarting, removeStored, removeStoredStarting, writeStored } from '../lib/storage';
 import type { PathCount } from './model';
 import { zoneOf } from './zone';
 
 const KEY = 'ledger.key';
-const LOG = 'ledger.requests';
+/** Each tab's own log (so two tabs never write over each other's), all read together. */
+const LOG = 'ledger.requests.';
+const TAB = Math.random().toString(36).slice(2, 10);
 /** GoatCounter's requests an hour from an address. */
 export const HOUR_LIMIT = 500;
 
-/** When each request of the last hour went out, this browser's ledger tabs together. */
-export function requestsLastHour(): number[] {
-  const since = Date.now() - 3_600_000;
+const times = (raw: string, since: number): number[] => {
   try {
-    const list = JSON.parse(readStored(LOG) ?? '[]') as unknown;
+    const list = JSON.parse(raw) as unknown;
     return Array.isArray(list) ? list.filter((t): t is number => typeof t === 'number' && t > since) : [];
   } catch {
     return [];
   }
+};
+/** When each request of the last hour went out, this browser's ledger tabs together. */
+export function requestsLastHour(): number[] {
+  const since = Date.now() - 3_600_000;
+  return readStoredStarting(LOG).flatMap(([, raw]) => times(raw, since));
 }
-/** A call sent: two requests, its preflight and itself. */
+/** A call sent: two requests, its preflight and itself, in this tab's log (a log with nothing left in the hour goes). */
 function noteCall() {
   const now = Date.now();
-  writeStored(LOG, JSON.stringify([...requestsLastHour(), now, now]));
+  const since = now - 3_600_000;
+  for (const [tab, raw] of readStoredStarting(LOG)) if (tab !== TAB && !times(raw, since).length) removeStored(LOG + tab);
+  writeStored(LOG + TAB, JSON.stringify([...times(readStored(LOG + TAB) ?? '[]', since), now, now]));
 }
+/** Forgets every tab's log (with the key). */
+export const forgetRequests = () => removeStoredStarting(LOG);
+
+/** A read given up (a newer one took its place): its calls not yet sent never go. */
+export class Cancelled extends Error {}
 export const savedKey = () => readStored(KEY) ?? '';
 export const saveKey = (key: string) => writeStored(KEY, key.trim());
 export const forgetKey = () => removeStored(KEY);
@@ -74,16 +86,18 @@ function paced<T>(go: () => Promise<T>): Promise<T> {
   return turn;
 }
 
-async function get<T>(key: string, path: string, query: Record<string, string> = {}, tried = 0): Promise<T> {
+async function get<T>(key: string, path: string, query: Record<string, string>, signal: AbortSignal, tried = 0): Promise<T> {
   const url = `${COUNTER_ORIGIN}/api/v0${path}${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ''}`;
   const again = async () => {
     await sleep(1500 * 2 ** tried);
-    return get<T>(key, path, query, tried + 1);
+    return get<T>(key, path, query, signal, tried + 1);
   };
   const res = await paced(() => {
+    if (signal.aborted) throw new Cancelled();
     noteCall();
-    return fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => null);
+    return fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, signal }).catch(() => null);
   });
+  if (signal.aborted) throw new Cancelled();
   // No answer: most often a preflight GoatCounter turned away for coming too fast, now and then an ad blocker.
   if (!res) {
     if (tried + 1 < TRIES) return again();
@@ -99,8 +113,8 @@ async function get<T>(key: string, path: string, query: Record<string, string> =
 }
 
 /** The account's time zone, GoatCounter's days are cut in (any key may ask). */
-export async function accountZone(key: string): Promise<string> {
-  const me = await get<{ user?: { settings?: { timezone?: string } } }>(key, '/me');
+export async function accountZone(key: string, signal: AbortSignal): Promise<string> {
+  const me = await get<{ user?: { settings?: { timezone?: string } } }>(key, '/me', {}, signal);
   return zoneOf(me.user?.settings?.timezone);
 }
 
@@ -124,16 +138,16 @@ const MAX_PAGES = 10;
  * next one leaving out the paths already had. `complete`: false when there
  * were more than MAX_PAGES of them.
  */
-export async function pathCounts(key: string, span: Span): Promise<{ paths: PathCount[]; complete: boolean }> {
+export async function pathCounts(key: string, span: Span, signal: AbortSignal): Promise<{ paths: PathCount[]; complete: boolean }> {
   const out: PathCount[] = [];
   const had: string[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
-    const r = await get<HitsResponse>(key, '/stats/hits', {
-      ...range(span),
-      group: 'day',
-      limit: '100',
-      ...(had.length ? { exclude_paths: had.join(',') } : {}),
-    });
+    const r = await get<HitsResponse>(
+      key,
+      '/stats/hits',
+      { ...range(span), group: 'day', limit: '100', ...(had.length ? { exclude_paths: had.join(',') } : {}) },
+      signal,
+    );
     for (const h of r.hits) {
       had.push(String(h.path_id));
       out.push({ path: h.path, event: h.event, count: h.count, days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])) });
@@ -151,12 +165,12 @@ export interface Named {
 }
 
 /** Visitors of the start page (visits, not game events) by system, country or referrer. */
-export async function visitorsBy(key: string, span: Span, page: 'systems' | 'locations' | 'toprefs'): Promise<Named[]> {
-  const r = await get<{ stats: { name: string; count: number }[] }>(key, `/stats/${page}`, {
-    ...range(span),
-    include_paths: '/',
-    path_by_name: 'true',
-    limit: '50',
-  });
+export async function visitorsBy(key: string, span: Span, page: 'systems' | 'locations' | 'toprefs', signal: AbortSignal): Promise<Named[]> {
+  const r = await get<{ stats: { name: string; count: number }[] }>(
+    key,
+    `/stats/${page}`,
+    { ...range(span), include_paths: '/', path_by_name: 'true', limit: '50' },
+    signal,
+  );
   return r.stats.map((s) => ({ name: s.name, count: s.count }));
 }

@@ -135,6 +135,22 @@ export function removeStoredStarting(start: string, where: Area = 'local') {
     /* ignore */
   }
 }
+/** Every entry of this build's whose name starts with `start`, as [the rest of its name, its value]. */
+export function readStoredStarting(start: string, where: Area = 'local'): [string, string][] {
+  const from = storeKey(start);
+  const out: [string, string][] = [];
+  try {
+    const s = area(where);
+    for (let i = 0; i < s.length; i++) {
+      const k = s.key(i);
+      const v = k !== null && k.startsWith(from) ? s.getItem(k) : null;
+      if (k !== null && v !== null) out.push([k.slice(from.length), v]);
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
+}
 /** For code that must not take a read error for an empty entry (and write over it). */
 export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey(storeKey(name), where);
 

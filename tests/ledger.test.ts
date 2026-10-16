@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
-import { change, daysBetween, descentOf, deviceOf, grouped, ledgerOf, medianRange, modesOf, percent, pointsChange, type PathCount } from '../src/statsPage/model.ts';
+import { change, daysBetween, descentOf, deviceOf, grouped, ledgerOf, medianRange, modesOf, percent, pointsChange, sharePerDay, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -183,4 +183,14 @@ test('a day whose midnight the clocks jump past begins at its first hour', () =>
   const start = midnight('America/Santiago', '2026-09-06');
   assert.equal(dayIn('America/Santiago', start), '2026-09-06');
   assert.equal(dayIn('America/Santiago', new Date(start.getTime() - 1)), '2026-09-05');
+});
+
+test('a share per day carries over a day with nothing to share', () => {
+  assert.deepEqual(sharePerDay([1, 0, 0, 3], [2, 0, 4, 3]), [50, 50, 0, 100]);
+  assert.deepEqual(sharePerDay([0, 1], [0, 4]), [0, 25]);
+});
+
+test('games finished per day count the modes the page knows', () => {
+  const l = ledgerOf([path('play/race-online', [2, 2, 0]), path('end/race-online', [1, 2, 0]), path('end/foo-online', [5, 5, 5])], DAYS);
+  assert.deepEqual(l.games.finishedPerDay, [1, 2, 0]);
 });

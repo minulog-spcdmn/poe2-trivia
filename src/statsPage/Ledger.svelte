@@ -13,13 +13,13 @@
   import { onMount } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import Activity, { METRIC_NAMES, type DayRows, type MetricKey } from './Activity.svelte';
-  import { ApiError, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
+  import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import BarList, { type Bar } from './BarList.svelte';
   import { fmt, shortDay } from './chart';
   import Columns from './Columns.svelte';
   import KeyGate from './KeyGate.svelte';
   import Kpi from './Kpi.svelte';
-  import { VIA_NAMES, change, daysBetween, deviceOf, grouped, ledgerOf, modesOf, percent, pointsChange, type Ledger } from './model';
+  import { VIA_NAMES, change, daysBetween, deviceOf, grouped, ledgerOf, modesOf, percent, pointsChange, sharePerDay, type Ledger } from './model';
   import ModesTable from './ModesTable.svelte';
   import Panel from './Panel.svelte';
   import Reach from './Reach.svelte';
@@ -88,27 +88,46 @@
   let held = $state(false);
   let clock = $state(Date.now());
   let zone: { key: string; zone: string; at: number } | null = null;
+  /** Reads that failed in a row, and when the last did: updating by itself waits longer after each (2, 4, 8… minutes, 10 at least after GoatCounter said it was busy). */
+  let fails = { n: 0, at: 0, busy: false };
+  const waitAfterFails = () => (fails.n ? Math.max(fails.busy ? 10 : 0, Math.min(30, 2 ** fails.n)) * 60_000 : 0);
 
   let asked = 0;
+  /** The read under way, given up (its calls not yet sent never go) when another takes its place. */
+  let reading: AbortController | null = null;
+  function stopReading() {
+    reading?.abort();
+    reading = null;
+    asked++;
+    loading = false;
+  }
   /** Reads `days` (the range on show): `force` reads it even while fresh, and asks the time zone again. */
   async function load(days = span, force = false) {
     if (!key) return;
     const had = cached(days);
     if (had && !force && Date.now() - had.at < FRESH_MS) {
+      stopReading();
+      failed = '';
       read = had;
       return;
     }
     if (had) read = had;
-    const ask = ++asked;
+    stopReading();
+    const ask = asked;
+    const signal = (reading = new AbortController()).signal;
     const k = key;
     loading = true;
     failed = '';
     progress = 0;
     const steps = 6;
     let done = 0;
-    const step = <T,>(p: Promise<T>) => p.then((v) => ((progress = ++done / steps), v));
+    const step = <T,>(p: Promise<T>) =>
+      p.then((v) => {
+        if (ask === asked) progress = ++done / steps;
+        return v;
+      });
     try {
-      if (force || zone?.key !== k || Date.now() - zone.at > ZONE_MS) zone = { key: k, zone: await step(accountZone(k)), at: Date.now() };
+      if (force || zone?.key !== k || Date.now() - zone.at > ZONE_MS) zone = { key: k, zone: await step(accountZone(k, signal)), at: Date.now() };
       else progress = ++done / steps;
       if (ask !== asked) return;
       const tz = zone.zone;
@@ -123,11 +142,11 @@
       const now: Span = { start: midnight(tz, from), end: at };
       const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + (at.getTime() - midnight(tz, today).getTime())) };
       const [n, b, systems, countries, refs] = await Promise.all([
-        step(pathCounts(k, now)),
-        step(pathCounts(k, before)),
-        step(visitorsBy(k, now, 'systems')),
-        step(visitorsBy(k, now, 'locations')),
-        step(visitorsBy(k, now, 'toprefs')),
+        step(pathCounts(k, now, signal)),
+        step(pathCounts(k, before, signal)),
+        step(visitorsBy(k, now, 'systems', signal)),
+        step(visitorsBy(k, now, 'locations', signal)),
+        step(visitorsBy(k, now, 'toprefs', signal)),
       ]);
       if (ask !== asked) return;
       const r: Read = {
@@ -145,16 +164,21 @@
         complete: n.complete && b.complete,
       };
       keep(r);
+      fails = { n: 0, at: 0, busy: false };
       if (days === span) read = r;
     } catch (err) {
-      if (ask !== asked) return;
+      if (ask !== asked || err instanceof Cancelled) return;
+      fails = { n: fails.n + 1, at: Date.now(), busy: err instanceof ApiError && err.kind === 'busy' };
       if (err instanceof ApiError && err.kind === 'key') {
         // A key GoatCounter turns down is no use kept: the next visit asks for a new one straight away.
         forget();
         refused = err.message;
       } else failed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
-      if (ask === asked) loading = false;
+      if (ask === asked) {
+        loading = false;
+        reading = null;
+      }
     }
   }
 
@@ -163,6 +187,8 @@
     clock = Date.now();
     held = requestsLastHour().length > HOUR_LIMIT - KEEP_SPARE;
     if (!key || loading || held || document.visibilityState !== 'visible') return;
+    // After a failure, not again until the wait is over (the Refresh button still reads at once).
+    if (fails.n && clock - fails.at < waitAfterFails()) return;
     if (!read || clock - read.at >= FRESH_MS) void load();
   }
 
@@ -189,15 +215,16 @@
     void load(span, true);
   }
   function forget() {
+    stopReading();
     forgetKey();
     removeStoredStarting('ledger.read.', 'session');
     cache.clear();
     zone = null;
-    asked++;
+    fails = { n: 0, at: 0, busy: false };
     key = '';
     read = null;
     refused = '';
-    loading = false;
+    failed = '';
   }
 
   const ago = (t: number) => {
@@ -290,7 +317,7 @@
       <p class="note" role="status">More paths than the ledger reads (1,000): some counts may be missing.</p>
     {/if}
 
-    {#if !read}
+    {#if !read && loading}
       <div class="grid skeleton" aria-busy="true" aria-label="Reading">
         {#each [3, 3, 3, 3, 12, 12, 6, 6, 12, 12] as s, i (i)}<div class="ghost-panel" style:--span={s} class:tall={s === 12}></div>{/each}
       </div>
@@ -306,6 +333,7 @@
             delta={pointsChange(L.games.finished, L.games.started, B.games.finished, B.games.started)}
             deltaUnit=" pts"
             sub="of games started"
+            trend={sharePerDay(L.games.finishedPerDay, L.games.perDay)}
           />
           <Kpi
             label="Today's unique"
@@ -314,7 +342,7 @@
             delta={pointsChange(L.daily.right, answers(L), B.daily.right, answers(B))}
             deltaUnit=" pts"
             sub="named it, of {fmt(answers(L))} answers"
-            trend={rowsOf(L).answers}
+            trend={sharePerDay(L.daily.rightPerDay, rowsOf(L).answers)}
           />
         </div>
 
@@ -907,7 +935,8 @@
       grid-column: 1 / -1;
     }
   }
-  @media (max-width: 760px) {
+  /* Under 900px the range takes a row of its own under the brand and the buttons. */
+  @media (max-width: 900px) {
     .bar {
       grid-template-columns: 1fr auto;
       padding: 0.6rem 16px;
@@ -923,12 +952,20 @@
     .spans :global(.seg button) {
       flex: 1;
     }
+  }
+  @media (max-width: 760px) {
     .kpis {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
     .three {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 600px) {
+    .joins {
+      grid-template-columns: minmax(0, 1fr) 2.6rem 3.2rem minmax(4.5rem, 1fr);
+      column-gap: 0.6rem;
     }
   }
   @media (max-width: 520px) {
@@ -940,10 +977,6 @@
     }
     .fresh {
       display: none;
-    }
-    .joins {
-      grid-template-columns: minmax(0, 1fr) 2.6rem 3.2rem minmax(4.5rem, 1fr);
-      column-gap: 0.6rem;
     }
     .brand span {
       display: none;
