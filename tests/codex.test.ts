@@ -8,6 +8,7 @@ import {
   RECENT,
   emptyCodex,
   encounterAt,
+  keepable,
   loadCodex,
   parseCodex,
   record,
@@ -547,4 +548,44 @@ test("only this build's practice tally is read: another shape is kept aside, a n
   store.set(key, newer);
   recordPractice(false);
   assert.equal(store.get(key), newer);
+});
+
+test("what a host's reveal says only goes in for items this build has, in shape", () => {
+  const known = (id: string) => items.some((it) => it.id === id);
+  const [a, b] = items;
+  const e: Encounter = {
+    at: 1790000000000,
+    itemId: a.id,
+    mode: 'name',
+    difficulty: 'cruel',
+    race: false,
+    answer: { ok: false, pickedId: `fake:${b.id}:0`, pickedLabel: 'Made-up Name', ms: 1234.5 },
+    delve: { depth: 12, run: 1790000000000, find: 'azurite', strike: 2, who: 'p1' },
+  };
+  assert.deepEqual(keepable(e, known), e);
+  // Items it doesn't have, or a name no item has on screen: nothing to keep.
+  assert.equal(keepable({ ...e, itemId: 'x'.repeat(100_000) }, known), null);
+  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedId: 'deadbeef0000' } }, known), null);
+  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedId: `fake:${'x'.repeat(5000)}:0` } }, known), null);
+  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedLabel: 'y'.repeat(5000) } }, known), null);
+  assert.equal(keepable({ ...e, mode: '__proto__' as never }, known), null);
+  assert.equal(keepable({ ...e, delve: { ...e.delve!, depth: 1e12 } }, known), null);
+  // What doesn't fit is left out, as parseCodex would on reading it back.
+  const odd = keepable({ ...e, difficulty: 'z'.repeat(5000) as never, delve: { ...e.delve!, find: 'z'.repeat(5000) as never, who: 'w'.repeat(5000) } }, known)!;
+  assert.ok(odd.difficulty.length < 20);
+  assert.equal(odd.delve!.find, undefined);
+  assert.equal(odd.delve!.who, undefined);
+});
+
+test('a stored codex keeps only item ids: whatever else got in is let go on reading it', () => {
+  const [a] = items;
+  const c = record(emptyCodex(), { at: 1, itemId: a.id, mode: 'name', difficulty: 'cruel', race: false, answer: { ok: true, pickedId: a.id, pickedLabel: null } });
+  const raw = JSON.parse(serializeCodex(c));
+  raw.items['x'.repeat(1000)] = raw.items[a.id];
+  raw.log.push({ ...raw.log[0], id: 'junk' });
+  raw.fooled['z'.repeat(1000)] = { of: a.id, n: 1, last: 1 };
+  const back = parseCodex(JSON.stringify(raw))!;
+  assert.deepEqual(Object.keys(back.items), [a.id]);
+  assert.equal(back.log.length, 1);
+  assert.deepEqual(back.fooled, {});
 });

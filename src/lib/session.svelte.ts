@@ -2051,9 +2051,14 @@ class Session {
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
     const blast = blastedAway(prev, next);
+    // (Only the items this build has: online, the reveal is the host's word.)
+    const known = (id: string) => engine.byId.has(id);
     if (blast) {
       void import('./codex')
-        .then(({ blastedEncounter, recordEncounter }) => recordEncounter(blastedEncounter(next, blast, me, hotSeat)))
+        .then(({ blastedEncounter, keepable, recordEncounter }) => {
+          const e = keepable(blastedEncounter(next, blast, me, hotSeat), known);
+          if (e) recordEncounter(e);
+        })
         .catch((err) => console.warn('codex', err));
       return;
     }
@@ -2066,8 +2071,9 @@ class Session {
     // Its own chunk: the first download stays small.
     // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
     void import('./codex')
-      .then(({ encounterAt, recordEncounter }) => {
-        const e = encounterAt(next, me, hotSeat, ms);
+      .then(({ encounterAt, keepable, recordEncounter }) => {
+        const met = encounterAt(next, me, hotSeat, ms);
+        const e = met && keepable(met, known);
         if (!e) return;
         recordEncounter(e);
         this.noteAchievements();
