@@ -13,16 +13,21 @@
 // by itself can stop well short of the hour's 500.
 
 import { COUNTER_ORIGIN } from '../lib/counter';
-import { readStored, readStoredStarting, removeStored, removeStoredStarting, writeStored } from '../lib/storage';
+import { readStored, readStoredStarting, removeStored, writeStored } from '../lib/storage';
 import type { PathCount } from './model';
 import { zoneOf } from './zone';
 
 const KEY = 'ledger.key';
-/** Each tab's own log (so two tabs never write over each other's), all read together. */
-const LOG = 'ledger.requests.';
-const TAB = Math.random().toString(36).slice(2, 10);
+/**
+ * Each tab's own log, `ledger.requests.<tab>` (so two tabs never write over
+ * each other's), all read together, an older build's single
+ * `ledger.requests` with them.
+ */
+const LOG = 'ledger.requests';
+const TAB = `.${Math.random().toString(36).slice(2, 10)}`;
 /** GoatCounter's requests an hour from an address. */
 export const HOUR_LIMIT = 500;
+const HOUR = 3_600_000;
 
 const times = (raw: string, since: number): number[] => {
   try {
@@ -34,18 +39,22 @@ const times = (raw: string, since: number): number[] => {
 };
 /** When each request of the last hour went out, this browser's ledger tabs together. */
 export function requestsLastHour(): number[] {
-  const since = Date.now() - 3_600_000;
+  const since = Date.now() - HOUR;
   return readStoredStarting(LOG).flatMap(([, raw]) => times(raw, since));
 }
-/** A call sent: two requests, its preflight and itself, in this tab's log (a log with nothing left in the hour goes). */
+
+/** This tab's own requests of the last hour, kept here too, so noting one reads nothing. */
+let mine: number[] = [];
+let swept = 0;
+/** A call sent: two requests, its preflight and itself. Now and then the logs of tabs long gone (nothing in two hours) are cleared away. */
 function noteCall() {
   const now = Date.now();
-  const since = now - 3_600_000;
-  for (const [tab, raw] of readStoredStarting(LOG)) if (tab !== TAB && !times(raw, since).length) removeStored(LOG + tab);
-  writeStored(LOG + TAB, JSON.stringify([...times(readStored(LOG + TAB) ?? '[]', since), now, now]));
+  mine = [...mine.filter((t) => t > now - HOUR), now, now];
+  writeStored(LOG + TAB, JSON.stringify(mine));
+  if (now - swept < 60_000) return;
+  swept = now;
+  for (const [tab, raw] of readStoredStarting(LOG)) if (tab !== TAB && !times(raw, now - 2 * HOUR).length) removeStored(LOG + tab);
 }
-/** Forgets every tab's log (with the key). */
-export const forgetRequests = () => removeStoredStarting(LOG);
 
 /** A read given up (a newer one took its place): its calls not yet sent never go. */
 export class Cancelled extends Error {}
@@ -74,9 +83,10 @@ let queue: Promise<unknown> = Promise.resolve();
 let lastStart = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** `go` once every call before it has finished, and APART_MS after the last one began. */
-function paced<T>(go: () => Promise<T>): Promise<T> {
+/** `go` once every call before it has finished, and APART_MS after the last one began; at once (going nowhere) for a call given up, so it holds up no other. */
+function paced<T>(go: () => Promise<T>, signal: AbortSignal): Promise<T> {
   const turn = queue.then(async () => {
+    if (signal.aborted) throw new Cancelled();
     const wait = lastStart + APART_MS - Date.now();
     if (wait > 0) await sleep(wait);
     lastStart = Date.now();
@@ -90,13 +100,14 @@ async function get<T>(key: string, path: string, query: Record<string, string>, 
   const url = `${COUNTER_ORIGIN}/api/v0${path}${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ''}`;
   const again = async () => {
     await sleep(1500 * 2 ** tried);
+    if (signal.aborted) throw new Cancelled();
     return get<T>(key, path, query, signal, tried + 1);
   };
   const res = await paced(() => {
     if (signal.aborted) throw new Cancelled();
     noteCall();
     return fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, signal }).catch(() => null);
-  });
+  }, signal);
   if (signal.aborted) throw new Cancelled();
   // No answer: most often a preflight GoatCounter turned away for coming too fast, now and then an ad blocker.
   if (!res) {

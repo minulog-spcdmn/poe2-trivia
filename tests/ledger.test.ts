@@ -194,3 +194,7 @@ test('games finished per day count the modes the page knows', () => {
   const l = ledgerOf([path('play/race-online', [2, 2, 0]), path('end/race-online', [1, 2, 0]), path('end/foo-online', [5, 5, 5])], DAYS);
   assert.deepEqual(l.games.finishedPerDay, [1, 2, 0]);
 });
+
+test('a share per day stops at 100, with more finished than started', () => {
+  assert.deepEqual(sharePerDay([3], [1]), [100]);
+});

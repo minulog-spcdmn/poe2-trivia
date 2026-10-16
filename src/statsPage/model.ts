@@ -198,10 +198,14 @@ export function deviceOf(system: string): 'Phone or tablet' | 'Computer' | 'Othe
   return 'Other';
 }
 
-/** A share per day as a whole percent, a day with nothing to share taking the one before (0 before any). */
+/**
+ * A share per day as a whole percent, a day with nothing to share taking the
+ * one before (0 before any). At most 100: games started late finish the next
+ * day, which can have more finished than started.
+ */
 export function sharePerDay(part: number[], whole: number[]): number[] {
   let last = 0;
-  return whole.map((w, i) => (last = w > 0 ? Math.round((100 * (part[i] ?? 0)) / w) : last));
+  return whole.map((w, i) => (last = w > 0 ? Math.min(100, Math.round((100 * (part[i] ?? 0)) / w)) : last));
 }
 
 /** A share as a whole percent, "–" with nothing to share. */

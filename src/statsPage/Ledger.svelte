@@ -114,7 +114,8 @@
     if (had) read = had;
     stopReading();
     const ask = asked;
-    const signal = (reading = new AbortController()).signal;
+    const ctrl = (reading = new AbortController());
+    const signal = ctrl.signal;
     const k = key;
     loading = true;
     failed = '';
@@ -167,6 +168,8 @@
       fails = { n: 0, at: 0, busy: false };
       if (days === span) read = r;
     } catch (err) {
+      // One call failing ends the read: the others' calls not yet sent never go.
+      ctrl.abort();
       if (ask !== asked || err instanceof Cancelled) return;
       fails = { n: fails.n + 1, at: Date.now(), busy: err instanceof ApiError && err.kind === 'busy' };
       if (err instanceof ApiError && err.kind === 'key') {
