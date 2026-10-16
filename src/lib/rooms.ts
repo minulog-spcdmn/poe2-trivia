@@ -10,12 +10,12 @@ import Peer, { type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
-import { checkRoom } from './ownerKey';
+import { checkRoom, newChallenge } from './ownerKey';
 
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 export { ProbeDesk, isProbe } from './probeDesk';
 import { listable, parseRoomInfo, type RoomInfo } from './roomInfo';
-import { ProbeDesk } from './probeDesk';
+import { ProbeDesk, type ListingInfo } from './probeDesk';
 
 const BATCH = 10;
 /** Slots up to this are scanned at full speed; later batches wait a little. */
@@ -82,7 +82,9 @@ class Prober {
       };
       let timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
       this.waiting.set(id, done);
-      conn = this.peer.connect(id, { reliable: true, metadata: { probe: true } });
+      // A fresh challenge, which a host under the held name signs its listing over (ownerKey.ts roomProof).
+      const challenge = newChallenge();
+      conn = this.peer.connect(id, { reliable: true, metadata: { probe: true, challenge } });
       // Whoever holds a slot is a stranger: what it sends is checked before
       // PeerJS decodes it, and a probe's answer is never split.
       hookFrames(conn, (data) => frameFits(data, MAX_PROBE_BYTES) || (done(null), false), () => (done(null), false));
@@ -91,7 +93,7 @@ class Prober {
         if (msg?.t !== 'info') return;
         const room = parseRoomInfo(msg.room);
         // A host under the held name is listed only with the owner key's signature for its room.
-        if (room && isHeldName(room.host)) void checkRoom(room.code, room.owner).then((ok) => done(ok ? room : null));
+        if (room && isHeldName(room.host)) void checkRoom(room.code, challenge, room.owner).then((ok) => done(ok ? room : null));
         else done(room ?? null);
       });
       conn.on('open', () => {
@@ -186,7 +188,7 @@ export class Beacon {
   private compacting = false;
   private prober: Prober | null = null;
 
-  constructor(private info: () => RoomInfo | null) {}
+  constructor(private info: ListingInfo) {}
 
   start() {
     this.stopped = false;

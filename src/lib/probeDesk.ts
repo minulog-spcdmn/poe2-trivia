@@ -5,6 +5,7 @@
 
 import type { DataConnection } from 'peerjs';
 import { hookFrames } from './guard.ts';
+import { isChallenge } from './ownerKey.ts';
 import { wireRoomInfo, type RoomInfo } from './roomInfo.ts';
 
 /** Probes answered at once / per 10 seconds before refusing more. */
@@ -17,6 +18,9 @@ const LONGEST_MS = 4000;
 /** A connection that only asks after the room (a probe), not one that comes to play. */
 export const isProbe = (conn: DataConnection) => !!(conn.metadata as { probe?: unknown } | undefined)?.probe;
 
+/** The room's info for a probe, given the challenge it brought (for a listing under the held name to be signed over, ownerKey.ts). */
+export type ListingInfo = (challenge: string | null) => RoomInfo | null | Promise<RoomInfo | null>;
+
 /**
  * Answers probes: the room's info, then it hangs up. A few at once and so
  * many per 10 seconds; past that a probe is hung up on unanswered. Used on a
@@ -26,9 +30,9 @@ export const isProbe = (conn: DataConnection) => !!(conn.metadata as { probe?: u
 export class ProbeDesk {
   private open = 0;
   private recent: number[] = [];
-  private info: () => RoomInfo | null;
+  private info: ListingInfo;
 
-  constructor(info: () => RoomInfo | null) {
+  constructor(info: ListingInfo) {
     this.info = info;
   }
 
@@ -57,9 +61,14 @@ export class ProbeDesk {
       release();
     }, LONGEST_MS);
     conn.on('open', () => {
-      const room = this.info();
-      if (room) conn.send({ t: 'info', room: wireRoomInfo(room) });
-      setTimeout(() => conn.close(), ANSWERED_MS);
+      const challenge = (conn.metadata as { challenge?: unknown } | undefined)?.challenge;
+      const tell = (room: RoomInfo | null) => {
+        if (room) conn.send({ t: 'info', room: wireRoomInfo(room) });
+        setTimeout(() => conn.close(), ANSWERED_MS);
+      };
+      const room = this.info(isChallenge(challenge) ? challenge : null);
+      if (room instanceof Promise) void room.then(tell, () => tell(null));
+      else tell(room);
     });
   }
 }

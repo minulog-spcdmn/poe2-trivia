@@ -1581,3 +1581,20 @@ test('names need at least two characters', () => {
   assert.equal(s.players[1].name, 'Bo');
   assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'B' }, 'p1'), /at least 2/);
 });
+
+test("the owner key's signature goes on the game only for whoever joins under the held name", () => {
+  const sig = 'x'.repeat(86);
+  let { engine, s } = setup(['Ash', 'Bram']);
+  // A seat coming back keeps its own name: a signature sent with it names nobody.
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zoe Arcana', returning: true, owner: sig }, 'p1');
+  assert.equal(s.owner, undefined);
+  assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Bram');
+  // Nor one under another name.
+  s = engine.apply(s, { type: 'join', playerId: 'p2', name: 'Cass', owner: sig }, 'p2');
+  assert.equal(s.owner, undefined);
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: sig }, 'z');
+  assert.deepEqual(s.owner, { id: 'z', sig });
+  // A guest can't put it on anyone (only the host signs for itself).
+  assert.throws(() => engine.apply(s, { type: 'owner', playerId: 'p1', proof: sig }, 'p1'), /Not allowed/);
+  assert.deepEqual(engine.apply(s, { type: 'owner', playerId: 'p0', proof: sig }, 'p0').owner, { id: 'p0', sig });
+});

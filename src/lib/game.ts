@@ -1,7 +1,7 @@
 // Pure game logic. The host (or the single device in hot-seat mode) is the only
 // place this runs; everyone else just renders the state it broadcasts.
 
-import { cleanName, nameProblem, nameSkeleton } from './names.ts';
+import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
 import type { OwnerProof } from './ownerKey.ts';
 import { RUBY } from './palette.ts';
 import type { Looks } from './looks.ts';
@@ -982,7 +982,7 @@ export interface GameState {
    * signature for this room, which the host checked before letting them in
    * and every device checks again (ownerKey.ts) before showing the foil.
    */
-  owner?: { id: string } & OwnerProof;
+  owner?: { id: string; sig: OwnerProof };
   settings: Settings;
   /** Index into players of whose turn it is. */
   turn: number;
@@ -1341,10 +1341,13 @@ export class Engine {
     switch (action.type) {
       case 'join': {
         if (from !== null && from !== action.playerId) throw new ActionError('Not allowed.');
-        // (A join turned down below leaves the state as it was, this with it.)
-        if (action.owner) s.owner = { id: action.playerId, n: action.owner.n, sig: action.owner.sig };
+        // The owner key's signature names whoever joins under the held name (a seat coming back keeps its own name, so it must be that).
+        const own = (name: string) => {
+          if (action.owner && isHeldName(name)) s.owner = { id: action.playerId, sig: action.owner };
+        };
         const existing = s.players.find((p) => p.id === action.playerId);
         if (existing) {
+          own(existing.name);
           // Rejoining keeps the original name, so a seat can't be renamed on the way back.
           existing.connected = true;
           // A guest coming back arrives here (the session only ever reports a drop as 'connection'); their excuse ends.
@@ -1352,13 +1355,19 @@ export class Engine {
           break;
         }
         // Already watching (e.g. a second connection after a refresh): nothing changes.
-        if (s.spectators.some((o) => o.id === action.playerId)) break;
+        const watching = s.spectators.find((o) => o.id === action.playerId);
+        if (watching) {
+          own(watching.name);
+          break;
+        }
         const name = cleanName(action.name);
         // Someone the host already knows may come back through the lock (a lobby
         // drops people who disconnect, so a refresh would otherwise shut them out).
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
         const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
         if (problem) throw new ActionError(problem);
+        // (A join turned down below leaves the state as it was, this with it.)
+        own(name);
         // Someone who'd rather watch does, while there's room (in the lobby, they take a seat otherwise).
         if (action.watch && s.spectators.length < MAX_SPECTATORS) {
           s.spectators.push({ id: action.playerId, name, stay: true });
@@ -1386,7 +1395,7 @@ export class Engine {
       }
       case 'owner': {
         if (!isHost) throw new ActionError('Not allowed.');
-        s.owner = { id: action.playerId, n: action.proof.n, sig: action.proof.sig };
+        s.owner = { id: action.playerId, sig: action.proof };
         break;
       }
       case 'rename': {

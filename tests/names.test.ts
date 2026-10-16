@@ -17,6 +17,9 @@ test('look-alike letters from any script count as the Latin letters they pass fo
   for (const fake of ['Ꮓoe Arcana', 'ꓜoe Arcana', 'ᴢoe ᴀrcana', 'Zое Аrcana', 'Ζoe Arcana']) assert.ok(isHeldName(fake), fake);
   assert.equal(nameSkeleton('Ᏼob'), nameSkeleton('Bob'));
   assert.equal(nameSkeleton('ʙob'), nameSkeleton('Bob'));
+  // The hand-picked look-alikes still win over Unicode's list where both have one.
+  assert.equal(nameSkeleton('νoid'), nameSkeleton('Void'));
+  assert.equal(nameSkeleton('ηova'), nameSkeleton('Nova'));
   assert.match(nameProblem('Ᏼob', ['Bob']) ?? '', /looks too much like/);
   // Names of their own in other scripts stay theirs.
   assert.equal(nameProblem('Мария', ['Bob']), null);

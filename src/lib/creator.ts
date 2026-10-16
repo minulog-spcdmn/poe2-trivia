@@ -15,6 +15,8 @@ export function creatorShown(name: string): boolean {
   if (LAB || END_PREVIEW) return true;
   const s = session.state;
   if (!s || (session.mode !== 'host' && session.mode !== 'client')) return ownerUnlocked();
-  const id = [...s.players, ...(s.spectators ?? [])].find((o) => isHeldName(o.name))?.id;
-  return !!id && session.ownerProven(id);
+  // The one under the held name, proven; a lying host's second spelling of it beside them gets no foil (and neither does
+  // anyone, with two of them: which is which can't be told by name).
+  const held = [...s.players, ...(s.spectators ?? [])].filter((o) => isHeldName(o.name));
+  return held.length === 1 && held[0].name === name && session.ownerProven(held[0].id);
 }

@@ -28,7 +28,7 @@ export interface RoomInfo {
   depth?: number;
   /** The host's PROTOCOL_VERSION (missing from hosts before 10). */
   v?: number;
-  /** A host under the held name: the owner key's signature for the room (ownerKey.ts roomProof), checked before it is listed (rooms.ts). */
+  /** A host under the held name: the owner key's signature on the listing, over the prober's challenge (ownerKey.ts roomProof), checked before it is listed (rooms.ts). */
   owner?: OwnerProof;
 }
 
@@ -54,7 +54,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
   const host = cleanName(r.host);
   if (typeof r.code !== 'string' || !CODE.test(r.code) || !host) return null;
   // The held name only with a signature (whether it checks out is rooms.ts's to see).
-  const owner = isOwnerProof(r.owner) ? { n: r.owner.n, sig: r.owner.sig } : undefined;
+  const owner = isOwnerProof(r.owner) ? r.owner : undefined;
   if (isHeldName(host) && !owner) return null;
   if (!int(r.players, 0, 64) || !int(r.maxPlayers, 1, 64) || !int(r.target, 1, 50)) return null;
   if (!int(r.spectators, 0, 64) || !int(r.maxSpectators, 0, 64)) return null;

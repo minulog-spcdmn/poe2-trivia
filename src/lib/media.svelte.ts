@@ -62,11 +62,14 @@ const imageCache = new Map<string, Promise<HTMLImageElement>>();
 const IMAGE_TIMEOUT_MS = 8000;
 /**
  * The most art pixels a veil is cut in (the biggest art has under 90,000),
- * and how much cutting it may take for each (patches.ts patchWork: a real
- * cut takes about twice its pixels at most).
+ * and how much cutting it may take for each (patches.ts patchWork): a real
+ * cut takes about twice its pixels, the smallest art's on the finest cuts
+ * over four times, so eight, and never less than MIN_VEIL_WORK, where small
+ * art's cuts are all well within (a cut that takes it costs a few ms).
  */
 const MAX_VEIL_PIXELS = 512 * 512;
-const VEIL_WORK = 4;
+const VEIL_WORK = 8;
+const MIN_VEIL_WORK = 1 << 20;
 
 /**
  * Loads a picture and decodes it. Decoding first (img.decode) does it off the
@@ -431,7 +434,7 @@ class Shown {
         const labels = uint16s(m.labels);
         if (patchCount(labels, m.w * m.h) !== m.count) return;
         // A veil no real cut makes (a host's attempt to freeze its guests) isn't cut at all.
-        if (m.w * m.h > MAX_VEIL_PIXELS || patchWork(labels, m.w) > VEIL_WORK * m.w * m.h) return;
+        if (m.w * m.h > MAX_VEIL_PIXELS || patchWork(labels, m.w) > Math.max(VEIL_WORK * m.w * m.h, MIN_VEIL_WORK)) return;
         // The same veil again (a guest reconnecting) keeps its cut and the
         // patches shown of it; one cut otherwise starts afresh.
         const tile = m.tile ?? -1;

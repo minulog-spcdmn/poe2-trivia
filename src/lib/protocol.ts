@@ -28,7 +28,7 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
-   * `owner`: the owner key's signature for this room, to play under the held name (ownerKey.ts).
+   * `owner`: the owner key's signature for this room and the id this guest's token makes, to play under the held name (ownerKey.ts).
    */
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
@@ -108,7 +108,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
-        ...(raw.owner !== undefined ? { owner: { n: raw.owner.n, sig: raw.owner.sig } } : {}),
+        ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

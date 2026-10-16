@@ -2,6 +2,7 @@
 // secret guests identify themselves with. Kept free of PeerJS and Svelte so
 // it can be tested on its own.
 
+import { base64url } from './base64url.ts';
 import { RateLimit } from './protocol.ts';
 
 /**
@@ -245,11 +246,6 @@ export function capped<T>(list: T[], max: number): T[] {
   return list.length > max ? list.slice(list.length - max) : list;
 }
 
-const base64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
 
 /**
  * The token a browser shows the host of room `code`: an HMAC of its own
@@ -263,4 +259,16 @@ export async function roomSecret(secret: string, code: string): Promise<string> 
   const enc = new TextEncoder();
   const key = await subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return base64url(new Uint8Array(await subtle.sign('HMAC', key, enc.encode(`room:${code}`))));
+}
+
+/**
+ * The player id a host gives a newcomer under the held name (names.ts):
+ * one its token (roomSecret) makes, which the newcomer can work out before
+ * it joins, so the owner key can sign for that very id (ownerKey.ts
+ * ownerProof). Nobody can find another token that makes the same id, so a
+ * signature seen in the room is of no use to anyone else.
+ */
+export async function playerIdFor(secret: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`player:${secret}`));
+  return base64url(new Uint8Array(hash)).slice(0, 16);
 }

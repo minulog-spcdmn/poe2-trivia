@@ -2,7 +2,7 @@
 // "zalgo" stacks, catch names that impersonate the host or another player,
 // and turn down slurs and the like (offensive.ts).
 
-import { foldLookalikes } from './lookalikes.ts';
+import { lookalikeOf } from './lookalikes.ts';
 import { offensive } from './offensive.ts';
 import { OWNER_PUBLIC_KEY, ownerUnlocked, unlockOwner } from './ownerKey.ts';
 
@@ -12,8 +12,9 @@ export const MIN_NAME = 2;
 const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 'moderator', 'mod', 'you', 'ggg']);
 
 // Digits and signs that pass for letters, and common look-alike letters
-// from other scripts, folded to ASCII (after lookalikes.ts, which folds the
-// look-alikes Unicode lists).
+// from other scripts, folded to ASCII; ahead of lookalikes.ts (the
+// look-alikes Unicode lists), which folds the rest. Where both have a letter
+// these win: Greek ν passes for a v here and η for an n, as they always did.
 const CONFUSABLES: Record<string, string> = {
   а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
   і: 'i', ї: 'i', ј: 'j', ѕ: 's', ԁ: 'd', ɡ: 'g', ո: 'n', ս: 'u',
@@ -46,8 +47,8 @@ export const initialOf = (name: string) => (Array.from(name.trim())[0] ?? '').to
 
 /** What a name "looks like": lowercase ASCII-ish letters only. */
 export function nameSkeleton(name: string): string {
-  const folded = Array.from(foldLookalikes(name.normalize('NFKD').toLowerCase()))
-    .map((c) => CONFUSABLES[c] ?? c)
+  const folded = Array.from(name.normalize('NFKD').toLowerCase())
+    .map((c) => CONFUSABLES[c] ?? lookalikeOf(c) ?? c)
     .join('')
     .replace(/\p{M}/gu, '')
     .replace(/[^a-z]/g, '')

@@ -565,9 +565,10 @@ test("what a host's reveal says only goes in for items this build has, in shape"
   assert.deepEqual(keepable(e, known), e);
   // Items it doesn't have, or a name no item has on screen: nothing to keep.
   assert.equal(keepable({ ...e, itemId: 'x'.repeat(100_000) }, known), null);
-  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedId: 'deadbeef0000' } }, known), null);
-  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedId: `fake:${'x'.repeat(5000)}:0` } }, known), null);
-  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedLabel: 'y'.repeat(5000) } }, known), null);
+  // A pick it doesn't know, or a name no item has on screen: the answer counts, without them.
+  assert.deepEqual(keepable({ ...e, answer: { ...e.answer!, pickedId: 'deadbeef0000' } }, known)?.answer, { ...e.answer, pickedId: null });
+  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedId: `fake:${'x'.repeat(5000)}:0` } }, known)?.answer?.pickedId, null);
+  assert.equal(keepable({ ...e, answer: { ...e.answer!, pickedLabel: 'y'.repeat(5000) } }, known)?.answer?.pickedLabel, null);
   assert.equal(keepable({ ...e, mode: '__proto__' as never }, known), null);
   assert.equal(keepable({ ...e, delve: { ...e.delve!, depth: 1e12 } }, known), null);
   // What doesn't fit is left out, as parseCodex would on reading it back.

@@ -32,7 +32,7 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
 import { parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
-import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
+import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, playerIdFor, roomSecret } from './guard';
 import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
 import { checkOwner, ownerProof, roomProof, type OwnerProof } from './ownerKey';
 import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
@@ -324,8 +324,6 @@ class Session {
   /** The room's owner (GameState owner) once this device checked the signature: its code and id (noteOwner). */
   private ownerChecked = $state<string | null>(null);
   private ownerCheck: { key: string; result: Promise<boolean> } | null = null;
-  /** Host under the held name: the owner key's signature on its room's listing (roomInfo). */
-  private listingProof: { code: string; proof: OwnerProof } | null = null;
   /** Guest under the held name: the owner key's signature for the room it joins, sent with its hello. */
   private helloOwner: Promise<OwnerProof | null> | null = null;
 
@@ -378,7 +376,7 @@ class Session {
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
   /** Answers invite links' probes on the room's own id (lib/rooms.ts). */
-  private probeDesk = new ProbeDesk(() => this.roomInfo());
+  private probeDesk = new ProbeDesk((challenge) => this.listing(challenge));
   private skipTimer: ReturnType<typeof setTimeout> | null = null;
   private skipKey = '';
   private idleKey = '';
@@ -760,20 +758,26 @@ class Session {
           if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
           clearTimeout(helloTimer);
-          if (isHeldName(cleanName(msg.name))) {
-            // The held name only with the owner key's signature for this room (ownerKey.ts), checked first.
+          // (A guest on another version is told so first, whatever its name.)
+          if (!versionProblem(msg.v) && isHeldName(cleanName(msg.name))) {
+            // The held name only with the owner key's signature for this room and
+            // the id this guest plays under: the one it had, or the one its token
+            // makes (playerIdFor), which nobody else's token does.
             guest.checking = true;
-            void checkOwner(this.code, msg.owner).then((ok) => {
+            const { secret, owner } = msg;
+            void (async () => {
+              const id = this.secretToPlayer.get(secret) ?? (await playerIdFor(secret));
+              const ok = await checkOwner(this.code, id, owner);
               guest.checking = false;
               if (!this.guests.has(conn) || guest.playerId || !this.state) return;
               try {
-                if (!ok) throw new ActionError(HELD_REFUSAL);
-                this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, msg.owner);
+                if (!ok || !owner) throw new ActionError(HELD_REFUSAL);
+                this.handleHello(conn, guest, secret, msg.name, msg.v, !!msg.watch, { id, sig: owner });
               } catch (err) {
                 const message = err instanceof ActionError ? err.message : 'Something went wrong.';
                 this.dismiss(conn, { t: 'error', message });
               }
-            });
+            })();
             return;
           }
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch);
@@ -887,7 +891,8 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, owner?: OwnerProof) {
+  /** `owner`: the owner key's signature (checked) for the held name, and the id it names. */
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, owner?: { id: string; sig: OwnerProof }) {
     const outdated = versionProblem(v);
     if (outdated) throw new ActionError(outdated);
     const known = this.secretToPlayer.get(secret);
@@ -903,12 +908,17 @@ class Session {
       this.dismiss(conn, { t: 'busy', message: busy });
       return;
     }
-    const playerId = known ?? newPlayerId();
+    // (A signature names one id: the guest's own, should it have come in meanwhile under another name.)
+    if (owner && known && known !== owner.id) {
+      this.joins.rejected(secret, true);
+      throw new ActionError(HELD_REFUSAL);
+    }
+    const playerId = known ?? owner?.id ?? newPlayerId();
     let next: GameState;
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner } : {}) }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: owner.sig } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1398,7 +1408,8 @@ class Session {
     this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
-    this.helloOwner = isHeldName(cleanName(name)) ? ownerProof(room) : null;
+    // Under the held name: signed for the id this guest's token makes, which the host gives it (guard.ts playerIdFor).
+    this.helloOwner = isHeldName(cleanName(name)) ? this.helloSecret.then((secret) => playerIdFor(secret)).then((id) => ownerProof(room, id)) : null;
     this.joinedAt = Date.now();
     this.armConnectTimeout();
     this.startClientPeer();
@@ -1979,7 +1990,7 @@ class Session {
   private syncBeacon(s: GameState) {
     const want = this.mode === 'host' && !this.labRoomless && !!s.settings.public;
     if (want && !this.beacon) {
-      this.beacon = new Beacon(() => this.roomInfo());
+      this.beacon = new Beacon((challenge) => this.listing(challenge));
       this.beacon.start();
     } else if (!want && this.beacon) {
       this.beacon.stop();
@@ -2004,7 +2015,6 @@ class Session {
       target: s.settings.targetScore,
       phase: s.settings.locked ? 'locked' : s.phase,
       ...(s.delve && s.phase !== 'lobby' ? { depth: s.round } : {}),
-      ...(this.listingProof?.code === this.code ? { owner: this.listingProof.proof } : {}),
     };
   }
 
@@ -2131,7 +2141,7 @@ class Session {
     const wait = dealIn(next, this.hostNow());
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
-        const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
+        const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare, creator: (id) => this.ownerProven(id) });
         this.noteEarned(earned.earned.map((a) => a.id), next.phase !== 'lobby' ? next.startedAt : undefined);
         if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
         else announceAchievements(earned, 'game');
@@ -2259,9 +2269,9 @@ class Session {
     const o = s.owner;
     const code = this.code;
     if (!o || !code || this.mode === 'local') return Promise.resolve(false);
-    const key = `${code} ${o.id} ${o.n} ${o.sig}`;
+    const key = `${code} ${o.id} ${o.sig}`;
     if (this.ownerCheck?.key === key) return this.ownerCheck.result;
-    const result = checkOwner(code, o).then((ok) => {
+    const result = checkOwner(code, o.id, o.sig).then((ok) => {
       if (ok && this.ownerCheck?.key === key) this.ownerChecked = `${code} ${o.id}`;
       return ok;
     });
@@ -2274,14 +2284,20 @@ class Session {
     return this.ownerChecked === `${this.code} ${id}` && this.state?.owner?.id === id;
   }
 
-  /** Host under the held name: signs its room, for the game (its own player) and for its listing. */
+  /** Host under the held name (as the game has it: a reopened room keeps it, with no name typed): signs for its own player. */
   private async signOwnRoom(code: string) {
     const me = this.priv.myPlayerId;
-    if (!isHeldName(cleanName(this.joinName))) return;
-    const [proof, listing] = await Promise.all([ownerProof(code), roomProof(code)]);
-    if (!proof || !listing || this.mode !== 'host' || this.code !== code || !this.state) return;
-    this.listingProof = { code, proof: listing };
+    if (!isHeldName(this.state?.players.find((p) => p.id === me)?.name ?? '')) return;
+    const proof = await ownerProof(code, me);
+    if (!proof || this.mode !== 'host' || this.code !== code || !this.state) return;
     this.setState(engine.apply(this.state, { type: 'owner', playerId: me, proof }, null));
+  }
+
+  /** The room's info for a probe: under the held name, signed over the probe's challenge (ownerKey.ts roomProof). */
+  private listing(challenge: string | null): RoomInfo | null | Promise<RoomInfo | null> {
+    const info = this.roomInfo();
+    if (!info || !challenge || !isHeldName(info.host)) return info;
+    return roomProof(info.code, challenge).then((owner) => (owner ? { ...info, owner } : info));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
@@ -2294,12 +2310,15 @@ class Session {
     const room = this.code;
     if (arrival && this.mode !== 'local' && arrival.id !== this.myPlayerId)
       void this.noteOwner(next).then((ok) => {
-        if (!ok || this.code !== room) return;
-        this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
-          title: CREATOR_TITLE,
-          who: { name: arrival.name, hue: arrival.hue ?? RUBY },
-          herald: true,
-        });
+        if (this.code !== room) return;
+        if (ok)
+          this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
+            title: CREATOR_TITLE,
+            who: { name: arrival.name, hue: arrival.hue ?? RUBY },
+            herald: true,
+          });
+        // Not the creator after all: the host still says who joined, as it does for anyone (handleHello held it back).
+        else if (this.mode === 'host') this.flash(arrival.name, 'info', { title: arrival.watching ? 'Spectator joined' : 'Player joined', who: { name: arrival.name, ...(arrival.watching ? {} : { hue: arrival.hue }) } });
       });
     // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
     this.hissFuse(next);
@@ -2691,7 +2710,6 @@ class Session {
     this.heralded = null;
     this.ownerChecked = null;
     this.ownerCheck = null;
-    this.listingProof = null;
     this.helloOwner = null;
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();

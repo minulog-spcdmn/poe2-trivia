@@ -66,7 +66,10 @@ ${rows.join('\n')}
 
 const LETTER_OF = new Map(Object.entries(LOOKALIKES).flatMap(([to, from]) => Array.from(from, (c) => [c, to] as const)));
 
-/** Each look-alike in \`s\` (as NFKD and lower case leave it) read as its Latin letters, upper case where it was. */
+/** The Latin letters a look-alike (as NFKD and lower case leave it) passes for; undefined for anything else. */
+export const lookalikeOf = (c: string) => LETTER_OF.get(c);
+
+/** Each look-alike in \`s\` read as its Latin letters, upper case where it was. */
 export function foldLookalikes(s: string): string {
   return Array.from(s, (c) => {
     const to = LETTER_OF.get(c.toLowerCase());

@@ -465,9 +465,9 @@ export function keepable(e: Encounter, known: (id: string) => boolean): Encounte
     const id = a.pickedId;
     // fake:<id of the item it copies>:<which of its fakes>
     const fake = typeof id === 'string' && isFake(id) && id.length <= 40 && known(id.split(':')[1] ?? '');
-    const pickedId = id === null || fake || (typeof id === 'string' && known(id)) ? id : undefined;
-    const label = a.pickedLabel;
-    if (pickedId === undefined || !(label === null || (typeof label === 'string' && label.length <= MAX_LABEL))) return null;
+    // A pick it doesn't know, or a name longer than any, is let go of; the answer and the question's item still count.
+    const pickedId = fake || (typeof id === 'string' && known(id)) ? id : null;
+    const label = typeof a.pickedLabel === 'string' && a.pickedLabel.length <= MAX_LABEL ? a.pickedLabel : null;
     const ms = typeof a.ms === 'number' && Number.isFinite(a.ms) && a.ms > 0 ? a.ms : undefined;
     kept.answer = { ok: a.ok === true, pickedId, pickedLabel: label, ...(ms !== undefined ? { ms } : {}) };
   }
