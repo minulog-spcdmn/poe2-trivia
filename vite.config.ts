@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
+import { COUNTER_ORIGIN } from './src/lib/counter.ts';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
@@ -26,9 +27,10 @@ function csp(env: Record<string, string>): Plugin {
     "script-src 'self'",
     // Svelte sets inline style attributes (animations, positions).
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // The counts (lib/count.ts) go out as a beacon, or an image where a beacon can't.
+    `img-src 'self' data: blob: ${COUNTER_ORIGIN}`,
     "font-src 'self'",
-    `connect-src 'self' ${signalling}`,
+    `connect-src 'self' ${signalling} ${COUNTER_ORIGIN}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
