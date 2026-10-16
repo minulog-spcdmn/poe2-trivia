@@ -20,8 +20,6 @@ export const SIZES = ['1p', '2p', '3-4p', '5-8p', '9-12p'] as const;
 export type Size = (typeof SIZES)[number];
 
 export const MODE_NAMES: Record<Mode, string> = { turns: 'Take turns', race: 'Race', delve: 'Delve' };
-export const WHERE_NAMES: Record<Where, string> = { online: 'Online', hotseat: 'Hot-seat' };
-export const SIZE_NAMES: Record<Size, string> = { '1p': 'Alone', '2p': '2 players', '3-4p': '3 to 4', '5-8p': '5 to 8', '9-12p': '9 to 12' };
 
 /** How a join started (count.ts JoinVia). */
 export type Via = 'invite-link' | 'code' | 'open-rooms';
@@ -82,6 +80,7 @@ export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
     return out;
   };
 
+  const played = new Set(MODES.flatMap((mode) => WHERES.map((where) => `play/${mode}-${where}`)));
   const rows: ModeRow[] = [];
   for (const mode of MODES)
     for (const where of WHERES) {
@@ -114,7 +113,8 @@ export function ledgerOf(paths: PathCount[], days: string[]): Ledger {
     games: {
       started: rows.reduce((n, r) => n + r.started, 0),
       finished: rows.reduce((n, r) => n + r.finished, 0),
-      perDay: perDay((p) => p.startsWith('play/')),
+      // The modes and places it knows, as started and finished are: a path from elsewhere would make them disagree.
+      perDay: perDay((p) => played.has(p)),
       rows,
     },
     delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges },

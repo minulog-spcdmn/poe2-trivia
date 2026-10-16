@@ -2,12 +2,14 @@
 // API key the owner pasted once, which stays in this browser
 // (lib/storage.ts) and is never in the code. GoatCounter lets a page call its
 // API from anywhere (CORS); the site's CSP lets this one reach it
-// (lib/counter.ts). It allows 4 calls a second and 500 an hour, so calls go
-// out a few at a time and a turned-down one waits and tries again.
+// (lib/counter.ts). It allows 4 calls a second and 500 an hour: calls go out
+// three at a time at most and a quarter second apart, and one turned away
+// waits longer each time (its Retry-After isn't readable from another site).
 
 import { COUNTER_ORIGIN } from '../lib/counter';
 import { readStored, removeStored, writeStored } from '../lib/storage';
 import type { PathCount } from './model';
+import { zoneOf } from './zone';
 
 const KEY = 'ledger.key';
 export const savedKey = () => readStored(KEY) ?? '';
@@ -28,29 +30,38 @@ export class ApiError extends Error {
   }
 }
 
-const MAX_AT_ONCE = 3;
+const AT_ONCE = 3;
+const APART_MS = 260;
 let running = 0;
-const queue: (() => void)[] = [];
-async function slot<T>(go: () => Promise<T>): Promise<T> {
-  if (running >= MAX_AT_ONCE) await new Promise<void>((r) => queue.push(r));
-  running++;
+let lastStart = 0;
+const waiting: (() => void)[] = [];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** `go` once a place is free (a call finishing hands its place straight on) and a quarter second after the last call began. */
+async function paced<T>(go: () => Promise<T>): Promise<T> {
+  if (running < AT_ONCE) running++;
+  else await new Promise<void>((r) => waiting.push(r));
   try {
+    const wait = lastStart + APART_MS - Date.now();
+    lastStart = Math.max(Date.now(), lastStart + APART_MS);
+    if (wait > 0) await sleep(wait);
     return await go();
   } finally {
-    running--;
-    queue.shift()?.();
+    const next = waiting.shift();
+    if (next) next();
+    else running--;
   }
 }
 
-async function get<T>(key: string, path: string, query: Record<string, string>, tries = 3): Promise<T> {
-  const url = `${COUNTER_ORIGIN}/api/v0${path}?${new URLSearchParams(query)}`;
-  const res = await slot(() =>
-    fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => {
+async function get<T>(key: string, path: string, query: Record<string, string> = {}, tries = 4): Promise<T> {
+  const url = `${COUNTER_ORIGIN}/api/v0${path}${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ''}`;
+  const res = await paced(() =>
+    fetch(url, { headers: { Authorization: `Bearer ${key}` } }).catch(() => {
       throw new ApiError("GoatCounter couldn't be reached. Check the connection and try again.", 'network');
     }),
   );
   if (res.status === 429 && tries > 1) {
-    await new Promise((r) => setTimeout(r, 1200));
+    await sleep(1200 * 2 ** (4 - tries));
     return get(key, path, query, tries - 1);
   }
   if (res.status === 401 || res.status === 403) throw new ApiError('GoatCounter turned the key down. It may have been deleted, or lack "Read statistics".', 'key');
@@ -59,28 +70,31 @@ async function get<T>(key: string, path: string, query: Record<string, string>, 
   return (await res.json()) as T;
 }
 
-/** A period: from the start of `from` to the end of `to` (YYYY-MM-DD, this browser's days), as the API takes it. */
-export interface Period {
-  from: string;
-  to: string;
+/** The account's time zone, GoatCounter's days are cut in (any key may ask). */
+export async function accountZone(key: string): Promise<string> {
+  const me = await get<{ user?: { settings?: { timezone?: string } } }>(key, '/me');
+  return zoneOf(me.user?.settings?.timezone);
 }
-const span = (p: Period) => ({
-  start: new Date(`${p.from}T00:00:00`).toISOString(),
-  end: new Date(`${p.to}T23:59:59`).toISOString(),
-});
+
+/** A stretch of time, as the API takes it. */
+export interface Span {
+  start: Date;
+  end: Date;
+}
+const range = (s: Span) => ({ start: s.start.toISOString(), end: s.end.toISOString() });
 
 interface HitsResponse {
   hits: { path_id: number; path: string; event: boolean; count: number; stats: { day: string; daily: number }[] }[];
   more: boolean;
 }
 
-/** Every path counted in the period, with its days: pages of 100, each next one leaving out the paths already had. */
-export async function pathCounts(key: string, period: Period): Promise<PathCount[]> {
+/** Every path counted in the span, with its days: pages of up to 100, each next one leaving out the paths already had. */
+export async function pathCounts(key: string, span: Span): Promise<PathCount[]> {
   const out: PathCount[] = [];
   const had: string[] = [];
-  for (let page = 0; page < 10; page++) {
+  for (;;) {
     const r = await get<HitsResponse>(key, '/stats/hits', {
-      ...span(period),
+      ...range(span),
       group: 'day',
       limit: '100',
       ...(had.length ? { exclude_paths: had.join(',') } : {}),
@@ -89,9 +103,10 @@ export async function pathCounts(key: string, period: Period): Promise<PathCount
       had.push(String(h.path_id));
       out.push({ path: h.path, event: h.event, count: h.count, days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])) });
     }
-    if (!r.more || !r.hits.length) break;
+    if (!r.more) return out;
+    // A page that brought nothing new would ask the same again for ever.
+    if (!r.hits.length) throw new ApiError("GoatCounter's list of paths didn't add up. Try again in a moment.", 'other');
   }
-  return out;
 }
 
 export interface Named {
@@ -99,10 +114,10 @@ export interface Named {
   count: number;
 }
 
-/** Visitors of the start page (visits, not game events) by browser, system, country or referrer. */
-export async function visitorsBy(key: string, period: Period, page: 'systems' | 'locations' | 'toprefs' | 'browsers'): Promise<Named[]> {
+/** Visitors of the start page (visits, not game events) by system, country or referrer. */
+export async function visitorsBy(key: string, span: Span, page: 'systems' | 'locations' | 'toprefs'): Promise<Named[]> {
   const r = await get<{ stats: { name: string; count: number }[] }>(key, `/stats/${page}`, {
-    ...span(period),
+    ...range(span),
     include_paths: '/',
     path_by_name: 'true',
     limit: '50',

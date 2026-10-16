@@ -12,72 +12,39 @@
   // The ledger's lead: a few figures set large, each with its change against
   // the days before, and the one picked drawn under them, this period in gold
   // over a faint wash and the period before as a grey ghost on the same axis.
-  // Over 90 days the points are weeks. A hairline follows the pointer (a
-  // finger dragged, the arrow keys) and a note reads out both periods there.
+  // `weekly`: the points are weeks. A hairline follows what's read
+  // (Crosshair), its note giving both periods there.
+  import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
+  import { Crosshair } from './crosshair.svelte';
   import { change, grouped } from './model';
-  import { niceStep } from './TimeChart.svelte';
 
-  let { days, metrics, height = 220 }: { days: string[]; metrics: Metric[]; height?: number } = $props();
+  let { days, metrics, weekly = false, height = 220 }: { days: string[]; metrics: Metric[]; weekly?: boolean; height?: number } = $props();
 
   let picked = $state(0);
   const m = $derived(metrics[Math.min(picked, metrics.length - 1)]);
-  const weekly = $derived(days.length > 90);
   const now = $derived(grouped(days, m.now, weekly ? 7 : 1));
   const before = $derived(grouped(days, m.before, weekly ? 7 : 1).values);
   const n = $derived(now.values.length);
 
   let width = $state(0);
-  let at = $state<number | null>(null);
-  let pinned = $state(false);
   const PAD = { top: 12, right: 8, bottom: 24, left: 36 };
   const plotW = $derived(Math.max(0, width - PAD.left - PAD.right));
   const plotH = $derived(height - PAD.top - PAD.bottom);
-  const peak = $derived(Math.max(0, ...now.values, ...before));
-  const step = $derived(niceStep(peak, 4));
-  const top = $derived(Math.max(step, Math.ceil(peak / step) * step));
-  const ticks = $derived(Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step));
+  const ax = $derived(axis(Math.max(0, ...now.values, ...before), 4));
   const x = (i: number) => PAD.left + (n > 1 ? (plotW * i) / (n - 1) : plotW / 2);
-  const y = (v: number) => PAD.top + plotH - (plotH * v) / top;
+  const y = (v: number) => PAD.top + plotH - (plotH * v) / ax.top;
   const path = (vs: number[]) => vs.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
   const line = $derived(path(now.values));
   const ghost = $derived(path(before));
   const wash = $derived(n ? `${line}L${x(n - 1).toFixed(1)} ${y(0)}L${x(0).toFixed(1)} ${y(0)}Z` : '');
-
-  const short = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const long = (d: string) =>
-    (weekly ? 'Week of ' : '') + new Date(`${d}T12:00:00Z`).toLocaleDateString('en', { weekday: weekly ? undefined : 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const labelled = $derived.by(() => {
-    if (!n || !plotW) return [];
-    const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 70))));
-    const out: number[] = [];
-    for (let i = n - 1; i >= 0; i -= every) out.unshift(i);
-    return out;
-  });
-  const fmt = (v: number) => v.toLocaleString('en');
-  const compact = (v: number) => (v >= 1000 ? new Intl.NumberFormat('en', { notation: 'compact' }).format(v) : String(v));
+  const ticks = $derived(labelled(n, plotW, 70));
   const sum = (vs: number[]) => vs.reduce((a, b) => a + b, 0);
-
-  let svg = $state<SVGSVGElement>();
-  const nearest = (clientX: number) =>
-    !svg || !n ? null : Math.max(0, Math.min(n - 1, Math.round(((clientX - svg.getBoundingClientRect().left - PAD.left) / Math.max(1, plotW)) * (n - 1))));
-  function key(e: KeyboardEvent) {
-    if (e.key === 'Escape') at = null;
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    const d = e.key === 'ArrowRight' ? 1 : -1;
-    at = Math.max(0, Math.min(n - 1, (at ?? (d > 0 ? -1 : n)) + d));
-  }
-  const tipLeft = $derived(at === null ? 0 : Math.max(80, Math.min(width - 80, x(at))));
+  const hair = new Crosshair(
+    () => n,
+    (px) => Math.round(((px - PAD.left) / Math.max(1, plotW)) * (n - 1)),
+  );
+  const tipLeft = $derived(hair.at === null ? 0 : Math.max(80, Math.min(width - 80, x(hair.at))));
 </script>
-
-<svelte:window
-  onpointerdown={(e) => {
-    if (pinned && svg && !svg.contains(e.target as Node)) {
-      pinned = false;
-      at = null;
-    }
-  }}
-/>
 
 <div class="figures" role="tablist" aria-label="Drawn below">
   {#each metrics as f, i (f.key)}
@@ -98,49 +65,39 @@
     <!-- An image of the days that can be stepped through with the arrow keys, its note read out (role=status). -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <svg
-      bind:this={svg}
+      {@attach hair.attach}
       {width}
       {height}
       role="img"
       tabindex="0"
       aria-label="{m.name} per {weekly ? 'week' : 'day'}, this period against the one before. Arrow keys step through."
-      onpointermove={(e) => {
-        if (e.pointerType === 'mouse' || pinned) at = nearest(e.clientX);
-      }}
-      onpointerdown={(e) => {
-        if (e.pointerType === 'mouse') return;
-        pinned = true;
-        at = nearest(e.clientX);
-      }}
-      onpointerleave={(e) => {
-        if (e.pointerType === 'mouse') at = null;
-      }}
-      onkeydown={key}
-      onblur={() => {
-        if (!pinned) at = null;
-      }}
+      onpointermove={hair.move}
+      onpointerdown={hair.down}
+      onpointerleave={hair.leave}
+      onkeydown={hair.key}
+      onblur={hair.blur}
     >
-      {#each ticks as t (t)}
+      {#each ax.ticks as t (t)}
         <line class="grid" x1={PAD.left} x2={PAD.left + plotW} y1={y(t)} y2={y(t)} />
         <text class="tick" x={PAD.left - 8} y={y(t) + 4} text-anchor="end">{compact(t)}</text>
       {/each}
-      {#each labelled as i (i)}
-        <text class="tick" x={x(i)} y={height - 6} text-anchor={i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}>{short(now.days[i])}</text>
+      {#each ticks as i (i)}
+        <text class="tick" x={x(i)} y={height - 6} text-anchor={i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}>{shortDay(now.days[i])}</text>
       {/each}
       <path class="ghost" d={ghost} />
       <path class="wash" d={wash} />
       <path class="line" d={line} />
-      {#if at !== null}
-        <line class="cross" x1={x(at)} x2={x(at)} y1={PAD.top} y2={PAD.top + plotH} />
-        <circle class="ghost-dot" cx={x(at)} cy={y(before[at] ?? 0)} r="3.5" />
-        <circle class="dot" cx={x(at)} cy={y(now.values[at] ?? 0)} r="4.5" />
+      {#if hair.at !== null}
+        <line class="cross" x1={x(hair.at)} x2={x(hair.at)} y1={PAD.top} y2={PAD.top + plotH} />
+        <circle class="ghost-dot" cx={x(hair.at)} cy={y(before[hair.at] ?? 0)} r="3.5" />
+        <circle class="dot" cx={x(hair.at)} cy={y(now.values[hair.at] ?? 0)} r="4.5" />
       {/if}
     </svg>
-    {#if at !== null}
+    {#if hair.at !== null}
       <div class="tip" style:left="{tipLeft}px" role="status">
-        <div class="when">{long(now.days[at])}</div>
-        <div class="row"><i class="key now"></i><b>{fmt(now.values[at] ?? 0)}</b></div>
-        <div class="row was"><i class="key before"></i>{fmt(before[at] ?? 0)} the period before</div>
+        <div class="when">{longDay(now.days[hair.at], weekly)}</div>
+        <div class="row"><i class="key now"></i><b>{fmt(now.values[hair.at] ?? 0)}</b></div>
+        <div class="row was"><i class="key before"></i>{fmt(before[hair.at] ?? 0)} the period before</div>
       </div>
     {/if}
   {/if}

@@ -7,7 +7,7 @@
   // where visitors come from. The days picked on top count for all of it.
   import { onMount } from 'svelte';
   import { readStored, writeStored } from '../lib/storage';
-  import { ApiError, DASHBOARD, forgetKey, pathCounts, saveKey, savedKey, visitorsBy, type Named, type Period } from './api';
+  import { ApiError, DASHBOARD, accountZone, forgetKey, pathCounts, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import BarList, { type Bar } from './BarList.svelte';
   import Descent from './Descent.svelte';
   import KeyGate from './KeyGate.svelte';
@@ -26,14 +26,17 @@
     type Ledger,
     type Size,
   } from './model';
-  import TimeChart, { longDay } from './TimeChart.svelte';
+  import { longDay } from './chart';
+  import Columns from './Columns.svelte';
   import Timeline from './Timeline.svelte';
+  import { addDays, dayIn, midnight } from './zone';
 
   const SPANS = [
     { days: 7, name: '7 days' },
     { days: 30, name: '30 days' },
     { days: 90, name: '90 days' },
-    { days: 365, name: 'Year' },
+    // 52 weeks: drawn by the week, a year of whole weeks has no stub of a day at its start.
+    { days: 364, name: 'Year' },
   ] as const;
   const SIZE_SHORT: Record<Size, string> = { '1p': '1', '2p': '2', '3-4p': '3–4', '5-8p': '5–8', '9-12p': '9+' };
 
@@ -54,22 +57,30 @@
   let loading = $state(false);
   let failed = $state('');
 
-  /** A day in this browser's calendar, `back` days before today, as YYYY-MM-DD. */
-  function dayBack(back: number): string {
-    const d = new Date();
-    d.setDate(d.getDate() - back);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
+  /** The account's time zone, asked once a key (GoatCounter cuts its days there). */
+  let zone: { key: string; zone: string } | null = null;
 
   let asked = 0;
   async function load() {
     if (!key) return;
     const ask = ++asked;
-    const now: Period = { from: dayBack(span - 1), to: dayBack(0) };
-    const before: Period = { from: dayBack(2 * span - 1), to: dayBack(span) };
+    const days = span;
     loading = true;
     failed = '';
     try {
+      if (zone?.key !== key) zone = { key, zone: await accountZone(key) };
+      const tz = zone.zone;
+      // From the start of the first day to now (to the hour), and the period
+      // before as far into it: today is only partly over, so the period before
+      // stops as far into its last day, and the two compare like with like.
+      const today = dayIn(tz, new Date());
+      const from = addDays(today, -(days - 1));
+      const fromBefore = addDays(from, -days);
+      const start = midnight(tz, from);
+      const startBefore = midnight(tz, fromBefore);
+      const end = new Date(Math.ceil(Date.now() / 3_600_000) * 3_600_000);
+      const now: Span = { start, end };
+      const before: Span = { start: startBefore, end: new Date(startBefore.getTime() + (end.getTime() - start.getTime())) };
       const [n, b, systems, countries, refs] = await Promise.all([
         pathCounts(key, now),
         pathCounts(key, before),
@@ -79,8 +90,8 @@
       ]);
       if (ask !== asked) return;
       read = {
-        now: ledgerOf(n, daysBetween(now.from, now.to)),
-        before: ledgerOf(b, daysBetween(before.from, before.to)),
+        now: ledgerOf(n, daysBetween(from, today)),
+        before: ledgerOf(b, daysBetween(fromBefore, addDays(today, -days))),
         systems,
         countries,
         refs,
@@ -89,6 +100,8 @@
     } catch (err) {
       if (ask !== asked) return;
       if (err instanceof ApiError && err.kind === 'key') {
+        // A key GoatCounter turns down is no use kept: the next visit asks for a new one straight away.
+        forgetKey();
         refused = err.message;
         key = '';
         read = null;
@@ -195,7 +208,7 @@
     {:else if L && B && read}
       <div class="body" class:stale={loading}>
         <section class="lead" aria-label="Visitors, games and daily answers">
-          <Timeline days={L.days} {metrics} />
+          <Timeline days={L.days} {metrics} {weekly} />
           <details class="every">
             <summary>Every day</summary>
             <table>
@@ -295,10 +308,9 @@
             </header>
             {#if answers && dailyRight}
               <p class="lede-line"><b>{fmt(L.daily.right)}</b> of {fmt(answers)} answers right.</p>
-              <TimeChart
+              <Columns
                 days={dailyRight.days}
                 {weekly}
-                kind="columns"
                 height={150}
                 series={[
                   { name: 'missed', values: dailyWrong, tone: 'dim' },

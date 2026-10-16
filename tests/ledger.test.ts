@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
+import { axis, labelled } from '../src/statsPage/chart.ts';
 import { change, daysBetween, descentOf, deviceOf, grouped, ledgerOf, medianRange, modesOf, percent, pointsChange, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
@@ -145,4 +147,33 @@ test('weeks are summed back from the last day, so the newest week is whole', () 
 test('a rate moves in percentage points', () => {
   assert.equal(pointsChange(70, 100, 75, 100), -5);
   assert.equal(pointsChange(1, 2, 0, 0), null);
+});
+
+test("days are cut at the GoatCounter account's midnight, in its zone", () => {
+  assert.equal(zoneOf('DE.Europe/Berlin'), 'Europe/Berlin');
+  assert.equal(zoneOf('.UTC'), 'UTC');
+  assert.equal(zoneOf('XX.Not/AZone'), 'UTC');
+  assert.equal(zoneOf(undefined), 'UTC');
+  // Berlin in summer is two hours ahead, in winter one; the day a clock change falls on still starts at its own midnight.
+  assert.equal(midnight('Europe/Berlin', '2026-07-01').toISOString(), '2026-06-30T22:00:00.000Z');
+  assert.equal(midnight('Europe/Berlin', '2026-01-15').toISOString(), '2026-01-14T23:00:00.000Z');
+  assert.equal(midnight('Europe/Berlin', '2026-10-25').toISOString(), '2026-10-24T22:00:00.000Z');
+  assert.equal(midnight('America/New_York', '2026-03-08').toISOString(), '2026-03-08T05:00:00.000Z');
+  assert.equal(midnight('UTC', '2026-10-16').toISOString(), '2026-10-16T00:00:00.000Z');
+  // 23:30 UTC is already the next day in Berlin.
+  assert.equal(dayIn('Europe/Berlin', new Date('2026-10-16T23:30:00Z')), '2026-10-17');
+  assert.equal(dayIn('UTC', new Date('2026-10-16T23:30:00Z')), '2026-10-16');
+  assert.equal(addDays('2026-03-01', -1), '2026-02-28');
+});
+
+test('an axis climbs in round steps past its peak', () => {
+  assert.deepEqual(axis(0), { top: 1, ticks: [0, 1] });
+  assert.deepEqual(axis(37), { top: 40, ticks: [0, 20, 40] });
+  assert.deepEqual(axis(112, 4), { top: 150, ticks: [0, 50, 100, 150] });
+});
+
+test('dates along an axis: as many as fit, the last always among them', () => {
+  assert.deepEqual(labelled(30, 660, 66), [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]);
+  assert.deepEqual(labelled(3, 1000), [0, 1, 2]);
+  assert.deepEqual(labelled(0, 500), []);
 });
