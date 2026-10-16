@@ -78,7 +78,15 @@
   $effect(() => {
     const day = today;
     const [load, name] = DAILY[turnOf(day, [0, 1, 2, 3])];
-    return whenIdle(() => void Promise.all([load(), loadPlate(name)]).then(([m]) => day === untrack(() => today) && (Circle = m.default)), { timeout: 500, fallback: 100 });
+    return whenIdle(
+      () =>
+        void Promise.all([load(), loadPlate(name)]).then(
+          ([m]) => day === untrack(() => today) && (Circle = m.default),
+          // (Without its circle, today's unique plays on as it is.)
+          (e) => console.error("today's circle:", e),
+        ),
+      { timeout: 500, fallback: 100 },
+    );
   });
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 

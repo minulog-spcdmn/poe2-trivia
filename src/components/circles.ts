@@ -1,7 +1,7 @@
 // The rune circles: one craft in several plates (docs/arcane-style.md), so
 // the same circle isn't behind everything. All take the same props.
 import type { Component } from 'svelte';
-import { loadPlate } from '../lib/plateStore.svelte';
+import { warmPlate } from '../lib/plateStore.svelte';
 import type { PlateName } from '../lib/plates/index.ts';
 import { turnOf } from '../lib/turns';
 import ArcaneCircle from './ArcaneCircle.svelte';
@@ -15,7 +15,7 @@ export type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string;
 export const DAILY_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, ForbiddenCircle];
 /** Behind a question's art (not Delve's): the same four, a different one from question to question. */
 export const QUESTION_CIRCLES: Circle[] = DAILY_CIRCLES;
-/** Behind the end of a game (not Delve's): the monad or the eye. */
+/** Behind the end of a game (not Delve's): the monad or the eye, as the game falls (`endCircle`). */
 export const END_CIRCLES: Circle[] = [MonadCircle, ArcaneCircle];
 /** Behind an item in the item window, the eye. */
 export const ITEM_CIRCLE: Circle = ArcaneCircle;
@@ -39,8 +39,6 @@ export const plateNamed = (circle: Circle, name: PlateName) => void PLATE_OF.set
 /** Has `circle`'s plate built ahead of its showing. */
 export function warmCircle(circle: Circle) {
   const name = PLATE_OF.get(circle);
-  if (name) loadPlate(name).catch(() => {});
+  if (name) warmPlate(name);
 }
 
-/** One of `from`, at random. */
-export const anyOf = (from: Circle[]) => from[Math.floor(Math.random() * from.length)];

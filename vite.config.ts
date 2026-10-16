@@ -1,6 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
@@ -122,15 +122,24 @@ function fontinNotice(): Plugin {
 
 /**
  * Which build of the rune circles' plates this is (src/lib/plates, built in
- * the browser: lib/plateStore.svelte.ts): a hash of all of src/lib, which
- * they draw on, so a device keeps a plate it built until any of it changes.
+ * the browser and kept: lib/plateStore.svelte.ts): a hash of the plates and
+ * of everything they import (what's imported only as a type left out), so a
+ * device keeps a plate it built until the code that draws it changes.
  */
 function platesVersion() {
-  const lib = fileURLToPath(new URL('./src/lib/', import.meta.url));
   const hash = createHash('sha256');
-  for (const file of (readdirSync(lib, { recursive: true }) as string[]).filter((f) => f.endsWith('.ts')).sort()) {
-    hash.update(file).update(readFileSync(join(lib, file)));
-  }
+  const seen = new Set<string>();
+  const walk = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const code = readFileSync(file, 'utf8');
+    hash.update(file.slice(file.indexOf('src')).replaceAll('\\', '/')).update(code);
+    for (const m of code.matchAll(/^(?!import type)(?:import|export)[^;]*?from '(\.{1,2}\/[^']+)'|import\('(\.{1,2}\/[^']+)'\)/gm)) {
+      const path = join(dirname(file), m[1] ?? m[2]);
+      walk(path.endsWith('.ts') ? path : `${path}.ts`);
+    }
+  };
+  walk(fileURLToPath(new URL('./src/lib/plates/index.ts', import.meta.url)));
   return hash.digest('hex').slice(0, 12);
 }
 

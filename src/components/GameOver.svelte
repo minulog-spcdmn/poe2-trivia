@@ -6,7 +6,7 @@
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
-  import { anyOf, END_CIRCLES, PERISHED_CIRCLE } from './circles';
+  import { endCircle } from './gameCircles';
   import WatchToggle from './WatchToggle.svelte';
   import WatchEye from './WatchEye.svelte';
   import StandingMark from './StandingMark.svelte';
@@ -58,11 +58,10 @@
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the monad or the eye, or after a Delve the moth (the
   // winner, or the delvers, at its heart), and what the game meant for you
-  // under it; on
-  // the right a lobby panel with the mode's ranking or the party, the
-  // highlights everyone shares, and the start row. Phones stack it all,
-  // the start row docked at the foot of the screen. What it says comes
-  // from lib/recap.ts.
+  // under it; on the right a lobby panel with the mode's ranking or the
+  // party, the highlights everyone shares, and the start row. Phones stack
+  // it all, the start row docked at the foot of the screen. What it says
+  // comes from lib/recap.ts.
 
   const s = $derived(session.state!);
   const local = $derived(session.mode === 'local');
@@ -81,10 +80,10 @@
 
   // ---- Delve -------------------------------------------------------------
   const run = $derived(s.delve ?? null);
-  // The circle behind the result: the monad or the eye, or after a Delve,
-  // where everyone perished, the moth.
-  const endCircle = anyOf(END_CIRCLES);
-  const Circle = $derived(run ? PERISHED_CIRCLE : endCircle);
+  // The circle behind the result: the monad or the eye as the game falls, or
+  // after a Delve, where everyone perished, the moth (built ahead as the
+  // game went, gameCircles.ts).
+  const Circle = $derived(endCircle(s));
   const solo = $derived(!!run && !isGroupRun(s));
   const together = $derived(!!run && !solo);
   /** Whose run this device tells: online its player, on one device its one delver. */

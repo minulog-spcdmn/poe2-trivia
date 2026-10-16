@@ -1,10 +1,3 @@
-<script module lang="ts">
-  import { loadPlate } from '../lib/plateStore.svelte';
-
-  // The collection's circle, built ahead away from the page as this page loads (before it's opened).
-  loadPlate('monad').catch(() => {});
-</script>
-
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -23,6 +16,7 @@
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import MonadCircle from './MonadCircle.svelte';
+  import { warmPlate } from '../lib/plateStore.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -40,9 +34,11 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
-  // The other pages' circles, and the item window's eye, built ahead away from the page once the Codex is open.
+  // The pages' circles, and the item window's eye, built ahead away from the
+  // page once the Codex is open (the collection's sooner, as its entry on
+  // the start page is pointed at: Home.svelte).
   onMount(() => {
-    for (const name of ['rose', 'blackSun', 'eye'] as const) loadPlate(name).catch(() => {});
+    for (const name of ['monad', 'rose', 'blackSun', 'eye'] as const) warmPlate(name);
   });
   // A game in another tab may add to it meanwhile.
   onMount(() =>
