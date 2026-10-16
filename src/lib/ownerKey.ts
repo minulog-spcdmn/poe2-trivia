@@ -4,13 +4,13 @@
 // The key is a few random words. Opening the site once with ?owner=<words>
 // turns them (PBKDF2, slow on purpose) into an Ed25519 signing key, and the
 // device keeps it if its public half is OWNER_PUBLIC_KEY, the only part in
-// the source. Whoever needs to know signs nothing over: they send a fresh
-// challenge, and the owner's device signs that, so no signature is ever of
-// use again. A host lets the held name in only with its challenge signed
-// (joinProof); every guest that sees the name asks, through the host, for
-// its own challenge to be signed for the player under it (vouchProof); and
-// a room's listing is signed over each probe's (roomProof). Hot-seat,
-// nobody else looks: there it is this device's own word (ownerUnlocked).
+// the source. Whoever needs to know sends a fresh challenge, and the
+// owner's device signs that, so no signature is of use again: a host lets
+// the held name in only with its own challenge signed (joinProof), and the
+// room list shows a room under the held name only with the scan's
+// challenge signed (roomProof). Guests take the host's word for who in its
+// room is the owner: a host that lies can show anything in its own room
+// anyway. Hot-seat, it is this device's own word (ownerUnlocked).
 //
 // Ed25519 comes from @noble/ed25519 (it needs no more of Web Crypto than
 // SHA-512, which every browser the game runs in has, unlike Ed25519 itself).
@@ -45,11 +45,11 @@ export const isChallenge = (v: unknown): v is string => typeof v === 'string' &&
 export const newChallenge = () => base64url(crypto.getRandomValues(new Uint8Array(16)));
 
 /**
- * What the owner signs: joining room `code`, playing in it as a player, or hosting it; always over someone's challenge.
+ * What the owner signs: joining room `code`, or hosting it (its listing); always over someone's challenge.
  * `code` is the room's peer id (PEER_PREFIX and its code): the live game, the beta and a local one share the key but
  * not their rooms, so a signature drawn out in a beta room must be of no use in the live room of the same code.
  */
-type What = 'join' | 'player' | 'room';
+type What = 'join' | 'room';
 const signed = (what: What, code: string, about: string) => new TextEncoder().encode(`poe2.quest ${what} ${code} ${about}`);
 
 /** The signing key's 32-byte seed from the words. Case, spaces and dashes don't count ("Ember Tower" is "ember-tower"). */
@@ -124,13 +124,6 @@ async function check(what: What, code: string, about: string, proof: unknown, ke
 export const joinProof = (code: string, challenge: string, key = OWNER_PUBLIC_KEY) => sign('join', code, challenge, key);
 /** Whether `proof` is the owner's signature for joining room `code`, over this host's `challenge`. */
 export const checkJoin = (code: string, challenge: string, proof: unknown, key = OWNER_PUBLIC_KEY) => check('join', code, challenge, proof, key);
-
-/** This device's signature that it plays as `playerId` in room `code`, over a guest's challenge; null unless it holds the owner key. */
-export const vouchProof = (code: string, playerId: string, challenge: string, key = OWNER_PUBLIC_KEY) =>
-  sign('player', code, `${playerId} ${challenge}`, key);
-/** Whether `proof` is the owner's signature that it plays as `playerId` in room `code`, over this guest's `challenge`. */
-export const checkVouch = (code: string, playerId: string, challenge: string, proof: unknown, key = OWNER_PUBLIC_KEY) =>
-  check('player', code, `${playerId} ${challenge}`, proof, key);
 
 /** This device's signature on its room's listing, over a prober's challenge; null unless it holds the owner key. */
 export const roomProof = (code: string, challenge: string, key = OWNER_PUBLIC_KEY) => sign('room', code, challenge, key);

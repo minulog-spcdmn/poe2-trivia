@@ -779,17 +779,7 @@ export type Outcome = 'won' | 'lost';
  * and what that earned (see versusOutcome for which games count). `track`:
  * the game as this device followed it.
  */
-/**
- * `creator`: whether a player is the creator, the held name signed for (session.svelte.ts ownerProven checks the
- * signature); by default, whoever the game says signed for it.
- */
-export function versusEnd(
-  s: GameState,
-  me: string | null,
-  hotSeat: boolean,
-  track: VersusTrack | null,
-  creator: (id: string) => boolean = (id) => s.owner?.id === id,
-): { outcome: Outcome | null; earned: string[] } {
+export function versusEnd(s: GameState, me: string | null, hotSeat: boolean, track: VersusTrack | null): { outcome: Outcome | null; earned: string[] } {
   const outcome = versusOutcome(s, me, hotSeat);
   if (!outcome) return { outcome, earned: [] };
   const t = track?.game === s.startedAt ? track : null;
@@ -805,7 +795,8 @@ export function versusEnd(
   if (s.settings.targetScore >= TARGET_HIGH && flawless) out.push('untarnished');
   const score = s.players.find((p) => p.id === me)?.score ?? 0;
   if (race && s.settings.targetScore >= TARGET_HIGH && score === s.round && t && there.every((p) => t.guessed.includes(p.id))) out.push('clean-sweep');
-  if (there.some((p) => isHeldName(p.name) && creator(p.id) && !s.winners.includes(p.id))) out.push('usurper');
+  // The creator: the held name on whoever the host let in with the owner key's signature (GameState owner).
+  if (there.some((p) => isHeldName(p.name) && s.owner?.id === p.id && !s.winners.includes(p.id))) out.push('usurper');
   if (race && flawless && (t?.veiled ?? 0) >= VEIL_TAKES) out.push('through-the-veil');
   return { outcome, earned: out };
 }
@@ -1023,7 +1014,7 @@ export function noteState(
   next: GameState,
   me: string | null,
   hotSeat: boolean,
-  { items, veilShare, creator }: { items: Item[]; veilShare?: { qid: number; share: number }; creator?: (id: string) => boolean },
+  { items, veilShare }: { items: Item[]; veilShare?: { qid: number; share: number } },
 ): Check {
   const delve = momentsIn(prev, next, me, hotSeat);
   const ended: string[] = [];
@@ -1055,7 +1046,7 @@ export function noteState(
       // kept (session storage blocked), as its end comes in.
       const ending = !!prev && prev.phase !== 'over' && prev.startedAt === next.startedAt;
       if (was?.game === next.startedAt || ending) {
-        const end = versusEnd(next, me, hotSeat, track, creator);
+        const end = versusEnd(next, me, hotSeat, track);
         ended.push(...end.earned);
         if (end.outcome) list();
         const game = next.startedAt;

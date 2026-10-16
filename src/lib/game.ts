@@ -977,10 +977,9 @@ export interface GameState {
   /** Watching this game; they get a seat when the host starts the next one unless they `stay` (missing in older saves). */
   spectators?: Spectator[];
   /**
-   * Online: who plays under the held name (names.ts), as the host says. The
-   * host let them in only with the owner key's signature over its own
-   * challenge; every other device asks for its own before it shows the foil
-   * (ownerKey.ts, session.svelte.ts noteOwner).
+   * Online: who plays under the held name (names.ts), as the host says: it
+   * let them in only with the owner key's signature over its own challenge
+   * (ownerKey.ts), or is the owner itself. Guests take its word.
    */
   owner?: { id: string };
   settings: Settings;

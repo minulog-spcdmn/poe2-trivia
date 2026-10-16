@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkJoin, checkRoom, checkVouch, isOwnerProof, joinProof, newChallenge, ownerPublicKey, ownerUnlocked, roomProof, unlockOwner, vouchProof } from '../src/lib/ownerKey.ts';
+import { checkJoin, checkRoom, isOwnerProof, joinProof, newChallenge, ownerPublicKey, ownerUnlocked, roomProof, unlockOwner } from '../src/lib/ownerKey.ts';
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = {
@@ -9,7 +9,7 @@ const store = new Map<string, string>();
   removeItem: (k: string) => void store.delete(k),
 };
 
-test("the owner's signatures check out only over the challenge, the room and the player they were made for", async () => {
+test("the owner's signatures check out only over the challenge and the room they were made for", async () => {
   // The real words are not in the repo, so this runs against a test key.
   const key = await ownerPublicKey('test words');
   assert.match(key, /^[A-Za-z0-9_-]{43}$/);
@@ -26,13 +26,6 @@ test("the owner's signatures check out only over the challenge, the room and the
   assert.ok(await checkJoin('ABCD', hi, join, key));
   assert.equal(await checkJoin('ABCD', newChallenge(), join, key), false, "another link's challenge: seen once, of no use again");
   assert.equal(await checkJoin('WXYZ', hi, join, key), false, "another room's");
-  // A guest's own check: over its challenge, for the player the host says is the owner.
-  const c = newChallenge();
-  const vouch = (await vouchProof('ABCD', 'p1', c, key))!;
-  assert.ok(await checkVouch('ABCD', 'p1', c, vouch, key));
-  assert.equal(await checkVouch('ABCD', 'p2', c, vouch, key), false, 'another player');
-  assert.equal(await checkVouch('ABCD', 'p1', newChallenge(), vouch, key), false, "another guest's challenge");
-  assert.equal(await checkJoin('ABCD', c, vouch, key), false, "a player's signature isn't a join's");
   assert.equal(await checkRoom('ABCD', hi, join, key), false, "a join's isn't a listing's");
   const flipped = join[0] === 'A' ? 'B' + join.slice(1) : 'A' + join.slice(1);
   assert.equal(await checkJoin('ABCD', hi, flipped, key), false, 'a forged signature');

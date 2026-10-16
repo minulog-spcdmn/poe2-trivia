@@ -1,9 +1,8 @@
 // Whether a name shows as the creator's (the foil, the gilded avatar, the
 // title): the held name (names.ts), and only where it's proven. In an online
-// room, only the one name the session has proven on this device
-// (session.svelte.ts creatorName: the owner key signed this device's own
-// challenge for them, whatever the host says); in hot-seat, and outside a
-// room, it's this device's own word.
+// room, only the one the host let in with the owner key's signature
+// (session.svelte.ts creatorName); in hot-seat, and outside a room, it's
+// this device's own word.
 
 import { isHeldName } from './names';
 import { ownerUnlocked } from './ownerKey';
