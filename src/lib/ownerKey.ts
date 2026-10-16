@@ -23,7 +23,7 @@ import { base64url, fromBase64url } from './base64url.ts';
 import { readKey, writeKey } from './storage.ts';
 
 /** The owner key's public half (raw Ed25519, base64url): scripts/owner-key.mjs prints it for the words. */
-export const OWNER_PUBLIC_KEY = '';
+export const OWNER_PUBLIC_KEY = 'SIwtcxovVQ_Mfp8NkPmSzMKgYx1ejNtyuw-VLrgkS8M';
 
 const SALT = 'poe2trivia.owner-key';
 const ITERATIONS = 600_000;
