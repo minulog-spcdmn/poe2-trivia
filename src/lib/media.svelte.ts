@@ -7,7 +7,7 @@
 // patches' pictures from it itself.
 
 import { itemImage } from './ui-paths';
-import { labelPatches, litMask, packLabels, patchCount, patchShapes, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
+import { labelPatches, litMask, packLabels, patchCount, patchShapes, patchWork, spreadOrder, veilSchedule, visibleBox, type VeilPlan } from './patches';
 import type { OwnVeil, PatchImage } from './veilCut';
 import { forgetCuts, startCut, type CutHandle } from './veilCutter';
 import type { MediaMsg } from './protocol';
@@ -60,6 +60,13 @@ const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
 /** A request that neither loads nor fails by then has stalled. */
 const IMAGE_TIMEOUT_MS = 8000;
+/**
+ * The most art pixels a veil is cut in (the biggest art has under 90,000),
+ * and how much cutting it may take for each (patches.ts patchWork: a real
+ * cut takes about twice its pixels at most).
+ */
+const MAX_VEIL_PIXELS = 512 * 512;
+const VEIL_WORK = 4;
 
 /**
  * Loads a picture and decodes it. Decoding first (img.decode) does it off the
@@ -423,6 +430,8 @@ class Shown {
         // Labels that don't make the patches the veil counts would leave it never whole.
         const labels = uint16s(m.labels);
         if (patchCount(labels, m.w * m.h) !== m.count) return;
+        // A veil no real cut makes (a host's attempt to freeze its guests) isn't cut at all.
+        if (m.w * m.h > MAX_VEIL_PIXELS || patchWork(labels, m.w) > VEIL_WORK * m.w * m.h) return;
         // The same veil again (a guest reconnecting) keeps its cut and the
         // patches shown of it; one cut otherwise starts afresh.
         const tile = m.tile ?? -1;
