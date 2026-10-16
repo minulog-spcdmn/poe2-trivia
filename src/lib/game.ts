@@ -662,6 +662,24 @@ export function snapTimer(v: number) {
 export const RACE_DEFAULT_TIMER = 16;
 
 /**
+ * How long a question's clock runs once it starts (ms): Delve's depth (or
+ * find), a race's timer or its default, a turn's timer. Null on untimed
+ * turns: their clock starts all the same, and never runs out.
+ */
+export function clockMs(s: GameState): number | null {
+  if (s.delve) return questionTimer(s) * 1000;
+  if (s.settings.mode === 'race') return (s.settings.timer || RACE_DEFAULT_TIMER) * 1000;
+  return s.settings.timer > 0 ? s.settings.timer * 1000 : null;
+}
+
+/**
+ * Whether the question's clock has started ('clock'), in every mode. Before
+ * it nobody sees its art, names or prompt, and every answer is too early. A
+ * Delve clock held still by the host's reload (paused) has not started again.
+ */
+export const clockRuns = (q: Pick<Question, 'clockAt'> | null | undefined) => q?.clockAt !== undefined;
+
+/**
  * Seconds on the clock of a question asked in `s` (`q`: a Delve find's has
  * its own, a vein's later strikes the lamp's light): a Delve depth's, else the room's timer, or the default one
  * without. A veiled question's art is sized for it (veilSeconds), and the
@@ -723,9 +741,13 @@ export interface Question {
   gray?: boolean;
   /** Host-clock timestamp when the question was asked. */
   askedAt: number;
-  /** Host-clock timestamp when time runs out, null without timer (and in Delve until the clock starts). */
+  /** Host-clock timestamp when time runs out: null until the clock starts, and for good on untimed turns. */
   deadline: number | null;
-  /** Delve: host clock when the clock started, once the art has reached the player answering. */
+  /**
+   * Host clock when the clock started ('clock'), once the art has reached
+   * those answering. Missing until then: nobody sees or answers any of the
+   * question before it (see clockRuns).
+   */
   clockAt?: number;
   /**
    * Delve: the clock held still by the host's reload (a player was cut off):
@@ -1187,8 +1209,9 @@ function guestView(s: GameState): GameState {
   if (!q) return { ...s, used: [] };
   if (s.phase === 'question') {
     const hidden = { ...q, itemId: '', options: [], mirrored: [], variant: [] };
-    // Delve: nothing to read off the clock either, until the art has reached the player answering.
-    if (s.delve && q.deadline === null) return { ...s, used: [], question: { ...hidden, labels: q.labels.map(() => null), prompt: null, groups: [] } };
+    // Nothing to read off the clock either, until it starts (the art has reached those answering):
+    // not the names, nor the name to find, nor the groups in play.
+    if (!clockRuns(q)) return { ...s, used: [], question: { ...hidden, labels: q.labels.map(() => null), prompt: null, groups: [] } };
     return { ...s, used: [], question: hidden };
   }
   // Revealed: only the answer and the options someone actually picked are
@@ -1283,13 +1306,22 @@ export class Engine {
   private looks: Looks | null;
   /** TWINS, as items (sets with fewer than two of them left out). */
   private readonly twins: { items: Item[]; depth: number; colour?: true }[];
+  /** Every question's clock starts as it is asked (see the constructor). */
+  private readonly autoClock: boolean;
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
    * `looks`: the look-alike table, if at hand already (else see setLooks).
    * `twins`: false lets twins (TWINS) meet anywhere (Today's unique).
+   * `autoClock`: every question's clock starts as it is asked, for an engine
+   * played without a session (tests, tools). A session leaves it off: it
+   * starts the clock itself ('clock'), once the art has reached those
+   * answering.
    */
-  constructor(items: Item[], opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean } = {}) {
+  constructor(
+    items: Item[],
+    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean } = {},
+  ) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
     this.fakes = new Map(items.filter((it) => opts.fakes?.[it.name]?.length).map((it) => [it.id, opts.fakes![it.name]]));
@@ -1303,6 +1335,7 @@ export class Engine {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
+    this.autoClock = !!opts.autoClock;
     const byName = new Map(items.map((it) => [it.name, it]));
     this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
@@ -1580,8 +1613,8 @@ export class Engine {
         if (!isActive) throw new ActionError("It's not your turn.");
         const q = s.question;
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
-        // Delve: nobody answers a question whose clock hasn't started (a stray key in hot-seat included).
-        if (s.delve && q.deadline === null && action.index !== null) throw new ActionError('Too early.', true);
+        // Nobody answers a question whose clock hasn't started (the host and a stray key in hot-seat included).
+        if (!clockRuns(q)) throw new ActionError('Too early.', true);
         // Delve: the clock has hit 0 with a flare in hand that hasn't burnt
         // yet (its timer came late, or after this one). The time-out is not
         // taken: the flare burns instead, as it would have at 0. A player's
@@ -1718,7 +1751,7 @@ export class Engine {
         if (!isHost) throw new ActionError('Only the host can change the question.');
         if (s.phase !== 'question' || !s.question) throw new ActionError('There is no open question.', true);
         // Delve: a question on the clock can't be traded for another.
-        if (s.delve && s.question.deadline !== null) throw new ActionError('The clock is already running.', true);
+        if (s.delve && clockRuns(s.question)) throw new ActionError('The clock is already running.', true);
         const voided = s.question;
         // Race: blind guesses on a question that is thrown out don't cost anything.
         for (const m of voided.misses) {
@@ -1781,28 +1814,10 @@ export class Engine {
         if (from !== null) throw new ActionError('Not allowed.');
         const q = s.question;
         // Already running (a resumed host releasing the art again) or a question that is gone: nothing to start.
-        if (!s.delve || s.phase !== 'question' || !q || q.askedAt !== action.askedAt || q.deadline !== null) break;
+        if (s.phase !== 'question' || !q || q.askedAt !== action.askedAt || clockRuns(q)) break;
         const now = this.now();
         const at = timeOr(action.at, now);
-        const start = Math.min(Math.max(at, now), now + 1000);
-        const p = q.paused;
-        if (p) {
-          // Held still since the host's reload ('resumed') at `p.at`: it
-          // carries on with the time it had left. Everything timed on it
-          // moves on by as long as it was held, so what had gone of it stays
-          // gone (an Azurite Vein's fast window too); only the deadline gets
-          // the time it had left (with a hold still to come, see clockLeft).
-          const shift = start - p.at;
-          q.clockAt = p.clockAt + shift;
-          q.deadline = start + p.left + heldAhead(q.held, p.at);
-          if (q.flaredAt !== undefined) q.flaredAt += shift;
-          if (q.held) q.held = { from: q.held.from + shift, until: q.held.until + shift };
-          for (const x of q.struck ?? []) x.at += shift;
-          delete q.paused;
-          break;
-        }
-        q.clockAt = start;
-        q.deadline = q.clockAt + questionTimer(s) * 1000;
+        this.startClock(s, q, Math.min(Math.max(at, now), now + 1000));
         break;
       }
       case 'expire': {
@@ -1883,8 +1898,38 @@ export class Engine {
       s.reveal.at = this.now();
       countStreaks(s, s.reveal);
     }
+    // Without a session to wait for the art, a question's clock starts as it is asked.
+    const q = s.question;
+    if (this.autoClock && s.phase === 'question' && q && !clockRuns(q) && !q.paused && q.askedAt !== prev.question?.askedAt) this.startClock(s, q, q.askedAt);
     s.version = prev.version + 1;
     return s;
+  }
+
+  /**
+   * The question's clock starts at `start` (host clock) and runs for as long
+   * as the question has (clockMs); untimed turns get a start and no
+   * deadline. A Delve clock the host's reload held still carries on instead.
+   */
+  private startClock(s: GameState, q: Question, start: number) {
+    const p = q.paused;
+    if (p) {
+      // Held still since the host's reload ('resumed') at `p.at`: it
+      // carries on with the time it had left. Everything timed on it
+      // moves on by as long as it was held, so what had gone of it stays
+      // gone (an Azurite Vein's fast window too); only the deadline gets
+      // the time it had left (with a hold still to come, see clockLeft).
+      const shift = start - p.at;
+      q.clockAt = p.clockAt + shift;
+      q.deadline = start + p.left + heldAhead(q.held, p.at);
+      if (q.flaredAt !== undefined) q.flaredAt += shift;
+      if (q.held) q.held = { from: q.held.from + shift, until: q.held.until + shift };
+      for (const x of q.struck ?? []) x.at += shift;
+      delete q.paused;
+      return;
+    }
+    q.clockAt = start;
+    const ms = clockMs(s);
+    q.deadline = ms === null ? null : start + ms;
   }
 
   // ---- race mode --------------------------------------------------------
@@ -1894,6 +1939,8 @@ export class Engine {
     // Late clicks from the previous question are expected; drop them quietly.
     if (s.phase !== 'question' || !q) throw new ActionError('Too late!', true);
     if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
+    // Nobody answers before the clock starts, the host included; nor can time be up.
+    if (!clockRuns(q)) throw new ActionError('Too early.', true);
 
     if (from === null) {
       // Host timer: time is up, nobody got it.
@@ -2464,7 +2511,7 @@ export class Engine {
       throw new ActionError('There is no open question.');
     }
     if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
-    if (q.deadline === null) throw new ActionError('Too early.', true);
+    if (!clockRuns(q) || q.deadline === null) throw new ActionError('Too early.', true);
     const now = this.now();
     // A flare still to burn at 0 (its timer came late): time hasn't run out yet.
     let flareDue = teamItemReady(s, 'flares') && now >= q.deadline;
@@ -3123,9 +3170,6 @@ export class Engine {
     // Strictly increasing: it doubles as the question's id for late answers.
     const askedAt = Math.max(this.now(), (s.lastAskedAt ?? 0) + 1, (s.question?.askedAt ?? 0) + 1);
     s.lastAskedAt = askedAt;
-    const timer = s.settings.mode === 'race' ? s.settings.timer || RACE_DEFAULT_TIMER : s.settings.timer;
-    // Delve: the clock starts once the art has reached the player answering (the 'clock' action).
-    const deadline = !s.delve && timer > 0 ? askedAt + timer * 1000 : null;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
     const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round, special.strike) : delveTileVeil(s.round));
     const secs = questionClock(s, special);
@@ -3149,7 +3193,8 @@ export class Engine {
     // always asked).
     const variant = picturesOf({ mode, options, itemId: answer.id }).map((id) => drawnWith.get(id) ?? rollArt(this.byId.get(id)!));
     const drawn = variant.some(Boolean) ? { variant } : {};
-    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, ...drawn, askedAt, deadline, misses: [], ...special };
+    // No deadline yet, in any mode: the clock starts once the art has reached those answering (the 'clock' action).
+    return { category, groups, ...tall, mode, itemId: answer.id, options, labels, prompt, veil, mirrored, ...gray, ...drawn, askedAt, deadline: null, misses: [], ...special };
   }
 }
 

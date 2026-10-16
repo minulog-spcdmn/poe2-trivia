@@ -22,6 +22,7 @@
   import { deeperThanEver, descended, zoneArrival } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
   import { untrack } from 'svelte';
+  import { clockMs } from '../lib/game';
   import { motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
@@ -130,9 +131,10 @@
           : `${active.name}'s turn`,
   );
 
-  // Delve: the seconds the question started with (a find's or the depth's),
-  // never read off the deadline, which a burning flare moves on.
-  const seconds = $derived(run ? questionTimer(s) : q?.deadline ? Math.round((q.deadline - (q.clockAt ?? q.askedAt)) / 1000) : 0);
+  // The seconds the question's clock runs (Delve: a find's or the depth's),
+  // known before it starts, so the ring stands full from the first; never
+  // read off the deadline, which a burning flare moves on. 0: untimed turns.
+  const seconds = $derived(run ? questionTimer(s) : Math.round((clockMs(s) ?? 0) / 1000));
   // Short timers only sound urgent near the end.
   const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
 
@@ -325,7 +327,8 @@
 </script>
 
 {#snippet timer()}
-  {#if !drawing && (q?.deadline || (run && q && s.phase === 'question'))}
+  <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
+  {#if !drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0))}
     {#key q.askedAt}
       <TimerRing deadline={q.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}

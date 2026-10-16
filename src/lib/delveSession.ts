@@ -15,11 +15,28 @@ import {
   voteDone,
   type ItemKind,
 } from './delve.ts';
-import type { Blast, GameState } from './game.ts';
+import { clockMs, clockRuns, type Blast, type GameState } from './game.ts';
 import type { DarkOutcome } from './darkness.ts';
 
 /** The longest the host waits for the art to reach the player answering before their clock starts anyway. */
 export const DELVE_CLOCK_CAP_MS = 3000;
+
+/** The bounds of clockCap (ms): no shorter than this, so a short clock still gives the art a fair wait... */
+export const CLOCK_CAP_MIN_MS = 2000;
+/** ...and no longer than this, nor on untimed turns, so one slow link can't hold everyone up for long. */
+export const CLOCK_CAP_MAX_MS = 4000;
+
+/**
+ * The most the host waits for a question's art to reach those answering
+ * before its clock starts anyway (ms): a fifth of the question's time, at
+ * least CLOCK_CAP_MIN_MS and at most CLOCK_CAP_MAX_MS (untimed turns: the
+ * most). It reads nothing a guest reports, so no guest can stretch it.
+ */
+export function clockCap(s: GameState): number {
+  const ms = clockMs(s);
+  if (ms === null) return CLOCK_CAP_MAX_MS;
+  return Math.min(CLOCK_CAP_MAX_MS, Math.max(CLOCK_CAP_MIN_MS, Math.round(ms / 5)));
+}
 
 /** How often the host checks whether the art has left for the player answering. */
 export const DRAIN_POLL_MS = 50;
@@ -60,11 +77,12 @@ export const halfTrip = (rtt: number) => Math.min(Math.max(0, rtt) / 2, 500);
 
 /**
  * When the answering player's clock starts (host clock): once the host's send
- * queue to them is empty (or the cap ran out), plus the half round trip the
- * last bytes and the state carrying the deadline still need to arrive.
+ * queue to them is empty (or the cap ran out: `cap` ms after the art was
+ * released, see clockCap), plus the half round trip the last bytes and the
+ * state carrying the deadline still need to arrive.
  */
-export function clockStart(drainedAt: number | null, releasedAt: number, rtt: number): number {
-  return Math.min(drainedAt ?? Infinity, releasedAt + DELVE_CLOCK_CAP_MS) + halfTrip(rtt);
+export function clockStart(drainedAt: number | null, releasedAt: number, rtt: number, cap = DELVE_CLOCK_CAP_MS): number {
+  return Math.min(drainedAt ?? Infinity, releasedAt + cap) + halfTrip(rtt);
 }
 
 /**
@@ -88,9 +106,13 @@ export function reaskDelay(failures: number): number | null {
   return REASK_WAITS[failures] ?? null;
 }
 
-/** A Delve question whose art failed may be asked again by itself while its clock hasn't started. */
+/**
+ * A question whose art failed may be asked again by itself while its clock
+ * hasn't started, in every mode (never on a guest's word: the host's own
+ * art failed). A Delve clock the host's reload held still has not started.
+ */
 export function mayAutoReask(s: GameState | null, qid: number): boolean {
-  return !!s?.delve && s.phase === 'question' && s.question?.askedAt === qid && s.question.deadline === null;
+  return !!s && s.phase === 'question' && s.question?.askedAt === qid && !clockRuns(s.question);
 }
 
 /**
@@ -172,6 +194,18 @@ export function underRuleset(s: GameState): GameState {
 export function artFirst(s: GameState): string[] {
   if (!s.delve) return [];
   if (isGroupRun(s)) return standingIds(s);
+  const p = s.players[s.turn];
+  return p ? [p.id] : [];
+}
+
+/**
+ * Whom a question's clock waits for to have its art, in every mode (the
+ * session leaves out those offline): those who answer it. Turns: the player
+ * on turn; race: everyone seated; Delve: as artFirst.
+ */
+export function clockWaitsFor(s: GameState): string[] {
+  if (s.delve) return artFirst(s);
+  if (s.settings.mode === 'race') return s.players.map((p) => p.id);
   const p = s.players[s.turn];
   return p ? [p.id] : [];
 }
