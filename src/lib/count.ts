@@ -47,16 +47,40 @@ export function countEvent(name: string) {
   send({ p: name, t: name, e: 'true' });
 }
 
-/**
- * The event for a game this device starts playing: its mode, Delve alone or
- * together, and on one device or online ("play/race-online",
- * "play/delve-together-online", "play/turns-hotseat").
- */
-export function playEvent(s: GameState, hotSeat: boolean): string {
-  const mode = s.settings.mode ?? 'turns';
-  const kind = mode === 'delve' ? `delve-${(s.delve?.entrants.length ?? 1) < 2 ? 'alone' : 'together'}` : mode;
-  return `play/${kind}-${hotSeat ? 'hotseat' : 'online'}`;
+/** How many play, roughly: Delve its entrants, other games their seats. */
+function partySize(s: GameState): string {
+  const n = s.delve?.entrants.length ?? s.players.length;
+  return n <= 2 ? `${Math.max(1, n)}p` : n <= 4 ? '3-4p' : n <= 8 ? '5-8p' : '9-12p';
 }
+
+/**
+ * A game's key: its mode, on one device or online, and how many play
+ * ("race-online-3-4p", "delve-online-1p", "turns-hotseat-2p"). Counted once
+ * a game, by the device that runs it, as it starts ("play/…") and as it
+ * ends ("end/…", under the key it started with): the two side by side say
+ * how many games are left unfinished.
+ */
+export function gameKey(s: GameState, hotSeat: boolean): string {
+  return `${s.settings.mode ?? 'turns'}-${hotSeat ? 'hotseat' : 'online'}-${partySize(s)}`;
+}
+
+/** Where a join started: a code typed, an invite link, the Open rooms list. Counted as tried ("join/…") and as let in ("joined/…"). */
+export type JoinVia = 'code' | 'invite-link' | 'open-rooms';
+
+/**
+ * The failures counted ("error/no-answer", …), by the title their notice
+ * shows: a room that can't be reached or opened. Not a guest removed, a room
+ * closed, a game moved to another tab or a code mistyped: nothing failed.
+ */
+const FAILURES: Record<string, string> = {
+  'No connection': 'no-connection',
+  'No answer': 'no-answer',
+  'No such room': 'no-such-room',
+  "Couldn't join": 'turned-away',
+  'Room not opened': 'room-not-opened',
+  'Room not reopened': 'room-not-reopened',
+};
+export const failureEvent = (title: string | undefined): string | null => (title && FAILURES[title] ? `error/${FAILURES[title]}` : null);
 
 /** The event for a Delve run's end, by the ten depths it ended in, as players see them ("delve/depth-20-29"). */
 export function delveEndEvent(shownDepth: number): string {

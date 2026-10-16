@@ -42,7 +42,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, shownDepth, standingIds } from './delve';
-import { countEvent, delveEndEvent, playEvent } from './count';
+import { countEvent, delveEndEvent, failureEvent, gameKey, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -1354,7 +1354,10 @@ class Session {
 
   // ---- joining ----------------------------------------------------------
 
-  join(code: string, name: string, watch = false) {
+  /** Where the join under way started (count.ts), counted once it's let in; none for a guest's reload getting back in. */
+  private joinVia: JoinVia | null = null;
+
+  join(code: string, name: string, watch = false, via?: JoinVia) {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
@@ -1362,6 +1365,8 @@ class Session {
     this.status = 'connecting';
     this.joinName = name;
     this.watchOnly = watch;
+    this.joinVia = via ?? null;
+    if (via) countEvent(`join/${via}`);
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
       this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
@@ -1621,6 +1626,8 @@ class Session {
             this.noteChange(this.state, msg.state);
             this.state = msg.state;
           }
+          if (this.status === 'connecting' && this.joinVia) countEvent(`joined/${this.joinVia}`);
+          this.joinVia = null;
           this.status = 'ready';
           if (this.state) this.noteWatch(this.state);
           break;
@@ -1680,6 +1687,7 @@ class Session {
 
   private hostLost(conn: DataConnection) {
     if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
+      countEvent('error/connection-lost');
       this.status = 'lost';
       this.retries = 0;
       // A link that came back on its own after giving up starts a fresh count.
@@ -1693,6 +1701,7 @@ class Session {
     this.retry = setTimeout(() => {
       if (this.mode !== 'client' || this.status === 'ready') return;
       if (this.retries++ >= 20) {
+        countEvent('error/reconnect-gave-up');
         this.gaveUp = true;
         return;
       }
@@ -1942,20 +1951,40 @@ class Session {
     }
     const run = runEvent(prev, next, this.myPlayerId, this.mode === 'local');
     if (!run) return;
+    this.countEnd(next, run.depth);
     const r = recordRun(run);
     if (!r) return;
-    countEvent(delveEndEvent(shownDepth(run.depth)));
     this.noteAchievements();
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
-  /** A game this device plays in starting, from the lobby or the last one's end (not one joined or resumed underway), counted (count.ts). */
+  /** The key the game under way started with (count.ts gameKey), for its end. */
+  private playKey: string | null = null;
+
+  /**
+   * Counted (count.ts), once a game, by the device that runs it: a game
+   * starting from the lobby or the last one's end, and reaching its end. Not
+   * a game resumed underway: its start was counted before the reload.
+   */
   private notePlay(prev: GameState | null, next: GameState) {
+    if (this.mode !== 'local' && this.mode !== 'host') return;
     const playing = (p: GameState['phase']) => p !== 'lobby' && p !== 'over';
-    if (!prev || playing(prev.phase) || !playing(next.phase)) return;
-    const hotSeat = this.mode === 'local';
-    if (hotSeat || next.players.some((p) => p.id === this.myPlayerId)) countEvent(playEvent(next, hotSeat));
+    if (!prev || prev.phase === next.phase) return;
+    if (!playing(prev.phase) && playing(next.phase)) {
+      this.playKey = gameKey(next, this.mode === 'local');
+      countEvent(`play/${this.playKey}`);
+    }
+    // A Delve run ends as it's decided (noteRun), not once someone looks at the results.
+    else if (next.phase === 'over' && !next.delve) this.countEnd(next);
+  }
+
+  /** A game's end counted (notePlay), a Delve run's with the ten depths it ended in (`depth`, as the records keep it). */
+  private countEnd(s: GameState, depth?: number) {
+    if (this.mode !== 'local' && this.mode !== 'host') return;
+    countEvent(`end/${this.playKey ?? gameKey(s, this.mode === 'local')}`);
+    this.playKey = null;
+    if (depth !== undefined) countEvent(delveEndEvent(shownDepth(depth)));
   }
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
@@ -2452,6 +2481,8 @@ class Session {
    */
   private fail(message: string, title?: string, reopening?: string) {
     const mode = this.mode;
+    const failure = failureEvent(title);
+    if (failure) countEvent(failure);
     // A game walked away from in this room by a reload that couldn't get back into it (it closed, or never
     // reopened) wasn't walked away from.
     forgiveLeaving({ room: reopening ?? this.code });

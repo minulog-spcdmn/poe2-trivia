@@ -25,6 +25,7 @@
   import DrawnMark from './DrawnMark.svelte';
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
+  import { countEvent, type JoinVia } from '../lib/count';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -32,6 +33,7 @@
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
   let invite = $state(cleanCode(params.get('room') ?? ''));
+  if (params.get('room')) countEvent('open/invite-link');
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -54,6 +56,7 @@
   // chosen in the lobby they open. Not over a game that's being resumed:
   // App resumes it on mount, after this, so look once that's had its turn.
   if (params.has(DELVE_LINK_PARAM)) {
+    countEvent('open/delve-link');
     const url = new URL(location.href);
     url.searchParams.delete(DELVE_LINK_PARAM);
     history.replaceState(history.state, '', url);
@@ -293,7 +296,7 @@
       return;
     }
     if (code.length < CODE_LENGTH) return codeShort();
-    startJoin(code, n);
+    startJoin(code, n, 'join', 'code');
   }
   /** The Code too short notice up, if one is: it goes once the code is whole. */
   let shortNotice: number | null = null;
@@ -369,7 +372,7 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n, inPlace ? 'rooms' : 'join');
+    startJoin(roomCode, n, inPlace ? 'rooms' : 'join', 'open-rooms');
   }
 
   // A join that ends back here without a room (no such room, no answer):
@@ -377,10 +380,11 @@
   // one tapped in the Open rooms list in its own place: nobody typed that code,
   // and Join's field is out of sight up the page.
   let joining: string | null = null;
-  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
+  /** `via`: where the join started, for the counts (lib/count.ts). */
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms', via: JoinVia) {
     joining = roomCode;
     busy = from;
-    session.join(roomCode, n);
+    session.join(roomCode, n, false, via);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
   }
@@ -477,7 +481,7 @@
     e?.preventDefault();
     const n = checkName(inviteName, inviteField);
     if (!n) return;
-    startJoin(invite, n);
+    startJoin(invite, n, 'join', 'invite-link');
   }
   function leaveInvite() {
     const url = new URL(location.href);
@@ -503,7 +507,7 @@
     leaveInvite();
     cursor = ENTRIES.indexOf('join');
     setTimeout(() => {
-      if (session.status === 'idle' && !session.state) startJoin(code, name);
+      if (session.status === 'idle' && !session.state) startJoin(code, name, 'join', 'invite-link');
     });
   } else if (opened.code) {
     // A first visit: the room is asked whose it is and how it stands, so the
