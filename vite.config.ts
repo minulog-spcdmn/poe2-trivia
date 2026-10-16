@@ -268,6 +268,8 @@ export default defineConfig(({ command, mode }) => {
           main: 'index.html',
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
+          // The ledger (src/statsPage): the counts from GoatCounter, read with the owner's key.
+          stats: 'stats.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool),
           // the zone tuning page (src/zonebanner), the descent's test page
           // (src/descentPreview), the daily streak's (src/streakPreview), the

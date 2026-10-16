@@ -96,9 +96,14 @@ export function countVisit() {
   send({ p: '/', t: document.title, ...(r ? { r } : {}) });
 }
 
-/** An event: its name is the path GoatCounter lists it under. */
+/**
+ * An event: its name is the path GoatCounter lists it under. Each one counts
+ * (`ns`, no session): GoatCounter would otherwise count a path once a visitor
+ * in eight hours, five games in an evening as one. A visit keeps its session,
+ * so visits still count people.
+ */
 export function countEvent(name: string) {
-  send({ p: name, t: name, e: 'true' });
+  send({ p: name, t: name, e: 'true', ns: 'true' });
 }
 
 const arrivals = new Set<string>();
