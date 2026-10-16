@@ -5,6 +5,7 @@
   // perish. The deeper, the darker the band. Beside it, the share that got
   // there and the share that ended there.
   import { accentAt, stratumName } from '../lib/descent';
+  import { fmt } from './chart';
   import { descentOf } from './model';
 
   let { ranges }: { ranges: { from: number; count: number }[] } = $props();
@@ -12,7 +13,6 @@
   const strata = $derived(descentOf(ranges));
   const total = $derived(strata[0]?.reached ?? 0);
   const pc = (v: number) => (total ? Math.round((100 * v) / total) : 0);
-  const fmt = (v: number) => v.toLocaleString('en');
 </script>
 
 {#if !total}

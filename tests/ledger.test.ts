@@ -177,3 +177,10 @@ test('dates along an axis: as many as fit, the last always among them', () => {
   assert.deepEqual(labelled(3, 1000), [0, 1, 2]);
   assert.deepEqual(labelled(0, 500), []);
 });
+
+test('a day whose midnight the clocks jump past begins at its first hour', () => {
+  // Chile moves its clocks from 00:00 to 01:00 on the first Sunday of September.
+  const start = midnight('America/Santiago', '2026-09-06');
+  assert.equal(dayIn('America/Santiago', start), '2026-09-06');
+  assert.equal(dayIn('America/Santiago', new Date(start.getTime() - 1)), '2026-09-05');
+});

@@ -41,9 +41,15 @@ function offset(zone: string, at: Date): number {
   return (Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - Math.floor(at.getTime() / 60_000) * 60_000) / 60_000;
 }
 
-/** The moment `day` begins in `zone` (worked out twice, for a day a clock change falls on). */
+/**
+ * The moment `day` begins in `zone`: worked out twice, for a day a clock
+ * change falls on, then moved on to the day's first hour where the clocks
+ * jump past midnight itself (Santiago, Havana: that day has no 00:00).
+ */
 export function midnight(zone: string, day: string): Date {
   const guess = Date.parse(`${day}T00:00:00Z`);
   const first = guess - offset(zone, new Date(guess)) * 60_000;
-  return new Date(guess - offset(zone, new Date(first)) * 60_000);
+  let at = guess - offset(zone, new Date(first)) * 60_000;
+  for (let i = 0; i < 4 && dayIn(zone, new Date(at)) < day; i++) at += 3_600_000;
+  return new Date(at);
 }

@@ -10,6 +10,8 @@
   // largest, and the count with its share: every value written out, so the
   // list is its own table. `top` keeps the first rows and folds the rest into
   // "Other".
+  import { fmt } from './chart';
+
   let { bars, top = 8, tone = 'gold', empty = 'None counted.' }: { bars: Bar[]; top?: number; tone?: 'gold' | 'bad'; empty?: string } = $props();
 
   const shown = $derived.by(() => {
@@ -20,7 +22,6 @@
   });
   const total = $derived(bars.reduce((n, b) => n + b.count, 0));
   const max = $derived(Math.max(1, ...shown.map((b) => b.count)));
-  const fmt = (n: number) => n.toLocaleString('en');
 </script>
 
 {#if !total}

@@ -12,8 +12,10 @@
   // The ledger's lead: a few figures set large, each with its change against
   // the days before, and the one picked drawn under them, this period in gold
   // over a faint wash and the period before as a grey ghost on the same axis.
-  // `weekly`: the points are weeks. A hairline follows what's read
-  // (Crosshair), its note giving both periods there.
+  // `weekly`: the points are weeks. The newest point is today (or this
+  // week), only partly over, so its stretch of both lines is drawn faint and
+  // its note says "so far". A hairline follows what's read (Crosshair), its
+  // note giving both periods there.
   import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { change, grouped } from './model';
@@ -34,9 +36,12 @@
   const x = (i: number) => PAD.left + (n > 1 ? (plotW * i) / (n - 1) : plotW / 2);
   const y = (v: number) => PAD.top + plotH - (plotH * v) / ax.top;
   const path = (vs: number[]) => vs.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
-  const line = $derived(path(now.values));
-  const ghost = $derived(path(before));
-  const wash = $derived(n ? `${line}L${x(n - 1).toFixed(1)} ${y(0)}L${x(0).toFixed(1)} ${y(0)}Z` : '');
+  /** Up to the last whole point, and the last stretch (to the point still filling) on its own. */
+  const settled = (vs: number[]) => path(vs.slice(0, Math.max(1, n - 1)));
+  const lastStretch = (vs: number[]) => (n > 1 ? `M${x(n - 2).toFixed(1)} ${y(vs[n - 2] ?? 0).toFixed(1)}L${x(n - 1).toFixed(1)} ${y(vs[n - 1] ?? 0).toFixed(1)}` : '');
+  const line = $derived(settled(now.values));
+  const ghost = $derived(settled(before));
+  const wash = $derived(n ? `${path(now.values)}L${x(n - 1).toFixed(1)} ${y(0)}L${x(0).toFixed(1)} ${y(0)}Z` : '');
   const ticks = $derived(labelled(n, plotW, 70));
   const sum = (vs: number[]) => vs.reduce((a, b) => a + b, 0);
   const hair = new Crosshair(
@@ -85,8 +90,10 @@
         <text class="tick" x={x(i)} y={height - 6} text-anchor={i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}>{shortDay(now.days[i])}</text>
       {/each}
       <path class="ghost" d={ghost} />
+      <path class="ghost so-far" d={lastStretch(before)} />
       <path class="wash" d={wash} />
       <path class="line" d={line} />
+      <path class="line so-far" d={lastStretch(now.values)} />
       {#if hair.at !== null}
         <line class="cross" x1={x(hair.at)} x2={x(hair.at)} y1={PAD.top} y2={PAD.top + plotH} />
         <circle class="ghost-dot" cx={x(hair.at)} cy={y(before[hair.at] ?? 0)} r="3.5" />
@@ -95,7 +102,7 @@
     </svg>
     {#if hair.at !== null}
       <div class="tip" style:left="{tipLeft}px" role="status">
-        <div class="when">{longDay(now.days[hair.at], weekly)}</div>
+        <div class="when">{longDay(now.days[hair.at], weekly)}{hair.at === n - 1 ? ', so far' : ''}</div>
         <div class="row"><i class="key now"></i><b>{fmt(now.values[hair.at] ?? 0)}</b></div>
         <div class="row was"><i class="key before"></i>{fmt(before[hair.at] ?? 0)} the period before</div>
       </div>
@@ -222,6 +229,9 @@
     stroke: var(--ghost);
     stroke-width: 1.5;
     stroke-linejoin: round;
+  }
+  .so-far {
+    opacity: 0.4;
   }
   .cross {
     stroke: var(--gold-hi);

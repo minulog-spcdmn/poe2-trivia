@@ -10,8 +10,9 @@
 <script lang="ts">
   // Counts per day (or week) as columns, one or two series stacked, the one
   // the chart is about in gold over the other in grey, a 2px gap between
-  // them. A column lifts while it's read (Crosshair), with a note naming
-  // each series that day.
+  // them. The newest (today, only partly over) is drawn faint and its note
+  // says "so far". A column lifts while it's read (Crosshair), with a note
+  // naming each series that day.
   import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
 
@@ -83,7 +84,7 @@
         <text class="tick" x={x(i)} y={height - 6} text-anchor="middle">{shortDay(days[i])}</text>
       {/each}
       {#each stacks as parts, i (i)}
-        <g class:lit={hair.at === i} class:faded={hair.at !== null && hair.at !== i}>
+        <g class:lit={hair.at === i} class:faded={hair.at !== null && hair.at !== i} class:so-far={i === days.length - 1}>
           {#each parts as p, k (k)}
             {#if p.d}
               <path class="col {p.tone}" d={p.d} />
@@ -96,7 +97,7 @@
     </svg>
     {#if hair.at !== null}
       <div class="tip" style:left="{tipLeft}px" role="status">
-        <div class="when">{longDay(days[hair.at], weekly)}</div>
+        <div class="when">{longDay(days[hair.at], weekly)}{hair.at === days.length - 1 ? ', so far' : ''}</div>
         {#each [...series].reverse() as s (s.name)}
           <div class="row"><i class="key {s.tone}"></i><b>{fmt(s.values[hair.at] ?? 0)}</b> <span>{s.name}</span></div>
         {/each}
@@ -141,8 +142,12 @@
   g {
     transition: opacity 0.15s;
   }
-  .faded {
+  .faded,
+  .so-far {
     opacity: 0.55;
+  }
+  .so-far.faded {
+    opacity: 0.35;
   }
   .lit .col.gold {
     fill: var(--gold-hi);

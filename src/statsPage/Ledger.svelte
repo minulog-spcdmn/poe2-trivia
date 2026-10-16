@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import { readStored, writeStored } from '../lib/storage';
   import { ApiError, DASHBOARD, accountZone, forgetKey, pathCounts, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
+  import { fmt, longDay } from './chart';
   import BarList, { type Bar } from './BarList.svelte';
   import Descent from './Descent.svelte';
   import KeyGate from './KeyGate.svelte';
@@ -26,7 +27,6 @@
     type Ledger,
     type Size,
   } from './model';
-  import { longDay } from './chart';
   import Columns from './Columns.svelte';
   import Timeline from './Timeline.svelte';
   import { addDays, dayIn, midnight } from './zone';
@@ -42,7 +42,8 @@
 
   let key = $state(savedKey());
   let refused = $state('');
-  const storedSpan = Number(readStored('ledger.days'));
+  // (A year was 365 days before it became 52 weeks.)
+  const storedSpan = Number(readStored('ledger.days')) === 365 ? 364 : Number(readStored('ledger.days'));
   let span = $state<number>(SPANS.some((s) => s.days === storedSpan) ? storedSpan : 30);
 
   interface Read {
@@ -52,50 +53,54 @@
     countries: Named[];
     refs: Named[];
     at: Date;
+    /** Every path was read (count.ts never makes as many as would leave some out). */
+    complete: boolean;
   }
   let read = $state<Read | null>(null);
   let loading = $state(false);
   let failed = $state('');
 
-  /** The account's time zone, asked once a key (GoatCounter cuts its days there). */
-  let zone: { key: string; zone: string } | null = null;
-
   let asked = 0;
   async function load() {
     if (!key) return;
     const ask = ++asked;
+    const k = key;
     const days = span;
     loading = true;
     failed = '';
     try {
-      if (zone?.key !== key) zone = { key, zone: await accountZone(key) };
-      const tz = zone.zone;
-      // From the start of the first day to now (to the hour), and the period
-      // before as far into it: today is only partly over, so the period before
-      // stops as far into its last day, and the two compare like with like.
-      const today = dayIn(tz, new Date());
+      // The account's time zone, GoatCounter's days are cut in: asked each time, as the owner may change it.
+      const tz = await accountZone(k);
+      if (ask !== asked) return;
+      // From the start of the first day to now, and the period before to as
+      // far into its last day as today has gone (by the clock there, whatever
+      // clock change lies between): the two compare like with like.
+      const at = new Date();
+      const today = dayIn(tz, at);
       const from = addDays(today, -(days - 1));
       const fromBefore = addDays(from, -days);
-      const start = midnight(tz, from);
-      const startBefore = midnight(tz, fromBefore);
-      const end = new Date(Math.ceil(Date.now() / 3_600_000) * 3_600_000);
-      const now: Span = { start, end };
-      const before: Span = { start: startBefore, end: new Date(startBefore.getTime() + (end.getTime() - start.getTime())) };
+      const lastBefore = addDays(today, -days);
+      const now: Span = { start: midnight(tz, from), end: at };
+      const before: Span = {
+        start: midnight(tz, fromBefore),
+        end: new Date(midnight(tz, lastBefore).getTime() + (at.getTime() - midnight(tz, today).getTime())),
+      };
       const [n, b, systems, countries, refs] = await Promise.all([
-        pathCounts(key, now),
-        pathCounts(key, before),
-        visitorsBy(key, now, 'systems'),
-        visitorsBy(key, now, 'locations'),
-        visitorsBy(key, now, 'toprefs'),
+        pathCounts(k, now),
+        pathCounts(k, before),
+        visitorsBy(k, now, 'systems'),
+        visitorsBy(k, now, 'locations'),
+        visitorsBy(k, now, 'toprefs'),
       ]);
       if (ask !== asked) return;
       read = {
-        now: ledgerOf(n, daysBetween(from, today)),
-        before: ledgerOf(b, daysBetween(fromBefore, addDays(today, -days))),
+        now: ledgerOf(n.paths, daysBetween(from, today)),
+        before: ledgerOf(b.paths, daysBetween(fromBefore, lastBefore)),
         systems,
         countries,
         refs,
-        at: new Date(),
+        at,
+        complete: n.complete && b.complete,
       };
     } catch (err) {
       if (ask !== asked) return;
@@ -133,7 +138,6 @@
     loading = false;
   }
 
-  const fmt = (n: number) => n.toLocaleString('en');
   const signed = (n: number | null, unit: string) => (n === null ? '' : `${n > 0 ? '+' : ''}${n}${unit}`);
 
   // ---- what the chapters show ----------------------------------------------------------
@@ -199,6 +203,9 @@
       <button type="button" class="link" onclick={forget}>Forget key</button>
     </div>
 
+    {#if read && !read.complete}
+      <p class="failed" role="status">More paths than the ledger reads (1,000): some counts may be missing.</p>
+    {/if}
     {#if failed}
       <p class="failed" role="alert">{failed} <button type="button" class="link" onclick={() => void load()}>Try again</button></p>
     {/if}

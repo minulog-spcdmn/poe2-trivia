@@ -56,7 +56,7 @@ async function paced<T>(go: () => Promise<T>): Promise<T> {
 async function get<T>(key: string, path: string, query: Record<string, string> = {}, tries = 4): Promise<T> {
   const url = `${COUNTER_ORIGIN}/api/v0${path}${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ''}`;
   const res = await paced(() =>
-    fetch(url, { headers: { Authorization: `Bearer ${key}` } }).catch(() => {
+    fetch(url, { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } }).catch(() => {
       throw new ApiError("GoatCounter couldn't be reached. Check the connection and try again.", 'network');
     }),
   );
@@ -88,11 +88,18 @@ interface HitsResponse {
   more: boolean;
 }
 
-/** Every path counted in the span, with its days: pages of up to 100, each next one leaving out the paths already had. */
-export async function pathCounts(key: string, span: Span): Promise<PathCount[]> {
+/** Pages read at most: 1,000 paths, far more than the game counts, and an address that stays short enough to send. */
+const MAX_PAGES = 10;
+
+/**
+ * Every path counted in the span, with its days: pages of up to 100, each
+ * next one leaving out the paths already had. `complete`: false when there
+ * were more than MAX_PAGES of them.
+ */
+export async function pathCounts(key: string, span: Span): Promise<{ paths: PathCount[]; complete: boolean }> {
   const out: PathCount[] = [];
   const had: string[] = [];
-  for (;;) {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const r = await get<HitsResponse>(key, '/stats/hits', {
       ...range(span),
       group: 'day',
@@ -103,10 +110,11 @@ export async function pathCounts(key: string, span: Span): Promise<PathCount[]> 
       had.push(String(h.path_id));
       out.push({ path: h.path, event: h.event, count: h.count, days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])) });
     }
-    if (!r.more) return out;
+    if (!r.more) return { paths: out, complete: true };
     // A page that brought nothing new would ask the same again for ever.
     if (!r.hits.length) throw new ApiError("GoatCounter's list of paths didn't add up. Try again in a moment.", 'other');
   }
+  return { paths: out, complete: false };
 }
 
 export interface Named {
