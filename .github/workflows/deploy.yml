@@ -192,9 +192,12 @@ jobs:
 
   # Recorded before the site goes up: if the deploy then fails, the next run
   # puts this beta up, rather than quietly going back to the one before.
+  # The status check is spelled out: a bare condition gets an implicit
+  # success(), which fails when the beta job was skipped (its build came from
+  # the cache), and then a beta put back up from the cache was never recorded.
   record-beta:
     needs: assemble
-    if: needs.assemble.outputs.new-beta
+    if: ${{ !cancelled() && needs.assemble.result == 'success' && needs.assemble.outputs.new-beta }}
     runs-on: ubuntu-latest
     permissions:
       deployments: write
