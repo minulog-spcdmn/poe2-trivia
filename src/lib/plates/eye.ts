@@ -3,7 +3,7 @@
 // worker, and kept (lib/plateStore.svelte.ts).
 import { at as atAbout, f, hatch, joined, lineParts, pt, rad, ringParts, seeded, wear, type Hole, type LineOpts, type Pt, type Strap, type Wear } from '../arcane.ts';
 import { PLANET_SIGNS } from '../alchemy.ts';
-import { circlePath, engrave, mapPath, stroke, turned, type StageLayer } from '../engraver.ts';
+import { circlePath, engrave, engraveFrame, FRAME_SPIN, hollowFrame, mapPath, stroke, turned, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 
 // An alchemist's circle, engraved, that draws itself behind the item art
@@ -333,6 +333,8 @@ const drawing = (worn: boolean) => {
     rays: rays(w),
     sun: stroke(ringParts(O, SUN, { wear: w }), 0.15, 0.8),
     sunInner: stroke(ringParts(O, EYE, { wear: w }), 0.05, 0.8),
+    // Hollow, the hollow frame in the sun's place, hugging the avatar.
+    hollowRing: hollowFrame(w),
   };
 };
 
@@ -393,6 +395,7 @@ const layers = (p: ReturnType<typeof drawing>) => ({
     e.pieces(p.sun, 'thin');
     e.pieces(p.sunInner, 'hair');
   }),
+  hollowRing: engraveFrame(p.hollowRing),
   glory0: engrave((e) => e.line(GLORY_SETS[0], 'hair', 1.35, 0.7)),
   glory1: engrave((e) => e.line(GLORY_SETS[1], 'hair', 1.4, 0.7)),
 });
@@ -409,7 +412,8 @@ const LAYERS = [
   layer('sol', undefined, { within: 'star', pivot: sol, upright: true }),
   layer('solFace', { turn: 180, from: 0 }, { within: 'sol', pivot: sol }),
   layer('luna', undefined, { within: 'star', pivot: luna, upright: true }),
-  layer('heart', { turn: 100, from: -70 }),
+  layer('heart', { turn: 100, from: -70 }, { inner: true }),
+  layer('hollowRing', FRAME_SPIN, { hollow: true }),
   layer('glory0', undefined, { breathe: { low: 0.96, period: 4.4 }, inner: true }),
   layer('glory1', undefined, { breathe: { low: 0.93, period: 3.6, delay: -1.8 }, inner: true }),
 ];

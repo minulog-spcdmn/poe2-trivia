@@ -2,7 +2,7 @@
 // docs/arcane-style.md): its geometry, built away from the page, in a
 // worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, clearFrom, f, hatch, lerp, line, lineParts, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Part, type Pt, type Strap, type Wear } from '../arcane.ts';
-import { engrave, mapPath, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
+import { engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, HOLLOW_RING_IN, hollowFrame, mapPath, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 
 export const build = (): StageLayer[] => {
@@ -433,8 +433,9 @@ export const build = (): StageLayer[] => {
   // Fine rays from the heart out to the circle, long and short in turn,
   // passing under the triangle, stopping short of the seals and the
   // crescents.
-  const HEART = 26.8;
-  const HEART_IN = HEART - 1.3;
+  // (The heart's ring is the hollow frame every circle has round an avatar: hugging it.)
+  const HEART = HOLLOW_RING;
+  const HEART_IN = HOLLOW_RING_IN;
   const GLORY_N = 72;
   const GLORY = Array.from({ length: GLORY_N }, (_, k) => {
     const a = ((k + 0.5) / GLORY_N) * 360;
@@ -629,8 +630,7 @@ export const build = (): StageLayer[] => {
         }),
       ),
       sigils: spirits.flatMap(({ c }, k) => [SIGIL_SEAL, SIGIL_SEAL - 1.4].map((r, i) => stroke(ringParts(c, r, { wear: i ? null : w }), 1 + k * 0.1, 0.5))),
-      heart: stroke(ringParts(O, HEART, { wear: w }), 0.05, 0.7),
-      heartIn: stroke(ringParts(O, HEART_IN), 0.1, 0.7),
+      heart: hollowFrame(w),
     };
   };
 
@@ -684,10 +684,7 @@ export const build = (): StageLayer[] => {
         }),
       ]),
     ),
-    heart: engrave((e) => {
-      e.pieces(p.heart, '');
-      e.pieces(p.heartIn, 'hair');
-    }),
+    heart: engraveFrame(p.heart),
     glory0: engrave((e) => e.line(MOTH_GLORY_SETS[0], 'hair', 1.3, 0.7)),
     glory1: engrave((e) => e.line(MOTH_GLORY_SETS[1], 'hair', 1.35, 0.7)),
     ...Object.fromEntries(
@@ -725,7 +722,7 @@ export const build = (): StageLayer[] => {
     layer('wall', { spin: { turn: 160, from: -40 } }),
     layer('triangle', { spin: { turn: 110, from: 55, reverse: true } }),
     ...spirits.map(({ c }, k) => layer(`sigil${k}`, { within: 'triangle', pivot: c, upright: true })),
-    layer('heart', { spin: { turn: 90, from: -70 } }),
+    layer('heart', { spin: FRAME_SPIN }),
     layer('glory0', { breathe: { low: 0.97, period: 4.4 }, inner: true }),
     layer('glory1', { breathe: { low: 0.95, period: 3.6, delay: -1.8 }, inner: true }),
     // The wings stir together now and then, each toward its root.

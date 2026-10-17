@@ -13,7 +13,7 @@
 // with every change of the circle's colour), so a reveal recolours a few
 // dozen paths, not the whole drawing.
 
-import { f, pt, rad, ring, type Part, type Pt } from './arcane.ts';
+import { f, pt, rad, ring, ringParts, type Part, type Pt, type Wear } from './arcane.ts';
 
 const sec = (v: number) => `${v.toFixed(3)}s`;
 
@@ -59,11 +59,11 @@ export type Plate = { drawing: string; still: string; start: number; end: number
  * (grown by `grow`) as that turns with the layer named `with`, so a ray
  * gives way to a head only while the head passes over it. `inner`: it
  * lies within the heart's ring (the heart's figure and its glory), or is a
- * frame round the heart too busy to set something in, and is left out
- * where something is set over the heart (a circle's `hollow`: the end
- * screen's one avatar). `hollow`: drawn only then, a plain frame in its
- * place (a double ring, as the eye's heart has). Each is still a box of its
- * own, moved on the compositor.
+ * frame round the heart other than the hollow one (too busy to set
+ * something in, or too far out), and is left out where something is set
+ * over the heart (a circle's `hollow`: the end screen's one avatar).
+ * `hollow`: drawn only then: the hollow frame (HOLLOW_RING), the same in
+ * every circle. Each is still a box of its own, moved on the compositor.
  */
 export type StageLayer = {
   name: string;
@@ -81,6 +81,26 @@ export type StageLayer = {
   inner?: boolean;
   hollow?: boolean;
 };
+
+/**
+ * The frame round a hollow circle's heart (StageLayer `hollow`), the same in
+ * every circle: a double ring this far out (of the circle's 200 across) and
+ * 1.3 inside it, hugging what's set over the heart (the end screen's one
+ * avatar, a quarter of the circle across), as the moth's own heart ring
+ * always does; so the avatar sits alike in every circle.
+ */
+export const HOLLOW_RING = 26.8;
+export const HOLLOW_RING_IN = HOLLOW_RING - 1.3;
+/** The hollow frame's two rings as they draw in, the outer worn by `w` with the plate's own lines (the moth's heart, drawn so). */
+export const hollowFrame = (w: Wear) => [stroke(ringParts([0, 0], HOLLOW_RING, { wear: w }), 0.05, 0.7), stroke(ringParts([0, 0], HOLLOW_RING_IN), 0.1, 0.7)];
+/** The hollow frame's layer, from its rings (hollowFrame). */
+export const engraveFrame = ([outer, inner]: Stroke[]) =>
+  engrave((e) => {
+    e.pieces(outer, '');
+    e.pieces(inner, 'hair');
+  });
+/** How the hollow frame turns, as the moth's heart does. */
+export const FRAME_SPIN = { turn: 90, from: -70 };
 
 /** How far round its ellipse (`rx`, `ry`, turned `rot`) an arc from `p` to `q` reaches: 1 where it is exactly half of it, below 1 where less. */
 const reach = (rx: number, ry: number, rot: number, p: Pt, q: Pt) => {

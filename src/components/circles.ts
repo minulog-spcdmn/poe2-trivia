@@ -15,8 +15,8 @@ export type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string;
 export const DAILY_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, ForbiddenCircle];
 /** Behind a question's art (not Delve's): the same four, a different one from question to question. */
 export const QUESTION_CIRCLES: Circle[] = DAILY_CIRCLES;
-/** Behind the end of a game (not Delve's), hollow round the winner: the eye. */
-export const END_CIRCLE: Circle = ArcaneCircle;
+/** Behind the end of a game (not Delve's), hollow round the winner: the eye or the monad, one or the other from game to game. */
+export const END_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle];
 /** Behind an item in the item window, the eye. */
 export const ITEM_CIRCLE: Circle = ArcaneCircle;
 /** Behind the end of a Delve, where everyone perished, hollow round the delvers. */

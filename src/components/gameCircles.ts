@@ -3,7 +3,7 @@
 // each built ahead, away from the page, before it's shown.
 import type { GameState } from '../lib/game';
 import BlackSunCircle from './BlackSunCircle.svelte';
-import { ITEM_CIRCLE, circleAt, END_CIRCLE, PERISHED_CIRCLE, plateNamed, QUESTION_CIRCLES, warmCircle, type Circle } from './circles';
+import { ITEM_CIRCLE, circleAt, END_CIRCLES, PERISHED_CIRCLE, plateNamed, QUESTION_CIRCLES, warmCircle, type Circle } from './circles';
 
 plateNamed(BlackSunCircle, 'blackSun');
 
@@ -12,8 +12,8 @@ const turnCircle = (s: GameState, ahead = 0): Circle => circleAt(s.turnCount + a
 /** The circle behind a question: Delve's own black sun behind a find's, else the turn's. */
 export const questionCircle = (s: GameState): Circle => (s.delve && s.question?.find ? BlackSunCircle : turnCircle(s));
 
-/** The circle behind a game's end: after a Delve, where everyone perished, the moth; else the eye. */
-export const endCircle = (s: GameState): Circle => (s.delve ? PERISHED_CIRCLE : END_CIRCLE);
+/** The circle behind a game's end: after a Delve, where everyone perished, the moth; else the eye or the monad, by the game, the same for every player. */
+export const endCircle = (s: GameState): Circle => (s.delve ? PERISHED_CIRCLE : circleAt(0, END_CIRCLES, s.startedAt ?? 0));
 
 /** Builds ahead the circles behind this turn's question and the next one's (and in a Delve a find's), the one at the game's end, and the item window's eye. */
 export function warmGame(s: GameState) {

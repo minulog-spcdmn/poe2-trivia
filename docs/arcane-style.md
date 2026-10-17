@@ -158,12 +158,12 @@ Where each one stands:
 | Today's unique | The same four, a different one from day to day, never the same two days running |
 | A Delve find's question, the Codex's Delve page | The black sun |
 | A Delve's end, where everyone perished | The moth, hollow |
-| The end of a game (not Delve) | The eye, hollow |
+| The end of a game (not Delve) | The eye or the monad, by the game, hollow |
 | The codex item window | The eye |
 | The Codex's collection | The monad |
 | The Codex's achievements | The rose |
 
-Where one thing is set over a circle's heart (the end screen's one avatar), the circle is `hollow`: the layers within its heart's ring (`inner`: its figure and its glory, which would show round the avatar like pins, and a frame round the heart too busy to set something in, as the monad's ouroboros) are left out, and the heart's ring frames it, or a plain double ring drawn only then (`hollow` layers: the monad's, where its ouroboros was). One mode, marked in each plate, rather than a variant of each circle for each use. Where several share the heart round its middle (a Delve together's delvers), the heart stays whole: it shows between them. Every heart has a living part of its own (the eye's glance, the monad's turning sun, the rose's window and its swelling star), so none needs a solid point at the very centre. The stage's `point` is there for a plate that does: set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
+Where one thing is set over a circle's heart (the end screen's one avatar), the circle is `hollow`: the layers within its heart's ring (`inner`: its figure and its glory, which would show round the avatar like pins, and a frame round the heart too busy to set something in, as the monad's ouroboros) are left out, and a plain double ring frames it, the same in every circle (`HOLLOW_RING` in `lib/engraver.ts`, 26.8 and 25.5 of the 200): hugging the avatar (a quarter of the circle across) as the moth's own heart ring does, so it sits alike in each. The moth's heart ring is that ring; the eye draws it in place of its sun, too far out, and the monad in place of its ouroboros (`hollow` layers, drawn only then). One mode, marked in each plate, rather than a variant of each circle for each use. Where several share the heart round its middle (a Delve together's delvers), the heart stays whole: it shows between them. Every heart has a living part of its own (the eye's glance, the monad's turning sun, the rose's window and its swelling star), so none needs a solid point at the very centre. The stage's `point` is there for a plate that does: set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
 
 ### Motion within a ring
 
