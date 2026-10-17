@@ -4,6 +4,7 @@
 // answer and the run of days answered right stay in this browser.
 
 import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
+import { DAILY_LAUNCH } from './dailyLaunch.ts';
 import { seededRandom } from './patches.ts';
 import { readStored, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
@@ -28,8 +29,7 @@ export function aTopic(topic: string): string {
   return said.charAt(0).toUpperCase() + said.slice(1);
 }
 
-/** Day No. 1: the day Today's unique first went up. */
-export const DAILY_LAUNCH = Date.UTC(2026, 9, 9);
+export { DAILY_LAUNCH };
 
 /** The UTC day a moment falls on, counted from 1970. */
 export const utcDay = (ms: number) => Math.floor(ms / DAY_MS);
