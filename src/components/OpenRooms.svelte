@@ -83,7 +83,7 @@
     seats = seatFree;
   });
 
-  /** Reloads this page into a newer host's room: its code in the address, as an invite link's, the newer version joins it on load. */
+  /** Reloads this page into a newer host's room: its code in the address, as an invite link's, the newer version joins it on load (counted as joined from this list, count.ts cameFromThisSite). */
   function reloadInto(code: string) {
     const url = new URL(location.href);
     url.searchParams.set('room', code);

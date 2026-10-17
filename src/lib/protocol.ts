@@ -5,17 +5,29 @@
 import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
+import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
-export const PROTOCOL_VERSION = 30;
+export const PROTOCOL_VERSION = 31;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
 
+const GUEST_BEHIND = 'Your game is out of date. Reload the page to join.';
+const HOST_BEHIND = "The host's game is out of date. Ask them to reload the page.";
+
 /** Why a guest on protocol `v` can't join this host, or null when it can. */
 export function versionProblem(v: number): string | null {
   if (v === PROTOCOL_VERSION) return null;
-  return v < PROTOCOL_VERSION ? 'Your game is out of date. Reload the page to join.' : "The host's game is out of date. Ask them to reload the page.";
+  return v < PROTOCOL_VERSION ? GUEST_BEHIND : HOST_BEHIND;
 }
+
+/**
+ * Whether a host's refusal is about the versions, not the room (full, locked,
+ * a name): flagged so (`version`), or, from a host older than the flag, in
+ * the words it used (versionProblem's then, or LEGACY_VERSION_TEXT).
+ */
+export const isVersionRefusal = (msg: { message: string; version?: true }) =>
+  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === LEGACY_VERSION_TEXT;
 
 /** The refusal a guest shows: an older host can't say which side is behind, so the guest says it for them. */
 export function versionRefusal(message: string): string {
@@ -27,8 +39,9 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
+   * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -38,13 +51,16 @@ export type ClientMsg =
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
+  /** As a link opens: a challenge for a hello under the held name to be signed over (ownerKey.ts joinProof). */
+  | { t: 'hi'; c: string }
   | { t: 'welcome'; playerId: string }
   | { t: 'state'; state: GameState; now: number }
   /**
    * `askedAt`: an answer to that question was turned down, so it may be
    * given again. A guest that doesn't know the field just shows the message.
    */
-  | { t: 'error'; message: string; askedAt?: number }
+  /** `version`: turned away for the versions (isVersionRefusal). */
+  | { t: 'error'; message: string; askedAt?: number; version?: true }
   | { t: 'kicked' }
   | { t: 'closed' }
   /** The same player connected again (another tab): this connection is dropped. */
@@ -98,6 +114,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
+      if (raw.owner !== undefined && !isOwnerProof(raw.owner)) return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -105,6 +122,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
+        ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
@@ -159,16 +177,20 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   const tile = raw.tile === undefined || isInt(raw.tile, 0, 16);
   switch (raw.t) {
+    case 'hi':
+      return isChallenge(raw.c) ? { t: 'hi', c: raw.c } : null;
     case 'welcome':
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
-      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && typeof raw.now === 'number'
+      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now)
         ? (raw as HostMsg)
         : null;
     }
     case 'error':
-      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) ? (raw as HostMsg) : null;
+      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) && (raw.version === undefined || raw.version === true)
+        ? (raw as HostMsg)
+        : null;
     case 'busy':
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
     case 'kicked':

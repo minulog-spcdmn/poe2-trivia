@@ -136,8 +136,8 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 30 joins two lines from 27 (one numbered 28 and 29, the other 28): an Azurite Vein\'s lamp is its strike 1\'s whole clock, never fed, and its strikes ask from 20, 30 and 40 depths further down; and an Azurite Vein is dug a strike at a time on one lamp, its wards in hand until the way out (WAY_OUT) and buried by a cave-in; and players say whether their game is on screen and in use (presence), the host tells the lobby how each stands (standing), and a veiled picture goes out whole with which patch each pixel falls in, its patches only named as they uncover; 27: in Delve only a question cleared goes a depth deeper, a miss or a time-out followed by another question at the same depth; 26: an Azurite Vein always gives a whole ward (no shards, no fast window), the Vein comes from shown depth 25 and the Flare Cache from 40, each certain on its first depth; 25: the Delve rules are ruleset 2, twins kept apart down to their depth (game.ts TWINS); 24: a pointer goes with the anchors round its own, and many more parts of the screen are anchors (cursors.ts); 23: Delve together counts the team\'s streak (depths cleared in a row with nobody missing), which every screen\'s verdict burns with; 22: a new zone\'s cards are dealt as the plunge into it lands (dealAt), every screen holding them and their votes till then; 21: players send their pointers (cursor, cursors); 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
-  assert.equal(PROTOCOL_VERSION, 30);
+test('version 31 lets only the owner key\'s signature play under the held name (hello and GameState owner, a listing\'s owner); 30 joins two lines from 27 (one numbered 28 and 29, the other 28): an Azurite Vein\'s lamp is its strike 1\'s whole clock, never fed, and its strikes ask from 20, 30 and 40 depths further down; and an Azurite Vein is dug a strike at a time on one lamp, its wards in hand until the way out (WAY_OUT) and buried by a cave-in; and players say whether their game is on screen and in use (presence), the host tells the lobby how each stands (standing), and a veiled picture goes out whole with which patch each pixel falls in, its patches only named as they uncover; 27: in Delve only a question cleared goes a depth deeper, a miss or a time-out followed by another question at the same depth; 26: an Azurite Vein always gives a whole ward (no shards, no fast window), the Vein comes from shown depth 25 and the Flare Cache from 40, each certain on its first depth; 25: the Delve rules are ruleset 2, twins kept apart down to their depth (game.ts TWINS); 24: a pointer goes with the anchors round its own, and many more parts of the screen are anchors (cursors.ts); 23: Delve together counts the team\'s streak (depths cleared in a row with nobody missing), which every screen\'s verdict burns with; 22: a new zone\'s cards are dealt as the plunge into it lands (dealAt), every screen holding them and their votes till then; 21: players send their pointers (cursor, cursors); 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+  assert.equal(PROTOCOL_VERSION, 31);
   // A guest on 29 would know nothing of presence or whole veiled pictures; one on 28 (presence) nothing of the vein's dig.
   assert.match(versionProblem(29)!, /^Your game is out of date/);
   assert.match(versionProblem(28)!, /^Your game is out of date/);
@@ -201,4 +201,20 @@ test('presence: a guest says only how it is, and the host lists only those not s
   assert.equal(parseHostMsg({ t: 'standing', s: { a1: 'here' } }), null);
   assert.equal(parseHostMsg({ t: 'standing', s: [] }), null);
   assert.equal(parseHostMsg({ t: 'standing', s: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`p${i}`, 'away'])) }), null);
+});
+
+test("a host's state with a clock that isn't a time is dropped", () => {
+  const state = { players: [], settings: {} };
+  assert.ok(parseHostMsg({ t: 'state', state, now: 1790642896195 }));
+  for (const now of [NaN, Infinity, -Infinity, '1'])
+    assert.equal(parseHostMsg({ t: 'state', state, now }), null);
+});
+
+test("the host's challenge, and a hello's signature over it, pass only in shape", () => {
+  const c = 'c'.repeat(22);
+  assert.deepEqual(parseHostMsg({ t: 'hi', c }), { t: 'hi', c });
+  assert.equal(parseHostMsg({ t: 'hi', c: '<script>' }), null);
+  const hello = { t: 'hello', secret: 'abcdefghijklmnopqrstuvwxyz012345', name: 'Zoe Arcana', v: PROTOCOL_VERSION };
+  assert.equal(parseClientMsg({ ...hello, owner: 's'.repeat(86) })?.t, 'hello');
+  assert.equal(parseClientMsg({ ...hello, owner: 'x' }), null);
 });

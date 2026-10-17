@@ -15,6 +15,7 @@
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
+  import { countEvent } from '../lib/count';
   import { answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, untilNextMinute, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -209,6 +210,7 @@
       const before = streakOn(rec, today);
       rec = next;
       saveDaily(rec);
+      countEvent(good ? 'daily/right' : 'daily/wrong');
       justMissed = !good && before > 0;
       // Yesterday's fire catches as the badge comes in, and grows into today's a moment later.
       growingFrom = good ? before : null;

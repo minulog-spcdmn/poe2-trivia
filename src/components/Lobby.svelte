@@ -8,7 +8,8 @@
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
-  import { MAX_NAME, isHeldName, nameRefusal, nameTooShort } from '../lib/names';
+  import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
+  import { creatorShown } from '../lib/creator';
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -84,7 +85,7 @@
   /** Svelte action: a new player's row arrives with a flash (zoe_arcana's is her own). */
   function arriving(node: HTMLElement, name: string) {
     if (!settled) return;
-    const t = setTimeout(() => (isHeldName(name) ? creatorArrived(node) : playerArrived(node)), 120);
+    const t = setTimeout(() => (creatorShown(name) ? creatorArrived(node) : playerArrived(node)), 120);
     return { destroy: () => clearTimeout(t) };
   }
 

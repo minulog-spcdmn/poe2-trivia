@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { areaTime, burntShare, cutPatches, labelPatches, litMask, packLabels, patchCount, patchCoverage, patchShapes, spreadOrder, unpackLabels, veilPace, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, burntShare, cutPatches, labelPatches, litMask, packLabels, patchCount, patchCoverage, patchShapes, patchWork, spreadOrder, unpackLabels, veilPace, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -260,4 +260,29 @@ test('the labels say how many patches they make, and a count they would get wron
   assert.equal(patchCount(Uint16Array.from([2, 2, 0, 1, 1, 1]), 4), 2);
   assert.equal(patchCount(Uint16Array.from([256, 4]), 4), null, 'a patch past 254');
   assert.equal(patchCount(Uint16Array.from([1, 0, 1, 4]), 4), null, 'an empty run');
+});
+
+test("a cut's work is what patchShapes walks, near the picture's area for a real one, and huge for a host's bomb", () => {
+  for (const [W, H, size] of [[212, 420, 9], [104, 104, 4], [312, 312, 6]]) {
+    const lit = new Uint8Array(W * H).fill(1);
+    const label = labelPatches(W, H, size, 7, lit);
+    const shapes = patchShapes(label, W, H);
+    const walked = shapes.reduce((n, p) => n + p.w * p.h, 0);
+    const work = patchWork(packLabels(label), W);
+    // The ring at the picture's edge is clipped in patchShapes, never here.
+    assert.ok(work >= walked && work < 4 * W * H, `${W}x${H}: ${work} vs ${walked}`);
+  }
+  // 255 patches, each a pixel in the top left corner and one in the bottom
+  // right (run lengths over 0xffff split, as packLabels does).
+  const W = 4096;
+  const H = 4096;
+  const runs: number[] = [];
+  const run = (v: number, n: number) => {
+    for (; n > 0; n -= 0xffff) runs.push(v, Math.min(n, 0xffff));
+  };
+  for (let v = 1; v <= 255; v++) run(v, 1);
+  run(0, W * H - 510);
+  for (let v = 1; v <= 255; v++) run(v, 1);
+  assert.equal(patchCount(Uint16Array.from(runs), W * H), 255);
+  assert.ok(patchWork(Uint16Array.from(runs), W) > 255 * W * H * 0.9);
 });
