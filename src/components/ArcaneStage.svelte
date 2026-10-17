@@ -1,6 +1,6 @@
 <script module lang="ts">
   import { untrack, type Snippet } from 'svelte';
-  import type { Plate, StageLayer } from '../lib/engraver';
+  import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
 
   export type { StageLayer };
 
@@ -20,16 +20,23 @@
   // very centre, set at `delay` (s), that swells at a right answer, shrinks
   // at a wrong one and beats now and then. `size`, `color` and `strength`
   // (opacity) override the stage defaults for other places, like behind the
-  // winner on the victory screen.
+  // winner on the victory screen. `hollow`: something is set over the heart
+  // (the end screen's one avatar), so what lies within it is left out, the
+  // hollow frame drawn round it, and the lines that cross it stop short of
+  // that frame (StageLayer's `inner`, `hollow` and `cut`).
   let {
-    layers,
+    layers: plateLayers,
+    hollow = false,
     heart,
     point,
     state: mood = 'idle',
     size,
     color,
     strength,
-  }: { layers: StageLayer[]; heart?: Snippet; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
+  }: { layers: StageLayer[]; hollow?: boolean; heart?: Snippet; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
+
+  /** The layers on the stage, hollow or whole. */
+  const layers = $derived(plateLayers.filter((l) => (hollow ? !l.inner : !l.hollow)));
 
   /**
    * A layer's mask, as a CSS image: the whole plate, less the shape grown
@@ -102,7 +109,7 @@
   const lateOf = (name: string) => `${(late[name] ?? 0).toFixed(3)}s`;
 </script>
 
-<div class="arcane {mood}" aria-hidden="true" style:--size={size} style:color={color} style:opacity={strength}>
+<div class="arcane {mood}" aria-hidden="true" style:--clear="{HOLLOW_CLEAR}%" style:--size={size} style:color={color} style:opacity={strength}>
   <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
     {#snippet plain(l: StageLayer)}
@@ -116,6 +123,7 @@
         class:swaying={!!l.sway}
         class:breathing={!!l.breathe}
         class:fluttering={!!l.flutter}
+        class:cut={hollow && l.cut}
         style:--turn={spin && `${spin.turn}s`}
         style:--from={spin && `${spin.from}deg`}
         style:--dir={spin && (spin.reverse ? 'reverse' : 'normal')}
@@ -231,6 +239,13 @@
     mask-repeat: no-repeat;
     -webkit-mask-size: 100% 100%;
     -webkit-mask-repeat: no-repeat;
+  }
+
+  /* Hollow, a layer that crosses the heart stops short of the hollow frame (a
+     disc, so it needs no turning with the layer). */
+  .summon :global(.layer.cut) {
+    mask-image: radial-gradient(circle closest-side, transparent var(--clear), #000 var(--clear));
+    -webkit-mask-image: radial-gradient(circle closest-side, transparent var(--clear), #000 var(--clear));
   }
 
   /* Each ring turns its own way and speed, and first winds into place. */

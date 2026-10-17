@@ -3,7 +3,7 @@
 // worker, and kept (lib/plateStore.svelte.ts).
 import { at as atAbout, f, hatch, joined, lineParts, pt, rad, ringParts, seeded, wear, type Hole, type LineOpts, type Pt, type Strap, type Wear } from '../arcane.ts';
 import { PLANET_SIGNS } from '../alchemy.ts';
-import { circlePath, engrave, engraveFrame, FRAME_SPIN, hollowFrame, mapPath, stroke, turned, type StageLayer } from '../engraver.ts';
+import { circlePath, engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, hollowFrame, mapPath, stroke, turned, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 
 // An alchemist's circle, engraved, that draws itself behind the item art
@@ -212,14 +212,15 @@ const LUNA_FACE = (() => {
 
 // The sun: seven long pointed rays out into the star's arms, passing
 // under the inner ring and the straps, and seven short ones between,
-// each hatched down one side.
+// each hatched down one side, from its ring (`from`: SUN, or hollow the
+// hollow frame's, the rays reaching in to it).
 const SUN = 31;
 const rayStraps = straps.map((s) => ({ ...s, w: W + GAP }));
-const rays = (worn: Wear) =>
+const rays = (worn: Wear, from = SUN) =>
   Array.from({ length: 14 }, (_, k) => {
     const a = ((k + 1) / 14) * 360;
     const long = k % 2 === 0;
-    const [base, l, r, tip] = [at(a, SUN), at(a - (long ? 4.5 : 3.6), SUN), at(a + (long ? 4.5 : 3.6), SUN), at(a, long ? R - 8 : STAR_RING - 1.4)];
+    const [base, l, r, tip] = [at(a, from), at(a - (long ? 4.5 : 3.6), from), at(a + (long ? 4.5 : 3.6), from), at(a, long ? R - 8 : STAR_RING - 1.4)];
     const opts: LineOpts = { holes: starHoles, under: rayStraps, rings: [{ c: O, r: STAR_RING, w: GAP }] };
     const delay = 0.7 + k * 0.035;
     return {
@@ -231,10 +232,11 @@ const rays = (worn: Wear) =>
     };
   });
 // Fine rays between, half as long.
-const FINE = Array.from({ length: 14 }, (_, k) => {
-  const a = ((k + 0.5) / 14) * 360;
-  return joined(lineParts(at(a, SUN + 1), at(a, SUN + 10)));
-}).join('');
+const fine = (from = SUN) =>
+  Array.from({ length: 14 }, (_, k) => {
+    const a = ((k + 0.5) / 14) * 360;
+    return joined(lineParts(at(a, from + 1), at(a, from + 10)));
+  }).join('');
 
 // In the spaces between the points, out to the band: a glory of fine
 // rays, long and short in turn, clear of the star, the seals and Luna.
@@ -333,10 +335,21 @@ const drawing = (worn: boolean) => {
     rays: rays(w),
     sun: stroke(ringParts(O, SUN, { wear: w }), 0.15, 0.8),
     sunInner: stroke(ringParts(O, EYE, { wear: w }), 0.05, 0.8),
-    // Hollow, the hollow frame in the sun's place, hugging the avatar.
+    // Hollow, the hollow frame in the sun's place, hugging the avatar, and the sun's rays from it.
     hollowRing: hollowFrame(w),
+    hollowRays: rays(w, HOLLOW_RING),
   };
 };
+
+/** The sun's pointed rays and its fine ones as a layer. */
+const sunRays = (list: ReturnType<typeof rays>, fineRays: string) =>
+  engrave((e) => {
+    for (const ray of list) {
+      e.pieces(ray.lines, 'hair');
+      e.line(ray.hatch, 'hatch', ray.delay, 0.5);
+    }
+    e.line(fineRays, 'hair', 1, 0.6);
+  });
 
 // The layers (lib/engraver), each drawn twice: worn for the lines, whole for the glow under them.
 const layers = (p: ReturnType<typeof drawing>) => ({
@@ -359,13 +372,11 @@ const layers = (p: ReturnType<typeof drawing>) => ({
   star: engrave((e) => {
     e.pieces(p.starRing, 'thin');
     for (const edge of p.straps) e.pieces(edge, 'thin');
-    for (const ray of p.rays) {
-      e.pieces(ray.lines, 'hair');
-      e.line(ray.hatch, 'hatch', ray.delay, 0.5);
-    }
-    e.line(FINE, 'hair', 1, 0.6);
     e.line(GAPS_GLORY, 'hair', 1.2, 0.7);
   }),
+  // The sun's rays, riding the star: from the sun's ring, or hollow from the hollow frame's.
+  rays: sunRays(p.rays, fine()),
+  hollowRays: sunRays(p.hollowRays, fine(HOLLOW_RING)),
   // The band's Luna, upright on the page as the band carries her round.
   bandLuna: engrave((e) => {
     const seal = seals[LUNA_SEAL];
@@ -408,6 +419,8 @@ const layer = (name: keyof typeof LINES, spin?: StageLayer['spin'], more: Partia
 const LAYERS = [
   layer('band', { turn: 240, from: -24 }),
   layer('star', { turn: 160, from: 40, reverse: true }),
+  layer('rays', undefined, { within: 'star', inner: true }),
+  layer('hollowRays', undefined, { within: 'star', hollow: true }),
   layer('bandLuna', undefined, { within: 'band', pivot: [seals[LUNA_SEAL].x, seals[LUNA_SEAL].y], upright: true }),
   layer('sol', undefined, { within: 'star', pivot: sol, upright: true }),
   layer('solFace', { turn: 180, from: 0 }, { within: 'sol', pivot: sol }),

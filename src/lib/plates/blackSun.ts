@@ -3,7 +3,7 @@
 // worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, f, joined, lineParts, pointedRay, pt, ringParts, seeded, wear, type Cut, type Hole, type Pt, type Wear } from '../arcane.ts';
 import { Plate } from '../cardEngraving.ts';
-import { engrave, mapPath, stroke, turned, type Plate as Engraved, type StageLayer } from '../engraver.ts';
+import { engrave, engraveFrame, FRAME_SPIN, hollowFrame, mapPath, stroke, turned, type Plate as Engraved, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 import { burst, crystalCrown, crystalSeal, shattered } from '../findEngraving.ts';
 
@@ -367,6 +367,8 @@ export const build = (): StageLayer[] => {
       seals: placedSeals.flatMap(({ c, ringCuts }, k) => [SEAL, SEAL - 1.6].map((r, i) => stroke(ringParts(c, r, { cuts: ringCuts(r), wear: i ? null : w }), 0.95 + k * 0.12, 0.6))),
       sun: stroke(ringParts(O, SUN, { wear: w }), 0.05, 0.6),
       sunIn: stroke(ringParts(O, SUN_IN), 0.1, 0.6),
+      // Hollow, the hollow frame round the avatar, the black sun hidden under it.
+      hollowRing: hollowFrame(w),
     };
   };
 
@@ -429,6 +431,7 @@ export const build = (): StageLayer[] => {
       }),
     ),
     sunFine: engrave((e) => e.line(FINE, 'hair', 0.7, 0.5)),
+    hollowRing: engraveFrame(p.hollowRing),
     sun: engrave((e) => {
       e.pieces(p.sun, '');
       e.pieces(p.sunIn, 'hair');
@@ -443,8 +446,10 @@ export const build = (): StageLayer[] => {
   // slowly sunwise and breathing. The finds stay as they are set: their breaking out is cut to
   // their rings.
   const LAYERS = [
-    layer('rings', { spin: { turn: 240, from: 30, reverse: true } }),
-    layer('sun', { within: 'rings', pivot: O, spin: { turn: 120, from: 0 } }),
+    // (Hollow, the bands, which meet in the heart, stop short of the hollow frame.)
+    layer('rings', { spin: { turn: 240, from: 30, reverse: true }, cut: true }),
+    layer('sun', { within: 'rings', pivot: O, spin: { turn: 120, from: 0 }, inner: true }),
+    layer('hollowRing', { spin: FRAME_SPIN, hollow: true }),
     ...placedSeals.map((_, k) => layer(`find${k}`, { within: 'rings' })),
     layer('sunRays', { within: 'sun', breathe: { low: 0.95, period: 4.6 }, inner: true }),
     layer('sunFine', { within: 'sun', breathe: { low: 0.9, period: 3.7, delay: -2.1 }, inner: true }),

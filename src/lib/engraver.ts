@@ -60,10 +60,14 @@ export type Plate = { drawing: string; still: string; start: number; end: number
  * gives way to a head only while the head passes over it. `inner`: it
  * lies within the heart's ring (the heart's figure and its glory), or is a
  * frame round the heart other than the hollow one (too busy to set
- * something in, or too far out), and is left out where something is set
+ * something in, or too far out), or has a hollow copy, and is left out where something is set
  * over the heart (a circle's `hollow`: the end screen's one avatar).
  * `hollow`: drawn only then: the hollow frame (HOLLOW_RING), the same in
- * every circle. Each is still a box of its own, moved on the compositor.
+ * every circle, and what of the circle's own design reaches in to it in
+ * place of what stopped short of the heart before. `cut`: its lines cross
+ * the heart, and hollow, they stop short of the hollow frame (HOLLOW_CLEAR),
+ * as if passing under it. Each is still a box of its own, moved on the
+ * compositor.
  */
 export type StageLayer = {
   name: string;
@@ -80,6 +84,7 @@ export type StageLayer = {
   mask?: { d: string; grow: number; with: string };
   inner?: boolean;
   hollow?: boolean;
+  cut?: boolean;
 };
 
 /**
@@ -91,6 +96,8 @@ export type StageLayer = {
  */
 export const HOLLOW_RING = 26.8;
 export const HOLLOW_RING_IN = HOLLOW_RING - 1.3;
+/** How far out from the heart, hollow, the circle's own lines begin: clear of the frame, as the moth's glory begins. */
+export const HOLLOW_CLEAR = HOLLOW_RING + 1.4;
 /** The hollow frame's two rings as they draw in, the outer worn by `w` with the plate's own lines (the moth's heart, drawn so). */
 export const hollowFrame = (w: Wear) => [stroke(ringParts([0, 0], HOLLOW_RING, { wear: w }), 0.05, 0.7), stroke(ringParts([0, 0], HOLLOW_RING_IN), 0.1, 0.7)];
 /** The hollow frame's layer, from its rings (hollowFrame). */

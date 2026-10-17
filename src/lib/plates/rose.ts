@@ -2,7 +2,7 @@
 // docs/arcane-style.md): its geometry, built away from the page, in a
 // worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, f, hatch, lerp, pt, ring as round, ringParts, seeded, wear, type Cut, type Hole, type Part, type Pt, type Wear } from '../arcane.ts';
-import { engrave, mapPath, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
+import { engrave, engraveFrame, FRAME_SPIN, hollowFrame, mapPath, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
 import { glyph, inscribe } from '../tongue.ts';
 
 export const build = (): StageLayer[] => {
@@ -806,6 +806,8 @@ export const build = (): StageLayer[] => {
       path: [1, -1, 0].map((side) => stroke(pathParts(side, pathHoles, side ? w : null), 0.3, 1.4)),
       hub: stroke(ringParts(O, HUB, { wear: w }), 0.05, 0.6),
       rays: POINTS.map(({ k, left, right }) => [left, right].flatMap((edge) => stroke(underPath(...edge, pathHoles, W + GAP, w), 0.3 + k * 0.06, 0.5))),
+      // Hollow, the hollow frame round the avatar, the window's ring hidden under it.
+      hollowRing: hollowFrame(w),
     };
   };
 
@@ -851,6 +853,7 @@ export const build = (): StageLayer[] => {
         e.line(strokes.map((s) => joinedParts(underPath(...s, pathHoles))).join(''), 'hatch', 0.55 + k * 0.06, 0.45);
       });
     }),
+    hollowRing: engraveFrame(p.hollowRing),
     // The window's ring, still; and the window turning within it.
     heart: engrave((e) => {
       e.pieces(p.hub, 'thin');
@@ -900,8 +903,10 @@ export const build = (): StageLayer[] => {
   const LAYERS = [
     layer('band', { spin: { turn: 240, from: 24, reverse: true } }),
     ...moons.map(({ c }, k) => layer(`moon${k}`, { within: 'band', pivot: c, upright: true })),
-    layer('path', { spin: { turn: 160, from: -40 } }),
-    layer('heart'),
+    // (Hollow, her loops, the rays and the glory, which run in to the window, stop short of the hollow frame.)
+    layer('path', { spin: { turn: 160, from: -40 }, cut: true }),
+    layer('heart', { inner: true }),
+    layer('hollowRing', { spin: FRAME_SPIN, hollow: true }),
     layer('window', { spin: { turn: 100, from: 18, reverse: true }, inner: true }),
     layer('oculus', { spin: { turn: 60, from: -30 }, inner: true }),
     layer('star', { within: 'oculus', breathe: { low: 0.88, period: 5.2 }, inner: true }),
