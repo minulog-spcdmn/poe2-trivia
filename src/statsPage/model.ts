@@ -2,6 +2,8 @@
 // (lib/count.ts names them) worked into what the page shows. Pure, so the
 // tests can feed it.
 
+import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
+
 /** One path as GoatCounter's /stats/hits gives it: how often it was counted, all told and per day. */
 export interface PathCount {
   path: string;
@@ -290,14 +292,19 @@ export function hardestAndEasiest(days: DailyDay[], min = 3, top = 5): { hardest
   return { hardest, easiest };
 }
 
-/** An average a day over the whole days (the last, still going, left out unless it's the only one). */
-export function perDay(values: number[]): number {
-  const whole = values.length > 1 ? values.slice(0, -1) : values;
-  return whole.length ? whole.reduce((n, v) => n + v, 0) / whole.length : 0;
-}
+/** The first day Today's unique asked (YYYY-MM-DD). */
+export const DAILY_FROM = new Date(DAILY_LAUNCH).toISOString().slice(0, 10);
+/** Whether Today's unique asked on a day: it had begun. */
+export const asked = (day: string) => day >= DAILY_FROM;
 
-/** Players of Today's unique a day on average, over the days it `asked` (the day still going left out), or null with none. */
-export function dailyAverage(c: Counts, asked: (day: string) => boolean = () => true): number | null {
-  const days = dailyDays(c).filter((d) => asked(d.day));
-  return days.length ? perDay(days.map((d) => d.answers)) : null;
+/**
+ * Players of Today's unique a day on average, over the whole days it asked
+ * (the last day, still going, left out first), or null with none: so a
+ * period whose only day of it is that last one has nothing to compare.
+ */
+export function dailyAverage(c: Counts, from = DAILY_FROM): number | null {
+  const days = dailyDays(c)
+    .slice(0, -1)
+    .filter((d) => d.day >= from);
+  return days.length ? days.reduce((n, d) => n + d.answers, 0) / days.length : null;
 }

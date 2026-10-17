@@ -10,7 +10,7 @@
   import DailyTable from './DailyTable.svelte';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
-  import { MODE_NAMES, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, type Counts } from './model';
+  import { MODE_NAMES, asked, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -25,9 +25,8 @@
   const tries = (c: Counts) => c.joins.reduce((n, j) => n + j.tried, 0);
   const joins = (c: Counts) => c.joins.reduce((n, j) => n + j.joined, 0);
   const rate = (part: number, whole: number) => (whole ? (100 * part) / whole : null);
-  const asked = (day: string) => !itemOf || !!itemOf(day);
-  const dailyNow = $derived(dailyAverage(L, asked));
-  const dailyBefore = $derived(dailyAverage(B, asked));
+  const dailyNow = $derived(dailyAverage(L));
+  const dailyBefore = $derived(dailyAverage(B));
   const oneDecimal = (v: number) => (v < 10 ? v.toFixed(1).replace(/\.0$/, '') : fmt(Math.round(v)));
 
   const failed = $derived(L.failures.reduce((n, f) => n + f.count, 0));
@@ -63,7 +62,7 @@
   });
 
   const days = $derived(dailyDays(L));
-  const hardest = $derived(itemOf ? hardestAndEasiest(days.filter((d) => itemOf?.(d.day)), 3, 3).hardest : []);
+  const hardest = $derived(hardestAndEasiest(days.filter((d) => asked(d.day)), 3, 3).hardest);
   const named = $derived(rate(L.daily.right, L.daily.right + L.daily.wrong));
   onMount(() => {
     dailyItems()

@@ -75,8 +75,8 @@
 
   <Section title="Links opened" says="Players who arrived by a link someone shared.">
     <dl class="links">
-      <div><dt>Invite links to a room</dt><dd>{fmt(L.links.invite)}</dd><Delta now={L.links.invite} before={B.links.invite} period={period.before} /></div>
-      <div><dt>Delve challenge links</dt><dd>{fmt(L.links.delve)}</dd><Delta now={L.links.delve} before={B.links.delve} period={period.before} /></div>
+      <div><dt>Invite links to a room</dt><dd><b>{fmt(L.links.invite)}</b><Delta now={L.links.invite} before={B.links.invite} period={period.before} /></dd></div>
+      <div><dt>Delve challenge links</dt><dd><b>{fmt(L.links.delve)}</b><Delta now={L.links.delve} before={B.links.delve} period={period.before} /></dd></div>
     </dl>
   </Section>
 </div>
@@ -129,7 +129,11 @@
     color: var(--a-muted);
   }
   .links dd {
+    display: grid;
+    gap: 0.2rem;
     margin: 0;
+  }
+  .links dd b {
     font-size: 2.6rem;
     font-weight: 650;
     line-height: 1.1;

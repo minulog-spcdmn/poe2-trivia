@@ -18,7 +18,7 @@ import type { PathCount } from './model';
 import { zoneOf } from './zone';
 
 const KEY = 'analytics.key';
-/** What the page kept while it was called the ledger (on the beta only): the key is taken over, the rest cleared away. */
+/** What the page kept while it was called the ledger (on the beta only): the key and the requests' logs are taken over, the rest cleared away. */
 const OLD = 'ledger.';
 /** Each tab's own log, `analytics.requests.<tab>` (so two tabs never write over each other's), all read together. */
 const LOG = 'analytics.requests';
@@ -59,6 +59,8 @@ export class Cancelled extends Error {}
 export function savedKey(): string {
   const old = readStored(`${OLD}key`);
   if (old !== null && readStored(KEY) === null) writeStored(KEY, old);
+  // The hour's requests made under the old name still count against GoatCounter's 500.
+  for (const [tab, raw] of readStoredStarting(`${OLD}requests`)) if (readStored(LOG + tab) === null) writeStored(LOG + tab, raw);
   removeStoredStarting(OLD);
   return readStored(KEY) ?? '';
 }

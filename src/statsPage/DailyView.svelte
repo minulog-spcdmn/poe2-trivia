@@ -10,7 +10,7 @@
   import DailyTable from './DailyTable.svelte';
   import DayColumns from './DayColumns.svelte';
   import Delta from './Delta.svelte';
-  import { dailyAverage, dailyDays, hardestAndEasiest } from './model';
+  import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
 
@@ -18,13 +18,12 @@
 
   const L = $derived(read.now);
   let itemOf = $state<((day: string) => DailyItem | null) | null>(null);
-  /** The days Today's unique asked something (all of them until the items are known). */
-  const days = $derived(dailyDays(L).filter((d) => !itemOf || itemOf(d.day)));
+  /** The days Today's unique asked something. */
+  const days = $derived(dailyDays(L).filter((d) => asked(d.day)));
   const answered = $derived(days.filter((d) => d.answers));
-  const ranked = $derived(itemOf ? hardestAndEasiest(days) : { hardest: [], easiest: [] });
-  const asked = (day: string) => !itemOf || !!itemOf(day);
-  const now = $derived(dailyAverage(L, asked));
-  const before = $derived(dailyAverage(read.before, asked));
+  const ranked = $derived(hardestAndEasiest(days));
+  const now = $derived(dailyAverage(L));
+  const before = $derived(dailyAverage(read.before));
   const total = $derived(L.daily.right + L.daily.wrong);
   const named = $derived(total ? Math.round((100 * L.daily.right) / total) : null);
   const namedBefore = $derived.by(() => {
@@ -57,7 +56,7 @@
     <div class="figure">
       <span class="name">Named the item</span>
       <b>{named === null ? '–' : `${named}%`}</b>
-      <Delta now={named} before={namedBefore} rate period={period.before} />
+      <Delta now={named} before={namedBefore} rate worse="neither" period={period.before} />
     </div>
     <div class="figure">
       <span class="name">Busiest day</span>

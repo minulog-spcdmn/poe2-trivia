@@ -1,6 +1,7 @@
 // Which item Today's unique asked on a day, worked out as the game does
 // (lib/daily.ts): the same everywhere for the same day. Loaded only when a
-// view asks, as it brings the game's engine and every item with it.
+// view asks, as it brings the game's engine and every item with it; which
+// days it asked at all is known without it (model.ts asked).
 
 export interface DailyItem {
   name: string;

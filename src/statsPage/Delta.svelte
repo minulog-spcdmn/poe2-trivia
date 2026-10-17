@@ -1,7 +1,8 @@
 <script lang="ts">
   // A figure's change against the period before, said once: an arrow and the
   // change, green where it's better and red where it's worse (a count going
-  // up is better; for failures, `worse="up"`), then what it was before.
+  // up is better; for failures, `worse="up"`; neither, for a change that's
+  // no better or worse, `worse="neither"`), then what it was before.
   // `rate`: the figures are percents, the change in points.
   import { fmt } from './chart';
 
@@ -12,7 +13,7 @@
     worse = 'down',
     period,
     digits = 0,
-  }: { now: number | null; before: number | null; rate?: boolean; worse?: 'up' | 'down'; period: string; digits?: number } = $props();
+  }: { now: number | null; before: number | null; rate?: boolean; worse?: 'up' | 'down' | 'neither'; period: string; digits?: number } = $props();
 
   const show = (v: number) => (rate ? `${Math.round(v)}%` : fmt(Number(v.toFixed(digits))));
   const step = $derived.by(() => {
@@ -21,7 +22,7 @@
     if (before <= 0) return null;
     return Math.round((100 * (now - before)) / before);
   });
-  const tone = $derived(step === null || step === 0 ? 'flat' : (step > 0) === (worse === 'down') ? 'up' : 'down');
+  const tone = $derived(step === null || step === 0 || worse === 'neither' ? 'flat' : (step > 0) === (worse === 'down') ? 'up' : 'down');
 </script>
 
 {#if now !== null && before !== null && (now > 0 || before > 0)}

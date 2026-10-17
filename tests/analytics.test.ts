@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
-import { change, countsOf, dailyAverage, dailyDays, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, perDay, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
+import { change, countsOf, dailyAverage, dailyDays, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -264,15 +264,11 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   );
 });
 
-test('an average a day leaves out the day still going', () => {
-  assert.equal(perDay([4, 6, 1]), 5);
-  assert.equal(perDay([3]), 3);
-  assert.equal(perDay([]), 0);
-});
-
 test('daily players on average count only the days it asked', () => {
   const l = countsOf([path('daily/right', [0, 4, 1]), path('daily/wrong', [0, 2, 0])], DAYS);
+  // The 16th is still going: left out.
   assert.equal(dailyAverage(l), 3);
-  assert.equal(dailyAverage(l, (d) => d !== '2026-10-14'), 6);
-  assert.equal(dailyAverage(l, () => false), null);
+  assert.equal(dailyAverage(l, '2026-10-15'), 6);
+  // Its only day the one still going: nothing whole to average, so nothing to compare.
+  assert.equal(dailyAverage(l, '2026-10-16'), null);
 });

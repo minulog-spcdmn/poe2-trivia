@@ -10,7 +10,7 @@
   // itself while the page is in view, as long as the hour's requests stay
   // well under GoatCounter's 500 (api.ts requestsLastHour). The numbers on
   // show stay as they are while newer ones are read.
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, requestsLastHour, saveKey, savedKey, visitorsBy, type Span } from './api';
   import { shortDay } from './chart';
@@ -41,18 +41,30 @@
 
   const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && `#${v.value}` === hash)?.value ?? 'overview';
   let view = $state<View>(viewOf(location.hash));
+  // Each view is an entry in the history that keeps how far the page was
+  // scrolled, so Back returns to the view as it was left. The page puts the
+  // scroll back itself: the browser would do it before the view is there.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   function go(v: View) {
     if (v === view) return;
-    if (v === 'overview') history.pushState(null, '', location.pathname + location.search);
-    else location.hash = v;
+    history.replaceState({ ...(history.state as object | null), y: window.scrollY }, '');
+    history.pushState({ y: 0 }, '', v === 'overview' ? location.pathname + location.search : `#${v}`);
     view = v;
     window.scrollTo({ top: 0 });
   }
-  const followHash = () => {
-    const v = viewOf(location.hash);
-    if (v !== view) window.scrollTo({ top: 0 });
-    view = v;
-  };
+  /** Back, forward, or a # typed in: the view it names, scrolled as it was left. */
+  async function followHash() {
+    view = viewOf(location.hash);
+    await tick();
+    window.scrollTo({ top: (history.state as { y?: number } | null)?.y ?? 0 });
+  }
+  /** A link to a view (the overview's "Games ›") goes there as the buttons do. */
+  function follow(e: MouseEvent) {
+    const a = e.target instanceof Element ? e.target.closest('a[href^="#"]') : null;
+    if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    go(viewOf(a.getAttribute('href') ?? ''));
+  }
 
   const cache = new Map<number, Read>();
   const cached = (days: number): Read | null => {
@@ -190,15 +202,15 @@
 
   onMount(() => {
     void load();
-    const tick = setInterval(update, 20_000);
+    const ticking = setInterval(update, 20_000);
     document.addEventListener('visibilitychange', update);
+    document.addEventListener('click', follow);
     window.addEventListener('popstate', followHash);
-    window.addEventListener('hashchange', followHash);
     return () => {
-      clearInterval(tick);
+      clearInterval(ticking);
       document.removeEventListener('visibilitychange', update);
+      document.removeEventListener('click', follow);
       window.removeEventListener('popstate', followHash);
-      window.removeEventListener('hashchange', followHash);
     };
   });
 
@@ -249,8 +261,7 @@
     {#if key}
       <div class="tools">
         <span class="fresh" aria-live="polite">
-          {#if loading}Updating…{:else if read}Updated {ago(read.at)}{/if}
-          {#if held && !loading}<em title="Paused to stay under GoatCounter's 500 requests an hour">, paused for now</em>{/if}
+          {#if loading}Updating…{:else if read}Updated {ago(read.at)}{/if}{#if held && !loading}<em title="Paused to stay under GoatCounter's 500 requests an hour">, paused for now</em>{/if}
         </span>
         <button type="button" class="icon-btn" class:spin={loading} onclick={() => void load(span, true)} disabled={loading} title="Read again" aria-label="Read again">
           <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
