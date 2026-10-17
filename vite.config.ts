@@ -251,6 +251,25 @@ function localId() {
   return createHash('sha256').update(`${hostname()}:${who}`).digest('hex').slice(0, 8);
 }
 
+/**
+ * The dev hub (dev.html) lists the room bot, which only the dev server and
+ * the bot's own build have; any other build drops its card rather than link
+ * to a page it doesn't have.
+ */
+function devHub(env: Record<string, string>): Plugin {
+  return {
+    name: 'dev-hub',
+    apply: 'build',
+    transformIndexHtml(html, ctx) {
+      if (!ctx.filename.endsWith('/dev.html') || env.VITE_BOT === '1') return html;
+      const card = /\s*<!-- bot -->[\s\S]*?<!-- \/bot -->/;
+      // Without its markers the card would ship, linking to a page that isn't there.
+      if (!card.test(html)) throw new Error('dev.html: the room bot card has lost its <!-- bot --> ... <!-- /bot --> markers.');
+      return html.replace(card, '');
+    },
+  };
+}
+
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   // A channel named wrongly stops here, rather than quietly playing in the live game. The local
@@ -265,7 +284,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env)],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     build: {
       rollupOptions: {
@@ -278,10 +297,10 @@ export default defineConfig(({ command, mode }) => {
           // the zone tuning page (src/zonebanner), the descent's test page
           // (src/descentPreview), the daily streak's (src/streakPreview), the
           // spatial sound page (src/spatialPage), the hover tuning page
-          // (src/hoverPage) and the end screen's (src/endscreenPreview):
-          // the dev server serves them by itself; of the builds only the beta
-          // has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html' } : {}),
+          // (src/hoverPage), the end screen's (src/endscreenPreview) and the
+          // hub linking them all (dev.html): the dev server serves them by
+          // itself; of the builds only the beta has them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

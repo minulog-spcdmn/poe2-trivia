@@ -1238,6 +1238,17 @@ A bot does nothing while a new zone's cards are on their way: its pointer
 is off the page, and it looks the cards over from the deal.
 More players' recordings make for more kinds of hands.
 
+### The dev hub
+
+`dev.html` links every tool page below, with a line on what each is for,
+so nobody has to remember their names. On the dev server it links the room
+bot too; builds without the bot (the beta) leave its card out.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/dev.html`; on the
+  beta, **poe2.quest/beta/dev.html**. The live build leaves it out.
+- A new tool page gets a card there; `tests/devHub.test.ts` fails until it
+  does.
+
 ### The lab
 
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the

@@ -1,10 +1,18 @@
 @import '../app.css';
 
 body {
+  /* The dither (app.css) on top stirs each pixel a level up or down, so the
+     soft glow across the whole page doesn't band (CLAUDE.md). */
   background:
+    var(--dither),
     radial-gradient(ellipse 80% 50% at 50% -10%, rgba(120, 95, 60, 0.18), transparent 70%),
     linear-gradient(180deg, #0d0b09, #080706 60%, #0d0907);
   background-attachment: fixed;
+  image-rendering: pixelated;
+}
+/* Pixelated is for the body's own background; images on the page scale smoothly. */
+body > * {
+  image-rendering: auto;
 }
 .legal {
   /* Long German words ("Datenschutzerklärung") must not overflow on phones. */
