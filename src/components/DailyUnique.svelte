@@ -24,6 +24,8 @@
   import { whenIdle } from '../lib/idle';
   import { turnOf } from '../lib/turns';
   import { loadPlate } from '../lib/plateStore.svelte';
+  import { PLACES } from '../lib/circlePlaces';
+  import type { PlateName } from '../lib/plates/index.ts';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -63,25 +65,27 @@
     };
   });
   const today = $derived(utcDay(now));
-  // A different one of the circles from day to day, the same for every exile.
-  // (DAILY_CIRCLES in circles.ts, in its order, loaded only when it's today's,
-  // so the start page carries none of the others.)
-  const DAILY = [
-    [() => import('./ArcaneCircle.svelte'), 'eye'],
-    [() => import('./MonadCircle.svelte'), 'monad'],
-    [() => import('./RoseCircle.svelte'), 'rose'],
-    [() => import('./ForbiddenCircle.svelte'), 'moth'],
-  ] as const;
+  // A different one of the circles from day to day, the same for every exile
+  // (lib/circlePlaces.ts, in its order), loaded only when it's today's, so
+  // the start page carries none of the others.
+  const LOAD: Record<PlateName, () => Promise<{ default: Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> }>> = {
+    eye: () => import('./ArcaneCircle.svelte'),
+    monad: () => import('./MonadCircle.svelte'),
+    rose: () => import('./RoseCircle.svelte'),
+    blackSun: () => import('./BlackSunCircle.svelte'),
+    moth: () => import('./ForbiddenCircle.svelte'),
+  };
+  const DAILY = PLACES.daily.circles as PlateName[];
   // Loaded, its plate built away from the page, and put on the page in the
   // first idle moment after the start page's first frames (half a second at
   // most), once both are at hand.
   let Circle = $state.raw<Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> | null>(null);
   $effect(() => {
     const day = today;
-    const [load, name] = DAILY[turnOf(day, [0, 1, 2, 3])];
+    const name = turnOf(day, DAILY);
     return whenIdle(
       () =>
-        void Promise.all([load(), loadPlate(name)]).then(
+        void Promise.all([LOAD[name](), loadPlate(name)]).then(
           ([m]) => day === untrack(() => today) && (Circle = m.default),
           // (Without its circle, today's unique plays on as it is.)
           (e) => console.error("today's circle:", e),

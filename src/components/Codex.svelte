@@ -15,7 +15,8 @@
   import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
-  import MonadCircle from './MonadCircle.svelte';
+  import { circleOf } from './circles';
+  import { circleAtPlace } from '../lib/circlePlaces';
   import { warmPlate } from '../lib/plateStore.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
@@ -38,7 +39,7 @@
   // page once the Codex is open (the collection's sooner, as its entry on
   // the start page is pointed at: Home.svelte).
   onMount(() => {
-    for (const name of ['monad', 'rose', 'blackSun', 'eye'] as const) warmPlate(name);
+    for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
   });
   // A game in another tab may add to it meanwhile.
   onMount(() =>
@@ -320,7 +321,7 @@
       </div>
     {/if}
 
-    <CodexMedallion share={found} circle={MonadCircle}>
+    <CodexMedallion share={found} circle={circleOf('collection')}>
       <span class="medal-value">{stats.seen}</span>
       <span class="medal-of">of {stats.total}</span>
       <span class="medal-label">discovered</span>
