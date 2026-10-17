@@ -795,7 +795,8 @@ export function versusEnd(s: GameState, me: string | null, hotSeat: boolean, tra
   if (s.settings.targetScore >= TARGET_HIGH && flawless) out.push('untarnished');
   const score = s.players.find((p) => p.id === me)?.score ?? 0;
   if (race && s.settings.targetScore >= TARGET_HIGH && score === s.round && t && there.every((p) => t.guessed.includes(p.id))) out.push('clean-sweep');
-  if (there.some((p) => isHeldName(p.name) && !s.winners.includes(p.id))) out.push('usurper');
+  // The creator: the held name on whoever the host let in with the owner key's signature (GameState owner).
+  if (there.some((p) => isHeldName(p.name) && s.owner?.id === p.id && !s.winners.includes(p.id))) out.push('usurper');
   if (race && flawless && (t?.veiled ?? 0) >= VEIL_TAKES) out.push('through-the-veil');
   return { outcome, earned: out };
 }

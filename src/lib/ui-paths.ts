@@ -10,9 +10,15 @@ export function artScale(w: number, h: number) {
   return cells(w) <= 2 && cells(h) <= 2 ? 4 : 2;
 }
 
-/** An item's picture's path from the site's base, full size (itemImage), or its `size` px copy (itemThumb). */
+/**
+ * An item's picture's path from the site's base, full size (itemImage), or
+ * its `size` px copy (itemThumb). The id is escaped: online it can be the
+ * host's word (a game's recap), and in a srcset a comma or a space would
+ * let it name a picture from anywhere.
+ */
 export function itemFile(id: string, size?: (typeof ITEM_THUMBS)[number]) {
-  return size ? `items/${size}/${id}.avif` : `items/${id}.avif`;
+  const file = encodeURIComponent(id);
+  return size ? `items/${size}/${file}.avif` : `items/${file}.avif`;
 }
 
 /** Read when asked, not on import, so tests can import this module outside Vite. */

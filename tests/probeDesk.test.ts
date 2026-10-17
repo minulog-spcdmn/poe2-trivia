@@ -61,3 +61,20 @@ test('too many probes at once are hung up on unanswered', () => {
   assert.equal(answered, 8);
   assert.equal(all.filter((c) => c.closed && !c.sent.length).length, 2);
 });
+
+test("a probe's challenge reaches the room, and a listing signed over it (later) goes out", async () => {
+  const asked: (string | null)[] = [];
+  const desk = new ProbeDesk(async (challenge) => (asked.push(challenge), { ...room, owner: 'x'.repeat(86) }));
+  const c = conn({ probe: true, challenge: 'c'.repeat(22) });
+  desk.answer(asConn(c));
+  c.open();
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(asked, ['c'.repeat(22)]);
+  assert.equal((c.sent[0] as { room: { owner?: string } }).room.owner, 'x'.repeat(86));
+  // A probe without one (or with junk) is answered too, unsigned.
+  const old = conn({ probe: true, challenge: '<junk>' });
+  desk.answer(asConn(old));
+  old.open();
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(asked, ['c'.repeat(22), null]);
+});
