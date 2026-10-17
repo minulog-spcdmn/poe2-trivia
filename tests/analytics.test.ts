@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
-import { change, countsOf, dailyAverage, dailyDays, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
+import { change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -271,4 +271,31 @@ test('daily players on average count only the days it asked', () => {
   assert.equal(dailyAverage(l, '2026-10-15'), 6);
   // Its only day the one still going: nothing whole to average, so nothing to compare.
   assert.equal(dailyAverage(l, '2026-10-16'), null);
+});
+
+test("Today's unique counts by the game's UTC days, its hours moved from the account's zone", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  // Berlin is two hours ahead in October: its 00:00 and 01:00 belong to the UTC day before.
+  const answers: PathCount = {
+    path: 'daily/right',
+    event: true,
+    count: 9,
+    days: { '2026-10-15': 5, '2026-10-16': 4 },
+    hours: { '2026-10-15': hours({ 0: 1, 1: 1, 2: 3 }), '2026-10-16': hours({ 1: 2, 23: 2 }) },
+  };
+  // The 14th's two (Berlin's first hours of the 15th) stay out, as the 14th isn't among the days.
+  assert.deepEqual(utcPerDay(answers, ['2026-10-15', '2026-10-16'], 'Europe/Berlin'), [5, 2]);
+  assert.deepEqual(utcPerDay(answers, ['2026-10-14', '2026-10-15', '2026-10-16'], 'Europe/Berlin'), [2, 5, 2]);
+  // Without a zone, or without hours, by GoatCounter's own days.
+  assert.deepEqual(utcPerDay(answers, ['2026-10-15', '2026-10-16']), [5, 4]);
+  assert.deepEqual(utcPerDay({ ...answers, hours: undefined }, ['2026-10-15', '2026-10-16'], 'Europe/Berlin'), [5, 4]);
+  const l = countsOf([answers], ['2026-10-15', '2026-10-16'], 'Europe/Berlin');
+  assert.deepEqual([l.daily.right, l.daily.rightPerDay], [7, [5, 2]]);
+});
+
+test('games played to the end are at most all of them', () => {
+  assert.equal(finishedShare(3, 4), '75%');
+  // Games started late the period before, ending in this one.
+  assert.equal(finishedShare(11, 10), '100%');
+  assert.equal(finishedShare(0, 0), '–');
 });

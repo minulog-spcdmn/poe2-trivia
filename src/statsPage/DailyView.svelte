@@ -5,8 +5,8 @@
   // that day's item was. Which item each day asked is worked out as the
   // game does (dailyItems.ts).
   import { onMount } from 'svelte';
-  import { fmt } from './chart';
-  import { dailyItems, type DailyItem } from './dailyItems';
+  import { average, fmt } from './chart';
+  import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import DayColumns from './DayColumns.svelte';
   import Delta from './Delta.svelte';
@@ -31,13 +31,8 @@
     return t ? (100 * read.before.daily.right) / t : null;
   });
   const best = $derived(answered.reduce<(typeof days)[number] | null>((b, d) => (!b || d.answers > b.answers ? d : b), null));
-  const oneDecimal = (v: number) => (v < 10 ? v.toFixed(1).replace(/\.0$/, '') : fmt(Math.round(v)));
 
-  onMount(() => {
-    dailyItems()
-      .then((f) => (itemOf = f))
-      .catch(() => undefined);
-  });
+  onMount(() => withDailyItems((f) => (itemOf = f)));
   let all = $state(false);
   const newestFirst = $derived([...answered].reverse());
 </script>
@@ -50,7 +45,7 @@
   <div class="figures">
     <div class="figure">
       <span class="name">Players a day</span>
-      <b>{now === null ? '–' : oneDecimal(now)}</b>
+      <b>{now === null ? '–' : average(now)}</b>
       <Delta now={now} before={before} digits={1} period={period.before} />
     </div>
     <div class="figure">
@@ -104,9 +99,7 @@
     {/if}
   </Section>
 
-  {#if read.zone !== 'UTC'}
-    <p class="foot">The item changes at midnight UTC, but these days are cut at midnight in {read.zone.replace(/_/g, ' ')} (GoatCounter's setting), so a few answers near midnight may count toward the day beside theirs.</p>
-  {/if}
+  <p class="foot">These are the game's days: each runs from midnight to midnight UTC, when the item changes.</p>
 </div>
 
 <style>

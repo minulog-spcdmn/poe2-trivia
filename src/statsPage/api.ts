@@ -142,7 +142,7 @@ export interface Span {
 const range = (s: Span) => ({ start: s.start.toISOString(), end: s.end.toISOString() });
 
 interface HitsResponse {
-  hits: { path_id: number; path: string; event: boolean; count: number; stats: { day: string; daily: number }[] }[];
+  hits: { path_id: number; path: string; event: boolean; count: number; stats: { day: string; daily: number; hourly?: number[] }[] }[];
   more: boolean;
 }
 
@@ -166,7 +166,13 @@ export async function pathCounts(key: string, span: Span, signal: AbortSignal): 
     );
     for (const h of r.hits) {
       had.push(String(h.path_id));
-      out.push({ path: h.path, event: h.event, count: h.count, days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])) });
+      out.push({
+        path: h.path,
+        event: h.event,
+        count: h.count,
+        days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])),
+        ...(h.stats.every((s) => s.hourly?.length === 24) ? { hours: Object.fromEntries(h.stats.map((s) => [s.day, s.hourly!])) } : {}),
+      });
     }
     if (!r.more) return { paths: out, complete: true };
     // A page that brought nothing new would ask the same again for ever.

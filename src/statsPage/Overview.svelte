@@ -5,12 +5,12 @@
   // opening its view.
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
-  import { fmt } from './chart';
-  import { dailyItems, type DailyItem } from './dailyItems';
+  import { average, fmt } from './chart';
+  import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
-  import { MODE_NAMES, asked, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, type Counts } from './model';
+  import { MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -27,7 +27,6 @@
   const rate = (part: number, whole: number) => (whole ? (100 * part) / whole : null);
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
-  const oneDecimal = (v: number) => (v < 10 ? v.toFixed(1).replace(/\.0$/, '') : fmt(Math.round(v)));
 
   const failed = $derived(L.failures.reduce((n, f) => n + f.count, 0));
   const worst = $derived(L.failures[0]);
@@ -64,11 +63,7 @@
   const days = $derived(dailyDays(L));
   const hardest = $derived(hardestAndEasiest(days.filter((d) => asked(d.day)), 3, 3).hardest);
   const named = $derived(rate(L.daily.right, L.daily.right + L.daily.wrong));
-  onMount(() => {
-    dailyItems()
-      .then((f) => (itemOf = f))
-      .catch(() => undefined);
-  });
+  onMount(() => withDailyItems((f) => (itemOf = f)));
 </script>
 
 <svelte:window bind:innerHeight />
@@ -91,7 +86,7 @@
   <Kpi label="Games played" value={fmt(L.games.started)} means="games started, every mode" href="#games">
     {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={period.before} />{/snippet}
   </Kpi>
-  <Kpi label="Daily players" value={dailyNow === null ? '–' : oneDecimal(dailyNow)} means="a day, answering Today's unique" href="#daily">
+  <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
     {#snippet change()}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/snippet}
   </Kpi>
   <Kpi
@@ -115,7 +110,7 @@
       {#snippet aside()}<a class="to-view" href="#games">Games ›</a>{/snippet}
       <Bars bars={modes} empty="No games in these days." />
       {#if L.games.started}
-        <p class="line"><b>{percent(L.games.finished, L.games.started)}</b> of games were played to the end.</p>
+        <p class="line"><b>{finishedShare(L.games.finished, L.games.started)}</b> of games were played to the end.</p>
       {/if}
     </Section>
 

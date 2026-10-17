@@ -12,6 +12,13 @@ export interface DailyItem {
 const DAY_MS = 86_400_000;
 let loading: Promise<(day: string) => DailyItem | null> | null = null;
 
+/** `got` the days' items once they've loaded (a load that fails leaves them unnamed). */
+export function withDailyItems(got: (itemOf: (day: string) => DailyItem | null) => void) {
+  dailyItems()
+    .then(got)
+    .catch(() => undefined);
+}
+
 /** A day's item ("2026-10-14", taken as the UTC day the game asks by), or null before Today's unique began. */
 export function dailyItems(): Promise<(day: string) => DailyItem | null> {
   loading ??= Promise.all([import('../lib/daily'), import('../data/items.json'), import('../data/fakes.json')]).then(([daily, items, fakes]) => {

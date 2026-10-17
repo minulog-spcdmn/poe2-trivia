@@ -3,6 +3,7 @@
 // tests can feed it.
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
+import { midnight } from './zone.ts';
 
 /** One path as GoatCounter's /stats/hits gives it: how often it was counted, all told and per day. */
 export interface PathCount {
@@ -11,6 +12,8 @@ export interface PathCount {
   count: number;
   /** Per day (YYYY-MM-DD), in the site's time zone. */
   days: Record<string, number>;
+  /** Per day as `days`, its 24 hours (from the day's midnight there), where GoatCounter gave them. */
+  hours?: Record<string, number[]>;
 }
 
 export type Mode = 'turns' | 'race' | 'delve';
@@ -65,6 +68,7 @@ export interface Counts {
   games: { started: number; finished: number; perDay: number[]; finishedPerDay: number[]; rows: ModeRow[] };
   /** Delve runs by where they ended: every ten depths from 0 up to the deepest reached, as players see them. */
   delve: { total: number; ranges: { from: number; count: number }[] };
+  /** Today's unique's answers, named and missed, by the game's (UTC) days when the hours were there to sort them (utcPerDay). */
   daily: { right: number; wrong: number; rightPerDay: number[]; wrongPerDay: number[] };
   links: { invite: number; delve: number };
   joins: { via: Via; tried: number; joined: number }[];
@@ -83,7 +87,29 @@ export function daysBetween(from: string, to: string): string[] {
   return out;
 }
 
-export function countsOf(paths: PathCount[], days: string[]): Counts {
+/**
+ * A path's count on each of `days` taken as UTC days, the days Today's unique
+ * asks by: each hour GoatCounter counted (in the account's `zone`) moved to
+ * the UTC day it fell on, an hour outside `days` left out. Without its hours
+ * (or a zone), by GoatCounter's own days. (On a day the clocks change, an
+ * hour after the change may land an hour off.)
+ */
+export function utcPerDay(p: PathCount | undefined, days: string[], zone?: string): number[] {
+  if (!p) return days.map(() => 0);
+  if (!zone || !p.hours) return days.map((d) => p.days[d] ?? 0);
+  const out = new Map(days.map((d) => [d, 0]));
+  for (const [day, hours] of Object.entries(p.hours)) {
+    const start = midnight(zone, day).getTime();
+    hours.forEach((n, h) => {
+      const utc = new Date(start + h * 3_600_000).toISOString().slice(0, 10);
+      if (n && out.has(utc)) out.set(utc, out.get(utc)! + n);
+    });
+  }
+  return days.map((d) => out.get(d)!);
+}
+
+/** `zone`: the account's time zone, which GoatCounter cuts its days in; Today's unique is counted by UTC days with it (utcPerDay). */
+export function countsOf(paths: PathCount[], days: string[], zone?: string): Counts {
   const byPath = new Map(paths.map((p) => [p.path, p]));
   const count = (path: string) => byPath.get(path)?.count ?? 0;
   const perDay = (match: (path: string) => boolean) => {
@@ -136,12 +162,12 @@ export function countsOf(paths: PathCount[], days: string[]): Counts {
       rows,
     },
     delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges },
-    daily: {
-      right: count('daily/right'),
-      wrong: count('daily/wrong'),
-      rightPerDay: perDay((p) => p === 'daily/right'),
-      wrongPerDay: perDay((p) => p === 'daily/wrong'),
-    },
+    daily: (() => {
+      const rightPerDay = utcPerDay(byPath.get('daily/right'), days, zone);
+      const wrongPerDay = utcPerDay(byPath.get('daily/wrong'), days, zone);
+      const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+      return { right: sum(rightPerDay), wrong: sum(wrongPerDay), rightPerDay, wrongPerDay };
+    })(),
     links: { invite: count('open/invite-link'), delve: count('open/delve-link') },
     joins: VIAS.map((via) => ({ via, tried: count(`join/${via}`), joined: count(`joined/${via}`) })),
     failures,
@@ -241,6 +267,9 @@ export function sharePerDay(part: number[], whole: number[]): number[] {
   let last = 0;
   return whole.map((w, i) => (last = w > 0 ? Math.min(100, Math.round((100 * (part[i] ?? 0)) / w)) : last));
 }
+
+/** Of games started, the share played to the end, at most 100%: games started late in the period before can end in this one. */
+export const finishedShare = (finished: number, started: number) => percent(Math.min(finished, started), started);
 
 /** A share as a whole percent, "–" with nothing to share. */
 export const percent = (part: number, whole: number) => (whole > 0 ? `${Math.round((100 * part) / whole)}%` : '–');

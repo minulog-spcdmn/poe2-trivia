@@ -18,6 +18,8 @@ export function axis(peak: number, ticks = 3): { top: number; ticks: number[] } 
 }
 
 export const fmt = (n: number) => n.toLocaleString('en');
+/** A figure a day on average: one decimal under 10 ("2.5"), whole above. */
+export const average = (v: number) => (v < 10 ? v.toFixed(1).replace(/\.0$/, '') : fmt(Math.round(v)));
 export const compact = (n: number) => (n >= 1000 ? new Intl.NumberFormat('en', { notation: 'compact' }).format(n) : String(n));
 
 const at = (d: string) => new Date(`${d}T12:00:00Z`);

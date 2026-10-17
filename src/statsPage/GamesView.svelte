@@ -4,7 +4,7 @@
   // (the host, or the one passed around for hot-seat).
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
-  import { MODES, MODE_NAMES, descentOf, modesOf, percent, sizeName, sizesOf } from './model';
+  import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, sizeName, sizesOf } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import TrendChart from './TrendChart.svelte';
@@ -53,7 +53,7 @@
               <td class="n strong">{fmt(m.started)}</td>
               <td class="wide"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
               <td class="n">{percent(m.started, L.games.started)}</td>
-              <td class="n">{percent(m.finished, m.started)}</td>
+              <td class="n">{finishedShare(m.finished, m.started)}</td>
               <td class="n">{fmt(m.online)}</td>
               <td class="n">{fmt(m.hotseat)}</td>
             </tr>
@@ -65,7 +65,7 @@
             <td class="n">{fmt(L.games.started)}</td>
             <td></td>
             <td class="n">{L.games.started ? '100%' : '–'}</td>
-            <td class="n">{percent(L.games.finished, L.games.started)}</td>
+            <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
             <td class="n">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
             <td class="n">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
           </tr>

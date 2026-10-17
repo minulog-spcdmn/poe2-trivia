@@ -33,7 +33,8 @@
   const total = (i: number) => (g.values[i] ?? 0) + (r[i] ?? 0);
 
   let width = $state(0);
-  const PAD = { top: 12, right: 4, bottom: 34, left: 52 };
+  // Room on the right for the last date, centred under its column.
+  const PAD = { top: 12, right: 18, bottom: 34, left: 52 };
   const plotW = $derived(Math.max(0, width - PAD.left - PAD.right));
   const plotH = $derived(height - PAD.top - PAD.bottom);
   const ax = $derived(axis(Math.max(0, ...g.values.map((_, i) => total(i))), 4));
@@ -81,7 +82,7 @@
         </g>
       {/each}
       {#each ticks as i (i)}
-        <text class="tick" x={x(i) + barW / 2} y={height - 6} text-anchor={i === n - 1 && n > 1 ? 'end' : i === 0 && n > 1 ? 'start' : 'middle'}>{shortDay(g.days[i])}</text>
+        <text class="tick" x={x(i) + barW / 2} y={height - 6} text-anchor="middle">{shortDay(g.days[i])}</text>
       {/each}
     </svg>
     {#if hair.at !== null}

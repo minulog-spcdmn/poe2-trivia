@@ -72,7 +72,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 2 || r.span !== days) return null;
+      if (r?.v !== 3 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -154,15 +154,15 @@
       ]);
       if (ask !== asked) return;
       const r: Read = {
-        v: 2,
+        v: 3,
         span: days,
         from,
         to: today,
         fromBefore,
         toBefore,
         zone: tz,
-        now: countsOf(n.paths, daysBetween(from, today)),
-        before: countsOf(b.paths, daysBetween(fromBefore, toBefore)),
+        now: countsOf(n.paths, daysBetween(from, today), tz),
+        before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz),
         systems,
         countries,
         refs,
@@ -187,13 +187,21 @@
         loading = false;
         reading = null;
       }
+      countRequests();
     }
+  }
+
+  /** The hour's requests, counted once for the footer and for whether updating by itself holds off. */
+  let used = $state(requestsLastHour().length);
+  function countRequests() {
+    used = requestsLastHour().length;
+    held = used > HOUR_LIMIT - KEEP_SPARE;
   }
 
   /** Reads the period on show again if it's grown stale, unless the hour's requests are running low. */
   function update() {
     clock = Date.now();
-    held = requestsLastHour().length > HOUR_LIMIT - KEEP_SPARE;
+    countRequests();
     if (!key || loading || held || document.visibilityState !== 'visible') return;
     // After a failure, not again until the wait is over (the Read again button still reads at once).
     if (fails.n && clock - fails.at < waitAfterFails()) return;
@@ -244,11 +252,6 @@
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`;
   };
   const weekly = $derived(!!read && read.span > 90);
-  const used = $derived.by(() => {
-    void clock;
-    void loading;
-    return requestsLastHour().length;
-  });
 </script>
 
 <header class="top">
