@@ -410,8 +410,8 @@ const LAYERS = [
   layer('solFace', { turn: 180, from: 0 }, { within: 'sol', pivot: sol }),
   layer('luna', undefined, { within: 'star', pivot: luna, upright: true }),
   layer('heart', { turn: 100, from: -70 }),
-  layer('glory0', undefined, { breathe: { low: 0.96, period: 4.4 } }),
-  layer('glory1', undefined, { breathe: { low: 0.93, period: 3.6, delay: -1.8 } }),
+  layer('glory0', undefined, { breathe: { low: 0.96, period: 4.4 }, inner: true }),
+  layer('glory1', undefined, { breathe: { low: 0.93, period: 3.6, delay: -1.8 }, inner: true }),
 ];
 
 // The eye, the same while drawn and after (it opens as a whole); `@id@`

@@ -726,12 +726,12 @@ export const build = (): StageLayer[] => {
     layer('triangle', { spin: { turn: 110, from: 55, reverse: true } }),
     ...spirits.map(({ c }, k) => layer(`sigil${k}`, { within: 'triangle', pivot: c, upright: true })),
     layer('heart', { spin: { turn: 90, from: -70 } }),
-    layer('glory0', { breathe: { low: 0.97, period: 4.4 } }),
-    layer('glory1', { breathe: { low: 0.95, period: 3.6, delay: -1.8 } }),
+    layer('glory0', { breathe: { low: 0.97, period: 4.4 }, inner: true }),
+    layer('glory1', { breathe: { low: 0.95, period: 3.6, delay: -1.8 }, inner: true }),
     // The wings stir together now and then, each toward its root.
-    layer('wingR', { pivot: WING_ROOT, flutter: { fold: 0.84, period: 11, delay: 3 } }),
-    layer('wingL', { pivot: flip(WING_ROOT), flutter: { fold: 0.84, period: 11, delay: 3 } }),
-    layer('moth'),
+    layer('wingR', { pivot: WING_ROOT, flutter: { fold: 0.84, period: 11, delay: 3 }, inner: true }),
+    layer('wingL', { pivot: flip(WING_ROOT), flutter: { fold: 0.84, period: 11, delay: 3 }, inner: true }),
+    layer('moth', { inner: true }),
   ];
   return LAYERS;
 };

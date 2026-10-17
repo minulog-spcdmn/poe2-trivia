@@ -2,7 +2,7 @@
   import ArcaneStage, { type StageLayer } from './ArcaneStage.svelte';
   import { usePlate } from '../lib/plateStore.svelte';
 
-  let { state, size, color, strength }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
+  let { state, size, color, strength, hollow = false }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number; hollow?: boolean } = $props();
 
   // Its plate (src/lib/plates/eye.ts), built away from the page; the circle
   // is put on the page as soon as it's at hand.
@@ -20,15 +20,16 @@
   layer winds into place meanwhile, and the glow swells up under it all.
 -->
 
+{#snippet eye()}
+  <div class="layer eye">
+    <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
+    <svg viewBox="-100 -100 200 200">{@html eyeLines}</svg>
+  </div>
+{/snippet}
+
+<!-- Hollow (with something set over its heart), without the eye and its glory. -->
 {#if plate.value}
-  <ArcaneStage layers={plate.value.layers} {state} {size} {color} {strength}>
-    {#snippet heart()}
-      <div class="layer eye">
-        <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
-        <svg viewBox="-100 -100 200 200">{@html eyeLines}</svg>
-      </div>
-    {/snippet}
-  </ArcaneStage>
+  <ArcaneStage layers={hollow ? plate.value.layers.filter((l) => !l.inner) : plate.value.layers} {state} {size} {color} {strength} heart={hollow ? undefined : eye} />
 {/if}
 
 <style>

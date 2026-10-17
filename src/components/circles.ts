@@ -9,17 +9,17 @@ import ForbiddenCircle from './ForbiddenCircle.svelte';
 import MonadCircle from './MonadCircle.svelte';
 import RoseCircle from './RoseCircle.svelte';
 
-export type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number }>;
+export type Circle = Component<{ state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number; hollow?: boolean }>;
 
 /** Behind today's unique: any but Delve's black sun, a different one from day to day (loaded by DailyUnique one at a time, in this order). */
 export const DAILY_CIRCLES: Circle[] = [ArcaneCircle, MonadCircle, RoseCircle, ForbiddenCircle];
 /** Behind a question's art (not Delve's): the same four, a different one from question to question. */
 export const QUESTION_CIRCLES: Circle[] = DAILY_CIRCLES;
-/** Behind the end of a game (not Delve's): the monad or the eye, as the game falls (`endCircle`). */
-export const END_CIRCLES: Circle[] = [MonadCircle, ArcaneCircle];
+/** Behind the end of a game (not Delve's), hollow round the winner: the eye. */
+export const END_CIRCLE: Circle = ArcaneCircle;
 /** Behind an item in the item window, the eye. */
 export const ITEM_CIRCLE: Circle = ArcaneCircle;
-/** Behind the end of a Delve, where everyone perished. */
+/** Behind the end of a Delve, where everyone perished, hollow round the delvers. */
 export const PERISHED_CIRCLE: Circle = ForbiddenCircle;
 
 /** The `n`th circle (a day, a question's turn) of `from` in a run seeded `seed`, never the same twice running (lib/turns). */

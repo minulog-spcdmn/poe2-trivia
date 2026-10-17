@@ -448,11 +448,11 @@ export const build = (): StageLayer[] => {
     ...figures.map(({ c }, k) => layer(`figure${k}`, undefined, { within: 'star', pivot: c, upright: true })),
     layer('serpent', { turn: 300, from: -20 }),
     ...MONAD_GLORY_SETS.map((_, n) =>
-      layer(`glory${n}`, undefined, { breathe: { low: 0.93, period: 4.5, delay: -(n / SECTORS) * 9 }, mask: { d: OURO_HEADS, grow: 1.3, with: 'serpent' } }),
+      layer(`glory${n}`, undefined, { breathe: { low: 0.93, period: 4.5, delay: -(n / SECTORS) * 9 }, mask: { d: OURO_HEADS, grow: 1.3, with: 'serpent' }, inner: true }),
     ),
-    layer('monad'),
-    layer('sunFace', { turn: 80, from: 0 }),
-    layer('moon', undefined, { pivot: [0, (MOON.c + MOON.r) * MK], sway: { swing: 2.2, period: 6.5 } }),
+    layer('monad', undefined, { inner: true }),
+    layer('sunFace', { turn: 80, from: 0 }, { inner: true }),
+    layer('moon', undefined, { pivot: [0, (MOON.c + MOON.r) * MK], sway: { swing: 2.2, period: 6.5 }, inner: true }),
   ];
   return LAYERS;
 };

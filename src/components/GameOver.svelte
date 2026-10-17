@@ -56,8 +56,8 @@
   import { achievementById, type Achievement } from '../lib/achievements';
 
   // The end of a game, as the lobby is laid out: on the left the result in
-  // a rune circle, the monad or the eye, or after a Delve the moth (the
-  // winner, or the delvers, at its heart), and what the game meant for you
+  // a rune circle, the eye, or after a Delve the moth (the winner, or the
+  // delvers, in its hollow heart), and what the game meant for you
   // under it; on the right a lobby panel with the mode's ranking or the
   // party, the highlights everyone shares, and the start row. Phones stack
   // it all, the start row docked at the foot of the screen. What it says
@@ -80,9 +80,9 @@
 
   // ---- Delve -------------------------------------------------------------
   const run = $derived(s.delve ?? null);
-  // The circle behind the result: the monad or the eye as the game falls, or
-  // after a Delve, where everyone perished, the moth (built ahead as the
-  // game went, gameCircles.ts).
+  // The circle behind the result: the eye, or after a Delve, where everyone
+  // perished, the moth (built ahead as the game went, gameCircles.ts);
+  // hollow, its heart's figure and glory left out round the avatars.
   const Circle = $derived(endCircle(s));
   const solo = $derived(!!run && !isGroupRun(s));
   const together = $derived(!!run && !solo);
@@ -514,8 +514,8 @@
         <div class="plate" aria-hidden="true" in:scale={{ start: 0.85, duration: 900 }}>
           <div class="veil">
             <div class="inner">
-              <!-- The monad or the eye, or after a Delve the moth; a run short of your best in worn grey. -->
-              <Circle size="100%" color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
+              <!-- The eye, or after a Delve the moth, hollow; a run short of your best in worn grey. -->
+              <Circle size="100%" hollow color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
             </div>
           </div>
         </div>

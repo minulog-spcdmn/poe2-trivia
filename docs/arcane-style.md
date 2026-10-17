@@ -154,16 +154,16 @@ Where each one stands:
 
 | Place | Circle |
 | --- | --- |
-| A question (not Delve) | The eye, the monad, the rose or the moth, a different one from question to question and never the same twice running (`circleAt` in `src/components/circles.ts`, `src/lib/turns.ts`), the same for every player |
+| A question (Delve's too, but for a find's) | The eye, the monad, the rose or the moth, a different one from question to question and never the same twice running (`circleAt` in `src/components/circles.ts`, `src/lib/turns.ts`), the same for every player |
 | Today's unique | The same four, a different one from day to day, never the same two days running |
-| A Delve question, the Codex's Delve page | The black sun |
-| A Delve's end, where everyone perished | The moth |
-| The end of a game (not Delve) | The monad or the eye, as the game falls (`endCircle` in `gameCircles.ts`), the same for every player |
+| A Delve find's question, the Codex's Delve page | The black sun |
+| A Delve's end, where everyone perished | The moth, hollow |
+| The end of a game (not Delve) | The eye, hollow |
 | The codex item window | The eye |
 | The Codex's collection | The monad |
 | The Codex's achievements | The rose |
 
-Every heart has a living part of its own (the eye's glance, the monad's turning sun, the rose's window and its swelling star), so none needs a solid point at the very centre. The stage's `point` is there for a plate that does: set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
+Where something is set over a circle's heart (the end screen's avatars), the circle is `hollow`: the layers within its heart's ring (`inner`: its figure and its glory, which would show round the avatar like pins) are left out, and only the heart's ring frames it. Every heart has a living part of its own (the eye's glance, the monad's turning sun, the rose's window and its swelling star), so none needs a solid point at the very centre. The stage's `point` is there for a plate that does: set last with an overshoot, swelling at a right answer (1.6) and shrinking at a wrong one (0.6) as the pupil does, and at rest beating about every 9 s instead of a blink.
 
 ### Motion within a ring
 

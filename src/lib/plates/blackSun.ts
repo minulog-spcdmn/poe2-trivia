@@ -446,8 +446,8 @@ export const build = (): StageLayer[] => {
     layer('rings', { spin: { turn: 240, from: 30, reverse: true } }),
     layer('sun', { within: 'rings', pivot: O, spin: { turn: 120, from: 0 } }),
     ...placedSeals.map((_, k) => layer(`find${k}`, { within: 'rings' })),
-    layer('sunRays', { within: 'sun', breathe: { low: 0.95, period: 4.6 } }),
-    layer('sunFine', { within: 'sun', breathe: { low: 0.9, period: 3.7, delay: -2.1 } }),
+    layer('sunRays', { within: 'sun', breathe: { low: 0.95, period: 4.6 }, inner: true }),
+    layer('sunFine', { within: 'sun', breathe: { low: 0.9, period: 3.7, delay: -2.1 }, inner: true }),
     ...eclipses.flatMap(({ c }, k) => [
       layer(`eclipse${k}`, { within: 'rings', pivot: c, upright: true }),
       // The corona turns slowly sunwise in the upright eclipse: its fine rays

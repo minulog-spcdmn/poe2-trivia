@@ -57,8 +57,11 @@ export type Plate = { drawing: string; still: string; start: number; end: number
  * `fold` of its width and back, twice in quick succession, as a resting
  * moth stirs its wings. `mask`: its lines stop short of the shape `d`
  * (grown by `grow`) as that turns with the layer named `with`, so a ray
- * gives way to a head only while the head passes over it. Each is still a
- * box of its own, moved on the compositor.
+ * gives way to a head only while the head passes over it. `inner`: it
+ * lies within the heart's ring (the heart's figure and its glory), and is
+ * left out where something is set over the heart (a circle's `hollow`: the
+ * end screen's avatars). Each is still a box of its own, moved on the
+ * compositor.
  */
 export type StageLayer = {
   name: string;
@@ -73,6 +76,7 @@ export type StageLayer = {
   breathe?: { low: number; period: number; delay?: number };
   flutter?: { fold: number; period: number; delay?: number };
   mask?: { d: string; grow: number; with: string };
+  inner?: boolean;
 };
 
 /** How far round its ellipse (`rx`, `ry`, turned `rot`) an arc from `p` to `q` reaches: 1 where it is exactly half of it, below 1 where less. */

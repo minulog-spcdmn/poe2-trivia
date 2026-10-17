@@ -46,8 +46,8 @@
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
-  // The circle behind the art: Delve's own black sun in a Delve, else a
-  // different one from question to question (the same for every player).
+  // The circle behind the art: a different one from question to question
+  // (the same for every player), or Delve's own black sun behind a find's.
   const Circle = $derived(questionCircle(s));
   const reveal = $derived(s.phase === 'reveal' ? s.reveal : null);
   /** The question's timer, at the task line's right end (phones have it in the pinned scoreboard, Game.svelte). */
