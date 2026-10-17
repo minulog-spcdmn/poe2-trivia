@@ -28,8 +28,11 @@
 {/snippet}
 
 <!-- Hollow (with something set over its heart), without the eye and its glory. -->
+<!-- (Set again when it turns hollow or whole: the stage takes its layers once, as it mounts.) -->
 {#if plate.value}
-  <ArcaneStage layers={hollow ? plate.value.layers.filter((l) => !l.inner) : plate.value.layers} {state} {size} {color} {strength} heart={hollow ? undefined : eye} />
+  {#key hollow}
+    <ArcaneStage layers={plate.value.layers.filter((l) => (hollow ? !l.inner : !l.hollow))} {state} {size} {color} {strength} heart={hollow ? undefined : eye} />
+  {/key}
 {/if}
 
 <style>

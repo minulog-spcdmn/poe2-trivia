@@ -338,6 +338,8 @@ export const build = (): StageLayer[] => {
   // Everything that wears, drawn twice: worn for the lines, whole for the
   // glow under them. The wear is one seeded run through the lines in this
   // order, so every circle is worn alike.
+  /** The double ring that frames the heart when the circle is hollow, in the ouroboros' place, clear of the Seal's straps. */
+  const HOLLOW_RING = 31;
   const drawing = (worn: boolean) => {
     const w: Wear = worn ? wear(17) : null;
     const strap = (s: ReturnType<typeof wovenPolygons>, i: number, side: number, holes: Hole[] = s === solomon ? [heartHole] : [greatHole]) =>
@@ -350,6 +352,8 @@ export const build = (): StageLayer[] => {
       circle: stroke(ringParts(O, CIRCLE, { wear: w }), 0.25, 0.9),
       circleInner: stroke(ringParts(O, CIRCLE - 1.3, { wear: w }), 0.3, 0.9),
       solomon: solomon.straps.flatMap((_, i) => [1, -1].map((side) => stroke(strap(solomon, i, side), 0.35 + i * 0.09, 0.5))),
+      // Hollow, the ouroboros' place round the heart is a double ring, as the eye's heart has.
+      hollowRing: [HOLLOW_RING, HOLLOW_RING - 1.6].map((r, k) => stroke(ringParts(O, r, { wear: k ? null : w }), 0.05 + k * 0.05, 0.8)),
     };
   };
 
@@ -403,6 +407,7 @@ export const build = (): StageLayer[] => {
     // The ouroboros: each snake's body draws from its neck round to the
     // other's mouth, both at once, the line along it with it; then the
     // heads are cut, and last the eyes open.
+    hollowRing: engrave((e) => p.hollowRing.forEach((list, k) => e.pieces(list, k ? 'hair' : 'thin'))),
     serpent: engrave((e) => {
       OURO.edges.forEach((d) => e.line(d, 'ouro', 0.2, 1.1));
       OURO.dividers.forEach((d) => e.line(d, 'ouro-divider', 0.3, 1.05));
@@ -446,7 +451,8 @@ export const build = (): StageLayer[] => {
     layer('great', undefined, { within: 'square', pivot: great.c, upright: true }),
     layer('star', { turn: 110, from: 48, reverse: true }),
     ...figures.map(({ c }, k) => layer(`figure${k}`, undefined, { within: 'star', pivot: c, upright: true })),
-    layer('serpent', { turn: 300, from: -20 }),
+    layer('serpent', { turn: 300, from: -20 }, { inner: true }),
+    layer('hollowRing', undefined, { hollow: true }),
     ...MONAD_GLORY_SETS.map((_, n) =>
       layer(`glory${n}`, undefined, { breathe: { low: 0.93, period: 4.5, delay: -(n / SECTORS) * 9 }, mask: { d: OURO_HEADS, grow: 1.3, with: 'serpent' }, inner: true }),
     ),

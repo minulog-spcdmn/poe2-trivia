@@ -36,6 +36,8 @@ const PLATE_OF = new Map<Circle, PlateName>([
 ]);
 /** Names `circle`'s plate, a circle not loaded here. */
 export const plateNamed = (circle: Circle, name: PlateName) => void PLATE_OF.set(circle, name);
+/** The circle whose plate is `name` (Delve's black sun once the game has loaded it). */
+export const circleNamed = (name: PlateName): Circle | undefined => [...PLATE_OF].find(([, n]) => n === name)?.[0];
 /** Has `circle`'s plate built ahead of its showing. */
 export function warmCircle(circle: Circle) {
   const name = PLATE_OF.get(circle);

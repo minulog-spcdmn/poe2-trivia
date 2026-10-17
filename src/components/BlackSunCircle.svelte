@@ -16,5 +16,6 @@
   written along them, and last the rim closes round it all.
 -->
 
-<!-- Hollow (with something set over its heart), without what lies within the heart's ring. -->
-{#if plate.value}<ArcaneStage layers={hollow ? plate.value.filter((l) => !l.inner) : plate.value} {state} {size} {color} {strength} />{/if}
+<!-- Hollow (with something set over its heart): without what lies within the heart's ring, a plain frame in its place where it has one. -->
+<!-- (Set again when it turns hollow or whole: the stage takes its layers once, as it mounts.) -->
+{#if plate.value}{#key hollow}<ArcaneStage layers={plate.value.filter((l) => (hollow ? !l.inner : !l.hollow))} {state} {size} {color} {strength} />{/key}{/if}

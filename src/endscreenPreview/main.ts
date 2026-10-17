@@ -15,6 +15,8 @@ import { mount, tick } from 'svelte';
 import '../app.css';
 import { BETA } from '../lib/channel';
 import { END_PREVIEW, writeKey } from '../lib/storage';
+import { endCircleChoice } from '../lib/endCircleChoice.svelte';
+import type { PlateName } from '../lib/plates/index.ts';
 
 if (!(import.meta.env.DEV || BETA) || !END_PREVIEW) throw new Error('The end screen page only runs on the dev server and the beta, from endscreen.html.');
 
@@ -26,10 +28,14 @@ for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection']) Object.defi
 
 /** What the picker posts to its frame: show this state. */
 export type SceneMessage = { endscreen: 'scene'; key: string };
+/** What the picker posts to its frame: set this circle behind the end screen (null: the one the game falls to). */
+export type CircleMessage = { endscreen: 'circle'; name: PlateName | null };
 /** What the frame posts back once it listens, and which state it shows. */
 export type ReadyMessage = { endscreen: 'ready'; key: string };
 
-const key = new URLSearchParams(location.search).get('scene');
+const asked = new URLSearchParams(location.search);
+const key = asked.get('scene');
+endCircleChoice.name = (asked.get('circle') as PlateName | null) || null;
 if (key) void frame(key);
 else void import('./Preview.svelte').then(({ default: Preview }) => mount(Preview, { target: document.getElementById('app')! }));
 
@@ -93,9 +99,15 @@ async function frame(first: string) {
   // state's end.
   let showing = first;
   let turn = 0;
-  addEventListener('message', async (e: MessageEvent<SceneMessage>) => {
-    if (e.origin !== location.origin || e.data?.endscreen !== 'scene') return;
-    const next = all.find((s) => s.key === e.data.key);
+  addEventListener('message', async (e: MessageEvent<SceneMessage | CircleMessage>) => {
+    const m = e.data;
+    if (e.origin !== location.origin || !m) return;
+    if (m.endscreen === 'circle') {
+      endCircleChoice.name = m.name;
+      return;
+    }
+    if (m.endscreen !== 'scene') return;
+    const next = all.find((s) => s.key === m.key);
     if (!next) return;
     const mine = ++turn;
     session.state = { ...session.state!, phase: 'lobby' };

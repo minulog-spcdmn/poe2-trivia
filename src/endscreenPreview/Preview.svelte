@@ -6,7 +6,18 @@
   // the same view; the arrow keys walk the list.
   import { untrack } from 'svelte';
   import { VIEWPORTS, scenes, type Scene } from './scenes';
-  import type { ReadyMessage, SceneMessage } from './main';
+  import type { CircleMessage, ReadyMessage, SceneMessage } from './main';
+  import type { PlateName } from '../lib/plates/index.ts';
+
+  /** The circles that can stand behind the end screen, to pick by hand (Auto: the one the game falls to). */
+  const CIRCLES: [PlateName | null, string][] = [
+    [null, 'Auto'],
+    ['eye', 'Eye'],
+    ['moth', 'Moth'],
+    ['monad', 'Monad'],
+    ['rose', 'Rose'],
+    ['blackSun', 'Black sun'],
+  ];
 
   /** The handoff's boards, by name (docs/handoff/end-screen/screens). */
   const BOARDS: Record<string, string> = Object.fromEntries(
@@ -26,12 +37,13 @@
   let picked = $state<string | null>(params.get('v'));
   let show = $state<Show>((params.get('show') as Show) ?? 'screen');
   let fit = $state(params.get('fit') !== '0');
+  let circle = $state<PlateName | null>((params.get('c') as PlateName | null) || null);
   /**
    * The frame: made once, with the first state, and kept (main.ts says
    * why); every state after it is posted to it and set in place.
    */
   let frameEl = $state<HTMLIFrameElement>();
-  const firstSrc = untrack(() => `endscreen.html?scene=${encodeURIComponent(current.key)}`);
+  const firstSrc = untrack(() => `endscreen.html?scene=${encodeURIComponent(current.key)}${circle ? `&circle=${circle}` : ''}`);
   /** Shows `key` in the frame (again, for Replay: its entrance plays anew). */
   const send = (key: string) => frameEl?.contentWindow?.postMessage({ endscreen: 'scene', key } satisfies SceneMessage, location.origin);
   // The frame says when it listens, and what it shows: a state picked while it loaded follows then.
@@ -58,7 +70,11 @@
     img.src = board;
   });
   const showing = $derived<Show>(board ? show : 'screen');
-  const src = $derived(`endscreen.html?scene=${encodeURIComponent(current.key)}`);
+  const src = $derived(`endscreen.html?scene=${encodeURIComponent(current.key)}${circle ? `&circle=${circle}` : ''}`);
+  function pickCircle(name: PlateName | null) {
+    circle = name;
+    frameEl?.contentWindow?.postMessage({ endscreen: 'circle', name } satisfies CircleMessage, location.origin);
+  }
 
   // The room the panes have, to scale the window into.
   let paneW = $state(0);
@@ -77,6 +93,7 @@
     if (picked) p.set('v', picked);
     if (show !== 'screen') p.set('show', show);
     if (!fit) p.set('fit', '0');
+    if (circle) p.set('c', circle);
     history.replaceState(null, '', `?${p}`);
   });
   $effect(() => {
@@ -124,6 +141,11 @@
         <button class:on={showing === 'screen'} onclick={() => (show = 'screen')}>Screen</button>
         <button class:on={showing === 'board'} disabled={!board} onclick={() => (show = 'board')}>Board</button>
         <button class:on={showing === 'both'} disabled={!board} onclick={() => (show = 'both')}>Side by side</button>
+      </div>
+      <div class="seg" role="group" aria-label="Circle">
+        {#each CIRCLES as [name, label] (label)}
+          <button class:on={circle === name} onclick={() => pickCircle(name)}>{label}</button>
+        {/each}
       </div>
       <div class="seg">
         <button class:on={fit} onclick={() => (fit = !fit)}>{fit ? 'Fit' : '1:1'}</button>

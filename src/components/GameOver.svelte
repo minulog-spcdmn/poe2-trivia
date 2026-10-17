@@ -7,6 +7,8 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import { endCircle } from './gameCircles';
+  import { circleNamed } from './circles';
+  import { endCircleChoice } from '../lib/endCircleChoice.svelte';
   import WatchToggle from './WatchToggle.svelte';
   import WatchEye from './WatchEye.svelte';
   import StandingMark from './StandingMark.svelte';
@@ -81,9 +83,11 @@
   // ---- Delve -------------------------------------------------------------
   const run = $derived(s.delve ?? null);
   // The circle behind the result: the eye, or after a Delve, where everyone
-  // perished, the moth (built ahead as the game went, gameCircles.ts);
-  // hollow, its heart's figure and glory left out round the avatars.
-  const Circle = $derived(endCircle(s));
+  // perished, the moth (built ahead as the game went, gameCircles.ts), or the
+  // one picked on the end screen's test page; hollow round one avatar (its
+  // heart's figure and glory left out, a plain frame in place of a busy
+  // one), whole where several share the heart round its middle.
+  const Circle = $derived((endCircleChoice.name && circleNamed(endCircleChoice.name)) || endCircle(s));
   const solo = $derived(!!run && !isGroupRun(s));
   const together = $derived(!!run && !solo);
   /** Whose run this device tells: online its player, on one device its one delver. */
@@ -514,8 +518,8 @@
         <div class="plate" aria-hidden="true" in:scale={{ start: 0.85, duration: 900 }}>
           <div class="veil">
             <div class="inner">
-              <!-- The eye, or after a Delve the moth, hollow; a run short of your best in worn grey. -->
-              <Circle size="100%" hollow color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
+              <!-- The eye, or after a Delve the moth, hollow round one avatar; a run short of your best in worn grey. -->
+              <Circle size="100%" hollow={!!winner && !together} color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
             </div>
           </div>
         </div>
