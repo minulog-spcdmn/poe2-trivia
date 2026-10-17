@@ -327,7 +327,7 @@ export default defineConfig(({ command, mode }) => {
           // (src/hoverPage), the end screen's (src/endscreenPreview) and the
           // hub linking them all (dev.html): the dev server serves them by
           // itself; of the builds only the beta has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html' } : {}),
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html', circle: 'circle.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },
