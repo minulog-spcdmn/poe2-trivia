@@ -322,7 +322,9 @@ export class Embers {
    * Follows a Delve (the surface outside one): `shown` is the scene as shown,
    * whose look they take; `aim` the scene it heads for. An ember starting a
    * new life burns in the stratum `aim` is in, or the one before while it is
-   * still turning, so none turns back while the depth eases in.
+   * still turning, so none turns back while the depth eases in. Their
+   * strata and turns are taken as they are now (the next step goes by
+   * these, whatever becomes of the objects), the look by reference.
    */
   descend(shown: Descent, aim: { stratum: number; turn: number } = shown) {
     this.look = shown.look;
@@ -453,8 +455,9 @@ export class Embers {
    * Works out how ember `i` moves this step under motion `m` (see
    * emberMotion.ts) into the m* fields: its velocity (px/s), its sway and
    * curl (px off where it is), its size and brightness against its own,
-   * its flicker, and whether an eddy has swallowed it. `v0` is its classic
-   * rise (px/s), `cool` how far its zone has cooled.
+   * its flicker, and whether an eddy has swallowed it. It reads the screen
+   * from (sw, sh), and its classic rise (px/s) and how far its zone has
+   * cooled from sv0 and scool, which the caller sets first.
    */
   private sample(m: EmberMotion, i: number, e: Ember) {
     const t = this.t;
@@ -522,7 +525,6 @@ export class Embers {
     this.mrate = m.flickerRate;
     this.mgone = gone;
   }
-
 
   /**
    * Advances by `dt` seconds and writes (x, y, size, brightness) per ember.
@@ -702,10 +704,14 @@ export class Embers {
     // the stratum's glints (fewer on a narrow screen), in the walls or, as
     // the stratum spreads them, anywhere.
     const narrow = 0.55 + 0.45 * Math.min(1, w / 1100);
+    // (The look's numbers read once, not in the loops: off looks of many shapes, each read can hand back a new heap number.)
+    const glints = look.glints;
+    const spread = look.spread;
+    const lookBright = look.bright;
     for (let k = 0; k < GLINTS; k++) {
       const g = this.glintList[k];
       const i = EMBERS + k;
-      const amount = look.glints * (k < WALL_GLINTS ? 1 - look.spread : look.spread);
+      const amount = glints * (k < WALL_GLINTS ? 1 - spread : spread);
       const show = Math.min(1, Math.max(0, (amount - g.gate / narrow) / 0.15 + 1));
       const tw = 0.5 + 0.5 * Math.sin(this.glintT * g.rate + g.phase);
       // The ones out in the open drift slowly past, the larger (nearer) faster.
@@ -725,6 +731,7 @@ export class Embers {
     // along the floor. (Thrown up here, not in a call of its own: a burst
     // comes too seldom for a call to be compiled, and run as it is written,
     // each sum makes a new heap number.)
+    let thrown = false;
     let throwing = 0;
     let burstX = 0;
     let burstBurn = 0;
@@ -735,9 +742,9 @@ export class Embers {
         burstBurn = this.burstStratum();
         burstX = (0.06 + r() * 0.88) * w;
         throwing = Math.round(7 + 10 * look.burst);
+        thrown = true;
       }
     }
-    const thrown = throwing > 0;
     const sp = this.sparks;
     const drag = Math.exp(-dt * 1.5);
     const drift = -40 * lift * (1 - drag);
@@ -770,7 +777,7 @@ export class Embers {
       pos[i * 4] = sp[o];
       pos[i * 4 + 1] = sp[o + 1];
       pos[i * 4 + 2] = (1.1 + 0.5 * (j % 3)) * this.scale + SIZE_STRIDE * entryOf(burn);
-      pos[i * 4 + 3] = Math.max(0, left) ** 1.4 * 1.5 * (0.75 + 0.25 * Math.sin(t * 23 + j * 2.1)) * look.bright;
+      pos[i * 4 + 3] = Math.max(0, left) ** 1.4 * 1.5 * (0.75 + 0.25 * Math.sin(t * 23 + j * 2.1)) * lookBright;
     }
     if (thrown) this.burstIn = (2.5 + r() * 4.5) / (0.35 + 0.65 * look.burst);
     // Sort the embers into the tiles their glow reaches, so each pixel of

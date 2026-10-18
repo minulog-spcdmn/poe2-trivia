@@ -497,6 +497,7 @@ test('a step allocates (almost) nothing once settled', async (t) => {
     t.diagnostic(`stratum ${k}: ${windows.join(' and ')} bytes, kept or not`);
     // Under 2 kB as measured, from a sampler that counts about every 64 bytes. One small object a step
     // (a number handed back boxed, a closure, a spread) is 16 bytes or more: 32 kB over a window.
-    assert.ok(bytes < 8_000, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
+    // (Failing with nothing changed in the embers: a Node whose JIT compiles later than the warm-up allows.)
+    assert.ok(bytes < 8_000, `stratum ${k}: ${bytes} bytes over ${STEPS} steps, kept or not`);
   });
 });
