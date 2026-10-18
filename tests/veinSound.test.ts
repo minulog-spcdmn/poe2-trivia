@@ -15,7 +15,7 @@ const PICKS = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'vei
   moments: Record<'veinStrike' | 'veinMined' | 'veinStrain1' | 'veinStrain2', { soften: number; varyPitch: number; varyGain: number; after?: number; layers: Picked[] }>;
 };
 
-/** The board's candidates, by the names they have in public/sfx (the crack cut to the 3.5 s picked). */
+/** The board's candidates, by the names they have in public/sfx (each the board's file as it is). */
 const FILES: Record<string, string> = {
   'strike-760566': 'vein-pick',
   'strike-431019': 'vein-stone-hit',
@@ -31,13 +31,11 @@ const FILES: Record<string, string> = {
   'tunnel-636124': 'amb-vein-3',
 };
 /**
- * dB each was moved by to sit in line with the game (K-weighted loudness
- * through its mix): the strike up to the card pick it replaces, the first
- * crack up to 4 LU under the second (as picked it was quieter than any other
- * sound in the game), and the tunnel down so that the vein's whole mix sits
- * at the zones' average.
+ * dB each was moved by to sit in line with the game: the tunnel down so that
+ * the vein's whole mix sits at the zones' average. The moments were leveled
+ * on the board itself.
  */
-const LEVEL = { veinStrike: 1, veinMined: 0, veinStrain1: 8, veinStrain2: 0, tunnel: -3 };
+const LEVEL = { veinStrike: 0, veinMined: 0, veinStrain1: 0, veinStrain2: 0, tunnel: -3 };
 
 test("a vein's moments are as picked on its sound board, leveled", () => {
   for (const [id, m] of Object.entries(PICKS.moments)) {
@@ -45,22 +43,22 @@ test("a vein's moments are as picked on its sound board, leveled", () => {
     assert.deepEqual({ soften: game.soften, varyPitch: game.varyPitch, varyGain: game.varyGain }, { soften: m.soften, varyPitch: m.varyPitch, varyGain: m.varyGain }, id);
     assert.deepEqual(
       game.layers,
-      m.layers.map(({ file, gain, rate, delay, hp, lp, send }) => ({ file: FILES[file] ?? file, gain: gain + LEVEL[id as keyof typeof LEVEL], rate, delay, hp, lp, send })),
+      m.layers.map(({ file, gain, rate, delay, hp, lp, send, len }) => ({ file: FILES[file] ?? file, gain: gain + LEVEL[id as keyof typeof LEVEL], rate, delay, hp, lp, send, ...(len > 0 ? { len } : {}) })),
       id,
     );
     if (m.after !== undefined) assert.equal(VEIN_AFTER[id as keyof typeof VEIN_AFTER], m.after, id);
   }
 });
 
-test("a vein's tunnel is as picked, leveled, and only a cut that was picked is baked into a file", () => {
+test("a vein's tunnel is as picked, leveled, and its loops play whole", () => {
   const { layers, ...rest } = VEIN_AMBIENCE;
   const { layers: picked, ...pickedRest } = PICKS.vein;
   assert.deepEqual(rest, pickedRest);
   assert.deepEqual(layers, picked.map(({ file, gain, lp, rate, send }) => ({ file: FILES[file], gain: gain + LEVEL.tunnel, lp, rate, send })));
-  // Every picked layer starts at its file's start; the one cut short is the crack, whose file is that cut.
+  // Every picked layer starts at its file's start (the game has no start offset), and a loop is never cut.
   const all = [...picked, ...Object.values(PICKS.moments).flatMap((m) => m.layers)];
   assert.ok(all.every((l) => l.start === 0));
-  assert.deepEqual(all.filter((l) => l.len > 0).map((l) => FILES[l.file]), ['vein-crack']);
+  assert.ok(picked.every((l) => l.len === 0));
 });
 
 test("the tunnel's loops are fetched before the first vein can turn up", () => {

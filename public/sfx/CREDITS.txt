@@ -158,8 +158,8 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by abstraktgeneriert, https://freesound.org/s/348947/
   vein-crumble-3.mp3   Stone Crumble 2 (a vein's walls cracking, worse)
                        by Kastenfrosch, https://freesound.org/s/521956/
-  vein-crack.mp3       Cracking Earthquake (cracking soil, cracking stone),
-                       its first 3.5 s (a vein's walls cracking, worse)
+  vein-crack.mp3       Cracking Earthquake (cracking soil, cracking stone)
+                       (a vein's walls cracking, worse)
                        by uagadugu, https://freesound.org/s/222521/
   amb-vein-1.mp3       abandoned mine (an Azurite Vein's tunnel)
                        by wkalmar, https://freesound.org/s/871712/

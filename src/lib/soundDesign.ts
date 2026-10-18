@@ -6,7 +6,12 @@
 
 import type { Sfx } from './sound';
 
-export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number };
+/**
+ * `len` (s of the recording, before `rate`): play only that much, dying away
+ * over its last 1.5 s (see playLayer in lib/sound.ts), as cut on the sound
+ * board; the file itself stays whole.
+ */
+export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number; len?: number };
 export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyGain: number };
 
 /**
@@ -492,8 +497,8 @@ export const MOMENTS: Record<Sfx, Moment> = {
     varyPitch: 0.03,
     varyGain: 1,
     layers: [
-      { file: 'vein-crack', gain: -28, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.6 },
-      { file: 'vein-crumble-3', gain: -32, rate: 1, delay: 400, hp: 20, lp: 20000, send: 0.6 },
+      { file: 'vein-crack', gain: -28, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.6, len: 4.47 },
+      { file: 'vein-crumble-3', gain: -32, rate: 1, delay: 400, hp: 20, lp: 20000, send: 0.6, len: 2.16 },
       { file: 'layer-sub-2', gain: -32, rate: 0.6, delay: 0, hp: 20, lp: 400, send: 0.5 },
     ],
   },

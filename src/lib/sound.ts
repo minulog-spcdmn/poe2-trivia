@@ -535,9 +535,14 @@ export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: 
   return f;
 }
 
+/** A layer cut short (Layer's `len`) dies away over at most this long (s), as the sound board cuts it. */
+const CUT_FADE = 1.5;
+
 /**
  * One layer: high-pass, low-pass and the "soften" dip around 3.2 kHz, then
  * level and reverb send. Returns its source and level, to stop it early (see sfx).
+ * A layer with a `len` stops there, dying away over its last CUT_FADE s
+ * ((1 - p)³, a sound settling) on a level of its own, which stopping early leaves be.
  * `hold` (s): the layer lasts that long from the moment's start, looped
  * should its recording run out sooner, and then fades out. `at` (s): the
  * moment starts that long from now, on the audio clock.
@@ -557,16 +562,23 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
   }
   const g = ac.createGain();
   g.gain.value = db(l.gain + gainDb);
-  src
+  let head: AudioNode = src
     .connect(filter(ac, 'highpass', l.hp))
     .connect(filter(ac, 'lowpass', l.lp))
-    .connect(filter(ac, 'peaking', 3200, 1, -soften))
-    .connect(g)
-    .connect(into?.dry ?? b.master);
+    .connect(filter(ac, 'peaking', 3200, 1, -soften));
+  const cut = l.len ? l.len / src.playbackRate.value : 0;
+  if (cut > 0) {
+    const fade = Math.min(CUT_FADE, cut * 0.43);
+    const out = ac.createGain();
+    out.gain.setValueCurveAtTime(Float32Array.from({ length: 64 }, (_, i) => (1 - i / 63) ** 3), start + cut - fade, fade);
+    head = head.connect(out);
+  }
+  head.connect(g).connect(into?.dry ?? b.master);
   const send = ac.createGain();
   send.gain.value = l.send;
   g.connect(send).connect(into?.wet ?? b.wet);
   src.start(start);
+  if (cut > 0) src.stop(start + cut);
   if (hold !== undefined) {
     const end = Math.max(start, begin + hold);
     g.gain.setValueAtTime(g.gain.value, end);
