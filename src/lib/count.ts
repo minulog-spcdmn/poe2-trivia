@@ -169,6 +169,15 @@ export function countEvent(name: string) {
   send({ p: name, t: name, e: 'true', ns: 'true' });
 }
 
+/**
+ * A step a visit reached ("reach/played", "reach/finished"): counted the way
+ * visits are, once a visitor in eight hours (no `ns`), so set against the
+ * visits it says what share of visitors got that far.
+ */
+export function countReach(name: string) {
+  send({ p: name, t: name, e: 'true' });
+}
+
 const arrivals = new Set<string>();
 /** An event that comes with arriving (a link opened): once a page load, not on coming back. */
 export function countArrival(name: string) {
@@ -213,6 +222,17 @@ export function gameEvents(prev: GameState | null, next: GameState, hotSeat: boo
   if (!playing(prev) && playing(next)) return [`play/${key}`, `size/${key}-${partySize(next)}`];
   if (!decided(next) || (decided(prev) && prev.delve?.startedAt === next.delve?.startedAt)) return [];
   return next.delve ? [`end/${key}`, delveEndEvent(shownDepth(teamDepth(next)))] : [`end/${key}`];
+}
+
+/**
+ * The steps a state change reaches on any device in the game, host, guest
+ * or hot-seat (countReach): a game starting ("reach/played") and one
+ * decided ("reach/finished"). Nothing for a game picked up after a reload.
+ */
+export function reachEvents(prev: GameState | null, next: GameState): string[] {
+  if (!prev) return [];
+  if (!playing(prev) && playing(next)) return ['reach/played'];
+  return decided(next) && !decided(prev) ? ['reach/finished'] : [];
 }
 
 /** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after. */

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { GameCounts, flipSkip, isToggleHash, type SkipStore, countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, referrerOf } from '../src/lib/count.ts';
+import { GameCounts, flipSkip, isToggleHash, type SkipStore, countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, reachEvents, referrerOf } from '../src/lib/count.ts';
 import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, versionProblem } from '../src/lib/protocol.ts';
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
@@ -150,4 +150,17 @@ test('a toggle flips the opt-out both ways, and says so when the browser cannot 
   works = false;
   assert.equal(flipSkip(store), 'unsaved');
   assert.equal(skip, false);
+});
+
+test('every device in a game marks the steps its visitor reached: played, then finished', () => {
+  const lobby = game('race', 4);
+  const started = { ...lobby, phase: 'choosing' as const };
+  const over = { ...started, phase: 'over' as const };
+  assert.deepEqual(reachEvents(lobby, started), ['reach/played']);
+  assert.deepEqual(reachEvents(started, { ...started, phase: 'question' }), []);
+  assert.deepEqual(reachEvents(started, over), ['reach/finished']);
+  assert.deepEqual(reachEvents(over, over), []);
+  assert.deepEqual(reachEvents(over, { ...over, phase: 'choosing' }), ['reach/played']);
+  // A game picked up after a reload was counted before.
+  assert.deepEqual(reachEvents(null, started), []);
 });

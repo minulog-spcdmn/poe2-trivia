@@ -10,6 +10,7 @@
   import DailyTable from './DailyTable.svelte';
   import DayColumns from './DayColumns.svelte';
   import Delta from './Delta.svelte';
+  import { fitChart } from './fitChart.svelte';
   import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -20,8 +21,15 @@
   let itemOf = $state<((day: string) => DailyItem | null) | null>(null);
   /** The days Today's unique asked something. */
   const days = $derived(dailyDays(L).filter((d) => asked(d.day)));
+  /** The chart starts on the first day it asked: the days before it would only be empty. */
+  const from = $derived(Math.max(0, L.days.findIndex(asked)));
   const answered = $derived(days.filter((d) => d.answers));
-  const ranked = $derived(hardestAndEasiest(days));
+  let innerWidth = $state(1400);
+  let innerHeight = $state(900);
+  /** A big monitor, or one on its side, fits the view on one screen: three of each, and the chart gives up what runs past it. */
+  const big = $derived(innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900));
+  const chart = fitChart({ on: () => big, base: () => (big ? 236 : 340), least: 160 });
+  const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
   const before = $derived(dailyAverage(read.before));
   const total = $derived(L.daily.right + L.daily.wrong);
@@ -36,6 +44,8 @@
   let all = $state(false);
   const newestFirst = $derived([...answered].reverse());
 </script>
+
+<svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
   <p class="what">
@@ -62,14 +72,14 @@
 
   <Section title="Players a day" says="Each column is a day's players: those who named the item at its foot, those who missed it above.">
     <DayColumns
-      days={L.days}
-      gold={L.daily.rightPerDay}
-      grey={L.daily.wrongPerDay}
+      days={L.days.slice(from)}
+      gold={L.daily.rightPerDay.slice(from)}
+      grey={L.daily.wrongPerDay.slice(from)}
       names={{ gold: 'Named it', grey: 'Missed it' }}
       {weekly}
       label="Players of Today's unique a {weekly ? 'week' : 'day'}, named and missed"
       note={(d) => itemOf?.(d)?.name ?? ''}
-      height={340}
+      height={chart.height}
     />
   </Section>
 
@@ -147,7 +157,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .soft {
     color: var(--a-muted);
@@ -177,6 +186,16 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  /* A monitor on its side: the two side by side, so the view is one screen. */
+  @media (orientation: portrait) and (min-width: 900px) {
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* Half a screen leaves their bars a sliver; the share beside them says it. */
+    .two :global(.table .bar) {
+      display: none;
+    }
+  }
   @media (max-width: 760px) {
     .figures {
       grid-template-columns: minmax(0, 1fr);
@@ -187,6 +206,38 @@
     }
     .what {
       font-size: 1.05rem;
+    }
+  }
+  /* A big monitor: every day down the right, the rest on the left, so the view is one screen. */
+  @media (min-width: 1900px) {
+    .stack {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      grid-template-areas:
+        'what what'
+        'figures every'
+        'chart every'
+        'two every'
+        'foot foot';
+      align-items: start;
+    }
+    .what {
+      grid-area: what;
+    }
+    .figures {
+      grid-area: figures;
+    }
+    .two {
+      grid-area: two;
+    }
+    .foot {
+      grid-area: foot;
+    }
+    .stack > :global(.section:nth-of-type(1)) {
+      grid-area: chart;
+    }
+    .stack > :global(.section:last-of-type) {
+      grid-area: every;
+      align-self: stretch;
     }
   }
 </style>

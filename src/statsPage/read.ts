@@ -1,12 +1,13 @@
 // What Analytics reads for a period, and the periods it offers.
 
 import type { Named } from './api';
+import type { Changes } from './changes';
 import type { Counts } from './model';
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 3;
+  v: 5;
   span: number;
   from: string;
   to: string;
@@ -19,8 +20,15 @@ export interface Read {
   systems: Named[];
   countries: Named[];
   refs: Named[];
+  /** The period before's, to see who brought more or fewer (insights.ts moversOf). */
+  countriesBefore: Named[];
+  refsBefore: Named[];
+  /** The sites that brought each of the period's busiest days (insights.ts spikesOf), by day. */
+  spikeRefs: Record<string, Named[]>;
   at: number;
   complete: boolean;
+  /** What came in since the read before it (changes.ts keptChanges). */
+  changes?: Changes | null;
 }
 
 export interface Period {
@@ -47,5 +55,6 @@ export const VIEWS = [
   { value: 'games', name: 'Games' },
   { value: 'daily', name: "Today's unique" },
   { value: 'joining', name: 'Joining' },
+  { value: 'groups', name: 'Groups' },
 ] as const;
 export type View = (typeof VIEWS)[number]['value'];

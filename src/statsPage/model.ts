@@ -72,7 +72,37 @@ export interface Counts {
   daily: { right: number; wrong: number; rightPerDay: number[]; wrongPerDay: number[] };
   links: { invite: number; delve: number };
   joins: { via: Via; tried: number; joined: number }[];
+  /** Tries to join, and those let in, a day, every way in together. */
+  joinsPerDay: { tried: number[]; joined: number[] };
   failures: { key: string; label: string; host: boolean; count: number }[];
+  /** Every failure a day, all causes together. */
+  failuresPerDay: number[];
+  /** The steps visits reached a day, counted once a visitor like visits (count.ts countReach): played a game, finished one. */
+  reach: { playedPerDay: number[]; finishedPerDay: number[] };
+  /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours. */
+  week: { visitors: number[][] | null; games: number[][] | null };
+}
+
+/** Monday 0 to Sunday 6, of a day (YYYY-MM-DD). */
+export const weekday = (day: string) => (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7;
+
+/**
+ * Paths' counts by weekday and hour: 7 rows (Monday first) of 24 hours, as
+ * GoatCounter counted them in the account's zone, only `days` taken. Null
+ * when a path with counts came without its hours. (On a day the clocks
+ * change, the hours after the change sit an hour off.)
+ */
+export function weekHours(paths: PathCount[], days: string[]): number[][] | null {
+  const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  const wanted = new Set(days);
+  for (const p of paths) {
+    if (!p.hours) {
+      if (p.count > 0) return null;
+      continue;
+    }
+    for (const [day, hours] of Object.entries(p.hours)) if (wanted.has(day)) hours.forEach((n, h) => (grid[weekday(day)][h] += n));
+  }
+  return grid;
 }
 
 /** Every day from `from` to `to` (YYYY-MM-DD, both included). */
@@ -170,8 +200,51 @@ export function countsOf(paths: PathCount[], days: string[], zone?: string): Cou
     })(),
     links: { invite: count('open/invite-link'), delve: count('open/delve-link') },
     joins: VIAS.map((via) => ({ via, tried: count(`join/${via}`), joined: count(`joined/${via}`) })),
+    joinsPerDay: {
+      tried: perDay((p) => VIAS.some((via) => p === `join/${via}`)),
+      joined: perDay((p) => VIAS.some((via) => p === `joined/${via}`)),
+    },
     failures,
+    failuresPerDay: perDay((p) => p.startsWith('error/')),
+    reach: { playedPerDay: perDay((p) => p === 'reach/played'), finishedPerDay: perDay((p) => p === 'reach/finished') },
+    week: {
+      visitors: weekHours(paths.filter((p) => p.path === '/'), days),
+      games: weekHours(paths.filter((p) => played.has(p.path)), days),
+    },
   };
+}
+
+/**
+ * A weekHours grid as an hour's average on that weekday: each weekday's row
+ * over how many of `days` fell on it (a month has four or five of each).
+ */
+export function weekAverage(grid: number[][], days: string[]): number[][] {
+  const many = Array<number>(7).fill(0);
+  for (const d of days) many[weekday(d)]++;
+  return grid.map((row, wd) => row.map((n) => (many[wd] ? n / many[wd] : 0)));
+}
+
+/** The busiest hour of a grid: its weekday (Monday 0), hour and figure, or null with nothing in it. */
+export function busiest(grid: number[][]): { day: number; hour: number; value: number } | null {
+  let best: { day: number; hour: number; value: number } | null = null;
+  grid.forEach((row, day) => row.forEach((value, hour) => value > (best?.value ?? 0) && (best = { day, hour, value })));
+  return best;
+}
+
+/**
+ * Seats taken in games: every game's players added up, the people a period's
+ * games brought together (one player in three games is three). An older
+ * range of sizes counts by its middle. `games`: those whose size is known.
+ */
+export function seatsOf(rows: ModeRow[]): { seats: number; games: number } {
+  let seats = 0;
+  let games = 0;
+  for (const r of rows)
+    for (const s of r.sizes) {
+      seats += ((s.from + s.to) / 2) * s.count;
+      games += s.count;
+    }
+  return { seats: Math.round(seats), games };
 }
 
 /** A mode over both places it's played: games started and finished, and where. */
@@ -294,6 +367,9 @@ export interface DailyDay {
   answers: number;
   named: number | null;
 }
+
+/** Today's unique's answers each day, named or missed. */
+export const answersPerDay = (c: Counts): number[] => c.daily.rightPerDay.map((r, i) => r + (c.daily.wrongPerDay[i] ?? 0));
 
 export function dailyDays(c: Counts): DailyDay[] {
   return c.days.map((day, i) => {

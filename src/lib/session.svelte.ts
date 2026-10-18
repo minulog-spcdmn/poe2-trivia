@@ -50,7 +50,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
-import { GameCounts, countEvent, countFailure, counting, type Failure, type JoinVia } from './count';
+import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -2435,9 +2435,15 @@ class Session {
   }
 
   private gameCounts = new GameCounts();
-  /** A game starting or decided, counted once a game by the device that runs it (count.ts gameEvents); nothing to work out where nothing counts. */
+  /**
+   * A game starting or decided: on every device as a step its visitor
+   * reached (count.ts reachEvents), and once a game by the device that runs
+   * it (gameEvents). Nothing to work out where nothing counts.
+   */
   private notePlay(prev: GameState | null, next: GameState) {
-    if (!counting || (this.mode !== 'local' && this.mode !== 'host')) return;
+    if (!counting) return;
+    for (const e of reachEvents(prev, next)) countReach(e);
+    if (this.mode !== 'local' && this.mode !== 'host') return;
     for (const e of this.gameCounts.events(prev, next, this.mode === 'local')) countEvent(e);
   }
 
