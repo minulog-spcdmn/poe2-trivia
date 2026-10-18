@@ -873,10 +873,10 @@ each a sentence, and sets the visitors from a country, or on a system or
 a kind of device, against everyone: who played a game at all (guests
 too), the games they start, Today's unique, joins and failures. A mode
 can be picked with them (`#groups/place/Germany/mode/delve`), or alone,
-for where it's played; a country and a device never together, as
-GoatCounter counts the two apart. Below, the groups side by side in a
-table, by country, device or system (`slices.ts`); every country,
-system and mode name across the views opens its group. GoatCounter keeps no visit with its
+each showing where it's played most for its visitors, a bar a country
+(`slices.ts`); a country and a device never together, as GoatCounter
+counts the two apart. Every country, system and mode name across the
+views opens its group. GoatCounter keeps no visit with its
 events, but breaks any set of paths down by country and by system, so
 each thing people do is read once for each, only while that view is
 open, and kept half an hour. On the dev server and the beta,

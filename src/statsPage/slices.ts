@@ -246,9 +246,9 @@ export function lookedAt(s: Slices): SegmentRow[] {
 /** Something a group does unlike everyone, said in a line (GroupsView words it). */
 export interface Standout {
   who: Who;
-  what: 'mode' | 'played' | 'games' | 'daily' | 'joins';
+  what: 'mode' | 'played' | 'games' | 'daily' | 'joins' | 'failures';
   mode?: Mode;
-  /** The group's figure and everyone's: a mode's share of games, a percent of visitors, games for 100 visitors, a percent of joins. */
+  /** The group's figure and everyone's: a mode's share of games, a percent of visitors, games for 100 visitors, a percent of joins, failures for 100 visitors. */
   mine: number;
   all: number;
   /** Better for the game (more play, more answers, joins that work), worse, or neither (a mode played more). */
@@ -260,7 +260,8 @@ export interface Standout {
 /**
  * What stands out among the groups, most first: a mode far more of their
  * games, more or fewer playing at all, many more or fewer games started,
- * Today's unique answered more or less, joins that fail more. Only groups big enough that a handful of players can't make it up
+ * Today's unique answered more or less, joins that fail more, far more
+ * failures met. Only groups big enough that a handful of players can't make it up
  * (`min` visitors, and enough games or tries behind the figure).
  */
 export function standouts(s: Slices, top = 6, min = 30): Standout[] {
@@ -290,6 +291,9 @@ export function standouts(s: Slices, top = 6, min = 30): Standout[] {
     }
     if (p.joins !== null && all.joins !== null && p.tried >= 20 && Math.abs(p.joins - all.joins) >= 8)
       out.push({ who, what: 'joins', mine: p.joins, all: all.joins, tone: p.joins > all.joins ? 'up' : 'down', score: weigh(Math.max(1, 100 - p.joins), Math.max(1, 100 - all.joins), p.tried) });
+    // Only more: a group meeting fewer failures is no news.
+    if (p.failures !== null && all.failures && p.failed >= 10 && p.failures / all.failures >= 1.4)
+      out.push({ who, what: 'failures', mine: p.failures, all: all.failures, tone: 'down', score: weigh(p.failures, all.failures, p.failed) });
   }
   // A mix of findings: at most two of a kind, and two about one group.
   const kinds = new Map<string, number>();

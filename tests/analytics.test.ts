@@ -609,7 +609,7 @@ test('what stands out among the groups: big enough to tell, a mix, the largest f
   assert.ok(found.length > 0 && found.length <= 6);
   // The made-up Germans lean to Delve.
   assert.ok(found.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
-  for (const what of ['mode', 'played', 'games', 'daily', 'joins']) assert.ok(found.filter((f) => f.what === what).length <= 2);
+  for (const what of ['mode', 'played', 'games', 'daily', 'joins', 'failures']) assert.ok(found.filter((f) => f.what === what).length <= 2);
   assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
   // Groups too small to tell apart say nothing.
   assert.deepEqual(standouts(SLICES, 6, 1000), []);

@@ -5,14 +5,12 @@
   // country and a device together, as GoatCounter counts the two apart.
   // Nothing picked: what stands out (slices.ts standouts), each a sentence
   // with its two figures drawn. Something picked: its few figures, each
-  // against everyone. Below, always, the groups side by side, a picked mode's
-  // figures where there is one. GoatCounter breaks a whole period down, not
-  // its days.
+  // against everyone; a mode, where it's played most for its visitors, a
+  // bar each. GoatCounter breaks a whole period down, not its days.
   import { fmt } from './chart';
-  import { MODES, MODE_NAMES, modesOf, type Mode } from './model';
+  import { MODES, MODE_NAMES, deviceOf, modesOf, type Mode } from './model';
   import type { Period, Read } from './read';
-  import Seg from './Seg.svelte';
-  import { countsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Group, type Kind, type Profile, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
+  import { countsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
 
   let {
     read,
@@ -66,6 +64,7 @@
       return { big: times(r), line: r > 1 ? `Visitors ${w} start ${times(r)} as many games each` : `Visitors ${w} start fewer games each`, mine: `${rate(f.mine)} games for 100 visitors`, all: rate(f.all) };
     if (f.what === 'daily')
       return { big: times(r), line: r > 1 ? `Visitors ${w} answer Today's unique ${times(r)} as often` : `Visitors ${w} answer Today's unique less often`, mine: `${pct(f.mine)} answered it`, all: pct(f.all) };
+    if (f.what === 'failures') return { big: times(r), line: `Visitors ${w} meet failures ${times(r)} as often`, mine: `${rate(f.mine)} for 100 visitors`, all: rate(f.all) };
     return { big: pct(f.mine), line: `Tries to join a room ${w} work ${f.mine < f.all ? 'less' : 'more'} often`, mine: `${pct(f.mine)} of tries worked`, all: pct(f.all) };
   }
 
@@ -93,78 +92,26 @@
   // ---- a mode on its own: as the rest of the page counts it (the groups' own read can come out a little apart) ----
   const modeGames = $derived(mode ? (modesOf(read.now.games.rows).find((m) => m.mode === mode)?.started ?? 0) : 0);
   const visits = $derived(read.now.visitors.total);
-  /** The country that plays a mode most for its visitors, among those big enough to tell. */
-  const keenest = $derived.by(() => {
-    if (!slices || !mode) return null;
-    const rate = (n: Record<Group, number>) => per100(n[mode], n.visit);
-    const best = segments(slices, 'place', 1000)
-      .filter((r) => known(r) && r.profile.visitors >= FEW && r.counts[mode] >= 10)
-      .sort((a, b) => rate(b.counts) - rate(a.counts))[0];
-    return best ? { who: best.who, rate: rate(best.counts) } : null;
+  // ---- where a mode is played most: each country's games of it for 100 visitors, against everyone's ----
+  /** Countries (systems, where a device or system is picked) big enough to tell, most for their visitors first; the picked one even where it isn't among them. */
+  const keen = $derived.by(() => {
+    if (!slices || !mode) return [];
+    const m = mode;
+    const rateOf = (r: SegmentRow) => per100(r.counts[m], r.counts.visit);
+    const every = segments(slices, who && who.kind !== 'place' ? 'system' : 'place', 1000).filter(known);
+    const big = every.filter((r) => r.counts.visit >= FEW).sort((a, b) => rateOf(b) - rateOf(a)).slice(0, 8);
+    const lost = who && !big.some((r) => isWho(r.who)) ? every.find((r) => isWho(r.who)) : undefined;
+    return [...big, ...(lost ? [lost] : [])].map((r) => ({ who: r.who, rate: rateOf(r), few: r.counts.visit < FEW }));
   });
-
-  // ---- side by side: a row a group, the picked one lit ----
-  const KINDS: { value: Kind; name: string }[] = [
-    { value: 'place', name: 'Countries' },
-    { value: 'device', name: 'Devices' },
-    { value: 'system', name: 'Systems' },
-  ];
-  /** The table's kind: the picked group's, until another is chosen for it. */
-  let chosen = $state<{ for: string; kind: Kind } | null>(null);
-  const whoKey = $derived(who ? `${who.kind}/${who.name}` : '');
-  const kind = $derived(chosen && chosen.for === whoKey ? chosen.kind : (who?.kind ?? 'place'));
-  const rows = $derived.by(() => {
-    if (!slices) return [];
-    const list = segments(slices, kind, kind === 'place' ? 12 : 8).filter(known);
-    // The picked group even where it's too small to be among them.
-    const lost = who && who.kind === kind && !list.some((r) => isWho(r.who)) ? segments(slices, kind, 1000).find((r) => isWho(r.who)) : undefined;
-    return lost ? [...list, lost] : list;
+  /** Everyone's games of the mode for 100 visitors, in the list's own counts. */
+  const keenAll = $derived.by(() => {
+    if (!slices || !mode) return 0;
+    const n = countsIn(slices, null, who && who.kind !== 'place' ? 'systems' : 'locations');
+    return per100(n[mode], n.visit);
   });
-  const base = $derived(slices ? countsIn(slices, null, dimOf(kind)) : null);
-  const baseProfile = $derived(slices ? profileIn(slices, null, dimOf(kind)) : null);
-
-  interface Col {
-    head: string;
-    unit: string;
-    of: (n: Record<Group, number>, p: Profile) => number | null;
-    show: (v: number) => string;
-    /** Set against everyone's in points (percents), or as a ratio. */
-    points?: boolean;
-    /** Which way is better, coloured green and red; null: told apart in gold, neither better nor worse. */
-    better: 'up' | 'down' | null;
-    /** Whether a row has enough behind this figure to colour it. */
-    enough?: (n: Record<Group, number>, p: Profile) => boolean;
-  }
-  const modeShare = (p: Profile, m: Mode) => (p.games ? p.modes.find((x) => x.mode === m)!.share : null);
-  const cols = $derived.by((): Col[] => {
-    if (mode) {
-      const M = MODE_NAMES[mode];
-      return [
-        { head: `${M} games`, unit: 'started', of: (n) => n[mode], show: fmt, better: null, enough: () => false },
-        { head: 'For 100 visitors', unit: `${M} games`, of: (n) => (n.visit ? per100(n[mode], n.visit) : null), show: rate, better: null, enough: (n) => n[mode] >= 10 },
-        { head: 'Part of their games', unit: `are ${M}`, of: (_, p) => modeShare(p, mode), show: pct, points: true, better: null, enough: (_, p) => p.games >= 20 },
-      ];
-    }
-    return [
-      ...(played ? [{ head: 'Played a game', unit: 'of visitors', of: (_: unknown, p: Profile) => p.played, show: pct, points: true, better: 'up' as const }] : []),
-      { head: 'Games started', unit: 'for 100 visitors', of: (_, p) => (p.visitors ? per100(p.games, p.visitors) : null), show: rate, better: 'up', enough: (_, p) => p.games >= 20 },
-      ...MODES.map((m): Col => ({ head: MODE_NAMES[m], unit: 'of their games', of: (_, p) => modeShare(p, m), show: pct, points: true, better: null, enough: (_, p) => p.games >= 20 })),
-      { head: "Today's unique", unit: 'of visitors answered', of: (_, p) => p.daily, show: pct, better: 'up' },
-      { head: 'Joins that work', unit: 'of tries', of: (_, p) => p.joins, show: pct, points: true, better: 'up', enough: (_, p) => p.tried >= 20 },
-      { head: 'Failures', unit: 'for 100 visitors', of: (_, p) => p.failures, show: rate, better: 'down', enough: (n) => n.failed >= 5 },
-    ];
-  });
-  /** A cell's colour: only where the row has enough behind it, and it's far enough from everyone's. */
-  function toneOf(c: Col, v: number | null, n: Record<Group, number>, p: Profile): string {
-    if (v === null || !base || !baseProfile || p.visitors < FEW || (c.enough && !c.enough(n, p))) return '';
-    const b = c.of(base, baseProfile);
-    if (b === null || !b) return '';
-    // A mode told apart as a finding is (slices.ts standouts): a quarter more or less of it; better or worse, by less.
-    if (c.better === null) return v / b >= 1.25 || v / b <= 1 / 1.25 ? 'lean' : '';
-    const far = c.points ? Math.abs(v - b) >= 5 : v / b >= 1.2 || v / b <= 1 / 1.2;
-    if (!far) return '';
-    return v > b === (c.better === 'up') ? 'up' : 'down';
-  }
+  const keenMax = $derived(Math.max(keenAll, ...keen.map((r) => r.rate), 0.1));
+  /** The picked group's row, or a picked kind of device's systems. */
+  const lit = (w: Who) => isWho(w) || (who?.kind === 'device' && deviceOf(w.name) === who.name);
 
   const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 </script>
@@ -185,6 +132,26 @@
     <span class="says {a.tone}">{a.says}</span>
     {#if max > 0}{@render pair(mine, all, max, a.tone, mineLabel, allLabel)}{/if}
   </div>
+{/snippet}
+
+{#snippet keenList(m: Mode)}
+  {#if keen.length}
+    <div class="tile wide">
+      <h3>Where {MODE_NAMES[m]} is played most, for its visitors</h3>
+      <ol class="from">
+        {#each keen as r (r.who.name)}
+          {@const lean = keenAll ? r.rate / keenAll : 1}
+          <li class:on={lit(r.who)}>
+            <a class="name pick" href={to(r.who, m)}>{whoName(r.who)}</a>
+            <span class="bar flat"><i style:width="{(100 * r.rate) / keenMax}%"></i><b class="mark" style:left="{(100 * keenAll) / keenMax}%"></b></span>
+            <b>{rate(r.rate)}</b>
+            <span class="lean">{#if !r.few && (lean >= 1.25 || lean <= 0.8)}{times(lean)} everyone{/if}</span>
+          </li>
+        {/each}
+      </ol>
+      <p class="hint">{MODE_NAMES[m]} games for 100 visitors; the line is everyone's, {rate(keenAll)}. Only those with {FEW} visitors or more{#if keen.some((r) => r.few)}, and the one picked{/if}.</p>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet chipFor(w: Who)}
@@ -228,8 +195,6 @@
     {@const allRate = per100(all[mode], all.visit)}
     {@const mineShare = share(mine[mode], picked.games)}
     {@const allShare = share(all[mode], everyone.games)}
-    {@const ofAll = share(mine[mode], all[mode])}
-    {@const ofVisits = share(mine.visit, all.visit)}
     <header class="head">
       <h2>{M} {from(who)}</h2>
       <p>{fmt(mine[mode])} games started {from(who)} in {period.now.toLowerCase()}, by {fmt(mine.visit)} visitors{#if mine.visit < FEW}; so few that a handful more or less changes a lot{/if}.</p>
@@ -237,8 +202,8 @@
     <div class="tiles">
       {@render tile(`${M} games for 100 visitors`, rate(mineRate), plain(against(mineRate, allRate)), mineRate, allRate, Math.max(mineRate, allRate), `${rate(mineRate)} ${from(who)}`, `everyone: ${rate(allRate)}`)}
       {@render tile('Part of their games', pct(mineShare), plain(against(mineShare, allShare, true)), mineShare, allShare, 100, `of their games are ${M}`, `everyone: ${pct(allShare)}`)}
-      {@render tile(`Of all ${M} games`, pct(ofAll), plain(against(ofAll, ofVisits, true, false, 'their share of visitors')), ofAll, ofVisits, Math.max(ofAll, ofVisits), `of ${M} games`, `of visitors: ${pct(ofVisits)}`)}
     </div>
+    {@render keenList(mode)}
   {:else if who && picked && everyone}
     {@const mineGames = per100(picked.games, picked.visitors)}
     {@const allGames = per100(everyone.games, everyone.visitors)}
@@ -284,16 +249,8 @@
       <div class="tiles">
         {@render tile('Part of all games', pct(share(modeGames, read.now.games.started)), { says: `of the ${fmt(read.now.games.started)} games started`, tone: 'flat' }, 0, 0, 0, '', '')}
         {@render tile('Started on a phone or tablet', pct(phones), plain(against(phones, phonesAll, true, false, 'all games')), phones, phonesAll, 100, `of ${M} games`, `all games: ${pct(phonesAll)}`)}
-        {#if keenest}
-          {@const allRate = per100(modeGames, visits)}
-          <div class="tile">
-            <h3>Played most, for its visitors</h3>
-            <b class="value flat"><a class="pick" href={to(keenest.who)}>{keenest.who.name}</a></b>
-            <span class="says flat">{rate(keenest.rate)} games for 100 visitors; {against(keenest.rate, allRate).says}</span>
-            {@render pair(keenest.rate, allRate, Math.max(keenest.rate, allRate), 'flat', `${rate(keenest.rate)} for 100 visitors`, `everyone: ${rate(allRate)}`)}
-          </div>
-        {/if}
       </div>
+      {@render keenList(mode)}
     {/if}
   {:else}
     <section aria-label="What stands out">
@@ -316,43 +273,6 @@
     </section>
   {/if}
 
-  <section class="side" aria-label="Side by side">
-    <div class="side-head">
-      <h2>{mode ? `${MODE_NAMES[mode]}, side by side` : 'Side by side'}</h2>
-      <Seg options={KINDS} value={kind} label="Groups to set side by side" onpick={(k) => (chosen = { for: whoKey, kind: k })} />
-    </div>
-    <div class="scroll-x">
-      <table class="table groups">
-        <thead>
-          <tr>
-            <th scope="col">{KINDS.find((k) => k.value === kind)?.name}</th>
-            <th scope="col" class="n">Visitors</th>
-            {#each cols as c (c.head)}<th scope="col" class="n">{c.head}<span class="unit">{c.unit}</span></th>{/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#if base && baseProfile}
-            <tr class="everyone">
-              <th scope="row">Everyone</th>
-              <td class="n">{fmt(base.visit)}</td>
-              {#each cols as c (c.head)}{@const v = c.of(base, baseProfile)}<td class="n">{v === null ? '–' : c.show(v)}</td>{/each}
-            </tr>
-          {/if}
-          {#each rows as r (r.who.name)}
-            <tr class:on={isWho(r.who)} class:few={r.profile.visitors < FEW}>
-              <th scope="row"><a class="pick" href={to(r.who)}>{whoName(r.who)}</a></th>
-              <td class="n">{fmt(r.profile.visitors)}</td>
-              {#each cols as c (c.head)}{@const v = c.of(r.counts, r.profile)}<td class="n {toneOf(c, v, r.counts, r.profile)}">{v === null ? '–' : c.show(v)}</td>{/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    <p class="hint">
-      {#if mode}Gold: far more or less of {MODE_NAMES[mode]} than everyone.{:else}Green and red: better or worse than everyone by enough to matter; gold: a mode far more or less of their games.{/if}
-      Greyed: fewer than {FEW} visitors, too few to tell.
-    </p>
-  </section>
   <p class="aside">
     How it's counted: a game counts on the device that runs it (the host's, or the one screen everyone plays on), so visitors who mostly join others' rooms start few games of their own{#if played}; "Played a game" counts guests too{/if}. GoatCounter counts countries and devices apart, so a country can't be narrowed to a device.
   </p>
@@ -594,73 +514,60 @@
     background: var(--a-before);
   }
 
-  /* ---- side by side: a row a group, everyone's on top, the picked lit ---- */
-  .side {
-    margin-top: 2.6rem;
+  /* ---- where a mode is played most: a bar each, everyone's a line across them ---- */
+  .from {
+    display: grid;
+    /* The names' column as wide as the longest name, so on a wide screen the bars start beside them. */
+    grid-template-columns: fit-content(15rem) minmax(5rem, 1fr) auto minmax(7rem, auto);
+    column-gap: 0.9rem;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    list-style: none;
   }
-  .side-head {
-    display: flex;
-    flex-wrap: wrap;
+  .from li {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.8rem 1.5rem;
-    margin-bottom: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--a-rule);
   }
-  .groups th,
-  .groups td {
-    padding-inline: 0.7rem;
+  .from li:last-child {
+    border-bottom: 0;
   }
-  /* Headings wrap, so the figures, not their names, set how wide a column is. */
-  .groups thead th {
-    vertical-align: bottom;
-    white-space: normal;
-  }
-  .groups thead th.n {
-    min-width: 5.5rem;
-  }
-  .unit {
-    display: block;
-    font-size: 0.85rem;
-    font-weight: 400;
-  }
-  .groups .everyone > * {
-    font-weight: 600;
-    color: var(--a-ink);
-    border-bottom-color: rgba(163, 152, 131, 0.4);
-  }
-  .groups tr.on > * {
-    background: rgba(217, 176, 98, 0.1);
-  }
-  .groups tr.on .pick {
+  .from li.on .pick {
     font-weight: 650;
     color: var(--gold-hi);
   }
-  .groups tr.few > * {
-    color: var(--a-muted);
+  .from .name {
+    justify-self: start;
   }
-  .groups td.up {
-    font-weight: 650;
-    color: var(--a-up);
+  .from .bar {
+    position: relative;
+    height: 0.75rem;
   }
-  .groups td.down {
-    font-weight: 650;
-    color: var(--a-down);
+  .from li.on .bar > i {
+    background: var(--gold-hi);
   }
-  .groups td.lean {
+  .mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--a-ink);
+    /* Edged dark, so it shows over a bar that reaches past it too. */
+    box-shadow: 0 0 0 1px rgba(10, 8, 6, 0.7);
+  }
+  .from b:not(.mark) {
     font-weight: 650;
+    text-align: right;
+    color: var(--a-ink);
+  }
+  .lean {
+    font-size: 0.95rem;
+    font-weight: 600;
     color: var(--a-now);
-  }
-  /* The names stay in sight while a phone scrolls the figures. */
-  .groups tbody th,
-  .groups thead th:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    background: var(--bg);
-    white-space: nowrap;
-  }
-  .groups tr.on th {
-    background: linear-gradient(rgba(217, 176, 98, 0.1), rgba(217, 176, 98, 0.1)), var(--bg);
   }
 
   .hint,
@@ -720,8 +627,11 @@
       width: 100%;
       margin-left: 0;
     }
-    .groups .unit {
-      font-size: 0.8rem;
+    .from {
+      grid-template-columns: minmax(0, 1fr) minmax(3rem, 1fr) auto;
+    }
+    .lean {
+      grid-column: 1 / -1;
     }
   }
 </style>
