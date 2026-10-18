@@ -1,7 +1,9 @@
 // Visits and a few game events, counted by GoatCounter (counter.ts):
-// no cookies, nothing kept in the browser, no IP addresses stored. Only the
-// game's own page at poe2.quest counts; the beta, the dev server and the dev
-// pages never do. datenschutz.html says what is sent, and vite.config.ts's
+// no cookies, no IP addresses stored, nothing kept in the browser but the
+// privacy page's opt-out, when it was asked for. Only the game's own page at
+// poe2.quest counts; the beta, the dev server and the dev pages never do, nor
+// a browser that asked not to be (countOptOut.ts: the privacy page's switch,
+// or Global Privacy Control). datenschutz.html says what is sent, and vite.config.ts's
 // CSP lets it through.
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
@@ -11,6 +13,7 @@ import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
+import { notCounted } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
@@ -39,13 +42,16 @@ if (counting && !seen) {
     if (document.visibilityState !== 'visible') return;
     document.removeEventListener('visibilitychange', look);
     seen = true;
-    for (const url of waiting.splice(0)) beacon(url);
+    const held = waiting.splice(0);
+    // Not if the privacy page was used to opt out while this page waited unseen.
+    if (!notCounted()) for (const url of held) beacon(url);
   };
   document.addEventListener('visibilitychange', look);
 }
 
 function send(params: Record<string, string>) {
-  if (!counting) return;
+  // Asked each time: the privacy page can set it while this page waits in the back-forward cache.
+  if (!counting || notCounted()) return;
   const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
   if (seen) beacon(url);
   else waiting.push(url);

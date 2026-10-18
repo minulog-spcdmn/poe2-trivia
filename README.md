@@ -840,9 +840,20 @@ their own tools, and a cheating host.
 ## Legal pages
 
 `impressum.html` (legal notice, § 5 DDG) and `datenschutz.html` (privacy
-policy, GDPR) are plain static pages, built as extra Vite entry points and
+policy, GDPR) are plain static pages that work without JavaScript, built as extra Vite entry points and
 linked from every screen. Update them whenever the site starts using a new
 third-party service.
+
+The privacy page also has the visitor counts' opt-out ("Stop counting" /
+"Zählung abschalten", `src/legal/countToggle.ts`): a flag in this browser's storage
+(`src/lib/countOptOut.ts`, one key for every channel, so the beta's
+privacy page opts out of the live game's counts too) that
+`src/lib/count.ts` checks before every count, along with the browser's
+Global Privacy Control signal. GoatCounter's own `#toggle-goatcounter` does nothing here, as the
+game doesn't use its `count.js`. An iPhone's home-screen app keeps storage
+of its own, apart from Safari's, so there (and only there) the privacy link
+in a room opens over the game (`src/lib/legalSheet.svelte.ts`) rather than
+in a Safari sheet, where the switch would never reach the app.
 
 ## Development
 
