@@ -237,8 +237,11 @@ function undress() {
 
 /** Shows the pointer in `color` from now on (old gold when none). */
 export function setCursorColor(c: string = GOLD) {
+  // The app sets it on mount, before the first paint, to what it already is.
+  if (c === color) return;
   color = c;
-  apply();
+  // Before the rest of the looks are first set (installCursor), only the soon ones: the rest follow then.
+  apply(!whole);
   whenIdle(predraw, { timeout: 3000 });
 }
 

@@ -24,22 +24,30 @@ import { checkRoom, newChallenge } from './ownerKey';
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 export { ProbeDesk, isProbe } from './probeDesk';
 import { listable, parseRoomInfo, type RoomInfo } from './roomInfo';
-import { ProbeDesk, answerOf, isProbe, ping, pingAnswer, pingOf, type ListingInfo } from './probeDesk';
+import { ProbeDesk, answerOf, isProbe, ping, pingAnswer, pingOf, turnAway, type ListingInfo } from './probeDesk';
 
 const BATCH = 10;
 /** Slots up to this are scanned at full speed; later batches wait a little. */
 const FAST_SLOTS = 30;
 const SLOW_BATCH_DELAY_MS = 800;
 /**
- * A slot that hasn't answered a ping by then is pinged again: past the five
- * seconds in which the server tells only one asker that an id is free.
+ * A slot that hasn't answered a ping by then is pinged again. The server
+ * tells one asker per id that it's free in each five-second stretch (fixed
+ * stretches, not five seconds from the last told), so this lands in the next
+ * one, and the answer comes at once.
  */
 const REPING_MS = 5500;
-/** How long the second ping has before the slot is taken as held by someone who doesn't answer pings. */
+/** How long the second ping has before the room list takes the slot as held by someone who doesn't answer pings, and connects. */
 const LAST_PING_MS = 2000;
-// A signalling server may report a free slot to a connection only after its
-// message expiry (~5s), so give real rooms comfortably longer than that to answer.
-const PROBE_TIMEOUT_MS = 9000;
+const SCAN_CONNECT_MS = REPING_MS + LAST_PING_MS;
+/**
+ * An invite's screen connects to a room that hasn't answered by then: it's
+ * about to be joined anyway, so the connection costs little, and it shouldn't
+ * wait out the second ping first.
+ */
+const INVITE_CONNECT_MS = 2000;
+/** How long a connection to a slot that answers no ping has to open. */
+const CONNECT_TIMEOUT_MS = 6000;
 /** How long an invite's probe waits for the signalling server before it gives up (probeRoom). */
 const PROBE_OPEN_TIMEOUT_MS = 8000;
 /**
@@ -65,25 +73,32 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 type ProbeResult = RoomInfo | 'free' | 'held' | null;
 
+type Ping = NonNullable<ReturnType<typeof pingOf>>;
+type Answer = NonNullable<ReturnType<typeof answerOf>>;
+
 /**
  * Pings and their answers reaching a peer, handed on by one listener on its
- * socket. PeerJS keeps each as a candidate for a connection that never comes;
- * it's taken back out here.
+ * socket from the peer's start (openPeer). PeerJS keeps each as a candidate
+ * for a connection that never comes; it's taken back out here. Pings that
+ * come before anyone answers them (a slot still being claimed, Beacon) wait,
+ * a few of them.
  */
-type Signals = { pinged?: (p: NonNullable<ReturnType<typeof pingOf>>) => void; answered?: (a: NonNullable<ReturnType<typeof answerOf>>) => void };
+type Signals = { pinged: ((p: Ping) => void) | null; early: Ping[]; answered: ((a: Answer) => void) | null };
 const signalsOf = new WeakMap<Peer, Signals>();
+const MAX_EARLY_PINGS = 8;
 
 function signals(peer: Peer): Signals {
   let s = signalsOf.get(peer);
   if (s) return s;
-  const fresh: Signals = {};
+  const fresh: Signals = { pinged: null, early: [], answered: null };
   signalsOf.set(peer, fresh);
   peer.socket.on('message', (msg: unknown) => {
     const p = pingOf(msg);
     const a = p ? null : answerOf(msg);
     if (!p && !a) return;
     peer._getMessages((p ?? a)!.connectionId);
-    if (p) fresh.pinged?.(p);
+    if (p && fresh.pinged) fresh.pinged(p);
+    else if (p) fresh.early.length < MAX_EARLY_PINGS && fresh.early.push(p);
     else if (a) fresh.answered?.(a);
   });
   return fresh;
@@ -113,17 +128,18 @@ class Prober {
   }
 
   /**
-   * Asks `id` what it is. A slot that answers no ping is connected to if
-   * `connect` (which shares this browser's IP address with whoever holds it),
-   * and otherwise left at no word.
+   * Asks `id` what it is. Not answered by `connectAfter` ms, it's connected to
+   * (which shares this browser's IP address with whoever holds it); with null,
+   * a slot that answers neither ping is left at no word.
    */
-  probe(id: string, connect: boolean): Promise<ProbeResult> {
+  probe(id: string, connectAfter: number | null): Promise<ProbeResult> {
     // Cut off from the server, PeerJS can't ping or connect (connect()
     // returns nothing): no answer, as if the probe timed out.
     if (this.peer.disconnected || this.peer.destroyed) return Promise.resolve(null);
     return new Promise((resolve) => {
       let conn: DataConnection | null = null;
       let settled = false;
+      let clear = () => {};
       const connectionId = `dc_${util.randomToken()}`;
       // Every probe settles once, on its own; it takes itself off the
       // waiting list only if it's still the one there (a later probe of the
@@ -133,7 +149,7 @@ class Prober {
         settled = true;
         if (this.waiting.get(id) === done) this.waiting.delete(id);
         this.pings.delete(connectionId);
-        clearTimeout(timer);
+        clear();
         conn?.close();
         resolve(r);
       };
@@ -147,27 +163,35 @@ class Prober {
         else done(room ?? 'held');
       };
       const connectNow = () => {
-        timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
-        conn = this.peer.connect(id, { reliable: true, metadata: { probe: true, challenge } });
+        // Cut off from the server since, PeerJS can't connect (connect() returns nothing).
+        if (settled) return;
+        if (this.peer.disconnected || this.peer.destroyed) return done(null);
+        const c = this.peer.connect(id, { reliable: true, metadata: { probe: true, challenge } });
+        if (!c) return done(null);
+        conn = c;
+        connTimer = setTimeout(() => done(null), CONNECT_TIMEOUT_MS);
         // Checked before PeerJS decodes it, and a probe's answer is never split.
-        hookFrames(conn, (data) => frameFits(data, MAX_PROBE_BYTES) || (done('held'), false), () => (done('held'), false));
-        conn.on('data', (raw) => {
+        hookFrames(c, (data) => frameFits(data, MAX_PROBE_BYTES) || (done('held'), false), () => (done('held'), false));
+        c.on('data', (raw) => {
           const msg = raw as { t?: string; room?: unknown };
           if (msg?.t === 'info') told(msg.room);
         });
-        conn.on('open', () => {
+        c.on('open', () => {
           if (settled) return;
-          clearTimeout(timer);
-          timer = setTimeout(() => done('held'), PROBE_ANSWER_MS);
+          clearTimeout(connTimer);
+          connTimer = setTimeout(() => done('held'), PROBE_ANSWER_MS);
         });
-        conn.on('error', () => done(null));
+        c.on('error', () => done(null));
       };
       const send = () => !this.peer.disconnected && this.peer.socket.send(ping(id, connectionId, challenge));
-      // Either ping's answer counts, however late, until the probe settles.
-      let timer = setTimeout(() => {
-        send();
-        timer = setTimeout(() => (connect ? connectNow() : done(null)), LAST_PING_MS);
-      }, REPING_MS);
+      // Either ping's answer counts, however late, until the probe settles
+      // (a connection made meanwhile carries on beside the second ping).
+      let connTimer: ReturnType<typeof setTimeout> | undefined;
+      const timers = [
+        setTimeout(send, REPING_MS),
+        setTimeout(() => (connectAfter === null ? done(null) : connectNow()), connectAfter ?? REPING_MS + LAST_PING_MS),
+      ];
+      clear = () => [...timers, connTimer].forEach((t) => clearTimeout(t));
       this.waiting.set(id, done);
       this.pings.set(connectionId, { id, answered: told });
       send();
@@ -176,27 +200,37 @@ class Prober {
 }
 
 /**
- * Answers probes reaching `peer` through `desk`: pings, and connections that
- * say they're probes (from an older version, or one whose pings went
- * unanswered); `allow` turns away whoever it says no to, unanswered.
+ * Takes the connections reaching `peer`, and answers probes through `desk`:
+ * pings, and connections that say they're probes (from an older version, or
+ * one whose pings went unanswered) in PeerJS's default serialization, as
+ * every version's are. `allow` turns away whoever it says no to, unanswered;
+ * any other connection goes to `others`, or is turned away.
  */
-export function answerProbes(peer: Peer, desk: ProbeDesk, allow: (peerId: string) => boolean = () => true) {
-  signals(peer).pinged = (p) => {
+export function answerProbes(
+  peer: Peer,
+  desk: ProbeDesk,
+  { allow = () => true, others = turnAway }: { allow?: (peerId: string) => boolean; others?: (conn: DataConnection) => void } = {},
+) {
+  const s = signals(peer);
+  s.pinged = (p) => {
     if (!allow(p.src)) return;
     desk.answerPing(p.src, p.challenge, (room) => {
       if (!peer.destroyed) peer.socket.send(pingAnswer(p.src, p.connectionId, room));
     });
   };
+  for (const p of s.early.splice(0)) s.pinged(p);
   peer.on('connection', (conn) => {
-    if (!isProbe(conn)) return;
-    if (allow(conn.peer)) desk.answer(conn);
-    else conn.on('open', () => conn.close());
+    if (!isProbe(conn)) others(conn);
+    else if (allow(conn.peer) && conn.serialization === 'binary') desk.answer(conn);
+    else turnAway(conn);
   });
 }
 
 function openPeer(id?: string): Promise<Peer> {
   return new Promise((resolve, reject) => {
     const peer = id ? new Peer(id, PEER_OPTIONS) : new Peer(PEER_OPTIONS);
+    // Listening from the start, so a ping that comes before anyone answers it isn't kept by PeerJS for good.
+    signals(peer);
     const fail = (err: unknown) => {
       peer.destroy();
       reject(err);
@@ -225,7 +259,7 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
       let found = 0;
       await Promise.all(
         ids.map(async (id) => {
-          const r = await prober.probe(id, true);
+          const r = await prober.probe(id, SCAN_CONNECT_MS);
           if (r && r !== 'free') {
             found++;
             if (r !== 'held' && listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
@@ -258,7 +292,7 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
     return null;
   }
   try {
-    const r = await new Prober(peer).probe(PEER_PREFIX + code, true);
+    const r = await new Prober(peer).probe(PEER_PREFIX + code, INVITE_CONNECT_MS);
     // Only this room's own listing: another room's, signed for the held name, passed on by this one, would show it as theirs.
     return r === 'free' ? 'gone' : r === 'held' || (r && r.code !== code) ? null : r;
   } finally {
@@ -339,9 +373,8 @@ export class Beacon {
     this.prober = new Prober(peer);
     this.slot = slot;
     old?.destroy();
+    // A slot is only asked after, never joined: anything else is turned away.
     answerProbes(peer, new ProbeDesk(this.info));
-    // A slot is only asked after, never joined.
-    peer.on('connection', (conn) => !isProbe(conn) && conn.on('open', () => conn.close()));
     peer.on('disconnected', () => {
       if (!peer.destroyed && this.peer === peer) setTimeout(() => !peer.destroyed && peer.reconnect(), 2000);
     });
@@ -365,8 +398,11 @@ export class Beacon {
     try {
       const prober = this.prober;
       for (let n = 1; n < this.slot && !this.stopped; n++) {
+        // Cut off from the server, every probe would come back as no word at once: next time.
+        if (prober.peer.disconnected) return;
         // No word may still be free (the server told someone else): claiming it is what tells.
-        const r = await prober.probe(slotId(n), false);
+        const r = await prober.probe(slotId(n), null);
+        if (prober.peer.disconnected || this.stopped) return;
         if (r !== 'free' && r !== null) continue;
         const peer = await this.tryClaim(n);
         if (peer === 'taken') continue;

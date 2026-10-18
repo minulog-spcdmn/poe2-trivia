@@ -27,6 +27,12 @@ const LONGEST_MS = 4000;
 /** A connection that only asks after the room (a probe), not one that comes to play. */
 export const isProbe = (conn: DataConnection) => !!(conn.metadata as { probe?: unknown } | undefined)?.probe;
 
+/** Closes a connection unanswered: once it opens, or after a while if it never does (which would otherwise keep its peer connection for good). */
+export function turnAway(conn: DataConnection) {
+  conn.on('open', () => conn.close());
+  setTimeout(() => conn.close(), LONGEST_MS);
+}
+
 /** The room's info for a probe, given the challenge it brought (for a listing under the held name to be signed over, ownerKey.ts). */
 export type ListingInfo = (challenge: string | null) => RoomInfo | null | Promise<RoomInfo | null>;
 
@@ -65,7 +71,7 @@ export class ProbeDesk {
     const now = Date.now();
     this.recent = this.recent.filter((t) => now - t < 10000);
     if (this.open >= MAX_OPEN || this.recent.length >= MAX_PER_10S) {
-      conn.on('open', () => conn.close());
+      turnAway(conn);
       return;
     }
     this.open++;
