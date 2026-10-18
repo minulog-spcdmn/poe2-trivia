@@ -1,5 +1,5 @@
 // What Analytics reads out of the numbers by itself (the overview's "What
-// happened", the board's too): days far busier than usual and the site that
+// happened"): days far busier than usual and the site that
 // brought them, the sites and countries that brought far more or fewer than
 // the period before, and how far a visit gets (played a game, finished one).
 // Only what the counts bear out: a change has to be well beyond what chance

@@ -4,10 +4,11 @@
   // the views, the period and how fresh the numbers are, with a thin bar
   // along its foot while they're read. The overview answers "how is it
   // going?" at a glance; each view behind it answers one question in full.
-  // The board (#board) is the overview for a monitor of its own, most of all
-  // one on its side: one screen, sized from it, kept awake, updating by itself.
-  // Each update keeps what it brought in since the one before (changes.ts),
-  // shown on the overview and the board. Player groups (#groups) are read
+  // The monitor button (#board) shows the overview full screen for a monitor
+  // of its own: kept awake, the pointer hidden while still, updating by
+  // itself; leaving full screen leaves it. Each update keeps what it brought
+  // in since the one before (changes.ts), shown on the overview. Player
+  // groups (#groups) are read
   // only while that view is open, and seldom (slices.ts): a call for each
   // thing people do and each way to break it down.
   //
@@ -21,7 +22,6 @@
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { spikesOf } from './insights';
   import { shortDay } from './chart';
-  import Board from './Board.svelte';
   import { keptChanges } from './changes';
   import DailyView from './DailyView.svelte';
   import GamesView from './GamesView.svelte';
@@ -62,6 +62,7 @@
   let view = $state<View>(viewOf(location.hash));
   /** Whoever the player groups pick out (#groups/place/Germany). */
   let sel = $state<Sel | null>(selOf(location.hash));
+  /** The overview full screen, kept awake (#board, the name it had as a layout of its own). */
   const BOARD = '#board';
   let board = $state(location.hash === BOARD);
   // Each view is an entry in the history that keeps how far the page was
@@ -83,6 +84,12 @@
     history.pushState({ y: 0 }, '', BOARD);
     board = true;
     window.scrollTo({ top: 0 });
+    // Full screen needs the click that asked for it; where the browser has none (an iPhone), the overview is still kept awake.
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  }
+  function leaveBoard() {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    go('overview');
   }
   /** Back, forward, or a # typed in: the view it names, scrolled as it was left. */
   async function followHash() {
@@ -380,17 +387,18 @@
   };
   const weekly = $derived(!!read && read.span > 90);
 
-  // ---- the board: sized from the screen, kept awake, the pointer out of the way ----
-  let topH = $state(0);
+  // ---- full screen: kept awake, the pointer out of the way ----
   let full = $state(!!document.fullscreenElement);
   let idle = $state(false);
-  $effect(() => {
-    document.documentElement.classList.toggle('board', board);
-    return () => document.documentElement.classList.remove('board');
-  });
+  /** Leaving full screen (Esc) leaves it for the overview as it usually is. */
+  function fullChanged() {
+    const was = full;
+    full = !!document.fullscreenElement;
+    if (was && !full && board) go('overview');
+  }
   $effect(() => {
     if (!board) return;
-    // The screen stays on while the board is in view, where the browser lets a page ask.
+    // The screen stays on while it's in view, where the browser lets a page ask.
     let lock: WakeLock | null = null;
     let gone = false;
     const wake = async () => {
@@ -426,24 +434,17 @@
       idle = false;
     };
   });
-  function fullScreen() {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen?.().catch(() => undefined);
-  }
 </script>
 
-<svelte:document onfullscreenchange={() => (full = !!document.fullscreenElement)} />
+<svelte:document onfullscreenchange={fullChanged} />
 
-<header class="top" class:on-board={board} class:idle bind:offsetHeight={topH}>
+<header class="top" class:idle>
   <div class="row">
     <a class="brand" href="./" title="Back to the game">
       <svg class="mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
       <span>PoE2.Quest</span>
     </a>
-    <h1>Analytics{#if board}<span class="sub">Board</span>{/if}</h1>
-    {#if key && board}
-      <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
-    {/if}
+    <h1>Analytics</h1>
     {#if key}
       <div class="tools">
         <span class="fresh" aria-live="polite">
@@ -453,16 +454,17 @@
           <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
         </button>
         {#if board}
-          <button type="button" class="icon-btn" onclick={fullScreen} title={full ? 'Leave full screen' : 'Full screen'} aria-label={full ? 'Leave full screen' : 'Full screen'}>
-            <svg viewBox="0 0 24 24">
-              {#if full}<path d="M9 4v5H4" /><path d="M15 4v5h5" /><path d="M9 20v-5H4" /><path d="M15 20v-5h5" />{:else}<path d="M4 9V4h5" /><path d="M20 9V4h-5" /><path d="M4 15v5h5" /><path d="M20 15v5h-5" />{/if}
-            </svg>
-          </button>
-          <button type="button" class="icon-btn" onclick={() => go('overview')} title="Leave the board" aria-label="Leave the board">
+          <!-- Opened from a link rather than the button, it isn't full screen yet: this makes it so. -->
+          {#if !full}
+            <button type="button" class="icon-btn" onclick={() => void document.documentElement.requestFullscreen?.().catch(() => undefined)} title="Full screen" aria-label="Full screen">
+              <svg viewBox="0 0 24 24"><path d="M4 9V4h5" /><path d="M20 9V4h-5" /><path d="M4 15v5h5" /><path d="M20 15v5h-5" /></svg>
+            </button>
+          {/if}
+          <button type="button" class="icon-btn" onclick={leaveBoard} title="Leave full screen" aria-label="Leave full screen">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>
           </button>
         {:else}
-          <button type="button" class="icon-btn" onclick={openBoard} title="The board: the overview for a monitor of its own" aria-label="Open the board, the overview for a monitor of its own">
+          <button type="button" class="icon-btn" onclick={openBoard} title="Full screen, for a monitor of its own: kept awake and updating by itself" aria-label="Show the overview full screen, kept awake">
             <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="16" rx="1.2" /><path d="M12 18.5v3" /><path d="M9 21.5h6" /></svg>
           </button>
         {/if}
@@ -477,9 +479,9 @@
       </div>
     {/if}
   </div>
-  {#if key && !board}
+  {#if key}
     <nav class="row choices">
-      <Seg label="View" options={VIEWS} value={view} onpick={go} />
+      {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
       {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}</span>{/if}
       <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
     </nav>
@@ -487,7 +489,7 @@
   <div class="progress" class:on={loading} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
 </header>
 
-<main class="analytics" class:on-board={board} class:idle style:height={board ? `calc(100dvh - ${topH}px)` : null}>
+<main class="analytics" class:idle>
   {#if !key}
     <KeyGate onkey={useKey} {refused} />
   {:else}
@@ -512,9 +514,7 @@
         <div class="ghost chart"></div>
       </div>
     {:else if read}
-      {#if board}
-        <Board {read} {period} {weekly} />
-      {:else if view === 'overview'}
+      {#if board || view === 'overview'}
         <Overview {read} {period} {weekly} />
       {:else if view === 'visitors'}
         <VisitorsView {read} {period} {weekly} />
@@ -740,7 +740,7 @@
   }
   @media (min-width: 1900px) {
     /* As wide as the screen allows, and no taller than it: the overview is about 88rem high, so its type follows the screen's height too. */
-    :global(html:not(.board)) {
+    :global(html) {
       font-size: clamp(13px, min(0.625vw, 1.1vh), 26px);
     }
     /* The dates go up into the bar, beside the period. */
@@ -752,7 +752,7 @@
       color: var(--a-muted);
     }
     .dates,
-    main:not(.on-board) .made-up {
+    .made-up {
       display: none;
     }
     .made-up-tag {
@@ -783,7 +783,7 @@
 
   /* ---- a monitor on its side (taller than wide, wider than a phone): the type sized from the screen, so the overview is one screen ---- */
   @media (orientation: portrait) and (min-width: 900px) {
-    :global(html:not(.board)) {
+    :global(html) {
       font-size: clamp(11px, min(1.3vw, 0.74vh), 30px);
     }
     .row,
@@ -800,7 +800,7 @@
       color: var(--a-muted);
     }
     .dates,
-    main:not(.on-board) .made-up {
+    .made-up {
       display: none;
     }
     .made-up-tag {
@@ -824,64 +824,9 @@
     }
   }
 
-  /* ---- the board: one screen, its type sized from the screen (rem), nothing to scroll ---- */
-  :global(html.board) {
-    font-size: clamp(12px, min(1.5vw, 0.9vh), 30px);
-  }
-  /* The usual way round, the height decides. */
-  @media (orientation: landscape) {
-    :global(html.board) {
-      font-size: clamp(12px, min(0.75vw, 1.3vh), 30px);
-    }
-  }
-  .top.on-board {
-    position: relative;
-  }
-  .top.on-board .row {
-    width: 100%;
-    padding-top: 0.6rem;
-    padding-bottom: 0.6rem;
-  }
-  .top.on-board .row {
-    flex-wrap: nowrap;
-  }
-  .top.on-board .brand span {
-    display: none;
-  }
-  .top.on-board .fresh {
-    margin-right: 0;
-  }
-  .sub {
-    margin-left: 0.6rem;
-    font-size: 0.75em;
-    color: var(--a-muted);
-  }
-  main.on-board {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    padding: 1rem 1.5rem;
-    overflow: hidden;
-  }
-  main.on-board > :global(*) {
-    flex: none;
-  }
-  main.on-board > :global(.board) {
-    flex: 1 1 0;
-  }
-  main.on-board .dates,
-  main.on-board .note {
-    margin-bottom: 0.8rem;
-  }
   .idle,
   .idle :global(*) {
     cursor: none;
-  }
-  /* A monitor the usual way round has the board in two columns, which may run past the screen. */
-  @media (orientation: landscape) {
-    main.on-board {
-      overflow: auto;
-    }
   }
 
   /* ---- first read: the overview's outline, waiting ---- */
@@ -969,31 +914,6 @@
     .choices :global(.seg button) {
       min-width: 0;
       padding: 0.4rem 0.3rem;
-    }
-    /* The board on a phone: the periods a row of their own under the bar, the type the overview's, and the page scrolls (Board.svelte stacks it). */
-    :global(html.board) {
-      font-size: 15px;
-    }
-    .top.on-board .row {
-      flex-wrap: wrap;
-    }
-    .top.on-board .row > :global(.seg) {
-      order: 3;
-      display: grid;
-      flex-basis: 100%;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 0.35rem;
-    }
-    .top.on-board .row > :global(.seg button) {
-      min-width: 0;
-      padding: 0.4rem 0.3rem;
-    }
-    /* (Over the height the board's script sets, which keeps it to one screen elsewhere.) */
-    main.on-board {
-      display: block;
-      height: auto !important;
-      padding: 1rem 16px 2rem;
-      overflow: visible;
     }
   }
 </style>

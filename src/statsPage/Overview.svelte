@@ -1,9 +1,10 @@
 <script lang="ts">
   // The overview: how it's going, at a glance, on one screen where it's big
-  // enough (a 1440p or 4K monitor). What the last update brought and anything
-  // wrong first, then the four figures that matter beside what happened and
-  // how far a visit gets; one chart of how busy it was, its busiest days
-  // ringed; and a row of short answers, each opening its view.
+  // enough (a 1440p or 4K monitor, or one on its side). The period's figures
+  // and how far a visit gets; one chart of how busy it was, its busiest days
+  // ringed, beside today so far (with what the last update brought and what
+  // went wrong) and what happened; and a row of short answers, each opening
+  // its view. The monitor button shows it full screen, kept awake.
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
@@ -13,7 +14,6 @@
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
   import Kpi from './Kpi.svelte';
-  import NewSince from './NewSince.svelte';
   import { DAILY_FROM, MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -24,6 +24,7 @@
   import WeekHours from './WeekHours.svelte';
   import WhatHappened from './WhatHappened.svelte';
   import Steps from './Steps.svelte';
+  import Today from './Today.svelte';
   import { spikesOf } from './insights';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -38,8 +39,6 @@
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
 
-  const failed = $derived(L.failures.reduce((n, f) => n + f.count, 0));
-  const worst = $derived(L.failures[0]);
 
   const METRICS = [
     { value: 'visitors', name: 'Visitors' },
@@ -62,6 +61,8 @@
   /** A monitor on its side (taller than wide, wider than a phone): the overview fitted to it as to a big one. */
   const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900);
   const oneScreen = $derived(innerWidth > 1500 || sideways);
+  /** A big monitor the usual way round: what happened joins the short answers below, so the chart has the height beside today's box. */
+  const big = $derived(innerWidth >= 1900 && !sideways);
   /** The figures' comparisons said short where the cards are narrow (a monitor on its side): "from 1,861 before". */
   const before = $derived(sideways ? 'before' : period.before);
   const chartBase = $derived(Math.round(oneScreen ? Math.max(200, innerHeight * (sideways ? 0.2 : 0.18)) : Math.min(560, Math.max(260, innerHeight * 0.27))));
@@ -139,32 +140,19 @@
       </div>
     </Section>
   </div>
-  <div class="side">
-    {#if read.changes || failed}
-    <div class="alerts">
-      {#if read.changes}
-        <div class="since"><NewSince changes={read.changes} at={read.at} /></div>
-      {/if}
-
-      {#if failed}
-        <a class="problem" href="#joining">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18v.01" /></svg>
-          <span>
-            <b>{fmt(failed)} {failed === 1 ? 'try' : 'tries'} to join or open a room failed.</b>
-            Most often: {worst.host ? 'opening a room, ' : ''}{worst.label.toLowerCase()} ({fmt(worst.count)}).
-          </span>
-          <span class="go">See why ›</span>
-        </a>
-      {/if}
-    </div>
-    {/if}
+  {#snippet happened()}
     <div class="happened">
       <Section title="What happened" says={oneScreen ? '' : 'What the numbers bear out by themselves.'}>
         <WhatHappened {read} {period} />
       </Section>
     </div>
+  {/snippet}
+  <div class="side">
+    <div class="now"><Today {read} {period} tall={big} /></div>
+    {#if !big}{@render happened()}{/if}
   </div>
-  <div class="four">
+  <div class="four" class:five={big}>
+  {#if big}{@render happened()}{/if}
   <Section title="When they come">
     {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
     {#if week}
@@ -206,58 +194,21 @@
 </div>
 
 <style>
-  /* (A grid, so what's new fills the room its row gives it.) */
-  .since {
-    display: grid;
-  }
-  .problem {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.4rem;
-    font-size: 1.2rem;
-    color: var(--a-ink);
-    text-decoration: none;
-    background: var(--a-surface);
-    border: 1px solid rgba(236, 102, 80, 0.45);
-    border-left: 5px solid var(--a-down);
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .problem:hover {
-    border-color: var(--a-down);
-  }
-  .problem svg {
-    flex: none;
-    width: 28px;
-    height: 28px;
-    fill: none;
-    stroke: var(--a-down);
-    stroke-width: 2;
-    stroke-linejoin: round;
-    stroke-linecap: round;
-  }
-  .problem b {
-    font-weight: 650;
-  }
-  .go {
-    margin-left: auto;
-    font-weight: 600;
-    white-space: nowrap;
-    color: var(--a-down);
-  }
   /*
-   * One grid: the figures and the chart, and beside them what the last
-   * update brought, anything wrong, what happened and how far a visit gets;
-   * the short answers in a row below. Narrower, the side's parts take rows
-   * of their own (display: contents), what's new and wrong first.
+   * One grid: the figures, then the chart with what happened under it and
+   * today so far beside both; the short answers in a row below. Today's
+   * box is as tall as the two together; the chart's row (1fr) takes
+   * whatever more it needs. Narrower, they take rows of their own, today
+   * first.
    */
   .ov {
     display: grid;
     grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto auto;
     grid-template-areas:
       'kpis kpis'
-      'chart side'
+      'chart now'
+      'happened now'
       'four four';
     gap: 1.25rem;
   }
@@ -282,20 +233,15 @@
     flex: 1 1 0;
   }
   .side {
-    grid-area: side;
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    min-width: 0;
+    display: contents;
   }
-  .alerts {
-    grid-area: alerts;
+  /* (A grid, so today's box fills the room its row gives it.) */
+  .now {
+    grid-area: now;
     display: grid;
-    gap: 1.25rem;
   }
   .happened {
     grid-area: happened;
-    flex: 1 1 auto;
     display: grid;
   }
   .four {
@@ -303,6 +249,12 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1.25rem;
+  }
+  .four.five {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .four > .happened {
+    grid-area: auto;
   }
   .line {
     margin: 1rem 0 0;
@@ -333,9 +285,15 @@
   }
   /* A big monitor: the chart is right below the figures, so their small lines would only say it twice. */
   @media (min-width: 1900px) {
+    .ov {
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas:
+        'kpis kpis'
+        'chart now'
+        'four four';
+    }
     .ov,
     .kpis,
-    .side,
     .four {
       gap: 1rem;
     }
@@ -346,15 +304,13 @@
   @media (max-width: 1500px) {
     .ov {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: none;
       grid-template-areas:
-        'alerts alerts'
+        'now now'
         'kpis kpis'
         'chart chart'
         'happened happened'
         'four four';
-    }
-    .side {
-      display: contents;
     }
     .four {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -374,7 +330,7 @@
     .ov {
       grid-template-columns: minmax(0, 1fr);
       grid-template-areas:
-        'alerts'
+        'now'
         'kpis'
         'chart'
         'happened'
@@ -384,18 +340,6 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  @media (max-width: 600px) {
-    .problem {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      font-size: 1rem;
-      padding: 0.9rem 1rem;
-    }
-    .go {
-      grid-column: 2;
-      margin-left: 0;
-    }
-  }
   /* A monitor on its side: everything stacked in the screen's height, the five figures in a row, the short answers two by two. */
   @media (orientation: portrait) and (min-width: 900px) {
     /* What a list hides stays hidden, and the time zone goes without saying. */
@@ -403,33 +347,16 @@
     .four :global(.zone) {
       display: none;
     }
-    /* What's new and what went wrong down the left of the top row, what happened beside them: the chart keeps the room a row of its own would take. */
+    /* Today down the left of the top row, what happened beside it: the chart keeps the room a row of its own would take. */
     .ov {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: none;
       grid-template-areas:
-        'alerts happened'
+        'now happened'
         'kpis kpis'
         'chart chart'
         'four four';
       gap: 1rem;
-    }
-    .ov:not(:has(.alerts)) {
-      grid-template-areas:
-        'happened happened'
-        'kpis kpis'
-        'chart chart'
-        'four four';
-    }
-    .side {
-      display: contents;
-    }
-    /* The last of them takes what What happened leaves beside them, so the two columns end level. */
-    .alerts {
-      grid-template-rows: auto minmax(0, 1fr);
-      gap: 1rem;
-    }
-    .alerts:not(:has(> :nth-child(2))) {
-      grid-template-rows: minmax(0, 1fr);
     }
     .kpis {
       grid-template-columns: repeat(5, minmax(0, 1fr));

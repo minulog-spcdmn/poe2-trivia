@@ -849,22 +849,21 @@ or finished a game (the overview's "From visit to game").
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser. Its
-overview answers "how is it going?" with the views behind it; `#board`
-(the monitor button in its top bar) is the overview for a monitor of its
-own, most of all one on its side: one screen, sized from the screen,
-kept awake and updating by itself, the liveliest first (today so far and
-what's new, what happened, then the period; on a phone it stacks and
-scrolls). On a monitor on its side (taller than wide, 900px or more) every
-view fits the screen too, its type sized from it. On a big monitor (1440p,
-4K) every view fits one screen, a chart giving up what runs past it or
+overview answers "how is it going?" with the views behind it, today so
+far among it: today's visitors, games, answers and failures against the
+same time a period ago, each with what the last update added. The monitor
+button in its top bar (`#board`) shows the overview full screen for a
+monitor of its own, kept awake, the pointer hidden while still, updating
+by itself; leaving full screen leaves it. On a monitor on its side
+(taller than wide, 900px or more) every view fits the screen, its type
+sized from it. On a big monitor (1440p, 4K) every view fits one screen, a chart giving up what runs past it or
 taking what's left (`fitChart.svelte.ts`), its labels sized with the
 type; "What happened" reads out the days far busier
 than usual and the site behind each, and the sites and countries that
 brought far more or fewer than the period before (`insights.ts`, only
 what's beyond chance). Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
-and systems the new visitors came from and on, lit on the overview and
-the board. `#groups` (Groups) opens on what stands out between groups,
+and systems the new visitors came from and on, lit on the overview. `#groups` (Groups) opens on what stands out between groups,
 each a sentence, and sets a country's, a system's or a kind of
 device's players against everyone, and shows where the players of a mode
 come from and on what (`slices.ts`); every country, system and mode name
