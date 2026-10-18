@@ -49,6 +49,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Types, which the build leaves unchecked.
+      - run: npm run check
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v4
@@ -120,8 +122,12 @@ jobs:
             exit 1
           fi
           npm ci
-          # A new beta is tested; the current one passed when it went up.
-          if [ -n "$NEW" ]; then npm test; fi
+          # A new beta is checked and tested; the current one passed when it
+          # went up.
+          if [ -n "$NEW" ]; then
+            npm run check
+            npm test
+          fi
           VITE_CHANNEL=beta npm run build
       - uses: actions/upload-artifact@v4
         with:
