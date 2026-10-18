@@ -3,7 +3,8 @@
 // until the desk takes its place.
 
 import { engine } from '../lib/session.svelte';
-import { useEngine } from '../qa/build/engine.ts';
+import fakeNames from '../data/fakes.json';
+import { useItems } from '../qa/build/engine.ts';
 import { endScenes, type EndScene, type EndView } from '../qa/scenes/over.ts';
 
 export { pid, type Mode } from '../qa/scenes/over.ts';
@@ -27,6 +28,6 @@ export const VIEWPORTS: Viewport[] = [
 ];
 
 export function scenes(): Scene[] {
-  useEngine(engine);
+  useItems(engine.items, fakeNames);
   return endScenes();
 }
