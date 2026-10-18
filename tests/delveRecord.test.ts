@@ -27,22 +27,12 @@ import {
 import { createGame, type GameState, type Revive } from '../src/lib/game.ts';
 import { storeKey } from '../src/lib/storage.ts';
 import { DELVE_RULESET } from '../src/lib/delve.ts';
+import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
 /** Writes longer than this don't fit (storage nearly full); Infinity for room enough. */
 let room = Infinity;
-(globalThis as { localStorage?: unknown }).localStorage = {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => {
-    if (v.length > room) throw new Error('QuotaExceededError');
-    store.set(k, String(v));
-  },
-  removeItem: (k: string) => void store.delete(k),
-  key: (i: number) => [...store.keys()][i] ?? null,
-  get length() {
-    return store.size;
-  },
-};
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store, (_, v) => v.length <= room);
 beforeEach(() => {
   store.clear();
   room = Infinity;

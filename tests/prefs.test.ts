@@ -13,13 +13,10 @@ import {
   type RoomPrefs,
 } from '../src/lib/prefs.ts';
 import { PRESETS, type Difficulty, type Settings } from '../src/lib/game.ts';
+import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
-(globalThis as { localStorage?: unknown }).localStorage = {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => void store.set(k, String(v)),
-  removeItem: (k: string) => void store.delete(k),
-};
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
 beforeEach(() => store.clear());
 
 const knobs = { ...PRESETS.cruel, options: 10, veil: 'slowest' as const, grayscale: 'all' as const, lockout: 0 };

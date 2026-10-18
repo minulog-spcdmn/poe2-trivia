@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CLOCK_PEAK,
@@ -12,6 +12,7 @@ import {
   pressing,
   pressureLevel,
   pressureOf,
+  resetDark,
   resolution,
   resolutionMs,
   resolveDark,
@@ -21,6 +22,9 @@ import {
 } from '../src/lib/darkness.ts';
 import { darkOutcome } from '../src/lib/delveSession.ts';
 import { createGame, type GameState, type Hit, type Reveal } from '../src/lib/game.ts';
+
+// The dark is the module's own: each test starts from none.
+beforeEach(resetDark);
 
 test("the dark comes in with a question's clock: faint while there is time, closing in over the last seconds", () => {
   const span = 20000;
@@ -110,7 +114,6 @@ test('a loop waking after a long sleep eases from where the dark was', () => {
   now += 60000;
   assert.ok(pressureLevel(now) < 0.5, 'no jump');
   a.release();
-  for (let i = 0; i < 400; i++) pressureLevel((now += 16));
 });
 
 test('the dark runs much deeper over the clock\'s last seconds, and is much as it was while there is time', () => {

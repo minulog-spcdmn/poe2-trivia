@@ -1,13 +1,19 @@
-import { test } from 'node:test';
+import { afterEach, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DataConnection } from 'peerjs';
 import { ProbeDesk, answerOf, isProbe, ping, pingAnswer, pingOf } from '../src/lib/probeDesk.ts';
 import { parseRoomInfo, type RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 
+// The desk's limits run on Date.now and its hang-ups on setTimeout: both the test's to move.
+beforeEach(() => mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 }));
+afterEach(() => mock.timers.reset());
+/** Lets settled promises run on (setImmediate isn't among the timers mocked). */
+const flush = () => new Promise((r) => setImmediate(r));
+
 const room: RoomInfo = { code: 'KXR4QT', host: 'Una', players: 3, maxPlayers: 12, spectators: 0, maxSpectators: 12, mode: 'turns', difficulty: 'cruel', target: 10, phase: 'lobby', v: PROTOCOL_VERSION };
 
-/** A connection that records what it was sent and whether it was hung up on; `open()` opens it. */
+/** A connection that records what it was sent and whether it was hung up on (closing it tells its 'close' listeners, as PeerJS does); `open()` opens it. */
 function conn(metadata?: unknown) {
   const handlers: Record<string, (() => void)[]> = {};
   const c = {
@@ -21,7 +27,9 @@ function conn(metadata?: unknown) {
       c.sent.push(msg);
     },
     close() {
+      if (c.closed) return;
       c.closed = true;
+      for (const fn of handlers.close ?? []) fn();
     },
     open() {
       for (const fn of handlers.open ?? []) fn();
@@ -68,14 +76,14 @@ test("a probe's challenge reaches the room, and a listing signed over it (later)
   const c = conn({ probe: true, challenge: 'c'.repeat(22) });
   desk.answer(asConn(c));
   c.open();
-  await new Promise((r) => setTimeout(r));
+  await flush();
   assert.deepEqual(asked, ['c'.repeat(22)]);
   assert.equal((c.sent[0] as { room: { owner?: string } }).room.owner, 'x'.repeat(86));
   // A probe without one (or with junk) is answered too, unsigned.
   const old = conn({ probe: true, challenge: '<junk>' });
   desk.answer(asConn(old));
   old.open();
-  await new Promise((r) => setTimeout(r));
+  await flush();
   assert.deepEqual(asked, ['c'.repeat(22), null]);
 });
 
@@ -120,7 +128,7 @@ test('pings are answered with the room (signed over their challenge) or null', a
   const desk = new ProbeDesk(async (challenge) => (asked.push(challenge), room));
   const replies: (RoomInfo | null)[] = [];
   desk.answerPing('scanner', 'c'.repeat(22), (r) => replies.push(r));
-  await new Promise((r) => setTimeout(r));
+  await flush();
   assert.deepEqual(asked, ['c'.repeat(22)]);
   assert.deepEqual(replies, [room]);
   const none: (RoomInfo | null)[] = [];
@@ -148,4 +156,60 @@ test("a refused ping (a banned peer's) is told at once there's nothing, without 
   desk.answerPing('banned', 'c'.repeat(22), (r) => replies.push(r), true);
   assert.deepEqual(replies, [null]);
   assert.equal(asked, 0);
+});
+
+test('a probe hung up on frees its place: on its own, once answered, or at the latest after a while', () => {
+  const desk = new ProbeDesk(() => room);
+  const first = Array.from({ length: 8 }, () => conn({ probe: true }));
+  for (const c of first) desk.answer(asConn(c));
+  const turned = conn({ probe: true });
+  desk.answer(asConn(turned));
+  turned.open();
+  assert.deepEqual([turned.sent.length, turned.closed], [0, true], 'eight at once, and no more');
+  // One hangs up: its place is free.
+  first[0].close();
+  const next = conn({ probe: true });
+  desk.answer(asConn(next));
+  next.open();
+  assert.equal(next.sent.length, 1);
+  // The rest are answered, then hung up on 2 s later; one that never opens, after 4 s.
+  for (const c of first.slice(1, 7)) c.open();
+  mock.timers.tick(2000);
+  assert.ok(first.slice(1, 7).every((c) => c.closed) && !first[7].closed);
+  mock.timers.tick(2000);
+  assert.ok(first[7].closed);
+  const all = Array.from({ length: 8 }, () => conn({ probe: true }));
+  for (const c of all) desk.answer(asConn(c));
+  for (const c of all) c.open();
+  assert.ok(all.every((c) => c.sent.length === 1), 'every place free again');
+});
+
+test('past 60 probes in 10 seconds more are refused, until the 10 seconds have passed', () => {
+  const desk = new ProbeDesk(() => room);
+  const probe = () => {
+    const c = conn({ probe: true });
+    desk.answer(asConn(c));
+    c.open();
+    c.close();
+    return c.sent.length === 1;
+  };
+  for (let i = 0; i < 60; i++) assert.ok(probe(), `probe ${i}`);
+  assert.equal(probe(), false, 'the 61st');
+  mock.timers.tick(9999);
+  assert.equal(probe(), false);
+  mock.timers.tick(1);
+  assert.equal(probe(), true, 'the first of them 10 s ago');
+});
+
+test("pings past their share are answered again once it frees up, a sender's own share too", () => {
+  const desk = new ProbeDesk(() => room);
+  let answered = 0;
+  for (let i = 0; i < 4; i++) desk.answerPing('flood', null, () => answered++);
+  assert.equal(answered, 3);
+  for (let i = 0; i < 70; i++) desk.answerPing(`id${i}`, null, () => answered++);
+  assert.equal(answered, 60);
+  mock.timers.tick(10_000);
+  desk.answerPing('flood', null, () => answered++);
+  desk.answerPing('someone', null, () => answered++);
+  assert.equal(answered, 62);
 });

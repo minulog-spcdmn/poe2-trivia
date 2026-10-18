@@ -232,6 +232,15 @@ export interface Pressure {
 }
 let owner: Pressure | null = null;
 
+/** Tests: back as at load (no dark, nobody driving it, nothing settling), so one test's leftovers aren't the next one's start. */
+export function resetDark() {
+  target = 0;
+  level = 0;
+  at = -1;
+  owner = null;
+  settling = null;
+}
+
 /**
  * Takes over driving the dark (a new question's ring). A driver that has
  * been taken over from, or let go, no longer moves it; letting go clears it.

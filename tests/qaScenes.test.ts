@@ -8,9 +8,8 @@ import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
 import { SCREENS, knobValues, seatLabel } from '../src/qa/scene.ts';
 import { matches, sizesFor, walk } from '../src/qa/desk/walk.ts';
 import { answered } from '../src/qa/frame/emulate.ts';
+import { fakes, items } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 useItems(items, fakes);
 // The scenes saved from live rooms, as the desk has them (src/qa/captured).
 const capturedDir = new URL('../src/qa/captured/', import.meta.url);

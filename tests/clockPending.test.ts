@@ -5,21 +5,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { ActionError, Engine, RACE_DEFAULT_TIMER, clockMs, clockRuns, createGame, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ActionError, Engine, RACE_DEFAULT_TIMER, clockMs, clockRuns, createGame, publicView, type Action, type GameState, type Question, type Settings } from '../src/lib/game.ts';
 import { isGroupRun, questionTimer } from '../src/lib/delve.ts';
+import { fakes, items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
 const right = (q: Question) => q.options.indexOf(q.itemId);
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 const tooEarly = (fn: () => unknown) => assert.throws(fn, (e: unknown) => e instanceof ActionError && e.silent && /Too early/.test(e.message));
 

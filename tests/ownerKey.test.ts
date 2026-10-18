@@ -1,13 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkJoin, checkRoom, isOwnerProof, joinProof, newChallenge, ownerPublicKey, ownerUnlocked, roomProof, unlockOwner } from '../src/lib/ownerKey.ts';
+import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
-(globalThis as { localStorage?: unknown }).localStorage = {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => void store.set(k, v),
-  removeItem: (k: string) => void store.delete(k),
-};
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
 
 test("the owner's signatures check out only over the challenge and the room they were made for", async () => {
   // The real words are not in the repo, so this runs against a test key.

@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DELVE_RULESET } from '../src/lib/delve.ts';
-import { readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
 import { emptyCodex, parseCodex, record, serializeCodex, type Codex, type Encounter } from '../src/lib/codex.ts';
 import {
@@ -26,8 +25,8 @@ import {
 import { MAX_COUNT, MAX_DEPTH, addRun, emptyRecords, parseRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
 import { milestoneAt, stratumName } from '../src/lib/descent.ts';
 import { ARCHETYPES } from '../src/lib/archetypes.ts';
+import { fakes, items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const [a, b, c] = items;
 
 /** A Delve answer at `depth` in run `run`. */
@@ -236,9 +235,8 @@ test('medians come from counts, so a huge tally costs nothing', () => {
   assert.equal(medianOfCounts({ 3: 2, 9: 1 }), 3);
   assert.equal(medianOfCounts({ 1: 1, 5: 2, 100: 1 }), 5);
   const raw = JSON.stringify({ v: 1, runs: [], bests: {}, tallies: { [`${DELVE_RULESET}:solo`]: { ends: { 5: 3e15, 6: 2 }, lost: {} } }, frontier: [] });
-  const started = Date.now();
+  // (Counted one by one, this would not finish.)
   const s = delveSummary(parseRecords(raw)!, 'solo');
-  assert.ok(Date.now() - started < 200);
   assert.deepEqual([s.runs, s.median], [MAX_COUNT + 2, 5]);
 });
 
@@ -398,9 +396,7 @@ test('a cave-in costs the lives it took, and the wards that broke in their place
 test('a Delve reveal says what the question came from and whether a ward took its loss', async () => {
   const { Engine, createGame, isFake } = await import('../src/lib/game.ts');
   const { encounterAt } = await import('../src/lib/codex.ts');
-  const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-  let seed = 11;
-  const engine = new Engine(items, { rng: () => ((seed = (seed * 1664525 + 1013904223) >>> 0), seed / 2 ** 32), now: () => 1_000_000, fakes });
+  const engine = new Engine(items, { rng: seeded(11), now: () => 1_000_000, fakes });
   let s = createGame(null, { targetScore: 1, timer: 0, difficulty: 'eternal', mode: 'delve', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
   s = engine.apply(s, { type: 'start' }, null);

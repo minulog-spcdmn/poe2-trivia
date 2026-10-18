@@ -2,13 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import data from '../src/data/botMotion.json' with { type: 'json' };
 import { STEP, fitLead, frameOf, leadTrack, pickClick, pickStream, place, reachTrack, steer, streamTrack, trackAt, waver, within, type ClickStretch, type Stretch } from '../src/bot/motion.ts';
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
+import { seeded } from './helpers.ts';
 
 const ALL = data.episodes as Stretch[];
 

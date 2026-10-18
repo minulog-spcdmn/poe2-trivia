@@ -2,7 +2,6 @@
 // the wards in hand until the way out, buried by a cave-in.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
   DELVE_MAX_WARDS,
@@ -30,79 +29,39 @@ import {
   voteClosesAt,
   wardRoom,
   wardsOf,
-  type Inventory,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, Engine, activeRules, createGame, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
-
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
-
-const right = (q: Question) => q.options.indexOf(q.itemId);
-const wrong = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
-
-function seeded(seed: number) {
-  seed = Math.imul(seed, 2654435761) >>> 0;
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
+import { ANSWER_GRACE_MS, activeRules, lastPicks, publicView } from '../src/lib/game.ts';
+import { NONE, right, room, wrong } from './helpers.ts';
 
 /** A run of `n` players (one: alone, hot-seat; more: co-op online, p0 hosting) at `depth`. */
 function run(n = 1, depth = 30, seed = 7) {
-  const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(seed), now: () => clock.now, fakes });
-  const host = n === 1 ? null : 'p0';
-  let s: GameState = createGame(host, SETTINGS);
-  for (let i = 0; i < n; i++) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name: `Delver ${'ABCD'[i]}` }, host === null ? null : `p${i}`);
-  s = engine.apply(s, { type: 'start' }, host);
-  s = { ...s, players: [...s.players].sort((a, b) => a.id.localeCompare(b.id)), round: depth };
-  const h = {
-    engine,
-    clock,
-    get s() {
-      return s;
-    },
-    act(a: Action, from: string | null = null) {
-      s = engine.apply(s, a, from);
-      return s;
-    },
-    edit(fn: (s: GameState) => void) {
-      const c = structuredClone(s);
-      fn(c);
-      s = c;
-    },
-    give(id: string, inv: Partial<Inventory>) {
-      h.edit((c) => ((c.delve!.inventory ??= {})[id] = { ...NONE, ...inv }));
-    },
-    id: () => s.players[s.turn].id,
+  const h = Object.assign(room({ players: n, host: n === 1 ? null : 'p0', seed, sorted: true, depth }), {
+    id: () => h.s.players[h.s.turn].id,
     /** Picks `category` (the trusted host's pick, which settles a co-op vote) and starts its clock. */
     pick(category: string) {
       h.act({ type: 'pick', category });
-      if (s.phase === 'question') h.act({ type: 'clock', askedAt: s.question!.askedAt });
-      return s;
+      if (h.s.phase === 'question') h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+      return h.s;
     },
     /** A vein on the first card, picked: strike 1 on the clock. */
     vein() {
       h.edit((c) => (c.delve!.finds = [{ category: c.offered[0], kind: 'azurite' }]));
-      return h.pick(s.offered[0]).question!;
+      return h.pick(h.s.offered[0]).question!;
     },
     /** Answers the question in play (alone the player's; together as `by`), `after` ms into its clock. */
     answer(ok: boolean, after = 1000, by: string | null = null) {
-      const q = s.question!;
+      const q = h.s.question!;
       h.clock.now = q.clockAt! + after;
       return h.act({ type: 'answer', index: ok ? right(q) : wrong(q), askedAt: q.askedAt }, by);
     },
     timeOut() {
-      h.clock.now = s.question!.deadline! + ANSWER_GRACE_MS + 1;
+      h.clock.now = h.s.question!.deadline! + ANSWER_GRACE_MS + 1;
       return h.act({ type: 'answer', index: null });
     },
     next: () => h.act({ type: 'next' }),
     /** The vein on the cards of a dig (the card that isn't the way out). */
-    veinCard: () => s.offered.find((c) => c !== WAY_OUT)!,
-  };
+    veinCard: () => h.s.offered.find((c) => c !== WAY_OUT)!,
+  });
   return h;
 }
 

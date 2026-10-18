@@ -6,6 +6,8 @@ const HOUR = 3_600_000;
 const T = Date.parse('2026-10-11T12:00:00Z');
 const reply = (date: string | null, init: ResponseInit = {}) => new Response(null, { ...init, headers: date ? { date } : {} });
 const at = (t: number) => reply(new Date(t).toUTCString());
+/** Lets settled promises run on (setImmediate isn't among the timers mocked). */
+const flush = () => new Promise((r) => setImmediate(r));
 
 test("a plain reply from the site says the server's time; an error, a redirect or no header says nothing", () => {
   assert.equal(serverTimeOf(at(T)), T);
@@ -72,16 +74,20 @@ test("no answer (offline, blocked, a request that can't be made) leaves the devi
   }
 });
 
-test('a request with no reply is given up, and asked again later', async () => {
+test('a request with no reply is given up, and asked again later', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   let signal: AbortSignal | undefined;
   const { dev, clock } = rig((s) => {
     signal = s;
     return new Promise((_, fail) => s.addEventListener('abort', () => fail(new Error('aborted'))));
   });
-  const t0 = performance.now();
-  await clock.sync();
-  assert.ok(signal?.aborted);
-  assert.ok(performance.now() - t0 >= GIVE_UP_MS - 50);
+  const synced = clock.sync();
+  await flush();
+  t.mock.timers.tick(GIVE_UP_MS - 1);
+  assert.equal(signal?.aborted, false, 'not yet');
+  t.mock.timers.tick(1);
+  await synced;
+  assert.equal(signal?.aborted, true);
   assert.equal(clock.known(), true);
   assert.equal(clock.trusted(), false);
   // Not again at once, but a minute on.
@@ -113,10 +119,16 @@ test('asked once at a time, and again only when the device clock jumps (set by h
   assert.ok(Math.abs(clock.now() - dev.server) <= 1000);
 });
 
-test('an answer waits for the server no longer than it is told', async () => {
+test('an answer waits for the server no longer than it is told', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { clock } = rig((s) => new Promise((_, fail) => s.addEventListener('abort', () => fail(new Error('aborted')))));
-  const t0 = performance.now();
-  await clock.ready(30);
-  assert.ok(performance.now() - t0 < 1000);
+  let ready = false;
+  void clock.ready(30).then(() => (ready = true));
+  t.mock.timers.tick(29);
+  await flush();
+  assert.equal(ready, false);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.equal(ready, true);
   assert.equal(clock.known(), false);
 });

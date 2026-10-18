@@ -2,20 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { delveRules, findRules, opensZone } from '../src/lib/delve.ts';
-import { Engine, PRESETS, TWINS, allArt, createGame, isFake, type Difficulty, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { Engine, PRESETS, TWINS, allArt, createGame, isFake, type Difficulty, type GameState, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks } from '../src/lib/looks.ts';
+import { fakes, items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 const looks = readLooks(JSON.parse(readFileSync(new URL('../src/data/looks.json', import.meta.url), 'utf8')));
 const byName = new Map(items.map((it) => [it.name, it]));
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
+const byId = new Map(items.map((it) => [it.id, it]));
 
 /** The real items behind a question's options (a made-up name counts as none). */
 const real = (q: Question) => q.options.filter((id) => !isFake(id));
@@ -158,7 +151,7 @@ test('with twins sitting out, a question that mixes groups still shows each as o
     for (const q of twinQuestions(settings, 8)) {
       const counts = new Map<string, number>();
       for (const id of q.options) {
-        const group = items.find((it) => it.id === (isFake(id) ? id.split(':')[1] : id))!.group;
+        const group = byId.get(isFake(id) ? id.split(':')[1] : id)!.group;
         counts.set(group, (counts.get(group) ?? 0) + 1);
       }
       assert.equal(new Set(counts.values()).size, 1, `${q.category}: ${[...counts]}`);
@@ -171,23 +164,28 @@ test('in Delve, twins meet from their depth on (a find from its deeper one)', ()
   let base = createGame(null, { targetScore: 10, timer: 0, difficulty: 'eternal', mode: 'delve', public: false, locked: false });
   base = engine.apply(base, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
   base = engine.apply(base, { type: 'start' }, null);
-  /** Which sets met at `depth`, over a fresh pool each question. */
-  const meetsAt = (depth: number) => {
-    const seen = new Set<string>();
-    for (const category of CATEGORIES) {
-      for (let i = 0; i < 600; i++) {
-        const s: GameState = structuredClone(base);
-        s.round = depth;
-        const q = engine.makeQuestion(s, category);
-        if (q.gray) assert.ok(!met(q).some((t) => t.colour), `${met(q).map((t) => t.names)} met in grayscale at ${depth}`);
-        for (const t of met(q)) seen.add(t.names[0]);
-      }
+  /** Which sets met at `depth` in `category`, over a fresh pool each question (asked once for each, as sets share depths and categories). */
+  const asked = new Map<string, Set<string>>();
+  const meetsAt = (depth: number, category: string) => {
+    const key = `${depth} ${category}`;
+    let seen = asked.get(key);
+    if (seen) return seen;
+    seen = new Set<string>();
+    for (let i = 0; i < 600; i++) {
+      const s: GameState = structuredClone(base);
+      s.round = depth;
+      const q = engine.makeQuestion(s, category);
+      if (q.gray) assert.ok(!met(q).some((t) => t.colour), `${met(q).map((t) => t.names)} met in grayscale at ${depth}`);
+      for (const t of met(q)) seen.add(t.names[0]);
     }
+    asked.set(key, seen);
     return seen;
   };
   for (const { names, depth } of TWINS) {
-    assert.ok(!meetsAt(depth - 1).has(names[0]), `${names} apart above ${depth}`);
-    assert.ok(meetsAt(depth).has(names[0]), `${names} meet at ${depth}`);
+    // (Twins are of one category: only its questions can bring them together.)
+    const category = byName.get(names[0])!.category;
+    assert.ok(!meetsAt(depth - 1, category).has(names[0]), `${names} apart above ${depth}`);
+    assert.ok(meetsAt(depth, category).has(names[0]), `${names} meet at ${depth}`);
   }
   assert.equal(delveRules(30).twins, 30);
   assert.ok(findRules('flare', 30).twins! > 30, 'a find plays a deeper depth');

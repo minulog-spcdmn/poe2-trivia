@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { ANSWER_MS_FLOOR, ANSWER_MS_SLACK, Engine, createGame, heldMs, publicView, type GameState, type Item, type Question, type Revive } from '../src/lib/game.ts';
+import { ANSWER_MS_FLOOR, ANSWER_MS_SLACK, Engine, createGame, heldMs, publicView, type GameState, type Question, type Revive } from '../src/lib/game.ts';
 import {
   CHART_RUNS,
   chartLayout,
@@ -25,19 +24,12 @@ import { parseClientMsg } from '../src/lib/protocol.ts';
 import type { Answer } from '../src/lib/codex.ts';
 import type { DelveRun } from '../src/lib/delveRecord.ts';
 import { DELVE_RULESET, inventoryOf, livesOf } from '../src/lib/delve.ts';
+import { items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const byId = new Map(items.map((it) => [it.id, it]));
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
 const text = (s: GameState) => (id: string) => s.players.find((p) => p.id === id)?.name ?? byId.get(id)?.name ?? id;
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 /** A game on a clock the test moves (an answer's time is held to what the host saw: game.ts heldMs). */
 function setup(names: string[], settings: Partial<GameState['settings']> = {}) {

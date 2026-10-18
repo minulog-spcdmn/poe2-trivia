@@ -275,11 +275,19 @@ test("an effect a zone shows is coloured unlike that zone's, near the colours it
   assert.ok(steered > plain, `kept from the zones' colours by ${(steered / n).toFixed(3)} against ${(plain / n).toFixed(3)}`);
 });
 
-test('the generator stays cheap: 1000 strata, steered and re-rolled where needed', (t) => {
+test('the generator stays cheap: 1000 strata, steered and re-rolled where needed, seldom more than once', (t) => {
   setBackdrops(SHIPPED);
   const start = performance.now();
-  for (let k = FIRST; k < FIRST + 1000; k++) endgameAt(k);
+  let rolls = 0;
+  let most = 0;
+  for (let k = FIRST; k < FIRST + 1000; k++) {
+    const r = endgameAt(k).rolled ?? 0;
+    rolls += r;
+    most = Math.max(most, r);
+  }
   const ms = performance.now() - start;
-  t.diagnostic(`1000 strata in ${ms.toFixed(0)} ms (${ms.toFixed(0)} µs a stratum)`);
-  assert.ok(ms < 2000, `${ms.toFixed(0)} ms`);
+  t.diagnostic(`1000 strata in ${ms.toFixed(0)} ms (${ms.toFixed(0)} µs a stratum), ${rolls} re-rolls`);
+  // Its cost is the strata generated: one each, and a re-roll now and then, never all its tries.
+  assert.ok(rolls < 500, `${rolls} re-rolls`);
+  assert.ok(most < TRIES - 1, `${most} re-rolls for one stratum`);
 });
