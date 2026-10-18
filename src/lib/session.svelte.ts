@@ -32,7 +32,7 @@ import {
   type Item,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
-import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
+import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
@@ -696,6 +696,12 @@ class Session {
     }
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
+    // An invite link's screen asking whose room this is: told, apart from the
+    // players' slots (nobody banned or blocked, though). Everyone else comes to play.
+    answerProbes(peer, this.probeDesk, {
+      allow: (id) => !this.priv.bannedPeers.includes(id) && !this.priv.blockedPeers.includes(id),
+      others: (conn) => this.acceptConnection(conn),
+    });
     // 'open' fires again each time the signalling server is reconnected; the
     // room (and its game) is only built the first time.
     peer.once('open', () => {
@@ -738,7 +744,6 @@ class Session {
       this.startPings();
       this.watchOwnPresence();
     });
-    peer.on('connection', (conn) => this.acceptConnection(conn));
     peer.on('disconnected', () => {
       // Lost the signalling server; existing peer links keep working.
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
@@ -783,11 +788,6 @@ class Session {
     const p = this.priv;
     if (p.bannedPeers.includes(conn.peer) || p.blockedPeers.includes(conn.peer) || conn.serialization !== 'binary') {
       this.refuse(conn);
-      return;
-    }
-    // An invite link's screen asking whose room this is: told, and hung up on, apart from the players' slots.
-    if (isProbe(conn)) {
-      this.probeDesk.answer(conn);
       return;
     }
     // Connections that haven't introduced themselves have their own few

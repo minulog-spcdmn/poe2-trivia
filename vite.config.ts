@@ -11,6 +11,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { glslMinify } from './glslMinify.ts';
+import { peerjsProbe } from './peerjsProbe.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
@@ -309,7 +310,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env)],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env)],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
