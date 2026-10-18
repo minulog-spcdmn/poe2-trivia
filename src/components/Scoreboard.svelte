@@ -743,7 +743,10 @@
           <!-- A ward taking a loss: the entry braces, rimmed in azurite light. -->
           {#key guard[p.id].key}<span class="ward-rim" class:theirs={!guard[p.id].mine} aria-hidden="true"></span>{/key}
         {/if}
-        {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
+        <!-- Gone: the lobby's offline mark (StandingMark), a signal with no bar lit. -->
+        {#if !p.connected}<span class="off" role="img" aria-label="Disconnected" title="Disconnected"
+            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19.5v-3M10.5 19.5v-6.5M15 19.5v-10M19.5 19.5v-13.5" /></svg></span
+          >{/if}
         {#if canKick && p.id !== s.hostId}
           <span class="kick-at" class:armed={confirming === p.id}>
             <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
@@ -1302,7 +1305,18 @@
     position: absolute;
     top: -6px;
     left: 26px;
-    font-size: 0.8rem;
+    display: grid;
+    color: var(--muted);
+  }
+  .off svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    opacity: 0.7;
+    filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000);
   }
 
   @media (max-width: 640px) {
@@ -1481,7 +1495,7 @@
     .board:has(> li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide)) {
       flex-wrap: wrap;
     }
-    /* Where the ⚡ sits on a lone avatar. */
+    /* Where the offline mark sits on a lone avatar. */
     li:not(.wide) .off {
       left: 18px;
     }

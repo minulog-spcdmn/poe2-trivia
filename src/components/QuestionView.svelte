@@ -1518,19 +1518,20 @@
     color: #d8a26a;
     opacity: 0.85;
   }
-  /* An extra tooltip line, cool against the warm name and base. */
+  /* An extra tooltip line, cool against the warm name and base. In Cinzel's
+     small capitals (its lower case), not faked on EB Garamond: the capital
+     stands as tall as the base's above it. */
   .mirrored {
     display: block;
-    font-family: var(--font-body);
+    font-family: var(--font-cinzel);
     font-weight: 400;
-    font-variant: small-caps;
-    font-size: 0.95rem;
+    font-size: 0.86rem;
     letter-spacing: 0.06em;
     line-height: 1.1;
     color: #a9c3dc;
   }
   .caption .mirrored {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
   }
 
   .art {

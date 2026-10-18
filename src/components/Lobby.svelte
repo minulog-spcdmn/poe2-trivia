@@ -241,6 +241,7 @@
   );
   /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
   const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
+  const hostName = $derived(s.players.find((p) => p.id === s.hostId)?.name);
 </script>
 
 {#snippet startRow()}
@@ -256,7 +257,7 @@
       <!-- A lone player knows they're here: Begin stands by itself. With a party, whether everyone is
            really there (lib/presence.ts): their game on screen and in use, or who it would begin without. -->
       {#if unready.length}
-        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of {s.players.length} ready; {missingNote(unready)}</p>
+        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of <b class="num">{s.players.length}</b> ready; {missingNote(unready)}</p>
       {:else}
         <p class="go-note all-ready">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>
@@ -267,7 +268,13 @@
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
-    <p class="muted waiting"><span class="pulse"></span>{hostMark === 'away' || hostMark === 'idle' ? `Waiting for the host to start; they seem to be ${hostMark}…` : 'Waiting for the host to start…'}</p>
+    <!-- The host by name, as the end screen has it; "the host" only while no name is known. -->
+    <p class="muted waiting">
+      <span class="pulse"></span>
+      <span
+        >Waiting for {#if hostName}<b class="host-name">{hostName}</b>{:else}the host{/if} to start{hostMark === 'away' || hostMark === 'idle' ? `; they seem to be ${hostMark}…` : '…'}</span
+      >
+    </p>
   {/if}
 {/snippet}
 
@@ -1362,18 +1369,16 @@
     color: var(--gold-hi);
   }
 
+  /* No sign before the lines: none of the game's marks means anything for
+     every one of them, and the diamond means "you are here". */
   .rules {
     margin: 0.4rem 0 1.4rem;
-    padding-left: 1.2rem;
+    padding-left: 0;
+    list-style: none;
     font-size: 0.98rem;
   }
   .rules li {
     margin: 0.25rem 0;
-  }
-  .rules li::marker {
-    color: var(--unique);
-    content: '◆  ';
-    font-size: 0.7em;
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
@@ -1386,6 +1391,10 @@
     margin-top: 1.2rem;
     padding-top: 1.2rem;
     border-top: 1px solid var(--line);
+  }
+  .host-name {
+    font-weight: 400;
+    color: var(--text);
   }
   .start .waiting {
     margin: 0 auto;
