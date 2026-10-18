@@ -15,6 +15,7 @@ import { forgetCuts, startCut, type CutHandle } from './veilCutter';
 import type { MediaMsg } from './protocol';
 import { drawnAs, type Grayscale, type Item, type Question, type Veil } from './game';
 import { veilPlan } from './delve';
+import { loadOnce } from './loadOnce';
 
 /** A patch as the host lets it out: which one it is (its index in the cut, patchShapes). */
 export interface Patch {
@@ -120,19 +121,6 @@ async function fetchFile(src: string): Promise<Blob> {
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** Loads a picture once, trying again after a hiccup (a dropped request would leave everyone without art). */
-function loadOnce<T>(cache: Map<string, Promise<T>>, src: string, load: (src: string) => Promise<T>): Promise<T> {
-  let p = cache.get(src);
-  if (!p) {
-    const attempt = (left: number): Promise<T> =>
-      load(src).catch((err) => (left > 0 ? new Promise((r) => setTimeout(r, 600)).then(() => attempt(left - 1)) : Promise.reject(err)));
-    p = attempt(2);
-    cache.set(src, p);
-    p.catch(() => cache.delete(src));
-  }
-  return p;
 }
 
 const loadImage = (src: string) => loadOnce(imageCache, src, fetchImage);

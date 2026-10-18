@@ -74,7 +74,7 @@ From the outside in. Radii are what worked; keep the proportions when scaling.
 
 ### Layers
 
-Each layer is a separate absolutely positioned element holding two SVGs (glow and lines), turned as a whole so the browser composites it without repainting:
+Each layer is a separate absolutely positioned element holding two SVGs (glow and lines), turned as a whole so the browser composites it without repainting. Each is a compositing layer of its own at the screen's full density, so each is sized to the box its drawing takes up (`box`, worked out with the plate by `staged` in `src/lib/engraver.ts` and `src/lib/plateBox.ts`), not to the whole circle, and turns about the same point as ever: most layers (a seal, a figure, a moon) take up a few hundredths of the circle, and sized to all of it the start page's circle alone held over 200 MB of layers on a phone, enough for iOS to kill the page. A layer cut round a hollow heart keeps the whole plate, which its mask is drawn to.
 
 | Layer | Turn | Direction | Winds in from |
 | --- | --- | --- | --- |
