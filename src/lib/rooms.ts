@@ -66,6 +66,16 @@ const COMPACT_EVERY_MS = 30000;
 
 export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
 
+/**
+ * The QA desk's frames (src/qa) have no network: a scene hands in the rooms
+ * the list finds and what an invite's room answers (undefined: it never
+ * does), and nothing goes out.
+ */
+let madeUp: { rooms: RoomInfo[]; invite?: RoomInfo | 'gone' | null } | null = null;
+export function useMadeUpRooms(rooms: RoomInfo[], invite?: RoomInfo | 'gone' | null) {
+  madeUp = { rooms, invite };
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -278,6 +288,10 @@ function openPeer(id?: string): Promise<Peer> {
  * the scan is done or `cancelled()` returns true.
  */
 export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () => boolean): Promise<void> {
+  if (madeUp) {
+    for (const r of madeUp.rooms) onRoom(r);
+    return;
+  }
   const peer = await openPeer();
   const prober = new Prober(peer);
   /** Probes still connecting to slots that answered no ping, finished before the scan is. */
@@ -331,6 +345,7 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
  * with its host (as joining it would).
  */
 export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null> {
+  if (madeUp) return madeUp.invite === undefined ? new Promise(() => {}) : madeUp.invite;
   // A signalling server that never answers (blocked, offline) gives no error
   // for a long while: past this, the room is taken as not answering.
   const opening = openPeer();

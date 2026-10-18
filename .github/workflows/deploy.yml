@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: beta-dist
-          key: beta-dist-v1-${{ steps.find.outputs.sha }}
+          key: beta-dist-v2-${{ steps.find.outputs.sha }}
           lookup-only: true
 
   beta:
@@ -108,6 +108,8 @@ jobs:
         with:
           ref: ${{ needs.find-beta.outputs.sha }}
           persist-credentials: false
+          # All of it, main too: the QA desk's change list is the diff from where the beta left main.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -123,6 +125,12 @@ jobs:
           # A new beta is tested; the current one passed when it went up.
           if [ -n "$NEW" ]; then npm test; fi
           VITE_CHANNEL=beta npm run build
+      - name: List the files the beta changes, for the QA desk's "This change"
+        run: |
+          base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+          if [ -n "$base" ] && [ -f dist/qa.html ]; then
+            git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean) })))' "$base" > dist/qa-change.json
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: beta
@@ -172,7 +180,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: beta-dist
-          key: beta-dist-v1-${{ needs.find-beta.outputs.sha }}
+          key: beta-dist-v2-${{ needs.find-beta.outputs.sha }}
           fail-on-cache-miss: true
       - if: steps.pick.outputs.from == 'build'
         uses: actions/download-artifact@v4
@@ -183,7 +191,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: beta-dist
-          key: beta-dist-v1-${{ needs.find-beta.outputs.sha }}
+          key: beta-dist-v2-${{ needs.find-beta.outputs.sha }}
       - if: steps.pick.outputs.from
         run: cp -r beta-dist dist/beta
       - uses: actions/upload-pages-artifact@v3
