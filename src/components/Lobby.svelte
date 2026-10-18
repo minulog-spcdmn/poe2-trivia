@@ -272,14 +272,15 @@
     <p class="muted waiting">
       <span class="pulse"></span>
       <span
-        >Waiting for {#if hostName}<b class="host-name">{hostName}</b>{:else}the host{/if} to start{hostMark === 'away' || hostMark === 'idle' ? `; they seem to be ${hostMark}…` : '…'}</span
+        >Waiting for {#if hostName}<span class="host-name">{hostName}</span>{:else}the host{/if} to start{hostMark === 'away' || hostMark === 'idle' ? `; they seem to be ${hostMark}…` : '…'}</span
       >
     </p>
   {/if}
 {/snippet}
 
-<!-- A rules line leads with what it governs, a word in Cinzel's capitals in a column of its own, so the
-     rules read at a glance as a list without a sign that means nothing (never the diamond: "you are here"). -->
+<!-- A rules line leads with what it governs, a word the line itself doesn't say, set as the room's other
+     small labels are (.vis-tag), in a column as wide as the longest; so the rules read at a glance as a
+     list without a sign that means nothing (never the diamond: "you are here"). Phones set it over its line. -->
 {#snippet key(word: string)}
   <span class="key">{word}</span>
 {/snippet}
@@ -472,9 +473,9 @@
               <p class="together-when">Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
-              <li>{@render key('Cards')}<span>Vote for a card, then one is drawn from the votes.</span></li>
-              <li>{@render key('Answers')}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
-              <li>{@render key('Revives')}<span>Teammates can sacrifice their life force to revive you.</span></li>
+              <li>{@render key('Choice')}<span>Vote for a card, then one is drawn from the votes.</span></li>
+              <li>{@render key('Questions')}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
+              <li>{@render key('Rescue')}<span>Teammates can sacrifice their life force to revive you.</span></li>
             </ul>
           </div>
         {/if}
@@ -601,15 +602,15 @@
 
         <ul class="rules" data-cursor="rules">
           {#if race}
-            <li>{@render key('Misses')}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
-            <li>{@render key('Winning')}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
+            <li>{@render key('Penalty')}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
+            <li>{@render key('Victory')}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
           {:else}
             <li>
-              {@render key('Points')}<span
+              {@render key('Reward')}<span
                 >A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.</span
               >
             </li>
-            <li>{@render key('Winning')}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
+            <li>{@render key('Victory')}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
           {/if}
         </ul>
       {/if}
@@ -1252,8 +1253,8 @@
     font-size: 0.93rem;
     line-height: 1.3;
   }
-  .rules.coop li {
-    margin: 0.2rem 0;
+  .rules.coop {
+    row-gap: 0.2rem;
   }
   /* Numbers among the words are set in Cinzel, as everywhere in the game. */
   .num {
@@ -1383,21 +1384,35 @@
     padding-left: 0;
     list-style: none;
     font-size: 0.98rem;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 0.85rem;
+    row-gap: 0.3rem;
   }
   .rules li {
     display: grid;
-    grid-template-columns: 4.6rem 1fr;
-    gap: 0.75rem;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: baseline;
-    margin: 0.3rem 0;
   }
   .key {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.66rem;
+    font-family: var(--font-display);
+    font-size: 0.7rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--gold);
+    color: var(--muted);
+  }
+  @media (max-width: 480px) {
+    .rules,
+    .rules li {
+      display: block;
+    }
+    .rules li + li {
+      margin-top: 0.45rem;
+    }
+    .key {
+      display: block;
+    }
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
@@ -1412,7 +1427,6 @@
     border-top: 1px solid var(--line);
   }
   .host-name {
-    font-weight: 400;
     color: var(--text);
   }
   .start .waiting {

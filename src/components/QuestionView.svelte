@@ -1524,7 +1524,7 @@
   .mirrored {
     display: block;
     font-family: var(--font-cinzel);
-    font-weight: 400;
+    font-weight: 500;
     font-size: 0.86rem;
     letter-spacing: 0.06em;
     line-height: 1.1;

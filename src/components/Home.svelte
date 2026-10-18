@@ -674,17 +674,18 @@
         </div>
       {:else if compact.current}
         <!-- Create a room: the page's one big button, and its gold one until Join's code is whole
-             (then Join holds the gold and this goes plain). On a first visit its row asks the name. -->
+             (then Join holds the gold and this goes plain), unless Create's own row is the one open.
+             On a first visit its row asks the name. -->
         <div class="act" bind:this={boxes[0]} class:dimmed={connecting && busyEntry !== 'create'} inert={connecting && busyEntry !== 'create'} in:fly={{ y: 12, duration: 500, delay: 450 }}>
           <!-- On a first visit the button gives way to the name and its own Create, in its place. -->
           <div class="under">
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
-                <button class="btn" class:primary={!joinReady} type="submit">Create</button>
+                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Create</button>
               </form>
             {:else}
-              <button class="btn big" class:primary={!joinReady} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>Create a room</button>
+              <button class="btn big" class:primary={!joinReady || open === 'create'} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>Create a room</button>
             {/if}
           </div>
           <div class="under">
@@ -720,7 +721,7 @@
                   {@render codeInput(false)}
                 {/if}
                 <!-- Lit once a join can go, and Create a room gives up its gold: one lit button at a time. -->
-                <button class="btn" class:primary={joinReady} type="submit">Join</button>
+                <button class="btn" class:primary={joinReady && open !== 'create'} type="submit">Join</button>
               </form>
             {/if}
           </div>
