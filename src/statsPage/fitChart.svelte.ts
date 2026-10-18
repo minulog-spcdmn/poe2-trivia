@@ -14,11 +14,11 @@ export function fitChart(o: { on: () => boolean; base: () => number; least?: num
     const main = document.querySelector('main');
     if (!main) return;
     // The page's content ends with main (its own padding at the foot included), whatever the page's least height.
-    const over = Math.round(main.getBoundingClientRect().bottom + scrollY - innerHeight);
+    const over = Math.ceil(main.getBoundingClientRect().bottom + scrollY - innerHeight);
     const now = untrack(() => height);
     const least = o.least ?? 140;
     const most = Math.max(now, untrack(() => o.most?.() ?? now));
-    if (over > 2 && now > least) fitted = Math.max(least, now - over);
+    if (over > 0 && now > least) fitted = Math.max(least, now - over);
     else if (over < -8 && now < most) fitted = Math.min(most, now - over);
   }
   $effect(() => {

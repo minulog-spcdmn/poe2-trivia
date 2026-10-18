@@ -849,9 +849,14 @@ or finished a game (the overview's "From visit to game").
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser. Its
-overview answers "how is it going?" with the views behind it, today so
-far among it: today's visitors, games, answers and failures against the
-same time a period ago, each with what the last update added. The monitor
+overview answers "how is it going?" and keeps to what's worth a glance,
+with room around it: four figures for the period, today's visitors,
+games and answers against the same time a period ago (each with what the
+last update added), how busy each day was, what happened, when they
+come, where they are and what they play; the rest is in the views
+behind it. Joining only shows there when its failures run well above the
+usual rate, today's or the period's (`insights.ts` troubleOf), as a line
+above it all. The monitor
 button in its top bar (`#board`) shows the overview full screen for a
 monitor of its own, kept awake, the pointer hidden while still, updating
 by itself; leaving full screen leaves it. On a monitor on its side

@@ -119,3 +119,35 @@ export function stepsOf(c: Counts): Steps {
   });
   return out;
 }
+
+/**
+ * Joining going worse than usual: failures (joining a room, or opening
+ * one) against what the usual rate would give for as many games and tries
+ * to join, each only beyond chance. `period`: the period's against the
+ * period before's rate; `today`: today's so far against the rest of the
+ * period's. Null where neither is.
+ */
+export interface Trouble {
+  period: { failed: number; expected: number } | null;
+  today: { failed: number; expected: number } | null;
+}
+
+export function troubleOf(now: Counts, before: Counts): Trouble | null {
+  const failed = (c: Counts) => c.failures.reduce((n, f) => n + f.count, 0);
+  const tries = (c: Counts) => c.joins.reduce((n, j) => n + j.tried, 0);
+  /** What a failure could happen on: a game started (a room opened, or played at one screen) or a try to join. */
+  const chances = (c: Counts) => c.games.started + tries(c);
+  /** Failures well above `expected`, or null. */
+  const worse = (f: number, expected: number) => (f > expected && beyondChance(f - expected, expected) ? { failed: f, expected } : null);
+
+  const before_ = chances(before);
+  const period = before_ ? worse(failed(now), (chances(now) * failed(before)) / before_) : null;
+
+  const last = now.days.length - 1;
+  const failedToday = now.failuresPerDay[last] ?? 0;
+  const chancesToday = (now.games.perDay[last] ?? 0) + (now.joinsPerDay.tried[last] ?? 0);
+  const restChances = chances(now) - chancesToday;
+  const today = restChances > 0 ? worse(failedToday, (chancesToday * (failed(now) - failedToday)) / restChances) : null;
+
+  return period || today ? { period, today } : null;
+}

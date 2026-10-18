@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { moversOf, spikeSource, spikesOf, stepsOf } from '../src/statsPage/insights.ts';
+import { moversOf, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Slices } from '../src/statsPage/slices.ts';
 import { busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
@@ -376,6 +376,25 @@ test('how far a visit gets: played, finished, answered, of the visitors since th
   assert.deepEqual(c.failuresPerDay, [1, 0, 2]);
   // Never marked: nothing to say yet.
   assert.equal(stepsOf(countsOf([path('/', [5, 5, 5], false)], DAYS)).from, null);
+});
+
+test('joining is called worse only when its failures are well above the usual rate', () => {
+  // 100 games and tries a day; the period before failed 2 in 100.
+  const counts = (games: number[], failures: number[]) => countsOf([path('play/race-online', games), path('error/join-no-answer', failures)], DAYS);
+  const before = counts([100, 100, 100], [2, 2, 2]);
+  // As many again failing 3 in 100: chance could do that.
+  assert.equal(troubleOf(counts([100, 100, 100], [3, 3, 3]), before), null);
+  // Failing 10 in 100: worse, against the 6 the usual rate gives.
+  const bad = troubleOf(counts([100, 100, 100], [10, 10, 10]), before);
+  assert.deepEqual(bad?.period, { failed: 30, expected: 6 });
+  // Twice the games and twice the failures is the same rate: not worse.
+  assert.equal(troubleOf(counts([200, 200, 200], [4, 4, 4]), before), null);
+  // Today far above the rest of the period, which was as usual.
+  const today = troubleOf(counts([100, 100, 100], [2, 2, 20]), before);
+  assert.equal(today?.today?.failed, 20);
+  assert.equal(today?.today?.expected, 2);
+  // Nothing before to go by, and an ordinary today: nothing to say.
+  assert.equal(troubleOf(counts([100, 100, 100], [2, 2, 2]), countsOf([], DAYS)), null);
 });
 
 test('a day far busier than usual stands out, a day chance could make does not', () => {
