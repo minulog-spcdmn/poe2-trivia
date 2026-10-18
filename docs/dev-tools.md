@@ -2,7 +2,7 @@
 
 Test and tuning pages, all linked from the dev hub (`dev.html`), and the recorder for the room bots' hands. The live build leaves them out.
 
-A new tool is a bench on the QA desk (`docs/qa.md`, "Adding a bench"), not a page of its own: the desk gives it the sizes, the states side by side, Replay and Freeze, and lists it. The pages below came before; each moves onto the desk when it's next worked on (the daily streak's page already has: `qa.html?b=streak`).
+A new tool is a bench on the QA desk (`docs/qa.md`, "Adding a bench"), not a page of its own: the desk gives it the sizes, the states side by side, Replay and Freeze, and lists it. The pages below came before; each moves onto the desk when it's next worked on (the daily streak's, the descent's and the rune circles' pages already have: `qa.html?b=streak`, `?b=descent`, `?b=circle`).
 
 ## The dev hub
 
@@ -19,7 +19,7 @@ bot too; builds without the bot (the beta) leave its card out.
 
 `qa.html` (`src/qa/`) is a bench for each thing of the game's to try out,
 live, in every state that matters: the pieces on their own (the avatar, the
-daily streak) with their controls, and every scene of the game. It is where
+daily streak, the descent, the rune circles) with their controls, and every scene of the game. It is where
 a change gets checked; `docs/qa.md` says how to use it and how to add a
 bench.
 
@@ -144,25 +144,6 @@ all as in a game.
   leaves it out, and its page is marked (`<html data-lab data-zones>`), so
   `src/lib/storage.ts` starts its keys with `lab.zones.` and its run never
   moves the lab's.
-
-## The descent's test page
-
-Its states are scenes in the QA desk too (`lobby/delve-descent`, with knobs), walked with the rest; this page is for playing them out by hand.
-
-`descent.html` (`src/descentPreview/`) shows Delve's rules block
-(`src/components/DelveRules.svelte`: the descent drawn beside the finds,
-with the leaders from the pit to the finds' headings) in a rules card at a
-phone's (281 px), a tablet's (329 px) and a desktop's (450 px) width side
-by side.
-
-- **Deepest:** a slider from 0 to 300 and a box for any depth (0 is no run
-  yet); the hint says the depth as players see it.
-- **Finds met:** which of the three finds the player has met (only those
-  get a leader, or their item beside the pit on a phone).
-- **Replay entrance** draws the blocks in again; **Walk down** goes a depth
-  deeper every 180 ms.
-- **Open it:** `npm run dev`, then `http://localhost:5173/descent.html`; on
-  the beta, **poe2.quest/beta/descent.html**. The live build leaves it out.
 
 ## The hover tuning page
 
