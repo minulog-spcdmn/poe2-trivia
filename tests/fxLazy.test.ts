@@ -24,15 +24,20 @@ registerHooks({
   },
 });
 
-// Frames and idle moments run only when a test says so.
-let frames: (() => void)[] = [];
+// Frames and idle moments run only when a test says so; frames come 60 a
+// second, each with its time as a browser gives it.
+const FRAME_MS = 1000 / 60;
+let clock = 0;
+let frames: ((now: number) => void)[] = [];
 let idles: (() => void)[] = [];
 let ids = 0;
-const queued = new Map<number, () => void>();
+const queued = new Map<number, unknown>();
 const g = globalThis as Record<string, unknown>;
-g.requestAnimationFrame = (f: () => void) => {
+// The page's clock is the frames' clock: it moves only when a frame comes.
+performance.now = () => clock;
+g.requestAnimationFrame = (f: (now: number) => void) => {
   const id = ++ids;
-  const run = () => queued.delete(id) && f();
+  const run = (now: number) => queued.delete(id) && f(now);
   queued.set(id, run);
   frames.push(run);
   return id;
@@ -49,7 +54,8 @@ g.cancelIdleCallback = (id: number) => queued.delete(id);
 const frame = () => {
   const now = frames;
   frames = [];
-  for (const f of now) f();
+  clock += FRAME_MS;
+  for (const f of now) f(performance.now());
 };
 const idle = () => {
   const now = idles;
@@ -378,10 +384,21 @@ test("a task ends by its life, however it is written", () => {
   o.ctx.state.done = true;
   readSix();
   let runs = 0;
-  fx.task(() => (runs++, true), { life: 0.1 });
+  let forever = 0;
+  let going = true;
+  const ages: number[] = [];
+  fx.task((_, age) => (ages.push(age), runs++, true), { life: 0.1 });
+  fx.task(() => (forever++, going));
   for (let i = 0; i < 30; i++) frame();
+  // It ran until the frame its age (the wait for the renderer included)
+  // reached its life, and no longer, though it never said it was done.
+  assert.ok(runs > 1 && runs < 30, `${runs} runs`);
+  assert.ok(ages.at(-1)! >= 0.1 && ages.at(-2)! < 0.1, `ages ${ages}`);
+  assert.ok(forever > runs, `${forever} runs of the endless one`);
+  assert.equal(fx.fxStats().tasks, 1, 'only the task without a life is left');
+  going = false;
+  frame();
   assert.equal(fx.fxStats().tasks, 0);
-  assert.ok(runs > 0 && runs < 30, `${runs} runs`);
   stop();
 });
 

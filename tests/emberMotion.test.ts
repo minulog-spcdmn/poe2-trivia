@@ -83,7 +83,6 @@ test('every stratum has a motion: each zone its profile as tweaked in backdrops.
   for (let k = STRATA.length; k < 60; k++) {
     const own = motionOf(endgameAt(k).motion);
     assert.deepEqual(zoneMotionOf(k).main, own.main, `stratum ${k}`);
-    assert.equal(motionFor(k, 1), motionFor(k, 1));
     assert.ok(MOTIONS[motionFor(k, 1)].name === own.main.name);
   }
   // And they move so: one past 100 goes the way its motion has it.

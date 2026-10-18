@@ -142,3 +142,29 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by CeebFrack, https://freesound.org/s/132593/
   victory-6.mp3        gong -10 sem
                        by Logicogonist, https://freesound.org/s/519359/
+  vein-pick.mp3        Pickaxe2 (an Azurite Vein's strike)
+                       by NoisyRedFox, https://freesound.org/s/760566/
+  vein-stone-hit.mp3   Stone hit (an Azurite Vein's strike)
+                       by CamoMano, https://freesound.org/s/431019/
+  vein-crystal-1.mp3   OWI_CrystalShatter 2.wav (the azurite breaking free)
+                       by matthewHoldenSound, https://freesound.org/s/542560/
+  vein-crystal-2.mp3   OWI_Crystalclass shatter.wav (an Azurite Vein's strike)
+                       by matthewHoldenSound, https://freesound.org/s/542565/
+  vein-rock-break.mp3  Rock destroy (the azurite breaking free)
+                       by Bertsz, https://freesound.org/s/524312/
+  vein-crumble-1.mp3   Kirkstall Rock Crumble .wav (a vein's walls cracking)
+                       by rokenjocu, https://freesound.org/s/262118/
+  vein-crumble-2.mp3   Crumble #1.wav (a vein's walls cracking)
+                       by abstraktgeneriert, https://freesound.org/s/348947/
+  vein-crumble-3.mp3   Stone Crumble 2 (a vein's walls cracking, worse)
+                       by Kastenfrosch, https://freesound.org/s/521956/
+  vein-crack.mp3       Cracking Earthquake (cracking soil, cracking stone)
+                       (a vein's walls cracking, worse)
+                       by uagadugu, https://freesound.org/s/222521/
+  amb-vein-ice.mp3     The crackling of a frozen river. The crackling of ice.
+                       (an Azurite Vein's tunnel)
+                       by ReflektWave, https://freesound.org/s/842575/
+  amb-vein-rumble.mp3  rumbling_ice (an Azurite Vein's tunnel)
+                       by aerror, https://freesound.org/s/847807/
+  amb-vein-shaft.mp3   Dangerous mine shaft, edited (an Azurite Vein's tunnel)
+                       by bkamuse, edited by pbmzbr, https://freesound.org/s/625296/

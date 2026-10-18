@@ -47,8 +47,9 @@ test('counts held while unseen are dropped if the opt-out was set meanwhile', ()
 
 test('counts held while unseen go out once the page is seen, when not opted out', async () => {
   visibility = 'hidden';
-  // A page of its own, loaded unseen.
-  const { countEvent: count } = await import('../src/lib/count.ts?unseen');
+  // A page of its own, loaded unseen (the query makes it a module of its own).
+  const unseen = '../src/lib/count.ts?unseen';
+  const { countEvent: count } = (await import(unseen)) as typeof import('../src/lib/count.ts');
   count('play/race-online');
   assert.equal(sent.length, 0, 'held');
   show();

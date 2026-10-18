@@ -20,7 +20,7 @@ const met = (q: Question) => TWINS.filter((t) => t.names.filter((n) => real(q).i
 const CATEGORIES = [...new Set(TWINS.map((t) => byName.get(t.names[0])!.category))];
 
 /** Questions in each twin category played one after another, each answer used up, as in a game. */
-function twinQuestions(settings: Partial<Settings>, seed: number, n = 1500): Question[] {
+function twinQuestions(settings: Partial<Settings> & Pick<Settings, 'difficulty'>, seed: number, n = 1500): Question[] {
   const engine = new Engine(items, { autoClock: true, rng: seeded(seed), fakes });
   return CATEGORIES.flatMap((category) => {
     const s = createGame(null, { targetScore: 5, timer: 0, mode: 'turns', public: false, locked: false, ...settings });
@@ -147,7 +147,7 @@ test('with twins sitting out, a question that mixes groups still shows each as o
   // Eternal turns a name question with no room for its made-up names into a
   // picture one, whose art is in grayscale: it is counted with the Guiding
   // Palms apart, as it is dealt.
-  for (const settings of [{ difficulty: 'eternal' }, { difficulty: 'merciless' }] as Partial<Settings>[]) {
+  for (const settings of [{ difficulty: 'eternal' }, { difficulty: 'merciless' }] as Pick<Settings, 'difficulty'>[]) {
     for (const q of twinQuestions(settings, 8)) {
       const counts = new Map<string, number>();
       for (const id of q.options) {

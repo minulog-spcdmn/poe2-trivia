@@ -9,7 +9,7 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, Dig, GameState, Player, Preset, Question, Revive } from './game.ts';
+import type { DifficultyRules, Dig, GameState, Player, Preset, Question } from './game.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -820,12 +820,6 @@ export function findOffers(s: GameState): CardFind[] {
 export const findOn = (s: GameState, category: string): FindKind | null => findOffers(s).find((f) => f.category === category)?.kind ?? null;
 
 /**
- * The first find among the cards on offer, or null.
- * @deprecated An offer may hold two finds: use findOffers(s) or findOn(s, category).
- */
-export const findOffer = (s: GameState): CardFind | null => findOffers(s)[0] ?? null;
-
-/**
  * Seconds the question in play started with: a find's or the depth's (a
  * flare's extra time not counted).
  */
@@ -1136,19 +1130,5 @@ export function teamDepth(s: GameState): number {
   return falls.length || left ? Math.max(left, ...falls) : s.round;
 }
 
-/** A run's result, for the end screen and the records: one depth for the team, and what each player gave and lost. */
-export interface DelveTeam {
-  depth: number;
-  /** Nobody stands any more. */
-  perished: boolean;
-  players: DelveStanding[];
-  /** Every life given, oldest first. */
-  revives: Revive[];
-}
-
 /** Nobody in the run stands any more: the run is over, as the engine ends it (Engine.advanceCoop), before the results are shown. */
 export const nobodyStands = (s: GameState) => !!s.delve && standingIds(s).length === 0;
-
-export function delveTeam(s: GameState): DelveTeam {
-  return { depth: teamDepth(s), perished: nobodyStands(s), players: delveStandings(s), revives: [...(s.delve?.revives ?? [])] };
-}

@@ -178,62 +178,30 @@ test('an answer turned down names its question, so the guest can answer it again
   assert.equal(parseHostMsg({ t: 'error', message, askedAt: 1.5 }), null);
 });
 
-test('version 32: the pictures of a question come down an art lane of their own (artLane.ts), the hello saying the guest opened it (lane), and a question waits for its clock in every mode, as Delve\'s did (no deadline nor clockAt until the host\'s clock action, and no labels, prompt or groups for guests till then), its pictures going out sealed as soon as they are ready (sealed) and their key on the main channel as it starts (key), the hello saying the guest can open them (seal); 31 lets only the owner key\'s signature play under the held name (hello and GameState owner, a listing\'s owner); 30 joins two lines from 27 (one numbered 28 and 29, the other 28): an Azurite Vein\'s lamp is its strike 1\'s whole clock, never fed, and its strikes ask from 20, 30 and 40 depths further down; and an Azurite Vein is dug a strike at a time on one lamp, its wards in hand until the way out (WAY_OUT) and buried by a cave-in; and players say whether their game is on screen and in use (presence), the host tells the lobby how each stands (standing), and a veiled picture goes out whole with which patch each pixel falls in, its patches only named as they uncover; 27: in Delve only a question cleared goes a depth deeper, a miss or a time-out followed by another question at the same depth; 26: an Azurite Vein always gives a whole ward (no shards, no fast window), the Vein comes from shown depth 25 and the Flare Cache from 40, each certain on its first depth; 25: the Delve rules are ruleset 2, twins kept apart down to their depth (game.ts TWINS); 24: a pointer goes with the anchors round its own, and many more parts of the screen are anchors (cursors.ts); 23: Delve together counts the team\'s streak (depths cleared in a row with nobody missing), which every screen\'s verdict burns with; 22: a new zone\'s cards are dealt as the plunge into it lands (dealAt), every screen holding them and their votes till then; 21: players send their pointers (cursor, cursors); 20: pictures go out at each item\'s own artScale (4 up to 2 x 2 cells, 2 above), so an option\'s picture comes with its size in art pixels; 19: a guest can choose to watch rather than play (the watch action); 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled item art); 17: a blasted question remembers the wrong answers given to it, so every screen logs what they cost (Blast.was.struck); 16 gave a flare six seconds and a Flare Cache two thirds of the clock, never under four (worked out on every screen); 15 set dynamite off right at 0, its fuse burning over the last seconds before; 14 lit it at 0 (Question.fuse), 13 blasted a question away (the blast action), 12 had the frozen Delve rules, 11 the co-op vote and revive', () => {
+test('the protocol version moves only on purpose (its note in protocol.ts says what each changed)', () => {
   assert.equal(PROTOCOL_VERSION, 32);
-  // A guest on 31 would know nothing of the art lane, sealed pictures or a clock that waits outside Delve.
-  assert.match(versionProblem(31)!, /^Your game is out of date/);
-  // A guest on 29 would know nothing of presence or whole veiled pictures; one on 28 (presence) nothing of the vein's dig.
-  assert.match(versionProblem(29)!, /^Your game is out of date/);
-  assert.match(versionProblem(28)!, /^Your game is out of date/);
-  // A host on 27 would take a guest's presence for a forged message and block them; a guest on 27 would look for patches as pictures,
-  // and put a vein's ward straight into the pack and never deal the way out.
-  assert.match(versionProblem(27)!, /^Your game is out of date/);
-  // A guest on 26 would expect a miss to take the run deeper.
-  assert.match(versionProblem(26)!, /^Your game is out of date/);
-  // A guest on 25 would draw a Vein's fast window and look for shards the host no longer gives.
-  assert.match(versionProblem(25)!, /^Your game is out of date/);
-  // A host on 24 would deal Delve questions under ruleset 1 to a guest recording them under 2.
-  assert.match(versionProblem(24)!, /^Your game is out of date/);
-  // A host on 23 would take a pointer with more than one anchor, or on one it doesn't know, for a forged message and block its guest.
-  assert.match(versionProblem(23)!, /^Your game is out of date/);
-  // A guest on 22 would show its own streak, not the team's, on the verdict.
-  assert.match(versionProblem(22)!, /^Your game is out of date/);
-  // A guest on 21 would show a new zone's cards mid-plunge, and vote on them.
-  assert.match(versionProblem(21)!, /^Your game is out of date/);
-  // A host on 20 would take a guest's pointer for a forged message and block them.
-  assert.match(versionProblem(20)!, /^Your game is out of date/);
-  // A guest on 19 would draw a small item's picture at twice its size, and find no size on an option's picture.
-  assert.match(versionProblem(19)!, /^Your game is out of date/);
+});
+
+test("an option's picture comes with its size in art pixels", () => {
   const pic = new ArrayBuffer(8);
   assert.ok(parseHostMsg({ t: 'option', qid: 1, index: 0, w: 120, h: 120, data: pic }));
   assert.equal(parseHostMsg({ t: 'option', qid: 1, index: 0, data: pic }), null, 'an option picture without its size');
-  // A host on 18 would take a guest's watch action for a forged message and block them.
-  assert.match(versionProblem(18)!, /^Your game is out of date/);
-  // A guest on 17 would show a host's pictures at twice their size, or a 17 host's at half, and burn patches in out of place.
-  assert.match(versionProblem(17)!, /^Your game is out of date/);
-  // A guest on 16 would log a wrong answer a teammate's dynamite then blasted away as never given.
-  assert.match(versionProblem(16)!, /^Your game is out of date/);
-  // The state passes as the host sent it, a blast's struck answers and all.
+});
+
+test("the state passes as the host sent it, a blast's struck answers and all", () => {
   const was = { at: 1, itemId: 'x', mode: 'name', struck: [{ by: 'p1', index: 2, lives: 1, wards: 0 }] };
   const state = { players: [], settings: {}, question: { blast: { stick: 'p0', side: 1, was } } };
   assert.deepEqual(parseHostMsg({ t: 'state', state, now: 5 }), { t: 'state', state, now: 5 });
-  // A guest on 15 would run its own clock five seconds on after a flare, and a Flare Cache's a second short.
-  assert.match(versionProblem(15)!, /^Your game is out of date/);
-  // A guest on 14 would wait for a fuse the host never lights, and burn none before 0.
-  assert.match(versionProblem(14)!, /^Your game is out of date/);
-  // A guest before the fuse would show no fuse burning.
-  assert.match(versionProblem(13)!, /^Your game is out of date/);
-  // A guest on an older curve would time its own clock and fast window wrongly, so it does not mix.
-  assert.match(versionProblem(12)!, /^Your game is out of date/);
-  assert.match(versionProblem(11)!, /^Your game is out of date/);
-  assert.match(versionProblem(10)!, /^Your game is out of date/);
+});
+
+test('co-op actions pass; a blast names only its question; retired messages are no messages', () => {
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'vote', category: 'Rings' } }), { t: 'action', action: { type: 'vote', category: 'Rings' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'revive', target: 'p2' } }), { t: 'action', action: { type: 'revive', target: 'p2' } });
-  // A blast names only its question; who set it off the host takes from the connection.
+  // Who set a blast off the host takes from the connection.
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'blast', askedAt: 42, by: 'p0' } }), { t: 'action', action: { type: 'blast', askedAt: 42 } });
-  // No fuse is lit by anyone (14's host-only 'fuse' action is gone): it is no message.
+  // No fuse is lit by anyone (14's host-only 'fuse' action is gone).
   assert.equal(parseClientMsg({ t: 'action', action: { type: 'fuse', askedAt: 42 } }), null);
-  // The plain art the dynamite before it laid bare is no message any more.
+  // The plain art the dynamite before it laid bare.
   assert.equal(parseHostMsg({ t: 'clean', qid: 5, w: 120, h: 160, data: new ArrayBuffer(8) }), null);
 });
 

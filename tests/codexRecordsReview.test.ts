@@ -86,7 +86,7 @@ test('the usual depth: at least half the ends that deep or deeper (ties too), an
     const shallower = Object.entries(ends).reduce((n, [d, k]) => n + (Number(d) <= m ? k : 0), 0);
     return 2 * deeper >= all && 2 * shallower >= all;
   };
-  for (const ends of [{ 5: 3 }, { 3: 2, 9: 2 }, { 4: 1, 5: 5, 9: 1 }, { 2: 1, 7: 2 }]) assert.ok(atLeastHalf(ends), JSON.stringify(ends));
+  for (const ends of [{ 5: 3 }, { 3: 2, 9: 2 }, { 4: 1, 5: 5, 9: 1 }, { 2: 1, 7: 2 }] as Record<number, number>[]) assert.ok(atLeastHalf(ends), JSON.stringify(ends));
   // "Half end deeper" would be false here: none does.
   assert.equal(medianOfCounts({ 5: 3 }), 5);
   let x = emptyRecords();

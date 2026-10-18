@@ -1,0 +1,289 @@
+{
+ "moments": {
+  "veinMined": {
+   "after": 0,
+   "layers": [
+    {
+     "delay": 0,
+     "file": "mined-542560",
+     "gain": -28,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.55,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "mined-524312",
+     "gain": -30,
+     "hp": 20,
+     "len": 0,
+     "lp": 6000,
+     "rate": 1,
+     "send": 0.4,
+     "start": 0
+    }
+   ],
+   "over": true,
+   "soften": 4,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  },
+  "veinStrain1": {
+   "after": 1100,
+   "layers": [
+    {
+     "delay": 0,
+     "file": "strain-262118",
+     "gain": -24,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    },
+    {
+     "delay": 300,
+     "file": "strain-348947",
+     "gain": -28,
+     "hp": 20,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    }
+   ],
+   "soften": 3,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  },
+  "veinStrain2": {
+   "after": 1000,
+   "layers": [
+    {
+     "delay": 0,
+     "file": "strain-222521",
+     "gain": -28,
+     "hp": 20,
+     "len": 4.47,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    },
+    {
+     "delay": 400,
+     "file": "strain-521956",
+     "gain": -32,
+     "hp": 20,
+     "len": 2.16,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.6,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "layer-sub-2",
+     "gain": -32,
+     "hp": 20,
+     "len": 0,
+     "lp": 400,
+     "rate": 0.6,
+     "send": 0.5,
+     "start": 0
+    }
+   ],
+   "soften": 3,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  },
+  "veinStrike": {
+   "layers": [
+    {
+     "delay": 0,
+     "file": "strike-760566",
+     "gain": -26,
+     "hp": 227,
+     "len": 0,
+     "lp": 20000,
+     "rate": 1,
+     "send": 0.45,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "strike-431019",
+     "gain": -26,
+     "hp": 20,
+     "len": 0,
+     "lp": 963,
+     "rate": 0.8,
+     "send": 0.75,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "click-5",
+     "gain": -31,
+     "hp": 20,
+     "len": 0,
+     "lp": 651,
+     "rate": 1,
+     "send": 0.4,
+     "start": 0
+    },
+    {
+     "delay": 0,
+     "file": "mined-542565",
+     "gain": -31,
+     "hp": 145,
+     "len": 0,
+     "lp": 2381,
+     "rate": 1,
+     "send": 0.15,
+     "start": 0
+    }
+   ],
+   "soften": 4,
+   "varyGain": 1,
+   "varyPitch": 0.03
+  }
+ },
+ "v": 1,
+ "vein": {
+  "space": "tunnel",
+  "spaceLen": 0.65,
+  "even": true,
+  "duck": -8,
+  "muffle": 963,
+  "fadeIn": 3,
+  "fadeOut": 1.5,
+  "layers": [
+   {
+    "cents": 0,
+    "delay": 0,
+    "eq": [
+     {
+      "f": 120,
+      "g": 0,
+      "q": 0.7,
+      "type": "lowshelf"
+     },
+     {
+      "f": 400,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 2500,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 7000,
+      "g": 0,
+      "q": 0.7,
+      "type": "highshelf"
+     }
+    ],
+    "file": "ice-842575",
+    "gain": -40,
+    "hp": 20,
+    "len": 0,
+    "lp": 20000,
+    "rate": 1,
+    "send": 0.7,
+    "start": 0
+   },
+   {
+    "cents": 0,
+    "delay": 0,
+    "eq": [
+     {
+      "f": 120,
+      "g": 0,
+      "q": 0.7,
+      "type": "lowshelf"
+     },
+     {
+      "f": 400,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 2500,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 7000,
+      "g": 0,
+      "q": 0.7,
+      "type": "highshelf"
+     }
+    ],
+    "file": "ice-847807",
+    "gain": -27,
+    "hp": 20,
+    "len": 0,
+    "lp": 217,
+    "rate": 1,
+    "send": 0.2,
+    "start": 0
+   },
+   {
+    "cents": 0,
+    "delay": 0,
+    "eq": [
+     {
+      "f": 120,
+      "g": 0,
+      "q": 0.7,
+      "type": "lowshelf"
+     },
+     {
+      "f": 400,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 2875,
+      "g": -10,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 7348,
+      "g": -18,
+      "q": 0.7,
+      "type": "highshelf"
+     }
+    ],
+    "file": "tunnel-625296",
+    "gain": -34,
+    "hp": 723,
+    "len": 0,
+    "lp": 9838,
+    "rate": 0.4,
+    "send": 1,
+    "start": 0
+   }
+  ],
+  "muffles": [
+   1200,
+   850,
+   600
+  ]
+ },
+ "zone": 3
+}

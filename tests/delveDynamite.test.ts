@@ -331,9 +331,6 @@ test("the fuse burns only over the last DELVE_FUSE_MS before a 0 where the dynam
   // Nothing in the state lights it: the host sets no fuse, the question is as it was.
   h.before0(DELVE_FUSE_MS / 2);
   assert.equal('fuse' in h.s.question!, false);
-  // Protocol 14's host-only 'fuse' lights nothing now.
-  h.act({ type: 'fuse', askedAt: q.askedAt } as unknown as Action);
-  assert.equal('fuse' in h.s.question!, false);
   // A flare to burn at that 0: it burns first, and no fuse before it.
   const f = solo({ dynamite: 1, flares: 1 });
   assert.equal(fuseDue(f.s), false);

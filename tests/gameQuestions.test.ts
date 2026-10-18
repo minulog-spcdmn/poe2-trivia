@@ -5,7 +5,7 @@ import { Engine, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficu
 import { fakes, items, lobby, right, seeded, wrong } from './helpers.ts';
 
 test('difficulties scale options, decoy kind and question types', () => {
-  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
+  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Preset[]) {
     const rules = PRESETS[difficulty];
     let { s } = lobby(['Ash'], 3, difficulty);
     const engine = new Engine(items, { autoClock: true, rng: seeded(42), fakes });
@@ -178,7 +178,7 @@ test('similar-looking names rank above unrelated ones', () => {
 });
 
 test('lineage gems are a category', () => {
-  const engine = new Engine(items, { autoClock: true, autoClock: true });
+  const engine = new Engine(items, { autoClock: true });
   assert.ok(engine.categories.includes('Lineage Gems'));
   assert.ok(engine.byCategory.get('Lineage Gems')!.length >= 20);
 });

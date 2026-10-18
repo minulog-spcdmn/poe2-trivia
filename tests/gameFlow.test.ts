@@ -1,7 +1,7 @@
 // The game's flow (src/lib/game.ts): turns, races and deathmatches, what guests see before the reveal, the clock, streaks.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, PRESETS, publicView, renameCategories, type Difficulty, type GameState } from '../src/lib/game.ts';
+import { Engine, ActionError, AUTO_NEXT_MS, autoNextLeft, createGame, PRESETS, publicView, renameCategories, type GameState, type Preset } from '../src/lib/game.ts';
 import { items, lobby, playTurn, right, seeded, wrong } from './helpers.ts';
 
 test('offers three categories and locks out picks for two turns', () => {
@@ -28,7 +28,7 @@ test('offers three categories and locks out picks for two turns', () => {
   assert.equal(new Set(s.used).size, s.used.length, 'no repeated items');
 });
 
-for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) test(`${difficulty} locks out picks for longer`, () => {
+for (const difficulty of ['merciless', 'eternal'] as Preset[]) test(`${difficulty} locks out picks for longer`, () => {
   const lockout = PRESETS[difficulty].lockout;
   let { engine, s } = lobby(['Ash'], 99, difficulty);
   s = engine.apply(s, { type: 'start' }, 'p0');

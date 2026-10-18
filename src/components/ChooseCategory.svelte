@@ -203,7 +203,7 @@
       if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
       else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
       else if (frame) onCards(() => cardPicked(frame, card, others, false));
-      sfx('draw', { from: { from: card } });
+      sfx(kind === 'azurite' ? 'veinStrike' : 'draw', { from: { from: card } });
     };
     // The cards in the draw: those with votes, in their order.
     const tickets = s.offered.flatMap((c, i) => (votersOf(c).length ? [i] : []));
@@ -579,7 +579,7 @@
     if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
     else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
     else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
-    sfx('pick', { from: { from: cardEls[i] } });
+    sfx(kind === 'azurite' ? 'veinStrike' : 'pick', { from: { from: cardEls[i] } });
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);

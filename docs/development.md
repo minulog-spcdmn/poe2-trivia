@@ -17,8 +17,9 @@ recordings from [Freesound](https://freesound.org) plus a quiet ambience loop
 (about 1.1 MB in `public/sfx`, see `CREDITS.txt` there), filtered and mixed in
 WebAudio with a generated reverb. Delve's beds (about 360 KB each) are only
 fetched as a run nears them: the next place's while the page is idle, from
-the first depth of the zone before it. `src/lib/soundDesign.ts` sets the
-layers and the beds, as tuned on the ambience mix board.
+the first depth of the zone before it, and an Azurite Vein's tunnel loops from
+depth 20 on. `src/lib/soundDesign.ts` sets the layers and the beds, as tuned on
+the ambience mix board and the vein sound board.
 
 Every sound comes from where it happens on screen (`src/lib/spatial.svelte.ts`):
 each call of `sfx()` says where (a card, an answer, the clock, a player's
@@ -26,9 +27,10 @@ entry, the edge a blast bursts in from, or the path its sparks fly), and a
 head model places it (the far ear hears it a fraction of a millisecond late
 and a little duller), the screen's edges at ±36°. Sparks are heard flying,
 teammates' sounds a little farther off, the reverb answers from the sound's
-side, and a blast or a cave-in fills the space round it. The ambience is
+side, and a blast or a cave-in fills the space round it, as an Azurite
+Vein's walls do when they crack. The ambience is
 spread wide (each ear its own take of the loop, half a loop apart), and in
-Delve each place rings in a room of its own (`src/lib/acoustics.ts`: early
+Delve each place rings in a room of its own (`src/lib/acoustics.ts`, and a vein being dug one for its own sounds: early
 reflections, far slaps and a tail whose lows, mids and highs die at their
 own pace, worked out while the page is idle) in place of the one hall,
 cross-fading as the beds do. The hover, the most frequent sound and now

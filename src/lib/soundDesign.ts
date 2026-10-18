@@ -6,7 +6,12 @@
 
 import type { Sfx } from './sound';
 
-export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number };
+/**
+ * `len` (s of the recording, before `rate`): play only that much, dying away
+ * over its last 1.5 s (see playLayer in lib/sound.ts), as cut on the sound
+ * board; the file itself stays whole.
+ */
+export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number; len?: number };
 export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyGain: number };
 
 /**
@@ -53,11 +58,15 @@ export const DEPTH = { lp: 1300, rate: 0.82, gain: 5, send: 0.45 };
  */
 export const RUMBLE = { file: 'rumble', gain: -50, abyss: 7, lp: 140, breath: 0.4, period: 13 };
 
+/** A band of a layer's EQ: a shelf or a bell at `f` Hz, `g` dB, of width `q` (BiquadFilterNode's Q). */
+export type EqBand = { type: 'lowshelf' | 'peaking' | 'highshelf'; f: number; g: number; q: number };
+
 /**
  * Delve: one layer of a place's ambience bed, a loop played under the game.
- * Its level (dB), low-pass cutoff (Hz), playback rate and reverb send.
+ * Its level (dB), low-pass cutoff (Hz), playback rate and reverb send; a
+ * high-pass cutoff (Hz) and EQ bands, between the two, where it has them.
  */
-export type BedLayer = { file: string; gain: number; lp: number; rate: number; send: number };
+export type BedLayer = { file: string; gain: number; lp: number; rate: number; send: number; hp?: number; eq?: readonly EqBand[] };
 
 /**
  * Delve: a place's ambience bed. `fire` is how much of AMBIENCE (dB, over
@@ -140,6 +149,60 @@ export const ARCHETYPE_AMBIENCE: readonly Bed[] = [
  * caveIn moment below.
  */
 export const CAVE_IN = { file: 'cave-in', seconds: 1.3, rumble: 6, stones: 4 };
+
+/**
+ * Delve: an Azurite Vein's tunnel. While a vein is dug (lib/vein.ts inVein)
+ * the run is in a side passage off the zone: the zone's loops (its fire,
+ * rumble and bed) duck and lose their highs, heard from the hall behind, and
+ * the tunnel's own `layers` play over them: a frozen river crackling, ice
+ * rumbling low and a mine shaft slowed to a groan. All come in over about
+ * `fadeIn` s and go over `fadeOut`. `duck` (dB) is for a zone of average
+ * loudness; each place's own correction (VEIN_DUCK) evens it out, so every
+ * place sounds as far behind. `muffles` (Hz): the cutoff at strikes 1, 2 and
+ * 3, each 0.7 of the last (even steps to the ear), the zone further away the
+ * deeper the dig. As picked on the vein sound board; the tunnel's echo is
+ * the vein's own room (lib/acoustics.ts).
+ */
+export const VEIN_AMBIENCE: { duck: number; muffles: readonly number[]; fadeIn: number; fadeOut: number; layers: readonly BedLayer[] } = {
+  duck: -8,
+  muffles: [1200, 850, 600],
+  fadeIn: 3,
+  fadeOut: 1.5,
+  layers: [
+    { file: 'amb-vein-ice', gain: -40, lp: 20000, rate: 1, send: 0.7 },
+    { file: 'amb-vein-rumble', gain: -27, lp: 217, rate: 1, send: 0.2 },
+    {
+      file: 'amb-vein-shaft',
+      gain: -34,
+      hp: 723,
+      lp: 9838,
+      rate: 0.4,
+      send: 1,
+      eq: [
+        { type: 'peaking', f: 2875, g: -10, q: 1 },
+        { type: 'highshelf', f: 7348, g: -18, q: 0.7 },
+      ],
+    },
+  ],
+};
+
+/**
+ * Delve: how much less (dB, +) or more (-) each place ducks behind a vein
+ * than VEIN_AMBIENCE's duck, so that each, ducked, is as loud as an average
+ * zone (ear-model loudness, Zwicker, ISO 532-1, at strike 1's muffle): a
+ * loud place ducks deeper, a quiet one less, and never above its own level.
+ * By place (lib/sound.ts placeAt): the ten zones, then the archetypes past
+ * depth 100. The quietest archetypes are already at the rumble's level
+ * behind a vein, where ducking barely changes how loud they are; theirs is
+ * held at +10.
+ */
+export const VEIN_DUCK = {
+  zones: [8.0, -1.7, -4.7, -2.5, 1.7, -2.0, -1.9, 3.8, 3.6, -1.2],
+  archetypes: [4.7, 10, -0.3, 7.9, -1.0, -0.8, 5.6, 10, 10, 2.1, 4.8, 0.8],
+} as const;
+
+/** Delve: how long (ms) after a vein's strike is revealed right each of its moments plays (lib/session.svelte.ts). */
+export const VEIN_AFTER = { veinMined: 0, veinStrain1: 1100, veinStrain2: 1000 } as const;
 
 /** Delve: the run is over; no victory, just the last ember going out. */
 const FALLEN: Moment = {
@@ -396,6 +459,8 @@ export const MOMENTS: Record<Sfx, Moment> = {
   // life's sound, twice): the generated collapse (CAVE_IN), with the gate
   // slam slowed into the rock giving way, and a low thud under it. Heavy,
   // but over in about a second; drier than the blast, as it is close.
+  // Louder than anything else in a run, by ear: brought down to the blast's
+  // level it was too quiet.
   caveIn: {
     soften: 5,
     varyPitch: 0.03,
@@ -420,6 +485,55 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'click-5', gain: -31, rate: 0.75, delay: 170, hp: 400, lp: 9000, send: 0.5 },
       { file: 'click-5', gain: -34, rate: 0.95, delay: 260, hp: 500, lp: 9000, send: 0.55 },
       { file: 'burn-crackle', gain: -33, rate: 0.9, delay: 120, hp: 250, lp: 11000, send: 0.6 },
+    ],
+  },
+  // An Azurite Vein, as picked on the vein sound board and leveled by
+  // loudness against the game's own moments. Its card chosen (any strike):
+  // a pickaxe biting stone, a stone knock under it, a tap and a glint of
+  // crystal; about as loud as the card pick it takes the place of.
+  veinStrike: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'vein-pick', gain: -26, rate: 1, delay: 0, hp: 227, lp: 20000, send: 0.45 },
+      { file: 'vein-stone-hit', gain: -26, rate: 0.8, delay: 0, hp: 20, lp: 963, send: 0.75 },
+      { file: 'click-5', gain: -31, rate: 1, delay: 0, hp: 20, lp: 651, send: 0.4 },
+      { file: 'vein-crystal-2', gain: -31, rate: 1, delay: 0, hp: 145, lp: 2381, send: 0.15 },
+    ],
+  },
+  // A strike answered right, over the right-answer sound: the azurite breaks
+  // free of the rock, a crystal shattering and a rock breaking.
+  veinMined: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'vein-crystal-1', gain: -28, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.55 },
+      { file: 'vein-rock-break', gain: -30, rate: 1, delay: 0, hp: 20, lp: 6000, send: 0.4 },
+    ],
+  },
+  // While the dig runs on, after strike 1 (VEIN_AFTER): rock crumbling, then
+  // dust and grit coming down. A warning, a little under strike 2's.
+  veinStrain1: {
+    soften: 3,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'vein-crumble-1', gain: -24, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.6 },
+      { file: 'vein-crumble-2', gain: -28, rate: 1, delay: 300, hp: 20, lp: 20000, send: 0.6 },
+    ],
+  },
+  // After strike 2: the earth cracking, stones crumbling, and a low boom
+  // under it. One more and it may all come down.
+  veinStrain2: {
+    soften: 3,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'vein-crack', gain: -28, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.6, len: 4.47 },
+      { file: 'vein-crumble-3', gain: -32, rate: 1, delay: 400, hp: 20, lp: 20000, send: 0.6, len: 2.16 },
+      { file: 'layer-sub-2', gain: -32, rate: 0.6, delay: 0, hp: 20, lp: 400, send: 0.5 },
     ],
   },
   // A new zone's title card (components/zonecard), under the zone's own sound

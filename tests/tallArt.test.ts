@@ -8,7 +8,7 @@ const byId = new Map(items.map((it) => [it.id, it]));
 /** Plays `turns` turns alone, picking whichever offered category `pick` likes, and returns every question asked. */
 function questions(turns: number, pick: (offered: string[]) => string) {
   const engine = new Engine(items, { autoClock: true, rng: seeded(7) });
-  let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'cruel' });
+  let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   const asked: Question[] = [];

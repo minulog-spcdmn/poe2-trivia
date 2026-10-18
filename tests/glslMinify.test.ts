@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseSync } from 'vite';
 import { GLSL_FILES, minifyGlsl } from '../glslMinify.ts';
@@ -11,7 +11,11 @@ import { GLSL_FILES, minifyGlsl } from '../glslMinify.ts';
 // lines whole and on lines of their own, and none is left out.
 
 const root = join(import.meta.dirname, '..');
-const FILES = ['src/lib/backdrop.ts', 'src/lib/shaders/effects.ts', 'src/lib/shaders/newEffects.ts', 'src/lib/fx/renderer.ts', 'src/lib/fx/gl.ts'];
+// Every file the plugin minifies, so a new shader file is checked too.
+const FILES = readdirSync(join(root, 'src/lib'), { recursive: true, encoding: 'utf8' })
+  .map((f) => 'src/lib/' + f.replaceAll('\\', '/'))
+  .filter((f) => GLSL_FILES.test('/' + f))
+  .sort();
 const HINT = /\b(vec[234]|uniform|void main)\b/;
 
 type Node = { type?: string; start: number; end: number; [k: string]: unknown };
@@ -58,11 +62,15 @@ function tokens(text: string): string[] {
   return raw.filter((s, i) => s !== ' ' || (word(raw[i - 1]) && word(raw[i + 1])));
 }
 
-for (const file of FILES) {
-  test(`glsl-minify keeps every GLSL token in ${file}`, () => {
+test('glsl-minify finds the shader files', () => {
+  for (const f of ['src/lib/backdrop.ts', 'src/lib/fx/gl.ts', 'src/lib/fx/renderer.ts', 'src/lib/shaders/effects.ts']) assert.ok(FILES.includes(f), f);
+});
+
+// In both line endings: git's autocrlf checks the files out with \r\n on Windows.
+for (const file of FILES) for (const eol of ['\n', '\r\n']) {
+  test(`glsl-minify keeps every GLSL token in ${file} (${eol === '\n' ? 'LF' : 'CRLF'})`, () => {
     const id = join(root, file);
-    assert.match(id.replaceAll('\\', '/'), GLSL_FILES);
-    const code = readFileSync(id, 'utf8');
+    const code = readFileSync(id, 'utf8').replaceAll('\r\n', '\n').replaceAll('\n', eol);
     const out = minifyGlsl(code, id);
     const before = literals(code, id);
     const after = literals(out.code, id);

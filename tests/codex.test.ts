@@ -42,7 +42,7 @@ const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId && !
 
 function setup(names: string[], mode: GameMode = 'turns') {
   const engine = new Engine(items, { autoClock: true, rng: seeded(7), fakes });
-  let s: GameState = createGame('p0', { targetScore: 50, timer: 0, difficulty: 'cruel', mode });
+  let s: GameState = createGame('p0', { targetScore: 50, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s: engine.apply(s, { type: 'start' }, 'p0') };
 }
