@@ -2,7 +2,8 @@
   // The board (stats.html#board): the overview for a monitor of its own,
   // most of all one turned on its side, read from across a room and left
   // to update by itself. One screen, nothing to scroll or click: today so
-  // far against the same time a period ago, the period's four figures, its
+  // far against the same time a period ago (and what the last update brought
+  // in, where from and on what), the period's four figures, its
   // days drawn as large as the screen leaves room for, when in the week
   // they come, and the short answers. Everything is sized from the screen
   // (Analytics sets the root's size), so a bigger monitor reads the same.
@@ -12,6 +13,7 @@
   import { withDailyItems, type DailyItem } from './dailyItems';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
+  import NewSince from './NewSince.svelte';
   import { MODE_NAMES, asked, dailyAverage, finishedShare, modesOf, percent, sharePerDay, weekAverage } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -41,6 +43,8 @@
   const failedToday = $derived(last(L.failuresPerDay) ?? 0);
   const failed = $derived(L.failures.reduce((n, f) => n + f.count, 0));
   const sameTime = $derived(`${longDay(read.toBefore)} at this time`);
+  /** What the newest update brought, while it's the newest (marked on today's figures). */
+  const lit = $derived(read.changes && read.changes.at === read.at ? read.changes : null);
 
   let itemOf = $state<((day: string) => DailyItem | null) | null>(null);
   onMount(() => withDailyItems((f) => (itemOf = f)));
@@ -72,26 +76,30 @@
     <div class="figures">
       <div>
         <span class="name">Visitors</span>
-        <b>{fmt(today.visitors[0])}</b>
+        <b>{fmt(today.visitors[0])}{#if lit?.visitors}<span class="added">+{fmt(lit.visitors)}</span>{/if}</b>
         <Delta now={today.visitors[0]} before={today.visitors[1]} period="" />
       </div>
       <div>
         <span class="name">Games</span>
-        <b>{fmt(today.games[0])}</b>
+        <b>{fmt(today.games[0])}{#if lit?.games}<span class="added">+{fmt(lit.games)}</span>{/if}</b>
         <Delta now={today.games[0]} before={today.games[1]} period="" />
       </div>
       <div>
         <span class="name">Today's unique</span>
-        <b>{fmt(today.daily[0])}</b>
+        <b>{fmt(today.daily[0])}{#if lit?.answers}<span class="added">+{fmt(lit.answers)}</span>{/if}</b>
         <span class="soft">{today.daily[0] ? `${percent(today.named, today.daily[0])} named ${item ? item.name : 'it'}` : item ? item.name : 'nobody yet'}</span>
       </div>
       <div class:bad={failedToday > 0}>
         <span class="name">Failures</span>
-        <b>{fmt(failedToday)}</b>
+        <b>{fmt(failedToday)}{#if lit?.failures}<span class="added">+{fmt(lit.failures)}</span>{/if}</b>
         <span class="soft">{fmt(failed)} in {period.now.toLowerCase()}</span>
       </div>
     </div>
   </section>
+
+  {#if read.changes}
+    <div class="since"><NewSince changes={read.changes} at={read.at} /></div>
+  {/if}
 
   <div class="kpis">
     <Kpi label="Visitors" value={fmt(L.visitors.total)} means="opened the game" href="#visitors">
@@ -202,6 +210,14 @@
     letter-spacing: -0.02em;
     color: var(--a-ink);
   }
+  .added {
+    margin-left: 0.6rem;
+    font-size: 0.45em;
+    font-weight: 650;
+    letter-spacing: 0;
+    vertical-align: 0.6em;
+    color: var(--a-now);
+  }
   .figures .bad b {
     color: var(--a-down);
   }
@@ -255,6 +271,19 @@
     .board {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
+      grid-template-areas:
+        'today today'
+        'since since'
+        'kpis kpis'
+        'charts came'
+        'charts two';
+    }
+    .today {
+      grid-area: today;
+    }
+    /* Before an update has brought anything, no row is kept for it. */
+    .board:not(:has(.since)) {
       grid-template-rows: auto auto auto minmax(0, 1fr);
       grid-template-areas:
         'today today'
@@ -262,8 +291,8 @@
         'charts came'
         'charts two';
     }
-    .today {
-      grid-area: today;
+    .since {
+      grid-area: since;
     }
     .kpis {
       grid-area: kpis;
@@ -277,7 +306,6 @@
     }
     .two {
       grid-area: two;
-      align-content: start;
     }
   }
 </style>

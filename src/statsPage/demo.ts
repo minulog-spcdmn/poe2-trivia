@@ -6,8 +6,10 @@
 // slowly growing, Today's unique only from the day it began.
 
 import type { Named } from './api.ts';
-import { DAILY_FROM, countsOf, daysBetween, type PathCount } from './model.ts';
+import { keptChanges } from './changes.ts';
+import { DAILY_FROM, countsOf, daysBetween, modesOf, type PathCount } from './model.ts';
 import type { Read } from './read.ts';
+import { GROUPS, type Group, type Slices } from './slices.ts';
 import { addDays, dayIn, midnight } from './zone.ts';
 
 /** The zone the made-up account cuts its days in. */
@@ -138,8 +140,12 @@ function pathsOf(days: string[], lastHours: number): PathCount[] {
   return [...byPath.values()];
 }
 
-/** `shares` of `total`, each a whole number, largest first. */
-const split = (total: number, shares: [string, number][]): Named[] => shares.map(([name, s]) => ({ name, count: Math.round(total * s) })).filter((n) => n.count > 0);
+/** `shares` of `total`, each a whole number, largest first; what they leave, unknown (GoatCounter's ''), as it lists those it couldn't place. */
+function split(total: number, shares: [string, number][], rest = true): Named[] {
+  const named = shares.map(([name, s]) => ({ name, count: Math.round(total * s) })).filter((n) => n.count > 0);
+  const left = total - named.reduce((n, x) => n + x.count, 0);
+  return rest && left > 0 ? [...named, { name: '', count: left }] : named;
+}
 
 /** A made-up read of the last `days` days, against the same many before, as Analytics' load() makes from GoatCounter's. */
 export function demoRead(days: number, at = new Date()): Read {
@@ -190,8 +196,64 @@ export function demoRead(days: number, at = new Date()): Read {
       ['https://discord.com', 0.05],
       ['https://www.twitch.tv', 0.03],
       ['https://poe2db.tw', 0.02],
-    ]),
+    ], false),
     at: at.getTime(),
     complete: true,
   };
+}
+
+/** A made-up read as an update would find it: with what the hour before it brought in. */
+export function demoUpdate(days: number, at = new Date()): Read {
+  const now = demoRead(days, at);
+  return { ...now, changes: keptChanges(demoRead(days, new Date(at.getTime() - 3_600_000)), now) };
+}
+
+/** How each country and system plays, against everyone: more of one mode, fewer answers, more joins that fail. */
+const TILTS: Record<string, Partial<Record<Group | 'success', number>>> = {
+  'United States': { race: 1.3, turns: 0.8, daily: 0.9 },
+  Germany: { delve: 1.7, race: 0.8, daily: 1.25 },
+  'United Kingdom': { turns: 1.3 },
+  Poland: { delve: 1.4, join: 1.3 },
+  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2 },
+  France: { race: 0.6, daily: 1.4 },
+  Russia: { race: 1.4, success: 0.85, failed: 1.6 },
+  'Korea, Republic of': { race: 1.7, daily: 1.5 },
+  Android: { daily: 1.5, race: 0.7, success: 0.9, failed: 1.3 },
+  iOS: { daily: 1.6, race: 0.6, delve: 1.2 },
+  Linux: { delve: 1.4, join: 1.4 },
+  macOS: { turns: 1.3 },
+};
+
+/** Made-up player groups (slices.ts) for a made-up read: its totals spread over its countries and systems, each leaning its own way. */
+export function demoSlices(read: Read): Slices {
+  const c = read.now;
+  const played = new Map(modesOf(c.games.rows).map((m) => [m.mode, m.started]));
+  const total: Record<Group, number> = {
+    visit: c.visitors.total,
+    turns: played.get('turns') ?? 0,
+    race: played.get('race') ?? 0,
+    delve: played.get('delve') ?? 0,
+    daily: c.daily.right + c.daily.wrong,
+    join: c.joins.reduce((n, j) => n + j.tried, 0),
+    joined: c.joins.reduce((n, j) => n + j.joined, 0),
+    failed: c.failures.reduce((n, f) => n + f.count, 0),
+  };
+  const spread = (list: Named[]): Partial<Record<Group, Named[]>> => {
+    const all = list.reduce((n, x) => n + x.count, 0) || 1;
+    const out: Partial<Record<Group, Named[]>> = {};
+    for (const { group } of GROUPS) {
+      if (group === 'visit') {
+        out.visit = list;
+        continue;
+      }
+      if (group === 'joined') continue;
+      const weight = list.map((x) => (x.count / all) * (TILTS[x.name]?.[group] ?? 1));
+      const sum = weight.reduce((a, b) => a + b, 0) || 1;
+      out[group] = list.map((x, i) => ({ name: x.name, count: Math.round((total[group] * weight[i]) / sum) })).filter((x) => x.count > 0);
+    }
+    const success = total.join ? total.joined / total.join : 0;
+    out.joined = (out.join ?? []).map((x) => ({ name: x.name, count: Math.round(x.count * Math.min(1, success * (TILTS[x.name]?.success ?? 1))) })).filter((x) => x.count > 0);
+    return out;
+  };
+  return { v: 1, span: read.span, from: read.from, at: read.at, locations: spread(read.countries), systems: spread(read.systems) };
 }

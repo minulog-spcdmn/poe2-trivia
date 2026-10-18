@@ -847,7 +847,16 @@ owner's read-only GoatCounter API key, which stays in that browser. Its
 overview answers "how is it going?" with the views behind it; `#board`
 (the monitor button in its top bar) is the overview for a monitor of its
 own, most of all one on its side: one screen, sized from the screen,
-kept awake and updating by itself. On the dev server and the beta,
+kept awake and updating by itself. Each update keeps what it brought in
+(`changes.ts`): the visitors, games and answers added, and the countries
+and systems the new visitors came from and on, lit on the overview and
+the board. `#groups` (Groups) sets a country's, a system's or a kind of
+device's players against everyone, and shows where the players of a mode
+come from and on what (`slices.ts`); every country, system and mode name
+across the views opens its group. GoatCounter keeps no visit with its
+events, but breaks any set of paths down by country and by system, so
+each thing people do is read once for each, only while that view is
+open, and kept half an hour. On the dev server and the beta,
 `stats.html?demo` fills every view with made-up numbers
 (`src/statsPage/demo.ts`), no key needed, to look at the layout with.
 

@@ -137,3 +137,14 @@
   color: var(--gold-hi);
   text-decoration: underline;
 }
+
+/* A name that opens its player group (#groups): underlined lightly, gold when pointed at. */
+.analytics .pick {
+  color: var(--a-ink);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(217, 176, 98, 0.5);
+}
+.analytics .pick:hover {
+  color: var(--gold-hi);
+  border-bottom-color: var(--gold-hi);
+}

@@ -6,29 +6,36 @@
   // going?" at a glance; each view behind it answers one question in full.
   // The board (#board) is the overview for a monitor of its own, most of all
   // one on its side: one screen, sized from it, kept awake, updating by itself.
+  // Each update keeps what it brought in since the one before (changes.ts),
+  // shown on the overview and the board. Player groups (#groups) are read
+  // only while that view is open, and seldom (slices.ts): a call for each
+  // thing people do and each way to break it down.
   //
   // Each period read is kept (this tab, and through a reload), so switching
   // back shows it at once; it is read again once it's 5 minutes old, by
   // itself while the page is in view, as long as the hour's requests stay
   // well under GoatCounter's 500 (api.ts requestsLastHour). The numbers on
   // show stay as they are while newer ones are read.
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
-  import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, requestsLastHour, saveKey, savedKey, visitorsBy, type Span } from './api';
+  import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Span } from './api';
   import { shortDay } from './chart';
   import Board from './Board.svelte';
+  import { keptChanges } from './changes';
   import DailyView from './DailyView.svelte';
   import GamesView from './GamesView.svelte';
+  import GroupsView from './GroupsView.svelte';
   import JoiningView from './JoiningView.svelte';
   import KeyGate from './KeyGate.svelte';
   import { countsOf, daysBetween } from './model';
   import Overview from './Overview.svelte';
   import { PERIODS, VIEWS, type Read, type View } from './read';
   import Seg from './Seg.svelte';
+  import { hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
   import { addDays, dayIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
-  import { demoRead } from './demo';
+  import { demoSlices, demoUpdate } from './demo';
 
   type WakeLock = { release(): Promise<void>; addEventListener(type: 'release', f: () => void): void };
 
@@ -36,6 +43,8 @@
   const FRESH_MS = 5 * 60_000;
   /** Updating by itself stops while the hour's requests are within this of GoatCounter's limit, leaving room to click about. */
   const KEEP_SPARE = 150;
+  /** Player groups are read again once they're this old (the view open): they cost a call for each group and way to break it down. */
+  const SLICES_FRESH_MS = 30 * 60_000;
   /** The account's time zone is asked again after this. */
   const ZONE_MS = 60 * 60_000;
 
@@ -48,19 +57,23 @@
   let span = $state<number>(firstSpan);
   const period = $derived(PERIODS.find((p) => p.value === span) ?? PERIODS[1]);
 
-  const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && `#${v.value}` === hash)?.value ?? 'overview';
+  const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && (`#${v.value}` === hash || hash.startsWith(`#${v.value}/`)))?.value ?? 'overview';
   let view = $state<View>(viewOf(location.hash));
+  /** Whoever the player groups pick out (#groups/place/Germany). */
+  let sel = $state<Sel | null>(selOf(location.hash));
   const BOARD = '#board';
   let board = $state(location.hash === BOARD);
   // Each view is an entry in the history that keeps how far the page was
   // scrolled, so Back returns to the view as it was left. The page puts the
   // scroll back itself: the browser would do it before the view is there.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-  function go(v: View) {
-    if (v === view && !board) return;
+  function go(v: View, picked: Sel | null = null) {
+    const to = v === 'groups' ? hashOf(picked) : `#${v}`;
+    if (v === view && !board && (v !== 'groups' || to === hashOf(sel))) return;
     history.replaceState({ ...(history.state as object | null), y: window.scrollY }, '');
-    history.pushState({ y: 0 }, '', v === 'overview' ? location.pathname + location.search : `#${v}`);
+    history.pushState({ y: 0 }, '', v === 'overview' ? location.pathname + location.search : to);
     view = v;
+    sel = v === 'groups' ? picked : null;
     board = false;
     window.scrollTo({ top: 0 });
   }
@@ -73,6 +86,7 @@
   /** Back, forward, or a # typed in: the view it names, scrolled as it was left. */
   async function followHash() {
     view = viewOf(location.hash);
+    sel = selOf(location.hash);
     board = location.hash === BOARD;
     await tick();
     window.scrollTo({ top: (history.state as { y?: number } | null)?.y ?? 0 });
@@ -82,7 +96,8 @@
     const a = e.target instanceof Element ? e.target.closest('a[href^="#"]') : null;
     if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    go(viewOf(a.getAttribute('href') ?? ''));
+    const href = a.getAttribute('href') ?? '';
+    go(viewOf(href), selOf(href));
   }
 
   const cache = new Map<number, Read>();
@@ -127,7 +142,7 @@
   async function load(days = span, force = false) {
     if (!key) return;
     if (demo) {
-      read = demoRead(days);
+      read = demoUpdate(days);
       return;
     }
     const had = cached(days);
@@ -192,6 +207,7 @@
         at: at.getTime(),
         complete: n.complete && b.complete,
       };
+      r.changes = keptChanges(had, r);
       keep(r);
       fails = { n: 0, at: 0, busy: false };
       if (days === span) read = r;
@@ -213,6 +229,68 @@
       countRequests();
     }
   }
+
+  // ---- player groups: read while their view is open, kept a while ----
+  let slices = $state<Slices | null>(null);
+  let slicing = $state(0);
+  let slicesFailed = $state('');
+  let slicer: AbortController | null = null;
+  const slicesKey = (days: number) => `analytics.slices.${days}`;
+  const keptSlices = (r: Read): Slices | null => {
+    try {
+      const s = JSON.parse(readStored(slicesKey(r.span), 'session') ?? 'null') as Slices | null;
+      return s?.v === 1 && s.span === r.span && s.from === r.from ? s : null;
+    } catch {
+      return null;
+    }
+  };
+  /** The groups of the period on show (`force`: even while fresh), each call in turn with the page's others. */
+  async function loadSlices(r: Read, force = false) {
+    if (demo) {
+      slices = demoSlices(r);
+      return;
+    }
+    const had = keptSlices(r);
+    if (had) slices = had;
+    else if (slices && (slices.span !== r.span || slices.from !== r.from)) slices = null;
+    if ((had && !force && Date.now() - had.at < SLICES_FRESH_MS) || (slicer && !force)) return;
+    // Not by itself while the hour's requests run low; the Read again button still reads.
+    if (held && !force) return;
+    slicer?.abort();
+    const ctrl = (slicer = new AbortController());
+    const calls = sliceCalls(r.now);
+    let done = 0;
+    slicing = 0.02;
+    slicesFailed = '';
+    try {
+      const out: Slices = { v: 1, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
+      const within: Span = { start: midnight(r.zone, r.from), end: new Date() };
+      await Promise.all(
+        calls.map((c) =>
+          pathsBy(key, within, c.dim, c.paths, ctrl.signal).then((list) => {
+            out[c.dim][c.group] = list;
+            slicing = ++done / calls.length;
+          }),
+        ),
+      );
+      writeStored(slicesKey(r.span), JSON.stringify(out), 'session');
+      if (r.span === span) slices = out;
+    } catch (err) {
+      ctrl.abort();
+      if (!(err instanceof Cancelled)) slicesFailed = err instanceof Error ? err.message : 'Something went wrong.';
+    } finally {
+      if (slicer === ctrl) {
+        slicer = null;
+        slicing = 0;
+      }
+      countRequests();
+    }
+  }
+  $effect(() => {
+    if (view !== 'groups' || board || !read || !key) return;
+    const r = read;
+    untrack(() => void loadSlices(r));
+  });
 
   /** The hour's requests, counted once for the footer and for whether updating by itself holds off. */
   let used = $state(requestsLastHour().length);
@@ -249,6 +327,8 @@
     span = days;
     writeStored('analytics.days', String(days));
     read = cached(days);
+    slicer?.abort();
+    slicer = null;
     void load(days);
   }
   function useKey(k: string) {
@@ -261,6 +341,9 @@
     stopReading();
     forgetKey();
     removeStoredStarting('analytics.read.', 'session');
+    removeStoredStarting('analytics.slices.', 'session');
+    slicer?.abort();
+    slices = null;
     cache.clear();
     zone = null;
     fails = { n: 0, at: 0, busy: false };
@@ -415,6 +498,8 @@
         <GamesView {read} {period} {weekly} />
       {:else if view === 'daily'}
         <DailyView {read} {period} {weekly} />
+      {:else if view === 'groups'}
+        <GroupsView {read} {period} {slices} {sel} reading={slicing} failed={slicesFailed} onagain={() => read && void loadSlices(read, true)} />
       {:else}
         <JoiningView {read} {period} />
       {/if}

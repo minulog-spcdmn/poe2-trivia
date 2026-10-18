@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
-import { demoRead } from '../src/statsPage/demo.ts';
+import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
+import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
+import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, whereOf, type Slices } from '../src/statsPage/slices.ts';
 import { busiest, seatsOf, visitsCameTo, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
@@ -386,4 +388,123 @@ test('the made-up numbers read the same for a day in any period, and add up', ()
   );
   for (const j of month.now.joins) assert.ok(j.joined <= j.tried);
   assert.ok(month.now.games.started > 0 && month.now.week.visitors !== null);
+});
+
+test('each thing people do is read by the paths counted for it, and only those', () => {
+  const c = countsOf(
+    [
+      path('/', [10, 20, 30], false),
+      path('play/race-online', [2, 3, 1]),
+      path('play/delve-hotseat', [1, 0, 0]),
+      path('daily/right', [1, 1, 0]),
+      path('join/code', [2, 0, 0]),
+      path('joined/code', [1, 0, 0]),
+      path('error/join-no-answer', [1, 0, 0]),
+    ],
+    DAYS,
+  );
+  const g = groupPaths(c);
+  assert.deepEqual(g.visit, ['/']);
+  assert.deepEqual(g.race, ['play/race-online']);
+  assert.deepEqual(g.delve, ['play/delve-hotseat']);
+  assert.deepEqual(g.turns, []);
+  assert.deepEqual(g.daily, ['daily/right']);
+  assert.deepEqual(g.join, ['join/code']);
+  assert.deepEqual(g.joined, ['joined/code']);
+  assert.deepEqual(g.failed, ['error/join-no-answer']);
+  // Two calls (country, system) for each group with paths: no call for Take turns.
+  assert.equal(sliceCalls(c).length, 14);
+});
+
+const SLICES: Slices = {
+  v: 1,
+  span: 7,
+  from: '2026-10-10',
+  at: 0,
+  locations: {
+    visit: [{ name: 'Germany', count: 40 }, { name: 'France', count: 50 }, { name: '', count: 10 }],
+    delve: [{ name: 'Germany', count: 20 }, { name: 'France', count: 5 }],
+    race: [{ name: 'France', count: 15 }],
+    daily: [{ name: 'Germany', count: 10 }, { name: 'France', count: 10 }],
+    join: [{ name: 'Germany', count: 10 }, { name: 'France', count: 10 }],
+    joined: [{ name: 'Germany', count: 9 }, { name: 'France', count: 5 }],
+  },
+  systems: {
+    visit: [{ name: 'Windows', count: 70 }, { name: 'iOS', count: 20 }, { name: 'Android', count: 12 }],
+    delve: [{ name: 'Windows', count: 15 }, { name: 'iOS', count: 10 }],
+  },
+};
+
+test("a country's players, set against everyone", () => {
+  const de = profileOf(countsIn(SLICES, { kind: 'place', name: 'Germany' }));
+  assert.equal(de.visitors, 40);
+  assert.equal(de.games, 20);
+  assert.equal(de.perVisitor, 0.5);
+  assert.deepEqual(de.modes.map((m) => m.share), [0, 0, 100]);
+  assert.equal(de.daily, 25);
+  assert.equal(de.joins, 90);
+  const all = profileOf(countsIn(SLICES, null));
+  assert.equal(all.visitors, 100);
+  assert.equal(all.games, 40);
+  // Everyone by system: its own list's total.
+  assert.equal(countsIn(SLICES, null, 'systems').visit, 102);
+  // Those GoatCounter couldn't place are a group too.
+  assert.equal(countsIn(SLICES, { kind: 'place', name: 'Unknown' }).visit, 10);
+  // A kind of device is its systems together.
+  assert.equal(countsIn(SLICES, { kind: 'device', name: 'Phone or tablet' }).visit, 32);
+  assert.deepEqual(
+    segments(SLICES, 'place').map((r) => r.sel.name),
+    ['France', 'Germany', 'Unknown'],
+  );
+});
+
+test('where the players of a mode come from, against where visitors do', () => {
+  const rows = whereOf(SLICES, 'delve', 'locations');
+  assert.deepEqual(rows.map((r) => r.name), ['Germany', 'France']);
+  assert.equal(rows[0].share, 80);
+  assert.equal(rows[0].visitShare, 40);
+  const kinds = whereOf(SLICES, 'delve', 'systems', true);
+  assert.deepEqual(kinds.map((r) => [r.name, r.count]), [['Computer', 15], ['Phone or tablet', 10]]);
+});
+
+test('a group is kept in the address, and read back from it', () => {
+  for (const sel of [{ kind: 'place', name: 'Korea, Republic of' }, { kind: 'device', name: 'Phone or tablet' }, { kind: 'did', group: 'delve' }] as const)
+    assert.deepEqual(selOf(hashOf(sel)), sel);
+  assert.equal(hashOf(null), '#groups');
+  assert.equal(selOf('#groups'), null);
+  assert.equal(selOf('#groups/did/nothing'), null);
+  assert.equal(selOf('#groups/place/%E0%A4%A'), null);
+  assert.equal(modeLink('Delve'), '#groups/did/delve');
+  assert.equal(modeLink('Something else'), null);
+});
+
+test('an update keeps what it brought in, and where from', () => {
+  const at = new Date('2026-10-16T18:30:00Z');
+  const was = demoRead(7, new Date(at.getTime() - 3_600_000));
+  const now = demoRead(7, at);
+  const c = changesOf(was, now)!;
+  assert.ok(c);
+  assert.equal(c.visitors, now.now.visitors.total - was.now.visitors.total);
+  assert.equal(c.since, was.at);
+  assert.ok(c.countries.every((n) => n.count > 0));
+  assert.ok(anyNew(c));
+  // Another period, or one read the day before, isn't compared.
+  assert.equal(changesOf(demoRead(30, at), now), null);
+  assert.equal(changesOf(demoRead(7, new Date(at.getTime() - 86_400_000)), now), null);
+  // Nothing new: the last update that brought something stays, lit no more.
+  const kept = { ...now, changes: c };
+  const later = { ...now, at: now.at + 60_000 };
+  assert.equal(keptChanges(kept, later), c);
+  assert.equal(freshOf(c, later.at, 'countries'), undefined);
+  assert.equal(freshOf(c, now.at, 'countries')?.size, c.countries.length);
+  assert.ok(demoUpdate(7, at).changes);
+});
+
+test('made-up groups add up to the made-up totals', () => {
+  const read = demoRead(30, new Date('2026-10-16T18:30:00Z'));
+  const s = demoSlices(read);
+  const sum = (g: keyof Slices['locations']) => (s.locations[g] ?? []).reduce((n, x) => n + x.count, 0);
+  assert.equal(sum('visit'), read.now.visitors.total);
+  assert.ok(Math.abs(sum('delve') - modesOf(read.now.games.rows).find((m) => m.mode === 'delve')!.started) <= 12);
+  assert.ok(sum('joined') <= sum('join'));
 });

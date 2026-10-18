@@ -2,11 +2,13 @@
   // Visitors: how many came, from where, how they found the game, and on
   // what. All of it is the start page's visitors, not what they did there.
   import Bars from './Bars.svelte';
+  import { freshOf } from './changes';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
   import { deviceOf, percent } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
+  import { deviceLink, placeLink, systemLink } from './slices';
   import TrendChart from './TrendChart.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -38,7 +40,7 @@
 
   <div class="two">
     <Section title="Where they are" says="By country, as GoatCounter places them.">
-      <Bars bars={countries} top={10} empty="No visitors in these days." />
+      <Bars bars={countries} top={10} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
     </Section>
     <Section title="How they found the game" says="The site they came from; a link in a chat app or a bookmark shows as typed in.">
       <Bars bars={refs} top={10} empty="No visitors in these days." />
@@ -53,12 +55,12 @@
         {#if devices.other}<i class="other" style:flex-grow={devices.other}></i>{/if}
       </div>
       <dl class="devices">
-        <div><dt><i class="computer"></i>Computer</dt><dd><b>{percent(devices.computer, devices.all)}</b> {fmt(devices.computer)}</dd></div>
-        <div><dt><i class="phone"></i>Phone or tablet</dt><dd><b>{percent(devices.phone, devices.all)}</b> {fmt(devices.phone)}</dd></div>
+        <div><dt><i class="computer"></i><a class="pick" href={deviceLink('Computer')}>Computer</a></dt><dd><b>{percent(devices.computer, devices.all)}</b> {fmt(devices.computer)}</dd></div>
+        <div><dt><i class="phone"></i><a class="pick" href={deviceLink('Phone or tablet')}>Phone or tablet</a></dt><dd><b>{percent(devices.phone, devices.all)}</b> {fmt(devices.phone)}</dd></div>
         {#if devices.other}<div><dt><i class="other"></i>Other</dt><dd><b>{percent(devices.other, devices.all)}</b> {fmt(devices.other)}</dd></div>{/if}
       </dl>
       <h3>By system</h3>
-      <Bars bars={systems} top={8} />
+      <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
     {:else}
       <p class="soft">No visitors in these days.</p>
     {/if}
@@ -74,7 +76,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .total {
     display: grid;

@@ -6,15 +6,18 @@
   // short answers, each opening its view.
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
+  import { freshOf } from './changes';
   import { average, fmt } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
+  import NewSince from './NewSince.svelte';
   import { MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
+  import { deviceLink, modeLink, placeLink } from './slices';
   import Spark from './Spark.svelte';
   import TrendChart from './TrendChart.svelte';
   import VisitsCameTo from './VisitsCameTo.svelte';
@@ -79,6 +82,10 @@
 
 <svelte:window bind:innerHeight />
 
+{#if read.changes}
+  <div class="since"><NewSince changes={read.changes} at={read.at} /></div>
+{/if}
+
 {#if failed}
   <a class="problem" href="#joining">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18v.01" /></svg>
@@ -137,7 +144,7 @@
   <div class="three">
     <Section title="What they play">
       {#snippet aside()}<a class="to-view" href="#games">Games ›</a>{/snippet}
-      <Bars bars={modes} empty="No games in these days." />
+      <Bars bars={modes} empty="No games in these days." link={modeLink} fresh={freshOf(read.changes, read.at, 'modes')} />
       {#if L.games.started}
         <p class="line"><b>{finishedShare(L.games.finished, L.games.started)}</b> of games were played to the end.</p>
       {/if}
@@ -145,9 +152,9 @@
 
     <Section title="Where they are">
       {#snippet aside()}<a class="to-view" href="#visitors">Visitors ›</a>{/snippet}
-      <Bars bars={countries} top={5} empty="No visitors in these days." />
+      <Bars bars={countries} top={5} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
       {#if phones.all}
-        <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a phone or tablet.</p>
+        <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.</p>
       {/if}
     </Section>
 
@@ -167,6 +174,9 @@
 </div>
 
 <style>
+  .since {
+    margin-bottom: 1.25rem;
+  }
   .problem {
     display: flex;
     align-items: center;
@@ -218,13 +228,11 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .three {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .line {
     margin: 1rem 0 0;

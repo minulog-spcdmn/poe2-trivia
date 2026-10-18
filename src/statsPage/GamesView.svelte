@@ -7,6 +7,7 @@
   import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
+  import { hashOf } from './slices';
   import TrendChart from './TrendChart.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -55,7 +56,7 @@
         <tbody>
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
-              <th scope="row">{MODE_NAMES[m.mode]}</th>
+              <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })} title="Where its players come from, and on what">{MODE_NAMES[m.mode]}</a></th>
               <td class="n strong">{fmt(m.started)}</td>
               <td class="wide"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
               <td class="n">{percent(m.started, L.games.started)}</td>
@@ -153,7 +154,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .total {
     display: grid;
