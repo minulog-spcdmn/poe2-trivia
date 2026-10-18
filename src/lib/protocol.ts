@@ -8,6 +8,52 @@ import type { Presence, Standing } from './presence.ts';
 import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
+/**
+ * Bumped whenever a host and a guest on different versions would misread
+ * each other. What each version changed, newest first:
+ * - 32: a question's pictures come down an art lane of their own
+ *   (artLane.ts), the hello saying the guest opened it (lane); a question
+ *   waits for its clock in every mode, as Delve's did (no deadline nor
+ *   clockAt until the host's clock action, no labels, prompt or groups for
+ *   guests till then); its pictures go out sealed as soon as they are ready
+ *   (sealed), their key on the main channel as it starts (key), the hello
+ *   saying the guest can open them (seal).
+ * - 31: only the owner key's signature plays under the held name (hello and
+ *   GameState owner, a listing's owner).
+ * - 30: joins two lines from 27 (one numbered 28 and 29, the other 28): an
+ *   Azurite Vein's lamp is its strike 1's whole clock, never fed, its strikes
+ *   asked from 20, 30 and 40 depths further down; a Vein is dug a strike at a
+ *   time on one lamp, its wards in hand until the way out (WAY_OUT) and
+ *   buried by a cave-in; players say whether their game is on screen and in
+ *   use (presence), the host tells the lobby how each stands (standing); a
+ *   veiled picture goes out whole with which patch each pixel falls in, its
+ *   patches only named as they uncover.
+ * - 27: in Delve only a question cleared goes a depth deeper; a miss or a
+ *   time-out is followed by another question at the same depth.
+ * - 26: an Azurite Vein always gives a whole ward (no shards, no fast
+ *   window); the Vein comes from shown depth 25 and the Flare Cache from 40,
+ *   each certain on its first depth.
+ * - 25: the Delve rules are ruleset 2, twins kept apart down to their depth
+ *   (game.ts TWINS).
+ * - 24: a pointer goes with the anchors round its own, and many more parts
+ *   of the screen are anchors (cursors.ts).
+ * - 23: Delve together counts the team's streak (depths cleared in a row
+ *   with nobody missing), which every screen's verdict burns with.
+ * - 22: a new zone's cards are dealt as the plunge into it lands (dealAt),
+ *   every screen holding them and their votes till then.
+ * - 21: players send their pointers (cursor, cursors).
+ * - 20: pictures go out at each item's own artScale (4 up to 2 x 2 cells, 2
+ *   above), an option's picture with its size in art pixels.
+ * - 19: a guest can choose to watch rather than play (the watch action).
+ * - 18: pictures go out at ART_SCALE pixels per art pixel (the upscaled art).
+ * - 17: a blasted question remembers the wrong answers given to it, so every
+ *   screen logs what they cost (Blast.was.struck).
+ * - 16: a flare gives six seconds and a Flare Cache two thirds of the clock,
+ *   never under four (worked out on every screen).
+ * - 15: dynamite goes off right at 0, its fuse burning over the last seconds.
+ * - 14: dynamite lit at 0 (Question.fuse); 13: a question blasted away (the
+ *   blast action); 12: the frozen Delve rules; 11: the co-op vote and revive.
+ */
 export const PROTOCOL_VERSION = 32;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */

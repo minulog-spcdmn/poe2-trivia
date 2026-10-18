@@ -12,13 +12,7 @@ import { afterHosting, afterVisit, appeal, hesitation, joinsAfter, keenTo, opens
 import { MAX_NAME, cleanName, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 import { VISITORS, asNewcomer, visitorsFor } from '../src/bot/visitors.ts';
 import { activity, minutesAwake, nightOf, rhythmOf } from '../src/bot/sleep.ts';
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
+import { seeded } from './helpers.ts';
 
 const plain: Persona = { skill: 0, pace: 1, affinity: { Rings: 0.02, Flasks: -0.05 }, finds: 0.8, boldness: 0.5, haste: 0, nerve: 1, favourites: [], temper: 0, herd: 0.3, impatience: 0.5, dither: 0.1, hosting: 0.3, sociable: 0.5, picky: 0.5, hand: PLAIN_HAND, eye: 1, seed: '', gamble: 0.3, sense: 0.8, curious: 0.3 };
 const plainRules = rulesFor({ difficulty: 'cruel' });
@@ -835,7 +829,7 @@ test('names read as players\' do: hardly any food, animals or game jokes; newcom
 
 test('opening an item\'s details: now and then, most after a miss, more for the curious', () => {
   const rng = seeded(41);
-  const rate = (p: Persona, how: 'missed' | 'unknown' | 'known') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
+  const rate = (p: Persona, how: 'missed' | 'unknown' | 'known' | 'theirs') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
   const curious = { ...plain, curious: 0.9 };
   const not = { ...plain, curious: 0.05 };
   assert.ok(rate(curious, 'missed') > rate(curious, 'unknown') && rate(curious, 'unknown') > rate(curious, 'theirs') && rate(curious, 'theirs') > rate(curious, 'known'));

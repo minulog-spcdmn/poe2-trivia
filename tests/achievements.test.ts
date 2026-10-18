@@ -1,7 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Engine, createGame, isFake, publicView, type GameMode, type GameState, type Item, type Question, type Reveal, type Revive } from '../src/lib/game.ts';
+import { Engine, createGame, isFake, publicView, type GameMode, type GameState, type Question, type Reveal, type Revive } from '../src/lib/game.ts';
 import { emptyCodex, encounterAt, recordEncounter, resetCodex, type Answer, type Codex } from '../src/lib/codex.ts';
 import { emptyRecords, recordRun, type DelveRecords, type DelveRun } from '../src/lib/delveRecord.ts';
 import {
@@ -32,23 +31,13 @@ import {
 } from '../src/lib/achievements.ts';
 import { storeKey } from '../src/lib/storage.ts';
 import { forgiveLeaving, leftGame, losing, noteLeaving } from '../src/lib/versus.ts';
+import { fakes, items, memoryStorage, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
 const store = new Map<string, string>();
 const tab = new Map<string, string>();
-const area = (m: Map<string, string>) => ({
-  getItem: (k: string) => m.get(k) ?? null,
-  setItem: (k: string, v: string) => void m.set(k, String(v)),
-  removeItem: (k: string) => void m.delete(k),
-  key: (i: number) => [...m.keys()][i] ?? null,
-  get length() {
-    return m.size;
-  },
-});
-(globalThis as { localStorage?: unknown }).localStorage = area(store);
-(globalThis as { sessionStorage?: unknown }).sessionStorage = area(tab);
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
+(globalThis as { sessionStorage?: unknown }).sessionStorage = memoryStorage(tab);
 beforeEach(() => {
   store.clear();
   tab.clear();
@@ -56,13 +45,6 @@ beforeEach(() => {
 
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId && !isFake(o));
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 const ids = (list: { id: string }[]) => list.map((a) => a.id);
 

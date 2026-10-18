@@ -1,6 +1,5 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { Engine, createGame, isFake, publicView, type GameMode, type GameState, type Item, type Question } from '../src/lib/game.ts';
 import {
   CODEX_KEY,
@@ -23,9 +22,8 @@ import {
 } from '../src/lib/codex.ts';
 import { codexStats, median } from '../src/lib/codexStats.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { fakes, items, memoryStorage, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 const categories = [...new Set(items.map((it) => it.category))].sort();
 
 const store = new Map<string, string>();
@@ -34,18 +32,7 @@ let full = false;
 let refuse: string | null = null;
 /** The longest value that still fits. */
 let room = Infinity;
-(globalThis as { localStorage?: unknown }).localStorage = {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => {
-    if ((full && v.length > 2000) || k === refuse || v.length > room) throw new Error('QuotaExceededError');
-    store.set(k, String(v));
-  },
-  removeItem: (k: string) => void store.delete(k),
-  key: (i: number) => [...store.keys()][i] ?? null,
-  get length() {
-    return store.size;
-  },
-};
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store, (k, v) => !((full && v.length > 2000) || k === refuse || v.length > room));
 beforeEach(() => {
   store.clear();
   full = false;
@@ -56,16 +43,9 @@ beforeEach(() => {
 const right = (q: Question) => q.options.indexOf(q.itemId);
 const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId && !isFake(o));
 
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
-
 function setup(names: string[], mode: GameMode = 'turns') {
   const engine = new Engine(items, { autoClock: true, rng: seeded(7), fakes });
-  let s: GameState = createGame('p0', { targetScore: 50, timer: 0, difficulty: 'cruel', mode });
+  let s: GameState = createGame('p0', { targetScore: 50, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s: engine.apply(s, { type: 'start' }, 'p0') };
 }

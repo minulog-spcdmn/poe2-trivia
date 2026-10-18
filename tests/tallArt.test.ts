@@ -1,22 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Engine, TALL_ART_GROUPS, createGame, publicView, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, TALL_ART_GROUPS, createGame, publicView, type GameState, type Question } from '../src/lib/game.ts';
+import { items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const byId = new Map(items.map((it) => [it.id, it]));
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 /** Plays `turns` turns alone, picking whichever offered category `pick` likes, and returns every question asked. */
 function questions(turns: number, pick: (offered: string[]) => string) {
   const engine = new Engine(items, { autoClock: true, rng: seeded(7) });
-  let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'cruel' });
+  let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
   const asked: Question[] = [];

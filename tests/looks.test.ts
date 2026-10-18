@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { allArt, type Item } from '../src/lib/game.ts';
+import { allArt } from '../src/lib/game.ts';
 import { loadLooks, readLooks } from '../src/lib/looks.ts';
+import { items } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = JSON.parse(readFileSync(new URL('../src/data/looks.json', import.meta.url), 'utf8'));
 const { looksLike, lookScore, lookalikePool } = readLooks(raw);
 const byName = new Map(items.map((it) => [it.name, it]));
@@ -94,10 +94,9 @@ test('lookalikePool puts the look-alikes first, keeps the rest in order, never r
   assert.deepEqual(lookalikePool(answer.id, sceptres, 0), []);
 });
 
-test('the same input gives the same pool', () => {
+test("a pool's order is the art's own ranking", () => {
   for (const it of arts.filter((a, i) => i < 60 || a.name === 'Grand Spectrum' || a.group === 'Rings')) {
     const group = arts.filter((o) => o.group === it.group);
-    assert.deepEqual(lookalikePool(it.id, group, 7), lookalikePool(it.id, group, 7));
     assert.deepEqual(
       lookalikePool(it.id, group, 7).map((o) => o.id).slice(0, Math.min(7, looksLike(it.id).length)),
       looksLike(it.id).slice(0, 7).map((l) => l.id),

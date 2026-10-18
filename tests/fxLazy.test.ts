@@ -6,7 +6,7 @@
 // lib/fx/gl.ts, which the backdrop's Delve programs use too): how a compile
 // went is never asked right after it starts, and the programs are read one
 // at a time, each in a step of its own.
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 
@@ -24,15 +24,20 @@ registerHooks({
   },
 });
 
-// Frames and idle moments run only when a test says so.
-let frames: (() => void)[] = [];
+// Frames and idle moments run only when a test says so; frames come 60 a
+// second, each with its time as a browser gives it.
+const FRAME_MS = 1000 / 60;
+let clock = 0;
+let frames: ((now: number) => void)[] = [];
 let idles: (() => void)[] = [];
 let ids = 0;
-const queued = new Map<number, () => void>();
+const queued = new Map<number, unknown>();
 const g = globalThis as Record<string, unknown>;
-g.requestAnimationFrame = (f: () => void) => {
+// The page's clock is the frames' clock: it moves only when a frame comes.
+performance.now = () => clock;
+g.requestAnimationFrame = (f: (now: number) => void) => {
   const id = ++ids;
-  const run = () => queued.delete(id) && f();
+  const run = (now: number) => queued.delete(id) && f(now);
   queued.set(id, run);
   frames.push(run);
   return id;
@@ -49,7 +54,8 @@ g.cancelIdleCallback = (id: number) => queued.delete(id);
 const frame = () => {
   const now = frames;
   frames = [];
-  for (const f of now) f();
+  clock += FRAME_MS;
+  for (const f of now) f(performance.now());
 };
 const idle = () => {
   const now = idles;
@@ -162,6 +168,23 @@ function overlay(parallel = true, refuse = false) {
   return { canvas: c as unknown as HTMLCanvasElement, c, ctx };
 }
 
+/**
+ * The overlay mounted on `canvas`, and unmounted once the test is over even
+ * if it fails halfway (or else what it left running would be the next
+ * test's start). Returns the unmount, which the test may call sooner.
+ */
+function mounted(ctx: TestContext, canvas: HTMLCanvasElement) {
+  const stop = fx.startFx(canvas);
+  let done = false;
+  const once = () => {
+    if (done) return;
+    done = true;
+    stop();
+  };
+  ctx.after(once);
+  return once;
+}
+
 const glow = () =>
   fx.shape({
     type: ShapeType.Flash,
@@ -174,9 +197,9 @@ const glow = () =>
     },
   });
 
-test('the renderer is made once two frames have gone by and the page is idle, not as the overlay mounts', () => {
+test('the renderer is made once two frames have gone by and the page is idle, not as the overlay mounts', (ctx) => {
   const o = overlay();
-  const stop = fx.startFx(o.canvas);
+  const stop = mounted(ctx, o.canvas);
   assert.equal(o.c.asked, 0, 'no context as it mounts');
   assert.ok(fx.fxActive(), 'effects count as on meanwhile');
   frame();
@@ -204,9 +227,9 @@ test('the renderer is made once two frames have gone by and the page is idle, no
   stop();
 });
 
-test('an effect asked for before then starts the renderer at once, waits for it, and plays', () => {
+test('an effect asked for before then starts the renderer at once, waits for it, and plays', (ctx) => {
   const o = overlay();
-  const stop = fx.startFx(o.canvas);
+  const stop = mounted(ctx, o.canvas);
   const s = glow();
   assert.ok(fx.isLive(s), 'kept, not dropped');
   assert.equal(o.c.asked, 1, 'the renderer started at once');
@@ -224,7 +247,7 @@ test('an effect asked for before then starts the renderer at once, waits for it,
   stop();
 });
 
-test('with the backdrop running, the context is asked for only once the GPU has caught up with it', () => {
+test('with the backdrop running, the context is asked for only once the GPU has caught up with it', (ctx) => {
   // (The backdrop holds its frames until a fence passes: whenGpuCaughtUp.)
   const held: (() => void)[] = [];
   setGpuCatchUp((f) => {
@@ -234,8 +257,9 @@ test('with the backdrop running, the context is asked for only once the GPU has 
       if (i >= 0) held.splice(i, 1);
     };
   });
+  ctx.after(() => setGpuCatchUp(null));
   const o = overlay();
-  const stop = fx.startFx(o.canvas);
+  const stop = mounted(ctx, o.canvas);
   const s = glow();
   assert.equal(o.c.asked, 0, 'not while the GPU is busy');
   assert.equal(held.length, 1);
@@ -270,13 +294,13 @@ test('without the effects layer mounted, nothing is made and effects are off', (
   assert.ok(!fx.isLive(glow()));
 });
 
-test('what was asked for meanwhile goes on from where it would be by now; what ran its course, was stopped or lost its element is dropped', () => {
+test('what was asked for meanwhile goes on from where it would be by now; what ran its course, was stopped or lost its element is dropped', (ctx) => {
   const real = performance.now;
   let t = real.call(performance);
   performance.now = () => t;
   try {
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     const kept = glow();
     glow().stop();
     const el = Object.assign(new (g.Element as new () => object)(), { isConnected: true, getBoundingClientRect: () => ({ left: 0, top: 0, width: 10, height: 10 }) });
@@ -304,10 +328,10 @@ test('what was asked for meanwhile goes on from where it would be by now; what r
   }
 });
 
-test('in a background tab nothing runs: what would run its course is dropped, and what lasts until stopped goes on once it is back', () => {
+test('in a background tab nothing runs: what would run its course is dropped, and what lasts until stopped goes on once it is back', (ctx) => {
   try {
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     const kept = glow();
     askFloat();
     frame();
@@ -360,20 +384,31 @@ test("a task ends by its life, however it is written", () => {
   o.ctx.state.done = true;
   readSix();
   let runs = 0;
-  fx.task(() => (runs++, true), { life: 0.1 });
+  let forever = 0;
+  let going = true;
+  const ages: number[] = [];
+  fx.task((_, age) => (ages.push(age), runs++, true), { life: 0.1 });
+  fx.task(() => (forever++, going));
   for (let i = 0; i < 30; i++) frame();
+  // It ran until the frame its age (the wait for the renderer included)
+  // reached its life, and no longer, though it never said it was done.
+  assert.ok(runs > 1 && runs < 30, `${runs} runs`);
+  assert.ok(ages.at(-1)! >= 0.1 && ages.at(-2)! < 0.1, `ages ${ages}`);
+  assert.ok(forever > runs, `${forever} runs of the endless one`);
+  assert.equal(fx.fxStats().tasks, 1, 'only the task without a life is left');
+  going = false;
+  frame();
   assert.equal(fx.fxStats().tasks, 0);
-  assert.ok(runs > 0 && runs < 30, `${runs} runs`);
   stop();
 });
 
-test('the renderer made while the tab is away does not count the time away; what lasts starts where it was, and the hook hears of it after the overlay', () => {
+test('the renderer made while the tab is away does not count the time away; what lasts starts where it was, and the hook hears of it after the overlay', (ctx) => {
   const real = performance.now;
   let t = real.call(performance);
   performance.now = () => t;
   try {
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     let age = -1;
     const kept = fx.shape({ type: ShapeType.Flash, at: { x: 0, y: 0 }, life: Infinity, delay: 0.3, color: [1, 1, 1], update: (f, _, a) => ((age = a), (f.k = 1)) });
     const heard: [boolean, number][] = [];
@@ -405,13 +440,13 @@ test('the renderer made while the tab is away does not count the time away; what
   }
 });
 
-test('a task with a life that waited past it for the renderer is dropped, not run late', () => {
+test('a task with a life that waited past it for the renderer is dropped, not run late', (ctx) => {
   const real = performance.now;
   let t = real.call(performance);
   performance.now = () => t;
   try {
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     let fired = false;
     fx.after(0.12, () => (fired = true));
     t += 1500;
@@ -427,13 +462,13 @@ test('a task with a life that waited past it for the renderer is dropped, not ru
   }
 });
 
-test('away, what is stopped goes at once; opened in a background tab, the overlay starts away and says so; unmounted, nothing counts as away', () => {
+test('away, what is stopped goes at once; opened in a background tab, the overlay starts away and says so; unmounted, nothing counts as away', (ctx) => {
   try {
     const heard: boolean[] = [];
     const off = fx.onFxHidden((h) => heard.push(h));
     doc.hidden = true;
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     assert.ok(fx.fxHidden());
     assert.deepEqual(heard, [true]);
     const fire = glow();
@@ -453,7 +488,7 @@ test('away, what is stopped goes at once; opened in a background tab, the overla
   }
 });
 
-test("lights follow the tab: a moment's light and pulse go as it goes away and aren't started meanwhile; a held light stays", () => {
+test("lights follow the tab: a moment's light and pulse go as it goes away and aren't started meanwhile; a held light stays", (ctx) => {
   const a = new Float32Array(lights.MAX_LIGHTS * 4);
   const c = new Float32Array(lights.MAX_LIGHTS * 4);
   /** How many lights are packed now (each with its radius). */
@@ -467,7 +502,7 @@ test("lights follow the tab: a moment's light and pulse go as it goes away and a
   const mood = new Float32Array(4);
   try {
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     lights.light({ x: 0, y: 0 }, { color: [1, 1, 1], radius: 100, intensity: 1, hold: 5 });
     const held = lights.holdLight({ x: 0, y: 0 }, [1, 1, 1], 80);
     lights.pulseMood(0.8);
@@ -487,9 +522,9 @@ test("lights follow the tab: a moment's light and pulse go as it goes away and a
   }
 });
 
-test('a context lost before its shaders are built turns effects off, and says so', () => {
+test('a context lost before its shaders are built turns effects off, and says so', (ctx) => {
   const o = overlay(false);
-  const stop = fx.startFx(o.canvas);
+  const stop = mounted(ctx, o.canvas);
   const heard: boolean[] = [];
   const off = fx.onFxChange(() => heard.push(fx.fxActive()));
   glow();
@@ -505,9 +540,9 @@ test('a context lost before its shaders are built turns effects off, and says so
   stop();
 });
 
-test('refused a context, effects turn off, and say so', () => {
+test('refused a context, effects turn off, and say so', (ctx) => {
   const o = overlay(true, true);
-  const stop = fx.startFx(o.canvas);
+  const stop = mounted(ctx, o.canvas);
   const heard: boolean[] = [];
   const off = fx.onFxChange(() => heard.push(fx.fxActive()));
   glow();
@@ -518,12 +553,12 @@ test('refused a context, effects turn off, and say so', () => {
   stop();
 });
 
-test('without WebGL2 nothing is on its way: effects are off from the start', () => {
+test('without WebGL2 nothing is on its way: effects are off from the start', (ctx) => {
   const had = g.WebGL2RenderingContext;
   delete g.WebGL2RenderingContext;
   try {
     const o = overlay();
-    const stop = fx.startFx(o.canvas);
+    const stop = mounted(ctx, o.canvas);
     assert.ok(!fx.fxActive() && !fx.fxAvailable());
     stop();
   } finally {
@@ -531,10 +566,11 @@ test('without WebGL2 nothing is on its way: effects are off from the start', () 
   }
 });
 
-test('with effects switched off, the renderer waits until they are on (and the switch stays there)', () => {
+test('with effects switched off, the renderer waits until they are on (and the switch stays there)', (ctx) => {
   fx.setFxOn(false);
+  ctx.after(() => fx.setFxOn(true));
   const o = overlay();
-  const stop = fx.startFx(o.canvas);
+  const stop = mounted(ctx, o.canvas);
   frame();
   frame();
   idle();

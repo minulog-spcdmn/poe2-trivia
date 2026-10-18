@@ -22,6 +22,18 @@ export function inVein(s: GameState | null | undefined): boolean {
   return false;
 }
 
+/**
+ * The strike `s` is at in its vein (1 on), 0 out of one: the strike asked or
+ * revealed, and between strikes (the vein's next cards dealt) the last one
+ * struck. The tunnel's sound muffles the zone behind it a step further each
+ * strike (lib/sound.ts veinAmbience).
+ */
+export function veinStrike(s: GameState | null | undefined): number {
+  if (!s || !inVein(s)) return 0;
+  if (s.phase === 'choosing') return digOf(s)?.strikes ?? 1;
+  return s.question?.strike ?? 1;
+}
+
 let target = 0;
 let level = 0;
 let at = -1;

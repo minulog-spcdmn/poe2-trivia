@@ -5,21 +5,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { ActionError, Engine, clockRuns, createGame, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ActionError, Engine, clockRuns, createGame, type Action, type GameState, type Question, type Settings } from '../src/lib/game.ts';
 import { drawAhead, mayDrawAhead, takeAhead } from '../src/lib/drawAhead.ts';
+import { fakes, items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 
 const right = (q: Question) => q.options.indexOf(q.itemId);
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 /** A started race of p0 (the host) and p1, on a clock the test moves, the session's way: every clock started by the host. */
 function race(settings: Partial<Settings> = {}, seed = 5) {

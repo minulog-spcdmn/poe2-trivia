@@ -337,6 +337,28 @@ export function dealCards() {
 }
 
 /**
+ * Deals exactly these cards, in this order, each with its find or none,
+ * replaying the deal (the card bench, cards.html): any finds on any cards,
+ * past the game's own two of different kinds (session.labFinds). The way out
+ * among them deals as a dig's, one strike in.
+ */
+export function dealThese(cards: { category: string; kind: FindKind | null }[]) {
+  // A category once only: the cards are known by it.
+  cards = cards.filter((c, i) => cards.findIndex((d) => d.category === c.category) === i);
+  const finds = cards.flatMap(({ category, kind }) => (kind ? [{ category, kind }] : []));
+  put((s) => {
+    if (!s.delve) return;
+    s.turnCount++;
+    deal(s);
+    session.labFinds = { turn: s.turnCount, finds: Object.fromEntries(finds.map((f) => [f.category, f.kind])) };
+    s.offered = cards.map((c) => c.category);
+    s.delve.finds = finds;
+    delete s.delve.dig;
+    if (s.offered.includes(WAY_OUT)) s.delve.dig = { strikes: 1, haul: [s.players[s.turn]?.id ?? ''], light: 6, struck: [] };
+  });
+}
+
+/**
  * Deals a vein's two cards as after a right strike (delve.ts, the dig): the
  * vein running on and the way out, `strikes` struck so far with as many
  * wards in hand (the player's, or the lab's actor's together), and `light`

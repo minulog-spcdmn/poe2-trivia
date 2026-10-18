@@ -1,16 +1,20 @@
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Session } from 'node:inspector/promises';
 import { descent, HALL_FROM, hallTurn, lookOf, magmaCooling, STRATA } from '../src/lib/descent.ts';
-import { CALM_EMBERS, EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES } from '../src/lib/backdropEmbers.ts';
+import { CALM_EMBERS, EMBERS, Embers, GLINTS, PALETTE, SIZE_STRIDE, SLOTS, SPARKS, TILES, setEmberRandom } from '../src/lib/backdropEmbers.ts';
 import { cooling, MOTIONS, motionFor, motionOf, PROFILES, profileOf, SURFACE_MOTION, tweakOf, ZONE_MOTION, zoneMotionOf } from '../src/lib/emberMotion.ts';
 import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
 import { endgameAt, setBackdrops, SHIPPED, zones } from '../src/lib/backdrops.ts';
 import { cloneData } from '../src/lib/backdropData.ts';
+import { seeded } from './helpers.ts';
 
 const W = 1200;
 const H = 800;
 const DT = 1 / 60;
+
+// Each test sees the same embers every run: the statistical checks below hold for these rolls, not for luck.
+beforeEach(() => setEmberRandom(seeded(1)));
 
 /** Embers all burning in stratum k (-1: the surface), settled in for a few seconds. */
 function zone(k: number, seconds = 4) {
@@ -79,7 +83,6 @@ test('every stratum has a motion: each zone its profile as tweaked in backdrops.
   for (let k = STRATA.length; k < 60; k++) {
     const own = motionOf(endgameAt(k).motion);
     assert.deepEqual(zoneMotionOf(k).main, own.main, `stratum ${k}`);
-    assert.equal(motionFor(k, 1), motionFor(k, 1));
     assert.ok(MOTIONS[motionFor(k, 1)].name === own.main.name);
   }
   // And they move so: one past 100 goes the way its motion has it.
@@ -422,25 +425,39 @@ test('nothing goes wrong anywhere: plunges, swarms, flares, calm, a resize, snap
   assert.equal(calm.level, 0);
 });
 
-test('a step allocates nothing once settled', async () => {
+/** Steps sampled per window (each costs the heap sampler's time). */
+const STEPS = 2000;
+
+test('a step keeps nothing once settled', async (t) => {
   const session = new Session();
   session.connect();
-  for (const k of [-1, 0, 1, 5, 7, 8, 9, 23]) {
-    const e = zone(k);
-    e.swarm(1);
-    for (let i = 0; i < 3000; i++) e.step(DT, W, H);
+  /**
+   * What the embers' own code allocated over STEPS steps and still holds as they end (sampled: about every
+   * 64 bytes). The sampler leaves out what was let go meanwhile, so short-lived garbage doesn't count here.
+   */
+  const sampled = async (e: Embers) => {
     await session.post('HeapProfiler.startSampling', { samplingInterval: 64 });
-    for (let i = 0; i < 20000; i++) e.step(DT, W, H);
+    for (let i = 0; i < STEPS; i++) e.step(DT, W, H);
     const { profile } = await session.post('HeapProfiler.stopSampling');
-    // What the embers' own code allocated (sampled: about every 64 bytes).
     let bytes = 0;
     const walk = (n: (typeof profile)['head']) => {
       if (/backdropEmbers|emberMotion/.test(n.callFrame.url)) bytes += n.selfSize;
       n.children.forEach(walk);
     };
     walk(profile.head);
-    // Less than one small object every few steps: one a step, even, would be 320 kB.
-    assert.ok(bytes < 100_000, `stratum ${k}: ${bytes} bytes over 20000 steps`);
+    return bytes;
+  };
+  for (const k of [-1, 0, 1, 5, 7, 8, 9, 23]) {
+    const e = zone(k);
+    e.swarm(1);
+    for (let i = 0; i < 3000; i++) e.step(DT, W, H);
+    // Two windows, the less of them: something done once (the JIT's work, a list grown, some 30 kB as
+    // measured, in whichever stratum it falls) shows in one, what a step allocates in both.
+    const windows = [await sampled(e), await sampled(e)];
+    const bytes = Math.min(...windows);
+    t.diagnostic(`stratum ${k}: ${windows.join(' and ')} bytes`);
+    // Less than one small object kept every few steps. One a step, even, is 16 bytes a step: 32 kB over a window, past this.
+    assert.ok(bytes < 10_000 + STEPS * 5, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
   }
   session.disconnect();
 });

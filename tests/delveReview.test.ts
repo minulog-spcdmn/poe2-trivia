@@ -5,7 +5,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_IDLE_ROUNDS,
   DELVE_LIVES,
@@ -20,30 +19,9 @@ import {
   inventoryOf,
   livesOf,
   pausedUsed,
-  type Inventory,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, ActionError, Engine, createGame, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
-
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
-const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
-const right = (q: Question) => q.options.indexOf(q.itemId);
-const wrong = (q: Question) => q.options.findIndex((id) => id !== q.itemId);
-/** The wrong options of a question, by index (co-op: each can be struck once). */
-const wrongs = (q: Question) => q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));
-
-function seeded(seed: number) {
-  seed = Math.imul(seed, 2654435761) >>> 0;
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
-
-const silently = (fn: () => unknown, message?: RegExp) =>
-  assert.throws(fn, (e: unknown) => e instanceof ActionError && e.silent && (!message || message.test(e.message)));
+import { ANSWER_GRACE_MS } from '../src/lib/game.ts';
+import { NONE, right, room, silently, wrong, wrongs } from './helpers.ts';
 
 /**
  * An online Delve run on a clock the test moves, hosted by `host`, for
@@ -51,40 +29,15 @@ const silently = (fn: () => unknown, message?: RegExp) =>
  * as the trusted host.
  */
 function run(n: number, opts: { host?: string; seed?: number; depth?: number } = {}) {
-  const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(opts.seed ?? 3), now: () => clock.now, fakes });
-  const host = opts.host ?? 'p0';
-  let s: GameState = createGame(host, SETTINGS);
-  for (let i = 0; i < n; i++) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name: `Delver ${'ABCDEFGH'[i]}` }, `p${i}`);
-  s = engine.apply(s, { type: 'start' }, host);
-  s = { ...s, players: [...s.players].sort((a, b) => a.id.localeCompare(b.id)) };
-  const h = {
-    engine,
-    clock,
-    get s() {
-      return s;
-    },
-    act(a: Action, from: string | null = null) {
-      s = engine.apply(s, a, from);
-      return s;
-    },
-    edit(fn: (s: GameState) => void) {
-      const c = structuredClone(s);
-      fn(c);
-      s = c;
-    },
-    give(id: string, inv: Partial<Inventory>) {
-      h.edit((c) => ((c.delve!.inventory ??= {})[id] = { ...NONE, ...inv }));
-    },
+  const h = Object.assign(room({ players: n, host: opts.host, seed: opts.seed ?? 3, sorted: true, depth: opts.depth }), {
     /** A card picked (no find) and the clock started. */
     ask() {
-      h.act({ type: 'pick', category: s.offered.find((c) => !findOn(s, c))! });
-      h.act({ type: 'clock', askedAt: s.question!.askedAt });
-      return s.question!;
+      h.act({ type: 'pick', category: h.s.offered.find((c) => !findOn(h.s, c))! });
+      h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+      return h.s.question!;
     },
-    answer: (id: string, index: number) => h.act({ type: 'answer', index, askedAt: s.question!.askedAt }, id),
-  };
-  if (opts.depth) h.edit((c) => (c.round = opts.depth!));
+    answer: (id: string, index: number) => h.act({ type: 'answer', index, askedAt: h.s.question!.askedAt }, id),
+  });
   return h;
 }
 

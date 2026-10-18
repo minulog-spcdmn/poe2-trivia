@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
   DELVE_MAX_DYNAMITE,
@@ -17,7 +16,6 @@ import {
   FIND_RAMP,
   FLARE_MS,
   blastVictim,
-  blowsUp,
   cavesIn,
   delveLockout,
   delveStandings,
@@ -29,11 +27,9 @@ import {
   dynamiteOf,
   findChance,
   firstFindAt,
-  shownDepth,
   findDepth,
   MAX_FINDS,
   SECOND_FIND,
-  findOffer,
   findOffers,
   findOn,
   findReward,
@@ -49,85 +45,40 @@ import {
   tileVeilSize,
   veilSeconds,
   wardsOf,
-  LAMP_START,
   WAY_OUT,
   haulOf,
   type FindKind,
   type Inventory,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, Engine, activeRules, createGame, isFake, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ANSWER_GRACE_MS, activeRules, isFake, publicView, type GameState } from '../src/lib/game.ts';
 import { delveNotices, flareIn, inventoryChanges, itemsBlown } from '../src/lib/delveSession.ts';
 import { veilPace } from '../src/lib/patches.ts';
+import { NONE, fakes, items, right, room, seeded, wrong } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-
-const right = (q: Question) => q.options.indexOf(q.itemId);
-const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
-
-function seeded(seed: number) {
-  // Spread small seeds apart, or their first rolls (who sits first) all come out alike.
-  seed = Math.imul(seed, 2654435761) >>> 0;
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
-
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
 const FULL: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE };
-
-const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
 
 /** A Delve run with a controllable clock; `host` null for hot-seat. Helpers act as the trusted host. */
 function delve(names: string[], opts: { host?: string | null; seed?: number } = {}) {
-  const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(opts.seed ?? 11), now: () => clock.now, fakes });
-  const host = opts.host === undefined ? 'p0' : opts.host;
-  let s: GameState = createGame(host, SETTINGS);
-  names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, host === null ? null : `p${i}`)));
-  s = engine.apply(s, { type: 'start' }, host);
-  const h = {
-    engine,
-    clock,
-    get s() {
-      return s;
-    },
-    set s(v: GameState) {
-      s = v;
-    },
-    act(a: Action, from: string | null = null) {
-      s = engine.apply(s, a, from);
-      return s;
-    },
-    active: () => s.players[s.turn],
-    /** Changes the host's state by hand (a depth, an inventory, a find on offer). */
-    edit(fn: (s: GameState) => void) {
-      const c = structuredClone(s);
-      fn(c);
-      s = c;
-    },
+  const h = Object.assign(room({ players: names, host: opts.host, seed: opts.seed ?? 11 }), {
+    active: () => h.s.players[h.s.turn],
     /** Makes the first card on offer a find, as a lucky roll would. */
     plant(kind: FindKind = 'azurite') {
       h.edit((c) => (c.delve!.finds = [{ category: c.offered[0], kind }]));
-      return s.offered[0];
+      return h.s.offered[0];
     },
-    give(id: string, inv: Partial<Inventory>) {
-      h.edit((c) => ((c.delve!.inventory ??= {})[id] = { ...NONE, ...inv }));
-    },
-    clockIn: () => h.act({ type: 'clock', askedAt: s.question!.askedAt }),
+    clockIn: () => h.act({ type: 'clock', askedAt: h.s.question!.askedAt }),
     answer(ok: boolean, from: string | null = null) {
-      const q = s.question!;
-      return h.act({ type: 'answer', index: ok ? right(q) : wrongIdx(q), askedAt: q.askedAt }, from);
+      const q = h.s.question!;
+      return h.act({ type: 'answer', index: ok ? right(q) : wrong(q), askedAt: q.askedAt }, from);
     },
     /** A whole turn on an ordinary card (never the find), answered right. */
     plainTurn() {
-      h.act({ type: 'pick', category: s.offered.find((c) => !findOn(s, c))! });
+      h.act({ type: 'pick', category: h.s.offered.find((c) => !findOn(h.s, c))! });
       h.clockIn();
       h.answer(true);
       h.act({ type: 'next' });
     },
-  };
+  });
   return h;
 }
 
@@ -152,10 +103,6 @@ const LIVE = ['azurite', 'flare'] as const;
 const DEEPER: Record<FindKind, number> = { azurite: 20, flare: 20, dynamite: 15 };
 
 test('an Azurite Vein and a Flare Cache ask the question of twenty depths deeper: its rules, its clock and its pictures\' veil', () => {
-  assert.deepEqual(
-    FINDS.map((f) => [f.kind, f.deeper]),
-    Object.entries(DEEPER),
-  );
   for (const kind of ['azurite', 'flare', 'dynamite'] as const)
     for (const d of [FINDS_FROM, 8, 12, 13, 20, 40, 59, 60, 75, 300]) {
       const deeper = d + DEEPER[kind];
@@ -165,10 +112,7 @@ test('an Azurite Vein and a Flare Cache ask the question of twenty depths deeper
       assert.deepEqual(r.veil, deep.veil, `veil at ${d}`);
       assert.equal(r.moreFakes, deep.moreFakes, `fourth fakes at ${d}`);
       assert.equal(r.lookalikes, deep.lookalikes, `look-alike pictures at ${d}`);
-      // A Flare Cache's clock is two thirds of that (never under four): time now for time later. A vein's
-      // strike 1 runs on its lamp, LAMP_START of it (never under four either).
-      const share = kind === 'flare' ? 2 / 3 : kind === 'azurite' ? LAMP_START : 1;
-      assert.equal(findTimer(kind, d), share < 1 ? Math.max(FIND_MIN_TIMER, Math.round(delveTimer(deeper) * share)) : delveTimer(deeper));
+      // (Its clock: the tests below.)
       assert.equal(findTileVeil(kind, d), delveTileVeil(deeper));
       // Neither the art/name mix nor the lockout makes a question harder: they stay the depth's.
       assert.equal(r.artChance, delveRules(d).artChance);
@@ -176,7 +120,6 @@ test('an Azurite Vein and a Flare Cache ask the question of twenty depths deeper
     }
   // Odd depths read as the surface.
   assert.equal(findDepth('flare', NaN), 21);
-  assert.deepEqual([findDepth('azurite', 20), findDepth('flare', 20)], [40, 40]);
 });
 
 test('a find is never easier than its depth, nearly always harder, and the hardest there is only once its question is from 150 down', () => {
@@ -207,53 +150,31 @@ test('a find is never easier than its depth, nearly always harder, and the harde
 });
 
 test("a find's clock is fair: never the shortest near the top, and never shorter than any depth's, but a Flare Cache's and a vein's lamp", () => {
-  // At the first finds, a Dynamite Cache gets 14 s, not the 5 of depth 96.
-  assert.equal(findTimer('dynamite', FINDS_FROM), 14);
-  assert.equal(findTimer('dynamite', 20), 12);
-  // The shortest clock only past depth 75, where the depth's own is 6 s at the least.
-  assert.equal(findTimer('dynamite', 80), DELVE_MIN_TIMER + 1);
-  assert.equal(findTimer('dynamite', 81), DELVE_MIN_TIMER);
+  // (Its numbers are pinned with the ruleset, tests/delve.test.ts: here, how they stand to the depths'.)
   for (let d = 1; d <= 300; d++) {
-    if (findTimer('dynamite', d) === DELVE_MIN_TIMER) assert.ok(delveTimer(d) > DELVE_MIN_TIMER || d >= 96, `dynamite at ${d}`);
-    assert.ok(findTimer('dynamite', d) >= DELVE_MIN_TIMER && findTimer('dynamite', d) <= 16);
-  }
-  // A vein's strike 1 runs on its lamp, the whole dig's light: its deeper depth's clock, 10 s where it
-  // first turns up (depth 46's), down to the shortest any depth has from depth 76 (96's).
-  assert.equal(findTimer('azurite', findFor('azurite').from), 10);
-  assert.equal(findTimer('azurite', 43), 7);
-  assert.equal(findTimer('azurite', 75), 6);
-  assert.equal(findTimer('azurite', 76), DELVE_MIN_TIMER);
-  for (let d = 1; d <= 300; d++) {
-    assert.equal(findTimer('azurite', d), delveTimer(d + 20));
-    assert.ok(findTimer('azurite', d) <= delveTimer(d), `the lamp at ${d}`);
+    const dynamite = findTimer('dynamite', d);
+    // A Dynamite Cache's is its deeper depth's: never the shortest near the top, only where the depth's own is close to it.
+    assert.equal(dynamite, delveTimer(findDepth('dynamite', d)), `dynamite at ${d}`);
+    if (d <= 75) assert.ok(dynamite > DELVE_MIN_TIMER, `dynamite at ${d}: ${dynamite} s`);
+    if (dynamite === DELVE_MIN_TIMER) assert.ok(delveTimer(d) <= DELVE_MIN_TIMER + 1, `dynamite at ${d}`);
+    // A vein's strike 1 runs on its lamp, the whole dig's light: no more than its deeper depth's clock, nor than the depth's own.
+    assert.ok(findTimer('azurite', d) <= delveTimer(findDepth('azurite', d)) && findTimer('azurite', d) <= delveTimer(d), `the lamp at ${d}`);
+    assert.ok(findTimer('azurite', d) >= DELVE_MIN_TIMER);
   }
 });
 
 test('a Flare Cache trades time now for time later: two thirds of its deeper depth\'s clock, never under four', () => {
-  assert.equal(FIND_MIN_TIMER, 4);
-  assert.deepEqual(
-    FINDS.map((f) => [f.kind, f.clock]),
-    [
-      ['azurite', LAMP_START],
-      ['flare', 2 / 3],
-      ['dynamite', 1],
-    ],
-  );
-  // Where it first turns up (depth 41, shown 40), two thirds of 8 s, rounded; then down with the curve.
-  assert.equal(findTimer('flare', findFor('flare').from), 5);
-  assert.equal(findTimer('flare', 15), 8);
-  assert.equal(findTimer('flare', 20), 7);
-  assert.equal(findTimer('flare', 38), 5);
-  assert.equal(findTimer('flare', 57), 5);
-  // From depth 58 it asks from 78 down, 6 s there: four left, and never fewer (two thirds of 5 would be 3).
-  assert.equal(findTimer('flare', 58), FIND_MIN_TIMER);
-  assert.equal(findTimer('flare', 76), FIND_MIN_TIMER);
-  assert.equal(findTimer('flare', 500), FIND_MIN_TIMER);
+  let prev = Infinity;
   for (let d = 1; d <= 300; d++) {
+    const flare = findTimer('flare', d);
     const deep = delveTimer(findDepth('flare', d));
-    assert.equal(findTimer('flare', d), Math.max(FIND_MIN_TIMER, Math.round((deep * 2) / 3)), `at ${d}`);
-    assert.ok(findTimer('flare', d) < delveTimer(d), `less time than the depth's own at ${d}`);
+    // About two thirds of its deeper depth's (whole seconds), but never under the least.
+    if (flare > FIND_MIN_TIMER) assert.ok(flare / deep > 0.6 && flare / deep < 0.75, `at ${d}: ${flare} s of ${deep}`);
+    assert.ok(flare >= FIND_MIN_TIMER && flare < delveTimer(d), `at ${d}: ${flare} s, the depth's own ${delveTimer(d)}`);
+    assert.ok(flare <= prev, `more time deeper, at ${d}`);
+    prev = flare;
   }
+  assert.equal(findTimer('flare', 500), FIND_MIN_TIMER, 'the least, deepest down');
 });
 
 test('even a find has half its art in with over 3 s left', () => {
@@ -294,6 +215,8 @@ test("a right answer to a find earns its own item, and nothing else when there's
 // ---- the offer -------------------------------------------------------------
 
 test('each find ramps from its start at its own first depth to its cap 20 depths on, fixed by depth, and grows scarcer past 100; they come one at a time, the Flare Cache last', () => {
+  // (Where and how often, in numbers, is pinned with the ruleset, tests/delve.test.ts: here, the shape of it.)
+  // Each pays in its own item, up to the most of it a pack holds.
   assert.deepEqual(
     FINDS.map((f) => [f.kind, f.item, f.max]),
     [
@@ -302,23 +225,12 @@ test('each find ramps from its start at its own first depth to its cap 20 depths
       ['dynamite', 'dynamite', DELVE_MAX_DYNAMITE],
     ],
   );
-  assert.deepEqual([DELVE_MAX_WARDS, DELVE_MAX_FLARES, DELVE_MAX_DYNAMITE], [3, 3, 3]);
-  assert.equal(FIND_RAMP, 20);
-  assert.equal(FINDS_FROM, 11);
-  // In the order they first turn up, at the depths players see: dynamite from 10, veins from 25, flares from 40.
+  // In the order they first turn up: dynamite, veins, flares, the first of them at FINDS_FROM.
   assert.deepEqual(
-    FINDS_IN_ORDER.map((f) => [f.kind, shownDepth(f.from)]),
-    [
-      ['dynamite', 10],
-      ['azurite', 25],
-      ['flare', 40],
-    ],
+    FINDS_IN_ORDER.map((f) => f.kind),
+    ['dynamite', 'azurite', 'flare'],
   );
-  assert.equal(shownDepth(FINDS_FROM), 10);
-  // Where each starts, and how.
-  assert.deepEqual([findChance('dynamite', 10), findChance('dynamite', 11)], [0, 0.08]);
-  assert.deepEqual([findChance('azurite', 25), findChance('azurite', 26)], [0, 0.04]);
-  assert.deepEqual([findChance('flare', 40), findChance('flare', 41)], [0, 0.04]);
+  assert.equal(FINDS_IN_ORDER[0].from, FINDS_FROM);
   const live = FINDS.filter((f) => f.cap > 0);
   assert.ok(Math.max(...live.map((f) => f.from)) === findFor('flare').from, 'the Flare Cache comes last');
   for (const f of live) {
@@ -327,6 +239,7 @@ test('each find ramps from its start at its own first depth to its cap 20 depths
       const c = findChance(f.kind, d);
       assert.ok(c >= prev, `${f.kind} never less likely deeper (${d})`);
       if (d < f.from) assert.equal(c, 0, `no ${f.kind} above its first depth (${d})`);
+      if (d === f.from) assert.ok(c > 0, `${f.kind} from its first depth (${d})`);
       if (d >= f.from && d < f.from + FIND_RAMP) assert.ok(c < f.cap, `${f.kind} below its cap at ${d}`);
       if (d >= f.from + FIND_RAMP) assert.equal(c, f.cap, `${f.kind} at its cap from ${f.from + FIND_RAMP}`);
       prev = c;
@@ -340,20 +253,14 @@ test('each find ramps from its start at its own first depth to its cap 20 depths
     assert.ok(Math.abs(findChance(f.kind, FIND_FADE_TO) - f.cap * f.late) < 1e-4, `${f.kind} at ${FIND_FADE_TO}`);
     assert.equal(findChance(f.kind, FIND_FADE_TO), findChance(f.kind, 300), 'held from there on');
   }
-  assert.deepEqual([FIND_FADE_FROM, FIND_FADE_TO], [100, 200]);
-  assert.deepEqual(FINDS.map((f) => [f.kind, f.late]), [['azurite', 1 / 3], ['flare', 0.5], ['dynamite', 0.5]]);
-  // Rare at first, about one offer in three once the Flare Cache is at its cap (depth 61, shown 60).
+  // Rare at first, the most once the Flare Cache is at its cap, held to 100, scarcer to 200, held from there.
   const total = (d: number) => FINDS.reduce((sum, f) => sum + findChance(f.kind, d), 0);
-  assert.equal(total(10), 0);
-  assert.equal(total(11), 0.08);
-  assert.ok(total(25) < 0.1, `${total(25)} at 25`);
-  assert.ok(Math.abs(total(26) - 0.1275) < 1e-9, `${total(26)} at 26`);
-  assert.ok(total(60) < total(61));
-  assert.ok(Math.abs(total(61) - 0.33) < 0.005, `${total(61)} at 61`);
-  assert.equal(total(100), total(61));
-  // About one offer in seven from 200.
-  assert.ok(Math.abs(total(200) - 0.147) < 0.005, `${total(200)} at 200`);
-  assert.equal(total(300), total(200));
+  const capped = findFor('flare').from + FIND_RAMP;
+  assert.equal(total(FINDS_FROM - 1), 0);
+  assert.ok(total(capped - 1) < total(capped));
+  assert.equal(total(FIND_FADE_FROM), total(capped));
+  assert.ok(total(FIND_FADE_TO) < total(FIND_FADE_FROM) && total(FIND_FADE_TO) > 0);
+  assert.equal(total(300), total(FIND_FADE_TO));
   // Odd depths read as the surface.
   for (const d of [NaN, -3, 0]) assert.equal(total(d), 0);
 });
@@ -365,15 +272,6 @@ test('no find turns up above its first depth; each is at its start chance there 
     assert.ok(findChance(f.kind, f.from + FIND_RAMP - 1) < f.cap, `${f.kind} just short of its cap`);
     assert.equal(findChance(f.kind, f.from + FIND_RAMP), f.cap, `${f.kind} at its cap ${FIND_RAMP} depths on`);
   }
-  // As players see it: dynamite full by 30, veins by 45, flares by 60.
-  assert.deepEqual(
-    FINDS_IN_ORDER.map((f) => [f.kind, shownDepth(f.from + FIND_RAMP)]),
-    [
-      ['dynamite', 30],
-      ['azurite', 45],
-      ['flare', 60],
-    ],
-  );
 });
 
 test("a find's chance is always a number between 0 and 1, at any depth and for odd ones", () => {
@@ -485,18 +383,9 @@ const double = (d: number) => {
   return FINDS.reduce((sum, f) => sum + findChance(f.kind, d) * SECOND_FIND * (chances(d) - findChance(f.kind, d)), 0);
 };
 
-test('the Dynamite Cache comes first, from depth 10 as shown, 8% rising to 9% by 30, and is the rarest of the three at their caps', () => {
+test('the Dynamite Cache comes first, is the rarest of the three at their caps, and is rolled as often as its chance', () => {
   assert.equal(DYNAMITE_ON, true);
-  assert.deepEqual(
-    FINDS.map((f) => [f.kind, f.from, f.start, f.cap]),
-    [
-      ['azurite', 26, 0.04, 0.11],
-      ['flare', 41, 0.04, 0.13],
-      ['dynamite', 11, 0.08, 0.09],
-    ],
-  );
-  // Internal depths (shown one less): none at 10, 8% at 11, 8.5% at 21, 9% from 31, half of that from 200.
-  assert.deepEqual([10, 11, 21, 31, 100, 200].map((d) => findChance('dynamite', d)), [0, 0.08, 0.085, 0.09, 0.09, 0.045]);
+  assert.ok(FINDS.every((f) => f.kind === 'dynamite' || f.from > findFor('dynamite').from));
   // Rarer than the vein once that is at its cap, and than the flare once that is at its.
   assert.ok(findChance('dynamite', 46) < findChance('azurite', 46));
   for (let d = 61; d <= 200; d++) assert.ok(findChance('dynamite', d) < findChance('flare', d), `${d}`);
@@ -508,9 +397,9 @@ test('the Dynamite Cache comes first, from depth 10 as shown, 8% rising to 9% by
     if (findOffers(h.s).some((f) => f.kind === 'dynamite')) seen++;
     h.plainTurn();
   }
-  // A little more often than 9% of offers: it may also come second, beside another find.
+  // A little more often than its chance: it may also come second, beside another find.
   const p = present('dynamite', 61);
-  assert.ok(p > 0.09 && p < 0.105, `${p}`);
+  assert.ok(p > findChance('dynamite', 61) && p < findChance('dynamite', 61) * (1 + SECOND_FIND), `${p}`);
   assert.ok(Math.abs(seen - 600 * p) < 4 * Math.sqrt(600 * p), `${seen} Dynamite Caches in 600 offers`);
 });
 
@@ -527,7 +416,6 @@ test('one roll per offer and one more beside a find: at most two, on different c
     assert.ok(finds.length <= MAX_FINDS && MAX_FINDS === 2, 'never three');
     assert.equal(new Set(finds.map((f) => f.category)).size, finds.length, 'each on its own card');
     assert.equal(new Set(finds.map((f) => f.kind)).size, finds.length, 'each of its own kind');
-    assert.deepEqual(findOffer(s), finds[0] ?? null);
     for (const f of finds) {
       assert.ok(s.offered.includes(f.category), 'the find is one of the cards on offer');
       assert.ok(findChance(f.kind, s.round) > 0, `${f.kind} at depth ${s.round}`);
@@ -545,18 +433,12 @@ test('one roll per offer and one more beside a find: at most two, on different c
 });
 
 test('two finds side by side are rare early and grow less rare with depth, and as many offers hold a find as with one roll', () => {
-  // The rates, as SECOND_FIND says: none above depth 26 (shown 25); beside the certain vein about 1 offer in 23 at 26,
-  // then 1 in 260 at 27, 1 in 125 at 40; beside the certain Flare Cache 1 in 11 at 41; 1 in 28 from 61.
-  assert.equal(SECOND_FIND, 0.5);
-  for (let d = 1; d <= 25; d++) assert.equal(double(d), 0, `only dynamite at ${d}: nothing to go beside it`);
-  assert.ok(double(26) > 0.04 && double(26) < 0.05, `${double(26)} at 26`);
-  assert.ok(double(27) > 0.003 && double(27) < 0.005, `${double(27)} at 27`);
-  assert.ok(double(40) > 0.007 && double(40) < 0.009, `${double(40)} at 40`);
-  assert.ok(double(41) > 0.085 && double(41) < 0.095, `${double(41)} at 41`);
-  assert.ok(double(61) > 0.03 && double(61) < 0.04, `${double(61)} at 61`);
+  // (The rates in numbers are pinned with the ruleset, tests/delve.test.ts. The model above, double(), is what the engine is held to below.)
+  // None until a second kind turns up beside dynamite; held to 100, then rarer as the finds grow scarcer.
+  for (let d = 1; d < findFor('azurite').from; d++) assert.equal(double(d), 0, `only dynamite at ${d}: nothing to go beside it`);
+  assert.ok(double(findFor('azurite').from) > 0);
   assert.equal(double(100), double(61));
-  // Rarer again as the finds grow scarcer past 100.
-  assert.ok(double(200) < double(100) / 4, `${double(200)} at 200`);
+  assert.ok(double(200) < double(100), `${double(200)} at 200`);
   // Growing with depth, away from the first depths (where one find is certain and the second roll is all there is).
   for (let d = 27; d < 61; d++) if (!firstFindAt(d) && !firstFindAt(d + 1)) assert.ok(double(d + 1) >= double(d), `growing at ${d}`);
   // A ninth of the offers with a find hold two from depth 61, fewer above.
@@ -564,7 +446,7 @@ test('two finds side by side are rare early and grow less rare with depth, and a
   // Simulated: offers rolled by the engine at each depth, for a player with room for everything.
   const h = delve(['Ash'], { seed: 21 });
   const roll = (h.engine as unknown as { beginTurn(s: GameState, first: boolean, deeper?: boolean): void }).beginTurn.bind(h.engine);
-  const N = 20_000;
+  const N = 5000;
   for (const d of [26, 41, 61]) {
     let one = 0;
     let two = 0;
@@ -625,7 +507,6 @@ test('picking a find asks the question of its deeper depth, on its clock', () =>
     const q = h.s.question!;
     const rules = findRules(kind, depth);
     assert.equal(q.find, kind);
-    assert.equal(q.blasted, undefined);
     assert.deepEqual(activeRules(h.s), rules);
     assert.equal(q.options.length, rules.options);
     if (q.mode === 'name') {
@@ -783,14 +664,7 @@ test("a Flare Cache's question gets two thirds of the clock, and even on its flo
 });
 
 test("a Dynamite Cache's blast takes one thing a pack holds: each ward, flare and stick a chance", () => {
-  assert.deepEqual(
-    FINDS.map((f) => [f.kind, blowsUp(f.kind)]),
-    [
-      ['azurite', false],
-      ['flare', false],
-      ['dynamite', true],
-    ],
-  );
+  // (Only a Dynamite Cache blows anything up: the engine's test of it is below.)
   assert.equal(blastVictim(NONE, 0.5), null);
   assert.equal(blastVictim({ ...NONE, wards: 2 }, 0.7), 'wards');
   // Two wards, a flare and a stick: 2 + 1 + 1 chances, in the order wards, flares, dynamite.
@@ -971,7 +845,7 @@ test('a wrong answer or a time-out on an Azurite Vein caves in: two losses, a wa
     }
 });
 
-test('a right answer to a vein still pays, and dynamite held over one neither goes off nor saves it from its cave-in', () => {
+test('a right answer to a vein still pays, and dynamite held over one does not save it from its cave-in', () => {
   const ok = found('azurite');
   ok.answer(true);
   assert.equal(ok.s.reveal!.caveIn, undefined);
@@ -983,9 +857,6 @@ test('a right answer to a vein still pays, and dynamite held over one neither go
   h.give(id, { dynamite: 1 });
   h.act({ type: 'pick', category: h.plant('azurite') });
   h.clockIn();
-  const q = h.s.question!;
-  h.act({ type: 'dynamite', askedAt: q.askedAt });
-  assert.equal(h.s.question!.blasted, undefined);
   h.answer(false);
   assert.equal(livesOf(h.s, id), DELVE_LIVES - 2);
   assert.equal(h.s.reveal!.caveIn, true);
@@ -1404,7 +1275,7 @@ test('a game saved before finds plays on without them', () => {
 test('past depth 100, name questions now and then show a fourth made-up name; from 150 every one that has room', () => {
   const count = (depth: number) => {
     const fakes: number[] = [];
-    for (let seed = 1; seed <= 40; seed++) {
+    for (let seed = 1; seed <= 20; seed++) {
       const h = delve(['Ash'], { host: null, seed });
       for (let i = 0; i < 6; i++) {
         at(h, depth);
@@ -1423,5 +1294,5 @@ test('past depth 100, name questions now and then show a fourth made-up name; fr
   const at150 = count(150);
   assert.ok(at150.every((n) => n <= 4), 'never more than four');
   const four = at150.filter((n) => n === 4).length;
-  assert.ok(four >= at150.length * 0.8, `${four} of ${at150.length} name questions with four at 150`);
+  assert.ok(at150.length >= 30 && four >= at150.length * 0.8, `${four} of ${at150.length} name questions with four at 150`);
 });

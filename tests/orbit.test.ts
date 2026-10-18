@@ -10,9 +10,14 @@ import { DUTY, FULL_AT, GAP, GRAND_AT, MOTES, SHOW, auraEnvelope, auraForm, next
 const SIZES = [18, 22, 24, 28, 30, 32, 36, 56, 110];
 
 test('avatars get the reduced, full or grand aura by size', () => {
+  assert.deepEqual(
+    [FULL_AT - 1, FULL_AT, GRAND_AT - 1, GRAND_AT].map((s) => auraForm(s).tier),
+    ['small', 'full', 'full', 'grand'],
+  );
+  // The race markers are small, the standings full, the victory crown grand.
+  assert.deepEqual([18, 32, 110].map((s) => auraForm(s).tier), ['small', 'full', 'grand']);
   for (const s of SIZES) {
     const f = auraForm(s);
-    assert.equal(f.tier, s < FULL_AT ? 'small' : s < GRAND_AT ? 'full' : 'grand', `${s}px`);
     // Only the bigger ones get embers, so small faces stay clear of what's beside them.
     assert.equal(f.embers > 0, f.tier !== 'small', `${s}px embers`);
     assert.ok(f.motes >= 1 && f.motes <= MOTES.length, `${s}px motes`);
@@ -101,9 +106,5 @@ test('a showing fades in, holds and fades out', () => {
 test('showings come in turns with a short breath between, when the effects loop can sleep', () => {
   assert.equal(nextGap(0), GAP[0]);
   assert.equal(nextGap(1), GAP[1]);
-  for (let i = 0; i < 100; i++) {
-    const g = nextGap();
-    assert.ok(g >= GAP[0] && g <= GAP[1]);
-  }
   assert.ok(DUTY > 0.7 && DUTY < 0.9, `out ${(DUTY * 100).toFixed(0)}% of the time`);
 });

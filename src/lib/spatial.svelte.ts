@@ -7,15 +7,17 @@
 // player's entry, a screen edge, or a path the sparks fly); sounds that
 // belong to the whole scene (the plunge, the verdict) say nothing and stay
 // centred. A blast and a cave-in fill the space round where they happen
-// (Size). The ambience is spread wide, and in Delve each place has a room
-// of its own (lib/acoustics.ts) in place of the hall.
+// (Size), as an Azurite Vein's walls do when they crack. The ambience is
+// spread wide, and in Delve each place has a room of its own
+// (lib/acoustics.ts) in place of the hall; a vein being dug has one too,
+// for its own sounds.
 //
 // A sound's place across the game's screen (-1 its left edge, 1 its right)
 // times the width is its azimuth, as a fraction of 90°: a monitor spans about
 // ±30° from where you sit, about where a pair of stereo speakers stands. The
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
-import { HALL_SECONDS, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
+import { HALL_SECONDS, VEIN_NEAR, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
 import { hoverDuck, roomPlan, screenX, travel, type HoverMemory } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastAway';
@@ -127,8 +129,8 @@ export function onPlaced(f: (b: Blip) => void) {
 /** The audio clock, and the room sounds ring in now (for the lab's controls). */
 export const heard = $state<{ now: () => number; room: string }>({ now: () => 0, room: 'The game’s hall' });
 
-/** Sounds that, with Size on, fill the space round where they happen. */
-const WIDE = new Set<Sfx>(['blast', 'caveIn']);
+/** Sounds that, with Size on, fill the space round where they happen: a blast, a cave-in, and a vein's walls cracking all round. */
+const WIDE = new Set<Sfx>(['blast', 'caveIn', 'veinStrain1', 'veinStrain2']);
 /** Heard from far off already (lib/soundDesign.ts's distant()): no more distance on top. */
 const DISTANT = new Set<Sfx>(['fallenFar']);
 
@@ -423,6 +425,15 @@ const roomBufs = new Map<string, AudioBuffer>();
 const working = new Set<string>();
 /** Delve's depth as the ambience hears it (0: not in Delve, the hall). */
 let depthNow = 0;
+/**
+ * An Azurite Vein's room (ROOMS.vein), for the vein's own sounds (their send,
+ * lib/sound.ts veinWet): `gate` lets them through to the rest of the reverb
+ * instead, until the room is worked out (from VEIN_NEAR down, ahead of the
+ * first vein) and whenever the rooms are off.
+ */
+type VeinRoom = { send: GainNode; gate: GainNode; conv?: ConvolverNode; gain?: GainNode; working?: boolean };
+let veinRoom: VeinRoom | null = null;
+
 /** How fast (s, a time constant) one room gives way to the next: about as the beds cross-fade. */
 const ROOM_EASE = 0.8;
 
@@ -470,6 +481,7 @@ function tuneRooms() {
   // The next place's room, worked out ahead; any other not playing, let go of.
   if (next) work(next);
   for (const place of roomBufs.keys()) if (!r.playing.has(place) && !kept.has(place)) roomBufs.delete(place);
+  tuneVein(r);
   const hallShare = Math.sqrt(Math.max(0, 1 - covered));
   r.hall.gain.setTargetAtTime(hallShare, t, ROOM_EASE);
   feedHall(r, hallShare > 0.001);
@@ -499,6 +511,33 @@ function feedHall(r: Rooms, wanted: boolean) {
   }
 }
 
+/** The vein's room in or out: its own once worked out, with the rooms on; otherwise its sounds go with everything else. */
+function tuneVein(r: Rooms) {
+  const v = veinRoom;
+  if (!v) return;
+  const t = r.ac.currentTime;
+  const on = spatial.rooms && !spatial.today;
+  if (on && depthNow >= VEIN_NEAR && !v.conv && !v.working) {
+    v.working = true;
+    const steps = roomSteps(r.ac, ROOMS.vein, r.like, roomSeed('vein'));
+    const next = () => {
+      const s = steps.next();
+      if (!s.done) return whenIdle(next, { fallback: 300 });
+      v.working = false;
+      v.conv = new ConvolverNode(r.ac, { disableNormalization: true });
+      v.conv.buffer = s.value;
+      v.gain = gainNode(r.ac, 0);
+      // At the send's level into the rooms (lib/sound.ts: the bus's send is at half).
+      v.send.connect(gainNode(r.ac, 0.5)).connect(v.conv).connect(v.gain).connect(mixOf(r.ac));
+      tuneVein(r);
+    };
+    whenIdle(next, { fallback: 300 });
+  }
+  const own = on && !!v.conv;
+  v.gate.gain.setTargetAtTime(own ? 0 : 1, t, 0.05);
+  v.gain?.gain.setTargetAtTime(own ? 1 : 0, t, 0.05);
+}
+
 /** Works a place's room out a little at a time while the page is idle (lib/acoustics.ts roomSteps), then keeps it (bringing it in), if its place still sounds or comes next. */
 function work(place: string) {
   const r = rooms;
@@ -524,12 +563,18 @@ const placer: Placer = {
   },
   /**
    * The mix's output, to the speakers as it is (through the listening aids
-   * only while one is on, applyMix); and the reverb send, through the game's
-   * hall at its share and the rooms beside it.
+   * only while one is on, applyMix); the reverb send, through the game's
+   * hall at its share and the rooms beside it; and the vein's own send,
+   * into its room (tuneVein).
    */
-  mount({ ac, master, wet, reverb, out: user }) {
+  mount({ ac, master, wet, reverb, out: user, veinWet }) {
     mix = master;
     send = wet;
+    // The vein's own sounds: through to the rest of the reverb until its room is ready (tuneVein).
+    veinWet.disconnect();
+    const gate = gainNode(ac, 1);
+    veinWet.connect(gate).connect(wet);
+    veinRoom = { send: veinWet, gate };
     user.disconnect();
     const straight = gainNode(ac, 1);
     user.connect(straight).connect(ac.destination);
@@ -546,7 +591,7 @@ const placer: Placer = {
     applyMix();
   },
 
-  place(ac, name, start, where: SoundPlace | undefined) {
+  place(ac, name, start, where: SoundPlace | undefined, wetTo?: AudioNode) {
     const s = spatial;
     if (s.today) return null;
     const edge = where?.edge;
@@ -594,7 +639,7 @@ const placer: Placer = {
     if (far) toRoom = toRoom.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far) * (1 + 0.6 * far)));
     // A ducked hover's room as dull as the hover.
     if (soften) toRoom = toRoom.connect(filter(ac, 'highshelf', 4000, 0.707, soften));
-    toRoom.connect(sendPan).connect(wetOf(ac));
+    toRoom.connect(sendPan).connect(wetTo ?? wetOf(ac));
     const sendAz = (t: number) => (s.sideReverb && !dryHover ? clamp1(az(t)) * SIDE_REVERB : 0);
     if (hover) {
       // At its level; dry and close (hoverDry), with little of the room.

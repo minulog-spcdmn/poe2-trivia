@@ -6,7 +6,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_IDLE_ROUNDS,
   DELVE_LIVES,
@@ -18,7 +17,7 @@ import {
   awaitingReturn,
   dealIn,
   delveStandings,
-  delveTeam,
+  nobodyStands,
   expectedVoters,
   fellAt,
   findTimer,
@@ -38,10 +37,9 @@ import {
   voteDone,
   wardsOf,
   type FindKind,
-  type Inventory,
   haulOf,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, ActionError, Engine, createGame, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ANSWER_GRACE_MS, Engine, createGame, publicView, type Action } from '../src/lib/game.ts';
 import {
   HOST_HOLD_MARGIN_MS,
   delveNotices,
@@ -56,70 +54,22 @@ import {
   racerIds,
 } from '../src/lib/delveSession.ts';
 import { parseClientMsg } from '../src/lib/protocol.ts';
-
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
-const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
-const right = (q: Question) => q.options.indexOf(q.itemId);
-/** The wrong options of a question, by index. */
-const wrongs = (q: Question) => q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));
-
-function seeded(seed: number) {
-  seed = Math.imul(seed, 2654435761) >>> 0;
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
-
-const silently = (fn: () => unknown, message?: RegExp) =>
-  assert.throws(fn, (e: unknown) => e instanceof ActionError && e.silent && (!message || message.test(e.message)));
-const loudly = (fn: () => unknown, message?: RegExp) =>
-  assert.throws(fn, (e: unknown) => e instanceof ActionError && !e.silent && (!message || message.test(e.message)));
+import { DELVE as SETTINGS, NONE, fakes, items, loudly, right, room, seeded, silently, wrongs } from './helpers.ts';
 
 /** An online co-op run of `n` players p0 (the host) to p(n-1), on a clock the test moves. */
 function team(n = 3, opts: { seed?: number; depth?: number } = {}) {
-  const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(opts.seed ?? 5), now: () => clock.now, fakes });
-  let s: GameState = createGame('p0', SETTINGS);
-  for (let i = 0; i < n; i++) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name: `Delver ${'ABCDEFGH'[i]}` }, `p${i}`);
-  s = engine.apply(s, { type: 'start' }, 'p0');
-  // Seats in name order, so lists in seat order read plainly (the start shuffles them).
-  s = { ...s, players: [...s.players].sort((a, b) => a.id.localeCompare(b.id)) };
-  const h = {
-    engine,
-    clock,
-    get s() {
-      return s;
-    },
-    set s(v: GameState) {
-      s = v;
-    },
-    act(a: Action, from: string | null = null) {
-      s = engine.apply(s, a, from);
-      return s;
-    },
-    edit(fn: (s: GameState) => void) {
-      const c = structuredClone(s);
-      fn(c);
-      s = c;
-    },
-    give(id: string, inv: Partial<Inventory>) {
-      h.edit((c) => ((c.delve!.inventory ??= {})[id] = { ...NONE, ...inv }));
-    },
-    vote: (id: string, category = s.offered[0]) => h.act({ type: 'vote', category }, id),
+  const h = Object.assign(room({ players: n, seed: opts.seed ?? 5, sorted: true, depth: opts.depth }), {
+    vote: (id: string, category = h.s.offered[0]) => h.act({ type: 'vote', category }, id),
     /** The vote settled by the host's own tooling (a trusted pick), on a card that is no find unless `find`. */
     ask(find?: FindKind) {
       if (find) h.edit((c) => (c.delve!.finds = [{ category: c.offered[0], kind: find }]));
-      h.act({ type: 'pick', category: find ? s.offered[0] : s.offered.find((c) => !findOn(s, c))! });
-      h.act({ type: 'clock', askedAt: s.question!.askedAt });
-      return s.question!;
+      h.act({ type: 'pick', category: find ? h.s.offered[0] : h.s.offered.find((c) => !findOn(h.s, c))! });
+      h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+      return h.s.question!;
     },
-    pickAs: (id: string, index: number) => h.act({ type: 'answer', index, askedAt: s.question!.askedAt }, id),
+    pickAs: (id: string, index: number) => h.act({ type: 'answer', index, askedAt: h.s.question!.askedAt }, id),
     timeOut() {
-      h.clock.now = s.question!.deadline! + ANSWER_GRACE_MS;
+      h.clock.now = h.s.question!.deadline! + ANSWER_GRACE_MS;
       return h.act({ type: 'answer', index: null });
     },
     next: () => h.act({ type: 'next' }),
@@ -129,8 +79,7 @@ function team(n = 3, opts: { seed?: number; depth?: number } = {}) {
         for (const [id, n] of Object.entries(byId)) c.delve!.losses[id] = Array(DELVE_LIVES - n).fill(1);
       });
     },
-  };
-  if (opts.depth) h.edit((c) => (c.round = opts.depth!));
+  });
   return h;
 }
 
@@ -346,7 +295,7 @@ test('the raffle: one ticket per vote, drawn with the engine\'s roll, so two vot
   for (let seed = 1; seed <= 600; seed++) {
     const h = team(3, { seed: 3 });
     // The same cards each time, a different roll for the draw.
-    (h.engine as unknown as { rng: () => number }).rng = seeded(seed);
+    h.reseed(seed);
     offered = h.s.offered;
     h.vote('p0', offered[0]);
     h.vote('p1', offered[0]);
@@ -904,11 +853,9 @@ test('the run ends when nobody stands: no winner, one depth for the team, where 
   assert.deepEqual(h.s.winners, []);
   assert.deepEqual([fellAt(h.s, 'p0'), fellAt(h.s, 'p1'), fellAt(h.s, 'p2')], [1, 2, 3]);
   assert.equal(teamDepth(h.s), 3);
-  const t = delveTeam(h.s);
-  assert.equal(t.depth, 3);
-  assert.equal(t.perished, true);
+  assert.equal(nobodyStands(h.s), true);
   assert.deepEqual(
-    t.players.map((r) => [r.id, r.depth, r.rank]),
+    delveStandings(h.s).map((r) => [r.id, r.depth, r.rank]),
     [
       ['p2', 3, 1],
       ['p1', 2, 2],
@@ -921,7 +868,7 @@ test('the run ends when nobody stands: no winner, one depth for the team, where 
   const g = team(2, { depth: 7 });
   g.lives({ p1: 0 });
   assert.equal(teamDepth(g.s), 7);
-  assert.equal(delveTeam(g.s).perished, false);
+  assert.equal(nobodyStands(g.s), false);
 });
 
 test('the last one standing leaving ends the run; a question with nobody left to answer ends at once', () => {
@@ -1041,7 +988,7 @@ test('the last one standing leaving (or removed) keeps the team depth where they
   assert.equal(h.s.phase, 'over');
   assert.equal(h.s.delve!.leftAt, 30);
   assert.equal(teamDepth(h.s), 30);
-  assert.deepEqual([delveTeam(h.s).depth, delveTeam(h.s).perished], [30, true]);
+  assert.equal(nobodyStands(h.s), true);
   // One who perished leaving changes nothing; one who leaves standing marks the depth, and the team goes on deeper.
   const g = team(3, { depth: 12 });
   g.edit((c) => (c.delve!.losses.p2 = [4, 4, 4]));

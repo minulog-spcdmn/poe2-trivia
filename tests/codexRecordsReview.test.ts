@@ -12,16 +12,12 @@ import { answersByRun, answersFor, delveSummary, medianOfCounts, runStory } from
 import { CODEX_NAMES, addRun, emptyRecords, measure, runEvent, runKey, type DelveRun } from '../src/lib/delveRecord.ts';
 import { createGame } from '../src/lib/game.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { items, memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
-(globalThis as { localStorage?: unknown }).localStorage = {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => void store.set(k, String(v)),
-  removeItem: (k: string) => void store.delete(k),
-};
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
 beforeEach(() => store.clear());
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const [a, b, c] = items;
 const byId = new Map(items.map((it) => [it.id, it]));
 const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: DELVE_RULESET, mixed: false, ...o });
@@ -90,7 +86,7 @@ test('the usual depth: at least half the ends that deep or deeper (ties too), an
     const shallower = Object.entries(ends).reduce((n, [d, k]) => n + (Number(d) <= m ? k : 0), 0);
     return 2 * deeper >= all && 2 * shallower >= all;
   };
-  for (const ends of [{ 5: 3 }, { 3: 2, 9: 2 }, { 4: 1, 5: 5, 9: 1 }, { 2: 1, 7: 2 }]) assert.ok(atLeastHalf(ends), JSON.stringify(ends));
+  for (const ends of [{ 5: 3 }, { 3: 2, 9: 2 }, { 4: 1, 5: 5, 9: 1 }, { 2: 1, 7: 2 }] as Record<number, number>[]) assert.ok(atLeastHalf(ends), JSON.stringify(ends));
   // "Half end deeper" would be false here: none does.
   assert.equal(medianOfCounts({ 5: 3 }), 5);
   let x = emptyRecords();

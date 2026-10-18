@@ -1,9 +1,11 @@
 // In a game: each kind's moments (a category to pick, a question with its
 // clock running, the answer shown, right and wrong), played through the
 // engine to there, from the seat whose turn it is and from one watching it.
-// Delve alone and together, deeper down too.
+// Delve alone and together, deeper down too, with finds among the cards and a
+// vein's dig.
 
 import type { Settings } from '../../lib/game.ts';
+import { WAY_OUT } from '../../lib/delve.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
@@ -72,6 +74,23 @@ export function gameScenes(): Scene[] {
         .playTo((s) => !!s.deathmatch),
     ),
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
+    scene('delve-finds', 'Delve alone', 'The cards dealt: an Azurite Vein and a Flare Cache among them', [ALONE], () => {
+      const t = delveAlone();
+      const [vein, , flare] = t.s.offered;
+      t.s.delve!.finds = [
+        { category: vein, kind: 'azurite' },
+        { category: flare, kind: 'flare' },
+      ];
+      return t;
+    }),
+    scene('delve-dig', 'Delve alone', 'A vein struck once: dig deeper, or the way out', [ALONE], () => {
+      const t = delveAlone();
+      const vein = t.s.offered[0];
+      t.s.offered = [vein, WAY_OUT];
+      t.s.delve!.finds = [{ category: vein, kind: 'azurite' }];
+      t.s.delve!.dig = { strikes: 1, haul: [t.s.players[0].id], light: 6, struck: [] };
+      return t;
+    }),
     scene('delve-question', 'Delve alone', 'A question', [ALONE], () => delveAlone().pick()),
     scene('delve-wrong', 'Delve alone', 'Answered wrong: a life lost', [ALONE], () => {
       const t = delveAlone().pick();

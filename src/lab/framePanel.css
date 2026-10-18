@@ -1,0 +1,76 @@
+/* A tool page's panel over the real game screen in a frame, at a desktop's
+   width or a phone's (zones.html, cards.html): a bar of controls, the frame
+   under it. Its root carries .frame-panel. */
+.frame-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: #0a0908;
+}
+.frame-panel .bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  padding: 0.7rem 1rem 0.3rem;
+  border-bottom: 1px solid rgba(201, 164, 92, 0.18);
+}
+.frame-panel h1 {
+  margin: 0 0.4rem 0 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  color: var(--gold-hi);
+}
+.frame-panel select {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.25rem 0.4rem;
+  color: var(--gold-hi);
+  background: #15100c;
+  border: 1px solid var(--gold-lo);
+  border-radius: 3px;
+}
+.frame-panel .tog {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.92rem;
+  color: var(--gold);
+  cursor: pointer;
+}
+.frame-panel .tog input {
+  accent-color: var(--gold);
+}
+.frame-panel .hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.frame-panel .stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  background: #050404;
+}
+.frame-panel iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #0a0908;
+}
+.frame-panel .phone {
+  padding: 0.8rem 0;
+}
+.frame-panel .phone iframe {
+  width: 375px;
+  max-width: 100%;
+  border: 1px solid rgba(201, 164, 92, 0.35);
+  border-radius: 6px;
+}
+.frame-panel .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

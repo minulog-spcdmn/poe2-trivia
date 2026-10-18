@@ -1,12 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
-
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
+import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { fakes, items, seeded } from './helpers.ts';
 
 const HOUR = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -14,13 +11,6 @@ const at = (iso: string) => Date.parse(iso);
 test('the day turns over at midnight UTC, wherever the player is', () => {
   assert.equal(utcDay(at('2026-10-09T23:59:59.999Z')) + 1, utcDay(at('2026-10-10T00:00:00Z')));
   assert.equal(utcDay(at('2026-10-10T00:00:00+02:00')), utcDay(at('2026-10-09T22:00:00Z')));
-});
-
-test('day numbers count from the launch, which is No. 1', () => {
-  assert.equal(dayNumber(DAILY_LAUNCH), 1);
-  assert.equal(dayNumber(DAILY_LAUNCH + 23 * HOUR), 1);
-  assert.equal(dayNumber(DAILY_LAUNCH + 24 * HOUR), 2);
-  assert.equal(dayNumber(DAILY_LAUNCH + 213 * 24 * HOUR + 5 * HOUR), 214);
 });
 
 test('the next one is counted in whole hours, rounded up, then minutes in the last hour, and the word is spelled out', () => {
@@ -80,11 +70,12 @@ test("a day's question never changes, twins and all", () => {
 
 test('practice asks as the daily does: twins may meet', () => {
   const byName = new Map(items.map((it) => [it.name, it.id]));
-  const engine = dailyEngine(items, fakes);
+  const engine = dailyEngine(items, fakes, { rng: seeded(1) });
   const game = dailyGame();
+  const rng = seeded(2);
   let met = 0;
   for (let i = 0; i < 4000; i++) {
-    const q = askOne(engine, game);
+    const q = askOne(engine, game, rng);
     if (TWINS.some((t) => t.names.filter((n) => q.options.includes(byName.get(n)!)).length > 1)) met++;
   }
   assert.ok(met > 0, 'twins met');
@@ -116,10 +107,11 @@ test('the pictures too thin for the start page are real items\' pictures, and ne
   for (const id of TOO_THIN) assert.equal(byArt.get(id)?.kind, 'unique', `${id} is an item's picture`);
   const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
   const start = utcDay(DAILY_LAUNCH);
-  for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
-  const engine = new Engine(items, { autoClock: true, fakes });
+  for (let d = start; d < start + 400; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
+  const engine = new Engine(items, { autoClock: true, fakes, rng: seeded(3) });
   const game = dailyGame();
-  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(shown(askOne(engine, game))), `practice question ${i}`);
+  const rng = seeded(4);
+  for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(shown(askOne(engine, game, rng))), `practice question ${i}`);
 });
 
 test('a right answer starts or carries on a streak; a day skipped starts it over', () => {

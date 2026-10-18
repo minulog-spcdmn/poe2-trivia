@@ -67,7 +67,11 @@ type Ember = {
   gate: number;
 };
 
-const r = Math.random;
+let r: () => number = Math.random;
+/** Tests: the embers' random source (seeded there, so what a statistical check sees is the same every run). */
+export function setEmberRandom(rng: () => number = Math.random) {
+  r = rng;
+}
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /** n gates spread evenly over 0 to 1 (one in each nth, at random within it), in random order. */

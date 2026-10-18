@@ -74,7 +74,7 @@ test('every hint, and every reason that replaces one, fits on one line', () => {
 });
 
 test('the notes under a find: its tagline, then one short line of what its item does and what it risks, for someone who never played; never a depth, nor that it is harder', async () => {
-  const { findNote, teamFindNote, FIND_TEXT, caveInLabel } = await import('../src/lib/difficultyText.ts');
+  const { findNote, teamFindNote, FIND_TEXT } = await import('../src/lib/difficultyText.ts');
   const none = { wards: 0, flares: 0, dynamite: 0 };
   const line = (k: 'azurite' | 'flare' | 'dynamite', inv = none) => `${FIND_TEXT[k].tag}. ${findNote(k, inv)}`;
   assert.equal(line('azurite'), 'Answer right to dig out a ward. A ward takes a lost life for you. A miss costs two lives and your haul.');
@@ -90,7 +90,6 @@ test('the notes under a find: its tagline, then one short line of what its item 
   assert.equal(teamFindNote('flare', false), 'It adds six seconds for everyone when time runs out. You get less time to answer.');
   assert.equal(FIND_TEXT.azurite.others, 'A right answer digs out a ward. A ward takes a lost life for you. A miss costs two lives and your haul.');
   assert.equal(FIND_TEXT.flare.others, 'A right answer wins a flare. It adds six seconds when your time runs out. You get less time to answer.');
-  assert.equal(caveInLabel('azurite'), 'A wrong answer loses two lives');
   // Plain words, read in a second: no depths, no digits, no bullets in these body-font lines, and short.
   const kinds = ['azurite', 'flare', 'dynamite'] as const;
   const all = [
