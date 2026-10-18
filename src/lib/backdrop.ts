@@ -1058,6 +1058,17 @@ function warm2d() {
 }
 
 /**
+ * Gives a context back at once. A canvas let go of keeps its context (its
+ * targets, the drawing buffer) until it's collected, and Safari collects
+ * them late: the app shown afresh after a crash (Root.svelte) made a new one
+ * each time beside the old ones, on a phone short of memory as it is.
+ */
+function letGo(gl: WebGL2RenderingContext): null {
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return null;
+}
+
+/**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
  * first frame drawn at once); Delve's follow in the background once Delve is
  * on its way (wantDelveBackdrop). Returns a cleanup function, or null when
@@ -1080,7 +1091,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     return null;
   }
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
-  if (!hp || hp.precision === 0) return null;
+  if (!hp || hp.precision === 0) return letGo(gl);
   warm2d();
   // The main pass needs about FIXED_UNIFORMS fragment uniform vectors (every
   // one counted unpacked, the soft light's included where it is worked out
@@ -1124,7 +1135,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const leanProgs = buildProgramsNow(gl, leanSources);
   if (!leanProgs) {
     console.warn('The backdrop goes to the CSS one.');
-    return null;
+    return letGo(gl);
   }
   const [leanProg, leanSmooth = null] = leanProgs;
 
@@ -1852,6 +1863,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     offFx();
     releaseAll();
     releaseAllDrops();
+    letGo(gl!);
   }
 
   // A lost context stays lost: we don't call preventDefault(), so the browser
