@@ -67,6 +67,17 @@
   const chartBase = $derived(Math.round(oneScreen ? Math.max(200, innerHeight * (sideways ? 0.2 : 0.18)) : Math.min(560, Math.max(260, innerHeight * 0.27))));
   /** Wide or on its side, the chart's height fitted to the screen, so the whole overview is one screen: smaller where the rest runs past it, taller where it leaves room. */
   const chart = fitChart({ on: () => oneScreen, base: () => chartBase, most: () => innerHeight * 0.42 });
+  /** The chart's panel ends level with the column beside it: the chart takes whatever its panel has past its own height (less its legend above). */
+  let fillH = $state(0);
+  let fillEl = $state<HTMLElement>();
+  let legendH = $state(48);
+  $effect(() => {
+    void fillH;
+    void metric;
+    const l = fillEl?.querySelector<HTMLElement>('.legend');
+    if (l) legendH = l.offsetHeight + parseFloat(getComputedStyle(l).marginBottom);
+  });
+  const drawnH = $derived(Math.max(chart.height, Math.floor(fillH - legendH)));
   /** The days far busier than usual, ringed on the chart (only on the visitors' line, which they're read from). */
   const spikes = $derived(metric === 'visitors' ? spikesOf(L.days, L.visitors.perDay).map((s) => s.day) : []);
 
@@ -123,7 +134,9 @@
   <div class="chart">
     <Section title="How busy it was" says={oneScreen ? '' : 'Each day against the same day of the period before.'}>
       {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
-      <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chart.height} marks={spikes} />
+      <div class="fill" bind:this={fillEl} bind:clientHeight={fillH} style:min-height="{chart.height + legendH}px">
+        <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={drawnH} marks={spikes} />
+      </div>
     </Section>
   </div>
   <div class="side">
@@ -193,6 +206,10 @@
 </div>
 
 <style>
+  /* (A grid, so what's new fills the room its row gives it.) */
+  .since {
+    display: grid;
+  }
   .problem {
     display: flex;
     align-items: center;
@@ -250,9 +267,19 @@
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 1.25rem;
   }
+  /* The chart's panel as tall as its row (the column beside it may be taller); the chart fills it, never under its own height (the min-height set above). */
   .chart {
     grid-area: chart;
+    display: flex;
     min-width: 0;
+  }
+  .chart > :global(.section) {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .fill {
+    flex: 1 1 0;
   }
   .side {
     grid-area: side;
@@ -396,9 +423,13 @@
     .side {
       display: contents;
     }
+    /* The last of them takes what What happened leaves beside them, so the two columns end level. */
     .alerts {
-      align-content: start;
+      grid-template-rows: auto minmax(0, 1fr);
       gap: 1rem;
+    }
+    .alerts:not(:has(> :nth-child(2))) {
+      grid-template-rows: minmax(0, 1fr);
     }
     .kpis {
       grid-template-columns: repeat(5, minmax(0, 1fr));
