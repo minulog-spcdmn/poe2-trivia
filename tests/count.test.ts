@@ -71,15 +71,15 @@ test("a join turned down for the versions counts apart from one turned down by t
 test('a game counts as it starts, with how many play, and as it ends, under the same key', () => {
   const lobby = game('race', 4);
   const started = { ...lobby, phase: 'choosing' as const };
-  assert.deepEqual(gameEvents(lobby, started, false), ['play/race-online', 'size/race-online-3-4p']);
+  assert.deepEqual(gameEvents(lobby, started, false), ['play/race-online', 'size/race-online-4p']);
   assert.deepEqual(gameEvents(started, { ...started, phase: 'question' }, false), []);
   const over = { ...started, phase: 'over' as const };
   assert.deepEqual(gameEvents(started, over, false), ['end/race-online']);
   assert.deepEqual(gameEvents(over, over, false), []);
   // The next game in the room starts from the last one's end.
-  assert.deepEqual(gameEvents(over, { ...over, phase: 'choosing' }, false), ['play/race-online', 'size/race-online-3-4p']);
+  assert.deepEqual(gameEvents(over, { ...over, phase: 'choosing' }, false), ['play/race-online', 'size/race-online-4p']);
   const sizes = [1, 2, 5, 12].map((n) => gameEvents(game('turns', n), game('turns', n, 'choosing'), true)[1]);
-  assert.deepEqual(sizes, ['size/turns-hotseat-1p', 'size/turns-hotseat-2p', 'size/turns-hotseat-5-8p', 'size/turns-hotseat-9-12p']);
+  assert.deepEqual(sizes, ['size/turns-hotseat-1p', 'size/turns-hotseat-2p', 'size/turns-hotseat-5p', 'size/turns-hotseat-12p']);
 });
 
 test('a game picked up after a reload counts nothing, not even an end it had reached', () => {
