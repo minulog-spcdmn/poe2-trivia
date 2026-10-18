@@ -143,6 +143,11 @@ class Prober {
     };
   }
 
+  /** Settles every probe still out with no word, so none goes on to connect (a scan that was left, or has listed all it will). */
+  stop() {
+    for (const done of [...this.waiting.values()]) done(null);
+  }
+
   /**
    * Asks `id` what it is. Not answered by `connectAfter` ms, it's connected to
    * (which shares this browser's IP address with whoever holds it), and
@@ -277,8 +282,8 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
   const prober = new Prober(peer);
   /** Probes still connecting to slots that answered no ping, finished before the scan is. */
   const connecting: Promise<void>[] = [];
+  let listed = 0;
   try {
-    let listed = 0;
     for (let start = 1; start <= MAX_SLOTS; start += BATCH) {
       if (cancelled() || listed >= MAX_LISTED) return;
       if (start > FAST_SLOTS) await sleep(SLOW_BATCH_DELAY_MS);
@@ -310,6 +315,8 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
       if (found === 0) return;
     }
   } finally {
+    // Left, or listed all it will: what's still out has nothing to add, and shouldn't connect to anyone.
+    if (cancelled() || listed >= MAX_LISTED) prober.stop();
     await Promise.all(connecting);
     peer.destroy();
   }
