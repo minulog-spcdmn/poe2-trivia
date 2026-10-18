@@ -277,14 +277,19 @@ function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: bool
  * as the cluster's are, stopping short of `s`. Their outlines are kept clear
  * of the plate.
  */
-export function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1) {
+export function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1, solid = false) {
   sunRing(p, c, r0);
   points.forEach(({ a, end, hw }, i) => {
     const len = end - r0 + 1;
     if (len < hw * 3.5) return;
     const pr: Prism = { root: at(c, a, r0 - 1), a, len, hw, phase: [14, 40, 22, 8, 30, 18, 44, 26][i % 8] };
+    // `solid`: its prisms stand in front, dark inside, as the cluster's do.
+    p.front = solid;
     prism(p, pr, s, k);
-    p.knockout += poly(grow(prismShape(pr).outline, 1.4));
+    p.front = false;
+    const outline = prismShape(pr).outline;
+    if (solid) p.solid += poly(outline);
+    p.knockout += poly(grow(outline, 1.4));
   });
 }
 
@@ -402,7 +407,7 @@ function veinTall(p: Plate, g: TallLayout) {
   const C = g.emblem;
   const r0 = 64 * k;
   const holes = [
-    { c: g.sol.c, r: g.sol.r + 3 },
+    { c: g.sol.c, r: VEIN_SEAL * k * 0.8 + 3 },
     { c: g.luna.c, r: g.luna.r + 3 },
   ];
   // Grown as crystals grow: in uneven groups, each at its own heading, length (past the ring, on a card
@@ -666,6 +671,8 @@ function dynamiteBack(p: Plate, g: BackLayout) {
 
 /** How far a flare's burst in Sol's place reaches, on a card 218 wide. */
 const BURST = 30;
+/** How far the crown of the vein's seal in Sol's place reaches, on a card 218 wide (the flare's burst's reach). */
+const VEIN_SEAL = 30;
 /** How wide the ring blown apart in Sol's place is, on a card 218 wide. */
 const SMALL_RING = 14;
 
@@ -685,7 +692,16 @@ const disc = (c: Pt, r: number) => `M${pt([c[0] + r, c[1]])}A${r} ${r} 0 1 1 ${p
 function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
   const k = w / 218;
   if (kind === 'azurite') {
-    crystalSeal(p, sol.c, sol.r * 0.92);
+    // The black sun's seal (lib/plates/blackSun): a crystal seen end on in a
+    // ring, a crown of prisms bursting out of it, long and short in turn, so
+    // large it breaks the arch, its prisms dark inside as the cluster's are;
+    // the plate stops short of the ring and each prism.
+    const r = VEIN_SEAL * k;
+    const r0 = r * 0.41;
+    const points = Array.from({ length: 8 }, (_, i) => ({ a: i * 45 + 22.5, end: r * (i % 2 ? 0.76 : 1), hw: r * (i % 2 ? 0.088 : 0.117) }));
+    crystalCrown(p, sol.c, r0, points, NONE, 0.8 * k, true);
+    crystalSeal(p, sol.c, r * 0.25);
+    p.knockout += disc(sol.c, r0 + 1.2);
     copperSign(p, luna.c, luna.r * 0.82);
   } else if (kind === 'flare') {
     // So large it breaks the arch: the plate stops short of its heart, its fine rays and each pointed ray.
