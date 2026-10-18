@@ -25,6 +25,8 @@
   import DrawnMark from './DrawnMark.svelte';
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
+  import { warmPlate } from '../lib/plateStore.svelte';
+  import { circleAtPlace } from '../lib/circlePlaces';
   import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -175,6 +177,9 @@
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
+  /** The Codex's collection circle, built ahead away from the page once its entry is pointed at (the Codex warms the rest as it opens). */
+  const warmCodex = (e: Entry) => e === 'codex' && warmPlate(circleAtPlace('collection'));
+  $effect(() => void warmCodex(ENTRIES[cursor]));
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
@@ -722,7 +727,7 @@
         <!-- Hot-seat and the Codex: set as the list's entries are, side by side. -->
         <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
           {#each PAIR as { e, name } (e)}
-            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)}>
+            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => warmCodex(e)} onfocus={() => warmCodex(e)}>
               <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
               {#each pairLines[e] as line}<span class="pair-line">{line}</span>{/each}
             </button>

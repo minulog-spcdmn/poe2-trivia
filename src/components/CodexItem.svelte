@@ -11,10 +11,13 @@
   import { allArt, type DrawnItem, type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import { circleOf } from './circles';
   import ItemDetails from './ItemDetails.svelte';
   import { readStored, writeStored } from '../lib/storage';
   import { calm, motion } from '../lib/motion.svelte';
+
+  /** The circle behind it (lib/circlePlaces.ts). */
+  const ItemCircle = circleOf('item');
 
   // One item of the codex, as a tooltip like the one the game reveals it in.
   let { item, codex, onclose, onopen }: { item: Item; codex: Codex; onclose: () => void; onopen: (item: Item) => void } = $props();
@@ -155,7 +158,7 @@
       </div>
 
       <div class="art" class:several={arts.length > 1} bind:this={art}>
-        <ArcaneCircle />
+        <ItemCircle />
         <div class="frame">
           {#key drawn.art}
             <ArtImage src={itemImage(drawn.art)} alt={item.name} w={drawn.w} h={drawn.h} float />

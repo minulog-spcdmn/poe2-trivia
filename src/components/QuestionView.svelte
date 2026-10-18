@@ -12,7 +12,7 @@
   import Avatar from './Avatar.svelte';
   import ArtImage from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import { questionCircle } from './gameCircles.svelte';
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
@@ -46,6 +46,9 @@
 
   const s = $derived(session.state!);
   const q = $derived(s.question!);
+  // The circle behind the art: a different one from question to question
+  // (the same for every player), or Delve's own black sun behind a find's.
+  const Circle = $derived(questionCircle(s));
   const reveal = $derived(s.phase === 'reveal' ? s.reveal : null);
   /** The question's timer, at the task line's right end (phones have it in the pinned scoreboard, Game.svelte). */
   let { timer }: { timer?: Snippet } = $props();
@@ -1273,7 +1276,7 @@
           {/if}
         </div>
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
-          {#if !circleOff}<ArcaneCircle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />{/if}
+          {#if !circleOff}<Circle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />{/if}
           <div class="frame">
             {#if media?.veil && showFull && drawn}
               <ArtImage src={itemImage(drawn.art)} alt={drawn.name} w={drawn.w} h={drawn.h} float unflip={mirrored(0)} />

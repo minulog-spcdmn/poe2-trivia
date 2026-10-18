@@ -1,5 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
@@ -119,6 +120,29 @@ function fontinNotice(): Plugin {
       }
     },
   };
+}
+
+/**
+ * Which build of the rune circles' plates this is (src/lib/plates, built in
+ * the browser and kept: lib/plateStore.svelte.ts): a hash of the plates and
+ * of everything they import (what's imported only as a type left out), so a
+ * device keeps a plate it built until the code that draws it changes.
+ */
+function platesVersion() {
+  const hash = createHash('sha256');
+  const seen = new Set<string>();
+  const walk = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const code = readFileSync(file, 'utf8');
+    hash.update(file.slice(file.indexOf('src')).replaceAll('\\', '/')).update(code);
+    for (const m of code.matchAll(/^(?!import type)(?:import|export)[^;]*?from '(\.{1,2}\/[^']+)'|import\('(\.{1,2}\/[^']+)'\)/gm)) {
+      const path = join(dirname(file), m[1] ?? m[2]);
+      walk(path.endsWith('.ts') ? path : `${path}.ts`);
+    }
+  };
+  walk(fileURLToPath(new URL('./src/lib/plates/index.ts', import.meta.url)));
+  return hash.digest('hex').slice(0, 12);
 }
 
 /** Where the backdrop tool saves to (and the game reads its zones' looks from). */
@@ -275,6 +299,7 @@ export default defineConfig(({ command, mode }) => {
   // A channel named wrongly stops here, rather than quietly playing in the live game. The local
   // one's rooms are this machine's: set before Vite reads the env, so the app sees import.meta.env.VITE_LOCAL_ID.
   if (channelOf({ VITE_CHANNEL: env.VITE_CHANNEL, DEV: command === 'serve' }) === 'local') process.env.VITE_LOCAL_ID ??= localId();
+  process.env.VITE_PLATES_VERSION = platesVersion();
   // Without the owner key's public half, nobody (the creator included) can play under the held name. Said loudly, in the
   // deploy's summary too, but not in the way: everything else goes out as it should.
   if (command === 'build' && channelOf({ VITE_CHANNEL: env.VITE_CHANNEL }) === 'live' && /OWNER_PUBLIC_KEY = ''/.test(readFileSync(`${process.cwd()}/src/lib/ownerKey.ts`, 'utf8'))) {
@@ -286,6 +311,8 @@ export default defineConfig(({ command, mode }) => {
     base: './',
     plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env)],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
+    worker: { format: 'es' },
     build: {
       rollupOptions: {
         // Legal pages are plain static pages so they work without JavaScript.
@@ -302,7 +329,7 @@ export default defineConfig(({ command, mode }) => {
           // (src/hoverPage), the end screen's (src/endscreenPreview) and the
           // hub linking them all (dev.html): the dev server serves them by
           // itself; of the builds only the beta has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html' } : {}),
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html', circle: 'circle.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

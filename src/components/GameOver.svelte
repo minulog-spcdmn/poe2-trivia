@@ -6,7 +6,7 @@
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import { endCircle, endHollow } from './gameCircles.svelte';
   import WatchToggle from './WatchToggle.svelte';
   import WatchEye from './WatchEye.svelte';
   import StandingMark from './StandingMark.svelte';
@@ -56,11 +56,12 @@
   import { achievementById, type Achievement } from '../lib/achievements';
 
   // The end of a game, as the lobby is laid out: on the left the result in
-  // the start page's rune circle (the winner, or the delvers, at its heart)
-  // and what the game meant for you under it; on the right a lobby panel
-  // with the mode's ranking or the party, the highlights everyone shares,
-  // and the start row. Phones stack it all, the start row docked at the
-  // foot of the screen. What it says comes from lib/recap.ts.
+  // a rune circle, the eye or the monad, or after a Delve the moth (the
+  // winner, or the delvers, in its heart), and what the game meant for you
+  // under it; on the right a lobby panel with the mode's ranking or the
+  // party, the highlights everyone shares, and the start row. Phones stack
+  // it all, the start row docked at the foot of the screen. What it says
+  // comes from lib/recap.ts.
 
   const s = $derived(session.state!);
   const local = $derived(session.mode === 'local');
@@ -79,6 +80,12 @@
 
   // ---- Delve -------------------------------------------------------------
   const run = $derived(s.delve ?? null);
+  // The circle behind the result: the eye or the monad, or after a Delve,
+  // where everyone perished, the moth (built ahead as the game went,
+  // gameCircles.svelte.ts); hollow round one avatar (its heart's figure and glory
+  // left out, the same plain frame hugging the avatar in every circle),
+  // whole where several share the heart round its middle.
+  const Circle = $derived(endCircle(s));
   const solo = $derived(!!run && !isGroupRun(s));
   const together = $derived(!!run && !solo);
   /** Whose run this device tells: online its player, on one device its one delver. */
@@ -509,8 +516,8 @@
         <div class="plate" aria-hidden="true" in:scale={{ start: 0.85, duration: 900 }}>
           <div class="veil">
             <div class="inner">
-              <!-- The start page's rune circle; a run short of your best in worn grey. -->
-              <ArcaneCircle size="100%" color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
+              <!-- The eye or the monad, or after a Delve the moth, hollow round one avatar; a run short of your best in worn grey. -->
+              <Circle size="100%" hollow={!!winner && endHollow(s)} color={dim ? '#9a8f7f' : undefined} strength={run ? (bright ? 0.42 : 0.3) : iLost ? 0.35 : 0.6} />
             </div>
           </div>
         </div>

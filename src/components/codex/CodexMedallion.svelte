@@ -1,18 +1,18 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  import ArcaneCircle from '../ArcaneCircle.svelte';
+  import type { Component, Snippet } from 'svelte';
 
   // The medallion at the heart of each Codex page's summary, between its four
-  // figures: the rune circle round a dark disc and its track, the page's
+  // figures: a rune circle (`circle`, each page its own) round a dark disc
+  // and its track, the page's
   // figure inside (the children, styled by the page). `share` (0 to 1) fills
   // an arc along the track; without it there is none (Delve: depth has no end
   // to fill to). It takes its place in the summary's grid, the same on every page.
-  let { share, children }: { share?: number; children: Snippet } = $props();
+  let { share, circle: Circle, children }: { share?: number; circle: Component<{ size?: string; strength?: number }>; children: Snippet } = $props();
   const uid = $props.id();
 </script>
 
 <div class="medallion">
-  <ArcaneCircle size="100%" strength={0.3} />
+  <Circle size="100%" strength={0.3} />
   <svg class="ring" viewBox="-100 -100 200 200" aria-hidden="true">
     {#if share}
       <defs>
