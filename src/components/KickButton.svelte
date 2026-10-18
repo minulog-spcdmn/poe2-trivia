@@ -1,8 +1,11 @@
-<!-- The host's kick: a small seal, a double ring round a drawn ×, as the
-     achievements' seals are a double ring round a sign. Pointed at, it warms
-     to rust with a faint glow. Kicking takes two clicks (lib/kick): armed, the
-     ring grows sideways into a pill and the × gives way to Kick. Same ring,
-     same red, only longer. Sized by the parent: --kick-size. -->
+<!-- The host's kick: a small seal, a ring round a ring struck through (not
+     allowed here: a kicked player is barred from the room; never the × of a
+     wrong answer, nor the header's Leave, which is your own way out). One ring
+     only, where the achievements' seals have two, or the sign's own ring
+     would make three. Pointed at, it warms to rust with a faint glow. Kicking
+     takes two clicks (lib/kick): armed, the ring grows sideways into a pill
+     and the sign gives way to Kick. Same ring, same red, only longer. Sized by
+     the parent: --kick-size. -->
 <script lang="ts">
   import DrawnMark from './DrawnMark.svelte';
 
@@ -19,7 +22,7 @@
   class:armed
   title={title ?? `Remove ${name}`}
   aria-label={armed ? `Click again to remove ${name}` : `Remove ${name}`}
-  {onclick}>{#if armed}Kick{:else}<DrawnMark />{/if}</button
+  {onclick}>{#if armed}Kick{:else}<DrawnMark shape="banned" />{/if}</button
 >
 
 <style>
@@ -36,12 +39,9 @@
     border-radius: 999px;
     border: 1px solid rgba(201, 164, 92, 0.34);
     background: radial-gradient(circle at 50% 30%, #1f160e, #0d0a07 72%);
-    /* The seal's inner ring, a hair inside the outer one. */
-    box-shadow:
-      inset 0 0 0 2px #0d0a07,
-      inset 0 0 0 2.6px rgba(201, 164, 92, 0.16);
     color: #a8987f;
-    --mark-size: min(calc(var(--size) * 0.3), 9px);
+    /* Larger than a cross would be: the ring inside the seal needs the room to read. */
+    --mark-size: min(calc(var(--size) * 0.42), 11px);
     cursor: pointer;
     transition:
       width 0.22s var(--ease-out),
@@ -53,10 +53,7 @@
   .kick:hover {
     color: #ff9c86;
     border-color: rgba(224, 85, 63, 0.7);
-    box-shadow:
-      inset 0 0 0 2px #0d0a07,
-      inset 0 0 0 2.6px rgba(224, 85, 63, 0.38),
-      0 0 10px rgba(224, 85, 63, 0.22);
+    box-shadow: 0 0 10px rgba(224, 85, 63, 0.22);
   }
   .kick:focus-visible {
     outline: 1px solid var(--gold-hi);
