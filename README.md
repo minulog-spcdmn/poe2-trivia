@@ -834,6 +834,14 @@ host and guests can see each other's IP address (unless the connection
 runs through a TURN relay). Guests never connect to each other. The
 privacy policy says so; the game itself doesn't show a notice.
 
+**Visit counts** (GoatCounter, `src/lib/count.ts`) are sent from the live
+game's own page only. To keep a browser out of them (the owner's, without a
+fixed IP to exclude in GoatCounter), open `poe2.quest/#toggle-goatcounter`;
+open it again to count it again. It works typed after the address of a page
+already open too, says which way it went, and keeps the choice in
+localStorage (`poe2trivia.skipCount`). GoatCounter's own count.js isn't
+used, so this is the game's version of its toggle.
+
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
 

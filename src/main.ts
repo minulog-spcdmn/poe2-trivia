@@ -13,7 +13,8 @@ import { installCursor } from './lib/ownCursor';
 import { installAutoscroll } from './lib/autoscroll';
 import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
-import { countVisit } from './lib/count';
+import { countVisit, onCountToggle, type Toggled } from './lib/count';
+import { toasts } from './lib/toasts.svelte';
 
 installUiSounds();
 installSpatial();
@@ -23,6 +24,12 @@ if (!switchedOff('cursor')) installCursor();
 installAutoscroll();
 if (fpsMeterOn()) installFpsMeter();
 countVisit();
+const TOGGLED: Record<Toggled, string> = {
+  skipped: 'Visits from this browser are no longer counted. Open poe2.quest/#toggle-goatcounter again to count them.',
+  counted: 'Visits from this browser are counted again.',
+  unsaved: "This browser can't change the setting: its site storage is blocked or full.",
+};
+onCountToggle((t) => toasts.show(TOGGLED[t], t === 'unsaved' ? 'error' : 'info', { title: 'Visit counts' }));
 // No browser menu on a right click: it brings the system's cursor, and the
 // game has no use for it. Text fields keep theirs, where it's how many paste,
 // and links theirs (open in a new tab, copy the address).
