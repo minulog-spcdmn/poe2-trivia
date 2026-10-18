@@ -446,8 +446,9 @@ test('a step allocates nothing once settled', async (t) => {
     };
     walk(profile.head);
     t.diagnostic(`stratum ${k}: ${bytes} bytes`);
-    // Less than one small object every few steps: one a step, even, would be 16 bytes a step.
-    assert.ok(bytes < STEPS * 5, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
+    // A little once (the JIT's, the sampler's own: a few hundred bytes as measured), then less than one small
+    // object every few steps. One a step, even, is 16 bytes a step: 32 kB over these steps, past this.
+    assert.ok(bytes < 10_000 + STEPS * 5, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
   }
   session.disconnect();
 });

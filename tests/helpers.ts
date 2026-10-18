@@ -82,7 +82,7 @@ export interface RunOpts {
   host?: string | null;
   seed?: number;
   settings?: Settings;
-  /** Seats in id order, so lists in seat order read plainly (the start shuffles them). */
+  /** Seats in id order, so lists in seat order read plainly (the start shuffles them); the turn stays with whoever had it. */
   sorted?: boolean;
   depth?: number;
   /** Whether the game starts (true by default). */
@@ -105,7 +105,11 @@ export function room(o: RunOpts = {}) {
   let s: GameState = createGame(host, o.settings ?? DELVE);
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, host === null ? null : `p${i}`)));
   if (o.start !== false) s = engine.apply(s, { type: 'start' }, host);
-  if (o.sorted) s = { ...s, players: [...s.players].sort((a, b) => a.id.localeCompare(b.id)) };
+  if (o.sorted) {
+    const on = s.players[s.turn]?.id;
+    const players = [...s.players].sort((a, b) => a.id.localeCompare(b.id));
+    s = { ...s, players, turn: Math.max(0, players.findIndex((p) => p.id === on)) };
+  }
   if (o.depth) s = { ...s, round: o.depth };
   const h = {
     engine,

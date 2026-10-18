@@ -68,13 +68,9 @@ import { DELVE_BLUE_FROM } from '../src/lib/fx/streaks.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SHIPPED, backdropsVersion, setBackdrops } from '../src/lib/backdrops.ts';
+import { cloneData, ENV_TONES, lookErrors, stopsOf, type Tones } from '../src/lib/backdropData.ts';
 import { seeded } from './helpers.ts';
 
-/**
- * Each test starts where a page does, whatever the one before left (or
- * failed halfway through): the shipped backdrops, the scene at the top,
- * no plunge or swing asked for or under way, and the embers' rolls the same.
- */
 /**
  * The light worked out to `depth` at once, as a run that has been there has
  * it: otherwise a jump waits a few frames for it (as long as the machine
@@ -82,6 +78,11 @@ import { seeded } from './helpers.ts';
  */
 const warmTo = (depth: number) => void lightAt(depth + 1);
 
+/**
+ * Each test starts where a page does, whatever the one before left (or
+ * failed halfway through): the shipped backdrops, the scene at the top,
+ * no plunge or swing asked for or under way, and the embers' rolls the same.
+ */
 let shippedVersion = backdropsVersion;
 beforeEach(() => {
   if (backdropsVersion !== shippedVersion) {
@@ -94,7 +95,6 @@ beforeEach(() => {
   snapDescent();
   setEmberRandom(seeded(1));
 });
-import { cloneData, ENV_TONES, lookErrors, stopsOf, type Tones } from '../src/lib/backdropData.ts';
 
 /** Every number in a look, in a fixed order. */
 const numbers = (l: Look) =>
