@@ -117,7 +117,7 @@ test('the pictures too thin for the start page are real items\' pictures, and ne
   const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
   const start = utcDay(DAILY_LAUNCH);
   for (let d = start; d < start + 1500; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
-  const engine = new Engine(items, { fakes });
+  const engine = new Engine(items, { autoClock: true, fakes });
   const game = dailyGame();
   for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(shown(askOne(engine, game))), `practice question ${i}`);
 });

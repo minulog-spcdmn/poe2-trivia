@@ -73,3 +73,24 @@ body > * {
 .legal .switch {
   font-size: 0.95rem;
 }
+/* "Stop counting" (countToggle.ts): its state, and the button beside it, below on a phone. */
+.legal .count-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.legal .count-toggle[hidden] {
+  display: none;
+}
+.legal .count-toggle .state {
+  margin: 0;
+  flex: 1 1 14rem;
+}
+.legal .count-toggle button[hidden] {
+  display: none;
+}

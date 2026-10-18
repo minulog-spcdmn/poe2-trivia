@@ -65,6 +65,14 @@
   --text: #ddd3c2;
   --muted: #968a77;
   --bad: #e0553f;
+  /* A verdict's sign (VerdictSign.svelte): its line, and the tint of its disc,
+     rim and glow (r, g, b). Right, wrong and out of time. */
+  --verdict-good-icon: #c2e3a6;
+  --verdict-good-tint: 150, 200, 105;
+  --verdict-bad-icon: #f0a68c;
+  --verdict-bad-tint: 220, 110, 80;
+  --verdict-late-icon: #cdb4ee;
+  --verdict-late-tint: 165, 125, 225;
   --radius: 6px;
   --font-display: 'Maragsa', 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-title: 'Maragsa Title', var(--font-display);

@@ -2,18 +2,20 @@
   // Visitors: how many came, from where, how they found the game, and on
   // what. All of it is the start page's visitors, not what they did there.
   import Bars from './Bars.svelte';
-  import { fmt } from './chart';
+  import { freshOf } from './changes';
+  import { fmt, siteName } from './chart';
   import Delta from './Delta.svelte';
   import { deviceOf, percent } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
+  import { deviceLink, placeLink, systemLink } from './slices';
   import TrendChart from './TrendChart.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
   const L = $derived(read.now);
   const countries = $derived(read.countries.map((c) => ({ label: c.name || 'Unknown', count: c.count })));
-  const refs = $derived(read.refs.map((r) => ({ label: !r.name || r.name === '(unknown)' ? 'Typed in, or unknown' : r.name, count: r.count })));
+  const refs = $derived(read.refs.map((r) => ({ label: !r.name || r.name === '(unknown)' ? 'Typed in, or unknown' : siteName(r.name), count: r.count })));
   const systems = $derived(read.systems.map((s) => ({ label: s.name || 'Unknown', count: s.count })));
   const devices = $derived.by(() => {
     const by = { computer: 0, phone: 0, other: 0 };
@@ -38,7 +40,7 @@
 
   <div class="two">
     <Section title="Where they are" says="By country, as GoatCounter places them.">
-      <Bars bars={countries} top={10} empty="No visitors in these days." />
+      <Bars bars={countries} top={10} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
     </Section>
     <Section title="How they found the game" says="The site they came from; a link in a chat app or a bookmark shows as typed in.">
       <Bars bars={refs} top={10} empty="No visitors in these days." />
@@ -53,12 +55,12 @@
         {#if devices.other}<i class="other" style:flex-grow={devices.other}></i>{/if}
       </div>
       <dl class="devices">
-        <div><dt><i class="computer"></i>Computer</dt><dd><b>{percent(devices.computer, devices.all)}</b> {fmt(devices.computer)}</dd></div>
-        <div><dt><i class="phone"></i>Phone or tablet</dt><dd><b>{percent(devices.phone, devices.all)}</b> {fmt(devices.phone)}</dd></div>
+        <div><dt><i class="computer"></i><a class="pick" href={deviceLink('Computer')}>Computer</a></dt><dd><b>{percent(devices.computer, devices.all)}</b> {fmt(devices.computer)}</dd></div>
+        <div><dt><i class="phone"></i><a class="pick" href={deviceLink('Phone or tablet')}>Phone or tablet</a></dt><dd><b>{percent(devices.phone, devices.all)}</b> {fmt(devices.phone)}</dd></div>
         {#if devices.other}<div><dt><i class="other"></i>Other</dt><dd><b>{percent(devices.other, devices.all)}</b> {fmt(devices.other)}</dd></div>{/if}
       </dl>
       <h3>By system</h3>
-      <Bars bars={systems} top={8} />
+      <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
     {:else}
       <p class="soft">No visitors in these days.</p>
     {/if}
@@ -74,7 +76,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .total {
     display: grid;
@@ -153,6 +154,31 @@
   @media (max-width: 900px) {
     .two {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* A big monitor: two columns, so the view is one screen. */
+  @media (min-width: 1900px) {
+    .stack {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        'chart where'
+        'on found';
+      align-items: stretch;
+    }
+    .two {
+      display: contents;
+    }
+    .stack > :global(.section:first-child) {
+      grid-area: chart;
+    }
+    .stack > :global(.section:last-child) {
+      grid-area: on;
+    }
+    .two > :global(.section:first-child) {
+      grid-area: where;
+    }
+    .two > :global(.section:last-child) {
+      grid-area: found;
     }
   }
 </style>

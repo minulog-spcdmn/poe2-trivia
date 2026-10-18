@@ -42,7 +42,7 @@ function seeded(seed: number) {
 /** A game on a clock the test moves (an answer's time is held to what the host saw: game.ts heldMs). */
 function setup(names: string[], settings: Partial<GameState['settings']> = {}) {
   const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(7), now: () => clock.now });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(7), now: () => clock.now });
   let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', ...settings });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, clock, s: engine.apply(s, { type: 'start' }, 'p0') };
@@ -309,7 +309,7 @@ test('the runs chart: the runs of the kind up to this one, and columns that fit'
 
 test('Delve: a find won goes into the recap, and what came of it; a right answer is a close call by its clock', () => {
   const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(3), now: () => clock.now });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(3), now: () => clock.now });
   let s: GameState = createGame(null, { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
   s = engine.apply(s, { type: 'start' }, null);
@@ -440,7 +440,7 @@ test('ordinals: in words to twelve, then figures with the right suffix', () => {
 
 test('together: a flare given back goes only to a holder still standing', () => {
   const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(5), now: () => clock.now });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(5), now: () => clock.now });
   let s: GameState = createGame('p0', { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false });
   for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'join', playerId: id, name: id.toUpperCase() }, id);
   s = engine.apply(s, { type: 'start' }, 'p0');

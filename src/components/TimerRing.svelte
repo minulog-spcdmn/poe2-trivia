@@ -10,9 +10,9 @@
   import { motion } from '../lib/motion.svelte';
 
   /**
-   * `deadline` null: the clock hasn't started yet (Delve waits for the art), so
-   * the ring stays full, or the host's reload holds it still at the time it
-   * had left (Question.paused). `warnFrom`: the seconds that tick and glow urgent.
+   * `deadline` null: the clock hasn't started yet (it waits for the art, in
+   * every mode), so the ring stays full, or the host's reload holds it still
+   * at the time it had left (Question.paused). `warnFrom`: the seconds that tick and glow urgent.
    */
   let {
     deadline,

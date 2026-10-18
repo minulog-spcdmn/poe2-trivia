@@ -9,6 +9,7 @@ import { offensive } from './offensive.ts';
 import { PROTOCOL_VERSION } from './protocol.ts';
 import { DIFFICULTY_NAMES } from './difficultyText.ts';
 import { shownDepth } from './delve.ts';
+import { CODE_PATTERN } from './roomCode.ts';
 
 export interface RoomInfo {
   code: string;
@@ -33,7 +34,7 @@ export interface RoomInfo {
 }
 
 const PHASES = ['lobby', 'locked', 'choosing', 'question', 'reveal', 'over'];
-const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
+const CODE = CODE_PATTERN;
 
 const int = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 

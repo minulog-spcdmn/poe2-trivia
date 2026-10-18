@@ -5,7 +5,6 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
-  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
@@ -710,7 +709,7 @@
         style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
-        <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
+        <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name-row">
             <span class="name">
@@ -758,7 +757,6 @@
             <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
           </span>
         {/if}
-        {#if out}<span class="x" title="Answered wrong"><DrawnMark /></span>{/if}
         {#if reviveOk}
           <!-- Delve together: revive them with one of your lives. A heart of
                light in the entry, beating as the phial's lives do. -->
@@ -907,7 +905,7 @@
     border-color: #8e4434;
     background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
   }
-  li.armed :global(.avatar) {
+  li.armed :global(.avatar:not(:has(> .face-down))) {
     filter: saturate(0.4) brightness(0.75);
   }
   li.armed .name {
@@ -1174,29 +1172,24 @@
   li.duelist {
     border-color: rgba(224, 85, 63, 0.55);
   }
+  /* Answered wrong: the avatar turns face down (Avatar's wrong), and the rest
+     of the entry is set back, fading as the entry would; the token keeps the
+     verdict's full colour (scoped, these never reach the avatar, its own
+     component), and a ward's rim keeps its own flare. The transition as
+     :where, so a child's own transition wins over it. */
+  li > :where(:not(.kick-at, .revive, .ward-rim)) {
+    transition: opacity 0.35s;
+  }
   li.out {
-    border-color: rgba(224, 85, 63, 0.6);
+    border-color: rgba(224, 85, 63, 0.45);
+  }
+  li.out > :not(.kick-at, .revive, .ward-rim),
+  li.out .kick-at > :global(.kick) {
     opacity: 0.75;
   }
-  .x {
-    position: absolute;
-    top: -7px;
-    right: -4px;
-    width: 18px;
-    height: 18px;
-    display: grid;
-    place-items: center;
-    --mark-size: 7px;
-    --mark-stroke: 1.5px;
-    color: #fff;
-    background: var(--bad);
-    border-radius: 50%;
-    animation: pop 0.35s var(--ease-back);
-  }
-  @keyframes pop {
-    from {
-      transform: scale(0);
-    }
+  /* Perished as well: set back further, as the two together always were. */
+  li.out.fallen.revivable > :not(.kick-at, .revive, .ward-rim) {
+    opacity: calc(0.45 * 0.75);
   }
   .negative {
     color: #ff9c86;
@@ -1399,6 +1392,12 @@
     }
     li.wide {
       flex: 0 1 auto;
+    }
+    /* The kick a little further onto the corner, so it overlaps a wrong
+       answer's face-down token (Avatar) less. */
+    li .kick-at {
+      top: -10px;
+      left: -9px;
     }
     li :global(.avatar) {
       width: 26px;
