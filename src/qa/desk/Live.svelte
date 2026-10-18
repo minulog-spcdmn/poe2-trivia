@@ -66,7 +66,7 @@
   function src(key: string, i: number) {
     const seat = room.seats.find((s) => s.key === key)!;
     // WebGL in the first seat only: four backdrops at once are the one thing that stalled the spike's seats.
-    const query = `?seat${i === 0 ? '' : '&off=webgl'}`;
+    const query = `?live${i === 0 ? '' : '&off=webgl'}`;
     const origin = LOCAL ? `${location.protocol}//${key}.localhost:${location.port}` : '';
     return `${origin}${location.pathname}${query}#seed=${seedParam(seat.seed)}`;
   }

@@ -6,6 +6,8 @@
 // rules out of everything the game says. The elements at fault are marked
 // (data-qa-flag) and outlined, unless the desk has outlines off.
 
+import { CRASH_MESSAGE } from './crash.svelte.ts';
+
 /** What a frame finds wrong; and banding, which only the sweep can see (scripts/qa.mjs, in a screenshot). */
 export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'banding';
 export const KIND_LABEL: Record<Kind, string> = {
@@ -36,7 +38,9 @@ export function listen() {
   const images: string[] = [];
   const real = console.error.bind(console);
   console.error = (...args: unknown[]) => {
-    errors.push(args.map((a) => (a instanceof Error ? a.message : String(a))).join(' '));
+    const said = args.map((a) => (a instanceof Error ? a.message : String(a))).join(' ');
+    // (A crash a scene set off on purpose is no error of the game's: crash.svelte.ts.)
+    if (!said.includes(CRASH_MESSAGE)) errors.push(said);
     real(...args);
   };
   addEventListener(
@@ -45,7 +49,7 @@ export function listen() {
       const t = e.target;
       if (t instanceof HTMLImageElement) images.push(t.currentSrc || t.src);
       // (Chrome's note that a ResizeObserver's callback changed a size it watches is harmless, and comes and goes.)
-      else if (e instanceof ErrorEvent && !/^ResizeObserver loop/.test(e.message)) errors.push(e.message);
+      else if (e instanceof ErrorEvent && !/^ResizeObserver loop/.test(e.message) && !e.message.includes(CRASH_MESSAGE)) errors.push(e.message);
     },
     true,
   );

@@ -20,5 +20,8 @@ export function overlayScenes(): Scene[] {
     overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
     overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
+    overlay('crash', 'The game crashed and came back', [doryani], () => inGame([{ crash: 1 }])),
+    overlay('crash-twice', 'Crashed twice in a game: out of the room', [doryani], () => inGame([{ crash: 2 }])),
+    overlay('crash-stuck', 'Crashed twice out of a game: the page stops', [{ mode: 'none', me: null }], () => ({ state: null, steps: [{ crash: 2 }] })),
   ];
 }

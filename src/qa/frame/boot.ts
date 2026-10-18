@@ -133,7 +133,8 @@ export async function boot(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
-  mount(Root, { target: document.getElementById('app')! });
+  const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crash.svelte.ts')]);
+  mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
 
   // A question's pictures, made as the host makes them and taken in as each
   // device takes them in, sealed or not (lib/media.svelte.ts).
@@ -151,6 +152,14 @@ export async function boot(asked: URLSearchParams) {
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
     else if ('fail' in step) session.labFail(step.fail);
+    else if ('crash' in step) {
+      // One crash, and (twice) another once the boundary has put the app back.
+      crash.left = 1;
+      if (step.crash === 2) {
+        await new Promise((r) => setTimeout(r, 300));
+        crash.left = 1;
+      }
+    }
     else (await found(step.click))?.click();
   }
 

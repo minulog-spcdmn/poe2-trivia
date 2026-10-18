@@ -39,7 +39,9 @@ export type Step =
   /** Waits (ms). */
   | { wait: number }
   /** The room turns this device out, as the host's word for it would (session.labFail). */
-  | { fail: 'kicked' | 'closed' | 'replaced' };
+  | { fail: 'kicked' | 'closed' | 'replaced' }
+  /** The app crashes, once or twice in a row (Root.svelte's recovery). */
+  | { crash: 1 | 2 };
 
 /** Everything a seat's device holds for the scene, beyond the room's state. */
 export interface Built {
