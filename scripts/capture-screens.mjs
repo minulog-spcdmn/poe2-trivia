@@ -18,7 +18,7 @@
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by CHROMIUM (or BOT_CHROMIUM).
 //
-//   npm run screens -- [--preset quick|full] [--url http://localhost:5173/] [--page / --page /endscreen.html ...]
+//   npm run screens -- [--preset quick|walk|full] [--url http://localhost:5173/] [--page / --page /endscreen.html ...]
 //                      [--out dir] [--full-page] [--dpr N] [--webgl] [--concurrency 4]
 //   (or node scripts/capture-screens.mjs --preset full; from PowerShell, where npm eats the flags,
 //   npm run screens full webgl page=/endscreen.html; --help or the bare word help for the rest)
@@ -28,29 +28,25 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
+import { PRESETS as SIZE_SETS, SIZES } from '../src/qa/sizes.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The design canvas's main sizes (quick) and the device matrix for handoff (full). Touch sizes get a device scale of 2. */
-const PRESETS = {
-  quick: [
-    { name: 'desktop', w: 1440, h: 900 },
-    { name: 'mba13', w: 1440, h: 725 },
-    { name: 'phone', w: 390, h: 844, touch: true },
-  ],
-  full: [
-    { name: 'phone', w: 390, h: 844, touch: true },
-    { name: 'phone-narrow', w: 375, h: 812, touch: true },
-    { name: 'tablet', w: 820, h: 1180, touch: true },
-    { name: 'mba13', w: 1440, h: 725 },
-    { name: 'desktop', w: 1440, h: 900 },
-    { name: 'mbp14', w: 1512, h: 790 },
-    { name: 'mbp16', w: 1728, h: 925 },
-    { name: 'fhd', w: 1920, h: 970 },
-    { name: 'qhd', w: 2560, h: 1310 },
-    { name: 'uhd', w: 3840, h: 2030 },
-  ],
-};
+/**
+ * The sizes, from the one list the QA desk uses too (src/qa/sizes.ts): the
+ * design canvas's three (quick), the desk's walk (walk: a phone, a 13-inch
+ * laptop and a 4K screen at 150% and 100%) and every size (full). Each shot
+ * gets its size's own device scale unless --dpr names one.
+ */
+const PRESETS = Object.fromEntries(
+  Object.entries(SIZE_SETS).map(([name, keys]) => [
+    name,
+    keys.map((k) => {
+      const s = SIZES.find((x) => x.key === k);
+      return { name: s.key, w: s.w, h: s.h, dpr: s.dpr, touch: !!s.touch };
+    }),
+  ]),
+);
 
 /** The faces app.css declares (and @fontsource brings in), the ones whose loading is confirmed. */
 const FAMILIES = ['Maragsa', 'Maragsa Title', 'Cinzel', 'EB Garamond', 'Fontin SmallCaps', 'Fontin'];
@@ -75,7 +71,7 @@ const parsed = parseArgs({ options: OPTIONS, allowPositionals: true });
 // PowerShell drops the `--` in `npm run screens -- --preset full`, and npm
 // then takes the flags as its own settings (npm_config_*) and hands on only
 // their values (as scripts/room-bot.mjs works around too): so those settings
-// count, and so do bare words: `full` or `quick` (the preset), a path
+// count, and so do bare words: `full`, `walk` or `quick` (the preset), a path
 // starting with / (a page), `name=value` and a bare flag name (`webgl`).
 // npm reads `--concurrency 3` as a bare setting (true) and the 3 as a word:
 // such an option takes the first word nothing else claims.
@@ -107,7 +103,7 @@ if (numeric.length > 1) {
   process.exit(2);
 }
 for (const word of parsed.positionals) {
-  const fits = { page: { test: isPage }, url: /^https?:\/\//, preset: /^(quick|full)$/, dpr: /^[\d.]+$/, concurrency: /^\d+$/, timeout: /^[\d.]+$/, out: { test: (w) => !/^[\d.]+$/.test(w) && !/^https?:\/\//.test(w) && !(w in PRESETS) && !(w.split('=')[0] in OPTIONS) && !isPage(w) } };
+  const fits = { page: { test: isPage }, url: /^https?:\/\//, preset: /^(quick|walk|full)$/, dpr: /^[\d.]+$/, concurrency: /^\d+$/, timeout: /^[\d.]+$/, out: { test: (w) => !/^[\d.]+$/.test(w) && !/^https?:\/\//.test(w) && !(w in PRESETS) && !(w.split('=')[0] in OPTIONS) && !isPage(w) } };
   const taker = awaiting.findIndex((name) => fits[name]?.test(word));
   if (taker >= 0) {
     const [name] = awaiting.splice(taker, 1);
@@ -137,14 +133,16 @@ if (opts.help) {
 
 Usage: npm run screens -- [options]   (or node scripts/capture-screens.mjs [options])
 
-  --preset quick|full  quick (default): ${PRESETS.quick.map((s) => `${s.name} ${s.w}x${s.h}`).join(', ')}
+  --preset quick|walk|full  (sizes from src/qa/sizes.ts)
+                       quick (default): ${PRESETS.quick.map((s) => `${s.name} ${s.w}x${s.h}`).join(', ')}
+                       walk: ${PRESETS.walk.map((s) => `${s.name} ${s.w}x${s.h}`).join(', ')}
                        full: ${PRESETS.full.map((s) => `${s.name} ${s.w}x${s.h}`).join(', ')}
   --url URL            the app's base (default http://localhost:5173/; the beta: https://poe2.quest/beta/)
   --page PATH          a page under it, as often as wanted (default /); this checkout's pages:
                        ${entries.join(' ')}
   --out DIR            where the shots go (default screens/<timestamp>/)
   --full-page          the whole scrolling page, not only the viewport
-  --dpr N              device scale for every size (default 2 for touch sizes, 1 otherwise)
+  --dpr N              device scale for every size (default: each size's own, from src/qa/sizes.ts)
   --webgl              keep WebGL (the effects, on the GPU) and full motion; by default WebGL
                        is hidden and motion reduced (CLAUDE.md)
   --concurrency N      shots taken at once, each in its own context (default 4)
@@ -156,7 +154,7 @@ Usage: npm run screens -- [options]   (or node scripts/capture-screens.mjs [opti
 
 const sizes = PRESETS[opts.preset];
 if (!sizes) {
-  console.error(`No preset "${opts.preset}" (quick or full).`);
+  console.error(`No preset "${opts.preset}" (quick, walk or full).`);
   process.exit(1);
 }
 const pages = [...new Set((opts.page?.length ? opts.page : ['/']).map(asPage).map((p) => (p === '/index.html' ? '/' : p)))];
@@ -224,7 +222,7 @@ for (const p of pages) {
 
 /** Takes one shot: a fresh context (its own storage) at the size, the page loaded and settled. */
 async function shoot(pagePath, size) {
-  const scale = dpr ?? (size.touch ? 2 : 1);
+  const scale = dpr ?? size.dpr;
   const url = new URL(pagePath.replace(/^\/+/, ''), base).href;
   const file = `${stems.get(pagePath)}-${size.name}-${size.w}x${size.h}.png`;
   const warnings = [];

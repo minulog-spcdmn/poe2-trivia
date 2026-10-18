@@ -37,6 +37,16 @@ export const END_PREVIEW = typeof document !== 'undefined' && document.documentE
  * own browser never takes over their saves, codex or settings.
  */
 export const BOT = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-bot');
+/**
+ * The QA desk (qa.html, src/qa: dev and beta builds only) marks the desk
+ * `<html data-qa="desk">` and each frame of the game it shows
+ * `<html data-qa="<its slot>">`, before anything reads storage
+ * (src/qa/main.ts). Each gets keys of its own: frames side by side on one
+ * page share its sessionStorage and localStorage, so without a start apart
+ * every seat would be the same player, with one save between them.
+ */
+const QA_SLOT = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-qa') : null;
+export const QA = QA_SLOT !== null;
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -60,7 +70,8 @@ export const STORE =
   (SPATIAL_PAGE ? 'spatial.' : '') +
   (BACKDROP_TOOL ? 'backdrops.' : '') +
   (BOT ? 'bot.' : '') +
-  (END_PREVIEW ? 'endscreen.' : '');
+  (END_PREVIEW ? 'endscreen.' : '') +
+  (QA ? `qa.${QA_SLOT!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
 export const LAB_STORE = CHANNEL + 'lab.';
 
@@ -161,7 +172,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || BOT ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || BOT || QA ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !BOT) removeKey(key, where);
+  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !BOT && !QA) removeKey(key, where);
 };

@@ -13,6 +13,16 @@ bot too; builds without the bot (the beta) leave its card out.
 - A new tool page gets a card there; `tests/devHub.test.ts` fails until it
   does.
 
+## The QA desk
+
+`qa.html` (`src/qa/`) shows every scene of the game in the real app, one at
+a time, at every size from a phone to 4K and from every seat, walked with the
+arrow keys. It is where a change gets checked; `docs/qa.md` says how to use
+it and how to add a scene.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/qa.html`; on the
+  beta, **poe2.quest/beta/qa.html**.
+
 ## The lab
 
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the

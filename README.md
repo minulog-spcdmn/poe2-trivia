@@ -57,7 +57,7 @@ npm run dev:live   # local dev server in the live rooms
 npm test           # tests
 npm run check      # svelte/type checks
 npm run build      # production build in dist/
-npm run screens    # screenshots at the design sizes in screens/
+npm run screens    # screenshots at the design sizes in screens/ (sizes: src/qa/sizes.ts)
 ```
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS, WebGL2 and WebAudio. The dev server
@@ -83,6 +83,10 @@ npm run bake-icons                           # category card emblems (needs Chro
 ```
 
 ### The dev hub
+
+The QA desk, `qa.html`, is where to check a change: every scene of the game
+in the real app, one at a time, at every size from a phone to 4K and from
+every seat (`docs/qa.md`).
 
 `dev.html` links every test and tuning page with a line on what each is for:
 `http://localhost:5173/dev.html` on the dev server, **poe2.quest/beta/dev.html**
