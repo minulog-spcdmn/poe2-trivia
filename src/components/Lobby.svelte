@@ -13,6 +13,8 @@
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
+  import DrawnMark from './DrawnMark.svelte';
+  import HeartOfLight from './HeartOfLight.svelte';
   import KickButton from './KickButton.svelte';
   import OnlookerMark from './OnlookerMark.svelte';
   import WatchEye from './WatchEye.svelte';
@@ -242,6 +244,8 @@
   /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
   const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
   const hostName = $derived(s.players.find((p) => p.id === s.hostId)?.name);
+  /** The co-op rules' vote line shows the seal a vote sets on a card: yours, or with no seat the host's. */
+  const voteSeal = $derived(s.players.find((p) => p.id === session.myPlayerId) ?? s.players.find((p) => p.id === s.hostId) ?? s.players[0]);
 </script>
 
 {#snippet startRow()}
@@ -276,6 +280,19 @@
       >
     </p>
   {/if}
+{/snippet}
+
+<!-- A rules line's sign: what the line is about, in the game's own marks (never the diamond, which means
+     "you are here"). Right and wrong as the answers show them, the score to reach in the answer tiles' ring,
+     the vote as your seal lands on a card, the revive by its heart of light. -->
+{#snippet sign(kind: 'right' | 'wrong' | 'target' | 'vote' | 'revive')}
+  <span class="sign {kind}" aria-hidden="true">
+    {#if kind === 'right'}<DrawnMark shape="check" />
+    {:else if kind === 'wrong'}<DrawnMark />
+    {:else if kind === 'target'}<span class="ring">{s.settings.targetScore}</span>
+    {:else if kind === 'vote'}{#if voteSeal}<Avatar name={voteSeal.name} hue={voteSeal.hue} size={18} />{/if}
+    {:else}<HeartOfLight />{/if}
+  </span>
 {/snippet}
 
 <!-- The start page's two columns carry on here: on the left, where its menu
@@ -466,9 +483,9 @@
               <p class="together-when">Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
-              <li>Vote for a card, then one is drawn from the votes.</li>
-              <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
-              <li>Teammates can sacrifice their life force to revive you.</li>
+              <li>{@render sign('vote')}<span>Vote for a card, then one is drawn from the votes.</span></li>
+              <li>{@render sign('wrong')}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
+              <li>{@render sign('revive')}<span>Teammates can sacrifice their life force to revive you.</span></li>
             </ul>
           </div>
         {/if}
@@ -595,13 +612,15 @@
 
         <ul class="rules" data-cursor="rules">
           {#if race}
-            <li>A wrong answer costs a point and sits you out until the next question.</li>
-            <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
+            <li>{@render sign('wrong')}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
+            <li>{@render sign('target')}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
           {:else}
             <li>
-              A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
+              {@render sign('right')}<span
+                >A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.</span
+              >
             </li>
-            <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
+            <li>{@render sign('target')}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
           {/if}
         </ul>
       {/if}
@@ -1369,8 +1388,7 @@
     color: var(--gold-hi);
   }
 
-  /* No sign before the lines: none of the game's marks means anything for
-     every one of them, and the diamond means "you are here". */
+  /* Each line led by its sign (the sign snippet), in a column of its own so the words line up. */
   .rules {
     margin: 0.4rem 0 1.4rem;
     padding-left: 0;
@@ -1378,7 +1396,45 @@
     font-size: 0.98rem;
   }
   .rules li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
     margin: 0.25rem 0;
+  }
+  /* As tall as the first line, the sign centred on it. */
+  .sign {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 1.15rem;
+    height: 1.3em;
+    --mark-size: 9px;
+    --mark-stroke: 1.6px;
+  }
+  .sign.right {
+    color: #a9cf8f;
+  }
+  .sign.wrong {
+    color: #d98a6e;
+  }
+  .sign.revive :global(svg) {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  /* The score to reach, in the ring the answer tiles number their options in; gold, the winner's colour. */
+  .ring {
+    display: grid;
+    place-items: center;
+    min-width: 1.05rem;
+    height: 1.05rem;
+    padding: 0 0.15rem;
+    border: 1px solid var(--gold-lo);
+    border-radius: 999px;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.56rem;
+    line-height: 1;
+    color: var(--gold-hi);
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */

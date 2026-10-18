@@ -711,8 +711,12 @@
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
         <div class="info">
-          <span class="name">
-            <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
+          <span class="name-row">
+            <span class="name">
+              <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
+            </span>
+            <!-- Online, room for the offline mark after the name is always kept, so nothing moves when it comes. -->
+            {#if session.mode !== 'local'}<span class="off-slot">{#if !p.connected}{@render offline()}{/if}</span>{/if}
           </span>
           {#if run && fell !== null}
             <span class="fell-at">Perished at depth {shownDepth(fell)}</span>
@@ -743,10 +747,8 @@
           <!-- A ward taking a loss: the entry braces, rimmed in azurite light. -->
           {#key guard[p.id].key}<span class="ward-rim" class:theirs={!guard[p.id].mine} aria-hidden="true"></span>{/key}
         {/if}
-        <!-- Gone: the lobby's offline mark (StandingMark), a signal with no bar lit. -->
-        {#if !p.connected}<span class="off" role="img" aria-label="Disconnected" title="Disconnected"
-            ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19.5v-3M10.5 19.5v-6.5M15 19.5v-10M19.5 19.5v-13.5" /></svg></span
-          >{/if}
+        <!-- Phones, on the entries shrunk to an avatar (no name to follow): on the avatar's corner. -->
+        {#if !p.connected}<span class="off-corner">{@render offline()}</span>{/if}
         {#if canKick && p.id !== s.hostId}
           <span class="kick-at" class:armed={confirming === p.id}>
             <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
@@ -791,6 +793,13 @@
 </div>
 <!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
 {#if session.spectating}<Gallery />{/if}
+
+<!-- Gone: the lobby's offline mark (StandingMark), a signal with no bar lit. -->
+{#snippet offline()}
+  <span class="off" role="img" aria-label="Disconnected" title="Disconnected"
+    ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19.5v-3M10.5 19.5v-6.5M15 19.5v-10M19.5 19.5v-13.5" /></svg></span
+  >
+{/snippet}
 
 <style>
   .board {
@@ -1301,16 +1310,30 @@
       text-shadow: 0 0 12px rgba(190, 210, 140, 0.6);
     }
   }
+  .name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .name-row .name {
+    min-width: 0;
+  }
+  .off-slot {
+    flex: none;
+    width: 13px;
+    height: 13px;
+  }
   .off {
-    position: absolute;
-    top: -6px;
-    left: 26px;
     display: grid;
     color: var(--muted);
   }
+  .off-corner {
+    display: none;
+  }
   .off svg {
-    width: 15px;
-    height: 15px;
+    width: 13px;
+    height: 13px;
     fill: none;
     stroke: currentColor;
     stroke-width: 2.4;
@@ -1495,8 +1518,11 @@
     .board:has(> li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide)) {
       flex-wrap: wrap;
     }
-    /* Where the offline mark sits on a lone avatar. */
-    li:not(.wide) .off {
+    /* On a lone avatar the name is hidden, so the offline mark sits on its corner. */
+    li:not(.wide) .off-corner {
+      display: grid;
+      position: absolute;
+      top: -6px;
       left: 18px;
     }
   }
