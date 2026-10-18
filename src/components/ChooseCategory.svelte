@@ -1494,12 +1494,16 @@
     --bs1-color: var(--f-pulse);
   }
   /* What the card is, on a small plaque over the keystone, lozenges at its
-     ends like the nameplate's (in its name on a row). */
+     ends like the nameplate's (in its name on a row). Centred by layout, not
+     a translate: a translated plaque was drawn a pixel off from its turned
+     lozenges once hover scaled the card, and they seemed to slide. */
   .find-tag {
     position: absolute;
     top: 8px;
-    left: 50%;
-    translate: -50% 0;
+    left: 0;
+    right: 0;
+    width: fit-content;
+    margin-inline: auto;
     padding: 3px 12px 4px;
     font-family: var(--font-display);
     font-size: 0.6rem;
