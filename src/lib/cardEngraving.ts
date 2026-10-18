@@ -59,6 +59,8 @@ export type Gilt = { parts: { d: string; tone: 'glass' | 'body' | 'flame' }[]; s
 export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132 };
 /** A card in a row: the emblem's centre from the left, and the divider after it. */
 export const ROW = { emblemX: 62, divider: 118 };
+/** The largest Sol and Luna in the spandrels of a tall face (each as large as its corner allows, up to this). */
+export const SPANDREL_R = 13;
 
 export type Box = [number, number, number, number];
 
@@ -511,7 +513,7 @@ const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
 
   // Sol and Luna in the spandrels, each as large as the corner allows.
   const corners = [cornerCircle([x0, y0], 2.5, A, ro), cornerCircle([x1, y0], 2.5, A, ro)];
-  const [sol, luna] = corners.map(({ c, r }) => ({ c, r: Math.min(13, r - 3.5) }));
+  const [sol, luna] = corners.map(({ c, r }) => ({ c, r: Math.min(SPANDREL_R, r - 3.5) }));
   if (v?.spandrels) hook(p, true, () => v.spandrels!(p, sol, luna, w));
   else {
     p.sol(sol.c, sol.r);

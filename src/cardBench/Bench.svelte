@@ -50,6 +50,8 @@
     for (let i = 0; !api()?.ready && i < 100; i++) await new Promise((r) => setTimeout(r, 100));
     const a = api();
     if (!a) return;
+    // (A new window with each load of the frame.)
+    frame.contentWindow?.addEventListener('keydown', key);
     items = a.items;
     finds = a.finds;
     if (!items.some((i) => i.value === item)) item = items[0]?.value ?? '';
@@ -75,18 +77,19 @@
     deal();
   }
 
+  /** R deals again, F turns every card over: from the panel, and from the frame once a card there is clicked (it takes the focus). */
+  function key(e: KeyboardEvent) {
+    if ((e.target instanceof Element && e.target.closest('select, input, textarea')) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'r') deal();
+    if (e.key === 'f') api()?.flip();
+  }
   onMount(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
-      if (e.key === 'r') deal();
-      if (e.key === 'f') api()?.flip();
-    };
     addEventListener('keydown', key);
     return () => removeEventListener('keydown', key);
   });
 </script>
 
-<div class="bench">
+<div class="frame-panel">
   <header class="bar">
     <h1>Card bench</h1>
     <label>
@@ -122,35 +125,7 @@
 </div>
 
 <style>
-  .bench {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-    background: #0a0908;
-  }
-  .bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem 1rem;
-    padding: 0.7rem 1rem 0.5rem;
-    border-bottom: 1px solid rgba(201, 164, 92, 0.18);
-  }
-  h1 {
-    margin: 0 0.4rem 0 0;
-    font-size: 1.05rem;
-    letter-spacing: 0.08em;
-    color: var(--gold-hi);
-  }
-  select {
-    font: inherit;
-    font-size: 0.95rem;
-    padding: 0.25rem 0.4rem;
-    color: var(--gold-hi);
-    background: #15100c;
-    border: 1px solid var(--gold-lo);
-    border-radius: 3px;
-  }
+  /* The bar and the frame: lab/framePanel.css. */
   select:disabled {
     opacity: 0.45;
   }
@@ -191,49 +166,5 @@
   .unpin:hover {
     color: var(--gold-hi);
     background: rgba(201, 164, 92, 0.15);
-  }
-  .tog {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.92rem;
-    color: var(--gold);
-    cursor: pointer;
-  }
-  .tog input {
-    accent-color: var(--gold);
-  }
-  .hint {
-    font-size: 0.85rem;
-    color: var(--muted);
-  }
-  .stage {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    justify-content: center;
-    background: #050404;
-  }
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: #0a0908;
-  }
-  .phone {
-    padding: 0.8rem 0;
-  }
-  .phone iframe {
-    width: 375px;
-    max-width: 100%;
-    border: 1px solid rgba(201, 164, 92, 0.35);
-    border-radius: 6px;
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
   }
 </style>

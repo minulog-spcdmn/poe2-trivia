@@ -37,7 +37,7 @@
 // emblem.
 
 import { arc, at, hatch, lerp, line, pointedRay, pt, rad, type Cut, type Hole, type Pt } from './arcane.ts';
-import { type BackLayout, type Plate, type RowLayout, type TallLayout, type Variant } from './cardEngraving.ts';
+import { SPANDREL_R, type BackLayout, type Plate, type RowLayout, type TallLayout, type Variant } from './cardEngraving.ts';
 import type { FindKind } from './delve.ts';
 
 // ---- geometry -------------------------------------------------------------------
@@ -422,7 +422,7 @@ function veinTall(p: Plate, g: TallLayout) {
   const C = g.emblem;
   const r0 = 64 * k;
   const holes = [
-    { c: g.sol.c, r: VEIN_SEAL * k * 0.8 + 3 },
+    { c: g.sol.c, r: veinSealR(g.sol, k) * 0.8 + 3 },
     { c: g.luna.c, r: g.luna.r + 3 },
   ];
   // Grown as crystals grow: in uneven groups, each at its own heading, length (past the ring, on a card
@@ -688,6 +688,8 @@ function dynamiteBack(p: Plate, g: BackLayout) {
 const BURST = 30;
 /** How far the crown of the vein's seal in Sol's place reaches, on a card 218 wide (the flare's burst's reach). */
 const VEIN_SEAL = 30;
+/** How far the vein's seal reaches in Sol's place `sol`: less where the corner is tighter than Sol's largest. */
+const veinSealR = (sol: Hole, k: number) => Math.min(VEIN_SEAL * k, (VEIN_SEAL / SPANDREL_R) * sol.r);
 /** How wide the ring blown apart in Sol's place is, on a card 218 wide. */
 const SMALL_RING = 14;
 
@@ -708,7 +710,7 @@ function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
   const k = w / 218;
   if (kind === 'azurite') {
     // Its crowned seal, so large it breaks the arch, its prisms dark inside as the cluster's are.
-    crownedSeal(p, sol.c, VEIN_SEAL * k, NONE, true);
+    crownedSeal(p, sol.c, veinSealR(sol, k), NONE, true);
     copperSign(p, luna.c, luna.r * 0.82);
   } else if (kind === 'flare') {
     // So large it breaks the arch: the plate stops short of its heart, its fine rays and each pointed ray.

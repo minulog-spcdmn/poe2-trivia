@@ -1,3 +1,8 @@
+<script module lang="ts">
+  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows) rather than sideways. The card bench turns them the same way. */
+  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 700px)' };
+</script>
+
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { scale } from 'svelte/transition';
@@ -246,8 +251,14 @@
     done(t + 650);
   }
 
-  /** Delve: the finds among the cards on offer (up to two, on different cards), in the cards' order. */
-  const finds = $derived(findOffers(s).toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category)));
+  /** The card bench's finds for this deal (lab only: any find on any card), or null. */
+  const benchFinds = $derived(session.labFinds?.turn === s.turnCount && s.phase === 'choosing' ? session.labFinds.finds : null);
+  /** Delve: the finds among the cards on offer (up to two, on different cards; on the bench, one of each kind dealt), in the cards' order. */
+  const finds = $derived.by(() => {
+    const all = benchFinds ? Object.entries(benchFinds).map(([category, kind]) => ({ category, kind })) : findOffers(s);
+    const sorted = all.toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category));
+    return sorted.filter((f, i) => sorted.findIndex((g) => g.kind === f.kind) === i);
+  });
   /**
    * The finds on the cards as they were dealt. Once a card is drawn (or
    * picked) the run has moved on to its question, where the cards carry no
@@ -257,8 +268,7 @@
    */
   let dealtFinds: Record<string, FindKind> = {};
   const findsShown = $derived.by(() => {
-    // The card bench (lab only): its own finds, any on any card.
-    if (session.labFinds && s.phase === 'choosing') return (dealtFinds = { ...session.labFinds });
+    if (benchFinds) return (dealtFinds = { ...benchFinds });
     if (s.phase === 'choosing') dealtFinds = Object.fromEntries(s.offered.flatMap((c) => (findOn(s, c) ? [[c, findOn(s, c)!]] : [])));
     // Come in after the cards closed (no deal seen): the question in play still says what its card was.
     else if (s.question?.find && !Object.keys(dealtFinds).length) dealtFinds = { [s.question.category]: s.question.find };
@@ -461,11 +471,11 @@
   // motion, or the effects off) they only fade in, face up, and the vote pips
   // appear and go at once.
   const DEAL = 0.42;
-  const FLIP = 0.46;
+  const FLIP = TURN.seconds;
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
   /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
-  const narrow = matchMedia('(max-width: 700px)');
+  const narrow = matchMedia(TURN.across);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
@@ -502,8 +512,8 @@
         const f = cubicInOut(Math.min(1, Math.max(0, (u - turn) / FLIP)));
         // Lifted off the table while it turns.
         const lift = Math.sin(Math.PI * f);
-        const y = (1 - d) * 90 - lift * 16;
-        return `transform:perspective(1200px) translateY(${y.toFixed(2)}px) rotate(${((1 - d) * rot).toFixed(2)}deg) rotate${axis}(${(180 * (1 - f)).toFixed(2)}deg) scale(${(1 + 0.05 * lift).toFixed(4)})`;
+        const y = (1 - d) * 90 - lift * TURN.lift;
+        return `transform:perspective(${TURN.perspective}px) translateY(${y.toFixed(2)}px) rotate(${((1 - d) * rot).toFixed(2)}deg) rotate${axis}(${(180 * (1 - f)).toFixed(2)}deg) scale(${(1 + TURN.swell * lift).toFixed(4)})`;
       },
     };
   }
@@ -1498,12 +1508,14 @@
   /* What the card is, on a small plaque over the keystone, lozenges at its
      ends like the nameplate's (in its name on a row). Centred by layout, not
      a translate: a translated plaque was drawn a pixel off from its turned
-     lozenges once hover scaled the card, and they seemed to slide. */
+     lozenges once hover scaled the card, and they seemed to slide. Its room
+     reaches half a card past either side, so a plaque wider than the card
+     still overflows it evenly. */
   .find-tag {
     position: absolute;
     top: 8px;
-    left: 0;
-    right: 0;
+    left: -50%;
+    right: -50%;
     width: fit-content;
     margin-inline: auto;
     padding: 3px 12px 4px;

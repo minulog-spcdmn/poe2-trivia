@@ -343,12 +343,14 @@ export function dealCards() {
  * among them deals as a dig's, one strike in.
  */
 export function dealThese(cards: { category: string; kind: FindKind | null }[]) {
+  // A category once only: the cards are known by it.
+  cards = cards.filter((c, i) => cards.findIndex((d) => d.category === c.category) === i);
   const finds = cards.flatMap(({ category, kind }) => (kind ? [{ category, kind }] : []));
-  session.labFinds = Object.fromEntries(finds.map((f) => [f.category, f.kind]));
   put((s) => {
     if (!s.delve) return;
     s.turnCount++;
     deal(s);
+    session.labFinds = { turn: s.turnCount, finds: Object.fromEntries(finds.map((f) => [f.category, f.kind])) };
     s.offered = cards.map((c) => c.category);
     s.delve.finds = finds;
     delete s.delve.dig;

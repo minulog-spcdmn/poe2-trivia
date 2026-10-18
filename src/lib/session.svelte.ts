@@ -2270,11 +2270,12 @@ class Session {
   /** Lab only: the grayscale the art is prepared with, in place of the rules'. Always null in the game. */
   labGrayscale: Grayscale | null = null;
   /**
-   * Lab only (the card bench, cards.html): the find on each card dealt, by
-   * category, shown in place of the run's (any find on any card, past the
-   * game's two of different kinds). Always null in the game.
+   * Lab only (the card bench, cards.html): the find on each card of the deal
+   * at `turn` (the state's turnCount), by category, shown in place of the
+   * run's (any find on any card, past the game's two of different kinds);
+   * any later deal shows its own. Always null in the game.
    */
-  labFinds: Record<string, FindKind> | null = null;
+  labFinds: { turn: number; finds: Record<string, FindKind> } | null = null;
 
   /** Lab only: puts a state in place as the host would, with its timers, sounds, art and records. */
   labSetState(next: GameState) {
