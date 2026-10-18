@@ -381,22 +381,11 @@
   const weekly = $derived(!!read && read.span > 90);
 
   // ---- the board: sized from the screen, kept awake, the pointer out of the way ----
-  /** A monitor on its side (taller than wide, wider than a phone): its overview is the board's, one screen, with the views still above it. */
-  const SIDEWAYS = '(orientation: portrait) and (min-width: 900px)';
-  let sideways = $state(matchMedia(SIDEWAYS).matches);
-  $effect(() => {
-    const q = matchMedia(SIDEWAYS);
-    const follow = () => (sideways = q.matches);
-    q.addEventListener('change', follow);
-    return () => q.removeEventListener('change', follow);
-  });
-  /** Laid out as the board: one screen, its type sized from the screen. */
-  const fitted = $derived(board || (sideways && view === 'overview' && !!key));
   let topH = $state(0);
   let full = $state(!!document.fullscreenElement);
   let idle = $state(false);
   $effect(() => {
-    document.documentElement.classList.toggle('board', fitted);
+    document.documentElement.classList.toggle('board', board);
     return () => document.documentElement.classList.remove('board');
   });
   $effect(() => {
@@ -498,7 +487,7 @@
   <div class="progress" class:on={loading} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
 </header>
 
-<main class="analytics" class:on-board={fitted} class:idle style:height={fitted ? `calc(100dvh - ${topH}px)` : null}>
+<main class="analytics" class:on-board={board} class:idle style:height={board ? `calc(100dvh - ${topH}px)` : null}>
   {#if !key}
     <KeyGate onkey={useKey} {refused} />
   {:else}
@@ -523,7 +512,7 @@
         <div class="ghost chart"></div>
       </div>
     {:else if read}
-      {#if fitted}
+      {#if board}
         <Board {read} {period} {weekly} />
       {:else if view === 'overview'}
         <Overview {read} {period} {weekly} />
@@ -538,10 +527,10 @@
       {:else}
         <JoiningView {read} {period} />
       {/if}
-      <footer class="foot" hidden={fitted}>
+      {#if !board}<footer class="foot">
         <p>Visitors are people on the start page, each counted once a visit (8 hours). Ad blockers hide some of them, so totals run low while shares hold.</p>
         <p>This browser asked GoatCounter {used} times in the last hour, of the {HOUR_LIMIT} it allows; updating by itself pauses at {HOUR_LIMIT - KEEP_SPARE}.</p>
-      </footer>
+      </footer>{/if}
     {/if}
   {/if}
 </main>
@@ -792,9 +781,58 @@
     }
   }
 
+  /* ---- a monitor on its side (taller than wide, wider than a phone): the type sized from the screen, so the overview is one screen ---- */
+  @media (orientation: portrait) and (min-width: 900px) {
+    :global(html:not(.board)) {
+      font-size: clamp(11px, min(1.3vw, 0.74vh), 30px);
+    }
+    .row,
+    main {
+      width: 100%;
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
+    .range {
+      display: block;
+      margin-left: auto;
+      font-family: var(--font-data);
+      font-size: 1rem;
+      color: var(--a-muted);
+    }
+    .dates,
+    main:not(.on-board) .made-up {
+      display: none;
+    }
+    .made-up-tag {
+      margin-right: 1.2rem;
+      font-weight: 600;
+      color: var(--a-now);
+    }
+    main {
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
+    .foot {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 2rem;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+    }
+    .foot p {
+      margin: 0;
+    }
+  }
+
   /* ---- the board: one screen, its type sized from the screen (rem), nothing to scroll ---- */
   :global(html.board) {
     font-size: clamp(12px, min(1.5vw, 0.9vh), 30px);
+  }
+  /* The usual way round, the height decides. */
+  @media (orientation: landscape) {
+    :global(html.board) {
+      font-size: clamp(12px, min(0.75vw, 1.3vh), 30px);
+    }
   }
   .top.on-board {
     position: relative;

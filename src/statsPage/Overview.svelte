@@ -58,13 +58,18 @@
   let innerHeight = $state(900);
   let innerWidth = $state(1400);
   /** Wide (the side column beside it): about what one screen leaves it; narrower, a good height of its own. */
-  const chartBase = $derived(Math.round(innerWidth > 1500 ? Math.max(200, innerHeight * 0.18) : Math.min(560, Math.max(260, innerHeight * 0.27))));
+  /** A monitor on its side (taller than wide, wider than a phone): the overview fitted to it as to a big one. */
+  const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900);
+  const oneScreen = $derived(innerWidth > 1500 || sideways);
+  /** The figures' comparisons said short where the cards are narrow (a monitor on its side): "from 1,861 before". */
+  const before = $derived(sideways ? 'before' : period.before);
+  const chartBase = $derived(Math.round(oneScreen ? Math.max(200, innerHeight * (sideways ? 0.2 : 0.18)) : Math.min(560, Math.max(260, innerHeight * 0.27))));
   /** Wide, the chart's height fitted to the screen: so the whole overview is one screen. */
   let fitted = $state<number | null>(null);
   const chartH = $derived(fitted ?? chartBase);
   /** Whatever changes the page's height (a read, the chart drawn), the chart gives up what runs past the screen; a resize starts again from its usual height. */
   function fit() {
-    if (window.innerWidth <= 1500) return void (fitted = null);
+    if (!untrack(() => oneScreen)) return void (fitted = null);
     const over = document.documentElement.scrollHeight - window.innerHeight;
     const now = untrack(() => chartH);
     if (over > 2 && now > 140) fitted = Math.max(140, now - over);
@@ -111,15 +116,15 @@
   <div class="kpis">
     <Kpi label="Visitors" value={fmt(L.visitors.total)} means="people who opened the game" href="#visitors">
       {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visitors a day" />{/snippet}
-      {#snippet change()}<Delta now={L.visitors.total} before={B.visitors.total} period={period.before} />{/snippet}
+      {#snippet change()}<Delta now={L.visitors.total} before={B.visitors.total} period={before} />{/snippet}
     </Kpi>
     <Kpi label="Games played" value={fmt(L.games.started)} means="games started, every mode" href="#games">
       {#snippet spark()}<Spark days={L.days} values={L.games.perDay} {weekly} label="Games a day" />{/snippet}
-      {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={period.before} />{/snippet}
+      {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={before} />{/snippet}
     </Kpi>
     <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
-      {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/if}{/snippet}
+      {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={before} />{/if}{/snippet}
     </Kpi>
     <Kpi
       label="Joins that worked"
@@ -128,12 +133,12 @@
       href="#joining"
     >
       {#snippet spark()}<Spark days={L.days} values={sharePerDay(L.joinsPerDay.joined, L.joinsPerDay.tried)} {weekly} label="Share of joins that worked, a day" />{/snippet}
-      {#snippet change()}<Delta now={rate(joins(L), tries(L))} before={rate(joins(B), tries(B))} rate period={period.before} />{/snippet}
+      {#snippet change()}<Delta now={rate(joins(L), tries(L))} before={rate(joins(B), tries(B))} rate period={before} />{/snippet}
     </Kpi>
-    <Steps {read} {period} />
+    <Steps {read} period={{ ...period, before }} />
   </div>
   <div class="chart">
-    <Section title="How busy it was" says="Each day against the same day of the period before.">
+    <Section title="How busy it was" says={oneScreen ? '' : 'Each day against the same day of the period before.'}>
       {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
       <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chartH} marks={spikes} />
     </Section>
@@ -158,7 +163,7 @@
     </div>
     {/if}
     <div class="happened">
-      <Section title="What happened" says="What the numbers bear out by themselves.">
+      <Section title="What happened" says={oneScreen ? '' : 'What the numbers bear out by themselves.'}>
         <WhatHappened {read} {period} />
       </Section>
     </div>
@@ -379,6 +384,42 @@
     .go {
       grid-column: 2;
       margin-left: 0;
+    }
+  }
+  /* A monitor on its side: everything stacked in the screen's height, the five figures in a row, the short answers two by two. */
+  @media (orientation: portrait) and (min-width: 900px) {
+    /* What a list hides stays hidden, and the time zone goes without saying. */
+    .four :global(.more),
+    .four :global(.zone) {
+      display: none;
+    }
+    .ov {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        'alerts alerts'
+        'kpis kpis'
+        'chart chart'
+        'happened happened'
+        'four four';
+      gap: 1rem;
+    }
+    .side {
+      display: contents;
+    }
+    .alerts {
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      gap: 1rem;
+    }
+    .kpis {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+    .kpis > :global(:last-child) {
+      grid-column: auto;
+    }
+    .four {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
     }
   }
 </style>

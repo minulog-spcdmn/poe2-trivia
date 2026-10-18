@@ -1,19 +1,22 @@
 <script lang="ts">
   // The board (stats.html#board): the overview for a monitor of its own,
-  // most of all one turned on its side, read from across a room and left
-  // to update by itself. One screen, nothing to scroll or click: today so
-  // far against the same time a period ago (and what the last update brought
-  // in, where from and on what), the period's four figures, its
-  // days drawn as large as the screen leaves room for, what happened and
-  // how far a visit gets. Everything is sized from the screen
-  // (Analytics sets the root's size), so a bigger monitor reads the same.
+  // read from across a room and left to update by itself. One screen,
+  // nothing to scroll or click, the liveliest first: today so far against
+  // the same time a period ago, and what the last update brought in, where
+  // from and on what; what happened and how far a visit gets; the period's
+  // four figures; its visitors a day, as large as the screen leaves room
+  // for; and where they are and what they play, what's new marked. Sized
+  // from the screen (Analytics sets the root's size).
   import { onMount } from 'svelte';
   import { average, fmt, longDay, shortDay } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
   import NewSince from './NewSince.svelte';
-  import { DAILY_FROM, asked, dailyAverage, percent, sharePerDay } from './model';
+  import Bars from './Bars.svelte';
+  import { freshOf } from './changes';
+  import { spikesOf } from './insights';
+  import { DAILY_FROM, MODE_NAMES, asked, dailyAverage, modesOf, percent, sharePerDay } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Spark from './Spark.svelte';
@@ -55,15 +58,23 @@
   /** The deltas said short, so each keeps to a line: "from 1,658 before". */
   const short = $derived({ ...period, before: 'before' });
 
-  /** The room each chart has (what the rest leaves of the screen, split between the two), less its legend above. */
+  const modes = $derived(
+    modesOf(L.games.rows)
+      .filter((m) => m.started)
+      .map((m) => ({ label: MODE_NAMES[m.mode], count: m.started })),
+  );
+  const countries = $derived(read.countries.map((c) => ({ label: c.name || 'Unknown', count: c.count })));
+  /** The days far busier than usual, ringed on the chart. */
+  const spikes = $derived(spikesOf(L.days, L.visitors.perDay).map((x) => x.day));
+
+  /** The room the chart has (what the rest leaves of the screen), less its legend above. */
   let visitorsH = $state(0);
-  let gamesH = $state(0);
   /** The legend's height, in the root's size (the board sizes its type from the screen). */
   const legend = $derived(visitorsH ? 3 * parseFloat(getComputedStyle(document.documentElement).fontSize) : 48);
   const fit = (h: number) => Math.max(120, Math.floor(h - legend));
 </script>
 
-<div class="board">
+<div class="board" class:has-since={!!read.changes}>
   <section class="today" aria-label="Today so far">
     <h2>Today so far <span>against {sameTime}</span></h2>
     <div class="figures">
@@ -94,6 +105,13 @@
     <div class="since"><NewSince changes={read.changes} at={read.at} /></div>
   {/if}
 
+  <div class="happened">
+    <Section title="What happened">
+      <WhatHappened {read} {period} top={2} />
+    </Section>
+  </div>
+  <div class="steps"><Steps {read} period={short} /></div>
+
   <div class="kpis">
     <Kpi label="Visitors" value={fmt(L.visitors.total)} means="opened the game" href="#visitors">
       {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visitors a day" />{/snippet}
@@ -113,39 +131,86 @@
     </Kpi>
   </div>
 
-
-  <div class="charts">
-    <Section title="Visitors">
+  <div class="chart">
+    <Section title="Visitors a day">
       <div class="fill" bind:clientHeight={visitorsH}>
-        <TrendChart days={L.days} now={L.visitors.perDay} before={B.visitors.perDay} {weekly} what="Visitors" {names} height={fit(visitorsH)} />
-      </div>
-    </Section>
-    <Section title="Games">
-      <div class="fill" bind:clientHeight={gamesH}>
-        <TrendChart days={L.days} now={L.games.perDay} before={B.games.perDay} {weekly} what="Games" {names} height={fit(gamesH)} />
+        <TrendChart days={L.days} now={L.visitors.perDay} before={B.visitors.perDay} {weekly} what="Visitors" {names} height={fit(visitorsH)} marks={spikes} />
       </div>
     </Section>
   </div>
 
-  <div class="two">
-    <Section title="What happened">
-      <WhatHappened {read} {period} top={2} />
+  <div class="where">
+    <Section title="Where they are">
+      <Bars bars={countries} top={5} empty="No visitors in these days." fresh={freshOf(read.changes, read.at, 'countries')} />
     </Section>
-    <Steps {read} period={short} />
+  </div>
+  <div class="play">
+    <Section title="What they play">
+      <Bars bars={modes} top={3} empty="No games in these days." fresh={freshOf(read.changes, read.at, 'modes')} />
+    </Section>
   </div>
 </div>
 
 <style>
-  /* The screen's height, split: the charts take whatever the rest leaves. */
+  /*
+   * One grid, the screen's height split: the chart takes whatever the rest
+   * leaves. A monitor on its side stacks it; the usual way round puts
+   * what's new beside today and the chart beside the rest.
+   */
   .board {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'today today'
+      'since since'
+      'happened steps'
+      'kpis kpis'
+      'chart chart'
+      'where play';
     gap: 1rem;
     height: 100%;
     min-height: 0;
   }
-  .board > * {
-    flex: none;
+  .board:not(.has-since) {
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'today today'
+      'happened steps'
+      'kpis kpis'
+      'chart chart'
+      'where play';
+  }
+  .today {
+    grid-area: today;
+  }
+  .since {
+    grid-area: since;
+    display: grid;
+  }
+  .happened {
+    grid-area: happened;
+    display: grid;
+  }
+  .steps {
+    grid-area: steps;
+    display: grid;
+  }
+  .kpis {
+    grid-area: kpis;
+  }
+  .chart {
+    grid-area: chart;
+    display: flex;
+    min-height: 0;
+  }
+  .where {
+    grid-area: where;
+    display: grid;
+  }
+  .play {
+    grid-area: play;
+    display: grid;
   }
   .board :global(.more) {
     display: none;
@@ -210,15 +275,9 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1rem;
   }
-  .charts {
-    flex: 1 1 0;
-    min-height: 0;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 1rem;
-  }
-  /* Each chart's panel a column, the chart (with its legend) filling what its heading leaves. */
-  .charts > :global(.section) {
+  /* The chart's panel a column, the chart (with its legend) filling what its heading leaves. */
+  .chart > :global(.section) {
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -228,64 +287,28 @@
     min-height: 0;
     overflow: hidden;
   }
-  .two {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-    align-items: stretch;
-  }
   .board :global(.section) {
     padding: 1.1rem 1.4rem 1.2rem;
   }
   .board :global(.section header) {
     margin-bottom: 0.7rem;
   }
-  /*
-   * A monitor the usual way round: today with what's new beside it, the
-   * four figures with how far a visit gets, then the two charts side by side
-   * and what happened, taking what the rest leaves of the screen.
-   */
   @media (orientation: landscape) {
     .board {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.15fr);
-      grid-template-rows: auto auto minmax(16rem, 1fr);
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
       grid-template-areas:
-        'today today today today since'
-        'kpis kpis kpis kpis steps'
-        'vis vis gam gam happened';
+        'today today today since'
+        'kpis kpis kpis steps'
+        'chart chart happened where'
+        'chart chart happened play';
     }
-    .board:not(:has(.since)) {
+    .board:not(.has-since) {
       grid-template-areas:
-        'today today today today today'
-        'kpis kpis kpis kpis steps'
-        'vis vis gam gam happened';
-    }
-    .today {
-      grid-area: today;
-    }
-    .since {
-      grid-area: since;
-      display: grid;
-    }
-    .kpis {
-      grid-area: kpis;
-    }
-    .charts,
-    .two {
-      display: contents;
-    }
-    .charts > :global(.section:first-child) {
-      grid-area: vis;
-    }
-    .charts > :global(.section:last-child) {
-      grid-area: gam;
-    }
-    .two > :global(.section) {
-      grid-area: happened;
-    }
-    .two > :global(.steps) {
-      grid-area: steps;
+        'today today today today'
+        'kpis kpis kpis steps'
+        'chart chart happened where'
+        'chart chart happened play';
     }
   }
 </style>
