@@ -14,6 +14,7 @@
 // dozen paths, not the whole drawing.
 
 import { f, pt, rad, ring, ringParts, type Part, type Pt, type Wear } from './arcane.ts';
+import { boxOf, union, type Box } from './plateBox.ts';
 
 const sec = (v: number) => `${v.toFixed(3)}s`;
 
@@ -81,16 +82,25 @@ export type StageLayer = {
   mask?: { d: string; grow: number; with: string };
   inner?: boolean;
   cut?: boolean;
+  /** The box its drawing takes up (lib/plateBox.ts), set by `staged`: the stage sizes the layer to it. */
+  box?: Box;
 };
 
 /**
  * A plate's layers as built whole or `hollow` (each its own plate, so a
  * circle never builds the other): hollow, without its `inner` layers, and
  * its `cut` layers cut; whole, nothing cut. (A hollow plate draws its
- * hollow frame, and whatever of its design reaches in to it, itself.)
+ * hollow frame, and whatever of its design reaches in to it, itself.) Each
+ * layer gets the box its drawing takes up (`box`, lib/plateBox.ts).
  */
 export const staged = (layers: StageLayer[], hollow: boolean): StageLayer[] =>
-  layers.filter((l) => !(hollow && l.inner)).map(({ inner: _, cut, ...l }) => (hollow && cut ? { ...l, cut } : l));
+  layers
+    .filter((l) => !(hollow && l.inner))
+    .map(({ inner: _, cut, ...l }) => (hollow && cut ? { ...l, cut } : l))
+    .map((l) => {
+      const box = union(boxOf(l.lines.still), boxOf(l.glow.still));
+      return box ? { ...l, box } : l;
+    });
 
 /**
  * The frame round a hollow circle's heart (`staged`), the same in
