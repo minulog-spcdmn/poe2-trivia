@@ -38,6 +38,7 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
@@ -858,19 +859,7 @@
 {#snippet verdictBadge()}
   {#if verdict}
     <div class="verdict {verdict.tone}" data-cursor="verdict" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, flame: chipFlame, out: chipOut }}>
-      <span class="glyph" aria-hidden="true">
-        <svg viewBox="0 0 20 20">
-          {#if verdict.icon === 'check'}
-            <path pathLength="1" d="M5.6 10.4l3 3 5.8-6.6" />
-          {:else if verdict.icon === 'cross'}
-            <path pathLength="1" d="M6.6 6.6l6.8 6.8" />
-            <path pathLength="1" d="M13.4 6.6l-6.8 6.8" />
-          {:else}
-            <path pathLength="1" d="M10 4.4a5.6 5.6 0 1 1 0 11.2a5.6 5.6 0 1 1 0-11.2" />
-            <path pathLength="1" d="M10 7v3.2l2.1 1.5" />
-          {/if}
-        </svg>
-      </span>
+      <span class="glyph"><VerdictSign icon={verdict.icon} /></span>
       {#if chipHeat > 0}
         <!-- The streak instead of the word, in the fire's colour. -->
         <span class="word count" class:blue={chipFlame.blue} class:tinted={!!chipFlame.tint} style:--flame-rgb={chipFlame.css} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
@@ -1911,8 +1900,8 @@
      ring spreads off it and a sheen crosses it; a right answer's disc keeps
      glowing softly. Green and red as the answers' ✓ and ✕, violet for time. */
   .verdict {
-    --v-icon: #c2e3a6;
-    --v-tint: 150, 200, 105;
+    --v-icon: var(--verdict-good-icon);
+    --v-tint: var(--verdict-good-tint);
     position: relative;
     flex: none;
     display: flex;
@@ -1943,12 +1932,12 @@
       verdict-sheen 0.9s ease-in-out 0.45s;
   }
   .verdict.bad {
-    --v-icon: #f0a68c;
-    --v-tint: 220, 110, 80;
+    --v-icon: var(--verdict-bad-icon);
+    --v-tint: var(--verdict-bad-tint);
   }
   .verdict.late {
-    --v-icon: #cdb4ee;
-    --v-tint: 165, 125, 225;
+    --v-icon: var(--verdict-late-icon);
+    --v-tint: var(--verdict-late-tint);
   }
   .verdict.neutral {
     --v-icon: var(--gold-hi);
@@ -1964,20 +1953,13 @@
     opacity: 0;
     animation: verdict-ripple 0.7s var(--ease-out) 0.25s;
   }
-  /* As tall as the line, so the chip is no taller than its word. */
+  /* As tall as the line, so the chip is no taller than its word. Its sign
+     (VerdictSign) fills it; the flare lights round it as it lands. */
   .glyph {
     flex: none;
-    display: grid;
-    place-items: center;
     width: 1.45em;
     height: 1.45em;
-    color: var(--v-icon);
-    border: 1px solid rgba(var(--v-tint), 0.75);
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 35%, rgba(var(--v-tint), 0.45), rgba(var(--v-tint), 0.12) 70%), rgba(0, 0, 0, 0.5);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.15),
-      0 0 8px rgba(var(--v-tint), 0.45);
     animation: verdict-flare 0.9s var(--ease-out) 0.2s backwards;
   }
   /* A right answer's glyph breathes: a wider glow on a layer of its own
@@ -1996,26 +1978,6 @@
     animation: verdict-breathe 2.6s ease-in-out 1.2s infinite;
     pointer-events: none;
   }
-  .glyph svg {
-    width: 1.05em;
-    height: 1.05em;
-    overflow: visible;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.4;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 0 2px rgba(var(--v-tint), 0.8));
-  }
-  .glyph path {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: verdict-draw 0.35s var(--ease-out) 0.22s forwards;
-  }
-  /* A cross's second stroke and a clock's hands follow the first. */
-  .glyph svg > :nth-child(2) {
-    animation-delay: 0.4s;
-  }
   .word {
     animation: verdict-word 0.5s var(--ease-out) 0.2s backwards;
   }
@@ -2033,9 +1995,7 @@
   }
   @keyframes verdict-flare {
     from {
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.15),
-        0 0 18px 3px rgba(var(--v-tint), 0.8);
+      box-shadow: 0 0 18px 3px rgba(var(--v-tint), 0.8);
     }
   }
   @keyframes verdict-breathe {
@@ -2050,11 +2010,6 @@
     to {
       inset: -8px;
       opacity: 0;
-    }
-  }
-  @keyframes verdict-draw {
-    to {
-      stroke-dashoffset: 0;
     }
   }
   @keyframes verdict-word {
