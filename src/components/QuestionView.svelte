@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -251,8 +251,8 @@
   // row of tall tiles rather than two rows of short ones, where a staff is a
   // thin stick.
   const tallArt = $derived(!!q.tall && count <= 8);
-  /** Whether a timer runs on this question (the timer snippet draws nothing without one). */
-  const clocked = $derived(!!q.deadline || !!s.delve);
+  /** Whether a timer runs on this question, started or not (the timer snippet draws nothing without one). */
+  const clocked = $derived(!!q.deadline || clockMs(s) !== null);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
   /** "Find the art" pictures in so far: whole, or (veiled, in Delve) ready to burn in. */
@@ -260,11 +260,12 @@
   /** A veiled picture's patches so far. */
   const tilePatches = (i: number) => Object.values(media?.tilePatches[i] ?? {});
   /**
-   * Delve: nothing to see or answer until the clock runs and every picture is
-   * in, so the timer only counts time the player could actually use.
+   * Nothing to see or answer until the clock runs, in every mode (the host's
+   * own screen too); in Delve, nor until every picture is in, so the timer
+   * only counts time the player could actually use.
    */
   const waiting = $derived(
-    !!s.delve && !reveal && (q.deadline === null || (q.mode === 'art' ? tilesIn < count : !(media?.art || media?.veil))),
+    !reveal && (!clockRuns(q) || (!!s.delve && (q.mode === 'art' ? tilesIn < count : !(media?.art || media?.veil)))),
   );
 
   /** Veiled art: the patches that have appeared so far. */
@@ -785,6 +786,8 @@
 
   /** Frees the options should the host's word on an answer never come. */
   let fallback: ReturnType<typeof setTimeout> | undefined;
+  /** The longest the options wait shut for that word (ms): a far host's round trip and then some. */
+  const PICK_WAIT_MS = 6000;
   function answer(index: number) {
     if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
@@ -795,10 +798,17 @@
     sfx('select', { from: { from: optionEls[index] } });
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     // Only the latest answer's: one turned down and given again stays on its way.
+    // A far host's word can take a while: it waits till a moment after a
+    // timed question's end (its reveal brings the word at the latest), but
+    // never more than PICK_WAIT_MS, so an answer the host let go without a
+    // word doesn't keep the options shut for the rest of the clock.
     clearTimeout(fallback);
-    fallback = setTimeout(() => {
-      if (!session.state?.reveal) chosen = null;
-    }, 2500);
+    fallback = setTimeout(
+      () => {
+        if (!session.state?.reveal) chosen = null;
+      },
+      q.deadline ? Math.min(PICK_WAIT_MS, Math.max(2500, q.deadline - session.hostNow() + 2000)) : PICK_WAIT_MS,
+    );
   }
 
   function next() {
@@ -1144,7 +1154,7 @@
     {#if timer && clocked}<div class="clock" class:done={!!reveal}>{@render timer()}</div>{/if}
   </div>
 
-  <!-- Delve: until the clock runs (waiting), the question keeps its shape but shows nothing to read. -->
+  <!-- Until the clock runs (waiting; in Delve, until its art is in too), the question keeps its shape but shows nothing to read. -->
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>

@@ -5,12 +5,15 @@ import { extname, join, relative } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
 const skip = new Set(['node_modules', 'dist', '.git', '.bot']);
+// Capture runs (scripts/capture-screens.mjs), at the top only.
+const skipTop = join(root, 'screens');
 const text = new Set(['.ts', '.mjs', '.js', '.svelte', '.css', '.html', '.md', '.json', '.yml', '.svg']);
 
 function* files(dir: string): Generator<string> {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (skip.has(e.name)) continue;
     const p = join(dir, e.name);
+    if (p === skipTop) continue;
     if (e.isDirectory()) yield* files(p);
     else if (text.has(extname(e.name))) yield p;
   }
