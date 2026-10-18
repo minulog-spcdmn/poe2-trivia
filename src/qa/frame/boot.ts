@@ -34,25 +34,15 @@ export async function boot(asked: URLSearchParams) {
   };
   clear();
 
-  await import('../../app.css');
-  const [{ mount }, { default: Root }, { session, engine }, { useEngine }, scenes, codex, records, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }, { toasts }] = await Promise.all([
-    import('svelte'),
-    import('../../Root.svelte'),
+  // The scene first: what it puts in the address has to be there before the
+  // app's modules read it (the codex's #codex, an invite's ?room=).
+  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }] = await Promise.all([
     import('../../lib/session.svelte.ts'),
     import('../build/engine.ts'),
     import('../scenes/index.ts'),
-    import('../../lib/codex.ts'),
-    import('../../lib/delveRecord.ts'),
-    import('../../lib/sound.ts'),
-    import('../../lib/spatial.svelte.ts'),
-    import('../../lib/fx/ui.ts'),
-    import('../../lib/ownCursor.ts'),
-    import('../../lib/autoscroll.ts'),
-    import('../../lib/switchedOff.ts'),
-    import('../../lib/toasts.svelte.ts'),
+    import('../../data/fakes.json'),
   ]);
-  useEngine(engine);
-
+  useItems(engine.items, fakeNames);
   const key = asked.get('s');
   const scene = scenes.sceneByKey(key);
   const seat = scene?.seats[Number(asked.get('seat') ?? 0)];
@@ -61,31 +51,71 @@ export async function boot(asked: URLSearchParams) {
     return;
   }
   const built = scene.build();
+  if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
+
+  await import('../../app.css');
+  const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }, { toasts }, game, media] = await Promise.all([
+    import('svelte'),
+    import('../../Root.svelte'),
+    import('../../lib/codex.ts'),
+    import('../../lib/delveRecord.ts'),
+    import('../../lib/daily.ts'),
+    import('../../lib/rooms.ts'),
+    import('../../lib/sound.ts'),
+    import('../../lib/spatial.svelte.ts'),
+    import('../../lib/fx/ui.ts'),
+    import('../../lib/ownCursor.ts'),
+    import('../../lib/autoscroll.ts'),
+    import('../../lib/switchedOff.ts'),
+    import('../../lib/toasts.svelte.ts'),
+    import('../../lib/game.ts'),
+    import('../../lib/media.svelte.ts'),
+  ]);
+  const state = built.state;
 
   // Its codex: its answers in the game, and the items they name, met for the
-  // first time then; and a few met before, seen again in it.
+  // first time then; and others met before, seen again in it.
   const c = codex.emptyCodex();
-  const at = built.state.startedAt ?? 0;
+  const at = state?.startedAt ?? Date.now();
   c.log = built.log ?? [];
   const meet = (id: string, first: number, last: number) =>
     (c.items[id] ??= { seen: 1, first, last, name: { n: 1, ok: 0 }, art: { n: 0, ok: 0 }, mixed: {} });
   for (const a of c.log) meet(a.id, a.t, a.t);
-  for (const it of engine.items.slice(0, 5)) meet(it.id, at - 86_400_000, at + 1);
+  const met = built.met ?? 5;
+  const before = typeof met === 'number' ? engine.items.slice(0, met) : engine.items.filter((it) => met.includes(it.name));
+  for (const it of before) meet(it.id, at - 86_400_000, at + 1);
   storage.writeKey(codex.CODEX_KEY, codex.serializeCodex(c));
   // Its Delve runs, oldest first, this one last.
   records.resetRecords();
   for (const run of built.runs ?? []) records.recordRun(run);
+  // Its name ('' a first visit), and Today's unique as it last answered.
+  if (built.name !== '') storage.writeStored('name', built.name ?? 'Kalguur');
+  if (built.daily) {
+    const { daysAgo, ...rec } = built.daily;
+    storage.writeStored('daily', JSON.stringify({ ...rec, day: daily.utcDay(Date.now()) - daysAgo }));
+  }
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
+  // No network: the rooms the start page finds are the scene's.
+  rooms.useMadeUpRooms(built.rooms ?? [], built.invite);
 
   // Who it is, and what it made of the game.
-  session.mode = seat.mode;
+  session.mode = seat.mode === 'none' ? null : seat.mode;
   session.myPlayerId = seat.me;
+  session.status = built.status ?? (state ? 'ready' : 'idle');
   session.code = 'KXR4QT';
   session.hideCode = false;
   session.delveResult = built.delveResult ?? null;
-  session.earned = built.earned && built.state.startedAt !== undefined ? { game: built.state.startedAt, ids: built.earned } : null;
-  session.state = built.state;
+  session.bestAtStart = built.bestAtStart ?? null;
+  session.earned = built.earned && state?.startedAt !== undefined ? { game: state.startedAt, ids: built.earned } : null;
+  // A guest or a spectator holds the room as the host sends it: what's still to guess left out.
+  session.state = state && seat.mode === 'client' ? game.publicView(state) : state;
+  // Its clocks stand still at the scene's moment.
+  if (built.at !== undefined) {
+    const now = built.at;
+    session.clockOffset = now - Date.now();
+    session.hostNow = () => now;
+  }
   const said = (what: string) => toasts.show(what, 'info', { title: 'Preview' });
   session.dispatch = (a) => said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
   session.watch = (on) => said(on ? 'You would just watch the next game.' : 'You would play in the next game.');
@@ -97,6 +127,25 @@ export async function boot(asked: URLSearchParams) {
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
   mount(Root, { target: document.getElementById('app')! });
+
+  // A question's pictures, made as the host makes them and taken in as each
+  // device takes them in, sealed or not (lib/media.svelte.ts).
+  const q = state?.question;
+  if (state && q && (state.phase === 'question' || state.phase === 'reveal')) {
+    try {
+      const made = await media.prepareMedia(q, game.grayscaleFor(state), veilClock(state), engine.byId);
+      for (const m of picturesOf(made)) media.shown.receive(m);
+    } catch (err) {
+      console.error("The scene's art couldn't be made", err);
+    }
+  }
+
+  // What the scene does once it shows.
+  for (const step of built.steps ?? []) {
+    if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
+    else if ('fail' in step) session.labFail(step.fail);
+    else (await found(step.click))?.click();
+  }
 
   const slot = asked.get('frame') ?? '';
   const tell = (m: FrameMessage) => parent.postMessage(m, location.origin);
@@ -145,6 +194,17 @@ function handOnKeys(tell: (m: FrameMessage) => void) {
   };
   addEventListener('keydown', (e) => hand(e, false));
   addEventListener('keyup', (e) => hand(e, true));
+}
+
+/** The first element `selector` finds, once there is one (null after 5 s). */
+async function found(selector: string): Promise<HTMLElement | null> {
+  for (let i = 0; i < 50; i++) {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) return el;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.error(`The scene's step found nothing at ${selector}`);
+  return null;
 }
 
 /** Every WebGL context the frame's page makes from now on. */

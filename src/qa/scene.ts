@@ -6,6 +6,8 @@
 import type { GameState } from '../lib/game.ts';
 import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
+import type { DailyRecord } from '../lib/daily.ts';
+import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { SizeKey } from './sizes.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
@@ -19,22 +21,56 @@ export const SCREENS: { key: Screen; label: string }[] = [
   { key: 'overlay', label: 'Over the game' },
 ];
 
-/** Who this device is: the room's role ('local': no room, alone or hot-seat) and its player (a spectator's own id; none in hot-seat). */
+/**
+ * Who this device is: the room's role ('local': no room, alone or hot-seat;
+ * 'none': in no game at all, on the start page or in the codex) and its
+ * player (a spectator's own id; none in hot-seat or out of a game).
+ */
 export interface Seat {
-  mode: 'host' | 'client' | 'local';
+  mode: 'host' | 'client' | 'local' | 'none';
   me: string | null;
 }
 
+/** What a frame does once the scene shows, in order. */
+export type Step =
+  /** Clicks the first element `selector` finds. */
+  | { click: string }
+  /** Waits (ms). */
+  | { wait: number }
+  /** The room turns this device out, as the host's word for it would (session.labFail). */
+  | { fail: 'kicked' | 'closed' | 'replaced' };
+
 /** Everything a seat's device holds for the scene, beyond the room's state. */
 export interface Built {
-  state: GameState;
+  /** The room's state; null out of a game. */
+  state: GameState | null;
+  /** The moment the scene is at (host clock, ms): its clocks stand still there. Missing: the state's own start. */
+  at?: number;
   /** How the run measured up against this device's records (the session's delveResult). */
   delveResult?: { id: number; depth: number; previousBest: number | null; best: boolean } | null;
+  /** Delve: this device's deepest before the run (the session's bestAtStart). */
+  bestAtStart?: number | null;
   /** Achievements this device earned in the game (ids, lib/achievements.ts). */
   earned?: string[];
   /** This device's codex log (its own answers), and its Delve runs, oldest first. */
   log?: Answer[];
   runs?: DelveRun[];
+  /** Items this device has met besides those in its log: by name, or the first so many of the game's; missing: a few. */
+  met?: string[] | number;
+  /** The name this device plays under ('': a first visit, never asked). Missing: Kalguur. */
+  name?: string;
+  /** Today's unique as this device has it: its record, last answered `daysAgo` days before today (the frame's real today). */
+  daily?: Omit<DailyRecord, 'day'> & { daysAgo: number };
+  /** The session's status ('connecting': joining a room). */
+  status?: 'idle' | 'connecting' | 'ready' | 'lost';
+  /** What follows the page's address: a query to add ('room=KXR4QT&first') and a hash ('#codex'). */
+  query?: string;
+  hash?: string;
+  /** The rooms the start page's list finds, and what an invite's room answers (undefined: never answers). */
+  rooms?: RoomInfo[];
+  invite?: RoomInfo | 'gone' | null;
+  /** Done once the scene shows. */
+  steps?: Step[];
 }
 
 export interface Scene {
@@ -49,11 +85,13 @@ export interface Scene {
   sizes?: SizeKey[];
   /** The design's boards for it (docs/handoff/end-screen/screens/<board>.webp), by the size each was drawn at. */
   boards?: Partial<Record<SizeKey, string>>;
+  /** Built afresh for each seat that asks. */
   build(): Built;
 }
 
 /** A seat in words: whose eyes, and in what part ("Kalguur (host)", "Hot-seat"). */
-export function seatLabel(seat: Seat, state: GameState): string {
+export function seatLabel(seat: Seat, state: GameState | null): string {
+  if (seat.mode === 'none' || !state) return 'This device';
   if (seat.mode === 'local') return state.players.length > 1 ? 'Hot-seat' : 'Alone';
   const name = state.players.find((p) => p.id === seat.me)?.name;
   if (name) return `${name} (${seat.mode === 'host' ? 'host' : 'guest'})`;

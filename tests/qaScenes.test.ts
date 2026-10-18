@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { Engine, type Item } from '../src/lib/game.ts';
-import { useEngine } from '../src/qa/build/engine.ts';
+import type { Item } from '../src/lib/game.ts';
+import { useItems } from '../src/qa/build/engine.ts';
 import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
 import { SCREENS, seatLabel } from '../src/qa/scene.ts';
 import { matches, sizesFor, walk } from '../src/qa/desk/walk.ts';
@@ -10,7 +10,7 @@ import { answered } from '../src/qa/frame/emulate.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-useEngine(new Engine(items, { fakes }));
+useItems(items, fakes);
 const { catalog } = await import('../src/qa/scenes/index.ts');
 
 // The QA desk (qa.html) walks every scene from every seat at every size; a
@@ -20,10 +20,20 @@ test('every scene builds, and every seat is someone in it', () => {
   const all = catalog();
   assert.ok(all.length > 0);
   for (const s of all) {
-    const built = s.build();
-    assert.ok(built.state, `${s.key} has no state`);
+    let built;
+    try {
+      built = s.build();
+    } catch (e) {
+      assert.fail(`${s.key} doesn't build: ${(e as Error).message}`);
+    }
     assert.ok(s.seats.length > 0, `${s.key} has no seat`);
     for (const seat of s.seats) {
+      // Out of a game (the start page, the codex): nobody in particular.
+      if (!built.state) {
+        assert.equal(seat.me, null, `${s.key} has no room, but a seat is someone`);
+        continue;
+      }
+      assert.notEqual(seat.mode, 'none', `${s.key} has a room, but a seat is in none`);
       if (seat.mode === 'local') continue;
       const ids = [...built.state.players, ...(built.state.spectators ?? [])].map((p) => p.id);
       assert.ok(ids.includes(seat.me!), `${s.key}: seat ${seat.me} isn't in the room`);

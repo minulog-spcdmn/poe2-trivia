@@ -211,6 +211,13 @@ function stored(name: string, fallback: () => string): string {
 }
 
 export const savedName = () => readStored('name') ?? '';
+
+/** What a guest is told when the host turns it out of the room, by the host's word for it: the message, and its title. */
+const TURNED_OUT = {
+  kicked: ['You were removed from the game.', 'Removed'],
+  closed: ['The host closed the room.', 'Room closed'],
+  replaced: ['You joined this game from another tab or window, so it continues there.', 'Moved to another tab'],
+} as const satisfies Record<string, readonly [string, string]>;
 export const saveName = (name: string) => void writeStored('name', name);
 
 /**
@@ -2072,13 +2079,9 @@ class Session {
           else this.flash(msg.message, 'error');
           break;
         case 'kicked':
-          this.fail('You were removed from the game.', 'Removed');
-          break;
         case 'closed':
-          this.fail('The host closed the room.', 'Room closed');
-          break;
         case 'replaced':
-          this.fail('You joined this game from another tab or window, so it continues there.', 'Moved to another tab');
+          this.turnedOut(msg.t);
           break;
         case 'busy':
           this.flash(msg.message, 'warn', { title: 'Room busy' });
@@ -2294,6 +2297,16 @@ class Session {
   }
 
   /** Lab only: an action from a given player (null: the host's own timers), as the room would take it. An error's message, or null. */
+  /** The QA desk (src/qa): this device is turned out of its room as the host's word for it would. */
+  labFail(why: keyof typeof TURNED_OUT) {
+    this.turnedOut(why);
+  }
+
+  private turnedOut(why: keyof typeof TURNED_OUT) {
+    const [message, title] = TURNED_OUT[why];
+    this.fail(message, title);
+  }
+
   labAct(action: Action, from: string | null): string | null {
     if (!this.state) return 'No game.';
     try {
@@ -3137,8 +3150,10 @@ const OLD_SAVE_KEY = 'poe2trivia.session.v3';
 /**
  * A question's pictures as they go out (sealed, to guests): its art, or
  * each option's, or each veiled one. Patches go later, one at a time.
+ * (Exported for the QA desk's frames, src/qa, which show a question's art
+ * without a room.)
  */
-function picturesOf(media: PreparedMedia): MediaMsg[] {
+export function picturesOf(media: PreparedMedia): MediaMsg[] {
   const qid = media.qid;
   const out: MediaMsg[] = [];
   if (media.art) out.push({ t: 'art', qid, ...media.art });
@@ -3160,7 +3175,7 @@ function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: 
  * veil's share of them by the rules (by its own time where the rules have no
  * veil, as for the lab's).
  */
-function veilClock(s: GameState): { secs: number; share: number } {
+export function veilClock(s: GameState): { secs: number; share: number } {
   const q = s.question!;
   const secs = questionClock(s, q);
   const own = q.veil ? q.veil.seconds / secs : 0;

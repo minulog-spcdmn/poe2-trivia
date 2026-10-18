@@ -125,7 +125,10 @@ export function check(heard: { errors: string[]; images: string[] }): Problem[] 
       const outer = box && clipper(el, 'both');
       if (box && outer) {
         const o = outer.getBoundingClientRect();
-        byParent = box.right > o.right + 1 || box.left < o.left - 1 || box.bottom > o.bottom + 1 || box.top < o.top - 1;
+        const os = getComputedStyle(outer);
+        // Cut off by a box that means to: one with an ellipsis or a line clamp, or one folded away (a chip shrunk to its mark).
+        const meantThere = os.textOverflow === 'ellipsis' || (os.webkitLineClamp && os.webkitLineClamp !== 'none') || o.width < 4 || o.height < 4;
+        byParent = !meantThere && (box.right > o.right + 1 || box.left < o.left - 1 || box.bottom > o.bottom + 1 || box.top < o.top - 1);
       }
       if (!meant && (own || ownY || byParent)) cut.push(el);
     }

@@ -17,6 +17,7 @@ html[data-qa='desk'] #app {
   height: 100dvh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   font-size: 15px;
 }
 .desk .num {
@@ -203,23 +204,25 @@ html[data-qa='desk'] #app {
 .strip {
   display: flex;
   align-items: stretch;
-  gap: 1px;
+  overflow: hidden;
   height: 18px;
   padding: 5px 1rem 7px;
   border-top: 1px solid var(--line);
   background: #0d0b09;
 }
+/* Hundreds of stops share the width: a hairline between marks, a gap between scenes. */
 .strip .mark {
   flex: 1 1 0;
-  min-width: 1px;
+  min-width: 0;
   padding: 0;
   border: 0;
-  border-radius: 1px;
+  border-radius: 0;
+  box-shadow: inset -1px 0 0 #0d0b09;
   background: #2a2219;
   cursor: pointer;
 }
 .strip .mark.first {
-  margin-left: 3px;
+  margin-left: 2px;
 }
 .strip .mark:hover {
   background: var(--gold-lo);

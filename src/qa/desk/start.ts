@@ -7,13 +7,13 @@ import '../../app.css';
 import './desk.css';
 import itemData from '../../data/items.json';
 import fakeNames from '../../data/fakes.json';
-import { Engine, type Item } from '../../lib/game.ts';
-import { useEngine } from '../build/engine.ts';
+import type { Item } from '../../lib/game.ts';
+import { useItems } from '../build/engine.ts';
 import { catalog } from '../scenes/index.ts';
 import { walk } from './walk.ts';
 import Desk from './Desk.svelte';
 
-useEngine(new Engine(itemData as Item[], { fakes: fakeNames }));
+useItems(itemData as Item[], fakeNames);
 mount(Desk, { target: document.getElementById('app')! });
 
 // For the sweep (scripts/qa.mjs), which opens each stop's frames by itself:
