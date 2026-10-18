@@ -4,7 +4,7 @@
   // wrong first, then the four figures that matter beside what happened and
   // how far a visit gets; one chart of how busy it was, its busiest days
   // ringed; and a row of short answers, each opening its view.
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
   import { average, fmt, shortDay } from './chart';
@@ -57,9 +57,28 @@
 
   let innerHeight = $state(900);
   let innerWidth = $state(1400);
-  /** Taller on a tall window (a monitor on its side), so the overview fills it. */
-  /** Wide (the side column beside it): what one screen leaves it; narrower, a good height of its own. */
-  const chartH = $derived(Math.round(innerWidth > 1500 ? Math.max(200, innerHeight * 0.18) : Math.min(560, Math.max(260, innerHeight * 0.27))));
+  /** Wide (the side column beside it): about what one screen leaves it; narrower, a good height of its own. */
+  const chartBase = $derived(Math.round(innerWidth > 1500 ? Math.max(200, innerHeight * 0.18) : Math.min(560, Math.max(260, innerHeight * 0.27))));
+  /** Wide, the chart's height fitted to the screen: so the whole overview is one screen. */
+  let fitted = $state<number | null>(null);
+  const chartH = $derived(fitted ?? chartBase);
+  /** Whatever changes the page's height (a read, the chart drawn), the chart gives up what runs past the screen; a resize starts again from its usual height. */
+  function fit() {
+    if (window.innerWidth <= 1500) return void (fitted = null);
+    const over = document.documentElement.scrollHeight - window.innerHeight;
+    const now = untrack(() => chartH);
+    if (over > 2 && now > 160) fitted = Math.max(160, now - over);
+  }
+  $effect(() => {
+    const seen = new ResizeObserver(() => requestAnimationFrame(fit));
+    seen.observe(document.body);
+    const resized = () => (fitted = null);
+    window.addEventListener('resize', resized);
+    return () => {
+      seen.disconnect();
+      window.removeEventListener('resize', resized);
+    };
+  });
   /** The days far busier than usual, ringed on the chart (only on the visitors' line, which they're read from). */
   const spikes = $derived(metric === 'visitors' ? spikesOf(L.days, L.visitors.perDay).map((s) => s.day) : []);
 
@@ -296,6 +315,18 @@
   }
   .soft {
     color: var(--a-muted);
+  }
+  /* A big monitor: the chart is right below the figures, so their small lines would only say it twice. */
+  @media (min-width: 1900px) {
+    .ov,
+    .kpis,
+    .side,
+    .four {
+      gap: 1rem;
+    }
+    .kpis :global(.spark) {
+      display: none;
+    }
   }
   @media (max-width: 1500px) {
     .ov {

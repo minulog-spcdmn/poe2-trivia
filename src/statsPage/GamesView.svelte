@@ -45,37 +45,37 @@
           <tr>
             <th scope="col">Mode</th>
             <th scope="col" class="n">Games</th>
-            <th scope="col" class="n">Share</th>
+            <th scope="col" class="n opt">Share</th>
             <th scope="col" class="n">To the end</th>
-            <th scope="col" class="n">Players a game</th>
-            <th scope="col" class="n">Online</th>
-            <th scope="col" class="n">Hot-seat</th>
+            <th scope="col" class="n opt">Players a game</th>
+            <th scope="col" class="n opt">Online</th>
+            <th scope="col" class="n opt">Hot-seat</th>
             <th scope="col" class="bar"><span class="sr">Against the most played</span></th>
           </tr>
         </thead>
         <tbody>
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
-              <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })} title="Where its players come from, and on what">{MODE_NAMES[m.mode]}</a></th>
+              <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })} title="Where its players come from, and on what">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each; {fmt(m.online)} online, {fmt(m.hotseat)} hot-seat</span></th>
               <td class="n strong">{fmt(m.started)}</td>
-              <td class="n">{percent(m.started, L.games.started)}</td>
+              <td class="n opt">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
-              <td class="n">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
-              <td class="n">{fmt(m.online)}</td>
-              <td class="n">{fmt(m.hotseat)}</td>
+              <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
+              <td class="n opt">{fmt(m.online)}</td>
+              <td class="n opt">{fmt(m.hotseat)}</td>
               <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
             </tr>
           {/each}
         </tbody>
         <tfoot>
           <tr>
-            <th scope="row">All</th>
+            <th scope="row">All<span class="on-phone">{perGame(L.games.rows)} players each; {fmt(modes.reduce((n, m) => n + m.online, 0))} online, {fmt(modes.reduce((n, m) => n + m.hotseat, 0))} hot-seat</span></th>
             <td class="n">{fmt(L.games.started)}</td>
-            <td class="n">{L.games.started ? '100%' : '–'}</td>
+            <td class="n opt">{L.games.started ? '100%' : '–'}</td>
             <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
-            <td class="n">{perGame(L.games.rows)}</td>
-            <td class="n">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
-            <td class="n">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
+            <td class="n opt">{perGame(L.games.rows)}</td>
+            <td class="n opt">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
+            <td class="n opt">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
             <td></td>
           </tr>
         </tfoot>
@@ -200,6 +200,30 @@
   @media (max-width: 1100px) {
     .two {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* A big monitor: two columns, so the view is one screen. */
+  @media (min-width: 1900px) {
+    .stack {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        'chart many'
+        'modes deep';
+    }
+    .two {
+      display: contents;
+    }
+    .stack > :global(.section:nth-child(1)) {
+      grid-area: chart;
+    }
+    .stack > :global(.section:nth-child(2)) {
+      grid-area: modes;
+    }
+    .two > :global(.section:first-child) {
+      grid-area: many;
+    }
+    .two > :global(.section:last-child) {
+      grid-area: deep;
     }
   }
 </style>

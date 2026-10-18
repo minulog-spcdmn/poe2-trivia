@@ -156,4 +156,29 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  /* A big monitor: two columns, so the view is one screen. */
+  @media (min-width: 1900px) {
+    .stack {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        'chart where'
+        'on found';
+      align-items: stretch;
+    }
+    .two {
+      display: contents;
+    }
+    .stack > :global(.section:first-child) {
+      grid-area: chart;
+    }
+    .stack > :global(.section:last-child) {
+      grid-area: on;
+    }
+    .two > :global(.section:first-child) {
+      grid-area: where;
+    }
+    .two > :global(.section:last-child) {
+      grid-area: found;
+    }
+  }
 </style>

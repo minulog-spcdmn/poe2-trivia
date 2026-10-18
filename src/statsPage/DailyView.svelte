@@ -23,7 +23,10 @@
   /** The chart starts on the first day it asked: the days before it would only be empty. */
   const from = $derived(Math.max(0, L.days.findIndex(asked)));
   const answered = $derived(days.filter((d) => d.answers));
-  const ranked = $derived(hardestAndEasiest(days));
+  let innerWidth = $state(1400);
+  /** A big monitor fits the view on one screen: three of each and a shorter chart. */
+  const big = $derived(innerWidth >= 1900);
+  const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
   const before = $derived(dailyAverage(read.before));
   const total = $derived(L.daily.right + L.daily.wrong);
@@ -38,6 +41,8 @@
   let all = $state(false);
   const newestFirst = $derived([...answered].reverse());
 </script>
+
+<svelte:window bind:innerWidth />
 
 <div class="stack">
   <p class="what">
@@ -71,7 +76,7 @@
       {weekly}
       label="Players of Today's unique a {weekly ? 'week' : 'day'}, named and missed"
       note={(d) => itemOf?.(d)?.name ?? ''}
-      height={340}
+      height={big ? 236 : 340}
     />
   </Section>
 
@@ -188,6 +193,38 @@
     }
     .what {
       font-size: 1.05rem;
+    }
+  }
+  /* A big monitor: every day down the right, the rest on the left, so the view is one screen. */
+  @media (min-width: 1900px) {
+    .stack {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      grid-template-areas:
+        'what what'
+        'figures every'
+        'chart every'
+        'two every'
+        'foot foot';
+      align-items: start;
+    }
+    .what {
+      grid-area: what;
+    }
+    .figures {
+      grid-area: figures;
+    }
+    .two {
+      grid-area: two;
+    }
+    .foot {
+      grid-area: foot;
+    }
+    .stack > :global(.section:nth-of-type(1)) {
+      grid-area: chart;
+    }
+    .stack > :global(.section:last-of-type) {
+      grid-area: every;
+      align-self: stretch;
     }
   }
 </style>

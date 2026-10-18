@@ -87,9 +87,11 @@
 .analytics .table td.bar {
   width: 100%;
 }
-/* (So the names beside it keep to a line.) */
-.analytics .table:has(.bar) th[scope='row'] {
-  white-space: nowrap;
+/* (So the names beside it keep to a line, where there's room for a bar at all.) */
+@media (min-width: 601px) {
+  .analytics .table:has(.bar) th[scope='row'] {
+    white-space: nowrap;
+  }
 }
 
 /* A bar in a cell, as long as its figure against the column's largest. */
@@ -129,10 +131,28 @@
   }
   .analytics .table th,
   .analytics .table td {
-    padding: 0.55rem 0.6rem;
+    padding: 0.55rem 0.45rem;
   }
   .analytics .table thead th {
     font-size: 0.9rem;
+    white-space: normal;
+  }
+  /* A phone keeps a table to its width: a bar beside a percent says nothing the percent doesn't, and a column marked .opt says its piece under the row's name instead. */
+  .analytics .table .bar,
+  .analytics .table .opt {
+    display: none;
+  }
+}
+/* What a phone shows under a row's name in place of its hidden columns (.opt). */
+.analytics .table .on-phone {
+  display: none;
+}
+@media (max-width: 600px) {
+  .analytics .table .on-phone {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--a-muted);
   }
 }
 

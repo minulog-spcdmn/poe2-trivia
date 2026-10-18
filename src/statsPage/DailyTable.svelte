@@ -32,7 +32,7 @@
   <table class="table" aria-label={label}>
     <thead>
       <tr>
-        <th scope="col">Day</th>
+        <th scope="col" class="opt">Day</th>
         <th scope="col">Item</th>
         <th scope="col" class="n">Players</th>
         <th scope="col" class="n">Named it</th>
@@ -43,9 +43,10 @@
       {#each days as d (d.day)}
         {@const item = itemOf?.(d.day)}
         <tr>
-          <th scope="row" class="day">{longDay(d.day)}{#if d.day === today}<em>so far</em>{/if}</th>
+          <th scope="row" class="day opt">{longDay(d.day)}{#if d.day === today}<em>so far</em>{/if}</th>
           <td class="item">
             {#if item}<span class="iname">{item.name}</span><span class="kind">{MODE[item.mode]}</span>{:else}<span class="soft">…</span>{/if}
+            <span class="on-phone">{longDay(d.day)}{d.day === today ? ', so far' : ''}</span>
           </td>
           <td class="n">{fmt(d.answers)}</td>
           <td class="n strong">{d.named === null ? '–' : `${d.named}%`}</td>
@@ -69,6 +70,16 @@
   }
   .item {
     min-width: 12rem;
+  }
+  @media (max-width: 600px) {
+    .item {
+      min-width: 0;
+    }
+  }
+  @media (min-width: 1900px) {
+    .iname {
+      white-space: nowrap;
+    }
   }
   .iname {
     display: block;

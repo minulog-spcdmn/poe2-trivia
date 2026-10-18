@@ -28,7 +28,7 @@
 <div class="steps">
   <span class="name">From visit to game</span>
   <b class="value">{now.from ? pct(played) : '–'}</b>
-  <span class="means">{now.from ? 'of visitors played a game' : 'played a game: counted from the next release'}</span>
+  <span class="means">{now.from ? `of visitors played a game${late ? `, since ${shortDay(late)}` : ''}` : 'played a game: counted from the next release'}</span>
   {#each rows as r (r.name)}
     <div class="row">
       <span class="step">{r.name}</span>
@@ -39,7 +39,6 @@
   <span class="change">
     {#if now.from}
       <Delta now={played} before={was.from ? share(was.played, was.visitors) : null} rate period={period.before} />
-      {#if late}<span class="since">since {shortDay(late)}</span>{/if}
     {/if}
   </span>
 </div>
@@ -71,19 +70,19 @@
     font-size: 1.05rem;
     color: var(--a-muted);
   }
+  /* Each further step a line: its name, a bar as long as its share, the share. */
   .row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(2rem, 1fr) auto;
     align-items: center;
     column-gap: 0.7rem;
-    margin-top: 0.3rem;
+    margin-top: 0.2rem;
   }
   .step {
     font-size: 0.95rem;
     color: var(--a-text);
   }
   .bar {
-    grid-row: 2;
     display: block;
     height: 0.45rem;
     background: var(--a-track);
@@ -97,8 +96,6 @@
     border-radius: 2px;
   }
   .row b {
-    grid-row: 1 / 3;
-    grid-column: 2;
     font-size: 1.15rem;
     font-weight: 650;
     color: var(--a-ink);
@@ -106,10 +103,5 @@
   .change {
     margin-top: auto;
     padding-top: 0.6rem;
-  }
-  .since {
-    display: block;
-    font-size: 0.95rem;
-    color: var(--a-muted);
   }
 </style>

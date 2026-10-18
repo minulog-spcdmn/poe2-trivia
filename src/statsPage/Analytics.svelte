@@ -478,7 +478,7 @@
   {#if key && !board}
     <nav class="row choices">
       <Seg label="View" options={VIEWS} value={view} onpick={go} />
-      {#if read}<span class="range">{shortDay(read.from)} to {shortDay(read.to)}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}</span>{/if}
+      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}</span>{/if}
       <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
     </nav>
   {/if}
@@ -495,7 +495,7 @@
       </p>
     {/if}
     {#if demo}
-      <p class="note" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
+      <p class="note made-up" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
     {/if}
     {#if failed}
       <p class="note bad" role="alert">{failed} <button type="button" class="again" onclick={() => void load(span, true)}>Try again</button></p>
@@ -749,8 +749,27 @@
       font-size: 1rem;
       color: var(--a-muted);
     }
-    .dates {
+    .dates,
+    main:not(.on-board) .made-up {
       display: none;
+    }
+    .made-up-tag {
+      margin-right: 1.2rem;
+      font-weight: 600;
+      color: var(--a-now);
+    }
+    main {
+      padding-bottom: 1.2rem;
+    }
+    .foot {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 2rem;
+      margin-top: 1.2rem;
+      font-size: 0.9rem;
+    }
+    .foot p {
+      margin: 0;
     }
     .row,
     main {
@@ -882,19 +901,23 @@
       margin-bottom: 1rem;
       font-size: 0.95rem;
     }
-    /* Each row of choices one line, swiped sideways where it runs past the screen, so the figures start on the first screen. */
+    /* The choices in even rows, nothing to swipe: the views three to a row, the periods four. */
     .choices {
       flex-direction: column;
       align-items: stretch;
-      gap: 0.5rem;
+      gap: 0.4rem;
     }
     .choices :global(.seg) {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      scrollbar-width: none;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.35rem;
+    }
+    .choices :global(.seg[aria-label='Period']) {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .choices :global(.seg button) {
-      flex: none;
+      min-width: 0;
+      padding: 0.4rem 0.3rem;
     }
   }
 </style>
