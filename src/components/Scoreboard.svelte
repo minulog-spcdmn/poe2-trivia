@@ -1320,12 +1320,12 @@
   }
   .off-slot {
     flex: none;
-    width: 15px;
-    height: 15px;
+    width: 17px;
+    height: 17px;
   }
   .off {
     display: grid;
-    --standing-size: 15px;
+    --standing-size: 17px;
   }
   .off :global(.mark) {
     margin: 0;

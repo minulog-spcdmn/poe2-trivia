@@ -14,6 +14,8 @@
   let { mark, title }: { mark: Mark; title?: string } = $props();
   const text = $derived(MARK_TEXT[mark]);
   const id = $props.id();
+  const BARS = [5, 9, 13, 17];
+  const STRIKE = 'M4.5 6L20 21.5';
 </script>
 
 <span class="mark {mark}" role="img" aria-label={text.tag} title={title ?? text.title} transition:fade={{ duration: 250 }}
@@ -23,13 +25,14 @@
     {:else if mark === 'away'}
       <path d="M2.5 10.5A11.6 11.6 0 0 0 21.5 10.5" /><path d="M6.6 14.4l-1.3 2.1M12 16.2v2.5M17.4 14.4l1.3 2.1" />
     {:else}
+      <!-- A phone's signal: four solid bars on one baseline, lagging with the two short ones lit. Offline, none
+           lit and a light strike kept within the bars, cutting its own gap through them as a phone's does. -->
+      <g mask={mark === 'offline' ? `url(#${id})` : undefined}>
+        {#each BARS as h, i (i)}<rect class="bar" class:faint={mark === 'offline' || i > 1} x={2.5 + i * 5} y={20.5 - h} width="3.5" height={h} rx="1" />{/each}
+      </g>
       {#if mark === 'offline'}
-        <!-- The strike cuts its own gap through the bars, as a phone's no-signal sign does. -->
-        <mask id={id}><rect x="0" y="0" width="24" height="24" fill="#fff" /><path d="M4 4l16.5 16.5" stroke="#000" stroke-width="4.2" /></mask>
-        <path class="bar faint" mask="url(#{id})" d="M6 19.5v-3M10.5 19.5v-6.5M15 19.5v-10M19.5 19.5v-13.5" />
-        <path class="strike" d="M4 4l16.5 16.5" />
-      {:else}
-        <path class="bar" d="M6 19.5v-3M10.5 19.5v-6.5" /><path class="bar faint" d="M15 19.5v-10M19.5 19.5v-13.5" />
+        <mask {id}><rect width="24" height="24" fill="#fff" /><path d={STRIKE} stroke="#000" stroke-width="4" /></mask>
+        <path class="strike" d={STRIKE} />
       {/if}
     {/if}
   </svg></span
@@ -53,16 +56,14 @@
     stroke-linejoin: round;
   }
   .bar {
-    stroke-width: 2.4;
+    fill: currentColor;
+    stroke: none;
   }
   .faint {
-    opacity: 0.3;
-  }
-  .offline .faint {
-    opacity: 0.45;
+    opacity: 0.38;
   }
   .strike {
-    stroke-width: 1.7;
-    opacity: 0.75;
+    stroke-width: 1.5;
+    opacity: 0.6;
   }
 </style>
