@@ -82,11 +82,31 @@
   // button's autoscroll, dragging the scrollbar) outruns the browser's lazy
   // loading, which only looks ahead a little and only on a main-thread frame,
   // so the pictures were still missing, and arrived all at once mid-scroll.
-  // Not with Save-Data on: the rest are some megabytes.
-  let thumbsLoading = $state<'lazy' | 'eager'>('lazy');
+  // A few at a time, each lot once the last is decoded: all of them at once,
+  // with none in the browser's cache yet (a first visit, a hard refresh),
+  // some 500 came in and were decoded together, and the page stalled for most
+  // of a second at a time while it scrolled, the backdrop's shadows left
+  // behind. Not with Save-Data on: the rest are some megabytes.
+  const THUMBS_AT_ONCE = 12;
   onMount(() => {
     if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
-    return whenIdle(() => (thumbsLoading = 'eager'), { timeout: 2000 });
+    let live = true;
+    const next = async () => {
+      const lot: HTMLImageElement[] = [];
+      for (const img of collection?.querySelectorAll<HTMLImageElement>('img[loading="lazy"]') ?? []) {
+        img.loading = 'eager';
+        // (Those already on screen have loaded: they don't count.)
+        if (!img.complete && lot.push(img) === THUMBS_AT_ONCE) break;
+      }
+      if (!lot.length) return;
+      await Promise.all(lot.map((img) => img.decode().catch(() => {})));
+      if (live) cancel = whenIdle(next, { timeout: 1000 });
+    };
+    let cancel = whenIdle(next, { timeout: 2000 });
+    return () => {
+      live = false;
+      cancel();
+    };
   });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
@@ -255,7 +275,7 @@
 {/snippet}
 
 {#snippet thumb(it: Item)}
-  <span class="thumb"><img src={itemThumb(it.id, 128)} alt="" loading={thumbsLoading} /></span>
+  <span class="thumb"><img src={itemThumb(it.id, 128)} alt="" loading="lazy" /></span>
 {/snippet}
 
 {#snippet glyph(category: string)}
@@ -499,7 +519,7 @@
                   {#if e}
                     {@const t = tallyOf(e)}
                     <button class="tile" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ', seen'}">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading="lazy" /></span>
                       <span class="name">{it.name}</span>
                       <span class="status">
                         {#if t.n}
@@ -511,7 +531,7 @@
                     </button>
                   {:else}
                     <span class="tile unknown" title="Not discovered yet">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading="lazy" /></span>
                       <span class="name">Undiscovered</span>
                       <span class="status"></span>
                     </span>
