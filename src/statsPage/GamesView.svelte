@@ -4,22 +4,37 @@
   // (the host, or the one passed around for hot-seat).
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
-  import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, sizeName, sizesOf } from './model';
+  import { fitChart } from './fitChart.svelte';
+  import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
+  import { hashOf } from './slices';
   import TrendChart from './TrendChart.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
   const L = $derived(read.now);
-  const modes = $derived(modesOf(L.games.rows));
+  /** The most played first, as everywhere else. */
+  const modes = $derived(modesOf(L.games.rows).sort((a, b) => b.started - a.started));
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));
   const ranges = $derived(sizes.some((s) => s.from !== s.to));
   const descent = $derived(descentOf(L.delve.ranges));
+  /** Players a game, one decimal, of the games whose size is known. */
+  const perGame = (rows: typeof L.games.rows) => {
+    const { seats, games } = seatsOf(rows);
+    return games ? (seats / games).toFixed(1) : '–';
+  };
+
+  let innerWidth = $state(1400);
+  let innerHeight = $state(900);
+  /** A big monitor, or one on its side, has the view on one screen: the chart gives up what runs past it. */
+  const chart = fitChart({ on: () => innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900), base: () => 340, least: 180 });
 </script>
+
+<svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
   <Section title="Games a day" says="Games started, every mode, online and hot-seat.">
@@ -29,7 +44,7 @@
         <Delta now={L.games.started} before={read.before.games.started} period={period.before} />
       </div>
     {/snippet}
-    <TrendChart days={L.days} now={L.games.perDay} before={read.before.games.perDay} {weekly} what="Games" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={340} />
+    <TrendChart days={L.days} now={L.games.perDay} before={read.before.games.perDay} {weekly} what="Games" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chart.height} />
   </Section>
 
   <Section title="Modes" says="Played to the end: the game reached its results, or a Delve run its last life.">
@@ -39,35 +54,38 @@
           <tr>
             <th scope="col">Mode</th>
             <th scope="col" class="n">Games</th>
-            <th scope="col" class="wide"><span class="sr">Against the most played</span></th>
-            <th scope="col" class="n">Share</th>
+            <th scope="col" class="n opt">Share</th>
             <th scope="col" class="n">To the end</th>
-            <th scope="col" class="n">Online</th>
-            <th scope="col" class="n">Hot-seat</th>
+            <th scope="col" class="n opt">Players a game</th>
+            <th scope="col" class="n opt">Online</th>
+            <th scope="col" class="n opt">Hot-seat</th>
+            <th scope="col" class="bar"><span class="sr">Against the most played</span></th>
           </tr>
         </thead>
         <tbody>
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
-              <th scope="row">{MODE_NAMES[m.mode]}</th>
+              <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each; {fmt(m.online)} online, {fmt(m.hotseat)} hot-seat</span></th>
               <td class="n strong">{fmt(m.started)}</td>
-              <td class="wide"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
-              <td class="n">{percent(m.started, L.games.started)}</td>
+              <td class="n opt">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
-              <td class="n">{fmt(m.online)}</td>
-              <td class="n">{fmt(m.hotseat)}</td>
+              <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
+              <td class="n opt">{fmt(m.online)}</td>
+              <td class="n opt">{fmt(m.hotseat)}</td>
+              <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
             </tr>
           {/each}
         </tbody>
         <tfoot>
           <tr>
-            <th scope="row">All</th>
+            <th scope="row">All<span class="on-phone">{perGame(L.games.rows)} players each; {fmt(modes.reduce((n, m) => n + m.online, 0))} online, {fmt(modes.reduce((n, m) => n + m.hotseat, 0))} hot-seat</span></th>
             <td class="n">{fmt(L.games.started)}</td>
-            <td></td>
-            <td class="n">{L.games.started ? '100%' : '–'}</td>
+            <td class="n opt">{L.games.started ? '100%' : '–'}</td>
             <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
-            <td class="n">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
-            <td class="n">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
+            <td class="n opt">{perGame(L.games.rows)}</td>
+            <td class="n opt">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
+            <td class="n opt">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
+            <td></td>
           </tr>
         </tfoot>
       </table>
@@ -145,7 +163,6 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    align-items: start;
   }
   .total {
     display: grid;
@@ -165,10 +182,6 @@
   }
   .none > * {
     color: var(--a-muted);
-  }
-  .wide {
-    width: 30%;
-    min-width: 6rem;
   }
   .bar {
     width: 30%;
@@ -196,6 +209,36 @@
   @media (max-width: 1100px) {
     .two {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* A monitor on its side: the two side by side, so the view is one screen. */
+  @media (orientation: portrait) and (min-width: 900px) {
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  /* A big monitor: two columns, so the view is one screen. */
+  @media (min-width: 1900px) {
+    .stack {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        'chart many'
+        'modes deep';
+    }
+    .two {
+      display: contents;
+    }
+    .stack > :global(.section:nth-child(1)) {
+      grid-area: chart;
+    }
+    .stack > :global(.section:nth-child(2)) {
+      grid-area: modes;
+    }
+    .two > :global(.section:first-child) {
+      grid-area: many;
+    }
+    .two > :global(.section:last-child) {
+      grid-area: deep;
     }
   }
 </style>

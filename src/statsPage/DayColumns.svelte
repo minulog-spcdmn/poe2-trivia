@@ -2,10 +2,12 @@
   // Columns a day (or a week), each split into two stacked parts: the one
   // looked at in gold at the foot, the other in grey above it, so the
   // column's height is the whole. Pointing (or the arrow keys) reads a
-  // column's figures, with `note` saying more about its day.
+  // column's figures, with `note` saying more about its day. Its labels
+  // follow the page's type, as TrendChart's do.
   import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { grouped } from './model';
+  import { rootFont } from './rootFont.svelte';
 
   let {
     days,
@@ -34,7 +36,9 @@
 
   let width = $state(0);
   // Room on the right for the last date, centred under its column.
-  const PAD = { top: 12, right: 18, bottom: 34, left: 52 };
+  const font = rootFont();
+  const fs = $derived(font.label);
+  const PAD = $derived({ top: 12, right: Math.round(fs * 1.2), bottom: Math.round(fs * 2.3), left: Math.round(fs * 3.5) });
   const plotW = $derived(Math.max(0, width - PAD.left - PAD.right));
   const plotH = $derived(height - PAD.top - PAD.bottom);
   const ax = $derived(axis(Math.max(0, ...g.values.map((_, i) => total(i))), 4));
@@ -43,7 +47,7 @@
   const x = (i: number) => PAD.left + slot * i + (slot - barW) / 2;
   const h = (v: number) => (plotH * v) / ax.top;
   const y0 = $derived(PAD.top + plotH);
-  const ticks = $derived(labelled(n, plotW, 96));
+  const ticks = $derived(labelled(n, plotW, fs * 6.4));
   const hair = new Crosshair(
     () => n,
     (px) => Math.floor((px - PAD.left) / Math.max(1, slot)),
@@ -62,6 +66,7 @@
       {@attach hair.attach}
       {width}
       {height}
+      style:font-size="{fs}px"
       role="img"
       tabindex="0"
       aria-label="{label}. Arrow keys step through."
@@ -73,7 +78,7 @@
     >
       {#each ax.ticks as t (t)}
         <line class="grid" class:base={t === 0} x1={PAD.left} x2={PAD.left + plotW} y1={y0 - h(t)} y2={y0 - h(t)} />
-        <text class="tick" x={PAD.left - 12} y={y0 - h(t) + 5} text-anchor="end">{compact(t)}</text>
+        <text class="tick" x={PAD.left - fs * 0.8} y={y0 - h(t) + fs * 0.33} text-anchor="end">{compact(t)}</text>
       {/each}
       {#each g.values as v, i (i)}
         <g class:dim={hair.at !== null && hair.at !== i} class:so-far={i === n - 1}>
@@ -82,7 +87,7 @@
         </g>
       {/each}
       {#each ticks as i (i)}
-        <text class="tick" x={x(i) + barW / 2} y={height - 6} text-anchor="middle">{shortDay(g.days[i])}</text>
+        <text class="tick" x={x(i) + barW / 2} y={height - fs * 0.4} text-anchor="middle">{shortDay(g.days[i])}</text>
       {/each}
     </svg>
     {#if hair.at !== null}
@@ -143,7 +148,6 @@
   }
   .tick {
     font-family: var(--font-data);
-    font-size: 15px;
     fill: var(--a-muted);
   }
   g {
@@ -188,10 +192,5 @@
     font-size: 1.2rem;
     font-weight: 650;
     color: var(--a-ink);
-  }
-  @media (max-width: 600px) {
-    .tick {
-      font-size: 13px;
-    }
   }
 </style>

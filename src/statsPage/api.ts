@@ -191,7 +191,19 @@ export async function visitorsBy(key: string, span: Span, page: 'systems' | 'loc
   const r = await get<{ stats: { name: string; count: number }[] }>(
     key,
     `/stats/${page}`,
-    { ...range(span), include_paths: '/', path_by_name: 'true', limit: '50' },
+    // As many as it gives: a country that's new to the list shows among what an update brought in (changes.ts).
+    { ...range(span), include_paths: '/', path_by_name: 'true', limit: '100' },
+    signal,
+  );
+  return r.stats.map((s) => ({ name: s.name, count: s.count }));
+}
+
+/** Those counted on any of `paths` (by name) by country or system: one group of the player groups (slices.ts). */
+export async function pathsBy(key: string, span: Span, page: 'systems' | 'locations', paths: string[], signal: AbortSignal): Promise<Named[]> {
+  const r = await get<{ stats: { name: string; count: number }[] }>(
+    key,
+    `/stats/${page}`,
+    { ...range(span), include_paths: paths.join(','), path_by_name: 'true', limit: '100' },
     signal,
   );
   return r.stats.map((s) => ({ name: s.name, count: s.count }));
