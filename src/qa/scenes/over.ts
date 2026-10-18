@@ -1,43 +1,29 @@
-// The end screen's states (endscreen.html): every board of the handoff
+// The end screen's states: every board of the handoff
 // (docs/handoff/end-screen) and the edge cases around them, each a finished
 // game as this device would have it at its end: the room's state, who this
 // device is, how its run measured up, what it earned, and the codex log and
-// Delve records the screen reads.
+// Delve records the screen reads. The QA desk walks them (scenes/index.ts).
 
-import { DEFAULT_SETTINGS, createGame, type GameState, type Player, type Recap, type Spectator } from '../lib/game';
-import { DELVE_RULESET } from '../lib/delve';
-import type { Answer } from '../lib/codex';
-import type { DelveRun } from '../lib/delveRecord';
-import { CREATOR } from '../lib/site';
-import { RUBY } from '../lib/palette';
-import { engine } from '../lib/session.svelte';
+import { DEFAULT_SETTINGS, createGame, type GameState, type Recap } from '../../lib/game.ts';
+import { DELVE_RULESET } from '../../lib/delve.ts';
+import type { Answer } from '../../lib/codex.ts';
+import type { DelveRun } from '../../lib/delveRecord.ts';
+import { CREATOR } from '../../lib/site.ts';
+import { id, pid, player, spectator } from '../build/people.ts';
 
+export { pid };
 export type Mode = 'host' | 'client' | 'local';
-export interface Viewport {
-  key: string;
-  label: string;
-  w: number;
-  h: number;
-}
-export const VIEWPORTS: Viewport[] = [
-  { key: 'desktop', label: '1440 × 900', w: 1440, h: 900 },
-  { key: 'air13', label: '1440 × 725', w: 1440, h: 725 },
-  { key: 'tablet', label: 'Tablet 900', w: 900, h: 1180 },
-  { key: 'phone', label: 'Phone 390', w: 390, h: 844 },
-  { key: 'phone375', label: 'Phone 375', w: 375, h: 812 },
-  { key: 'narrow', label: '1100 × 900', w: 1100, h: 900 },
-  { key: 'big', label: '2560 × 1440', w: 2560, h: 1440 },
-  { key: 'landscape', label: 'Phone on its side', w: 844, h: 390 },
-];
+/** The windows the end screen's page knew, by its own names for them. */
+export type EndView = 'desktop' | 'air13' | 'tablet' | 'phone' | 'phone375' | 'narrow' | 'big' | 'landscape';
 
-export interface Scene {
+export interface EndScene {
   key: string;
   group: 'Normal games' | 'Delve' | 'Edge cases: normal games' | 'Edge cases: Delve';
   label: string;
   /** The handoff's boards it draws (docs/handoff/end-screen/screens/<board>.webp), by the window each was drawn at. */
-  boards?: Partial<Record<string, string>>;
+  boards?: Partial<Record<EndView, string>>;
   /** The window it opens at. */
-  view: Viewport['key'];
+  view: EndView;
   /** Who this device is: the room's role and its player (a spectator's own id; none in hot-seat). */
   mode: Mode;
   me: string | null;
@@ -49,20 +35,6 @@ export interface Scene {
   log?: Answer[];
   runs?: DelveRun[];
 }
-
-// ---- people and items --------------------------------------------------------
-
-/** Each name's colour seat (lib/palette.ts), as the boards draw them; the creator's is ruby. */
-const HUES: Record<string, number> = { Kalguur: 0, Doryani: 1, 'Una of the Vaal': 2, Rog: 3, Alva: 4, Dannig: 5, 'Hooded One': 6, Zelina: 7, Oswin: 8, Finn: 9, 'Sekhema Asala': 10, Renly: 11, [CREATOR]: RUBY };
-export const pid = (name: string) => 'id-' + name.toLowerCase().replace(/[^a-z0-9]/g, '');
-const player = (name: string, score = 0, connected = true): Player => ({ id: pid(name), name, score, recent: [], connected, hue: HUES[name] ?? (name.length * 7) % RUBY });
-const spectator = (name: string, stay = false): Spectator => ({ id: pid(name), name, ...(stay ? { stay: true as const } : {}) });
-/** An item's id by its name. */
-const id = (name: string) => {
-  const it = engine.items.find((i) => i.name === name);
-  if (!it) throw new Error(`No item named ${name}`);
-  return it.id;
-};
 
 const K = pid('Kalguur');
 const GAME = 1_700_000_000_000;
@@ -189,12 +161,12 @@ function runs(depths: number[], depth: number, together: boolean, who?: string):
 }
 const measured = (depth: number, previousBest: number | null, best: boolean) => ({ id: RUN, depth, previousBest, best });
 
-const soloRecap: Partial<Recap> = {
+const soloRecap = (): Partial<Recap> => ({
   fastest: { by: K, id: id('Headhunter'), ms: 1900 },
   closest: { by: K, id: id('Ingenuity'), left: 400, depth: 17 },
   items: [{ kind: 'dynamite', at: 15, by: K, used: 18, how: 'blast' }],
-};
-const solo = (more: Partial<Parameters<typeof delve>[1]> = {}) => delve(['Kalguur'], { depth: 23, losses: { [K]: [19, 21, 23] }, recap: soloRecap, host: null, ...more });
+});
+const solo = (more: Partial<Parameters<typeof delve>[1]> = {}) => delve(['Kalguur'], { depth: 23, losses: { [K]: [19, 21, 23] }, recap: soloRecap(), host: null, ...more });
 const soloLog = () => [miss(10, "Atziri's Disdain", 19), miss(20, 'Briarpatch', 21), miss(30, 'Death Rush', 23)];
 const soloRuns = () => runs([16, 27, 12, 20, 25, 20, 14], 23, false);
 
@@ -281,7 +253,7 @@ const LONG = ['Sekhema Asala Kahari', 'Doryani of the Vaal', 'Hooded Wanderer Ka
 const NG = 'Edge cases: normal games';
 const DG = 'Edge cases: Delve';
 
-export function scenes(): Scene[] {
+export function endScenes(): EndScene[] {
   const dannig = pid('Dannig');
   const doryani = pid('Doryani');
   const solo23 = () => ({ delveResult: measured(23, 27, false), log: soloLog(), runs: soloRuns() });

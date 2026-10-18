@@ -15,6 +15,7 @@
     "looks": "node scripts/looks.mjs",
     "bake-icons": "node scripts/bake-icons.mjs",
     "screens": "node scripts/capture-screens.mjs",
+    "qa": "node scripts/qa.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "devDependencies": {
@@ -22,6 +23,7 @@
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
     "magic-string": "^1.4.2",
+    "peer": "^1.0.2",
     "playwright-core": "^1.56.1",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",

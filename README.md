@@ -48,6 +48,14 @@ each other's IP address. Details in [docs/fair-play.md](docs/fair-play.md).
 plain static pages; update them whenever the site starts using a new
 third-party service.
 
+The visitor counts' opt-out is one flag in the browser
+(`src/lib/countOptOut.ts`, shared by every channel) that `src/lib/count.ts`
+checks before every count, as it does Global Privacy Control. The privacy
+page's switch sets it (`src/legal/countToggle.ts`), and so does opening
+poe2.quest/#toggle-goatcounter. An iPhone's home-screen app keeps storage
+apart from Safari's, so there, and only there, the privacy link in a room
+opens over the game (`src/lib/legalSheet.svelte.ts`).
+
 ## Development
 
 ```sh
@@ -57,7 +65,8 @@ npm run dev:live   # local dev server in the live rooms
 npm test           # tests
 npm run check      # svelte/type checks
 npm run build      # production build in dist/
-npm run screens    # screenshots at the design sizes in screens/
+npm run screens    # screenshots at the design sizes in screens/ (sizes: src/qa/sizes.ts)
+npm run qa         # the QA sweep: every scene, seat and size, shot and checked (docs/qa.md)
 ```
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS, WebGL2 and WebAudio. The dev server
@@ -83,6 +92,10 @@ npm run bake-icons                           # category card emblems (needs Chro
 ```
 
 ### The dev hub
+
+The QA desk, `qa.html`, is where to check a change: every scene of the game
+in the real app, one at a time, at every size from a phone to 4K and from
+every seat (`docs/qa.md`).
 
 `dev.html` links every test and tuning page with a line on what each is for:
 `http://localhost:5173/dev.html` on the dev server, **poe2.quest/beta/dev.html**

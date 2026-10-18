@@ -1,9 +1,11 @@
 // Visits and a few game events, counted by GoatCounter (counter.ts):
 // no cookies, no IP addresses stored, and nothing kept in the browser but
-// the owner's own opt-out (SKIP_KEY), set only on asking. Only the game's
-// own page at poe2.quest counts; the beta, the dev server and the dev pages
-// never do. datenschutz.html says what is sent, and vite.config.ts's CSP
-// lets it through.
+// its opt-out (countOptOut.ts), set only on asking: on the privacy page, or
+// by opening poe2.quest/#toggle-goatcounter. Nothing counts from a browser
+// that opted out or sends Global Privacy Control. Only the game's own page
+// at poe2.quest counts; the beta, the dev server and the dev pages never do.
+// datenschutz.html says what is sent, and vite.config.ts's CSP lets it
+// through.
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
@@ -14,8 +16,8 @@ import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
+import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
-import { readKey, removeKey, writeKey } from './storage.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
 export function countsOn(at: { hostname: string; pathname: string }, channel: Channel, robot: boolean): boolean {
@@ -23,8 +25,6 @@ export function countsOn(at: { hostname: string; pathname: string }, channel: Ch
   return channel === 'live' && !robot && at.hostname === live.hostname && (at.pathname === live.pathname || at.pathname === `${live.pathname}index.html`);
 }
 
-/** Set (to anything) in a browser that is never counted: the owner's own. */
-export const SKIP_KEY = 'poe2trivia.skipCount';
 /** The address's hash that switches counting this browser off, or back on (GoatCounter's own, as count.js reads it; without the dash too). */
 export const isToggleHash = (hash: string) => /^#toggle-?goatcounter$/i.test(hash);
 
@@ -34,14 +34,8 @@ export interface SkipStore {
   set(skip: boolean): boolean;
 }
 
-const browserSkip: SkipStore = {
-  skipped: () => readKey(SKIP_KEY) !== null,
-  set(skip) {
-    if (skip) return writeKey(SKIP_KEY, 't');
-    removeKey(SKIP_KEY);
-    return readKey(SKIP_KEY) === null;
-  },
-};
+/** The browser's opt-out (countOptOut.ts): the one the privacy page's switch sets too. */
+const browserSkip: SkipStore = { skipped: countOptedOut, set: setCountOptedOut };
 
 /** What a toggle came to: counted no longer, counted again, or nothing changed as the browser can't keep it. */
 export type Toggled = 'skipped' | 'counted' | 'unsaved';
@@ -102,13 +96,16 @@ if (counting && !seen) {
     if (document.visibilityState !== 'visible') return;
     document.removeEventListener('visibilitychange', look);
     seen = true;
-    for (const url of waiting.splice(0)) beacon(url);
+    const held = waiting.splice(0);
+    // Not if the privacy page was used to opt out while this page waited unseen.
+    if (!notCounted()) for (const url of held) beacon(url);
   };
   document.addEventListener('visibilitychange', look);
 }
 
 function send(params: Record<string, string>) {
-  if (!counting) return;
+  // Asked each time: the privacy page can set it while this page waits in the back-forward cache.
+  if (!counting || notCounted()) return;
   const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
   if (seen) beacon(url);
   else waiting.push(url);
