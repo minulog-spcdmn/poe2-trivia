@@ -23,7 +23,7 @@ These all came up and were rejected while iterating:
 - Colour: `currentColor`, default `#d9a45a` (old gold). States tint it: right `#d8dfa0`, wrong `#d98a6e`. Shown at low opacity behind content (0.22 on the question stage, 0.16 to 0.3 by state; 0.3 to 0.6 elsewhere).
 - Stroke widths in a 200 × 200 viewBox (centre 0, 0): main 0.5, thin 0.35, hair 0.22, hatching 0.2, symbols 0.42. Butt caps and miter joins (limit 12) for geometry; round caps and joins only for small symbols and hatching.
 - A symbol drawn at k times its size keeps the same line: `stroke-width: calc(0.42px / var(--k, 1))` with `--k` set on the scaled element.
-- Glow: a second copy of the same SVG under the lines with stroke width 2 (1 for hair and hatching), opacity breathing between 0.1 and 0.28 over 6 s. The glow copy is drawn without wear, so a nick in the line reads as worn metal rather than a black cut.
+- Glow: a second copy of the same SVG under the lines with stroke width 2 (1 for hair and hatching), opacity breathing between 0.1 and 0.28 over 6 s (on a touch screen it holds still at 0.19: see Layers). The glow copy is drawn without wear, so a nick in the line reads as worn metal rather than a black cut.
 
 ## Composition (viewBox -100 to 100)
 
@@ -83,7 +83,7 @@ Each layer is a separate absolutely positioned element holding two SVGs (glow an
 | Sun rings, compass star | 100 s | clockwise | -70° |
 | Glory, eye | still | | |
 
-Use the `rotate` property for the endless turn and `transform` for the entrance wind, so the two animations combine. Never animate inside a layer while it idles; the glow breathes by changing the glow SVG's opacity.
+Use the `rotate` property for the endless turn and `transform` for the entrance wind, so the two animations combine. Never animate inside a layer while it idles; the glow breathes by changing the glow SVG's opacity. That makes the glow SVG a compositing layer of its own, and the lines over it another: three full-size layers to a ring. On a touch screen (`pointer: coarse`, a phone short of memory) the glow holds still instead, so each ring is one layer: at a phone's 3x the breathing glows cost the start page's circle about 100 MB and the monad over 200 MB, enough for iOS to kill the page. Only a layer that moves gets `will-change`; one that holds still paints into the layer it rides.
 
 ### Entrance: a summoning in about 2.3 s
 
@@ -100,7 +100,7 @@ It plays every time the circle mounts (every question), so the shape has to read
 | 1.15 to 2.0 | The script is written round the band, mark by mark. |
 | 1.35 | The glory draws. |
 | 1.55 to 2.35 | The eye opens (vertical scale 0.05 to 1 with a slight overshoot). |
-| 0.8 to 2.2 | The glow swells (to 0.42, settling at 0.28), then breathes. |
+| 0.8 to 2.2 | The glow swells (to 0.42, settling at 0.28), then breathes (on a touch screen it draws in with its strokes and holds still). |
 
 - Lines draw with `pathLength="100"`, `stroke-dasharray: 100` and an animated `stroke-dashoffset`.
 - A broken line (pieces between nicks, holes and underpasses) must not draw each piece from its own start, or it looks like scattered dashes. The browser restarts the dash at every subpath, so give each piece its own `<path>` with a delay and duration taken from where it sits along the whole. The pen then sweeps once, eased (fast start, slow end), and runs on across the gaps (`stroke()` in the component).

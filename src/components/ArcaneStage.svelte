@@ -227,8 +227,13 @@
   .summon {
     animation: settle 2.4s var(--ease-out) both;
   }
-  .summon :global(.layer) {
+  /* A layer that moves is a layer of its own on the compositor; one that
+     holds still paints into the one it rides (each is the whole circle's
+     size: on a phone's 3x screen, megabytes). */
+  .summon :global(.layer:is(.spin, .turning, .upright, .swaying, .breathing, .fluttering)) {
     will-change: transform;
+  }
+  .summon :global(.layer) {
     mask-size: 100% 100%;
     mask-repeat: no-repeat;
     -webkit-mask-size: 100% 100%;
@@ -342,6 +347,18 @@
     animation:
       arcane-glow-in 1.4s 0.8s ease-out both,
       arcane-breathe 6s 2.2s ease-in-out infinite alternate;
+  }
+  /* On a touch screen (a phone, short of memory) the glow holds still, at
+     the middle of its breath, and comes in with its strokes. Breathing, the
+     glow SVG is a layer of its own, and the lines over it another: three
+     full-size layers to a ring instead of one: on a phone's 3x screen, the
+     start page's circle alone took about 100 MB more, and the monad's 27
+     rings over 200 MB more, enough for iOS to kill the page. */
+  @media (pointer: coarse) {
+    .arcane :global(.glow) {
+      opacity: 0.19;
+      animation: none;
+    }
   }
   .arcane .summon :global(.glow *) {
     stroke-width: 2;
