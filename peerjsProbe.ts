@@ -1,0 +1,50 @@
+import type { Plugin } from 'vite';
+
+/**
+ * PeerJS without its WebRTC probe (build only; vite.config.ts).
+ *
+ * On import, PeerJS works out what the browser supports by making a peer
+ * connection and a data channel and closing them again. The first peer
+ * connection a browser makes starts its WebRTC machinery, which holds the
+ * page's thread for up to a second (on a fast desktop, in a fresh browser),
+ * and PeerJS is imported before the start page's first paint. All PeerJS
+ * asks of the probe is whether WebRTC is there at all (Peer's constructor);
+ * so the probe goes, and what it found is read from what the browser has.
+ * The first peer connection is then made when one is needed: joining a
+ * room, or a look at an open one.
+ *
+ * tests/peerjsProbe.test.ts checks this still finds the probe in the PeerJS
+ * installed, and the build stops if it doesn't, so an update can't bring the
+ * probe back unnoticed.
+ */
+export const PEERJS_FILE = /\/node_modules\/peerjs\/dist\/bundler\.mjs$/;
+
+/** From the probe's guard to its result: the peer connection and data channel made and closed. */
+const PROBE = /(if \(!supported\.webRTC\) return supported;)[\s\S]*?(return supported;)/;
+
+/** What the probe found, read without making anything (WebRTC there means data channels too, in every browser PeerJS supports). */
+const READ = `supported.audioVideo = true;
+            supported.data = typeof RTCPeerConnection.prototype.createDataChannel === "function";
+            supported.reliable = supported.data;
+            supported.binaryBlob = supported.data && !(0, $fb63e766cfafaab9$export$25be9502477c137d).isIOS;
+            `;
+
+/** PeerJS's code with the probe taken out, or null if it isn't there as expected. */
+export function withoutProbe(code: string): string | null {
+  const m = PROBE.exec(code);
+  if (!m || !/new RTCPeerConnection\(/.test(m[0]) || !code.includes('$fb63e766cfafaab9$export$25be9502477c137d).isIOS')) return null;
+  return code.slice(0, m.index) + m[1] + '\n            ' + READ + m[2] + code.slice(m.index + m[0].length);
+}
+
+export function peerjsProbe(): Plugin {
+  return {
+    name: 'peerjs-probe',
+    apply: 'build',
+    transform(code, id) {
+      if (!PEERJS_FILE.test(id.replace(/\\/g, '/'))) return;
+      const out = withoutProbe(code);
+      if (out === null) this.error("PeerJS's WebRTC probe isn't where peerjsProbe.ts looks for it: check what it does now and update peerjsProbe.ts.");
+      return { code: out, map: { mappings: '' } };
+    },
+  };
+}

@@ -36,7 +36,10 @@ function draw(art: Art, color: string, look: Look, scale: number): string {
   const canvas = document.createElement('canvas');
   canvas.width = art.size[0] * scale;
   canvas.height = art.size[1] * scale;
-  const g = canvas.getContext('2d');
+  // Drawn in memory, not on the GPU: reading a GPU canvas back as a PNG
+  // waits behind whatever the GPU is doing (the backdrop's shaders building,
+  // as the page opens), tens of ms each for a picture this small.
+  const g = canvas.getContext('2d', { willReadFrequently: true });
   if (!g) return '';
   g.scale(scale, scale);
   g.translate(art.hot[0], art.hot[1]);
@@ -139,6 +142,13 @@ function cursorValue(name: ArtName, look: Look, color: string, fallback: string)
 
 let color = GOLD;
 let applied = '';
+/** Whether all of the pointer's looks are set for `applied`, not just the two seen from the start (see apply). */
+let whole = false;
+/**
+ * Whether there's a pointer to draw: something like a mouse, or a mouse seen
+ * (see installCursor). A phone has none, and draws nothing.
+ */
+let wanted = false;
 /**
  * Pressed, the pointer changes on the element under it alone (an inline
  * cursor, put back on release), never through the variables on <html>:
@@ -150,20 +160,32 @@ let dressed: { el: HTMLElement | SVGElement; was: string; priority: string } | n
 const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: active)') : null;
 const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text', '--cursor-zoom', '--cursor-grab', '--cursor-grabbing'];
 
-function apply() {
-  if (typeof document === 'undefined' || switchedOff('cursor')) return;
+/**
+ * Sets the pointer's looks in its colour. `soon`: only the two seen from the
+ * start, the dart and the hand; the rest (each a picture at three
+ * resolutions to draw) come with a later call, so the page's first paint
+ * doesn't wait on them.
+ */
+function apply(soon = false) {
+  if (typeof document === 'undefined' || switchedOff('cursor') || !wanted) return;
   const root = document.documentElement.style;
   const key = forced?.matches ? 'forced' : color;
-  if (key === applied) return;
-  applied = key;
-  undress();
-  if (key === 'forced') {
-    for (const v of VARS) root.removeProperty(v);
-    return;
+  if (key === applied && (whole || soon)) return;
+  if (key !== applied) {
+    applied = key;
+    whole = false;
+    undress();
+    if (key === 'forced') {
+      for (const v of VARS) root.removeProperty(v);
+      whole = true;
+      return;
+    }
+    // Over something that can be clicked, the hand (pressed, its finger pushes in: dress, below).
+    root.setProperty('--cursor', cursorValue('rest', 'rest', color, 'default'));
+    root.setProperty('--cursor-pointer', cursorValue('hover', 'lit', color, 'pointer'));
   }
-  // Over something that can be clicked, the hand (pressed, its finger pushes in: dress, below).
-  root.setProperty('--cursor', cursorValue('rest', 'rest', color, 'default'));
-  root.setProperty('--cursor-pointer', cursorValue('hover', 'lit', color, 'pointer'));
+  if (soon) return;
+  whole = true;
   root.setProperty('--cursor-disabled', cursorValue('disabled', 'dull', color, 'not-allowed'));
   root.setProperty('--cursor-text', cursorValue('text', 'rest', color, 'text'));
   // A closer look (an item's details): the hand with a lens. Something to move: the compass's points, drawn in while held.
@@ -231,10 +253,23 @@ export const scrollCursor = (way: 'up' | 'down' | 'still') => cursorValue(way, '
  * it, pressed for as long as the main button is held.
  */
 export function installCursor() {
-  apply();
-  forced?.addEventListener('change', apply);
-  // The pressed looks drawn ahead, so the first press doesn't wait on them.
-  whenIdle(predraw, { timeout: 3000 });
+  forced?.addEventListener('change', () => apply());
+  const show = () => {
+    if (wanted) return;
+    wanted = true;
+    apply(true);
+    whenIdle(() => apply(), { timeout: 1000 });
+    // The pressed looks drawn ahead, so the first press doesn't wait on them.
+    whenIdle(predraw, { timeout: 3000 });
+  };
+  // Drawn only where there's a mouse or the like: as soon as one is said to
+  // be there (a tablet's trackpad attached), or seen.
+  const fine = typeof matchMedia === 'function' ? matchMedia('(any-pointer: fine)') : null;
+  if (!fine || fine.matches) show();
+  else {
+    fine.addEventListener('change', () => fine.matches && show());
+    addEventListener('pointermove', (e) => e.pointerType === 'mouse' && show(), { passive: true });
+  }
   let pressed = false;
   const release = () => {
     pressed = false;
@@ -267,7 +302,7 @@ export function installCursor() {
 
 /** Draws the pressed looks in the pointer's colour now, ahead of the first press. */
 function predraw() {
-  if (typeof document === 'undefined' || applied === 'forced') return;
+  if (typeof document === 'undefined' || !wanted || applied === 'forced') return;
   cursorValue('press', 'press', color, 'pointer');
   cursorValue('sink', 'sunk', color, 'default');
   cursorValue('inspectPress', 'press', color, 'zoom-in');
