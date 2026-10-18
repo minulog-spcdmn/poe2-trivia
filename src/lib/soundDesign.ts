@@ -58,11 +58,15 @@ export const DEPTH = { lp: 1300, rate: 0.82, gain: 5, send: 0.45 };
  */
 export const RUMBLE = { file: 'rumble', gain: -50, abyss: 7, lp: 140, breath: 0.4, period: 13 };
 
+/** A band of a layer's EQ: a shelf or a bell at `f` Hz, `g` dB, of width `q` (BiquadFilterNode's Q). */
+export type EqBand = { type: 'lowshelf' | 'peaking' | 'highshelf'; f: number; g: number; q: number };
+
 /**
  * Delve: one layer of a place's ambience bed, a loop played under the game.
- * Its level (dB), low-pass cutoff (Hz), playback rate and reverb send.
+ * Its level (dB), low-pass cutoff (Hz), playback rate and reverb send; a
+ * high-pass cutoff (Hz) and EQ bands, between the two, where it has them.
  */
-export type BedLayer = { file: string; gain: number; lp: number; rate: number; send: number };
+export type BedLayer = { file: string; gain: number; lp: number; rate: number; send: number; hp?: number; eq?: readonly EqBand[] };
 
 /**
  * Delve: a place's ambience bed. `fire` is how much of AMBIENCE (dB, over
@@ -149,23 +153,53 @@ export const CAVE_IN = { file: 'cave-in', seconds: 1.3, rumble: 6, stones: 4 };
 /**
  * Delve: an Azurite Vein's tunnel. While a vein is dug (lib/vein.ts inVein)
  * the run is in a side passage off the zone: the zone's loops (its fire,
- * rumble and bed) duck by `duck` dB and lose their highs above `muffle` Hz,
- * heard from the hall behind, and the tunnel's own `layers` play over them,
- * coming in over about `fadeIn` s and going over `fadeOut`. As picked on the
- * vein sound board, then leveled by loudness: the vein's whole mix sits at
- * the zones' average (about -54.5 LUFS at each zone's middle depth).
+ * rumble and bed) duck and lose their highs, heard from the hall behind, and
+ * the tunnel's own `layers` play over them: a frozen river crackling, ice
+ * rumbling low and a mine shaft slowed to a groan. All come in over about
+ * `fadeIn` s and go over `fadeOut`. `duck` (dB) is for a zone of average
+ * loudness; each place's own correction (VEIN_DUCK) evens it out, so every
+ * place sounds as far behind. `muffles` (Hz): the cutoff at strikes 1, 2 and
+ * 3, each 0.7 of the last (even steps to the ear), the zone further away the
+ * deeper the dig. As picked on the vein sound board; the tunnel's echo is
+ * the vein's own room (lib/acoustics.ts).
  */
-export const VEIN_AMBIENCE: { duck: number; muffle: number; fadeIn: number; fadeOut: number; layers: readonly BedLayer[] } = {
-  duck: -10,
-  muffle: 736,
+export const VEIN_AMBIENCE: { duck: number; muffles: readonly number[]; fadeIn: number; fadeOut: number; layers: readonly BedLayer[] } = {
+  duck: -8,
+  muffles: [1200, 850, 600],
   fadeIn: 3,
   fadeOut: 1.5,
   layers: [
-    { file: 'amb-vein-1', gain: -43, lp: 1864, rate: 0.64, send: 0.5 },
-    { file: 'amb-vein-2', gain: -41, lp: 20000, rate: 1.48, send: 0.9 },
-    { file: 'amb-vein-3', gain: -43, lp: 222, rate: 1, send: 0.2 },
+    { file: 'amb-vein-ice', gain: -40, lp: 20000, rate: 1, send: 0.7 },
+    { file: 'amb-vein-rumble', gain: -27, lp: 217, rate: 1, send: 0.2 },
+    {
+      file: 'amb-vein-shaft',
+      gain: -34,
+      hp: 723,
+      lp: 9838,
+      rate: 0.4,
+      send: 1,
+      eq: [
+        { type: 'peaking', f: 2875, g: -10, q: 1 },
+        { type: 'highshelf', f: 7348, g: -18, q: 0.7 },
+      ],
+    },
   ],
 };
+
+/**
+ * Delve: how much less (dB, +) or more (-) each place ducks behind a vein
+ * than VEIN_AMBIENCE's duck, so that each, ducked, is as loud as an average
+ * zone (ear-model loudness, Zwicker, ISO 532-1, at strike 1's muffle): a
+ * loud place ducks deeper, a quiet one less, and never above its own level.
+ * By place (lib/sound.ts placeAt): the ten zones, then the archetypes past
+ * depth 100. The quietest archetypes are already at the rumble's level
+ * behind a vein, where ducking barely changes how loud they are; theirs is
+ * held at +10.
+ */
+export const VEIN_DUCK = {
+  zones: [8.0, -1.7, -4.7, -2.5, 1.7, -2.0, -1.9, 3.8, 3.6, -1.2],
+  archetypes: [4.7, 10, -0.3, 7.9, -1.0, -0.8, 5.6, 10, 10, 2.1, 4.8, 0.8],
+} as const;
 
 /** Delve: how long (ms) after a vein's strike is revealed right each of its moments plays (lib/session.svelte.ts). */
 export const VEIN_AFTER = { veinMined: 0, veinStrain1: 1100, veinStrain2: 1000 } as const;

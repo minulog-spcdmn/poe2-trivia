@@ -16,7 +16,7 @@
   import LegalSheet from './components/LegalSheet.svelte';
   import { dialogBackdrop } from './lib/behindDialog';
   import { wantDelveBackdrop } from './lib/backdrop';
-  import { inVein, setVein } from './lib/vein';
+  import { inVein, setVein, veinStrike } from './lib/vein';
   import Background from './components/Background.svelte';
   import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
@@ -145,7 +145,7 @@
   $effect(() => {
     const dug = screen === 'game' && inVein(gs);
     setVein(dug);
-    veinAmbience(dug);
+    veinAmbience(dug ? veinStrike(gs) : 0);
   });
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve

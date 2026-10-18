@@ -156,45 +156,134 @@
  },
  "v": 1,
  "vein": {
-  "duck": -10,
+  "space": "tunnel",
+  "spaceLen": 0.65,
+  "even": true,
+  "duck": -8,
+  "muffle": 963,
   "fadeIn": 3,
   "fadeOut": 1.5,
   "layers": [
    {
+    "cents": 0,
     "delay": 0,
-    "file": "tunnel-871712",
+    "eq": [
+     {
+      "f": 120,
+      "g": 0,
+      "q": 0.7,
+      "type": "lowshelf"
+     },
+     {
+      "f": 400,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 2500,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 7000,
+      "g": 0,
+      "q": 0.7,
+      "type": "highshelf"
+     }
+    ],
+    "file": "ice-842575",
     "gain": -40,
-    "hp": 20,
-    "len": 0,
-    "lp": 1864,
-    "rate": 0.64,
-    "send": 0.5,
-    "start": 0
-   },
-   {
-    "delay": 0,
-    "file": "tunnel-735353",
-    "gain": -38,
     "hp": 20,
     "len": 0,
     "lp": 20000,
-    "rate": 1.48,
-    "send": 0.9,
+    "rate": 1,
+    "send": 0.7,
     "start": 0
    },
    {
+    "cents": 0,
     "delay": 0,
-    "file": "tunnel-636124",
-    "gain": -40,
+    "eq": [
+     {
+      "f": 120,
+      "g": 0,
+      "q": 0.7,
+      "type": "lowshelf"
+     },
+     {
+      "f": 400,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 2500,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 7000,
+      "g": 0,
+      "q": 0.7,
+      "type": "highshelf"
+     }
+    ],
+    "file": "ice-847807",
+    "gain": -27,
     "hp": 20,
     "len": 0,
-    "lp": 222,
+    "lp": 217,
     "rate": 1,
     "send": 0.2,
     "start": 0
+   },
+   {
+    "cents": 0,
+    "delay": 0,
+    "eq": [
+     {
+      "f": 120,
+      "g": 0,
+      "q": 0.7,
+      "type": "lowshelf"
+     },
+     {
+      "f": 400,
+      "g": 0,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 2875,
+      "g": -10,
+      "q": 1,
+      "type": "peaking"
+     },
+     {
+      "f": 7348,
+      "g": -18,
+      "q": 0.7,
+      "type": "highshelf"
+     }
+    ],
+    "file": "tunnel-625296",
+    "gain": -34,
+    "hp": 723,
+    "len": 0,
+    "lp": 9838,
+    "rate": 0.4,
+    "send": 1,
+    "start": 0
    }
   ],
-  "muffle": 736
+  "muffles": [
+   1200,
+   850,
+   600
+  ]
  },
- "zone": 8
+ "zone": 3
 }

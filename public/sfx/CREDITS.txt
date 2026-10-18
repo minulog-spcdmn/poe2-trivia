@@ -161,9 +161,10 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
   vein-crack.mp3       Cracking Earthquake (cracking soil, cracking stone)
                        (a vein's walls cracking, worse)
                        by uagadugu, https://freesound.org/s/222521/
-  amb-vein-1.mp3       abandoned mine (an Azurite Vein's tunnel)
-                       by wkalmar, https://freesound.org/s/871712/
-  amb-vein-2.mp3       Ice - Cristal cave (an Azurite Vein's tunnel)
-                       by Vrymaa, https://freesound.org/s/735353/
-  amb-vein-3.mp3       ambience large cave variation.ogg (an Azurite Vein's tunnel)
-                       by fonografico, https://freesound.org/s/636124/
+  amb-vein-ice.mp3     The crackling of a frozen river. The crackling of ice.
+                       (an Azurite Vein's tunnel)
+                       by ReflektWave, https://freesound.org/s/842575/
+  amb-vein-rumble.mp3  rumbling_ice (an Azurite Vein's tunnel)
+                       by aerror, https://freesound.org/s/847807/
+  amb-vein-shaft.mp3   Dangerous mine shaft, edited (an Azurite Vein's tunnel)
+                       by bkamuse, edited by pbmzbr, https://freesound.org/s/625296/

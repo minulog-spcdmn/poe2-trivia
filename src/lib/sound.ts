@@ -11,7 +11,7 @@
 
 import { archetypeAt } from './backdrops.ts';
 import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
-import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, ZONE_AMBIENCE, type Bed, type Layer } from './soundDesign.ts';
+import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, VEIN_DUCK, ZONE_AMBIENCE, type Bed, type BedLayer, type Layer } from './soundDesign.ts';
 import { whenIdle } from './idle.ts';
 import { readStored, writeStored } from './storage.ts';
 
@@ -716,9 +716,10 @@ const VEIN_FADE = { up: VEIN_AMBIENCE.fadeIn / 3, down: VEIN_AMBIENCE.fadeOut / 
  * before the first vein can turn up (from 26; delve.ts FINDS).
  */
 export const VEIN_NEAR = 20;
-let vein = false;
+/** The strike of the vein being dug (1 on), 0 out of one (see veinAmbience). */
+let vein = 0;
 /** In a vein's tunnel, in Delve. */
-const inTunnel = () => vein && depth > 0;
+const inTunnel = () => vein > 0 && depth > 0;
 const playing = new Map<Loop, Playing>();
 const starting = new Set<Loop>();
 let fire = false;
@@ -848,26 +849,49 @@ export function depthAmbience(d: number) {
 }
 
 /**
- * Delve: in an Azurite Vein's tunnel or not (lib/vein.ts inVein): a side
- * passage off the zone. In it the zone's loops duck and muffle behind, in
- * the hall (VEIN_AMBIENCE's duck and muffle), and the tunnel's own play over
- * them, all coming in over its fadeIn and going over its fadeOut.
+ * Delve: in an Azurite Vein's tunnel at `strike` (1 on; lib/vein.ts
+ * veinStrike), or out of one (0): a side passage off the zone. In it the
+ * zone's loops duck and muffle behind, in the hall (VEIN_AMBIENCE, evened
+ * out by VEIN_DUCK), more muffled each strike, and the tunnel's own play
+ * over them, all coming in over its fadeIn and going over its fadeOut.
  */
-export function veinAmbience(on: boolean) {
-  if (on === vein) return;
-  vein = on;
-  if (bus) shapeHall(bus, (on ? VEIN_AMBIENCE.fadeIn : VEIN_AMBIENCE.fadeOut) / 3);
-  updateAmbience();
+export function veinAmbience(strike: number) {
+  const next = Math.max(0, Math.floor(strike) || 0);
+  if (next === vein) return;
+  const turning = next > 0 !== vein > 0;
+  vein = next;
+  // A strike further in, the hall muffling as quickly as the board has it.
+  if (bus) shapeHall(bus, turning ? (next ? VEIN_AMBIENCE.fadeIn : VEIN_AMBIENCE.fadeOut) / 3 : 0.4);
+  if (turning) updateAmbience();
 }
+
+/** A place's correction to the tunnel's duck (VEIN_DUCK), by its name (see placeAt). */
+const duckOf = (place: string) => (place[0] === 'z' ? VEIN_DUCK.zones : VEIN_DUCK.archetypes)[Number(place.slice(1))] ?? 0;
+
+/**
+ * How far (dB) the zone ducks behind a vein at Delve's depth `d`: VEIN_AMBIENCE's
+ * duck with the place's correction, between two places their corrections by
+ * the share each sounds (bedsAt's weights, squared: power), never above 0.
+ */
+export function veinDuckAt(d: number): number {
+  const { beds: sounding } = bedsAt(d);
+  const total = sounding.reduce((sum, { weight }) => sum + weight * weight, 0);
+  const corr = total > 0 ? sounding.reduce((sum, { place, weight }) => sum + weight * weight * duckOf(place), 0) / total : 0;
+  return Math.min(0, VEIN_AMBIENCE.duck + corr);
+}
+
+/** The zone's cutoff (Hz) behind a vein at strike `strike` (VEIN_AMBIENCE's muffles; past the last, the last). */
+export const veinMuffleAt = (strike: number) => VEIN_AMBIENCE.muffles[Math.min(Math.max(1, strike), VEIN_AMBIENCE.muffles.length) - 1];
 
 /** Moves the hall the zone's loops play in toward where the tunnel has it (`tc`: time constant in s). */
 function shapeHall(b: Bus, tc: number) {
   const at = b.ac.currentTime;
-  const k = inTunnel() ? db(VEIN_AMBIENCE.duck) : 1;
+  const k = inTunnel() ? db(veinDuckAt(depth)) : 1;
+  const f = inTunnel() ? veinMuffleAt(vein) : 20000;
   b.hall.gain.setTargetAtTime(k, at, tc);
   b.hallWet.gain.setTargetAtTime(k, at, tc);
-  b.hallLp.frequency.setTargetAtTime(inTunnel() ? VEIN_AMBIENCE.muffle : 20000, at, tc);
-  b.hallWetLp.frequency.setTargetAtTime(inTunnel() ? VEIN_AMBIENCE.muffle : 20000, at, tc);
+  b.hallLp.frequency.setTargetAtTime(f, at, tc);
+  b.hallWetLp.frequency.setTargetAtTime(f, at, tc);
 }
 
 /**
@@ -1003,12 +1027,20 @@ function updateLoop(l: Loop) {
       gain.gain.value = 0;
       const send = ac.createGain();
       send.gain.value = 0;
+      // A layer's own high-pass and EQ, where it has them, ahead of its low-pass (as the sound board has them).
+      const { hp, eq = [] } = l as Partial<BedLayer>;
+      const shaping = [...(hp ? [filter(ac, 'highpass', hp)] : []), ...eq.map((band) => filter(ac, band.type, band.f, band.q, band.g))];
+      let into: AudioNode = lp;
+      for (const node of shaping.reverse()) {
+        node.connect(into);
+        into = node;
+      }
       // (The rumble is wide already, worked out in stereo.)
       const wide = placer && l !== RUMBLE ? placer.widen(ac, buf) : null;
       if (wide) {
         src.connect(wide.input);
-        wide.output.connect(lp);
-      } else src.connect(lp);
+        wide.output.connect(into);
+      } else src.connect(into);
       lp.connect(gain);
       const takes = wide?.take ? [src, wide.take] : [src];
       // The tunnel's loops play close; every other in the hall, behind it while in a vein.
