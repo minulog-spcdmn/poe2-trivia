@@ -278,11 +278,10 @@
   {/if}
 {/snippet}
 
-<!-- A rules line leads with what it governs, a word the line itself doesn't say, set as the room's other
-     small labels are (.vis-tag), in a column as wide as the longest; so the rules read at a glance as a
-     list without a sign that means nothing (never the diamond: "you are here"). Phones set it over its line. -->
-{#snippet key(word: string)}
-  <span class="key">{word}</span>
+<!-- A rule's heading, the rule under it, as the Delve finds below are set (DelveRules): the rules read at a
+     glance as a list without a sign that means nothing (never the diamond: "you are here"). -->
+{#snippet key(word: string, n?: number)}
+  <span class="key">{word}{#if n !== undefined}&nbsp;<span class="key-n">{n}</span>{/if}</span>
 {/snippet}
 
 <!-- The start page's two columns carry on here: on the left, where its menu
@@ -473,9 +472,9 @@
               <p class="together-when">Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
-              <li>{@render key('Choice')}<span>Vote for a card, then one is drawn from the votes.</span></li>
-              <li>{@render key('Questions')}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
-              <li>{@render key('Rescue')}<span>Teammates can sacrifice their life force to revive you.</span></li>
+              <li>{@render key('Cards')}<span>Everyone votes, then one is drawn from the votes.</span></li>
+              <li>{@render key('Answers')}<span>Given at once; a wrong one is crossed out for all.</span></li>
+              <li>{@render key('Lives')}<span>Teammates can give their life force to revive you.</span></li>
             </ul>
           </div>
         {/if}
@@ -602,15 +601,15 @@
 
         <ul class="rules" data-cursor="rules">
           {#if race}
-            <li>{@render key('Penalty')}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
-            <li>{@render key('Victory')}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
+            <li>{@render key('Wrong answers')}<span>Cost a point and sit you out until the next question.</span></li>
+            <li>{@render key('First to', s.settings.targetScore)}<span>Wins; only the fastest right answer scores each question.</span></li>
           {:else}
             <li>
-              {@render key('Reward')}<span
-                >A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.</span
+              {@render key('Right answers')}<span
+                >Score a point; {#if lockout > 0}the category then stays locked for your next <span class="num">{lockout}</span> turns{:else}then the turn passes to the next exile{/if}.</span
               >
             </li>
-            <li>{@render key('Victory')}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
+            <li>{@render key('First to', s.settings.targetScore)}<span>Wins once the round is over; a tie goes to sudden death.</span></li>
           {/if}
         </ul>
       {/if}
@@ -1252,9 +1251,7 @@
     margin: 0;
     font-size: 0.93rem;
     line-height: 1.3;
-  }
-  .rules.coop {
-    row-gap: 0.2rem;
+    gap: 0.4rem;
   }
   /* Numbers among the words are set in Cinzel, as everywhere in the game. */
   .num {
@@ -1378,41 +1375,33 @@
     color: var(--gold-hi);
   }
 
-  /* Each line led by what it governs (the key snippet), the words lined up after it. */
+  /* Each rule under its heading, as the Delve finds are set (DelveRules: display face, gold here, the house accent for headings). */
   .rules {
+    display: grid;
+    gap: 0.55rem;
     margin: 0.4rem 0 1.4rem;
     padding-left: 0;
     list-style: none;
     font-size: 0.98rem;
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    column-gap: 0.85rem;
-    row-gap: 0.3rem;
+    line-height: 1.25;
   }
   .rules li {
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: baseline;
+    gap: 0.1rem;
   }
   .key {
     font-family: var(--font-display);
     font-size: 0.7rem;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--gold);
   }
-  @media (max-width: 480px) {
-    .rules,
-    .rules li {
-      display: block;
-    }
-    .rules li + li {
-      margin-top: 0.45rem;
-    }
-    .key {
-      display: block;
-    }
+  /* Its number in Cinzel, bold, as numbers among words are everywhere. */
+  .key-n {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 1.1em;
+    letter-spacing: 0.06em;
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
