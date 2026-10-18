@@ -5,7 +5,7 @@ import type { Item } from '../src/lib/game.ts';
 import { useItems } from '../src/qa/build/engine.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
-import { SCREENS, seatLabel } from '../src/qa/scene.ts';
+import { SCREENS, knobValues, seatLabel } from '../src/qa/scene.ts';
 import { matches, sizesFor, walk } from '../src/qa/desk/walk.ts';
 import { answered } from '../src/qa/frame/emulate.ts';
 
@@ -44,6 +44,14 @@ test('every scene builds, and every seat is someone in it', () => {
       assert.ok(seatLabel(seat, built.state));
     }
   }
+});
+
+test("every knob's every choice builds, and its default is one of them", () => {
+  for (const s of catalog())
+    for (const k of s.knobs ?? []) {
+      assert.ok(k.options.some((o) => o.value === k.default), `${s.key}: knob ${k.key}'s default isn't a choice`);
+      for (const o of k.options) assert.doesNotThrow(() => s.build(knobValues(s.knobs, { [k.key]: o.value })), `${s.key}: ${k.key}=${o.value}`);
+    }
 });
 
 test('scene keys are unique and well formed, and scenes come in the order of the screens', () => {

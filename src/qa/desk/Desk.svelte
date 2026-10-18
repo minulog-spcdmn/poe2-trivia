@@ -7,7 +7,7 @@
   import { catalog } from '../scenes/index.ts';
   import sceneFiles from '../../data/sceneFiles.json';
   import { touched, type Touched } from '../change.ts';
-  import { seatLabel } from '../scene.ts';
+  import { knobValues, seatLabel } from '../scene.ts';
   import { isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
   import { isFrameMessage, type FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
@@ -131,7 +131,17 @@
   let searchEl = $state<HTMLInputElement>();
 
   const board = $derived(stop && stop.scene.boards?.[stop.size] ? BOARDS[stop.scene.boards[stop.size]!] : undefined);
-  const built = $derived(stop?.scene.build());
+  /** The knobs as set, by scene (the address keeps the shown scene's). */
+  let knobsSet = $state<Record<string, Record<string, string>>>({});
+  {
+    const p = new URLSearchParams(location.search);
+    const s = p.get('s');
+    if (s) knobsSet[s] = Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
+  }
+  const knobs = $derived(stop ? knobValues(stop.scene.knobs, knobsSet[stop.scene.key]) : {});
+  /** The knobs set away from their defaults, as the frames' address gives them. */
+  const knobQuery = $derived(stop ? Object.entries(knobs).filter(([k, v]) => stop.scene.knobs?.find((x) => x.key === k)?.default !== v) : []);
+  const built = $derived(stop?.scene.build(knobs));
   const seats = $derived(stop && built ? stop.seats.map((i) => seatLabel(stop.scene.seats[i], built.state)) : []);
   const size = $derived(stop ? sizeOf(stop.size) : undefined);
 
@@ -198,6 +208,7 @@
     if (stop) {
       const [s, sz, seat] = stop.id.split('|');
       p.set('s', s);
+      for (const [k, v] of knobQuery) p.set(`k.${k}`, v);
       p.set('size', sz);
       if (seat !== '0') p.set('seat', seat);
     }
@@ -248,6 +259,14 @@
       {#if built?.state && !live}
         <button class="hold" onclick={play} title="This scene's room for real: every seat playable, by hand or by a bot, with its link to make bad">Play from here</button>
       {/if}
+      {#each stop?.scene.knobs ?? [] as k (k.key)}
+        <label class="knob">
+          {k.label}
+          <select value={knobs[k.key]} onchange={(e) => stop && (knobsSet[stop.scene.key] = { ...knobsSet[stop.scene.key], [k.key]: e.currentTarget.value })}>
+            {#each k.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+          </select>
+        </label>
+      {/each}
       {#if befores.some(Boolean)}
         <button class="hold" onpointerdown={() => (holdingBefore = true)} onpointerup={() => (holdingBefore = false)} onpointerleave={() => (holdingBefore = false)}>Hold for before <kbd>B</kbd></button>
       {/if}
@@ -284,7 +303,7 @@
   {#if live}
     <Live room={live.room} scene={live.scene} size={live.size} onexit={() => (live = null)} />
   {:else if stop}
-    <Stage {stop} {seats} {zoomed} {reloads} {panning} {outlines} board={holding ? board : undefined} befores={holdingBefore ? befores : undefined} onchecked={(id, slot, r) => (results[id] = { ...results[id], [slot]: r })} />
+    <Stage {stop} {seats} {knobQuery} {zoomed} {reloads} {panning} {outlines} board={holding ? board : undefined} befores={holdingBefore ? befores : undefined} onchecked={(id, slot, r) => (results[id] = { ...results[id], [slot]: r })} />
   {:else}
     <div class="empty"></div>
   {/if}

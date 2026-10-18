@@ -26,12 +26,6 @@ export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documen
  */
 export const SPATIAL_PAGE = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-spatial');
 /**
- * The end screen's test page (endscreen.html, src/endscreenPreview: dev and
- * beta builds only) marks its page `<html data-endscreen>`: the codex and the
- * Delve records it writes for each state start apart, never over the game's.
- */
-export const END_PREVIEW = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-endscreen');
-/**
  * The room bot (bot.html, src/bot: dev and bot builds only) marks its page
  * `<html data-bot>`: its keys start apart too, so a bot opened in someone's
  * own browser never takes over their saves, codex or settings.
@@ -58,6 +52,8 @@ const SEAT = (BETA || LOCAL) && typeof window !== 'undefined' && typeof window.n
 export const QA_ROOM = SEAT?.[1] ?? null;
 export const QA_SEAT = SEAT?.[2] ?? null;
 export const QA = QA_SLOT !== null || QA_SEAT !== null;
+/** A frame of the desk showing a still scene (not the desk, not a live seat): it stages whatever the scene holds. */
+export const QA_FRAME = QA_SLOT !== null && QA_SLOT !== 'desk';
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -81,7 +77,6 @@ export const STORE =
   (SPATIAL_PAGE ? 'spatial.' : '') +
   (BACKDROP_TOOL ? 'backdrops.' : '') +
   (BOT ? 'bot.' : '') +
-  (END_PREVIEW ? 'endscreen.' : '') +
   (QA ? `qa.${(QA_SLOT ?? QA_SEAT)!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
 export const LAB_STORE = CHANNEL + 'lab.';

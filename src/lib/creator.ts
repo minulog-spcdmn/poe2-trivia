@@ -7,11 +7,11 @@
 import { isHeldName } from './names';
 import { ownerUnlocked } from './ownerKey';
 import { session } from './session.svelte';
-import { END_PREVIEW, LAB } from './storage';
+import { LAB, QA_FRAME } from './storage';
 
 export function creatorShown(name: string): boolean {
-  // The effects lab and the end screen's test page (dev and beta builds only) show whatever they stage.
-  if (LAB || END_PREVIEW) return isHeldName(name);
+  // The effects lab and the QA desk's frames (dev and beta builds only) show whatever they stage.
+  if (LAB || QA_FRAME) return isHeldName(name);
   if (session.state && (session.mode === 'host' || session.mode === 'client')) return name === session.creatorName;
   return isHeldName(name) && ownerUnlocked();
 }

@@ -18,10 +18,10 @@
 // Chromium: Playwright's own (npx playwright-core install chromium), or any
 // Chromium or Chrome named by CHROMIUM (or BOT_CHROMIUM).
 //
-//   npm run screens -- [--preset quick|walk|full] [--url http://localhost:5173/] [--page / --page /endscreen.html ...]
+//   npm run screens -- [--preset quick|walk|full] [--url http://localhost:5173/] [--page / --page /qa.html ...]
 //                      [--out dir] [--full-page] [--dpr N] [--webgl] [--concurrency 4]
 //   (or node scripts/capture-screens.mjs --preset full; from PowerShell, where npm eats the flags,
-//   npm run screens full webgl page=/endscreen.html; --help or the bare word help for the rest)
+//   npm run screens full webgl page=/lab.html; --help or the bare word help for the rest)
 
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -87,8 +87,8 @@ for (const [name, def] of Object.entries(OPTIONS)) {
 }
 /**
  * A page as given, made a path: Git Bash rewrites a leading / into its own
- * install folder (/endscreen.html arrives as C:/Program Files/Git/endscreen.html),
- * so that prefix is taken back off, and endscreen.html without the slash works too.
+ * install folder (/lab.html arrives as C:/Program Files/Git/lab.html),
+ * so that prefix is taken back off, and lab.html without the slash works too.
  */
 const GIT_PREFIX = /^[A-Za-z]:[\\/]Program Files(?: \(x86\))?[\\/]Git(?=[\\/]|$)/i;
 function asPage(w) {
@@ -118,7 +118,7 @@ for (const word of parsed.positionals) {
   else if (OPTIONS[name] && rest.length) opts[name] = OPTIONS[name].multiple ? [...(opts[name] ?? []), value] : value;
   else if (/^https?:\/\//.test(word)) opts.url = word;
   else {
-    console.error(`Don't know "${word}" (--help for the options; from PowerShell, npm run screens full webgl page=/endscreen.html works too).`);
+    console.error(`Don't know "${word}" (--help for the options; from PowerShell, npm run screens full webgl page=/lab.html works too).`);
     process.exit(2);
   }
 }
@@ -184,7 +184,7 @@ for (const p of pages) {
   if (isLocal && !entries.includes(file === '' ? '/' : file)) console.warn(`warning: ${p} isn't one of this checkout's pages (${entries.join(' ')})`);
 }
 
-/** A page path as a file name: / is index, /endscreen.html?x=1 is endscreen_x-1. */
+/** A page path as a file name: / is index, /lab.html?x=1 is lab_x-1. */
 function pageName(p) {
   const [file, rest = ''] = p.split(/(?=[?#])/);
   const name = file.replace(/^\/+/, '').replace(/\.html$/, '').replace(/\/+$/, '') || 'index';
@@ -212,7 +212,7 @@ const browser = await chromium.launch({
   args: opts.webgl ? [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : []), '--enable-gpu', '--ignore-gpu-blocklist'] : [],
 });
 
-/** Each page's file-name stem, made unique (/endscreen and /endscreen.html would both be endscreen). */
+/** Each page's file-name stem, made unique (/lab and /lab.html would both be lab). */
 const stems = new Map();
 for (const p of pages) {
   let stem = pageName(p);

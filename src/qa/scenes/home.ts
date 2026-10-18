@@ -5,7 +5,7 @@
 import type { RoomInfo } from '../../lib/roomInfo.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
-import type { Built, Scene } from '../scene.ts';
+import type { Built, Knob, Scene } from '../scene.ts';
 
 const ME = { mode: 'none' as const, me: null };
 
@@ -32,6 +32,19 @@ function returning(more: Partial<Built> = {}): Built {
 
 const home = (key: string, label: string, build: () => Built, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], build });
 
+/** Today's unique along its streak's ladder (lib/fx/streaks): the badge for any run, today answered or not. The streak's own page (streak.html) plays it growing. */
+const DAYS: Knob = { key: 'days', label: 'Streak', default: '7', options: ['0', '1', '2', '3', '5', '7', '14', '30', '60', '100', '200', '365', '730'].map((d) => ({ value: d, label: d === '1' ? '1 day' : `${d} days` })) };
+const TODAY: Knob = {
+  key: 'today',
+  label: 'Today',
+  default: 'right',
+  options: [
+    { value: 'right', label: 'Answered right' },
+    { value: 'waiting', label: 'Not answered yet' },
+    { value: 'missed', label: 'Missed' },
+  ],
+};
+
 export function homeScenes(): Scene[] {
   return [
     home('first-visit', 'A first visit: no name yet, nothing played', () => ({ state: null, name: '', met: [], rooms: [] })),
@@ -47,6 +60,19 @@ export function homeScenes(): Scene[] {
     home('invite-silent', "An invite to a room that doesn't answer", () => returning({ query: 'room=KXR4QT', invite: null }), 'Invites'),
     home('daily-new', "Today's unique, not answered yet, a streak of 7 waiting", () => returning({ daily: { daysAgo: 1, picked: 1, ok: true, streak: 7, ended: 0 } }), "Today's unique"),
     home('daily-year', "Today's unique answered, a streak of a year", () => returning({ daily: { daysAgo: 0, picked: 0, ok: true, streak: 365, ended: 0 } }), "Today's unique"),
+    {
+      key: 'home/daily-streak',
+      screen: 'home',
+      group: "Today's unique",
+      label: "Today's unique: any streak",
+      seats: [ME],
+      knobs: [DAYS, TODAY],
+      build: (k = {}) => {
+        const days = Number(k.days ?? 7);
+        const daily = k.today === 'missed' ? { daysAgo: 0, picked: 3, ok: false, streak: 0, ended: days } : k.today === 'waiting' ? { daysAgo: 1, picked: 1, ok: days > 0, streak: days, ended: 0 } : { daysAgo: 0, picked: 2, ok: days > 0, streak: days, ended: 0 };
+        return returning({ daily });
+      },
+    },
     home('daily-missed', "Today's unique missed, a streak of 30 ended", () => returning({ daily: { daysAgo: 0, picked: 3, ok: false, streak: 0, ended: 30 } }), "Today's unique"),
   ];
 }

@@ -27,7 +27,7 @@
 // game's files each scene runs, for the desk's "This change"
 // (src/qa/change.ts). Run it when scenes or screens have changed much.
 //
-//   npm run qa -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--webgl] [--banding]
+//   npm run qa -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
 //                 [--before | --base REF] [--url URL] [--no-build] [--concurrency N]
 //   npm run qa -- --map
 //   (from PowerShell, where npm eats the flags: npm run qa full webgl before only=lobby)
@@ -41,6 +41,8 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
+import { touched } from '../src/qa/change.ts';
+import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCREENS = path.join(ROOT, 'screens');
@@ -54,6 +56,7 @@ const OPTIONS = {
   webgl: { type: 'boolean', default: false },
   banding: { type: 'boolean', default: false },
   before: { type: 'boolean', default: false },
+  change: { type: 'boolean', default: false },
   base: { type: 'string' },
   map: { type: 'boolean', default: false },
   concurrency: { type: 'string', default: String(Math.max(2, os.availableParallelism() - 2)) },
@@ -63,7 +66,7 @@ const { values, positionals } = parseArgs({ options: OPTIONS, allowPositionals: 
 // Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, before, map, no-build, name=value.
 for (const word of positionals) {
   if (word === 'full' || word === 'walk') values.sizes = word;
-  else if (['webgl', 'banding', 'before', 'map', 'help'].includes(word)) values[word] = true;
+  else if (['webgl', 'banding', 'before', 'change', 'map', 'help'].includes(word)) values[word] = true;
   else if (word === 'no-build') values.build = false;
   else if (word.includes('=')) values[word.split('=')[0]] = word.slice(word.indexOf('=') + 1);
   else {
@@ -79,6 +82,7 @@ if (values.help) {
   --only REGEX           only scenes whose key matches (lobby, game/delve, over/n-)
   --webgl                keep WebGL (the effects, on the GPU) and full motion
   --banding              run scripts/find-banding.py on each shot (implies --webgl; needs numpy and Pillow)
+  --change               only the scenes this branch's changes touch (as the desk's This change)
   --before               shoot the same as they were where this branch left main, and compare
   --base REF             the same, as they were at REF
   --url URL              shoot a running server (the dev server, the beta) instead of building one
@@ -314,7 +318,16 @@ else {
   if (values.build || !existsSync(path.join(BUILD, 'qa.html'))) buildBeta(ROOT, BUILD, 'this checkout (npm run qa -- --no-build skips this next time)');
   served = await serveDir(BUILD);
 }
-const scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
+let scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
+if (values.change) {
+  // As the desk's This change has it (src/qa/change.ts): the files changed since main, and the scenes that run them.
+  const changed = changedFiles(ROOT);
+  const map = JSON.parse(readFileSync(path.join(ROOT, 'src', 'data', 'sceneFiles.json'), 'utf8'));
+  const t = touched(changed?.files ?? [], map, scenes.map((s) => ({ key: s.key, screen: s.key.split('/')[0] })));
+  const keys = new Set(t.scenes.map((s) => s.key));
+  scenes = scenes.filter((s) => keys.has(s.key));
+  console.log(`This change: ${changed?.files.length ?? 0} files changed, ${scenes.length} scenes touch them.${t.uncovered.length ? ` No scene runs ${t.uncovered.join(', ')}.` : ''}`);
+}
 const jobs = jobsFor(scenes);
 if (!jobs.length) {
   console.error(only ? `No scene's key matches ${only}.` : 'No scenes.');

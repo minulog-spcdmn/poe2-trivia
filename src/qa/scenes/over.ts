@@ -2,8 +2,7 @@
 // (docs/handoff/end-screen) and the edge cases around them, each a finished
 // game as this device would have it at its end: the room's state, who this
 // device is, how its run measured up, what it earned, and the codex log and
-// Delve records the screen reads. The QA desk walks them (scenes/index.ts),
-// and so does the end screen's own page (endscreen.html) until it goes.
+// Delve records the screen reads. The QA desk walks them (scenes/index.ts).
 
 import { DEFAULT_SETTINGS, createGame, type GameState, type Recap } from '../../lib/game.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';

@@ -80,6 +80,21 @@ html[data-qa='desk'] #app {
   color: var(--line);
   cursor: default;
 }
+.knob {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.knob select {
+  font: inherit;
+  color: var(--text);
+  background: #0a0908;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
 .views {
   display: flex;
 }

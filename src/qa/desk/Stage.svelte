@@ -14,6 +14,7 @@
     stop,
     seats,
     zoomed,
+    knobQuery,
     reloads,
     panning,
     outlines,
@@ -24,6 +25,8 @@
     stop: Stop;
     seats: string[];
     zoomed: boolean;
+    /** The scene's knobs set away from their defaults: a change makes the frames afresh. */
+    knobQuery: [string, string][];
     reloads: number;
     panning: boolean;
     outlines: boolean;
@@ -49,14 +52,15 @@
   const scale = $derived(zoomed ? 1 : Math.max(0.05, Math.min(1, (cw - 2 * PAD - (n - 1) * GAP) / (n * size.w), (ch - 2 * PAD - CAPTION) / size.h)));
 
   /** The stop whose frames are up (null between stops). */
-  let shown = $state<{ stop: Stop; take: number } | null>(null);
+  let shown = $state<{ stop: Stop; take: number; knobs: [string, string][] } | null>(null);
   let ready = $state<Set<string>>(new Set());
   $effect(() => {
     const next = stop;
     const take = reloads;
+    const knobs = knobQuery;
     shown = null;
     ready = new Set();
-    const t = setTimeout(() => (shown = { stop: next, take }), SETTLE_MS);
+    const t = setTimeout(() => (shown = { stop: next, take, knobs }), SETTLE_MS);
     return () => clearTimeout(t);
   });
   let frames = $state<HTMLIFrameElement[]>([]);
@@ -75,9 +79,10 @@
     for (const f of frames) f?.contentWindow?.postMessage(m, location.origin);
   });
 
-  const src = (s: Stop, i: number) => {
+  const src = (s: Stop, i: number, knobs: [string, string][]) => {
     const p = new URLSearchParams({ frame: `s${i}`, s: s.scene.key, seat: String(s.seats[i]), size: s.size });
     if (!outlines) p.set('o', '0');
+    for (const [k, v] of knobs) p.set(`k.${k}`, v);
     return `${location.pathname}?${p}`;
   };
 
@@ -107,7 +112,7 @@
               <iframe
                 bind:this={frames[i]}
                 title={seats[i] ?? 'The game'}
-                src={untrack(() => src(shown!.stop, i))}
+                src={untrack(() => src(shown!.stop, i, shown!.knobs))}
                 style:width="{size.w}px"
                 style:height="{size.h}px"
                 style:transform="scale({scale})"

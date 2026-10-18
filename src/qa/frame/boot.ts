@@ -11,6 +11,7 @@ import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { isDeskMessage, type FrameMessage } from '../messages.ts';
+import { knobValues } from '../scene.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
 const RECHECK_MS = 600;
@@ -54,7 +55,8 @@ export async function boot(asked: URLSearchParams) {
     document.body.textContent = `No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`;
     return;
   }
-  const built = scene.build();
+  const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
+  const built = scene.build(knobValues(scene.knobs, given));
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
   await import('../../app.css');
@@ -125,6 +127,7 @@ export async function boot(asked: URLSearchParams) {
   session.watch = (on) => said(on ? 'You would just watch the next game.' : 'You would play in the next game.');
   session.leave = () => said('You would leave the room.');
 
+  if (built.circle !== undefined) (await import('../../components/gameCircles.svelte.ts')).putEndCircle(built.circle);
   sound.installUiSounds();
   spatial.installSpatial();
   fxUi.installUiFx();

@@ -8,6 +8,7 @@ import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
 import type { DailyRecord } from '../lib/daily.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
+import type { PlateName } from '../lib/plates/index.ts';
 import type { SizeKey } from './sizes.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
@@ -71,6 +72,21 @@ export interface Built {
   invite?: RoomInfo | 'gone' | null;
   /** Done once the scene shows. */
   steps?: Step[];
+  /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
+  circle?: PlateName | null;
+}
+
+/** A setting of a scene's, turned in the desk (a menu shown only for that scene): its choices, and the one walked. */
+export interface Knob {
+  key: string;
+  label: string;
+  options: { value: string; label: string }[];
+  default: string;
+}
+
+/** A scene's knob settings: `given` where it names a choice there is, the default otherwise. */
+export function knobValues(knobs: Knob[] | undefined, given: Record<string, string | null | undefined> = {}): Record<string, string> {
+  return Object.fromEntries((knobs ?? []).map((k) => [k.key, k.options.some((o) => o.value === given[k.key]) ? given[k.key]! : k.default]));
 }
 
 export interface Scene {
@@ -85,8 +101,10 @@ export interface Scene {
   sizes?: SizeKey[];
   /** The design's boards for it (docs/handoff/end-screen/screens/<board>.webp), by the size each was drawn at. */
   boards?: Partial<Record<SizeKey, string>>;
-  /** Built afresh for each seat that asks. */
-  build(): Built;
+  /** Settings to turn in the desk (the walk and the sweep use their defaults). */
+  knobs?: Knob[];
+  /** Built afresh for each seat that asks, with the knobs' settings (knobValues). */
+  build(knobs?: Record<string, string>): Built;
 }
 
 /** A seat in words: whose eyes, and in what part ("Kalguur (host)", "Hot-seat"). */

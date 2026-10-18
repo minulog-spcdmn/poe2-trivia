@@ -145,6 +145,8 @@ all as in a game.
 
 ## The descent's test page
 
+Its states are scenes in the QA desk too (`lobby/delve-descent`, with knobs), walked with the rest; this page is for playing them out by hand.
+
 `descent.html` (`src/descentPreview/`) shows Delve's rules block
 (`src/components/DelveRules.svelte`: the descent drawn beside the finds,
 with the leaders from the pit to the finds' headings) in a rules card at a
@@ -162,6 +164,8 @@ by side.
 
 ## The daily streak's test page
 
+Its states are scenes in the QA desk too (`home/daily-streak`, with knobs), walked with the rest; this page is for playing them out by hand.
+
 `streak.html` (`src/streakPreview/`) shows the daily's streak badge
 (`src/components/DailyStreak.svelte`) under a mock of Today's unique's
 answers, burning for any run of days, and every step of its ladder of
@@ -178,46 +182,6 @@ colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
 - `streak.html?days=30` opens it at a run of 30 days.
 - **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
   the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
-
-## The end screen's test page
-
-`endscreen.html` (`src/endscreenPreview/`) shows the end of a game
-(`src/components/GameOver.svelte`) in every state it can be in, in the real
-app: each one a finished game set into the session before the app mounts
-(who this device is, how its run measured up, what it earned, its codex log
-and Delve records), so nothing has to be played to reach it.
-
-- **The list** holds each state of the handoff's boards
-  (`docs/handoff/end-screen`) once, and the edge cases round them: in
-  normal games long names, the creator's, a game to 1 point, scores below
-  nothing, ties, deathmatches won and of three, a winner who missed, many
-  misses, the ranking from seven to eleven players, a room emptied, a host
-  alone, hot-seat with no miss, no highlights, spectators; in Delve a run
-  level with the best, past the tenth zone, gone at depth 0, a two-life
-  cave-in, more finds than fit, tall art, charts of two and of a dozen runs,
-  lives missing from the codex, teams of two to seven, lives given and
-  brought back, a run never recorded, someone gone. ↑ and ↓ walk it.
-- **The window:** 1440 × 900, 1440 × 725, a tablet's, phones at 390 and 375,
-  1100 × 900, 2560 × 1440 and a phone on its side; the state shows in a
-  frame of that size, scaled to fit or at **1:1**.
-- **Board** shows the handoff's board for that window in its place (a state
-  drawn at several sizes has a board for each), **Side by side** both.
-  **Replay** shows the state afresh (its entrance plays again); **Open alone**
-  opens it in a tab of its own (`endscreen.html?scene=<key>`). The frame is
-  made once and each state set in it in place: a frame made afresh for every
-  pick started the backdrop's shaders over while the last ones were still
-  being built, which held up the browser for most of a minute.
-- **The circle:** Auto shows the one the game falls to (the eye, the moth
-  after a Delve); Eye, Moth, Monad, Rose and Black sun set that one behind
-  the state instead, to see how each frames its avatars
-  (`src/lib/endCircleChoice.svelte.ts`; `endscreen.html?scene=<key>&circle=<name>`).
-- Its buttons only say what they would do: there is no room behind it. The
-  address keeps the state, the window and the circle, to send a link to one.
-- **Open it:** `npm run dev`, then `http://localhost:5173/endscreen.html`; on
-  the beta, **poe2.quest/beta/endscreen.html**. The live build leaves it out,
-  and its page is marked (`<html data-endscreen>`), so `src/lib/storage.ts`
-  starts its keys apart and the codex and records it writes never reach the
-  game's.
 
 ## The hover tuning page
 

@@ -3,7 +3,8 @@
 // Call useItems (../build/engine.ts), and useCaptured (./captured.ts) for the
 // scenes saved from live rooms, before catalog().
 
-import { SCREENS, type Scene } from '../scene.ts';
+import { SCREENS, type Knob, type Scene } from '../scene.ts';
+import type { PlateName } from '../../lib/plates/index.ts';
 import type { SizeKey } from '../sizes.ts';
 import { endScenes, type EndView } from './over.ts';
 import { homeScenes } from './home.ts';
@@ -25,6 +26,21 @@ const END_SIZE: Record<EndView, SizeKey> = {
   landscape: 'landscape',
 };
 
+/** The circle behind the end screen: the one the game falls to, or any of the five. */
+const CIRCLE: Knob = {
+  key: 'circle',
+  label: 'Circle',
+  default: 'auto',
+  options: [
+    { value: 'auto', label: 'As the game picks' },
+    { value: 'eye', label: 'Eye' },
+    { value: 'moth', label: 'Moth' },
+    { value: 'monad', label: 'Monad' },
+    { value: 'rose', label: 'Rose' },
+    { value: 'blackSun', label: 'Black sun' },
+  ],
+};
+
 function overScenes(): Scene[] {
   return endScenes().map((e) => {
     const { key, group, label, boards, view, mode, me, ...built } = e;
@@ -36,7 +52,8 @@ function overScenes(): Scene[] {
       seats: [{ mode, me }],
       sizes: [END_SIZE[view]],
       boards: boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board])),
-      build: () => built,
+      knobs: [CIRCLE],
+      build: (k) => ({ ...built, circle: k?.circle && k.circle !== 'auto' ? (k.circle as PlateName) : null }),
     };
   });
 }
