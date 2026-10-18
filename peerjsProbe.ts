@@ -22,18 +22,22 @@ export const PEERJS_FILE = /\/node_modules\/peerjs\/dist\/bundler\.mjs$/;
 /** From the probe's guard to its result: the peer connection and data channel made and closed. */
 const PROBE = /(if \(!supported\.webRTC\) return supported;)[\s\S]*?(return supported;)/;
 
+/** Where the probe tells iOS apart, naming PeerJS's browser helper (whose bundled name changes with each PeerJS build). */
+const IOS = /supported\.binaryBlob = !\(0, ([\w$]+)\)\.isIOS;/;
+
 /** What the probe found, read without making anything (WebRTC there means data channels too, in every browser PeerJS supports). */
-const READ = `supported.audioVideo = true;
+const read = (helper: string) => `supported.audioVideo = true;
             supported.data = typeof RTCPeerConnection.prototype.createDataChannel === "function";
             supported.reliable = supported.data;
-            supported.binaryBlob = supported.data && !(0, $fb63e766cfafaab9$export$25be9502477c137d).isIOS;
+            supported.binaryBlob = supported.data && !(0, ${helper}).isIOS;
             `;
 
 /** PeerJS's code with the probe taken out, or null if it isn't there as expected. */
 export function withoutProbe(code: string): string | null {
   const m = PROBE.exec(code);
-  if (!m || !/new RTCPeerConnection\(/.test(m[0]) || !code.includes('$fb63e766cfafaab9$export$25be9502477c137d).isIOS')) return null;
-  return code.slice(0, m.index) + m[1] + '\n            ' + READ + m[2] + code.slice(m.index + m[0].length);
+  const ios = m && IOS.exec(m[0]);
+  if (!m || !ios || !/new RTCPeerConnection\(/.test(m[0])) return null;
+  return code.slice(0, m.index) + m[1] + '\n            ' + read(ios[1]) + m[2] + code.slice(m.index + m[0].length);
 }
 
 export function peerjsProbe(): Plugin {

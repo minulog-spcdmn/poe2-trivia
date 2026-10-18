@@ -267,8 +267,11 @@ export function installCursor() {
   const fine = typeof matchMedia === 'function' ? matchMedia('(any-pointer: fine)') : null;
   if (!fine || fine.matches) show();
   else {
-    fine.addEventListener('change', () => fine.matches && show());
-    addEventListener('pointermove', (e) => e.pointerType === 'mouse' && show(), { passive: true });
+    // Watched only until then.
+    const watch = new AbortController();
+    const showOnce = () => (watch.abort(), show());
+    fine.addEventListener('change', () => fine.matches && showOnce(), { signal: watch.signal });
+    addEventListener('pointermove', (e) => e.pointerType === 'mouse' && showOnce(), { passive: true, signal: watch.signal });
   }
   let pressed = false;
   const release = () => {

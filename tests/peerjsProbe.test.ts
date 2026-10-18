@@ -27,3 +27,11 @@ test('the rest of PeerJS is left as it was', () => {
   assert.equal(out.slice(0, code.indexOf('this.supports')), code.slice(0, code.indexOf('this.supports')));
   assert.equal(out.slice(out.indexOf('this.validateId')), code.slice(code.indexOf('this.validateId')));
 });
+
+test("a PeerJS bundled anew, its helpers renamed, still loses its probe and keeps telling iOS apart", () => {
+  const helper = code.match(/supported\.binaryBlob = !\(0, ([\w$]+)\)\.isIOS;/)![1];
+  const renamed = code.split(helper).join('$0123456789abcdef$export$renamed');
+  const out = withoutProbe(renamed);
+  assert.ok(out);
+  assert.match(out.slice(out.indexOf('this.supports = function()'), out.indexOf('this.validateId')), /!\(0, \$0123456789abcdef\$export\$renamed\)\.isIOS/);
+});

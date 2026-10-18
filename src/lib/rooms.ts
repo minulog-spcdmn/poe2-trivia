@@ -7,13 +7,15 @@
 // throttled by the free signalling server.
 //
 // A probe is a ping over the signalling server (probeDesk.ts), which a room
-// answers with its info, so the room list never connects to anyone: a
+// answers with its info, so the room list doesn't connect to anyone: a
 // browser's first WebRTC connection holds up its page for half a second or
 // more, and the list mostly finds nobody. The server says when nobody holds a
 // slot, but only once per id in five seconds, whoever asks (another browser
-// scanning just before gets told): a ping met with silence is as good as free.
+// scanning just before gets told), so a slot that stays silent is asked again
+// once that has passed. Silent twice, someone holds it without answering
+// pings (an older version, or a room asked too often): that one is connected to.
 
-import Peer, { type DataConnection } from 'peerjs';
+import Peer, { util, type DataConnection } from 'peerjs';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
@@ -22,18 +24,19 @@ import { checkRoom, newChallenge } from './ownerKey';
 export { parseRoomInfo, wireRoomInfo, type RoomInfo } from './roomInfo';
 export { ProbeDesk, isProbe } from './probeDesk';
 import { listable, parseRoomInfo, type RoomInfo } from './roomInfo';
-import { ProbeDesk, answerOf, ping, pingAnswer, pingOf, type ListingInfo } from './probeDesk';
+import { ProbeDesk, answerOf, isProbe, ping, pingAnswer, pingOf, type ListingInfo } from './probeDesk';
 
 const BATCH = 10;
 /** Slots up to this are scanned at full speed; later batches wait a little. */
 const FAST_SLOTS = 30;
 const SLOW_BATCH_DELAY_MS = 800;
 /**
- * How long a room has to answer a ping. Past it the room list takes the slot
- * as having nothing to list, and an invite's probe connects instead (an older
- * version answers only that way).
+ * A slot that hasn't answered a ping by then is pinged again: past the five
+ * seconds in which the server tells only one asker that an id is free.
  */
-const PING_ANSWER_MS = 2000;
+const REPING_MS = 5500;
+/** How long the second ping has before the slot is taken as held by someone who doesn't answer pings. */
+const LAST_PING_MS = 2000;
 // A signalling server may report a free slot to a connection only after its
 // message expiry (~5s), so give real rooms comfortably longer than that to answer.
 const PROBE_TIMEOUT_MS = 9000;
@@ -56,7 +59,35 @@ export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type ProbeResult = RoomInfo | 'free' | null;
+/**
+ * What a probe found: a room; 'free'; 'held' by someone with nothing to list
+ * (or nothing that made sense); or null for no word at all.
+ */
+type ProbeResult = RoomInfo | 'free' | 'held' | null;
+
+/**
+ * Pings and their answers reaching a peer, handed on by one listener on its
+ * socket. PeerJS keeps each as a candidate for a connection that never comes;
+ * it's taken back out here.
+ */
+type Signals = { pinged?: (p: NonNullable<ReturnType<typeof pingOf>>) => void; answered?: (a: NonNullable<ReturnType<typeof answerOf>>) => void };
+const signalsOf = new WeakMap<Peer, Signals>();
+
+function signals(peer: Peer): Signals {
+  let s = signalsOf.get(peer);
+  if (s) return s;
+  const fresh: Signals = {};
+  signalsOf.set(peer, fresh);
+  peer.socket.on('message', (msg: unknown) => {
+    const p = pingOf(msg);
+    const a = p ? null : answerOf(msg);
+    if (!p && !a) return;
+    peer._getMessages((p ?? a)!.connectionId);
+    if (p) fresh.pinged?.(p);
+    else if (a) fresh.answered?.(a);
+  });
+  return fresh;
+}
 
 /**
  * Tracks outstanding probes on one peer so "peer-unavailable" errors (which
@@ -75,25 +106,25 @@ class Prober {
       const id = err.message.trim().split(/\s+/).pop() ?? '';
       this.waiting.get(id)?.('free');
     });
-    peer.socket.on('message', (msg: unknown) => {
-      const a = answerOf(msg);
-      if (!a) return;
-      // PeerJS kept it for a connection that never comes.
-      peer._getMessages(a.connectionId);
+    signals(peer).answered = (a) => {
       const out = this.pings.get(a.connectionId);
       if (out?.id === a.src) out.answered(a.room);
-    });
+    };
   }
 
-  /** Asks `id` what it is; one that doesn't answer the ping is connected to only if `connect` (it shares this browser's IP address with the room). */
-  probe(id: string, connect = false): Promise<ProbeResult> {
+  /**
+   * Asks `id` what it is. A slot that answers no ping is connected to if
+   * `connect` (which shares this browser's IP address with whoever holds it),
+   * and otherwise left at no word.
+   */
+  probe(id: string, connect: boolean): Promise<ProbeResult> {
     // Cut off from the server, PeerJS can't ping or connect (connect()
     // returns nothing): no answer, as if the probe timed out.
     if (this.peer.disconnected || this.peer.destroyed) return Promise.resolve(null);
     return new Promise((resolve) => {
       let conn: DataConnection | null = null;
       let settled = false;
-      const connectionId = `dc_${Math.random().toString(36).slice(2)}`;
+      const connectionId = `dc_${util.randomToken()}`;
       // Every probe settles once, on its own; it takes itself off the
       // waiting list only if it's still the one there (a later probe of the
       // same id may have taken its place, and stays waiting).
@@ -112,14 +143,14 @@ class Prober {
       const told = (raw: unknown) => {
         const room = parseRoomInfo(raw);
         // A host under the held name is listed only with the owner key's signature for its room.
-        if (room && isHeldName(room.host)) void checkRoom(PEER_PREFIX + room.code, challenge, room.owner).then((ok) => done(ok ? room : null));
-        else done(room ?? null);
+        if (room && isHeldName(room.host)) void checkRoom(PEER_PREFIX + room.code, challenge, room.owner).then((ok) => done(ok ? room : 'held'));
+        else done(room ?? 'held');
       };
       const connectNow = () => {
         timer = setTimeout(() => done(null), PROBE_TIMEOUT_MS);
         conn = this.peer.connect(id, { reliable: true, metadata: { probe: true, challenge } });
         // Checked before PeerJS decodes it, and a probe's answer is never split.
-        hookFrames(conn, (data) => frameFits(data, MAX_PROBE_BYTES) || (done(null), false), () => (done(null), false));
+        hookFrames(conn, (data) => frameFits(data, MAX_PROBE_BYTES) || (done('held'), false), () => (done('held'), false));
         conn.on('data', (raw) => {
           const msg = raw as { t?: string; room?: unknown };
           if (msg?.t === 'info') told(msg.room);
@@ -127,28 +158,39 @@ class Prober {
         conn.on('open', () => {
           if (settled) return;
           clearTimeout(timer);
-          timer = setTimeout(() => done(null), PROBE_ANSWER_MS);
+          timer = setTimeout(() => done('held'), PROBE_ANSWER_MS);
         });
         conn.on('error', () => done(null));
       };
-      let timer = setTimeout(() => (connect ? connectNow() : done(null)), PING_ANSWER_MS);
+      const send = () => !this.peer.disconnected && this.peer.socket.send(ping(id, connectionId, challenge));
+      // Either ping's answer counts, however late, until the probe settles.
+      let timer = setTimeout(() => {
+        send();
+        timer = setTimeout(() => (connect ? connectNow() : done(null)), LAST_PING_MS);
+      }, REPING_MS);
       this.waiting.set(id, done);
       this.pings.set(connectionId, { id, answered: told });
-      this.peer.socket.send(ping(id, connectionId, challenge));
+      send();
     });
   }
 }
 
-/** Answers pings that reach `peer` (probeDesk.ts) through `desk`, as it answers probes that connect. */
-export function hearPings(peer: Peer, desk: ProbeDesk) {
-  peer.socket.on('message', (msg: unknown) => {
-    const p = pingOf(msg);
-    if (!p) return;
-    // PeerJS kept it for a connection that never comes.
-    peer._getMessages(p.connectionId);
-    desk.answerPing(p.challenge, (room) => {
+/**
+ * Answers probes reaching `peer` through `desk`: pings, and connections that
+ * say they're probes (from an older version, or one whose pings went
+ * unanswered); `allow` turns away whoever it says no to, unanswered.
+ */
+export function answerProbes(peer: Peer, desk: ProbeDesk, allow: (peerId: string) => boolean = () => true) {
+  signals(peer).pinged = (p) => {
+    if (!allow(p.src)) return;
+    desk.answerPing(p.src, p.challenge, (room) => {
       if (!peer.destroyed) peer.socket.send(pingAnswer(p.src, p.connectionId, room));
     });
+  };
+  peer.on('connection', (conn) => {
+    if (!isProbe(conn)) return;
+    if (allow(conn.peer)) desk.answer(conn);
+    else conn.on('open', () => conn.close());
   });
 }
 
@@ -183,14 +225,14 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
       let found = 0;
       await Promise.all(
         ids.map(async (id) => {
-          const r = await prober.probe(id);
+          const r = await prober.probe(id, true);
           if (r && r !== 'free') {
             found++;
-            if (listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
+            if (r !== 'held' && listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
           }
         }),
       );
-      // Rooms always take the lowest free slot, so an empty batch means we're past the end.
+      // Rooms always take the lowest free slot, so a batch nobody holds means we're past the end.
       if (found === 0) return;
     }
   } finally {
@@ -218,7 +260,7 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
   try {
     const r = await new Prober(peer).probe(PEER_PREFIX + code, true);
     // Only this room's own listing: another room's, signed for the held name, passed on by this one, would show it as theirs.
-    return r === 'free' ? 'gone' : r && r.code !== code ? null : r;
+    return r === 'free' ? 'gone' : r === 'held' || (r && r.code !== code) ? null : r;
   } finally {
     peer.destroy();
   }
@@ -297,9 +339,9 @@ export class Beacon {
     this.prober = new Prober(peer);
     this.slot = slot;
     old?.destroy();
-    const desk = new ProbeDesk(this.info);
-    hearPings(peer, desk);
-    peer.on('connection', (conn) => desk.answer(conn));
+    answerProbes(peer, new ProbeDesk(this.info));
+    // A slot is only asked after, never joined.
+    peer.on('connection', (conn) => !isProbe(conn) && conn.on('open', () => conn.close()));
     peer.on('disconnected', () => {
       if (!peer.destroyed && this.peer === peer) setTimeout(() => !peer.destroyed && peer.reconnect(), 2000);
     });
@@ -323,9 +365,12 @@ export class Beacon {
     try {
       const prober = this.prober;
       for (let n = 1; n < this.slot && !this.stopped; n++) {
-        if ((await prober.probe(slotId(n))) !== 'free') continue;
+        // No word may still be free (the server told someone else): claiming it is what tells.
+        const r = await prober.probe(slotId(n), false);
+        if (r !== 'free' && r !== null) continue;
         const peer = await this.tryClaim(n);
-        if (peer && peer !== 'taken') this.adopt(peer, n);
+        if (peer === 'taken') continue;
+        if (peer) this.adopt(peer, n);
         return;
       }
     } catch (err) {

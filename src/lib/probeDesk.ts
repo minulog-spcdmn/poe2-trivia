@@ -1,7 +1,8 @@
 // How a room answers probes (lib/rooms.ts): browsers that only ask after it,
 // the room list's scan on a public room's listing slot and an invite link's
-// screen on the room's own id. They ask over the signalling server (a ping);
-// an invite's screen connects to a room that doesn't answer (an older version).
+// screen on the room's own id. They ask over the signalling server (a ping),
+// and connect only to a room that answers no ping (an older version, or one
+// past its share of pings).
 // Apart from rooms.ts, which needs PeerJS, so tests can reach it.
 
 import type { DataConnection } from 'peerjs';
@@ -9,9 +10,16 @@ import { hookFrames } from './guard.ts';
 import { isChallenge } from './ownerKey.ts';
 import { wireRoomInfo, type RoomInfo } from './roomInfo.ts';
 
-/** Probes answered at once / per 10 seconds (pings and connections alike) before refusing more. */
+/** Probes that connect answered at once / per 10 seconds before refusing more. */
 const MAX_OPEN = 8;
 const MAX_PER_10S = 60;
+/**
+ * Pings answered per 10 seconds, and from any one sender. They have a share
+ * of their own: a flood of pings, which cost only a message, leaves probes
+ * that connect theirs (which a ping gone unanswered falls back on, rooms.ts).
+ */
+const MAX_PINGS_PER_10S = 60;
+const MAX_PINGS_PER_SENDER = 3;
 /** A probe is hung up on this long after its answer, and this long at most whatever happens (ms). */
 const ANSWERED_MS = 2000;
 const LONGEST_MS = 4000;
@@ -31,24 +39,20 @@ export type ListingInfo = (challenge: string | null) => RoomInfo | null | Promis
 export class ProbeDesk {
   private open = 0;
   private recent: number[] = [];
+  /** When each ping answered in the last 10 seconds came, and from whom. */
+  private pings: { at: number; from: string }[] = [];
   private info: ListingInfo;
 
   constructor(info: ListingInfo) {
     this.info = info;
   }
 
-  /** Whether another probe fits in the last 10 seconds' share, counting it if so. */
-  private take(): boolean {
+  /** Answers a ping (pingOf) from `from` through `reply`: the room's info, or null when it has none. Past the limits it goes unanswered. */
+  answerPing(from: string, challenge: string | null, reply: (room: RoomInfo | null) => void) {
     const now = Date.now();
-    this.recent = this.recent.filter((t) => now - t < 10000);
-    if (this.recent.length >= MAX_PER_10S) return false;
-    this.recent.push(now);
-    return true;
-  }
-
-  /** Answers a ping (pingOf) through `reply`: the room's info, or null when it has none. Past the limit it goes unanswered. */
-  answerPing(challenge: string | null, reply: (room: RoomInfo | null) => void) {
-    if (!this.take()) return;
+    this.pings = this.pings.filter((p) => now - p.at < 10000);
+    if (this.pings.length >= MAX_PINGS_PER_10S || this.pings.filter((p) => p.from === from).length >= MAX_PINGS_PER_SENDER) return;
+    this.pings.push({ at: now, from });
     const room = this.info(challenge);
     if (room instanceof Promise) void room.then(reply, () => reply(null));
     else reply(room);
@@ -58,11 +62,14 @@ export class ProbeDesk {
     // Probes only listen: anything one sends hangs it up, before PeerJS decodes it.
     const hangUp = () => (conn.close(), false);
     hookFrames(conn, hangUp, hangUp);
-    if (this.open >= MAX_OPEN || !this.take()) {
+    const now = Date.now();
+    this.recent = this.recent.filter((t) => now - t < 10000);
+    if (this.open >= MAX_OPEN || this.recent.length >= MAX_PER_10S) {
       conn.on('open', () => conn.close());
       return;
     }
     this.open++;
+    this.recent.push(now);
     let counted = true;
     const release = () => {
       if (counted) this.open--;

@@ -32,7 +32,7 @@ import {
   type Item,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
-import { Beacon, ProbeDesk, hearPings, isProbe, type RoomInfo } from './rooms';
+import { Beacon, ProbeDesk, answerProbes, isProbe, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
@@ -696,7 +696,8 @@ class Session {
     }
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
-    hearPings(peer, this.probeDesk);
+    // An invite link's screen asking whose room this is: told, apart from the players' slots (nobody banned or blocked, though).
+    answerProbes(peer, this.probeDesk, (id) => !this.priv.bannedPeers.includes(id) && !this.priv.blockedPeers.includes(id));
     // 'open' fires again each time the signalling server is reconnected; the
     // room (and its game) is only built the first time.
     peer.once('open', () => {
@@ -780,15 +781,12 @@ class Session {
   }
 
   private acceptConnection(conn: DataConnection) {
+    // Probes are answerProbes's (openRoom).
+    if (isProbe(conn)) return;
     // Real clients use PeerJS's default (binary) serialization.
     const p = this.priv;
     if (p.bannedPeers.includes(conn.peer) || p.blockedPeers.includes(conn.peer) || conn.serialization !== 'binary') {
       this.refuse(conn);
-      return;
-    }
-    // An invite link's screen asking whose room this is: told, and hung up on, apart from the players' slots.
-    if (isProbe(conn)) {
-      this.probeDesk.answer(conn);
       return;
     }
     // Connections that haven't introduced themselves have their own few

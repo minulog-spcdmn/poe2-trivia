@@ -115,25 +115,28 @@ test('a ping is read back with who sent it and its challenge, and its answer wit
   }
 });
 
-test('pings are answered with the room (signed over their challenge) or null, and count toward the same limit as connections', async () => {
+test('pings are answered with the room (signed over their challenge) or null', async () => {
   const asked: (string | null)[] = [];
   const desk = new ProbeDesk(async (challenge) => (asked.push(challenge), room));
   const replies: (RoomInfo | null)[] = [];
-  desk.answerPing('c'.repeat(22), (r) => replies.push(r));
+  desk.answerPing('scanner', 'c'.repeat(22), (r) => replies.push(r));
   await new Promise((r) => setTimeout(r));
   assert.deepEqual(asked, ['c'.repeat(22)]);
   assert.deepEqual(replies, [room]);
   const none: (RoomInfo | null)[] = [];
-  new ProbeDesk(() => null).answerPing(null, (r) => none.push(r));
+  new ProbeDesk(() => null).answerPing('scanner', null, (r) => none.push(r));
   assert.deepEqual(none, [null]);
+});
 
-  const busy = new ProbeDesk(() => room);
+test('pings have a share of their own, and any one sender a little of it, so a flood of them leaves probes that connect answered', () => {
+  const desk = new ProbeDesk(() => room);
   let answered = 0;
-  for (let i = 0; i < 70; i++) busy.answerPing(null, () => answered++);
+  for (let i = 0; i < 5; i++) desk.answerPing('flood', null, () => answered++);
+  assert.equal(answered, 3);
+  for (let i = 0; i < 100; i++) desk.answerPing(`id${i}`, null, () => answered++);
   assert.equal(answered, 60);
   const c = conn({ probe: true });
-  busy.answer(asConn(c));
+  desk.answer(asConn(c));
   c.open();
-  assert.deepEqual(c.sent, []);
-  assert.equal(c.closed, true);
+  assert.equal(c.sent.length, 1);
 });
