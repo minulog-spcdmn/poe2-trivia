@@ -80,6 +80,32 @@ html[data-qa='desk'] #app {
   color: var(--line);
   cursor: default;
 }
+.views {
+  display: flex;
+}
+.views button {
+  border-radius: 0;
+  color: var(--muted);
+}
+.views button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.views button:last-child {
+  border-radius: 0 4px 4px 0;
+  margin-left: -1px;
+}
+.views button.on {
+  color: var(--gold-hi);
+  border-color: var(--gold-lo);
+  background: #1a140d;
+}
+.uncovered {
+  margin: 0;
+  padding: 0.3rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9em;
+}
 .count {
   display: flex;
   align-items: center;

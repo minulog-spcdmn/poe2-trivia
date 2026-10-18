@@ -58,6 +58,7 @@ npm test           # tests
 npm run check      # svelte/type checks
 npm run build      # production build in dist/
 npm run screens    # screenshots at the design sizes in screens/ (sizes: src/qa/sizes.ts)
+npm run qa         # the QA sweep: every scene, seat and size, shot and checked (docs/qa.md)
 ```
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS, WebGL2 and WebAudio. The dev server

@@ -10,16 +10,17 @@ import fakeNames from '../../data/fakes.json';
 import type { Item } from '../../lib/game.ts';
 import { useItems } from '../build/engine.ts';
 import { catalog } from '../scenes/index.ts';
-import { walk } from './walk.ts';
+import { sizesFor, walk } from './walk.ts';
 import Desk from './Desk.svelte';
 
 useItems(itemData as Item[], fakeNames);
 mount(Desk, { target: document.getElementById('app')! });
 
-// For the sweep (scripts/qa.mjs), which opens each stop's frames by itself:
-// every stop, and every frame of it by its address.
+// For the sweep (scripts/qa.mjs), which opens each scene's frames by itself:
+// every scene with its seats and the sizes it is walked at, and every stop.
 Object.assign(window, {
   __qaDesk: {
+    scenes: () => catalog().map((s) => ({ key: s.key, label: s.label, seats: s.seats.length, sizes: sizesFor(s) })),
     stops: () =>
       walk(catalog()).map((s) => ({
         id: s.id,

@@ -5,11 +5,13 @@
   // search and the zoom are in the address, so reloading, going back and
   // sending a link all give the same view.
   import { catalog } from '../scenes/index.ts';
+  import sceneFiles from '../../data/sceneFiles.json';
+  import { touched, type Touched } from '../change.ts';
   import { seatLabel } from '../scene.ts';
-  import { sizeOf } from '../sizes.ts';
+  import { isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
   import { isFrameMessage, type FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
-  import { matches, walk, type Stop } from './walk.ts';
+  import { matches, stopOf, walk, type Stop } from './walk.ts';
   import Stage from './Stage.svelte';
   import Strip from './Strip.svelte';
 
@@ -23,35 +25,65 @@
 
   const ALL = catalog();
 
-  type View = { id: string | null; q: string; zoomed: boolean; outlines: boolean };
+  type View = { id: string | null; q: string; zoomed: boolean; outlines: boolean; view: 'change' | 'all' | null };
   function fromAddress(): View {
     const p = new URLSearchParams(location.search);
     const s = p.get('s');
     const size = p.get('size');
     const seat = p.get('seat');
-    return { id: s && size ? `${s}|${size}|${seat ?? 0}` : null, q: p.get('q') ?? '', zoomed: p.get('z') === '1', outlines: p.get('o') !== '0' };
+    return { id: s && size ? `${s}|${size}|${seat ?? 0}` : null, q: p.get('q') ?? '', zoomed: p.get('z') === '1', outlines: p.get('o') !== '0', view: p.get('v') === 'change' ? 'change' : p.get('v') === 'all' ? 'all' : null };
   }
   const first = fromAddress();
   let query = $state(first.q);
   let zoomed = $state(first.zoomed);
   let outlines = $state(first.outlines);
+
+  /**
+   * This change: the scenes the branch's files touch (src/qa/change.ts), from
+   * the dev server (its git) or, on the beta, the list written as it was
+   * built. Walked by default when there are some and no stop was asked for.
+   */
+  let change = $state<(Touched & { base: string }) | null>(null);
+  let view = $state<'change' | 'all'>(first.view ?? 'all');
+  void (async () => {
+    for (const url of ['./__qa/change', './qa-change.json']) {
+      const got = await fetch(url).then((r) => (r.ok ? r.json() : null), () => null);
+      if (!got?.files) continue;
+      change = { base: got.base, ...touched(got.files, sceneFiles, ALL) };
+      if (first.view === null && first.id === null && change.scenes.length) view = 'change';
+      return;
+    }
+  })();
+  const changing = $derived(new Map((change?.scenes ?? []).map((s) => [s.key, s.why])));
   /** What each stop's frames found wrong, by stop and frame, once checked. */
   let results = $state<Record<string, Record<string, Extract<FrameMessage, { qa: 'checked' }>>>>({});
-  const bad = $derived(new Set(Object.entries(results).filter(([, bySlot]) => Object.values(bySlot).some((r) => r.problems.length)).map(([id]) => id)));
-  /** The stop's problems, every frame's together. */
-  const problems = $derived.by(() => {
-    const out: Problem[] = [];
-    for (const r of Object.values((stop && results[stop.id]) ?? {}))
-      for (const p of r.problems) {
-        const same = out.find((o) => o.kind === p.kind);
-        if (same) {
-          same.count += p.count;
-          same.examples = [...new Set([...same.examples, ...p.examples])].slice(0, 3);
-        } else out.push({ ...p, examples: [...p.examples] });
-      }
-    return out;
+  /**
+   * What the last sweep found (scripts/qa.mjs, through the dev server): the
+   * problems by stop, and the sizes a scene isn't walked at but had some at,
+   * which join its walk.
+   */
+  type Shot = { scene: string; seat: number; size: string; problems: Problem[]; failed?: string };
+  let sweep = $state<{ at: string; shots: Shot[] } | null>(null);
+  void fetch('./__qa/latest')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => (sweep = m), () => {});
+  const sweepMore = $derived.by(() => {
+    const more = new Map<string, SizeKey[]>();
+    for (const sh of sweep?.shots ?? []) if ((sh.problems.length || sh.failed) && isSizeKey(sh.size)) more.set(sh.scene, [...(more.get(sh.scene) ?? []), sh.size]);
+    return more;
   });
-  const stops = $derived(walk(ALL.filter((s) => matches(s, query))));
+  const swept = $derived.by(() => {
+    const by: Record<string, Problem[]> = {};
+    const seatsOf = new Map(ALL.map((s) => [s.key, s.seats.length]));
+    for (const sh of sweep?.shots ?? []) {
+      const n = seatsOf.get(sh.scene);
+      if (!n || !isSizeKey(sh.size)) continue;
+      const found = sh.failed ? [{ kind: 'error' as const, count: 1, examples: [`The sweep couldn't show it: ${sh.failed}`] }, ...sh.problems] : sh.problems;
+      if (found.length) (by[stopOf(sh.scene, n, sh.size, sh.seat)] ??= []).push(...found);
+    }
+    return by;
+  });
+  const stops = $derived(walk(ALL.filter((s) => matches(s, query) && (view === 'all' || changing.has(s.key))), sweepMore));
   /** The stop shown, by id; a stop the search hides falls back to the walk's first. */
   let wanted = $state<string | null>(first.id);
   const at = $derived.by(() => {
@@ -61,6 +93,23 @@
     return Math.max(0, stops.findIndex((s) => wanted!.startsWith(`${s.scene.key}|`)));
   });
   const stop = $derived<Stop | undefined>(stops[at]);
+  /** A stop's problems, every frame's together: as its frames found them here, or else as the last sweep did. */
+  const problemsAt = (id: string): Problem[] => (results[id] ? Object.values(results[id]).flatMap((r) => r.problems) : (swept[id] ?? []));
+  const bad = $derived(new Set(stops.map((s) => s.id).filter((id) => problemsAt(id).length)));
+  /** Whether the stop's problems are the sweep's (it hasn't been checked here yet). */
+  const fromSweep = $derived(!!stop && !results[stop.id] && !!swept[stop.id]);
+  const problems = $derived.by(() => {
+    const out: Problem[] = [];
+    if (stop)
+      for (const p of problemsAt(stop.id)) {
+        const same = out.find((o) => o.kind === p.kind);
+        if (same) {
+          same.count += p.count;
+          same.examples = [...new Set([...same.examples, ...p.examples])].slice(0, 3);
+        } else out.push({ ...p, examples: [...p.examples] });
+      }
+    return out;
+  });
   let reloads = $state(0);
   let holding = $state(false);
   let panning = $state(false);
@@ -138,6 +187,7 @@
     if (query) p.set('q', query);
     if (zoomed) p.set('z', '1');
     if (!outlines) p.set('o', '0');
+    if (view === 'change') p.set('v', 'change');
     const url = `${location.pathname}?${p}`;
     if (url === location.pathname + location.search) return;
     if (lastStop !== null && stop && stop.id !== lastStop) history.pushState(null, '', url);
@@ -152,6 +202,7 @@
       query = v.q;
       zoomed = v.zoomed;
       outlines = v.outlines;
+      view = v.view ?? 'all';
     };
     addEventListener('popstate', back);
     return () => removeEventListener('popstate', back);
@@ -165,7 +216,7 @@
     <header class="top">
       <p class="where">
         {#if stop && size}
-          <span class="scene">{stop.scene.label}</span>
+          <span class="scene" title={changing.get(stop.scene.key) ?? stop.scene.key}>{stop.scene.label}</span>
           <span class="sep">•</span>
           <span>{seats.length > 1 ? `${seats.length} seats` : seats[0]}</span>
           <span class="sep">•</span>
@@ -177,20 +228,29 @@
       {#if board}
         <button class="hold" onpointerdown={() => (holding = true)} onpointerup={() => (holding = false)} onpointerleave={() => (holding = false)}>Hold for design <kbd>H</kbd></button>
       {/if}
-      <div class="count">
+      {#if change?.scenes.length}
+      <div class="views" role="group" aria-label="Which scenes">
+        <button class:on={view === 'change'} onclick={() => (view = 'change')}>This change <span class="num">{change.scenes.length}</span></button>
+        <button class:on={view === 'all'} onclick={() => (view = 'all')}>Everything</button>
+      </div>
+    {/if}
+    <div class="count">
         <button aria-label="Previous stop" onclick={() => go(at - 1)} disabled={at === 0}>‹</button>
         <span class="num">{stops.length ? at + 1 : 0} of {stops.length}</span>
         <button aria-label="Next stop" onclick={() => go(at + 1)} disabled={at >= stops.length - 1}>›</button>
       </div>
       <input class="search" type="search" placeholder="Find a scene  /" bind:value={query} bind:this={searchEl} aria-label="Find a scene" />
     </header>
-    {#if problems.length}
+    {#if view === 'change' && change?.uncovered.length}
+    <p class="uncovered">No scene runs {change.uncovered.length === 1 ? 'this changed file' : `these ${change.uncovered.length} changed files`}: {change.uncovered.map((f) => f.split('/').pop()).join(', ')}</p>
+  {/if}
+  {#if problems.length}
       <p class="problems" role="status">
         {#each problems as p, i (p.kind)}
           {#if i > 0}<span class="sep">•</span>{/if}
           <span title={p.examples.join(' • ')}>{KIND_LABEL[p.kind]}{#if p.count > 1}<span class="num times">×{p.count}</span>{/if}<span class="example">{p.examples[0]}</span></span>
         {/each}
-        <span class="hint"><kbd>O</kbd> {outlines ? 'hides' : 'shows'} the outlines</span>
+        <span class="hint">{#if fromSweep}found by the last sweep{:else}<kbd>O</kbd> {outlines ? 'hides' : 'shows'} the outlines{/if}</span>
       </p>
     {/if}
   </div>

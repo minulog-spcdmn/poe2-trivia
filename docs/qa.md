@@ -14,6 +14,15 @@ Every scene is walked at a 375 phone, a 13-inch laptop (1440 × 725) and a 4K sc
 
 A frame starts with nothing of its own (its storage keys start apart, `src/lib/storage.ts`, and are cleared as it opens and closes), so nothing it shows reaches the game's saves, and no two frames share a player. It pretends to be its size's device: the pixel ratio, and a touch screen's lack of hover and coarse pointer. That is close, not exact: it is still drawn at your screen's pixel ratio, and the mouse is still a mouse.
 
+## The sweep
+
+`npm run qa` checks every scene from every seat at every size it is walked at, without anyone watching: it builds the beta into `screens/qa-build/`, opens each frame as a page of its own in a browser that really is that device (its pixel ratio, touch, a phone's user agent), shoots it and runs the same checks. The desk then marks every stop the sweep found something at (and walks the sizes it found it at), so a walk starts with the red marks. It uses every thread but two and the GPU; the whole walk takes a few minutes.
+
+- `npm run qa -- --only lobby` sweeps the scenes whose key matches; `--sizes full` every size, or `--sizes phone,uhd`.
+- `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
+- `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.
+- Shots and a `manifest.json` go to `screens/qa-<when>/`, and `screens/qa-latest.json` is what the desk reads (through the dev server).
+
 ## Adding a scene
 
 A change that adds or alters something on screen adds or updates its scenes, the way it would add tests. Scenes live in `src/qa/scenes/<screen>.ts`, built from the game's own types with the helpers in `src/qa/build/` (people, items); `src/qa/scene.ts` says what a scene holds. `tests/qaScenes.test.ts` builds every one.

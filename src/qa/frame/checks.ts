@@ -6,13 +6,15 @@
 // rules out of everything the game says. The elements at fault are marked
 // (data-qa-flag) and outlined, unless the desk has outlines off.
 
-export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash';
+/** What a frame finds wrong; and banding, which only the sweep can see (scripts/qa.mjs, in a screenshot). */
+export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'banding';
 export const KIND_LABEL: Record<Kind, string> = {
   offscreen: 'Off the side of the screen',
   clipped: 'Text cut off',
   error: 'Console error',
   image: "Picture didn't load",
   dash: 'Em dash',
+  banding: 'Banding',
 };
 
 /** One kind of problem on a page: how many, and the first few in words. */
@@ -70,9 +72,20 @@ function textBox(el: Element): DOMRect | null {
   }
   return box;
 }
-/** The nearest box above `el` that cuts off what spills out of it (not one that scrolls), up to the app. */
-function clipper(el: Element, axis: 'x' | 'y' | 'both'): Element | null {
-  for (let a = el.parentElement; a && a.id !== 'app' && a !== document.body; a = a.parentElement) {
+/** Each line of an element's own text, as drawn. */
+function textLines(el: Element): DOMRect[] {
+  const range = document.createRange();
+  const lines: DOMRect[] = [];
+  for (const n of Array.from(el.childNodes)) {
+    if (n.nodeType !== Node.TEXT_NODE || !n.textContent?.trim()) continue;
+    range.selectNodeContents(n);
+    lines.push(...Array.from(range.getClientRects()));
+  }
+  return lines;
+}
+/** The nearest box that cuts off what spills out of it (not one that scrolls), from `el` itself (`self`) or above, up to the app. */
+function clipper(el: Element, axis: 'x' | 'y' | 'both', self = false): Element | null {
+  for (let a = self ? el : el.parentElement; a && a.id !== 'app' && a !== document.body; a = a.parentElement) {
     const cs = getComputedStyle(a);
     const ox = cs.overflowX;
     const oy = cs.overflowY;
@@ -82,6 +95,10 @@ function clipper(el: Element, axis: 'x' | 'y' | 'both'): Element | null {
   }
   return null;
 }
+const meansToCut = (el: Element) => {
+  const cs = getComputedStyle(el);
+  return cs.textOverflow === 'ellipsis' || (!!cs.webkitLineClamp && cs.webkitLineClamp !== 'none');
+};
 const describe = (el: Element) => {
   const text = ownText(el) || el.getAttribute('aria-label') || '';
   const cls = typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/)[0]}` : '';
@@ -115,22 +132,20 @@ export function check(heard: { errors: string[]; images: string[] }): Problem[] 
       const gone = content.left >= W || content.right <= 0;
       if (past && !gone && !clipper(el, 'x')) off.push(el);
     }
+    // Text cut off: a line of it past the box that clips it (the element's
+    // own, or one around it). Sideways by more than a hair; up or down by a
+    // good part of the line, as a display face's tall glyph box overhangs a
+    // tight line without anything going missing. Not where the box means
+    // to cut (an ellipsis, a line clamp) or is folded away (a chip shrunk
+    // to its mark).
     if (text && !decor) {
-      const cs = getComputedStyle(el);
-      const meant = cs.textOverflow === 'ellipsis' || (cs.webkitLineClamp && cs.webkitLineClamp !== 'none');
-      const own = (cs.overflowX === 'hidden' || cs.overflowX === 'clip') && el.scrollWidth > el.clientWidth + 1;
-      const ownY = (cs.overflowY === 'hidden' || cs.overflowY === 'clip') && el.scrollHeight > el.clientHeight + 1;
-      let byParent = false;
-      const box = textBox(el);
-      const outer = box && clipper(el, 'both');
-      if (box && outer) {
-        const o = outer.getBoundingClientRect();
-        const os = getComputedStyle(outer);
-        // Cut off by a box that means to: one with an ellipsis or a line clamp, or one folded away (a chip shrunk to its mark).
-        const meantThere = os.textOverflow === 'ellipsis' || (os.webkitLineClamp && os.webkitLineClamp !== 'none') || o.width < 4 || o.height < 4;
-        byParent = !meantThere && (box.right > o.right + 1 || box.left < o.left - 1 || box.bottom > o.bottom + 1 || box.top < o.top - 1);
+      const box = clipper(el, 'both', true);
+      if (box && !meansToCut(el) && !meansToCut(box)) {
+        const o = box.getBoundingClientRect();
+        const folded = o.width < 4 || o.height < 4;
+        const out = textLines(el).some((l) => l.right > o.right + 2 || l.left < o.left - 2 || l.bottom > o.bottom + l.height * 0.35 || l.top < o.top - l.height * 0.35);
+        if (!folded && out) cut.push(el);
       }
-      if (!meant && (own || ownY || byParent)) cut.push(el);
     }
     if (text.includes(DASH)) dash.push(el);
     for (const attr of ['aria-label', 'title', 'alt', 'placeholder']) if (el.getAttribute(attr)?.includes(DASH)) dash.push(el);

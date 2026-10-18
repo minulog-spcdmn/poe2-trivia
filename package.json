@@ -15,6 +15,7 @@
     "looks": "node scripts/looks.mjs",
     "bake-icons": "node scripts/bake-icons.mjs",
     "screens": "node scripts/capture-screens.mjs",
+    "qa": "node scripts/qa.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "devDependencies": {

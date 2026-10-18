@@ -14,6 +14,8 @@ import { isDeskMessage, type FrameMessage } from '../messages.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
 const RECHECK_MS = 600;
+/** How long after a click or a key in the frame a change counts as its doing (ms). */
+const TOUCHED_MS = 5000;
 
 export async function boot(asked: URLSearchParams) {
   const size = sizeOf(isSizeKey(asked.get('size')) ? (asked.get('size') as Parameters<typeof sizeOf>[0]) : 'desktop');
@@ -169,8 +171,17 @@ export async function boot(asked: URLSearchParams) {
     (window as Window & { __qa?: unknown }).__qa = { settled, problems };
   };
   await run();
+  // In the desk, checked again once what it shows has changed after a click
+  // or a key in it (not on the screen's own ticking: a clock, a pulse). The
+  // sweep (scripts/qa.mjs) opens a frame as a page of its own and checks it
+  // once.
+  if (parent === window) return;
+  let touchedAt = -Infinity;
+  addEventListener('pointerdown', () => (touchedAt = performance.now()), true);
+  addEventListener('keydown', () => (touchedAt = performance.now()), true);
   let again: ReturnType<typeof setTimeout> | undefined;
   new MutationObserver(() => {
+    if (performance.now() - touchedAt > TOUCHED_MS) return;
     clearTimeout(again);
     again = setTimeout(run, RECHECK_MS);
   }).observe(document.getElementById('app')!, { childList: true, subtree: true, characterData: true });
