@@ -60,6 +60,9 @@ export function touched(changed: string[], map: SceneFiles, scenes: { key: strin
   return { scenes: scenes.filter((s) => why.has(s.key)).map((s) => ({ key: s.key, why: why.get(s.key)! })), uncovered };
 }
 
+/** What every piece's bench runs on: a change to one touches them all. */
+const PIECE_FILES = ['src/qa/bench.ts', 'src/qa/benches/pieces.ts', 'src/qa/frame/PieceHost.svelte', 'src/qa/frame/piece.ts', 'src/qa/frame/pieceState.svelte.ts'];
+
 /** A bench a change touches, and why. */
 export interface BenchTouched {
   key: string;
@@ -67,9 +70,9 @@ export interface BenchTouched {
 }
 
 /**
- * The benches `changed` touches: a piece through the files it names (or its
- * own, in src/qa/benches/), a screen of scenes through any of its scenes
- * `touched` found. Its `uncovered`: the changed files of the game's that no
+ * The benches `changed` touches: a piece through the files it names, its
+ * own (in src/qa/benches/) and those every piece runs on, a screen of
+ * scenes through any of its scenes `touched` found. Its `uncovered`: the changed files of the game's that no
  * scene runs and no piece names, which no bench shows.
  */
 export function benchesTouched(
@@ -82,8 +85,8 @@ export function benchesTouched(
   const out: BenchTouched[] = [];
   for (const b of benches) {
     if (b.kind === 'piece') {
-      const own = new RegExp(`^src/qa/benches/(${b.key}\.ts|${b.key}View\.svelte)$`, 'i');
-      const hit = changed.find((f) => b.files.includes(f) || own.test(f));
+      const own = [`src/qa/benches/${b.key}.ts`, `src/qa/benches/${b.key[0].toUpperCase()}${b.key.slice(1)}View.svelte`, ...PIECE_FILES];
+      const hit = changed.find((f) => b.files.includes(f) || own.includes(f));
       for (const f of changed) if (b.files.includes(f)) named.add(f);
       if (hit) out.push({ key: b.key, why: `shows ${hit}` });
     } else {

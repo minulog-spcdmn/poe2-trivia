@@ -225,8 +225,9 @@ export async function boot(asked: URLSearchParams) {
  * them, or they belong to a field or a list there. Holding keys (H, Alt)
  * hand on their letting go too.
  */
-export function handOnKeys(tell: (m: FrameMessage) => void) {
-  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', '/', 'Alt', ...'123456789']);
+export function handOnKeys(tell: (m: FrameMessage) => void, digits = false) {
+  // (The digits only from a piece's frame: in the game they answer a question, and it doesn't stop them going on.)
+  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', '/', 'Alt', ...(digits ? '123456789' : '')]);
   const HELD = new Set(['h', 'H', 'Alt']);
   const hand = (e: KeyboardEvent, up: boolean) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt') || !DESK_KEYS.has(e.key)) return;
@@ -252,7 +253,7 @@ async function found(selector: string): Promise<HTMLElement | null> {
 }
 
 /** Every WebGL context the frame's page makes from now on. */
-function trackWebgl(): Set<WebGLRenderingContext | WebGL2RenderingContext> {
+export function trackWebgl(): Set<WebGLRenderingContext | WebGL2RenderingContext> {
   const gls = new Set<WebGLRenderingContext | WebGL2RenderingContext>();
   const real = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, id: string, opts?: unknown) => RenderingContext | null;
   HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, id: string, opts?: unknown) {

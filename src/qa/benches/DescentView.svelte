@@ -2,7 +2,7 @@
   // The descent bench's view (./descent.ts): Delve's rules block in a rules
   // card as the lobby lays it out, at each width the controls ask for. Walk
   // down moves the deepest a depth on every 180 ms until it's pressed again.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import DelveRules from '../../components/DelveRules.svelte';
   import { FINDS_IN_ORDER, shownDepth } from '../../lib/delve';
   import type { PieceProps } from '../bench.ts';
@@ -38,17 +38,27 @@
   onDestroy(() => delete document.documentElement.dataset.ouro);
 
   let walking: ReturnType<typeof setInterval> | null = null;
+  /** The depth the walk set last: the deepest at anything else was moved from outside (the panel, a state), which stops it. */
+  let mine: number | null = null;
   function stop() {
     if (walking) clearInterval(walking);
     walking = null;
+    mine = null;
   }
+  $effect(() => {
+    const d = Number(v.best);
+    untrack(() => walking && d !== mine && stop());
+  });
+  const step = (d: number) => {
+    mine = d;
+    set({ best: d });
+  };
   onAction('walk', () => {
     if (walking) return stop();
-    let d = Number(v.best) >= MAX ? 0 : Number(v.best);
-    set({ best: d });
+    step(Number(v.best) >= MAX ? 0 : Number(v.best));
     walking = setInterval(() => {
-      d = Math.min(MAX, d + 1);
-      set({ best: d });
+      const d = Math.min(MAX, Number(v.best) + 1);
+      step(d);
       if (d >= MAX) stop();
     }, 180);
   });

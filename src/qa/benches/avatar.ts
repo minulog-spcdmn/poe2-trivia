@@ -27,7 +27,7 @@ export const avatar: PieceBench = {
     },
     { kind: 'range', key: 'hue', label: 'Colour', min: 0, max: PALETTE.length - 1, default: 0 },
     { kind: 'range', key: 'size', label: 'Size', min: 16, max: 96, default: 36, unit: 'px' },
-    { kind: 'toggle', key: 'named', label: 'Its name beside it', default: true },
+    { kind: 'toggle', key: 'named', label: 'Its name beside it', default: true, view: true },
     { kind: 'toggle', key: 'dim', label: 'Offline', default: false },
     { kind: 'toggle', key: 'wrong', label: 'Face down (answered wrong)', default: false },
   ],

@@ -86,27 +86,30 @@
   }
 </script>
 
-<div class="stage" class:zoomed bind:clientWidth={cw} bind:clientHeight={ch} bind:this={el}>
-  <div class="row" style:gap="{GAP}px">
-    {#each frames as f, i (i)}
-      <figure class="seat">
-        <div class="screen" style:width="{w * scale}px" style:height="{h * scale}px">
-          {#if shown?.srcs[i] && cw > 0}
-            {#key shown}
-              <iframe bind:this={els[i]} title={f.title} src={shown.srcs[i]} style:width="{w}px" style:height="{h}px" style:transform="scale({scale})" class:away={!!board}></iframe>
-            {/key}
+<!-- The size in the corner and the drag (held Alt) stay put while the frames scroll under them. -->
+<div class="stage-box">
+  <div class="stage" class:zoomed bind:clientWidth={cw} bind:clientHeight={ch} bind:this={el}>
+    <div class="row" style:gap="{GAP}px">
+      {#each frames as f, i (i)}
+        <figure class="seat">
+          <div class="screen" style:width="{w * scale}px" style:height="{h * scale}px">
+            {#if shown?.srcs[i] && cw > 0}
+              {#key shown}
+                <iframe bind:this={els[i]} title={f.title} src={shown.srcs[i]} style:width="{w}px" style:height="{h}px" style:transform="scale({scale})" class:away={!!board}></iframe>
+              {/key}
+            {/if}
+            {#if board}
+              <img class="board" src={board} alt="The design's board for this scene" style:width="{w * scale}px" />
+            {:else if !ready.has(i)}
+              <p class="loading">Loading…</p>
+            {/if}
+          </div>
+          {#if captioned}
+            <figcaption>{f.caption}</figcaption>
           {/if}
-          {#if board}
-            <img class="board" src={board} alt="The design's board for this scene" style:width="{w * scale}px" />
-          {:else if !ready.has(i)}
-            <p class="loading">Loading…</p>
-          {/if}
-        </div>
-        {#if captioned}
-          <figcaption>{f.caption}</figcaption>
-        {/if}
-      </figure>
-    {/each}
+        </figure>
+      {/each}
+    </div>
   </div>
   <p class="scale">{w} × {h}{#if scale < 1}<span class="num">{Math.round(scale * 100)}%</span>{/if}</p>
   {#if panning}

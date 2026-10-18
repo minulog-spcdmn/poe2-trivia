@@ -4,6 +4,7 @@
   // it's on screen (or near), and draws without the WebGL backdrop, so a
   // screen of thirty scenes stays light; a click on one shows it alone, in
   // full.
+  import { untrack } from 'svelte';
   import { isFrameMessage, type FrameMessage } from '../messages.ts';
   import { sizeOf, type SizeKey } from '../sizes.ts';
   import type { SceneBench } from '../bench.ts';
@@ -49,14 +50,16 @@
         else next.delete(i);
         near = next;
       },
-      { rootMargin: '300px 0px' },
+      // (The grid is what scrolls, so the margin is round it: a frame starts a little before it scrolls in.)
+      { root: node.closest('.grid'), rootMargin: '300px 0px' },
     );
     io.observe(node);
     return { destroy: () => io.disconnect() };
   }
   const src = (s: Scene, i: number) => {
     const p = new URLSearchParams({ frame: `g${i}`, s: s.key, seat: String(Math.min(seat, s.seats.length - 1)), size, off: 'webgl' });
-    if (!outlines) p.set('o', '0');
+    // (As a frame is made: O later reaches those up by a message, not by making them again.)
+    if (!untrack(() => outlines)) p.set('o', '0');
     for (const [k, v] of knobsOf(s)) p.set(`k.${k}`, v);
     return `${location.pathname}?${p}`;
   };

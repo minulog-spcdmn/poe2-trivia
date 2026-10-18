@@ -21,18 +21,28 @@
     set(values);
   }
 
-  /** Each state's controls, side by side: its own, and whatever the panel moved since. */
-  const fresh = () => bench.states.map((s) => stateValues(bench, s));
-  let cells = $state(fresh());
+  /**
+   * Each state's controls, side by side: its own, the view's as the panel
+   * has them, and whatever the panel moved since they came up (kept on a
+   * replay too).
+   */
+  let moved: Values = {};
+  const fresh = () => bench.states.map((s) => ({ ...stateValues(bench, s, piece.values), ...moved }));
+  let cells = $state(untrack(fresh));
   let last: Values = { ...untrack(() => piece.values) };
   $effect(() => {
     const now = { ...piece.values };
     untrack(() => {
-      for (const [k, v] of Object.entries(now)) if (last[k] !== v) for (const c of cells) c[k] = v;
+      for (const [k, v] of Object.entries(now))
+        if (last[k] !== v) {
+          moved[k] = v;
+          for (const c of cells) c[k] = v;
+        }
       last = now;
     });
   });
-  $effect(() => {
+  // (Before the views are made again, so they come in with these.)
+  $effect.pre(() => {
     void piece.replay;
     untrack(() => (cells = fresh()));
   });
@@ -41,7 +51,7 @@
 <FxLayer />
 
 {#if all}
-  <main class="all">
+  <main class="all" style:--cell="{bench.cell ?? 200}px">
     {#each bench.states as s, i (i)}
       <div class="cell" role="button" tabindex="0" onclick={() => pick(i)} onkeydown={(e) => e.key === 'Enter' && pick(i)} title="Show it alone">
         <span class="view">
@@ -74,7 +84,7 @@
   }
   .all {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(var(--cell), 100%), 1fr));
     align-content: start;
     gap: 12px;
     padding: 16px;

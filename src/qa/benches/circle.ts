@@ -11,7 +11,23 @@ export const circle: PieceBench = {
   key: 'circle',
   label: 'Rune circles',
   about: 'Each arcane circle at full size, whole beside hollow round an avatar, right and wrong, and where it stands in the game.',
-  files: ['src/components/circles.ts', 'src/components/ArcaneStage.svelte', 'src/lib/circlePlaces.ts', 'src/lib/engraver.ts'],
+  files: [
+    'src/components/circles.ts',
+    'src/components/ArcaneStage.svelte',
+    'src/components/ArcaneCircle.svelte',
+    'src/components/MonadCircle.svelte',
+    'src/components/RoseCircle.svelte',
+    'src/components/BlackSunCircle.svelte',
+    'src/components/ForbiddenCircle.svelte',
+    'src/lib/plates/index.ts',
+    'src/lib/plates/eye.ts',
+    'src/lib/plates/monad.ts',
+    'src/lib/plates/rose.ts',
+    'src/lib/plates/moth.ts',
+    'src/lib/plates/blackSun.ts',
+    'src/lib/circlePlaces.ts',
+    'src/lib/engraver.ts',
+  ],
   controls: [
     {
       kind: 'choice',
@@ -66,5 +82,5 @@ export const circle: PieceBench = {
     { key: 'bad', label: 'Answer wrong', hint: 'it jars, cools and dims' },
     { key: 'idle', label: 'Back to rest' },
   ],
-  view:() => import('./CircleView.svelte'),
+  view: () => import('./CircleView.svelte'),
 };

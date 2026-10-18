@@ -11,7 +11,7 @@
   import { benchesTouched, touched } from '../change.ts';
   import { knobValues, seatLabel, type Scene } from '../scene.ts';
   import { SIZES, isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
-  import { isFrameMessage, type DeskMessage, type FrameMessage } from '../messages.ts';
+  import type { DeskMessage, FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
   import { stateAt, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Values } from '../bench.ts';
   import Shelf from './Shelf.svelte';
@@ -40,9 +40,9 @@
   const ALL = benches();
   const SCENES = ALL.flatMap((b) => (b.kind === 'scenes' ? b.scenes : []));
 
-  /** The view the address asks for. */
   /** A size to show at: a device's, or (fit) the desk's own window, the frame as large as the room there, at 1:1. */
   type Pick = SizeKey | 'fit';
+  /** The view the address asks for. */
   type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean };
   function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
@@ -97,11 +97,18 @@
   const built = $derived(scenes && scene ? scene.build(knobs) : undefined);
   const sz = $derived(size === 'fit' ? null : sizeOf(size));
   /** A scene's seats shown: all side by side on a touch screen (they fit), one at a time on a larger one, unless one was picked. */
-  const seatShown = $derived<number | 'all'>(!scene || scene.seats.length === 1 ? 0 : (seatPicked ?? (sz?.touch ? 'all' : 0)));
+  // (A seat picked on a scene with more stays the last one there is on one with fewer.)
+  const seatShown = $derived<number | 'all'>(!scene || scene.seats.length === 1 ? 0 : seatPicked === 'all' ? 'all' : seatPicked !== null ? Math.min(seatPicked, scene.seats.length - 1) : sz?.touch ? 'all' : 0);
   const seatNames = $derived(scene && built ? scene.seats.map((s) => seatLabel(s, built.state)) : []);
   const stateIndex = $derived(piece ? stateAt(piece, v) : scenes && scene ? scenes.scenes.indexOf(scene) : -1);
   const states = $derived(piece ? piece.states.map((s) => s.label) : (scenes?.scenes.map((s) => s.label) ?? []));
   const board = $derived(size !== 'fit' && scene?.boards?.[size] ? BOARDS[scene.boards[size]!] : undefined);
+
+  /**
+   * Going to another bench or state by hand (not a slider moved, not a frame
+   * moving its own controls): a step the back button returns to.
+   */
+  let moves = $state(0);
 
   /**
    * This change: the benches the branch's files touch (src/qa/change.ts),
@@ -115,12 +122,15 @@
       if (!got?.files) continue;
       change = benchesTouched(got.files, touched(got.files, sceneFiles, SCENES), ALL);
       const opening = change.benches.map((t) => ALL.find((b) => b.key === t.key)).find(Boolean);
-      if (!first && opening) open(opening);
+      // Not if the address named a bench, or one was picked meanwhile; and in place of the first, not a step after it.
+      if (!first && opening && moves === 0) open(opening, undefined, false);
       return;
     }
   })();
 
-  function open(b: Bench, at?: Scene) {
+  function open(b: Bench, at?: Scene, step = true) {
+    if (step) moves++;
+    if (live) live = null;
     if (b !== bench) {
       seatPicked = null;
       all = false;
@@ -129,10 +139,12 @@
     scene = b.kind === 'scenes' ? (at ?? b.scenes[0]) : null;
   }
   function goState(i: number) {
+    moves++;
+    if (live) live = null;
     all = false;
     if (piece) {
       const s = piece.states[Math.max(0, Math.min(piece.states.length - 1, i))];
-      if (s) values[piece.key] = stateValues(piece, s);
+      if (s) values[piece.key] = stateValues(piece, s, v);
     } else if (scenes) {
       const s = scenes.scenes[Math.max(0, Math.min(scenes.scenes.length - 1, i))];
       if (s) scene = s;
@@ -200,7 +212,7 @@
 
   /** To every frame up (a piece's, or each seat's). */
   function tellFrames(m: DeskMessage) {
-    for (const f of document.querySelectorAll<HTMLIFrameElement>('.stage iframe, .grid iframe')) f.contentWindow?.postMessage(m, location.origin);
+    for (const f of document.querySelectorAll<HTMLIFrameElement>('.middle > .stage-box iframe, .middle > .grid iframe')) f.contentWindow?.postMessage(m, location.origin);
   }
   $effect(() => tellFrames({ qa: 'outlines', on: outlines }));
   $effect(() => tellFrames({ qa: 'freeze', on: frozen }));
@@ -220,10 +232,14 @@
 
   function onframe(m: FrameMessage) {
     if (m.qa === 'checked') results = { ...results, [m.slot]: m.problems };
-    else if (m.qa === 'ready' && piece) tellFrames({ qa: 'values', values: $state.snapshot(v) });
+    else if (m.qa === 'ready') {
+      // (What changed while it loaded, before it listened.)
+      if (frozen) tellFrames({ qa: 'freeze', on: true });
+      if (piece) tellFrames({ qa: 'values', values: $state.snapshot(v) });
+    }
     else if (m.qa === 'set' && piece) values[piece.key] = { ...v, ...m.values };
     else if (m.qa === 'pick') goState(m.index);
-    else if (m.qa === 'key') press(m.key, m.up);
+    else if (m.qa === 'key') press(m.key, m.up, m.repeat);
   }
 
   /** Play from here: the scene as a live room, while one is up. */
@@ -235,11 +251,13 @@
   }
 
   let shelf = $state<{ focus: () => void }>();
-  function press(key: string, up = false) {
+  function press(key: string, up = false, repeat = false) {
     if (live) return;
     if (key === 'h' || key === 'H') holding = !up && !!board;
     else if (key === 'Alt') panning = !up && zoomed;
     else if (up) return;
+    // Held down, only the arrows go on: a switch held a moment too long would flip back and forth.
+    else if (repeat && !key.startsWith('Arrow')) return;
     else if (key === 'ArrowDown') goState(stateIndex + 1);
     else if (key === 'ArrowUp') goState(Math.max(0, stateIndex - 1));
     else if (key === 'ArrowRight') goBench(1);
@@ -252,22 +270,29 @@
     else if (key === 'o' || key === 'O') outlines = !outlines;
     else if (key === '/') shelf?.focus();
   }
+  /** Keys a slider moves itself by, while it has the focus. */
+  const SLIDER_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
   function onkeydown(e: KeyboardEvent) {
     const t = e.target;
-    if (t instanceof HTMLElement && t.closest('input, select, textarea')) {
+    // Typing in a box or a menu keeps every key; a slider keeps its own and a switch its space, the desk has the rest.
+    if (t instanceof HTMLElement && (t.matches('textarea, select, input:not([type="range"], [type="checkbox"])') || (t.matches('input[type="range"]') && SLIDER_KEYS.has(e.key)))) {
       if (e.key === 'Escape') t.blur();
       return;
     }
     if (e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt')) return;
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '/', 'Alt'].includes(e.key)) e.preventDefault();
-    press(e.key);
+    press(e.key, false, e.repeat);
   }
   function onkeyup(e: KeyboardEvent) {
     if (['h', 'H', 'Alt'].includes(e.key)) press(e.key, true);
   }
 
-  // The address follows: another bench or state is a step back can return to; the rest only changes the current one.
-  let lastPlace: string | null = null;
+  // The address follows: going to another bench or state by hand is a step back
+  // can return to; the rest only changes the current one, a moment after it
+  // stops moving (a slider dragged writes it once, and the browser's limit on
+  // how often it's written is never met).
+  let lastMoves = 0;
+  let pending: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const p = new URLSearchParams();
     if (piece) {
@@ -283,18 +308,19 @@
     if (zoomed) p.set('z', '1');
     if (!outlines) p.set('o', '0');
     const url = `${location.pathname}?${p}`;
-    const place = piece ? `${piece.key}#${stateIndex}` : (scene?.key ?? '');
-    if (url !== location.pathname + location.search) {
-      if (lastPlace !== null && place !== lastPlace) history.pushState(null, '', url);
-      else history.replaceState(null, '', url);
-    }
-    lastPlace = place;
+    const step = moves !== lastMoves;
+    lastMoves = moves;
+    clearTimeout(pending);
+    if (url === location.pathname + location.search) return;
+    if (step) history.pushState(null, '', url);
+    else pending = setTimeout(() => history.replaceState(null, '', url), 250);
   });
   $effect(() => {
     const back = () => {
       const a = fromAddress();
       if (!a) return;
-      lastPlace = null;
+      clearTimeout(pending);
+      live = null;
       bench = a.bench;
       scene = a.scene;
       if (a.bench.kind === 'piece') values[a.bench.key] = valuesOf(a.bench.controls, a.given);
@@ -331,7 +357,7 @@
         {#each QUICK as k (k)}
           <button class:on={size === k} onclick={() => (size = k)} title="{sizeOf(k).label}, {sizeOf(k).w} × {sizeOf(k).h}">{SHORT[k]}</button>
         {/each}
-        <select class:on={size !== 'fit' && !QUICK.includes(size)} value={size} onchange={(e) => (size = e.currentTarget.value as SizeKey)} aria-label="Every size">
+        <select class:on={size !== 'fit' && !QUICK.includes(size)} value={size} onchange={(e) => ((size = e.currentTarget.value as SizeKey), e.currentTarget.blur())} aria-label="Every size">
           <option value="fit">This window</option>
           {#each SIZES as s (s.key)}<option value={s.key}>{s.label} • {s.w} × {s.h}</option>{/each}
         </select>

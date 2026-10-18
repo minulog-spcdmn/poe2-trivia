@@ -59,7 +59,7 @@ html[data-qa='desk'] #app {
   padding: 0.15rem 0.4rem;
 }
 .desk select:focus,
-.desk input:focus {
+.desk input:not([type='range'], [type='checkbox']):focus {
   outline: none;
   border-color: var(--gold);
 }
@@ -136,7 +136,7 @@ html[data-qa='desk'] #app {
   min-width: 0;
   min-height: 0;
 }
-.middle > .stage,
+.middle > .stage-box,
 .middle > .grid,
 .middle > .live {
   flex: 1;
@@ -235,12 +235,12 @@ html[data-qa='desk'] #app {
   font-size: 0.85rem;
   padding: 0.05rem 0.45rem;
 }
-.states {
+.bench-panel .states {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.states button {
+.bench-panel .states button {
   display: flex;
   width: 100%;
   gap: 0.5rem;
@@ -248,67 +248,67 @@ html[data-qa='desk'] #app {
   border-color: transparent;
   padding: 0.15rem 0.4rem;
 }
-.states .n {
+.bench-panel .states .n {
   flex: none;
   width: 0.8em;
   font-family: var(--font-cinzel);
   color: var(--gold-lo);
 }
-.controls {
+.bench-panel .controls {
   display: grid;
   gap: 0.55rem;
 }
-.control {
+.bench-panel .control {
   display: grid;
   gap: 0.2rem;
   color: var(--muted);
 }
-.control select {
+.bench-panel .control select {
   width: 100%;
 }
-.control.toggle {
+.bench-panel .control.toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   color: var(--text);
 }
-.control input[type='checkbox'],
-.control input[type='range'] {
+.bench-panel .control input[type='checkbox'],
+.bench-panel .control input[type='range'] {
   accent-color: var(--gold);
 }
-.control .range {
+.bench-panel .control .range {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
-.control .range input[type='range'] {
+.bench-panel .control .range input[type='range'] {
   flex: 1;
   min-width: 0;
 }
-.control .range .num {
+.bench-panel .control .range .num {
   width: 4.2rem;
 }
-.control .unit {
+.bench-panel .control .unit {
   color: var(--muted);
 }
-.actions,
-.seats,
-.tools {
+.bench-panel .actions,
+.bench-panel .seats,
+.bench-panel .tools {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
 }
-.act {
+.bench-panel .act {
   display: grid;
   text-align: left;
   width: 100%;
   border-color: var(--gold-lo) !important;
 }
-.act .hint {
+.bench-panel .act .hint {
   font-size: 0.85em;
   color: var(--muted);
 }
-.tools {
+.bench-panel .tools {
   padding-top: 1rem;
   border-top: 1px solid var(--line);
 }
@@ -344,7 +344,12 @@ html[data-qa='desk'] #app {
   font-size: 0.9em;
 }
 
+.stage-box {
+  position: relative;
+  display: grid;
+}
 .stage {
+  min-height: 0;
   position: relative;
   display: flex;
   overflow: hidden;
@@ -397,7 +402,7 @@ html[data-qa='desk'] #app {
   white-space: nowrap;
 }
 /* The size and how far it's shrunk, in the corner. */
-.stage .scale {
+.stage-box .scale {
   position: absolute;
   right: 0.8rem;
   bottom: 0.4rem;
@@ -406,7 +411,7 @@ html[data-qa='desk'] #app {
   font-family: var(--font-cinzel);
   font-size: 0.8em;
 }
-.stage .scale .num {
+.stage-box .scale .num {
   margin-left: 0.6em;
   color: var(--gold-lo);
 }

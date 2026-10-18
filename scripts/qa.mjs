@@ -4,8 +4,8 @@
 // that device (its pixel ratio, touch, a phone's user agent), shot and
 // checked the way the desk's frames check themselves (src/qa/frame/checks.ts:
 // off the screen, text cut off, console errors, pictures, em dashes), and
-// with --banding, scripts/find-banding.py on top. The desk marks every stop
-// the sweep found something at, and walks the sizes it found it at too.
+// with --banding, scripts/find-banding.py on top. It prints what it found:
+// it's for the machine, so nobody has to look through its shots.
 //
 // By default it builds the beta (the only build with the desk) into
 // screens/qa-build/ and serves that, many times faster to load than the dev
@@ -13,14 +13,7 @@
 // (the dev server, or https://poe2.quest/beta/). WebGL is hidden and motion
 // reduced (CLAUDE.md, the headless-check skill) unless --webgl.
 //
-// Writes the shots and a manifest.json into screens/qa-<timestamp>/, and
-// screens/qa-latest.json, which the dev server hands the desk.
-//
-// --before shoots the same scenes as they were where this branch left main
-// (or at --base REF): that commit is checked out in a worktree of its own
-// in the system's temp folder (never the stash), built and shot into
-// screens/qa-base-<sha>/, and each shot is compared with its pair. The
-// desk then holds the before up on B, and marks what looks different.
+// Writes the shots and a manifest.json into screens/qa-<timestamp>/.
 //
 // --map instead runs every scene once on a dev server of its own with the
 // browser's coverage on, and writes src/data/sceneFiles.json: which of the
@@ -28,9 +21,9 @@
 // (src/qa/change.ts). Run it when scenes or screens have changed much.
 //
 //   npm run qa -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
-//                 [--before | --base REF] [--url URL] [--no-build] [--concurrency N]
+//                 [--url URL] [--no-build] [--concurrency N]
 //   npm run qa -- --map
-//   (from PowerShell, where npm eats the flags: npm run qa full webgl before only=lobby)
+//   (from PowerShell, where npm eats the flags: npm run qa full webgl only=lobby)
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -55,18 +48,16 @@ const OPTIONS = {
   build: { type: 'boolean', default: true },
   webgl: { type: 'boolean', default: false },
   banding: { type: 'boolean', default: false },
-  before: { type: 'boolean', default: false },
   change: { type: 'boolean', default: false },
-  base: { type: 'string' },
   map: { type: 'boolean', default: false },
   concurrency: { type: 'string', default: String(Math.max(2, os.availableParallelism() - 2)) },
   help: { type: 'boolean', short: 'h', default: false },
 };
 const { values, positionals } = parseArgs({ options: OPTIONS, allowPositionals: true, allowNegative: true });
-// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, before, map, no-build, name=value.
+// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, change, map, no-build, name=value.
 for (const word of positionals) {
   if (word === 'full' || word === 'walk') values.sizes = word;
-  else if (['webgl', 'banding', 'before', 'change', 'map', 'help'].includes(word)) values[word] = true;
+  else if (['webgl', 'banding', 'change', 'map', 'help'].includes(word)) values[word] = true;
   else if (word === 'no-build') values.build = false;
   else if (word.includes('=')) values[word.split('=')[0]] = word.slice(word.indexOf('=') + 1);
   else {
@@ -77,14 +68,12 @@ for (const word of positionals) {
 if (values.help) {
   console.log(`The QA sweep: every scene, seat and size, shot and checked.
 
-  --sizes walk|full|a,b  walk (default): each scene's own sizes, as the desk walks them;
+  --sizes walk|full|a,b  walk (default): the usual sizes and each scene's own;
                          full: every size in src/qa/sizes.ts; or keys: ${SIZES.map((s) => s.key).join(', ')}
   --only REGEX           only scenes whose key matches (lobby, game/delve, over/n-)
   --webgl                keep WebGL (the effects, on the GPU) and full motion
   --banding              run scripts/find-banding.py on each shot (implies --webgl; needs numpy and Pillow)
   --change               only the scenes this branch's changes touch (as the desk's This change)
-  --before               shoot the same as they were where this branch left main, and compare
-  --base REF             the same, as they were at REF
   --url URL              shoot a running server (the dev server, the beta) instead of building one
   --no-build             serve screens/qa-build/ as the last sweep built it
   --concurrency N        pages at once (default: all threads but two, ${OPTIONS.concurrency.default})
@@ -342,95 +331,6 @@ console.log(`${jobs.length} shots of ${scenes.length} scenes, ${concurrency} at 
 const { shots } = await shootAll(served.base, jobs, outDir);
 served.close();
 
-// ---- before -------------------------------------------------------------------
-
-let before = null;
-if (values.before || values.base) {
-  const ref = values.base ?? git(ROOT, 'merge-base', 'origin/main', 'HEAD') ?? git(ROOT, 'merge-base', 'main', 'HEAD');
-  const sha = ref && git(ROOT, 'rev-parse', '--verify', `${ref}^{commit}`);
-  if (!sha) {
-    console.error(`Can't find ${values.base ?? 'where this branch left main'}.`);
-    process.exit(1);
-  }
-  const short = sha.slice(0, 12);
-  // Its own worktree in the system's temp folder, kept for the next sweep from the same commit.
-  const tree = path.join(os.tmpdir(), 'poe2-qa-base', short);
-  if (!existsSync(path.join(tree, 'package.json'))) {
-    console.log(`Checking out ${short} in ${tree}…`);
-    if (git(ROOT, 'worktree', 'add', '--detach', tree, sha) === null) {
-      console.error(`git worktree add failed for ${short}.`);
-      process.exit(1);
-    }
-  }
-  if (!existsSync(path.join(tree, 'src', 'qa', 'main.ts'))) {
-    console.warn(`${short} has no QA desk yet, so there is nothing to compare with: the befores start once the desk is on main.`);
-  } else {
-    if (!existsSync(path.join(tree, 'node_modules', '.package-lock.json'))) {
-      console.log('Installing its packages…');
-      const r = spawnSync('npm ci --prefer-offline --no-audit --no-fund', { cwd: tree, shell: true, stdio: 'inherit' });
-      if (r.status !== 0) process.exit(r.status ?? 1);
-    }
-    const baseBuild = path.join(SCREENS, `qa-base-${short}-build`);
-    if (!existsSync(path.join(baseBuild, 'qa.html'))) buildBeta(tree, baseBuild, short);
-    const baseServed = await serveDir(baseBuild);
-    const had = new Set((await listScenes(baseServed.base)).map((s) => s.key));
-    const baseJobs = jobs.filter((j) => had.has(j.scene));
-    const baseDir = `qa-base-${short}`;
-    console.log(`${baseJobs.length} shots as at ${short}…`);
-    const { shots: was } = await shootAll(baseServed.base, baseJobs, path.join(SCREENS, baseDir));
-    baseServed.close();
-    before = { sha, dir: baseDir };
-    await compare(shots, was, baseDir);
-  }
-}
-
-/**
- * Each shot against its before: the share of its pixels that differ by more
- * than a few levels (a hair of antialiasing isn't a change). Done in the
- * browser, which reads PNGs already.
- */
-async function compare(now, was, baseDir) {
-  const page = await browser.newPage();
-  const byFile = new Map(was.filter((s) => s.file).map((s) => [s.file, s]));
-  let i = 0;
-  for (const s of now) {
-    if (!s.file) continue;
-    if (!byFile.has(s.file)) {
-      s.before = null;
-      continue;
-    }
-    const read = (dir) => `data:image/png;base64,${readFileSync(path.join(SCREENS, dir, s.file)).toString('base64')}`;
-    s.before = `${baseDir}/${s.file}`;
-    s.changed = await page.evaluate(
-      async ([a, b]) => {
-        const load = async (src) => {
-          const img = new Image();
-          img.src = src;
-          await img.decode();
-          return img;
-        };
-        const [x, y] = await Promise.all([load(a), load(b)]);
-        if (x.width !== y.width || x.height !== y.height) return 1;
-        const pixels = (img) => {
-          const c = new OffscreenCanvas(img.width, img.height);
-          const g = c.getContext('2d');
-          g.drawImage(img, 0, 0);
-          return g.getImageData(0, 0, img.width, img.height).data;
-        };
-        const p = pixels(x);
-        const q = pixels(y);
-        let differ = 0;
-        for (let k = 0; k < p.length; k += 4) if (Math.abs(p[k] - q[k]) > 12 || Math.abs(p[k + 1] - q[k + 1]) > 12 || Math.abs(p[k + 2] - q[k + 2]) > 12) differ++;
-        return differ / (p.length / 4);
-      },
-      [read(path.basename(outDir)), read(baseDir)],
-    );
-    if (process.stdout.isTTY) process.stdout.write(`\rcompared ${++i}`);
-  }
-  if (process.stdout.isTTY) process.stdout.write('\n');
-  await page.close();
-}
-
 await Promise.all(browsers.map((b) => b.close()));
 
 // ---- banding ------------------------------------------------------------------
@@ -482,21 +382,15 @@ const manifest = {
   dirty: (git(ROOT, 'status', '--porcelain') ?? '') !== '',
   sizes: values.sizes,
   webgl: values.webgl,
-  before,
   shots,
 };
 writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 1));
-writeFileSync(path.join(SCREENS, 'qa-latest.json'), JSON.stringify(manifest));
 
 const bad = shots.filter((s) => s.failed || s.problems.length);
 console.log(`${shots.length} shots in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${bad.length} with something to look at; screens/${dirName}/`);
 for (const s of bad) {
   const what = s.failed ? `failed: ${s.failed}` : s.problems.map((p) => `${p.kind}${p.count > 1 ? ` x${p.count}` : ''}: ${p.examples[0]}`).join('; ');
   console.log(`  ${s.scene} (seat ${s.seat}, ${s.size}): ${what}`);
-}
-if (before) {
-  const moved = shots.filter((s) => s.changed > 0.001);
-  console.log(`Against ${before.sha.slice(0, 12)}: ${moved.length} shots look different, ${shots.filter((s) => s.before === null).length} are new.`);
 }
 const unsettled = shots.filter((s) => s.settled === false).length;
 if (unsettled) console.log(`${unsettled} never came to rest within 8 s (checked as they were).`);

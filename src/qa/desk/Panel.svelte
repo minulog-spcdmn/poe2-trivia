@@ -88,14 +88,32 @@
             <span class="label">{c.label}</span>
             <span class="range">
               <input type="range" min={c.min} max={c.max} step={c.step ?? 1} value={v[c.key]} oninput={(e) => onvalue(c.key, Number(e.currentTarget.value))} />
-              <input class="num" type="number" min={c.min} max={c.max} step={c.step ?? 1} value={v[c.key]} oninput={(e) => e.currentTarget.value !== '' && onvalue(c.key, Math.max(c.min, Math.min(c.max, Number(e.currentTarget.value))))} />
+              <input
+                class="num"
+                type="number"
+                min={c.min}
+                max={c.max}
+                step={c.step ?? 1}
+                value={v[c.key]}
+                oninput={(e) => {
+                  // Only a number it can be, while typing (2 on the way to 24 isn't 16); the rest once it's left.
+                  const n = e.currentTarget.valueAsNumber;
+                  if (n >= c.min && n <= c.max) onvalue(c.key, n);
+                }}
+                onchange={(e) => {
+                  const n = e.currentTarget.valueAsNumber;
+                  const kept = Number.isFinite(n) ? Math.max(c.min, Math.min(c.max, n)) : c.default;
+                  onvalue(c.key, kept);
+                  e.currentTarget.value = String(kept);
+                }}
+              />
               {#if c.unit}<span class="unit">{c.unit}</span>{/if}
             </span>
           </label>
         {:else if c.kind === 'choice'}
           <label class="control">
             <span class="label">{c.label}</span>
-            <select value={v[c.key]} onchange={(e) => onvalue(c.key, e.currentTarget.value)}>
+            <select value={v[c.key]} onchange={(e) => (onvalue(c.key, e.currentTarget.value), e.currentTarget.blur())}>
               {#each c.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
             </select>
           </label>
@@ -115,7 +133,7 @@
       {#each scene.knobs as k (k.key)}
         <label class="control">
           <span class="label">{k.label}</span>
-          <select value={knobs[k.key]} onchange={(e) => onknob(k.key, e.currentTarget.value)}>
+          <select value={knobs[k.key]} onchange={(e) => (onknob(k.key, e.currentTarget.value), e.currentTarget.blur())}>
             {#each k.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
           </select>
         </label>

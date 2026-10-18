@@ -22,19 +22,25 @@ test('every piece has its controls, states and actions in order', () => {
     const controls = new Map(p.controls.map((c) => [c.key, c]));
     assert.equal(controls.size, p.controls.length, `${p.key} has two controls of one name`);
     assert.ok(p.states.length > 0, `${p.key} has no states`);
+    for (const c of p.controls) assert.equal(valuesOf([c], { [c.key]: c.default })[c.key], c.default, `${p.key}'s ${c.key} starts at ${c.default}, which it can't be`);
     const seen = new Set<string>();
     for (const s of p.states) {
       for (const [k, v] of Object.entries(s.values)) {
         const c = controls.get(k);
         assert.ok(c, `${p.key}'s state “${s.label}” sets ${k}, which isn't one of its controls`);
+        assert.ok(!c.view, `${p.key}'s state “${s.label}” sets ${k}, which is the view's own`);
         assert.equal(valuesOf([c], { [k]: v })[k], v, `${p.key}'s state “${s.label}” sets ${k} to ${v}, which it can't be`);
       }
-      const full = JSON.stringify(stateValues(p, s));
+      // The view's own controls aside, which a state doesn't change.
+      const v = stateValues(p, s);
+      const full = JSON.stringify(p.controls.filter((c) => !c.view).map((c) => v[c.key]));
       assert.ok(!seen.has(full), `${p.key}'s state “${s.label}” is the same as another`);
       seen.add(full);
     }
     assert.equal(new Set((p.actions ?? []).map((a) => a.key)).size, (p.actions ?? []).length, `${p.key} has two actions of one name`);
     for (const f of p.files) assert.ok(existsSync(f), `${p.key} names ${f}, which isn't there`);
+    // Its own files, which This change finds it by.
+    for (const f of [`src/qa/benches/${p.key}.ts`, `src/qa/benches/${p.key[0].toUpperCase()}${p.key.slice(1)}View.svelte`]) assert.ok(existsSync(f), `${p.key} has no ${f}`);
   }
 });
 
@@ -62,10 +68,16 @@ test("a piece's controls read from the address as they're written to it", () => 
   assert.deepEqual(valuesQuery(controls, valuesOf(controls)), []);
 });
 
-test('the desk knows which state the controls are in', () => {
+test('the desk knows which state the controls are in, whatever the view is set to', () => {
+  for (const p of PIECES) p.states.forEach((s, i) => assert.equal(stateAt(p, stateValues(p, s)), i, `${p.key}'s “${s.label}”`));
   const avatar = PIECES.find((p) => p.key === 'avatar')!;
-  avatar.states.forEach((s, i) => assert.equal(stateAt(avatar, stateValues(avatar, s)), i));
   assert.equal(stateAt(avatar, { ...stateValues(avatar, avatar.states[0]), size: 77 }), -1);
+  // The view's own controls (its name beside it) stay as they were set from state to state.
+  const named = !avatar.controls.find((c) => c.key === 'named')!.default;
+  const moved = stateValues(avatar, avatar.states[1], { named, size: 77 });
+  assert.equal(moved.named, named);
+  assert.notEqual(moved.size, 77);
+  assert.equal(stateAt(avatar, moved), 1);
 });
 
 test('a change touches the pieces showing its files and the screens running them', () => {
@@ -77,6 +89,9 @@ test('a change touches the pieces showing its files and the screens running them
   assert.ok(keys.includes('game/take-turns'));
   assert.ok(!keys.includes('streak'));
   assert.deepEqual(got.uncovered, ['src/lib/nowhere.ts']);
-  // A bench's own files touch it.
-  assert.deepEqual(benchesTouched(['src/qa/benches/StreakView.svelte'], { scenes: [], uncovered: [] }, all).benches.map((b) => b.key), ['streak']);
+  // A bench's own files touch it, and what every piece runs on touches them all.
+  const none: Touched = { scenes: [], uncovered: [] };
+  assert.deepEqual(benchesTouched(['src/qa/benches/StreakView.svelte'], none, all).benches.map((b) => b.key), ['streak']);
+  assert.deepEqual(benchesTouched(['src/qa/benches/streakXts'], none, all).benches, []);
+  assert.deepEqual(benchesTouched(['src/qa/frame/PieceHost.svelte'], none, all).benches.map((b) => b.key), PIECES.map((p) => p.key));
 });

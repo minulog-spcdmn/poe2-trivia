@@ -20,8 +20,8 @@ export const descent: PieceBench = {
   about: "Delve's rules block in the lobby's rules card, at a phone's, a tablet's and a desktop's width, for any records.",
   files: ['src/components/DelveRules.svelte', 'src/components/DelveLadder.svelte', 'src/lib/ouroborosArt.ts'],
   controls: [
-    { kind: 'range', key: 'best', label: 'Deepest (0: no run yet)', min: 0, max: 999, default: 46 },
-    { kind: 'range', key: 'last', label: 'Last run (0: none)', min: 0, max: 999, default: 20 },
+    { kind: 'range', key: 'best', label: 'Deepest (0: no run yet)', min: 0, max: 300, default: 46 },
+    { kind: 'range', key: 'last', label: 'Last run (0: none)', min: 0, max: 300, default: 20 },
     { kind: 'toggle', key: 'together', label: 'Runs together (co-op)', default: false },
     ...FINDS.map((k): Control => ({ kind: 'toggle', key: `met.${k}`, label: `Met ${FIND_TEXT[k].name}`, default: true })),
     {
@@ -29,6 +29,7 @@ export const descent: PieceBench = {
       key: 'width',
       label: 'Card width',
       default: 'all',
+      view: true,
       options: [
         { value: 'all', label: 'All three' },
         { value: 'phone', label: 'Phone (281 px)' },
@@ -41,6 +42,7 @@ export const descent: PieceBench = {
       key: 'ouro',
       label: 'Ouroboros',
       default: '',
+      view: true,
       options: [
         { value: '', label: 'By state' },
         { value: 'filled', label: 'Filled' },
@@ -60,6 +62,8 @@ export const descent: PieceBench = {
     { label: 'Past 100 and last run', values: { best: 216, last: 31, ...ALL } },
     { label: 'Both past 100', values: { best: 216, last: 150, ...ALL } },
   ],
-  actions: [{ key: 'walk', label: 'Walk down', hint: 'a depth deeper every 180 ms; again to stop' }],
+  actions: [{ key: 'walk', label: 'Walk down', hint: 'a depth deeper every 180 ms; again, or moving Deepest, stops it' }],
+  // Side by side, each state's phone card (281 px, and its padding) needs the room.
+  cell: 340,
   view: () => import('./DescentView.svelte'),
 };

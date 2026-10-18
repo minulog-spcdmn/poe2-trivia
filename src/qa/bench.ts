@@ -14,11 +14,17 @@
 import type { Component } from 'svelte';
 import type { Scene } from './scene.ts';
 
-/** A control in a piece's panel. */
-export type Control =
+/**
+ * A control in a piece's panel. `view`: only how it's shown (the width it's
+ * drawn at, a name beside it), not a state of its own: going to a state
+ * leaves it as set, it's no part of telling the states apart, and in All
+ * states every state shows it as the panel has it.
+ */
+export type Control = (
   | { kind: 'range'; key: string; label: string; min: number; max: number; step?: number; default: number; unit?: string }
   | { kind: 'choice'; key: string; label: string; options: { value: string; label: string }[]; default: string }
-  | { kind: 'toggle'; key: string; label: string; default: boolean };
+  | { kind: 'toggle'; key: string; label: string; default: boolean }
+) & { view?: boolean };
 
 export type Value = string | number | boolean;
 export type Values = Record<string, Value>;
@@ -59,6 +65,8 @@ export interface PieceBench {
   controls: Control[];
   states: State[];
   actions?: Action[];
+  /** How wide each state is at least in All states (CSS px; missing: 200). */
+  cell?: number;
   view: () => Promise<{ default: Component<PieceProps> }>;
 }
 
@@ -89,12 +97,15 @@ function valueOf(c: Control, raw: Value | string | null | undefined): Value {
   return c.options.some((o) => o.value === raw) ? String(raw) : c.default;
 }
 
-/** A state's controls in full: its own values over the defaults. */
-export const stateValues = (bench: PieceBench, state: State): Values => valuesOf(bench.controls, state.values);
+/** A state's controls in full: its own values over the defaults, and the view's controls as `now` has them. */
+export function stateValues(bench: PieceBench, state: State, now: Values = {}): Values {
+  const kept = Object.fromEntries(bench.controls.filter((c) => c.view && c.key in now).map((c) => [c.key, now[c.key]]));
+  return valuesOf(bench.controls, { ...state.values, ...kept });
+}
 
-/** The state the controls are in, if they're in one (its index). */
+/** The state the controls are in, if they're in one (its index): the view's controls aside. */
 export function stateAt(bench: PieceBench, v: Values): number {
-  return bench.states.findIndex((s) => bench.controls.every((c) => stateValues(bench, s)[c.key] === v[c.key]));
+  return bench.states.findIndex((s) => bench.controls.every((c) => c.view || stateValues(bench, s)[c.key] === v[c.key]));
 }
 
 /** The controls away from their defaults, as the address writes them (`k.size=56`). */

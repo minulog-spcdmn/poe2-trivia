@@ -24,10 +24,11 @@ A change that adds or alters something on screen adds or updates its bench, the 
 
 **A piece** is a component on its own. It is a file in `src/qa/benches/` (`avatar.ts`), a view beside it (`AvatarView.svelte`) and a line in `src/qa/benches/pieces.ts`. The file says what it is (`src/qa/bench.ts` has every field):
 
-- `controls`: what can be set, each a `range` (a slider with a box), a `choice` or a `toggle`, with its default.
+- `controls`: what can be set, each a `range` (a slider with a box), a `choice` or a `toggle`, with its default. One marked `view: true` sets how it's looked at, not what it shows (the avatar's name beside it, the descent's width): it stays as set from state to state and Replay to Replay, and no state names it.
 - `states`: the ones that matter, each a name and the controls it sets.
 - `actions`: what can happen to it, a button each.
-- `files`: the files it shows, for This change.
+- `files`: the files it shows, for This change (its own two, and what every piece runs on, count by themselves).
+- `cell`: how wide each is, at least, when all its states show side by side (200 px unless it says).
 
 The view gets the controls as set (`v`) and draws the component with them. It hears an action with `onAction('turn', () => ...)` (`src/qa/frame/pieceState.svelte.ts`) and moves controls itself with `set({ wrong: true })`, which the panel follows. `small` is true when it is one of many side by side. The desk gives every bench the rest: the size, the states side by side, Replay, Freeze, the checks, the address.
 
