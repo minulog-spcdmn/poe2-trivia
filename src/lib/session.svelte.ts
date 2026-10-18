@@ -34,7 +34,7 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
-import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
+import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
@@ -50,7 +50,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -85,6 +85,7 @@ import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, act
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
+import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -118,8 +119,7 @@ const MAX_PENDING_PER_PEER = 2;
 const PENDING_GRACE_MS = 4000;
 /** Players and spectators, plus room for people joining or reconnecting (who can't crowd out the rest). */
 const MAX_CONNECTIONS = MAX_PLAYERS + MAX_SPECTATORS + MAX_PENDING;
-/** Most remembered player tokens, and kicked tokens/peers/names or blocked peers, each (they're saved with the room). */
-const MAX_KNOWN = 400;
+/** Most kicked tokens/peers/names or blocked peers, each (they're saved with the room; remembered player tokens: sessionRules.ts MAX_KNOWN). */
 const MAX_BLOCKED = 200;
 /** What a client is told when the room can't take its connection right now. */
 const ROOM_BUSY = 'The room is busy right now. Trying again…';
@@ -157,8 +157,6 @@ const HOST_SILENCE_MS = 15000;
 const NETWORK_ERRORS = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
 /** No pong for this long: the connection is dead. */
 const DEAD_AFTER_MS = 15000;
-/** Faster than this (after the question reached them: the key to its art, as its clock started) is not a human answer. */
-const MIN_HUMAN_MS = 200;
 /**
  * The pictures go out sealed (seal.ts), which takes WebCrypto, there only on
  * a secure page (https, or localhost). Without it a guest couldn't open them
@@ -296,31 +294,6 @@ interface AheadArt extends Ahead {
   stop: AbortController;
   sent: Map<Guest, LaneSpan | null>;
 }
-
-/** Host-only data that must survive a page refresh but never reach guests. */
-interface HostPrivate {
-  myPlayerId: string;
-  secrets: [string, string][];
-  bannedSecrets: string[];
-  /** Peers of kicked players. */
-  bannedPeers: string[];
-  /** Name skeletons of kicked players, refused to newcomers. */
-  bannedNames: string[];
-  /**
-   * Peers that sent something no real client sends. Kept apart from the
-   * kicks, so a pile of these can't push a kick off the (capped) list.
-   */
-  blockedPeers: string[];
-}
-
-const noPrivate = (myPlayerId = ''): HostPrivate => ({
-  myPlayerId,
-  secrets: [],
-  bannedSecrets: [],
-  bannedPeers: [],
-  bannedNames: [],
-  blockedPeers: [],
-});
 
 class Session {
   mode = $state<Mode | null>(null);
@@ -648,7 +621,11 @@ class Session {
     if (!saved) return;
     // Picking up a game: a shared link's Delve was not for it, nor for the next one.
     this.delveLink = false;
-    if (saved.mode === 'local') this.startLocal(soloHotSeat(underRuleset(renameCategories(saved.state))));
+    if (saved.mode === 'local') this.startLocal(
+        soloHotSeat(underRuleset(renameCategories(saved.state)), engine, () =>
+          toasts.show('Delve together is now played online in a room. On one device, Delve is for one player.', 'info', { title: 'Run not resumed' }),
+        ),
+      );
     else if (saved.mode === 'host') {
       // The host's last moment before the reload, which reset() lets go of with the save ('resumed' reads it).
       const alive = readStored(ALIVE, 'session');
@@ -675,15 +652,7 @@ class Session {
   }
 
   private loadPrivate(p: HostPrivate) {
-    this.priv = {
-      ...p,
-      secrets: [...p.secrets],
-      bannedSecrets: [...p.bannedSecrets],
-      bannedPeers: [...p.bannedPeers],
-      // Saved by a build that didn't have these yet: start them empty.
-      bannedNames: [...(p.bannedNames ?? [])],
-      blockedPeers: [...(p.blockedPeers ?? [])],
-    };
+    this.priv = privateFrom(p);
     this.secretToPlayer = new Map(p.secrets);
     this.myPlayerId = p.myPlayerId;
   }
@@ -995,27 +964,12 @@ class Session {
 
   /** `seal`: it can open sealed pictures (seal.ts). `owner`: under the held name, the owner key's signature over this link's challenge (hi), checked here. */
   private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, seal: boolean, owner?: string) {
-    const outdated = versionProblem(v);
-    if (outdated) {
-      this.dismiss(conn, { t: 'error', message: outdated, version: true });
-      return;
-    }
-    // It couldn't open a question's pictures, and nobody gets them unsealed.
-    if (!seal) {
-      this.dismiss(conn, { t: 'error', message: NO_SEAL_GUEST });
-      return;
-    }
     const known = this.secretToPlayer.get(secret);
     // A kicked player stays out, under their old token or (as a newcomer) their old name.
-    if (this.priv.bannedSecrets.includes(secret)) {
-      this.dismiss(conn, { t: 'kicked' });
-      return;
-    }
-    // Everything past this point is paid for out of the join budgets, turned-down attempts included.
-    const busy = this.joins.admit(secret, !!known);
-    if (busy) {
-      // Not a refusal: the client tries again a little later.
-      this.dismiss(conn, { t: 'busy', message: busy });
+    // Everything past the kick is paid for out of the join budgets, turned-down attempts included.
+    const refusal = helloRefusal(v, seal, this.priv.bannedSecrets.includes(secret), () => this.joins.admit(secret, !!known), NO_SEAL_GUEST);
+    if (refusal) {
+      this.dismiss(conn, refusal);
       return;
     }
     if (isHeldName(cleanName(name))) {
@@ -1079,34 +1033,20 @@ class Session {
   /** Remembers a newcomer's token, forgetting the oldest ones of people who are gone once there are too many. */
   private rememberSecret(secret: string, playerId: string, s: GameState) {
     this.secretToPlayer.set(secret, playerId);
-    this.priv.secrets.push([secret, playerId]);
-    if (this.priv.secrets.length <= MAX_KNOWN) return;
-    const here = new Set([...s.players, ...(s.spectators ?? [])].map((o) => o.id));
-    const drop = this.priv.secrets.findIndex(([, id]) => !here.has(id));
-    if (drop < 0) return;
-    this.secretToPlayer.delete(this.priv.secrets[drop][0]);
-    this.priv.secrets.splice(drop, 1);
+    const gone = rememberSecret(this.priv.secrets, secret, playerId, new Set([...s.players, ...(s.spectators ?? [])].map((o) => o.id)));
+    if (gone !== null) this.secretToPlayer.delete(gone);
   }
 
-  /** An answer (to the question asked at `askedAt`) that arrives before a human could have seen the question. */
+  /** An answer (to the question asked at `askedAt`) that arrives before a human could have seen the question (sessionRules.ts). */
   private tooFast(guest: Guest, askedAt: number | undefined) {
-    const q = this.state?.question;
-    // One for a question gone by, or come in as it was revealed, is the engine's to drop ("Too late!").
-    if (!q || this.state!.phase !== 'question' || (askedAt !== undefined && askedAt !== q.askedAt)) return false;
-    // Before its clock the engine turns every answer down by itself (too early, without a word).
-    if (!clockRuns(q)) return false;
-    // No art went out at all: don't hold answers back waiting for it.
-    if (this.artFailedFor === q.askedAt) return false;
-    // Counted from the key reaching them (it opens the art): the sealed bytes may have been there for a while.
-    if (!guest.mediaAt || guest.mediaAt.qid !== q.askedAt) return true;
-    // Nor before its clock started as this device last saw it (a Delve clock
-    // the host's reload held still carries on later); the host notes it
-    // running as it goes out to everyone (noteClock).
-    const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
+    const qid = this.state?.question?.askedAt;
+    // The host notes the clock running as it goes out to everyone (noteClock).
+    const seen = this.clockSeen;
+    const clockAt = seen && seen.qid === qid ? seen.at : 0;
     // The link's own round trip (honestRtt), not the pongs': a busy host page
     // reads those late and would turn honest quick answers down, and a guest
     // can't make the browser's measure shorter than its link is.
-    return performance.now() - Math.max(guest.mediaAt.at, clock) < honestRtt(guest) + MIN_HUMAN_MS;
+    return tooFast(this.state, askedAt, { artFailedFor: this.artFailedFor, mediaAt: guest.mediaAt, clockAt, rtt: honestRtt(guest), now: performance.now() });
   }
 
   private watchOwnPresence() {
@@ -2045,7 +1985,7 @@ class Session {
         }
         case 'state':
           this.syncClock(msg.now);
-          if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
+          if (takesState(this.state, msg.state)) {
             try {
               this.noteChange(this.state, msg.state);
             } catch (err) {
@@ -2269,6 +2209,13 @@ class Session {
 
   /** Lab only: the grayscale the art is prepared with, in place of the rules'. Always null in the game. */
   labGrayscale: Grayscale | null = null;
+  /**
+   * Lab only (the card bench, cards.html): the find on each card of the deal
+   * at `turn` (the state's turnCount), by category, shown in place of the
+   * run's (any find on any card, past the game's two of different kinds);
+   * any later deal shows its own. Always null in the game.
+   */
+  labFinds: { turn: number; finds: Record<string, FindKind> } | null = null;
 
   /** Lab only: puts a state in place as the host would, with its timers, sounds, art and records. */
   labSetState(next: GameState) {
@@ -2309,6 +2256,12 @@ class Session {
     } catch (err) {
       return err instanceof ActionError ? err.message : String(err);
     }
+  }
+
+  /** Delve: the finds on the cards on offer (lib/delve's findOffers), or on the card bench (lab only), its own for the deal it made. */
+  cardFinds(s: GameState): CardFind[] {
+    const bench = this.labFinds?.turn === s.turnCount && s.phase === 'choosing' ? this.labFinds.finds : null;
+    return bench ? Object.entries(bench).map(([category, kind]) => ({ category, kind })) : findOffers(s);
   }
 
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
@@ -3134,11 +3087,6 @@ class Session {
   }
 }
 
-type Saved =
-  | { mode: 'local'; state: GameState }
-  | { mode: 'host'; code: string; state: GameState; priv: HostPrivate }
-  /** `watch`: the guest chose to watch rather than play. */
-  | { mode: 'client'; code: string; name: string; watch?: boolean };
 /** The save's storage name, in sessionStorage (each tab its own; the room bot keeps a copy, src/bot/host.ts). */
 export const SAVE = 'session.v4';
 /** Beside the save, in sessionStorage: when the host was last here (Session.noteAlive; the room bot keeps a copy too). */
@@ -3191,30 +3139,13 @@ export function veilClock(s: GameState): { secs: number; share: number } {
   return { secs, share: Math.max(own, activeRules(s).veil?.share ?? 0) };
 }
 
-/**
- * Hot-seat Delve is a run alone (together it is co-op, played online): a
- * group's hot-seat run saved by an older build goes back to its lobby, where
- * the players can pick another game or delve alone.
- */
-function soloHotSeat(s: GameState): GameState {
-  if (!s.delve || s.hostId !== null || !isGroupRun(s) || s.phase === 'lobby' || s.phase === 'over') return s;
-  try {
-    const lobby = engine.apply(s, { type: 'restart' }, null);
-    toasts.show('Delve together is now played online in a room. On one device, Delve is for one player.', 'info', { title: 'Run not resumed' });
-    return lobby;
-  } catch {
-    return createGame(null);
-  }
-}
-
 function readSaved(): Saved | null {
   try {
     const raw = readStored(SAVE, 'session');
-    if (raw) return JSON.parse(raw) as Saved;
+    if (raw) return parseSaved(raw, null);
     const old = readLegacy(OLD_SAVE_KEY, 'session');
     removeLegacy(OLD_SAVE_KEY, 'session');
-    const saved = old ? (JSON.parse(old) as Saved) : null;
-    return saved?.mode === 'local' ? saved : null;
+    return parseSaved(null, old);
   } catch {
     return null;
   }

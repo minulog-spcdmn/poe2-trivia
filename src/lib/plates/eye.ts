@@ -5,6 +5,7 @@ import { at as atAbout, f, hatch, joined, lineParts, pt, rad, ringParts, seeded,
 import { PLANET_SIGNS } from '../alchemy.ts';
 import { circlePath, engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, hollowFrame, mapPath, staged, stroke, turned, type Plate, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
+import { boxOf, union, type Box } from '../plateBox.ts';
 
 // An alchemist's circle, engraved, that draws itself behind the item art
 // and turns slowly, in layers:
@@ -439,5 +440,20 @@ const eye = (key: string) =>
 const EYE_GLOW = eye('c');
 const EYE_LINES = eye('w');
 
-/** The plate, whole or `hollow`: its layers, and (whole) the eye drawn for the glow and for the lines (`@id@` standing for the circle's id). */
-export const build = (hollow = false) => ({ layers: stage(hollow), eye: (hollow ? ['', ''] : [EYE_GLOW, EYE_LINES]) as [string, string] });
+/**
+ * The box the eye is drawn in (ArcaneCircle sizes its layer to it): its
+ * paths' (the lid holds the iris, clipped to it), and room for its glance
+ * aside (ArcaneCircle's gaze: 5 at most) and the pupil's lift.
+ */
+const GLANCE = 6;
+const eyeBox = (): Box => {
+  const [x0, y0, x1, y1] = union(boxOf(EYE_GLOW), boxOf(EYE_LINES))!;
+  return [x0 - GLANCE, y0 - GLANCE, x1 + GLANCE, y1 + GLANCE];
+};
+
+/** The plate, whole or `hollow`: its layers, and (whole) the eye drawn for the glow and for the lines (`@id@` standing for the circle's id) and the box it's drawn in. */
+export const build = (hollow = false) => ({
+  layers: stage(hollow),
+  eye: (hollow ? ['', ''] : [EYE_GLOW, EYE_LINES]) as [string, string],
+  ...(hollow ? {} : { eyeBox: eyeBox() }),
+});

@@ -14,8 +14,12 @@
 // dozen paths, not the whole drawing.
 
 import { f, pt, rad, ring, ringParts, type Part, type Pt, type Wear } from './arcane.ts';
+import { boxOf, union, type Box } from './plateBox.ts';
 
 const sec = (v: number) => `${v.toFixed(3)}s`;
+/** How large a seal is as its stamp starts (ArcaneStage's stamp), and the widest stroke it's drawn with (the glow's). */
+const STAMP = 1.6;
+const STAMP_STROKE = 2.2;
 
 /**
  * Timing for drawing a broken line in one stroke: each piece starts when
@@ -34,7 +38,13 @@ export const stroke = (parts: Part[], delay: number, t: number) => {
 export type Stroke = ReturnType<typeof stroke>;
 
 /** A drawing's lines as they draw in, the same lines still, and when the first of them starts and the last is drawn (s). */
-export type Plate = { drawing: string; still: string; start: number; end: number };
+/**
+ * A layer's drawing (`drawing`, as it draws in, from `start` to `end`) and its
+ * still copy once drawn (`still`). `reach`: how far its seals reach as they
+ * are stamped in, from 1.6 times their size (ArcaneStage), beyond what the
+ * still copy draws.
+ */
+export type Plate = { drawing: string; still: string; start: number; end: number; reach?: Box };
 
 /**
  * One layer of a rune circle: its lines drawn twice, worn (`lines`) and
@@ -81,16 +91,26 @@ export type StageLayer = {
   mask?: { d: string; grow: number; with: string };
   inner?: boolean;
   cut?: boolean;
+  /** The box its drawing takes up (lib/plateBox.ts), set by `staged`: the stage sizes the layer to it. */
+  box?: Box;
 };
 
 /**
  * A plate's layers as built whole or `hollow` (each its own plate, so a
  * circle never builds the other): hollow, without its `inner` layers, and
  * its `cut` layers cut; whole, nothing cut. (A hollow plate draws its
- * hollow frame, and whatever of its design reaches in to it, itself.)
+ * hollow frame, and whatever of its design reaches in to it, itself.) Each
+ * layer gets the box its drawing takes up (`box`, lib/plateBox.ts).
  */
 export const staged = (layers: StageLayer[], hollow: boolean): StageLayer[] =>
-  layers.filter((l) => !(hollow && l.inner)).map(({ inner: _, cut, ...l }) => (hollow && cut ? { ...l, cut } : l));
+  layers
+    .filter((l) => !(hollow && l.inner))
+    .map(({ inner: _, cut, ...l }) => (hollow && cut ? { ...l, cut } : l))
+    .map((l) => {
+      // The glow is the same strokes as the lines, unworn and wider: its box holds them both (tests/plateBox.test.ts).
+      const box = union(boxOf(l.glow.still) ?? boxOf(l.lines.still), union(l.glow.reach ?? null, l.lines.reach ?? null));
+      return box ? { ...l, box } : l;
+    });
 
 /**
  * The frame round a hollow circle's heart (`staged`), the same in
@@ -218,13 +238,15 @@ export const circlePath = (r: number) => ring([0, 0], r);
 export const engrave = (draw: (e: Engraver) => void): Plate => {
   const e = engraver();
   draw(e);
-  return { drawing: e.drawing(), still: e.still(), start: e.start(), end: e.end() };
+  const reach = e.reach();
+  return { drawing: e.drawing(), still: e.still(), start: e.start(), end: e.end(), ...(reach ? { reach } : {}) };
 };
 export type Engraver = ReturnType<typeof engraver>;
 const engraver = () => {
   let drawing = '';
   let start = Infinity;
   let end = 0;
+  let reach: Box | null = null;
   const still = new Map<string, string>();
   const keep = (cls: string, d: string) => still.set(cls, (still.get(cls) ?? '') + d);
   /** A line that starts at `from` and is done at `to`. */
@@ -264,6 +286,10 @@ const engraver = () => {
       keep('hair', mapPath(circlePath(r - inner), place));
       for (const [d, cls, k] of signs) keep(k === 1 ? cls : `${cls} big`, mapPath(d, (p) => place([p[0] * k, p[1] * k]), turn, k));
       span(delay, delay + Math.max(0.55, t, 0.3 + 0.6));
+      // Stamped in from 1.6 times its size about its centre (its strokes with it).
+      const [cx, cy] = place([0, 0]);
+      const k = STAMP * (r + STAMP_STROKE / 2);
+      reach = union(reach, [cx - k, cy - k, cx + k, cy + k]);
     },
     /** A mark of the script, written at `delay`, `transform` and `place` putting it on the band. */
     mark(d: string, delay: number, transform: string, place: (p: Pt) => Pt, turn: number) {
@@ -272,6 +298,7 @@ const engraver = () => {
       span(delay, delay + 0.35);
     },
     drawing: () => drawing,
+    reach: () => reach,
     still: () => [...still].map(([cls, d]) => `<path d="${d}"${cls ? ` class="${cls}"` : ''}/>`).join(''),
     start: () => start,
     end: () => end,

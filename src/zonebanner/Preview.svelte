@@ -90,7 +90,7 @@
   });
 </script>
 
-<div class="preview">
+<div class="frame-panel">
   <header class="bar">
     <h1>Zone card</h1>
     <label class="zone">
@@ -121,83 +121,11 @@
 </div>
 
 <style>
-  .preview {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-    background: #0a0908;
-  }
-  .bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem 1rem;
-    padding: 0.7rem 1rem 0.3rem;
-    border-bottom: 1px solid rgba(201, 164, 92, 0.18);
-  }
-  h1 {
-    margin: 0 0.4rem 0 0;
-    font-size: 1.05rem;
-    letter-spacing: 0.08em;
-    color: var(--gold-hi);
-  }
-  select {
-    font: inherit;
-    font-size: 0.95rem;
-    padding: 0.25rem 0.4rem;
-    color: var(--gold-hi);
-    background: #15100c;
-    border: 1px solid var(--gold-lo);
-    border-radius: 3px;
-  }
-  .tog {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.92rem;
-    color: var(--gold);
-    cursor: pointer;
-  }
-  .tog input {
-    accent-color: var(--gold);
-  }
+  /* The bar and the frame: lab/framePanel.css. */
   .at input {
     width: 12rem;
   }
   .at {
     font-variant-numeric: tabular-nums;
-  }
-  .hint {
-    font-size: 0.85rem;
-    color: var(--muted);
-  }
-  .stage {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    justify-content: center;
-    background: #050404;
-  }
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: #0a0908;
-  }
-  .phone {
-    padding: 0.8rem 0;
-  }
-  .phone iframe {
-    width: 375px;
-    max-width: 100%;
-    border: 1px solid rgba(201, 164, 92, 0.35);
-    border-radius: 6px;
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
   }
 </style>

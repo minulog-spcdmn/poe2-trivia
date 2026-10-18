@@ -30,11 +30,14 @@ const store = new Map<string, string>();
 let full = false;
 /** A key no write to fits (storage too full for it). */
 let refuse: string | null = null;
-(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store, (k, v) => !((full && v.length > 2000) || k === refuse));
+/** The longest value that still fits. */
+let room = Infinity;
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store, (k, v) => !((full && v.length > 2000) || k === refuse || v.length > room));
 beforeEach(() => {
   store.clear();
   full = false;
   refuse = null;
+  room = Infinity;
 });
 
 const right = (q: Question) => q.options.indexOf(q.itemId);
@@ -569,4 +572,19 @@ test('a stored codex keeps only item ids: whatever else got in is let go on read
   assert.deepEqual(Object.keys(back.items), [a.id]);
   assert.equal(back.log.length, 1);
   assert.deepEqual(back.fooled, {});
+});
+
+test('storage: when the codex no longer fits, the older half of its log goes, and the newest entries stay', () => {
+  let x: Codex = emptyCodex();
+  for (let i = 0; i < 40; i++) x = record(x, enc(i + 1, items[i].id, ok()));
+  store.set(CODEX_KEY, serializeCodex(x));
+  // Room for the codex with half its log, not with all of it.
+  const next = record(x, enc(500, a.id, ok()));
+  room = serializeCodex({ ...next, log: next.log.slice(Math.ceil(next.log.length / 2)) }).length;
+  recordEncounter(enc(500, a.id, ok()));
+  const c = loadCodex();
+  assert.equal(c.log.length, 20);
+  assert.deepEqual(c.log.map((e) => e.t), [...x.log.slice(-19).map((e) => e.t), 500]);
+  // Only the log is cut: what the codex counts keeps the newest answer too.
+  assert.equal(c.items[a.id].seen, next.items[a.id].seen);
 });

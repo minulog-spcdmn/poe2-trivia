@@ -1,15 +1,18 @@
 <script lang="ts">
   import ArcaneStage, { type StageLayer } from './ArcaneStage.svelte';
   import { usePlate } from '../lib/plateStore.svelte';
+  import { WHOLE, placed, type Box } from '../lib/plateBox';
 
   let { state, size, color, strength, hollow = false }: { state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number; hollow?: boolean } = $props();
 
   // Its plate (src/lib/plates/eye.ts), built away from the page; the circle
   // is put on the page as soon as it's at hand.
-  const plate = usePlate<{ layers: StageLayer[]; eye: [string, string] }>('eye', () => hollow);
+  const plate = usePlate<{ layers: StageLayer[]; eye: [string, string]; eyeBox?: Box }>('eye', () => hollow);
   const uid = $props.id();
   const eyeGlow = $derived(plate.value?.eye[0].replaceAll('@id@', uid) ?? '');
   const eyeLines = $derived(plate.value?.eye[1].replaceAll('@id@', uid) ?? '');
+  // The eye's layer the size of the eye, not of the whole circle (lib/plateBox.ts), opening and blinking about the plate's centre as ever.
+  const at = $derived(placed(plate.value?.eyeBox ?? WHOLE, WHOLE));
 </script>
 
 <!--
@@ -21,9 +24,9 @@
 -->
 
 {#snippet eye()}
-  <div class="layer eye">
-    <svg class="glow" viewBox="-100 -100 200 200">{@html eyeGlow}</svg>
-    <svg viewBox="-100 -100 200 200">{@html eyeLines}</svg>
+  <div class="layer eye" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:transform-origin={at.origin}>
+    <svg class="glow" viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeGlow}</svg>
+    <svg viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeLines}</svg>
   </div>
 {/snippet}
 

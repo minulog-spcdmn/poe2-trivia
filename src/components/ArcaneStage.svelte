@@ -1,6 +1,8 @@
 <script module lang="ts">
   import { untrack, type Snippet } from 'svelte';
   import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
+  import { WHOLE, placed, type Box } from '../lib/plateBox';
+  import { switchedOff } from '../lib/switchedOff';
 
   export type { StageLayer };
 
@@ -69,8 +71,11 @@
   // (A circle's layers are fixed: it is drawn once, as it mounts.)
   let late = $state<Record<string, number>>(Object.fromEntries(untrack(() => layers).filter((l) => !due(l)).map((l) => [l.name, 0])));
   let drawn = $state<Record<string, true>>({});
-  let summon: HTMLDivElement;
+  let summon = $state<HTMLDivElement>();
+  /** Every circle left out (?off=circles, the beta and the dev server only: lib/switchedOff.ts). */
+  const off = switchedOff('circles');
   $effect(() => {
+    if (off) return;
     let timers: ReturnType<typeof setTimeout>[] = [];
     let stopped = false;
     /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
@@ -88,7 +93,7 @@
     // old one's `ready` rejects: then it's timed from the new one.
     const follow = () => {
       if (stopped) return;
-      const settle = summon.getAnimations()[0];
+      const settle = summon?.getAnimations()[0];
       if (settle) settle.ready.then(() => time(performance.now() - Number(settle.currentTime ?? 0)), follow);
       else time(performance.now());
     };
@@ -103,11 +108,15 @@
   const lateOf = (name: string) => `${(late[name] ?? 0).toFixed(3)}s`;
 </script>
 
+{#if !off}
 <div class="arcane {mood}" aria-hidden="true" style:--clear="{HOLLOW_CLEAR}%" style:--size={size} style:color={color} style:opacity={strength}>
   <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
-    {#snippet plain(l: StageLayer)}
+    {#snippet plain(l: StageLayer, inside: Box)}
       {@const parent = l.upright ? layers.find((p) => p.name === l.within)?.spin : undefined}
+      <!-- (A layer cut round the hollow keeps the whole plate: its mask is drawn to it.) -->
+      {@const box = (!l.cut && l.box) || WHOLE}
+      {@const at = placed(box, inside, l.pivot)}
       {@const spin = parent ? { turn: parent.turn, from: -parent.from, reverse: !parent.reverse } : l.spin}
       <div
         class="layer"
@@ -130,25 +139,36 @@
         style:--fold={l.flutter?.fold}
         style:--flutter={l.flutter && `${l.flutter.period}s`}
         style:--flutter-delay={l.flutter && `${l.flutter.delay ?? 0}s`}
-        style:transform-origin={l.pivot && `${(l.pivot[0] + 100) / 2}% ${(l.pivot[1] + 100) / 2}%`}
+        style:left={at.left}
+        style:top={at.top}
+        style:width={at.width}
+        style:height={at.height}
+        style:transform-origin={at.origin}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
       >
-        <svg class="glow" viewBox="-100 -100 200 200" style:--late={lateOf(l.name)}>{@html plate(l.glow, l.name)}</svg>
-        <svg viewBox="-100 -100 200 200" style:--late={lateOf(l.name)}>{@html plate(l.lines, l.name)}</svg>
+        <svg class="glow" viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.glow, l.name)}</svg>
+        <svg viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.lines, l.name)}</svg>
         {#each layers.filter((c) => c.within === l.name) as child (child.name)}
-          {@render layer(child)}
+          {@render layer(child, box)}
         {/each}
       </div>
     {/snippet}
     <!-- A masked layer sits in a box that turns with the layer it follows and carries the mask, inside one that turns back the
          same, so the layer keeps its own way and only the mask moves; all on the compositor. Layers side by side with the same
          mask (a glory in sectors) share the one box, so the mask is drawn once. -->
-    {#snippet masked(group: StageLayer[])}
+    {#snippet masked(group: StageLayer[], inside: Box)}
       {@const m = group[0].mask}
       {@const by = m && layers.find((p) => p.name === m.with)?.spin}
       {#if m && by}
+        <!-- (The whole plate, which its mask is drawn to, wherever it sits.) -->
+        {@const at = placed(WHOLE, inside)}
         <div
           class="layer spin"
+          style:left={at.left}
+          style:top={at.top}
+          style:width={at.width}
+          style:height={at.height}
+          style:transform-origin={at.origin}
           style:--turn="{by.turn}s"
           style:--from="{by.from}deg"
           style:--dir={by.reverse ? 'reverse' : 'normal'}
@@ -157,32 +177,36 @@
         >
           <div class="layer upright" style:--turn="{by.turn}s" style:--from="{-by.from}deg" style:--dir={by.reverse ? 'normal' : 'reverse'}>
             {#each group as l (l.name)}
-              {@render plain(l)}
+              {@render plain(l, WHOLE)}
             {/each}
           </div>
         </div>
       {:else}
         {#each group as l (l.name)}
-          {@render plain(l)}
+          {@render plain(l, inside)}
         {/each}
       {/if}
     {/snippet}
-    {#snippet layer(l: StageLayer)}
-      {@render masked([l])}
+    {#snippet layer(l: StageLayer, inside: Box)}
+      {@render masked([l], inside)}
     {/snippet}
     {#each groups as group (group[0].name)}
-      {@render masked(group)}
+      {@render masked(group, WHOLE)}
     {/each}
     {@render heart?.()}
     {#if point}
-      <div class="layer point" style:--set="{point.delay}s">
-        <svg class="glow" viewBox="-100 -100 200 200"><circle r={point.r} class="dot" /></svg>
-        <svg viewBox="-100 -100 200 200"><circle r={point.r} class="dot" /></svg>
+      <!-- (Its layer only as large as it swells as it's set.) -->
+      {@const reach = point.r * 2.4 + 1.5}
+      {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
+      <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
+        <svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
+        <svg viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
       </div>
     {/if}
     <div class="wave"></div>
   </div>
 </div>
+{/if}
 
 <style>
   .arcane {
