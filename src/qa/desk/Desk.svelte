@@ -17,6 +17,14 @@
   import Live from './Live.svelte';
   import { liveRoom, type LiveRoom } from '../live/room.ts';
   import type { Scene } from '../scene.ts';
+  import { BETA, LOCAL } from '../../lib/channel.ts';
+
+  /**
+   * Live rooms only where their seats get rooms and storage of their own
+   * (storage.ts' QA_SEAT, peer.ts): the dev server's channel and the beta's.
+   * Under npm run dev:live a room would open among the live game's.
+   */
+  const LIVE_ROOMS = BETA || LOCAL;
 
   /** The design's boards, by name (docs/handoff/end-screen/screens). */
   const BOARDS: Record<string, string> = Object.fromEntries(
@@ -133,11 +141,13 @@
   const board = $derived(stop && stop.scene.boards?.[stop.size] ? BOARDS[stop.scene.boards[stop.size]!] : undefined);
   /** The knobs as set, by scene (the address keeps the shown scene's). */
   let knobsSet = $state<Record<string, Record<string, string>>>({});
-  {
+  /** The address's knobs, as the shown scene's. */
+  function knobsFromAddress() {
     const p = new URLSearchParams(location.search);
     const s = p.get('s');
     if (s) knobsSet[s] = Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
   }
+  knobsFromAddress();
   const knobs = $derived(stop ? knobValues(stop.scene.knobs, knobsSet[stop.scene.key]) : {});
   /** The knobs set away from their defaults, as the frames' address gives them. */
   const knobQuery = $derived(stop ? Object.entries(knobs).filter(([k, v]) => stop.scene.knobs?.find((x) => x.key === k)?.default !== v) : []);
@@ -231,6 +241,7 @@
       zoomed = v.zoomed;
       outlines = v.outlines;
       view = v.view ?? 'all';
+      knobsFromAddress();
     };
     addEventListener('popstate', back);
     return () => removeEventListener('popstate', back);
@@ -256,7 +267,7 @@
       {#if board}
         <button class="hold" onpointerdown={() => (holding = true)} onpointerup={() => (holding = false)} onpointerleave={() => (holding = false)}>Hold for design <kbd>H</kbd></button>
       {/if}
-      {#if built?.state && !live}
+      {#if built?.state && !live && LIVE_ROOMS}
         <button class="hold" onclick={play} title="This scene's room for real: every seat playable, by hand or by a bot, with its link to make bad">Play from here</button>
       {/if}
       {#if befores.some(Boolean)}

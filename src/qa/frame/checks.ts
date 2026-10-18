@@ -6,7 +6,7 @@
 // rules out of everything the game says. The elements at fault are marked
 // (data-qa-flag) and outlined, unless the desk has outlines off.
 
-import { CRASH_MESSAGE } from './crash.svelte.ts';
+import { CRASH_MESSAGE } from './crashCue.svelte.ts';
 
 /** What a frame finds wrong; and banding, which only the sweep can see (scripts/qa.mjs, in a screenshot). */
 export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'banding';
@@ -39,7 +39,7 @@ export function listen() {
   const real = console.error.bind(console);
   console.error = (...args: unknown[]) => {
     const said = args.map((a) => (a instanceof Error ? a.message : String(a))).join(' ');
-    // (A crash a scene set off on purpose is no error of the game's: crash.svelte.ts.)
+    // (A crash a scene set off on purpose is no error of the game's: crashCue.svelte.ts.)
     if (!said.includes(CRASH_MESSAGE)) errors.push(said);
     real(...args);
   };

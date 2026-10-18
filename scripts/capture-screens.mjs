@@ -36,7 +36,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
  * The sizes, from the one list the QA desk uses too (src/qa/sizes.ts): the
  * design canvas's three (quick), the desk's walk (walk: a phone, a 13-inch
  * laptop and a 4K screen at 150% and 100%) and every size (full). Each shot
- * gets its size's own device scale unless --dpr names one.
+ * is taken at a device scale of 2 on touch sizes and 1 otherwise, as
+ * always; --dpr names another, or `device` for each size's own.
  */
 const PRESETS = Object.fromEntries(
   Object.entries(SIZE_SETS).map(([name, keys]) => [
@@ -103,7 +104,7 @@ if (numeric.length > 1) {
   process.exit(2);
 }
 for (const word of parsed.positionals) {
-  const fits = { page: { test: isPage }, url: /^https?:\/\//, preset: /^(quick|walk|full)$/, dpr: /^[\d.]+$/, concurrency: /^\d+$/, timeout: /^[\d.]+$/, out: { test: (w) => !/^[\d.]+$/.test(w) && !/^https?:\/\//.test(w) && !(w in PRESETS) && !(w.split('=')[0] in OPTIONS) && !isPage(w) } };
+  const fits = { page: { test: isPage }, url: /^https?:\/\//, preset: /^(quick|walk|full)$/, dpr: /^([\d.]+|device)$/, concurrency: /^\d+$/, timeout: /^[\d.]+$/, out: { test: (w) => !/^[\d.]+$/.test(w) && !/^https?:\/\//.test(w) && !(w in PRESETS) && !(w.split('=')[0] in OPTIONS) && !isPage(w) } };
   const taker = awaiting.findIndex((name) => fits[name]?.test(word));
   if (taker >= 0) {
     const [name] = awaiting.splice(taker, 1);
@@ -142,7 +143,8 @@ Usage: npm run screens -- [options]   (or node scripts/capture-screens.mjs [opti
                        ${entries.join(' ')}
   --out DIR            where the shots go (default screens/<timestamp>/)
   --full-page          the whole scrolling page, not only the viewport
-  --dpr N              device scale for every size (default: each size's own, from src/qa/sizes.ts)
+  --dpr N|device       device scale for every size (default 2 for touch sizes, 1 otherwise;
+                       device: each size's own, from src/qa/sizes.ts)
   --webgl              keep WebGL (the effects, on the GPU) and full motion; by default WebGL
                        is hidden and motion reduced (CLAUDE.md)
   --concurrency N      shots taken at once, each in its own context (default 4)
@@ -169,7 +171,8 @@ if (!(Number.isInteger(concurrency) && concurrency >= 1)) {
   console.error(`--concurrency takes a whole number, at least 1, not "${opts.concurrency}".`);
   process.exit(2);
 }
-const dpr = opts.dpr !== undefined ? Number(opts.dpr) : undefined;
+const ownDpr = opts.dpr === 'device';
+const dpr = opts.dpr !== undefined && !ownDpr ? Number(opts.dpr) : undefined;
 if (dpr !== undefined && !(dpr > 0 && dpr <= 4)) {
   console.error(`--dpr takes a number above 0 and up to 4, not "${opts.dpr}".`);
   process.exit(2);
@@ -222,7 +225,7 @@ for (const p of pages) {
 
 /** Takes one shot: a fresh context (its own storage) at the size, the page loaded and settled. */
 async function shoot(pagePath, size) {
-  const scale = dpr ?? size.dpr;
+  const scale = dpr ?? (ownDpr ? size.dpr : size.touch ? 2 : 1);
   const url = new URL(pagePath.replace(/^\/+/, ''), base).href;
   const file = `${stems.get(pagePath)}-${size.name}-${size.w}x${size.h}.png`;
   const warnings = [];

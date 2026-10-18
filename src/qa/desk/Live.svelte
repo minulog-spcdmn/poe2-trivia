@@ -46,7 +46,7 @@
       );
     const tick = setInterval(() => (now = performance.now()), 500);
     const heard = (e: MessageEvent) => {
-      const seat = room.seats.find((s) => frames[s.key]?.contentWindow === e.source);
+      const seat = room.seats.find((s) => frames[s.key]?.contentWindow === e.source && e.origin === originOf(s.key));
       const m = e.data as SeatMessage | null;
       if (!seat || !m || typeof m !== 'object') return;
       if (m.qa === 'seat') looks[seat.key] = m.look;
@@ -67,13 +67,17 @@
     const seat = room.seats.find((s) => s.key === key)!;
     // WebGL in the first seat only: four backdrops at once are the one thing that stalled the spike's seats.
     const query = `?live${i === 0 ? '' : '&off=webgl'}`;
-    const origin = LOCAL ? `${location.protocol}//${key}.localhost:${location.port}` : '';
-    return `${origin}${location.pathname}${query}#seed=${seedParam(seat.seed)}`;
+    return `${LOCAL ? originOf(key) : ''}${location.pathname}${query}#seed=${seedParam(seat.seed)}&desk=${encodeURIComponent(location.origin)}`;
   }
-  const ask = (key: string, op: Omit<SeatOp, 'qa'>) => frames[key]?.contentWindow?.postMessage({ qa: 'seat-op', ...op } satisfies SeatOp, '*');
+  /** A seat's origin: its own on the dev server, the desk's on the beta. */
+  const originOf = (key: string) => (LOCAL ? `${location.protocol}//${key}.localhost:${location.port}` : location.origin);
+  const ask = (key: string, op: Omit<SeatOp, 'qa'>) => frames[key]?.contentWindow?.postMessage({ qa: 'seat-op', ...op } satisfies SeatOp, originOf(key));
 
+  // The link's faults as set here, at once: a seat's own look comes only once a second, too late for a second click.
+  const silent = (key: string) => downSince[key] !== undefined;
+  let lags = $state<Record<string, number>>({});
   function drop(key: string) {
-    if (looks[key]?.link.holding) {
+    if (silent(key)) {
       ask(key, { op: 'release' });
       delete downSince[key];
     } else {
@@ -81,13 +85,22 @@
       downSince[key] = performance.now();
     }
   }
-  const lagOf = (key: string) => looks[key]?.link.lag ?? 0;
-  const nextLag = (key: string) => LAGS[(LAGS.indexOf(lagOf(key)) + 1) % LAGS.length];
+  const lagOf = (key: string) => lags[key] ?? 0;
+  function lag(key: string) {
+    lags[key] = LAGS[(LAGS.indexOf(lagOf(key)) + 1) % LAGS.length];
+    ask(key, { op: 'lag', ms: lags[key] });
+  }
+  /** A reload starts the seat afresh, its link whole. */
+  function reload(key: string) {
+    delete downSince[key];
+    delete lags[key];
+    ask(key, { op: 'reload' });
+  }
 
   function status(key: string): string {
     const l = looks[key];
     if (!l) return 'Starting…';
-    if (l.link.holding) return `Silent for ${Math.round((now - (downSince[key] ?? now)) / 1000)} s (noticed 12 to 18 s in)`;
+    if (silent(key)) return `Silent for ${Math.round((now - (downSince[key] ?? now)) / 1000)} s (noticed 12 to 18 s in)`;
     if (l.gaveUp) return 'Gave up on the host';
     if (l.status === 'connecting') return 'Joining…';
     if (l.status === 'lost') return 'Lost the host';
@@ -148,15 +161,15 @@
             </div>
             <figcaption>
               <span class="who">{seat.name} ({seat.role === 'local' ? 'this device' : seat.role})</span>
-              <span class="state" class:down={looks[seat.key]?.link.holding}>{status(seat.key)}</span>
+              <span class="state" class:down={silent(seat.key)}>{status(seat.key)}</span>
               <span class="tools">
                 <button class:on={looks[seat.key]?.bot} onclick={() => ask(seat.key, { op: 'bot', on: !looks[seat.key]?.bot })}>Bot</button>
                 {#if seat.role !== 'local'}
-                  <button class:on={lagOf(seat.key) > 0} onclick={() => ask(seat.key, { op: 'lag', ms: nextLag(seat.key) })}>Lag {lagOf(seat.key) ? `${lagOf(seat.key)} ms` : 'off'}</button>
-                  <button class:on={looks[seat.key]?.link.holding} onclick={() => drop(seat.key)}>{looks[seat.key]?.link.holding ? 'Bring back' : 'Drop link'}</button>
+                  <button class:on={lagOf(seat.key) > 0} onclick={() => lag(seat.key)}>Lag {lagOf(seat.key) ? `${lagOf(seat.key)} ms` : 'off'}</button>
+                  <button class:on={silent(seat.key)} onclick={() => drop(seat.key)}>{silent(seat.key) ? 'Bring back' : 'Drop link'}</button>
                   <button onclick={() => ask(seat.key, { op: 'cut' })}>Cut</button>
                 {/if}
-                <button onclick={() => ask(seat.key, { op: 'reload' })}>Reload</button>
+                <button onclick={() => reload(seat.key)}>Reload</button>
                 {#if seat.role === 'guest'}
                   <button onclick={() => ask('host', { op: 'kick', id: seat.playerId ?? '' })}>Kick</button>
                 {/if}

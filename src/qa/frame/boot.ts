@@ -145,7 +145,7 @@ export async function boot(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
-  const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crash.svelte.ts')]);
+  const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crashCue.svelte.ts')]);
   mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
 
   // A question's pictures, made as the host makes them and taken in as each

@@ -12,11 +12,16 @@
 // room or rejoins it, as after any reload.
 
 import { faults, installFaults } from './fault.ts';
+import { LOCAL } from '../../lib/channel.ts';
 import type { SeatLook, SeatOp, SeatMessage } from '../messages.ts';
 
 export async function seat() {
   installFaults();
   const storage = await import('../../lib/storage.ts');
+  // The desk it answers to, kept in the address across reloads: its own origin, or (on the dev server,
+  // where a seat has an origin of its own) localhost on the same port. Nobody else drives it or hears from it.
+  const asked = decodeURIComponent(/[#&]desk=([^&]+)/.exec(location.hash)?.[1] ?? '');
+  const desk = asked === location.origin || (LOCAL && /^https?:\/\/localhost(:\d+)?$/.test(asked) && new URL(asked).port === location.port) ? asked : null;
   const seed = /#seed=([\w-]+)/.exec(location.hash);
   if (seed) {
     const json = new TextDecoder().decode(Uint8Array.from(atob(seed[1].replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
@@ -25,7 +30,7 @@ export async function seat() {
     storage.removeStoredStarting('', 'session');
     for (const [k, v] of Object.entries(local)) storage.writeStored(k, v, 'local');
     for (const [k, v] of Object.entries(session)) storage.writeStored(k, v, 'session');
-    history.replaceState(null, '', location.pathname + location.search);
+    history.replaceState(null, '', `${location.pathname}${location.search}${desk ? `#desk=${encodeURIComponent(desk)}` : ''}`);
   }
 
   await import('../../app.css');
@@ -49,7 +54,7 @@ export async function seat() {
   // Development only, as the game's own page has it (src/main.ts): the session, for scripts that drive a seat.
   if (import.meta.env.DEV) Object.assign(window, { __s: session });
 
-  const tell =(m: SeatMessage) => parent.postMessage(m, '*');
+  const tell = (m: SeatMessage) => desk && parent.postMessage(m, desk);
   const look = (): SeatLook => ({
     mode: session.mode,
     status: session.status,
@@ -80,7 +85,7 @@ export async function seat() {
   }
 
   addEventListener('message', async (e) => {
-    if (e.source !== parent) return;
+    if (e.source !== parent || e.origin !== desk) return;
     const m = e.data as SeatOp | null;
     if (m?.qa !== 'seat-op') return;
     switch (m.op) {

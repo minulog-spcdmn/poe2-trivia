@@ -8,6 +8,7 @@
 // Players without a seat stay in the room, offline.
 
 import { roomSecret } from '../../lib/guard.ts';
+import { CODE_ALPHABET, randomCode, randomToken } from '../../lib/roomCode.ts';
 import type { GameState } from '../../lib/game.ts';
 import type { Built } from '../scene.ts';
 
@@ -30,16 +31,22 @@ export interface LiveRoom {
   offline: string[];
 }
 
-const CODE = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const token = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => CODE[b % CODE.length]).join('');
 
-/** Is `v` a moment (ms since 1970) of a scene's: from 2001 to 2096, nothing else a state holds is that large. */
-const isMoment = (v: unknown): v is number => typeof v === 'number' && v > 1e12 && v < 4e12;
+/**
+ * The state's moments (host clock, ms) by their names in lib/game.ts:
+ * askedAt, clockAt, startedAt, dealAt, flaredAt, leftAt, graceUntil,
+ * voteFrom, and the `at` of a revive, a strike or a reveal. A RecapItem's
+ * `at` is a depth, so the name alone isn't enough: a moment is also a
+ * moment's size (2001 to 2096).
+ */
+const MOMENT_NAME = /(At|Until)$|^(at|voteFrom)$/;
+const isMoment = (key: string, v: unknown): v is number => MOMENT_NAME.test(key) && typeof v === 'number' && v > 1e12 && v < 4e12;
 
 /** `state` with every moment in it moved on by `by` ms: the room picks up now, as it stood at the scene's moment. */
 export function retime<T>(state: T, by: number): T {
-  const move = (v: unknown): unknown => (isMoment(v) ? v + by : Array.isArray(v) ? v.map(move) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, move(x)])) : v);
-  return move(state) as T;
+  const move = (key: string, v: unknown): unknown =>
+    isMoment(key, v) ? v + by : Array.isArray(v) ? v.map((x) => move(key, x)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, move(k, x)])) : v;
+  return move('', state) as T;
 }
 
 /** At most this many seats: four games side by side on one page run well (the spike's numbers). */
@@ -51,8 +58,9 @@ export async function liveRoom(built: Built): Promise<LiveRoom | null> {
   if (!s0) return null;
   const now = Date.now();
   const state: GameState = retime(s0, now - (built.at ?? s0.startedAt ?? now));
-  const nonce = token(8).toLowerCase();
-  const code = token(6);
+  // (Letters and digits only: storage.ts and peer.ts read it from the frame's name as \w+.)
+  const nonce = randomToken(8, CODE_ALPHABET).toLowerCase();
+  const code = randomCode();
   const common = { 'fullscreenTip.shown': '3' };
   const host = state.players.find((p) => p.id === state.hostId);
   if (!host) {
@@ -64,7 +72,7 @@ export async function liveRoom(built: Built): Promise<LiveRoom | null> {
   const seats: LiveSeat[] = [];
   const secrets: [string, string][] = [];
   for (const [i, g] of guests.entries()) {
-    const secret = token(32);
+    const secret = randomToken(32);
     secrets.push([await roomSecret(secret, code), g.id]);
     seats.push({
       key: `g${i + 1}`,

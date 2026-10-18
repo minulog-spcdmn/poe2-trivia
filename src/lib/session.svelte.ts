@@ -32,6 +32,7 @@ import {
   type Item,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
+import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
@@ -107,9 +108,7 @@ function fetchLooks() {
   );
 }
 
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const CODE_LENGTH = 6;
-export const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
+export { CODE_LENGTH, CODE_PATTERN } from './roomCode.ts';
 
 /** Connections that haven't introduced themselves yet, room-wide and per peer (a joiner races two attempts). */
 const MAX_PENDING = 16;
@@ -194,12 +193,6 @@ const FAKE_LINK = import.meta.env.DEV ? parseFakeLink(readStored('fakeLink')) : 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
 
-function randomToken(len: number, alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789') {
-  const buf = crypto.getRandomValues(new Uint32Array(len));
-  return Array.from(buf, (n) => alphabet[n % alphabet.length]).join('');
-}
-
-const randomCode = () => randomToken(CODE_LENGTH, CODE_ALPHABET);
 
 /** The stored value, or a fresh one from fallback that is stored for next time. */
 function stored(name: string, fallback: () => string): string {

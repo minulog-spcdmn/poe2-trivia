@@ -54,10 +54,16 @@
   /** The stop whose frames are up (null between stops). */
   let shown = $state<{ stop: Stop; take: number; knobs: [string, string][] } | null>(null);
   let ready = $state<Set<string>>(new Set());
+  /**
+   * What the frames show, as one string: the stop, its knobs, a reload. The
+   * desk builds its walk afresh as its lists arrive (the change, the last
+   * sweep) or a search is typed, new Stop objects for the same stops; only a
+   * different stop, knob or reload makes the frames afresh.
+   */
+  const showing = $derived(`${stop.id}#${JSON.stringify(knobQuery)}#${reloads}`);
   $effect(() => {
-    const next = stop;
-    const take = reloads;
-    const knobs = knobQuery;
+    void showing;
+    const { next, take, knobs } = untrack(() => ({ next: stop, take: reloads, knobs: knobQuery }));
     shown = null;
     ready = new Set();
     const t = setTimeout(() => (shown = { stop: next, take, knobs }), SETTLE_MS);
