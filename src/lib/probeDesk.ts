@@ -14,9 +14,12 @@ import { wireRoomInfo, type RoomInfo } from './roomInfo.ts';
 const MAX_OPEN = 8;
 const MAX_PER_10S = 60;
 /**
- * Pings answered per 10 seconds, and from any one sender. They have a share
- * of their own: a flood of pings, which cost only a message, leaves probes
- * that connect theirs (which a ping gone unanswered falls back on, rooms.ts).
+ * Pings answered per 10 seconds, and from any one id (which holds back a
+ * single sender only: ids cost nothing). Past them pings go unanswered, and
+ * an honest asker falls back on connecting (rooms.ts), as every probe did
+ * before pings: so pings have a share of their own, which a flood of them,
+ * costing a message each, can use up without touching the share of probes
+ * that connect.
  */
 const MAX_PINGS_PER_10S = 60;
 const MAX_PINGS_PER_SENDER = 3;
@@ -53,12 +56,17 @@ export class ProbeDesk {
     this.info = info;
   }
 
-  /** Answers a ping (pingOf) from `from` through `reply`: the room's info, or null when it has none. Past the limits it goes unanswered. */
-  answerPing(from: string, challenge: string | null, reply: (room: RoomInfo | null) => void) {
+  /**
+   * Answers a ping (pingOf) from `from` through `reply`: the room's info, or
+   * null when it has none, or when the ping is `refused` (a banned peer's: told
+   * at once there's nothing for it). Past the limits it goes unanswered.
+   */
+  answerPing(from: string, challenge: string | null, reply: (room: RoomInfo | null) => void, refused = false) {
     const now = Date.now();
     this.pings = this.pings.filter((p) => now - p.at < 10000);
     if (this.pings.length >= MAX_PINGS_PER_10S || this.pings.filter((p) => p.from === from).length >= MAX_PINGS_PER_SENDER) return;
     this.pings.push({ at: now, from });
+    if (refused) return reply(null);
     const room = this.info(challenge);
     if (room instanceof Promise) void room.then(reply, () => reply(null));
     else reply(room);

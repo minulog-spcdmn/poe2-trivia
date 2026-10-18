@@ -1,3 +1,4 @@
+import MagicString from 'magic-string';
 import type { Plugin } from 'vite';
 
 /**
@@ -32,12 +33,18 @@ const read = (helper: string) => `supported.audioVideo = true;
             supported.binaryBlob = supported.data && !(0, ${helper}).isIOS;
             `;
 
-/** PeerJS's code with the probe taken out, or null if it isn't there as expected. */
-export function withoutProbe(code: string): string | null {
+/** Where the probe is in PeerJS's code, and what goes there instead; null if it isn't there as expected. */
+function findProbe(code: string): { start: number; end: number; text: string } | null {
   const m = PROBE.exec(code);
   const ios = m && IOS.exec(m[0]);
   if (!m || !ios || !/new RTCPeerConnection\(/.test(m[0])) return null;
-  return code.slice(0, m.index) + m[1] + '\n            ' + read(ios[1]) + m[2] + code.slice(m.index + m[0].length);
+  return { start: m.index, end: m.index + m[0].length, text: m[1] + '\n            ' + read(ios[1]) + m[2] };
+}
+
+/** PeerJS's code with the probe taken out, or null if it isn't there as expected. */
+export function withoutProbe(code: string): string | null {
+  const p = findProbe(code);
+  return p && code.slice(0, p.start) + p.text + code.slice(p.end);
 }
 
 export function peerjsProbe(): Plugin {
@@ -46,9 +53,11 @@ export function peerjsProbe(): Plugin {
     apply: 'build',
     transform(code, id) {
       if (!PEERJS_FILE.test(id.replace(/\\/g, '/'))) return;
-      const out = withoutProbe(code);
-      if (out === null) this.error("PeerJS's WebRTC probe isn't where peerjsProbe.ts looks for it: check what it does now and update peerjsProbe.ts.");
-      return { code: out, map: { mappings: '' } };
+      const p = findProbe(code);
+      if (p === null) this.error("PeerJS's WebRTC probe isn't where peerjsProbe.ts looks for it: check what it does now and update peerjsProbe.ts.");
+      // The rest of PeerJS keeps its place in the source map.
+      const s = new MagicString(code).overwrite(p.start, p.end, p.text);
+      return { code: s.toString(), map: s.generateMap({ hires: true, source: id }) };
     },
   };
 }

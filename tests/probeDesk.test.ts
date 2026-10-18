@@ -140,3 +140,12 @@ test('pings have a share of their own, and any one sender a little of it, so a f
   c.open();
   assert.equal(c.sent.length, 1);
 });
+
+test("a refused ping (a banned peer's) is told at once there's nothing, without asking the room", () => {
+  let asked = 0;
+  const desk = new ProbeDesk(() => (asked++, room));
+  const replies: (RoomInfo | null)[] = [];
+  desk.answerPing('banned', 'c'.repeat(22), (r) => replies.push(r), true);
+  assert.deepEqual(replies, [null]);
+  assert.equal(asked, 0);
+});
