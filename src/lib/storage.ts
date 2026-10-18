@@ -26,6 +26,12 @@ export const ZONES_PREVIEW = typeof document !== 'undefined' && document.documen
  */
 export const SPATIAL_PAGE = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-spatial');
 /**
+ * The card bench (cards.html, src/cardBench: dev and beta builds only) runs
+ * the lab's game too, marked `<html data-lab data-cards>`: its keys start
+ * apart from the lab's in the same way.
+ */
+export const CARD_BENCH = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-cards');
+/**
  * The room bot (bot.html, src/bot: dev and bot builds only) marks its page
  * `<html data-bot>`: its keys start apart too, so a bot opened in someone's
  * own browser never takes over their saves, codex or settings.
@@ -75,10 +81,11 @@ export const STORE =
   (LAB ? 'lab.' : '') +
   (ZONES_PREVIEW ? 'zones.' : '') +
   (SPATIAL_PAGE ? 'spatial.' : '') +
+  (CARD_BENCH ? 'cards.' : '') +
   (BACKDROP_TOOL ? 'backdrops.' : '') +
   (BOT ? 'bot.' : '') +
   (QA ? `qa.${(QA_SLOT ?? QA_SEAT)!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
-/** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
+/** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html, cards.html): for settings they share. */
 export const LAB_STORE = CHANNEL + 'lab.';
 
 export type Area = 'local' | 'session';

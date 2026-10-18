@@ -257,6 +257,8 @@
    */
   let dealtFinds: Record<string, FindKind> = {};
   const findsShown = $derived.by(() => {
+    // The card bench (lab only): its own finds, any on any card.
+    if (session.labFinds && s.phase === 'choosing') return (dealtFinds = { ...session.labFinds });
     if (s.phase === 'choosing') dealtFinds = Object.fromEntries(s.offered.flatMap((c) => (findOn(s, c) ? [[c, findOn(s, c)!]] : [])));
     // Come in after the cards closed (no deal seen): the question in play still says what its card was.
     else if (s.question?.find && !Object.keys(dealtFinds).length) dealtFinds = { [s.question.category]: s.question.find };

@@ -50,7 +50,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds, type FindKind } from './delve';
 import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -2269,6 +2269,12 @@ class Session {
 
   /** Lab only: the grayscale the art is prepared with, in place of the rules'. Always null in the game. */
   labGrayscale: Grayscale | null = null;
+  /**
+   * Lab only (the card bench, cards.html): the find on each card dealt, by
+   * category, shown in place of the run's (any find on any card, past the
+   * game's two of different kinds). Always null in the game.
+   */
+  labFinds: Record<string, FindKind> | null = null;
 
   /** Lab only: puts a state in place as the host would, with its timers, sounds, art and records. */
   labSetState(next: GameState) {

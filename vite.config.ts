@@ -325,14 +325,14 @@ export default defineConfig(({ command, mode }) => {
           // Analytics (src/statsPage): the counts from GoatCounter, read with the owner's key.
           stats: 'stats.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool),
-          // the zone tuning page (src/zonebanner), the descent's test page
+          // the zone tuning page (src/zonebanner), the card bench (src/cardBench), the descent's test page
           // (src/descentPreview), the daily streak's (src/streakPreview), the
           // spatial sound page (src/spatialPage), the hover tuning page
           // (src/hoverPage), the sound levels page (src/levelsPage), the QA
           // desk (src/qa) and the hub linking them all (dev.html): the dev
           // server serves them by itself; of the builds only the beta has
           // them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', qa: 'qa.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', levels: 'levels.html', circle: 'circle.html' } : {}),
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', qa: 'qa.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', cards: 'cards.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', levels: 'levels.html', circle: 'circle.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },
