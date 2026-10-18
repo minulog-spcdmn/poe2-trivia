@@ -4,7 +4,7 @@ import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
-import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, whereOf, type Slices } from '../src/statsPage/slices.ts';
+import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Slices } from '../src/statsPage/slices.ts';
 import { busiest, seatsOf, visitsCameTo, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
@@ -507,4 +507,16 @@ test('made-up groups add up to the made-up totals', () => {
   assert.equal(sum('visit'), read.now.visitors.total);
   assert.ok(Math.abs(sum('delve') - modesOf(read.now.games.rows).find((m) => m.mode === 'delve')!.started) <= 12);
   assert.ok(sum('joined') <= sum('join'));
+});
+
+test('what stands out among the groups: big enough to tell, a mix, the largest first', () => {
+  const s = demoSlices(demoRead(30, new Date('2026-10-16T18:30:00Z')));
+  const found = standouts(s);
+  assert.ok(found.length > 0 && found.length <= 6);
+  // The made-up Germans lean to Delve.
+  assert.ok(found.some((f) => f.sel.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
+  for (const what of ['mode', 'games', 'daily', 'joins']) assert.ok(found.filter((f) => f.what === what).length <= 2);
+  assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
+  // Groups too small to tell apart say nothing.
+  assert.deepEqual(standouts(SLICES, 6, 1000), []);
 });

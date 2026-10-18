@@ -121,8 +121,8 @@
   </div>
 
   <div class="came">
-    <Section title="What a visit comes to">
-      <VisitsCameTo {read} period={short} across />
+    <Section title="How much they play">
+      <VisitsCameTo {read} period={short} />
     </Section>
   </div>
 

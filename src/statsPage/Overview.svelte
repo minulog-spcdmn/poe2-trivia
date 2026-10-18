@@ -2,7 +2,7 @@
   // The overview: how it's going, at a glance. Anything wrong first (joins
   // that failed), then the four figures that matter, each with its days in a
   // small line and against the period before; one chart of how busy it was;
-  // when in the week they come, and what their visits come to; and a line of
+  // when in the week they come, and how much they play; and a line of
   // short answers, each opening its view.
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
@@ -136,7 +136,7 @@
         <p class="soft">GoatCounter gave no hours for these days.</p>
       {/if}
     </Section>
-    <Section title="What a visit comes to" says="The counts set against each other.">
+    <Section title="How much they play" says="Against the period before.">
       <VisitsCameTo {read} {period} />
     </Section>
   </div>

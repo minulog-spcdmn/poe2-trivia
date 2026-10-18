@@ -140,9 +140,10 @@ function pathsOf(days: string[], lastHours: number): PathCount[] {
   return [...byPath.values()];
 }
 
-/** `shares` of `total`, each a whole number, largest first; what they leave, unknown (GoatCounter's ''), as it lists those it couldn't place. */
+/** `shares` of `total` (scaled to fill it), each a whole number, largest first; with `rest`, a few unknown (GoatCounter's ''), as it lists those it couldn't place. */
 function split(total: number, shares: [string, number][], rest = true): Named[] {
-  const named = shares.map(([name, s]) => ({ name, count: Math.round(total * s) })).filter((n) => n.count > 0);
+  const scale = (rest ? 0.97 : 1) / shares.reduce((n, [, s]) => n + s, 0);
+  const named = shares.map(([name, s]) => ({ name, count: Math.round(total * s * scale) })).filter((n) => n.count > 0);
   const left = total - named.reduce((n, x) => n + x.count, 0);
   return rest && left > 0 ? [...named, { name: '', count: left }] : named;
 }

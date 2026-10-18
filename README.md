@@ -850,7 +850,8 @@ own, most of all one on its side: one screen, sized from the screen,
 kept awake and updating by itself. Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
 and systems the new visitors came from and on, lit on the overview and
-the board. `#groups` (Groups) sets a country's, a system's or a kind of
+the board. `#groups` (Groups) opens on what stands out between groups,
+each a sentence, and sets a country's, a system's or a kind of
 device's players against everyone, and shows where the players of a mode
 come from and on what (`slices.ts`); every country, system and mode name
 across the views opens its group. GoatCounter keeps no visit with its

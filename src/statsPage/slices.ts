@@ -182,3 +182,67 @@ export function sliceCalls(c: Counts): { group: Group; dim: Dim; paths: string[]
   const paths = groupPaths(c);
   return GROUPS.flatMap(({ group }) => (paths[group].length ? (['locations', 'systems'] as const).map((dim) => ({ group, dim, paths: paths[group] })) : []));
 }
+
+/** The groups looked at for what stands out: the biggest countries, both kinds of device, the biggest systems. */
+export function lookedAt(s: Slices): SegmentRow[] {
+  const known = (r: SegmentRow) => r.sel.name !== 'Unknown' && r.sel.name !== 'Other';
+  return [...segments(s, 'place', 8), ...segments(s, 'device'), ...segments(s, 'system', 5)].filter(known);
+}
+
+/** Something a group does unlike everyone, said in a line (GroupsView words it). */
+export interface Standout {
+  sel: Exclude<Sel, { kind: 'did' }>;
+  what: 'mode' | 'games' | 'daily' | 'joins';
+  mode?: Mode;
+  /** The group's figure and everyone's: a mode's share of games, games for 100 visitors, a percent of visitors, a percent of joins. */
+  mine: number;
+  all: number;
+  /** Better for the game (more play, more answers, joins that work), worse, or neither (a mode played more). */
+  tone: 'up' | 'down' | 'flat';
+  /** How much it stands out: the size of the difference, weighed by how many it rests on. */
+  score: number;
+}
+
+/**
+ * What stands out among the groups, most first: a mode played far more, many
+ * more or fewer games, Today's unique answered more or less, joins that fail
+ * more. Only groups big enough that a handful of players can't make it up
+ * (`min` visitors, and enough games or tries behind the figure).
+ */
+export function standouts(s: Slices, top = 6, min = 30): Standout[] {
+  const all = profileOf(countsIn(s, null));
+  const floor = Math.max(min, all.visitors * 0.03);
+  const out: Standout[] = [];
+  const weigh = (mine: number, theirs: number, n: number) => Math.abs(Math.log(mine / theirs)) * Math.sqrt(n);
+  for (const { sel, profile: p } of lookedAt(s)) {
+    if (p.visitors < floor) continue;
+    for (const m of p.modes) {
+      const a = all.modes.find((x) => x.mode === m.mode)!;
+      if (p.games >= 20 && a.share >= 5 && m.share >= a.share * 1.3) out.push({ sel, what: 'mode', mode: m.mode, mine: m.share, all: a.share, tone: 'flat', score: weigh(m.share, a.share, m.count) });
+    }
+    const games = (g: Profile) => (100 * g.games) / g.visitors;
+    if (all.visitors && p.games >= 20) {
+      const r = games(p) / games(all);
+      if (r >= 1.25 || r <= 0.8) out.push({ sel, what: 'games', mine: games(p), all: games(all), tone: r > 1 ? 'up' : 'down', score: weigh(games(p), games(all), p.games) });
+    }
+    if (p.daily !== null && all.daily && p.daily > 0) {
+      const r = p.daily / all.daily;
+      if (r >= 1.25 || r <= 0.8) out.push({ sel, what: 'daily', mine: p.daily, all: all.daily, tone: r > 1 ? 'up' : 'down', score: weigh(p.daily, all.daily, p.visitors) });
+    }
+    if (p.joins !== null && all.joins !== null && p.tried >= 20 && Math.abs(p.joins - all.joins) >= 8)
+      out.push({ sel, what: 'joins', mine: p.joins, all: all.joins, tone: p.joins > all.joins ? 'up' : 'down', score: weigh(Math.max(1, 100 - p.joins), Math.max(1, 100 - all.joins), p.tried) });
+  }
+  // A mix of findings: at most two of a kind, and two about one group.
+  const kinds = new Map<string, number>();
+  const groups = new Map<string, number>();
+  return out
+    .sort((a, b) => b.score - a.score)
+    .filter((f) => {
+      const g = `${f.sel.kind}/${f.sel.name}`;
+      if ((kinds.get(f.what) ?? 0) >= 2 || (groups.get(g) ?? 0) >= 2) return false;
+      kinds.set(f.what, (kinds.get(f.what) ?? 0) + 1);
+      groups.set(g, (groups.get(g) ?? 0) + 1);
+      return true;
+    })
+    .slice(0, top);
+}

@@ -1,14 +1,13 @@
 <script lang="ts">
-  // Player groups (#groups): how players in one country, on one system or
-  // kind of device play against everyone, and where those who did one thing
-  // (played Delve, answered Today's unique) come from and on what. Each name
-  // opens its group. GoatCounter breaks down a whole period, not its days,
-  // and never a country by system: what slices.ts can put together.
+  // Player groups (#groups): what sets a country's, a device's or a mode's
+  // players apart, read at a glance. First what stands out (slices.ts
+  // standouts), each a sentence with its two figures drawn; then a group of
+  // one's own picking, its few figures each against everyone. GoatCounter
+  // breaks a whole period down, not its days, and never a country by device.
   import { fmt } from './chart';
-  import { MODE_NAMES } from './model';
+  import { MODES, MODE_NAMES, type Mode } from './model';
   import type { Period, Read } from './read';
-  import Section from './Section.svelte';
-  import { GROUPS, countsIn, groupName, hashOf, profileOf, segments, selName, whereOf, type Group, type Profile, type Sel, type Slices, type WhereRow } from './slices';
+  import { countsIn, groupName, hashOf, profileOf, segments, standouts, whereOf, type Sel, type Slices, type Standout } from './slices';
 
   let {
     read,
@@ -20,340 +19,462 @@
     onagain,
   }: { read: Read; period: Period; slices: Slices | null; sel: Sel | null; reading: number; failed: string; onagain: () => void } = $props();
 
-  /** Fewer visitors than this, and a group's shares swing on a handful. */
-  const FEW = 20;
+  /** Fewer visitors than this, and a group's figures swing on a handful. */
+  const FEW = 30;
 
   const everyone = $derived(slices ? profileOf(countsIn(slices, null)) : null);
-  /** Everyone, added up by system: what the device table sets its rows against. */
-  const everyoneOn = $derived(slices ? profileOf(countsIn(slices, null, 'systems')) : null);
   const picked = $derived(slices && sel && sel.kind !== 'did' ? profileOf(countsIn(slices, sel)) : null);
   const did = $derived(sel?.kind === 'did' ? sel.group : null);
+  const found = $derived(slices ? standouts(slices) : []);
 
-  const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
-  const most = (p: Profile) => {
-    const top = [...p.modes].sort((a, b) => b.count - a.count)[0];
-    return top && top.count ? `${MODE_NAMES[top.mode]}, ${top.share}%` : '–';
-  };
-  /** Its share of those who did it over its share of visitors: 1.5× is half again as many as its visits would bring. */
-  const lean = (r: WhereRow) => (r.visitShare ? r.share / r.visitShare : null);
-  const leanTone = (v: number | null) => (v === null ? '' : v >= 1.15 ? 'more' : v <= 0.87 ? 'less' : '');
-  /** The country (of 5 or more, so not a lone player) most over its share of visitors. */
-  const leanest = (rows: WhereRow[]) => rows.filter((r) => r.count >= 5).sort((a, b) => (lean(b) ?? 0) - (lean(a) ?? 0))[0];
-  /** The largest share in a table, either kind: its bars are drawn against it. */
-  const widest = (rows: WhereRow[]) => Math.max(1, ...rows.map((r) => Math.max(r.share, r.visitShare)));
-  const per100 = (n: number, visitors: number) => (visitors ? `${Math.round((100 * n) / visitors)}` : '–');
+  const places = $derived(slices ? segments(slices, 'place', 8).filter((r) => r.sel.name !== 'Unknown') : []);
+  const systems = $derived(slices ? segments(slices, 'system', 4).filter((r) => r.sel.name !== 'Unknown') : []);
+
+  // ---- words ----
+  const DEVICE: Record<string, string> = { 'Phone or tablet': 'phones and tablets', Computer: 'computers' };
+  const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
+  const nameOf = (s: Sel) => (s.kind === 'did' ? (MODES.includes(s.group as Mode) ? MODE_NAMES[s.group as Mode] : groupName(s.group)) : s.kind === 'device' ? cap(DEVICE[s.name] ?? s.name) : s.name);
+  /** "Players in Germany", "Players on phones and tablets". */
+  const who = (s: Exclude<Sel, { kind: 'did' }>) => (s.kind === 'place' ? `Players in ${s.name}` : `Players on ${s.kind === 'device' ? (DEVICE[s.name] ?? s.name) : s.name}`);
+  const times = (r: number) => `${r >= 10 ? Math.round(r) : r.toFixed(1)}×`;
+  const per100 = (n: number, visitors: number) => (visitors ? Math.round((100 * n) / visitors) : 0);
+  const pct = (v: number) => `${Math.round(v)}%`;
+
+  /** A finding in words: its big figure, its sentence, and the labels of its two bars. */
+  function told(f: Standout): { big: string; line: string; mine: string; all: string } {
+    const r = f.mine / f.all;
+    if (f.what === 'mode') return { big: times(r), line: `${who(f.sel)} play ${MODE_NAMES[f.mode!]} ${times(r)} as much`, mine: `${pct(f.mine)} of their games`, all: pct(f.all) };
+    if (f.what === 'games')
+      return { big: times(r), line: r > 1 ? `${who(f.sel)} play ${times(r)} as many games` : `${who(f.sel)} play fewer games`, mine: `${Math.round(f.mine)} games for 100 visitors`, all: String(Math.round(f.all)) };
+    if (f.what === 'daily')
+      return { big: times(r), line: r > 1 ? `${who(f.sel)} answer Today's unique ${times(r)} as often` : `${who(f.sel)} answer Today's unique less often`, mine: `${pct(f.mine)} answered it`, all: pct(f.all) };
+    return { big: pct(f.mine), line: f.mine < f.all ? `${who(f.sel)} get into rooms less often` : `${who(f.sel)} get into rooms more often`, mine: `${pct(f.mine)} of joins worked`, all: pct(f.all) };
+  }
+
+  type Tone = 'up' | 'down' | 'flat';
+  /** Against everyone in a few words: about the same, or how far above or below. */
+  function against(mine: number | null, all: number | null, points = false): { says: string; tone: Tone } {
+    if (mine === null || all === null || !all) return { says: '', tone: 'flat' };
+    if (points) {
+      const d = Math.round(mine - all);
+      return Math.abs(d) < 4 ? { says: 'about the same as everyone', tone: 'flat' } : { says: `${Math.abs(d)} points ${d > 0 ? 'above' : 'below'} everyone`, tone: d > 0 ? 'up' : 'down' };
+    }
+    const r = mine / all;
+    return Math.abs(r - 1) < 0.12 ? { says: 'about the same as everyone', tone: 'flat' } : { says: `${times(r)} everyone`, tone: r > 1 ? 'up' : 'down' };
+  }
+
+  // ---- a mode: where its players come from, and on what ----
+  const fromAll = $derived(slices && did ? whereOf(slices, did, 'locations') : []);
+  const where = $derived(fromAll.filter((r) => r.name !== 'Unknown').slice(0, 6));
+  const didCount = $derived(fromAll.reduce((n, r) => n + r.count, 0));
+  const phoneShare = (rows: { name: string; share: number }[]) => rows.find((r) => r.name === 'Phone or tablet')?.share ?? 0;
+  const phonesDid = $derived(slices && did ? phoneShare(whereOf(slices, did, 'systems', true)) : 0);
+  const phonesAll = $derived(slices ? phoneShare(whereOf(slices, 'visit', 'systems', true)) : 0);
+  const widest = $derived(Math.max(1, ...where.map((r) => r.share)));
+
   const at = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  const places = $derived(slices ? segments(slices, 'place', 12) : []);
-  const devices = $derived(slices ? segments(slices, 'device') : []);
-  const systems = $derived(slices ? segments(slices, 'system', 8) : []);
-  /** What each thing people did comes to: how many, the country most of them came from, and the share on a phone. */
-  const doings = $derived(
-    slices
-      ? GROUPS.filter((g) => g.group !== 'visit').map((g) => {
-          const from = whereOf(slices, g.group, 'locations');
-          const on = whereOf(slices, g.group, 'systems', true);
-          const top = leanest(from);
-          const leaning = top && (lean(top) ?? 0) >= 1.15 ? top : undefined;
-          return { group: g.group, count: from.reduce((n, r) => n + r.count, 0), top: from[0], leaning, phone: on.find((r) => r.name === 'Phone or tablet')?.share ?? 0 };
-        })
-      : [],
-  );
-  const where = $derived(slices && did ? whereOf(slices, did, 'locations') : []);
-  const onKind = $derived(slices && did ? whereOf(slices, did, 'systems', true) : []);
-  const onSystem = $derived(slices && did ? whereOf(slices, did, 'systems') : []);
-  const didCount = $derived(where.reduce((n, r) => n + r.count, 0));
+  const isSel = (s: Sel) => !!sel && hashOf(sel) === hashOf(s);
 </script>
 
-{#snippet compared(label: string, mine: string, all: string | null, means: string, against = 'Everyone')}
-  <div class="fig">
-    <dt>{label}</dt>
-    <dd><b>{mine}</b><span class="means">{means}</span>{#if all !== null}<span class="all">{against}: {all}</span>{/if}</dd>
+{#snippet pair(mine: number, all: number, max: number, tone: Tone, label: string, allLabel: string)}
+  <div class="pair">
+    <span class="bar {tone}"><i style:width="{(100 * mine) / Math.max(max, 1)}%"></i></span>
+    <span class="fig">{label}</span>
+    <span class="bar all"><i style:width="{(100 * all) / Math.max(max, 1)}%"></i></span>
+    <span class="fig soft">{allLabel}</span>
   </div>
 {/snippet}
 
-{#snippet whereTable(rows: WhereRow[], label: string, kind: 'place' | 'system' | 'device', top: number)}
-  <div class="scroll-x">
-    <table class="table" aria-label={label}>
-      <thead>
-        <tr>
-          <th scope="col">{kind === 'place' ? 'Country' : kind === 'device' ? 'Device' : 'System'}</th>
-          <th scope="col" class="n">Counted</th>
-          <th scope="col" class="n">Of them</th>
-          <th scope="col" class="n">Of visitors</th>
-          <th scope="col" class="bar"><span class="key"><i class="k-now"></i>them <i class="k-all"></i>visitors</span></th>
-          <th scope="col" class="n" title="Its share of them over its share of visitors">Lean</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each rows.slice(0, top) as r (r.name)}
-          {@const l = lean(r)}
-          <tr class:few={r.count < 5}>
-            <th scope="row"><a class="pick" href={hashOf({ kind, name: r.name })}>{r.name}</a></th>
-            <td class="n">{fmt(r.count)}</td>
-            <td class="n strong">{Math.round(r.share)}%</td>
-            <td class="n soft">{Math.round(r.visitShare)}%</td>
-            <td class="bar">
-              <span class="pair" aria-hidden="true">
-                <span class="meter"><i style:width="{(100 * r.share) / widest(rows)}%"></i></span>
-                <span class="meter all"><i style:width="{(100 * r.visitShare) / widest(rows)}%"></i></span>
-              </span>
-            </td>
-            <td class="n lean {leanTone(l)}">{l === null ? '–' : `${l.toFixed(1)}×`}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+{#snippet tile(title: string, value: string, a: { says: string; tone: Tone }, mine: number, all: number, max: number, mineLabel: string, allLabel: string)}
+  <div class="tile">
+    <h3>{title}</h3>
+    <b class="value {a.tone}">{value}</b>
+    <span class="says {a.tone}">{a.says}</span>
+    {#if max > 0}{@render pair(mine, all, max, a.tone, mineLabel, allLabel)}{/if}
   </div>
 {/snippet}
 
-{#snippet segmentTable(rows: { sel: Exclude<Sel, { kind: 'did' }>; profile: Profile }[], label: string, head: string, everyone: Profile | null)}
-  <div class="scroll-x">
-    <table class="table" aria-label={label}>
-      <thead>
-        <tr>
-          <th scope="col">{head}</th>
-          <th scope="col" class="n">Visitors</th>
-          <th scope="col" class="n">Games for 100 visitors</th>
-          <th scope="col">Plays most</th>
-          <th scope="col" class="n">Answered Today's unique</th>
-          <th scope="col" class="n">Joins worked</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#if everyone}
-          <tr class="everyone">
-            <th scope="row">Everyone</th>
-            <td class="n">{fmt(everyone.visitors)}</td>
-            <td class="n">{per100(everyone.games, everyone.visitors)}</td>
-            <td>{most(everyone)}</td>
-            <td class="n">{pct(everyone.daily)}</td>
-            <td class="n">{pct(everyone.joins)}</td>
-          </tr>
-        {/if}
-        {#each rows as r (r.sel.name)}
-          <tr class:few={r.profile.visitors < FEW}>
-            <th scope="row"><a class="pick" href={hashOf(r.sel)}>{r.sel.name}</a></th>
-            <td class="n strong">{fmt(r.profile.visitors)}</td>
-            <td class="n">{per100(r.profile.games, r.profile.visitors)}</td>
-            <td>{most(r.profile)}</td>
-            <td class="n">{pct(r.profile.daily)}</td>
-            <td class="n">{pct(r.profile.joins)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+<nav class="picker" aria-label="Pick a group">
+  <div class="line">
+    <span class="what">Countries</span>
+    <a class="chip" class:on={!sel} href="#groups">Everyone</a>
+    {#each places as r (r.sel.name)}<a class="chip" class:on={isSel(r.sel)} href={hashOf(r.sel)}>{r.sel.name}</a>{/each}
   </div>
-{/snippet}
-
-<div class="stack">
-  <div class="picked">
-    <a class="crumb" href="#groups" class:on={!sel}>Everyone</a>
-    {#if sel}
-      <span class="sep" aria-hidden="true">›</span>
-      <span class="crumb on">{selName(sel)}</span>
-      <a class="clear" href="#groups" title="Back to everyone" aria-label="Back to everyone">×</a>
-    {/if}
-    <span class="how">
-      {#if reading}
-        Reading the groups… {Math.round(reading * 100)}%
-      {:else if slices}
-        {period.now}, read at {at(slices.at)}. Pick a name to see that group.
-      {/if}
-    </span>
+  <div class="line">
+    <span class="what">Devices</span>
+    {#each ['Phone or tablet', 'Computer'] as d (d)}<a class="chip" class:on={isSel({ kind: 'device', name: d })} href={hashOf({ kind: 'device', name: d })}>{cap(DEVICE[d])}</a>{/each}
+    {#each systems as r (r.sel.name)}<a class="chip" class:on={isSel(r.sel)} href={hashOf(r.sel)}>{r.sel.name}</a>{/each}
   </div>
+  <div class="line">
+    <span class="what">Modes</span>
+    {#each MODES as m (m)}<a class="chip" class:on={isSel({ kind: 'did', group: m })} href={hashOf({ kind: 'did', group: m })}>{MODE_NAMES[m]}</a>{/each}
+  </div>
+</nav>
 
-  {#if !slices}
-    {#if failed}
-      <p class="note bad" role="alert">{failed} <button type="button" class="again" onclick={onagain}>Try again</button></p>
-    {:else}
-      <div class="reading" aria-busy="true">
-        <p>Reading how each thing people do breaks down by country and by system: a call for each, so a few seconds.</p>
-        <span class="meter"><i style:width="{Math.max(4, reading * 100)}%"></i></span>
-      </div>
-    {/if}
-  {:else if sel && sel.kind !== 'did' && picked && everyone}
-    <Section title={sel.name} says="{fmt(picked.visitors)} visitors, {everyone.visitors ? Math.round((100 * picked.visitors) / everyone.visitors) : 0}% of everyone. Against everyone in {period.now.toLowerCase()}.">
-      {#if picked.visitors < FEW}<p class="caution">Few visitors: a handful more or less would change these a lot.</p>{/if}
-      <dl class="figs">
-        {@render compared('Games', per100(picked.games, picked.visitors), per100(everyone.games, everyone.visitors), 'started for every 100 visitors')}
-        {@render compared("Answered Today's unique", pct(picked.daily), pct(everyone.daily), 'of visitors')}
-        {@render compared('Joins worked', pct(picked.joins), pct(everyone.joins), `of ${fmt(picked.tried)} tries`)}
-        {@render compared('Failures', per100(picked.failed, picked.visitors), per100(everyone.failed, everyone.visitors), 'for every 100 visitors')}
-      </dl>
-    </Section>
-
-    <div class="two">
-      <Section title="What they play" says="Each mode's share of their games, against everyone's.">
-        <div class="modes">
-          {#each picked.modes as m, i (m.mode)}
-            {@const all = everyone.modes[i]}
-            <div class="mode">
-              <span class="name"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })}>{MODE_NAMES[m.mode]}</a></span>
-              <span class="pair" aria-hidden="true">
-                <span class="meter"><i style:width="{m.share}%"></i></span>
-                <span class="meter all"><i style:width="{all.share}%"></i></span>
-              </span>
-              <b>{m.share}%</b>
-              <span class="soft">{all.share}%</span>
-              <span class="per">{per100(m.count, picked.visitors)} games for every 100 visitors; everyone {per100(all.count, everyone.visitors)}</span>
-            </div>
-          {/each}
-        </div>
-        <p class="key-line"><span class="key"><i class="k-now"></i>{sel.name} <i class="k-all"></i>everyone</span></p>
-      </Section>
-      <Section title="What they did" says="Each thing counted, for every 100 of their visitors.">
-        <div class="scroll-x">
-          <table class="table" aria-label="What they did, for every 100 visitors">
-            <thead>
-              <tr><th scope="col"></th><th scope="col" class="n">Counted</th><th scope="col" class="n">For 100 visitors</th><th scope="col" class="n">Everyone</th></tr>
-            </thead>
-            <tbody>
-              {#each GROUPS.filter((g) => g.group !== 'visit') as g (g.group)}
-                {@const mine = countsIn(slices, sel)[g.group]}
-                {@const all = countsIn(slices, null)[g.group]}
-                <tr>
-                  <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: g.group })}>{g.name}</a></th>
-                  <td class="n">{fmt(mine)}</td>
-                  <td class="n strong">{per100(mine, picked.visitors)}</td>
-                  <td class="n soft">{per100(all, everyone.visitors)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-    </div>
-    <p class="aside">GoatCounter never breaks a country down by system, so a country's devices (or a system's countries) can't be shown.</p>
-  {:else if did && everyone}
-    {@const leans = leanest(where)}
-    {@const phone = onKind.find((r) => r.name === 'Phone or tablet')}
-    {@const visitPhone = whereOf(slices, 'visit', 'systems', true).find((r) => r.name === 'Phone or tablet')}
-    <Section title={groupName(did)} says="Where they come from and what they play on, against all visitors in {period.now.toLowerCase()}.">
-      {#if didCount}
-        <dl class="figs">
-          {@render compared('Counted', fmt(didCount), null, `${per100(didCount, everyone.visitors)} for every 100 visitors`)}
-          {@render compared('Most from', where[0] ? `${Math.round(where[0].share)}%` : '–', where[0] ? `${Math.round(where[0].visitShare)}%` : '–', `of them from ${where[0]?.name ?? 'one country'}`, 'Of all visitors')}
-          {@render compared('Leans most', leans ? `${(lean(leans) ?? 0).toFixed(1)}×` : '–', null, leans ? `${leans.name}, the most over its share of visitors` : 'nowhere yet')}
-          {@render compared('On a phone', phone ? `${Math.round(phone.share)}%` : '0%', visitPhone ? `${Math.round(visitPhone.share)}%` : '0%', 'or a tablet', 'Of all visitors')}
-        </dl>
-      {:else}
-        <p class="soft">Nobody in these days.</p>
-      {/if}
-    </Section>
-    {#if didCount}
-      <Section title="Where they come from" says="Lean: its share of them over its share of visitors; above 1, more of them than its visits would bring.">
-        {@render whereTable(where, `Where those who ${groupName(did).toLowerCase()} come from`, 'place', 12)}
-      </Section>
-      <Section title="What they play on" says="Phones and computers, then each system.">
-        <div class="tables">
-          {@render whereTable(onKind, 'By kind of device', 'device', 3)}
-          {@render whereTable(onSystem, 'By system', 'system', 8)}
-        </div>
-      </Section>
-    {/if}
+{#if !slices}
+  {#if failed}
+    <p class="note" role="alert">{failed} <button type="button" class="again" onclick={onagain}>Try again</button></p>
   {:else}
-    <Section title="By country" says="Each country's players against everyone: how much they play, what most, and how the rest goes. Pick one to see it all.">
-      {@render segmentTable(places, 'Players by country', 'Country', everyone)}
-    </Section>
-    <Section title="By device" says="Phones and computers, then each system.">
-      {@render segmentTable([...devices, ...systems], 'Players by device and system', 'Device', everyoneOn)}
-    </Section>
-      <Section title="By what they did" says="Those who did each thing: how many, where most came from, the country most leaning to it, and how many on a phone.">
-        <div class="scroll-x">
-          <table class="table" aria-label="Players by what they did">
-            <thead>
-              <tr><th scope="col"></th><th scope="col" class="n">Counted</th><th scope="col">Most from</th><th scope="col">Leans to it</th><th scope="col" class="n">On a phone</th></tr>
-            </thead>
-            <tbody>
-              {#each doings as d (d.group)}
-                <tr class:few={!d.count}>
-                  <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: d.group as Group })}>{groupName(d.group)}</a></th>
-                  <td class="n strong">{fmt(d.count)}</td>
-                  <td>{d.top ? `${d.top.name}, ${Math.round(d.top.share)}%` : '–'}</td>
-                  <td>{d.leaning ? `${d.leaning.name}, ${(lean(d.leaning) ?? 0).toFixed(1)}×` : '–'}</td>
-                  <td class="n">{d.count ? `${Math.round(d.phone)}%` : '–'}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+    <div class="reading" aria-busy="true">
+      <p>Reading the groups from GoatCounter…</p>
+      <span class="bar"><i style:width="{Math.max(4, reading * 100)}%"></i></span>
+    </div>
+  {/if}
+{:else if sel && sel.kind !== 'did' && picked && everyone}
+  {@const mineGames = per100(picked.games, picked.visitors)}
+  {@const allGames = per100(everyone.games, everyone.visitors)}
+  {@const top = [...picked.modes].sort((a, b) => b.count - a.count)[0]}
+  <header class="head">
+    <h2>{nameOf(sel)}</h2>
+    <p>{fmt(picked.visitors)} visitors, {Math.round((100 * picked.visitors) / Math.max(1, everyone.visitors))}% of everyone{#if picked.visitors < FEW}; so few that a handful more or less changes a lot{/if}.</p>
+  </header>
+  <div class="tiles three">
+    {@render tile('Games played', String(mineGames), against(mineGames, allGames), mineGames, allGames, Math.max(mineGames, allGames), 'for every 100 visitors', `everyone: ${allGames}`)}
+    {@render tile("Today's unique", picked.daily === null ? '–' : pct(picked.daily), against(picked.daily, everyone.daily), picked.daily ?? 0, everyone.daily ?? 0, 100, 'of visitors answered it', `everyone: ${pct(everyone.daily ?? 0)}`)}
+    {@render tile('Joins that work', picked.joins === null ? '–' : pct(picked.joins), against(picked.joins, everyone.joins, true), picked.joins ?? 0, everyone.joins ?? 0, 100, `of ${fmt(picked.tried)} tries`, `everyone: ${pct(everyone.joins ?? 0)}`)}
+  </div>
+  <div class="tile wide">
+    <h3>What they play</h3>
+    <p class="most">Mostly <b>{top?.count ? MODE_NAMES[top.mode] : '–'}</b>{#if top?.count}, {top.share}% of their games{/if}</p>
+    <div class="modes">
+      {#each picked.modes as m, i (m.mode)}
+        {@const a = everyone.modes[i]}
+        {@const r = a.share ? m.share / a.share : 1}
+        <div class="mode">
+          <span class="name"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })}>{MODE_NAMES[m.mode]}</a>{#if Math.abs(r - 1) >= 0.15}<em>{times(r)} everyone</em>{/if}</span>
+          {@render pair(m.share, a.share, 100, 'flat', `${m.share}%`, `everyone: ${a.share}%`)}
         </div>
-      </Section>
+      {/each}
+    </div>
+  </div>
+  <p class="aside">The upper bar is {nameOf(sel)}, the grey one everyone. GoatCounter never splits a country by device, so the two can't be combined.</p>
+{:else if did && everyone}
+  <header class="head">
+    <h2>{nameOf(sel!)}</h2>
+    <p>{fmt(didCount)} games in {period.now.toLowerCase()}, {per100(didCount, everyone.visitors)} for every 100 visitors.</p>
+  </header>
+  {#if !didCount}
+    <p class="soft">Nobody in these days.</p>
+  {:else}
+    {@const first = where[0]}
+    <div class="tiles three">
+      {@render tile('How common', String(per100(didCount, everyone.visitors)), { says: 'games for every 100 visitors', tone: 'flat' }, 0, 0, 0, '', '')}
+      <div class="tile">
+        <h3>Most from</h3>
+        <b class="value flat">{first?.name ?? '–'}</b>
+        <span class="says flat">{first ? `${pct(first.share)} of its players; ${pct(first.visitShare)} of all visitors` : ''}</span>
+      </div>
+      <!-- More or fewer on a phone is neither better nor worse: said, not coloured. -->
+      {@render tile('On a phone or tablet', pct(phonesDid), { says: `${against(phonesDid, phonesAll, true).says} (${pct(phonesAll)})`, tone: 'flat' }, 0, 0, 0, '', '')}
+    </div>
+    <div class="tile wide">
+        <h3>Where they come from</h3>
+        <ol class="from">
+          {#each where as r (r.name)}
+            {@const lean = r.visitShare ? r.share / r.visitShare : 0}
+            <li>
+              <a class="name pick" href={hashOf({ kind: 'place', name: r.name })}>{r.name}</a>
+              <span class="bar flat"><i style:width="{(100 * r.share) / widest}%"></i></span>
+              <b>{pct(r.share)}</b>
+              <span class="lean">{#if r.count >= 5 && lean >= 1.3}{times(lean)} its share{/if}</span>
+            </li>
+          {/each}
+        </ol>
+        <p class="hint">"1.5× its share": half again as many as that country's visitors would bring.</p>
+    </div>
   {/if}
-  {#if slices && failed}
-    <p class="note bad" role="alert">{failed} <button type="button" class="again" onclick={onagain}>Try again</button></p>
-  {/if}
-</div>
+{:else}
+  <section aria-label="What stands out">
+    <h2>What stands out</h2>
+    <p class="sub">{period.now}, read at {at(slices.at)}. Only groups big enough to tell apart.</p>
+    {#if found.length}
+      <div class="cards">
+        {#each found as f (`${hashOf(f.sel)}/${f.what}/${f.mode ?? ''}`)}
+          {@const t = told(f)}
+          <a class="card" href={hashOf(f.sel)}>
+            <b class="value {f.tone}">{t.big}</b>
+            <span class="line">{t.line}</span>
+            {@render pair(f.mine, f.all, Math.max(f.mine, f.all), f.tone, t.mine, `everyone: ${t.all}`)}
+          </a>
+        {/each}
+      </div>
+    {:else}
+      <p class="soft">Nothing stands out: the groups play much alike, or are still too small to tell apart.</p>
+    {/if}
+  </section>
+{/if}
+{#if slices && failed}
+  <p class="note" role="alert">{failed} <button type="button" class="again" onclick={onagain}>Try again</button></p>
+{/if}
 
 <style>
-  .stack {
+  /* ---- the picker: every group a chip, the one on show lit ---- */
+  .picker {
     display: grid;
-    gap: 1.25rem;
+    gap: 0.6rem;
+    margin-bottom: 1.8rem;
   }
-  .two {
+  .line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .what {
+    width: 6.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--a-muted);
+  }
+  .chip {
+    padding: 0.3rem 0.85rem;
+    font-size: 1rem;
+    color: var(--a-text);
+    text-decoration: none;
+    background: var(--a-surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .chip:hover {
+    color: var(--a-ink);
+    border-color: var(--gold);
+  }
+  .chip.on {
+    font-weight: 600;
+    color: #1a140c;
+    background: var(--a-now);
+    border-color: var(--a-now);
+  }
+
+  /* ---- headings ---- */
+  h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--gold-hi);
+  }
+  .head {
+    margin-bottom: 1.2rem;
+  }
+  .head p,
+  .sub {
+    margin: 0.2rem 0 0;
+    color: var(--a-muted);
+  }
+  .sub {
+    margin-bottom: 1.2rem;
+  }
+  h3 {
+    margin: 0;
+    font-family: var(--font-data);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--a-ink);
+  }
+
+  /* ---- what stands out: a card a finding, opening its group ---- */
+  /* A row the cards fill between them, however many there are. */
+  .cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.1rem;
+  }
+  .cards > .card {
+    flex: 1 1 22rem;
+    min-width: 0;
+  }
+  .card,
+  .tile {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
+    align-content: start;
+    gap: 0.35rem;
+    padding: 1.3rem 1.5rem 1.4rem;
+    color: var(--a-text);
+    text-decoration: none;
+    background: var(--a-surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
   }
-  .picked {
+  .card {
+    cursor: pointer;
+  }
+  .card:hover {
+    border-color: var(--gold);
+  }
+  .card .line {
+    font-size: 1.2rem;
+    line-height: 1.35;
+    color: var(--a-ink);
+  }
+  .value {
+    font-size: 2.6rem;
+    font-weight: 650;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .value.flat {
+    color: var(--a-now);
+  }
+  .value.up,
+  .says.up {
+    color: var(--a-up);
+  }
+  .value.down,
+  .says.down {
+    color: var(--a-down);
+  }
+  .says {
+    font-weight: 600;
+  }
+  .says.flat {
+    color: var(--a-muted);
+  }
+
+  /* ---- a group's figures, each against everyone ---- */
+  .tiles {
+    display: grid;
+    gap: 1.1rem;
+  }
+  .tiles.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tile.wide {
+    margin-top: 1.1rem;
+  }
+  .most {
+    margin: 0.2rem 0 0.4rem;
+    font-size: 1.2rem;
+    color: var(--a-text);
+  }
+  .most b {
+    font-weight: 650;
+    color: var(--a-now);
+  }
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem 2rem;
+  }
+  .mode {
+    display: grid;
+    gap: 0.15rem;
+  }
+  .mode .name {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.4rem 0.7rem;
-    font-size: 1.3rem;
+    gap: 0.6rem;
   }
-  .crumb {
+  .mode em {
+    font-size: 0.95rem;
+    font-style: normal;
     font-weight: 600;
-    color: var(--gold);
-    text-decoration: none;
+    color: var(--a-now);
   }
-  a.crumb:hover {
-    color: var(--gold-hi);
-    text-decoration: underline;
+
+  /* Two bars: the group's (gold, or green and red where better or worse) over everyone's (grey), each with its figure. */
+  .pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.3rem 0.8rem;
+    margin-top: 0.6rem;
   }
-  .crumb.on {
+  .mode .pair {
+    margin-top: 0;
+  }
+  .fig {
+    font-size: 0.95rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .bar {
+    display: block;
+    height: 0.6rem;
+    background: var(--a-track);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .bar > i {
+    display: block;
+    height: 100%;
+    background: var(--a-now);
+    border-radius: 2px;
+  }
+  .bar.up > i {
+    background: var(--a-up);
+  }
+  .bar.down > i {
+    background: var(--a-down);
+  }
+  .bar.all > i {
+    background: var(--a-before);
+  }
+
+  /* ---- where a mode's players come from ---- */
+  .from {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(5rem, 1.6fr) auto minmax(7rem, auto);
+    column-gap: 0.9rem;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .from li {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--a-rule);
+  }
+  .from li:last-child {
+    border-bottom: 0;
+  }
+  .from .name {
+    justify-self: start;
+  }
+  .from b {
+    font-weight: 650;
+    text-align: right;
     color: var(--a-ink);
   }
-  a.crumb.on {
-    pointer-events: none;
+  .lean {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--a-now);
   }
-  .sep {
+  .hint,
+  .aside {
+    margin: 0.8rem 0 0;
+    font-size: 0.95rem;
     color: var(--a-muted);
   }
-  .clear {
-    padding: 0 0.3rem;
-    font-size: 1.4rem;
-    line-height: 1;
-    color: var(--a-muted);
-    text-decoration: none;
+  .aside {
+    margin-top: 1.2rem;
   }
-  .clear:hover {
-    color: var(--a-ink);
-  }
-  .how {
-    margin-left: auto;
-    font-size: 1rem;
-    color: var(--a-muted);
-  }
+
   .reading {
     display: grid;
     gap: 0.8rem;
-    max-width: 40rem;
+    max-width: 36rem;
     color: var(--a-muted);
   }
   .reading p {
     margin: 0;
   }
-  .note {
-    margin: 0;
-    padding: 0.8rem 1.1rem;
-    background: var(--a-surface);
-    border: 1px solid var(--line);
-    border-radius: 4px;
+  .soft {
+    color: var(--a-muted);
   }
-  .note.bad {
-    border-color: rgba(236, 102, 80, 0.45);
+  .note {
+    margin: 1rem 0 0;
+    padding: 0.8rem 1.1rem;
     color: var(--a-ink);
+    background: var(--a-surface);
+    border: 1px solid rgba(236, 102, 80, 0.45);
+    border-radius: 4px;
   }
   .again {
     margin-left: 0.6rem;
@@ -365,164 +486,24 @@
     border: 0;
     cursor: pointer;
   }
-  .everyone > * {
-    font-weight: 600;
-    color: var(--a-muted);
-  }
-  .few > * {
-    opacity: 0.6;
-  }
-  .strong {
-    font-weight: 650;
-    color: var(--a-ink);
-  }
-  .soft {
-    color: var(--a-muted);
-  }
-  .caution {
-    margin: 0 0 1rem;
-    color: var(--a-muted);
-  }
-  .figs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.4rem 2rem;
-    margin: 0;
-  }
-  .fig {
-    min-width: 0;
-  }
-  dt {
-    font-weight: 600;
-    color: var(--a-ink);
-  }
-  dd {
-    display: grid;
-    gap: 0.15rem;
-    margin: 0.2rem 0 0;
-  }
-  dd b {
-    font-size: 2.4rem;
-    font-weight: 650;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    color: var(--a-now);
-  }
-  .means,
-  .all {
-    font-size: 1rem;
-    color: var(--a-muted);
-  }
-  .all {
-    color: var(--a-text);
-  }
-  .modes {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(6rem, 2fr) auto auto;
-    column-gap: 1rem;
-  }
-  .mode {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: center;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid var(--a-rule);
-  }
-  .mode:last-child {
-    border-bottom: 0;
-  }
-  .mode .name {
-    color: var(--a-ink);
-  }
-  .mode b {
-    font-weight: 650;
-    text-align: right;
-    color: var(--a-ink);
-  }
-  .mode .soft {
-    text-align: right;
-  }
-  .per {
-    grid-column: 1 / -1;
-    margin-top: 0.2rem;
-    font-size: 1rem;
-    color: var(--a-muted);
-  }
-  .pair {
-    display: grid;
-    gap: 3px;
-  }
-  .pair .meter {
-    height: 0.55rem;
-  }
-  .meter.all > i {
-    background: var(--a-before);
-  }
-  .bar {
-    width: 26%;
-    min-width: 5rem;
-  }
-  .key {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-weight: 500;
-    color: var(--a-muted);
-  }
-  .key i {
-    display: inline-block;
-    width: 0.8rem;
-    height: 0.55rem;
-    border-radius: 2px;
-  }
-  .key i + i,
-  .key-line .k-all {
-    margin-left: 0.4rem;
-  }
-  .k-now {
-    background: var(--a-now);
-  }
-  .k-all {
-    background: var(--a-before);
-  }
-  .key-line {
-    margin: 0.9rem 0 0;
-    font-size: 1rem;
-  }
-  .lean.more {
-    font-weight: 650;
-    color: var(--a-now);
-  }
-  .lean.less {
-    color: var(--a-muted);
-  }
-  .tables {
-    display: grid;
-    gap: 1.8rem;
-  }
-  .aside {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--a-muted);
-  }
-  @media (max-width: 1100px) {
-    .two {
+  @media (max-width: 900px) {
+    .tiles.three,
+    .modes {
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  @media (max-width: 900px) {
-    .figs {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .how {
-      flex-basis: 100%;
-      margin-left: 0;
-    }
-  }
   @media (max-width: 600px) {
-    dd b {
-      font-size: 1.9rem;
+    .what {
+      width: 100%;
+    }
+    .value {
+      font-size: 2.1rem;
+    }
+    .from {
+      grid-template-columns: minmax(0, 1fr) minmax(3rem, 1fr) auto;
+    }
+    .lean {
+      grid-column: 1 / -1;
     }
   }
 </style>
