@@ -22,6 +22,17 @@ export async function boot(asked: URLSearchParams) {
   const size = sizeOf(isSizeKey(asked.get('size')) ? (asked.get('size') as Parameters<typeof sizeOf>[0]) : 'desktop');
   emulate(size);
   const heard = listen();
+  // The same scene draws the same every time (the embers, the dust): a shot
+  // differs from its before only where something changed. Its game is
+  // stubbed out, so this touches nothing but how it looks.
+  let seed = [...(asked.get('s') ?? '')].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 2166136261);
+  Math.random = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 
   // No room here, so no WebRTC: PeerJS, as the session loads it, checks what
   // the browser supports by opening a connection, a wait the frame can do
