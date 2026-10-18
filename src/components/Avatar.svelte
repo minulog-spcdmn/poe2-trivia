@@ -62,7 +62,7 @@
     return () => a.cancel();
   });
   /** Keeps the face-down side on the token until the turn back up is edge on. */
-  const untilEdgeOn = () => ({ duration: turn === 'up' ? TURN_MS / 2 : 0 });
+  const untilEdgeOn = (_node: Element) => ({ duration: turn === 'up' ? TURN_MS / 2 : 0 });
 </script>
 
 <span
