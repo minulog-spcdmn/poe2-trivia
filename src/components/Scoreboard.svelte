@@ -47,6 +47,7 @@
   import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
   import HeartOfLight from './HeartOfLight.svelte';
+  import StandingMark from './StandingMark.svelte';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -794,11 +795,9 @@
 <!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
 {#if session.spectating}<Gallery />{/if}
 
-<!-- Gone: the lobby's offline mark (StandingMark), a signal with no bar lit. -->
+<!-- Gone: the lobby's offline mark (StandingMark), a phone's signal with no bar lit and a ×. -->
 {#snippet offline()}
-  <span class="off" role="img" aria-label="Disconnected" title="Disconnected"
-    ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19.5v-3M10.5 19.5v-6.5M15 19.5v-10M19.5 19.5v-13.5" /></svg></span
-  >
+  <span class="off"><StandingMark mark="offline" title="Disconnected" /></span>
 {/snippet}
 
 <style>
@@ -1321,24 +1320,21 @@
   }
   .off-slot {
     flex: none;
-    width: 13px;
-    height: 13px;
+    width: 15px;
+    height: 15px;
   }
   .off {
     display: grid;
-    color: var(--muted);
+    --standing-size: 15px;
+  }
+  .off :global(.mark) {
+    margin: 0;
   }
   .off-corner {
     display: none;
   }
-  .off svg {
-    width: 13px;
-    height: 13px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.4;
-    stroke-linecap: round;
-    opacity: 0.7;
+  /* Kept legible where it sits on an avatar's corner. */
+  .off :global(svg) {
     filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000);
   }
 

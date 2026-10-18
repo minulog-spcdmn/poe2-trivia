@@ -13,8 +13,6 @@
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
-  import DrawnMark from './DrawnMark.svelte';
-  import HeartOfLight from './HeartOfLight.svelte';
   import KickButton from './KickButton.svelte';
   import OnlookerMark from './OnlookerMark.svelte';
   import WatchEye from './WatchEye.svelte';
@@ -244,8 +242,6 @@
   /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
   const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
   const hostName = $derived(s.players.find((p) => p.id === s.hostId)?.name);
-  /** The co-op rules' vote line shows the seal a vote sets on a card: yours, or with no seat the host's. */
-  const voteSeal = $derived(s.players.find((p) => p.id === session.myPlayerId) ?? s.players.find((p) => p.id === s.hostId) ?? s.players[0]);
 </script>
 
 {#snippet startRow()}
@@ -282,17 +278,10 @@
   {/if}
 {/snippet}
 
-<!-- A rules line's sign: what the line is about, in the game's own marks (never the diamond, which means
-     "you are here"). Right and wrong as the answers show them, the score to reach in the answer tiles' ring,
-     the vote as your seal lands on a card, the revive by its heart of light. -->
-{#snippet sign(kind: 'right' | 'wrong' | 'target' | 'vote' | 'revive')}
-  <span class="sign {kind}" aria-hidden="true">
-    {#if kind === 'right'}<DrawnMark shape="check" />
-    {:else if kind === 'wrong'}<DrawnMark />
-    {:else if kind === 'target'}<span class="ring">{s.settings.targetScore}</span>
-    {:else if kind === 'vote'}{#if voteSeal}<Avatar name={voteSeal.name} hue={voteSeal.hue} size={18} />{/if}
-    {:else}<HeartOfLight />{/if}
-  </span>
+<!-- A rules line's sign: one small engraved ring before every line, so the rules read at a glance as a list
+     (never the diamond, which means "you are here"; never the waiting line's dot). -->
+{#snippet sign()}
+  <span class="sign" aria-hidden="true"><span class="ring"></span></span>
 {/snippet}
 
 <!-- The start page's two columns carry on here: on the left, where its menu
@@ -483,9 +472,9 @@
               <p class="together-when">Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
-              <li>{@render sign('vote')}<span>Vote for a card, then one is drawn from the votes.</span></li>
-              <li>{@render sign('wrong')}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
-              <li>{@render sign('revive')}<span>Teammates can sacrifice their life force to revive you.</span></li>
+              <li>{@render sign()}<span>Vote for a card, then one is drawn from the votes.</span></li>
+              <li>{@render sign()}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
+              <li>{@render sign()}<span>Teammates can sacrifice their life force to revive you.</span></li>
             </ul>
           </div>
         {/if}
@@ -612,15 +601,15 @@
 
         <ul class="rules" data-cursor="rules">
           {#if race}
-            <li>{@render sign('wrong')}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
-            <li>{@render sign('target')}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
+            <li>{@render sign()}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
+            <li>{@render sign()}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
           {:else}
             <li>
-              {@render sign('right')}<span
+              {@render sign()}<span
                 >A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.</span
               >
             </li>
-            <li>{@render sign('target')}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
+            <li>{@render sign()}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
           {/if}
         </ul>
       {/if}
@@ -1398,7 +1387,7 @@
   .rules li {
     display: flex;
     align-items: flex-start;
-    gap: 0.6rem;
+    gap: 0.55rem;
     margin: 0.25rem 0;
   }
   /* As tall as the first line, the sign centred on it. */
@@ -1406,35 +1395,16 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 1.15rem;
+    width: 0.6rem;
     height: 1.3em;
-    --mark-size: 9px;
-    --mark-stroke: 1.6px;
   }
-  .sign.right {
-    color: #a9cf8f;
-  }
-  .sign.wrong {
-    color: #d98a6e;
-  }
-  .sign.revive :global(svg) {
-    width: 1.1rem;
-    height: 1.1rem;
-  }
-  /* The score to reach, in the ring the answer tiles number their options in; gold, the winner's colour. */
+  /* A hairline ring in the house gold, its accent; small beside the words. */
   .ring {
-    display: grid;
-    place-items: center;
-    min-width: 1.05rem;
-    height: 1.05rem;
-    padding: 0 0.15rem;
-    border: 1px solid var(--gold-lo);
-    border-radius: 999px;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.56rem;
-    line-height: 1;
-    color: var(--gold-hi);
+    width: 6px;
+    height: 6px;
+    border: 1.3px solid var(--gold);
+    border-radius: 50%;
+    opacity: 0.85;
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
