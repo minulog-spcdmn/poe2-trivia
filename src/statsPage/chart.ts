@@ -31,11 +31,13 @@ export const shortDay = (d: string) => at(d).toLocaleDateString('en', { month: '
 export const longDay = (d: string, week = false) =>
   week ? `Week of ${shortDay(d)}` : at(d).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-/** Which of `n` points get a date along an axis `width` wide: as many as fit, the last always among them. */
+/** Which of `n` points get a date along an axis `width` wide: as many as fit, the last always among them, the first where it has room. */
 export function labelled(n: number, width: number, room = 66): number[] {
   if (!n || !width) return [];
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(width / room))));
   const out: number[] = [];
   for (let i = n - 1; i >= 0; i -= every) out.unshift(i);
+  // The first day too, where it has room: a narrow chart otherwise says where it ends but not where it starts.
+  if (out[0] > 0 && out[0] >= every * 0.75) out.unshift(0);
   return out;
 }

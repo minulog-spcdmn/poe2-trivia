@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Days of Today's unique in a table: the day, its item (and whether it was
-  // named from its art or found by name), how many answered, and the share
-  // who named it, with a bar to compare.
+  // Days of Today's unique in a table: the day, its item, how many
+  // answered, and the share who named it, with a bar to compare. Its items
+  // are named from their art; a day that asked the other way round (finding
+  // the art for a name) would say so under its item.
   import { fmt, longDay } from './chart';
   import type { DailyItem } from './dailyItems';
   import type { DailyDay } from './model';
@@ -45,7 +46,7 @@
         <tr>
           <th scope="row" class="day opt">{longDay(d.day)}{#if d.day === today}<em>so far</em>{/if}</th>
           <td class="item">
-            {#if item}<span class="iname">{item.name}</span><span class="kind">{MODE[item.mode]}</span>{:else}<span class="soft">…</span>{/if}
+            {#if item}<span class="iname">{item.name}</span>{#if item.mode !== 'name'}<span class="kind">{MODE[item.mode]}</span>{/if}{:else}<span class="soft">…</span>{/if}
             <span class="on-phone">{longDay(d.day)}{d.day === today ? ', so far' : ''}</span>
           </td>
           <td class="n">{fmt(d.answers)}</td>

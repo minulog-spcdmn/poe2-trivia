@@ -4,6 +4,7 @@
   // (the host, or the one passed around for hot-seat).
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
+  import { fitChart } from './fitChart.svelte';
   import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -13,7 +14,8 @@
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
   const L = $derived(read.now);
-  const modes = $derived(modesOf(L.games.rows));
+  /** The most played first, as everywhere else. */
+  const modes = $derived(modesOf(L.games.rows).sort((a, b) => b.started - a.started));
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
@@ -25,7 +27,14 @@
     const { seats, games } = seatsOf(rows);
     return games ? (seats / games).toFixed(1) : '–';
   };
+
+  let innerWidth = $state(1400);
+  let innerHeight = $state(900);
+  /** A big monitor, or one on its side, has the view on one screen: the chart gives up what runs past it. */
+  const chart = fitChart({ on: () => innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900), base: () => 340, least: 180 });
 </script>
+
+<svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
   <Section title="Games a day" says="Games started, every mode, online and hot-seat.">
@@ -35,7 +44,7 @@
         <Delta now={L.games.started} before={read.before.games.started} period={period.before} />
       </div>
     {/snippet}
-    <TrendChart days={L.days} now={L.games.perDay} before={read.before.games.perDay} {weekly} what="Games" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={340} />
+    <TrendChart days={L.days} now={L.games.perDay} before={read.before.games.perDay} {weekly} what="Games" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chart.height} />
   </Section>
 
   <Section title="Modes" says="Played to the end: the game reached its results, or a Delve run its last life.">
@@ -200,6 +209,12 @@
   @media (max-width: 1100px) {
     .two {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* A monitor on its side: the two side by side, so the view is one screen. */
+  @media (orientation: portrait) and (min-width: 900px) {
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   /* A big monitor: two columns, so the view is one screen. */

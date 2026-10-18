@@ -5,7 +5,7 @@
   // one's own picking, its few figures each against everyone. GoatCounter
   // breaks a whole period down, not its days, and never a country by device.
   import { fmt } from './chart';
-  import { MODES, MODE_NAMES, type Mode } from './model';
+  import { MODES, MODE_NAMES, modesOf, type Mode } from './model';
   import type { Period, Read } from './read';
   import { countsIn, groupName, hashOf, profileOf, segments, standouts, whereOf, type Sel, type Slices, type Standout } from './slices';
 
@@ -67,6 +67,9 @@
   const fromAll = $derived(slices && did ? whereOf(slices, did, 'locations') : []);
   const where = $derived(fromAll.filter((r) => r.name !== 'Unknown').slice(0, 6));
   const didCount = $derived(fromAll.reduce((n, r) => n + r.count, 0));
+  /** Its games and everyone's visits as the rest of the page counts them, for the headline: the groups' own read (by country) can come out a little apart. */
+  const didGames = $derived(modesOf(read.now.games.rows).find((m) => m.mode === did)?.started ?? didCount);
+  const visits = $derived(read.now.visitors.total);
   const phoneShare = (rows: { name: string; share: number }[]) => rows.find((r) => r.name === 'Phone or tablet')?.share ?? 0;
   const phonesDid = $derived(slices && did ? phoneShare(whereOf(slices, did, 'systems', true)) : 0);
   const phonesAll = $derived(slices ? phoneShare(whereOf(slices, 'visit', 'systems', true)) : 0);
@@ -151,14 +154,14 @@
 {:else if did && everyone}
   <header class="head">
     <h2>{nameOf(sel!)}</h2>
-    <p>{fmt(didCount)} games in {period.now.toLowerCase()}, {per100(didCount, everyone.visitors)} for every 100 visitors.</p>
+    <p>{fmt(didGames)} games in {period.now.toLowerCase()}, {per100(didGames, visits)} for every 100 visitors.</p>
   </header>
   {#if !didCount}
     <p class="soft">Nobody in these days.</p>
   {:else}
     {@const first = where[0]}
     <div class="tiles three">
-      {@render tile('How common', String(per100(didCount, everyone.visitors)), { says: 'games for every 100 visitors', tone: 'flat' }, 0, 0, 0, '', '')}
+      {@render tile('How common', String(per100(didGames, visits)), { says: 'games for every 100 visitors', tone: 'flat' }, 0, 0, 0, '', '')}
       <div class="tile">
         <h3>Most from</h3>
         <b class="value flat">{first?.name ?? '–'}</b>
@@ -416,7 +419,8 @@
   /* ---- where a mode's players come from ---- */
   .from {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(5rem, 1.6fr) auto minmax(7rem, auto);
+    /* The names' column as wide as the longest name, so on a wide screen the bars start beside them. */
+    grid-template-columns: fit-content(15rem) minmax(5rem, 1fr) auto minmax(7rem, auto);
     column-gap: 0.9rem;
     margin: 0.6rem 0 0;
     padding: 0;

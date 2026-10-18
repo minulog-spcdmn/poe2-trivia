@@ -853,10 +853,12 @@ overview answers "how is it going?" with the views behind it; `#board`
 (the monitor button in its top bar) is the overview for a monitor of its
 own, most of all one on its side: one screen, sized from the screen,
 kept awake and updating by itself, the liveliest first (today so far and
-what's new, what happened, then the period). On a monitor on its side
-(taller than wide, 900px or more) the overview, everything in it, fits
-the screen too, its type sized from it. On a big monitor (1440p, 4K) the
-overview fits one screen; "What happened" reads out the days far busier
+what's new, what happened, then the period; on a phone it stacks and
+scrolls). On a monitor on its side (taller than wide, 900px or more) every
+view fits the screen too, its type sized from it. On a big monitor (1440p,
+4K) every view fits one screen, a chart giving up what runs past it or
+taking what's left (`fitChart.svelte.ts`), its labels sized with the
+type; "What happened" reads out the days far busier
 than usual and the site behind each, and the sites and countries that
 brought far more or fewer than the period before (`insights.ts`, only
 what's beyond chance). Each update keeps what it brought in

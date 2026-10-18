@@ -62,7 +62,8 @@
     h2 {
       font-size: 1.3rem;
     }
-    header {
+    /* A choice goes under the heading; a link to more (a short one) stays beside it. */
+    header:not(:has(> .aside > :global(.to-view:only-child))) {
       grid-template-columns: minmax(0, 1fr);
     }
   }

@@ -4,13 +4,14 @@
   // wrong first, then the four figures that matter beside what happened and
   // how far a visit gets; one chart of how busy it was, its busiest days
   // ringed; and a row of short answers, each opening its view.
-  import { onMount, untrack } from 'svelte';
+  import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
   import { average, fmt, shortDay } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import Delta from './Delta.svelte';
+  import { fitChart } from './fitChart.svelte';
   import Kpi from './Kpi.svelte';
   import NewSince from './NewSince.svelte';
   import { DAILY_FROM, MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
@@ -64,26 +65,8 @@
   /** The figures' comparisons said short where the cards are narrow (a monitor on its side): "from 1,861 before". */
   const before = $derived(sideways ? 'before' : period.before);
   const chartBase = $derived(Math.round(oneScreen ? Math.max(200, innerHeight * (sideways ? 0.2 : 0.18)) : Math.min(560, Math.max(260, innerHeight * 0.27))));
-  /** Wide, the chart's height fitted to the screen: so the whole overview is one screen. */
-  let fitted = $state<number | null>(null);
-  const chartH = $derived(fitted ?? chartBase);
-  /** Whatever changes the page's height (a read, the chart drawn), the chart gives up what runs past the screen; a resize starts again from its usual height. */
-  function fit() {
-    if (!untrack(() => oneScreen)) return void (fitted = null);
-    const over = document.documentElement.scrollHeight - window.innerHeight;
-    const now = untrack(() => chartH);
-    if (over > 2 && now > 140) fitted = Math.max(140, now - over);
-  }
-  $effect(() => {
-    const seen = new ResizeObserver(() => requestAnimationFrame(fit));
-    seen.observe(document.body);
-    const resized = () => (fitted = null);
-    window.addEventListener('resize', resized);
-    return () => {
-      seen.disconnect();
-      window.removeEventListener('resize', resized);
-    };
-  });
+  /** Wide or on its side, the chart's height fitted to the screen, so the whole overview is one screen: smaller where the rest runs past it, taller where it leaves room. */
+  const chart = fitChart({ on: () => oneScreen, base: () => chartBase, most: () => innerHeight * 0.42 });
   /** The days far busier than usual, ringed on the chart (only on the visitors' line, which they're read from). */
   const spikes = $derived(metric === 'visitors' ? spikesOf(L.days, L.visitors.perDay).map((s) => s.day) : []);
 
@@ -127,7 +110,7 @@
       {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={before} />{/if}{/snippet}
     </Kpi>
     <Kpi
-      label="Joins that worked"
+      label="Joins worked"
       value={tries(L) ? percent(joins(L), tries(L)) : '–'}
       means={tries(L) ? `of ${fmt(tries(L))} ${tries(L) === 1 ? 'try' : 'tries'} to join a room` : 'nobody tried to join a room'}
       href="#joining"
@@ -140,7 +123,7 @@
   <div class="chart">
     <Section title="How busy it was" says={oneScreen ? '' : 'Each day against the same day of the period before.'}>
       {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
-      <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chartH} marks={spikes} />
+      <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chart.height} marks={spikes} />
     </Section>
   </div>
   <div class="side">
@@ -393,21 +376,28 @@
     .four :global(.zone) {
       display: none;
     }
+    /* What's new and what went wrong down the left of the top row, what happened beside them: the chart keeps the room a row of its own would take. */
     .ov {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       grid-template-areas:
-        'alerts alerts'
+        'alerts happened'
         'kpis kpis'
         'chart chart'
-        'happened happened'
         'four four';
       gap: 1rem;
+    }
+    .ov:not(:has(.alerts)) {
+      grid-template-areas:
+        'happened happened'
+        'kpis kpis'
+        'chart chart'
+        'four four';
     }
     .side {
       display: contents;
     }
     .alerts {
-      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      align-content: start;
       gap: 1rem;
     }
     .kpis {

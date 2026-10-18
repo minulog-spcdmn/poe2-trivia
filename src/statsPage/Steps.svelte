@@ -53,6 +53,7 @@
     background: var(--a-surface);
     border: 1px solid var(--line);
     border-radius: 4px;
+    container-type: inline-size;
   }
   .name {
     font-size: 1.25rem;
@@ -103,5 +104,15 @@
   .change {
     margin-top: auto;
     padding-top: 0.6rem;
+  }
+  /* A narrow card (five in a row, a monitor on its side): each step's name a line above its bar, not wrapped beside it. */
+  @container (max-width: 22rem) {
+    .row {
+      grid-template-columns: minmax(2rem, 1fr) auto;
+      row-gap: 0.15rem;
+    }
+    .step {
+      grid-column: 1 / -1;
+    }
   }
 </style>

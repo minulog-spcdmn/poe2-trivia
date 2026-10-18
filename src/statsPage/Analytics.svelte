@@ -970,5 +970,30 @@
       min-width: 0;
       padding: 0.4rem 0.3rem;
     }
+    /* The board on a phone: the periods a row of their own under the bar, the type the overview's, and the page scrolls (Board.svelte stacks it). */
+    :global(html.board) {
+      font-size: 15px;
+    }
+    .top.on-board .row {
+      flex-wrap: wrap;
+    }
+    .top.on-board .row > :global(.seg) {
+      order: 3;
+      display: grid;
+      flex-basis: 100%;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.35rem;
+    }
+    .top.on-board .row > :global(.seg button) {
+      min-width: 0;
+      padding: 0.4rem 0.3rem;
+    }
+    /* (Over the height the board's script sets, which keeps it to one screen elsewhere.) */
+    main.on-board {
+      display: block;
+      height: auto !important;
+      padding: 1rem 16px 2rem;
+      overflow: visible;
+    }
   }
 </style>

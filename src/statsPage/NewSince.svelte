@@ -37,6 +37,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
+    /* Its lines together at the top when a grid makes the box taller than they are (the board). */
+    align-content: start;
     gap: 0.3rem 1.4rem;
     padding: 0.8rem 1.3rem;
     background: var(--a-surface);

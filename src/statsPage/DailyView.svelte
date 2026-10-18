@@ -10,6 +10,7 @@
   import DailyTable from './DailyTable.svelte';
   import DayColumns from './DayColumns.svelte';
   import Delta from './Delta.svelte';
+  import { fitChart } from './fitChart.svelte';
   import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -24,8 +25,10 @@
   const from = $derived(Math.max(0, L.days.findIndex(asked)));
   const answered = $derived(days.filter((d) => d.answers));
   let innerWidth = $state(1400);
-  /** A big monitor fits the view on one screen: three of each and a shorter chart. */
-  const big = $derived(innerWidth >= 1900);
+  let innerHeight = $state(900);
+  /** A big monitor, or one on its side, fits the view on one screen: three of each, and the chart gives up what runs past it. */
+  const big = $derived(innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900));
+  const chart = fitChart({ on: () => big, base: () => (big ? 236 : 340), least: 160 });
   const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
   const before = $derived(dailyAverage(read.before));
@@ -42,7 +45,7 @@
   const newestFirst = $derived([...answered].reverse());
 </script>
 
-<svelte:window bind:innerWidth />
+<svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
   <p class="what">
@@ -76,7 +79,7 @@
       {weekly}
       label="Players of Today's unique a {weekly ? 'week' : 'day'}, named and missed"
       note={(d) => itemOf?.(d)?.name ?? ''}
-      height={big ? 236 : 340}
+      height={chart.height}
     />
   </Section>
 
@@ -181,6 +184,16 @@
   @media (max-width: 1100px) {
     .two {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* A monitor on its side: the two side by side, so the view is one screen. */
+  @media (orientation: portrait) and (min-width: 900px) {
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* Half a screen leaves their bars a sliver; the share beside them says it. */
+    .two :global(.table .bar) {
+      display: none;
     }
   }
   @media (max-width: 760px) {

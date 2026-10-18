@@ -71,8 +71,12 @@
   let visitorsH = $state(0);
   /** The legend's height, in the root's size (the board sizes its type from the screen). */
   const legend = $derived(visitorsH ? 3 * parseFloat(getComputedStyle(document.documentElement).fontSize) : 48);
-  const fit = (h: number) => Math.max(120, Math.floor(h - legend));
+  let innerWidth = $state(1400);
+  /** On a phone the board scrolls, so its chart has a height of its own (and its legend, three lines, the room it needs). */
+  const fit = (h: number) => (innerWidth <= 600 ? 220 : Math.max(120, Math.floor(h - legend)));
 </script>
+
+<svelte:window bind:innerWidth />
 
 <div class="board" class:has-since={!!read.changes}>
   <section class="today" aria-label="Today so far">
@@ -309,6 +313,33 @@
         'kpis kpis kpis steps'
         'chart chart happened where'
         'chart chart happened play';
+    }
+  }
+  /* A phone isn't what the board is for, but it opens there: one column that scrolls, today two by two. */
+  @media (max-width: 600px) {
+    .board,
+    .board:not(.has-since) {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+      grid-template-areas: 'today' 'since' 'happened' 'steps' 'kpis' 'chart' 'where' 'play';
+      height: auto;
+    }
+    .board:not(.has-since) {
+      grid-template-areas: 'today' 'happened' 'steps' 'kpis' 'chart' 'where' 'play';
+    }
+    .today {
+      padding: 1rem 1.1rem;
+    }
+    .figures,
+    .kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .figures b {
+      font-size: 2.6rem;
+    }
+    .fill {
+      flex: none;
+      overflow: visible;
     }
   }
 </style>

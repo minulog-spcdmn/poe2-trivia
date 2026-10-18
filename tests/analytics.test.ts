@@ -182,8 +182,10 @@ test('an axis climbs in round steps past its peak', () => {
   assert.deepEqual(axis(112, 4), { top: 150, ticks: [0, 50, 100, 150] });
 });
 
-test('dates along an axis: as many as fit, the last always among them', () => {
+test('dates along an axis: as many as fit, the last always among them, the first where it has room', () => {
   assert.deepEqual(labelled(30, 660, 66), [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]);
+  // A phone's room for two: the end, the middle, and the start, which the step from the end leaves a gap for.
+  assert.deepEqual(labelled(30, 280, 96), [0, 14, 29]);
   assert.deepEqual(labelled(3, 1000), [0, 1, 2]);
   assert.deepEqual(labelled(0, 500), []);
 });

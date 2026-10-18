@@ -4,9 +4,12 @@
   // The newest point (today, or this week) isn't over, so its last stretch is
   // drawn faint. Pointing (or the arrow keys) reads a day's two figures.
   // `marks`: days ringed on the line (the busiest, insights.ts spikesOf).
+  // Its labels, and the room around the plot for them, follow the page's
+  // type (rootFont), so a big screen's chart reads like the rest of it.
   import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { grouped } from './model';
+  import { rootFont } from './rootFont.svelte';
   import { addDays } from './zone';
 
   let {
@@ -25,7 +28,9 @@
   const n = $derived(cur.values.length);
 
   let width = $state(0);
-  const PAD = { top: 16, right: 12, bottom: 34, left: 52 };
+  const font = rootFont();
+  const fs = $derived(font.label);
+  const PAD = $derived({ top: Math.max(16, fs), right: 12, bottom: Math.round(fs * 2.3), left: Math.round(fs * 3.5) });
   const plotW = $derived(Math.max(0, width - PAD.left - PAD.right));
   const plotH = $derived(height - PAD.top - PAD.bottom);
   const ax = $derived(axis(Math.max(0, ...cur.values, ...was), 4));
@@ -36,7 +41,7 @@
   const settled = (vs: number[]) => path(vs.slice(0, Math.max(1, n - 1)));
   const lastStretch = (vs: number[]) => (n > 1 ? `M${x(n - 2).toFixed(1)} ${y(vs[n - 2] ?? 0).toFixed(1)}L${x(n - 1).toFixed(1)} ${y(vs[n - 1] ?? 0).toFixed(1)}` : '');
   const wash = $derived(n ? `${path(cur.values)}L${x(n - 1).toFixed(1)} ${y(0)}L${x(0).toFixed(1)} ${y(0)}Z` : '');
-  const ticks = $derived(labelled(n, plotW, 96));
+  const ticks = $derived(labelled(n, plotW, fs * 6.4));
   const hair = new Crosshair(
     () => n,
     (px) => Math.round(((px - PAD.left) / Math.max(1, plotW)) * (n - 1)),
@@ -60,6 +65,7 @@
       {@attach hair.attach}
       {width}
       {height}
+      style:font-size="{fs}px"
       role="img"
       tabindex="0"
       aria-label="{what} a {unit}, {names.now.toLowerCase()} against {names.before.toLowerCase()}. Arrow keys step through."
@@ -71,10 +77,10 @@
     >
       {#each ax.ticks as t (t)}
         <line class="grid" class:base={t === 0} x1={PAD.left} x2={PAD.left + plotW} y1={y(t)} y2={y(t)} />
-        <text class="tick" x={PAD.left - 12} y={y(t) + 5} text-anchor="end">{compact(t)}</text>
+        <text class="tick" x={PAD.left - fs * 0.8} y={y(t) + fs * 0.33} text-anchor="end">{compact(t)}</text>
       {/each}
       {#each ticks as i (i)}
-        <text class="tick" x={x(i)} y={height - 6} text-anchor={i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}>{shortDay(cur.days[i])}</text>
+        <text class="tick" x={x(i)} y={height - fs * 0.4} text-anchor={i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle'}>{shortDay(cur.days[i])}</text>
       {/each}
       <path class="before" d={settled(was)} />
       <path class="before so-far" d={lastStretch(was)} />
@@ -149,7 +155,6 @@
   }
   .tick {
     font-family: var(--font-data);
-    font-size: 15px;
     fill: var(--a-muted);
     font-variant-numeric: tabular-nums;
   }
@@ -236,9 +241,6 @@
     .hint {
       margin-left: 0;
       flex-basis: 100%;
-    }
-    .tick {
-      font-size: 13px;
     }
   }
 </style>

@@ -52,8 +52,8 @@
 <style>
   .bars {
     display: grid;
-    /* The name's column no wider than a name needs, so on a wide screen its bar and count stay beside it. */
-    grid-template-columns: minmax(0, 15rem) minmax(3rem, 1fr) auto 3.4rem;
+    /* The name's column as wide as the longest name (up to 15rem), so on a wide screen its bar and count stay beside it, and a narrow panel's bar keeps its room. */
+    grid-template-columns: fit-content(15rem) minmax(3rem, 1fr) auto 3.4rem;
     column-gap: 1rem;
     margin: 0;
     padding: 0;
@@ -69,6 +69,10 @@
   }
   li:last-child {
     border-bottom: 0;
+  }
+  /* (No wider than its column, which may be narrower than a table's bar, or it runs under the count.) */
+  .bars .meter {
+    min-width: 0;
   }
   .name {
     overflow-wrap: anywhere;
