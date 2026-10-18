@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DataConnection } from 'peerjs';
-import { ProbeDesk, isProbe } from '../src/lib/probeDesk.ts';
+import { ProbeDesk, answerOf, isProbe, ping, pingAnswer, pingOf } from '../src/lib/probeDesk.ts';
 import { parseRoomInfo, type RoomInfo } from '../src/lib/roomInfo.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
 
@@ -77,4 +77,63 @@ test("a probe's challenge reaches the room, and a listing signed over it (later)
   old.open();
   await new Promise((r) => setTimeout(r));
   assert.deepEqual(asked, ['c'.repeat(22), null]);
+});
+
+/** What the signalling server hands on: the message as sent, with `src` set to the sender and `dst` left as it was. */
+const relayed = (msg: object, src: string) => JSON.parse(JSON.stringify({ ...msg, src }));
+
+test('a ping looks to the signalling server like an ICE candidate, the only kind the free one passes on from strangers', () => {
+  const msg = ping('room-pub-1', 'dc_abc', 'c'.repeat(22));
+  assert.equal(msg.type, 'CANDIDATE');
+  assert.equal(msg.dst, 'room-pub-1');
+  // The free server cut off a sender whose candidate lacked any of these (checked against it).
+  assert.deepEqual(msg.payload.candidate, { candidate: '', sdpMid: '0', sdpMLineIndex: 0 });
+  assert.equal(msg.payload.type, 'data');
+  assert.equal(msg.payload.connectionId, 'dc_abc');
+  assert.equal(pingAnswer('scanner', 'dc_abc', room).type, 'CANDIDATE');
+  assert.deepEqual(pingAnswer('scanner', 'dc_abc', room).payload.candidate, msg.payload.candidate);
+});
+
+test('a ping is read back with who sent it and its challenge, and its answer with the room', () => {
+  const heard = pingOf(relayed(ping('room-pub-1', 'dc_abc', 'c'.repeat(22)), 'scanner'));
+  assert.deepEqual(heard, { src: 'scanner', connectionId: 'dc_abc', challenge: 'c'.repeat(22) });
+  // Junk where the challenge goes is answered unsigned.
+  assert.equal(pingOf(relayed(ping('room-pub-1', 'dc_abc', '<junk>'), 'scanner'))?.challenge, null);
+  // An answer isn't a ping, nor a ping an answer, nor anything else either.
+  const answer = relayed(pingAnswer('scanner', 'dc_abc', room), 'room-pub-1');
+  assert.equal(pingOf(answer), null);
+  assert.equal(answerOf(relayed(ping('room-pub-1', 'dc_abc', 'c'.repeat(22)), 'scanner')), null);
+  const a = answerOf(answer);
+  assert.equal(a?.src, 'room-pub-1');
+  assert.equal(a?.connectionId, 'dc_abc');
+  assert.deepEqual(parseRoomInfo(a?.room), room);
+  assert.equal(answerOf(relayed(pingAnswer('scanner', 'dc_abc', null), 'room-pub-1'))?.room, null);
+  const real = { type: 'CANDIDATE', src: 'x', payload: { candidate: { candidate: 'candidate:1 1 udp 1 1.2.3.4 5 typ host' }, type: 'data', connectionId: 'dc_1' } };
+  for (const m of [real, { type: 'OFFER', src: 'x', payload: { connectionId: 'dc_1', probe: 'c' } }, { type: 'CANDIDATE', payload: { connectionId: 'dc_1', probe: 'c' } }, null, 'CANDIDATE']) {
+    assert.equal(pingOf(m), null);
+    assert.equal(answerOf(m), null);
+  }
+});
+
+test('pings are answered with the room (signed over their challenge) or null, and count toward the same limit as connections', async () => {
+  const asked: (string | null)[] = [];
+  const desk = new ProbeDesk(async (challenge) => (asked.push(challenge), room));
+  const replies: (RoomInfo | null)[] = [];
+  desk.answerPing('c'.repeat(22), (r) => replies.push(r));
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(asked, ['c'.repeat(22)]);
+  assert.deepEqual(replies, [room]);
+  const none: (RoomInfo | null)[] = [];
+  new ProbeDesk(() => null).answerPing(null, (r) => none.push(r));
+  assert.deepEqual(none, [null]);
+
+  const busy = new ProbeDesk(() => room);
+  let answered = 0;
+  for (let i = 0; i < 70; i++) busy.answerPing(null, () => answered++);
+  assert.equal(answered, 60);
+  const c = conn({ probe: true });
+  busy.answer(asConn(c));
+  c.open();
+  assert.deepEqual(c.sent, []);
+  assert.equal(c.closed, true);
 });

@@ -30,7 +30,7 @@ import {
   type Item,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
-import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
+import { Beacon, ProbeDesk, hearPings, isProbe, type RoomInfo } from './rooms';
 import { isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
@@ -607,6 +607,7 @@ class Session {
   private openRoom(code: string, attempt: number, resumeState?: GameState) {
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
+    hearPings(peer, this.probeDesk);
     // 'open' fires again each time the signalling server is reconnected; the
     // room (and its game) is only built the first time.
     peer.once('open', () => {
