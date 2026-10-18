@@ -23,6 +23,9 @@ export const LANE_HIGH_BYTES = 64 * 1024;
 /** Sending goes on once the buffer is down to this. */
 export const LANE_LOW_BYTES = 32 * 1024;
 
+/** A lane not open by then never will be (ms): it is closed, and what waits on it goes on the main channel instead. */
+export const LANE_OPEN_MS = 10_000;
+
 /** The largest message a guest takes: a veiled picture's labels (1 MB at most) and the picture. */
 export const MAX_LANE_MESSAGE = 6 * 1024 * 1024;
 /** A message's own description (everything but its bytes) is small. */
@@ -35,6 +38,7 @@ export interface LaneChannel {
   bufferedAmountLowThreshold: number;
   binaryType: string;
   send(data: Uint8Array<ArrayBuffer>): void;
+  close(): void;
   addEventListener(type: 'open' | 'close' | 'bufferedamountlow' | 'message', listener: (e: { data?: unknown }) => void): void;
 }
 
@@ -134,27 +138,52 @@ export class LaneSender {
   private held = 0;
   private nextAt = 0;
 
-  constructor(channel: LaneChannel, fake: FakeLink | null = null) {
+  /** Closed, or never opened: nothing more goes down it (see `onDead`). */
+  private gone = false;
+  private readonly onDead: () => void;
+  private openTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * `onDead`: the lane closed, or didn't open within LANE_OPEN_MS. What it
+   * still held is dropped (a message cut short with it is let go by the
+   * guest), so whatever was sent down it is best sent again another way.
+   */
+  constructor(channel: LaneChannel, fake: FakeLink | null = null, onDead: () => void = () => {}) {
     this.channel = channel;
     this.fake = fake;
+    this.onDead = onDead;
     channel.bufferedAmountLowThreshold = LANE_LOW_BYTES;
     channel.addEventListener('bufferedamountlow', () => this.pump());
-    channel.addEventListener('open', () => this.pump());
+    channel.addEventListener('open', () => {
+      clearTimeout(this.openTimer);
+      this.pump();
+    });
+    channel.addEventListener('close', () => this.dead());
+    if (channel.readyState === 'connecting')
+      this.openTimer = setTimeout(() => {
+        if (channel.readyState !== 'connecting') return;
+        try {
+          channel.close();
+        } catch {
+          // Gone already.
+        }
+        this.dead();
+      }, LANE_OPEN_MS);
   }
 
   /** Whether messages can go down it (opened, not closed). */
   get open() {
-    return this.channel.readyState === 'open';
+    return !this.gone && this.channel.readyState === 'open';
   }
 
   /** Whether messages may still be put on it: open, or opening (they wait). */
   get usable() {
-    return this.channel.readyState === 'open' || this.channel.readyState === 'connecting';
+    return !this.gone && (this.channel.readyState === 'open' || this.channel.readyState === 'connecting');
   }
 
   /** Bytes still to send: waiting here and in the lane's own buffer. */
   get backlog() {
-    return this.waiting + this.held + (this.channel.readyState === 'open' ? this.channel.bufferedAmount : 0);
+    return this.waiting + this.held + (this.open ? this.channel.bufferedAmount : 0);
   }
 
   send(msg: Record<string, unknown>) {
@@ -198,14 +227,24 @@ export class LaneSender {
    * question's art, sent after it (drawn ahead in a race), stays.
    */
   clearBefore(mark: number) {
-    this.frames = this.frames.filter((f) => new DataView(f.buffer).getUint32(0) >= mark >>> 0);
+    this.keep((n) => n >= mark >>> 0);
+  }
+
+  /** Drops what hasn't gone yet of the messages sent from `from` up to `to` (marks): a question drawn ahead and thrown away. */
+  drop(from: number, to: number) {
+    this.keep((n) => n < from >>> 0 || n >= to >>> 0);
+  }
+
+  /** Keeps only the frames not handed to the lane yet whose message number passes `wanted`. */
+  private keep(wanted: (n: number) => boolean) {
+    this.frames = this.frames.filter((f) => wanted(new DataView(f.buffer).getUint32(0)));
     this.waiting = this.frames.reduce((n, f) => n + f.byteLength, 0);
   }
 
   /** Hands frames to the lane while its buffer has room. */
   pump() {
     const ch = this.channel;
-    while (this.frames.length && ch.readyState === 'open' && ch.bufferedAmount + this.held < LANE_HIGH_BYTES) {
+    while (this.frames.length && this.open && ch.bufferedAmount + this.held < LANE_HIGH_BYTES) {
       const frame = this.frames.shift()!;
       this.waiting -= frame.byteLength;
       if (this.fake) this.later(frame, this.fake);
@@ -217,10 +256,18 @@ export class LaneSender {
     try {
       this.channel.send(frame);
     } catch {
-      // Closed underneath us: the connection is going too.
-      this.frames = [];
-      this.waiting = 0;
+      // Closed underneath us (or it won't take more): the rest goes another way.
+      this.dead();
     }
+  }
+
+  private dead() {
+    if (this.gone) return;
+    this.gone = true;
+    clearTimeout(this.openTimer);
+    this.frames = [];
+    this.waiting = 0;
+    this.onDead();
   }
 
   /** Fake far link: each frame goes once the rate allows, half a round trip late. */
@@ -230,7 +277,7 @@ export class LaneSender {
     this.held += frame.byteLength;
     setTimeout(() => {
       this.held -= frame.byteLength;
-      if (this.channel.readyState === 'open') this.put(frame);
+      if (this.open) this.put(frame);
       this.pump();
     }, this.nextAt - now + fake.delayMs);
   }

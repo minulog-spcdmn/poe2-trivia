@@ -9,7 +9,9 @@ export type PrepRequest =
   /** One picture from the item's file as fetched (decoded here too); answered with it prepared. */
   | { t: 'prep'; id: number; file: Blob; job: PrepJob }
   /** Gets ready before the first question: a tiny picture through every step, so the first real one runs warm. */
-  | { t: 'warm' };
+  | { t: 'warm' }
+  /** A picture no longer wanted (its question was thrown away): dropped where it is, unanswered. */
+  | { t: 'drop'; id: number };
 
 /** A picture prepared, or why it couldn't be here (the page then does it itself). */
 export type PrepAnswer = { id: number; prepped?: Prepped; error?: string };
@@ -17,7 +19,16 @@ export type PrepAnswer = { id: number; prepped?: Prepped; error?: string };
 const surface = (w: number, h: number) => new OffscreenCanvas(w, h);
 const encode = async (canvas: OffscreenCanvas, type: string, quality: number) => (await canvas.convertToBlob({ type, quality })).arrayBuffer();
 
+/** Jobs in hand, and those of them dropped meanwhile (looked at between steps). */
+const running = new Set<number>();
+const dropped = new Set<number>();
+const DROPPED = 'dropped';
+
 self.onmessage = async ({ data: req }: MessageEvent<PrepRequest>) => {
+  if (req.t === 'drop') {
+    if (running.has(req.id)) dropped.add(req.id);
+    return;
+  }
   if (req.t === 'warm') {
     const img = new OffscreenCanvas(8, 8);
     const ctx = img.getContext('2d');
@@ -28,14 +39,25 @@ self.onmessage = async ({ data: req }: MessageEvent<PrepRequest>) => {
     await prepare(img, 8, { w: 4, h: 4, most: 2, grayscale: false, mirror: false, veil: { size: 3, seed: 1, plan } }, surface, encode).catch(() => {});
     return;
   }
+  const { id } = req;
+  const check = () => {
+    if (dropped.has(id)) throw new Error(DROPPED);
+  };
   let img: ImageBitmap | null = null;
+  running.add(id);
   try {
     img = await createImageBitmap(req.file);
-    const prepped = await prepare(img, img.width, req.job, surface, encode);
-    self.postMessage({ id: req.id, prepped } satisfies PrepAnswer, { transfer: transfers(prepped) });
+    check();
+    // Encoding is the last and longest step: not begun for a picture dropped meanwhile.
+    const prepped = await prepare(img, img.width, req.job, surface, (canvas, type, quality) => (check(), encode(canvas, type, quality)));
+    check();
+    self.postMessage({ id, prepped } satisfies PrepAnswer, { transfer: transfers(prepped) });
   } catch (err) {
-    self.postMessage({ id: req.id, error: String(err) } satisfies PrepAnswer);
+    // The page let go of a dropped one already.
+    if (!dropped.has(id)) self.postMessage({ id, error: String(err) } satisfies PrepAnswer);
   } finally {
     img?.close();
+    running.delete(id);
+    dropped.delete(id);
   }
 };

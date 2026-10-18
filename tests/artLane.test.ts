@@ -6,6 +6,7 @@ import {
   LANE_FRAME_BYTES,
   LANE_HIGH_BYTES,
   LANE_LOW_BYTES,
+  LANE_OPEN_MS,
   LaneReceiver,
   LaneSender,
   MAX_LANE_MESSAGE,
@@ -36,6 +37,11 @@ class FakeChannel implements LaneChannel {
   }
   fire(type: string) {
     for (const l of this.listeners.get(type) ?? []) l({});
+  }
+  close() {
+    if (this.readyState === 'closed') return;
+    this.readyState = 'closed';
+    this.fire('close');
   }
 }
 
@@ -154,6 +160,56 @@ test("a race's next question sent ahead stays when what is left of the one befor
   sender.send({ t: 'patch', qid: 7, i: 1 });
   sender.clearBefore(m);
   assert.equal(ch.sent.length, 2, 'what the lane had room for went at once');
+});
+
+test('a lane that closes lets go of what it held, says so once, and takes nothing more', () => {
+  const ch = new FakeChannel();
+  let dead = 0;
+  const sender = new LaneSender(ch, null, () => dead++);
+  sender.send({ t: 'art', qid: 5, w: 1, h: 1, data: bytes(300_000) });
+  assert.ok(sender.backlog > 200_000);
+  ch.close();
+  assert.equal(dead, 1);
+  assert.equal(sender.backlog, 0, 'nothing is left waiting on it: the clock waits for nobody on a dead lane');
+  assert.equal(sender.usable, false, 'what comes next goes the main channel');
+  ch.fire('close');
+  assert.equal(dead, 1);
+});
+
+test("a lane that never opens is closed in time, and what waited on it given up", async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const ch = new FakeChannel();
+  ch.readyState = 'connecting';
+  let dead = 0;
+  const sender = new LaneSender(ch, null, () => dead++);
+  sender.send({ t: 'patch', qid: 5, i: 1 });
+  t.mock.timers.tick(LANE_OPEN_MS - 1);
+  assert.equal(dead, 0);
+  t.mock.timers.tick(1);
+  assert.equal(dead, 1);
+  assert.equal(ch.readyState, 'closed');
+  assert.equal(sender.backlog, 0);
+});
+
+test('a question drawn ahead and thrown away: only its own frames go', () => {
+  const ch = new FakeChannel();
+  const sender = new LaneSender(ch);
+  const got: Record<string, unknown>[] = [];
+  const receiver = new LaneReceiver((m) => got.push(m));
+  sender.send({ t: 'art', qid: 5, w: 1, h: 1, data: bytes(100_000) });
+  const from = sender.mark;
+  sender.send({ t: 'sealed', kid: '6-b', iv: bytes(12), data: bytes(90_000, 3) });
+  const to = sender.mark;
+  sender.send({ t: 'patch', qid: 5, i: 1 });
+  sender.drop(from, to);
+  while (ch.sent.length || sender.backlog) {
+    for (const f of ch.sent.splice(0)) assert.ok(receiver.take(f));
+    ch.drain();
+  }
+  assert.deepEqual(
+    got.map((m) => m.t),
+    ['art', 'patch'],
+  );
 });
 
 test('frames no real host sends are turned down', () => {

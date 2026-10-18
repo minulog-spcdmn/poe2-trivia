@@ -786,6 +786,8 @@
 
   /** Frees the options should the host's word on an answer never come. */
   let fallback: ReturnType<typeof setTimeout> | undefined;
+  /** The longest the options wait shut for that word (ms): a far host's round trip and then some. */
+  const PICK_WAIT_MS = 6000;
   function answer(index: number) {
     if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
@@ -796,14 +798,16 @@
     sfx('select', { from: { from: optionEls[index] } });
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     // Only the latest answer's: one turned down and given again stays on its way.
-    // A far host's word can take a while: a timed question's comes by its
-    // end at the latest (the reveal), so it waits till a moment after that.
+    // A far host's word can take a while: it waits till a moment after a
+    // timed question's end (its reveal brings the word at the latest), but
+    // never more than PICK_WAIT_MS, so an answer the host let go without a
+    // word doesn't keep the options shut for the rest of the clock.
     clearTimeout(fallback);
     fallback = setTimeout(
       () => {
         if (!session.state?.reveal) chosen = null;
       },
-      q.deadline ? Math.max(2500, q.deadline - session.hostNow() + 2000) : 6000,
+      q.deadline ? Math.min(PICK_WAIT_MS, Math.max(2500, q.deadline - session.hostNow() + 2000)) : PICK_WAIT_MS,
     );
   }
 

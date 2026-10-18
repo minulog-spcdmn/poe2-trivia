@@ -160,17 +160,20 @@ const FEW_OPTIONS = 4;
  * item's file as it is, so the page goes on as the question begins; where
  * there is no worker, OffscreenCanvas or createImageBitmap, or where the
  * file can't be fetched or a worker fails, the page does it itself from the
- * item's image.
+ * item's image. `signal` stops it: a worker drops the job where it is.
  */
-async function prepPicture(art: { art: string; w: number; h: number }, job: Omit<PrepJob, 'w' | 'h'>): Promise<Prepped> {
+async function prepPicture(art: { art: string; w: number; h: number }, job: Omit<PrepJob, 'w' | 'h'>, signal?: AbortSignal): Promise<Prepped> {
   const src = itemImage(art.art);
   const full: PrepJob = { ...job, w: art.w, h: art.h };
   const here = async () => {
     const img = await loadImage(src);
+    signal?.throwIfAborted();
     return prepare(img, img.naturalWidth, full, canvasOnPage, encodeHere);
   };
+  signal?.throwIfAborted();
   if (!preparers()?.length) return here();
   const file = await loadFile(src).catch(() => null);
+  signal?.throwIfAborted();
   // (Picked only now: one may have failed meanwhile.)
   const p = leastBusy();
   if (!file || !p) return here();
@@ -178,6 +181,15 @@ async function prepPicture(art: { art: string; w: number; h: number }, job: Omit
   return new Promise<Prepped>((resolve, reject) => {
     p.jobs.set(id, { resolve, again: () => here().then(resolve, reject) });
     p.worker.postMessage({ t: 'prep', id, file, job: full } satisfies PrepRequest);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        if (!p.jobs.delete(id)) return;
+        p.worker.postMessage({ t: 'drop', id } satisfies PrepRequest);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
   });
 }
 
@@ -262,9 +274,16 @@ export function warmMedia() {
  * Host side: builds the art for a question (full question, with the answer).
  * `clock`: the question's seconds (game.ts questionClock) and the veil's
  * share of them, which each veiled picture's pace is fitted to as it is cut
- * (prepArt.ts cutArt).
+ * (prepArt.ts cutArt). `signal` stops it partway (a race's question drawn
+ * ahead and thrown away), so it holds up no question asked in its place.
  */
-export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { secs: number; share: number }, items: ItemsById): Promise<PreparedMedia> {
+export async function prepareMedia(
+  q: Question,
+  grayscale: Grayscale,
+  clock: { secs: number; share: number },
+  items: ItemsById,
+  signal?: AbortSignal,
+): Promise<PreparedMedia> {
   // Each picture as the question draws its item (Question.variant).
   const art = (id: string, i: number) => drawnAs(items.get(id)!, q.variant?.[i]);
   const out: PreparedMedia = { qid: q.askedAt, art: null, veil: null, patches: [], delays: [], gap: 0, areas: [], options: [], tiles: [] };
@@ -279,7 +298,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
           mirror: !!q.mirrored?.[i],
           // Each picture cut on its own seed, so no two burn in alike.
           veil: q.veil && plan ? { size: q.veil.size, seed: q.veil.seed + i, plan } : undefined,
-        }),
+        }, signal),
       ),
     );
     if (q.veil) out.tiles = pictures.map(cutVeil);
@@ -287,7 +306,7 @@ export async function prepareMedia(q: Question, grayscale: Grayscale, clock: { s
     return out;
   }
   const veil = q.veil ? { size: q.veil.size, seed: q.veil.seed, plan: veilPlan(clock.secs, clock.share, false) } : undefined;
-  const picture = await prepPicture(art(q.itemId, 0), { most: q.veil ? LIGHT : SHARP, grayscale: grayscale === 'all', mirror: !!q.mirrored?.[0], veil });
+  const picture = await prepPicture(art(q.itemId, 0), { most: q.veil ? LIGHT : SHARP, grayscale: grayscale === 'all', mirror: !!q.mirrored?.[0], veil }, signal);
   if (!picture.cut) {
     out.art = { w: picture.w, h: picture.h, data: picture.data };
     return out;

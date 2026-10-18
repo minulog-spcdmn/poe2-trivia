@@ -258,21 +258,42 @@ interface Guest {
   slow: boolean;
 }
 
+/**
+ * Host: a question's sealing (seal.ts). Its key (none where nobody else can
+ * be sent the art: hot-seat, the lab), its pictures sealed under it, and
+ * whether the key has gone out (`open`: the clock started, or the question
+ * ended before it did).
+ */
+interface Sealing {
+  qid: number;
+  key: SealKey | null;
+  sealed: SealedMsg[];
+  open: boolean;
+}
+
 /** Host: a question's art as prepared (unsealed: its pictures and patches), and sealed for the room. */
 interface PreparedArt {
   media: PreparedMedia;
   plain: MediaMsg[];
-  sealing: { qid: number; key: SealKey | null; sealed: SealedMsg[]; open: boolean };
+  sealing: Sealing;
+}
+
+/** Where a question's sealed pictures sit on a guest's lane: from one mark (LaneSender.mark) up to another. */
+interface LaneSpan {
+  from: number;
+  to: number;
 }
 
 /**
  * Host, race: a next question drawn ahead (drawAhead.ts), its art once
- * prepared and sealed, and the guests it has gone to, with where it began on
- * each one's lane (LaneSender.mark; null: not on a lane).
+ * prepared and sealed (stopped by `stop` should it be thrown away), and the
+ * guests it has gone to, with where it sits on each one's lane (null: not on
+ * a lane).
  */
 interface AheadArt extends Ahead {
   ready: Promise<PreparedArt>;
-  sent: Map<Guest, number | null>;
+  stop: AbortController;
+  sent: Map<Guest, LaneSpan | null>;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -410,14 +431,11 @@ class Session {
    */
   private released: MediaMsg[] = [];
   /**
-   * Host: the current question's sealing (seal.ts). Its key (none where
-   * nobody else can be sent the art: hot-seat, the lab), its pictures sealed
-   * under it (sent to everyone as soon as they're ready, and to whoever comes
-   * later), and whether the key has gone out (`open`: the clock started, or
-   * the question ended before it did). Never in GameState, which guests are
-   * sent a view of.
+   * Host: the current question's sealing, its pictures sent to everyone as
+   * soon as they're ready, and to whoever comes later. Never in GameState,
+   * which guests are sent a view of.
    */
-  private sealing: { qid: number; key: SealKey | null; sealed: SealedMsg[]; open: boolean } | null = null;
+  private sealing: Sealing | null = null;
   /**
    * Host, race: the next question, drawn ahead as the reveal starts, on a
    * copy of the state (drawAhead.ts), its art being prepared and sealed
@@ -820,7 +838,7 @@ class Session {
       // The art lane: host to guest only, so anything sent up it is no real client.
       const lane = openLane(conn.peerConnection);
       if (lane) {
-        guest.lane = new LaneSender(lane, FAKE_LINK);
+        guest.lane = new LaneSender(lane, FAKE_LINK, () => this.laneLost(conn, guest));
         lane.addEventListener('message', () => this.guests.has(conn) && this.block(conn));
       }
       // For a hello under the held name to sign (ownerKey.ts joinProof): fresh, so a signature seen once is of no use again.
@@ -1319,9 +1337,9 @@ class Session {
     // thrown away) is of no use any more: this one's goes first. One drawn
     // ahead keeps its own, sent behind it.
     for (const g of this.guests.values()) {
-      const from = ahead?.sent.get(g);
-      if (from === undefined) g.lane?.clear();
-      else if (from !== null) g.lane?.clearBefore(from);
+      const span = ahead?.sent.get(g);
+      if (span === undefined) g.lane?.clear();
+      else if (span !== null) g.lane?.clearBefore(span.from);
     }
     const qid = q.askedAt;
     let prepared: PreparedArt;
@@ -1355,14 +1373,14 @@ class Session {
     if (media.veil || media.tiles.length) this.burnVeil(qid, cur.question.clockAt!);
   }
 
-  /** Prepares a question's art (media.svelte.ts), within MEDIA_TIMEOUT_MS, and seals it. */
-  private async prepareArt(s: GameState): Promise<PreparedArt> {
+  /** Prepares a question's art (media.svelte.ts), within MEDIA_TIMEOUT_MS, and seals it; `signal` stops it partway. */
+  private async prepareArt(s: GameState, signal?: AbortSignal): Promise<PreparedArt> {
     const q = s.question!;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
     });
-    const media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
+    const media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, signal), timeout]).finally(() => clearTimeout(timer));
     const plain = picturesOf(media);
     return { media, plain, sealing: await this.sealMedia(q.askedAt, plain) };
   }
@@ -1373,14 +1391,16 @@ class Session {
    * waits for first, so the others' copies don't go ahead of theirs on the
    * host's uplink.
    */
-  private sendSealed(s: GameState, sealed: SealedMsg[], sent: Map<Guest, number | null>) {
+  private sendSealed(s: GameState, sealed: SealedMsg[], sent: Map<Guest, LaneSpan | null>) {
     const first = new Set(clockWaitsFor(s));
     const guests = [...this.guests]
       .filter(([, g]) => !!g.playerId && !sent.has(g))
       .sort(([, a], [, b]) => Number(first.has(b.playerId!)) - Number(first.has(a.playerId!)));
     for (const [conn, g] of guests) {
-      sent.set(g, g.laneWanted && g.lane?.usable ? g.lane.mark : null);
+      const lane = g.laneWanted && g.lane?.usable ? g.lane : null;
+      const from = lane?.mark ?? 0;
       for (const m of sealed) this.sendMedia(conn, g, m);
+      sent.set(g, lane ? { from, to: lane.mark } : null);
     }
   }
 
@@ -1394,11 +1414,12 @@ class Session {
    * state until then.
    */
   private drawAhead(s: GameState, after: Promise<void>) {
-    this.ahead = null;
+    this.dropAhead();
     if (this.mode !== 'host' || this.labRoomless) return;
     const drawn = drawAhead(s, (st) => engine.apply(st, { type: 'next' }, null));
     if (!drawn) return;
-    const a: AheadArt = { ...drawn, ready: this.prepareArt(drawn.state), sent: new Map() };
+    const stop = new AbortController();
+    const a: AheadArt = { ...drawn, ready: this.prepareArt(drawn.state, stop.signal), stop, sent: new Map() };
     this.ahead = a;
     a.ready.then(
       async ({ sealing }) => {
@@ -1407,10 +1428,41 @@ class Session {
         if (this.ahead === a) this.sendSealed(a.state, sealing.sealed, a.sent);
       },
       (err) => {
-        // Drawn again at 'next', as before (and asked again by itself should that fail too).
+        // Thrown away (stopped), or drawn again at 'next', as before (and asked again by itself should that fail too).
+        if (this.ahead !== a) return;
         console.warn('media ahead', err);
-        if (this.ahead === a) this.ahead = null;
+        this.ahead = null;
       },
+    );
+  }
+
+  /**
+   * The question drawn ahead is thrown away: its preparing stops, and what
+   * of its art hasn't gone yet down each lane is dropped, so neither holds
+   * up the question drawn in its place.
+   */
+  private dropAhead() {
+    const a = this.ahead;
+    if (!a) return;
+    this.ahead = null;
+    a.stop.abort();
+    for (const [g, span] of a.sent) if (span) g.lane?.drop(span.from, span.to);
+  }
+
+  /**
+   * A guest's art lane closed, or never opened: what it carried of the
+   * question in play, and of one drawn ahead, goes again on the main
+   * channel (sendMedia, now the lane is no use).
+   */
+  private laneLost(conn: DataConnection, g: Guest) {
+    if (this.guests.get(conn) !== g || !g.playerId || !conn.open) return;
+    this.replayMedia(conn, g);
+    const a = this.ahead;
+    if (!a?.sent.has(g)) return;
+    a.sent.delete(g);
+    a.ready.then(
+      ({ sealing }) => this.ahead === a && this.sendSealed(a.state, sealing.sealed, a.sent),
+      () => {},
     );
   }
 
@@ -1421,9 +1473,12 @@ class Session {
    */
   private stepNext(cur: GameState, from: string | null): GameState {
     const a = this.ahead;
-    this.ahead = null;
     const taken = takeAhead(cur, a);
-    if (!taken) return engine.apply(cur, { type: 'next' }, from);
+    if (!taken) {
+      this.dropAhead();
+      return engine.apply(cur, { type: 'next' }, from);
+    }
+    this.ahead = null;
     this.taking = a;
     return taken;
   }
@@ -1434,7 +1489,7 @@ class Session {
    * bytes sealed for one question ever pair with another's key. Hot-seat and
    * the lab send nobody anything: nothing to seal.
    */
-  private async sealMedia(qid: number, plain: MediaMsg[]): Promise<NonNullable<Session['sealing']>> {
+  private async sealMedia(qid: number, plain: MediaMsg[]): Promise<Sealing> {
     if (this.mode !== 'host' || this.labRoomless) return { qid, key: null, sealed: [], open: false };
     const key = await makeSealKey(`${qid}-${newKid()}`);
     return { qid, key, sealed: await Promise.all(plain.map((m) => sealMsg(m, key))), open: false };
@@ -2259,7 +2314,7 @@ class Session {
   private setState(next: GameState) {
     const prev = this.state;
     // The room changed since the next question was drawn ahead: it's thrown away (drawAhead.ts).
-    if (this.ahead && next.version !== this.ahead.from) this.ahead = null;
+    if (this.ahead && next.version !== this.ahead.from) this.dropAhead();
     const taking = this.taking;
     this.taking = null;
     let patchesOut: Promise<void> | null = null;
@@ -2995,7 +3050,7 @@ class Session {
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     this.drawHold = null;
-    this.ahead = null;
+    this.dropAhead();
     this.taking = null;
     this.strikes.clear();
     this.sealedArt.clear();
