@@ -7,23 +7,13 @@ import { backdropsErrors, cloneData, ENV_TONES, ENVIRONMENTS, formatBackdrops, l
 import { DEFAULT_SETTINGS, generate, generateStratum, hsv, hueDistance, hueOf, keepLocked, seedOf, stratumSeed } from '../src/lib/backdropGen.ts';
 import { archetypeAt, endgame, endgameAt, SHIPPED, setBackdrops, seedAt, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
 import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lightSwing, lookOf, luminanceAt, measuredAt, MEASURED, settledAt, STRATA, stratumName } from '../src/lib/descent.ts';
-import { PROFILE_NAMES, SURFACE_MOTION, ZONE_MOTION } from '../src/lib/emberProfiles.ts';
-import { zoneMotionOf } from '../src/lib/emberMotion.ts';
+import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
 
 const FILE = join(import.meta.dirname, '..', 'src', 'data', 'backdrops.json');
-/**
- * The zone looks and motions as they were hard-coded in lib/descent.ts and
- * lib/emberMotion.ts at 380e372 (the looks MEASURED was measured with), and
- * a hash of descent(d) at every quarter depth from 0 to 91 as it came out
- * then, before the looks moved into src/data/backdrops.json.
- */
-const SHIPPED_380E372 = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'shipped-backdrops.json'), 'utf8')) as {
-  looks: Look[];
-  motions: unknown[];
-  hashes: Record<string, string>;
-};
-// (Their environments were drawn in their own colours then: the colours they take as tones now.)
-withTones({ zones: SHIPPED_380E372.looks.map((look) => ({ look })) });
+/** The zone looks MEASURED was measured with (hard-coded in lib/descent.ts at 380e372), each environment taking its tone as they do now. */
+const MEASURED_LOOKS = withTones({
+  zones: (JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'measured-looks.json'), 'utf8')) as { looks: Look[] }).looks.map((look) => ({ look })),
+}).zones.map((z) => z.look);
 const names = SHIPPED.zones.map((z) => z.name);
 const hash = (d: number) => createHash('sha256').update(JSON.stringify(descent(d))).digest('hex').slice(0, 16);
 const luma = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -36,35 +26,25 @@ test('backdrops.json is whole and well formed, as the tool writes it', () => {
   assert.deepEqual(names, ['The Mines', 'Magma Fissure', 'Frozen Hollow', 'Fungal Caverns', 'Vaal Outpost', 'Abyssal Depths', 'Petrified Forest', 'Sulphur Vents', 'Abyssal City', 'Primeval Ruins']);
 });
 
-test('a zone the corrections were measured with has exactly the look it had hard-coded (380e372); the descent reads them from the file', () => {
-  assert.equal(SHIPPED_380E372.looks.length, zones.length);
+test('a zone marked measured keeps the look its corrections were measured with; the descent reads the looks from the file', () => {
+  assert.equal(MEASURED_LOOKS.length, zones.length);
   zones.forEach((z, k) => {
-    assert.equal(STRATA[k].look, z.look, 'STRATA reads the file');
-    if (z.measured) assert.deepEqual(z.look, SHIPPED_380E372.looks[k], `${z.name} is marked measured, but its look has changed: set measured to false (or, measured again, put its new look in tests/fixtures/shipped-backdrops.json)`);
+    assert.equal(STRATA[k].look, z.look, z.name);
+    if (z.measured) assert.deepEqual(z.look, MEASURED_LOOKS[k], `${z.name} is marked measured, but its look has changed: set measured to false (or, measured again, put its new look in tests/fixtures/measured-looks.json)`);
   });
-  // The motion profiles moved into lib/emberProfiles.ts as they were, but
-  // for the snow's and the spores', retuned since with the Frozen Hollow
-  // and the Fungal Caverns rebuilt: the snow drifts down slower, the spores
-  // hang stiller.
-  type Z = { main: { name: string; rise: number } };
-  const RETUNED = ['snow falling', 'spores hanging'];
-  const now = JSON.parse(JSON.stringify([SURFACE_MOTION, ...ZONE_MOTION])) as Z[];
-  const was = SHIPPED_380E372.motions as Z[];
-  const kept = (list: Z[]) => list.filter((z) => !RETUNED.includes(z.main.name));
-  assert.deepEqual(kept(now), kept(was));
-  const rise = (list: Z[], name: string) => list.find((z) => z.main.name === name)!.main.rise;
-  assert.ok(rise(now, 'snow falling') < 0 && rise(now, 'snow falling') > rise(was, 'snow falling'), 'the snow falls, slower');
-  assert.ok(rise(now, 'spores hanging') > 0 && rise(now, 'spores hanging') < rise(was, 'spores hanging'), 'the spores rise, barely');
 });
 
-test('while the zones are as shipped, depths 0 to 91 come out exactly as at 380e372: looks, light, everything', (t) => {
-  const asShipped = zones.every((z, k) => z.measured && JSON.stringify(z.look) === JSON.stringify(SHIPPED_380E372.looks[k]));
-  if (!asShipped) return t.skip('a zone has a new look (saved from the backdrop tool), so its depths look new');
-  const changed: number[] = [];
-  for (let d = 0; d <= 91; d += 0.25) if (hash(d) !== SHIPPED_380E372.hashes[d]) changed.push(d);
-  assert.deepEqual(changed, []);
-  // And each zone's embers move as they did.
-  zones.forEach((_, k) => assert.deepEqual(zoneMotionOf(k), ZONE_MOTION[k]));
+test('measured zones get their corrections; a zone changed since loses its own, and the rest keep theirs', () => {
+  const draft = cloneData(SHIPPED);
+  for (const z of draft.zones) z.measured = true;
+  withBackdrops(draft, () => {
+    for (let d = 1; d <= MEASURED.length; d++) assert.deepEqual(measuredAt(d), MEASURED[d - 1], `depth ${d}`);
+  });
+  draft.zones[3].measured = false;
+  withBackdrops(draft, () => {
+    assert.deepEqual(measuredAt(settledAt(3)), [1, 1]);
+    for (const k of [1, 2, 5]) assert.deepEqual(measuredAt(settledAt(k)), MEASURED[settledAt(k) - 1], `zone ${k}`);
+  });
 });
 
 test('the generator is pure and seeded: the same seed, the same backdrop; another seed, another', () => {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addNoise, artScale, cutArt, transfers } from '../src/lib/prepArt.ts';
-import { labelPatches, litMask, packLabels, patchShapes, seededRandom, spreadOrder, veilSchedule, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, FIRST_PATCH_MS, litMask, patchShapes, seededRandom, unpackLabels, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background, off centre. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -21,34 +21,40 @@ function ellipse(W: number, H: number): Uint8ClampedArray {
 
 const plan = { ms: 11000, halfBy: 17000, endBy: 19000, late: 0.5 };
 
-test('a veil cut where the art is prepared is the cut the host always made', () => {
+test('a veil cut where the art is prepared reads back on a guest as the same patches, all of the item and only it', () => {
   const W = 96;
   const H = 130;
   const px = ellipse(W, H);
-  const v = { size: 7, seed: 4242, plan };
-  const cut = cutArt(px, W, H, v);
-
-  // As media.svelte.ts cutVeil did it on the page.
-  const lit = litMask(px, W, H);
-  const label = labelPatches(W, H, v.size, v.seed, lit);
-  const shapes = patchShapes(label, W, H);
-  const order = spreadOrder(shapes, v.seed);
-  const areas = order.map((i) => shapes[i].area);
-  const schedule = veilSchedule(areas, plan);
-
+  const cut = cutArt(px, W, H, { size: 7, seed: 4242, plan });
   assert.equal(cut.w, W);
   assert.equal(cut.h, H);
-  assert.deepEqual(cut.lit, lit);
-  assert.deepEqual(cut.shapes, shapes);
-  assert.deepEqual(cut.order, order);
-  assert.deepEqual(cut.areas, areas);
-  assert.deepEqual(cut.delays, schedule.delays);
-  assert.equal(cut.gap, schedule.gap);
-  assert.equal(cut.burn, Math.round(schedule.burn));
-  assert.equal(cut.count, shapes.length);
-  assert.deepEqual(cut.box, visibleBox(px, W, H));
-  assert.deepEqual(new Uint16Array(cut.labels), packLabels(label));
   assert.ok(cut.count > 10);
+
+  // What a guest makes of the labels it is sent.
+  const label = unpackLabels(new Uint16Array(cut.labels), W * H);
+  assert.ok(label, 'the labels unpack');
+  assert.deepEqual(patchShapes(label, W, H), cut.shapes);
+  assert.equal(cut.shapes.length, cut.count);
+
+  // Every pixel of the item is in a patch, and no clear one.
+  const lit = litMask(px, W, H);
+  assert.deepEqual(cut.lit, lit);
+  for (let i = 0; i < W * H; i++) assert.equal(label[i] >= 0, lit[i] === 1, `pixel ${i}`);
+
+  // Each patch uncovers once, at its own time within the plan, its area as cut.
+  assert.deepEqual([...cut.order].sort((x, y) => x - y), cut.shapes.map((_, i) => i));
+  assert.deepEqual(cut.areas, cut.order.map((i) => cut.shapes[i].area));
+  assert.equal(cut.delays.length, cut.count);
+  for (let r = 1; r < cut.count; r++) assert.ok(cut.delays[r] >= cut.delays[r - 1], `patch ${r} after the one before`);
+  // The pace guests burn the patches in by: the first a gap after the
+  // second, every patch burning for a whole number of ms, half the item in
+  // by the plan's half and all of it within the plan's span.
+  assert.ok(cut.gap > 0 && cut.burn > 0 && Number.isInteger(cut.burn), `gap ${cut.gap}, burn ${cut.burn}`);
+  assert.equal(cut.delays[0], FIRST_PATCH_MS);
+  assert.ok(Math.abs(cut.delays[1] - cut.delays[0] - cut.gap) < 1e-9);
+  assert.ok(areaTime(cut.delays, cut.burn, cut.areas) <= plan.halfBy);
+  assert.ok(cut.delays.at(-1)! + cut.burn <= FIRST_PATCH_MS + plan.ms, `all in by ${cut.delays.at(-1)! + cut.burn}`);
+  assert.deepEqual(cut.box, visibleBox(px, W, H));
 });
 
 test('the noise leaves clear pixels alone and moves the rest by a few levels, alike in each channel', () => {

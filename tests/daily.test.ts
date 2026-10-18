@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, dayNumber, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
@@ -14,13 +14,6 @@ const at = (iso: string) => Date.parse(iso);
 test('the day turns over at midnight UTC, wherever the player is', () => {
   assert.equal(utcDay(at('2026-10-09T23:59:59.999Z')) + 1, utcDay(at('2026-10-10T00:00:00Z')));
   assert.equal(utcDay(at('2026-10-10T00:00:00+02:00')), utcDay(at('2026-10-09T22:00:00Z')));
-});
-
-test('day numbers count from the launch, which is No. 1', () => {
-  assert.equal(dayNumber(DAILY_LAUNCH), 1);
-  assert.equal(dayNumber(DAILY_LAUNCH + 23 * HOUR), 1);
-  assert.equal(dayNumber(DAILY_LAUNCH + 24 * HOUR), 2);
-  assert.equal(dayNumber(DAILY_LAUNCH + 213 * 24 * HOUR + 5 * HOUR), 214);
 });
 
 test('the next one is counted in whole hours, rounded up, then minutes in the last hour, and the word is spelled out', () => {

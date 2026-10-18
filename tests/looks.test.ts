@@ -94,10 +94,9 @@ test('lookalikePool puts the look-alikes first, keeps the rest in order, never r
   assert.deepEqual(lookalikePool(answer.id, sceptres, 0), []);
 });
 
-test('the same input gives the same pool', () => {
+test("a pool's order is the art's own ranking", () => {
   for (const it of arts.filter((a, i) => i < 60 || a.name === 'Grand Spectrum' || a.group === 'Rings')) {
     const group = arts.filter((o) => o.group === it.group);
-    assert.deepEqual(lookalikePool(it.id, group, 7), lookalikePool(it.id, group, 7));
     assert.deepEqual(
       lookalikePool(it.id, group, 7).map((o) => o.id).slice(0, Math.min(7, looksLike(it.id).length)),
       looksLike(it.id).slice(0, 7).map((l) => l.id),

@@ -18,7 +18,7 @@ import {
   awaitingReturn,
   dealIn,
   delveStandings,
-  delveTeam,
+  nobodyStands,
   expectedVoters,
   fellAt,
   findTimer,
@@ -904,11 +904,9 @@ test('the run ends when nobody stands: no winner, one depth for the team, where 
   assert.deepEqual(h.s.winners, []);
   assert.deepEqual([fellAt(h.s, 'p0'), fellAt(h.s, 'p1'), fellAt(h.s, 'p2')], [1, 2, 3]);
   assert.equal(teamDepth(h.s), 3);
-  const t = delveTeam(h.s);
-  assert.equal(t.depth, 3);
-  assert.equal(t.perished, true);
+  assert.equal(nobodyStands(h.s), true);
   assert.deepEqual(
-    t.players.map((r) => [r.id, r.depth, r.rank]),
+    delveStandings(h.s).map((r) => [r.id, r.depth, r.rank]),
     [
       ['p2', 3, 1],
       ['p1', 2, 2],
@@ -921,7 +919,7 @@ test('the run ends when nobody stands: no winner, one depth for the team, where 
   const g = team(2, { depth: 7 });
   g.lives({ p1: 0 });
   assert.equal(teamDepth(g.s), 7);
-  assert.equal(delveTeam(g.s).perished, false);
+  assert.equal(nobodyStands(g.s), false);
 });
 
 test('the last one standing leaving ends the run; a question with nobody left to answer ends at once', () => {
@@ -1041,7 +1039,7 @@ test('the last one standing leaving (or removed) keeps the team depth where they
   assert.equal(h.s.phase, 'over');
   assert.equal(h.s.delve!.leftAt, 30);
   assert.equal(teamDepth(h.s), 30);
-  assert.deepEqual([delveTeam(h.s).depth, delveTeam(h.s).perished], [30, true]);
+  assert.equal(nobodyStands(h.s), true);
   // One who perished leaving changes nothing; one who leaves standing marks the depth, and the team goes on deeper.
   const g = team(3, { depth: 12 });
   g.edit((c) => (c.delve!.losses.p2 = [4, 4, 4]));

@@ -11,7 +11,6 @@ import {
   findFor,
   findLosses,
   findReward,
-  shownDepth,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -220,9 +219,6 @@ export const ITEM_TIPS = {
 
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
 export const FINDS_UNSAFE = "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.";
-
-/** A find's cave-in mark, in words for those who can't see it: "A wrong answer loses two lives". */
-export const caveInLabel = (kind: FindKind) => `A wrong answer loses ${caveInText(kind)}`;
 
 /**
  * The finds: the card's name, the tagline under the cards (what to do, in
@@ -464,33 +460,3 @@ export const flareText = (by: string, nameOf: (id: string) => string, me: string
 /** Co-op: a life given to bring a teammate back: "Ash brought Brea back.", "You brought Ash back.", "Ash brought you back." */
 export const revivedText = (by: string, to: string, nameOf: (id: string) => string, me: string | null) =>
   `${cap(namesOf([by], nameOf, me))} brought ${namesOf([to], nameOf, me)} back.`;
-
-/**
- * Depths where lives went, for the end screen: a depth that took two (a
- * cave-in, or misses on two questions there) once, with how many: "3 (two
- * lives) and 4". `losses` are the
- * run's own depths; the text counts them as players do (shownDepth).
- */
-export function lossDepths(losses: number[]): string {
-  const groups: { depth: number; n: number }[] = [];
-  for (const d of losses.map(shownDepth)) {
-    const last = groups.at(-1);
-    if (last?.depth === d) last.n++;
-    else groups.push({ depth: d, n: 1 });
-  }
-  const parts = groups.map((g) => (g.n > 1 ? `${g.depth} (${words(g.n)} lives)` : `${g.depth}`));
-  const joined = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
-  return `${groups.length > 1 ? 'depths' : 'depth'} ${joined}`;
-}
-
-/** "once", "twice", "3 times". */
-const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
-
-/** Co-op end screen: what a delver lost, gave and was given, in a line. */
-export function delverText(row: { losses: number[]; given: number; revived: number }): string {
-  const n = row.losses.length;
-  const parts = [n ? `Lost ${n} ${n === 1 ? 'life' : 'lives'}` : 'Lost no lives'];
-  if (row.given) parts.push(`gave ${row.given} ${row.given === 1 ? 'life' : 'lives'}`);
-  if (row.revived) parts.push(`was brought back ${times(row.revived)}`);
-  return parts.join(', ');
-}

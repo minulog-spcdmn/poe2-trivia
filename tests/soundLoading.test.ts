@@ -38,9 +38,16 @@ g.fetch = (u: URL) => {
 };
 const fetches = (file: string) => net.fetched.filter((f) => f === file).length;
 
-type Param = { value: number; events: unknown[][] };
+type Param = {
+  value: number;
+  events: unknown[][];
+  setValueAtTime(v: number, t: number): unknown;
+  setTargetAtTime(v: number, t: number, tc: number): unknown;
+  linearRampToValueAtTime(v: number, t: number): unknown;
+  cancelScheduledValues(t: number): unknown;
+};
 const param = (value: number) => {
-  const p: Param & Record<string, (...a: number[]) => unknown> = {
+  const p: Param = {
     value,
     events: [],
     setValueAtTime: (v, t) => p.events.push(['set', v, t]),

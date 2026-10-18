@@ -41,7 +41,7 @@ import { FrameGuard, plausiblePack } from '../src/lib/guard.ts';
 import { RateLimit, parseClientMsg, parseHostMsg } from '../src/lib/protocol.ts';
 import { ART, type Art } from '../src/lib/pointerArt.ts';
 
-const bytes = (m: unknown) => {
+const bytes = (m: Parameters<typeof pack>[0]) => {
   const b = pack(m) as ArrayBuffer | Uint8Array;
   return b instanceof ArrayBuffer ? new Uint8Array(b) : b;
 };
