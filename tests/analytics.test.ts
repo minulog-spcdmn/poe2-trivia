@@ -613,4 +613,7 @@ test('what stands out among the groups: big enough to tell, a mix, the largest f
   assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
   // Groups too small to tell apart say nothing.
   assert.deepEqual(standouts(SLICES, 6, 1000), []);
+  // A problem is never left out for its group's other findings: the made-up Brazilians meet far more failures.
+  const quarter = standouts(demoSlices(demoRead(90, new Date('2026-10-16T18:30:00Z'))));
+  assert.ok(quarter.some((f) => f.who.name === 'Brazil' && f.what === 'failures' && f.tone === 'down'));
 });

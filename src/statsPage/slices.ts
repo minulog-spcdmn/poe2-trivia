@@ -295,11 +295,14 @@ export function standouts(s: Slices, top = 6, min = 30): Standout[] {
     if (p.failures !== null && all.failures && p.failed >= 10 && p.failures / all.failures >= 1.4)
       out.push({ who, what: 'failures', mine: p.failures, all: all.failures, tone: 'down', score: weigh(p.failures, all.failures, p.failed) });
   }
-  // A mix of findings: at most two of a kind, and two about one group.
+  // A mix of findings: at most two of a kind, and two about one group; but
+  // a problem (joins failing, failures met) is never left out for a group's
+  // other findings, which can always wait.
   const kinds = new Map<string, number>();
   const groups = new Map<string, number>();
+  const problem = (f: Standout) => f.tone === 'down' && (f.what === 'joins' || f.what === 'failures');
   return out
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => Number(problem(b)) - Number(problem(a)) || b.score - a.score)
     .filter((f) => {
       const g = `${f.who.kind}/${f.who.name}`;
       if ((kinds.get(f.what) ?? 0) >= 2 || (groups.get(g) ?? 0) >= 2) return false;
@@ -307,5 +310,6 @@ export function standouts(s: Slices, top = 6, min = 30): Standout[] {
       groups.set(g, (groups.get(g) ?? 0) + 1);
       return true;
     })
-    .slice(0, top);
+    .slice(0, top)
+    .sort((a, b) => b.score - a.score);
 }

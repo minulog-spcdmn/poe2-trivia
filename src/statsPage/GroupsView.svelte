@@ -36,8 +36,13 @@
   const found = $derived(slices && !who && !mode ? standouts(slices) : []);
 
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
-  const places = $derived(slices ? segments(slices, 'place', 8).filter(known) : []);
-  const systems = $derived(slices ? segments(slices, 'system', 4).filter(known) : []);
+  /** The chips of a kind: its biggest groups, and the picked one even where it isn't among them (opened from a list). */
+  const chipsOf = (rows: SegmentRow[]) => {
+    const ws = rows.filter(known).map((r) => r.who);
+    return who && who.kind === rows[0]?.who.kind && !ws.some(isWho) ? [...ws, who] : ws;
+  };
+  const places = $derived(slices ? chipsOf(segments(slices, 'place', 8)) : []);
+  const systems = $derived(slices ? chipsOf(segments(slices, 'system', 4)) : []);
 
   // ---- words ----
   const DEVICE: Record<string, string> = { 'Phone or tablet': 'phones and tablets', Computer: 'computers' };
@@ -91,7 +96,6 @@
 
   // ---- a mode on its own: as the rest of the page counts it (the groups' own read can come out a little apart) ----
   const modeGames = $derived(mode ? (modesOf(read.now.games.rows).find((m) => m.mode === mode)?.started ?? 0) : 0);
-  const visits = $derived(read.now.visitors.total);
   // ---- where a mode is played most: each country's games of it for 100 visitors, against everyone's ----
   /** Countries (systems, where a device or system is picked) big enough to tell, most for their visitors first; the picked one even where it isn't among them. */
   const keen = $derived.by(() => {
@@ -155,28 +159,28 @@
 {/snippet}
 
 {#snippet chipFor(w: Who)}
-  <a class="chip" class:on={isWho(w)} class:apart={!!who && !isWho(w) && (who.kind === 'place') !== (w.kind === 'place')} href={whoChip(w)}>{whoName(w)}</a>
+  {@const apart = !!who && !isWho(w) && (who.kind === 'place') !== (w.kind === 'place')}
+  <a class="chip" class:on={isWho(w)} class:apart aria-current={isWho(w) ? 'true' : undefined} title={apart ? `Lets go of ${whoName(who!)}` : undefined} href={whoChip(w)}>{whoName(w)}</a>
 {/snippet}
 
 <nav class="picker" aria-label="Pick a group">
   <div class="line">
     <span class="what">Country</span>
-    <a class="chip" class:on={who?.kind !== 'place'} href={to(who?.kind === 'place' ? null : who)}>Any</a>
-    {#each places as r (r.who.name)}{@render chipFor(r.who)}{/each}
-    {#if who && who.kind !== 'place'}<span class="apart-note">Picking one lets go of {whoName(who)}: GoatCounter counts countries and devices apart.</span>{/if}
+    <a class="chip" class:on={who?.kind !== 'place'} aria-current={who?.kind !== 'place' ? 'true' : undefined} href={to(who?.kind === 'place' ? null : who)}>Any</a>
+    {#each places as w (w.name)}{@render chipFor(w)}{/each}
   </div>
   <div class="line">
     <span class="what">Device</span>
-    <a class="chip" class:on={!who || who.kind === 'place'} href={to(who?.kind === 'place' ? who : null)}>Any</a>
+    <a class="chip" class:on={!who || who.kind === 'place'} aria-current={!who || who.kind === 'place' ? 'true' : undefined} href={to(who?.kind === 'place' ? who : null)}>Any</a>
     {#each ['Phone or tablet', 'Computer'] as d (d)}{@render chipFor({ kind: 'device', name: d })}{/each}
-    {#each systems as r (r.who.name)}{@render chipFor(r.who)}{/each}
-    {#if who?.kind === 'place'}<span class="apart-note">Picking one lets go of {who.name}: GoatCounter counts countries and devices apart.</span>{/if}
+    {#each systems as w (w.name)}{@render chipFor(w)}{/each}
   </div>
   <div class="line">
     <span class="what">Mode</span>
-    <a class="chip" class:on={!mode} href={to(who, null)}>All games</a>
-    {#each MODES as m (m)}<a class="chip" class:on={mode === m} href={modeChip(m)}>{MODE_NAMES[m]}</a>{/each}
+    <a class="chip" class:on={!mode} aria-current={!mode ? 'true' : undefined} href={to(who, null)}>All games</a>
+    {#each MODES as m (m)}<a class="chip" class:on={mode === m} aria-current={mode === m ? 'true' : undefined} href={modeChip(m)}>{MODE_NAMES[m]}</a>{/each}
   </div>
+  <p class="apart-note">A country and a device can't be picked together: GoatCounter counts them apart.</p>
 </nav>
 
 {#if !slices}
@@ -191,18 +195,12 @@
 {:else}
   {#if who && mode && mine && all && picked && everyone}
     {@const M = MODE_NAMES[mode]}
-    {@const mineRate = per100(mine[mode], mine.visit)}
-    {@const allRate = per100(all[mode], all.visit)}
     {@const mineShare = share(mine[mode], picked.games)}
     {@const allShare = share(all[mode], everyone.games)}
     <header class="head">
       <h2>{M} {from(who)}</h2>
-      <p>{fmt(mine[mode])} games started {from(who)} in {period.now.toLowerCase()}, by {fmt(mine.visit)} visitors{#if mine.visit < FEW}; so few that a handful more or less changes a lot{/if}.</p>
+      <p>{fmt(mine[mode])} games started {from(who)} in {period.now.toLowerCase()}, by {fmt(mine.visit)} visitors{#if mine.visit < FEW}; so few that a handful more or less changes a lot{/if}. {pct(mineShare)} of their games are {M}, against {pct(allShare)} of everyone's.</p>
     </header>
-    <div class="tiles">
-      {@render tile(`${M} games for 100 visitors`, rate(mineRate), plain(against(mineRate, allRate)), mineRate, allRate, Math.max(mineRate, allRate), `${rate(mineRate)} ${from(who)}`, `everyone: ${rate(allRate)}`)}
-      {@render tile('Part of their games', pct(mineShare), plain(against(mineShare, allShare, true)), mineShare, allShare, 100, `of their games are ${M}`, `everyone: ${pct(allShare)}`)}
-    </div>
     {@render keenList(mode)}
   {:else if who && picked && everyone}
     {@const mineGames = per100(picked.games, picked.visitors)}
@@ -229,7 +227,7 @@
           {@const a = everyone.modes[i]}
           {@const r = a.share ? m.share / a.share : 1}
           <div class="mode">
-            <span class="name"><a class="pick" href={to(who, m.mode)}>{MODE_NAMES[m.mode]}</a>{#if Math.abs(r - 1) >= 0.15}<em>{times(r)} everyone's part</em>{/if}</span>
+            <span class="name"><a class="pick" href={to(who, m.mode)}>{MODE_NAMES[m.mode]}</a>{#if Math.abs(r - 1) >= 0.15}<em>{times(r)} as big a part as everyone's</em>{/if}</span>
             {@render pair(m.share, a.share, 100, 'flat', `${m.share}%`, `everyone: ${a.share}%`)}
           </div>
         {/each}
@@ -241,7 +239,7 @@
     {@const phonesAll = phoneShare(slices, null)}
     <header class="head">
       <h2>{M}</h2>
-      <p>{fmt(modeGames)} games started in {period.now.toLowerCase()}, {rate(per100(modeGames, visits))} for every 100 visitors.</p>
+      <p>{fmt(modeGames)} games started in {period.now.toLowerCase()}, {rate(keenAll)} for every 100 visitors.</p>
     </header>
     {#if !modeGames}
       <p class="soft">Nobody played it in these days.</p>
@@ -274,7 +272,7 @@
   {/if}
 
   <p class="aside">
-    How it's counted: a game counts on the device that runs it (the host's, or the one screen everyone plays on), so visitors who mostly join others' rooms start few games of their own{#if played}; "Played a game" counts guests too{/if}. GoatCounter counts countries and devices apart, so a country can't be narrowed to a device.
+    How it's counted: a game counts on the device that runs it (the host's, or the one screen everyone plays on), so visitors who mostly join others' rooms start few games of their own{#if played}; "Played a game" counts guests too{/if}.
   </p>
 {/if}
 {#if slices && failed}
@@ -326,7 +324,7 @@
     border-style: dashed;
   }
   .apart-note {
-    margin-left: 0.4rem;
+    margin: 0;
     font-size: 0.95rem;
     color: var(--a-muted);
   }
@@ -622,10 +620,6 @@
     }
     .value {
       font-size: 2.1rem;
-    }
-    .apart-note {
-      width: 100%;
-      margin-left: 0;
     }
     .from {
       grid-template-columns: minmax(0, 1fr) minmax(3rem, 1fr) auto;
