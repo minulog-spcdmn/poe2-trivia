@@ -27,6 +27,8 @@ const patch = (qid: number, i: number, tile?: number): MediaMsg => ({ t: 'patch'
 /** Lets the cut's places come in (a promise, as from its worker). */
 const settle = () => new Promise((r) => setImmediate(r));
 const burnt = () => Object.keys(shown.patches).map(Number);
+/** The veil shown now (read afresh: a check that it's null doesn't make it so for good). */
+const veilShown = () => shown.veil;
 
 let qid = 100;
 const next = () => (qid += 10);
@@ -93,7 +95,7 @@ test('a veil no real cut makes, too big or too much work to cut, is dropped', as
   const fair = new Int16Array(W * W);
   for (let i = 0; i < fair.length; i++) fair[i] = Math.floor((i % W) / 2.01);
   shown.receive(veil(q, { w: W, h: W, label: fair, count: 255, box: [0, 0, W, W] }));
-  assert.equal(shown.veil?.count, 255);
+  assert.equal(veilShown()?.count, 255);
 });
 
 test('the same veil sent again (a guest reconnecting) keeps what burnt in; a different cut starts afresh', async () => {

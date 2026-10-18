@@ -25,12 +25,14 @@ const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', 
 // ---- too quick to count --------------------------------------------------
 
 const ASKED = 5000;
+/** What the host has seen of the guest and the question, as tooFast takes it. */
+type Seen = Parameters<typeof tooFast>[2];
 /** A question asked at ASKED, its clock started at `clockAt` (null: not yet). */
 const asking = (clockAt: number | null = ASKED + 100, phase = 'question') =>
   ({ phase, question: { askedAt: ASKED, ...(clockAt === null ? {} : { clockAt }) } }) as unknown as GameState;
 /** The guest was sent the key to its art at 6000, on a 50 ms link; nothing failed, no clock seen. */
-const sent = { artFailedFor: 0, mediaAt: { qid: ASKED, at: 6000 }, clockAt: 0, rtt: 50, now: 0 };
-const at = (now: number, o: Partial<typeof sent> = {}) => ({ ...sent, ...o, now });
+const sent: Seen = { artFailedFor: 0, mediaAt: { qid: ASKED, at: 6000 }, clockAt: 0, rtt: 50, now: 0 };
+const at = (now: number, o: Partial<Seen> = {}): Seen => ({ ...sent, ...o, now });
 
 test("an answer is too quick until the art's key had a round trip and a human's moment to reach them", () => {
   const s = asking();
@@ -40,7 +42,7 @@ test("an answer is too quick until the art's key had a round trip and a human's 
   assert.equal(tooFast(s, ASKED, at(enough)), false);
   // An answer that doesn't say which question it is for is taken for this one.
   assert.equal(tooFast(s, undefined, at(enough - 1)), true);
-  // The link's round trip counts: on a slow one the same moment is fine sooner.
+  // The link's round trip counts: on a faster one the same moment is human enough.
   assert.equal(tooFast(s, ASKED, at(enough - 1, { rtt: 0 })), false);
 });
 

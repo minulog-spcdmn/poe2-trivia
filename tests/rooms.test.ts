@@ -125,8 +125,9 @@ test('a scan that is left stops asking', async () => {
       () => left,
     ),
   );
-  assert.ok(found.length <= 10, `${found.length} listed`);
-  assert.ok(Math.max(...net.pinged.map(slotOf)) <= 10);
+  // Nothing listed after it was left, and nothing asked past the batch in flight then, nor asked again.
+  assert.equal(found.length, 5);
+  assert.deepEqual(net.pinged.map(slotOf).sort((a, b) => a - b), Array.from({ length: 10 }, (_, i) => i + 1));
 });
 
 test("an invite's probe takes the room's own word, 'gone' when nobody has the code, and nothing passed on from another room", async () => {

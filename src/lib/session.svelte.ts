@@ -34,7 +34,7 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
-import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
+import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
@@ -655,7 +655,6 @@ class Session {
     this.secretToPlayer = new Map(p.secrets);
     this.myPlayerId = p.myPlayerId;
   }
-
 
   private openRoom(code: string, attempt: number, resumeState?: GameState) {
     // Guests are only ever sent the art sealed: a page that can't seal it can't host.
