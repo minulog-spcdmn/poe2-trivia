@@ -12,6 +12,8 @@
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx } from './lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
+  import { openPrivacy } from './lib/legalSheet.svelte';
+  import LegalSheet from './components/LegalSheet.svelte';
   import { dialogBackdrop } from './lib/behindDialog';
   import { wantDelveBackdrop } from './lib/backdrop';
   import { inVein, setVein } from './lib/vein';
@@ -538,7 +540,7 @@
 {#snippet legalLinks()}
   <a href={IMPRINT_URL} target="_blank" rel="noopener">Impressum</a>
   <span aria-hidden="true">·</span>
-  <a href={PRIVACY_URL} target="_blank" rel="noopener">Datenschutz</a>
+  <a href={PRIVACY_URL} target="_blank" rel="noopener" onclick={openPrivacy}>Datenschutz</a>
 {/snippet}
 
 {#if zoneCard}
@@ -547,6 +549,7 @@
   {/key}
 {/if}
 <Toasts headerHeight={headerOn ? headerHeight : 0} />
+<LegalSheet />
 
 <FxLayer />
 

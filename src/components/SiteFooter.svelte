@@ -3,7 +3,8 @@
   // closes with too: who made it, a way to support it, the fine print and
   // the legal links, on one line on a wide window and stacked below.
   import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
-  /** In a room: the legal pages open in a tab of their own, so the game stays. */
+  import { openPrivacy } from '../lib/legalSheet.svelte';
+  /** In a room: the legal pages open in a tab of their own, so the game stays (the privacy page over the game in an iPhone's home-screen app, lib/legalSheet.svelte.ts). */
   let { inRoom = false }: { inRoom?: boolean } = $props();
   const uid = $props.id();
   const away = $derived(inRoom ? { target: '_blank', rel: 'noopener' } : {});
@@ -28,7 +29,7 @@
     <nav class="legal" aria-label="Legal">
       <a href={IMPRINT_URL} {...away}>Impressum</a>
       <span aria-hidden="true">·</span>
-      <a href={PRIVACY_URL} {...away}>Datenschutz</a>
+      <a href={PRIVACY_URL} {...away} onclick={inRoom ? openPrivacy : undefined}>Datenschutz</a>
     </nav>
   </div>
 </footer>

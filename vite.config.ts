@@ -317,7 +317,7 @@ export default defineConfig(({ command, mode }) => {
     worker: { format: 'es' },
     build: {
       rollupOptions: {
-        // Legal pages are plain static pages so they work without JavaScript.
+        // Legal pages are plain static pages that work without JavaScript; only the privacy page's opt-out switch needs it.
         input: {
           main: 'index.html',
           impressum: 'impressum.html',

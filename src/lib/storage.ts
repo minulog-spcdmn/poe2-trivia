@@ -123,11 +123,13 @@ export function writeKey(key: string, value: string, where: Area = 'local'): boo
   }
 }
 
-export function removeKey(key: string, where: Area = 'local') {
+/** Whether it could be removed. */
+export function removeKey(key: string, where: Area = 'local'): boolean {
   try {
     area(where).removeItem(key);
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
