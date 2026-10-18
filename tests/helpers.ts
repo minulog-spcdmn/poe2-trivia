@@ -16,10 +16,12 @@ export const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('
  * question's kind) all come out alike.
  */
 export function seeded(seed: number): () => number {
-  seed = Math.imul(seed, 2654435761) >>> 0;
+  // Held in a Uint32Array, not a variable: a variable holding a number past 2^31 holds a new heap
+  // object every roll, which the embers' memory tests would count as theirs.
+  const s = Uint32Array.of(Math.imul(seed, 2654435761));
   return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
+    s[0] = s[0] * 1664525 + 1013904223;
+    return s[0] / 2 ** 32;
   };
 }
 
