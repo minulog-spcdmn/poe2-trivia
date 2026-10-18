@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: beta-dist
-          key: beta-dist-v1-${{ steps.find.outputs.sha }}
+          key: beta-dist-v2-${{ steps.find.outputs.sha }}
           lookup-only: true
 
   beta:
@@ -180,7 +180,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: beta-dist
-          key: beta-dist-v1-${{ needs.find-beta.outputs.sha }}
+          key: beta-dist-v2-${{ needs.find-beta.outputs.sha }}
           fail-on-cache-miss: true
       - if: steps.pick.outputs.from == 'build'
         uses: actions/download-artifact@v4
@@ -191,7 +191,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: beta-dist
-          key: beta-dist-v1-${{ needs.find-beta.outputs.sha }}
+          key: beta-dist-v2-${{ needs.find-beta.outputs.sha }}
       - if: steps.pick.outputs.from
         run: cp -r beta-dist dist/beta
       - uses: actions/upload-pages-artifact@v3

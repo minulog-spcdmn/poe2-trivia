@@ -22,10 +22,12 @@ export async function boot(asked: URLSearchParams) {
   const size = sizeOf(isSizeKey(asked.get('size')) ? (asked.get('size') as Parameters<typeof sizeOf>[0]) : 'desktop');
   emulate(size);
   const heard = listen();
-  // The same scene draws the same every time (the embers, the dust): a shot
-  // differs from its before only where something changed. Its game is
-  // stubbed out, so this touches nothing but how it looks.
-  let seed = [...(asked.get('s') ?? '')].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 2166136261);
+  // The same seat of a scene draws the same every time (the embers, the
+  // dust): a shot differs from its before only where something changed.
+  // Each seat its own, as each device has, so seats side by side don't
+  // mirror each other. Its game is stubbed out, so this touches nothing
+  // but how it looks.
+  let seed = [...`${asked.get('s') ?? ''}|${asked.get('seat') ?? 0}`].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 2166136261);
   Math.random = () => {
     seed = (seed + 0x6d2b79f5) >>> 0;
     let t = seed;

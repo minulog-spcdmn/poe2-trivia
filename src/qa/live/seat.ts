@@ -18,10 +18,11 @@ import type { SeatLook, SeatOp, SeatMessage } from '../messages.ts';
 export async function seat() {
   installFaults();
   const storage = await import('../../lib/storage.ts');
-  // The desk it answers to, kept in the address across reloads: its own origin, or (on the dev server,
-  // where a seat has an origin of its own) localhost on the same port. Nobody else drives it or hears from it.
-  const asked = decodeURIComponent(/[#&]desk=([^&]+)/.exec(location.hash)?.[1] ?? '');
-  const desk = asked === location.origin || (LOCAL && /^https?:\/\/localhost(:\d+)?$/.test(asked) && new URL(asked).port === location.port) ? asked : null;
+  // The desk it answers to, handed over in the address and kept in the seat's own session storage (the
+  // game rewrites the address: its codex, its invites): the desk's origin, or (on the dev server, where a
+  // seat has an origin of its own) localhost on the same port. Nobody else drives it or hears from it.
+  const deskOk = (o: string | null) => !!o && (o === location.origin || (LOCAL && /^https?:\/\/localhost(:\d+)?$/.test(o) && new URL(o).port === location.port));
+  const handed = decodeURIComponent(/[#&]desk=([^&]+)/.exec(location.hash)?.[1] ?? '');
   const seed = /#seed=([\w-]+)/.exec(location.hash);
   if (seed) {
     const json = new TextDecoder().decode(Uint8Array.from(atob(seed[1].replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
@@ -30,8 +31,11 @@ export async function seat() {
     storage.removeStoredStarting('', 'session');
     for (const [k, v] of Object.entries(local)) storage.writeStored(k, v, 'local');
     for (const [k, v] of Object.entries(session)) storage.writeStored(k, v, 'session');
-    history.replaceState(null, '', `${location.pathname}${location.search}${desk ? `#desk=${encodeURIComponent(desk)}` : ''}`);
+    history.replaceState(null, '', location.pathname + location.search);
   }
+  if (deskOk(handed)) storage.writeStored('qaDesk', handed, 'session');
+  const kept = storage.readStored('qaDesk', 'session');
+  const desk = deskOk(kept) ? kept : null;
 
   await import('../../app.css');
   const [{ mount }, { default: Root }, { session, engine }, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }] = await Promise.all([

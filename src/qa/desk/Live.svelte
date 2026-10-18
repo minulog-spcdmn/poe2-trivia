@@ -111,7 +111,8 @@
 
   /** Keeps the room as it stands now as a scene of its own (the host's state). */
   async function save(state: GameState, at: number) {
-    const seats = room.seats.map((s) => ({ mode: s.role === 'host' ? ('host' as const) : s.role === 'guest' ? ('client' as const) : ('local' as const), me: s.role === 'local' ? null : s.playerId }));
+    // Each seat as it is now: one back in a lobby comes back under a new id, as after any host reload.
+    const seats = room.seats.map((s) => ({ mode: s.role === 'host' ? ('host' as const) : s.role === 'local' ? ('local' as const) : ('client' as const), me: s.role === 'local' ? null : (looks[s.key]?.me ?? s.playerId) }));
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
     const kept = { protocol: PROTOCOL_VERSION, label: `${scene.label}, played on (${state.phase})`, takenAt: new Date().toISOString(), at, seats, state };
     const name = `${scene.key.split('/').pop()}-${stamp}`;
@@ -170,7 +171,7 @@
                   <button onclick={() => ask(seat.key, { op: 'cut' })}>Cut</button>
                 {/if}
                 <button onclick={() => reload(seat.key)}>Reload</button>
-                {#if seat.role === 'guest'}
+                {#if seat.role === 'guest' || seat.role === 'spectator'}
                   <button onclick={() => ask('host', { op: 'kick', id: seat.playerId ?? '' })}>Kick</button>
                 {/if}
               </span>

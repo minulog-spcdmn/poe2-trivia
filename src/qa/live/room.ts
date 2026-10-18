@@ -17,7 +17,7 @@ export interface LiveSeat {
   key: string;
   name: string;
   playerId: string | null;
-  role: 'host' | 'guest' | 'local';
+  role: 'host' | 'guest' | 'spectator' | 'local';
   /** Its storage, by name (each under the seat's own start). */
   seed: { local: Record<string, string>; session: Record<string, string> };
 }
@@ -90,6 +90,18 @@ export async function liveRoom(built: Built): Promise<LiveRoom | null> {
     role: 'host',
     seed: { local: { ...common, name: host.name }, session: { 'session.v4': JSON.stringify({ mode: 'host', code, state, priv }), 'session.alive': String(now) } },
   });
+  // Those watching, as many as there are seats left: they come back watching (the engine keeps a known spectator one).
+  for (const [i, w] of (state.spectators ?? []).slice(0, MAX_SEATS - 1 - guests.length).entries()) {
+    const secret = randomToken(32);
+    secrets.push([await roomSecret(secret, code), w.id]);
+    seats.push({
+      key: `w${i + 1}`,
+      name: w.name,
+      playerId: w.id,
+      role: 'spectator',
+      seed: { local: { ...common, secret, name: w.name }, session: { 'session.v4': JSON.stringify({ mode: 'client', code, name: w.name, watch: true }) } },
+    });
+  }
   const seated = new Set(seats.map((x) => x.playerId));
   return { nonce, code, seats, offline: state.players.filter((p) => !seated.has(p.id)).map((p) => p.name) };
 }

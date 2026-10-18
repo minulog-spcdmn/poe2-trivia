@@ -75,9 +75,10 @@
    */
   type Shot = { scene: string; seat: number; size: string; problems: Problem[]; failed?: string; before?: string | null; changed?: number };
   let sweep = $state<{ at: string; shots: Shot[] } | null>(null);
+  // (Not one taken from other code than this: its marks would point at problems fixed since, or miss new ones.)
   void fetch('./__qa/latest')
     .then((r) => (r.ok ? r.json() : null))
-    .then((m) => (sweep = m), () => {});
+    .then((m) => (sweep = m?.stale ? null : m), () => {});
   const sweepMore = $derived.by(() => {
     const more = new Map<string, SizeKey[]>();
     for (const sh of sweep?.shots ?? []) if ((sh.problems.length || sh.failed) && isSizeKey(sh.size)) more.set(sh.scene, [...(more.get(sh.scene) ?? []), sh.size]);

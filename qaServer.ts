@@ -7,7 +7,7 @@
 // .github/workflows/deploy.yml; its live rooms meet on the PeerJS cloud).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
 import type { Connect, Plugin } from 'vite';
@@ -54,6 +54,28 @@ function startSignalling(): Promise<void> {
   })());
 }
 
+/**
+ * Whether a sweep was taken from other code than the checkout's now: another
+ * commit, or a file of the game's changed since (`at`). Its marks would
+ * point at problems already fixed, or miss new ones.
+ */
+function sweepStale(root: string, head: string, at: string): boolean {
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout?.trim() ?? '';
+  if (git('rev-parse', 'HEAD') !== head) return true;
+  const since = Date.parse(at);
+  return git('status', '--porcelain')
+    .split('\n')
+    .map((l) => l.slice(3).trim())
+    .filter((f) => /^(src|index\.html|qa\.html)/.test(f))
+    .some((f) => {
+      try {
+        return statSync(join(root, f)).mtimeMs > since;
+      } catch {
+        return true;
+      }
+    });
+}
+
 const json = (res: Parameters<Connect.NextHandleFunction>[1], status: number, body: unknown) => {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
@@ -70,9 +92,8 @@ export function qaServer(root: string): Plugin {
       server.middlewares.use('/__qa/latest', (_req, res) => {
         const file = join(screens, 'qa-latest.json');
         if (!existsSync(file)) return json(res, 404, null);
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Cache-Control', 'no-store');
-        res.end(readFileSync(file));
+        const sweep = JSON.parse(readFileSync(file, 'utf8')) as { head: string; at: string };
+        json(res, 200, { ...sweep, stale: sweepStale(root, sweep.head, sweep.at) });
       });
       server.middlewares.use('/__qa/change', (_req, res) => json(res, 200, changedFiles(root)));
       // A shot of a sweep: /__qa/shot/qa-<when>/<file>.png, and nothing else under screens/.
