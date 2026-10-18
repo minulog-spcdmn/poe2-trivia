@@ -127,11 +127,25 @@ const userGain = () => volume * volume;
 
 /**
  * `reverb`: the hall, fed by `wet` (its impulse response set a moment after
- * the bus is made, see audio). `hall` (and `hallWet`, its reverb send) is
- * what Delve's zone loops play through: ducked and muffled while an Azurite
- * Vein is dug (see veinAmbience).
+ * the bus is made, see audio). `hall` (and `hallWet`, its reverb send,
+ * muffled by `hallWetLp`) is what Delve's zone loops play through: ducked and
+ * muffled while an Azurite Vein is dug (see veinAmbience). `veinWet`: the
+ * reverb send of the vein's own sounds (its tunnel's loops, and its moments
+ * while in it), for the placer to ring in the vein's room; without one, the
+ * hall's.
  */
-type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode; reverb: ConvolverNode; hall: GainNode; hallLp: BiquadFilterNode; hallWet: GainNode };
+type Bus = {
+  ac: AudioContext;
+  master: AudioNode;
+  user: GainNode;
+  wet: AudioNode;
+  reverb: ConvolverNode;
+  hall: GainNode;
+  hallLp: BiquadFilterNode;
+  hallWet: GainNode;
+  hallWetLp: BiquadFilterNode;
+  veinWet: GainNode;
+};
 let bus: Bus | null = null;
 
 /**
@@ -155,11 +169,14 @@ export type SoundPlace = { from?: Element | null; x?: number; edge?: -1 | 1; to?
  * it (null: left as it is): it may hand back a second take of the loop
  * (`take`, not started), which is started half a loop on, follows the
  * loop's rate and stops with it. `depth` hears Delve's depth as the ambience does
- * (depthAmbience), once mounted and on every change, for its rooms.
+ * (depthAmbience), once mounted and on every change, for its rooms. `veinWet`
+ * (mount) is the send of an Azurite Vein's own sounds, for its room; `wetTo`
+ * (place) a send other than the bus's for a moment's reverb (a vein moment's,
+ * in the vein).
  */
 export type Placer = {
-  mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode }): void;
-  place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined): { dry: AudioNode; wet: AudioNode } | null;
+  mount(b: { ac: AudioContext; master: AudioNode; wet: AudioNode; reverb: ConvolverNode; out: GainNode; veinWet: GainNode }): void;
+  place(ac: AudioContext, name: Sfx, start: number, where: SoundPlace | undefined, wetTo?: AudioNode): { dry: AudioNode; wet: AudioNode } | null;
   widen(ac: AudioContext, buf: AudioBuffer): { input: AudioNode; output: AudioNode; take?: AudioBufferSourceNode } | null;
   depth(d: number): void;
 };
@@ -169,7 +186,7 @@ let placer: Placer | null = null;
 export function setPlacer(p: Placer) {
   placer = p;
   if (bus) {
-    p.mount({ ac: bus.ac, master: bus.master, wet: bus.wet, reverb: bus.reverb, out: bus.user });
+    p.mount({ ac: bus.ac, master: bus.master, wet: bus.wet, reverb: bus.reverb, out: bus.user, veinWet: bus.veinWet });
     p.depth(depth);
   }
 }
@@ -219,11 +236,15 @@ function audio(): Bus | null {
     const zone = ac.createGain();
     const zoneLp = filter(ac, 'lowpass', 20000);
     zone.connect(zoneLp).connect(master);
+    // Its echo too: heard from the hall, ducked and muffled with it.
     const zoneWet = ac.createGain();
-    zoneWet.connect(wet);
+    const zoneWetLp = filter(ac, 'lowpass', 20000);
+    zoneWet.connect(zoneWetLp).connect(wet);
+    const veinWet = ac.createGain();
+    veinWet.connect(wet);
 
-    bus = { ac, master, user, wet, reverb, hall: zone, hallLp: zoneLp, hallWet: zoneWet };
-    placer?.mount({ ac, master, wet, reverb, out: user });
+    bus = { ac, master, user, wet, reverb, hall: zone, hallLp: zoneLp, hallWet: zoneWet, hallWetLp: zoneWetLp, veinWet };
+    placer?.mount({ ac, master, wet, reverb, out: user, veinWet });
     placer?.depth(depth);
     // Sound starting in a vein: the hall is already behind.
     if (inTunnel()) shapeHall(bus, 0.001);
@@ -554,6 +575,8 @@ const STOP_FADE = 0.05;
  * several patches already in, shouldn't turn into a rattle.
  */
 const MIN_GAP: Partial<Record<Sfx, number>> = { hover: 70, burn: 120 };
+/** An Azurite Vein's own moments: in the vein, they ring in its room. */
+const VEIN_MOMENTS = new Set<Sfx>(['veinStrike', 'veinMined', 'veinStrain1', 'veinStrain2', 'caveIn']);
 const lastPlayed = new Map<Sfx, number>();
 
 /**
@@ -587,13 +610,15 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   const gainDb = (Math.random() * 2 - 1) * m.varyGain;
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   const inS = Math.max(0, opts.inMs ?? 0) / 1000;
-  const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from) : null;
+  // In a vein, its own moments ring in its room (Bus veinWet).
+  const wetTo = inTunnel() && VEIN_MOMENTS.has(name) ? b.veinWet : undefined;
+  const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from, wetTo) : null;
   for (const l of m.layers) {
     // Only layers that have loaded: a late layer would land out of step.
     const buf = ready.get(l.file);
     if (buf)
       layers.push(
-        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into),
+        playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into ?? (wetTo ? { dry: b.master, wet: wetTo } : null)),
       );
   }
   // One that failed to load as sound started (offline for a moment) is tried
@@ -808,6 +833,7 @@ function shapeHall(b: Bus, tc: number) {
   b.hall.gain.setTargetAtTime(k, at, tc);
   b.hallWet.gain.setTargetAtTime(k, at, tc);
   b.hallLp.frequency.setTargetAtTime(inTunnel() ? VEIN_AMBIENCE.muffle : 20000, at, tc);
+  b.hallWetLp.frequency.setTargetAtTime(inTunnel() ? VEIN_AMBIENCE.muffle : 20000, at, tc);
 }
 
 /**
@@ -954,7 +980,7 @@ function updateLoop(l: Loop) {
       // The tunnel's loops play close; every other in the hall, behind it while in a vein.
       const tunnel = VEIN_LAYERS.has(l);
       gain.connect(tunnel ? b.master : b.hall);
-      gain.connect(send).connect(tunnel ? b.wet : b.hallWet);
+      gain.connect(send).connect(tunnel ? b.veinWet : b.hallWet);
       const nodes: AudioScheduledSourceNode[] = [...takes];
       if (l === RUMBLE) {
         // The rumble breathes: a slow swell and ebb on its level.

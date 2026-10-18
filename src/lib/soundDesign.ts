@@ -411,17 +411,17 @@ export const MOMENTS: Record<Sfx, Moment> = {
   // An Azurite Vein caves in, for two losses at once (in place of a lost
   // life's sound, twice): the generated collapse (CAVE_IN), with the gate
   // slam slowed into the rock giving way, and a low thud under it. Heavy,
-  // but over in about a second; drier than the blast, as it is close. As
-  // loud as the blast (its loudest 400 ms, K-weighted, through the mix),
-  // the loudest moments in a run.
+  // but over in about a second; drier than the blast, as it is close.
+  // Louder than anything else in a run, by ear: brought down to the blast's
+  // level it was too quiet.
   caveIn: {
     soften: 5,
     varyPitch: 0.03,
     varyGain: 0.5,
     layers: [
-      { file: 'cave-in', gain: -21, rate: 1, delay: 0, hp: 25, lp: 300, send: 0.4 },
-      { file: 'layer-sub-2', gain: -23, rate: 0.62, delay: 0, hp: 20, lp: 900, send: 0.4 },
-      { file: 'start-7', gain: -36, rate: 0.6, delay: 0, hp: 60, lp: 2400, send: 0.35 },
+      { file: 'cave-in', gain: -15, rate: 1, delay: 0, hp: 25, lp: 300, send: 0.4 },
+      { file: 'layer-sub-2', gain: -17, rate: 0.62, delay: 0, hp: 20, lp: 900, send: 0.4 },
+      { file: 'start-7', gain: -30, rate: 0.6, delay: 0, hp: 60, lp: 2400, send: 0.35 },
     ],
   },
   // …then the blast: a deep boom, the gate slam's crack and its echo off the
