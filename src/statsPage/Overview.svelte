@@ -1,9 +1,9 @@
 <script lang="ts">
-  // The overview: how it's going, at a glance. Anything wrong first (joins
-  // that failed), then the four figures that matter, each with its days in a
-  // small line and against the period before; one chart of how busy it was;
-  // when in the week they come, and how much they play; and a line of
-  // short answers, each opening its view.
+  // The overview: how it's going, at a glance, on one screen where it's big
+  // enough (a 1440p or 4K monitor). What the last update brought and anything
+  // wrong first, then the four figures that matter beside what happened and
+  // how far a visit gets; one chart of how busy it was, its busiest days
+  // ringed; and a row of short answers, each opening its view.
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
@@ -20,8 +20,10 @@
   import { deviceLink, modeLink, placeLink } from './slices';
   import Spark from './Spark.svelte';
   import TrendChart from './TrendChart.svelte';
-  import VisitsCameTo from './VisitsCameTo.svelte';
   import WeekHours from './WeekHours.svelte';
+  import WhatHappened from './WhatHappened.svelte';
+  import Steps from './Steps.svelte';
+  import { spikesOf } from './insights';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
@@ -54,8 +56,12 @@
   const week = $derived(L.week[weekOf]);
 
   let innerHeight = $state(900);
+  let innerWidth = $state(1400);
   /** Taller on a tall window (a monitor on its side), so the overview fills it. */
-  const chartH = $derived(Math.round(Math.min(560, Math.max(280, innerHeight * 0.22))));
+  /** Wide (the side column beside it): what one screen leaves it; narrower, a good height of its own. */
+  const chartH = $derived(Math.round(innerWidth > 1500 ? Math.max(200, innerHeight * 0.18) : Math.min(560, Math.max(260, innerHeight * 0.27))));
+  /** The days far busier than usual, ringed on the chart (only on the visitors' line, which they're read from). */
+  const spikes = $derived(metric === 'visitors' ? spikesOf(L.days, L.visitors.perDay).map((s) => s.day) : []);
 
   const modes = $derived(
     modesOf(L.games.rows)
@@ -75,113 +81,115 @@
   });
 
   const days = $derived(dailyDays(L));
-  const hardest = $derived(hardestAndEasiest(days.filter((d) => asked(d.day)), 3, 3).hardest);
+  const hardest = $derived(hardestAndEasiest(days.filter((d) => asked(d.day)), 3, 2).hardest);
   const named = $derived(rate(L.daily.right, L.daily.right + L.daily.wrong));
   onMount(() => withDailyItems((f) => (itemOf = f)));
 </script>
 
-<svelte:window bind:innerHeight />
+<svelte:window bind:innerHeight bind:innerWidth />
 
-{#if read.changes}
-  <div class="since"><NewSince changes={read.changes} at={read.at} /></div>
-{/if}
-
-{#if failed}
-  <a class="problem" href="#joining">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18v.01" /></svg>
-    <span>
-      <b>{fmt(failed)} {failed === 1 ? 'try' : 'tries'} to join or open a room failed.</b>
-      Most often: {worst.host ? 'opening a room, ' : ''}{worst.label.toLowerCase()} ({fmt(worst.count)}).
-    </span>
-    <span class="go">See why ›</span>
-  </a>
-{/if}
-
-<div class="kpis">
-  <Kpi label="Visitors" value={fmt(L.visitors.total)} means="people who opened the game" href="#visitors">
-    {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visitors a day" />{/snippet}
-    {#snippet change()}<Delta now={L.visitors.total} before={B.visitors.total} period={period.before} />{/snippet}
-  </Kpi>
-  <Kpi label="Games played" value={fmt(L.games.started)} means="games started, every mode" href="#games">
-    {#snippet spark()}<Spark days={L.days} values={L.games.perDay} {weekly} label="Games a day" />{/snippet}
-    {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={period.before} />{/snippet}
-  </Kpi>
-  <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
-    {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
-    {#snippet change()}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/snippet}
-  </Kpi>
-  <Kpi
-    label="Joins that worked"
-    value={tries(L) ? percent(joins(L), tries(L)) : '–'}
-    means={tries(L) ? `of ${fmt(tries(L))} ${tries(L) === 1 ? 'try' : 'tries'} to join a room` : 'nobody tried to join a room'}
-    href="#joining"
-  >
-    {#snippet spark()}<Spark days={L.days} values={sharePerDay(L.joinsPerDay.joined, L.joinsPerDay.tried)} {weekly} label="Share of joins that worked, a day" />{/snippet}
-    {#snippet change()}<Delta now={rate(joins(L), tries(L))} before={rate(joins(B), tries(B))} rate period={period.before} />{/snippet}
-  </Kpi>
-</div>
-
-<div class="stack">
-  <Section title="How busy it was" says="Each day against the same day of the period before.">
-    {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
-    <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chartH} />
-  </Section>
-
-  <div class="two">
-    <Section title="When they come" says="Each hour of the week, on average: the brighter, the busier.">
-      {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
-      {#if week}
-        <WeekHours grid={weekAverage(week, L.days)} what={weekOf === 'visitors' ? 'Visitors' : 'Games'} zone={read.zone} />
-      {:else}
-        <p class="soft">GoatCounter gave no hours for these days.</p>
-      {/if}
-    </Section>
-    <Section title="How much they play" says="Against the period before.">
-      <VisitsCameTo {read} {period} />
+<div class="ov">
+  <div class="kpis">
+    <Kpi label="Visitors" value={fmt(L.visitors.total)} means="people who opened the game" href="#visitors">
+      {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visitors a day" />{/snippet}
+      {#snippet change()}<Delta now={L.visitors.total} before={B.visitors.total} period={period.before} />{/snippet}
+    </Kpi>
+    <Kpi label="Games played" value={fmt(L.games.started)} means="games started, every mode" href="#games">
+      {#snippet spark()}<Spark days={L.days} values={L.games.perDay} {weekly} label="Games a day" />{/snippet}
+      {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={period.before} />{/snippet}
+    </Kpi>
+    <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
+      {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
+      {#snippet change()}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/snippet}
+    </Kpi>
+    <Kpi
+      label="Joins that worked"
+      value={tries(L) ? percent(joins(L), tries(L)) : '–'}
+      means={tries(L) ? `of ${fmt(tries(L))} ${tries(L) === 1 ? 'try' : 'tries'} to join a room` : 'nobody tried to join a room'}
+      href="#joining"
+    >
+      {#snippet spark()}<Spark days={L.days} values={sharePerDay(L.joinsPerDay.joined, L.joinsPerDay.tried)} {weekly} label="Share of joins that worked, a day" />{/snippet}
+      {#snippet change()}<Delta now={rate(joins(L), tries(L))} before={rate(joins(B), tries(B))} rate period={period.before} />{/snippet}
+    </Kpi>
+    <Steps {read} {period} />
+  </div>
+  <div class="chart">
+    <Section title="How busy it was" says="Each day against the same day of the period before.">
+      {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
+      <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chartH} marks={spikes} />
     </Section>
   </div>
-
-  <div class="three">
-    <Section title="What they play">
-      {#snippet aside()}<a class="to-view" href="#games">Games ›</a>{/snippet}
-      <Bars bars={modes} empty="No games in these days." link={modeLink} fresh={freshOf(read.changes, read.at, 'modes')} />
-      {#if L.games.started}
-        <p class="line"><b>{finishedShare(L.games.finished, L.games.started)}</b> of games were played to the end.</p>
+  <div class="side">
+    {#if read.changes || failed}
+    <div class="alerts">
+      {#if read.changes}
+        <div class="since"><NewSince changes={read.changes} at={read.at} /></div>
       {/if}
-    </Section>
 
-    <Section title="Where they are">
-      {#snippet aside()}<a class="to-view" href="#visitors">Visitors ›</a>{/snippet}
-      <Bars bars={countries} top={5} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
-      {#if phones.all}
-        <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.</p>
+      {#if failed}
+        <a class="problem" href="#joining">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18v.01" /></svg>
+          <span>
+            <b>{fmt(failed)} {failed === 1 ? 'try' : 'tries'} to join or open a room failed.</b>
+            Most often: {worst.host ? 'opening a room, ' : ''}{worst.label.toLowerCase()} ({fmt(worst.count)}).
+          </span>
+          <span class="go">See why ›</span>
+        </a>
       {/if}
-    </Section>
+    </div>
+    {/if}
+    <div class="happened">
+      <Section title="What happened" says="What the numbers bear out by themselves.">
+        <WhatHappened {read} {period} />
+      </Section>
+    </div>
+  </div>
+  <div class="four">
+  <Section title="When they come">
+    {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
+    {#if week}
+      <WeekHours grid={weekAverage(week, L.days)} what={weekOf === 'visitors' ? 'Visitors' : 'Games'} zone={read.zone} />
+    {:else}
+      <p class="soft">GoatCounter gave no hours for these days.</p>
+    {/if}
+  </Section>
 
-    <Section title="Today's unique">
-      {#snippet aside()}<a class="to-view" href="#daily">Every day ›</a>{/snippet}
-      {#if named === null}
-        <p class="soft">Nobody answered in these days.</p>
-      {:else}
-        <p class="big"><b>{Math.round(named)}%</b> named the day's item.</p>
-        {#if hardest.length}
-          <h3>Hardest items</h3>
-          <DailyTable days={hardest} {itemOf} compact label="The hardest items of these days" />
-        {/if}
+  <Section title="What they play">
+    {#snippet aside()}<a class="to-view" href="#games">Games ›</a>{/snippet}
+    <Bars bars={modes} empty="No games in these days." link={modeLink} fresh={freshOf(read.changes, read.at, 'modes')} />
+    {#if L.games.started}
+      <p class="line"><b>{finishedShare(L.games.finished, L.games.started)}</b> of games were played to the end.</p>
+    {/if}
+  </Section>
+
+  <Section title="Where they are">
+    {#snippet aside()}<a class="to-view" href="#visitors">Visitors ›</a>{/snippet}
+    <Bars bars={countries} top={5} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
+    {#if phones.all}
+      <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.</p>
+    {/if}
+  </Section>
+
+  <Section title="Today's unique">
+    {#snippet aside()}<a class="to-view" href="#daily">Every day ›</a>{/snippet}
+    {#if named === null}
+      <p class="soft">Nobody answered in these days.</p>
+    {:else}
+      <p class="big"><b>{Math.round(named)}%</b> named the day's item.</p>
+      {#if hardest.length}
+        <h3>Hardest items</h3>
+        <DailyTable days={hardest} {itemOf} compact label="The hardest items of these days" />
       {/if}
-    </Section>
+    {/if}
+  </Section>
   </div>
 </div>
 
 <style>
-  .since {
-    margin-bottom: 1.25rem;
-  }
   .problem {
     display: flex;
     align-items: center;
     gap: 1rem;
-    margin-bottom: 1.25rem;
     padding: 1rem 1.4rem;
     font-size: 1.2rem;
     color: var(--a-ink);
@@ -214,24 +222,52 @@
     white-space: nowrap;
     color: var(--a-down);
   }
+  /*
+   * One grid: the figures and the chart, and beside them what the last
+   * update brought, anything wrong, what happened and how far a visit gets;
+   * the short answers in a row below. Narrower, the side's parts take rows
+   * of their own (display: contents), what's new and wrong first.
+   */
+  .ov {
+    display: grid;
+    grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr);
+    grid-template-areas:
+      'kpis kpis'
+      'chart side'
+      'four four';
+    gap: 1.25rem;
+  }
   .kpis {
+    grid-area: kpis;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  .chart {
+    grid-area: chart;
+    min-width: 0;
+  }
+  .side {
+    grid-area: side;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-width: 0;
+  }
+  .alerts {
+    grid-area: alerts;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .happened {
+    grid-area: happened;
+    flex: 1 1 auto;
+    display: grid;
+  }
+  .four {
+    grid-area: four;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.25rem;
-  }
-  .stack {
-    display: grid;
-    gap: 1.25rem;
-    margin-top: 1.25rem;
-  }
-  .two {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
-  }
-  .three {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1.25rem;
   }
   .line {
@@ -261,30 +297,45 @@
   .soft {
     color: var(--a-muted);
   }
-  @media (max-width: 1180px) {
-    .three {
+  @media (max-width: 1500px) {
+    .ov {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        'alerts alerts'
+        'kpis kpis'
+        'chart chart'
+        'happened happened'
+        'four four';
+    }
+    .side {
+      display: contents;
+    }
+    .four {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    /* Two to a row: the third takes a row of its own, not half of one. */
-    .three > :global(:nth-child(3)) {
-      grid-column: 1 / -1;
-    }
   }
-  @media (max-width: 1100px) {
-    .two {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-  @media (max-width: 900px) {
+  @media (max-width: 1200px) {
     .kpis {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 0.9rem;
     }
-    .three {
-      grid-template-columns: minmax(0, 1fr);
+    /* The fifth figure a row of its own. */
+    .kpis > :global(:last-child) {
+      grid-column: 1 / -1;
     }
-    .three > :global(:nth-child(3)) {
-      grid-column: auto;
+  }
+  @media (max-width: 900px) {
+    .ov {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'alerts'
+        'kpis'
+        'chart'
+        'happened'
+        'four';
+    }
+    .four {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
   @media (max-width: 600px) {

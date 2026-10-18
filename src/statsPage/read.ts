@@ -7,7 +7,7 @@ import type { Counts } from './model';
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 4;
+  v: 5;
   span: number;
   from: string;
   to: string;
@@ -20,6 +20,11 @@ export interface Read {
   systems: Named[];
   countries: Named[];
   refs: Named[];
+  /** The period before's, to see who brought more or fewer (insights.ts moversOf). */
+  countriesBefore: Named[];
+  refsBefore: Named[];
+  /** The sites that brought each of the period's busiest days (insights.ts spikesOf), by day. */
+  spikeRefs: Record<string, Named[]>;
   at: number;
   complete: boolean;
   /** What came in since the read before it (changes.ts keptChanges). */

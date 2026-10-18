@@ -46,6 +46,15 @@
     max-width: 52rem;
     color: var(--a-muted);
   }
+  /* A big monitor: a little closer, so the overview keeps to one screen. */
+  @media (min-width: 1900px) {
+    .section {
+      padding: 1.2rem 1.5rem 1.3rem;
+    }
+    header {
+      margin-bottom: 1rem;
+    }
+  }
   @media (max-width: 600px) {
     .section {
       padding: 1.1rem 1rem 1.2rem;

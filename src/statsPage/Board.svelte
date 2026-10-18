@@ -4,23 +4,22 @@
   // to update by itself. One screen, nothing to scroll or click: today so
   // far against the same time a period ago (and what the last update brought
   // in, where from and on what), the period's four figures, its
-  // days drawn as large as the screen leaves room for, when in the week
-  // they come, and the short answers. Everything is sized from the screen
+  // days drawn as large as the screen leaves room for, what happened and
+  // how far a visit gets. Everything is sized from the screen
   // (Analytics sets the root's size), so a bigger monitor reads the same.
   import { onMount } from 'svelte';
-  import Bars from './Bars.svelte';
   import { average, fmt, longDay } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
   import NewSince from './NewSince.svelte';
-  import { MODE_NAMES, asked, dailyAverage, finishedShare, modesOf, percent, sharePerDay, weekAverage } from './model';
+  import { asked, dailyAverage, percent, sharePerDay } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Spark from './Spark.svelte';
   import TrendChart from './TrendChart.svelte';
-  import VisitsCameTo from './VisitsCameTo.svelte';
-  import WeekHours from './WeekHours.svelte';
+  import Steps from './Steps.svelte';
+  import WhatHappened from './WhatHappened.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
@@ -52,12 +51,6 @@
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
 
-  const modes = $derived(
-    modesOf(L.games.rows)
-      .filter((m) => m.started)
-      .sort((a, b) => b.started - a.started)
-      .map((m) => ({ label: MODE_NAMES[m.mode], count: m.started })),
-  );
 
   /** The deltas said short, so each keeps to a line: "from 1,658 before". */
   const short = $derived({ ...period, before: 'before' });
@@ -120,11 +113,6 @@
     </Kpi>
   </div>
 
-  <div class="came">
-    <Section title="How much they play">
-      <VisitsCameTo {read} period={short} />
-    </Section>
-  </div>
 
   <div class="charts">
     <Section title="Visitors">
@@ -140,17 +128,10 @@
   </div>
 
   <div class="two">
-    <Section title="When they come">
-      {#if L.week.visitors}
-        <WeekHours grid={weekAverage(L.week.visitors, L.days)} what="Visitors" zone={read.zone} />
-      {:else}
-        <p class="soft">GoatCounter gave no hours for these days.</p>
-      {/if}
+    <Section title="What happened">
+      <WhatHappened {read} {period} top={2} />
     </Section>
-    <Section title="What they play">
-      <Bars bars={modes} top={3} empty="No games in these days." />
-      {#if L.games.started}<p class="line"><b>{finishedShare(L.games.finished, L.games.started)}</b> played to the end.</p>{/if}
-    </Section>
+    <Steps {read} period={short} />
   </div>
 </div>
 
@@ -253,13 +234,6 @@
     gap: 1rem;
     align-items: stretch;
   }
-  .line {
-    margin: 0.8rem 0 0;
-  }
-  .line b {
-    font-weight: 650;
-    color: var(--a-ink);
-  }
   .board :global(.section) {
     padding: 1.1rem 1.4rem 1.2rem;
   }
@@ -276,7 +250,7 @@
         'today today'
         'since since'
         'kpis kpis'
-        'charts came'
+        'charts two'
         'charts two';
     }
     .today {
@@ -288,7 +262,7 @@
       grid-template-areas:
         'today today'
         'kpis kpis'
-        'charts came'
+        'charts two'
         'charts two';
     }
     .since {
@@ -300,9 +274,6 @@
     .charts {
       grid-area: charts;
       min-height: 30rem;
-    }
-    .came {
-      grid-area: came;
     }
     .two {
       grid-area: two;

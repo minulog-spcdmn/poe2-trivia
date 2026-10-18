@@ -7,6 +7,7 @@
 
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
+import { spikesOf } from './insights.ts';
 import { DAILY_FROM, countsOf, daysBetween, modesOf, type PathCount } from './model.ts';
 import type { Read } from './read.ts';
 import { GROUPS, type Group, type Slices } from './slices.ts';
@@ -58,6 +59,11 @@ const GAMES = [
   { key: 'delve-hotseat', share: 0.04, sizes: [1, 2] },
 ];
 
+/** Now and then a post somewhere sends a day's visitors up: by how much (1 on an ordinary day). */
+const spikeOf = (day: string) => (stream(seedOf(`${day}/spike`))() < 0.06 ? 2.4 : 1);
+/** The day the made-up game began marking how far a visit got (count.ts countReach). */
+const REACH_FROM = '2026-10-04';
+
 /** One day's made-up counts, each path with its 24 hours (from the day's midnight in ZONE); `upTo`: the hours counted so far (today). */
 function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   const rnd = stream(seedOf(day));
@@ -70,13 +76,19 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   };
   const t = (Date.parse(day) - Date.parse('2026-01-01')) / 86_400_000;
   const weekend = [0, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay()) ? 1.35 : 1;
-  const visitors = (28 + t * 0.11) * weekend * (0.85 + rnd() * 0.3);
+  const visitors = (28 + t * 0.11) * weekend * (0.85 + rnd() * 0.3) * spikeOf(day);
   const daily = day >= DAILY_FROM;
   // How hard the day's item was: the share who name it.
   const named = 0.3 + rnd() * 0.55;
   for (let h = 0; h < 24; h++) {
     const v = (visitors * HOURS[h]) / HOUR_SUM;
-    add('/', h, around(v, rnd));
+    const came = around(v, rnd);
+    add('/', h, came);
+    if (day >= REACH_FROM) {
+      const played = ofThem(came, 0.44, rnd);
+      add('reach/played', h, played);
+      add('reach/finished', h, ofThem(played, 0.8, rnd));
+    }
     for (const g of GAMES) {
       const started = around(v * g.share, rnd);
       add(`play/${g.key}`, h, started);
@@ -148,6 +160,37 @@ function split(total: number, shares: [string, number][], rest = true): Named[] 
   return rest && left > 0 ? [...named, { name: '', count: left }] : named;
 }
 
+const COUNTRIES: [string, number][] = [
+  ['United States', 0.24],
+  ['Germany', 0.15],
+  ['United Kingdom', 0.08],
+  ['Canada', 0.06],
+  ['Poland', 0.05],
+  ['Brazil', 0.05],
+  ['France', 0.04],
+  ['Australia', 0.04],
+  ['Russia', 0.03],
+  ['Netherlands', 0.03],
+  ['Sweden', 0.02],
+  ['Korea, Republic of', 0.02],
+];
+const REFS: [string, number][] = [
+  ['(unknown)', 0.46],
+  ['https://www.reddit.com', 0.22],
+  ['https://www.google.com', 0.1],
+  ['https://www.youtube.com', 0.06],
+  ['https://discord.com', 0.05],
+  ['https://www.twitch.tv', 0.03],
+  ['https://poe2db.tw', 0.02],
+];
+/** A day's sites: the usual ones, and on a busy day the post behind it bringing the rest. */
+function dayRefs(day: string, visitors: number): Named[] {
+  const usual = visitors / spikeOf(day);
+  const out = split(usual, REFS, false);
+  const extra = Math.round(visitors - usual);
+  return extra > 0 ? out.map((r) => (r.name === 'https://www.reddit.com' ? { ...r, count: r.count + extra } : r)) : out;
+}
+
 /** A made-up read of the last `days` days, against the same many before, as Analytics' load() makes from GoatCounter's. */
 export function demoRead(days: number, at = new Date()): Read {
   const today = dayIn(ZONE, at);
@@ -157,16 +200,18 @@ export function demoRead(days: number, at = new Date()): Read {
   const hoursSoFar = Math.floor((at.getTime() - midnight(ZONE, today).getTime()) / 3_600_000) + 1;
   const nowPaths = pathsOf(daysBetween(from, today), hoursSoFar);
   const visitors = nowPaths.find((p) => p.path === '/')?.count ?? 0;
+  const now = countsOf(nowPaths, daysBetween(from, today), ZONE);
+  const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE);
   return {
-    v: 4,
+    v: 5,
     span: days,
     from,
     to: today,
     fromBefore,
     toBefore,
     zone: ZONE,
-    now: countsOf(nowPaths, daysBetween(from, today), ZONE),
-    before: countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE),
+    now,
+    before,
     systems: split(visitors, [
       ['Windows', 0.52],
       ['Android', 0.17],
@@ -175,29 +220,11 @@ export function demoRead(days: number, at = new Date()): Read {
       ['Linux', 0.07],
       ['Chrome OS', 0.01],
     ]),
-    countries: split(visitors, [
-      ['United States', 0.24],
-      ['Germany', 0.15],
-      ['United Kingdom', 0.08],
-      ['Canada', 0.06],
-      ['Poland', 0.05],
-      ['Brazil', 0.05],
-      ['France', 0.04],
-      ['Australia', 0.04],
-      ['Russia', 0.03],
-      ['Netherlands', 0.03],
-      ['Sweden', 0.02],
-      ['Korea, Republic of', 0.02],
-    ]),
-    refs: split(visitors, [
-      ['(unknown)', 0.46],
-      ['https://www.reddit.com', 0.22],
-      ['https://www.google.com', 0.1],
-      ['https://www.youtube.com', 0.06],
-      ['https://discord.com', 0.05],
-      ['https://www.twitch.tv', 0.03],
-      ['https://poe2db.tw', 0.02],
-    ], false),
+    countries: split(visitors, COUNTRIES),
+    refs: split(visitors, REFS, false),
+    countriesBefore: split(before.visitors.total, COUNTRIES.map(([name, share]) => [name, name === 'Brazil' ? 0.015 : share])),
+    refsBefore: split(before.visitors.total, REFS.map(([name, share]) => [name, name === 'https://www.youtube.com' ? 0.14 : share]), false),
+    spikeRefs: Object.fromEntries(spikesOf(now.days, now.visitors.perDay).map((sp) => [sp.day, dayRefs(sp.day, sp.value)])),
     at: at.getTime(),
     complete: true,
   };

@@ -77,6 +77,8 @@ export interface Counts {
   failures: { key: string; label: string; host: boolean; count: number }[];
   /** Every failure a day, all causes together. */
   failuresPerDay: number[];
+  /** The steps visits reached a day, counted once a visitor like visits (count.ts countReach): played a game, finished one. */
+  reach: { playedPerDay: number[]; finishedPerDay: number[] };
   /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours. */
   week: { visitors: number[][] | null; games: number[][] | null };
 }
@@ -204,6 +206,7 @@ export function countsOf(paths: PathCount[], days: string[], zone?: string): Cou
     },
     failures,
     failuresPerDay: perDay((p) => p.startsWith('error/')),
+    reach: { playedPerDay: perDay((p) => p === 'reach/played'), finishedPerDay: perDay((p) => p === 'reach/finished') },
     week: {
       visitors: weekHours(paths.filter((p) => p.path === '/'), days),
       games: weekHours(paths.filter((p) => played.has(p.path)), days),
@@ -219,31 +222,6 @@ export function weekAverage(grid: number[][], days: string[]): number[][] {
   const many = Array<number>(7).fill(0);
   for (const d of days) many[weekday(d)]++;
   return grid.map((row, wd) => row.map((n) => (many[wd] ? n / many[wd] : 0)));
-}
-
-/**
- * What a period's visits came to, the counts set against each other:
- * seats filled in games, players a game, games each visitor was in, and the
- * share of visitors who answered Today's unique (on the days it asked).
- * Ad blockers hide visits and events alike, so the ratios hold where the
- * totals run low. Null where there is nothing to divide by.
- */
-export function visitsCameTo(c: Counts): { seats: number; perGame: number | null; perVisitor: number | null; daily: number | null } {
-  const { seats, games } = seatsOf(c.games.rows);
-  let visitors = 0;
-  let answers = 0;
-  c.days.forEach((d, i) => {
-    if (!asked(d)) return;
-    visitors += c.visitors.perDay[i] ?? 0;
-    answers += (c.daily.rightPerDay[i] ?? 0) + (c.daily.wrongPerDay[i] ?? 0);
-  });
-  return {
-    seats,
-    perGame: games ? seats / games : null,
-    perVisitor: c.visitors.total ? seats / c.visitors.total : null,
-    // More answers than visits can come of visitors who opened the game the day before and answered after midnight.
-    daily: visitors ? Math.min(100, (100 * answers) / visitors) : null,
-  };
 }
 
 /** The busiest hour of a grid: its weekday (Monday 0), hour and figure, or null with nothing in it. */

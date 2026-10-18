@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
+import { moversOf, spikeSource, spikesOf, stepsOf } from '../src/statsPage/insights.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Slices } from '../src/statsPage/slices.ts';
-import { busiest, seatsOf, visitsCameTo, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
+import { busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -350,12 +351,12 @@ test("seats add every game's players, an older range by its middle", () => {
   assert.deepEqual(seatsOf([]), { seats: 0, games: 0 });
 });
 
-test('what a visit comes to: the counts set against each other', () => {
+test('how far a visit gets: played, finished, answered, of the visitors since the game marked it', () => {
   const c = countsOf(
     [
       path('/', [10, 10, 20], false),
-      path('play/race-online', [2, 2, 0]),
-      path('size/race-online-3p', [2, 2, 0]),
+      path('reach/played', [0, 4, 10]),
+      path('reach/finished', [0, 3, 6]),
       path('daily/right', [1, 2, 3]),
       path('daily/wrong', [1, 0, 1]),
       path('join/code', [2, 1, 0]),
@@ -364,15 +365,46 @@ test('what a visit comes to: the counts set against each other', () => {
     ],
     DAYS,
   );
-  const v = visitsCameTo(c);
-  assert.equal(v.seats, 12);
-  assert.equal(v.perGame, 3);
-  assert.equal(v.perVisitor, 12 / 40);
-  assert.equal(v.daily, (100 * 8) / 40);
+  const s = stepsOf(c);
+  // Marked from the second day: the first day's visitors aren't counted against it.
+  assert.equal(s.from, DAYS[1]);
+  assert.deepEqual([s.visitors, s.played, s.finished], [30, 14, 9]);
+  assert.deepEqual([s.answered, s.askedVisitors], [8, 40]);
   assert.deepEqual(c.joinsPerDay, { tried: [2, 1, 0], joined: [1, 1, 0] });
   assert.deepEqual(c.failuresPerDay, [1, 0, 2]);
-  // Nothing to divide by: nothing said.
-  assert.deepEqual(visitsCameTo(countsOf([], DAYS)), { seats: 0, perGame: null, perVisitor: null, daily: null });
+  // Never marked: nothing to say yet.
+  assert.equal(stepsOf(countsOf([path('/', [5, 5, 5], false)], DAYS)).from, null);
+});
+
+test('a day far busier than usual stands out, a day chance could make does not', () => {
+  const days = daysBetween('2026-10-01', '2026-10-10');
+  const values = [40, 42, 38, 41, 95, 39, 44, 52, 40, 30];
+  assert.deepEqual(spikesOf(days, values).map((s) => s.day), ['2026-10-05']);
+  assert.equal(spikesOf(days, values)[0].usual, 41);
+  // At a handful a day, even double is chance.
+  assert.deepEqual(spikesOf(days.slice(0, 5), [2, 3, 2, 6, 2]), []);
+  assert.deepEqual(spikesOf(days, days.map(() => 0)), []);
+});
+
+test("a spike's source: the site far above its usual share that day", () => {
+  const period = [{ name: '(unknown)', count: 500 }, { name: 'https://www.reddit.com', count: 100 }, { name: 'https://www.google.com', count: 100 }];
+  const day = [{ name: '(unknown)', count: 30 }, { name: 'https://www.reddit.com', count: 60 }, { name: 'https://www.google.com', count: 5 }];
+  const s = spikeSource(day, period)!;
+  assert.equal(s.name, 'https://www.reddit.com');
+  assert.equal(Math.round(s.share), 63);
+  // The usual mix, or most typed in: no site to name.
+  assert.equal(spikeSource([{ name: '(unknown)', count: 90 }, { name: 'https://www.reddit.com', count: 14 }], period), null);
+  assert.equal(spikeSource([], period), null);
+});
+
+test('who brought far more or fewer than before, only beyond chance', () => {
+  const m = moversOf(
+    [{ name: 'Brazil', count: 117 }, { name: 'Germany', count: 300 }, { name: 'France', count: 9 }, { name: '', count: 400 }],
+    [{ name: 'Brazil', count: 35 }, { name: 'Germany', count: 290 }, { name: 'France', count: 4 }, { name: 'Poland', count: 80 }, { name: '', count: 10 }],
+  );
+  assert.deepEqual(m.up, { name: 'Brazil', now: 117, before: 35 });
+  assert.deepEqual(m.down, { name: 'Poland', now: 0, before: 80 });
+  assert.deepEqual(moversOf([{ name: 'France', count: 9 }], [{ name: 'France', count: 4 }]), { up: null, down: null });
 });
 
 test('the made-up numbers read the same for a day in any period, and add up', () => {

@@ -841,13 +841,22 @@ open it again to count it again. It works typed after the address of a page
 already open too, says which way it went, and keeps the choice in
 localStorage (`poe2trivia.skipCount`). GoatCounter's own count.js isn't
 used, so this is the game's version of its toggle.
+Game events count each time (`ns`, no session), visits once a person in
+eight hours. Two events count the way visits do, `reach/played` and
+`reach/finished`, sent by every device in a game as it starts and ends, so
+set against the visits they say what share of the people who came played
+or finished a game (the overview's "From visit to game").
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser. Its
 overview answers "how is it going?" with the views behind it; `#board`
 (the monitor button in its top bar) is the overview for a monitor of its
 own, most of all one on its side: one screen, sized from the screen,
-kept awake and updating by itself. Each update keeps what it brought in
+kept awake and updating by itself. On a big monitor (1440p, 4K) the
+overview fits one screen; "What happened" reads out the days far busier
+than usual and the site behind each, and the sites and countries that
+brought far more or fewer than the period before (`insights.ts`, only
+what's beyond chance). Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
 and systems the new visitors came from and on, lit on the overview and
 the board. `#groups` (Groups) opens on what stands out between groups,

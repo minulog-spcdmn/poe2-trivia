@@ -18,7 +18,8 @@
   // show stay as they are while newer ones are read.
   import { onMount, tick, untrack } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
-  import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Span } from './api';
+  import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
+  import { spikesOf } from './insights';
   import { shortDay } from './chart';
   import Board from './Board.svelte';
   import { keptChanges } from './changes';
@@ -106,7 +107,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 4 || r.span !== days) return null;
+      if (r?.v !== 5 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -161,7 +162,7 @@
     loading = true;
     failed = '';
     progress = 0;
-    const steps = 6;
+    const steps = 8;
     let done = 0;
     const step = <T,>(p: Promise<T>) =>
       p.then((v) => {
@@ -183,27 +184,46 @@
       const toBefore = addDays(today, -days);
       const now: Span = { start: midnight(tz, from), end: at };
       const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + (at.getTime() - midnight(tz, today).getTime())) };
-      const [n, b, systems, countries, refs] = await Promise.all([
+      const [n, b, systems, countries, refs, countriesBefore, refsBefore] = await Promise.all([
         step(pathCounts(k, now, signal)),
         step(pathCounts(k, before, signal)),
         step(visitorsBy(k, now, 'systems', signal)),
         step(visitorsBy(k, now, 'locations', signal)),
         step(visitorsBy(k, now, 'toprefs', signal)),
+        step(visitorsBy(k, before, 'locations', signal)),
+        step(visitorsBy(k, before, 'toprefs', signal)),
       ]);
       if (ask !== asked) return;
+      const counts = countsOf(n.paths, daysBetween(from, today), tz);
+      // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
+      const spikeRefs: Record<string, Named[]> = {};
+      for (const s of spikesOf(counts.days, counts.visitors.perDay)) {
+        const kept = s.day === today ? null : readStored(`analytics.dayrefs.${s.day}`);
+        if (kept) {
+          spikeRefs[s.day] = JSON.parse(kept) as Named[];
+          continue;
+        }
+        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : midnight(tz, addDays(s.day, 1)) };
+        spikeRefs[s.day] = await visitorsBy(k, day, 'toprefs', signal);
+        if (s.day !== today) writeStored(`analytics.dayrefs.${s.day}`, JSON.stringify(spikeRefs[s.day]));
+      }
+      if (ask !== asked) return;
       const r: Read = {
-        v: 4,
+        v: 5,
         span: days,
         from,
         to: today,
         fromBefore,
         toBefore,
         zone: tz,
-        now: countsOf(n.paths, daysBetween(from, today), tz),
+        now: counts,
         before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz),
         systems,
         countries,
         refs,
+        countriesBefore,
+        refsBefore,
+        spikeRefs,
         at: at.getTime(),
         complete: n.complete && b.complete,
       };
@@ -342,6 +362,7 @@
     forgetKey();
     removeStoredStarting('analytics.read.', 'session');
     removeStoredStarting('analytics.slices.', 'session');
+    removeStoredStarting('analytics.dayrefs.');
     slicer?.abort();
     slices = null;
     cache.clear();
@@ -457,6 +478,7 @@
   {#if key && !board}
     <nav class="row choices">
       <Seg label="View" options={VIEWS} value={view} onpick={go} />
+      {#if read}<span class="range">{shortDay(read.from)} to {shortDay(read.to)}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}</span>{/if}
       <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
     </nav>
   {/if}
@@ -708,6 +730,34 @@
   }
   .foot p {
     margin: 0 0 0.35rem;
+  }
+
+  /* ---- a big monitor (1440p, 4K): the page as wide as the screen, its type grown with it, the overview on one screen ---- */
+  .range {
+    display: none;
+  }
+  @media (min-width: 1900px) {
+    /* As wide as the screen allows, and no taller than it: the overview is about 88rem high. */
+    :global(html:not(.board)) {
+      font-size: clamp(14px, min(0.625vw, 1.15vh), 26px);
+    }
+    /* The dates go up into the bar, beside the period. */
+    .range {
+      display: block;
+      margin-left: auto;
+      font-family: var(--font-data);
+      font-size: 1rem;
+      color: var(--a-muted);
+    }
+    .dates {
+      display: none;
+    }
+    .row,
+    main {
+      width: min(160rem, 100%);
+      padding-left: 3rem;
+      padding-right: 3rem;
+    }
   }
 
   /* ---- the board: one screen, its type sized from the screen (rem), nothing to scroll ---- */

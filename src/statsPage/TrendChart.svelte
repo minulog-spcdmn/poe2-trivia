@@ -3,6 +3,7 @@
   // as a grey one on the same axis, so a glance says whether it's growing.
   // The newest point (today, or this week) isn't over, so its last stretch is
   // drawn faint. Pointing (or the arrow keys) reads a day's two figures.
+  // `marks`: days ringed on the line (the busiest, insights.ts spikesOf).
   import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { grouped } from './model';
@@ -16,7 +17,8 @@
     what,
     names,
     height = 360,
-  }: { days: string[]; now: number[]; before: number[]; weekly: boolean; what: string; names: { now: string; before: string }; height?: number } = $props();
+    marks = [],
+  }: { days: string[]; now: number[]; before: number[]; weekly: boolean; what: string; names: { now: string; before: string }; height?: number; marks?: string[] } = $props();
 
   const cur = $derived(grouped(days, now, weekly ? 7 : 1));
   const was = $derived(grouped(days, before, weekly ? 7 : 1).values);
@@ -41,6 +43,8 @@
   );
   const tipLeft = $derived(hair.at === null ? 0 : Math.max(120, Math.min(width - 120, x(hair.at))));
   const unit = $derived(weekly ? 'week' : 'day');
+  /** Where each marked day falls (by the day; a week isn't marked). */
+  const marked = $derived(weekly ? [] : marks.map((d) => cur.days.indexOf(d)).filter((i) => i >= 0));
 </script>
 
 <div class="legend" aria-hidden="true">
@@ -77,6 +81,9 @@
       <path class="wash" d={wash} />
       <path class="now" d={settled(cur.values)} />
       <path class="now so-far" d={lastStretch(cur.values)} />
+      {#each marked as i (i)}
+        <circle class="mark" cx={x(i)} cy={y(cur.values[i] ?? 0)} r="9" />
+      {/each}
       {#if hair.at !== null}
         <line class="cross" x1={x(hair.at)} x2={x(hair.at)} y1={PAD.top} y2={PAD.top + plotH} />
         <circle class="dot-before" cx={x(hair.at)} cy={y(was[hair.at] ?? 0)} r="5" />
@@ -167,6 +174,11 @@
   .so-far {
     opacity: 0.45;
     stroke-dasharray: 2 6;
+  }
+  .mark {
+    fill: none;
+    stroke: var(--a-up);
+    stroke-width: 2.5;
   }
   .cross {
     stroke: var(--a-text);
