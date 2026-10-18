@@ -249,7 +249,9 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
         const r = await page.evaluate(() => window.__qa);
         const file = fileOf(j);
         // At CSS pixels (a quarter of a 4K-at-200% shot's), unless banding is looked for, which shows only in the device's own.
-        await page.screenshot({ path: path.join(outDir, file), animations: values.webgl ? 'allow' : 'disabled', caret: 'hide', scale: values.banding ? 'device' : 'css' });
+        // (A 4K page under a full sweep's load can take a while to give up its pixels: once more, with longer, before calling it failed.)
+        const shoot = (timeout) => page.screenshot({ path: path.join(outDir, file), animations: values.webgl ? 'allow' : 'disabled', caret: 'hide', scale: values.banding ? 'device' : 'css', timeout });
+        await shoot(45000).catch(() => shoot(90000));
         const times = { load: loaded - started, check: checked - loaded, shot: Date.now() - checked };
         shots.push({ ...j, file, settled: r.settled, problems: r.problems, ms: Date.now() - started, times });
       } catch (e) {
