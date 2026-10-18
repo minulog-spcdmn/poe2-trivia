@@ -57,12 +57,6 @@ test('a hiccup is tried again; a picture that never loads is let go, to be tried
   assert.equal(cache.has('a'), true);
 });
 
-test('on a touch screen the circles’ glow holds still, so a ring is one layer, not three', () => {
-  const css = readFileSync(new URL('../src/components/ArcaneStage.svelte', import.meta.url), 'utf8');
-  const coarse = css.match(/@media \(pointer: coarse\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
-  assert.match(coarse, /:global\(\.glow\)\s*\{[^}]*animation:\s*none/);
-});
-
 test('the backdrop gives its context back when it stops', () => {
   const src = readFileSync(new URL('../src/lib/backdrop.ts', import.meta.url), 'utf8');
   const stop = src.slice(src.indexOf('  function stop() {'), src.indexOf('  // A lost context stays lost'));

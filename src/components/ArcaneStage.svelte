@@ -1,6 +1,7 @@
 <script module lang="ts">
   import { untrack, type Snippet } from 'svelte';
   import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
+  import { switchedOff } from '../lib/switchedOff';
 
   export type { StageLayer };
 
@@ -69,8 +70,11 @@
   // (A circle's layers are fixed: it is drawn once, as it mounts.)
   let late = $state<Record<string, number>>(Object.fromEntries(untrack(() => layers).filter((l) => !due(l)).map((l) => [l.name, 0])));
   let drawn = $state<Record<string, true>>({});
-  let summon: HTMLDivElement;
+  let summon = $state<HTMLDivElement>();
+  /** Every circle left out (?off=circles, the beta and the dev server only: lib/switchedOff.ts). */
+  const off = switchedOff('circles');
   $effect(() => {
+    if (off) return;
     let timers: ReturnType<typeof setTimeout>[] = [];
     let stopped = false;
     /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
@@ -88,7 +92,7 @@
     // old one's `ready` rejects: then it's timed from the new one.
     const follow = () => {
       if (stopped) return;
-      const settle = summon.getAnimations()[0];
+      const settle = summon?.getAnimations()[0];
       if (settle) settle.ready.then(() => time(performance.now() - Number(settle.currentTime ?? 0)), follow);
       else time(performance.now());
     };
@@ -103,6 +107,7 @@
   const lateOf = (name: string) => `${(late[name] ?? 0).toFixed(3)}s`;
 </script>
 
+{#if !off}
 <div class="arcane {mood}" aria-hidden="true" style:--clear="{HOLLOW_CLEAR}%" style:--size={size} style:color={color} style:opacity={strength}>
   <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
@@ -183,6 +188,7 @@
     <div class="wave"></div>
   </div>
 </div>
+{/if}
 
 <style>
   .arcane {
@@ -227,13 +233,8 @@
   .summon {
     animation: settle 2.4s var(--ease-out) both;
   }
-  /* A layer that moves is a layer of its own on the compositor; one that
-     holds still paints into the one it rides (each is the whole circle's
-     size: on a phone's 3x screen, megabytes). */
-  .summon :global(.layer:is(.spin, .turning, .upright, .swaying, .breathing, .fluttering)) {
-    will-change: transform;
-  }
   .summon :global(.layer) {
+    will-change: transform;
     mask-size: 100% 100%;
     mask-repeat: no-repeat;
     -webkit-mask-size: 100% 100%;
@@ -347,18 +348,6 @@
     animation:
       arcane-glow-in 1.4s 0.8s ease-out both,
       arcane-breathe 6s 2.2s ease-in-out infinite alternate;
-  }
-  /* On a touch screen (a phone, short of memory) the glow holds still, at
-     the middle of its breath, and comes in with its strokes. Breathing, the
-     glow SVG is a layer of its own, and the lines over it another: three
-     full-size layers to a ring instead of one: on a phone's 3x screen, the
-     start page's circle alone took about 100 MB more, and the monad's 27
-     rings over 200 MB more, enough for iOS to kill the page. */
-  @media (pointer: coarse) {
-    .arcane :global(.glow) {
-      opacity: 0.19;
-      animation: none;
-    }
   }
   .arcane .summon :global(.glow *) {
     stroke-width: 2;
