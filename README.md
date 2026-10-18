@@ -834,6 +834,14 @@ host and guests can see each other's IP address (unless the connection
 runs through a TURN relay). Guests never connect to each other. The
 privacy policy says so; the game itself doesn't show a notice.
 
+**Visit counts** (GoatCounter, `src/lib/count.ts`) are sent from the live
+game's own page only. To keep a browser out of them (the owner's, without a
+fixed IP to exclude in GoatCounter), open `poe2.quest/#toggle-goatcounter`;
+open it again to count it again. It works typed after the address of a page
+already open too, says which way it went, and keeps the choice in
+localStorage (`poe2trivia.skipCount`). GoatCounter's own count.js isn't
+used, so this is the game's version of its toggle.
+
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
 
@@ -1433,8 +1441,12 @@ and Delve records), so nothing has to be played to reach it.
   made once and each state set in it in place: a frame made afresh for every
   pick started the backdrop's shaders over while the last ones were still
   being built, which held up the browser for most of a minute.
+- **The circle:** Auto shows the one the game falls to (the eye, the moth
+  after a Delve); Eye, Moth, Monad, Rose and Black sun set that one behind
+  the state instead, to see how each frames its avatars
+  (`src/lib/endCircleChoice.svelte.ts`; `endscreen.html?scene=<key>&circle=<name>`).
 - Its buttons only say what they would do: there is no room behind it. The
-  address keeps the state and the window, to send a link to one.
+  address keeps the state, the window and the circle, to send a link to one.
 - **Open it:** `npm run dev`, then `http://localhost:5173/endscreen.html`; on
   the beta, **poe2.quest/beta/endscreen.html**. The live build leaves it out,
   and its page is marked (`<html data-endscreen>`), so `src/lib/storage.ts`

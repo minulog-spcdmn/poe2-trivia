@@ -1,17 +1,21 @@
 // Visits and a few game events, counted by GoatCounter (counter.ts):
-// no cookies, nothing kept in the browser, no IP addresses stored. Only the
-// game's own page at poe2.quest counts; the beta, the dev server and the dev
-// pages never do. datenschutz.html says what is sent, and vite.config.ts's
-// CSP lets it through.
+// no cookies, no IP addresses stored, and nothing kept in the browser but
+// the owner's own opt-out (SKIP_KEY), set only on asking. Only the game's
+// own page at poe2.quest counts; the beta, the dev server and the dev pages
+// never do. datenschutz.html says what is sent, and vite.config.ts's CSP
+// lets it through.
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
+// So count.js's #toggle-goatcounter means nothing to GoatCounter here;
+// onCountToggle below reads it instead.
 
 import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { SITE_URL } from './site.ts';
+import { readKey, removeKey, writeKey } from './storage.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
 export function countsOn(at: { hostname: string; pathname: string }, channel: Channel, robot: boolean): boolean {
@@ -19,8 +23,67 @@ export function countsOn(at: { hostname: string; pathname: string }, channel: Ch
   return channel === 'live' && !robot && at.hostname === live.hostname && (at.pathname === live.pathname || at.pathname === `${live.pathname}index.html`);
 }
 
-/** Whether this page counts, settled as it loads (its address changes only in its query and hash after). */
-export const counting = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
+/** Set (to anything) in a browser that is never counted: the owner's own. */
+export const SKIP_KEY = 'poe2trivia.skipCount';
+/** The address's hash that switches counting this browser off, or back on (GoatCounter's own, as count.js reads it; without the dash too). */
+export const isToggleHash = (hash: string) => /^#toggle-?goatcounter$/i.test(hash);
+
+/** Where the opt-out is kept: whether it's set, and setting it, true when it held. */
+export interface SkipStore {
+  skipped(): boolean;
+  set(skip: boolean): boolean;
+}
+
+const browserSkip: SkipStore = {
+  skipped: () => readKey(SKIP_KEY) !== null,
+  set(skip) {
+    if (skip) return writeKey(SKIP_KEY, 't');
+    removeKey(SKIP_KEY);
+    return readKey(SKIP_KEY) === null;
+  },
+};
+
+/** What a toggle came to: counted no longer, counted again, or nothing changed as the browser can't keep it. */
+export type Toggled = 'skipped' | 'counted' | 'unsaved';
+
+/** Flips the opt-out; what it came to. */
+export function flipSkip(store: SkipStore): Toggled {
+  const skip = !store.skipped();
+  return store.set(skip) ? (skip ? 'skipped' : 'counted') : 'unsaved';
+}
+
+/** The page counts where it is: the live game's own page, no robot. Settled as it loads (its address changes only in its query and hash after). */
+const countsHere = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
+
+/** Whether this page counts: where it counts, in a browser that hasn't opted out. A toggle changes it. */
+export let counting = countsHere && !browserSkip.skipped();
+
+/** Takes a toggle hash from the address, if there is one where it means something, and flips the opt-out. */
+function takeToggle(): Toggled | null {
+  if (!countsHere || !isToggleHash(location.hash)) return null;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  const out = flipSkip(browserSkip);
+  counting = !browserSkip.skipped();
+  return out;
+}
+
+/** A toggle in the address the page opened with: taken at once, before anything counts, and that load counts nothing either way. */
+const toggledOnLoad = takeToggle();
+
+/**
+ * poe2.quest/#toggle-goatcounter: this browser stops being counted, or
+ * starts again, for good, opened with it or typed after the address of a
+ * page already open. The hash goes from the address after, so a reload
+ * doesn't switch it back. `say` is told what each came to.
+ */
+export function onCountToggle(say: (t: Toggled) => void) {
+  if (toggledOnLoad) say(toggledOnLoad);
+  if (!countsHere) return;
+  addEventListener('hashchange', () => {
+    const t = takeToggle();
+    if (t) say(t);
+  });
+}
 
 function beacon(url: string) {
   try {
@@ -91,7 +154,7 @@ export function referrerOf(referrer: string, here: string): string {
 
 /** A visit to the start page; not one come back to (cameBack). */
 export function countVisit() {
-  if (!counting || cameBack()) return;
+  if (!counting || toggledOnLoad || cameBack()) return;
   const r = referrerOf(document.referrer, location.href);
   send({ p: '/', t: document.title, ...(r ? { r } : {}) });
 }

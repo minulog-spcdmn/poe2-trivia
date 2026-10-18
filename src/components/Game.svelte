@@ -27,9 +27,12 @@
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
   import ItemWindow from './ItemWindow.svelte';
+  import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const s = $derived(session.state!);
+  // The circles behind the coming question and at the game's end, built ahead away from the page.
+  $effect(() => warmGame(s));
   const active = $derived(s.players[s.turn]);
   const mine = $derived(session.myTurn);
   const local = $derived(session.mode === 'local');

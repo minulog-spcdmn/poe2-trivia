@@ -15,6 +15,7 @@ import { mount, tick } from 'svelte';
 import '../app.css';
 import { BETA } from '../lib/channel';
 import { END_PREVIEW, writeKey } from '../lib/storage';
+import { isPlateName, type PlateName } from '../lib/plates/index.ts';
 
 if (!(import.meta.env.DEV || BETA) || !END_PREVIEW) throw new Error('The end screen page only runs on the dev server and the beta, from endscreen.html.');
 
@@ -26,16 +27,21 @@ for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection']) Object.defi
 
 /** What the picker posts to its frame: show this state. */
 export type SceneMessage = { endscreen: 'scene'; key: string };
+/** What the picker posts to its frame: set this circle behind the end screen (null: the one the game falls to). */
+export type CircleMessage = { endscreen: 'circle'; name: PlateName | null };
 /** What the frame posts back once it listens, and which state it shows. */
 export type ReadyMessage = { endscreen: 'ready'; key: string };
 
-const key = new URLSearchParams(location.search).get('scene');
+const asked = new URLSearchParams(location.search);
+const key = asked.get('scene');
+/** The circle asked for behind the end (gameCircles.svelte.ts' putEndCircle), if it names one. */
+const circle = asked.get('circle');
 if (key) void frame(key);
 else void import('./Preview.svelte').then(({ default: Preview }) => mount(Preview, { target: document.getElementById('app')! }));
 
 /** The frame: the real app, its session at the end of the game picked. */
 async function frame(first: string) {
-  const [{ default: App }, { session, engine }, { scenes }, codex, records, { installUiSounds }, { installUiFx }, { toasts }] = await Promise.all([
+  const [{ default: App }, { session, engine }, { scenes }, codex, records, { installUiSounds }, { installUiFx }, { toasts }, { putEndCircle }] = await Promise.all([
     import('../App.svelte'),
     import('../lib/session.svelte'),
     import('./scenes'),
@@ -44,7 +50,9 @@ async function frame(first: string) {
     import('../lib/sound'),
     import('../lib/fx/ui'),
     import('../lib/toasts.svelte'),
+    import('../components/gameCircles.svelte'),
   ]);
+  if (isPlateName(circle)) putEndCircle(circle);
   const all = scenes();
   installUiSounds();
   installUiFx();
@@ -93,9 +101,15 @@ async function frame(first: string) {
   // state's end.
   let showing = first;
   let turn = 0;
-  addEventListener('message', async (e: MessageEvent<SceneMessage>) => {
-    if (e.origin !== location.origin || e.data?.endscreen !== 'scene') return;
-    const next = all.find((s) => s.key === e.data.key);
+  addEventListener('message', async (e: MessageEvent<SceneMessage | CircleMessage>) => {
+    const m = e.data;
+    if (e.origin !== location.origin || !m) return;
+    if (m.endscreen === 'circle') {
+      putEndCircle(isPlateName(m.name) ? m.name : null);
+      return;
+    }
+    if (m.endscreen !== 'scene') return;
+    const next = all.find((s) => s.key === m.key);
     if (!next) return;
     const mine = ++turn;
     session.state = { ...session.state!, phase: 'lobby' };
