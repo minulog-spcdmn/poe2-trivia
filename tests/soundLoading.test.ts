@@ -74,7 +74,7 @@ g.AudioContext = class {
   }
   createGain = () => ({ ...node(), gain: param(1) });
   createBiquadFilter = () => ({ ...node(), frequency: param(350), Q: param(1), gain: param(0) });
-  createDynamicsCompressor = () => ({ ...node(), threshold: param(0), knee: param(0), ratio: param(0) });
+  createDynamicsCompressor = () => ({ ...node(), threshold: param(0), knee: param(0), ratio: param(0), attack: param(0), release: param(0) });
   createConvolver = () => node();
   createOscillator = () => ({ ...node(), frequency: param(440), start() {}, stop() {} });
   createBuffer(channels: number, length: number, sampleRate: number) {

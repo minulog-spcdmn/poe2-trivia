@@ -117,8 +117,19 @@ export function setVolume(value: number) {
 /** Squared, so the slider feels even to the ear rather than bunching up at the top. */
 const userGain = () => volume * volume;
 
+/** The whole mix's lift (dB, MIX.lift): another only on the levels page (levels.html), to hear it against. */
+let liftDb = MIX.lift;
+
+export function setLift(value: number) {
+  liftDb = value;
+  if (bus) bus.lift.gain.setTargetAtTime(liftGain(), bus.ac.currentTime, 0.03);
+}
+
+/** The limiter's automatic makeup gain adds about 1.7 dB of its own, counted in the lift. */
+const liftGain = () => db(liftDb - 1.7);
+
 /** `reverb`: the hall, fed by `wet` (its impulse response set a moment after the bus is made, see audio). */
-type Bus = { ac: AudioContext; master: AudioNode; user: GainNode; wet: AudioNode; reverb: ConvolverNode };
+type Bus = { ac: AudioContext; master: AudioNode; lift: GainNode; user: GainNode; wet: AudioNode; reverb: ConvolverNode };
 let bus: Bus | null = null;
 
 /**
@@ -191,9 +202,18 @@ function audio(): Bus | null {
     shelf.gain.value = -MIX.warmth;
     const master = ac.createGain();
     master.gain.value = 0.9 * db(MIX.volume);
+    const lift = ac.createGain();
+    lift.gain.value = liftGain();
+    // Holds the peaks just under full scale.
+    const limit = ac.createDynamicsCompressor();
+    limit.threshold.value = -3;
+    limit.knee.value = 0;
+    limit.ratio.value = 20;
+    limit.attack.value = 0.001;
+    limit.release.value = 0.15;
     const user = ac.createGain();
     user.gain.value = userGain();
-    master.connect(shelf).connect(comp).connect(user).connect(ac.destination);
+    master.connect(shelf).connect(comp).connect(lift).connect(limit).connect(user).connect(ac.destination);
 
     // The hall's impulse takes a moment to work out: not in the tap that
     // starts the sound (the first sounds just play dry).
@@ -203,7 +223,7 @@ function audio(): Bus | null {
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
 
-    bus = { ac, master, user, wet, reverb };
+    bus = { ac, master, lift, user, wet, reverb };
     placer?.mount({ ac, master, wet, reverb, out: user });
     placer?.depth(depth);
     for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});

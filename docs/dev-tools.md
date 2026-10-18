@@ -226,6 +226,20 @@ ducked, with the last one's speed.
 - **Open it:** `npm run dev`, then `http://localhost:5173/hover.html`; on
   the beta, **poe2.quest/beta/hover.html**. The live build leaves it out.
 
+## The sound levels page
+
+`levels.html` (`src/levelsPage/`) plays every sound as the game plays it,
+grouped by role, and a few that land together in the game (a wrong answer
+with the lives it takes, the blast with what it destroys, a run's end, and
+the loudest three at once for the limiter), with the whole mix's lift
+(`MIX.lift`, `src/lib/soundDesign.ts`) switched between **Before** (0 dB,
+the mix as it was) and **After** (the game's now), keys 1 and 2. Switching
+plays the last sound again (**Space** switches, **R** plays it again), and
+**Blind** hides which is which as X and Y until **Reveal**.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/levels.html`; on
+  the beta, **poe2.quest/beta/levels.html**. The live build leaves it out.
+
 ## The spatial sound page
 
 `spatial.html` (`src/spatialPage/`) is the real game screen, full window, on
