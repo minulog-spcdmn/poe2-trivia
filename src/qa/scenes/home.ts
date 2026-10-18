@@ -32,7 +32,7 @@ function returning(more: Partial<Built> = {}): Built {
 
 const home = (key: string, label: string, build: () => Built, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], build });
 
-/** Today's unique along its streak's ladder (lib/fx/streaks): the badge for any run, today answered or not. The streak's own page (streak.html) plays it growing. */
+/** Today's unique along its streak's ladder (lib/fx/streaks): the badge for any run, today answered or not. The streak's bench (qa.html?b=streak) plays it growing. */
 const DAYS: Knob = { key: 'days', label: 'Streak', default: '7', options: ['0', '1', '2', '3', '5', '7', '14', '30', '60', '100', '200', '365', '730'].map((d) => ({ value: d, label: d === '1' ? '1 day' : `${d} days` })) };
 const TODAY: Knob = {
   key: 'today',

@@ -1,98 +1,76 @@
 <script lang="ts">
-  // One stop: a frame of the real game for each of its seats, side by side,
-  // laid out at the stop's size and shrunk to fit the window (or at 1:1,
-  // zoomed, to scroll about in; held Alt drags it). A frame is made afresh
-  // for each stop, a moment after the walk stops on it, so flipping through
-  // never builds the game's shaders for stops already left behind; the
-  // frames of the last stop go first, letting go of their WebGL as they go.
+  // What the desk shows: a frame for a piece, or one for each seat of a
+  // scene side by side, laid out at the size picked and shrunk to fit (or at
+  // 1:1, zoomed, to scroll about in; held Alt drags it). The frames are made
+  // afresh when what they show changes (`showing`), a moment after it
+  // settles, so going through states quickly never builds the game for
+  // those already left behind.
   import { untrack } from 'svelte';
-  import { isFrameMessage, type DeskMessage, type FrameMessage } from '../messages.ts';
-  import { sizeOf } from '../sizes.ts';
-  import type { Stop } from './walk.ts';
+  import { isFrameMessage, type FrameMessage } from '../messages.ts';
+  import type { Size } from '../sizes.ts';
 
   let {
-    stop,
-    seats,
+    frames,
+    size,
+    showing,
     zoomed,
-    knobQuery,
-    reloads,
     panning,
-    outlines,
     board,
-    befores,
-    onchecked,
+    onframe,
   }: {
-    stop: Stop;
-    seats: string[];
+    frames: { src: string; title: string; caption: string }[];
+    /** A device's size, or null: as large as the room here, at 1:1. */
+    size: Size | null;
+    /** What the frames show, as one string: when it changes they're made afresh. */
+    showing: string;
     zoomed: boolean;
-    /** The scene's knobs set away from their defaults: a change makes the frames afresh. */
-    knobQuery: [string, string][];
-    reloads: number;
     panning: boolean;
-    outlines: boolean;
     board?: string;
-    /** Each seat's shot as it was before (held up on B), where the last sweep has one. */
-    befores?: (string | null)[];
-    /** A frame of the stop shown was checked. */
-    onchecked: (stopId: string, slot: string, result: Extract<FrameMessage, { qa: 'checked' }>) => void;
+    onframe: (m: FrameMessage) => void;
   } = $props();
 
   const GAP = 24;
   const PAD = 16;
   const CAPTION = 30;
-  /** How long the walk rests on a stop before its frames are made (ms). */
+  /** How long a view rests before its frames are made (ms). */
   const SETTLE_MS = 150;
 
   let cw = $state(0);
   let ch = $state(0);
   let el = $state<HTMLDivElement>();
 
-  const size = $derived(sizeOf(stop.size));
-  const n = $derived(stop.seats.length);
-  const scale = $derived(zoomed ? 1 : Math.max(0.05, Math.min(1, (cw - 2 * PAD - (n - 1) * GAP) / (n * size.w), (ch - 2 * PAD - CAPTION) / size.h)));
+  const n = $derived(frames.length);
+  const captioned = $derived(frames.some((f) => f.caption));
+  /** Each frame's size: the device's, or a share of the room here. */
+  const w = $derived(size?.w ?? Math.max(200, Math.floor((cw - 2 * PAD - (n - 1) * GAP) / n)));
+  const h = $derived(size?.h ?? Math.max(200, ch - 2 * PAD - (captioned ? CAPTION : 0)));
+  const scale = $derived(zoomed || !size ? 1 : Math.max(0.05, Math.min(1, (cw - 2 * PAD - (n - 1) * GAP) / (n * w), (ch - 2 * PAD - (captioned ? CAPTION : 0)) / h)));
 
-  /** The stop whose frames are up (null between stops). */
-  let shown = $state<{ stop: Stop; take: number; knobs: [string, string][] } | null>(null);
-  let ready = $state<Set<string>>(new Set());
-  /**
-   * What the frames show, as one string: the stop, its knobs, a reload. The
-   * desk builds its walk afresh as its lists arrive (the change, the last
-   * sweep) or a search is typed, new Stop objects for the same stops; only a
-   * different stop, knob or reload makes the frames afresh.
-   */
-  const showing = $derived(`${stop.id}#${JSON.stringify(knobQuery)}#${reloads}`);
+  /** The frames up (null between views): their addresses as they were when made. */
+  let shown = $state<{ srcs: string[] } | null>(null);
+  let ready = $state<Set<number>>(new Set());
   $effect(() => {
     void showing;
-    const { next, take, knobs } = untrack(() => ({ next: stop, take: reloads, knobs: knobQuery }));
+    const srcs = untrack(() => frames.map((f) => f.src));
     shown = null;
     ready = new Set();
-    const t = setTimeout(() => (shown = { stop: next, take, knobs }), SETTLE_MS);
+    const t = setTimeout(() => (shown = { srcs }), SETTLE_MS);
     return () => clearTimeout(t);
   });
-  let frames = $state<HTMLIFrameElement[]>([]);
+  let els = $state<HTMLIFrameElement[]>([]);
   $effect(() => {
     const heard = (e: MessageEvent) => {
-      if (e.origin !== location.origin || !isFrameMessage(e.data) || !shown || !frames.some((f) => f?.contentWindow === e.source)) return;
-      if (e.data.qa === 'ready') ready = new Set([...ready, e.data.slot]);
-      else if (e.data.qa === 'checked') onchecked(shown.stop.id, e.data.slot, e.data);
+      if (e.origin !== location.origin || !isFrameMessage(e.data)) return;
+      const i = els.findIndex((f) => f?.contentWindow === e.source);
+      if (i < 0) return;
+      if (e.data.qa === 'ready') ready = new Set([...ready, i]);
+      onframe(e.data);
     };
     addEventListener('message', heard);
     return () => removeEventListener('message', heard);
   });
-  // Outlines on or off, in the frames up now (a new one is told by its address).
-  $effect(() => {
-    const m: DeskMessage = { qa: 'outlines', on: outlines };
-    for (const f of frames) f?.contentWindow?.postMessage(m, location.origin);
-  });
 
-  const src = (s: Stop, i: number, knobs: [string, string][]) => {
-    const p = new URLSearchParams({ frame: `s${i}`, s: s.scene.key, seat: String(s.seats[i]), size: s.size });
-    if (!outlines) p.set('o', '0');
-    for (const [k, v] of knobs) p.set(`k.${k}`, v);
-    return `${location.pathname}?${p}`;
-  };
-
-  /** Held Alt: dragging moves the zoomed stop about. */
+  /** Held Alt: dragging moves the zoomed view about. */
   function pan(e: PointerEvent) {
     if (!el) return;
     const box = el;
@@ -110,34 +88,27 @@
 
 <div class="stage" class:zoomed bind:clientWidth={cw} bind:clientHeight={ch} bind:this={el}>
   <div class="row" style:gap="{GAP}px">
-    {#each stop.seats as _, i (i)}
+    {#each frames as f, i (i)}
       <figure class="seat">
-        <div class="screen" style:width="{size.w * scale}px" style:height="{size.h * scale}px">
-          {#if shown}
+        <div class="screen" style:width="{w * scale}px" style:height="{h * scale}px">
+          {#if shown?.srcs[i] && cw > 0}
             {#key shown}
-              <iframe
-                bind:this={frames[i]}
-                title={seats[i] ?? 'The game'}
-                src={untrack(() => src(shown!.stop, i, shown!.knobs))}
-                style:width="{size.w}px"
-                style:height="{size.h}px"
-                style:transform="scale({scale})"
-                class:away={!!board || !!befores?.[i]}
-              ></iframe>
+              <iframe bind:this={els[i]} title={f.title} src={shown.srcs[i]} style:width="{w}px" style:height="{h}px" style:transform="scale({scale})" class:away={!!board}></iframe>
             {/key}
           {/if}
-          {#if befores?.[i]}
-            <img class="board" src={befores[i]} alt="This seat as it was before" style:width="{size.w * scale}px" />
-          {:else if board}
-            <img class="board" src={board} alt="The design's board for this scene" style:width="{size.w * scale}px" />
-          {:else if !ready.has(`s${i}`)}
+          {#if board}
+            <img class="board" src={board} alt="The design's board for this scene" style:width="{w * scale}px" />
+          {:else if !ready.has(i)}
             <p class="loading">Loading…</p>
           {/if}
         </div>
-        <figcaption>{seats[i] ?? ''}{#if scale < 1}<span class="num zoom">{Math.round(scale * 100)}%</span>{/if}</figcaption>
+        {#if captioned}
+          <figcaption>{f.caption}</figcaption>
+        {/if}
       </figure>
     {/each}
   </div>
+  <p class="scale">{w} × {h}{#if scale < 1}<span class="num">{Math.round(scale * 100)}%</span>{/if}</p>
   {#if panning}
     <div class="pan" role="presentation" onpointerdown={pan}></div>
   {/if}

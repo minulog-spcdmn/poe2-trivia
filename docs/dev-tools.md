@@ -2,6 +2,8 @@
 
 Test and tuning pages, all linked from the dev hub (`dev.html`), and the recorder for the room bots' hands. The live build leaves them out.
 
+A new tool is a bench on the QA desk (`docs/qa.md`, "Adding a bench"), not a page of its own: the desk gives it the sizes, the states side by side, Replay and Freeze, and lists it. The pages below came before; each moves onto the desk when it's next worked on (the daily streak's page already has: `qa.html?b=streak`).
+
 ## The dev hub
 
 `dev.html` links every tool page below, with a line on what each is for,
@@ -15,10 +17,11 @@ bot too; builds without the bot (the beta) leave its card out.
 
 ## The QA desk
 
-`qa.html` (`src/qa/`) shows every scene of the game in the real app, one at
-a time, at every size from a phone to 4K and from every seat, walked with the
-arrow keys. It is where a change gets checked; `docs/qa.md` says how to use
-it and how to add a scene.
+`qa.html` (`src/qa/`) is a bench for each thing of the game's to try out,
+live, in every state that matters: the pieces on their own (the avatar, the
+daily streak) with their controls, and every scene of the game. It is where
+a change gets checked; `docs/qa.md` says how to use it and how to add a
+bench.
 
 - **Open it:** `npm run dev`, then `http://localhost:5173/qa.html`; on the
   beta, **poe2.quest/beta/qa.html**.
@@ -160,27 +163,6 @@ by side.
   deeper every 180 ms.
 - **Open it:** `npm run dev`, then `http://localhost:5173/descent.html`; on
   the beta, **poe2.quest/beta/descent.html**. The live build leaves it out.
-
-## The daily streak's test page
-
-Its states are scenes in the QA desk too (`home/daily-streak`, with knobs), walked with the rest; this page is for playing them out by hand.
-
-`streak.html` (`src/streakPreview/`) shows the daily's streak badge
-(`src/components/DailyStreak.svelte`) under a mock of Today's unique's
-answers, burning for any run of days, and every step of its ladder of
-colours (`DAILY_LADDER` in `src/lib/fx/streaks.ts`) side by side below.
-
-- **Days in a row:** a slider from 0 to 730 and a box for any run; the hint
-  names the colour, the fire's heat and the days to the next colour.
-- **Steps** shows a step's first day; the numbers after them show the day
-  before a step, to answer right and see it turn.
-- **Answer right** plays what the start page plays for a right answer: the
-  badge comes in at yesterday's run and grows into today's, bursting when it
-  reaches a new colour. **Miss** ends the run in a puff of smoke;
-  **Replay entrance** brings the badge in again.
-- `streak.html?days=30` opens it at a run of 30 days.
-- **Open it:** `npm run dev`, then `http://localhost:5173/streak.html`; on
-  the beta, **poe2.quest/beta/streak.html**. The live build leaves it out.
 
 ## The hover tuning page
 
