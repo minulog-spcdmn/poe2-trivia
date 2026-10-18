@@ -7,6 +7,7 @@
 // do. It tells the desk when it is showing, and hands on the desk's keys.
 
 import { emulate } from './emulate.ts';
+import { freeze, installFreeze } from './freeze.ts';
 import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
@@ -20,7 +21,9 @@ const TOUCHED_MS = 5000;
 
 export async function boot(asked: URLSearchParams) {
   const size = sizeOf(isSizeKey(asked.get('size')) ? (asked.get('size') as Parameters<typeof sizeOf>[0]) : 'desktop');
-  emulate(size);
+  // (size=fit: the desk's own window, as it is.)
+  if (asked.get('size') !== 'fit') emulate(size);
+  installFreeze();
   const heard = listen();
   // The same seat of a scene draws the same every time (the embers, the
   // dust): a shot differs from its before only where something changed.
@@ -190,7 +193,9 @@ export async function boot(asked: URLSearchParams) {
   // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
   outline(asked.get('o') !== '0');
   addEventListener('message', (e) => {
-    if (e.origin === location.origin && isDeskMessage(e.data)) outline(e.data.on);
+    if (e.origin !== location.origin || !isDeskMessage(e.data)) return;
+    if (e.data.qa === 'outlines') outline(e.data.on);
+    else if (e.data.qa === 'freeze') freeze(e.data.on);
   });
   const run = async () => {
     const settled = await settle();
@@ -217,12 +222,12 @@ export async function boot(asked: URLSearchParams) {
 
 /**
  * The desk's keys, pressed in the frame, go to the desk; unless the game took
- * them, or they belong to a field or a list there. Holding keys (H, B, Alt)
+ * them, or they belong to a field or a list there. Holding keys (H, Alt)
  * hand on their letting go too.
  */
-function handOnKeys(tell: (m: FrameMessage) => void) {
-  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'b', 'B', 'o', 'O', 'r', 'R', '/', 'Alt']);
-  const HELD = new Set(['h', 'H', 'b', 'B', 'Alt']);
+export function handOnKeys(tell: (m: FrameMessage) => void) {
+  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', '/', 'Alt', ...'123456789']);
+  const HELD = new Set(['h', 'H', 'Alt']);
   const hand = (e: KeyboardEvent, up: boolean) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt') || !DESK_KEYS.has(e.key)) return;
     if (up && !HELD.has(e.key)) return;
