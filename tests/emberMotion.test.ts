@@ -427,37 +427,76 @@ test('nothing goes wrong anywhere: plunges, swarms, flares, calm, a resize, snap
 
 /** Steps sampled per window (each costs the heap sampler's time). */
 const STEPS = 2000;
+/** The strata the memory tests settle in: the surface, and one of each way of moving. */
+const SETTLED = [-1, 0, 1, 5, 7, 8, 9, 23];
 
-test('a step keeps nothing once settled', async (t) => {
+/**
+ * What the embers' own code allocated over STEPS steps (sampled: about every
+ * 64 bytes). By default the sampler leaves out what was let go meanwhile, so
+ * only what they still hold as the window ends counts; with `collected`,
+ * what the collector took back meanwhile (a step's short-lived garbage) too.
+ */
+async function sampled(session: Session, e: Embers, collected = false) {
+  await session.post('HeapProfiler.startSampling', {
+    samplingInterval: 64,
+    ...(collected && { includeObjectsCollectedByMinorGC: true, includeObjectsCollectedByMajorGC: true }),
+  });
+  for (let i = 0; i < STEPS; i++) e.step(DT, W, H);
+  const { profile } = await session.post('HeapProfiler.stopSampling');
+  let bytes = 0;
+  const walk = (n: (typeof profile)['head']) => {
+    if (/backdropEmbers|emberMotion/.test(n.callFrame.url)) bytes += n.selfSize;
+    n.children.forEach(walk);
+  };
+  walk(profile.head);
+  return bytes;
+}
+
+/** Embers settled in stratum k with a swarm, for `steps` steps. */
+function swarming(k: number, steps = 3000) {
+  const e = zone(k);
+  e.swarm(1);
+  for (let i = 0; i < steps; i++) e.step(DT, W, H);
+  return e;
+}
+
+/**
+ * Each of SETTLED's strata, settled in with a swarm, and the less of two
+ * windows' bytes: something done once (the JIT's work, a list grown, some
+ * 30 kB as measured, in whichever stratum it falls) shows in one, what a
+ * step allocates in both.
+ */
+async function settled(collected: boolean, each: (k: number, bytes: number, windows: number[]) => void) {
+  // Counting what is let go too, through all of them first, twice: what runs only now and then (a
+  // new life) is compiled only once it has run a while, and again once a stratum takes a way through
+  // it the first pass hadn't (the endgame's), and till then each sum it works out is a new heap number.
+  if (collected) for (let pass = 0; pass < 2; pass++) for (const k of SETTLED) swarming(k, 500);
   const session = new Session();
   session.connect();
-  /**
-   * What the embers' own code allocated over STEPS steps and still holds as they end (sampled: about every
-   * 64 bytes). The sampler leaves out what was let go meanwhile, so short-lived garbage doesn't count here.
-   */
-  const sampled = async (e: Embers) => {
-    await session.post('HeapProfiler.startSampling', { samplingInterval: 64 });
-    for (let i = 0; i < STEPS; i++) e.step(DT, W, H);
-    const { profile } = await session.post('HeapProfiler.stopSampling');
-    let bytes = 0;
-    const walk = (n: (typeof profile)['head']) => {
-      if (/backdropEmbers|emberMotion/.test(n.callFrame.url)) bytes += n.selfSize;
-      n.children.forEach(walk);
-    };
-    walk(profile.head);
-    return bytes;
-  };
-  for (const k of [-1, 0, 1, 5, 7, 8, 9, 23]) {
-    const e = zone(k);
-    e.swarm(1);
-    for (let i = 0; i < 3000; i++) e.step(DT, W, H);
-    // Two windows, the less of them: something done once (the JIT's work, a list grown, some 30 kB as
-    // measured, in whichever stratum it falls) shows in one, what a step allocates in both.
-    const windows = [await sampled(e), await sampled(e)];
-    const bytes = Math.min(...windows);
+  try {
+    for (const k of SETTLED) {
+      const e = swarming(k);
+      const windows = [await sampled(session, e, collected), await sampled(session, e, collected)];
+      each(k, Math.min(...windows), windows);
+    }
+  } finally {
+    session.disconnect();
+  }
+}
+
+test('a step keeps nothing once settled', async (t) => {
+  await settled(false, (k, bytes, windows) => {
     t.diagnostic(`stratum ${k}: ${windows.join(' and ')} bytes`);
     // Less than one small object kept every few steps. One a step, even, is 16 bytes a step: 32 kB over a window, past this.
     assert.ok(bytes < 10_000 + STEPS * 5, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
-  }
-  session.disconnect();
+  });
+});
+
+test('a step allocates (almost) nothing once settled', async (t) => {
+  await settled(true, (k, bytes, windows) => {
+    t.diagnostic(`stratum ${k}: ${windows.join(' and ')} bytes, kept or not`);
+    // Under 2 kB as measured, from a sampler that counts about every 64 bytes. One small object a step
+    // (a number handed back boxed, a closure, a spread) is 16 bytes or more: 32 kB over a window.
+    assert.ok(bytes < 8_000, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
+  });
 });

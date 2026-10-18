@@ -72,7 +72,6 @@ let r: () => number = Math.random;
 export function setEmberRandom(rng: () => number = Math.random) {
   r = rng;
 }
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /** n gates spread evenly over 0 to 1 (one in each nth, at random within it), in random order. */
 function spread(n: number): Float32Array {
@@ -175,9 +174,16 @@ export class Embers {
   private placedW = 0;
   private placedH = 0;
   private look: Look = SURFACE;
-  /** The stratum the scene heads for, and how far it has turned into it; and the same of the scene as shown (the magma cools with it). */
-  private aim = { stratum: 0, turn: 0 };
-  private shown = { stratum: 0, turn: 0 };
+  /**
+   * The stratum the scene heads for, and how far it has turned into it; and
+   * the same of the scene as shown (the magma cools with it). Copied out of
+   * what `descend` is handed: read off objects of many shapes, a fraction
+   * comes back as a new heap number each time.
+   */
+  private aimStratum = 0;
+  private aimTurn = 0;
+  private shownStratum = 0;
+  private shownTurn = 0;
   /** The strata the palette holds (the one aimed at), and the backdrops' version it was built from (the tool's drafts), to rebuild it only when either changes. */
   private paletteFor = NaN;
   private paletteVersion = -1;
@@ -189,8 +195,6 @@ export class Embers {
   private restless = 1;
   /** The glints' twinkle and the eddies' wandering, on a clock of its own. */
   private glintT = r() * 100;
-  /** The stratum aimed at last step: a jump of more than one recolours them all at once. */
-  private aimed = 0;
   /** Sparks: (x, y, vx, vy, age, life) each, and the seconds to the next burst. */
   private sparks = new Float32Array(SPARKS * 6);
   /** The stratum each spark burns in: its burst's (see burstStratum), whose embers' colour it takes. */
@@ -226,6 +230,16 @@ export class Embers {
   readonly color: number[] = [...CALM];
   private colorTarget: number[] = [...CALM];
   private tinted = 0;
+  /**
+   * The screen this step (px), and one ember's classic rise (px/s) and how far
+   * its zone has cooled, as `sample` takes them: fields, not arguments, since
+   * a number that isn't a small integer passed to a call not inlined is
+   * boxed, a heap object a call, and the step should allocate nothing.
+   */
+  private sw = 0;
+  private sh = 0;
+  private sv0 = 0;
+  private scool = 0;
   /** One ember's motion this step, as `sample` works it out (fields, so the step allocates nothing). */
   private mvx = 0;
   private mvy = 0;
@@ -312,16 +326,17 @@ export class Embers {
    */
   descend(shown: Descent, aim: { stratum: number; turn: number } = shown) {
     this.look = shown.look;
-    this.shown = shown;
-    this.aim = aim;
+    this.shownStratum = shown.stratum;
+    this.shownTurn = shown.turn;
     // A jump (leaving a run, a rejoin): the scene cross-fades straight there, and the embers go with it.
-    if (Math.abs(aim.stratum - this.aimed) > 1) this.recolorDue = true;
-    this.aimed = aim.stratum;
+    if (Math.abs(aim.stratum - this.aimStratum) > 1) this.recolorDue = true;
+    this.aimStratum = aim.stratum;
+    this.aimTurn = aim.turn;
   }
 
   /** The stratum ember `i` burns in if it starts now. */
   private pick(i: number) {
-    return emberTurn(this.aim.turn) > this.burnGate[i] ? this.aim.stratum : this.aim.stratum - 1;
+    return emberTurn(this.aimTurn) > this.burnGate[i] ? this.aimStratum : this.aimStratum - 1;
   }
 
   /**
@@ -337,7 +352,7 @@ export class Embers {
 
   /** The colours of the strata around the one aimed at, by palette entry. */
   private strataPalette() {
-    const k = this.aim.stratum;
+    const k = this.aimStratum;
     if (k === this.paletteFor && backdropsVersion === this.paletteVersion) return;
     this.paletteFor = k;
     this.paletteVersion = backdropsVersion;
@@ -351,7 +366,9 @@ export class Embers {
   }
 
   /** Ember `i` starts a new life: in the colour and motion of the stratum it heads for, placed where that motion starts one (`seed`: anywhere along it, to fill the screen at the start). */
-  private born(i: number, w: number, h: number, seed: boolean) {
+  private born(i: number, seed: boolean) {
+    const w = this.sw;
+    const h = this.sh;
     const b = this.pick(i);
     this.burn[i] = b;
     const id = this.motionOf(i, b);
@@ -375,7 +392,7 @@ export class Embers {
       y = (0.08 + 0.84 * r()) * h;
     } else if (m.pull > 0 || m.swirl > 0) {
       // Somewhere round the eddy it is drawn to.
-      this.centre(i, w, h);
+      this.centre(i);
       const reach = EDDY_REACH * Math.min(w, h);
       const a = r() * 6.283;
       const d = reach * (0.35 + 1.3 * r());
@@ -395,13 +412,13 @@ export class Embers {
    * Ember `i` takes the stratum it heads for at once, in mid-life (a
    * recolor): its colour at once, its motion over TURN_S (`snap`: at once).
    */
-  private rekindle(i: number, w: number, h: number, snap: boolean) {
+  private rekindle(i: number, snap: boolean) {
     const b = this.pick(i);
     this.burn[i] = b;
     const id = this.motionOf(i, b);
     if (id === this.motion[i]) return;
     // Resting dark between lives: it just starts afresh, its new way.
-    if (this.wait[i] > 0) return this.born(i, w, h, false);
+    if (this.wait[i] > 0) return this.born(i, false);
     this.from[i] = snap ? id : this.motion[i];
     this.fromCool[i] = this.cool[i];
     this.motion[i] = id;
@@ -425,10 +442,10 @@ export class Embers {
   }
 
   /** Sets (cx, cy, spin) to the eddy ember `i` is drawn to (each ember its own, the second turning the other way). */
-  private centre(i: number, w: number, h: number) {
+  private centre(i: number) {
     const k = i & 1;
-    this.cx = this.eddies[k * 2] * w;
-    this.cy = this.eddies[k * 2 + 1] * h;
+    this.cx = this.eddies[k * 2] * this.sw;
+    this.cy = this.eddies[k * 2 + 1] * this.sh;
     this.spin = k ? -1 : 1;
   }
 
@@ -439,8 +456,12 @@ export class Embers {
    * its flicker, and whether an eddy has swallowed it. `v0` is its classic
    * rise (px/s), `cool` how far its zone has cooled.
    */
-  private sample(m: EmberMotion, i: number, e: Ember, w: number, h: number, v0: number, cool: number) {
+  private sample(m: EmberMotion, i: number, e: Ember) {
     const t = this.t;
+    const w = this.sw;
+    const h = this.sh;
+    const v0 = this.sv0;
+    const cool = this.scool;
     const c = cool * m.cool;
     const speed = v0 * (1 - 0.6 * c);
     let vy = -m.rise * speed * (1 + m.accel * (1 - c) * this.u[i]);
@@ -474,11 +495,11 @@ export class Embers {
       const toRight = this.bx[i] > w / 2;
       vx += (toRight ? 1 : -1) * m.wall * speed * (0.08 + u * u * u);
       const edge = toRight ? w - this.bx[i] : this.bx[i];
-      bright *= 0.7 + 0.8 * clamp01(1 - edge / (0.3 * w));
+      bright *= 0.7 + 0.8 * Math.min(1, Math.max(0, 1 - edge / (0.3 * w)));
       gone = edge < 4;
     } else if (m.pull > 0 || m.swirl > 0) {
       // Drawn in and round, quicker round the nearer, dimming as it nears the middle.
-      this.centre(i, w, h);
+      this.centre(i);
       const dx = this.bx[i] - this.cx;
       const dy = this.by[i] - this.cy;
       const d = Math.sqrt(dx * dx + dy * dy) + 1;
@@ -488,7 +509,7 @@ export class Embers {
       vx += (-dy * round - dx * inward) / d;
       vy += (dx * round - dy * inward) / d;
       const near = m.swallow * reach;
-      bright *= clamp01((d - near) / (3 * near));
+      bright *= Math.min(1, Math.max(0, (d - near) / (3 * near)));
       gone = d < near;
     }
     this.mvx = vx;
@@ -502,9 +523,6 @@ export class Embers {
     this.mgone = gone;
   }
 
-  private ease(dt: number, snap: boolean, rate: number) {
-    return snap ? 1 : 1 - Math.exp(-dt * rate);
-  }
 
   /**
    * Advances by `dt` seconds and writes (x, y, size, brightness) per ember.
@@ -513,11 +531,18 @@ export class Embers {
    * and sizes, as part of the scene.
    */
   step(dt: number, w: number, h: number, calm = false, snap = false) {
+    this.sw = w;
+    this.sh = h;
     const look = this.look;
-    const flaring = this.flareUntil > performance.now();
-    this.restless += ((calm ? 0.5 : 1) - this.restless) * this.ease(dt, snap, 1.5);
-    this.agit += ((calm ? 0 : look.agit) - this.agit) * this.ease(dt, snap, 1.5);
-    this.scale += (look.size - this.scale) * this.ease(dt, snap, 1);
+    // (The clock only while a flare is on: it hands back a new number, a heap object, every call.)
+    if (this.flareUntil && this.flareUntil <= performance.now()) this.flareUntil = 0;
+    const flaring = this.flareUntil > 0;
+    // Eased in by `dt` at these rates (written out, not a call: a number a call hands back may be boxed).
+    const ease1 = snap ? 1 : 1 - Math.exp(-dt);
+    const ease15 = snap ? 1 : 1 - Math.exp(-dt * 1.5);
+    this.restless += ((calm ? 0.5 : 1) - this.restless) * ease15;
+    this.agit += ((calm ? 0 : look.agit) - this.agit) * ease15;
+    this.scale += (look.size - this.scale) * ease1;
     const target = calm ? 0 : Math.max(this.heatTarget, flaring ? this.flareLevel : 0);
     this.heat += (target - this.heat) * (1 - Math.exp(-dt * 1.5));
     // A swarm builds slowly but clears out within a second or so, so it never
@@ -528,7 +553,7 @@ export class Embers {
     const base = calm ? CALM : this.colorTarget;
     let tinted = 0;
     if (!calm) for (let i = 0; i < 3; i++) if (base[i] !== CALM[i]) tinted = 1;
-    const colorEase = this.ease(dt, snap, 1.2);
+    const colorEase = snap ? 1 : 1 - Math.exp(-dt * 1.2);
     this.tinted += (tinted - this.tinted) * colorEase;
     for (let i = 0; i < 3; i++) this.color[i] += (base[i] - this.color[i]) * colorEase;
     this.strataPalette();
@@ -557,7 +582,7 @@ export class Embers {
 
     // Placed on the first screen they see; kept in place as it changes size.
     if (w > 0 && h > 0) {
-      if (!this.placedW) for (let i = 0; i < EMBERS; i++) this.born(i, w, h, true);
+      if (!this.placedW) for (let i = 0; i < EMBERS; i++) this.born(i, true);
       else if (w !== this.placedW || h !== this.placedH) {
         for (let i = 0; i < EMBERS; i++) {
           this.bx[i] *= w / this.placedW;
@@ -567,7 +592,7 @@ export class Embers {
       this.placedW = w;
       this.placedH = h;
     }
-    if (snap || this.recolorDue) for (let i = 0; i < EMBERS; i++) this.rekindle(i, w, h, snap);
+    if (snap || this.recolorDue) for (let i = 0; i < EMBERS; i++) this.rekindle(i, snap);
     this.recolorDue = false;
 
     const t = this.t;
@@ -579,7 +604,8 @@ export class Embers {
     const sizeK = (1 + 0.25 * this.heat) * this.scale;
     const brightK = (1 + 0.8 * this.heat) * look.bright;
     const span = h * 1.08 + 32;
-    const { stratum, turn } = this.shown;
+    const stratum = this.shownStratum;
+    const turn = this.shownTurn;
     // Their flicker's mean: as deep as the look's restlessness has it, so a zone's embers are as bright as its look.
     const flickerMean = 1 - (0.22 + 0.2 * this.agit);
     for (let i = 0; i < EMBERS; i++) {
@@ -598,7 +624,9 @@ export class Embers {
       const v0 = (span / e.period) * heatK;
       const cool = cooling(this.burn[i], stratum, turn);
       this.cool[i] = cool;
-      this.sample(m, i, e, w, h, v0, cool);
+      this.sv0 = v0;
+      this.scool = cool;
+      this.sample(m, i, e);
       if (this.mix[i] < 1) {
         // Turning from the motion it had to its new one (a recolor in mid-life).
         const vx = this.mvx;
@@ -610,7 +638,8 @@ export class Embers {
         const flicker = this.mflicker;
         const rate = this.mrate;
         const gone = this.mgone;
-        this.sample(MOTIONS[this.from[i]], i, e, w, h, v0, this.fromCool[i]);
+        this.scool = this.fromCool[i];
+        this.sample(MOTIONS[this.from[i]], i, e);
         const k = this.mix[i] * this.mix[i] * (3 - 2 * this.mix[i]);
         this.mvx += (vx - this.mvx) * k;
         this.mvy += (vy - this.mvy) * k;
@@ -649,7 +678,7 @@ export class Embers {
       } else over ||= m.spawn === 'below' ? y < -MARGIN : y > h + MARGIN;
       if (over && dt > 0) {
         // A new life: it now burns in the stratum the scene heads for, and moves its way.
-        this.born(i, w, h, false);
+        this.born(i, false);
         pos[o] = this.bx[i];
         pos[o + 1] = this.by[i];
         pos[o + 2] = e.size * sizeK + SIZE_STRIDE * entryOf(this.burn[i]);
@@ -659,7 +688,7 @@ export class Embers {
       // (Drawn into a wall, it burns on till the rock takes it, going out only if its life ends first.)
       const fade = Math.min(1, u / 0.1) * (m.wall ? 1 - Math.max(0, (u - 0.9) / 0.1) : 1 - Math.max(0, (u - 0.62) / 0.38));
       // The extra embers join a swarm one by one as it builds, and leave as it ebbs.
-      const join = i < CALM_EMBERS ? 1 : i < extra ? clamp01((this.crowd - e.gate) / 0.3) : 0;
+      const join = i < CALM_EMBERS ? 1 : i < extra ? Math.min(1, Math.max(0, (this.crowd - e.gate) / 0.3)) : 0;
       // A flicker about a steady mean, however deep, so a zone's brightness keeps to its look.
       const fd = Math.min(0.9, this.mflicker * this.restless * (1 + 0.5 * this.heat));
       const fr = e.flicker * this.mrate;
@@ -692,22 +721,42 @@ export class Embers {
     }
     // Sparks: now and then a burst of them flies up from below, slows in the
     // air (they never fall back: everything a burst throws up rises) and dies.
+    // A burst throws up as many as it has of those gone out, from somewhere
+    // along the floor. (Thrown up here, not in a call of its own: a burst
+    // comes too seldom for a call to be compiled, and run as it is written,
+    // each sum makes a new heap number.)
+    let throwing = 0;
+    let burstX = 0;
+    let burstBurn = 0;
+    const lift = Math.sqrt(h / 800);
     if (!calm && look.burst > 0.02 && dt > 0) {
       this.burstIn -= dt;
       if (this.burstIn <= 0) {
-        this.burst(w, h, look.burst);
-        this.burstIn = (2.5 + r() * 4.5) / (0.35 + 0.65 * look.burst);
+        burstBurn = this.burstStratum();
+        burstX = (0.06 + r() * 0.88) * w;
+        throwing = Math.round(7 + 10 * look.burst);
       }
     }
+    const thrown = throwing > 0;
     const sp = this.sparks;
     const drag = Math.exp(-dt * 1.5);
-    const drift = -40 * Math.sqrt(h / 800) * (1 - drag);
+    const drift = -40 * lift * (1 - drag);
     for (let j = 0; j < SPARKS; j++) {
       const o = j * 6;
       const i = EMBERS + GLINTS + j;
+      if (throwing > 0 && sp[o + 4] >= sp[o + 5]) {
+        throwing--;
+        sp[o] = burstX + (r() - 0.5) * 30;
+        sp[o + 1] = h + 6;
+        sp[o + 2] = (r() - 0.5) * 160;
+        sp[o + 3] = -(300 + r() * 330) * lift;
+        sp[o + 4] = 0;
+        sp[o + 5] = 1.1 + r() * 1.3;
+        this.sparkBurn[j] = burstBurn;
+      }
       // (One whose stratum the palette no longer holds, after a jump, goes out.)
       const burn = this.sparkBurn[j];
-      if (burn < this.aim.stratum - 2 || burn > this.aim.stratum + 1) sp[o + 4] = sp[o + 5];
+      if (burn < this.aimStratum - 2 || burn > this.aimStratum + 1) sp[o + 4] = sp[o + 5];
       if (sp[o + 4] >= sp[o + 5]) {
         pos[i * 4 + 3] = 0;
         continue;
@@ -723,6 +772,7 @@ export class Embers {
       pos[i * 4 + 2] = (1.1 + 0.5 * (j % 3)) * this.scale + SIZE_STRIDE * entryOf(burn);
       pos[i * 4 + 3] = Math.max(0, left) ** 1.4 * 1.5 * (0.75 + 0.25 * Math.sin(t * 23 + j * 2.1)) * look.bright;
     }
+    if (thrown) this.burstIn = (2.5 + r() * 4.5) / (0.35 + 0.65 * look.burst);
     // Sort the embers into the tiles their glow reaches, so each pixel of
     // the backdrop only looks at a handful.
     const data = this.data;
@@ -775,32 +825,12 @@ export class Embers {
    * Hollow, whose embers are blue.
    */
   private burstStratum(): number {
-    const { stratum, turn } = this.aim;
+    const stratum = this.aimStratum;
+    const turn = this.aimTurn;
     const h = hallTurn(turn);
     const before = (1 - h) * lookOf(stratum - 1).burst;
     const next = h * lookOf(stratum).burst;
     return r() * (before + next) < next ? stratum : stratum - 1;
-  }
-
-  /** Throws a burst of sparks up from somewhere along the floor. */
-  private burst(w: number, h: number, level: number) {
-    const sp = this.sparks;
-    const burn = this.burstStratum();
-    const x = (0.06 + r() * 0.88) * w;
-    const lift = Math.sqrt(h / 800);
-    let n = Math.round(7 + 10 * level);
-    for (let j = 0; j < SPARKS && n > 0; j++) {
-      const o = j * 6;
-      if (sp[o + 4] < sp[o + 5]) continue;
-      n--;
-      sp[o] = x + (r() - 0.5) * 30;
-      sp[o + 1] = h + 6;
-      sp[o + 2] = (r() - 0.5) * 160;
-      sp[o + 3] = -(300 + r() * 330) * lift;
-      sp[o + 4] = 0;
-      sp[o + 5] = 1.1 + r() * 1.3;
-      this.sparkBurn[j] = burn;
-    }
   }
 }
 
