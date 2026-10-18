@@ -9,8 +9,16 @@ import type { Sfx } from './sound';
 export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number };
 export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyGain: number };
 
-/** Whole mix: master volume (dB) and 'warmth', a high-shelf cut (dB) above 5 kHz. */
-export const MIX = { volume: 7, warmth: 1 };
+/**
+ * Whole mix: master volume (dB) and 'warmth', a high-shelf cut (dB) above 5
+ * kHz. 'lift' (dB) raises the whole mix evenly after its compressor, so the
+ * balance between the sounds stays as tuned; a limiter after it keeps
+ * moments that land together from clipping. Set by ear-model loudness
+ * (Zwicker, ISO 532-1) against speech and music played at -14 LUFS, as
+ * YouTube and Spotify play them: lifted 4 dB, the loudest moment
+ * (deathmatch) peaks about as loud as their loud passages, and no louder.
+ */
+export const MIX = { volume: 7, warmth: 1, lift: 4 };
 
 /**
  * How far (ms) into the 'fill' moment its first spark lands on the bar: the

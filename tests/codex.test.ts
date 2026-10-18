@@ -61,7 +61,7 @@ function seeded(seed: number) {
 }
 
 function setup(names: string[], mode: GameMode = 'turns') {
-  const engine = new Engine(items, { rng: seeded(7), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(7), fakes });
   let s: GameState = createGame('p0', { targetScore: 50, timer: 0, difficulty: 'cruel', mode });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s: engine.apply(s, { type: 'start' }, 'p0') };
@@ -358,7 +358,7 @@ test('Delve answers are filed under the preset their depth plays like', () => {
 
 /** A co-op Delve run online of p0 (the host), p1 and p2, its first question asked and its clock running. */
 function coop() {
-  const engine = new Engine(items, { rng: seeded(3), now: () => 1_000_000, fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(3), now: () => 1_000_000, fakes });
   let s: GameState = createGame('p0', { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false });
   for (const id of ['p0', 'p1', 'p2']) s = engine.apply(s, { type: 'join', playerId: id, name: `Delver ${id}` }, id);
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -395,7 +395,7 @@ test('Delve together: a ward that takes a struck answer\'s loss, and the time-ou
   s.delve!.inventory = { p1: { wards: 1, flares: 0, dynamite: 0 } };
   const q = s.question!;
   s = engine.apply(s, { type: 'answer', index: wrongIdx(q), askedAt: q.askedAt }, 'p1');
-  const later = new Engine(items, { rng: seeded(3), now: () => q.deadline! + 1000, fakes });
+  const later = new Engine(items, { autoClock: true, rng: seeded(3), now: () => q.deadline! + 1000, fakes });
   s = later.apply(s, { type: 'answer', index: null }, null);
   assert.equal(s.phase, 'reveal');
   const p1 = encounterAt(s, 'p1', false)!;

@@ -5,9 +5,10 @@
 import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
+import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
-export const PROTOCOL_VERSION = 31;
+export const PROTOCOL_VERSION = 32;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -39,9 +40,11 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
+   * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
+   * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; owner?: OwnerProof }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -72,6 +75,13 @@ export type HostMsg =
   | { t: 'cursors'; c: CursorEntry[] }
   /** Lobby: how each player who isn't simply ready stands (presence.ts), by id; sent when it changes. */
   | { t: 'standing'; s: Record<string, Standing> }
+  /**
+   * A question's picture, sealed (seal.ts): sent as soon as it's ready, on the
+   * art lane like the plain ones; nothing in it can be read until its key comes.
+   */
+  | SealedMsg
+  /** The key to a question's sealed pictures, on the main channel to everyone as its clock starts, before the state that starts it. */
+  | KeyMsg
   | MediaMsg;
 
 export type MediaMsg =
@@ -86,6 +96,10 @@ export type MediaMsg =
   | { t: 'patch'; qid: number; tile?: number; i: number }
   /** `w`, `h`: its size in art pixels (the picture is finer, by the item's artScale). */
   | { t: 'option'; qid: number; index: number; w: number; h: number; data: ArrayBuffer };
+
+const MEDIA = new Set(['art', 'veil', 'patch', 'option']);
+/** A question's pictures and their patches: what the art lane carries (artLane.ts). */
+export const isMedia = (msg: HostMsg): msg is MediaMsg => MEDIA.has(msg.t);
 
 /** A veiled picture's labels: (patch, length) pairs of 16-bit numbers, a run per patch per row or so. */
 const MAX_LABEL_BYTES = 4 * 262144;
@@ -114,6 +128,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
+      if (raw.lane !== undefined && typeof raw.lane !== 'boolean') return null;
+      if (raw.seal !== undefined && typeof raw.seal !== 'boolean') return null;
       if (raw.owner !== undefined && !isOwnerProof(raw.owner)) return null;
       return {
         t: 'hello',
@@ -122,6 +138,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
+        ...(raw.lane ? { lane: true } : {}),
+        ...(raw.seal ? { seal: true } : {}),
         ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
       };
     case 'pong':
@@ -227,6 +245,11 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return qid && tile && isInt(raw.i, 0, 254) ? (raw as HostMsg) : null;
     case 'option':
       return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+    // What's inside is checked as it opens (it goes through here again then).
+    case 'sealed':
+      return parseSealed(raw);
+    case 'key':
+      return parseKey(raw);
     default:
       return null;
   }
