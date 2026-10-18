@@ -272,7 +272,16 @@ the same thing for everyone.
     is its own (`src/lib/vein.ts`, `azuriteVein` in `src/lib/backdrop.ts`):
     the hall goes cold and dark, cracks of azurite glow in the rock of the
     walls and the floor with crystals where they meet, and the embers burn
-    azure; it fades back to the depth's own as the dig ends. The rules are in
+    azure; it fades back to the depth's own as the dig ends. Its sound is a
+    tunnel off the zone (`VEIN_AMBIENCE` in `src/lib/soundDesign.ts`): a
+    frozen river crackling, ice rumbling low and a mine shaft's groan, the
+    zone's ambience ducked and muffled behind them (the zone's echo with
+    it), as far behind in every place (`VEIN_DUCK`, by loudness) and
+    further each strike. With spatial sound on the vein's own sounds ring in a
+    room of its own (`vein` in `src/lib/acoustics.ts`), a tight tunnel,
+    while the zone behind keeps its room. A pickaxe rings as its card is
+    chosen, the azurite breaks free on a right strike, and while the dig
+    runs on the walls crack all round you, worse after strike 2. The rules are in
     `src/lib/delve.ts` (the dig); `docs/vein-digging.md` has the design.
   - A **Flare Cache** (from depth 40) gives a **flare**: time later for time
     now, as its own question gets two thirds of its deeper depth's clock,

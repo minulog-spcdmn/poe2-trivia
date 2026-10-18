@@ -56,6 +56,11 @@ export const ROOMS: Record<string, Room> = {
   a9: { name: 'Ashen reliquary', rt: 3.2, low: 1.0, high: 0.6, size: 30, er: 0.8, pre: 12 },
   a10: { name: 'Starfall abyss', rt: 6.0, low: 1.1, high: 0.5, size: 150, er: 0.1, pre: 70 },
   a11: { name: 'Witchfire grove', rt: 1.3, low: 0.95, high: 0.5, size: 70, er: 0.45, pre: 12 },
+  // An Azurite Vein being dug: a tight side tunnel off the zone, its walls
+  // close (a flutter between them, about 10 ms) and its short tail darkening,
+  // as picked on the vein sound board (its tunnel echo, 0.65 s). Its own
+  // sounds ring in it (lib/sound.ts veinWet); the zone behind keeps its own.
+  vein: { name: 'An Azurite Vein', rt: 0.65, low: 1.1, high: 0.5, size: 8, er: 0.9, pre: 3, flutter: [10.5, 0.4] },
 };
 
 type Ctx = Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>;
