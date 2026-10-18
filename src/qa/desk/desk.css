@@ -1,0 +1,367 @@
+/* The QA desk (qa.html): the game's colours and faces, one window high, a
+   line at the top, the stop below it and the strip at the foot. Flat
+   colours only, so nothing here bands. */
+
+html[data-qa='desk'],
+html[data-qa='desk'] body {
+  height: 100%;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+html[data-qa='desk'] #app {
+  min-height: 0;
+  height: 100%;
+}
+
+.desk {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 15px;
+}
+.desk .num {
+  font-family: var(--font-cinzel);
+}
+.desk kbd {
+  font-family: var(--font-cinzel);
+  font-size: 0.8em;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 0.3em;
+  color: var(--muted);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: #0d0b09;
+}
+/* The scene's name gives way first: the seat and the size always show. */
+.where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.where > * {
+  flex: none;
+}
+.where .scene {
+  flex: 0 1 auto;
+  min-width: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gold-hi);
+}
+.where .sep {
+  margin: 0 0.45em;
+  color: var(--gold-lo);
+}
+.top button {
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.15rem 0.6rem;
+  cursor: pointer;
+}
+.top button:hover:not(:disabled) {
+  border-color: var(--gold);
+}
+.top button:disabled {
+  color: var(--line);
+  cursor: default;
+}
+/* Only for a scene with settings: a row of its own under the top line. */
+.knobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.knob {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.knob select {
+  font: inherit;
+  color: var(--text);
+  background: #0a0908;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+.views {
+  display: flex;
+}
+.views button {
+  border-radius: 0;
+  color: var(--muted);
+}
+.views button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.views button:last-child {
+  border-radius: 0 4px 4px 0;
+  margin-left: -1px;
+}
+.views button.on {
+  color: var(--gold-hi);
+  border-color: var(--gold-lo);
+  background: #1a140d;
+}
+.different {
+  margin: 0;
+  padding: 0.3rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--gold);
+  font-size: 0.9em;
+}
+.uncovered {
+  margin: 0;
+  padding: 0.3rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.count {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+.count .num {
+  min-width: 6.5em;
+  text-align: center;
+}
+.search {
+  width: 14rem;
+  font: inherit;
+  color: var(--text);
+  background: #0a0908;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.2rem 0.6rem;
+}
+.search:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+/* Only there when the stop has something wrong: what, how often, the first one. */
+.problems {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0;
+  margin: 0;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid #5a2620;
+  background: #1c0e0b;
+  color: #ff8a7a;
+}
+.problems .sep {
+  margin: 0 0.6em;
+  color: #7a3a30;
+}
+.problems .times {
+  margin-left: 0.3em;
+}
+.problems .example {
+  margin-left: 0.5em;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.problems .hint {
+  margin-left: auto;
+  padding-left: 1rem;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  padding: 16px;
+}
+.stage.zoomed {
+  overflow: auto;
+}
+.stage .row {
+  display: flex;
+  margin: auto;
+}
+.seat {
+  margin: 0;
+}
+.screen {
+  position: relative;
+  overflow: hidden;
+  outline: 1px solid var(--line);
+  background: #0a0908;
+}
+.screen iframe {
+  position: absolute;
+  inset: 0 auto auto 0;
+  border: 0;
+  transform-origin: 0 0;
+  background: #0a0908;
+}
+.screen iframe.away {
+  visibility: hidden;
+}
+.screen .board {
+  position: absolute;
+  inset: 0 auto auto 0;
+}
+.screen .loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  color: var(--muted);
+  pointer-events: none;
+}
+.seat figcaption {
+  height: 30px;
+  padding-top: 6px;
+  text-align: center;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.seat figcaption .zoom {
+  margin-left: 0.6em;
+  font-size: 0.85em;
+  color: var(--gold-lo);
+}
+.pan {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+}
+.pan:active {
+  cursor: grabbing;
+}
+
+.strip {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  height: 18px;
+  padding: 5px 1rem 7px;
+  border-top: 1px solid var(--line);
+  background: #0d0b09;
+}
+/* Hundreds of stops share the width: a hairline between marks, a gap between scenes. */
+.strip .mark {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset -1px 0 0 #0d0b09;
+  background: #2a2219;
+  cursor: pointer;
+}
+.strip .mark.first {
+  margin-left: 2px;
+}
+.strip .mark:hover {
+  background: var(--gold-lo);
+}
+.strip .mark.now {
+  background: var(--gold-hi);
+}
+.strip .mark.bad {
+  background: #b5463c;
+}
+.strip .mark.bad.now {
+  background: #ff8a7a;
+}
+
+/* Play from here: the room's line, then its seats, each with what it's doing and its link's controls. */
+.live {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+.live .room {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 0;
+  margin: 0;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.live .room .scene {
+  color: var(--gold-hi);
+}
+.live .room .sep {
+  margin: 0 0.45em;
+  color: var(--gold-lo);
+}
+.live .room .note {
+  color: var(--gold);
+}
+.live .room .spacer {
+  flex: 1;
+}
+.live button {
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.1rem 0.5rem;
+  margin-left: 0.4rem;
+  cursor: pointer;
+}
+.live button:hover {
+  border-color: var(--gold);
+}
+.live button.on {
+  border-color: var(--gold-lo);
+  color: var(--gold-hi);
+  background: #1a140d;
+}
+.live .seat figcaption {
+  height: 64px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.live .seat .who {
+  color: var(--text);
+}
+.live .seat .state {
+  font-size: 0.85em;
+}
+.live .seat .state.down {
+  color: #ff8a7a;
+}
+.live .seat .tools button {
+  margin: 0 0.15rem;
+}
+.empty {
+  margin: auto;
+  color: var(--muted);
+}

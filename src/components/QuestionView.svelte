@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from 'svelte/transition';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, drawnAs, isFake, questionTopic } from '../lib/game';
+  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -38,6 +38,7 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
 
@@ -251,8 +252,8 @@
   // row of tall tiles rather than two rows of short ones, where a staff is a
   // thin stick.
   const tallArt = $derived(!!q.tall && count <= 8);
-  /** Whether a timer runs on this question (the timer snippet draws nothing without one). */
-  const clocked = $derived(!!q.deadline || !!s.delve);
+  /** Whether a timer runs on this question, started or not (the timer snippet draws nothing without one). */
+  const clocked = $derived(!!q.deadline || clockMs(s) !== null);
   // Pictures the host has sent for this question.
   const media = $derived(shown.qid === q.askedAt ? shown : null);
   /** "Find the art" pictures in so far: whole, or (veiled, in Delve) ready to burn in. */
@@ -260,11 +261,12 @@
   /** A veiled picture's patches so far. */
   const tilePatches = (i: number) => Object.values(media?.tilePatches[i] ?? {});
   /**
-   * Delve: nothing to see or answer until the clock runs and every picture is
-   * in, so the timer only counts time the player could actually use.
+   * Nothing to see or answer until the clock runs, in every mode (the host's
+   * own screen too); in Delve, nor until every picture is in, so the timer
+   * only counts time the player could actually use.
    */
   const waiting = $derived(
-    !!s.delve && !reveal && (q.deadline === null || (q.mode === 'art' ? tilesIn < count : !(media?.art || media?.veil))),
+    !reveal && (!clockRuns(q) || (!!s.delve && (q.mode === 'art' ? tilesIn < count : !(media?.art || media?.veil)))),
   );
 
   /** Veiled art: the patches that have appeared so far. */
@@ -785,6 +787,8 @@
 
   /** Frees the options should the host's word on an answer never come. */
   let fallback: ReturnType<typeof setTimeout> | undefined;
+  /** The longest the options wait shut for that word (ms): a far host's round trip and then some. */
+  const PICK_WAIT_MS = 6000;
   function answer(index: number) {
     if (!mine || reveal || chosen !== null || waiting || struckAt.has(index)) return;
     // Time's up: the host only waits a moment longer for answers already on their way.
@@ -795,10 +799,17 @@
     sfx('select', { from: { from: optionEls[index] } });
     session.dispatch({ type: 'answer', index, askedAt: q.askedAt });
     // Only the latest answer's: one turned down and given again stays on its way.
+    // A far host's word can take a while: it waits till a moment after a
+    // timed question's end (its reveal brings the word at the latest), but
+    // never more than PICK_WAIT_MS, so an answer the host let go without a
+    // word doesn't keep the options shut for the rest of the clock.
     clearTimeout(fallback);
-    fallback = setTimeout(() => {
-      if (!session.state?.reveal) chosen = null;
-    }, 2500);
+    fallback = setTimeout(
+      () => {
+        if (!session.state?.reveal) chosen = null;
+      },
+      q.deadline ? Math.min(PICK_WAIT_MS, Math.max(2500, q.deadline - session.hostNow() + 2000)) : PICK_WAIT_MS,
+    );
   }
 
   function next() {
@@ -848,19 +859,7 @@
 {#snippet verdictBadge()}
   {#if verdict}
     <div class="verdict {verdict.tone}" data-cursor="verdict" bind:this={verdictEl} use:chipFire={{ heat: chipHeat, flame: chipFlame, out: chipOut }}>
-      <span class="glyph" aria-hidden="true">
-        <svg viewBox="0 0 20 20">
-          {#if verdict.icon === 'check'}
-            <path pathLength="1" d="M5.6 10.4l3 3 5.8-6.6" />
-          {:else if verdict.icon === 'cross'}
-            <path pathLength="1" d="M6.6 6.6l6.8 6.8" />
-            <path pathLength="1" d="M13.4 6.6l-6.8 6.8" />
-          {:else}
-            <path pathLength="1" d="M10 4.4a5.6 5.6 0 1 1 0 11.2a5.6 5.6 0 1 1 0-11.2" />
-            <path pathLength="1" d="M10 7v3.2l2.1 1.5" />
-          {/if}
-        </svg>
-      </span>
+      <span class="glyph"><VerdictSign icon={verdict.icon} /></span>
       {#if chipHeat > 0}
         <!-- The streak instead of the word, in the fire's colour. -->
         <span class="word count" class:blue={chipFlame.blue} class:tinted={!!chipFlame.tint} style:--flame-rgb={chipFlame.css} style:--heat={chipHeat.toFixed(3)}><b>{streak}</b> in a row</span>
@@ -1144,7 +1143,7 @@
     {#if timer && clocked}<div class="clock" class:done={!!reveal}>{@render timer()}</div>{/if}
   </div>
 
-  <!-- Delve: until the clock runs (waiting), the question keeps its shape but shows nothing to read. -->
+  <!-- Until the clock runs (waiting; in Delve, until its art is in too), the question keeps its shape but shows nothing to read. -->
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
@@ -1901,8 +1900,8 @@
      ring spreads off it and a sheen crosses it; a right answer's disc keeps
      glowing softly. Green and red as the answers' ✓ and ✕, violet for time. */
   .verdict {
-    --v-icon: #c2e3a6;
-    --v-tint: 150, 200, 105;
+    --v-icon: var(--verdict-good-icon);
+    --v-tint: var(--verdict-good-tint);
     position: relative;
     flex: none;
     display: flex;
@@ -1933,12 +1932,12 @@
       verdict-sheen 0.9s ease-in-out 0.45s;
   }
   .verdict.bad {
-    --v-icon: #f0a68c;
-    --v-tint: 220, 110, 80;
+    --v-icon: var(--verdict-bad-icon);
+    --v-tint: var(--verdict-bad-tint);
   }
   .verdict.late {
-    --v-icon: #cdb4ee;
-    --v-tint: 165, 125, 225;
+    --v-icon: var(--verdict-late-icon);
+    --v-tint: var(--verdict-late-tint);
   }
   .verdict.neutral {
     --v-icon: var(--gold-hi);
@@ -1954,20 +1953,13 @@
     opacity: 0;
     animation: verdict-ripple 0.7s var(--ease-out) 0.25s;
   }
-  /* As tall as the line, so the chip is no taller than its word. */
+  /* As tall as the line, so the chip is no taller than its word. Its sign
+     (VerdictSign) fills it; the flare lights round it as it lands. */
   .glyph {
     flex: none;
-    display: grid;
-    place-items: center;
     width: 1.45em;
     height: 1.45em;
-    color: var(--v-icon);
-    border: 1px solid rgba(var(--v-tint), 0.75);
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 35%, rgba(var(--v-tint), 0.45), rgba(var(--v-tint), 0.12) 70%), rgba(0, 0, 0, 0.5);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.15),
-      0 0 8px rgba(var(--v-tint), 0.45);
     animation: verdict-flare 0.9s var(--ease-out) 0.2s backwards;
   }
   /* A right answer's glyph breathes: a wider glow on a layer of its own
@@ -1986,26 +1978,6 @@
     animation: verdict-breathe 2.6s ease-in-out 1.2s infinite;
     pointer-events: none;
   }
-  .glyph svg {
-    width: 1.05em;
-    height: 1.05em;
-    overflow: visible;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.4;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 0 2px rgba(var(--v-tint), 0.8));
-  }
-  .glyph path {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: verdict-draw 0.35s var(--ease-out) 0.22s forwards;
-  }
-  /* A cross's second stroke and a clock's hands follow the first. */
-  .glyph svg > :nth-child(2) {
-    animation-delay: 0.4s;
-  }
   .word {
     animation: verdict-word 0.5s var(--ease-out) 0.2s backwards;
   }
@@ -2023,9 +1995,7 @@
   }
   @keyframes verdict-flare {
     from {
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.15),
-        0 0 18px 3px rgba(var(--v-tint), 0.8);
+      box-shadow: 0 0 18px 3px rgba(var(--v-tint), 0.8);
     }
   }
   @keyframes verdict-breathe {
@@ -2040,11 +2010,6 @@
     to {
       inset: -8px;
       opacity: 0;
-    }
-  }
-  @keyframes verdict-draw {
-    to {
-      stroke-dashoffset: 0;
     }
   }
   @keyframes verdict-word {

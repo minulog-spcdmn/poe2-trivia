@@ -34,3 +34,6 @@ dist-ssr
 
 # Python bytecode
 __pycache__/
+
+# Screenshots from scripts/capture-screens.mjs
+/screens/

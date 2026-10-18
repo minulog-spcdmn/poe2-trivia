@@ -169,8 +169,11 @@ test('wrong answers, giving up and answering late each cost a life; right ones s
   h.act({ type: 'next' });
 
   h.pick();
+  throwsSilently(() => h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt }), /Too early/);
+  assert.equal(lives(), 3, 'nothing is given up before the clock starts');
+  h.clockIn();
   h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt });
-  assert.equal(lives(), 2, 'giving up (or running out of time) costs a life, even before the clock');
+  assert.equal(lives(), 2, 'giving up (or running out of time) costs a life');
   h.act({ type: 'next' });
 
   // Answering after the deadline from their own device.
@@ -383,7 +386,7 @@ test('guests see nothing of a question until its clock starts', () => {
 });
 
 test('a game saved before Delve plays on as before', () => {
-  const engine = new Engine(items, { rng: seeded(5) });
+  const engine = new Engine(items, { rng: seeded(5), autoClock: true });
   let s = createGame('p0', { ...LEFTOVERS, mode: 'turns', targetScore: 2 });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { GameCounts, countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, referrerOf } from '../src/lib/count.ts';
+import { GameCounts, flipSkip, isToggleHash, type SkipStore, countArrival, countEvent, countVisit, countsOn, delveEndEvent, gameEvents, reachEvents, referrerOf } from '../src/lib/count.ts';
 import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, versionProblem } from '../src/lib/protocol.ts';
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
@@ -129,4 +129,38 @@ test('a Delve run counts by the ten depths it ended in, as players see them', ()
   assert.equal(delveEndEvent(9), 'delve/depth-0-9');
   assert.equal(delveEndEvent(10), 'delve/depth-10-19');
   assert.equal(delveEndEvent(-1), 'delve/depth-0-9');
+});
+
+test("GoatCounter's #toggle-goatcounter switches this browser's counting, with or without the dash", () => {
+  for (const h of ['#toggle-goatcounter', '#togglegoatcounter', '#Toggle-GoatCounter']) assert.ok(isToggleHash(h), h);
+  for (const h of ['', '#', '#codex', '#toggle-goatcounter?x', '#toggle']) assert.ok(!isToggleHash(h), h);
+});
+
+test('a toggle flips the opt-out both ways, and says so when the browser cannot keep it', () => {
+  let skip = false;
+  let works = true;
+  const store: SkipStore = {
+    skipped: () => skip,
+    set: (s) => (works ? ((skip = s), true) : false),
+  };
+  assert.equal(flipSkip(store), 'skipped');
+  assert.equal(skip, true);
+  assert.equal(flipSkip(store), 'counted');
+  assert.equal(skip, false);
+  works = false;
+  assert.equal(flipSkip(store), 'unsaved');
+  assert.equal(skip, false);
+});
+
+test('every device in a game marks the steps its visitor reached: played, then finished', () => {
+  const lobby = game('race', 4);
+  const started = { ...lobby, phase: 'choosing' as const };
+  const over = { ...started, phase: 'over' as const };
+  assert.deepEqual(reachEvents(lobby, started), ['reach/played']);
+  assert.deepEqual(reachEvents(started, { ...started, phase: 'question' }), []);
+  assert.deepEqual(reachEvents(started, over), ['reach/finished']);
+  assert.deepEqual(reachEvents(over, over), []);
+  assert.deepEqual(reachEvents(over, { ...over, phase: 'choosing' }), ['reach/played']);
+  // A game picked up after a reload was counted before.
+  assert.deepEqual(reachEvents(null, started), []);
 });

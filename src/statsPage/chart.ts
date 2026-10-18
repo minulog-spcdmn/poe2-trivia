@@ -18,6 +18,8 @@ export function axis(peak: number, ticks = 3): { top: number; ticks: number[] } 
 }
 
 export const fmt = (n: number) => n.toLocaleString('en');
+/** A site as people say it: "reddit.com", from GoatCounter's "https://www.reddit.com". */
+export const siteName = (name: string) => name.replace(/^[a-z-]+:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
 /** A figure a day on average: one decimal under 10 ("2.5"), whole above. */
 export const average = (v: number) => (v < 10 ? v.toFixed(1).replace(/\.0$/, '') : fmt(Math.round(v)));
 export const compact = (n: number) => (n >= 1000 ? new Intl.NumberFormat('en', { notation: 'compact' }).format(n) : String(n));
@@ -29,11 +31,13 @@ export const shortDay = (d: string) => at(d).toLocaleDateString('en', { month: '
 export const longDay = (d: string, week = false) =>
   week ? `Week of ${shortDay(d)}` : at(d).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-/** Which of `n` points get a date along an axis `width` wide: as many as fit, the last always among them. */
+/** Which of `n` points get a date along an axis `width` wide: as many as fit, the last always among them, the first where it has room. */
 export function labelled(n: number, width: number, room = 66): number[] {
   if (!n || !width) return [];
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(width / room))));
   const out: number[] = [];
   for (let i = n - 1; i >= 0; i -= every) out.unshift(i);
+  // The first day too, where it has room: a narrow chart otherwise says where it ends but not where it starts.
+  if (out[0] > 0 && out[0] >= every * 0.75) out.unshift(0);
   return out;
 }

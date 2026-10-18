@@ -1,19 +1,22 @@
 // Visits and a few game events, counted by GoatCounter (counter.ts):
-// no cookies, no IP addresses stored, nothing kept in the browser but the
-// privacy page's opt-out, when it was asked for. Only the game's own page at
-// poe2.quest counts; the beta, the dev server and the dev pages never do, nor
-// a browser that asked not to be (countOptOut.ts: the privacy page's switch,
-// or Global Privacy Control). datenschutz.html says what is sent, and vite.config.ts's
-// CSP lets it through.
+// no cookies, no IP addresses stored, and nothing kept in the browser but
+// its opt-out (countOptOut.ts), set only on asking: on the privacy page, or
+// by opening poe2.quest/#toggle-goatcounter. Nothing counts from a browser
+// that opted out or sends Global Privacy Control. Only the game's own page
+// at poe2.quest counts; the beta, the dev server and the dev pages never do.
+// datenschutz.html says what is sent, and vite.config.ts's CSP lets it
+// through.
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
+// So count.js's #toggle-goatcounter means nothing to GoatCounter here;
+// onCountToggle below reads it instead.
 
 import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
-import { notCounted } from './countOptOut.ts';
+import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
@@ -22,8 +25,59 @@ export function countsOn(at: { hostname: string; pathname: string }, channel: Ch
   return channel === 'live' && !robot && at.hostname === live.hostname && (at.pathname === live.pathname || at.pathname === `${live.pathname}index.html`);
 }
 
-/** Whether this page counts, settled as it loads (its address changes only in its query and hash after). */
-export const counting = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
+/** The address's hash that switches counting this browser off, or back on (GoatCounter's own, as count.js reads it; without the dash too). */
+export const isToggleHash = (hash: string) => /^#toggle-?goatcounter$/i.test(hash);
+
+/** Where the opt-out is kept: whether it's set, and setting it, true when it held. */
+export interface SkipStore {
+  skipped(): boolean;
+  set(skip: boolean): boolean;
+}
+
+/** The browser's opt-out (countOptOut.ts): the one the privacy page's switch sets too. */
+const browserSkip: SkipStore = { skipped: countOptedOut, set: setCountOptedOut };
+
+/** What a toggle came to: counted no longer, counted again, or nothing changed as the browser can't keep it. */
+export type Toggled = 'skipped' | 'counted' | 'unsaved';
+
+/** Flips the opt-out; what it came to. */
+export function flipSkip(store: SkipStore): Toggled {
+  const skip = !store.skipped();
+  return store.set(skip) ? (skip ? 'skipped' : 'counted') : 'unsaved';
+}
+
+/** The page counts where it is: the live game's own page, no robot. Settled as it loads (its address changes only in its query and hash after). */
+const countsHere = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
+
+/** Whether this page counts: where it counts, in a browser that hasn't opted out. A toggle changes it. */
+export let counting = countsHere && !browserSkip.skipped();
+
+/** Takes a toggle hash from the address, if there is one where it means something, and flips the opt-out. */
+function takeToggle(): Toggled | null {
+  if (!countsHere || !isToggleHash(location.hash)) return null;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  const out = flipSkip(browserSkip);
+  counting = !browserSkip.skipped();
+  return out;
+}
+
+/** A toggle in the address the page opened with: taken at once, before anything counts, and that load counts nothing either way. */
+const toggledOnLoad = takeToggle();
+
+/**
+ * poe2.quest/#toggle-goatcounter: this browser stops being counted, or
+ * starts again, for good, opened with it or typed after the address of a
+ * page already open. The hash goes from the address after, so a reload
+ * doesn't switch it back. `say` is told what each came to.
+ */
+export function onCountToggle(say: (t: Toggled) => void) {
+  if (toggledOnLoad) say(toggledOnLoad);
+  if (!countsHere) return;
+  addEventListener('hashchange', () => {
+    const t = takeToggle();
+    if (t) say(t);
+  });
+}
 
 function beacon(url: string) {
   try {
@@ -97,7 +151,7 @@ export function referrerOf(referrer: string, here: string): string {
 
 /** A visit to the start page; not one come back to (cameBack). */
 export function countVisit() {
-  if (!counting || cameBack()) return;
+  if (!counting || toggledOnLoad || cameBack()) return;
   const r = referrerOf(document.referrer, location.href);
   send({ p: '/', t: document.title, ...(r ? { r } : {}) });
 }
@@ -110,6 +164,15 @@ export function countVisit() {
  */
 export function countEvent(name: string) {
   send({ p: name, t: name, e: 'true', ns: 'true' });
+}
+
+/**
+ * A step a visit reached ("reach/played", "reach/finished"): counted the way
+ * visits are, once a visitor in eight hours (no `ns`), so set against the
+ * visits it says what share of visitors got that far.
+ */
+export function countReach(name: string) {
+  send({ p: name, t: name, e: 'true' });
 }
 
 const arrivals = new Set<string>();
@@ -156,6 +219,17 @@ export function gameEvents(prev: GameState | null, next: GameState, hotSeat: boo
   if (!playing(prev) && playing(next)) return [`play/${key}`, `size/${key}-${partySize(next)}`];
   if (!decided(next) || (decided(prev) && prev.delve?.startedAt === next.delve?.startedAt)) return [];
   return next.delve ? [`end/${key}`, delveEndEvent(shownDepth(teamDepth(next)))] : [`end/${key}`];
+}
+
+/**
+ * The steps a state change reaches on any device in the game, host, guest
+ * or hot-seat (countReach): a game starting ("reach/played") and one
+ * decided ("reach/finished"). Nothing for a game picked up after a reload.
+ */
+export function reachEvents(prev: GameState | null, next: GameState): string[] {
+  if (!prev) return [];
+  if (!playing(prev) && playing(next)) return ['reach/played'];
+  return decided(next) && !decided(prev) ? ['reach/finished'] : [];
 }
 
 /** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after. */

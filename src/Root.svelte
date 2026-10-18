@@ -7,8 +7,12 @@
   // second crash soon after leaves any game. A crash soon after that, with
   // nothing left to leave, would only come back on every try: the page then
   // stops and offers a reload.
+  import type { Component } from 'svelte';
   import App from './App.svelte';
   import { session } from './lib/session.svelte';
+
+  /** The QA desk's frames only (src/qa): something to put inside the boundary beside the app, which can crash on cue. */
+  let { qaInside }: { qaInside?: Component } = $props();
 
   /** A crash this soon after the last means the game itself can't be shown (ms). */
   const AGAIN_MS = 10000;
@@ -31,6 +35,10 @@
 
 <svelte:boundary {onerror}>
   <App {recovered} />
+  {#if qaInside}
+    {@const Inside = qaInside}
+    <Inside />
+  {/if}
   {#snippet failed()}
     {#if stuck}
       <div class="stuck" role="alert">

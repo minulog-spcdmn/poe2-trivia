@@ -15,7 +15,7 @@ function seeded(seed: number) {
 
 /** Plays `turns` turns alone, picking whichever offered category `pick` likes, and returns every question asked. */
 function questions(turns: number, pick: (offered: string[]) => string) {
-  const engine = new Engine(items, { rng: seeded(7) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(7) });
   let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'cruel' });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -49,12 +49,14 @@ test('a name question is never tall', () => {
   for (const q of asked.filter((q) => q.mode === 'name')) assert.equal(q.tall, undefined);
 });
 
-test("Delve's copy before the clock runs keeps tall (the pictures' layout), not the groups", () => {
+test("a guest's copy before the clock runs keeps tall (the pictures' layout), not the groups, in every mode", () => {
   const { asked, s } = game;
-  const q = asked.find((x) => x.mode === 'art' && x.tall)!;
-  const waiting = { ...s, phase: 'question', delve: s.delve ?? ({} as GameState['delve']), question: { ...q, deadline: null } } as GameState;
-  const seen = publicView(waiting).question!;
-  assert.equal(seen.tall, true);
-  assert.deepEqual(seen.groups, []);
-  assert.deepEqual(seen.options, []);
+  const { clockAt: _, ...q } = asked.find((x) => x.mode === 'art' && x.tall)!;
+  for (const delve of [s.delve ?? ({} as GameState['delve']), undefined]) {
+    const waiting = { ...s, phase: 'question', delve, question: { ...q, deadline: null } } as GameState;
+    const seen = publicView(waiting).question!;
+    assert.equal(seen.tall, true);
+    assert.deepEqual(seen.groups, []);
+    assert.deepEqual(seen.options, []);
+  }
 });

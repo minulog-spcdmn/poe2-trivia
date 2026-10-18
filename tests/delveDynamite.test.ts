@@ -579,7 +579,9 @@ test('a host reload while the fuse burns neither loses the stick nor spends it t
   h.clock.now = q.deadline! + ANSWER_GRACE_MS + 4000;
   h.act({ type: 'answer', index: null });
   assert.equal(h.s.question!.blast!.was.at, q.askedAt);
-  h.act({ type: 'answer', index: null });
+  // The time-out again (a timer from before the reload firing too) finds the
+  // question asked in its place, whose clock hasn't started: nothing goes off.
+  silently(() => h.act({ type: 'answer', index: null }), /Too early/);
   assert.equal(dynamiteOf(h.s, 'p0'), 1, 'one stick for one blast');
   assert.equal(h.s.delve!.blasts, 1);
   // A save from protocol 14 with a fuse lit on its question still loads, and goes off once at its time-out.

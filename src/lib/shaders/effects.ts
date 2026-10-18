@@ -148,7 +148,10 @@ vec3 env_magma(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
   float near2 = smoothstep(0.15, 0.0, d1);
   float k2 = 0.0;
   if (near2 > 0.0) k2 = clamp(1.0 - abs(fbm(m * 1.9 + 7.7) - 0.5) * 12.0 / open, 0.0, 1.0) * near2 * e;
-  float crack = k1 * k1 * k1 + 0.8 * k2 * k2 * k2;
+  // (Cubed before it's scaled: as 0.8 * k2 * k2 * k2, Direct3D's shader
+  // compiler, which Windows browsers build WebGL with, took over ten seconds
+  // on this function, and a minute on Delve's soft light.)
+  float crack = k1 * k1 * k1 + 0.8 * (k2 * k2 * k2);
   float low = 0.25 + 0.75 * smoothstep(0.1, 1.0, xy.y) + 0.3 * gSide;
   float flow = 0.35 + 0.65 * vnoise(vec2(m.x * 1.2, m.y * 1.6 + ft * 0.4));
   float heat = crack * low * flow;
@@ -250,7 +253,7 @@ vec3 env_frost(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
       if (wt.w > 0.0) c += wt.w * rime(vec2(p.x / D + 83.0, n));
       c /= wt.x + wt.y + wt.z + wt.w;
       // Lobes where it has reached further, and fingers along the stems and their barbs.
-      float front = grow * (0.05 + 0.07 * c.z + 0.05 * c.x * c.x * c.x + 0.03 * c.y);
+      float front = grow * (0.05 + 0.07 * c.z + 0.05 * (c.x * c.x * c.x) + 0.03 * c.y);
       float cover = smoothstep(0.0, 0.018, front - fe);
       float thick = clamp(1.0 - fe / max(front, 0.001), 0.0, 1.0);
       float body = cover * (0.3 + 0.7 * thick);

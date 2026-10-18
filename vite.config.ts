@@ -11,6 +11,8 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { glslMinify } from './glslMinify.ts';
+import { peerjsProbe } from './peerjsProbe.ts';
+import { qaServer } from './qaServer.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
@@ -309,7 +311,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env)],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
@@ -326,10 +328,11 @@ export default defineConfig(({ command, mode }) => {
           // the zone tuning page (src/zonebanner), the descent's test page
           // (src/descentPreview), the daily streak's (src/streakPreview), the
           // spatial sound page (src/spatialPage), the hover tuning page
-          // (src/hoverPage), the end screen's (src/endscreenPreview) and the
-          // hub linking them all (dev.html): the dev server serves them by
-          // itself; of the builds only the beta has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html', circle: 'circle.html' } : {}),
+          // (src/hoverPage), the sound levels page (src/levelsPage), the QA
+          // desk (src/qa) and the hub linking them all (dev.html): the dev
+          // server serves them by itself; of the builds only the beta has
+          // them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', qa: 'qa.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', levels: 'levels.html', circle: 'circle.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

@@ -73,3 +73,21 @@ test("only an iOS home-screen app opens the privacy page over the game", async (
   assert.equal(installedApp({} as Navigator), false);
   assert.equal(installedApp(undefined), false);
 });
+
+test('an opt-out kept where #toggle-goatcounter used to keep it still holds, and is cleared with the new one', () => {
+  const held = new Map<string, string>([['poe2trivia.skipCount', 't']]);
+  const was = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (k: string) => held.get(k) ?? null, setItem: (k: string, v: string) => void held.set(k, v), removeItem: (k: string) => void held.delete(k) },
+  });
+  try {
+    assert.equal(countOptedOut(), true);
+    assert.ok(setCountOptedOut(false));
+    assert.equal(countOptedOut(), false);
+    assert.equal(held.size, 0);
+  } finally {
+    if (was) Object.defineProperty(globalThis, 'localStorage', was);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+});

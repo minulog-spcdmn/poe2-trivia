@@ -1,9 +1,9 @@
-// "Stop counting" (datenschutz.html, src/legal/countToggle.ts): a flag in
-// this browser's storage that keeps count.ts from sending anything, as does
-// a browser sending Global Privacy Control. Its own module so the privacy
-// page needn't load the game to read or set it. GoatCounter's
-// #toggle-goatcounter can't do this: it only works with its count.js, which
-// the game doesn't use.
+// The visitor counts' opt-out: a flag in this browser's storage that keeps
+// count.ts from sending anything, as does a browser sending Global Privacy
+// Control. Set by the privacy page's "Stop counting" (datenschutz.html,
+// src/legal/countToggle.ts) and by opening poe2.quest/#toggle-goatcounter
+// (count.ts onCountToggle). Its own module so the privacy page needn't load
+// the game to read or set it.
 
 import { readKey, removeKey, writeKey } from './storage.ts';
 
@@ -15,11 +15,19 @@ import { readKey, removeKey, writeKey } from './storage.ts';
  */
 export const OPT_OUT_KEY = 'poe2trivia-shared.noCount';
 
-/** Whether this browser asked, on the privacy page, not to be counted. */
-export const countOptedOut = () => readKey(OPT_OUT_KEY) === '1';
+/** Where #toggle-goatcounter kept it before it moved here: still honoured, and cleared with it. */
+const OLD_KEY = 'poe2trivia.skipCount';
 
-/** Sets it; whether it could be stored. */
-export const setCountOptedOut = (out: boolean): boolean => (out ? writeKey(OPT_OUT_KEY, '1') : removeKey(OPT_OUT_KEY));
+/** Whether this browser asked not to be counted. */
+export const countOptedOut = () => readKey(OPT_OUT_KEY) !== null || readKey(OLD_KEY) !== null;
+
+/** Sets it; whether it held. */
+export function setCountOptedOut(out: boolean): boolean {
+  if (out) return writeKey(OPT_OUT_KEY, '1');
+  removeKey(OPT_OUT_KEY);
+  removeKey(OLD_KEY);
+  return !countOptedOut();
+}
 
 /** The browser sends Global Privacy Control: the visitor asked every site not to track them. */
 export const privacySignal = (nav: Navigator | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean =>
