@@ -63,7 +63,8 @@ Shippable on its own; changes no rule of the game.
   handicap, Delve's `halfTrip`), use the round trip the browser itself
   measures for the connection (`getStats`, the selected candidate pair's
   `currentRoundTripTime`), falling back to the lowest recent ping. The
-  too-quick check keeps the ping time: inflating it only hurts the guest.
+  too-quick check uses it too: the pings read late whenever the host's page
+  is busy (preparing art, say), which turned honest quick answers down.
 - **The pick keeps its highlight** until the verdict, a refusal or the next
   question, not 2.5 s.
 - **A fake far link for development:** a dev-only switch that delays both

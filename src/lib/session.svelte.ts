@@ -232,7 +232,7 @@ interface Guest {
   /** Its newest pointer past `pointer`, waiting until it may go (undefined when none is), and when it's looked at again. */
   pointerLate?: CursorAt | null;
   pointerTimer?: ReturnType<typeof setTimeout> | null;
-  /** Round-trip time estimate (ms), from its pongs: what it answers to (tooFast, slowLink). */
+  /** Round-trip time estimate (ms), from its pongs: whether its link shows as slow (slowLink). */
   rtt: number;
   /** Its recent ping times (ms), and the round trip its browser measures (linkRtt.ts): what timing that could favour it leans on (honestRtt). */
   pingTimes: number[];
@@ -1084,7 +1084,10 @@ class Session {
     // the host's reload held still carries on later); the host notes it
     // running as it goes out to everyone (noteClock).
     const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
-    return performance.now() - Math.max(guest.mediaAt.at, clock) < guest.rtt + MIN_HUMAN_MS;
+    // The link's own round trip (honestRtt), not the pongs': a busy host page
+    // reads those late and would turn honest quick answers down, and a guest
+    // can't make the browser's measure shorter than its link is.
+    return performance.now() - Math.max(guest.mediaAt.at, clock) < honestRtt(guest) + MIN_HUMAN_MS;
   }
 
   private watchOwnPresence() {
