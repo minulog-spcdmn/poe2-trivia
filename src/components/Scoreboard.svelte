@@ -46,6 +46,7 @@
   import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
   import HeartOfLight from './HeartOfLight.svelte';
+  import StandingMark from './StandingMark.svelte';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
@@ -710,8 +711,12 @@
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
-          <span class="name">
-            <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
+          <span class="name-row">
+            <span class="name">
+              <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
+            </span>
+            <!-- Online, room for the offline mark after the name is always kept, so nothing moves when it comes. -->
+            {#if session.mode !== 'local'}<span class="off-slot">{#if !p.connected}{@render offline()}{/if}</span>{/if}
           </span>
           {#if run && fell !== null}
             <span class="fell-at">Perished at depth {shownDepth(fell)}</span>
@@ -742,7 +747,11 @@
           <!-- A ward taking a loss: the entry braces, rimmed in azurite light. -->
           {#key guard[p.id].key}<span class="ward-rim" class:theirs={!guard[p.id].mine} aria-hidden="true"></span>{/key}
         {/if}
-        {#if !p.connected}<span class="off" title="Disconnected">⚡</span>{/if}
+        <!-- Phones, on the entries shrunk to an avatar (no name to follow): on the avatar's free top right
+             corner (the host's remove × has the left), giving way to a wrong answer's mark there. Not in a
+             delve, whose upright phial holds that edge: the greyed avatar says it there. Screen readers have
+             the mark after the name already (the name is only hidden from sight). -->
+        {#if !p.connected && !out && !run}<span class="off-corner" aria-hidden="true">{@render offline()}</span>{/if}
         {#if canKick && p.id !== s.hostId}
           <span class="kick-at" class:armed={confirming === p.id}>
             <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
@@ -786,6 +795,11 @@
 </div>
 <!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
 {#if session.spectating}<Gallery />{/if}
+
+<!-- Gone: the lobby's offline mark (StandingMark), a phone's signal with no bar lit, struck through. -->
+{#snippet offline()}
+  <span class="off"><StandingMark mark="offline" title="Offline" /></span>
+{/snippet}
 
 <style>
   .board {
@@ -1291,11 +1305,33 @@
       text-shadow: 0 0 12px rgba(190, 210, 140, 0.6);
     }
   }
+  .name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .name-row .name {
+    min-width: 0;
+  }
+  .off-slot {
+    flex: none;
+    width: 17px;
+    height: 17px;
+  }
   .off {
-    position: absolute;
-    top: -6px;
-    left: 26px;
-    font-size: 0.8rem;
+    display: grid;
+    --standing-size: 17px;
+  }
+  .off :global(.mark) {
+    margin: 0;
+  }
+  .off-corner {
+    display: none;
+  }
+  /* Kept legible where it sits on an avatar's corner. */
+  .off-corner :global(svg) {
+    filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000);
   }
 
   @media (max-width: 640px) {
@@ -1480,9 +1516,15 @@
     .board:has(> li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide)) {
       flex-wrap: wrap;
     }
-    /* Where the ⚡ sits on a lone avatar. */
-    li:not(.wide) .off {
-      left: 18px;
+    /* On a lone avatar the name is hidden, so the offline mark sits on its top right corner. */
+    li:not(.wide) .off-corner {
+      display: grid;
+      position: absolute;
+      top: -7px;
+      right: -5px;
+    }
+    li:not(.wide) .off-corner .off {
+      --standing-size: 15px;
     }
   }
 </style>

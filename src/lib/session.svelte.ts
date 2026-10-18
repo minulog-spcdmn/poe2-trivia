@@ -44,12 +44,13 @@ import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svel
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
 import { drawAhead, takeAhead, type Ahead } from './drawAhead';
 import { sfx } from './sound';
+import { VEIN_AFTER } from './soundDesign';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
 import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -2751,7 +2752,16 @@ class Session {
       if ((next.question.struck ?? []).slice(before).some((x) => x.by !== me)) sfx('struck', { from: { far: this.mode !== 'local' } });
     }
     if (prev.phase !== 'reveal' && next.phase === 'reveal' && next.reveal) {
-      sfx(next.reveal.correct ? 'correct' : 'wrong');
+      const r = next.reveal;
+      sfx(r.correct ? 'correct' : 'wrong');
+      // Delve: a vein's strike come out right. The azurite breaks free, and
+      // while the dig runs on (its haul not banked) the walls crack, worse
+      // after strike 2.
+      if (r.correct && r.strike) {
+        sfx('veinMined', { inMs: VEIN_AFTER.veinMined });
+        const strain = r.strike === 1 ? 'veinStrain1' : r.strike === 2 ? 'veinStrain2' : null;
+        if (strain && !r.banked && digOf(next)) sfx(strain, { inMs: VEIN_AFTER[strain] });
+      }
     } else if (prev.phase !== next.phase && next.phase === 'choosing') {
       // Delve: a new depth's deal is heard as the descent (App.svelte plays 'plunge').
       if (!next.delve) sfx(next.players[next.turn]?.id === me || this.mode === 'local' ? 'yourTurn' : 'turn');
