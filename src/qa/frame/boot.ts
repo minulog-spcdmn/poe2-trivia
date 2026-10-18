@@ -113,8 +113,9 @@ export async function boot(asked: URLSearchParams) {
   }
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
-  // No network: the rooms the start page finds are the scene's.
-  rooms.useMadeUpRooms(built.rooms ?? [], built.invite);
+  // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of
+  // which files each scene runs, scripts/qa.mjs --map, doesn't count rooms.ts for every scene.)
+  if (built.rooms !== undefined || built.invite !== undefined) rooms.useMadeUpRooms(built.rooms ?? [], built.invite);
 
   // Who it is, and what it made of the game.
   session.mode = seat.mode === 'none' ? null : seat.mode;

@@ -259,14 +259,6 @@
       {#if built?.state && !live}
         <button class="hold" onclick={play} title="This scene's room for real: every seat playable, by hand or by a bot, with its link to make bad">Play from here</button>
       {/if}
-      {#each stop?.scene.knobs ?? [] as k (k.key)}
-        <label class="knob">
-          {k.label}
-          <select value={knobs[k.key]} onchange={(e) => stop && (knobsSet[stop.scene.key] = { ...knobsSet[stop.scene.key], [k.key]: e.currentTarget.value })}>
-            {#each k.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
-          </select>
-        </label>
-      {/each}
       {#if befores.some(Boolean)}
         <button class="hold" onpointerdown={() => (holdingBefore = true)} onpointerup={() => (holdingBefore = false)} onpointerleave={() => (holdingBefore = false)}>Hold for before <kbd>B</kbd></button>
       {/if}
@@ -283,6 +275,18 @@
       </div>
       <input class="search" type="search" placeholder="Find a scene  /" bind:value={query} bind:this={searchEl} aria-label="Find a scene" />
     </header>
+    {#if stop?.scene.knobs?.length}
+      <div class="knobs">
+        {#each stop?.scene.knobs ?? [] as k (k.key)}
+          <label class="knob">
+            {k.label}
+            <select value={knobs[k.key]} onchange={(e) => stop && (knobsSet[stop.scene.key] = { ...knobsSet[stop.scene.key], [k.key]: e.currentTarget.value })}>
+              {#each k.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
+            </select>
+          </label>
+        {/each}
+      </div>
+    {/if}
     {#if view === 'change' && change?.uncovered.length}
       <p class="uncovered">No scene runs {change.uncovered.length === 1 ? 'this changed file' : `these ${change.uncovered.length} changed files`}: {change.uncovered.map((f) => f.split('/').pop()).join(', ')}</p>
     {/if}
