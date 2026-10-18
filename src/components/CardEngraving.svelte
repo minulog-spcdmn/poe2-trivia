@@ -48,9 +48,11 @@
     {#if motif.length}
       <span class="glint">
         <span class="through" style:--w="{box?.width ?? w}px">
-          <svg viewBox="0 0 {w} {h}" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
-            {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
-          </svg>
+          <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+            <svg viewBox="0 0 {w} {h}">
+              {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+            </svg>
+          </span>
         </span>
       </span>
     {/if}
@@ -146,9 +148,11 @@
            light moves and the lines stay put. -->
       <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
         <span class="through" style:--w="{box?.width ?? w}px">
-          <svg viewBox="0 0 {w} {h}" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
-            {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
-          </svg>
+          <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+            <svg viewBox="0 0 {w} {h}">
+              {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+            </svg>
+          </span>
         </span>
       </span>
     {/if}
@@ -368,7 +372,11 @@
     mask-image: linear-gradient(100deg, transparent, #000 40%, #000 60%, transparent);
     animation: band 6.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   }
-  .through svg {
+  /* The drawing moves in a span, not as the svg itself: Chrome runs an svg's
+     transform on the main thread while the band's runs on the compositor, so
+     with the main thread busy (the effects, the backdrop) the two fell out of
+     step and the light's copy of the lines slid off the lines. */
+  .drawing {
     position: absolute;
     inset: 0 auto auto 0;
     animation: back 6.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
@@ -420,7 +428,7 @@
     }
   }
   .glint:is(.flicker, .flash) .through,
-  .glint:is(.flicker, .flash) .through svg {
+  .glint:is(.flicker, .flash) .drawing {
     width: auto;
     right: 0;
     -webkit-mask-image: none;

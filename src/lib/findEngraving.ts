@@ -12,15 +12,16 @@
 // card's own glory, its motif, breaking out through the arch, whose lines
 // stop short of it, as the band's rings stop at a seal.
 //
-// • Azurite Vein: a crystal seen end on, and Venus, copper's sign (azurite
-//   is copper's blue ore); a cluster of hexagonal prisms grows out of the
+// • Azurite Vein: a crystal seen end on in a crown of prisms bursting out
+//   of its ring, so large it breaks the arch (the black sun's seal), and
+//   Venus, copper's sign (azurite is copper's blue ore); a cluster of hexagonal prisms grows out of the
 //   floor in the window's right corner, out through the arch and the panel,
 //   each computed from its section and hatched down the faces turned from
 //   the light (the upper left, as on the rest of the plate); the emblem in
 //   a crown of the same crystals standing out of a double ring like a
 //   geode's lining, grown unevenly in groups, the longest out through the
-//   arch to the panel, over a glory of fine rays. The back holds the crystal
-//   in that glory.
+//   arch to the panel, over a glory of fine rays. The back holds the
+//   crowned crystal in that glory.
 // • Flare Cache: a flare's burst about the sign of fire, so large it breaks
 //   the arch, and sulphur, the flare's brimstone; the emblem in a sun, a
 //   double ring with pointed rays hatched down one side, long and short in
@@ -36,7 +37,7 @@
 // emblem.
 
 import { arc, at, hatch, lerp, line, pointedRay, pt, rad, type Cut, type Hole, type Pt } from './arcane.ts';
-import { type BackLayout, type Plate, type RowLayout, type TallLayout, type Variant } from './cardEngraving.ts';
+import { SPANDREL_R, type BackLayout, type Plate, type RowLayout, type TallLayout, type Variant } from './cardEngraving.ts';
 import type { FindKind } from './delve.ts';
 
 // ---- geometry -------------------------------------------------------------------
@@ -277,15 +278,34 @@ function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: bool
  * as the cluster's are, stopping short of `s`. Their outlines are kept clear
  * of the plate.
  */
-export function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1) {
+export function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1, solid = false) {
   sunRing(p, c, r0);
   points.forEach(({ a, end, hw }, i) => {
     const len = end - r0 + 1;
     if (len < hw * 3.5) return;
     const pr: Prism = { root: at(c, a, r0 - 1), a, len, hw, phase: [14, 40, 22, 8, 30, 18, 44, 26][i % 8] };
+    // `solid`: its prisms stand in front, dark inside, as the cluster's do.
+    p.front = solid;
     prism(p, pr, s, k);
-    p.knockout += poly(grow(prismShape(pr).outline, 1.4));
+    p.front = false;
+    const outline = prismShape(pr).outline;
+    if (solid) p.solid += poly(outline);
+    p.knockout += poly(grow(outline, 1.4));
   });
+}
+
+/**
+ * The vein's seal, as on the black sun (lib/plates/blackSun): a crystal seen
+ * end on in a ring, a crown of prisms bursting out of it, long and short in
+ * turn, out to `r`, stopping short of `s`; the plate stops short of the ring
+ * and each prism. `solid`: its prisms stand in front, dark inside (a face only).
+ */
+export function crownedSeal(p: Plate, c: Pt, r: number, s: Shields = NONE, solid = false) {
+  const r0 = r * 0.41;
+  const points = Array.from({ length: 8 }, (_, i) => ({ a: i * 45 + 22.5, end: r * (i % 2 ? 0.76 : 1), hw: r * (i % 2 ? 0.088 : 0.117) }));
+  crystalCrown(p, c, r0, points, s, (0.8 * r) / VEIN_SEAL, solid);
+  crystalSeal(p, c, r * 0.25);
+  p.knockout += disc(c, r0 + 1.2);
 }
 
 // ---- the flare ------------------------------------------------------------------
@@ -402,7 +422,7 @@ function veinTall(p: Plate, g: TallLayout) {
   const C = g.emblem;
   const r0 = 64 * k;
   const holes = [
-    { c: g.sol.c, r: g.sol.r + 3 },
+    { c: g.sol.c, r: veinSealR(g.sol, k) * 0.8 + 3 },
     { c: g.luna.c, r: g.luna.r + 3 },
   ];
   // Grown as crystals grow: in uneven groups, each at its own heading, length (past the ring, on a card
@@ -556,7 +576,7 @@ function flareRow(p: Plate, g: RowLayout) {
 
 /** The backs: the find's own sign at the mandorla's heart, in its glory. */
 function veinBack(p: Plate, g: BackLayout) {
-  crystalSeal(p, g.c, g.row ? 11 : 19);
+  crownedSeal(p, g.c, Math.min(g.room(0), g.row ? 26 : 44), { polys: [], holes: g.holes });
   // The glory sits back with the plate, not the motif.
   p.motif = false;
   crystalGlory(p, g.c, (deg) => g.room(deg) + 1, g.row);
@@ -666,6 +686,10 @@ function dynamiteBack(p: Plate, g: BackLayout) {
 
 /** How far a flare's burst in Sol's place reaches, on a card 218 wide. */
 const BURST = 30;
+/** How far the crown of the vein's seal in Sol's place reaches, on a card 218 wide (the flare's burst's reach). */
+const VEIN_SEAL = 30;
+/** How far the vein's seal reaches in Sol's place `sol`: less where the corner is tighter than Sol's largest. */
+const veinSealR = (sol: Hole, k: number) => Math.min(VEIN_SEAL * k, (VEIN_SEAL / SPANDREL_R) * sol.r);
 /** How wide the ring blown apart in Sol's place is, on a card 218 wide. */
 const SMALL_RING = 14;
 
@@ -685,7 +709,8 @@ const disc = (c: Pt, r: number) => `M${pt([c[0] + r, c[1]])}A${r} ${r} 0 1 1 ${p
 function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
   const k = w / 218;
   if (kind === 'azurite') {
-    crystalSeal(p, sol.c, sol.r * 0.92);
+    // Its crowned seal, so large it breaks the arch, its prisms dark inside as the cluster's are.
+    crownedSeal(p, sol.c, veinSealR(sol, k), NONE, true);
     copperSign(p, luna.c, luna.r * 0.82);
   } else if (kind === 'flare') {
     // So large it breaks the arch: the plate stops short of its heart, its fine rays and each pointed ray.

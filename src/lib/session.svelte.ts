@@ -50,7 +50,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, isGroupRun, livesOf, pausedUsed, standingIds } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -2269,6 +2269,13 @@ class Session {
 
   /** Lab only: the grayscale the art is prepared with, in place of the rules'. Always null in the game. */
   labGrayscale: Grayscale | null = null;
+  /**
+   * Lab only (the card bench, cards.html): the find on each card of the deal
+   * at `turn` (the state's turnCount), by category, shown in place of the
+   * run's (any find on any card, past the game's two of different kinds);
+   * any later deal shows its own. Always null in the game.
+   */
+  labFinds: { turn: number; finds: Record<string, FindKind> } | null = null;
 
   /** Lab only: puts a state in place as the host would, with its timers, sounds, art and records. */
   labSetState(next: GameState) {
@@ -2309,6 +2316,12 @@ class Session {
     } catch (err) {
       return err instanceof ActionError ? err.message : String(err);
     }
+  }
+
+  /** Delve: the finds on the cards on offer (lib/delve's findOffers), or on the card bench (lab only), its own for the deal it made. */
+  cardFinds(s: GameState): CardFind[] {
+    const bench = this.labFinds?.turn === s.turnCount && s.phase === 'choosing' ? this.labFinds.finds : null;
+    return bench ? Object.entries(bench).map(([category, kind]) => ({ category, kind })) : findOffers(s);
   }
 
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
