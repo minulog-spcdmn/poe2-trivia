@@ -6,7 +6,7 @@ import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { moversOf, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
-import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Slices } from '../src/statsPage/slices.ts';
+import { countsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
@@ -448,6 +448,7 @@ test('each thing people do is read by the paths counted for it, and only those',
   const c = countsOf(
     [
       path('/', [10, 20, 30], false),
+      path('reach/played', [4, 5, 6]),
       path('play/race-online', [2, 3, 1]),
       path('play/delve-hotseat', [1, 0, 0]),
       path('daily/right', [1, 1, 0]),
@@ -459,6 +460,8 @@ test('each thing people do is read by the paths counted for it, and only those',
   );
   const g = groupPaths(c);
   assert.deepEqual(g.visit, ['/']);
+  // Those who played a game, guests too.
+  assert.deepEqual(g.played, ['reach/played']);
   assert.deepEqual(g.race, ['play/race-online']);
   assert.deepEqual(g.delve, ['play/delve-hotseat']);
   assert.deepEqual(g.turns, []);
@@ -467,21 +470,23 @@ test('each thing people do is read by the paths counted for it, and only those',
   assert.deepEqual(g.joined, ['joined/code']);
   assert.deepEqual(g.failed, ['error/join-no-answer']);
   // Two calls (country, system) for each group with paths: no call for Take turns.
-  assert.equal(sliceCalls(c).length, 14);
+  assert.equal(sliceCalls(c).length, 16);
 });
 
 const SLICES: Slices = {
-  v: 1,
+  v: 2,
   span: 7,
   from: '2026-10-10',
   at: 0,
   locations: {
     visit: [{ name: 'Germany', count: 40 }, { name: 'France', count: 50 }, { name: '', count: 10 }],
+    played: [{ name: 'Germany', count: 30 }, { name: 'France', count: 20 }],
     delve: [{ name: 'Germany', count: 20 }, { name: 'France', count: 5 }],
     race: [{ name: 'France', count: 15 }],
     daily: [{ name: 'Germany', count: 10 }, { name: 'France', count: 10 }],
     join: [{ name: 'Germany', count: 10 }, { name: 'France', count: 10 }],
     joined: [{ name: 'Germany', count: 9 }, { name: 'France', count: 5 }],
+    failed: [{ name: 'Germany', count: 2 }],
   },
   systems: {
     visit: [{ name: 'Windows', count: 70 }, { name: 'iOS', count: 20 }, { name: 'Android', count: 12 }],
@@ -489,7 +494,7 @@ const SLICES: Slices = {
   },
 };
 
-test("a country's players, set against everyone", () => {
+test("a country's visitors, set against everyone", () => {
   const de = profileOf(countsIn(SLICES, { kind: 'place', name: 'Germany' }));
   assert.equal(de.visitors, 40);
   assert.equal(de.games, 20);
@@ -497,9 +502,17 @@ test("a country's players, set against everyone", () => {
   assert.deepEqual(de.modes.map((m) => m.share), [0, 0, 100]);
   assert.equal(de.daily, 25);
   assert.equal(de.joins, 90);
+  assert.equal(de.played, 75);
+  assert.equal(de.failures, 5);
   const all = profileOf(countsIn(SLICES, null));
   assert.equal(all.visitors, 100);
   assert.equal(all.games, 40);
+  assert.equal(all.played, 50);
+  // Before those who played were counted, nobody's share is made up.
+  assert.equal(knowsPlayed(SLICES), true);
+  assert.equal(profileIn({ ...SLICES, locations: { ...SLICES.locations, played: undefined } }, null).played, null);
+  // A system's group against everyone's in the systems' list.
+  assert.equal(profileIn(SLICES, null, 'systems').visitors, 102);
   // Everyone by system: its own list's total.
   assert.equal(countsIn(SLICES, null, 'systems').visit, 102);
   // Those GoatCounter couldn't place are a group too.
@@ -507,28 +520,44 @@ test("a country's players, set against everyone", () => {
   // A kind of device is its systems together.
   assert.equal(countsIn(SLICES, { kind: 'device', name: 'Phone or tablet' }).visit, 32);
   assert.deepEqual(
-    segments(SLICES, 'place').map((r) => r.sel.name),
+    segments(SLICES, 'place').map((r) => r.who.name),
     ['France', 'Germany', 'Unknown'],
   );
 });
 
-test('where the players of a mode come from, against where visitors do', () => {
+test('where the games of a mode are started, against where visitors are', () => {
   const rows = whereOf(SLICES, 'delve', 'locations');
   assert.deepEqual(rows.map((r) => r.name), ['Germany', 'France']);
   assert.equal(rows[0].share, 80);
   assert.equal(rows[0].visitShare, 40);
   const kinds = whereOf(SLICES, 'delve', 'systems', true);
   assert.deepEqual(kinds.map((r) => [r.name, r.count]), [['Computer', 15], ['Phone or tablet', 10]]);
+  // Of Delve's games, those started on a phone or tablet; every mode's, with none.
+  assert.equal(phoneShare(SLICES, 'delve'), 40);
+  assert.equal(phoneShare(SLICES, null), 40);
+  assert.equal(phoneShare(SLICES, 'race'), 0);
 });
 
 test('a group is kept in the address, and read back from it', () => {
-  for (const sel of [{ kind: 'place', name: 'Korea, Republic of' }, { kind: 'device', name: 'Phone or tablet' }, { kind: 'did', group: 'delve' }] as const)
-    assert.deepEqual(selOf(hashOf(sel)), sel);
+  const sels: Sel[] = [
+    { who: { kind: 'place', name: 'Korea, Republic of' }, mode: null },
+    { who: { kind: 'device', name: 'Phone or tablet' }, mode: null },
+    { who: null, mode: 'delve' },
+    // A country and a mode together.
+    { who: { kind: 'place', name: 'Germany' }, mode: 'race' },
+  ];
+  for (const sel of sels) assert.deepEqual(selOf(hashOf(sel)), sel);
+  assert.equal(hashOf({ who: { kind: 'system', name: 'iOS' }, mode: 'turns' }), '#groups/system/iOS/mode/turns');
   assert.equal(hashOf(null), '#groups');
   assert.equal(selOf('#groups'), null);
+  // The way a mode was once kept still opens it.
+  assert.deepEqual(selOf('#groups/did/delve'), { who: null, mode: 'delve' });
   assert.equal(selOf('#groups/did/nothing'), null);
   assert.equal(selOf('#groups/place/%E0%A4%A'), null);
-  assert.equal(modeLink('Delve'), '#groups/did/delve');
+  // Never a country and a device together, nor half a pair.
+  assert.equal(selOf('#groups/place/Germany/device/Computer'), null);
+  assert.equal(selOf('#groups/place/Germany/mode'), null);
+  assert.equal(modeLink('Delve'), '#groups/mode/delve');
   assert.equal(modeLink('Something else'), null);
 });
 
@@ -579,8 +608,8 @@ test('what stands out among the groups: big enough to tell, a mix, the largest f
   const found = standouts(s);
   assert.ok(found.length > 0 && found.length <= 6);
   // The made-up Germans lean to Delve.
-  assert.ok(found.some((f) => f.sel.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
-  for (const what of ['mode', 'games', 'daily', 'joins']) assert.ok(found.filter((f) => f.what === what).length <= 2);
+  assert.ok(found.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
+  for (const what of ['mode', 'played', 'games', 'daily', 'joins']) assert.ok(found.filter((f) => f.what === what).length <= 2);
   assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
   // Groups too small to tell apart say nothing.
   assert.deepEqual(standouts(SLICES, 6, 1000), []);

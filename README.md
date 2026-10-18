@@ -869,10 +869,14 @@ brought far more or fewer than the period before (`insights.ts`, only
 what's beyond chance). Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
 and systems the new visitors came from and on, lit on the overview. `#groups` (Groups) opens on what stands out between groups,
-each a sentence, and sets a country's, a system's or a kind of
-device's players against everyone, and shows where the players of a mode
-come from and on what (`slices.ts`); every country, system and mode name
-across the views opens its group. GoatCounter keeps no visit with its
+each a sentence, and sets the visitors from a country, or on a system or
+a kind of device, against everyone: who played a game at all (guests
+too), the games they start, Today's unique, joins and failures. A mode
+can be picked with them (`#groups/place/Germany/mode/delve`), or alone,
+for where it's played; a country and a device never together, as
+GoatCounter counts the two apart. Below, the groups side by side in a
+table, by country, device or system (`slices.ts`); every country,
+system and mode name across the views opens its group. GoatCounter keeps no visit with its
 events, but breaks any set of paths down by country and by system, so
 each thing people do is read once for each, only while that view is
 open, and kept half an hour. On the dev server and the beta,

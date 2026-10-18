@@ -65,7 +65,7 @@
         <tbody>
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
-              <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })} title="Where its players come from, and on what">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each; {fmt(m.online)} online, {fmt(m.hotseat)} hot-seat</span></th>
+              <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where its games are started, and on what">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each; {fmt(m.online)} online, {fmt(m.hotseat)} hot-seat</span></th>
               <td class="n strong">{fmt(m.started)}</td>
               <td class="n opt">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>

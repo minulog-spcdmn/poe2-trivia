@@ -242,10 +242,10 @@ const TILTS: Record<string, Partial<Record<Group | 'success', number>>> = {
   Germany: { delve: 1.7, race: 0.8, daily: 1.25 },
   'United Kingdom': { turns: 1.3 },
   Poland: { delve: 1.4, join: 1.3 },
-  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2 },
+  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2, played: 0.75 },
   France: { race: 0.6, daily: 1.4 },
   Russia: { race: 1.4, success: 0.85, failed: 1.6 },
-  'Korea, Republic of': { race: 1.7, daily: 1.5 },
+  'Korea, Republic of': { race: 1.7, daily: 1.5, played: 1.3 },
   Android: { daily: 1.5, race: 0.7, success: 0.9, failed: 1.3 },
   iOS: { daily: 1.6, race: 0.6, delve: 1.2 },
   Linux: { delve: 1.4, join: 1.4 },
@@ -258,6 +258,7 @@ export function demoSlices(read: Read): Slices {
   const played = new Map(modesOf(c.games.rows).map((m) => [m.mode, m.started]));
   const total: Record<Group, number> = {
     visit: c.visitors.total,
+    played: c.reach.playedPerDay.reduce((a, b) => a + b, 0),
     turns: played.get('turns') ?? 0,
     race: played.get('race') ?? 0,
     delve: played.get('delve') ?? 0,
@@ -283,5 +284,5 @@ export function demoSlices(read: Read): Slices {
     out.joined = (out.join ?? []).map((x) => ({ name: x.name, count: Math.round(x.count * Math.min(1, success * (TILTS[x.name]?.success ?? 1))) })).filter((x) => x.count > 0);
     return out;
   };
-  return { v: 1, span: read.span, from: read.from, at: read.at, locations: spread(read.countries), systems: spread(read.systems) };
+  return { v: 2, span: read.span, from: read.from, at: read.at, locations: spread(read.countries), systems: spread(read.systems) };
 }

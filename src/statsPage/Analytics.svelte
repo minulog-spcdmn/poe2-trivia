@@ -284,7 +284,7 @@
   const keptSlices = (r: Read): Slices | null => {
     try {
       const s = JSON.parse(readStored(slicesKey(r.span), 'session') ?? 'null') as Slices | null;
-      return s?.v === 1 && s.span === r.span && s.from === r.from ? s : null;
+      return s?.v === 2 && s.span === r.span && s.from === r.from ? s : null;
     } catch {
       return null;
     }
@@ -308,7 +308,7 @@
     slicing = 0.02;
     slicesFailed = '';
     try {
-      const out: Slices = { v: 1, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
+      const out: Slices = { v: 2, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
       const within: Span = { start: midnight(r.zone, r.from), end: new Date() };
       await Promise.all(
         calls.map((c) =>
