@@ -3,28 +3,48 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { backdropsErrors, cloneData, ENV_TONES, ENVIRONMENTS, formatBackdrops, lookErrors, stopsOf, type Backdrops, type Look } from '../src/lib/backdropData.ts';
+import { backdropsErrors, cloneData, ENV_TONES, ENVIRONMENTS, formatBackdrops, lookErrors, stopsOf, withTones, type Backdrops, type Look } from '../src/lib/backdropData.ts';
 import { DEFAULT_SETTINGS, generate, generateStratum, hsv, hueDistance, hueOf, keepLocked, seedOf, stratumSeed } from '../src/lib/backdropGen.ts';
 import { archetypeAt, endgame, endgameAt, SHIPPED, setBackdrops, seedAt, VIVID, zones, zoneSignatures } from '../src/lib/backdrops.ts';
 import { brightnessAt, calibrateLight, descent, LIGHT_STEP, lightSwing, lookOf, luminanceAt, measuredAt, MEASURED, settledAt, STRATA, stratumName } from '../src/lib/descent.ts';
 import { PROFILE_NAMES } from '../src/lib/emberProfiles.ts';
 
 const FILE = join(import.meta.dirname, '..', 'src', 'data', 'backdrops.json');
+/** The zone looks MEASURED was measured with (hard-coded in lib/descent.ts at 380e372), each environment taking its tone as they do now. */
+const MEASURED_LOOKS = withTones({
+  zones: (JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'measured-looks.json'), 'utf8')) as { looks: Look[] }).looks.map((look) => ({ look })),
+}).zones.map((z) => z.look);
 const names = SHIPPED.zones.map((z) => z.name);
 const hash = (d: number) => createHash('sha256').update(JSON.stringify(descent(d))).digest('hex').slice(0, 16);
 const luma = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
 test('backdrops.json is whole and well formed, as the tool writes it', () => {
-  // (A Windows checkout may have \r\n line breaks; git stores \n, as the tool writes.)
-  const text = readFileSync(FILE, 'utf8').replaceAll('\r\n', '\n');
+  const text = readFileSync(FILE, 'utf8');
   const data = JSON.parse(text) as Backdrops;
   assert.deepEqual(backdropsErrors(data, names, PROFILE_NAMES), []);
   assert.equal(formatBackdrops(data), text, 'formatted as formatBackdrops writes it (so a save changes only what changed)');
   assert.deepEqual(names, ['The Mines', 'Magma Fissure', 'Frozen Hollow', 'Fungal Caverns', 'Vaal Outpost', 'Abyssal Depths', 'Petrified Forest', 'Sulphur Vents', 'Abyssal City', 'Primeval Ruins']);
 });
 
-test('the descent reads the zone looks from the file', () => {
-  zones.forEach((z, k) => assert.equal(STRATA[k].look, z.look, z.name));
+test('a zone marked measured keeps the look its corrections were measured with; the descent reads the looks from the file', () => {
+  assert.equal(MEASURED_LOOKS.length, zones.length);
+  zones.forEach((z, k) => {
+    assert.equal(STRATA[k].look, z.look, z.name);
+    if (z.measured) assert.deepEqual(z.look, MEASURED_LOOKS[k], `${z.name} is marked measured, but its look has changed: set measured to false (or, measured again, put its new look in tests/fixtures/measured-looks.json)`);
+  });
+});
+
+test('measured zones get their corrections; a zone changed since loses its own, and the rest keep theirs', () => {
+  const draft = cloneData(SHIPPED);
+  for (const z of draft.zones) z.measured = true;
+  withBackdrops(draft, () => {
+    for (let d = 1; d <= MEASURED.length; d++) assert.deepEqual(measuredAt(d), MEASURED[d - 1], `depth ${d}`);
+  });
+  draft.zones[3].measured = false;
+  withBackdrops(draft, () => {
+    assert.deepEqual(measuredAt(settledAt(3)), [1, 1]);
+    for (const k of [1, 2, 5]) assert.deepEqual(measuredAt(settledAt(k)), MEASURED[settledAt(k) - 1], `zone ${k}`);
+  });
 });
 
 test('the generator is pure and seeded: the same seed, the same backdrop; another seed, another', () => {
