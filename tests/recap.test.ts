@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ANSWER_MS_FLOOR, ANSWER_MS_SLACK, Engine, createGame, heldMs, publicView, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { ANSWER_MS_FLOOR, ANSWER_MS_SLACK, Engine, createGame, heldMs, publicView, type GameState, type Item, type Question, type Revive } from '../src/lib/game.ts';
 import {
   CHART_RUNS,
   chartLayout,
@@ -43,7 +43,7 @@ function seeded(seed: number) {
 function setup(names: string[], settings: Partial<GameState['settings']> = {}) {
   const clock = { now: 1_000_000 };
   const engine = new Engine(items, { autoClock: true, rng: seeded(7), now: () => clock.now });
-  let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', ...settings });
+  let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false, ...settings });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, clock, s: engine.apply(s, { type: 'start' }, 'p0') };
 }
@@ -190,8 +190,8 @@ test('the line under a Delve depth, against this device’s records', () => {
 });
 
 /** A Delve run alone, over: lives lost at the depths given. */
-function run(losses: number[], recap: Partial<NonNullable<GameState['recap']>> = {}, revives: GameState['delve'] extends infer D ? NonNullable<D>['revives'] : never = undefined, players = 1): GameState {
-  const s = createGame('p0', { mode: 'delve' });
+function run(losses: number[], recap: Partial<NonNullable<GameState['recap']>> = {}, revives: Revive[] | undefined = undefined, players = 1): GameState {
+  const s = createGame('p0', { targetScore: 0, timer: 0, difficulty: 'cruel', mode: 'delve', public: false, locked: false });
   s.players = Array.from({ length: players }, (_, i) => ({ id: `p${i}`, name: ['Kalguur', 'Doryani', 'Una of the Vaal'][i], score: 0, recent: [], connected: true, hue: i }));
   s.phase = 'over';
   s.round = Math.max(...losses, 1);
@@ -395,8 +395,8 @@ test('a negative score has a minus sign; the hardest category is never the one p
 });
 
 test("an answer's time is held to what the host saw: never longer, never much shorter", () => {
-  // Said 50 ms, but 3 s went by on the host: at most the slack sooner than that.
-  assert.equal(heldMs(50, 3000), 3000 - ANSWER_MS_SLACK > ANSWER_MS_FLOOR ? 3000 - ANSWER_MS_SLACK : ANSWER_MS_FLOOR);
+  // Said 50 ms, but 8 s went by on the host: at most the slack sooner than that.
+  assert.equal(heldMs(50, 8000), 8000 - ANSWER_MS_SLACK);
   // Never under the floor, never over what the host saw, the device's own time otherwise.
   assert.equal(heldMs(50, 400), ANSWER_MS_FLOOR);
   assert.equal(heldMs(9000, 4000), 4000);

@@ -106,12 +106,9 @@ and how the embers move. Every change shows at once.
   checked before it is written; never in a build). Anywhere, **Copy JSON**,
   **Download JSON** and **Import JSON**. The draft keeps on the device as
   you go.
-- A zone's look stays exactly as shipped until a new one is saved for it
-  (`tests/backdrops.test.ts` checks depths 0 to 91 against the looks as
-  they were hard-coded). A changed zone is saved with `measured: false`,
-  so its measured brightness corrections are dropped; measure again
-  (`scripts/measure-luminance.mjs calibrate --skip-env`) to restore them,
-  and update `tests/fixtures/shipped-backdrops.json` to the new looks.
+- A changed zone is saved with `measured: false`, so its measured
+  brightness corrections are dropped; measure again
+  (`scripts/measure-luminance.mjs calibrate --skip-env`) to restore them.
 - **Open it:** `npm run dev`, then `http://localhost:5173/backdrop.html`;
   on the beta, **poe2.quest/beta/backdrop.html**. Like the lab, the live
   build leaves it out, and its page is marked (`<html

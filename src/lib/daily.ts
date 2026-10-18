@@ -34,9 +34,6 @@ export { DAILY_LAUNCH };
 /** The UTC day a moment falls on, counted from 1970. */
 export const utcDay = (ms: number) => Math.floor(ms / DAY_MS);
 
-/** Today's number, "No. N": 1 on the launch day. */
-export const dayNumber = (ms: number) => utcDay(ms) - utcDay(DAILY_LAUNCH) + 1;
-
 /** Whole `unit`s until the next UTC day, rounded up (at least 1). */
 const leftIn = (ms: number, unit: number) => Math.max(1, Math.ceil(((utcDay(ms) + 1) * DAY_MS - ms) / unit));
 

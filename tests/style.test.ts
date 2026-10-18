@@ -1,22 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
-const skip = new Set(['node_modules', 'dist', '.git', '.bot']);
-// Capture runs (scripts/capture-screens.mjs), at the top only.
-const skipTop = join(root, 'screens');
-const text = new Set(['.ts', '.mjs', '.js', '.svelte', '.css', '.html', '.md', '.json', '.yml', '.svg']);
+const text = new Set(['.ts', '.mjs', '.js', '.svelte', '.css', '.html', '.md', '.json', '.yml', '.svg', '.py', '.txt']);
 
-function* files(dir: string): Generator<string> {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    if (skip.has(e.name)) continue;
-    const p = join(dir, e.name);
-    if (p === skipTop) continue;
-    if (e.isDirectory()) yield* files(p);
-    else if (text.has(extname(e.name))) yield p;
-  }
+/**
+ * The project's own files: tracked or new, but not ignored (node_modules,
+ * screenshots, the bot's build) and not other worktrees under .claude/.
+ */
+function files(): string[] {
+  const out = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8', maxBuffer: 64 << 20 });
+  return out
+    .split('\0')
+    .filter((f) => f && !f.endsWith('/') && text.has(extname(f)) && existsSync(join(root, f)));
 }
 
 // The dash itself, its HTML entities and its JS escape, built from parts so
@@ -24,12 +23,14 @@ function* files(dir: string): Generator<string> {
 const emDash = new RegExp([String.fromCharCode(0x2014), '&' + 'mdash;', '&#' + '8212;', '\\\\u' + '2014'].join('|'), 'i');
 
 test('no em dashes anywhere in the project (use • or ; instead)', () => {
+  const all = files();
+  assert.ok(all.includes('CLAUDE.md') && all.includes('tests/style.test.ts'), 'git lists the project');
   const bad: string[] = [];
-  for (const f of files(root)) {
-    readFileSync(f, 'utf8')
+  for (const f of all) {
+    readFileSync(join(root, f), 'utf8')
       .split('\n')
       .forEach((line, i) => {
-        if (emDash.test(line)) bad.push(`${relative(root, f)}:${i + 1}`);
+        if (emDash.test(line)) bad.push(`${f}:${i + 1}`);
       });
   }
   assert.deepEqual(bad, []);

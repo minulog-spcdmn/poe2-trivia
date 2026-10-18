@@ -60,24 +60,39 @@ export function minifyGlsl(code: string, id: string): GlslMinified {
   return { code: out, minified, kept };
 }
 
-/** Where a text part's raw text begins in the code (its span may or may not include the ` or } before it). */
-function rawStart(q: Quasi, code: string): number {
+/**
+ * Where a text part's raw text is in the code, as [start, length] (its span
+ * may or may not include the ` or } before it). The raw value reads every
+ * line break as \n, while a checkout may have \r\n (git's autocrlf on Windows).
+ */
+function rawSpan(q: Quasi, code: string): [number, number] | null {
   const raw = q.value.raw;
-  if (code.startsWith(raw, q.start) && !'`}'.includes(code[q.start])) return q.start;
-  return code.startsWith(raw, q.start + 1) ? q.start + 1 : -1;
+  for (const at of [q.start, q.start + 1]) {
+    if (at === q.start && '`}'.includes(code[at])) continue;
+    let i = at;
+    let j = 0;
+    while (j < raw.length) {
+      if (code[i] === raw[j]) i++;
+      else if (raw[j] === '\n' && code[i] === '\r') i += code[i + 1] === '\n' ? 2 : 1;
+      else break;
+      j++;
+    }
+    if (j === raw.length) return [at, i - at];
+  }
+  return null;
 }
 
 /** The edits that minify one template literal, or null to leave it as it is. */
 function shrink(t: Template, code: string): Edit[] | null {
   if (t.quasis.some((q) => q.value.raw.includes('\\'))) return null;
-  const starts = t.quasis.map((q) => rawStart(q, code));
-  if (starts.includes(-1)) return null;
+  const spans = t.quasis.map((q) => rawSpan(q, code));
+  if (spans.includes(null)) return null;
   const edits: Edit[] = [];
   let inLine = false;
   let inBlock = false;
   for (let i = 0; i < t.quasis.length; i++) {
     const raw = t.quasis[i].value.raw;
-    const at = starts[i];
+    const [at, len] = spans[i]!;
     let o = '';
     for (let j = 0; j < raw.length; j++) {
       const c = raw[j];
@@ -112,14 +127,14 @@ function shrink(t: Template, code: string): Edit[] | null {
     // Within this text part only: never across an interpolation, so
     // `float ${x}` can't run two tokens together.
     o = o.replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/\n{2,}/g, '\n');
-    edits.push([at, at + raw.length, o]);
+    edits.push([at, at + len, o]);
     // An interpolation inside a comment goes with it.
     const e = t.expressions[i];
     if (e && (inLine || inBlock)) {
       if (e.type !== 'Identifier' && e.type !== 'Literal' && e.type !== 'MemberExpression') return null;
-      const next = starts[i + 1];
-      if (!code.startsWith('${', at + raw.length) || code[next - 1] !== '}') return null;
-      edits.push([at + raw.length, next, '']);
+      const next = spans[i + 1]![0];
+      if (!code.startsWith('${', at + len) || code[next - 1] !== '}') return null;
+      edits.push([at + len, next, '']);
     }
   }
   return inLine || inBlock ? null : edits;

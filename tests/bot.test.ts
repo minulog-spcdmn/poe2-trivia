@@ -835,7 +835,7 @@ test('names read as players\' do: hardly any food, animals or game jokes; newcom
 
 test('opening an item\'s details: now and then, most after a miss, more for the curious', () => {
   const rng = seeded(41);
-  const rate = (p: Persona, how: 'missed' | 'unknown' | 'known') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
+  const rate = (p: Persona, how: 'missed' | 'unknown' | 'known' | 'theirs') => Array.from({ length: 4000 }, () => inspects(p, how, rng)).filter(Boolean).length / 4000;
   const curious = { ...plain, curious: 0.9 };
   const not = { ...plain, curious: 0.05 };
   assert.ok(rate(curious, 'missed') > rate(curious, 'unknown') && rate(curious, 'unknown') > rate(curious, 'theirs') && rate(curious, 'theirs') > rate(curious, 'known'));

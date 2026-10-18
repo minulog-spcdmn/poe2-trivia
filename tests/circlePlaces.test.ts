@@ -13,5 +13,5 @@ test('every place has its circles, and every circle a place', () => {
     for (const c of circles) assert.ok(plates.includes(c), `${place}: "${c}" is a circle`);
     assert.equal(new Set(circles).size, circles.length, `${place}: each circle once`);
   }
-  for (const name of plates) assert.ok(Object.values(PLACES).some((p) => (p.circles as string[]).includes(name)), `the ${name} stands somewhere`);
+  for (const name of plates) assert.ok(Object.values(PLACES).some((p) => (p.circles as readonly string[]).includes(name)), `the ${name} stands somewhere`);
 });

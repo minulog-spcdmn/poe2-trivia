@@ -143,6 +143,7 @@ test('a sealed message goes down the art lane and parses on the other side', asy
     send(data) {
       this.sent.push(data.slice().buffer);
     },
+    close() {},
     addEventListener() {},
   };
   const key = await makeSealKey();

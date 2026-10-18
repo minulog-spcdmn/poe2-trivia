@@ -8,7 +8,7 @@
     "dev:live": "vite --mode live",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.tests.json",
     "bot": "node scripts/room-bot.mjs",
     "fetch-data": "node scripts/fetch-data.mjs",
     "fetch-stats": "node scripts/fetch-stats.mjs",

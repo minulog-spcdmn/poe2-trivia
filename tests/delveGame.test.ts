@@ -13,6 +13,7 @@ import {
   findOn,
   findRules,
   livesOf,
+  tileVeilSize,
   veilSeconds,
   WAY_OUT,
 } from '../src/lib/delve.ts';
@@ -113,23 +114,32 @@ test('a run starts at depth 1 with three lives each and the whole item pool', ()
 });
 
 test('questions take their shape from the depth', () => {
+  const modes = new Set<string>();
   for (const depth of [1, 13, 25, 61, 100]) {
-    const h = delve(['Ash']);
-    h.s = { ...h.s, round: depth };
-    h.pick();
-    const q = h.s.question!;
-    assert.equal(q.options.length, delveRules(depth).options, `options at ${depth}`);
-    // From depth 25 the art of a name question burns in, paced by Delve's own timer.
-    const veil = delveRules(depth).veil;
-    if (veil && q.mode === 'name') {
-      assert.equal(q.veil!.size, veil.size);
-      assert.equal(q.veil!.seconds, veilSeconds(delveTimer(depth), veil.share, veil.size));
-      // On the shortest clocks it burns in faster than its share.
-      if (depth === 100) assert.ok(q.veil!.seconds < delveTimer(depth) * veil.share);
-    } else assert.equal(q.veil, null);
-    const madeUp = q.options.filter(isFake).length;
-    assert.ok(madeUp <= delveRules(depth).fakes);
+    for (let seed = 1; seed <= 12; seed++) {
+      const h = delve(['Ash'], { seed: seed * 7919 });
+      h.s = { ...h.s, round: depth };
+      h.pick();
+      const q = h.s.question!;
+      const at = `${q.mode} at ${depth} (seed ${seed})`;
+      assert.equal(q.options.length, delveRules(depth).options, `options, ${at}`);
+      // From depth 25 the art of a name question burns in, paced by Delve's
+      // own timer; a "find the art" picture may burn in too, in tiles.
+      const veil = delveRules(depth).veil;
+      if (veil) modes.add(q.mode);
+      if (veil && q.mode === 'name') {
+        assert.equal(q.veil!.size, veil.size, at);
+        assert.equal(q.veil!.seconds, veilSeconds(delveTimer(depth), veil.share, veil.size), at);
+        // On the shortest clocks it burns in faster than its share.
+        if (depth === 100) assert.ok(q.veil!.seconds < delveTimer(depth) * veil.share, at);
+      } else if (veil && q.mode === 'art' && q.veil) {
+        assert.equal(q.veil.size, tileVeilSize(veil.size), at);
+      } else assert.equal(q.veil, null, at);
+      const madeUp = q.options.filter(isFake).length;
+      assert.ok(madeUp <= delveRules(depth).fakes, at);
+    }
   }
+  assert.deepEqual([...modes].sort(), ['art', 'name'], 'both kinds of question came up where art burns in');
 });
 
 test('the clock starts when the host says the art has arrived', () => {

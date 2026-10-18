@@ -19,7 +19,7 @@ function seeded(seed: number) {
 
 function setup(names: string[], target = 3, difficulty: Difficulty = 'cruel') {
   const engine = new Engine(items, { autoClock: true, rng: seeded(42) });
-  let s: GameState = createGame('p0', { targetScore: target, timer: 0, difficulty });
+  let s: GameState = createGame('p0', { targetScore: target, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s };
 }
@@ -49,7 +49,7 @@ test('offers three categories and locks out picks for two turns', () => {
   assert.equal(new Set(s.used).size, s.used.length, 'no repeated items');
 });
 
-for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) test(`${difficulty} locks out picks for longer`, () => {
+for (const difficulty of ['merciless', 'eternal'] as Preset[]) test(`${difficulty} locks out picks for longer`, () => {
   const lockout = PRESETS[difficulty].lockout;
   let { engine, s } = setup(['Ash'], 99, difficulty);
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -298,7 +298,7 @@ test('guests see who is watching; the answer stays hidden', () => {
 });
 
 test('difficulties scale options, decoy kind and question types', () => {
-  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
+  for (const difficulty of ['cruel', 'merciless', 'eternal'] as Preset[]) {
     const rules = PRESETS[difficulty];
     let { s } = setup(['Ash'], 3, difficulty);
     const engine = new Engine(items, { autoClock: true, rng: seeded(42), fakes });
@@ -471,7 +471,7 @@ test('similar-looking names rank above unrelated ones', () => {
 });
 
 test('lineage gems are a category', () => {
-  const engine = new Engine(items, { autoClock: true, autoClock: true });
+  const engine = new Engine(items, { autoClock: true });
   assert.ok(engine.categories.includes('Lineage Gems'));
   assert.ok(engine.byCategory.get('Lineage Gems')!.length >= 20);
 });

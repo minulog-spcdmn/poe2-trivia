@@ -12,7 +12,7 @@ function clock() {
 }
 
 /** A frame as PeerJS's binary serialization sends it. */
-function frame(m: unknown): ArrayBuffer {
+function frame(m: Parameters<typeof pack>[0]): ArrayBuffer {
   const b = pack(m) as ArrayBuffer | Uint8Array;
   return b instanceof ArrayBuffer ? b : (b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
 }

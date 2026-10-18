@@ -33,7 +33,6 @@ import {
   findDepth,
   MAX_FINDS,
   SECOND_FIND,
-  findOffer,
   findOffers,
   findOn,
   findReward,
@@ -527,7 +526,6 @@ test('one roll per offer and one more beside a find: at most two, on different c
     assert.ok(finds.length <= MAX_FINDS && MAX_FINDS === 2, 'never three');
     assert.equal(new Set(finds.map((f) => f.category)).size, finds.length, 'each on its own card');
     assert.equal(new Set(finds.map((f) => f.kind)).size, finds.length, 'each of its own kind');
-    assert.deepEqual(findOffer(s), finds[0] ?? null);
     for (const f of finds) {
       assert.ok(s.offered.includes(f.category), 'the find is one of the cards on offer');
       assert.ok(findChance(f.kind, s.round) > 0, `${f.kind} at depth ${s.round}`);
@@ -625,7 +623,6 @@ test('picking a find asks the question of its deeper depth, on its clock', () =>
     const q = h.s.question!;
     const rules = findRules(kind, depth);
     assert.equal(q.find, kind);
-    assert.equal(q.blasted, undefined);
     assert.deepEqual(activeRules(h.s), rules);
     assert.equal(q.options.length, rules.options);
     if (q.mode === 'name') {
@@ -971,7 +968,7 @@ test('a wrong answer or a time-out on an Azurite Vein caves in: two losses, a wa
     }
 });
 
-test('a right answer to a vein still pays, and dynamite held over one neither goes off nor saves it from its cave-in', () => {
+test('a right answer to a vein still pays, and dynamite held over one does not save it from its cave-in', () => {
   const ok = found('azurite');
   ok.answer(true);
   assert.equal(ok.s.reveal!.caveIn, undefined);
@@ -983,9 +980,6 @@ test('a right answer to a vein still pays, and dynamite held over one neither go
   h.give(id, { dynamite: 1 });
   h.act({ type: 'pick', category: h.plant('azurite') });
   h.clockIn();
-  const q = h.s.question!;
-  h.act({ type: 'dynamite', askedAt: q.askedAt });
-  assert.equal(h.s.question!.blasted, undefined);
   h.answer(false);
   assert.equal(livesOf(h.s, id), DELVE_LIVES - 2);
   assert.equal(h.s.reveal!.caveIn, true);
