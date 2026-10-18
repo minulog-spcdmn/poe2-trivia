@@ -43,6 +43,7 @@ function deal(cards: BenchCard[]) {
 // back). Not while it is turning already, the deal's turn or one of these: it
 // would jump, and the deal's own .down would cross this one's.
 
+const BENCH_TURN = 'bench-turn';
 const cards = () => [...document.querySelectorAll<HTMLElement>('.choose .cards > .card')];
 const isDown = (card: HTMLElement) => card.classList.contains('down');
 
@@ -57,8 +58,9 @@ function turnOver(card: HTMLElement) {
     const lift = Math.sin(Math.PI * f);
     return { offset: i / 24, transform: `perspective(${TURN.perspective}px) translateY(${(-lift * TURN.lift).toFixed(2)}px) rotate${axis}(${(from + 180 * f).toFixed(2)}deg) scale(${(1 + TURN.swell * lift).toFixed(4)})` };
   });
-  for (const a of turn.getAnimations()) a.cancel();
-  turn.animate(frames, { duration: TURN.seconds * 1000, fill: 'forwards' });
+  // Only the bench's own turns: the deal's is Svelte's to keep.
+  for (const a of turn.getAnimations()) if (a.id === BENCH_TURN) a.cancel();
+  turn.animate(frames, { id: BENCH_TURN, duration: TURN.seconds * 1000, fill: 'forwards' });
   setTimeout(() => card.classList.toggle('down', ((from + 180) / 180) % 2 === 1), (TURN.seconds * 1000) / 2);
 }
 

@@ -14,7 +14,7 @@
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
-  import { digOf, expectedVoters, findOffers, findOn, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { digOf, expectedVoters, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -251,14 +251,10 @@
     done(t + 650);
   }
 
-  /** The card bench's finds for this deal (lab only: any find on any card), or null. */
-  const benchFinds = $derived(session.labFinds?.turn === s.turnCount && s.phase === 'choosing' ? session.labFinds.finds : null);
-  /** Delve: the finds among the cards on offer (up to two, on different cards; on the bench, one of each kind dealt), in the cards' order. */
-  const finds = $derived.by(() => {
-    const all = benchFinds ? Object.entries(benchFinds).map(([category, kind]) => ({ category, kind })) : findOffers(s);
-    const sorted = all.toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category));
-    return sorted.filter((f, i) => sorted.findIndex((g) => g.kind === f.kind) === i);
-  });
+  /** Delve: the finds on the cards on offer (up to two, on different cards; session.cardFinds), in the cards' order. */
+  const cardFinds = $derived(session.cardFinds(s).toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category)));
+  /** Their notes: one for each kind (the card bench may deal two of one). */
+  const finds = $derived(cardFinds.filter((f, i) => cardFinds.findIndex((g) => g.kind === f.kind) === i));
   /**
    * The finds on the cards as they were dealt. Once a card is drawn (or
    * picked) the run has moved on to its question, where the cards carry no
@@ -268,8 +264,7 @@
    */
   let dealtFinds: Record<string, FindKind> = {};
   const findsShown = $derived.by(() => {
-    if (benchFinds) return (dealtFinds = { ...benchFinds });
-    if (s.phase === 'choosing') dealtFinds = Object.fromEntries(s.offered.flatMap((c) => (findOn(s, c) ? [[c, findOn(s, c)!]] : [])));
+    if (s.phase === 'choosing') dealtFinds = Object.fromEntries(cardFinds.map((f) => [f.category, f.kind]));
     // Come in after the cards closed (no deal seen): the question in play still says what its card was.
     else if (s.question?.find && !Object.keys(dealtFinds).length) dealtFinds = { [s.question.category]: s.question.find };
     return dealtFinds;

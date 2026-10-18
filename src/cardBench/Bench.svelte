@@ -79,7 +79,9 @@
 
   /** R deals again, F turns every card over: from the panel, and from the frame once a card there is clicked (it takes the focus). */
   function key(e: KeyboardEvent) {
-    if ((e.target instanceof Element && e.target.closest('select, input, textarea')) || e.metaKey || e.ctrlKey || e.altKey) return;
+    // (Duck-typed: a key in the frame comes from its own window, whose elements aren't this window's Element.)
+    const at = e.target as Element | null;
+    if (e.defaultPrevented || at?.closest?.('select, input, textarea, [contenteditable]') || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'r') deal();
     if (e.key === 'f') api()?.flip();
   }
