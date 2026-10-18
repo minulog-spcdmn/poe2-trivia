@@ -853,6 +853,7 @@ npm run dev:live   # local dev server in the live rooms
 npm test           # game-engine tests
 npm run check      # svelte/type checks
 npm run build      # production build in dist/
+npm run screens    # screenshots at the design sizes in screens/ (scripts/capture-screens.mjs; -- --help)
 ```
 
 The dev server plays in a channel of its own (`src/lib/channel.ts`), as the
