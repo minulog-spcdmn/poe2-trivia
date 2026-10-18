@@ -241,6 +241,7 @@
   );
   /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
   const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
+  const hostName = $derived(s.players.find((p) => p.id === s.hostId)?.name);
 </script>
 
 {#snippet startRow()}
@@ -256,7 +257,7 @@
       <!-- A lone player knows they're here: Begin stands by itself. With a party, whether everyone is
            really there (lib/presence.ts): their game on screen and in use, or who it would begin without. -->
       {#if unready.length}
-        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of {s.players.length} ready; {missingNote(unready)}</p>
+        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of <b class="num">{s.players.length}</b> ready; {missingNote(unready)}</p>
       {:else}
         <p class="go-note all-ready">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>
@@ -267,8 +268,20 @@
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
-    <p class="muted waiting"><span class="pulse"></span>{hostMark === 'away' || hostMark === 'idle' ? `Waiting for the host to start; they seem to be ${hostMark}…` : 'Waiting for the host to start…'}</p>
+    <!-- The host by name, as the end screen has it; "the host" only while no name is known. -->
+    <p class="muted waiting">
+      <span class="pulse"></span>
+      <span
+        >Waiting for {#if hostName}<span class="host-name">{hostName}</span>{:else}the host{/if} to start{hostMark === 'away' || hostMark === 'idle' ? `; they seem to be ${hostMark}…` : '…'}</span
+      >
+    </p>
   {/if}
+{/snippet}
+
+<!-- A rule's heading, the rule under it, as the Delve finds below are set (DelveRules): the rules read at a
+     glance as a list without a sign that means nothing (never the diamond: "you are here"). -->
+{#snippet key(word: string, n?: number)}
+  <span class="key">{word}{#if n !== undefined}&nbsp;<span class="key-n">{n}</span>{/if}</span>
 {/snippet}
 
 <!-- The start page's two columns carry on here: on the left, where its menu
@@ -459,9 +472,9 @@
               <p class="together-when">Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
-              <li>Vote for a card, then one is drawn from the votes.</li>
-              <li>Everyone answers at once. A wrong answer is crossed out for everyone.</li>
-              <li>Teammates can sacrifice their life force to revive you.</li>
+              <li>{@render key('Cards')}<span>Everyone votes, then one is drawn from the votes.</span></li>
+              <li>{@render key('Answers')}<span>Given at once; a wrong one is crossed out for all.</span></li>
+              <li>{@render key('Lives')}<span>Teammates can give their life force to revive you.</span></li>
             </ul>
           </div>
         {/if}
@@ -588,13 +601,15 @@
 
         <ul class="rules" data-cursor="rules">
           {#if race}
-            <li>A wrong answer costs a point and sits you out until the next question.</li>
-            <li>First to <span class="num">{s.settings.targetScore}</span> wins.</li>
+            <li>{@render key('Wrong answers')}<span>Cost a point and sit you out until the next question.</span></li>
+            <li>{@render key('First to', s.settings.targetScore)}<span>Wins; only the fastest right answer scores each question.</span></li>
           {:else}
             <li>
-              A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.
+              {@render key('Right answers')}<span
+                >Score a point; {#if lockout > 0}the category then stays locked for your next <span class="num">{lockout}</span> turns{:else}then the turn passes to the next exile{/if}.</span
+              >
             </li>
-            <li>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</li>
+            <li>{@render key('First to', s.settings.targetScore)}<span>Wins once the round is over; a tie goes to sudden death.</span></li>
           {/if}
         </ul>
       {/if}
@@ -1236,9 +1251,7 @@
     margin: 0;
     font-size: 0.93rem;
     line-height: 1.3;
-  }
-  .rules.coop li {
-    margin: 0.2rem 0;
+    gap: 0.4rem;
   }
   /* Numbers among the words are set in Cinzel, as everywhere in the game. */
   .num {
@@ -1362,18 +1375,33 @@
     color: var(--gold-hi);
   }
 
+  /* Each rule under its heading, as the Delve finds are set (DelveRules: display face, gold here, the house accent for headings). */
   .rules {
+    display: grid;
+    gap: 0.55rem;
     margin: 0.4rem 0 1.4rem;
-    padding-left: 1.2rem;
+    padding-left: 0;
+    list-style: none;
     font-size: 0.98rem;
+    line-height: 1.25;
   }
   .rules li {
-    margin: 0.25rem 0;
+    display: grid;
+    gap: 0.1rem;
   }
-  .rules li::marker {
-    color: var(--unique);
-    content: '◆  ';
-    font-size: 0.7em;
+  .key {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  /* Its number in Cinzel, bold, as numbers among words are everywhere. */
+  .key-n {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 1.1em;
+    letter-spacing: 0.06em;
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
@@ -1386,6 +1414,9 @@
     margin-top: 1.2rem;
     padding-top: 1.2rem;
     border-top: 1px solid var(--line);
+  }
+  .host-name {
+    color: var(--text);
   }
   .start .waiting {
     margin: 0 auto;

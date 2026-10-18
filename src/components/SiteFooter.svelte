@@ -42,7 +42,7 @@
     background: linear-gradient(90deg, transparent, rgba(125, 99, 51, 0.35) 20%, rgba(201, 164, 92, 0.55) 50%, rgba(125, 99, 51, 0.35) 80%, transparent);
   }
   /* One line on the page's axis. No diamonds between the groups (the diamond
-     means the menu's cursor, a chosen thing): space alone sets them apart,
+     means "you are here" and nothing else): space alone sets them apart,
      28 px between groups against 12 px inside one. */
   .band {
     display: flex;

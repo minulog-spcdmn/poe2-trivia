@@ -673,17 +673,19 @@
           <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
         </div>
       {:else if compact.current}
-        <!-- Create a room: the page's one big button. On a first visit its row asks the name. -->
+        <!-- Create a room: the page's one big button, and its gold one until Join's code is whole
+             (then Join holds the gold and this goes plain), unless Create's own row is the one open.
+             On a first visit its row asks the name. -->
         <div class="act" bind:this={boxes[0]} class:dimmed={connecting && busyEntry !== 'create'} inert={connecting && busyEntry !== 'create'} in:fly={{ y: 12, duration: 500, delay: 450 }}>
           <!-- On a first visit the button gives way to the name and its own Create, in its place. -->
           <div class="under">
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
-                <button class="btn primary" type="submit">Create</button>
+                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Create</button>
               </form>
             {:else}
-              <button class="btn primary big" bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>Create a room</button>
+              <button class="btn big" class:primary={!joinReady || open === 'create'} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>Create a room</button>
             {/if}
           </div>
           <div class="under">
@@ -703,7 +705,7 @@
               <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
             {:else if roomCount && !connecting}
               <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
-                {roomSeats ? `${roomCount} open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount} ${roomCount === 1 ? 'room' : 'rooms'} to watch`}<span class="down"><DrawnMark shape="chevron" /></span>
+                <span><span class="n">{roomCount}</span> {roomSeats ? `open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount === 1 ? 'room' : 'rooms'} to watch`}</span><span class="down"><DrawnMark shape="chevron" /></span>
               </button>
             {/if}
           </div>
@@ -718,8 +720,8 @@
                 {:else}
                   {@render codeInput(false)}
                 {/if}
-                <!-- Lit once a join can go: until then Create a room is the page's one lit button. -->
-                <button class="btn" class:primary={joinReady} type="submit">Join</button>
+                <!-- Lit once a join can go, and Create a room gives up its gold: one lit button at a time. -->
+                <button class="btn" class:primary={joinReady && open !== 'create'} type="submit">Join</button>
               </form>
             {/if}
           </div>
@@ -1235,6 +1237,13 @@
     font-family: var(--font-cinzel);
     font-style: normal;
     letter-spacing: 0.08em;
+  }
+  /* The number among the words in Cinzel, as everywhere in the game. */
+  .to-rooms .n {
+    font-family: var(--font-cinzel);
+    font-style: normal;
+    font-weight: 700;
+    font-size: 0.86em;
   }
   .to-rooms .down {
     --mark-size: 9px;
