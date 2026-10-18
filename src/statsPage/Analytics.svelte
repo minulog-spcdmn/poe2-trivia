@@ -381,11 +381,25 @@
   const weekly = $derived(!!read && read.span > 90);
 
   // ---- the board: sized from the screen, kept awake, the pointer out of the way ----
+  /** A monitor on its side (taller than wide, wider than a phone): its overview is the board's, one screen, with the views still above it. */
+  const SIDEWAYS = '(orientation: portrait) and (min-width: 900px)';
+  let sideways = $state(matchMedia(SIDEWAYS).matches);
+  $effect(() => {
+    const q = matchMedia(SIDEWAYS);
+    const follow = () => (sideways = q.matches);
+    q.addEventListener('change', follow);
+    return () => q.removeEventListener('change', follow);
+  });
+  /** Laid out as the board: one screen, its type sized from the screen. */
+  const fitted = $derived(board || (sideways && view === 'overview' && !!key));
   let topH = $state(0);
   let full = $state(!!document.fullscreenElement);
   let idle = $state(false);
   $effect(() => {
-    document.documentElement.classList.toggle('board', board);
+    document.documentElement.classList.toggle('board', fitted);
+    return () => document.documentElement.classList.remove('board');
+  });
+  $effect(() => {
     if (!board) return;
     // The screen stays on while the board is in view, where the browser lets a page ask.
     let lock: WakeLock | null = null;
@@ -421,7 +435,6 @@
       document.removeEventListener('pointermove', moved);
       clearTimeout(still);
       idle = false;
-      document.documentElement.classList.remove('board');
     };
   });
   function fullScreen() {
@@ -485,7 +498,7 @@
   <div class="progress" class:on={loading} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
 </header>
 
-<main class="analytics" class:on-board={board} class:idle style:height={board ? `calc(100dvh - ${topH}px)` : null}>
+<main class="analytics" class:on-board={fitted} class:idle style:height={fitted ? `calc(100dvh - ${topH}px)` : null}>
   {#if !key}
     <KeyGate onkey={useKey} {refused} />
   {:else}
@@ -510,7 +523,7 @@
         <div class="ghost chart"></div>
       </div>
     {:else if read}
-      {#if board}
+      {#if fitted}
         <Board {read} {period} {weekly} />
       {:else if view === 'overview'}
         <Overview {read} {period} {weekly} />
@@ -525,7 +538,7 @@
       {:else}
         <JoiningView {read} {period} />
       {/if}
-      <footer class="foot" hidden={board}>
+      <footer class="foot" hidden={fitted}>
         <p>Visitors are people on the start page, each counted once a visit (8 hours). Ad blockers hide some of them, so totals run low while shares hold.</p>
         <p>This browser asked GoatCounter {used} times in the last hour, of the {HOUR_LIMIT} it allows; updating by itself pauses at {HOUR_LIMIT - KEEP_SPARE}.</p>
       </footer>
@@ -737,9 +750,9 @@
     display: none;
   }
   @media (min-width: 1900px) {
-    /* As wide as the screen allows, and no taller than it: the overview is about 88rem high. */
+    /* As wide as the screen allows, and no taller than it: the overview is about 88rem high, so its type follows the screen's height too. */
     :global(html:not(.board)) {
-      font-size: clamp(14px, min(0.625vw, 1.15vh), 26px);
+      font-size: clamp(13px, min(0.625vw, 1.1vh), 26px);
     }
     /* The dates go up into the bar, beside the period. */
     .range {
@@ -781,7 +794,7 @@
 
   /* ---- the board: one screen, its type sized from the screen (rem), nothing to scroll ---- */
   :global(html.board) {
-    font-size: clamp(14px, min(1.5vw, 0.9vh), 30px);
+    font-size: clamp(12px, min(1.5vw, 0.9vh), 30px);
   }
   .top.on-board {
     position: relative;

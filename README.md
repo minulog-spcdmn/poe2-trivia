@@ -852,7 +852,9 @@ owner's read-only GoatCounter API key, which stays in that browser. Its
 overview answers "how is it going?" with the views behind it; `#board`
 (the monitor button in its top bar) is the overview for a monitor of its
 own, most of all one on its side: one screen, sized from the screen,
-kept awake and updating by itself. On a big monitor (1440p, 4K) the
+kept awake and updating by itself. A monitor on its side (taller than
+wide, 900px or more) shows the overview laid out as the board, the views
+still above it, so nothing scrolls. On a big monitor (1440p, 4K) the
 overview fits one screen; "What happened" reads out the days far busier
 than usual and the site behind each, and the sites and countries that
 brought far more or fewer than the period before (`insights.ts`, only

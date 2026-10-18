@@ -67,7 +67,7 @@
     if (window.innerWidth <= 1500) return void (fitted = null);
     const over = document.documentElement.scrollHeight - window.innerHeight;
     const now = untrack(() => chartH);
-    if (over > 2 && now > 160) fitted = Math.max(160, now - over);
+    if (over > 2 && now > 140) fitted = Math.max(140, now - over);
   }
   $effect(() => {
     const seen = new ResizeObserver(() => requestAnimationFrame(fit));
