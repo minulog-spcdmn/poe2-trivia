@@ -13,11 +13,14 @@ export const CACHED = 40;
 /** How long after a failed try the next one goes (ms). */
 const RETRY_MS = 600;
 
+/** Loads that have come in (or failed for good): only those are let go, so one still on its way is never asked for twice. */
+const done = new WeakSet<Promise<unknown>>();
+
 /**
  * Loads `src` once into `cache`, trying again twice after a hiccup (a
  * dropped request would leave everyone without art); a load that fails for
  * good is let go, so the next ask tries afresh. The cache keeps the `keep`
- * asked for last.
+ * asked for last, and every one still on its way.
  */
 export function loadOnce<T>(cache: Map<string, Promise<T>>, src: string, load: (src: string) => Promise<T>, keep = CACHED, retryMs = RETRY_MS): Promise<T> {
   const had = cache.get(src);
@@ -31,10 +34,19 @@ export function loadOnce<T>(cache: Map<string, Promise<T>>, src: string, load: (
     load(src).catch((err) => (left > 0 ? new Promise((r) => setTimeout(r, retryMs)).then(() => attempt(left - 1)) : Promise.reject(err)));
   const p = attempt(2);
   cache.set(src, p);
-  p.catch(() => cache.get(src) === p && cache.delete(src));
-  for (const old of cache.keys()) {
-    if (cache.size <= keep) break;
+  p.then(
+    () => done.add(p),
+    () => {
+      done.add(p);
+      if (cache.get(src) === p) cache.delete(src);
+    },
+  );
+  let over = cache.size - keep;
+  for (const [old, q] of cache) {
+    if (over <= 0) break;
+    if (!done.has(q)) continue;
     cache.delete(old);
+    over--;
   }
   return p;
 }

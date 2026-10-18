@@ -37,6 +37,23 @@ test('a picture asked for again is the last to go', async () => {
   assert.deepEqual(calls, ['a', 'b', 'c', 'd']);
 });
 
+test('a picture still on its way is never let go, so it is never asked for twice', async () => {
+  const cache = new Map<string, Promise<string>>();
+  const calls: string[] = [];
+  const waiting: (() => void)[] = [];
+  const slow = (src: string) => (calls.push(src), new Promise<string>((r) => waiting.push(() => r(`pic:${src}`))));
+  for (const src of ['a', 'b', 'c', 'd']) void loadOnce(cache, src, slow, 2);
+  // All four still on their way: kept, over the two.
+  assert.deepEqual([...cache.keys()], ['a', 'b', 'c', 'd']);
+  void loadOnce(cache, 'a', slow, 2);
+  assert.deepEqual(calls, ['a', 'b', 'c', 'd']);
+  waiting.forEach((w) => w());
+  await Promise.all(cache.values());
+  // Come in, the oldest go as the next is asked for.
+  await loadOnce(cache, 'e', async (src) => `pic:${src}`, 2);
+  assert.deepEqual([...cache.keys()], ['a', 'e']);
+});
+
 test('a hiccup is tried again; a picture that never loads is let go, to be tried afresh', async () => {
   const cache = new Map<string, Promise<string>>();
   let fails = 1;

@@ -195,9 +195,12 @@
     {/each}
     {@render heart?.()}
     {#if point}
-      <div class="layer point" style:--set="{point.delay}s">
-        <svg class="glow" viewBox="-100 -100 200 200"><circle r={point.r} class="dot" /></svg>
-        <svg viewBox="-100 -100 200 200"><circle r={point.r} class="dot" /></svg>
+      <!-- (Its layer only as large as it swells as it's set.) -->
+      {@const reach = point.r * 2.4 + 1.5}
+      {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
+      <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
+        <svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
+        <svg viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
       </div>
     {/if}
     <div class="wave"></div>
