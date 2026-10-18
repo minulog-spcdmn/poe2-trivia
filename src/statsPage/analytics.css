@@ -82,6 +82,16 @@
   border-bottom: 0;
 }
 
+/* A table's bar column takes what its figures leave, so a name and its figures stay together however wide the screen. */
+.analytics .table th.bar,
+.analytics .table td.bar {
+  width: 100%;
+}
+/* (So the names beside it keep to a line.) */
+.analytics .table:has(.bar) th[scope='row'] {
+  white-space: nowrap;
+}
+
 /* A bar in a cell, as long as its figure against the column's largest. */
 .analytics .meter {
   display: block;

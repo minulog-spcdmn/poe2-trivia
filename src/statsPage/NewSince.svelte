@@ -19,7 +19,7 @@
   <h2>{lit ? `New since ${time(changes.since)}` : `Last new, ${time(changes.since)} to ${time(changes.at)}`}</h2>
   <ul>
     {#if changes.visitors}<li><b>{many(changes.visitors, 'visitor')}</b></li>{/if}
-    {#if changes.games}<li><b>{many(changes.games, 'game')}</b>{#if changes.modes.length}<span class="of"> {changes.modes.map((m) => `${m.name} ${fmt(m.count)}`).join(', ')}</span>{/if}</li>{/if}
+    {#if changes.games}<li><b>{many(changes.games, 'game')}</b>{#if changes.modes.length}<span class="of">{changes.modes.map((m) => `${m.name} ${fmt(m.count)}`).join(', ')}</span>{/if}</li>{/if}
     {#if changes.answers}<li><b>{many(changes.answers, "answer to Today's unique", "answers to Today's unique")}</b></li>{/if}
     {#if changes.tries}<li><b>{many(changes.tries, 'try to join', 'tries to join')}</b></li>{/if}
     {#if changes.failures}<li class="bad"><b>{many(changes.failures, 'failure')}</b></li>{/if}
@@ -76,6 +76,10 @@
   .of,
   .what {
     color: var(--a-muted);
+  }
+  /* (Svelte drops the space before it at the start of the element.) */
+  .of {
+    margin-left: 0.4em;
   }
   .whence {
     color: var(--a-text);

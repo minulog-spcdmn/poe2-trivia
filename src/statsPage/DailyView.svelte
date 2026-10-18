@@ -20,6 +20,8 @@
   let itemOf = $state<((day: string) => DailyItem | null) | null>(null);
   /** The days Today's unique asked something. */
   const days = $derived(dailyDays(L).filter((d) => asked(d.day)));
+  /** The chart starts on the first day it asked: the days before it would only be empty. */
+  const from = $derived(Math.max(0, L.days.findIndex(asked)));
   const answered = $derived(days.filter((d) => d.answers));
   const ranked = $derived(hardestAndEasiest(days));
   const now = $derived(dailyAverage(L));
@@ -62,9 +64,9 @@
 
   <Section title="Players a day" says="Each column is a day's players: those who named the item at its foot, those who missed it above.">
     <DayColumns
-      days={L.days}
-      gold={L.daily.rightPerDay}
-      grey={L.daily.wrongPerDay}
+      days={L.days.slice(from)}
+      gold={L.daily.rightPerDay.slice(from)}
+      grey={L.daily.wrongPerDay.slice(from)}
       names={{ gold: 'Named it', grey: 'Missed it' }}
       {weekly}
       label="Players of Today's unique a {weekly ? 'week' : 'day'}, named and missed"

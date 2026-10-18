@@ -879,7 +879,22 @@
       height: 38px;
     }
     .dates {
-      font-size: 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    /* Each row of choices one line, swiped sideways where it runs past the screen, so the figures start on the first screen. */
+    .choices {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.5rem;
+    }
+    .choices :global(.seg) {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .choices :global(.seg button) {
+      flex: none;
     }
   }
 </style>

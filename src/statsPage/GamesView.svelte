@@ -45,12 +45,12 @@
           <tr>
             <th scope="col">Mode</th>
             <th scope="col" class="n">Games</th>
-            <th scope="col" class="wide"><span class="sr">Against the most played</span></th>
             <th scope="col" class="n">Share</th>
             <th scope="col" class="n">To the end</th>
             <th scope="col" class="n">Players a game</th>
             <th scope="col" class="n">Online</th>
             <th scope="col" class="n">Hot-seat</th>
+            <th scope="col" class="bar"><span class="sr">Against the most played</span></th>
           </tr>
         </thead>
         <tbody>
@@ -58,12 +58,12 @@
             <tr class:none={!m.started}>
               <th scope="row"><a class="pick" href={hashOf({ kind: 'did', group: m.mode })} title="Where its players come from, and on what">{MODE_NAMES[m.mode]}</a></th>
               <td class="n strong">{fmt(m.started)}</td>
-              <td class="wide"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
               <td class="n">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
               <td class="n">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
               <td class="n">{fmt(m.online)}</td>
               <td class="n">{fmt(m.hotseat)}</td>
+              <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
             </tr>
           {/each}
         </tbody>
@@ -71,12 +71,12 @@
           <tr>
             <th scope="row">All</th>
             <td class="n">{fmt(L.games.started)}</td>
-            <td></td>
             <td class="n">{L.games.started ? '100%' : '–'}</td>
             <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
             <td class="n">{perGame(L.games.rows)}</td>
             <td class="n">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
             <td class="n">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
+            <td></td>
           </tr>
         </tfoot>
       </table>
@@ -173,10 +173,6 @@
   }
   .none > * {
     color: var(--a-muted);
-  }
-  .wide {
-    width: 30%;
-    min-width: 6rem;
   }
   .bar {
     width: 30%;

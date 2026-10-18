@@ -177,7 +177,7 @@
   }
   .mark {
     fill: none;
-    stroke: var(--a-up);
+    stroke: var(--gold-hi);
     stroke-width: 2.5;
   }
   .cross {

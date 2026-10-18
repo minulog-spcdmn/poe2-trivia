@@ -7,13 +7,13 @@
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { average, fmt } from './chart';
+  import { average, fmt, shortDay } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
   import NewSince from './NewSince.svelte';
-  import { MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -100,7 +100,7 @@
     </Kpi>
     <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
-      {#snippet change()}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/snippet}
+      {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/if}{/snippet}
     </Kpi>
     <Kpi
       label="Joins that worked"

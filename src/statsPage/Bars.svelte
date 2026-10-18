@@ -52,7 +52,8 @@
 <style>
   .bars {
     display: grid;
-    grid-template-columns: minmax(0, 1.3fr) minmax(3rem, 1fr) auto 3.4rem;
+    /* The name's column no wider than a name needs, so on a wide screen its bar and count stay beside it. */
+    grid-template-columns: minmax(0, 15rem) minmax(3rem, 1fr) auto 3.4rem;
     column-gap: 1rem;
     margin: 0;
     padding: 0;

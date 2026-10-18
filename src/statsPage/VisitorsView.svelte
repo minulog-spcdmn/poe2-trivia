@@ -3,7 +3,7 @@
   // what. All of it is the start page's visitors, not what they did there.
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { fmt } from './chart';
+  import { fmt, siteName } from './chart';
   import Delta from './Delta.svelte';
   import { deviceOf, percent } from './model';
   import type { Period, Read } from './read';
@@ -15,7 +15,7 @@
 
   const L = $derived(read.now);
   const countries = $derived(read.countries.map((c) => ({ label: c.name || 'Unknown', count: c.count })));
-  const refs = $derived(read.refs.map((r) => ({ label: !r.name || r.name === '(unknown)' ? 'Typed in, or unknown' : r.name, count: r.count })));
+  const refs = $derived(read.refs.map((r) => ({ label: !r.name || r.name === '(unknown)' ? 'Typed in, or unknown' : siteName(r.name), count: r.count })));
   const systems = $derived(read.systems.map((s) => ({ label: s.name || 'Unknown', count: s.count })));
   const devices = $derived.by(() => {
     const by = { computer: 0, phone: 0, other: 0 };

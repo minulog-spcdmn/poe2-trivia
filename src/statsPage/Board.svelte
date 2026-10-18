@@ -8,12 +8,12 @@
   // how far a visit gets. Everything is sized from the screen
   // (Analytics sets the root's size), so a bigger monitor reads the same.
   import { onMount } from 'svelte';
-  import { average, fmt, longDay } from './chart';
+  import { average, fmt, longDay, shortDay } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
   import NewSince from './NewSince.svelte';
-  import { asked, dailyAverage, percent, sharePerDay } from './model';
+  import { DAILY_FROM, asked, dailyAverage, percent, sharePerDay } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Spark from './Spark.svelte';
@@ -105,7 +105,7 @@
     </Kpi>
     <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, Today's unique" href="#daily">
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
-      {#snippet change()}<Delta now={dailyNow} before={dailyBefore} digits={1} period={short.before} />{/snippet}
+      {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={short.before} />{/if}{/snippet}
     </Kpi>
     <Kpi label="Joins worked" value={tries(L) ? percent(joins(L), tries(L)) : '–'} means="of {fmt(tries(L))} tries" href="#joining">
       {#snippet spark()}<Spark days={L.days} values={sharePerDay(L.joinsPerDay.joined, L.joinsPerDay.tried)} {weekly} label="Share of joins that worked, a day" />{/snippet}
@@ -240,43 +240,52 @@
   .board :global(.section header) {
     margin-bottom: 0.7rem;
   }
-  /* A monitor the usual way round: the charts down the left, the rest on the right. */
+  /*
+   * A monitor the usual way round: today with what's new beside it, the
+   * four figures with how far a visit gets, then the two charts side by side
+   * and what happened, taking what the rest leaves of the screen.
+   */
   @media (orientation: landscape) {
     .board {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      grid-template-rows: auto auto auto auto minmax(0, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.15fr);
+      grid-template-rows: auto auto minmax(16rem, 1fr);
       grid-template-areas:
-        'today today'
-        'since since'
-        'kpis kpis'
-        'charts two'
-        'charts two';
+        'today today today today since'
+        'kpis kpis kpis kpis steps'
+        'vis vis gam gam happened';
+    }
+    .board:not(:has(.since)) {
+      grid-template-areas:
+        'today today today today today'
+        'kpis kpis kpis kpis steps'
+        'vis vis gam gam happened';
     }
     .today {
       grid-area: today;
     }
-    /* Before an update has brought anything, no row is kept for it. */
-    .board:not(:has(.since)) {
-      grid-template-rows: auto auto auto minmax(0, 1fr);
-      grid-template-areas:
-        'today today'
-        'kpis kpis'
-        'charts two'
-        'charts two';
-    }
     .since {
       grid-area: since;
+      display: grid;
     }
     .kpis {
       grid-area: kpis;
     }
-    .charts {
-      grid-area: charts;
-      min-height: 30rem;
-    }
+    .charts,
     .two {
-      grid-area: two;
+      display: contents;
+    }
+    .charts > :global(.section:first-child) {
+      grid-area: vis;
+    }
+    .charts > :global(.section:last-child) {
+      grid-area: gam;
+    }
+    .two > :global(.section) {
+      grid-area: happened;
+    }
+    .two > :global(.steps) {
+      grid-area: steps;
     }
   }
 </style>
