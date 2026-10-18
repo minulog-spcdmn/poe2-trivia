@@ -3,7 +3,8 @@
 //
 // Trust model: the host runs the game and is trusted by definition (it has the
 // answers). Guests are not: they only receive a redacted copy of the state,
-// get question art as altered image bytes, identify themselves with a secret
+// get question art as altered image bytes (sealed until the question's clock
+// starts, seal.ts), identify themselves with a secret
 // token that only this room's host ever sees (a different one per room), and
 // everything they send is checked and rate limited, down to the raw frames.
 
@@ -24,6 +25,7 @@ import {
   DEFAULT_SETTINGS,
   questionClock,
   activeRules,
+  clockRuns,
   type Action,
   type GameState,
   type Grayscale,
@@ -31,11 +33,15 @@ import {
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
-import { isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
+import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
+import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
+import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
-import { prepareMedia, shown, type PreparedMedia } from './media.svelte';
+import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
+import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
+import { drawAhead, takeAhead, type Ahead } from './drawAhead';
 import { sfx } from './sound';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -48,11 +54,12 @@ import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import {
-  DELVE_CLOCK_CAP_MS,
   DRAIN_POLL_MS,
-  artFirst,
   blastedAway,
+  capStrikes,
+  clockCap,
   clockStart,
+  clockWaitsFor,
   delveNotices,
   drained,
   drawClockFrom,
@@ -67,6 +74,7 @@ import {
   racerIds,
   reaskDelay,
   runSeenStarting,
+  stillWaitedFor,
   underRuleset,
   type DelveNotice,
 } from './delveSession';
@@ -149,8 +157,17 @@ const HOST_SILENCE_MS = 15000;
 const NETWORK_ERRORS = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
 /** No pong for this long: the connection is dead. */
 const DEAD_AFTER_MS = 15000;
-/** Faster than this (after the question reached them: its art, and in Delve its clock) is not a human answer. */
+/** Faster than this (after the question reached them: the key to its art, as its clock started) is not a human answer. */
 const MIN_HUMAN_MS = 200;
+/**
+ * The pictures go out sealed (seal.ts), which takes WebCrypto, there only on
+ * a secure page (https, or localhost). Without it a guest couldn't open them
+ * and a host couldn't seal them, so neither gets in.
+ */
+const NO_SEAL_JOIN = "This page can't open the room's pictures: that needs a secure page. Open the game at its https:// address to join.";
+const NO_SEAL_HOST = "This page can't seal the room's pictures: that needs a secure page. Open the game at its https:// address to host, or play hot-seat on one device.";
+/** What the host tells a guest whose hello doesn't say it can open sealed pictures. */
+const NO_SEAL_GUEST = "Your game can't open this room's pictures: it needs a secure page. Open the game at its https:// address to join.";
 /** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
 const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
 /** The held name without the owner key's signature (names.ts): turned down like any name that isn't allowed. */
@@ -171,6 +188,8 @@ const EARLY_MS = 250;
 const CURSOR_BACKLOG_BYTES = 64 * 1024;
 /** Batches sent for a click (a press or a release) are this far apart at least (ms): a frame. */
 const CLICK_GAP_MS = 16;
+/** Development only: a far link played on a near one, set with the `fakeLink` setting (artLane.ts parseFakeLink). */
+const FAKE_LINK = import.meta.env.DEV ? parseFakeLink(readStored('fakeLink')) : null;
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -213,11 +232,17 @@ interface Guest {
   /** Its newest pointer past `pointer`, waiting until it may go (undefined when none is), and when it's looked at again. */
   pointerLate?: CursorAt | null;
   pointerTimer?: ReturnType<typeof setTimeout> | null;
-  /** Round-trip time estimate (ms). */
+  /** Round-trip time estimate (ms), from its pongs: whether its link shows as slow (slowLink). */
   rtt: number;
+  /** Its recent ping times (ms), and the round trip its browser measures (linkRtt.ts): what timing that could favour it leans on (honestRtt). */
+  pingTimes: number[];
+  linkRtt: number | null;
   lastPong: number;
   pings: Map<number, number>;
-  /** When this guest was sent the current question's first picture (page clock). */
+  /** Its art lane (artLane.ts), and whether it said it opened its end (hello's `lane`); without both, media go on the main channel. */
+  lane: LaneSender | null;
+  laneWanted: boolean;
+  /** When this guest was sent the key to the current question's pictures (page clock): its too-quick check counts from then. */
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
@@ -231,6 +256,44 @@ interface Guest {
   seen: Seen;
   /** Its link to the host is slow (presence.ts slowLink). */
   slow: boolean;
+}
+
+/**
+ * Host: a question's sealing (seal.ts). Its key (none where nobody else can
+ * be sent the art: hot-seat, the lab), its pictures sealed under it, and
+ * whether the key has gone out (`open`: the clock started, or the question
+ * ended before it did).
+ */
+interface Sealing {
+  qid: number;
+  key: SealKey | null;
+  sealed: SealedMsg[];
+  open: boolean;
+}
+
+/** Host: a question's art as prepared (unsealed: its pictures and patches), and sealed for the room. */
+interface PreparedArt {
+  media: PreparedMedia;
+  plain: MediaMsg[];
+  sealing: Sealing;
+}
+
+/** Where a question's sealed pictures sit on a guest's lane: from one mark (LaneSender.mark) up to another. */
+interface LaneSpan {
+  from: number;
+  to: number;
+}
+
+/**
+ * Host, race: a next question drawn ahead (drawAhead.ts), its art once
+ * prepared and sealed (stopped by `stop` should it be thrown away), and the
+ * guests it has gone to, with where it sits on each one's lane (null: not on
+ * a lane).
+ */
+interface AheadArt extends Ahead {
+  ready: Promise<PreparedArt>;
+  stop: AbortController;
+  sent: Map<Guest, LaneSpan | null>;
 }
 
 /** Host-only data that must survive a page refresh but never reach guests. */
@@ -361,8 +424,35 @@ class Session {
    * second resume of the same question) is dropped, even for the same question.
    */
   private mediaGen = 0;
-  /** Media messages already released for the current question (for late joiners). */
+  /**
+   * The current question's media messages as prepared, unsealed: its
+   * pictures, which the host's own screen shows once its clock starts, and
+   * the patches gone out so far (for late joiners, and the reveal's rest).
+   */
   private released: MediaMsg[] = [];
+  /**
+   * Host: the current question's sealing, its pictures sent to everyone as
+   * soon as they're ready, and to whoever comes later. Never in GameState,
+   * which guests are sent a view of.
+   */
+  private sealing: Sealing | null = null;
+  /**
+   * Host, race: the next question, drawn ahead as the reveal starts, on a
+   * copy of the state (drawAhead.ts), its art being prepared and sealed
+   * (`ready`), and sent to everyone (`sent`) while the reveal plays. Taken at
+   * 'next' if nothing changed meanwhile (stepNext), thrown away by any change
+   * before. Never in GameState, as the sealing isn't.
+   */
+  private ahead: AheadArt | null = null;
+  /** Host: the question drawn ahead being taken at 'next', for the state change under way to pick up (startMedia). */
+  private taking: AheadArt | null = null;
+  /** Host: by player, how many questions running the clock's cap ran out before the art reached them (delveSession.ts capStrikes). */
+  private strikes = new Map<string, number>();
+  /** Guest: the room's sealed pictures, held until their key comes as the clock starts, then shown (seal.ts). */
+  private sealedArt = new SealedStore((raw) => {
+    const m = parseHostMsg(raw);
+    if (m && isMedia(m) && this.mode === 'client') shown.receive(m);
+  });
   private timer: ReturnType<typeof setTimeout> | null = null;
   private autoNext: ReturnType<typeof setTimeout> | null = null;
   /** The reveal autoNext belongs to (its question's askedAt), so unrelated changes don't restart it. */
@@ -402,22 +492,15 @@ class Session {
   /** How long this device took to answer the current question (its askedAt), for the codex. */
   private answered: { qid: number; ms: number; share?: number } | null = null;
   /**
-   * Delve: when this device first had the question (its askedAt) with its
-   * clock running (page clock), which is when it opens to answers (noteClock).
+   * When this device first had the question (its askedAt) with its clock
+   * running (page clock), which is when it opens to answers (noteClock).
    */
   private clockSeen: { qid: number; clockAt?: number; at: number; before?: number } | null = null;
   /** Delve: how much of this question's clock was used before the host's reload held it still (pausedUsed). */
   private usedBefore: { qid: number; ms: number } | null = null;
-  /**
-   * Delve: the art of this question goes first to those who answer it (the
-   * player alone, or everyone standing in co-op), and to everyone else
-   * (spectators, those who perished) once the clock has started, so nobody
-   * shares the uplink with them and nobody watching sees it early.
-   */
-  private held: { qid: number; ids: Set<string> } | null = null;
   /** Delve together: the question the team's vote just drew, and the earliest its clock may start (drawHoldUntil). */
   private drawHold: { qid: number; until: number } | null = null;
-  /** Delve: the art failed this many times on this turn (turnCount), for the backoff. */
+  /** The art failed this many times on this turn (turnCount), for the backoff. */
   private reaskFails = { turn: '', n: 0 };
   /** Lab only: a co-op run played as its host would, without a room (see labCoop). */
   private labRoomless = false;
@@ -605,6 +688,12 @@ class Session {
   }
 
   private openRoom(code: string, attempt: number, resumeState?: GameState) {
+    // Guests are only ever sent the art sealed: a page that can't seal it can't host.
+    if (!sealAvailable()) {
+      if (resumeState) this.fail(NO_SEAL_HOST, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
+      else this.fail(NO_SEAL_HOST, 'Room not opened', { failure: 'host-room-not-opened' });
+      return;
+    }
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
     // 'open' fires again each time the signalling server is reconnected; the
@@ -726,7 +815,11 @@ class Session {
       limit: new RateLimit(10, 20),
       pointer: new RateLimit(POINTER_RATE, POINTER_BURST),
       rtt: 150,
+      pingTimes: [],
+      linkRtt: null,
       lastPong: Date.now(),
+      lane: null,
+      laneWanted: false,
       pings: new Map(),
       mediaAt: null,
       tab: null,
@@ -742,6 +835,12 @@ class Session {
       clearTimeout(helloTimer);
       if (!this.guests.has(conn)) return;
       helloTimer = setTimeout(() => !guest.playerId && this.drop(conn), HELLO_TIMEOUT_MS);
+      // The art lane: host to guest only, so anything sent up it is no real client.
+      const lane = openLane(conn.peerConnection);
+      if (lane) {
+        guest.lane = new LaneSender(lane, FAKE_LINK, () => this.laneLost(conn, guest));
+        lane.addEventListener('message', () => this.guests.has(conn) && this.block(conn));
+      }
       // For a hello under the held name to sign (ownerKey.ts joinProof): fresh, so a signature seen once is of no use again.
       this.send(conn, { t: 'hi', c: guest.challenge });
     });
@@ -778,14 +877,17 @@ class Session {
         if (msg.t === 'hello') {
           if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
+          guest.laneWanted = !!msg.lane;
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, msg.owner);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
             guest.pings.delete(msg.n);
             guest.lastPong = Date.now();
             guest.rtt = guest.rtt * 0.7 + (Date.now() - sent) * 0.3;
+            guest.pingTimes.push(Date.now() - sent);
+            if (guest.pingTimes.length > PING_SAMPLES) guest.pingTimes.shift();
           }
         } else if (msg.t === 'action') {
           if (!guest.playerId) return;
@@ -890,11 +992,16 @@ class Session {
     this.drop(conn);
   }
 
-  /** `owner`: under the held name, the owner key's signature over this link's challenge (hi), checked here. */
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, owner?: string) {
+  /** `seal`: it can open sealed pictures (seal.ts). `owner`: under the held name, the owner key's signature over this link's challenge (hi), checked here. */
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, seal: boolean, owner?: string) {
     const outdated = versionProblem(v);
     if (outdated) {
       this.dismiss(conn, { t: 'error', message: outdated, version: true });
+      return;
+    }
+    // It couldn't open a question's pictures, and nobody gets them unsealed.
+    if (!seal) {
+      this.dismiss(conn, { t: 'error', message: NO_SEAL_GUEST });
       return;
     }
     const known = this.secretToPlayer.get(secret);
@@ -959,7 +1066,7 @@ class Session {
     // Even when nobody is marked: a guest coming back may still hold marks from before it dropped.
     this.send(conn, { t: 'standing', s: this.standing });
     this.setState(next);
-    for (const m of this.released) if (this.mayGetMedia(guest)) this.sendMedia(conn, guest, m);
+    this.replayMedia(conn, guest);
     const player = next.players.find((p) => p.id === playerId);
     const watcher = next.spectators?.find((o) => o.id === playerId);
     // The creator's first arrival has a notice of its own (see onNewState).
@@ -985,14 +1092,20 @@ class Session {
     const q = this.state?.question;
     // One for a question gone by, or come in as it was revealed, is the engine's to drop ("Too late!").
     if (!q || this.state!.phase !== 'question' || (askedAt !== undefined && askedAt !== q.askedAt)) return false;
+    // Before its clock the engine turns every answer down by itself (too early, without a word).
+    if (!clockRuns(q)) return false;
     // No art went out at all: don't hold answers back waiting for it.
     if (this.artFailedFor === q.askedAt) return false;
+    // Counted from the key reaching them (it opens the art): the sealed bytes may have been there for a while.
     if (!guest.mediaAt || guest.mediaAt.qid !== q.askedAt) return true;
-    // Delve: nor before its clock started, which may be well after the art
-    // went out (during a team's draw); the host notes it running as it goes
-    // out to everyone (noteClock).
+    // Nor before its clock started as this device last saw it (a Delve clock
+    // the host's reload held still carries on later); the host notes it
+    // running as it goes out to everyone (noteClock).
     const clock = this.clockSeen?.qid === q.askedAt ? this.clockSeen.at : 0;
-    return performance.now() - Math.max(guest.mediaAt.at, clock) < guest.rtt + MIN_HUMAN_MS;
+    // The link's own round trip (honestRtt), not the pongs': a busy host page
+    // reads those late and would turn honest quick answers down, and a guest
+    // can't make the browser's measure shorter than its link is.
+    return performance.now() - Math.max(guest.mediaAt.at, clock) < honestRtt(guest) + MIN_HUMAN_MS;
   }
 
   private watchOwnPresence() {
@@ -1019,6 +1132,9 @@ class Session {
         if (g.pings.size > 10) g.pings.delete(g.pings.keys().next().value!);
         this.send(conn, { t: 'ping', n });
         g.slow = slowLink(g.slow, g.rtt, now - g.lastPong);
+        void measuredRtt(conn.peerConnection).then((rtt) => {
+          if (rtt !== null && this.guests.get(conn) === g) g.linkRtt = rtt;
+        });
       }
       this.updateStanding();
     }, PING_EVERY_MS);
@@ -1090,7 +1206,7 @@ class Session {
     const racing = new Set(this.state ? racerIds(this.state) : []);
     const rtts = [...this.guests.values()]
       .filter((g) => g.playerId && racing.has(g.playerId))
-      .map((g) => g.rtt)
+      .map((g) => honestRtt(g))
       .sort((a, b) => a - b);
     if (!rtts.length) return 0;
     return Math.min(MAX_HOST_HANDICAP_MS, rtts[Math.floor(rtts.length / 2)] / 2);
@@ -1187,6 +1303,15 @@ class Session {
 
   private send(conn: DataConnection, msg: HostMsg) {
     if (!conn.open) return;
+    if (FAKE_LINK) {
+      setTimeout(() => this.sendNow(conn, msg), FAKE_LINK.delayMs);
+      return;
+    }
+    this.sendNow(conn, msg);
+  }
+
+  private sendNow(conn: DataConnection, msg: HostMsg) {
+    if (!conn.open) return;
     try {
       conn.send(msg);
     } catch {
@@ -1196,77 +1321,237 @@ class Session {
 
   // ---- question media ---------------------------------------------------
 
-  /** Host: new question → prepare its art and release it on schedule. */
-  private async startMedia(s: GameState) {
+  /**
+   * Host: new question → prepare its art, seal it (seal.ts) and send it to
+   * everyone at once, spectators too: nothing in it can be seen before its
+   * key, which goes out as its clock starts (waitForArrival, startClock).
+   * The host's own screen waits for that too. A race's question drawn ahead
+   * (`ahead`) comes with its art prepared and mostly sent already.
+   */
+  private async startMedia(s: GameState, ahead: AheadArt | null = null) {
     const q = s.question!;
     this.stopMedia();
     const gen = this.mediaGen;
     shown.clear();
-    let media: PreparedMedia;
+    // What hasn't gone yet of the question before (or of one drawn ahead and
+    // thrown away) is of no use any more: this one's goes first. One drawn
+    // ahead keeps its own, sent behind it.
+    for (const g of this.guests.values()) {
+      const span = ahead?.sent.get(g);
+      if (span === undefined) g.lane?.clear();
+      else if (span !== null) g.lane?.clearBefore(span.from);
+    }
+    const qid = q.askedAt;
+    let prepared: PreparedArt;
     try {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
-      });
-      media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId), timeout]).finally(() => clearTimeout(timer));
+      prepared = await (ahead?.ready ?? this.prepareArt(s));
     } catch (err) {
       console.warn('media', err);
-      if (gen === this.mediaGen && this.state?.question?.askedAt === q.askedAt && this.state.phase === 'question') {
-        this.artFailedFor = q.askedAt;
-        if (mayAutoReask(this.state, q.askedAt)) this.reaskLater(this.state);
+      if (gen === this.mediaGen && this.state?.question?.askedAt === qid && this.state.phase === 'question') {
+        this.artFailedFor = qid;
+        // Its clock hasn't started (nobody has seen a thing of it): another question takes its place by itself.
+        if (mayAutoReask(this.state, qid)) this.reaskLater(this.state);
         else this.flash("Couldn't load the art for this question.", 'warn', { title: 'Art missing' });
       }
       return;
     }
+    const { media, plain, sealing } = prepared;
     // The question as it is now: the clock may have run on meanwhile.
     const cur = this.state;
-    if (gen !== this.mediaGen || cur?.question?.askedAt !== q.askedAt || cur.phase !== 'question') return;
+    if (gen !== this.mediaGen || cur?.question?.askedAt !== qid || cur.phase !== 'question') return;
     this.media = media;
-    const qid = q.askedAt;
-    // Delve: the clock starts once the art has reached those who answer.
-    const timing = !!cur.delve && cur.question.deadline === null;
-    this.held = timing && this.mode === 'host' ? { qid, ids: new Set(artFirst(cur)) } : null;
-    if (media.art) this.release({ t: 'art', qid, ...media.art });
-    media.options.forEach(({ w, h, data }, index) => this.release({ t: 'option', qid, index, w, h, data }));
-    // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
-    media.tiles.forEach((t, tile) => this.release({ t: 'veil', qid, tile, ...t.veil }));
-    if (media.veil) this.release({ t: 'veil', qid, ...media.veil });
-    // Delve: the art (or the pictures) burn in from when the clock starts
-    // (startClock), not from when the question was asked; a question resumed
-    // with its clock already running burns from that clock's start.
-    if (!timing && (media.veil || media.tiles.length)) this.burnVeil(qid, cur.question.clockAt ?? q.askedAt);
-    if (timing) this.waitForArrival(qid);
+    this.released = plain;
+    this.sealing = sealing;
+    this.sendSealed(cur, sealing.sealed, ahead?.sent ?? new Map());
+    if (!clockRuns(cur.question)) {
+      this.waitForArrival(qid);
+      return;
+    }
+    // Picked up with its clock running (the host reloaded): it opens at once,
+    // the veil (or the pictures) burning in from that clock's start.
+    this.openSeal(qid);
+    if (media.veil || media.tiles.length) this.burnVeil(qid, cur.question.clockAt!);
+  }
+
+  /** Prepares a question's art (media.svelte.ts), within MEDIA_TIMEOUT_MS, and seals it; `signal` stops it partway. */
+  private async prepareArt(s: GameState, signal?: AbortSignal): Promise<PreparedArt> {
+    const q = s.question!;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
+    });
+    const media = await Promise.race([prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, signal), timeout]).finally(() => clearTimeout(timer));
+    const plain = picturesOf(media);
+    return { media, plain, sealing: await this.sealMedia(q.askedAt, plain) };
   }
 
   /**
-   * Delve: starts the clock once the host's queue to everyone it waits for
-   * (the art's first recipients who are online: the player answering, or in
-   * co-op everyone standing) is empty, the art on the wire, and at most a few
-   * seconds after it was released, so nobody starts at a disadvantage. With
-   * nobody to wait for (the host alone, hot-seat), at once.
+   * A question's sealed pictures to everyone in the room not `sent` them yet
+   * (noted there, with where they begin on each one's lane), those its clock
+   * waits for first, so the others' copies don't go ahead of theirs on the
+   * host's uplink.
+   */
+  private sendSealed(s: GameState, sealed: SealedMsg[], sent: Map<Guest, LaneSpan | null>) {
+    const first = new Set(clockWaitsFor(s));
+    const guests = [...this.guests]
+      .filter(([, g]) => !!g.playerId && !sent.has(g))
+      .sort(([, a], [, b]) => Number(first.has(b.playerId!)) - Number(first.has(a.playerId!)));
+    for (const [conn, g] of guests) {
+      const lane = g.laneWanted && g.lane?.usable ? g.lane : null;
+      const from = lane?.mark ?? 0;
+      for (const m of sealed) this.sendMedia(conn, g, m);
+      sent.set(g, lane ? { from, to: lane.mark } : null);
+    }
+  }
+
+  /**
+   * Race, as the reveal starts: the next question is drawn ahead on a copy of
+   * the state (drawAhead.ts), and its art prepared, sealed and sent to
+   * everyone while the reveal plays, so that by 'next' it is mostly there.
+   * Sent once the reveal's own last patches are on their way (`after`), never
+   * ahead of them: on each lane, they'd wait behind it. Nothing of it can be seen before its
+   * clock starts, like any question's, and nothing of it is in the live
+   * state until then.
+   */
+  private drawAhead(s: GameState, after: Promise<void>) {
+    this.dropAhead();
+    if (this.mode !== 'host' || this.labRoomless) return;
+    const drawn = drawAhead(s, (st) => engine.apply(st, { type: 'next' }, null));
+    if (!drawn) return;
+    const stop = new AbortController();
+    const a: AheadArt = { ...drawn, ready: this.prepareArt(drawn.state, stop.signal), stop, sent: new Map() };
+    this.ahead = a;
+    a.ready.then(
+      async ({ sealing }) => {
+        // (Should they never go, the next question was asked first: startMedia sends it.)
+        await after;
+        if (this.ahead === a) this.sendSealed(a.state, sealing.sealed, a.sent);
+      },
+      (err) => {
+        // Thrown away (stopped), or drawn again at 'next', as before (and asked again by itself should that fail too).
+        if (this.ahead !== a) return;
+        console.warn('media ahead', err);
+        this.ahead = null;
+      },
+    );
+  }
+
+  /**
+   * The question drawn ahead is thrown away: its preparing stops, and what
+   * of its art hasn't gone yet down each lane is dropped, so neither holds
+   * up the question drawn in its place.
+   */
+  private dropAhead() {
+    const a = this.ahead;
+    if (!a) return;
+    this.ahead = null;
+    a.stop.abort();
+    for (const [g, span] of a.sent) if (span) g.lane?.drop(span.from, span.to);
+  }
+
+  /**
+   * A guest's art lane closed, or never opened: what it carried of the
+   * question in play, and of one drawn ahead, goes again on the main
+   * channel (sendMedia, now the lane is no use).
+   */
+  private laneLost(conn: DataConnection, g: Guest) {
+    if (this.guests.get(conn) !== g || !g.playerId || !conn.open) return;
+    this.replayMedia(conn, g);
+    const a = this.ahead;
+    if (!a?.sent.has(g)) return;
+    a.sent.delete(g);
+    a.ready.then(
+      ({ sealing }) => this.ahead === a && this.sendSealed(a.state, sealing.sealed, a.sent),
+      () => {},
+    );
+  }
+
+  /**
+   * Host: the step to the next question. A race's drawn ahead is taken if the
+   * room is just as it was when it was drawn (takeAhead), its art with it;
+   * otherwise it's drawn now, as before.
+   */
+  private stepNext(cur: GameState, from: string | null): GameState {
+    const a = this.ahead;
+    const taken = takeAhead(cur, a);
+    if (!taken) {
+      this.dropAhead();
+      return engine.apply(cur, { type: 'next' }, from);
+    }
+    this.ahead = null;
+    this.taking = a;
+    return taken;
+  }
+
+  /**
+   * Seals a question's pictures under a fresh key of its own (seal.ts), with
+   * an id new each time they're prepared (a host's reload included), so no
+   * bytes sealed for one question ever pair with another's key. Hot-seat and
+   * the lab send nobody anything: nothing to seal.
+   */
+  private async sealMedia(qid: number, plain: MediaMsg[]): Promise<Sealing> {
+    if (this.mode !== 'host' || this.labRoomless) return { qid, key: null, sealed: [], open: false };
+    const key = await makeSealKey(`${qid}-${newKid()}`);
+    return { qid, key, sealed: await Promise.all(plain.map((m) => sealMsg(m, key))), open: false };
+  }
+
+  /**
+   * Starts the question's clock once the host's queues to everyone it waits
+   * for have drained, the sealed art on the wire, or once the cap has run out
+   * (clockCap: a fifth of the question's time, 2 to 4 s), whichever comes
+   * first. Who it waits for is looked at afresh each time (clockWaitsFor: the
+   * player on turn, everyone racing, in Delve those answering), leaving out
+   * anyone offline and anyone the cap ran out on twice running (CAP_STRIKES),
+   * so one throttled link can't hold every question up; they're watched until
+   * the cap, and draining within it lets them back in. Nothing a guest says
+   * counts: only the host's own queues, and the round trip the browser
+   * measures (honestRtt). With nobody to wait for (the host alone, hot-seat),
+   * at once.
    */
   private waitForArrival(qid: number) {
     let releasedAt = Date.now();
+    let started = false;
     const poll = () => {
-      if (!mayAutoReask(this.state, qid)) return;
+      const s = this.state;
+      if (!s || s.phase !== 'question' || s.question?.askedAt !== qid || this.sealing?.qid !== qid) return;
       const now = Date.now();
+      const capped = now - releasedAt >= clockCap(s);
+      const ids = clockWaitsFor(s);
+      const waitIds = new Set(stillWaitedFor(ids, this.strikes));
+      const links = [...this.guests].flatMap(([c, g]) =>
+        g.playerId && ids.includes(g.playerId) ? [{ id: g.playerId, g, done: drained(c as unknown as Parameters<typeof drained>[0]) && !g.lane?.backlog }] : [],
+      );
+      const waited = links.filter((l) => waitIds.has(l.id));
+      const leftOut = links.filter((l) => !waitIds.has(l.id));
+      const watchLeftOut = () => {
+        if (!capped && leftOut.some((l) => !l.done)) this.mediaTimers.push(setTimeout(poll, DRAIN_POLL_MS));
+      };
+      if (started) {
+        // Started without them: those whose art is out within the cap after all are waited for again.
+        this.strikes = capStrikes(this.strikes, leftOut.filter((l) => l.done).map((l) => l.id), []);
+        watchLeftOut();
+        return;
+      }
+      if (clockRuns(s.question)) return;
       // After the host's reload, not before everyone it cut off is back (or
       // their grace is over); the art reaching them is waited for from then.
       // Looked at less often meanwhile: that may take up to a minute.
-      if (awaitingReturn(this.state!, now)) {
+      if (awaitingReturn(s, now)) {
         releasedAt = now;
         this.mediaTimers.push(setTimeout(poll, RETURN_POLL_MS));
         return;
       }
-      const ids = this.held?.qid === qid ? this.held.ids : new Set<string>();
-      const conns = [...this.guests].filter(([, g]) => !!g.playerId && ids.has(g.playerId));
-      const done = conns.every(([c]) => drained(c as unknown as Parameters<typeof drained>[0]));
-      // The slowest of them still needs half a round trip for the last bytes and the deadline.
-      const rtt = Math.max(0, ...conns.map(([, g]) => g.rtt));
+      const done = waited.every((l) => l.done);
+      // The slowest of them still needs half a round trip for the last bytes and the key.
+      const rtt = Math.max(0, ...waited.map((l) => honestRtt(l.g)));
       // Together, after a vote: not before its draw has played out on the cards, theirs starting that half trip late.
       const hold = this.drawHold?.qid === qid ? drawClockFrom(this.drawHold.until, rtt) : 0;
-      if ((done || now - releasedAt >= DELVE_CLOCK_CAP_MS) && now >= hold - 500) {
-        this.startClock(qid, Math.max(hold, conns.length ? clockStart(done ? now : null, releasedAt, rtt) : now));
+      if ((done || capped) && now >= hold - 500) {
+        const late = capped ? waited.filter((l) => !l.done) : [];
+        this.strikes = capStrikes(this.strikes, links.filter((l) => l.done).map((l) => l.id), late.map((l) => l.id));
+        this.startClock(qid, Math.max(hold, waited.length ? clockStart(done ? now : null, releasedAt, rtt, clockCap(s)) : now));
+        started = true;
+        watchLeftOut();
         return;
       }
       this.mediaTimers.push(setTimeout(poll, DRAIN_POLL_MS));
@@ -1295,41 +1580,66 @@ class Session {
     });
   }
 
-  /** Delve: the question's clock starts at `at` (host clock), and everyone else gets the art. */
+  /**
+   * The question's clock starts at `at` (host clock): the key to its
+   * pictures goes out to everyone first, on the main channel, then the state
+   * that starts the clock; the host's own screen shows the art with it.
+   */
   private startClock(qid: number, at: number) {
     const cur = this.state;
-    if (!cur || cur.question?.askedAt !== qid || cur.question.deadline !== null) return;
-    this.setState(engine.apply(cur, { type: 'clock', askedAt: qid, at }, null));
-    this.releaseHeld();
+    if (!cur || cur.question?.askedAt !== qid || clockRuns(cur.question)) return;
+    const next = engine.apply(cur, { type: 'clock', askedAt: qid, at }, null);
+    if (!clockRuns(next.question)) return;
+    this.openSeal(qid);
+    this.setState(next);
     const clockAt = this.state?.question?.clockAt;
     if (clockAt !== undefined) this.burnVeil(qid, clockAt);
   }
 
-  /** Delve: the art held back from everyone but those answering goes out to them now. */
-  private releaseHeld() {
-    const h = this.held;
-    if (!h) return;
-    this.held = null;
-    for (const [conn, g] of this.guests)
-      if (g.playerId && !h.ids.has(g.playerId)) for (const m of this.released) if (m.qid === h.qid) this.sendMedia(conn, g, m);
+  /**
+   * The key to the question's pictures goes out to everyone, once: its clock
+   * starts, or it ended before it did. Their too-quick checks count from
+   * now; the host's own screen shows the pictures now too.
+   */
+  private openSeal(qid: number) {
+    const sl = this.sealing;
+    if (!sl || sl.qid !== qid || sl.open) return;
+    sl.open = true;
+    for (const [conn, g] of this.guests) if (g.playerId) this.sendKey(conn, g);
+    for (const m of this.released) if (m.t !== 'patch') shown.receive(m);
   }
 
-  private mayGetMedia(g: Guest) {
-    return !this.held || (!!g.playerId && this.held.ids.has(g.playerId));
+  /** The key to the question's pictures, to one guest. */
+  private sendKey(conn: DataConnection, g: Guest) {
+    const sl = this.sealing;
+    if (!sl) return;
+    // On the main channel, which no picture holds up: the art lane may still be busy with the art itself.
+    if (sl.key) this.send(conn, keyMsg(sl.key));
+    g.mediaAt = { qid: sl.qid, at: performance.now() };
+  }
+
+  /** Someone arrived (or came back) during a question: its sealed pictures, their key if its clock has started, and the patches gone out. */
+  private replayMedia(conn: DataConnection, g: Guest) {
+    const sl = this.sealing;
+    if (!sl || this.state?.question?.askedAt !== sl.qid) return;
+    for (const m of sl.sealed) this.sendMedia(conn, g, m);
+    if (sl.open) this.sendKey(conn, g);
+    for (const m of this.released) if (m.t === 'patch') this.sendMedia(conn, g, m);
   }
 
   /**
-   * Delve: art that failed to load is asked again by itself, with a backoff,
-   * a few times (nothing is lost while it does, as the clock only starts once
-   * the art is out). Then it stops: the question waits, its clock not
-   * started, until the host asks another (Game's "Ask another question") or
-   * the browser is back online (artBack), so an offline device doesn't spin
-   * through questions forever and the depth still has to be answered.
+   * Art that failed to load is asked again by itself, with a backoff, a few
+   * times, in every mode (nothing is lost while it does, as the clock only
+   * starts once the art is out, and nobody has seen a thing of it). Then it
+   * stops: the question waits, its clock not started, until the host asks
+   * another (Game's "Ask another question") or the browser is back online
+   * (artBack), so an offline device doesn't spin through questions forever
+   * (and in Delve the depth still has to be answered).
    */
   private reaskLater(s: GameState) {
     const qid = s.question!.askedAt;
-    // Per turn of this run (turns count from 0 again in the next one).
-    const turn = `${s.delve?.startedAt}:${s.turnCount}`;
+    // Per turn of this game or run (turns count from 0 again in the next one).
+    const turn = `${s.delve?.startedAt ?? s.startedAt}:${s.turnCount}`;
     if (this.reaskFails.turn !== turn) this.reaskFails = { turn, n: 0 };
     const n = this.reaskFails.n++;
     const wait = reaskDelay(n);
@@ -1345,7 +1655,7 @@ class Session {
     );
   }
 
-  /** The browser is back online: a Delve question waiting on art that failed is asked again. */
+  /** The browser is back online: a question waiting on art that failed is asked again. */
   artBack() {
     const s = this.state;
     if (!this.artMissing || !s?.question || !mayAutoReask(s, s.question.askedAt)) return;
@@ -1368,38 +1678,42 @@ class Session {
    * The rest of a veiled picture goes out now (the answer is out), a few
    * tens of ms apart: it burns in
    * quickly, still spreading from what's there, and every device starts each
-   * patch's burn in a different frame.
+   * patch's burn in a different frame. Settles once the last has gone (by
+   * its timer, which a busy page may hold up well past its time; never, if
+   * the next question came first).
    */
-  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>) {
+  private finishVeil(rest: ReturnType<Session['unreleasedPatches']>): Promise<void> {
     const gap = Math.min(30, 300 / Math.max(1, rest.length));
+    let done = () => {};
+    const out = new Promise<void>((resolve) => (done = resolve));
     rest.forEach((patch, k) => {
       const go = () => {
         const s = this.state;
         if ((s?.phase === 'reveal' || s?.phase === 'question') && s.question?.askedAt === patch.qid) this.release({ t: 'patch', ...patch });
+        if (k === rest.length - 1) done();
       };
       if (k === 0) go();
       else this.mediaTimers.push(setTimeout(go, k * gap));
     });
+    if (!rest.length) done();
+    return out;
   }
 
+  /**
+   * A patch of a veiled picture goes out, on the host's own screen and to
+   * everyone, unsealed: it only names which part of a picture they already
+   * hold uncovers, and only ever after the key to it.
+   */
   private release(m: MediaMsg) {
     this.released.push(m);
     shown.receive(m);
-    for (const [conn, g] of this.guests) if (g.playerId && this.mayGetMedia(g)) this.sendMedia(conn, g, m);
+    for (const [conn, g] of this.guests) if (g.playerId) this.sendMedia(conn, g, m);
   }
 
-  private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg) {
-    // A veil alone shows nothing on screen to answer from, so it isn't the
-    // art reaching them (tooFast): their clock starts with the first patch.
-    // It does carry the whole picture, which a guest digging into the page
-    // could answer from at once; timed from the first patch, such an answer
-    // is still turned down as too quick. In Delve the veil is the art
-    // reaching them: there a question opens to answers once its veil is in
-    // and its clock runs (QuestionView's waiting), its patches only burning
-    // in after.
-    const reached = m.t !== 'veil' || !!this.state?.delve;
-    if (reached && (!g.mediaAt || g.mediaAt.qid !== m.qid)) g.mediaAt = { qid: m.qid, at: performance.now() };
-    this.send(conn, m);
+  private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg | SealedMsg) {
+    // On its own lane, so the art never holds up what the main channel carries.
+    if (g.laneWanted && g.lane?.usable) g.lane.send({ ...m });
+    else this.send(conn, m);
   }
 
   private stopMedia(keepReleased = false) {
@@ -1407,8 +1721,9 @@ class Session {
     for (const t of this.mediaTimers) clearTimeout(t);
     this.mediaTimers = [];
     this.media = null;
-    this.held = null;
-    if (!keepReleased) this.released = [];
+    if (keepReleased) return;
+    this.released = [];
+    this.sealing = null;
   }
 
   // ---- joining ----------------------------------------------------------
@@ -1429,6 +1744,11 @@ class Session {
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
       this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
+      return;
+    }
+    // The room's pictures come sealed: a page that can't open them is told so now, not after the host turns it away.
+    if (!sealAvailable()) {
+      this.fail(NO_SEAL_JOIN, "Can't join");
       return;
     }
     this.joinVia = via ?? null;
@@ -1667,6 +1987,8 @@ class Session {
     const stale = this.hostConn;
     this.hostConn = conn;
     stale?.close();
+    // The host sends what a question holds again on the new link (or, reloaded, under a new key).
+    this.sealedArt.clear();
     // Anything from the host: a link it then closes was not turned away without a word.
     let heard = false;
     // A host that vanishes (crashed tab, lost Wi-Fi) often never fires 'close'.
@@ -1680,6 +2002,23 @@ class Session {
         conn.close();
       }
     }, 2000);
+    // The art lane (artLane.ts), opened before the hello says so: the room's pictures come down it.
+    const lane = openLane(conn.peerConnection);
+    if (lane) {
+      const frames = new LaneReceiver((raw) => {
+        const msg = parseHostMsg(raw);
+        if (!msg || this.hostConn !== conn) return;
+        // Sealed until the clock starts (seal.ts); the patches come plain, after the key.
+        if (msg.t === 'sealed') this.sealedArt.take(msg);
+        else if (isMedia(msg)) shown.receive(msg);
+      });
+      lane.addEventListener('message', (e) => {
+        if (this.hostConn !== conn) return;
+        lastHeard = Date.now();
+        // A broken frame: the lane is closed, and the host sends the rest on the main channel.
+        if (!frames.take(e.data)) lane.close();
+      });
+    }
     conn.on('data', (raw) => {
       if (this.hostConn !== conn) return;
       lastHeard = Date.now();
@@ -1751,6 +2090,13 @@ class Session {
         case 'standing':
           this.standing = msg.s;
           break;
+        // A guest without the art lane gets the sealed pictures here; everyone gets their keys here.
+        case 'sealed':
+          this.sealedArt.take(msg);
+          break;
+        case 'key':
+          this.sealedArt.key(msg);
+          break;
         case 'cursors':
           if (!cursorsLive(this.state)) break;
           for (const e of msg.c) if (e[0] !== cursorKey(this.myPlayerId ?? '')) peerCursors.set(e[0], entryAt(e));
@@ -1774,7 +2120,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(owner ? { owner } : {}) });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}) });
     this.watchOwnPresence();
   }
 
@@ -1819,10 +2165,10 @@ class Session {
     if (action.type === 'answer' && action.index !== null && q && shown.qid === q.askedAt && this.answered?.qid !== q.askedAt) {
       // On a veiled picture, also how much of it had burnt in (for an achievement, lib/achievements.ts).
       const share = q.veil && shown.veil?.count ? Object.keys(shown.patches).length / shown.veil.count : undefined;
-      // Timed on this device's clock from its first picture, or in Delve from
-      // its clock running here if that came later (its art may come well
-      // before, during a team's draw): only then does it open to answers.
-      // A clock the host's reload held still adds what was used of it before.
+      // Timed on this device's clock from its first picture showing (on a
+      // guest, as its key opened it), or from its clock running here if that
+      // came later: only then does it open to answers. A Delve clock the
+      // host's reload held still adds what was used of it before.
       const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
       const ms = performance.now() - Math.max(shown.since, seen?.at ?? 0) + (seen?.before ?? 0);
       this.answered = { qid: q.askedAt, ms, ...(share !== undefined ? { share } : {}) };
@@ -1837,7 +2183,7 @@ class Session {
     const run = () => {
       if (!this.state) return;
       try {
-        this.setState(engine.apply(this.state, action, from));
+        this.setState(action.type === 'next' ? this.stepNext(this.state, from) : engine.apply(this.state, action, from));
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
         this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
@@ -1967,24 +2313,31 @@ class Session {
 
   private setState(next: GameState) {
     const prev = this.state;
+    // The room changed since the next question was drawn ahead: it's thrown away (drawAhead.ts).
+    if (this.ahead && next.version !== this.ahead.from) this.dropAhead();
+    const taking = this.taking;
+    this.taking = null;
+    let patchesOut: Promise<void> | null = null;
     this.noteChange(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
+    // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
+    if (this.isHost && next.phase !== 'lobby') warmMedia();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       // A question asked again in its place while the draw plays keeps its hold.
       const until = drawHoldUntil(prev, next, this.drawHold);
       this.drawHold = until === null ? null : { qid: next.question.askedAt, until };
-      void this.startMedia(next);
+      void this.startMedia(next, taking?.qid === next.question.askedAt ? taking : null);
     } else if (next.phase === 'reveal') {
       // Only as the reveal begins: a later change during it (someone joining,
       // the room going public) would cancel the patches still on their way.
       if (prev?.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt) {
         const rest = this.unreleasedPatches();
-        // Delve: a question that ended before its clock started still shows everyone its art.
-        this.releaseHeld();
+        // A question that ended before its clock started still shows everyone its art: its key goes out now.
+        if (next.question) this.openSeal(next.question.askedAt);
         // Keep what was sent, so someone arriving during the reveal still gets the pictures.
         this.stopMedia(true);
-        this.finishVeil(rest);
+        patchesOut = this.finishVeil(rest);
       }
     } else if (next.phase !== 'question') {
       this.stopMedia();
@@ -1995,6 +2348,9 @@ class Session {
       const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
     }
+    // Race: the next question is known as the reveal starts, so it's drawn now (once the reveal has gone
+    // out), and its art goes out while the reveal plays, after the reveal's own last patches.
+    if (patchesOut) this.drawAhead(next, patchesOut);
     this.scheduleTimers(next);
     this.syncBeacon(next);
     this.save();
@@ -2092,20 +2448,20 @@ class Session {
   }
 
   /**
-   * Delve: a question opens to answers as the state that starts its clock
-   * comes in (behind the pictures, for those answering), a little ahead of
-   * the clock's start (clockAt) itself. Noted as it first does on this
+   * A question opens to answers as the state that starts its clock comes in
+   * (just behind the key to its pictures), a little ahead of the clock's
+   * start (clockAt) itself, in every mode. Noted as it first does on this
    * device, to time its answer from (dispatch); on the host that is as it
    * goes out to everyone, a guest's answer taking a round trip at least (tooFast).
-   * One the host's reload held still is noted again as it carries on, with
-   * what was used of its clock before (`before`, for the answer's time; it
-   * opens to answers again only then); so is one that carried on unseen here
-   * (this device back after the grace, or idle and not waited for), from its
-   * new clockAt.
+   * Delve: one the host's reload held still is noted again as it carries on,
+   * with what was used of its clock before (`before`, for the answer's time;
+   * it opens to answers again only then); so is one that carried on unseen
+   * here (this device back after the grace, or idle and not waited for),
+   * from its new clockAt.
    */
   private noteClock(next: GameState) {
     const q = next.question;
-    if (!next.delve || !q) return;
+    if (!q) return;
     // An answer given just before the reload that never reached the host is timed afresh once the clock carries on.
     const dropLost = () => {
       if (this.answered?.qid === q.askedAt && !q.struck?.some((x) => x.by === this.myPlayerId)) this.answered = null;
@@ -2114,7 +2470,7 @@ class Session {
       this.clockSeen = null;
       this.usedBefore = { qid: q.askedAt, ms: pausedUsed(q.paused) };
       dropLost();
-    } else if (q.deadline !== null) {
+    } else if (clockRuns(q)) {
       const seen = this.clockSeen?.qid === q.askedAt ? this.clockSeen : null;
       if (seen && seen.clockAt === q.clockAt) return;
       // Carried on unseen here (the pause never reached this device): so is one lost on its way.
@@ -2537,7 +2893,7 @@ class Session {
       const cur = this.state;
       if (!cur || cur.phase !== 'reveal' || cur.question?.askedAt !== key) return;
       try {
-        this.setState(engine.apply(cur, { type: 'next' }, null));
+        this.setState(this.stepNext(cur, null));
       } catch {
         /* already moved on */
       }
@@ -2579,7 +2935,8 @@ class Session {
   /**
    * Turns mode: a player who is connected but doesn't pick a category (or
    * answer, without a timer) would hold everyone up; after a while the host
-   * may skip them.
+   * may skip them. A question whose clock hasn't started yet waits for the
+   * art, not for them: their while counts from its start.
    */
   private scheduleIdle(s: GameState) {
     const active = s.players[s.turn];
@@ -2589,7 +2946,7 @@ class Session {
       !s.delve &&
       !!active?.connected &&
       active.id !== this.priv.myPlayerId &&
-      (s.phase === 'choosing' || (s.phase === 'question' && !s.question?.deadline));
+      (s.phase === 'choosing' || (s.phase === 'question' && clockRuns(s.question) && !s.question?.deadline));
     const key = waiting ? `${s.turnCount}:${s.phase}:${s.question?.askedAt ?? 0}` : '';
     if (key === this.idleKey) return;
     this.idleKey = key;
@@ -2693,6 +3050,10 @@ class Session {
     this.reaskFails = { turn: '', n: 0 };
     this.artFailedFor = 0;
     this.drawHold = null;
+    this.dropAhead();
+    this.taking = null;
+    this.strikes.clear();
+    this.sealedArt.clear();
     this.labRoomless = false;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
@@ -2772,6 +3133,21 @@ function lastAlive(): { at?: number } {
  * can't be reached by this version; a hot-seat game carries on.
  */
 const OLD_SAVE_KEY = 'poe2trivia.session.v3';
+
+/**
+ * A question's pictures as they go out (sealed, to guests): its art, or
+ * each option's, or each veiled one. Patches go later, one at a time.
+ */
+function picturesOf(media: PreparedMedia): MediaMsg[] {
+  const qid = media.qid;
+  const out: MediaMsg[] = [];
+  if (media.art) out.push({ t: 'art', qid, ...media.art });
+  media.options.forEach(({ w, h, data }, index) => out.push({ t: 'option', qid, index, w, h, data }));
+  // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
+  media.tiles.forEach((t, tile) => out.push({ t: 'veil', qid, tile, ...t.veil }));
+  if (media.veil) out.push({ t: 'veil', qid, ...media.veil });
+  return out;
+}
 
 /** The veiled pictures of a question: the art of a name question, or each "find the art" picture (`tile`). */
 function veiledSets(media: PreparedMedia): { tile: number | undefined; patches: PreparedMedia['patches']; delays: number[]; gap: number }[] {

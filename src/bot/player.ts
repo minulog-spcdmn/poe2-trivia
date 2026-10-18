@@ -6,7 +6,7 @@
 // clicks would, and its timing runs on the host's clock.
 
 import { engine, session } from '../lib/session.svelte';
-import { activeRules, grayscaleFor, type GameState, type Question } from '../lib/game';
+import { activeRules, clockRuns, grayscaleFor, type GameState, type Question } from '../lib/game';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady, voteClosesAt } from '../lib/delve';
 import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, thinkTime, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
@@ -309,12 +309,14 @@ export class Player {
   private turns(s: GameState) {
     if (s.players[s.turn]?.id !== session.myPlayerId) return;
     if (s.phase === 'choosing') this.planCard(s, 'pick');
-    else if (s.phase === 'question' && s.question) this.planAnswer(s, s.question);
+    // The clock starts once the art has reached the player answering: nothing to read or answer before it.
+    else if (s.phase === 'question' && s.question && clockRuns(s.question)) this.planAnswer(s, s.question);
   }
 
   private race(s: GameState) {
     const q = s.question;
-    if (s.phase !== 'question' || !q || q.misses.some((m) => m.playerId === session.myPlayerId)) return;
+    // As on a turn: nothing to read or answer before the clock starts.
+    if (s.phase !== 'question' || !q || !clockRuns(q) || q.misses.some((m) => m.playerId === session.myPlayerId)) return;
     this.planAnswer(s, q);
     this.calmPick(s, q);
   }
@@ -327,7 +329,7 @@ export class Player {
    */
   private calmPick(s: GameState, q: Question) {
     const sat = this.satOut;
-    if (!sat || sat.askedAt !== q.askedAt || !q.deadline) return;
+    if (!sat || sat.askedAt !== q.askedAt || !clockRuns(q) || !q.deadline) return;
     const me = session.myPlayerId!;
     const others = s.players.filter((p) => p.id !== me && p.connected);
     if (!others.length || !others.every((p) => q.misses.some((m) => m.playerId === p.id))) return;
@@ -360,7 +362,7 @@ export class Player {
     } else if (s.phase === 'question' && s.question) {
       const q = s.question;
       // The clock starts once the art has reached everyone answering.
-      if (q.deadline === null) return;
+      if (!clockRuns(q)) return;
       if (together && q.struck?.some((x) => x.by === me)) return this.planHint(s, q);
       if (!together && s.players[s.turn]?.id !== me) return;
       this.planAnswer(s, q);
