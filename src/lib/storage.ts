@@ -45,7 +45,7 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  * page share its sessionStorage and localStorage, so without a start apart
  * every seat would be the same player, with one save between them.
  */
-const QA_SLOT = typeof document !== 'undefined' ? document.documentElement.getAttribute('data-qa') : null;
+const QA_SLOT = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-qa') ? document.documentElement.getAttribute('data-qa') : null;
 export const QA = QA_SLOT !== null;
 
 /**
