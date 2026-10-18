@@ -2,7 +2,8 @@
   // When they come: a week as seven rows of 24 hours, each hour as bright
   // as its average against the busiest (model.ts weekAverage), so the
   // evenings and the weekend show at a glance. A line below reads the
-  // busiest hour, or the one pointed at.
+  // busiest hour, or the one pointed at; it sits over its longest wording,
+  // kept hidden, so pointing never changes its height and moves what's below.
   import { average } from './chart';
   import { busiest } from './model';
 
@@ -15,6 +16,8 @@
   const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
   /** Brightness of a cell: its share of the busiest, with a floor so an empty hour still shows as a cell. */
   const level = (v: number) => (top ? Math.round((100 * v) / top.value) : 0);
+  /** The widest a figure in the line gets: the busiest hour's, or one with a decimal. */
+  const widest = $derived([top ? average(top.value) : '', '0.0'].reduce((a, b) => (b.length > a.length ? b : a)));
 
   function point(e: PointerEvent) {
     const cell = e.target instanceof HTMLElement ? e.target.closest<HTMLElement>('[data-h]') : null;
@@ -43,13 +46,18 @@
       <span class="hour" aria-hidden="true">{h % 3 === 0 ? h : ''}</span>
     {/each}
   </div>
-  <p class="read" aria-live="polite">
-    {#if shown && shown.value > 0}
-      <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: {average(shown.value)} {what.toLowerCase()} an hour on average{at ? '' : ', the busiest'}.
-    {:else if shown}
-      <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: none.
-    {:else}
-      Nothing counted in these days.
+  <p class="read">
+    <span aria-live="polite">
+      {#if shown && shown.value > 0}
+        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: {average(shown.value)} {what.toLowerCase()} an hour on average{at ? '' : ', the busiest'}.
+      {:else if shown}
+        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: none.
+      {:else}
+        Nothing counted in these days.
+      {/if}
+    </span>
+    {#if top}
+      <span class="sizer" aria-hidden="true"><b>Wednesdays, 00:00 to 00:00</b>: {widest} {what.toLowerCase()} an hour on average, the busiest.</span>
     {/if}
   </p>
   <p class="zone">Hours in {zone.replace(/_/g, ' ')} time, where GoatCounter counts them.</p>
@@ -87,8 +95,15 @@
     padding-top: 0.35rem;
   }
   .read {
+    display: grid;
     margin: 1rem 0 0;
     color: var(--a-text);
+  }
+  .read > span {
+    grid-area: 1 / 1;
+  }
+  .sizer {
+    visibility: hidden;
   }
   .read b {
     font-weight: 650;
