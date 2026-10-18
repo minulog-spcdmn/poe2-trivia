@@ -99,6 +99,13 @@ html[data-qa='desk'] #app {
   border-color: var(--gold-lo);
   background: #1a140d;
 }
+.different {
+  margin: 0;
+  padding: 0.3rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--gold);
+  font-size: 0.9em;
+}
 .uncovered {
   margin: 0;
   padding: 0.3rem 1rem;
@@ -261,4 +268,76 @@ html[data-qa='desk'] #app {
 }
 .strip .mark.bad.now {
   background: #ff8a7a;
+}
+
+/* Play from here: the room's line, then its seats, each with what it's doing and its link's controls. */
+.live {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+.live .room {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 0;
+  margin: 0;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.live .room .scene {
+  color: var(--gold-hi);
+}
+.live .room .sep {
+  margin: 0 0.45em;
+  color: var(--gold-lo);
+}
+.live .room .note {
+  color: var(--gold);
+}
+.live .room .spacer {
+  flex: 1;
+}
+.live button {
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.1rem 0.5rem;
+  margin-left: 0.4rem;
+  cursor: pointer;
+}
+.live button:hover {
+  border-color: var(--gold);
+}
+.live button.on {
+  border-color: var(--gold-lo);
+  color: var(--gold-hi);
+  background: #1a140d;
+}
+.live .seat figcaption {
+  height: 64px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.live .seat .who {
+  color: var(--text);
+}
+.live .seat .state {
+  font-size: 0.85em;
+}
+.live .seat .state.down {
+  color: #ff8a7a;
+}
+.live .seat .tools button {
+  margin: 0 0.15rem;
+}
+.empty {
+  margin: auto;
+  color: var(--muted);
 }

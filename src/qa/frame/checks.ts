@@ -44,7 +44,8 @@ export function listen() {
     (e) => {
       const t = e.target;
       if (t instanceof HTMLImageElement) images.push(t.currentSrc || t.src);
-      else if (e instanceof ErrorEvent) errors.push(e.message);
+      // (Chrome's note that a ResizeObserver's callback changed a size it watches is harmless, and comes and goes.)
+      else if (e instanceof ErrorEvent && !/^ResizeObserver loop/.test(e.message)) errors.push(e.message);
     },
     true,
   );

@@ -18,6 +18,7 @@
     panning,
     outlines,
     board,
+    befores,
     onchecked,
   }: {
     stop: Stop;
@@ -27,6 +28,8 @@
     panning: boolean;
     outlines: boolean;
     board?: string;
+    /** Each seat's shot as it was before (held up on B), where the last sweep has one. */
+    befores?: (string | null)[];
     /** A frame of the stop shown was checked. */
     onchecked: (stopId: string, slot: string, result: Extract<FrameMessage, { qa: 'checked' }>) => void;
   } = $props();
@@ -108,11 +111,13 @@
                 style:width="{size.w}px"
                 style:height="{size.h}px"
                 style:transform="scale({scale})"
-                class:away={!!board}
+                class:away={!!board || !!befores?.[i]}
               ></iframe>
             {/key}
           {/if}
-          {#if board}
+          {#if befores?.[i]}
+            <img class="board" src={befores[i]} alt="This seat as it was before" style:width="{size.w * scale}px" />
+          {:else if board}
             <img class="board" src={board} alt="The design's board for this scene" style:width="{size.w * scale}px" />
           {:else if !ready.has(`s${i}`)}
             <p class="loading">Loading…</p>

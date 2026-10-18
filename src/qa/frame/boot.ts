@@ -38,13 +38,15 @@ export async function boot(asked: URLSearchParams) {
 
   // The scene first: what it puts in the address has to be there before the
   // app's modules read it (the codex's #codex, an invite's ?room=).
-  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }] = await Promise.all([
+  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }, { useCaptured }] = await Promise.all([
     import('../../lib/session.svelte.ts'),
     import('../build/engine.ts'),
     import('../scenes/index.ts'),
     import('../../data/fakes.json'),
+    import('../scenes/captured.ts'),
   ]);
   useItems(engine.items, fakeNames);
+  useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
   const key = asked.get('s');
   const scene = scenes.sceneByKey(key);
   const seat = scene?.seats[Number(asked.get('seat') ?? 0)];
@@ -189,12 +191,12 @@ export async function boot(asked: URLSearchParams) {
 
 /**
  * The desk's keys, pressed in the frame, go to the desk; unless the game took
- * them, or they belong to a field or a list there. Holding keys (H, Alt)
+ * them, or they belong to a field or a list there. Holding keys (H, B, Alt)
  * hand on their letting go too.
  */
 function handOnKeys(tell: (m: FrameMessage) => void) {
-  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', '/', 'Alt']);
-  const HELD = new Set(['h', 'H', 'Alt']);
+  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'b', 'B', 'o', 'O', 'r', 'R', '/', 'Alt']);
+  const HELD = new Set(['h', 'H', 'b', 'B', 'Alt']);
   const hand = (e: KeyboardEvent, up: boolean) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt') || !DESK_KEYS.has(e.key)) return;
     if (up && !HELD.has(e.key)) return;

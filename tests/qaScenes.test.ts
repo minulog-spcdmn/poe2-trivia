@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
 import { useItems } from '../src/qa/build/engine.ts';
+import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
 import { SCREENS, seatLabel } from '../src/qa/scene.ts';
 import { matches, sizesFor, walk } from '../src/qa/desk/walk.ts';
@@ -11,6 +12,9 @@ import { answered } from '../src/qa/frame/emulate.ts';
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 useItems(items, fakes);
+// The scenes saved from live rooms, as the desk has them (src/qa/captured).
+const capturedDir = new URL('../src/qa/captured/', import.meta.url);
+useCaptured(Object.fromEntries((existsSync(capturedDir) ? readdirSync(capturedDir) : []).filter((f) => f.endsWith('.json')).map((f) => [f, JSON.parse(readFileSync(new URL(f, capturedDir), 'utf8'))])));
 const { catalog } = await import('../src/qa/scenes/index.ts');
 
 // The QA desk (qa.html) walks every scene from every seat at every size; a

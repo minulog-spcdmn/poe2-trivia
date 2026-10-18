@@ -14,6 +14,9 @@
   import { matches, stopOf, walk, type Stop } from './walk.ts';
   import Stage from './Stage.svelte';
   import Strip from './Strip.svelte';
+  import Live from './Live.svelte';
+  import { liveRoom, type LiveRoom } from '../live/room.ts';
+  import type { Scene } from '../scene.ts';
 
   /** The design's boards, by name (docs/handoff/end-screen/screens). */
   const BOARDS: Record<string, string> = Object.fromEntries(
@@ -62,7 +65,7 @@
    * problems by stop, and the sizes a scene isn't walked at but had some at,
    * which join its walk.
    */
-  type Shot = { scene: string; seat: number; size: string; problems: Problem[]; failed?: string };
+  type Shot = { scene: string; seat: number; size: string; problems: Problem[]; failed?: string; before?: string | null; changed?: number };
   let sweep = $state<{ at: string; shots: Shot[] } | null>(null);
   void fetch('./__qa/latest')
     .then((r) => (r.ok ? r.json() : null))
@@ -110,6 +113,18 @@
       }
     return out;
   });
+  /** The last sweep's shots of the stop's seats as they were before (--before), and how much has changed since. */
+  const shotsHere = $derived(stop ? stop.seats.map((seat) => sweep?.shots.find((sh) => sh.scene === stop.scene.key && sh.size === stop.size && sh.seat === seat)) : []);
+  const befores = $derived(shotsHere.map((sh) => (sh?.before ? `./__qa/shot/${sh.before}` : null)));
+  const changedBy = $derived(Math.max(0, ...shotsHere.map((sh) => sh?.changed ?? 0)));
+  let holdingBefore = $state(false);
+  /** Play from here: the stop's scene as a live room, while one is up. */
+  let live = $state<{ room: LiveRoom; scene: Scene; size: SizeKey } | null>(null);
+  async function play() {
+    if (!stop || !built?.state) return;
+    const room = await liveRoom(built);
+    if (room) live = { room, scene: stop.scene, size: stop.size };
+  }
   let reloads = $state(0);
   let holding = $state(false);
   let panning = $state(false);
@@ -139,7 +154,9 @@
   }
 
   function press(key: string, up = false) {
+    if (live) return;
     if (key === 'h' || key === 'H') holding = !up && !!board;
+    else if (key === 'b' || key === 'B') holdingBefore = !up && befores.some(Boolean);
     else if (key === 'Alt') panning = !up && zoomed;
     else if (up) return;
     else if (key === 'ArrowRight') go(at + 1);
@@ -162,7 +179,7 @@
     press(e.key);
   }
   function onkeyup(e: KeyboardEvent) {
-    if (e.key === 'h' || e.key === 'H' || e.key === 'Alt') press(e.key, true);
+    if (['h', 'H', 'b', 'B', 'Alt'].includes(e.key)) press(e.key, true);
   }
   // The frames hand on the desk's keys pressed in them.
   $effect(() => {
@@ -209,7 +226,7 @@
   });
 </script>
 
-<svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (panning = false))} />
+<svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (holdingBefore = false), (panning = false))} />
 
 <div class="desk">
   <div class="heads">
@@ -228,13 +245,19 @@
       {#if board}
         <button class="hold" onpointerdown={() => (holding = true)} onpointerup={() => (holding = false)} onpointerleave={() => (holding = false)}>Hold for design <kbd>H</kbd></button>
       {/if}
+      {#if built?.state && !live}
+        <button class="hold" onclick={play} title="This scene's room for real: every seat playable, by hand or by a bot, with its link to make bad">Play from here</button>
+      {/if}
+      {#if befores.some(Boolean)}
+        <button class="hold" onpointerdown={() => (holdingBefore = true)} onpointerup={() => (holdingBefore = false)} onpointerleave={() => (holdingBefore = false)}>Hold for before <kbd>B</kbd></button>
+      {/if}
       {#if change?.scenes.length}
-      <div class="views" role="group" aria-label="Which scenes">
-        <button class:on={view === 'change'} onclick={() => (view = 'change')}>This change <span class="num">{change.scenes.length}</span></button>
-        <button class:on={view === 'all'} onclick={() => (view = 'all')}>Everything</button>
-      </div>
-    {/if}
-    <div class="count">
+        <div class="views" role="group" aria-label="Which scenes">
+          <button class:on={view === 'change'} onclick={() => (view = 'change')}>This change <span class="num">{change.scenes.length}</span></button>
+          <button class:on={view === 'all'} onclick={() => (view = 'all')}>Everything</button>
+        </div>
+      {/if}
+      <div class="count">
         <button aria-label="Previous stop" onclick={() => go(at - 1)} disabled={at === 0}>‹</button>
         <span class="num">{stops.length ? at + 1 : 0} of {stops.length}</span>
         <button aria-label="Next stop" onclick={() => go(at + 1)} disabled={at >= stops.length - 1}>›</button>
@@ -242,9 +265,12 @@
       <input class="search" type="search" placeholder="Find a scene  /" bind:value={query} bind:this={searchEl} aria-label="Find a scene" />
     </header>
     {#if view === 'change' && change?.uncovered.length}
-    <p class="uncovered">No scene runs {change.uncovered.length === 1 ? 'this changed file' : `these ${change.uncovered.length} changed files`}: {change.uncovered.map((f) => f.split('/').pop()).join(', ')}</p>
-  {/if}
-  {#if problems.length}
+      <p class="uncovered">No scene runs {change.uncovered.length === 1 ? 'this changed file' : `these ${change.uncovered.length} changed files`}: {change.uncovered.map((f) => f.split('/').pop()).join(', ')}</p>
+    {/if}
+    {#if changedBy > 0.001}
+      <p class="different">Looks different from before: <span class="num">{changedBy < 0.01 ? '<1' : Math.round(changedBy * 100)}%</span> of the screen. Hold <kbd>B</kbd> to see it as it was.</p>
+    {/if}
+    {#if problems.length}
       <p class="problems" role="status">
         {#each problems as p, i (p.kind)}
           {#if i > 0}<span class="sep">•</span>{/if}
@@ -255,8 +281,10 @@
     {/if}
   </div>
 
-  {#if stop}
-    <Stage {stop} {seats} {zoomed} {reloads} {panning} {outlines} board={holding ? board : undefined} onchecked={(id, slot, r) => (results[id] = { ...results[id], [slot]: r })} />
+  {#if live}
+    <Live room={live.room} scene={live.scene} size={live.size} onexit={() => (live = null)} />
+  {:else if stop}
+    <Stage {stop} {seats} {zoomed} {reloads} {panning} {outlines} board={holding ? board : undefined} befores={holdingBefore ? befores : undefined} onchecked={(id, slot, r) => (results[id] = { ...results[id], [slot]: r })} />
   {:else}
     <div class="empty"></div>
   {/if}

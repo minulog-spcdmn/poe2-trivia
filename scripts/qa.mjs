@@ -16,15 +16,21 @@
 // Writes the shots and a manifest.json into screens/qa-<timestamp>/, and
 // screens/qa-latest.json, which the dev server hands the desk.
 //
+// --before shoots the same scenes as they were where this branch left main
+// (or at --base REF): that commit is checked out in a worktree of its own
+// in the system's temp folder (never the stash), built and shot into
+// screens/qa-base-<sha>/, and each shot is compared with its pair. The
+// desk then holds the before up on B, and marks what looks different.
+//
 // --map instead runs every scene once on a dev server of its own with the
 // browser's coverage on, and writes src/data/sceneFiles.json: which of the
 // game's files each scene runs, for the desk's "This change"
 // (src/qa/change.ts). Run it when scenes or screens have changed much.
 //
 //   npm run qa -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--webgl] [--banding]
-//                 [--url URL] [--no-build] [--concurrency N]
+//                 [--before | --base REF] [--url URL] [--no-build] [--concurrency N]
 //   npm run qa -- --map
-//   (from PowerShell, where npm eats the flags: npm run qa full webgl only=lobby)
+//   (from PowerShell, where npm eats the flags: npm run qa full webgl before only=lobby)
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -38,7 +44,6 @@ import { SIZES } from '../src/qa/sizes.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCREENS = path.join(ROOT, 'screens');
-const BUILD = path.join(SCREENS, 'qa-build');
 const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
 
 const OPTIONS = {
@@ -48,15 +53,17 @@ const OPTIONS = {
   build: { type: 'boolean', default: true },
   webgl: { type: 'boolean', default: false },
   banding: { type: 'boolean', default: false },
+  before: { type: 'boolean', default: false },
+  base: { type: 'string' },
   map: { type: 'boolean', default: false },
   concurrency: { type: 'string', default: String(Math.max(2, os.availableParallelism() - 2)) },
   help: { type: 'boolean', short: 'h', default: false },
 };
 const { values, positionals } = parseArgs({ options: OPTIONS, allowPositionals: true, allowNegative: true });
-// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, no-build, name=value.
+// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, before, map, no-build, name=value.
 for (const word of positionals) {
   if (word === 'full' || word === 'walk') values.sizes = word;
-  else if (word === 'webgl' || word === 'banding' || word === 'map' || word === 'help') values[word] = true;
+  else if (['webgl', 'banding', 'before', 'map', 'help'].includes(word)) values[word] = true;
   else if (word === 'no-build') values.build = false;
   else if (word.includes('=')) values[word.split('=')[0]] = word.slice(word.indexOf('=') + 1);
   else {
@@ -72,6 +79,8 @@ if (values.help) {
   --only REGEX           only scenes whose key matches (lobby, game/delve, over/n-)
   --webgl                keep WebGL (the effects, on the GPU) and full motion
   --banding              run scripts/find-banding.py on each shot (implies --webgl; needs numpy and Pillow)
+  --before               shoot the same as they were where this branch left main, and compare
+  --base REF             the same, as they were at REF
   --url URL              shoot a running server (the dev server, the beta) instead of building one
   --no-build             serve screens/qa-build/ as the last sweep built it
   --concurrency N        pages at once (default: all threads but two, ${OPTIONS.concurrency.default})
@@ -81,25 +90,32 @@ if (values.help) {
 if (values.banding) values.webgl = true;
 const concurrency = Math.max(1, Number(values.concurrency) || 1);
 const only = values.only ? new RegExp(values.only) : null;
+const t0 = Date.now();
+const git = (cwd, ...args) => {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : null;
+};
 
-// ---- what to shoot ------------------------------------------------------------
+// ---- serving ------------------------------------------------------------------
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.woff2': 'font/woff2', '.woff': 'font/woff', '.wasm': 'application/wasm', '.ico': 'image/x-icon', '.txt': 'text/plain', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.webm': 'video/webm' };
 
-/** Builds the beta into screens/qa-build/ (unless told not to) and serves it; resolves to its address. */
-async function serveBuild() {
-  if (values.build || !existsSync(path.join(BUILD, 'qa.html'))) {
-    console.log('Building the beta for the sweep (npm run qa -- --no-build skips this next time)…');
-    const t0 = Date.now();
-    const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
-    const r = spawnSync(process.execPath, [vite, 'build', '--outDir', BUILD, '--emptyOutDir', '--logLevel', 'error'], { cwd: ROOT, env: { ...process.env, VITE_CHANNEL: 'beta' }, stdio: 'inherit' });
-    if (r.status !== 0) process.exit(r.status ?? 1);
-    console.log(`Built in ${((Date.now() - t0) / 1000).toFixed(0)} s.`);
-  }
+/** Builds the beta of the checkout at `root` into `out`. */
+function buildBeta(root, out, what) {
+  console.log(`Building the beta of ${what}…`);
+  const started = Date.now();
+  const vite = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
+  const r = spawnSync(process.execPath, [vite, 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error'], { cwd: root, env: { ...process.env, VITE_CHANNEL: 'beta' }, stdio: 'inherit' });
+  if (r.status !== 0) process.exit(r.status ?? 1);
+  console.log(`Built in ${((Date.now() - started) / 1000).toFixed(0)} s.`);
+}
+
+/** Serves the files under `dir`; resolves to its address. */
+async function serveDir(dir) {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
-    let file = path.join(BUILD, decodeURIComponent(url.pathname));
-    if (!file.startsWith(BUILD)) return void res.writeHead(403).end();
+    let file = path.join(dir, decodeURIComponent(url.pathname));
+    if (!file.startsWith(dir)) return void res.writeHead(403).end();
     if (existsSync(file) && statSync(file).isDirectory()) file = path.join(file, 'index.html');
     if (!existsSync(file)) return void res.writeHead(404).end();
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
@@ -117,81 +133,38 @@ async function serveDev() {
   return { base: server.resolvedUrls.local[0], close: () => server.close() };
 }
 
-const served = values.map ? await serveDev() : values.url ? { base: values.url.endsWith('/') ? values.url : `${values.url}/`, close: () => {} } : await serveBuild();
-const base = served.base;
+// ---- shooting -----------------------------------------------------------------
 
 // Drawn on the GPU always: the game's blurs and shadows in software, a page
 // at a time through one compositor, are what a sweep would spend its time
 // on. (Without --webgl the pages still have no WebGL: hidden from them below.)
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM || process.env.BOT_CHROMIUM || undefined,
-  args: [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : []), '--enable-gpu', '--ignore-gpu-blocklist'],
-});
-
-const desk = await browser.newPage();
-await desk.goto(`${base}qa.html`);
-await desk.waitForFunction(() => window.__qaDesk, null, { timeout: 60000 });
-const scenes = (await desk.evaluate(() => window.__qaDesk.scenes())).filter((s) => !only || only.test(s.key));
-await desk.close();
-
-if (values.map) values.sizes = 'desktop';
-const pick = (s) => (values.sizes === 'walk' ? s.sizes : values.sizes === 'full' ? SIZES.map((x) => x.key) : values.sizes.split(',').map((k) => k.trim()));
-for (const k of new Set(scenes.flatMap(pick))) {
-  if (!SIZES.some((s) => s.key === k)) {
-    console.error(`No size "${k}" (src/qa/sizes.ts has ${SIZES.map((s) => s.key).join(', ')}).`);
-    process.exit(1);
-  }
-}
-const jobs = scenes.flatMap((s) => pick(s).flatMap((size) => Array.from({ length: s.seats }, (_, seat) => ({ scene: s.key, label: s.label, seat, size }))));
-if (!jobs.length) {
-  console.error(only ? `No scene's key matches ${only}.` : 'No scenes.');
-  process.exit(1);
-}
-
-// ---- shooting -----------------------------------------------------------------
-
-const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const dirName = `qa-${stamp}`;
-const outDir = path.join(SCREENS, dirName);
-mkdirSync(outDir, { recursive: true });
-
+// New headless (not the headless shell): the real GPU, and a process a site.
+const launch = () =>
+  chromium.launch({
+    ...(process.env.CHROMIUM || process.env.BOT_CHROMIUM ? { executablePath: process.env.CHROMIUM || process.env.BOT_CHROMIUM } : { channel: 'chromium' }),
+    args: [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : []), '--enable-gpu', '--ignore-gpu-blocklist'],
+  });
 /**
- * A context per worker and size, its jobs one after another: pages of one
- * site in one context share a renderer, so the workers' own contexts are
- * what lets them run side by side. Each frame keeps its own storage keys
- * (its slot) besides.
+ * A browser for every few workers: one browser's own process (its GPU
+ * process, its compositing, its screenshots) is what a crowd of pages ends
+ * up waiting on, past about four of them.
  */
-const contexts = new Map();
-async function contextFor(worker, key) {
-  const id = `${worker}|${key}`;
-  if (!contexts.has(id)) {
-    const size = SIZES.find((s) => s.key === key);
-    contexts.set(
-      id,
-      (async () => {
-        const c = await browser.newContext({
-          viewport: { width: size.w, height: size.h },
-          deviceScaleFactor: size.dpr,
-          isMobile: !!size.touch,
-          hasTouch: !!size.touch,
-          ...(size.touch ? { userAgent: MOBILE_UA } : {}),
-          reducedMotion: values.webgl ? 'no-preference' : 'reduce',
-        });
-        if (!values.webgl)
-          await c.addInitScript(() => {
-            delete window.WebGL2RenderingContext;
-            delete window.WebGLRenderingContext;
-          });
-        return c;
-      })(),
-    );
-  }
-  return contexts.get(id);
+const PER_BROWSER = 4;
+const browsers = await Promise.all(Array.from({ length: Math.ceil(concurrency / PER_BROWSER) }, launch));
+const browser = browsers[0];
+
+/** Every scene the desk at `base` has: key, label, seats, the sizes it is walked at. */
+async function listScenes(base) {
+  const desk = await browser.newPage();
+  await desk.goto(`${base}qa.html`);
+  await desk.waitForFunction(() => window.__qaDesk, null, { timeout: 60000 });
+  const scenes = await desk.evaluate(() => window.__qaDesk.scenes());
+  await desk.close();
+  return scenes;
 }
 
 const fileOf = (j) => `${j.scene.replace(/\//g, '--')}__${j.seat}__${j.size}.png`;
-/** --map: the game's files each job ran. */
-const ran = new Map();
+
 /**
  * The game's files of `entries` (the dev server's, one module a file) that
  * ran some function beyond their module's top level (whose range is the
@@ -209,51 +182,112 @@ function ranFiles(entries) {
   }
   return files;
 }
-const shots = [];
-let next = 0;
-let done = 0;
-const t0 = Date.now();
-async function worker(w) {
-  while (next < jobs.length) {
-    const n = next++;
-    const j = jobs[n];
-    const started = Date.now();
-    const page = await (await contextFor(w, j.size)).newPage();
-    const errors = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    try {
-      if (values.map) await page.coverage.startJSCoverage({ resetOnNavigation: false });
-      const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
-      await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
-      const loaded = Date.now();
-      await page.waitForFunction(() => window.__qa, null, { timeout: 60000 });
-      const checked = Date.now();
-      if (values.map) {
-        ran.set(j, ranFiles(await page.coverage.stopJSCoverage()));
-        continue;
+
+/**
+ * Opens each job's frame at `base`, waits for its check, and shoots it into
+ * `outDir` (with `coverage`: notes the files it ran instead). A context per
+ * worker and size, its jobs one after another: pages of one site in one
+ * context share a renderer, so the workers' own contexts are what lets them
+ * run side by side. Each frame keeps its own storage keys (its slot) besides.
+ */
+async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at = concurrency } = {}) {
+  mkdirSync(outDir, { recursive: true });
+  const contexts = new Map();
+  const contextFor = (worker, key) => {
+    const id = `${worker}|${key}`;
+    if (!contexts.has(id)) {
+      const size = SIZES.find((s) => s.key === key);
+      contexts.set(
+        id,
+        (async () => {
+          const c = await browsers[worker % browsers.length].newContext({
+            viewport: { width: size.w, height: size.h },
+            deviceScaleFactor: size.dpr,
+            isMobile: !!size.touch,
+            hasTouch: !!size.touch,
+            ...(size.touch ? { userAgent: MOBILE_UA } : {}),
+            reducedMotion: values.webgl ? 'no-preference' : 'reduce',
+          });
+          if (!values.webgl)
+            await c.addInitScript(() => {
+              delete window.WebGL2RenderingContext;
+              delete window.WebGLRenderingContext;
+            });
+          return c;
+        })(),
+      );
+    }
+    return contexts.get(id);
+  };
+  const shots = [];
+  const ran = new Map();
+  let next = 0;
+  let done = 0;
+  const worker = async (w) => {
+    while (next < jobs.length) {
+      const n = next++;
+      const j = jobs[n];
+      const started = Date.now();
+      const page = await (await contextFor(w, j.size)).newPage();
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      try {
+        if (coverage) await page.coverage.startJSCoverage({ resetOnNavigation: false });
+        const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
+        await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
+        const loaded = Date.now();
+        await page.waitForFunction(() => window.__qa, null, { timeout: 60000 });
+        const checked = Date.now();
+        if (coverage) {
+          ran.set(j, ranFiles(await page.coverage.stopJSCoverage()));
+          continue;
+        }
+        const r = await page.evaluate(() => window.__qa);
+        const file = fileOf(j);
+        // At CSS pixels (a quarter of a 4K-at-200% shot's), unless banding is looked for, which shows only in the device's own.
+        await page.screenshot({ path: path.join(outDir, file), animations: values.webgl ? 'allow' : 'disabled', caret: 'hide', scale: values.banding ? 'device' : 'css' });
+        const times = { load: loaded - started, check: checked - loaded, shot: Date.now() - checked };
+        shots.push({ ...j, file, settled: r.settled, problems: r.problems, ms: Date.now() - started, times });
+      } catch (e) {
+        shots.push({ ...j, file: null, failed: e.message.split('\n')[0], problems: [], ms: Date.now() - started, errors });
+      } finally {
+        await page.close();
+        done++;
+        if (process.stdout.isTTY) process.stdout.write(`\r${done}/${jobs.length}`);
       }
-      const r = await page.evaluate(() => window.__qa);
-      const file = fileOf(j);
-      // At CSS pixels (a quarter of a 4K-at-200% shot's), unless banding is looked for, which shows only in the device's own.
-      await page.screenshot({ path: path.join(outDir, file), animations: values.webgl ? 'allow' : 'disabled', caret: 'hide', scale: values.banding ? 'device' : 'css' });
-      const times = { load: loaded - started, check: checked - loaded, shot: Date.now() - checked };
-      shots.push({ ...j, file, settled: r.settled, problems: r.problems, ms: Date.now() - started, times });
-    } catch (e) {
-      shots.push({ ...j, file: null, failed: e.message.split('\n')[0], problems: [], ms: Date.now() - started, errors });
-    } finally {
-      await page.close();
-      done++;
-      if (process.stdout.isTTY) process.stdout.write(`\r${done}/${jobs.length} shots`);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(at, jobs.length) }, (_, w) => worker(w)));
+  if (process.stdout.isTTY) process.stdout.write('\n');
+  await Promise.all([...contexts.values()].map(async (c) => (await c).close()));
+  return { shots, ran };
+}
+
+/** The jobs for `scenes`: every seat at every size picked. */
+function jobsFor(scenes) {
+  const pick = (s) => (values.sizes === 'walk' ? s.sizes : values.sizes === 'full' ? SIZES.map((x) => x.key) : values.sizes.split(',').map((k) => k.trim()));
+  for (const k of new Set(scenes.flatMap(pick))) {
+    if (!SIZES.some((s) => s.key === k)) {
+      console.error(`No size "${k}" (src/qa/sizes.ts has ${SIZES.map((s) => s.key).join(', ')}).`);
+      process.exit(1);
     }
   }
+  return scenes.flatMap((s) => pick(s).flatMap((size) => Array.from({ length: s.seats }, (_, seat) => ({ scene: s.key, label: s.label, seat, size }))));
 }
-console.log(`${jobs.length} shots of ${scenes.length} scenes, ${concurrency} at once, from ${base}`);
-await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, (_, w) => worker(w)));
-if (process.stdout.isTTY) process.stdout.write('\n');
-await browser.close();
-served.close();
+
+// ---- --map --------------------------------------------------------------------
 
 if (values.map) {
+  const served = await serveDev();
+  values.sizes = 'desktop';
+  const scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
+  const jobs = jobsFor(scenes);
+  // The dev server builds each module as a page first asks for it: more than a few pages at once and they time out waiting.
+  const at = Math.min(concurrency, 4);
+  console.log(`Running ${jobs.length} frames with coverage on, ${at} at once…`);
+  const { ran } = await shootAll(served.base, jobs, path.join(SCREENS, 'qa-map'), { coverage: true, concurrency: at });
+  await Promise.all(browsers.map((b) => b.close()));
+  served.close();
   // Every file's scenes; and the files at least 60% of the scenes run, which say nothing about any one.
   const byScene = new Map();
   for (const [j, files] of ran) byScene.set(j.scene, new Set([...(byScene.get(j.scene) ?? []), ...files]));
@@ -270,6 +304,119 @@ if (values.map) {
   console.log(`src/data/sceneFiles.json: ${Object.keys(files).length} files over ${byScene.size} scenes, ${global.length} global${failed ? `; ${failed} frames failed` : ''}.`);
   process.exit(0);
 }
+
+// ---- the sweep ----------------------------------------------------------------
+
+const BUILD = path.join(SCREENS, 'qa-build');
+let served;
+if (values.url) served = { base: values.url.endsWith('/') ? values.url : `${values.url}/`, close: () => {} };
+else {
+  if (values.build || !existsSync(path.join(BUILD, 'qa.html'))) buildBeta(ROOT, BUILD, 'this checkout (npm run qa -- --no-build skips this next time)');
+  served = await serveDir(BUILD);
+}
+const scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
+const jobs = jobsFor(scenes);
+if (!jobs.length) {
+  console.error(only ? `No scene's key matches ${only}.` : 'No scenes.');
+  process.exit(1);
+}
+const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+const dirName = `qa-${stamp}`;
+const outDir = path.join(SCREENS, dirName);
+console.log(`${jobs.length} shots of ${scenes.length} scenes, ${concurrency} at once, from ${served.base}`);
+const { shots } = await shootAll(served.base, jobs, outDir);
+served.close();
+
+// ---- before -------------------------------------------------------------------
+
+let before = null;
+if (values.before || values.base) {
+  const ref = values.base ?? git(ROOT, 'merge-base', 'origin/main', 'HEAD') ?? git(ROOT, 'merge-base', 'main', 'HEAD');
+  const sha = ref && git(ROOT, 'rev-parse', '--verify', `${ref}^{commit}`);
+  if (!sha) {
+    console.error(`Can't find ${values.base ?? 'where this branch left main'}.`);
+    process.exit(1);
+  }
+  const short = sha.slice(0, 12);
+  // Its own worktree in the system's temp folder, kept for the next sweep from the same commit.
+  const tree = path.join(os.tmpdir(), 'poe2-qa-base', short);
+  if (!existsSync(path.join(tree, 'package.json'))) {
+    console.log(`Checking out ${short} in ${tree}…`);
+    if (git(ROOT, 'worktree', 'add', '--detach', tree, sha) === null) {
+      console.error(`git worktree add failed for ${short}.`);
+      process.exit(1);
+    }
+  }
+  if (!existsSync(path.join(tree, 'src', 'qa', 'main.ts'))) {
+    console.warn(`${short} has no QA desk yet, so there is nothing to compare with: the befores start once the desk is on main.`);
+  } else {
+    if (!existsSync(path.join(tree, 'node_modules', '.package-lock.json'))) {
+      console.log('Installing its packages…');
+      const r = spawnSync('npm ci --prefer-offline --no-audit --no-fund', { cwd: tree, shell: true, stdio: 'inherit' });
+      if (r.status !== 0) process.exit(r.status ?? 1);
+    }
+    const baseBuild = path.join(SCREENS, `qa-base-${short}-build`);
+    if (!existsSync(path.join(baseBuild, 'qa.html'))) buildBeta(tree, baseBuild, short);
+    const baseServed = await serveDir(baseBuild);
+    const had = new Set((await listScenes(baseServed.base)).map((s) => s.key));
+    const baseJobs = jobs.filter((j) => had.has(j.scene));
+    const baseDir = `qa-base-${short}`;
+    console.log(`${baseJobs.length} shots as at ${short}…`);
+    const { shots: was } = await shootAll(baseServed.base, baseJobs, path.join(SCREENS, baseDir));
+    baseServed.close();
+    before = { sha, dir: baseDir };
+    await compare(shots, was, baseDir);
+  }
+}
+
+/**
+ * Each shot against its before: the share of its pixels that differ by more
+ * than a few levels (a hair of antialiasing isn't a change). Done in the
+ * browser, which reads PNGs already.
+ */
+async function compare(now, was, baseDir) {
+  const page = await browser.newPage();
+  const byFile = new Map(was.filter((s) => s.file).map((s) => [s.file, s]));
+  let i = 0;
+  for (const s of now) {
+    if (!s.file) continue;
+    if (!byFile.has(s.file)) {
+      s.before = null;
+      continue;
+    }
+    const read = (dir) => `data:image/png;base64,${readFileSync(path.join(SCREENS, dir, s.file)).toString('base64')}`;
+    s.before = `${baseDir}/${s.file}`;
+    s.changed = await page.evaluate(
+      async ([a, b]) => {
+        const load = async (src) => {
+          const img = new Image();
+          img.src = src;
+          await img.decode();
+          return img;
+        };
+        const [x, y] = await Promise.all([load(a), load(b)]);
+        if (x.width !== y.width || x.height !== y.height) return 1;
+        const pixels = (img) => {
+          const c = new OffscreenCanvas(img.width, img.height);
+          const g = c.getContext('2d');
+          g.drawImage(img, 0, 0);
+          return g.getImageData(0, 0, img.width, img.height).data;
+        };
+        const p = pixels(x);
+        const q = pixels(y);
+        let differ = 0;
+        for (let k = 0; k < p.length; k += 4) if (Math.abs(p[k] - q[k]) > 12 || Math.abs(p[k + 1] - q[k + 1]) > 12 || Math.abs(p[k + 2] - q[k + 2]) > 12) differ++;
+        return differ / (p.length / 4);
+      },
+      [read(path.basename(outDir)), read(baseDir)],
+    );
+    if (process.stdout.isTTY) process.stdout.write(`\rcompared ${++i}`);
+  }
+  if (process.stdout.isTTY) process.stdout.write('\n');
+  await page.close();
+}
+
+await Promise.all(browsers.map((b) => b.close()));
 
 // ---- banding ------------------------------------------------------------------
 
@@ -302,23 +449,25 @@ if (values.banding) {
         });
       });
     let i = 0;
-    await Promise.all(Array.from({ length: concurrency }, async () => {
-      while (i < queue.length) await run(queue[i++]);
-    }));
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (i < queue.length) await run(queue[i++]);
+      }),
+    );
   }
 }
 
 // ---- what it found ------------------------------------------------------------
 
-const git = (...args) => spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' }).stdout.trim();
 const manifest = {
   dir: dirName,
   at: new Date().toISOString(),
   url: values.url ?? 'beta build',
-  head: git('rev-parse', 'HEAD'),
-  dirty: git('status', '--porcelain') !== '',
+  head: git(ROOT, 'rev-parse', 'HEAD'),
+  dirty: (git(ROOT, 'status', '--porcelain') ?? '') !== '',
   sizes: values.sizes,
   webgl: values.webgl,
+  before,
   shots,
 };
 writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 1));
@@ -329,6 +478,10 @@ console.log(`${shots.length} shots in ${((Date.now() - t0) / 1000).toFixed(0)} s
 for (const s of bad) {
   const what = s.failed ? `failed: ${s.failed}` : s.problems.map((p) => `${p.kind}${p.count > 1 ? ` x${p.count}` : ''}: ${p.examples[0]}`).join('; ');
   console.log(`  ${s.scene} (seat ${s.seat}, ${s.size}): ${what}`);
+}
+if (before) {
+  const moved = shots.filter((s) => s.changed > 0.001);
+  console.log(`Against ${before.sha.slice(0, 12)}: ${moved.length} shots look different, ${shots.filter((s) => s.before === null).length} are new.`);
 }
 const unsettled = shots.filter((s) => s.settled === false).length;
 if (unsettled) console.log(`${unsettled} never came to rest within 8 s (checked as they were).`);

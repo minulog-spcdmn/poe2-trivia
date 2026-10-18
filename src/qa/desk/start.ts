@@ -10,10 +10,12 @@ import fakeNames from '../../data/fakes.json';
 import type { Item } from '../../lib/game.ts';
 import { useItems } from '../build/engine.ts';
 import { catalog } from '../scenes/index.ts';
+import { useCaptured } from '../scenes/captured.ts';
 import { sizesFor, walk } from './walk.ts';
 import Desk from './Desk.svelte';
 
 useItems(itemData as Item[], fakeNames);
+useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
 mount(Desk, { target: document.getElementById('app')! });
 
 // For the sweep (scripts/qa.mjs), which opens each scene's frames by itself:

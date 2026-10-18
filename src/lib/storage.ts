@@ -46,7 +46,18 @@ export const BOT = typeof document !== 'undefined' && document.documentElement.h
  * every seat would be the same player, with one save between them.
  */
 const QA_SLOT = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-qa') ? document.documentElement.getAttribute('data-qa') : null;
-export const QA = QA_SLOT !== null;
+/**
+ * A seat of a live room on the QA desk ("Play from here", src/qa/live: dev
+ * and beta only): its frame is named `qa:<room>:<seat>`, a name kept across
+ * the frame's reloads, as a query the app rewrites wouldn't be. Its keys
+ * start apart the same way, and its rooms are the desk room's own
+ * (lib/peer.ts). The live game never reads it: any page that opens ours can
+ * set a window's name.
+ */
+const SEAT = (BETA || LOCAL) && typeof window !== 'undefined' && typeof window.name === 'string' ? /^qa:(\w+):(\w+)$/.exec(window.name) : null;
+export const QA_ROOM = SEAT?.[1] ?? null;
+export const QA_SEAT = SEAT?.[2] ?? null;
+export const QA = QA_SLOT !== null || QA_SEAT !== null;
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -71,7 +82,7 @@ export const STORE =
   (BACKDROP_TOOL ? 'backdrops.' : '') +
   (BOT ? 'bot.' : '') +
   (END_PREVIEW ? 'endscreen.' : '') +
-  (QA ? `qa.${QA_SLOT!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
+  (QA ? `qa.${(QA_SLOT ?? QA_SEAT)!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
 export const LAB_STORE = CHANNEL + 'lab.';
 
