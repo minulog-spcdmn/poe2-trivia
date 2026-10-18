@@ -1,5 +1,7 @@
 // Over the game: being turned out of a room (removed, the room closed, the
-// game moved to another tab), and the dialog before leaving one.
+// game moved to another tab), the dialog before leaving one, and coming
+// back from a crash (Root.svelte: a guest leaves the room, a second crash
+// soon after leaves any game, and one with no game left stops the page).
 
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
@@ -20,8 +22,9 @@ export function overlayScenes(): Scene[] {
     overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
     overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
-    overlay('crash', 'The game crashed and came back', [doryani], () => inGame([{ crash: 1 }])),
-    overlay('crash-twice', 'Crashed twice in a game: out of the room', [doryani], () => inGame([{ crash: 2 }])),
+    overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),
+    overlay('crash-guest', 'A guest crashed once: out of the room', [doryani], () => inGame([{ crash: 1 }])),
+    overlay('crash-twice', 'The host crashed twice: out of the game', [kalguur], () => inGame([{ crash: 2 }])),
     overlay('crash-stuck', 'Crashed twice out of a game: the page stops', [{ mode: 'none', me: null }], () => ({ state: null, steps: [{ crash: 2 }] })),
   ];
 }
