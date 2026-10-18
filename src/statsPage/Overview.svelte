@@ -15,7 +15,7 @@
   import { fitChart } from './fitChart.svelte';
   import { spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, MODE_NAMES, asked, dailyAverage, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -31,7 +31,6 @@
 
   const L = $derived(read.now);
   const B = $derived(read.before);
-  const answers = (c: Counts) => c.daily.rightPerDay.map((r, i) => r + (c.daily.wrongPerDay[i] ?? 0));
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
 
@@ -45,7 +44,7 @@
     { value: 'daily', name: 'Daily players' },
   ] as const;
   let metric = $state<(typeof METRICS)[number]['value']>('visitors');
-  const series = (c: Counts) => (metric === 'visitors' ? c.visitors.perDay : metric === 'games' ? c.games.perDay : answers(c));
+  const series = (c: Counts) => (metric === 'visitors' ? c.visitors.perDay : metric === 'games' ? c.games.perDay : answersPerDay(c));
 
   const WEEK = [
     { value: 'visitors', name: 'Visitors' },
@@ -124,7 +123,7 @@
       {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={before} />{/snippet}
     </Kpi>
     <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
-      {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
+      {#snippet spark()}<Spark days={L.days.filter(asked)} values={answersPerDay(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
       {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={before} />{/if}{/snippet}
     </Kpi>
     <Steps {read} period={{ ...period, before }} />

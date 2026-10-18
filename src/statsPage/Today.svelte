@@ -10,7 +10,7 @@
   import type { Changes } from './changes';
   import { fmt, longDay } from './chart';
   import Delta from './Delta.svelte';
-  import { percent } from './model';
+  import { answersPerDay, percent } from './model';
   import type { Read } from './read';
 
   let { read, tall = false }: { read: Read; tall?: boolean } = $props();
@@ -18,11 +18,10 @@
   const L = $derived(read.now);
   const B = $derived(read.before);
   const last = (vs: number[]) => vs[vs.length - 1] ?? 0;
-  const answers = (c: typeof L) => last(c.daily.rightPerDay) + last(c.daily.wrongPerDay);
   const today = $derived({
     visitors: [last(L.visitors.perDay), last(B.visitors.perDay)],
     games: [last(L.games.perDay), last(B.games.perDay)],
-    daily: [answers(L), answers(B)],
+    daily: [last(answersPerDay(L)), last(answersPerDay(B))],
     named: last(L.daily.rightPerDay),
   });
   const sameTime = $derived(`${longDay(read.toBefore)} at this time`);

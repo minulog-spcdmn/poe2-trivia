@@ -368,6 +368,9 @@ export interface DailyDay {
   named: number | null;
 }
 
+/** Today's unique's answers each day, named or missed. */
+export const answersPerDay = (c: Counts): number[] => c.daily.rightPerDay.map((r, i) => r + (c.daily.wrongPerDay[i] ?? 0));
+
 export function dailyDays(c: Counts): DailyDay[] {
   return c.days.map((day, i) => {
     const right = c.daily.rightPerDay[i] ?? 0;

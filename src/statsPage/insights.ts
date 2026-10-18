@@ -7,7 +7,7 @@
 // root). Pure, so the tests can feed it.
 
 import type { Named } from './api.ts';
-import { asked, type Counts } from './model.ts';
+import { answersPerDay, asked, type Counts } from './model.ts';
 
 /** Well beyond chance: a change of `d` on a count of `n` (twice its square root, and a few besides, so tiny counts never qualify). */
 const beyondChance = (d: number, n: number) => Math.abs(d) >= 2 * Math.sqrt(Math.max(n, 1)) + 3;
@@ -105,6 +105,7 @@ export interface Steps {
 export function stepsOf(c: Counts): Steps {
   const first = c.days.findIndex((_, i) => (c.reach.playedPerDay[i] ?? 0) + (c.reach.finishedPerDay[i] ?? 0) > 0);
   const out: Steps = { from: first < 0 ? null : c.days[first], visitors: 0, played: 0, finished: 0, answered: 0, askedVisitors: 0 };
+  const answers = answersPerDay(c);
   c.days.forEach((day, i) => {
     const v = c.visitors.perDay[i] ?? 0;
     if (first >= 0 && i >= first) {
@@ -114,7 +115,7 @@ export function stepsOf(c: Counts): Steps {
     }
     if (asked(day)) {
       out.askedVisitors += v;
-      out.answered += (c.daily.rightPerDay[i] ?? 0) + (c.daily.wrongPerDay[i] ?? 0);
+      out.answered += answers[i] ?? 0;
     }
   });
   return out;

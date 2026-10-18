@@ -1,6 +1,8 @@
 // What came in between two reads of a period (stats.html updates by itself
-// every few minutes): the visitors, games and answers added, and the
-// countries and systems the new visitors came from and on. GoatCounter keeps
+// every few minutes): the visitors, games and answers added, the games by
+// mode, and the countries and systems the new visitors came from and on:
+// what today's box shows. (Joining going wrong has its own line, from the
+// counts themselves, insights.ts troubleOf.) GoatCounter keeps
 // no visit with its country and system together, so with several new
 // visitors the two lists are each their own. Pure, so the tests can feed it.
 
@@ -16,18 +18,13 @@ export interface Changes {
   games: number;
   /** Today's unique's answers. */
   answers: number;
-  tries: number;
-  failures: number;
   /** Each mode's new games, most first. */
   modes: Named[];
   countries: Named[];
   systems: Named[];
 }
 
-const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
 const answers = (c: Counts) => c.daily.right + c.daily.wrong;
-const tries = (c: Counts) => sum(c.joins.map((j) => j.tried));
-const failures = (c: Counts) => sum(c.failures.map((f) => f.count));
 
 /** What a list gained, by name, most first (a count that went down is GoatCounter's own correction, left out). */
 function gained(was: Named[], now: Named[]): Named[] {
@@ -50,8 +47,6 @@ export function changesOf(was: Read, now: Read): Changes | null {
     visitors: Math.max(0, b.visitors.total - a.visitors.total),
     games: Math.max(0, b.games.started - a.games.started),
     answers: Math.max(0, answers(b) - answers(a)),
-    tries: Math.max(0, tries(b) - tries(a)),
-    failures: Math.max(0, failures(b) - failures(a)),
     modes: modesOf(b.games.rows)
       .map((m) => ({ name: MODE_NAMES[m.mode], count: m.started - (playedWas.get(m.mode) ?? 0) }))
       .filter((m) => m.count > 0)
@@ -66,8 +61,8 @@ export function freshOf(c: Changes | null | undefined, at: number, list: 'countr
   return c && c.at === at ? new Map(c[list].map((n) => [n.name, n.count])) : undefined;
 }
 
-/** Anything new at all. */
-export const anyNew = (c: Changes | null | undefined): c is Changes => !!c && c.visitors + c.games + c.answers + c.tries + c.failures + c.countries.length + c.systems.length > 0;
+/** Anything new that today's box shows (an update with nothing more leaves the last one that had). */
+export const anyNew = (c: Changes | null | undefined): c is Changes => !!c && c.visitors + c.games + c.answers + c.modes.length + c.countries.length + c.systems.length > 0;
 
 /**
  * The changes a fresh read keeps: what it added to the read before it, or,

@@ -23,6 +23,7 @@
   import { spikesOf } from './insights';
   import { shortDay } from './chart';
   import { keptChanges } from './changes';
+  import { DAY_REFS_KEY, dayRefsOf, dayRefsToKeep } from './dayRefs';
   import DailyView from './DailyView.svelte';
   import GamesView from './GamesView.svelte';
   import GroupsView from './GroupsView.svelte';
@@ -87,9 +88,19 @@
     // Full screen needs the click that asked for it; where the browser has none (an iPhone), the overview is still kept awake.
     void document.documentElement.requestFullscreen?.().catch(() => undefined);
   }
+  /**
+   * Back to the overview as it usually is, in place of the full screen's
+   * entry in the history: Back then goes where it went before, not into
+   * full screen again.
+   */
   function leaveBoard() {
     if (document.fullscreenElement) void document.exitFullscreen();
-    go('overview');
+    if (!board) return;
+    history.replaceState({ y: 0 }, '', location.pathname + location.search);
+    view = 'overview';
+    sel = null;
+    board = false;
+    window.scrollTo({ top: 0 });
   }
   /** Back, forward, or a # typed in: the view it names, scrolled as it was left. */
   async function followHash() {
@@ -204,16 +215,23 @@
       const counts = countsOf(n.paths, daysBetween(from, today), tz);
       // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
       const spikeRefs: Record<string, Named[]> = {};
+      const keptRefs = dayRefsOf(readStored(DAY_REFS_KEY), tz);
+      let added = false;
       for (const s of spikesOf(counts.days, counts.visitors.perDay)) {
-        const kept = s.day === today ? null : readStored(`analytics.dayrefs.${s.day}`);
+        const kept = s.day === today ? undefined : keptRefs[s.day];
         if (kept) {
-          spikeRefs[s.day] = JSON.parse(kept) as Named[];
+          spikeRefs[s.day] = kept;
           continue;
         }
         const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : midnight(tz, addDays(s.day, 1)) };
         spikeRefs[s.day] = await visitorsBy(k, day, 'toprefs', signal);
-        if (s.day !== today) writeStored(`analytics.dayrefs.${s.day}`, JSON.stringify(spikeRefs[s.day]));
+        if (s.day !== today) {
+          keptRefs[s.day] = spikeRefs[s.day];
+          added = true;
+        }
       }
+      // Only as far back as the longest period reaches: older days are never asked for again.
+      if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
         v: 5,
@@ -296,7 +314,8 @@
         calls.map((c) =>
           pathsBy(key, within, c.dim, c.paths, ctrl.signal).then((list) => {
             out[c.dim][c.group] = list;
-            slicing = ++done / calls.length;
+            // (Not once it's been called off: what's read for another period has its own.)
+            if (slicer === ctrl) slicing = ++done / calls.length;
           }),
         ),
       );
@@ -337,6 +356,8 @@
   }
 
   onMount(() => {
+    // The spike days' sites were once kept a key each, never cleared: they're one map now (dayRefs.ts).
+    removeStoredStarting(`${DAY_REFS_KEY}.`);
     void load();
     const ticking = setInterval(update, 20_000);
     document.addEventListener('visibilitychange', update);
@@ -356,6 +377,7 @@
     read = cached(days);
     slicer?.abort();
     slicer = null;
+    slicing = 0;
     void load(days);
   }
   function useKey(k: string) {
@@ -369,8 +391,10 @@
     forgetKey();
     removeStoredStarting('analytics.read.', 'session');
     removeStoredStarting('analytics.slices.', 'session');
-    removeStoredStarting('analytics.dayrefs.');
+    removeStoredStarting(DAY_REFS_KEY);
     slicer?.abort();
+    slicer = null;
+    slicing = 0;
     slices = null;
     cache.clear();
     zone = null;
@@ -394,7 +418,7 @@
   function fullChanged() {
     const was = full;
     full = !!document.fullscreenElement;
-    if (was && !full && board) go('overview');
+    if (was && !full && board) leaveBoard();
   }
   $effect(() => {
     if (!board) return;

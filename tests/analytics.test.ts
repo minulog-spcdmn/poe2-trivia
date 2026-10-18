@@ -4,6 +4,7 @@ import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { moversOf, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { countsIn, groupPaths, hashOf, modeLink, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Slices } from '../src/statsPage/slices.ts';
 import { busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
@@ -541,6 +542,8 @@ test('an update keeps what it brought in, and where from', () => {
   assert.equal(c.since, was.at);
   assert.ok(c.countries.every((n) => n.count > 0));
   assert.ok(anyNew(c));
+  // Nothing today's box would show (a try to join, a failure: their own line) isn't an update of its own.
+  assert.equal(anyNew({ ...c, visitors: 0, games: 0, answers: 0, modes: [], countries: [], systems: [] }), false);
   // Another period, or one read the day before, isn't compared.
   assert.equal(changesOf(demoRead(30, at), now), null);
   assert.equal(changesOf(demoRead(7, new Date(at.getTime() - 86_400_000)), now), null);
@@ -551,6 +554,15 @@ test('an update keeps what it brought in, and where from', () => {
   assert.equal(freshOf(c, later.at, 'countries'), undefined);
   assert.equal(freshOf(c, now.at, 'countries')?.size, c.countries.length);
   assert.ok(demoUpdate(7, at).changes);
+});
+
+test("the busy days' sites are kept for one time zone, as far back as a period reaches, and a broken store is none", () => {
+  const refs = { '2025-09-01': [{ name: 'reddit.com', count: 9 }], '2026-10-10': [{ name: 'youtube.com', count: 4 }] };
+  const stored = dayRefsToKeep(refs, 'Europe/Berlin', '2025-10-19');
+  assert.deepEqual(dayRefsOf(stored, 'Europe/Berlin'), { '2026-10-10': [{ name: 'youtube.com', count: 4 }] });
+  assert.deepEqual(dayRefsOf(stored, 'America/Chicago'), {});
+  assert.deepEqual(dayRefsOf('{"zone":"Europe/Berl', 'Europe/Berlin'), {});
+  assert.deepEqual(dayRefsOf(null, 'Europe/Berlin'), {});
 });
 
 test('made-up groups add up to the made-up totals', () => {
