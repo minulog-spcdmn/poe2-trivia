@@ -4,7 +4,7 @@
   // (the host, or the one passed around for hot-seat).
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
-  import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, sizeName, sizesOf } from './model';
+  import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import TrendChart from './TrendChart.svelte';
@@ -19,6 +19,11 @@
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));
   const ranges = $derived(sizes.some((s) => s.from !== s.to));
   const descent = $derived(descentOf(L.delve.ranges));
+  /** Players a game, one decimal, of the games whose size is known. */
+  const perGame = (rows: typeof L.games.rows) => {
+    const { seats, games } = seatsOf(rows);
+    return games ? (seats / games).toFixed(1) : '–';
+  };
 </script>
 
 <div class="stack">
@@ -42,6 +47,7 @@
             <th scope="col" class="wide"><span class="sr">Against the most played</span></th>
             <th scope="col" class="n">Share</th>
             <th scope="col" class="n">To the end</th>
+            <th scope="col" class="n">Players a game</th>
             <th scope="col" class="n">Online</th>
             <th scope="col" class="n">Hot-seat</th>
           </tr>
@@ -54,6 +60,7 @@
               <td class="wide"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
               <td class="n">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
+              <td class="n">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
               <td class="n">{fmt(m.online)}</td>
               <td class="n">{fmt(m.hotseat)}</td>
             </tr>
@@ -66,6 +73,7 @@
             <td></td>
             <td class="n">{L.games.started ? '100%' : '–'}</td>
             <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
+            <td class="n">{perGame(L.games.rows)}</td>
             <td class="n">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
             <td class="n">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
           </tr>

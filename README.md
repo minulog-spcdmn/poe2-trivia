@@ -842,6 +842,15 @@ already open too, says which way it went, and keeps the choice in
 localStorage (`poe2trivia.skipCount`). GoatCounter's own count.js isn't
 used, so this is the game's version of its toggle.
 
+**Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
+owner's read-only GoatCounter API key, which stays in that browser. Its
+overview answers "how is it going?" with the views behind it; `#board`
+(the monitor button in its top bar) is the overview for a monitor of its
+own, most of all one on its side: one screen, sized from the screen,
+kept awake and updating by itself. On the dev server and the beta,
+`stats.html?demo` fills every view with made-up numbers
+(`src/statsPage/demo.ts`), no key needed, to look at the layout with.
+
 Not defended against: a determined player recognising item art with
 their own tools, and a cheating host.
 

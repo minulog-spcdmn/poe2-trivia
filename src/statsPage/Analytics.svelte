@@ -4,6 +4,8 @@
   // the views, the period and how fresh the numbers are, with a thin bar
   // along its foot while they're read. The overview answers "how is it
   // going?" at a glance; each view behind it answers one question in full.
+  // The board (#board) is the overview for a monitor of its own, most of all
+  // one on its side: one screen, sized from it, kept awake, updating by itself.
   //
   // Each period read is kept (this tab, and through a reload), so switching
   // back shows it at once; it is read again once it's 5 minutes old, by
@@ -14,6 +16,7 @@
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, requestsLastHour, saveKey, savedKey, visitorsBy, type Span } from './api';
   import { shortDay } from './chart';
+  import Board from './Board.svelte';
   import DailyView from './DailyView.svelte';
   import GamesView from './GamesView.svelte';
   import JoiningView from './JoiningView.svelte';
@@ -24,6 +27,10 @@
   import Seg from './Seg.svelte';
   import VisitorsView from './VisitorsView.svelte';
   import { addDays, dayIn, midnight } from './zone';
+  import { CHANNEL } from '../lib/channel';
+  import { demoRead } from './demo';
+
+  type WakeLock = { release(): Promise<void>; addEventListener(type: 'release', f: () => void): void };
 
   /** A period is read again once it's this old. */
   const FRESH_MS = 5 * 60_000;
@@ -32,7 +39,9 @@
   /** The account's time zone is asked again after this. */
   const ZONE_MS = 60 * 60_000;
 
-  let key = $state(savedKey());
+  /** stats.html?demo, on the dev server and the beta: made-up numbers (demo.ts), no key and no calls. */
+  const demo = CHANNEL !== 'live' && new URLSearchParams(location.search).has('demo');
+  let key = $state(demo ? 'demo' : savedKey());
   let refused = $state('');
   const stored = Number(readStored('analytics.days'));
   const firstSpan = PERIODS.some((p) => p.value === stored) ? stored : 30;
@@ -41,20 +50,30 @@
 
   const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && `#${v.value}` === hash)?.value ?? 'overview';
   let view = $state<View>(viewOf(location.hash));
+  const BOARD = '#board';
+  let board = $state(location.hash === BOARD);
   // Each view is an entry in the history that keeps how far the page was
   // scrolled, so Back returns to the view as it was left. The page puts the
   // scroll back itself: the browser would do it before the view is there.
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   function go(v: View) {
-    if (v === view) return;
+    if (v === view && !board) return;
     history.replaceState({ ...(history.state as object | null), y: window.scrollY }, '');
     history.pushState({ y: 0 }, '', v === 'overview' ? location.pathname + location.search : `#${v}`);
     view = v;
+    board = false;
+    window.scrollTo({ top: 0 });
+  }
+  function openBoard() {
+    history.replaceState({ ...(history.state as object | null), y: window.scrollY }, '');
+    history.pushState({ y: 0 }, '', BOARD);
+    board = true;
     window.scrollTo({ top: 0 });
   }
   /** Back, forward, or a # typed in: the view it names, scrolled as it was left. */
   async function followHash() {
     view = viewOf(location.hash);
+    board = location.hash === BOARD;
     await tick();
     window.scrollTo({ top: (history.state as { y?: number } | null)?.y ?? 0 });
   }
@@ -72,7 +91,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 3 || r.span !== days) return null;
+      if (r?.v !== 4 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -107,6 +126,10 @@
   /** Reads `days` (the period on show): `force` reads it even while fresh, and asks the time zone again. */
   async function load(days = span, force = false) {
     if (!key) return;
+    if (demo) {
+      read = demoRead(days);
+      return;
+    }
     const had = cached(days);
     if (had && !force && Date.now() - had.at < FRESH_MS) {
       stopReading();
@@ -154,7 +177,7 @@
       ]);
       if (ask !== asked) return;
       const r: Read = {
-        v: 3,
+        v: 4,
         span: days,
         from,
         to: today,
@@ -252,15 +275,69 @@
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`;
   };
   const weekly = $derived(!!read && read.span > 90);
+
+  // ---- the board: sized from the screen, kept awake, the pointer out of the way ----
+  let topH = $state(0);
+  let full = $state(!!document.fullscreenElement);
+  let idle = $state(false);
+  $effect(() => {
+    document.documentElement.classList.toggle('board', board);
+    if (!board) return;
+    // The screen stays on while the board is in view, where the browser lets a page ask.
+    let lock: WakeLock | null = null;
+    let gone = false;
+    const wake = async () => {
+      if (gone || lock || document.visibilityState !== 'visible') return;
+      try {
+        const got = await (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLock> } }).wakeLock?.request('screen');
+        if (!got) return;
+        if (gone) return void got.release();
+        lock = got;
+        // The browser lets go of it whenever the tab is hidden; it's asked again on coming back.
+        got.addEventListener('release', () => (lock = null));
+      } catch {
+        // Refused (a battery saving, a hidden tab): the screen sleeps as it would.
+      }
+    };
+    void wake();
+    document.addEventListener('visibilitychange', wake);
+    // The pointer hides after a few still seconds, so it never sits on a figure.
+    let still = 0;
+    const moved = () => {
+      idle = false;
+      clearTimeout(still);
+      still = window.setTimeout(() => (idle = true), 3000);
+    };
+    moved();
+    document.addEventListener('pointermove', moved);
+    return () => {
+      gone = true;
+      void lock?.release();
+      document.removeEventListener('visibilitychange', wake);
+      document.removeEventListener('pointermove', moved);
+      clearTimeout(still);
+      idle = false;
+      document.documentElement.classList.remove('board');
+    };
+  });
+  function fullScreen() {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  }
 </script>
 
-<header class="top">
+<svelte:document onfullscreenchange={() => (full = !!document.fullscreenElement)} />
+
+<header class="top" class:on-board={board} class:idle bind:offsetHeight={topH}>
   <div class="row">
     <a class="brand" href="./" title="Back to the game">
       <svg class="mark" viewBox="20 0 400 391" aria-hidden="true"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
       <span>PoE2.Quest</span>
     </a>
-    <h1>Analytics</h1>
+    <h1>Analytics{#if board}<span class="sub">Board</span>{/if}</h1>
+    {#if key && board}
+      <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
+    {/if}
     {#if key}
       <div class="tools">
         <span class="fresh" aria-live="polite">
@@ -269,16 +346,32 @@
         <button type="button" class="icon-btn" class:spin={loading} onclick={() => void load(span, true)} disabled={loading} title="Read again" aria-label="Read again">
           <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
         </button>
+        {#if board}
+          <button type="button" class="icon-btn" onclick={fullScreen} title={full ? 'Leave full screen' : 'Full screen'} aria-label={full ? 'Leave full screen' : 'Full screen'}>
+            <svg viewBox="0 0 24 24">
+              {#if full}<path d="M9 4v5H4" /><path d="M15 4v5h5" /><path d="M9 20v-5H4" /><path d="M15 20v-5h5" />{:else}<path d="M4 9V4h5" /><path d="M20 9V4h-5" /><path d="M4 15v5h5" /><path d="M20 15v5h-5" />{/if}
+            </svg>
+          </button>
+          <button type="button" class="icon-btn" onclick={() => go('overview')} title="Leave the board" aria-label="Leave the board">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>
+          </button>
+        {:else}
+          <button type="button" class="icon-btn" onclick={openBoard} title="The board: the overview for a monitor of its own" aria-label="Open the board, the overview for a monitor of its own">
+            <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="16" rx="1.2" /><path d="M12 18.5v3" /><path d="M9 21.5h6" /></svg>
+          </button>
+        {/if}
         <a class="icon-btn" href={DASHBOARD} target="_blank" rel="noreferrer" title="GoatCounter's dashboard" aria-label="GoatCounter's dashboard">
           <svg viewBox="0 0 24 24"><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
         </a>
+{#if !demo}
         <button type="button" class="icon-btn" onclick={forget} title="Forget the key on this browser" aria-label="Forget the key on this browser">
           <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9" /><path d="M17 6l3 3" /><path d="M15 8l2 2" /></svg>
         </button>
+        {/if}
       </div>
     {/if}
   </div>
-  {#if key}
+  {#if key && !board}
     <nav class="row choices">
       <Seg label="View" options={VIEWS} value={view} onpick={go} />
       <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
@@ -287,7 +380,7 @@
   <div class="progress" class:on={loading} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
 </header>
 
-<main class="analytics">
+<main class="analytics" class:on-board={board} class:idle style:height={board ? `calc(100dvh - ${topH}px)` : null}>
   {#if !key}
     <KeyGate onkey={useKey} {refused} />
   {:else}
@@ -295,6 +388,9 @@
       <p class="dates">
         <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)})
       </p>
+    {/if}
+    {#if demo}
+      <p class="note" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
     {/if}
     {#if failed}
       <p class="note bad" role="alert">{failed} <button type="button" class="again" onclick={() => void load(span, true)}>Try again</button></p>
@@ -309,7 +405,9 @@
         <div class="ghost chart"></div>
       </div>
     {:else if read}
-      {#if view === 'overview'}
+      {#if board}
+        <Board {read} {period} {weekly} />
+      {:else if view === 'overview'}
         <Overview {read} {period} {weekly} />
       {:else if view === 'visitors'}
         <VisitorsView {read} {period} {weekly} />
@@ -320,7 +418,7 @@
       {:else}
         <JoiningView {read} {period} />
       {/if}
-      <footer class="foot">
+      <footer class="foot" hidden={board}>
         <p>Visitors are people on the start page, each counted once a visit (8 hours). Ad blockers hide some of them, so totals run low while shares hold.</p>
         <p>This browser asked GoatCounter {used} times in the last hour, of the {HOUR_LIMIT} it allows; updating by itself pauses at {HOUR_LIMIT - KEEP_SPARE}.</p>
       </footer>
@@ -414,6 +512,7 @@
     color: var(--unique-hi);
   }
   .icon-btn {
+    flex: none;
     width: 42px;
     height: 42px;
     display: grid;
@@ -524,6 +623,60 @@
   }
   .foot p {
     margin: 0 0 0.35rem;
+  }
+
+  /* ---- the board: one screen, its type sized from the screen (rem), nothing to scroll ---- */
+  :global(html.board) {
+    font-size: clamp(14px, min(1.5vw, 0.9vh), 30px);
+  }
+  .top.on-board {
+    position: relative;
+  }
+  .top.on-board .row {
+    width: 100%;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+  .top.on-board .row {
+    flex-wrap: nowrap;
+  }
+  .top.on-board .brand span {
+    display: none;
+  }
+  .top.on-board .fresh {
+    margin-right: 0;
+  }
+  .sub {
+    margin-left: 0.6rem;
+    font-size: 0.75em;
+    color: var(--a-muted);
+  }
+  main.on-board {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 1rem 1.5rem;
+    overflow: hidden;
+  }
+  main.on-board > :global(*) {
+    flex: none;
+  }
+  main.on-board > :global(.board) {
+    flex: 1 1 0;
+  }
+  main.on-board .dates,
+  main.on-board .note {
+    margin-bottom: 0.8rem;
+  }
+  .idle,
+  .idle :global(*) {
+    cursor: none;
+  }
+  /* A monitor the usual way round has the board in two columns, which may run past the screen. */
+  @media (orientation: landscape) {
+    main.on-board {
+      overflow: auto;
+    }
   }
 
   /* ---- first read: the overview's outline, waiting ---- */

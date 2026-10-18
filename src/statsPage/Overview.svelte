@@ -1,8 +1,9 @@
 <script lang="ts">
   // The overview: how it's going, at a glance. Anything wrong first (joins
-  // that failed), then the four figures that matter, each against the period
-  // before; one chart of how busy it was; and a line of short answers, each
-  // opening its view.
+  // that failed), then the four figures that matter, each with its days in a
+  // small line and against the period before; one chart of how busy it was;
+  // when in the week they come, and what their visits come to; and a line of
+  // short answers, each opening its view.
   import { onMount } from 'svelte';
   import Bars from './Bars.svelte';
   import { average, fmt } from './chart';
@@ -10,11 +11,14 @@
   import DailyTable from './DailyTable.svelte';
   import Delta from './Delta.svelte';
   import Kpi from './Kpi.svelte';
-  import { MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, type Counts } from './model';
+  import { MODE_NAMES, asked, finishedShare, dailyAverage, dailyDays, deviceOf, hardestAndEasiest, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
+  import Spark from './Spark.svelte';
   import TrendChart from './TrendChart.svelte';
+  import VisitsCameTo from './VisitsCameTo.svelte';
+  import WeekHours from './WeekHours.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
@@ -38,6 +42,13 @@
   ] as const;
   let metric = $state<(typeof METRICS)[number]['value']>('visitors');
   const series = (c: Counts) => (metric === 'visitors' ? c.visitors.perDay : metric === 'games' ? c.games.perDay : answers(c));
+
+  const WEEK = [
+    { value: 'visitors', name: 'Visitors' },
+    { value: 'games', name: 'Games' },
+  ] as const;
+  let weekOf = $state<(typeof WEEK)[number]['value']>('visitors');
+  const week = $derived(L.week[weekOf]);
 
   let innerHeight = $state(900);
   /** Taller on a tall window (a monitor on its side), so the overview fills it. */
@@ -81,12 +92,15 @@
 
 <div class="kpis">
   <Kpi label="Visitors" value={fmt(L.visitors.total)} means="people who opened the game" href="#visitors">
+    {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visitors a day" />{/snippet}
     {#snippet change()}<Delta now={L.visitors.total} before={B.visitors.total} period={period.before} />{/snippet}
   </Kpi>
   <Kpi label="Games played" value={fmt(L.games.started)} means="games started, every mode" href="#games">
+    {#snippet spark()}<Spark days={L.days} values={L.games.perDay} {weekly} label="Games a day" />{/snippet}
     {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={period.before} />{/snippet}
   </Kpi>
   <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
+    {#snippet spark()}<Spark days={L.days.filter(asked)} values={answers(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
     {#snippet change()}<Delta now={dailyNow} before={dailyBefore} digits={1} period={period.before} />{/snippet}
   </Kpi>
   <Kpi
@@ -95,6 +109,7 @@
     means={tries(L) ? `of ${fmt(tries(L))} ${tries(L) === 1 ? 'try' : 'tries'} to join a room` : 'nobody tried to join a room'}
     href="#joining"
   >
+    {#snippet spark()}<Spark days={L.days} values={sharePerDay(L.joinsPerDay.joined, L.joinsPerDay.tried)} {weekly} label="Share of joins that worked, a day" />{/snippet}
     {#snippet change()}<Delta now={rate(joins(L), tries(L))} before={rate(joins(B), tries(B))} rate period={period.before} />{/snippet}
   </Kpi>
 </div>
@@ -104,6 +119,20 @@
     {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
     <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chartH} />
   </Section>
+
+  <div class="two">
+    <Section title="When they come" says="Each hour of the week, on average: the brighter, the busier.">
+      {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
+      {#if week}
+        <WeekHours grid={weekAverage(week, L.days)} what={weekOf === 'visitors' ? 'Visitors' : 'Games'} zone={read.zone} />
+      {:else}
+        <p class="soft">GoatCounter gave no hours for these days.</p>
+      {/if}
+    </Section>
+    <Section title="What a visit comes to" says="The counts set against each other.">
+      <VisitsCameTo {read} {period} />
+    </Section>
+  </div>
 
   <div class="three">
     <Section title="What they play">
@@ -185,6 +214,12 @@
     gap: 1.25rem;
     margin-top: 1.25rem;
   }
+  .two {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    align-items: start;
+  }
   .three {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -222,6 +257,15 @@
     .three {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    /* Two to a row: the third takes a row of its own, not half of one. */
+    .three > :global(:nth-child(3)) {
+      grid-column: 1 / -1;
+    }
+  }
+  @media (max-width: 1100px) {
+    .two {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   @media (max-width: 900px) {
     .kpis {
@@ -230,6 +274,9 @@
     }
     .three {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .three > :global(:nth-child(3)) {
+      grid-column: auto;
     }
   }
   @media (max-width: 600px) {

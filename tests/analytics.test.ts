@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
-import { change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
+import { demoRead } from '../src/statsPage/demo.ts';
+import { busiest, seatsOf, visitsCameTo, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -298,4 +299,91 @@ test('games played to the end are at most all of them', () => {
   // Games started late the period before, ending in this one.
   assert.equal(finishedShare(11, 10), '100%');
   assert.equal(finishedShare(0, 0), '–');
+});
+
+test('hours land on their weekday, Monday first, only the days asked for', () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  // The 14th is a Wednesday (2), the 16th a Friday (4).
+  assert.deepEqual([weekday('2026-10-12'), weekday('2026-10-14'), weekday('2026-10-18')], [0, 2, 6]);
+  const visits: PathCount = {
+    path: '/',
+    event: false,
+    count: 7,
+    days: { '2026-10-13': 1, '2026-10-14': 2, '2026-10-16': 4 },
+    hours: { '2026-10-13': hours({ 5: 1 }), '2026-10-14': hours({ 20: 2 }), '2026-10-16': hours({ 20: 1, 21: 3 }) },
+  };
+  const grid = weekHours([visits], DAYS)!;
+  assert.equal(grid.length, 7);
+  assert.equal(grid[2][20], 2);
+  assert.deepEqual([grid[4][20], grid[4][21]], [1, 3]);
+  // The 13th isn't among the days.
+  assert.equal(grid[1][5], 0);
+  assert.deepEqual(busiest(grid), { day: 4, hour: 21, value: 3 });
+  // A path with counts but no hours: no grid, rather than one missing them.
+  assert.equal(weekHours([{ ...visits, hours: undefined }], DAYS), null);
+  assert.equal(weekHours([{ ...visits, count: 0, hours: undefined }], DAYS)?.flat().every((n) => n === 0), true);
+  assert.equal(busiest(weekHours([], DAYS)!), null);
+  // countsOf keeps the grid for visits and for games started.
+  const l = countsOf([visits, { ...visits, path: 'play/race-online', event: true }], DAYS);
+  assert.equal(l.week.visitors?.[4][21], 3);
+  assert.equal(l.week.games?.[4][21], 3);
+});
+
+test("an hour's average is over how many of the days fell on its weekday", () => {
+  const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  grid[0][10] = 6;
+  grid[1][10] = 6;
+  // Two Mondays and one Tuesday.
+  const avg = weekAverage(grid, ['2026-10-05', '2026-10-06', '2026-10-12']);
+  assert.deepEqual([avg[0][10], avg[1][10], avg[2][10]], [3, 6, 0]);
+});
+
+test("seats add every game's players, an older range by its middle", () => {
+  const rows = countsOf(
+    [path('play/race-online', [3, 0, 0]), path('size/race-online-2p', [2, 0, 0]), path('size/race-online-5-8p', [1, 0, 0]), path('play/delve-hotseat', [1, 0, 0]), path('size/delve-hotseat-1p', [1, 0, 0])],
+    DAYS,
+  ).games.rows;
+  // 2 + 2 + 6.5 + 1
+  assert.deepEqual(seatsOf(rows), { seats: 12, games: 4 });
+  assert.deepEqual(seatsOf([]), { seats: 0, games: 0 });
+});
+
+test('what a visit comes to: the counts set against each other', () => {
+  const c = countsOf(
+    [
+      path('/', [10, 10, 20], false),
+      path('play/race-online', [2, 2, 0]),
+      path('size/race-online-3p', [2, 2, 0]),
+      path('daily/right', [1, 2, 3]),
+      path('daily/wrong', [1, 0, 1]),
+      path('join/code', [2, 1, 0]),
+      path('joined/code', [1, 1, 0]),
+      path('error/join-no-answer', [1, 0, 2]),
+    ],
+    DAYS,
+  );
+  const v = visitsCameTo(c);
+  assert.equal(v.seats, 12);
+  assert.equal(v.perGame, 3);
+  assert.equal(v.perVisitor, 12 / 40);
+  assert.equal(v.daily, (100 * 8) / 40);
+  assert.deepEqual(c.joinsPerDay, { tried: [2, 1, 0], joined: [1, 1, 0] });
+  assert.deepEqual(c.failuresPerDay, [1, 0, 2]);
+  // Nothing to divide by: nothing said.
+  assert.deepEqual(visitsCameTo(countsOf([], DAYS)), { seats: 0, perGame: null, perVisitor: null, daily: null });
+});
+
+test('the made-up numbers read the same for a day in any period, and add up', () => {
+  const at = new Date('2026-10-18T15:30:00Z');
+  const week = demoRead(7, at);
+  const month = demoRead(30, at);
+  assert.equal(week.to, '2026-10-18');
+  assert.equal(week.now.days.length, 7);
+  assert.deepEqual(week.now.visitors.perDay.slice(0, -1), month.now.visitors.perDay.slice(-7, -1));
+  assert.equal(
+    week.now.visitors.perDay.reduce((n, v) => n + v, 0),
+    week.now.visitors.total,
+  );
+  for (const j of month.now.joins) assert.ok(j.joined <= j.tried);
+  assert.ok(month.now.games.started > 0 && month.now.week.visitors !== null);
 });
