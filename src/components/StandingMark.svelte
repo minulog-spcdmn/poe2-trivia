@@ -13,6 +13,7 @@
 
   let { mark, title }: { mark: Mark; title?: string } = $props();
   const text = $derived(MARK_TEXT[mark]);
+  const id = $props.id();
 </script>
 
 <span class="mark {mark}" role="img" aria-label={text.tag} title={title ?? text.title} transition:fade={{ duration: 250 }}
@@ -22,8 +23,14 @@
     {:else if mark === 'away'}
       <path d="M2.5 10.5A11.6 11.6 0 0 0 21.5 10.5" /><path d="M6.6 14.4l-1.3 2.1M12 16.2v2.5M17.4 14.4l1.3 2.1" />
     {:else}
-      <path class="bar" class:faint={mark === 'offline'} d="M6 19.5v-3M10.5 19.5v-6.5" /><path class="bar faint" d="M15 19.5v-10M19.5 19.5v-13.5" />
-      {#if mark === 'offline'}<path class="strike" d="M4 6.5l17 14" />{/if}
+      {#if mark === 'offline'}
+        <!-- The strike cuts its own gap through the bars, as a phone's no-signal sign does. -->
+        <mask id={id}><rect x="0" y="0" width="24" height="24" fill="#fff" /><path d="M4 4l16.5 16.5" stroke="#000" stroke-width="4.2" /></mask>
+        <path class="bar faint" mask="url(#{id})" d="M6 19.5v-3M10.5 19.5v-6.5M15 19.5v-10M19.5 19.5v-13.5" />
+        <path class="strike" d="M4 4l16.5 16.5" />
+      {:else}
+        <path class="bar" d="M6 19.5v-3M10.5 19.5v-6.5" /><path class="bar faint" d="M15 19.5v-10M19.5 19.5v-13.5" />
+      {/if}
     {/if}
   </svg></span
 >
@@ -51,8 +58,11 @@
   .faint {
     opacity: 0.3;
   }
+  .offline .faint {
+    opacity: 0.45;
+  }
   .strike {
-    stroke-width: 1.6;
-    opacity: 0.6;
+    stroke-width: 1.7;
+    opacity: 0.75;
   }
 </style>
