@@ -748,8 +748,9 @@
           <!-- A ward taking a loss: the entry braces, rimmed in azurite light. -->
           {#key guard[p.id].key}<span class="ward-rim" class:theirs={!guard[p.id].mine} aria-hidden="true"></span>{/key}
         {/if}
-        <!-- Phones, on the entries shrunk to an avatar (no name to follow): on the avatar's corner. -->
-        {#if !p.connected}<span class="off-corner">{@render offline()}</span>{/if}
+        <!-- Phones, on the entries shrunk to an avatar (no name to follow): on the avatar's free top right
+             corner (the host's remove × has the left), giving way to a wrong answer's mark there. -->
+        {#if !p.connected && !out}<span class="off-corner">{@render offline()}</span>{/if}
         {#if canKick && p.id !== s.hostId}
           <span class="kick-at" class:armed={confirming === p.id}>
             <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
@@ -1514,12 +1515,15 @@
     .board:has(> li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide) ~ li.revivable:not(.wide)) {
       flex-wrap: wrap;
     }
-    /* On a lone avatar the name is hidden, so the offline mark sits on its corner. */
+    /* On a lone avatar the name is hidden, so the offline mark sits on its top right corner. */
     li:not(.wide) .off-corner {
       display: grid;
       position: absolute;
-      top: -6px;
-      left: 18px;
+      top: -7px;
+      right: -5px;
+    }
+    li:not(.wide) .off-corner .off {
+      --standing-size: 15px;
     }
   }
 </style>

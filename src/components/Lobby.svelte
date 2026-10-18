@@ -278,10 +278,10 @@
   {/if}
 {/snippet}
 
-<!-- A rules line's sign: one small engraved ring before every line, so the rules read at a glance as a list
-     (never the diamond, which means "you are here"; never the waiting line's dot). -->
-{#snippet sign()}
-  <span class="sign" aria-hidden="true"><span class="ring"></span></span>
+<!-- A rules line leads with what it governs, a word in Cinzel's capitals in a column of its own, so the
+     rules read at a glance as a list without a sign that means nothing (never the diamond: "you are here"). -->
+{#snippet key(word: string)}
+  <span class="key">{word}</span>
 {/snippet}
 
 <!-- The start page's two columns carry on here: on the left, where its menu
@@ -472,9 +472,9 @@
               <p class="together-when">Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
-              <li>{@render sign()}<span>Vote for a card, then one is drawn from the votes.</span></li>
-              <li>{@render sign()}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
-              <li>{@render sign()}<span>Teammates can sacrifice their life force to revive you.</span></li>
+              <li>{@render key('Cards')}<span>Vote for a card, then one is drawn from the votes.</span></li>
+              <li>{@render key('Answers')}<span>Everyone answers at once. A wrong answer is crossed out for everyone.</span></li>
+              <li>{@render key('Revives')}<span>Teammates can sacrifice their life force to revive you.</span></li>
             </ul>
           </div>
         {/if}
@@ -601,15 +601,15 @@
 
         <ul class="rules" data-cursor="rules">
           {#if race}
-            <li>{@render sign()}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
-            <li>{@render sign()}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
+            <li>{@render key('Misses')}<span>A wrong answer costs a point and sits you out until the next question.</span></li>
+            <li>{@render key('Winning')}<span>First to <span class="num">{s.settings.targetScore}</span> wins.</span></li>
           {:else}
             <li>
-              {@render sign()}<span
+              {@render key('Points')}<span
                 >A right answer scores a point{#if lockout > 0}; the category stays locked for your next <span class="num">{lockout}</span> turns{/if}.</span
               >
             </li>
-            <li>{@render sign()}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
+            <li>{@render key('Winning')}<span>First to <span class="num">{s.settings.targetScore}</span> wins once the round is over; a tie goes to sudden death.</span></li>
           {/if}
         </ul>
       {/if}
@@ -1377,7 +1377,7 @@
     color: var(--gold-hi);
   }
 
-  /* Each line led by its sign (the sign snippet), in a column of its own so the words line up. */
+  /* Each line led by what it governs (the key snippet), the words lined up after it. */
   .rules {
     margin: 0.4rem 0 1.4rem;
     padding-left: 0;
@@ -1385,26 +1385,19 @@
     font-size: 0.98rem;
   }
   .rules li {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.55rem;
-    margin: 0.25rem 0;
-  }
-  /* As tall as the first line, the sign centred on it. */
-  .sign {
-    flex: none;
     display: grid;
-    place-items: center;
-    width: 0.6rem;
-    height: 1.3em;
+    grid-template-columns: 4.6rem 1fr;
+    gap: 0.75rem;
+    align-items: baseline;
+    margin: 0.3rem 0;
   }
-  /* A hairline ring in the house gold, its accent; small beside the words. */
-  .ring {
-    width: 6px;
-    height: 6px;
-    border: 1.3px solid var(--gold);
-    border-radius: 50%;
-    opacity: 0.85;
+  .key {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
   }
 
   /* The start closes the panel: what to know on the left, the button on the right. */
