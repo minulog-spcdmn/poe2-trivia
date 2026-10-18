@@ -1,8 +1,8 @@
-// The alchemist's signs, shared by the circle behind the item art
-// (ArcaneCircle), the plate behind the item's name (NamePlate) and the
+// The alchemist's signs, shared by the circles behind the item art
+// (ArcaneCircle and its siblings), the plate behind the item's name (NamePlate) and the
 // achievements' seals (AchievementSeal).
 
-import { angleOf, at as atAbout, meeting } from './arcane.ts';
+import { angleOf, at as atAbout, hatch, line, meeting, ring } from './arcane.ts';
 
 type Pt = [number, number];
 const f = (v: number) => v.toFixed(2);
@@ -41,6 +41,49 @@ export const PLANETS = [
   'M-1 -4.4V2M-2.6 -2.8H0.6M-1 -0.4C0.2 -1.8 2.8 -1.6 2.6 0.6C2.4 2.4 0.4 2.6 1.2 4.4', // Saturn • lead
 ];
 
+/** A circle about (x, y), as path data. */
+const round = (x: number, y: number, r: number) => ring([x, y], r);
+/**
+ * The seven planets again, as the rune circle's band and the monad's star
+ * hold them: drawn on a grid of about ±4.5 with the pen's curves and flicks,
+ * each with about as much line as the next.
+ */
+export const PLANET_SIGNS = [
+  // Sol: a round with its point, crowned with eight short pointed rays.
+  round(0, 0, 2.4) + round(0, 0, 0.45) + Array.from({ length: 8 }, (_, k) => {
+    const a = k * 45 + 22.5;
+    return `M${pt(at(a - 10, 3.0))}L${pt(at(a, k % 2 ? 4.2 : 4.75))}L${pt(at(a + 10, 3.0))}`;
+  }).join(''),
+  // Luna: a crescent, horns to the right, an arc along its back.
+  (() => {
+    const [R, r, off] = [4.15, 3.35, 1.8];
+    const hx = (R * R - r * r + off * off) / (2 * off);
+    const hy = Math.sqrt(R * R - hx * hx);
+    const d = `M${f(hx)} ${f(-hy)}A${R} ${R} 0 1 0 ${f(hx)} ${f(hy)}A${r} ${r} 0 1 1 ${f(hx)} ${f(-hy)}Z`;
+    const rr = R - 0.85;
+    const c = (rr * rr - off * off - (r + 0.45) ** 2) / (2 * off * (r + 0.45));
+    const a = (Math.PI - Math.acos(Math.max(-1, Math.min(1, -c)))) * 0.7;
+    return d + `M${f(-rr * Math.cos(a))} ${f(-rr * Math.sin(a))}A${f(rr)} ${f(rr)} 0 0 0 ${f(-rr * Math.cos(a))} ${f(rr * Math.sin(a))}`;
+  })(),
+  // Mercury: horns flicked out at their tips over a round, a cross below.
+  'M-2.1 -4.6C-2.1 -3.3 -1.2 -2.75 0 -2.75C1.2 -2.75 2.1 -3.3 2.1 -4.6M-2.1 -4.6C-2.35 -4.95 -2.85 -4.8 -2.75 -4.3M2.1 -4.6C2.35 -4.95 2.85 -4.8 2.75 -4.3' + round(0, -0.85, 1.85) + 'M0 1V4.6M-1.75 2.75H1.75',
+  // Venus: a round over a cross whose arms bow down at their ends.
+  round(0, -1.9, 2.5) + 'M0 0.6V4.6M-2.1 2.45C-1.4 2.65 -0.7 2.75 0 2.75C0.7 2.75 1.4 2.65 2.1 2.45',
+  // Mars: a round, and from it the spear out to the upper right, barbed both sides.
+  (() => {
+    const c: Pt = [-1.1, 1.1];
+    const r = 2.6;
+    const u = Math.SQRT1_2;
+    const from: Pt = [c[0] + r * u, c[1] - r * u];
+    const tip: Pt = [3.6, -3.6];
+    return round(c[0], c[1], r) + `M${pt(from)}L${pt(tip)}M${pt([tip[0] - 2.1, tip[1] + 0.15])}L${pt(tip)}L${pt([tip[0] - 0.15, tip[1] + 2.1])}`;
+  })(),
+  // Jupiter: a hook swept down from a curl into its foot, crossed by the staff.
+  'M-2.9 -2.6C-3.5 -3.6 -2.6 -4.5 -1.5 -4.3C-0.2 -4.1 0.2 -2.9 -0.4 -1.6C-0.9 -0.5 -2 0.6 -3 1.3H3.4M1.7 -4.3V4.5M0.9 4.5H2.5',
+  // Saturn: a cross over a sickle, its blade curling under to a hook.
+  'M-1.4 -4.8V1.9M-3.3 -3.1H0.5M-1.4 -0.4C-0.3 -2.1 3.1 -2.1 3.1 0.4C3.1 2.2 0.9 2.7 1.2 3.9C1.45 4.8 2.5 4.9 3 4.2M-2.2 1.9H-0.6',
+];
+
 // The two great seals, drawn for a ring of radius 13 (about ±10 inside it).
 // Sol: a disc (radius 5) with a point at its heart (1.1) and twelve rays,
 // long and short in turn.
@@ -53,6 +96,27 @@ export const LUNA_HATCH = Array.from({ length: 13 }, (_, i) => {
   const x1 = 3.5 - Math.sqrt(7.2 ** 2 - y * y) - 0.7;
   return x1 - x0 > 0.3 ? `M${f(x0)} ${y}H${f(x1)}` : '';
 }).join('');
+
+/**
+ * An element for a seal, its triangle `R` from its middle: pointing up for
+ * fire and air, down for water and earth, air and earth barred (the bar
+ * reaching a little past the sides); a ridge down its middle and one side
+ * hatched, as the circles' rays are.
+ */
+export function element(up: boolean, barred: boolean, R = 5.6) {
+  const s = up ? 1 : -1;
+  const [apex, l, r] = [0, 120, 240].map((a) => at(up ? a : a + 180, R));
+  const base: Pt = [0, (s * R) / 2];
+  const bar = (-s * 1.1 * R) / 5.6;
+  const half = Math.abs(bar - apex[1]) * Math.tan(Math.PI / 6) + (1.3 * R) / 5.6;
+  const under = barred ? [{ p: [-half, bar] as Pt, q: [half, bar] as Pt, w: 0.55 }] : [];
+  return {
+    lines: `M${pt(apex)}L${pt(l)}L${pt(r)}Z` + (barred ? `M${f(-half)} ${f(bar)}H${f(half)}` : ''),
+    shade: line(base, apex, { under }) + hatch(base, up ? r : l, apex, 0.55, { under }),
+  };
+}
+/** Fire, air, water, earth. */
+export const ELEMENTS = [element(true, false), element(true, true), element(false, false), element(false, true)];
 
 // ---- signs for the achievements' seals ----------------------------------------
 // Classic alchemical signs beyond the planets and the marks, drawn on the
@@ -110,7 +174,7 @@ function woven(polys: Pt[][]): string {
     .join('');
 }
 
-const circle = (cx: number, cy: number, r: number) => `M${f(cx)} ${f(cy - r)}A${f(r)} ${f(r)} 0 1 1 ${f(cx)} ${f(cy + r)}A${f(r)} ${f(r)} 0 1 1 ${f(cx)} ${f(cy - r)}Z`;
+const circle = (cx: number, cy: number, r: number) => ring([cx, cy], r);
 
 /** An arc of the circle about (cx, cy) from `a0` to `a1` degrees, clockwise from the top. */
 function arcPath(cx: number, cy: number, r: number, a0: number, a1: number): string {
@@ -203,21 +267,23 @@ export const RINGS = (() => {
 })();
 
 /**
- * The ouroboros, the serpent that bites its tail, for what never ends: one
- * outline round a circle (radius 2.9), from the fine tail up the left and
- * over the top into a broad head that closes on the tail's tip, with an eye
- * and the line of the mouth. It runs clockwise, its head at the top.
+ * The ouroboros, the serpent that bites its tail, for what never ends, at
+ * `k` times the sign's size: one outline round a circle (radius 2.9k), from
+ * the fine tail up the left and over the top into a broad head that closes
+ * on the tail's tip, with an eye and the line of the mouth. It runs
+ * clockwise, its head at the top. `width(a)` is its half-width at `a`
+ * degrees round (0 past the snout, where only the tail's tip is).
  */
-export const OUROBOROS = (() => {
-  const r = 2.9;
+export function serpent(k = 1) {
+  const r = 2.9 * k;
   /** The body's half-width from the neck (`-28`°) back round to the tail (`-347.5`°, just past the snout). */
   const NECK = -28;
   const TAIL = -347.5;
-  const body = (a: number) => 0.7 - 0.5 * ((NECK - a) / (NECK - TAIL)) ** 1.6;
+  const body = (a: number) => (0.7 - 0.5 * ((NECK - a) / (NECK - TAIL)) ** 1.6) * k;
   /** The head's half-width, `t` from the neck (0) to the snout (1): broad, then rounded off. */
   const SNOUT = 10;
   const head = (t: number) =>
-    (0.7 + 0.45 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.6))) * (t <= 0.62 ? 1 : Math.sqrt(Math.max(0, 1 - ((t - 0.62) / 0.38) ** 2)));
+    (0.7 + 0.45 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.6))) * (t <= 0.62 ? 1 : Math.sqrt(Math.max(0, 1 - ((t - 0.62) / 0.38) ** 2))) * k;
   const steps = (a0: number, a1: number, n: number) => Array.from({ length: n + 1 }, (_, i) => a0 + ((a1 - a0) * i) / n);
   const outer = [
     ...steps(TAIL, NECK, 64).map((a) => at(a, r + body(a))),
@@ -233,9 +299,23 @@ export const OUROBOROS = (() => {
       .slice(1)
       .map((a) => at(a, r - body(a))),
   ];
-  const outline = `M${[...outer, ...inner].map(pt).join('L')}Z`;
-  const mouth = `M${pt(at(SNOUT - 1, r))}L${pt(at(NECK + (SNOUT - NECK) * 0.6, r - 0.12))}`;
-  const eye = at(NECK + (SNOUT - NECK) * 0.5, r + 0.42);
+  const width = (a: number) => {
+    const b = ((((a - TAIL) % 360) + 360) % 360) + TAIL;
+    return b <= NECK ? body(b) : b <= SNOUT ? head((b - NECK) / (SNOUT - NECK)) : 0;
+  };
+  return {
+    r,
+    NECK,
+    TAIL,
+    SNOUT,
+    width,
+    outline: `M${[...outer, ...inner].map(pt).join('L')}Z`,
+    mouth: `M${pt(at(SNOUT - 1, r))}L${pt(at(NECK + (SNOUT - NECK) * 0.6, r - 0.12 * k))}`,
+    eye: at(NECK + (SNOUT - NECK) * 0.5, r + 0.42 * k),
+  };
+}
+export const OUROBOROS = (() => {
+  const { outline, mouth, eye } = serpent();
   return outline + mouth + circle(eye[0], eye[1], 0.26);
 })();
 

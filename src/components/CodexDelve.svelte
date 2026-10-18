@@ -32,6 +32,10 @@
   import DelveLastRun from './codex/DelveLastRun.svelte';
   import DelveRunLog from './codex/DelveRunLog.svelte';
   import CodexMedallion from './codex/CodexMedallion.svelte';
+  import { circleOf } from './circles';
+
+  /** The circle behind it (lib/circlePlaces.ts). */
+  const DelveCircle = circleOf('codexDelve');
 
   // The Codex's Delve page, a sibling of the Collection (Codex.svelte) and
   // built from its parts: four figures around your deepest in the rune
@@ -262,7 +266,7 @@
           </div>
         </div>
 
-        <CodexMedallion>
+        <CodexMedallion circle={DelveCircle}>
           <span class="medal-label">Deepest</span>
           <span class="medal-value">{best === null ? '?' : shownDepth(best)}</span>
           {#if best}

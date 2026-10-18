@@ -425,6 +425,55 @@ const isFind = (v: unknown): v is FindKind => v === 'azurite' || v === 'flare' |
 const isLoss = (v: unknown) => v === 0 || v === 1 || v === 2;
 /** A Delve depth (a whole number from 1), or 0. */
 const depth = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1e6 ? v : 0);
+/** An item's id (fetch-data.mjs hashId); anything else read back from storage was never an item. */
+const isItemId = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{12}$/.test(v);
+/** The longest name an item, or a made-up one, has on screen (they run to about 40 characters). */
+const MAX_LABEL = 120;
+
+/**
+ * An encounter fit to keep, or null when its item isn't one this build has
+ * (`known`). Online, what a reveal says comes from the host, whose game is
+ * only shape-checked (protocol.ts), and the codex is kept for good: so only
+ * known items go in, made-up names as long as any real one, and everything
+ * else as parseCodex would read it back. A host can't fill this browser's
+ * storage with it, or write anything into it that doesn't fit.
+ */
+export function keepable(e: Encounter, known: (id: string) => boolean): Encounter | null {
+  if (!known(e.itemId) || !isMode(e.mode) || !Number.isFinite(e.at)) return null;
+  const kept: Encounter = { at: e.at, itemId: e.itemId, mode: e.mode, difficulty: difficultyOf(e.difficulty), race: e.race === true };
+  const dv = e.delve;
+  if (dv) {
+    const d = depth(dv.depth);
+    if (!d || !Number.isSafeInteger(dv.run) || dv.run < 0) return null;
+    kept.delve = {
+      depth: d,
+      run: dv.run,
+      ...(isFind(dv.find) ? { find: dv.find } : {}),
+      ...(dv.blasted === true ? { blasted: true as const } : {}),
+      ...(dv.warded === true ? { warded: true as const } : {}),
+      ...(dv.lost && isLoss(dv.lost.lives) && isLoss(dv.lost.wards) ? { lost: { lives: dv.lost.lives, wards: dv.lost.wards } } : {}),
+      ...(ITEM_KINDS.includes(dv.gained as ItemKind) ? { gained: dv.gained } : {}),
+      ...(isStrike(dv.strike) ? { strike: dv.strike } : {}),
+      ...(isStrike(dv.buried) ? { buried: dv.buried } : {}),
+      ...(dv.flared === true ? { flared: true as const } : {}),
+      ...(dv.team === true ? { team: true as const } : {}),
+      ...(isWho(dv.who) ? { who: dv.who } : {}),
+    };
+  }
+  const a = e.answer;
+  if (a) {
+    const id = a.pickedId;
+    // fake:<id of the item it copies>:<which of its fakes>
+    const fake = typeof id === 'string' && isFake(id) && id.length <= 40 && known(id.split(':')[1] ?? '');
+    // A pick it doesn't know, or a name longer than any, is let go of; the answer and the question's item still count.
+    const pickedId = fake || (typeof id === 'string' && known(id)) ? id : null;
+    const label = typeof a.pickedLabel === 'string' && a.pickedLabel.length <= MAX_LABEL ? a.pickedLabel : null;
+    const ms = typeof a.ms === 'number' && Number.isFinite(a.ms) && a.ms > 0 ? a.ms : undefined;
+    kept.answer = { ok: a.ok === true, pickedId, pickedLabel: label, ...(ms !== undefined ? { ms } : {}) };
+  }
+  return kept;
+}
+
 function delveItem(v: unknown): DelveItem | undefined {
   if (!isObj(v)) return undefined;
   const t = tally(v);
@@ -461,9 +510,9 @@ export function parseCodex(raw: string | null): Codex | null {
   if (!isObj(v) || v.v !== CODEX_VERSION || !isObj(v.items)) return null;
   const c = emptyCodex();
   for (const [id, e] of Object.entries(v.items)) {
-    if (!isObj(e)) continue;
+    if (!isObj(e) || !isItemId(id)) continue;
     const mixed: Record<string, number> = {};
-    if (isObj(e.mixed)) for (const [k, n] of Object.entries(e.mixed)) if (count(n) > 0) mixed[k] = count(n);
+    if (isObj(e.mixed)) for (const [k, n] of Object.entries(e.mixed)) if (isItemId(k) && count(n) > 0) mixed[k] = count(n);
     const dv = delveItem(e.delve);
     c.items[id] = {
       seen: Math.max(1, count(e.seen)),
@@ -477,7 +526,7 @@ export function parseCodex(raw: string | null): Codex | null {
   }
   if (Array.isArray(v.log))
     for (const a of v.log.slice(-LOG_LIMIT)) {
-      if (!isObj(a) || typeof a.id !== 'string' || !isMode(a.mode) || typeof a.ok !== 'boolean') continue;
+      if (!isObj(a) || !isItemId(a.id) || !isMode(a.mode) || typeof a.ok !== 'boolean') continue;
       const ms = count(a.ms);
       const d = depth(a.depth);
       const run = typeof a.run === 'number' && Number.isSafeInteger(a.run) && a.run >= 0 ? a.run : null;
@@ -506,10 +555,10 @@ export function parseCodex(raw: string | null): Codex | null {
     for (const [d, t] of Object.entries(v.byDifficulty)) if (difficultyOf(d) === d) c.byDifficulty[d as Difficulty] = tally(t);
   if (isObj(v.fooled))
     for (const [name, f] of Object.entries(v.fooled))
-      if (isObj(f) && typeof f.of === 'string' && count(f.n) > 0) c.fooled[name] = { of: f.of, n: count(f.n), last: time(f.last) };
+      if (isObj(f) && name.length <= MAX_LABEL && isItemId(f.of) && count(f.n) > 0) c.fooled[name] = { of: f.of, n: count(f.n), last: time(f.last) };
   c.streak = count(v.streak);
   c.best = Math.max(c.streak, count(v.best));
-  if (isObj(v.fastest) && typeof v.fastest.id === 'string' && count(v.fastest.ms) > 0) c.fastest = { ms: count(v.fastest.ms), id: v.fastest.id };
+  if (isObj(v.fastest) && isItemId(v.fastest.id) && count(v.fastest.ms) > 0) c.fastest = { ms: count(v.fastest.ms), id: v.fastest.id };
   if (isObj(v.byDepth))
     for (const [k, t] of Object.entries(v.byDepth)) {
       const d = depth(Number(k));

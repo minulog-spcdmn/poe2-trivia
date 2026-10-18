@@ -1,11 +1,12 @@
 <script lang="ts">
   // Today's unique: one item a day, the same for every exile (lib/daily.ts),
-  // in the rune circle with the game's own answer buttons under it. Once it
-  // is answered, "Practice more" asks further questions in the same spot;
+  // in one of the rune circles (a different one each day) with the game's own
+  // answer buttons under it. Once it is answered, "Practice more" asks
+  // further questions in the same spot;
   // they never touch the streak. Into the codex, today's unique goes as
   // found (its answer isn't counted) and a practice answer only into a
   // practice accuracy of its own (see pick).
-  import { onMount } from 'svelte';
+  import { onMount, untrack, type Component } from 'svelte';
   import { fade, fly, scale, slide } from 'svelte/transition';
   import itemData from '../data/items.json';
   import fakeNames from '../data/fakes.json';
@@ -20,7 +21,11 @@
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
-  import ArcaneCircle from './ArcaneCircle.svelte';
+  import { whenIdle } from '../lib/idle';
+  import { turnOf } from '../lib/turns';
+  import { loadPlate } from '../lib/plateStore.svelte';
+  import { PLACES } from '../lib/circlePlaces';
+  import type { PlateName } from '../lib/plates/index.ts';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -60,6 +65,34 @@
     };
   });
   const today = $derived(utcDay(now));
+  // A different one of the circles from day to day, the same for every exile
+  // (lib/circlePlaces.ts, in its order), loaded only when it's today's, so
+  // the start page carries none of the others.
+  const LOAD: Record<PlateName, () => Promise<{ default: Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> }>> = {
+    eye: () => import('./ArcaneCircle.svelte'),
+    monad: () => import('./MonadCircle.svelte'),
+    rose: () => import('./RoseCircle.svelte'),
+    blackSun: () => import('./BlackSunCircle.svelte'),
+    moth: () => import('./ForbiddenCircle.svelte'),
+  };
+  const DAILY = [...PLACES.daily.circles];
+  // Loaded, its plate built away from the page, and put on the page in the
+  // first idle moment after the start page's first frames (half a second at
+  // most), once both are at hand.
+  let Circle = $state.raw<Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> | null>(null);
+  $effect(() => {
+    const day = today;
+    const name = turnOf(day, DAILY);
+    return whenIdle(
+      () =>
+        void Promise.all([LOAD[name](), loadPlate(name)]).then(
+          ([m]) => day === untrack(() => today) && (Circle = m.default),
+          // (Without its circle, today's unique plays on as it is.)
+          (e) => console.error("today's circle:", e),
+        ),
+      { timeout: 500, fallback: 100 },
+    );
+  });
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 
   let rec = $state(loadDaily());
@@ -279,7 +312,7 @@
       <div class="veil">
         <div class="inner">
           <div class="circle">
-            <ArcaneCircle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />
+            {#if Circle}<Circle size="100%" state={glow && right ? 'good' : 'idle'} strength={!glow ? 0.5 : right ? 0.85 : 0.26} />{/if}
           </div>
           <!-- "frame", as the game's art stage: the right answer's flare and rays find the
                picture through it (fx/moments reveal) and shine from behind its outline. -->

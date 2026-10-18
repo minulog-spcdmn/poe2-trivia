@@ -1,5 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
@@ -119,6 +120,29 @@ function fontinNotice(): Plugin {
       }
     },
   };
+}
+
+/**
+ * Which build of the rune circles' plates this is (src/lib/plates, built in
+ * the browser and kept: lib/plateStore.svelte.ts): a hash of the plates and
+ * of everything they import (what's imported only as a type left out), so a
+ * device keeps a plate it built until the code that draws it changes.
+ */
+function platesVersion() {
+  const hash = createHash('sha256');
+  const seen = new Set<string>();
+  const walk = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const code = readFileSync(file, 'utf8');
+    hash.update(file.slice(file.indexOf('src')).replaceAll('\\', '/')).update(code);
+    for (const m of code.matchAll(/^(?!import type)(?:import|export)[^;]*?from '(\.{1,2}\/[^']+)'|import\('(\.{1,2}\/[^']+)'\)/gm)) {
+      const path = join(dirname(file), m[1] ?? m[2]);
+      walk(path.endsWith('.ts') ? path : `${path}.ts`);
+    }
+  };
+  walk(fileURLToPath(new URL('./src/lib/plates/index.ts', import.meta.url)));
+  return hash.digest('hex').slice(0, 12);
 }
 
 /** Where the backdrop tool saves to (and the game reads its zones' looks from). */
@@ -251,16 +275,44 @@ function localId() {
   return createHash('sha256').update(`${hostname()}:${who}`).digest('hex').slice(0, 8);
 }
 
+/**
+ * The dev hub (dev.html) lists the room bot, which only the dev server and
+ * the bot's own build have; any other build drops its card rather than link
+ * to a page it doesn't have.
+ */
+function devHub(env: Record<string, string>): Plugin {
+  return {
+    name: 'dev-hub',
+    apply: 'build',
+    transformIndexHtml(html, ctx) {
+      if (!ctx.filename.endsWith('/dev.html') || env.VITE_BOT === '1') return html;
+      const card = /\s*<!-- bot -->[\s\S]*?<!-- \/bot -->/;
+      // Without its markers the card would ship, linking to a page that isn't there.
+      if (!card.test(html)) throw new Error('dev.html: the room bot card has lost its <!-- bot --> ... <!-- /bot --> markers.');
+      return html.replace(card, '');
+    },
+  };
+}
+
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   // A channel named wrongly stops here, rather than quietly playing in the live game. The local
   // one's rooms are this machine's: set before Vite reads the env, so the app sees import.meta.env.VITE_LOCAL_ID.
   if (channelOf({ VITE_CHANNEL: env.VITE_CHANNEL, DEV: command === 'serve' }) === 'local') process.env.VITE_LOCAL_ID ??= localId();
+  process.env.VITE_PLATES_VERSION = platesVersion();
+  // Without the owner key's public half, nobody (the creator included) can play under the held name. Said loudly, in the
+  // deploy's summary too, but not in the way: everything else goes out as it should.
+  if (command === 'build' && channelOf({ VITE_CHANNEL: env.VITE_CHANNEL }) === 'live' && /OWNER_PUBLIC_KEY = ''/.test(readFileSync(`${process.cwd()}/src/lib/ownerKey.ts`, 'utf8'))) {
+    const text = 'OWNER_PUBLIC_KEY in src/lib/ownerKey.ts is empty, so nobody can play under the held name. Run node --experimental-strip-types scripts/owner-key.mjs "<the owner words>" and paste what it prints there.';
+    console.warn(process.env.GITHUB_ACTIONS ? `::warning::${text}` : `\x1b[33m${text}\x1b[0m`);
+  }
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave()],
+    plugins: [svelte(), glslMinify(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env)],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
+    worker: { format: 'es' },
     build: {
       rollupOptions: {
         // Legal pages are plain static pages so they work without JavaScript.
@@ -268,14 +320,16 @@ export default defineConfig(({ command, mode }) => {
           main: 'index.html',
           impressum: 'impressum.html',
           datenschutz: 'datenschutz.html',
+          // Analytics (src/statsPage): the counts from GoatCounter, read with the owner's key.
+          stats: 'stats.html',
           // The effects lab (src/lab), the backdrop tool (src/backdropTool),
           // the zone tuning page (src/zonebanner), the descent's test page
           // (src/descentPreview), the daily streak's (src/streakPreview), the
           // spatial sound page (src/spatialPage), the hover tuning page
-          // (src/hoverPage) and the end screen's (src/endscreenPreview):
-          // the dev server serves them by itself; of the builds only the beta
-          // has them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html' } : {}),
+          // (src/hoverPage), the end screen's (src/endscreenPreview) and the
+          // hub linking them all (dev.html): the dev server serves them by
+          // itself; of the builds only the beta has them, never the live game.
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', descent: 'descent.html', streak: 'streak.html', spatial: 'spatial.html', hover: 'hover.html', endscreen: 'endscreen.html', circle: 'circle.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

@@ -1490,7 +1490,8 @@ test('a question thrown out for failed art does not count toward the art lean', 
 });
 
 test('the held name is refused until the device is unlocked', async () => {
-  const { heldKeyHash, isHeldName, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  const { isHeldName, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  const { ownerPublicKey } = await import('../src/lib/ownerKey.ts');
   for (const n of ['zoe_arcana', 'Zoe Arcana', 'zoe-arcana', 'Z0E_ARCANA', 'ｚｏｅ＿ａｒｃａｎａ']) assert.ok(isHeldName(n), n);
   for (const n of ['zoe', 'arcana', 'Doryani', 'zoe_arcana2x', '']) assert.ok(!isHeldName(n), n);
   const store = new Map<string, string>();
@@ -1500,15 +1501,18 @@ test('the held name is refused until the device is unlocked', async () => {
     value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
   });
   try {
-    // The real key is not in the repo, so this runs against a test key's hash.
-    const hash = await heldKeyHash('test words');
-    assert.equal(nameHeld('Doryani', hash), false);
-    assert.equal(nameHeld('Zoe_Arcana', hash), true);
-    assert.equal(await unlockHeldName('nope', hash), false);
-    assert.equal(nameHeld('Zoe_Arcana', hash), true, 'a wrong key unlocks nothing');
-    assert.equal(await unlockHeldName('Test-Words', hash), true, 'case and dashes do not count');
-    assert.equal(nameHeld('zoe_arcana', hash), false, 'unlocked on this device');
-    assert.equal(nameHeld('zoe_arcana'), true, 'a device unlocked for another key stays locked');
+    // The real words are not in the repo, so this runs against a test key.
+    const key = await ownerPublicKey('test words');
+    assert.equal(nameHeld('Doryani', key), false);
+    assert.equal(nameHeld('Zoe_Arcana', key), true);
+    assert.equal(await unlockHeldName('nope', key), false);
+    assert.equal(nameHeld('Zoe_Arcana', key), true, 'wrong words unlock nothing');
+    // The hash the source used to hold, now no secret at all, unlocks nothing either.
+    store.set('poe2trivia.owner', '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607');
+    assert.equal(nameHeld('Zoe_Arcana', key), true);
+    assert.equal(await unlockHeldName('Test-Words', key), true, 'case and dashes do not count');
+    assert.equal(nameHeld('zoe_arcana', key), false, 'unlocked on this device');
+    assert.equal(nameHeld('zoe_arcana', 'A'.repeat(43)), true, 'a device unlocked for another key stays locked');
   } finally {
     if (had) Object.defineProperty(globalThis, 'localStorage', had);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
@@ -1576,4 +1580,20 @@ test('names need at least two characters', () => {
   s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bo' }, 'p1');
   assert.equal(s.players[1].name, 'Bo');
   assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'B' }, 'p1'), /at least 2/);
+});
+
+test("the owner's place in the game goes only to whoever joins under the held name", () => {
+  let { engine, s } = setup(['Ash', 'Bram']);
+  // A seat coming back keeps its own name: a checked signature sent with it names nobody.
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zoe Arcana', returning: true, owner: true }, 'p1');
+  assert.equal(s.owner, undefined);
+  assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Bram');
+  // Nor one under another name.
+  s = engine.apply(s, { type: 'join', playerId: 'p2', name: 'Cass', owner: true }, 'p2');
+  assert.equal(s.owner, undefined);
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: true }, 'z');
+  assert.deepEqual(s.owner, { id: 'z' });
+  // A guest can't put it on anyone (only the host, for itself).
+  assert.throws(() => engine.apply(s, { type: 'owner', playerId: 'p1' }, 'p1'), /Not allowed/);
+  assert.deepEqual(engine.apply(s, { type: 'owner', playerId: 'p0' }, 'p0').owner, { id: 'p0' });
 });

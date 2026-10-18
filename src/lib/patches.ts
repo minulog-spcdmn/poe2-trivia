@@ -420,6 +420,39 @@ export function patchCount(runs: Uint16Array, size: number): number | null {
 }
 
 /**
+ * How much cutting packed labels (packLabels) of a W-pixel-wide picture
+ * takes: the area of every patch's box, grown by its ring, added up, which
+ * is what patchShapes walks. A real cut's patches tile the picture, so it
+ * stays near the picture's own area (about twice it at most); a few pixels
+ * per patch at opposite corners would make it hundreds of times that.
+ */
+export function patchWork(runs: Uint16Array, W: number): number {
+  const box = new Map<number, [number, number, number, number]>();
+  let at = 0;
+  for (let j = 0; j + 1 < runs.length; j += 2) {
+    const [v, len] = [runs[j], runs[j + 1]];
+    if (v && len) {
+      const y0 = Math.floor(at / W);
+      const y1 = Math.floor((at + len - 1) / W);
+      const x0 = y0 === y1 ? at % W : 0;
+      const x1 = y0 === y1 ? (at + len - 1) % W : W - 1;
+      const b = box.get(v);
+      if (!b) box.set(v, [x0, y0, x1, y1]);
+      else {
+        b[0] = Math.min(b[0], x0);
+        b[1] = Math.min(b[1], y0);
+        b[2] = Math.max(b[2], x1);
+        b[3] = Math.max(b[3], y1);
+      }
+    }
+    at += len;
+  }
+  let work = 0;
+  for (const [x0, y0, x1, y1] of box.values()) work += (x1 - x0 + 3) * (y1 - y0 + 3);
+  return work;
+}
+
+/**
  * The order patches are revealed in: the reveal spreads through the item
  * like fire. It starts at a random patch, and each next one is a neighbour
  * of what's already revealed (one sharing more border with it is likelier,

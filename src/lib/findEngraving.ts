@@ -238,7 +238,7 @@ function cluster(p: Plate, prisms: Prism[], extra: Shields = NONE, k = 1, top = 
 }
 
 /** A crystal seen end on, `r` across its points: its hexagon, the table cut on its tip, the facets between, those turned from the light hatched. */
-function crystalSeal(p: Plate, c: Pt, r: number) {
+export function crystalSeal(p: Plate, c: Pt, r: number) {
   const outer = Array.from({ length: 6 }, (_, k) => at(c, k * 60, r));
   const inner = Array.from({ length: 6 }, (_, k) => at(c, k * 60, r * 0.48));
   p.add(poly(outer), 'thin');
@@ -277,7 +277,7 @@ function crystalGlory(p: Plate, c: Pt, reach: (deg: number) => number, row: bool
  * as the cluster's are, stopping short of `s`. Their outlines are kept clear
  * of the plate.
  */
-function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1) {
+export function crystalCrown(p: Plate, c: Pt, r0: number, points: { a: number; end: number; hw: number }[], s: Shields, k = 1) {
   sunRing(p, c, r0);
   points.forEach(({ a, end, hw }, i) => {
     const len = end - r0 + 1;
@@ -303,7 +303,7 @@ function fireSign(p: Plate, c: Pt, r: number) {
  * double ring, pointed rays in three lengths hatched down one side, fine
  * rays between them.
  */
-function burst(p: Plate, c: Pt, r: number, s: Shields = NONE) {
+export function burst(p: Plate, c: Pt, r: number, s: Shields = NONE) {
   const core = r * 0.3;
   p.add(arc(c, core, 0, 360), 'thin');
   p.add(arc(c, core - 1.3, 0, 360), 'hair');
@@ -591,7 +591,7 @@ const THROWN = [0.02, 0.1, 0.05, 0.13, 0.03, 0.08, 0.11, 0.04, 0.12, 0.06, 0.09,
  * lets them (a shard whose point would leave it is left out). Shards and
  * arcs are kept clear of the plate.
  */
-function shattered(p: Plate, c: Pt, r: number, room: (q: Pt) => boolean, rings = 3) {
+export function shattered(p: Plate, c: Pt, r: number, room: (q: Pt) => boolean, rings = 3) {
   const n = THROWN.length;
   const gap = 360 / n;
   let arcs = '';

@@ -25,6 +25,8 @@
   import DrawnMark from './DrawnMark.svelte';
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
+  import { warmPlate } from '../lib/plateStore.svelte';
+  import { circleAtPlace } from '../lib/circlePlaces';
   import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -36,7 +38,8 @@
   let invite = $state(linked);
   /** How a join of the room in the address started: an invite link, or a room tapped in the Open rooms list whose newer host it reloaded into (count.ts cameFromThisSite). */
   const inviteVia: JoinVia = cameFromThisSite ? 'open-rooms' : 'invite-link';
-  if (linked && inviteVia === 'invite-link') countArrival('open/invite-link');
+  // (Not counted on coming from this site, the Open rooms case: countArrival leaves that out.)
+  if (linked) countArrival('open/invite-link');
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -174,6 +177,9 @@
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
+  /** The Codex's collection circle, built ahead away from the page once its entry is pointed at (the Codex warms the rest as it opens). */
+  const warmCodex = (e: Entry) => e === 'codex' && warmPlate(circleAtPlace('collection'));
+  $effect(() => void warmCodex(ENTRIES[cursor]));
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
@@ -299,7 +305,8 @@
       return;
     }
     if (code.length < CODE_LENGTH) return codeShort();
-    startJoin(code, n, 'join', 'code');
+    // A join that failed left its code here: trying it again is still the try it was (an invite link's, say).
+    startJoin(code, n, 'join', left?.code === code ? left.via : 'code');
   }
   /** The Code too short notice up, if one is: it goes once the code is whole. */
   let shortNotice: number | null = null;
@@ -382,10 +389,12 @@
   // its code is the one to check, and the toast (session.fail) says why. Not
   // one tapped in the Open rooms list in its own place: nobody typed that code,
   // and Join's field is out of sight up the page.
-  let joining: string | null = null;
+  let joining: { code: string; via: JoinVia } | null = null;
+  /** The join that failed last, its code left in Join a room's field. */
+  let left: { code: string; via: JoinVia } | null = null;
   /** `via`: where the join started, for the counts (lib/count.ts). */
   function startJoin(roomCode: string, n: string, from: 'join' | 'rooms', via: JoinVia) {
-    joining = roomCode;
+    joining = { code: roomCode, via };
     busy = from;
     session.join(roomCode, n, false, via);
     // Turned down on the spot (a code that can't be one).
@@ -393,7 +402,8 @@
   }
   function settle() {
     if (joining && !session.state && busy !== 'rooms') {
-      code = joining;
+      code = joining.code;
+      left = joining;
       codeError = true;
       if (!invite) open = 'join';
     }
@@ -717,7 +727,7 @@
         <!-- Hot-seat and the Codex: set as the list's entries are, side by side. -->
         <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
           {#each PAIR as { e, name } (e)}
-            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)}>
+            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => warmCodex(e)} onfocus={() => warmCodex(e)}>
               <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
               {#each pairLines[e] as line}<span class="pair-line">{line}</span>{/each}
             </button>

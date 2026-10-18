@@ -3,12 +3,12 @@
   // struck in gold foil, and now and then a glint of light crosses it (see
   // lib/glint.ts); everyone else's is the plain text. The foil only changes
   // the paint, never the metrics, so nothing moves when it's applied.
-  import { isHeldName } from '../lib/names';
+  import { creatorShown } from '../lib/creator';
   import { CREATOR_TITLE } from '../lib/site';
   import { glint } from '../lib/glint';
 
   let { name }: { name: string } = $props();
-  const creator = $derived(isHeldName(name));
+  const creator = $derived(creatorShown(name));
 </script>
 
 {#if creator}<span class="creator" title={CREATOR_TITLE}

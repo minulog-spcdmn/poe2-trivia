@@ -1238,6 +1238,17 @@ A bot does nothing while a new zone's cards are on their way: its pointer
 is off the page, and it looks the cards over from the deal.
 More players' recordings make for more kinds of hands.
 
+### The dev hub
+
+`dev.html` links every tool page below, with a line on what each is for,
+so nobody has to remember their names. On the dev server it links the room
+bot too; builds without the bot (the beta) leave its card out.
+
+- **Open it:** `npm run dev`, then `http://localhost:5173/dev.html`; on the
+  beta, **poe2.quest/beta/dev.html**. The live build leaves it out.
+- A new tool page gets a card there; `tests/devHub.test.ts` fails until it
+  does.
+
 ### The lab
 
 `lab.html` (`src/lab/`) is a page for trying Delve's moments by hand: the
@@ -1422,8 +1433,12 @@ and Delve records), so nothing has to be played to reach it.
   made once and each state set in it in place: a frame made afresh for every
   pick started the backdrop's shaders over while the last ones were still
   being built, which held up the browser for most of a minute.
+- **The circle:** Auto shows the one the game falls to (the eye, the moth
+  after a Delve); Eye, Moth, Monad, Rose and Black sun set that one behind
+  the state instead, to see how each frames its avatars
+  (`src/lib/endCircleChoice.svelte.ts`; `endscreen.html?scene=<key>&circle=<name>`).
 - Its buttons only say what they would do: there is no room behind it. The
-  address keeps the state and the window, to send a link to one.
+  address keeps the state, the window and the circle, to send a link to one.
 - **Open it:** `npm run dev`, then `http://localhost:5173/endscreen.html`; on
   the beta, **poe2.quest/beta/endscreen.html**. The live build leaves it out,
   and its page is marked (`<html data-endscreen>`), so `src/lib/storage.ts`

@@ -34,10 +34,11 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX } from './peer';
 import { Beacon, ProbeDesk, isProbe, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionProblem, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
-import { capped, FrameGuard, hookFrames, JoinGate, roomSecret } from './guard';
+import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
-import { cleanName, nameSkeleton, nameUsable } from './names';
+import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
+import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
 import { drawAhead, takeAhead, type Ahead } from './drawAhead';
@@ -169,6 +170,10 @@ const NO_SEAL_HOST = "This page can't seal the room's pictures: that needs a sec
 const NO_SEAL_GUEST = "Your game can't open this room's pictures: it needs a secure page. Open the game at its https:// address to join.";
 /** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
 const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
+/** The held name without the owner key's signature (names.ts): turned down like any name that isn't allowed. */
+const HELD_REFUSAL = 'That name is not allowed. Pick another name.';
+/** How long a hello under the held name waits for the host's challenge (hi), ms. */
+const HI_WAIT_MS = 4000;
 /** Cap on the delay added to the host's own race answers. */
 const MAX_HOST_HANDICAP_MS = 300;
 /** A disconnected player's turn is skipped after this long, unless they come back. */
@@ -241,6 +246,10 @@ interface Guest {
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
+  /** Its hello, under the held name, waits on the owner key's signature being checked. */
+  checking?: boolean;
+  /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
+  challenge: string;
   /** When the connection came in. */
   since: number;
   /** Whether its game is on screen and in use, as it last said (presence.ts). */
@@ -359,6 +368,23 @@ class Session {
   private seen = new Set<string>();
   /** Whom the state change under way announces, if anyone: their notice replaces the plain "joined" one. */
   private heralded: string | null = null;
+  /** Guest: the challenge the host sent as the link opened (hi). */
+  private hostHi: { conn: DataConnection; c: string } | null = null;
+  /** Guest: wakes a hello under the held name that waits for it (signHello). */
+  private onHi: (() => void) | null = null;
+  /**
+   * The name of the one player or spectator shown as the creator here
+   * (creator.ts): under the held name, on whoever the host let in with the
+   * owner key's signature (GameState owner), and the only one under it
+   * (with a second spelling of it beside them, nobody is).
+   */
+  readonly creatorName = $derived.by(() => {
+    const s = this.state;
+    const o = s?.owner;
+    if (!s || !o) return null;
+    const held = [...s.players, ...(s.spectators ?? [])].filter((p) => isHeldName(p.name));
+    return held.length === 1 && held[0].id === o.id ? held[0].name : null;
+  });
 
   private peer: Peer | null = null;
   private hostConn: DataConnection | null = null;
@@ -439,7 +465,7 @@ class Session {
   private hostWatch: ReturnType<typeof setInterval> | null = null;
   private beacon: Beacon | null = null;
   /** Answers invite links' probes on the room's own id (lib/rooms.ts). */
-  private probeDesk = new ProbeDesk(() => this.roomInfo());
+  private probeDesk = new ProbeDesk((challenge) => this.listing(challenge));
   private skipTimer: ReturnType<typeof setTimeout> | null = null;
   private skipKey = '';
   private idleKey = '';
@@ -690,6 +716,7 @@ class Session {
         }
         this.setState(s);
       }
+      this.signOwnRoom(code);
       this.startPings();
       this.watchOwnPresence();
     });
@@ -781,6 +808,7 @@ class Session {
       since: Date.now(),
       seen: { presence: 'here', since: Date.now() },
       slow: false,
+      challenge: newChallenge(),
     };
     this.guests.set(conn, guest);
     // The hello's clock starts once the connection is open; until then, only a much longer limit.
@@ -795,6 +823,8 @@ class Session {
         guest.lane = new LaneSender(lane, FAKE_LINK);
         lane.addEventListener('message', () => this.guests.has(conn) && this.block(conn));
       }
+      // For a hello under the held name to sign (ownerKey.ts joinProof): fresh, so a signature seen once is of no use again.
+      this.send(conn, { t: 'hi', c: guest.challenge });
     });
     this.guardFrames(conn);
     conn.on('data', (raw) => {
@@ -827,11 +857,11 @@ class Session {
       }
       try {
         if (msg.t === 'hello') {
-          if (guest.playerId) return;
+          if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
           guest.laneWanted = !!msg.lane;
           clearTimeout(helloTimer);
-          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal);
+          this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
           const sent = guest.pings.get(msg.n);
           if (sent !== undefined) {
@@ -891,7 +921,7 @@ class Session {
       else if (verdict === 'flood') this.drop(conn);
       return verdict === 'ok';
     };
-    if (hookFrames(conn, check, () => this.block(conn))) return;
+    if (hookFrames(conn, check, () => (this.block(conn), false))) return;
     // A PeerJS without those hooks (tests/guard.test.ts should have caught the
     // upgrade): frames are then only checked after PeerJS has decoded them.
     console.warn('PeerJS changed: raw frames are checked only after decoding');
@@ -944,7 +974,8 @@ class Session {
     this.drop(conn);
   }
 
-  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, seal: boolean) {
+  /** `seal`: it can open sealed pictures (seal.ts). `owner`: under the held name, the owner key's signature over this link's challenge (hi), checked here. */
+  private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, seal: boolean, owner?: string) {
     const outdated = versionProblem(v);
     if (outdated) {
       this.dismiss(conn, { t: 'error', message: outdated, version: true });
@@ -968,12 +999,36 @@ class Session {
       this.dismiss(conn, { t: 'busy', message: busy });
       return;
     }
+    if (isHeldName(cleanName(name))) {
+      // The held name only with the owner key's signature over this link's challenge (ownerKey.ts), checked first.
+      guest.checking = true;
+      void checkJoin(PEER_PREFIX + this.code, guest.challenge, owner).then((ok) => {
+        guest.checking = false;
+        if (!this.guests.has(conn) || guest.playerId || !this.state) return;
+        try {
+          if (!ok) {
+            this.joins.rejected(secret, !!known);
+            throw new ActionError(HELD_REFUSAL);
+          }
+          this.seat(conn, guest, secret, name, watch, true);
+        } catch (err) {
+          this.dismiss(conn, { t: 'error', message: err instanceof ActionError ? err.message : 'Something went wrong.' });
+        }
+      });
+      return;
+    }
+    this.seat(conn, guest, secret, name, watch, false);
+  }
+
+  /** A hello let in so far: the seat (or a spectator's place) it gets. `owner`: under the held name, its signature checked. */
+  private seat(conn: DataConnection, guest: Guest, secret: string, name: string, watch: boolean, owner: boolean) {
+    const known = this.secretToPlayer.get(secret);
     const playerId = known ?? newPlayerId();
     let next: GameState;
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}) }, playerId);
+      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}) }, playerId);
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1831,6 +1886,7 @@ class Session {
     }
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     if (!conn) return;
+    this.guardHostFrames(conn);
     // The host would turn the oldest away anyway.
     this.pruneAttempts();
     while (this.attempts.length >= MAX_PENDING_PER_PEER) this.attempts.shift()!.conn.close();
@@ -1842,6 +1898,23 @@ class Session {
       this.planAttempt(RETRY_SOON_MS);
     });
     conn.on('open', () => this.adopt(conn));
+  }
+
+  /**
+   * Checks what the host sends before PeerJS decodes (or buffers) it: a host
+   * is anyone who opened a room, so a few bytes announcing billions of
+   * entries must not freeze the guest. A host that sends one is left.
+   */
+  private guardHostFrames(conn: DataConnection) {
+    const chunks = new ChunkGuard();
+    const refuse = () => {
+      if (this.hostConn === conn) this.fail('The host sent something this game can\'t read, so you left the room.', 'Left the room');
+      conn.close();
+      return false;
+    };
+    const check = (data: unknown) => frameFits(data, MAX_HOST_MSG_BYTES) || refuse();
+    if (hookFrames(conn, check, (chunk) => chunks.check(chunk) || refuse())) return;
+    console.warn('PeerJS changed: what the host sends is decoded unchecked');
   }
 
   /** The first attempt to open becomes the link to the host; the rest make way. */
@@ -1896,6 +1969,10 @@ class Session {
       const msg = parseHostMsg(raw);
       if (!msg) return;
       switch (msg.t) {
+        case 'hi':
+          this.hostHi = { conn, c: msg.c };
+          this.onHi?.();
+          break;
         case 'welcome': {
           this.myPlayerId = msg.playerId;
           // Only now: a host on another version turns the hello down, and would
@@ -1910,7 +1987,15 @@ class Session {
         case 'state':
           this.syncClock(msg.now);
           if (!this.state || msg.state.version >= this.state.version || msg.state.version === 0) {
-            this.noteChange(this.state, msg.state);
+            try {
+              this.noteChange(this.state, msg.state);
+            } catch (err) {
+              // Only shape-checked: a game this one can't follow is left, as one it can't show is (crashed).
+              console.error(err);
+              this.crashed(false);
+              conn.close();
+              return;
+            }
             this.state = msg.state;
           }
           if (this.status === 'connecting' && this.joinVia) countEvent(`joined/${this.joinVia}`);
@@ -1975,8 +2060,9 @@ class Session {
       else this.planAttempt(RETRY_SOON_MS);
     });
     const secret = await this.helloSecret;
+    const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}) });
     this.watchOwnPresence();
   }
 
@@ -2079,6 +2165,29 @@ class Session {
     this.dispatch({ type: 'remove', playerId });
     if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue } });
     else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
+  }
+
+  /**
+   * The page crashed showing the game (Root.svelte shows it afresh), or a
+   * guest couldn't follow what its host sent. A guest leaves the room: the
+   * host's game may be what can't be shown, and a reload would only put it
+   * back in. Crashing again soon after (`again`), any game is left, so the
+   * page can be used again.
+   */
+  crashed(again: boolean) {
+    if (this.mode !== 'client' && !(again && this.mode)) return;
+    try {
+      if (this.mode === 'client') this.fail("The host's game sent something this page can't show, so you left the room.", 'Left the room');
+      else {
+        this.leave();
+        this.flash('The game ran into a problem it could not get past, so it was closed.', 'error', { title: 'Game closed', sticky: true });
+      }
+    } catch (err) {
+      // Leaving needs the game too (its records): without it, the page starts over, the game not saved to come back to.
+      console.error(err);
+      writeSaved(null);
+      location.reload();
+    }
   }
 
   leave() {
@@ -2212,7 +2321,7 @@ class Session {
   private syncBeacon(s: GameState) {
     const want = this.mode === 'host' && !this.labRoomless && !!s.settings.public;
     if (want && !this.beacon) {
-      this.beacon = new Beacon(() => this.roomInfo());
+      this.beacon = new Beacon((challenge) => this.listing(challenge));
       this.beacon.start();
     } else if (!want && this.beacon) {
       this.beacon.stop();
@@ -2323,9 +2432,14 @@ class Session {
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
     const blast = blastedAway(prev, next);
+    // (Only the items this build has: online, the reveal is the host's word.)
+    const known = (id: string) => engine.byId.has(id);
     if (blast) {
       void import('./codex')
-        .then(({ blastedEncounter, recordEncounter }) => recordEncounter(blastedEncounter(next, blast, me, hotSeat)))
+        .then(({ blastedEncounter, keepable, recordEncounter }) => {
+          const e = keepable(blastedEncounter(next, blast, me, hotSeat), known);
+          if (e) recordEncounter(e);
+        })
         .catch((err) => console.warn('codex', err));
       return;
     }
@@ -2338,8 +2452,9 @@ class Session {
     // Its own chunk: the first download stays small.
     // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
     void import('./codex')
-      .then(({ encounterAt, recordEncounter }) => {
-        const e = encounterAt(next, me, hotSeat, ms);
+      .then(({ encounterAt, keepable, recordEncounter }) => {
+        const met = encounterAt(next, me, hotSeat, ms);
+        const e = met && keepable(met, known);
         if (!e) return;
         recordEncounter(e);
         this.noteAchievements();
@@ -2480,6 +2595,36 @@ class Session {
       this.soundFuse(cur.question.askedAt, fuse * DELVE_FUSE_MS + ANSWER_GRACE_MS + FUSE_TAIL_MS);
     };
     light(s);
+  }
+
+  /** Guest under the held name: the host's challenge (hi) on this link, signed; null without it, or without the owner key. */
+  private async signHello(conn: DataConnection) {
+    if (this.hostHi?.conn !== conn)
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          if (this.onHi === done) this.onHi = null;
+          resolve();
+        };
+        const timer = setTimeout(done, HI_WAIT_MS);
+        this.onHi = done;
+      });
+    const hi = this.hostHi;
+    return hi?.conn === conn && this.hostConn === conn ? joinProof(PEER_PREFIX + this.code, hi.c) : null;
+  }
+
+  /** Host under the held name (as the game has it: a reopened room keeps it, with no name typed), holding the owner key. */
+  private signOwnRoom(code: string) {
+    const me = this.priv.myPlayerId;
+    if (!this.state || this.code !== code || !isHeldName(this.state.players.find((p) => p.id === me)?.name ?? '') || !ownerUnlocked()) return;
+    this.setState(engine.apply(this.state, { type: 'owner', playerId: me }, null));
+  }
+
+  /** The room's info for a probe: under the held name, signed over the probe's challenge (ownerKey.ts roomProof). */
+  private listing(challenge: string | null): RoomInfo | null | Promise<RoomInfo | null> {
+    const info = this.roomInfo();
+    if (!info || !challenge || !isHeldName(info.host)) return info;
+    return roomProof(PEER_PREFIX + info.code, challenge).then((owner) => (owner ? { ...info, owner } : info));
   }
 
   /** Side effects that every device plays: sounds, and the notice of the creator's arrival. */
@@ -2890,6 +3035,7 @@ class Session {
     this.priv = noPrivate();
     this.seen.clear();
     this.heralded = null;
+    this.hostHi = null;
     this.secretToPlayer = new Map();
     this.joins = new JoinGate();
     this.helloSecret = null;

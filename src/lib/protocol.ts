@@ -6,8 +6,9 @@ import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
 import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
+import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
-export const PROTOCOL_VERSION = 31;
+export const PROTOCOL_VERSION = 32;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -41,8 +42,9 @@ export type ClientMsg =
    * `watch`: the guest would rather watch than play (see the watch action).
    * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
    * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
+   * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -52,6 +54,8 @@ export type ClientMsg =
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
+  /** As a link opens: a challenge for a hello under the held name to be signed over (ownerKey.ts joinProof). */
+  | { t: 'hi'; c: string }
   | { t: 'welcome'; playerId: string }
   | { t: 'state'; state: GameState; now: number }
   /**
@@ -126,6 +130,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
       if (raw.lane !== undefined && typeof raw.lane !== 'boolean') return null;
       if (raw.seal !== undefined && typeof raw.seal !== 'boolean') return null;
+      if (raw.owner !== undefined && !isOwnerProof(raw.owner)) return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -135,6 +140,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         ...(raw.watch ? { watch: true } : {}),
         ...(raw.lane ? { lane: true } : {}),
         ...(raw.seal ? { seal: true } : {}),
+        ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
@@ -189,11 +195,13 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   const tile = raw.tile === undefined || isInt(raw.tile, 0, 16);
   switch (raw.t) {
+    case 'hi':
+      return isChallenge(raw.c) ? { t: 'hi', c: raw.c } : null;
     case 'welcome':
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
-      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && typeof raw.now === 'number'
+      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now)
         ? (raw as HostMsg)
         : null;
     }
