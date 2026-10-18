@@ -2,10 +2,11 @@
 // docs/arcane-style.md): its geometry, built away from the page, in a
 // worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, clearFrom, f, hatch, lerp, line, lineParts, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Part, type Pt, type Strap, type Wear } from '../arcane.ts';
-import { engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, HOLLOW_RING_IN, hollowFrame, mapPath, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
+import { engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, HOLLOW_RING_IN, hollowFrame, mapPath, staged, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 
-export const build = (): StageLayer[] => {
+/** The plate, whole or `hollow` (lib/engraver's `staged`): its heart's ring is the hollow frame. */
+export const build = (hollow = false): StageLayer[] => {
   // The forbidden circle, a sibling of the rune circle (ArcaneCircle; see
   // docs/arcane-style.md): the circle drawn to call a soul back from the
   // dead, the art no alchemist may practise. From the outside in, turning
@@ -730,5 +731,5 @@ export const build = (): StageLayer[] => {
     layer('wingL', { pivot: flip(WING_ROOT), flutter: { fold: 0.84, period: 11, delay: 3 }, inner: true }),
     layer('moth', { inner: true }),
   ];
-  return LAYERS;
+  return staged(LAYERS, hollow);
 };

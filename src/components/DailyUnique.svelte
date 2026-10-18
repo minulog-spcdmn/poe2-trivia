@@ -75,7 +75,7 @@
     blackSun: () => import('./BlackSunCircle.svelte'),
     moth: () => import('./ForbiddenCircle.svelte'),
   };
-  const DAILY = PLACES.daily.circles as PlateName[];
+  const DAILY = [...PLACES.daily.circles];
   // Loaded, its plate built away from the page, and put on the page in the
   // first idle moment after the start page's first frames (half a second at
   // most), once both are at hand.

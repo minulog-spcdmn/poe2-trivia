@@ -3,7 +3,7 @@
 // worker, and kept (lib/plateStore.svelte.ts).
 import { at as atAbout, f, hatch, joined, lineParts, pt, rad, ringParts, seeded, wear, type Hole, type LineOpts, type Pt, type Strap, type Wear } from '../arcane.ts';
 import { PLANET_SIGNS } from '../alchemy.ts';
-import { circlePath, engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, hollowFrame, mapPath, stroke, turned, type StageLayer } from '../engraver.ts';
+import { circlePath, engrave, engraveFrame, FRAME_SPIN, HOLLOW_RING, hollowFrame, mapPath, staged, stroke, turned, type Plate, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 
 // An alchemist's circle, engraved, that draws itself behind the item art
@@ -231,7 +231,7 @@ const rays = (worn: Wear, from = SUN) =>
       delay: delay + 0.25,
     };
   });
-// Fine rays between, half as long.
+// Fine rays between, half as long (from the sun's ring, or hollow the hollow frame's).
 const fine = (from = SUN) =>
   Array.from({ length: 14 }, (_, k) => {
     const a = ((k + 0.5) / 14) * 360;
@@ -321,8 +321,9 @@ const GLORY_SETS = [0, 1].map((n) => GLORY.filter((_, k) => k % 2 === n).join(''
 
 // Everything that wears, drawn twice: worn for the lines, whole for
 // the glow under them. The wear is one seeded run through the lines in
-// this order, so every circle is worn alike.
-const drawing = (worn: boolean) => {
+// this order, so every circle is worn alike. Hollow, the sun's rays reach
+// in to the hollow frame, drawn last.
+const drawing = (worn: boolean, hollow: boolean) => {
   const w = worn ? wear(5) : null;
   return {
     band: [ringParts(O, 97.5, { wear: w }), ringParts(O, BAND_OUT, { holes: bandHoles, wear: w }), ringParts(O, BAND_IN, { holes: bandHoles, wear: w })].map(
@@ -332,27 +333,16 @@ const drawing = (worn: boolean) => {
       [1, -1].map((side) => stroke(lineParts(...edgeOf(i, side), { holes: starHoles, under: unders[i], wear: w }), 0.4 + i * 0.09, 0.5)),
     ),
     starRing: stroke(ringParts(O, STAR_RING, { holes: starHoles, wear: w }), 0.3, 0.9),
-    rays: rays(w),
+    rays: rays(w, hollow ? HOLLOW_RING : SUN),
     sun: stroke(ringParts(O, SUN, { wear: w }), 0.15, 0.8),
     sunInner: stroke(ringParts(O, EYE, { wear: w }), 0.05, 0.8),
-    // Hollow, the hollow frame in the sun's place, hugging the avatar, and the sun's rays from it.
-    hollowRing: hollowFrame(w),
-    hollowRays: rays(w, HOLLOW_RING),
+    // Hollow, the hollow frame in the sun's place, hugging the avatar.
+    hollowRing: hollow ? hollowFrame(w) : [],
   };
 };
 
-/** The sun's pointed rays and its fine ones as a layer. */
-const sunRays = (list: ReturnType<typeof rays>, fineRays: string) =>
-  engrave((e) => {
-    for (const ray of list) {
-      e.pieces(ray.lines, 'hair');
-      e.line(ray.hatch, 'hatch', ray.delay, 0.5);
-    }
-    e.line(fineRays, 'hair', 1, 0.6);
-  });
-
 // The layers (lib/engraver), each drawn twice: worn for the lines, whole for the glow under them.
-const layers = (p: ReturnType<typeof drawing>) => ({
+const layers = (p: ReturnType<typeof drawing>, hollow: boolean): Record<string, Plate> => ({
   band: engrave((e) => {
     p.band.forEach((list, k) => e.pieces(list, k ? '' : 'thin'));
     seals.forEach((seal, k) => {
@@ -372,11 +362,13 @@ const layers = (p: ReturnType<typeof drawing>) => ({
   star: engrave((e) => {
     e.pieces(p.starRing, 'thin');
     for (const edge of p.straps) e.pieces(edge, 'thin');
+    for (const ray of p.rays) {
+      e.pieces(ray.lines, 'hair');
+      e.line(ray.hatch, 'hatch', ray.delay, 0.5);
+    }
+    e.line(fine(hollow ? HOLLOW_RING : SUN), 'hair', 1, 0.6);
     e.line(GAPS_GLORY, 'hair', 1.2, 0.7);
   }),
-  // The sun's rays, riding the star: from the sun's ring, or hollow from the hollow frame's.
-  rays: sunRays(p.rays, fine()),
-  hollowRays: sunRays(p.hollowRays, fine(HOLLOW_RING)),
   // The band's Luna, upright on the page as the band carries her round.
   bandLuna: engrave((e) => {
     const seal = seals[LUNA_SEAL];
@@ -406,30 +398,34 @@ const layers = (p: ReturnType<typeof drawing>) => ({
     e.pieces(p.sun, 'thin');
     e.pieces(p.sunInner, 'hair');
   }),
-  hollowRing: engraveFrame(p.hollowRing),
+  ...(hollow ? { hollowRing: engraveFrame(p.hollowRing) } : {}),
   glory0: engrave((e) => e.line(GLORY_SETS[0], 'hair', 1.35, 0.7)),
   glory1: engrave((e) => e.line(GLORY_SETS[1], 'hair', 1.4, 0.7)),
 });
-const GLOW = layers(drawing(false));
-const LINES = layers(drawing(true));
-const layer = (name: keyof typeof LINES, spin?: StageLayer['spin'], more: Partial<StageLayer> = {}): StageLayer => ({ name, lines: LINES[name], glow: GLOW[name], spin, ...more });
-// Each ring turns its own way and speed, and first winds into place; the
-// glory swells and shrinks, its long rays and its short out of step, and
-// Sol and Luna ride the star upright.
-const LAYERS = [
-  layer('band', { turn: 240, from: -24 }),
-  layer('star', { turn: 160, from: 40, reverse: true }),
-  layer('rays', undefined, { within: 'star', inner: true }),
-  layer('hollowRays', undefined, { within: 'star', hollow: true }),
-  layer('bandLuna', undefined, { within: 'band', pivot: [seals[LUNA_SEAL].x, seals[LUNA_SEAL].y], upright: true }),
-  layer('sol', undefined, { within: 'star', pivot: sol, upright: true }),
-  layer('solFace', { turn: 180, from: 0 }, { within: 'sol', pivot: sol }),
-  layer('luna', undefined, { within: 'star', pivot: luna, upright: true }),
-  layer('heart', { turn: 100, from: -70 }, { inner: true }),
-  layer('hollowRing', FRAME_SPIN, { hollow: true }),
-  layer('glory0', undefined, { breathe: { low: 0.96, period: 4.4 }, inner: true }),
-  layer('glory1', undefined, { breathe: { low: 0.93, period: 3.6, delay: -1.8 }, inner: true }),
-];
+/** The layers, whole or hollow (lib/engraver's `staged`). */
+const stage = (hollow: boolean) => {
+  const GLOW = layers(drawing(false, hollow), hollow);
+  const LINES = layers(drawing(true, hollow), hollow);
+  const layer = (name: string, spin?: StageLayer['spin'], more: Partial<StageLayer> = {}): StageLayer => ({ name, lines: LINES[name], glow: GLOW[name], spin, ...more });
+  // Each ring turns its own way and speed, and first winds into place; the
+  // glory swells and shrinks, its long rays and its short out of step, and
+  // Sol and Luna ride the star upright.
+  return staged(
+    [
+      layer('band', { turn: 240, from: -24 }),
+      layer('star', { turn: 160, from: 40, reverse: true }),
+      layer('bandLuna', undefined, { within: 'band', pivot: [seals[LUNA_SEAL].x, seals[LUNA_SEAL].y], upright: true }),
+      layer('sol', undefined, { within: 'star', pivot: sol, upright: true }),
+      layer('solFace', { turn: 180, from: 0 }, { within: 'sol', pivot: sol }),
+      layer('luna', undefined, { within: 'star', pivot: luna, upright: true }),
+      layer('heart', { turn: 100, from: -70 }, { inner: true }),
+      ...(hollow ? [layer('hollowRing', FRAME_SPIN)] : []),
+      layer('glory0', undefined, { breathe: { low: 0.96, period: 4.4 }, inner: true }),
+      layer('glory1', undefined, { breathe: { low: 0.93, period: 3.6, delay: -1.8 }, inner: true }),
+    ],
+    hollow,
+  );
+};
 
 // The eye, the same while drawn and after (it opens as a whole); `@id@`
 // stands for the circle's own id, which names its clip.
@@ -443,5 +439,5 @@ const eye = (key: string) =>
 const EYE_GLOW = eye('c');
 const EYE_LINES = eye('w');
 
-/** The plate: its layers, and the eye drawn for the glow and for the lines (`@id@` standing for the circle's id). */
-export const build = () => ({ layers: LAYERS, eye: [EYE_GLOW, EYE_LINES] as [string, string] });
+/** The plate, whole or `hollow`: its layers, and (whole) the eye drawn for the glow and for the lines (`@id@` standing for the circle's id). */
+export const build = (hollow = false) => ({ layers: stage(hollow), eye: (hollow ? ['', ''] : [EYE_GLOW, EYE_LINES]) as [string, string] });

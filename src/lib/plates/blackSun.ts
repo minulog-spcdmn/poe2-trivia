@@ -3,11 +3,12 @@
 // worker, and kept (lib/plateStore.svelte.ts).
 import { angleOf, at as atAbout, f, joined, lineParts, pointedRay, pt, ringParts, seeded, wear, type Cut, type Hole, type Pt, type Wear } from '../arcane.ts';
 import { Plate } from '../cardEngraving.ts';
-import { engrave, engraveFrame, FRAME_SPIN, hollowFrame, mapPath, stroke, turned, type Plate as Engraved, type StageLayer } from '../engraver.ts';
+import { engrave, engraveFrame, FRAME_SPIN, hollowFrame, mapPath, staged, stroke, turned, type Plate as Engraved, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 import { burst, crystalCrown, crystalSeal, shattered } from '../findEngraving.ts';
 
-export const build = (): StageLayer[] => {
+/** The plate, whole or `hollow` (lib/engraver's `staged`). */
+export const build = (hollow = false): StageLayer[] => {
 
   // Delve's circle, a sibling of the rune circle (ArcaneCircle; see
   // docs/arcane-style.md) in the same craft, built of great sweeping rings
@@ -368,7 +369,7 @@ export const build = (): StageLayer[] => {
       sun: stroke(ringParts(O, SUN, { wear: w }), 0.05, 0.6),
       sunIn: stroke(ringParts(O, SUN_IN), 0.1, 0.6),
       // Hollow, the hollow frame round the avatar, the black sun hidden under it.
-      hollowRing: hollowFrame(w),
+      hollowRing: hollow ? hollowFrame(w) : [],
     };
   };
 
@@ -431,7 +432,7 @@ export const build = (): StageLayer[] => {
       }),
     ),
     sunFine: engrave((e) => e.line(FINE, 'hair', 0.7, 0.5)),
-    hollowRing: engraveFrame(p.hollowRing),
+    ...(hollow ? { hollowRing: engraveFrame(p.hollowRing) } : {}),
     sun: engrave((e) => {
       e.pieces(p.sun, '');
       e.pieces(p.sunIn, 'hair');
@@ -449,7 +450,7 @@ export const build = (): StageLayer[] => {
     // (Hollow, the bands, which meet in the heart, stop short of the hollow frame.)
     layer('rings', { spin: { turn: 240, from: 30, reverse: true }, cut: true }),
     layer('sun', { within: 'rings', pivot: O, spin: { turn: 120, from: 0 }, inner: true }),
-    layer('hollowRing', { spin: FRAME_SPIN, hollow: true }),
+    ...(hollow ? [layer('hollowRing', { spin: FRAME_SPIN })] : []),
     ...placedSeals.map((_, k) => layer(`find${k}`, { within: 'rings' })),
     layer('sunRays', { within: 'sun', breathe: { low: 0.95, period: 4.6 }, inner: true }),
     layer('sunFine', { within: 'sun', breathe: { low: 0.9, period: 3.7, delay: -2.1 }, inner: true }),
@@ -461,5 +462,5 @@ export const build = (): StageLayer[] => {
       layer(`rays${k}`, { within: `fine${k}`, pivot: c, breathe: { low: 0.94, period: 3.9 + k * 0.6, delay: -k * 1.3 } }),
     ]),
   ];
-  return LAYERS;
+  return staged(LAYERS, hollow);
 };

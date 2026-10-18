@@ -6,7 +6,7 @@
 
   // Its plate (src/lib/plates/eye.ts), built away from the page; the circle
   // is put on the page as soon as it's at hand.
-  const plate = usePlate<{ layers: StageLayer[]; eye: [string, string] }>('eye');
+  const plate = usePlate<{ layers: StageLayer[]; eye: [string, string] }>('eye', () => hollow);
   const uid = $props.id();
   const eyeGlow = $derived(plate.value?.eye[0].replaceAll('@id@', uid) ?? '');
   const eyeLines = $derived(plate.value?.eye[1].replaceAll('@id@', uid) ?? '');
@@ -28,10 +28,10 @@
 {/snippet}
 
 <!-- Hollow (with something set over its heart), without the eye and its glory. -->
-<!-- (Set again when it turns hollow or whole: the stage takes its layers once, as it mounts.) -->
+<!-- (Set again when it turns hollow or whole, its other plate: the stage takes its layers once, as it mounts.) -->
 {#if plate.value}
-  {#key hollow}
-    <ArcaneStage layers={plate.value.layers} {hollow} {state} {size} {color} {strength} heart={hollow ? undefined : eye} />
+  {#key plate.value}
+    <ArcaneStage layers={plate.value.layers} {state} {size} {color} {strength} heart={hollow ? undefined : eye} />
   {/key}
 {/if}
 

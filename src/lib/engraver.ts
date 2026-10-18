@@ -60,14 +60,11 @@ export type Plate = { drawing: string; still: string; start: number; end: number
  * gives way to a head only while the head passes over it. `inner`: it
  * lies within the heart's ring (the heart's figure and its glory), or is a
  * frame round the heart other than the hollow one (too busy to set
- * something in, or too far out), or has a hollow copy, and is left out where something is set
- * over the heart (a circle's `hollow`: the end screen's one avatar).
- * `hollow`: drawn only then: the hollow frame (HOLLOW_RING), the same in
- * every circle, and what of the circle's own design reaches in to it in
- * place of what stopped short of the heart before. `cut`: its lines cross
- * the heart, and hollow, they stop short of the hollow frame (HOLLOW_CLEAR),
- * as if passing under it. Each is still a box of its own, moved on the
- * compositor.
+ * something in, or too far out), and is left out of a hollow plate (built
+ * for something set over the heart: the end screen's one avatar; see
+ * `staged`). `cut`: its lines cross the heart, and in a hollow plate they
+ * stop short of the hollow frame (HOLLOW_CLEAR), as if passing under it.
+ * Each is still a box of its own, moved on the compositor.
  */
 export type StageLayer = {
   name: string;
@@ -83,12 +80,20 @@ export type StageLayer = {
   flutter?: { fold: number; period: number; delay?: number };
   mask?: { d: string; grow: number; with: string };
   inner?: boolean;
-  hollow?: boolean;
   cut?: boolean;
 };
 
 /**
- * The frame round a hollow circle's heart (StageLayer `hollow`), the same in
+ * A plate's layers as built whole or `hollow` (each its own plate, so a
+ * circle never builds the other): hollow, without its `inner` layers, and
+ * its `cut` layers cut; whole, nothing cut. (A hollow plate draws its
+ * hollow frame, and whatever of its design reaches in to it, itself.)
+ */
+export const staged = (layers: StageLayer[], hollow: boolean): StageLayer[] =>
+  layers.filter((l) => !(hollow && l.inner)).map(({ inner: _, cut, ...l }) => (hollow && cut ? { ...l, cut } : l));
+
+/**
+ * The frame round a hollow circle's heart (`staged`), the same in
  * every circle: a double ring this far out (of the circle's 200 across) and
  * 1.3 inside it, hugging what's set over the heart (the end screen's one
  * avatar, a quarter of the circle across), as the moth's own heart ring

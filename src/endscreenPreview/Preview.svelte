@@ -7,7 +7,7 @@
   import { untrack } from 'svelte';
   import { VIEWPORTS, scenes, type Scene } from './scenes';
   import type { CircleMessage, ReadyMessage, SceneMessage } from './main';
-  import type { PlateName } from '../lib/plates/index.ts';
+  import { isPlateName, type PlateName } from '../lib/plates/index.ts';
 
   /** The circles that can stand behind the end screen, to pick by hand (Auto: the one the game falls to). */
   const CIRCLES: [PlateName | null, string][] = [
@@ -37,7 +37,8 @@
   let picked = $state<string | null>(params.get('v'));
   let show = $state<Show>((params.get('show') as Show) ?? 'screen');
   let fit = $state(params.get('fit') !== '0');
-  let circle = $state<PlateName | null>((params.get('c') as PlateName | null) || null);
+  const askedCircle = params.get('c');
+  let circle = $state<PlateName | null>(isPlateName(askedCircle) ? askedCircle : null);
   /**
    * The frame: made once, with the first state, and kept (main.ts says
    * why); every state after it is posted to it and set in place.

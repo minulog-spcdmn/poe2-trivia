@@ -2,11 +2,12 @@
 // docs/arcane-style.md): its geometry, built away from the page, in a
 // worker, and kept (lib/plateStore.svelte.ts).
 import { at as atAbout, clearFrom, f, hatch, line, lineParts, meeting, pt, ring as round, ringParts, seeded, wear, wovenPolygons, type Hole, type Pt, type Wear } from '../arcane.ts';
-import { engrave, engraveFrame, FRAME_SPIN, HOLLOW_CLEAR, hollowFrame, mapPath, stroke, turned, type Engraver, type StageLayer, type Stroke } from '../engraver.ts';
+import { engrave, engraveFrame, FRAME_SPIN, HOLLOW_CLEAR, hollowFrame, mapPath, staged, stroke, turned, type Engraver, type Plate, type StageLayer } from '../engraver.ts';
 import { inscribe } from '../tongue.ts';
 import * as ouro from '../ouroborosArt.ts';
 
-export const build = (): StageLayer[] => {
+/** The plate, whole or `hollow` (lib/engraver's `staged`). */
+export const build = (hollow = false): StageLayer[] => {
 
   // The rune circle's sibling (ArcaneCircle; docs/arcane-style.md): the same
   // engraving in another plate, the squared circle, so the two can take
@@ -177,20 +178,18 @@ export const build = (): StageLayer[] => {
   // the straps passing under it, so the monad can stand large inside it.
   const REACH = 32.6;
   const heartHole: Hole = { c: O, r: REACH + 1.2 };
-  /** Hollow, with no ouroboros, the straps run in to the hollow frame. */
-  const hollowHole: Hole = { c: O, r: HOLLOW_CLEAR };
-  // Its points, each with a ridge and hatched down one side, clear of the straps (and of `heart`).
-  const points = (heart: Hole) => Array.from({ length: 6 }, (_, k) => {
+  // (Hollow, with no ouroboros, the straps run in to the hollow frame.)
+  const sealHole: Hole = hollow ? { c: O, r: HOLLOW_CLEAR } : heartHole;
+  // Its points, each with a ridge and hatched down one side, clear of the straps.
+  const POINTS = Array.from({ length: 6 }, (_, k) => {
     const a = k * 60;
     const [tip, d] = [HEX - (W + 0.6) / Math.sin(Math.PI / 6), HEX / 2 + W + 0.6];
     const [apex, base] = [at(a, tip), at(a, d)];
     const half = (tip - d) * Math.tan(Math.PI / 6);
     const side = at(a + 90, half);
     const corner: Pt = [base[0] + side[0], base[1] + side[1]];
-    return { ridge: line(base, apex, { holes: [heart] }), hatch: hatch(base, corner, apex, 0.6, { holes: [heart] }) };
+    return { ridge: line(base, apex, { holes: [sealHole] }), hatch: hatch(base, corner, apex, 0.6, { holes: [sealHole] }) };
   });
-  const POINTS = points(heartHole);
-  const HOLLOW_POINTS = points(hollowHole);
   // Between its points, six letters of the angelic alphabet the angels
   // gave Dee and Kelley in 1583, drawn after Dee's own hand in his
   // manuscript, each upright as the star turns.
@@ -344,7 +343,7 @@ export const build = (): StageLayer[] => {
   // order, so every circle is worn alike.
   const drawing = (worn: boolean) => {
     const w: Wear = worn ? wear(17) : null;
-    const strap = (s: ReturnType<typeof wovenPolygons>, i: number, side: number, holes: Hole[] = s === solomon ? [heartHole] : [greatHole]) =>
+    const strap = (s: ReturnType<typeof wovenPolygons>, i: number, side: number, holes: Hole[] = s === solomon ? [sealHole] : [greatHole]) =>
       lineParts(...s.edge(i, side), { holes, under: s.unders[i], wear: side ? w : null });
     return {
       band: [ringParts(O, RIM, { holes: bandHoles, wear: w }), ringParts(O, BAND_OUT, { holes: bandHoles, wear: w }), ringParts(O, BAND_IN, { holes: bandHoles, wear: w })].map(
@@ -354,9 +353,8 @@ export const build = (): StageLayer[] => {
       circle: stroke(ringParts(O, CIRCLE, { wear: w }), 0.25, 0.9),
       circleInner: stroke(ringParts(O, CIRCLE - 1.3, { wear: w }), 0.3, 0.9),
       solomon: solomon.straps.flatMap((_, i) => [1, -1].map((side) => stroke(strap(solomon, i, side), 0.35 + i * 0.09, 0.5))),
-      // Hollow, the hollow frame in the ouroboros' place, the Seal's straps running in to it.
-      hollowRing: hollowFrame(w),
-      hollowSolomon: solomon.straps.flatMap((_, i) => [1, -1].map((side) => stroke(strap(solomon, i, side, [hollowHole]), 0.35 + i * 0.09, 0.5))),
+      // Hollow, the hollow frame in the ouroboros' place.
+      hollowRing: hollow ? hollowFrame(w) : [],
     };
   };
 
@@ -369,16 +367,7 @@ export const build = (): StageLayer[] => {
     }, `translate(${f(c[0])} ${f(c[1])}) rotate(${f(a)})`, a, r, 1.2, 0.5, signs);
   };
 
-  /** The Seal of Solomon as a layer: its straps' edges and its points. */
-  const engraveSeal = (straps: Stroke[], pts: typeof POINTS) =>
-    engrave((e) => {
-      for (const edge of straps) e.pieces(edge, 'thin');
-      pts.forEach((pt, k) => {
-        e.line(pt.ridge, 'hair', 0.85 + k * 0.05, 0.4);
-        e.line(pt.hatch, 'hatch', 0.95 + k * 0.05, 0.5);
-      });
-    });
-  const layers = (p: ReturnType<typeof drawing>) => ({
+  const layers = (p: ReturnType<typeof drawing>): Record<string, Plate> => ({
     band: engrave((e) => {
       p.band.forEach((list, k) => e.pieces(list, k ? '' : 'thin'));
       SCRIPT.forEach((m, k) => {
@@ -404,10 +393,12 @@ export const build = (): StageLayer[] => {
     star: engrave((e) => {
       e.pieces(p.circle, 'thin');
       e.pieces(p.circleInner, 'hair');
+      for (const edge of p.solomon) e.pieces(edge, 'thin');
+      POINTS.forEach((pt, k) => {
+        e.line(pt.ridge, 'hair', 0.85 + k * 0.05, 0.4);
+        e.line(pt.hatch, 'hatch', 0.95 + k * 0.05, 0.5);
+      });
     }),
-    // The Seal, riding the star: its straps passing under the ouroboros, or hollow running in to the hollow frame.
-    solomon: engraveSeal(p.solomon, POINTS),
-    hollowSolomon: engraveSeal(p.hollowSolomon, HOLLOW_POINTS),
     // Luna, upright on the page as the star carries her round.
     // The six letters, each upright on the page as the star carries it round.
     ...Object.fromEntries(
@@ -416,7 +407,7 @@ export const build = (): StageLayer[] => {
     // The ouroboros: each snake's body draws from its neck round to the
     // other's mouth, both at once, the line along it with it; then the
     // heads are cut, and last the eyes open.
-    hollowRing: engraveFrame(p.hollowRing),
+    ...(hollow ? { hollowRing: engraveFrame(p.hollowRing) } : {}),
     serpent: engrave((e) => {
       OURO.edges.forEach((d) => e.line(d, 'ouro', 0.2, 1.1));
       OURO.dividers.forEach((d) => e.line(d, 'ouro-divider', 0.3, 1.05));
@@ -445,7 +436,7 @@ export const build = (): StageLayer[] => {
   });
   const GLOW = layers(drawing(false));
   const LINES = layers(drawing(true));
-  const layer = (name: string, spin?: StageLayer['spin'], more: Partial<StageLayer> = {}): StageLayer => ({ name, lines: LINES[name as keyof typeof LINES], glow: GLOW[name as keyof typeof GLOW], spin, ...more });
+  const layer = (name: string, spin?: StageLayer['spin'], more: Partial<StageLayer> = {}): StageLayer => ({ name, lines: LINES[name], glow: GLOW[name], spin, ...more });
   // Each ring turns its own way and speed (each the other way from the
   // rune circle's), and first winds into place; the letters ride the star
   // upright; the monad stays upright, its sun's face turning, its moon
@@ -459,11 +450,9 @@ export const build = (): StageLayer[] => {
     layer('square', { turn: 150, from: -32 }),
     layer('great', undefined, { within: 'square', pivot: great.c, upright: true }),
     layer('star', { turn: 110, from: 48, reverse: true }),
-    layer('solomon', undefined, { within: 'star', inner: true }),
-    layer('hollowSolomon', undefined, { within: 'star', hollow: true }),
     ...figures.map(({ c }, k) => layer(`figure${k}`, undefined, { within: 'star', pivot: c, upright: true })),
     layer('serpent', { turn: 300, from: -20 }, { inner: true }),
-    layer('hollowRing', FRAME_SPIN, { hollow: true }),
+    ...(hollow ? [layer('hollowRing', FRAME_SPIN)] : []),
     ...MONAD_GLORY_SETS.map((_, n) =>
       layer(`glory${n}`, undefined, { breathe: { low: 0.93, period: 4.5, delay: -(n / SECTORS) * 9 }, mask: { d: OURO_HEADS, grow: 1.3, with: 'serpent' }, inner: true }),
     ),
@@ -471,5 +460,5 @@ export const build = (): StageLayer[] => {
     layer('sunFace', { turn: 80, from: 0 }, { inner: true }),
     layer('moon', undefined, { pivot: [0, (MOON.c + MOON.r) * MK], sway: { swing: 2.2, period: 6.5 }, inner: true }),
   ];
-  return LAYERS;
+  return staged(LAYERS, hollow);
 };

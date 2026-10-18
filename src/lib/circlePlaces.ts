@@ -10,7 +10,7 @@ export type Place = {
   /** Where, in words. */
   where: string;
   /** The circles there, by their plates' names (more than one: they take turns, `how`). */
-  circles: PlateName[];
+  circles: readonly PlateName[];
   /** How the circles take turns there, or how the one there is shown. */
   how: string;
 };
@@ -41,9 +41,11 @@ export const PLACES = {
   collection: { where: "The Codex's collection", circles: ['moth'], how: '' },
   achievements: { where: "The Codex's achievements", circles: ['monad'], how: '' },
   codexDelve: { where: "The Codex's Delve page", circles: ['blackSun'], how: '' },
-} satisfies Record<string, Place>;
+} as const satisfies Record<string, Place>;
 
 export type PlaceName = keyof typeof PLACES;
+/** A place where only one circle stands (where several take turns, the caller picks: lib/turns). */
+export type OnePlace = { [K in PlaceName]: (typeof PLACES)[K]['circles'] extends readonly [PlateName] ? K : never }[PlaceName];
 
-/** The one circle at `place` (where only one stands). */
-export const circleAtPlace = (place: PlaceName): PlateName => PLACES[place].circles[0] as PlateName;
+/** The one circle at `place`. */
+export const circleAtPlace = (place: OnePlace): PlateName => PLACES[place].circles[0];

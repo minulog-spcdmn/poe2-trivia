@@ -20,23 +20,17 @@
   // very centre, set at `delay` (s), that swells at a right answer, shrinks
   // at a wrong one and beats now and then. `size`, `color` and `strength`
   // (opacity) override the stage defaults for other places, like behind the
-  // winner on the victory screen. `hollow`: something is set over the heart
-  // (the end screen's one avatar), so what lies within it is left out, the
-  // hollow frame drawn round it, and the lines that cross it stop short of
-  // that frame (StageLayer's `inner`, `hollow` and `cut`).
+  // winner on the victory screen. A hollow plate's `cut` layers stop short
+  // of its hollow frame (lib/engraver's `staged`).
   let {
-    layers: plateLayers,
-    hollow = false,
+    layers,
     heart,
     point,
     state: mood = 'idle',
     size,
     color,
     strength,
-  }: { layers: StageLayer[]; hollow?: boolean; heart?: Snippet; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
-
-  /** The layers on the stage, hollow or whole. */
-  const layers = $derived(plateLayers.filter((l) => (hollow ? !l.inner : !l.hollow)));
+  }: { layers: StageLayer[]; heart?: Snippet; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
   /**
    * A layer's mask, as a CSS image: the whole plate, less the shape grown
@@ -123,7 +117,7 @@
         class:swaying={!!l.sway}
         class:breathing={!!l.breathe}
         class:fluttering={!!l.flutter}
-        class:cut={hollow && l.cut}
+        class:cut={!!l.cut}
         style:--turn={spin && `${spin.turn}s`}
         style:--from={spin && `${spin.from}deg`}
         style:--dir={spin && (spin.reverse ? 'reverse' : 'normal')}

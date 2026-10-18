@@ -27,7 +27,7 @@
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
   import ItemWindow from './ItemWindow.svelte';
-  import { warmGame } from './gameCircles';
+  import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const s = $derived(session.state!);

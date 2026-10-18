@@ -9,10 +9,10 @@
 // open from before a deploy and one opened after never clear out each
 // other's.
 
-import type { PlateName } from './plates/index.ts';
+import type { PlateKey } from './plates/index.ts';
 
 /** Builds a plate as JSON away from the page; null if it can't. */
-export type PlateBuilder = (name: PlateName) => Promise<string | null>;
+export type PlateBuilder = (name: PlateKey) => Promise<string | null>;
 
 export type PlateCacheDeps = {
   /** This build of the plates; undefined: nothing is kept between visits. */
@@ -22,7 +22,7 @@ export type PlateCacheDeps = {
   /** The worker. */
   worker: PlateBuilder;
   /** The page, where the worker can't. */
-  page: (name: PlateName) => Promise<unknown>;
+  page: (name: PlateKey) => Promise<unknown>;
   /** Now, in ms (for how long a plate of another build has lain). */
   now?: () => number;
 };
@@ -32,9 +32,9 @@ export const STALE_MS = 7 * 24 * 3600 * 1000;
 const STORED = 'x-plate-stored';
 
 export function plateCache({ version, open, worker, page, now = Date.now }: PlateCacheDeps) {
-  const ready = new Map<PlateName, unknown>();
-  const coming = new Map<PlateName, Promise<unknown>>();
-  const keyOf = (name: PlateName) => `https://plates.invalid/${version}/${name}.json`;
+  const ready = new Map<PlateKey, unknown>();
+  const coming = new Map<PlateKey, Promise<unknown>>();
+  const keyOf = (name: PlateKey) => `https://plates.invalid/${version}/${name}.json`;
 
   let opened: Promise<Cache | null> | undefined;
   /** The cache, its plates of other builds that have lain a week cleared out; null where there's none. */
@@ -55,7 +55,7 @@ export function plateCache({ version, open, worker, page, now = Date.now }: Plat
       }
     })());
 
-  async function fromCache(name: PlateName): Promise<string | null> {
+  async function fromCache(name: PlateKey): Promise<string | null> {
     try {
       const hit = await (await cache())?.match(keyOf(name));
       return hit ? await hit.text() : null;
@@ -63,14 +63,14 @@ export function plateCache({ version, open, worker, page, now = Date.now }: Plat
       return null;
     }
   }
-  async function toCache(name: PlateName, json: string) {
+  async function toCache(name: PlateKey, json: string) {
     try {
       await (await cache())?.put(keyOf(name), new Response(json, { headers: { 'content-type': 'application/json', [STORED]: String(now()) } }));
     } catch {
       // (No room, or no cache: built again next time.)
     }
   }
-  async function forget(name: PlateName) {
+  async function forget(name: PlateKey) {
     try {
       await (await cache())?.delete(keyOf(name));
     } catch {
@@ -78,7 +78,7 @@ export function plateCache({ version, open, worker, page, now = Date.now }: Plat
     }
   }
   /** The plate `name` from the cache, if it's there and reads. */
-  async function cached(name: PlateName): Promise<unknown> {
+  async function cached(name: PlateKey): Promise<unknown> {
     const json = await fromCache(name);
     if (json === null) return undefined;
     try {
@@ -89,7 +89,7 @@ export function plateCache({ version, open, worker, page, now = Date.now }: Plat
     }
   }
   /** The plate `name` built afresh (by the worker, or on the page), and kept in the cache. */
-  async function built(name: PlateName): Promise<unknown> {
+  async function built(name: PlateKey): Promise<unknown> {
     const json = (await worker(name)) ?? JSON.stringify(await page(name));
     void toCache(name, json);
     return JSON.parse(json);
@@ -97,9 +97,9 @@ export function plateCache({ version, open, worker, page, now = Date.now }: Plat
 
   return {
     /** The plate `name` if it's at hand already, else undefined. */
-    plateOf: (name: PlateName) => ready.get(name),
+    plateOf: (name: PlateKey) => ready.get(name),
     /** The plate `name`: kept, cached, or built. */
-    load(name: PlateName): Promise<unknown> {
+    load(name: PlateKey): Promise<unknown> {
       if (ready.has(name)) return Promise.resolve(ready.get(name));
       let p = coming.get(name);
       if (!p) {

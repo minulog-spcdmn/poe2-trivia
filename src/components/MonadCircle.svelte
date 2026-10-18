@@ -6,7 +6,7 @@
 
   // Its plate (src/lib/plates/monad.ts), built away from the page; the circle
   // is put on the page as soon as it's at hand.
-  const plate = usePlate<StageLayer[]>('monad');
+  const plate = usePlate<StageLayer[]>('monad', () => hollow);
 </script>
 
 <!--
@@ -20,5 +20,5 @@
 -->
 
 <!-- Hollow (with something set over its heart): without what lies within the heart's ring, a plain frame in its place where it has one. -->
-<!-- (Set again when it turns hollow or whole: the stage takes its layers once, as it mounts.) -->
-{#if plate.value}{#key hollow}<ArcaneStage layers={plate.value} {hollow} {state} {size} {color} {strength} />{/key}{/if}
+<!-- (Set again when it turns hollow or whole, its other plate: the stage takes its layers once, as it mounts.) -->
+{#if plate.value}{#key plate.value}<ArcaneStage layers={plate.value} {state} {size} {color} {strength} />{/key}{/if}

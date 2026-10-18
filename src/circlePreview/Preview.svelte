@@ -2,7 +2,7 @@
   import { circleNamed } from '../components/circles';
   import Avatar from '../components/Avatar.svelte';
   import { PLACES } from '../lib/circlePlaces';
-  import type { PlateName } from '../lib/plates/index.ts';
+  import { isPlateName, type PlateName } from '../lib/plates/index.ts';
 
   /** The circles, by their plates' names, as the page names them. */
   const NAMES: [PlateName, string][] = [
@@ -13,11 +13,11 @@
     ['blackSun', 'Black sun'],
   ];
   const label = (name: PlateName) => NAMES.find(([n]) => n === name)?.[1] ?? name;
-  const asked = new URLSearchParams(location.search).get('c') as PlateName | null;
-  let which = $state<PlateName>(asked && NAMES.some(([n]) => n === asked) ? asked : 'eye');
+  const asked = new URLSearchParams(location.search).get('c');
+  let which = $state<PlateName>(isPlateName(asked) ? asked : 'eye');
   const Circle = $derived(circleNamed(which));
   /** Every place, as the game reads it (lib/circlePlaces.ts), and whether this circle stands there. */
-  const places = $derived(Object.values(PLACES).map((p) => ({ ...p, here: (p.circles as PlateName[]).includes(which) })));
+  const places = $derived(Object.values(PLACES).map((p) => ({ ...p, here: (p.circles as readonly PlateName[]).includes(which) })));
   let replay = $state(0);
   let mood = $state<'idle' | 'good' | 'bad'>('idle');
   let avatar = $state(true);
@@ -63,7 +63,7 @@
           <tr class:here={p.here}>
             <th>{p.where}</th>
             <td>
-              {#each p.circles as name, k (name)}{k ? ', ' : ''}<button class="name" class:on={name === which} onclick={() => (which = name as PlateName)}>{label(name as PlateName)}</button>{/each}{#if p.how}<span class="how">; {p.how}</span>{/if}
+              {#each p.circles as name, k (name)}{k ? ', ' : ''}<button class="name" class:on={name === which} onclick={() => (which = name)}>{label(name)}</button>{/each}{#if p.how}<span class="how">; {p.how}</span>{/if}
             </td>
           </tr>
         {/each}
