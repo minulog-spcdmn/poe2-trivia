@@ -425,29 +425,38 @@ test('nothing goes wrong anywhere: plunges, swarms, flares, calm, a resize, snap
   assert.equal(calm.level, 0);
 });
 
-/** Steps sampled per stratum (each costs the heap sampler's time). */
+/** Steps sampled per window (each costs the heap sampler's time). */
 const STEPS = 2000;
 
-test('a step allocates nothing once settled', async (t) => {
+test('a step keeps nothing once settled', async (t) => {
   const session = new Session();
   session.connect();
-  for (const k of [-1, 0, 1, 5, 7, 8, 9, 23]) {
-    const e = zone(k);
-    e.swarm(1);
-    for (let i = 0; i < 3000; i++) e.step(DT, W, H);
+  /**
+   * What the embers' own code allocated over STEPS steps and still holds as they end (sampled: about every
+   * 64 bytes). The sampler leaves out what was let go meanwhile, so short-lived garbage doesn't count here.
+   */
+  const sampled = async (e: Embers) => {
     await session.post('HeapProfiler.startSampling', { samplingInterval: 64 });
     for (let i = 0; i < STEPS; i++) e.step(DT, W, H);
     const { profile } = await session.post('HeapProfiler.stopSampling');
-    // What the embers' own code allocated (sampled: about every 64 bytes).
     let bytes = 0;
     const walk = (n: (typeof profile)['head']) => {
       if (/backdropEmbers|emberMotion/.test(n.callFrame.url)) bytes += n.selfSize;
       n.children.forEach(walk);
     };
     walk(profile.head);
-    t.diagnostic(`stratum ${k}: ${bytes} bytes`);
-    // A little once (the JIT's, the sampler's own: a few hundred bytes as measured), then less than one small
-    // object every few steps. One a step, even, is 16 bytes a step: 32 kB over these steps, past this.
+    return bytes;
+  };
+  for (const k of [-1, 0, 1, 5, 7, 8, 9, 23]) {
+    const e = zone(k);
+    e.swarm(1);
+    for (let i = 0; i < 3000; i++) e.step(DT, W, H);
+    // Two windows, the less of them: something done once (the JIT's work, a list grown, some 30 kB as
+    // measured, in whichever stratum it falls) shows in one, what a step allocates in both.
+    const windows = [await sampled(e), await sampled(e)];
+    const bytes = Math.min(...windows);
+    t.diagnostic(`stratum ${k}: ${windows.join(' and ')} bytes`);
+    // Less than one small object kept every few steps. One a step, even, is 16 bytes a step: 32 kB over a window, past this.
     assert.ok(bytes < 10_000 + STEPS * 5, `stratum ${k}: ${bytes} bytes over ${STEPS} steps`);
   }
   session.disconnect();
