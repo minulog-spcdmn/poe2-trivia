@@ -108,7 +108,9 @@ and how the embers move. Every change shows at once.
   you go.
 - A changed zone is saved with `measured: false`, so its measured
   brightness corrections are dropped; measure again
-  (`scripts/measure-luminance.mjs calibrate --skip-env`) to restore them.
+  (`scripts/measure-luminance.mjs calibrate --skip-env`) to restore them,
+  and put the new looks in `tests/fixtures/measured-looks.json`
+  (`tests/backdrops.test.ts` checks a zone marked measured against it).
 - **Open it:** `npm run dev`, then `http://localhost:5173/backdrop.html`;
   on the beta, **poe2.quest/beta/backdrop.html**. Like the lab, the live
   build leaves it out, and its page is marked (`<html

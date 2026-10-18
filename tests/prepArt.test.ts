@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addNoise, artScale, cutArt, transfers } from '../src/lib/prepArt.ts';
-import { litMask, patchShapes, seededRandom, unpackLabels, visibleBox } from '../src/lib/patches.ts';
+import { areaTime, FIRST_PATCH_MS, litMask, patchShapes, seededRandom, unpackLabels, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background, off centre. */
 function ellipse(W: number, H: number): Uint8ClampedArray {
@@ -46,7 +46,14 @@ test('a veil cut where the art is prepared reads back on a guest as the same pat
   assert.deepEqual(cut.areas, cut.order.map((i) => cut.shapes[i].area));
   assert.equal(cut.delays.length, cut.count);
   for (let r = 1; r < cut.count; r++) assert.ok(cut.delays[r] >= cut.delays[r - 1], `patch ${r} after the one before`);
-  assert.ok(cut.delays.at(-1)! <= plan.endBy);
+  // The pace guests burn the patches in by: the first a gap after the
+  // second, every patch burning for a whole number of ms, half the item in
+  // by the plan's half and all of it within the plan's span.
+  assert.ok(cut.gap > 0 && cut.burn > 0 && Number.isInteger(cut.burn), `gap ${cut.gap}, burn ${cut.burn}`);
+  assert.equal(cut.delays[0], FIRST_PATCH_MS);
+  assert.ok(Math.abs(cut.delays[1] - cut.delays[0] - cut.gap) < 1e-9);
+  assert.ok(areaTime(cut.delays, cut.burn, cut.areas) <= plan.halfBy);
+  assert.ok(cut.delays.at(-1)! + cut.burn <= FIRST_PATCH_MS + plan.ms, `all in by ${cut.delays.at(-1)! + cut.burn}`);
   assert.deepEqual(cut.box, visibleBox(px, W, H));
 });
 
