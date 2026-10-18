@@ -106,12 +106,27 @@ test("a question's pictures come sealed, and their key on its own; neither carri
   assert.ok(msg && isMedia(msg) && msg.t === 'art' && msg.qid === 17);
 });
 
-test('rate limit allows bursts but not floods', () => {
-  const r = new RateLimit(10, 20);
+test('rate limit allows bursts but not floods, and fills up again at its rate', () => {
+  let now = 0;
+  const r = new RateLimit(10, 20, () => now);
   let ok = 0;
   for (let i = 0; i < 100; i++) if (r.take()) ok++;
   assert.equal(ok, 20);
   assert.equal(r.strikes, 80);
+  // Ten a second: one more after 100 ms, and never past the burst however long it waits.
+  now += 99;
+  assert.equal(r.take(), false);
+  now += 1;
+  assert.equal(r.take(), true);
+  now += 60_000;
+  ok = 0;
+  for (let i = 0; i < 100; i++) if (r.take()) ok++;
+  assert.equal(ok, 20);
+  // A cost spends that many at once.
+  now += 60_000;
+  assert.equal(r.take(15), true);
+  assert.equal(r.take(6), false);
+  assert.equal(r.take(5), true);
 });
 
 test('a veiled picture goes out whole with its labels, and a patch only says which one is uncovered', () => {

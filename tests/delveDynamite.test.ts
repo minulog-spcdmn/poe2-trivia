@@ -12,7 +12,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_FUSE_MS,
   DELVE_LIVES,
@@ -37,85 +36,46 @@ import {
   type FindKind,
   type Inventory,
 } from '../src/lib/delve.ts';
-import { ANSWER_GRACE_MS, ActionError, Engine, OFFER_COUNT, createGame, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { ANSWER_GRACE_MS, Engine, OFFER_COUNT, publicView, type Action, type GameState } from '../src/lib/game.ts';
 import { COOP_DRAW_MS, blastedAway, drawHoldUntil, inventoryChanges } from '../src/lib/delveSession.ts';
 import { momentOf } from '../src/lib/inventoryArt.ts';
 import { blastedEncounter, emptyCodex, record } from '../src/lib/codex.ts';
 import { addRun, emptyRecords, leftEvent, parseRecords, serializeRecords } from '../src/lib/delveRecord.ts';
-
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-
-const NONE: Inventory = { wards: 0, flares: 0, dynamite: 0 };
-const SETTINGS: Settings = { targetScore: 10, timer: 16, difficulty: 'merciless', mode: 'delve', public: false, locked: false };
-const right = (q: Question) => q.options.indexOf(q.itemId);
-const wrongs = (q: Question) => q.options.flatMap((id, i) => (id === q.itemId ? [] : [i]));
-
-function seeded(seed: number) {
-  seed = Math.imul(seed, 2654435761) >>> 0;
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
+import { loudly, right, room, silently, wrongs } from './helpers.ts';
 
 /** A Delve run on a controllable clock; `host` null for hot-seat. Helpers act as the trusted host unless told otherwise. */
 function delve(n: number, opts: { host?: string | null; seed?: number; depth?: number } = {}) {
-  const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(opts.seed ?? 11), now: () => clock.now, fakes });
-  const host = opts.host === undefined ? 'p0' : opts.host;
-  let s: GameState = createGame(host, SETTINGS);
-  for (let i = 0; i < n; i++) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name: `P${i}` }, host === null ? null : `p${i}`);
-  s = engine.apply(s, { type: 'start' }, host);
-  const h = {
-    engine,
-    clock,
-    get s() {
-      return s;
-    },
-    act(a: Action, from: string | null = null) {
-      s = engine.apply(s, a, from);
-      return s;
-    },
-    edit(fn: (s: GameState) => void) {
-      const c = structuredClone(s);
-      fn(c);
-      s = c;
-    },
-    give(id: string, inv: Partial<Inventory>) {
-      h.edit((c) => ((c.delve!.inventory ??= {})[id] = { ...NONE, ...inv }));
-    },
+  const h = Object.assign(room({ players: Array.from({ length: n }, (_, i) => `P${i}`), host: opts.host, seed: opts.seed ?? 11, depth: opts.depth }), {
     /** Picks a card (the find planted on it, if `find`; co-op: the host's own pick settles the vote) and starts the clock. */
     ask(find?: FindKind, card?: string) {
       if (find) h.edit((c) => (c.delve!.finds = [{ category: c.offered[0], kind: find }]));
-      h.act({ type: 'pick', category: card ?? (find ? s.offered[0] : s.offered.find((c) => !findOn(s, c))!) });
+      h.act({ type: 'pick', category: card ?? (find ? h.s.offered[0] : h.s.offered.find((c) => !findOn(h.s, c))!) });
       return h.clockOn();
     },
     /** The clock of the question in play starts (its art is out). */
     clockOn() {
-      h.act({ type: 'clock', askedAt: s.question!.askedAt });
-      return s.question!;
+      h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
+      return h.s.question!;
     },
     /** A blast set off by `by` (null: the host's own tooling, alone the player). */
     blast(by: string | null = null) {
-      return h.act({ type: 'blast', askedAt: s.question!.askedAt }, by);
+      return h.act({ type: 'blast', askedAt: h.s.question!.askedAt }, by);
     },
     /** The host's time-out, as its timer fires at 0 and the allowance for answers in flight. */
     timeOut() {
-      h.clock.now = s.question!.deadline! + ANSWER_GRACE_MS;
+      h.clock.now = h.s.question!.deadline! + ANSWER_GRACE_MS;
       return h.act({ type: 'answer', index: null });
     },
     /** The clock set to `ms` before the question's 0 (host clock). */
     before0(ms: number) {
-      h.clock.now = s.question!.deadline! - ms;
+      h.clock.now = h.s.question!.deadline! - ms;
       return h.clock.now;
     },
     /** On to the next depth, after a reveal. */
     next() {
       h.act({ type: 'next' });
     },
-  };
-  if (opts.depth) h.edit((c) => (c.round = opts.depth!));
+  });
   return h;
 }
 
@@ -127,12 +87,6 @@ function solo(inv: Partial<Inventory>, opts: { depth?: number; seed?: number; fi
   return h;
 }
 
-function loudly(fn: () => void, msg: RegExp) {
-  assert.throws(fn, (e: unknown) => e instanceof ActionError && msg.test(e.message));
-}
-function silently(fn: () => void, msg: RegExp) {
-  assert.throws(fn, (e: unknown) => e instanceof ActionError && e.silent && msg.test(e.message));
-}
 
 // ---- the rules -----------------------------------------------------------------
 

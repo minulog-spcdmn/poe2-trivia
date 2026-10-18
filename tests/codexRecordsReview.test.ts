@@ -12,16 +12,12 @@ import { answersByRun, answersFor, delveSummary, medianOfCounts, runStory } from
 import { CODEX_NAMES, addRun, emptyRecords, measure, runEvent, runKey, type DelveRun } from '../src/lib/delveRecord.ts';
 import { createGame } from '../src/lib/game.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { items, memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
-(globalThis as { localStorage?: unknown }).localStorage = {
-  getItem: (k: string) => store.get(k) ?? null,
-  setItem: (k: string, v: string) => void store.set(k, String(v)),
-  removeItem: (k: string) => void store.delete(k),
-};
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
 beforeEach(() => store.clear());
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const [a, b, c] = items;
 const byId = new Map(items.map((it) => [it.id, it]));
 const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: DELVE_RULESET, mixed: false, ...o });

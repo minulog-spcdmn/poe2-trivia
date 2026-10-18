@@ -57,7 +57,7 @@ Everyone starts with 3. There is no regain, no checkpoint and no continue.
 1. **Falling.** A player whose third life goes has fallen at that depth, straight away.
    - They keep their seat with 0 lives, as the deathmatch keeps its eliminated players (game.ts:262-274), and watch.
    - `turn` stays a valid seat index, and restart still reseats them (game.ts:874).
-2. **The round finishes for everyone else,** so turns stay equal (the same principle as tests/game.test.ts:80-96).
+2. **The round finishes for everyone else,** so turns stay equal (the same principle as "game ends at the end of the round", tests/gameFlow.test.ts).
 3. **At the round boundary** (the seat walk wraps):
    - If exactly one seated player is standing, in a run that started with 2 or more entrants, they are the **last one standing**. This is recorded once, and they **keep delving alone** until their third life is gone.
    - Then `round++`.

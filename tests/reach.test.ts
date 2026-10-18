@@ -4,13 +4,6 @@ import { aimIn, layout } from '../src/bot/reach.ts';
 import { NAMES, identityOf } from '../src/bot/identities.ts';
 import type { GameState } from '../src/lib/game.ts';
 
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
-
 const players = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 const choosing = { phase: 'choosing', players, offered: ['Rings', 'Belts', 'Flasks'] } as unknown as GameState;
 const question = (mode: 'name' | 'art', n: number, tall = false) => ({ phase: 'question', players, offered: [], question: { mode, tall, labels: Array.from({ length: n }, (_, i) => `x${i}`) } }) as unknown as GameState;

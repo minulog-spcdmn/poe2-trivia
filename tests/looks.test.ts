@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { allArt, type Item } from '../src/lib/game.ts';
+import { allArt } from '../src/lib/game.ts';
 import { loadLooks, readLooks } from '../src/lib/looks.ts';
+import { items } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = JSON.parse(readFileSync(new URL('../src/data/looks.json', import.meta.url), 'utf8'));
 const { looksLike, lookScore, lookalikePool } = readLooks(raw);
 const byName = new Map(items.map((it) => [it.name, it]));

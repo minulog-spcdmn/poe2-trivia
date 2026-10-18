@@ -1,7 +1,7 @@
 // count.ts in a browser at the live game's address (globals set before it
 // loads, as `counting` is settled then): with the privacy page's opt-out set,
 // nothing goes out, the counts held for an unseen page included.
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const sent: string[] = [];
@@ -26,25 +26,47 @@ set('localStorage', { getItem: (k: string) => held.get(k) ?? null, setItem: (k: 
 const { countEvent } = await import('../src/lib/count.ts');
 const { setCountOptedOut } = await import('../src/lib/countOptOut.ts');
 
+/** The page comes into view (count.ts holds its counts until it has been). */
+const show = () => {
+  visibility = 'visible';
+  for (const fn of listeners) fn();
+};
+beforeEach(() => {
+  sent.length = 0;
+  setCountOptedOut(false);
+});
+
 test('counts held while unseen are dropped if the opt-out was set meanwhile', () => {
+  // (First: count.ts was loaded with the page unseen.)
   countEvent('play/race-online');
   assert.equal(sent.length, 0);
   setCountOptedOut(true);
-  visibility = 'visible';
-  for (const fn of listeners) fn();
+  show();
   assert.equal(sent.length, 0);
 });
 
+test('counts held while unseen go out once the page is seen, when not opted out', async () => {
+  visibility = 'hidden';
+  // A page of its own, loaded unseen.
+  const { countEvent: count } = await import('../src/lib/count.ts?unseen');
+  count('play/race-online');
+  assert.equal(sent.length, 0, 'held');
+  show();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /p=play%2Frace-online/);
+});
+
 test('nothing is sent while the browser sends Global Privacy Control', () => {
+  show();
   const nav = globalThis.navigator as unknown as { globalPrivacyControl?: boolean };
   nav.globalPrivacyControl = true;
-  setCountOptedOut(false);
   countEvent('play/race-online');
   delete nav.globalPrivacyControl;
   assert.equal(sent.length, 0);
 });
 
 test('nothing is sent while opted out, and counting resumes once taken back', () => {
+  show();
   setCountOptedOut(true);
   countEvent('play/race-online');
   assert.equal(sent.length, 0);

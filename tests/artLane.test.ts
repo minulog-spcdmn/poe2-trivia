@@ -241,15 +241,18 @@ test('a fake far link is read from "<round trip>,<KB/s>" and nothing else', () =
   for (const v of [null, '', '350', '350,0', 'fast', '-1,40']) assert.equal(parseFakeLink(v), null, String(v));
 });
 
-test('on a fake far link frames trickle out at its rate, and still count as waiting', async () => {
+test('on a fake far link frames trickle out at its rate, half a round trip late, and still count as waiting', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const ch = new FakeChannel();
   const sender = new LaneSender(ch, { delayMs: 20, bytesPerSec: 1024 * 1024 });
   sender.send({ t: 'art', qid: 5, w: 1, h: 1, data: bytes(40_000) });
   assert.equal(ch.sent.length, 0, 'nothing before half the round trip');
   assert.ok(sender.backlog >= 40_000);
-  await new Promise((r) => setTimeout(r, 120));
+  t.mock.timers.tick(20);
+  assert.equal(ch.sent.length, 0, 'nor before the first frame has had its time at the rate');
+  t.mock.timers.tick(100);
   ch.drain();
-  await new Promise((r) => setTimeout(r, 60));
+  t.mock.timers.tick(60);
   assert.equal(sender.backlog, ch.bufferedAmount);
-  assert.equal(ch.sent.reduce((n, f) => n + f.byteLength, 0) > 40_000, true);
+  assert.ok(ch.sent.reduce((n, f) => n + f.byteLength, 0) > 40_000);
 });

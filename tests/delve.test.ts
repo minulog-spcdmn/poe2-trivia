@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
   DELVE_IDLE_ROUNDS,
@@ -44,7 +43,6 @@ import {
   tileVeilSize,
   veilSeconds,
   VEIL_LEFT_MS,
-  DELVE_MIN_TIMER,
   delveTier,
   delveTimer,
   fellAt,
@@ -55,10 +53,11 @@ import {
   VEIN_MAX_STRIKES,
   lampAfter,
 } from '../src/lib/delve.ts';
-import { Engine, KNOB_STEPS, OFFER_COUNT, createGame, maxFakes, type GameState, type Item } from '../src/lib/game.ts';
+import { Engine, KNOB_STEPS, OFFER_COUNT, createGame, maxFakes, type GameState } from '../src/lib/game.ts';
 import { PROTOCOL_VERSION } from '../src/lib/protocol.ts';
+import { FIRST_PATCH_MS, areaTime, seededRandom, veilPace, veilSchedule } from '../src/lib/patches.ts';
+import { items } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const DEPTHS = Array.from({ length: 200 }, (_, i) => i + 1);
 
 test('every depth plays sane knob values, and the Custom steps stay as they were', () => {
@@ -187,24 +186,6 @@ test('from depth 50 a growing share of questions picks its look-alikes by their 
   assert.equal(findRules('azurite', 26, 3).lookalikes, delveLookalikes(66));
 });
 
-test('timer and lockout stay within bounds', () => {
-  for (const d of DEPTHS) {
-    assert.ok(Number.isInteger(delveTimer(d)) && delveTimer(d) >= 5 && delveTimer(d) <= 16);
-    assert.ok(delveLockout(d) >= 2 && delveLockout(d) <= DELVE_MAX_LOCKOUT);
-  }
-  assert.equal(delveTimer(1), 16);
-  assert.equal(delveTimer(58), 7);
-  assert.equal(delveTimer(57), 8);
-  assert.equal(delveTimer(78), 6);
-  assert.equal(delveTimer(96), DELVE_MIN_TIMER);
-  assert.equal(delveTimer(95), DELVE_MIN_TIMER + 1);
-  assert.equal(DELVE_MIN_TIMER, 5);
-  assert.equal(delveTimer(1000), DELVE_MIN_TIMER);
-  assert.equal(delveLockout(1), 2);
-  assert.equal(delveLockout(91), DELVE_MAX_LOCKOUT);
-  assert.equal(delveLockout(90), DELVE_MAX_LOCKOUT - 1);
-});
-
 test('something gets harder at every depth to 150, and the steps never come together', () => {
   const at = (d: number) => JSON.stringify([delveRules(d), delveTimer(d), delveTileVeil(d)]);
   for (let d = 2; d <= 150; d++) assert.notEqual(at(d), at(d - 1), `nothing harder at ${d}`);
@@ -238,7 +219,7 @@ test('there are always three categories left to offer at the longest lockout', (
 });
 
 test('the ruleset is pinned to the curve and the protocol', () => {
-  // Changing the curve changes this hash: bump PROTOCOL_VERSION with it, then update the pin. DELVE_RULESET only for a change that leaves depths not remotely comparable (its note in delve.ts): a bump sets every player's bests back to nothing.
+  // Changing the curve changes this hash: bump PROTOCOL_VERSION with it, then update the pin and PINNED_AT to the new version. DELVE_RULESET only for a change that leaves depths not remotely comparable (its note in delve.ts): a bump sets every player's bests back to nothing.
   // (Ruleset 1 is frozen as the rules Delve opens with, at protocol 12; dynamite blasting a question away for a new one, in place of going off at half the clock, kept it at 1 at protocol 13, as Delve isn't public yet, and so did its fuse burning at 0 before it goes off by itself, at protocol 14, and the fuse burning over the clock's last seconds instead, the dynamite going off right at 0, at protocol 15 (DELVE_FUSE_MS kept its 1.8 s). The finds starting later, one at a time (the Dynamite Cache from shown depth 10, the Flare Cache from 30, the Azurite Vein from 40, each reaching its cap 20 depths on), kept it at 1 at protocol 14 too. The Flare Cache coming from shown depth 25 in place of 30 (its cap by 45) kept it at 1 at protocol 15. A flare giving six seconds in place of five, and a Flare Cache's clock two thirds of its deeper depth's in place of three seconds short, never under four in place of three, kept it at 1 at protocol 16. A blasted question remembering the wrong answers given to it (no rules change) kept it at 1 at protocol 17. The upscaled item art going out at twice the pixels (no rules change) kept it at 1 at protocol 18. A guest choosing to watch rather than play (no rules change) kept it at 1 at protocol 19. The item art going out at each item's own scale, with option pictures' sizes (no rules change), kept it at 1 at protocol 20. The players' pointers shown live (no rules change) kept it at 1 at protocol 21. A new zone's cards dealt as the plunge into it lands, every screen holding them and their votes till then (no rules change), kept it at 1 at protocol 22. The team's streak counted in co-op (no rules change) kept it at 1 at protocol 23. A pointer going with the anchors round its own, on many more of them (no rules change), kept it at 1 at protocol 24. Ruleset 2, at protocol 25: twins (game.ts TWINS) meet in a question only from a depth on, the rules' `twins`, and never in grayscale where only their colours tell them apart (the grayscale roll now comes before the options are picked). The Azurite Vein always giving a whole ward (no shards, no fast window), and the Vein coming from shown depth 25 and the Flare Cache from 40 in place of the other way round, each certain on its first depth, kept it at 2 at protocol 26, as ruleset 2 isn't out yet, and so did only a question cleared going a depth deeper (a miss asks another at the same depth), at protocol 27, and the Azurite Vein dug a strike at a time on one lamp (strike 1 on LAMP_START of its clock, up to VEIN_MAX_STRIKES, the haul in hand buried by a cave-in), at protocol 28, and so did its lamp never fed, at protocol 29, and its strikes asking from 20, 30 and 40 depths further down; and players saying whether their game is on screen and in use, the lobby showing who is ready, and a veiled picture going out whole with which patch each pixel falls in, its patches only named as they uncover (no rules changes), on another line at 28; the two joined at protocol 30, still ruleset 2. Only the owner key's signature playing under the held name (no rules change) kept it at 2 at protocol 31, and so did the pictures coming down an art lane of their own, and every mode's clock waiting for the art as Delve's did, its pictures sealed until the key that starts it, at protocol 32. Before that, while Delve was unreleased, every change kept the ruleset and only moved the pin; so did dynamite going off by itself, look-alike pictures, the flare burning at 0 and the blast holding the clock, co-op, dynamite taking half of all the options with two finds side by side, pinning the lives, the clock going down to 5 s with the art burning in faster on it, the smooth rise in place of the steps, and each find's own risk: the Flare Cache's shorter clock and the Dynamite Cache's blast.)
   const table: unknown[] = DEPTHS.map((d) => [delveRules(d), delveTimer(d), delveTileVeil(d)]);
   // The finds too: where and how often they turn up, what they ask and cost, and what their items do.
@@ -259,10 +240,13 @@ test('the ruleset is pinned to the curve and the protocol', () => {
   // The Azurite Vein's dig: how many strikes, how deep each asks, and the lamp.
   table.push(['vein', VEIN_MAX_STRIKES, VEIN_DEEPER, LAMP_START, DEPTHS.slice(0, 100).map((d) => [2, 3].map((k) => [findRules('azurite', d, k), lampAfter(d, k, 2.5)]))]);
   const hash = createHash('sha256').update(JSON.stringify(table)).digest('hex').slice(0, 16);
-  assert.deepEqual([DELVE_RULESET, PROTOCOL_VERSION, hash], [2, 32, PINNED_HASH]);
+  assert.deepEqual([DELVE_RULESET, hash], [2, PINNED_HASH]);
+  assert.ok(PROTOCOL_VERSION >= PINNED_AT, 'the protocol the curve was pinned at');
 });
 
 const PINNED_HASH = '13a63b9853d0bb48';
+/** The protocol version the curve last changed with (bumped for it): a protocol bump for something else leaves this as it is. */
+const PINNED_AT = 32;
 
 function run(losses: Record<string, number[]>, round = 10, seats = Object.keys(losses)): GameState {
   const s = createGame('a');
@@ -322,7 +306,6 @@ test('the art burns into view from depth 25, a little slower and finer every dep
 });
 
 test('at every depth to 300, even under the slowest veil, half the art is in with 3 s left at least', async () => {
-  const { veilPace } = await import('../src/lib/patches.ts');
   for (let d = 1; d <= 300; d++) {
     const veil = delveRules(d).veil;
     if (!veil) continue;
@@ -344,8 +327,7 @@ test('at every depth to 300, even under the slowest veil, half the art is in wit
 });
 
 /** Patch areas for a picture cut into `n` (in reveal order): all alike, smoothly uneven, or at random from `seed`. */
-async function areaProfiles(n: number, seed: number): Promise<Record<string, number[]>> {
-  const { seededRandom } = await import('../src/lib/patches.ts');
+function areaProfiles(n: number, seed: number): Record<string, number[]> {
   const rand = seededRandom(seed);
   return {
     even: Array(n).fill(100),
@@ -354,12 +336,15 @@ async function areaProfiles(n: number, seed: number): Promise<Record<string, num
   };
 }
 
-test('however a picture is cut, half of its area is in with 3 s left, exactly then where its share would allow more, and the rest lands about 1 s before the end: whole art and pictures, clocks of 3 to 16 s', async () => {
-  const { FIRST_PATCH_MS, areaTime, veilPace, veilSchedule } = await import('../src/lib/patches.ts');
+/** Patch counts up to `most` worth trying: every one to 20 (where one patch more or less tells), then every third, and `most`. */
+const patchCounts = (most: number) => [...new Set([...Array.from({ length: most }, (_, i) => i + 1).filter((n) => n <= 20 || n % 3 === 0), most])];
+
+test('however a picture is cut, half of its area is in with 3 s left, exactly then where its share would allow more, and the rest lands about 1 s before the end: whole art and pictures, clocks of 3 to 16 s', () => {
   let [checked, capped, tails] = [0, 0, 0];
-  for (let secs = 3; secs <= 16; secs += 0.5)
+  // Delve's clocks are whole seconds; its veils' sizes run from 4 to 9, and their shares from 0.3 to 0.8.
+  for (let secs = 3; secs <= 16; secs++)
     for (const share of [0.3, 0.55, 0.8])
-      for (let whole = 4; whole <= 9; whole += 0.5)
+      for (const whole of [4, 5.2, 6.5, 7, 8.1, 9])
         for (const tiles of [false, true]) {
           const size = tiles ? tileVeilSize(whole) : whole;
           // A clock too short for any veil shows the art plain (veilSeconds).
@@ -367,8 +352,8 @@ test('however a picture is cut, half of its area is in with 3 s left, exactly th
           const plan = veilPlan(secs, share, tiles);
           const late = veilLate(tiles);
           // cutPatches makes about size × size patches over a whole picture (never more than that, rounded), fewer over a small item.
-          for (let count = 1; count <= Math.round(size * size); count++)
-            for (const [kind, areas] of Object.entries(await areaProfiles(count, count * 31 + secs))) {
+          for (const count of patchCounts(Math.round(size * size)))
+            for (const [kind, areas] of Object.entries(areaProfiles(count, count * 31 + secs))) {
               const at = `${kind} ${count} of ${size} × ${size}, ${tiles ? 'pictures' : 'whole'}, ${secs} s at ${share}`;
               const s = veilSchedule(areas, plan);
               const end = s.delays.at(-1)! + s.burn;
@@ -407,7 +392,6 @@ test('however a picture is cut, half of its area is in with 3 s left, exactly th
 });
 
 test('at shown depths 24 to 199, deeper never leaves more time once half the art is in, nor once all of it is', async () => {
-  const { veilSchedule } = await import('../src/lib/patches.ts');
   for (const tiles of [false, true])
     for (const fill of [0.2, 0.35, 0.5, 0.65, 0.8, 1])
       for (const kind of ['even', 'uneven']) {
@@ -418,7 +402,7 @@ test('at shown depths 24 to 199, deeper never leaves more time once half the art
           const size = tiles ? tileVeilSize(veil.size) : veil.size;
           // The same item at every depth: it fills `fill` of its picture, cut finer deeper down.
           const count = Math.max(1, Math.round(size * size * fill));
-          const areas = (await areaProfiles(count, 1))[kind];
+          const areas = areaProfiles(count, 1)[kind];
           const s = veilSchedule(areas, veilPlan(secs, veil.share, tiles));
           // Time left once half of it is in and once all of it is, the last picture half a step late.
           const half = secs * 1000 - s.half;
@@ -435,7 +419,6 @@ test('at shown depths 24 to 199, deeper never leaves more time once half the art
 });
 
 test('at shown depths 24, 39, 59, 89 and 99, a picture of 4 patches or a whole one has half its area in with 3 s left at least, the rest after', async () => {
-  const { veilSchedule } = await import('../src/lib/patches.ts');
   // Shown depths are one less than the run's (depth 90 is shown as 89, a 6 s clock).
   for (const d of [25, 40, 60, 90, 100]) {
     const veil = delveRules(d).veil!;
@@ -443,7 +426,7 @@ test('at shown depths 24, 39, 59, 89 and 99, a picture of 4 patches or a whole o
     for (const tiles of [false, true]) {
       const size = tiles ? tileVeilSize(veil.size) : veil.size;
       for (let count = 4; count <= Math.round(size * size); count++)
-        for (const [kind, areas] of Object.entries(await areaProfiles(count, d))) {
+        for (const [kind, areas] of Object.entries(areaProfiles(count, d))) {
           const at = `depth ${d}, ${kind} ${count} of ${size} × ${size}, ${tiles ? 'pictures' : 'whole'}`;
           const s = veilSchedule(areas, veilPlan(secs, veil.share, tiles));
           const left = secs * 1000 - s.half;
@@ -483,7 +466,6 @@ test('the first art to burn in is in colour', () => {
 });
 
 test('at every depth to 300, a veiled picture also has half its patches in with 3 s left at least', async () => {
-  const { veilPace } = await import('../src/lib/patches.ts');
   for (let d = 1; d <= 300; d++) {
     const veil = delveRules(d).veil;
     if (!veil) continue;

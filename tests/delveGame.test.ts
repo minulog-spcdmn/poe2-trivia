@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DELVE_LIVES,
   ZONE_DESCENT_MS,
@@ -8,29 +7,19 @@ import {
   DEAL_SLACK_MS,
   delveLockout,
   delveRules,
+  delveTileVeil,
   delveTimer,
   fellAt,
   findOn,
   findRules,
   livesOf,
+  tileVeilSize,
   veilSeconds,
   WAY_OUT,
 } from '../src/lib/delve.ts';
 import { sceneOf } from '../src/lib/recorder.ts';
-import { ActionError, Engine, RARE_GROUPS, RARE_MAX_OPTIONS, activeRules, createGame, isFake, lastPicks, publicView, type Action, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
-
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
-
-const right = (q: Question) => q.options.indexOf(q.itemId);
-const wrongIdx = (q: Question) => q.options.findIndex((o) => o !== q.itemId);
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
+import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, activeRules, createGame, grayscaleFor, isFake, lastPicks, publicView, type Settings } from '../src/lib/game.ts';
+import { items, right, room, seeded, silently, wrong } from './helpers.ts';
 
 /** Settings Delve must ignore: a target of 1, no timer, Eternal. */
 const LEFTOVERS: Settings = { targetScore: 1, timer: 0, difficulty: 'eternal', mode: 'delve', public: false, locked: false };
@@ -40,34 +29,16 @@ const LEFTOVERS: Settings = { targetScore: 1, timer: 0, difficulty: 'eternal', m
  * (p0 by default), or null for hot-seat. Every helper acts as the trusted host.
  */
 function delve(names: string[], opts: { host?: string | null; seed?: number; start?: boolean } = {}) {
-  const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: seeded(opts.seed ?? 7), now: () => clock.now, fakes });
-  const host = opts.host === undefined ? 'p0' : opts.host;
-  let s: GameState = createGame(host, LEFTOVERS);
-  names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, host === null ? null : `p${i}`)));
-  if (opts.start !== false) s = engine.apply(s, { type: 'start' }, host);
-  const h = {
-    engine,
-    clock,
-    get s() {
-      return s;
-    },
-    set s(v: GameState) {
-      s = v;
-    },
-    act(a: Action, from: string | null = null) {
-      s = engine.apply(s, a, from);
-      return s;
-    },
-    active: () => s.players[s.turn],
-    pick: (from: string | null = null) => h.act({ type: 'pick', category: s.offered[0] }, from),
-    clockIn: () => h.act({ type: 'clock', askedAt: s.question!.askedAt }),
+  const h = Object.assign(room({ players: names, host: opts.host, seed: opts.seed ?? 7, start: opts.start, settings: LEFTOVERS }), {
+    active: () => h.s.players[h.s.turn],
+    pick: (from: string | null = null) => h.act({ type: 'pick', category: h.s.offered[0] }, from),
+    clockIn: () => h.act({ type: 'clock', askedAt: h.s.question!.askedAt }),
     /** One whole turn for whoever is on: pick, clock, answer, move on. */
     turn(ok: boolean) {
       h.pick();
       h.clockIn();
-      const q = s.question!;
-      h.act({ type: 'answer', index: ok ? right(q) : wrongIdx(q), askedAt: q.askedAt });
+      const q = h.s.question!;
+      h.act({ type: 'answer', index: ok ? right(q) : wrong(q), askedAt: q.askedAt });
       h.act({ type: 'next' });
     },
     /** Together: the host's time-out, which costs everyone standing who hasn't answered. */
@@ -79,15 +50,19 @@ function delve(names: string[], opts: { host?: string | null; seed?: number; sta
     },
     /** Plays turns from a script per player id (right by default) until the game is over. */
     playOut(plan: Record<string, boolean[]>, limit = 500) {
-      for (let i = 0; s.phase !== 'over' && i < limit; i++) h.turn(plan[h.active().id]?.shift() ?? true);
-      assert.equal(s.phase, 'over', 'the run should have ended');
+      for (let i = 0; h.s.phase !== 'over' && i < limit; i++) h.turn(plan[h.active().id]?.shift() ?? true);
+      assert.equal(h.s.phase, 'over', 'the run should have ended');
     },
-  };
+  });
   return h;
 }
 
-const throwsSilently = (fn: () => unknown, message?: RegExp) =>
-  assert.throws(fn, (e: unknown) => e instanceof ActionError && e.silent && (!message || message.test(e.message)));
+/** Questions at `depth` (each from the run as it starts, so none depends on the one before), over every category in turn. */
+function* asked(depth: number, seed: number) {
+  const h = delve(['Ash'], { seed });
+  const fresh = h.s;
+  for (let i = 0; ; i++) yield h.engine.makeQuestion({ ...structuredClone(fresh), round: depth }, h.engine.categories[i % h.engine.categories.length]);
+}
 
 test('delve is a mode the host can pick, and the other settings are kept for later', () => {
   const engine = new Engine(items);
@@ -121,12 +96,17 @@ test('questions take their shape from the depth', () => {
     assert.equal(q.options.length, delveRules(depth).options, `options at ${depth}`);
     // From depth 25 the art of a name question burns in, paced by Delve's own timer.
     const veil = delveRules(depth).veil;
-    if (veil && q.mode === 'name') {
+    if (!veil) assert.equal(q.veil, null, `no veil at ${depth}`);
+    else if (q.mode === 'name') {
       assert.equal(q.veil!.size, veil.size);
       assert.equal(q.veil!.seconds, veilSeconds(delveTimer(depth), veil.share, veil.size));
       // On the shortest clocks it burns in faster than its share.
       if (depth === 100) assert.ok(q.veil!.seconds < delveTimer(depth) * veil.share);
-    } else assert.equal(q.veil, null);
+    } else if (q.veil) {
+      // "Find the art": cut coarser, as its share of the depth's pictures has it (the next test).
+      assert.equal(q.veil.size, tileVeilSize(veil.size));
+      assert.equal(q.veil.seconds, veilSeconds(delveTimer(depth), veil.share, q.veil.size, true));
+    }
     const madeUp = q.options.filter(isFake).length;
     assert.ok(madeUp <= delveRules(depth).fakes);
   }
@@ -139,8 +119,8 @@ test('the clock starts when the host says the art has arrived', () => {
   const q = h.s.question!;
   assert.equal(q.deadline, null);
   const now = h.clock.now;
-  throwsSilently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, id), /early/);
-  throwsSilently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, null), /early/);
+  silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, id), /early/);
+  silently(() => h.act({ type: 'answer', index: right(q), askedAt: q.askedAt }, null), /early/);
   assert.throws(() => h.act({ type: 'clock', askedAt: q.askedAt }, id));
   h.act({ type: 'clock', askedAt: q.askedAt + 1 });
   assert.equal(h.s.question!.deadline, null, 'a stale clock does nothing');
@@ -169,7 +149,7 @@ test('wrong answers, giving up and answering late each cost a life; right ones s
   h.act({ type: 'next' });
 
   h.pick();
-  throwsSilently(() => h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt }), /Too early/);
+  silently(() => h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt }), /Too early/);
   assert.equal(lives(), 3, 'nothing is given up before the clock starts');
   h.clockIn();
   h.act({ type: 'answer', index: null, askedAt: h.s.question!.askedAt });
@@ -222,7 +202,7 @@ test("going down into a new zone, the player's own pick well before the cards ar
   const at = h.s.delve!.dealAt!;
   assert.equal(at, h.clock.now + ZONE_DESCENT_MS);
   h.clock.now = at - DEAL_SLACK_MS - 1;
-  throwsSilently(() => h.pick('p0'), /early/i);
+  silently(() => h.pick('p0'), /early/i);
   assert.equal(h.s.phase, 'choosing');
   // The bots' recordings know the cards weren't there yet (scripts/bot-motion.mjs).
   assert.equal(sceneOf(h.s, 'p0', 0).dealAt, at);
@@ -346,9 +326,9 @@ test('a question that failed to load can be asked again, but not once its clock 
   assert.equal(second.category, first.category);
   assert.equal(second.deadline, null);
   assert.equal(h.s.round, 1);
-  throwsSilently(() => h.act({ type: 'answer', index: 0, askedAt: first.askedAt }, h.active().id), /late/);
+  silently(() => h.act({ type: 'answer', index: 0, askedAt: first.askedAt }, h.active().id), /late/);
   h.clockIn();
-  throwsSilently(() => h.act({ type: 'reask' }), /clock/);
+  silently(() => h.act({ type: 'reask' }), /clock/);
 });
 
 test('play again starts a fresh run for everyone, the fallen and the watchers included', () => {
@@ -404,16 +384,11 @@ test('a game saved before Delve plays on as before', () => {
   assert.equal(s.delve ?? null, null);
 });
 
-test('deep down, "find the art" pictures burn in too, more often the deeper', async () => {
-  const { delveTileVeil, tileVeilSize } = await import('../src/lib/delve.ts');
+test('deep down, "find the art" pictures burn in too, more often the deeper', () => {
   const share = (depth: number) => {
     let art = 0;
     let veiled = 0;
-    for (let seed = 1; art < 300 && seed < 4000; seed++) {
-      const h = delve(['Ash'], { seed });
-      h.s = { ...h.s, round: depth };
-      h.pick();
-      const q = h.s.question!;
+    for (const q of asked(depth, depth)) {
       if (q.mode !== 'art') continue;
       art++;
       if (q.veil) {
@@ -421,6 +396,7 @@ test('deep down, "find the art" pictures burn in too, more often the deeper', as
         assert.equal(q.veil.size, tileVeilSize(delveRules(depth).veil!.size));
         assert.equal(q.veil.seconds, veilSeconds(delveTimer(depth), delveRules(depth).veil!.share, q.veil.size, true));
       }
+      if (art === 300) break;
     }
     return veiled / art;
   };
@@ -430,19 +406,15 @@ test('deep down, "find the art" pictures burn in too, more often the deeper', as
   assert.ok(Math.abs(mid - delveTileVeil(74)) < 0.1, `about half at depth 74, got ${mid}`);
 });
 
-test('grayscale is rolled for each question, as often as the depth says, and the art is prepared that way', async () => {
-  const { grayscaleFor } = await import('../src/lib/game.ts');
+test('grayscale is rolled for each question, as often as the depth says, and the art is prepared that way', () => {
   const share = (depth: number) => {
     let gray = 0;
     const n = 300;
-    for (let seed = 1; seed <= n; seed++) {
-      const h = delve(['Ash'], { seed });
-      h.s = { ...h.s, round: depth };
-      h.pick();
-      const q = h.s.question!;
-      assert.equal(grayscaleFor(h.s), q.gray ? 'all' : 'off');
+    let i = 0;
+    for (const q of asked(depth, depth)) {
       if (!delveRules(depth).grayChance) assert.equal(q.gray, undefined, `no roll at ${depth}`);
       if (q.gray) gray++;
+      if (++i === n) break;
     }
     return gray / n;
   };
@@ -450,4 +422,11 @@ test('grayscale is rolled for each question, as often as the depth says, and the
   const mid = share(65);
   assert.ok(Math.abs(mid - delveRules(65).grayChance!) < 0.1, `about half at depth 65, got ${mid}`);
   assert.equal(share(100), 1);
+  // As played: the art of the question picked is prepared in grayscale or not, as it was rolled.
+  for (const [depth, seed] of [[65, 1], [65, 2], [65, 3], [65, 4], [100, 1], [40, 1]]) {
+    const h = delve(['Ash'], { seed });
+    h.s = { ...h.s, round: depth };
+    h.pick();
+    assert.equal(grayscaleFor(h.s), h.s.question!.gray ? 'all' : 'off', `depth ${depth}, seed ${seed}`);
+  }
 });

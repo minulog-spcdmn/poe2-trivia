@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTO_REASKS,
-  CAP_STRIKES,
   CLOCK_CAP_MAX_MS,
   CLOCK_CAP_MIN_MS,
   COOP_DRAW_MS,
@@ -71,15 +70,15 @@ test("the most the host waits for the art is a fifth of the question's time, 2 t
   assert.equal(clockCap(room('turns', 0)), CLOCK_CAP_MAX_MS, 'untimed turns: the most');
   assert.equal(clockCap(room('race', 0)), 3200, "a race without a timer runs on the default's");
   assert.equal(clockCap(room('race', 64)), CLOCK_CAP_MAX_MS);
-  // Delve: the depth's clock (or a find's), whatever the room's timer says.
-  const s = run({ phase: 'question', question: question(null) });
-  assert.equal(clockCap(s), Math.min(CLOCK_CAP_MAX_MS, Math.max(CLOCK_CAP_MIN_MS, Math.round(questionTimer(s) * 200))));
-  assert.ok(clockCap(s) >= CLOCK_CAP_MIN_MS && clockCap(s) <= CLOCK_CAP_MAX_MS);
+  // Delve: the depth's clock (or a find's), whatever the room's timer says: a fifth of depth 1's 16 s, and the least on the deepest 5 s ones.
+  const s = run({ phase: 'question', question: question(null), round: 1, settings: { ...DEFAULT_SETTINGS, mode: 'delve', timer: 32 } });
+  assert.equal(questionTimer(s), 16);
+  assert.equal(clockCap(s), 3200);
+  assert.equal(clockCap({ ...s, round: 200 }), CLOCK_CAP_MIN_MS);
 });
 
 test('art that keeps failing is asked again a few times: at once, then after 2, 5 and 10 seconds, then no more by itself', () => {
   assert.deepEqual([0, 1, 2, 3, 4, 9].map(reaskDelay), [0, 2000, 5000, 10_000, null, null]);
-  assert.equal(AUTO_REASKS, 4);
   assert.equal(reaskDelay(AUTO_REASKS), null, 'an offline device does not spin through questions forever');
 });
 
@@ -97,7 +96,6 @@ test("one throttled link can't hold every question up: the cap running out on so
   strikes = capStrikes(strikes, ['a', 'c'], ['b']);
   assert.deepEqual(stillWaitedFor(ids, strikes), ids, 'once is not yet');
   strikes = capStrikes(strikes, ['a', 'c'], ['b']);
-  assert.equal(CAP_STRIKES, 2);
   assert.deepEqual(stillWaitedFor(ids, strikes), ['a', 'c'], 'twice running: left out');
   // Left out, not waited for: nothing new against them while the clock starts without them.
   strikes = capStrikes(strikes, ['a', 'c'], []);

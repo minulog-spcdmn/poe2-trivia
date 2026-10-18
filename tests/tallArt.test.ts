@@ -1,17 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Engine, TALL_ART_GROUPS, createGame, publicView, type GameState, type Item, type Question } from '../src/lib/game.ts';
+import { Engine, TALL_ART_GROUPS, createGame, publicView, type GameState, type Question } from '../src/lib/game.ts';
+import { items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const byId = new Map(items.map((it) => [it.id, it]));
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 /** Plays `turns` turns alone, picking whichever offered category `pick` likes, and returns every question asked. */
 function questions(turns: number, pick: (offered: string[]) => string) {

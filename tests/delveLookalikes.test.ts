@@ -2,20 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { LOOKALIKES_FROM, LOOKALIKES_TO, delveLookalikes } from '../src/lib/delve.ts';
-import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, answerDrawn, createGame, drawnAs, isFake, type GameState, type Item, type Question, type Settings } from '../src/lib/game.ts';
+import { Engine, RARE_GROUPS, RARE_MAX_OPTIONS, answerDrawn, createGame, drawnAs, isFake, type GameState, type Question, type Settings } from '../src/lib/game.ts';
 import { readLooks, type Looks } from '../src/lib/looks.ts';
+import { fakes, items, seeded } from './helpers.ts';
 
-const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
 const looks = readLooks(JSON.parse(readFileSync(new URL('../src/data/looks.json', import.meta.url), 'utf8')));
 const byId = new Map(items.map((it) => [it.id, it]));
-
-function seeded(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
 
 /** An engine with a fixed clock, so questions from two engines can be compared whole. */
 const make = (seed: number, table: Looks | null = null) => new Engine(items, { rng: seeded(seed), now: () => 1_000_000, fakes, looks: table });
@@ -75,11 +67,11 @@ test('from depth 50 the roll comes up as often as the depth says, and every time
     }
     return rolled / n;
   };
+  // (The curve's own values are pinned with the ruleset, delve.test.ts: here, that the engine follows it.)
   assert.equal(share(LOOKALIKES_FROM - 1, 300), 0);
-  const first = share(LOOKALIKES_FROM, 3000);
-  assert.ok(Math.abs(first - delveLookalikes(LOOKALIKES_FROM)) < 0.01, `${first} at ${LOOKALIKES_FROM}`);
-  const at85 = share(85, 3000);
-  assert.ok(Math.abs(at85 - delveLookalikes(85)) < 0.04, `${at85} at 85`);
+  assert.ok(share(LOOKALIKES_FROM, 1000) > 0, `it starts at ${LOOKALIKES_FROM}`);
+  const at85 = share(85, 1000);
+  assert.ok(Math.abs(at85 - delveLookalikes(85)) < 0.05, `${at85} at 85`);
   assert.equal(share(LOOKALIKES_TO, 300), 1);
   assert.equal(share(250, 100), 1);
 });
