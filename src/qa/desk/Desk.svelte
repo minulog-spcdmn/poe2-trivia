@@ -7,7 +7,8 @@
   import { catalog } from '../scenes/index.ts';
   import { seatLabel } from '../scene.ts';
   import { sizeOf } from '../sizes.ts';
-  import { isFrameMessage } from '../messages.ts';
+  import { isFrameMessage, type FrameMessage } from '../messages.ts';
+  import { KIND_LABEL, type Problem } from '../frame/checks.ts';
   import { matches, walk, type Stop } from './walk.ts';
   import Stage from './Stage.svelte';
   import Strip from './Strip.svelte';
@@ -22,17 +23,34 @@
 
   const ALL = catalog();
 
-  type View = { id: string | null; q: string; zoomed: boolean };
+  type View = { id: string | null; q: string; zoomed: boolean; outlines: boolean };
   function fromAddress(): View {
     const p = new URLSearchParams(location.search);
     const s = p.get('s');
     const size = p.get('size');
     const seat = p.get('seat');
-    return { id: s && size ? `${s}|${size}|${seat ?? 0}` : null, q: p.get('q') ?? '', zoomed: p.get('z') === '1' };
+    return { id: s && size ? `${s}|${size}|${seat ?? 0}` : null, q: p.get('q') ?? '', zoomed: p.get('z') === '1', outlines: p.get('o') !== '0' };
   }
   const first = fromAddress();
   let query = $state(first.q);
   let zoomed = $state(first.zoomed);
+  let outlines = $state(first.outlines);
+  /** What each stop's frames found wrong, by stop and frame, once checked. */
+  let results = $state<Record<string, Record<string, Extract<FrameMessage, { qa: 'checked' }>>>>({});
+  const bad = $derived(new Set(Object.entries(results).filter(([, bySlot]) => Object.values(bySlot).some((r) => r.problems.length)).map(([id]) => id)));
+  /** The stop's problems, every frame's together. */
+  const problems = $derived.by(() => {
+    const out: Problem[] = [];
+    for (const r of Object.values((stop && results[stop.id]) ?? {}))
+      for (const p of r.problems) {
+        const same = out.find((o) => o.kind === p.kind);
+        if (same) {
+          same.count += p.count;
+          same.examples = [...new Set([...same.examples, ...p.examples])].slice(0, 3);
+        } else out.push({ ...p, examples: [...p.examples] });
+      }
+    return out;
+  });
   const stops = $derived(walk(ALL.filter((s) => matches(s, query))));
   /** The stop shown, by id; a stop the search hides falls back to the walk's first. */
   let wanted = $state<string | null>(first.id);
@@ -80,6 +98,7 @@
     else if (key === 'ArrowDown') goScene(1);
     else if (key === 'ArrowUp') goScene(-1);
     else if (key === 'z' || key === 'Z') zoomed = !zoomed;
+    else if (key === 'o' || key === 'O') outlines = !outlines;
     else if (key === 'r' || key === 'R') reloads++;
     else if (key === '/') searchEl?.focus();
   }
@@ -118,6 +137,7 @@
     }
     if (query) p.set('q', query);
     if (zoomed) p.set('z', '1');
+    if (!outlines) p.set('o', '0');
     const url = `${location.pathname}?${p}`;
     if (url === location.pathname + location.search) return;
     if (lastStop !== null && stop && stop.id !== lastStop) history.pushState(null, '', url);
@@ -131,6 +151,7 @@
       wanted = v.id;
       query = v.q;
       zoomed = v.zoomed;
+      outlines = v.outlines;
     };
     addEventListener('popstate', back);
     return () => removeEventListener('popstate', back);
@@ -140,34 +161,45 @@
 <svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (panning = false))} />
 
 <div class="desk">
-  <header class="top">
-    <p class="where">
-      {#if stop && size}
-        <span class="scene">{stop.scene.label}</span>
-        <span class="sep">•</span>
-        <span>{seats.length > 1 ? `${seats.length} seats` : seats[0]}</span>
-        <span class="sep">•</span>
-        <span>{size.label} <span class="num">{size.w} × {size.h}</span></span>
-      {:else}
-        <span class="scene">No scene matches “{query}”.</span>
+  <div class="heads">
+    <header class="top">
+      <p class="where">
+        {#if stop && size}
+          <span class="scene">{stop.scene.label}</span>
+          <span class="sep">•</span>
+          <span>{seats.length > 1 ? `${seats.length} seats` : seats[0]}</span>
+          <span class="sep">•</span>
+          <span>{size.label} <span class="num">{size.w} × {size.h}</span></span>
+        {:else}
+          <span class="scene">No scene matches “{query}”.</span>
+        {/if}
+      </p>
+      {#if board}
+        <button class="hold" onpointerdown={() => (holding = true)} onpointerup={() => (holding = false)} onpointerleave={() => (holding = false)}>Hold for design <kbd>H</kbd></button>
       {/if}
-    </p>
-    {#if board}
-      <button class="hold" onpointerdown={() => (holding = true)} onpointerup={() => (holding = false)} onpointerleave={() => (holding = false)}>Hold for design <kbd>H</kbd></button>
+      <div class="count">
+        <button aria-label="Previous stop" onclick={() => go(at - 1)} disabled={at === 0}>‹</button>
+        <span class="num">{stops.length ? at + 1 : 0} of {stops.length}</span>
+        <button aria-label="Next stop" onclick={() => go(at + 1)} disabled={at >= stops.length - 1}>›</button>
+      </div>
+      <input class="search" type="search" placeholder="Find a scene  /" bind:value={query} bind:this={searchEl} aria-label="Find a scene" />
+    </header>
+    {#if problems.length}
+      <p class="problems" role="status">
+        {#each problems as p, i (p.kind)}
+          {#if i > 0}<span class="sep">•</span>{/if}
+          <span title={p.examples.join(' • ')}>{KIND_LABEL[p.kind]}{#if p.count > 1}<span class="num times">×{p.count}</span>{/if}<span class="example">{p.examples[0]}</span></span>
+        {/each}
+        <span class="hint"><kbd>O</kbd> {outlines ? 'hides' : 'shows'} the outlines</span>
+      </p>
     {/if}
-    <div class="count">
-      <button aria-label="Previous stop" onclick={() => go(at - 1)} disabled={at === 0}>‹</button>
-      <span class="num">{stops.length ? at + 1 : 0} of {stops.length}</span>
-      <button aria-label="Next stop" onclick={() => go(at + 1)} disabled={at >= stops.length - 1}>›</button>
-    </div>
-    <input class="search" type="search" placeholder="Find a scene  /" bind:value={query} bind:this={searchEl} aria-label="Find a scene" />
-  </header>
+  </div>
 
   {#if stop}
-    <Stage {stop} {seats} {zoomed} {reloads} {panning} board={holding ? board : undefined} />
+    <Stage {stop} {seats} {zoomed} {reloads} {panning} {outlines} board={holding ? board : undefined} onchecked={(id, slot, r) => (results[id] = { ...results[id], [slot]: r })} />
   {:else}
     <div class="empty"></div>
   {/if}
 
-  <Strip {stops} current={stop?.id} onpick={(id) => (wanted = id)} />
+  <Strip {stops} {bad} current={stop?.id} onpick={(id) => (wanted = id)} />
 </div>

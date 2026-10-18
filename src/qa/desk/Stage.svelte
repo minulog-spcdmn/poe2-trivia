@@ -5,11 +5,31 @@
   // for each stop, a moment after the walk stops on it, so flipping through
   // never builds the game's shaders for stops already left behind; the
   // frames of the last stop go first, letting go of their WebGL as they go.
-  import { isFrameMessage } from '../messages.ts';
+  import { untrack } from 'svelte';
+  import { isFrameMessage, type DeskMessage, type FrameMessage } from '../messages.ts';
   import { sizeOf } from '../sizes.ts';
   import type { Stop } from './walk.ts';
 
-  let { stop, seats, zoomed, reloads, panning, board }: { stop: Stop; seats: string[]; zoomed: boolean; reloads: number; panning: boolean; board?: string } = $props();
+  let {
+    stop,
+    seats,
+    zoomed,
+    reloads,
+    panning,
+    outlines,
+    board,
+    onchecked,
+  }: {
+    stop: Stop;
+    seats: string[];
+    zoomed: boolean;
+    reloads: number;
+    panning: boolean;
+    outlines: boolean;
+    board?: string;
+    /** A frame of the stop shown was checked. */
+    onchecked: (stopId: string, slot: string, result: Extract<FrameMessage, { qa: 'checked' }>) => void;
+  } = $props();
 
   const GAP = 24;
   const PAD = 16;
@@ -36,16 +56,25 @@
     const t = setTimeout(() => (shown = { stop: next, take }), SETTLE_MS);
     return () => clearTimeout(t);
   });
+  let frames = $state<HTMLIFrameElement[]>([]);
   $effect(() => {
     const heard = (e: MessageEvent) => {
-      if (e.origin === location.origin && isFrameMessage(e.data) && e.data.qa === 'ready') ready = new Set([...ready, e.data.slot]);
+      if (e.origin !== location.origin || !isFrameMessage(e.data) || !shown || !frames.some((f) => f?.contentWindow === e.source)) return;
+      if (e.data.qa === 'ready') ready = new Set([...ready, e.data.slot]);
+      else if (e.data.qa === 'checked') onchecked(shown.stop.id, e.data.slot, e.data);
     };
     addEventListener('message', heard);
     return () => removeEventListener('message', heard);
   });
+  // Outlines on or off, in the frames up now (a new one is told by its address).
+  $effect(() => {
+    const m: DeskMessage = { qa: 'outlines', on: outlines };
+    for (const f of frames) f?.contentWindow?.postMessage(m, location.origin);
+  });
 
   const src = (s: Stop, i: number) => {
     const p = new URLSearchParams({ frame: `s${i}`, s: s.scene.key, seat: String(s.seats[i]), size: s.size });
+    if (!outlines) p.set('o', '0');
     return `${location.pathname}?${p}`;
   };
 
@@ -73,8 +102,9 @@
           {#if shown}
             {#key shown}
               <iframe
+                bind:this={frames[i]}
                 title={seats[i] ?? 'The game'}
-                src={src(shown.stop, i)}
+                src={untrack(() => src(shown!.stop, i))}
                 style:width="{size.w}px"
                 style:height="{size.h}px"
                 style:transform="scale({scale})"

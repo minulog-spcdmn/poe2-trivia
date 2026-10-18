@@ -7,12 +7,18 @@
 // do. It tells the desk when it is showing, and hands on the desk's keys.
 
 import { emulate } from './emulate.ts';
+import { check, listen, outline } from './checks.ts';
+import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
-import type { FrameMessage } from '../messages.ts';
+import { isDeskMessage, type FrameMessage } from '../messages.ts';
+
+/** How long the page stays still after a change before it's checked again (ms). */
+const RECHECK_MS = 600;
 
 export async function boot(asked: URLSearchParams) {
   const size = sizeOf(isSizeKey(asked.get('size')) ? (asked.get('size') as Parameters<typeof sizeOf>[0]) : 'desktop');
   emulate(size);
+  const heard = listen();
 
   // No room here, so no WebRTC: PeerJS, as the session loads it, checks what
   // the browser supports by opening a connection, a wait the frame can do
@@ -92,6 +98,7 @@ export async function boot(asked: URLSearchParams) {
   autoscroll.installAutoscroll();
   mount(Root, { target: document.getElementById('app')! });
 
+  const slot = asked.get('frame') ?? '';
   const tell = (m: FrameMessage) => parent.postMessage(m, location.origin);
   handOnKeys(tell);
   addEventListener('pagehide', () => {
@@ -99,7 +106,25 @@ export async function boot(asked: URLSearchParams) {
     for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
     clear();
   });
-  tell({ qa: 'ready', slot: asked.get('frame') ?? '' });
+  tell({ qa: 'ready', slot });
+
+  // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
+  outline(asked.get('o') !== '0');
+  addEventListener('message', (e) => {
+    if (e.origin === location.origin && isDeskMessage(e.data)) outline(e.data.on);
+  });
+  const run = async () => {
+    const settled = await settle();
+    const problems = check(heard);
+    tell({ qa: 'checked', slot, settled, problems });
+    (window as Window & { __qa?: unknown }).__qa = { settled, problems };
+  };
+  await run();
+  let again: ReturnType<typeof setTimeout> | undefined;
+  new MutationObserver(() => {
+    clearTimeout(again);
+    again = setTimeout(run, RECHECK_MS);
+  }).observe(document.getElementById('app')!, { childList: true, subtree: true, characterData: true });
 }
 
 /**

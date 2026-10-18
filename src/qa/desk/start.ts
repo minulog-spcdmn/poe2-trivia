@@ -9,7 +9,24 @@ import itemData from '../../data/items.json';
 import fakeNames from '../../data/fakes.json';
 import { Engine, type Item } from '../../lib/game.ts';
 import { useEngine } from '../build/engine.ts';
+import { catalog } from '../scenes/index.ts';
+import { walk } from './walk.ts';
 import Desk from './Desk.svelte';
 
 useEngine(new Engine(itemData as Item[], { fakes: fakeNames }));
 mount(Desk, { target: document.getElementById('app')! });
+
+// For the sweep (scripts/qa.mjs), which opens each stop's frames by itself:
+// every stop, and every frame of it by its address.
+Object.assign(window, {
+  __qaDesk: {
+    stops: () =>
+      walk(catalog()).map((s) => ({
+        id: s.id,
+        scene: s.scene.key,
+        label: s.scene.label,
+        size: s.size,
+        frames: s.seats.map((seat, i) => `?${new URLSearchParams({ frame: `s${i}`, s: s.scene.key, seat: String(seat), size: s.size })}`),
+      })),
+  },
+});

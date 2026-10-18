@@ -103,6 +103,37 @@ html[data-qa='desk'] #app {
   border-color: var(--gold);
 }
 
+/* Only there when the stop has something wrong: what, how often, the first one. */
+.problems {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0;
+  margin: 0;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid #5a2620;
+  background: #1c0e0b;
+  color: #ff8a7a;
+}
+.problems .sep {
+  margin: 0 0.6em;
+  color: #7a3a30;
+}
+.problems .times {
+  margin-left: 0.3em;
+}
+.problems .example {
+  margin-left: 0.5em;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.problems .hint {
+  margin-left: auto;
+  padding-left: 1rem;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
 .stage {
   position: relative;
   display: flex;
@@ -198,4 +229,7 @@ html[data-qa='desk'] #app {
 }
 .strip .mark.bad {
   background: #b5463c;
+}
+.strip .mark.bad.now {
+  background: #ff8a7a;
 }
