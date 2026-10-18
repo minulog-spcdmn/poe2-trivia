@@ -16,9 +16,12 @@ import {
   type Inventory,
   type ItemKind,
 } from './delve.ts';
-import { knobsOf, maxFakes, type Difficulty, type Knobs, type Settings, type VeilSpeed } from './game.ts';
+import { knobsOf, maxFakes, type Difficulty, type GameMode, type Knobs, type Settings, type VeilSpeed } from './game.ts';
 
 /** Display names, in the order the lobby offers them. */
+/** The modes by name, as the lobby offers them and the end screen heads its panel. */
+export const MODE_NAMES: Record<GameMode, string> = { turns: 'Take turns', race: 'Race', delve: 'Delve' };
+
 export const DIFFICULTY_NAMES: Record<Difficulty, string> = {
   cruel: 'Cruel',
   merciless: 'Merciless',
@@ -27,7 +30,7 @@ export const DIFFICULTY_NAMES: Record<Difficulty, string> = {
 };
 
 const NUMBER = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
-const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
+export const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
 
 type Often = 'Never' | 'Some' | 'Half' | 'Always';
 /** How often something happens, for knobs that are a chance or a share. */
@@ -143,7 +146,7 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
 
 /** Small numbers in words, for the notes under the cards. */
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
-const words = (n: number) => WORDS[n] ?? String(n);
+export const words = (n: number) => WORDS[n] ?? String(n);
 /** How many times, in words: "once", "twice", "three times". */
 const timesWord = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${words(n)} times`);
 

@@ -1,0 +1,72 @@
+// Every scene the QA desk walks, in the order it walks them: by screen, as
+// a game goes (SCREENS in ../scene.ts), then as each file lists them.
+// Call useItems (../build/engine.ts), and useCaptured (./captured.ts) for the
+// scenes saved from live rooms, before catalog().
+
+import { SCREENS, type Knob, type Scene } from '../scene.ts';
+import type { PlateName } from '../../lib/plates/index.ts';
+import type { SizeKey } from '../sizes.ts';
+import { endScenes, type EndView } from './over.ts';
+import { homeScenes } from './home.ts';
+import { lobbyScenes } from './lobby.ts';
+import { gameScenes } from './game.ts';
+import { codexScenes } from './codex.ts';
+import { overlayScenes } from './overlays.ts';
+import { capturedScenes } from './captured.ts';
+
+/** The end screen page's windows, as the desk's sizes. */
+const END_SIZE: Record<EndView, SizeKey> = {
+  desktop: 'desktop',
+  air13: 'laptop',
+  tablet: 'tablet',
+  phone: 'phone390',
+  phone375: 'phone',
+  narrow: 'narrow',
+  big: 'uhd150',
+  landscape: 'landscape',
+};
+
+/** The circle behind the end screen: the one the game falls to, or any of the five. */
+const CIRCLE: Knob = {
+  key: 'circle',
+  label: 'Circle',
+  default: 'auto',
+  options: [
+    { value: 'auto', label: 'As the game picks' },
+    { value: 'eye', label: 'Eye' },
+    { value: 'moth', label: 'Moth' },
+    { value: 'monad', label: 'Monad' },
+    { value: 'rose', label: 'Rose' },
+    { value: 'blackSun', label: 'Black sun' },
+  ],
+};
+
+function overScenes(): Scene[] {
+  return endScenes().map((e) => {
+    const { key, group, label, boards, view, mode, me, ...built } = e;
+    return {
+      key: `over/${key}`,
+      screen: 'over',
+      group,
+      label,
+      seats: [{ mode, me }],
+      sizes: [END_SIZE[view]],
+      boards: boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board])),
+      knobs: [CIRCLE],
+      build: (k) => ({ ...built, circle: k?.circle && k.circle !== 'auto' ? (k.circle as PlateName) : null }),
+    };
+  });
+}
+
+let built: Scene[] | null = null;
+
+/** Every scene, built once. */
+export function catalog(): Scene[] {
+  if (built) return built;
+  const all = [...homeScenes(), ...lobbyScenes(), ...gameScenes(), ...overScenes(), ...codexScenes(), ...overlayScenes(), ...capturedScenes()];
+  const order = new Map(SCREENS.map((s, i) => [s.key, i]));
+  built = all.map((s, i) => [s, i] as const).sort(([a, i], [b, j]) => order.get(a.screen)! - order.get(b.screen)! || i - j).map(([s]) => s);
+  return built;
+}
+
+export const sceneByKey = (key: string | null) => (key ? catalog().find((s) => s.key === key) : undefined);

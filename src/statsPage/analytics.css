@@ -1,0 +1,180 @@
+/*
+ * Analytics (stats.html): what its views share. Numbers and words in Inter,
+ * which reads from across a room, figures in fixed widths so columns line
+ * up; the game's own fonts only for its name and the headings.
+ *
+ * Five colours, each with one meaning and no other:
+ *   gold    this period, the figure looked at
+ *   grey    the period before, or what's set against it ("missed")
+ *   green   better than before
+ *   red     worse than before, or a problem
+ *   ink     everything else, in two strengths
+ */
+:root {
+  --a-ink: #efe6d6;
+  --a-text: #d2c8b6;
+  --a-muted: #a39883;
+  --a-now: #d9b062;
+  --a-before: #7a7163;
+  --a-up: #5cbb8c;
+  --a-down: #ec6650;
+  --a-surface: #15120e;
+  --a-rule: rgba(163, 152, 131, 0.2);
+  --a-track: rgba(163, 152, 131, 0.13);
+  --font-data: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.analytics {
+  font-family: var(--font-data);
+  font-size: 1.125rem;
+  line-height: 1.5;
+  color: var(--a-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A table of figures: names left, numbers right, a bar where a column is compared. */
+.analytics .table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.analytics .table th,
+.analytics .table td {
+  padding: 0.7rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--a-rule);
+  vertical-align: middle;
+}
+.analytics .table th:first-child,
+.analytics .table td:first-child {
+  padding-left: 0;
+}
+.analytics .table th:last-child,
+.analytics .table td:last-child {
+  padding-right: 0;
+}
+.analytics .table thead th {
+  padding-top: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--a-muted);
+  border-bottom-color: rgba(163, 152, 131, 0.4);
+  white-space: nowrap;
+}
+.analytics .table tbody th {
+  font-weight: 500;
+  color: var(--a-ink);
+}
+.analytics .table .n {
+  text-align: right;
+  white-space: nowrap;
+}
+.analytics .table .soft {
+  color: var(--a-muted);
+}
+.analytics .table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.analytics .table tfoot th,
+.analytics .table tfoot td {
+  font-weight: 600;
+  color: var(--a-ink);
+  border-top: 1px solid rgba(163, 152, 131, 0.4);
+  border-bottom: 0;
+}
+
+/* A table's bar column takes what its figures leave, so a name and its figures stay together however wide the screen. */
+.analytics .table th.bar,
+.analytics .table td.bar {
+  width: 100%;
+}
+/* (So the names beside it keep to a line, where there's room for a bar at all.) */
+@media (min-width: 601px) {
+  .analytics .table:has(.bar) th[scope='row'] {
+    white-space: nowrap;
+  }
+}
+
+/* A bar in a cell, as long as its figure against the column's largest. */
+.analytics .meter {
+  display: block;
+  min-width: 4rem;
+  height: 0.75rem;
+  background: var(--a-track);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.analytics .meter > i {
+  display: block;
+  height: 100%;
+  background: var(--a-now);
+  border-radius: 2px;
+}
+
+.analytics .up {
+  color: var(--a-up);
+}
+.analytics .down {
+  color: var(--a-down);
+}
+.analytics .flat {
+  color: var(--a-muted);
+}
+
+/* Tables too wide for a phone scroll on their own, never the page. */
+.analytics .scroll-x {
+  overflow-x: auto;
+}
+
+@media (max-width: 600px) {
+  .analytics {
+    font-size: 1rem;
+  }
+  .analytics .table th,
+  .analytics .table td {
+    padding: 0.55rem 0.45rem;
+  }
+  .analytics .table thead th {
+    font-size: 0.9rem;
+    white-space: normal;
+  }
+  /* A phone keeps a table to its width: a bar beside a percent says nothing the percent doesn't, and a column marked .opt says its piece under the row's name instead. */
+  .analytics .table .bar,
+  .analytics .table .opt {
+    display: none;
+  }
+}
+/* What a phone shows under a row's name in place of its hidden columns (.opt). */
+.analytics .table .on-phone {
+  display: none;
+}
+@media (max-width: 600px) {
+  .analytics .table .on-phone {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: var(--a-muted);
+  }
+}
+
+/* A link to the view that tells more, at a section's heading. */
+.analytics .to-view {
+  font-weight: 600;
+  color: var(--gold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.analytics .to-view:hover {
+  color: var(--gold-hi);
+  text-decoration: underline;
+}
+
+/* A name that opens its player group (#groups): underlined lightly, gold when pointed at. */
+.analytics .pick {
+  color: var(--a-ink);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(217, 176, 98, 0.5);
+}
+.analytics .pick:hover {
+  color: var(--gold-hi);
+  border-bottom-color: var(--gold-hi);
+}

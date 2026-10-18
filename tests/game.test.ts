@@ -18,7 +18,7 @@ function seeded(seed: number) {
 }
 
 function setup(names: string[], target = 3, difficulty: Difficulty = 'cruel') {
-  const engine = new Engine(items, { rng: seeded(42) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(42) });
   let s: GameState = createGame('p0', { targetScore: target, timer: 0, difficulty });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s };
@@ -116,7 +116,7 @@ test('play again drops players who left, and the first turn goes to someone pres
   assert.deepEqual(s.players.map((p) => p.id).sort(), ['p0', 'p2']);
   // A player who drops out in the lobby before the start never gets the first turn.
   for (let seed = 1; seed <= 20; seed++) {
-    const e = new Engine(items, { rng: seeded(seed) });
+    const e = new Engine(items, { autoClock: true, rng: seeded(seed) });
     let t = setup(['Ash', 'Bram', 'Cora']).s;
     t = e.apply(t, { type: 'connection', playerId: 'p2', connected: false }, null);
     t = e.apply(t, { type: 'start' }, 'p0');
@@ -301,7 +301,7 @@ test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     const rules = PRESETS[difficulty];
     let { s } = setup(['Ash'], 3, difficulty);
-    const engine = new Engine(items, { rng: seeded(42), fakes });
+    const engine = new Engine(items, { autoClock: true, rng: seeded(42), fakes });
     s = engine.apply(s, { type: 'start' }, 'p0');
     const modes = new Set<string>();
     for (let turn = 0; turn < 40; turn++) {
@@ -346,7 +346,7 @@ test('difficulties scale options, decoy kind and question types', () => {
 
 test('a question that mixes groups shows each as often as the others', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
-    const engine = new Engine(items, { rng: seeded(11), fakes });
+    const engine = new Engine(items, { autoClock: true, rng: seeded(11), fakes });
     let mixed = 0;
     for (const category of engine.categories) {
       const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
@@ -371,7 +371,7 @@ test('a question that mixes groups shows each as often as the others', () => {
 
 test('ten options: a small group shares the question as five beside five of another, made-up names in both', () => {
   const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0 };
-  const engine = new Engine(items, { rng: seeded(5), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(5), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
   const answered = new Set<string>();
   let fives = 0;
@@ -398,7 +398,7 @@ test('ten options: a small group shares the question as five beside five of anot
 
 test('ten options: a tablet, too few to fill ten and never mixed, is asked with eight', () => {
   const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0.5 };
-  const engine = new Engine(items, { rng: seeded(11), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(11), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
   let tablets = 0;
   for (let i = 0; i < 600; i++) {
@@ -418,7 +418,7 @@ test('ten options: a tablet, too few to fill ten and never mixed, is asked with 
 });
 
 test('the topic counts a made-up name under the item it copies', () => {
-  const engine = new Engine(items, { rng: seeded(7), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(7), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
   const category = 'Flasks, Charms, Jewels, Relics & Tablets';
   let mixed = 0;
@@ -471,7 +471,7 @@ test('similar-looking names rank above unrelated ones', () => {
 });
 
 test('lineage gems are a category', () => {
-  const engine = new Engine(items);
+  const engine = new Engine(items, { autoClock: true, autoClock: true });
   assert.ok(engine.categories.includes('Lineage Gems'));
   assert.ok(engine.byCategory.get('Lineage Gems')!.length >= 20);
 });
@@ -571,7 +571,7 @@ test('guests never see the answer before the reveal', () => {
 });
 
 test('eternal mirrors some pictures, each on its own roll', () => {
-  const engine = new Engine(items, { rng: seeded(9) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(9) });
   for (const difficulty of ['cruel', 'merciless'] as Difficulty[]) {
     const s = createGame(null, { targetScore: 5, timer: 0, difficulty, mode: 'turns', public: false, locked: false });
     for (let i = 0; i < 200; i++) {
@@ -618,7 +618,7 @@ test('guests only learn which pictures were mirrored at the reveal', () => {
 });
 
 test('an item drawn more than one way shows each of its art about as often', () => {
-  const engine = new Engine(items, { rng: seeded(7), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(7), fakes });
   const s = createGame(null, { targetScore: 5, timer: 0, difficulty: 'merciless', mode: 'turns', public: false, locked: false });
   const drawn = new Map<string, number[]>();
   for (let i = 0; i < 8000; i++) {
@@ -706,7 +706,7 @@ test('guests cannot act for others, join locked rooms, or impersonate', () => {
 });
 
 test('tablets are rarer answers and only fill in as decoys', () => {
-  const engine = new Engine(items, { rng: seeded(7) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(7) });
   const cat = 'Flasks, Charms, Jewels, Relics & Tablets';
   const inCat = engine.byCategory.get(cat)!;
   const tablets = inCat.filter((it) => it.group === 'Tablets').length;
@@ -798,7 +798,7 @@ test('deathmatch: a disconnected duelist forfeits', () => {
 
 test('the answer is not the name that fits the other options best', () => {
   // Pick the option whose name is most (or least) like the others: neither may beat a blind guess by much.
-  const engine = new Engine(items, { rng: seeded(11) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(11) });
   for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) {
     const N = 3000;
     let most = 0;
@@ -820,7 +820,7 @@ test('the answer is not the name that fits the other options best', () => {
 });
 
 test('earlier answers never come back as decoys, until the category starts over', () => {
-  const engine = new Engine(items, { rng: seeded(5) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(5) });
   let s: GameState = createGame(null, { targetScore: 99, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, null);
@@ -842,7 +842,7 @@ test('earlier answers never come back as decoys, until the category starts over'
 });
 
 test('a tablet answer gets tablet decoys, so a tablet among the options gives nothing away', () => {
-  const engine = new Engine(items, { rng: seeded(3) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(3) });
   const cat = 'Flasks, Charms, Jewels, Relics & Tablets';
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Difficulty[]) {
     for (let i = 0; i < 1500; i++) {
@@ -855,7 +855,7 @@ test('a tablet answer gets tablet decoys, so a tablet among the options gives no
 });
 
 test('a tablet answer still gets only tablet decoys once earlier tablets have been used', () => {
-  const engine = new Engine(items, { rng: seeded(11) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(11) });
   const cat = 'Flasks, Charms, Jewels, Relics & Tablets';
   for (const difficulty of ['merciless', 'eternal'] as Difficulty[]) {
     let tabletQuestions = 0;
@@ -877,7 +877,7 @@ test('a tablet answer still gets only tablet decoys once earlier tablets have be
 
 test('question ids keep increasing even if the clock goes back', () => {
   let clock = 1_000_000;
-  const engine = new Engine(items, { rng: seeded(9), now: () => clock });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(9), now: () => clock });
   let s: GameState = createGame(null, { targetScore: 99, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, null);
@@ -893,7 +893,7 @@ test('question ids keep increasing even if the clock goes back', () => {
 });
 
 test('removing the last seat on their turn still ends the round (and the game)', () => {
-  const engine = new Engine(items, { rng: seeded(42) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(42) });
   let s: GameState = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   ['Ash', 'Bram', 'Cora'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   s = engine.apply(s, { type: 'start' }, null);
@@ -907,7 +907,7 @@ test('removing the last seat on their turn still ends the round (and the game)',
 });
 
 test('removing a player seated before the active duelist keeps their question', () => {
-  const engine = new Engine(items, { rng: seeded(42) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(42) });
   let s: GameState = createGame(null, { targetScore: 1, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   ['Ash', 'Bram', 'Cora', 'Dax'].forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   s = engine.apply(s, { type: 'start' }, null);
@@ -1005,7 +1005,7 @@ test('turns: an answer landing just after time ran out is dropped quietly', () =
 test('reveals are stamped with the host clock; only the host or (turns) whoever answered moves on', () => {
   for (const mode of ['turns', 'race'] as const) {
     let clock = 5_000_000;
-    const engine = new Engine(items, { rng: seeded(3), now: () => clock });
+    const engine = new Engine(items, { autoClock: true, rng: seeded(3), now: () => clock });
     let s: GameState = createGame('p0', { targetScore: 9, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
     for (const [i, name] of ['Ash', 'Bram', 'Cora'].entries()) s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`);
     s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1080,7 +1080,7 @@ test('a guest waits for a seat in a full lobby, and gets one freed at the start'
 });
 
 test('a full hot-seat lobby turns the thirteenth player down rather than seating them to watch', () => {
-  const engine = new Engine(items, { rng: seeded(42) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(42) });
   let s: GameState = createGame(null, { targetScore: 3, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, null)));
@@ -1096,7 +1096,7 @@ test('a full lobby with no room left to watch from turns a newcomer away', () =>
 });
 
 test('merciless and eternal swap decoys on name questions for made-up names', () => {
-  const engine = new Engine(items, { rng: seeded(21), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(21), fakes });
   const byId = new Map(items.map((it) => [it.id, it]));
   const cruel = createGame(null, { targetScore: 5, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   for (let i = 0; i < 200; i++) {
@@ -1138,7 +1138,7 @@ test('merciless and eternal swap decoys on name questions for made-up names', ()
 });
 
 test('made-up names stay hidden until the reveal, and never count as used items', () => {
-  const engine = new Engine(items, { rng: seeded(4), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(4), fakes });
   let s: GameState = createGame('p0', { targetScore: 3, timer: 0, difficulty: 'eternal', mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1159,7 +1159,7 @@ test('made-up names stay hidden until the reveal, and never count as used items'
 
 test('a made-up name someone fell for is not used again in that room', () => {
   for (const mode of ['turns', 'race'] as const) {
-    const engine = new Engine(items, { rng: seeded(8), fakes });
+    const engine = new Engine(items, { autoClock: true, rng: seeded(8), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'eternal', mode, public: false, locked: false });
     s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
     s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1263,7 +1263,7 @@ test('a preset unveils the art only in race; a custom unveil works in both modes
   for (const mode of ['turns', 'race'] as const) {
     for (const difficulty of ['merciless', 'eternal', 'custom'] as Difficulty[]) {
       const custom = { ...PRESETS.cruel, artChance: 0, veil: 'fast' as const };
-      const engine = new Engine(items, { rng: seeded(5), fakes });
+      const engine = new Engine(items, { autoClock: true, rng: seeded(5), fakes });
       let s: GameState = createGame('p0', { targetScore: 99, timer: 20, difficulty, custom, mode, public: false, locked: false });
       s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
       s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1310,7 +1310,7 @@ test('the host can tune a custom difficulty, one knob at a time, within the allo
 
 test('custom questions follow the knobs', () => {
   const custom = { options: 10, similarNames: 0, fakes: 1, artChance: 1, veil: 'off', grayscale: 'all', mirror: 0.3, lockout: 2 } as const;
-  const engine = new Engine(items, { rng: seeded(9), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(9), fakes });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1330,7 +1330,7 @@ test('custom questions follow the knobs', () => {
 });
 
 test('a lockout of 0 locks nothing', () => {
-  const engine = new Engine(items, { rng: seeded(4) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(4) });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom: { ...PRESETS.cruel, lockout: 0 }, mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1375,7 +1375,7 @@ test("a preset's knobs show its unveil only in race, so a custom copy plays the 
 
 test('the levels past Eternal: ten options, three made-up names', () => {
   const custom = { ...PRESETS.eternal, options: 10, fakes: 3, artChance: 0 };
-  const engine = new Engine(items, { rng: seeded(21), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(21), fakes });
   let s: GameState = createGame('p0', { targetScore: 99, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
   s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1400,7 +1400,7 @@ test('six options with three made-up names show all three, even when groups mix'
   // question instead, unless picture questions are off.
   const play = (artChance: number, seed: number, check: (q: Question, mixed: boolean) => void) => {
     const custom = { ...PRESETS.eternal, options: 6, fakes: 3, artChance };
-    const engine = new Engine(items, { rng: seeded(seed), fakes });
+    const engine = new Engine(items, { autoClock: true, rng: seeded(seed), fakes });
     let s: GameState = createGame('p0', { targetScore: 999, timer: 0, difficulty: 'custom', custom, mode: 'turns', public: false, locked: false });
     s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Ash' }, 'p0');
     s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1457,7 +1457,7 @@ for (const difficulty of ['cruel', 'eternal'] as Difficulty[]) test(`${difficult
 
 test('art questions lean toward whoever has had too few, one tally per player', () => {
   // A roll that always says "name" until the lean outweighs it.
-  const engine = new Engine(items, { rng: () => 0.99 });
+  const engine = new Engine(items, { autoClock: true, rng: () => 0.99 });
   let s: GameState = createGame('p0', { ...createGame(null).settings, timer: 0, difficulty: 'cruel' });
   for (const id of ['p0', 'p1']) s = engine.apply(s, { type: 'join', playerId: id, name: id }, id);
   s = engine.apply(s, { type: 'start' }, 'p0');
@@ -1490,7 +1490,8 @@ test('a question thrown out for failed art does not count toward the art lean', 
 });
 
 test('the held name is refused until the device is unlocked', async () => {
-  const { heldKeyHash, isHeldName, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  const { isHeldName, nameHeld, unlockHeldName } = await import('../src/lib/names.ts');
+  const { ownerPublicKey } = await import('../src/lib/ownerKey.ts');
   for (const n of ['zoe_arcana', 'Zoe Arcana', 'zoe-arcana', 'Z0E_ARCANA', 'ｚｏｅ＿ａｒｃａｎａ']) assert.ok(isHeldName(n), n);
   for (const n of ['zoe', 'arcana', 'Doryani', 'zoe_arcana2x', '']) assert.ok(!isHeldName(n), n);
   const store = new Map<string, string>();
@@ -1500,15 +1501,18 @@ test('the held name is refused until the device is unlocked', async () => {
     value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
   });
   try {
-    // The real key is not in the repo, so this runs against a test key's hash.
-    const hash = await heldKeyHash('test words');
-    assert.equal(nameHeld('Doryani', hash), false);
-    assert.equal(nameHeld('Zoe_Arcana', hash), true);
-    assert.equal(await unlockHeldName('nope', hash), false);
-    assert.equal(nameHeld('Zoe_Arcana', hash), true, 'a wrong key unlocks nothing');
-    assert.equal(await unlockHeldName('Test-Words', hash), true, 'case and dashes do not count');
-    assert.equal(nameHeld('zoe_arcana', hash), false, 'unlocked on this device');
-    assert.equal(nameHeld('zoe_arcana'), true, 'a device unlocked for another key stays locked');
+    // The real words are not in the repo, so this runs against a test key.
+    const key = await ownerPublicKey('test words');
+    assert.equal(nameHeld('Doryani', key), false);
+    assert.equal(nameHeld('Zoe_Arcana', key), true);
+    assert.equal(await unlockHeldName('nope', key), false);
+    assert.equal(nameHeld('Zoe_Arcana', key), true, 'wrong words unlock nothing');
+    // The hash the source used to hold, now no secret at all, unlocks nothing either.
+    store.set('poe2trivia.owner', '5ddd2ad1ad21e94175a14999359a9e8b2b508a70c769f49f71a6d94e5821a607');
+    assert.equal(nameHeld('Zoe_Arcana', key), true);
+    assert.equal(await unlockHeldName('Test-Words', key), true, 'case and dashes do not count');
+    assert.equal(nameHeld('zoe_arcana', key), false, 'unlocked on this device');
+    assert.equal(nameHeld('zoe_arcana', 'A'.repeat(43)), true, 'a device unlocked for another key stays locked');
   } finally {
     if (had) Object.defineProperty(globalThis, 'localStorage', had);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
@@ -1576,4 +1580,20 @@ test('names need at least two characters', () => {
   s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bo' }, 'p1');
   assert.equal(s.players[1].name, 'Bo');
   assert.throws(() => engine.apply(s, { type: 'rename', playerId: 'p1', name: 'B' }, 'p1'), /at least 2/);
+});
+
+test("the owner's place in the game goes only to whoever joins under the held name", () => {
+  let { engine, s } = setup(['Ash', 'Bram']);
+  // A seat coming back keeps its own name: a checked signature sent with it names nobody.
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Zoe Arcana', returning: true, owner: true }, 'p1');
+  assert.equal(s.owner, undefined);
+  assert.equal(s.players.find((p) => p.id === 'p1')!.name, 'Bram');
+  // Nor one under another name.
+  s = engine.apply(s, { type: 'join', playerId: 'p2', name: 'Cass', owner: true }, 'p2');
+  assert.equal(s.owner, undefined);
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: true }, 'z');
+  assert.deepEqual(s.owner, { id: 'z' });
+  // A guest can't put it on anyone (only the host, for itself).
+  assert.throws(() => engine.apply(s, { type: 'owner', playerId: 'p1' }, 'p1'), /Not allowed/);
+  assert.deepEqual(engine.apply(s, { type: 'owner', playerId: 'p0' }, 'p0').owner, { id: 'p0' });
 });

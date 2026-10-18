@@ -3,12 +3,13 @@
   import { fade, fly, scale, slide } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_SPECTATORS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
-  import { DIFFICULTY_NAMES, describe } from '../lib/difficultyText';
+  import { DIFFICULTY_NAMES, MODE_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
-  import { MAX_NAME, isHeldName, nameRefusal, nameTooShort } from '../lib/names';
+  import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
+  import { creatorShown } from '../lib/creator';
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
@@ -34,9 +35,9 @@
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
-    { id: 'turns', name: 'Take turns' },
-    { id: 'race', name: 'Race' },
-    { id: 'delve', name: 'Delve', isNew: true },
+    { id: 'turns', name: MODE_NAMES.turns },
+    { id: 'race', name: MODE_NAMES.race },
+    { id: 'delve', name: MODE_NAMES.delve, isNew: true },
   ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
@@ -84,7 +85,7 @@
   /** Svelte action: a new player's row arrives with a flash (zoe_arcana's is her own). */
   function arriving(node: HTMLElement, name: string) {
     if (!settled) return;
-    const t = setTimeout(() => (isHeldName(name) ? creatorArrived(node) : playerArrived(node)), 120);
+    const t = setTimeout(() => (creatorShown(name) ? creatorArrived(node) : playerArrived(node)), 120);
     return { destroy: () => clearTimeout(t) };
   }
 

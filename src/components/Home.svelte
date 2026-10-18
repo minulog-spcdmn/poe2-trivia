@@ -7,7 +7,6 @@
   import { motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
-  import { CREATOR, CREATOR_URL, DONATE_URL, IMPRINT_URL, PRIVACY_URL } from '../lib/site';
   import { refuse } from '../lib/fx/moments';
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
@@ -24,14 +23,23 @@
   import MenuCursor from './MenuCursor.svelte';
   import OpenRooms from './OpenRooms.svelte';
   import DrawnMark from './DrawnMark.svelte';
+  import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
+  import { warmPlate } from '../lib/plateStore.svelte';
+  import { circleAtPlace } from '../lib/circlePlaces';
+  import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
 
   const params = new URLSearchParams(location.search);
   /** An invite link's room (?room=CODE): the start page shows it until it is joined or left. */
-  let invite = $state(cleanCode(params.get('room') ?? ''));
+  const linked = cleanCode(params.get('room') ?? '');
+  let invite = $state(linked);
+  /** How a join of the room in the address started: an invite link, or a room tapped in the Open rooms list whose newer host it reloaded into (count.ts cameFromThisSite). */
+  const inviteVia: JoinVia = cameFromThisSite ? 'open-rooms' : 'invite-link';
+  // (Not counted on coming from this site, the Open rooms case: countArrival leaves that out.)
+  if (linked) countArrival('open/invite-link');
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -54,6 +62,7 @@
   // chosen in the lobby they open. Not over a game that's being resumed:
   // App resumes it on mount, after this, so look once that's had its turn.
   if (params.has(DELVE_LINK_PARAM)) {
+    countArrival('open/delve-link');
     const url = new URL(location.href);
     url.searchParams.delete(DELVE_LINK_PARAM);
     history.replaceState(history.state, '', url);
@@ -168,6 +177,9 @@
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
+  /** The Codex's collection circle, built ahead away from the page once its entry is pointed at (the Codex warms the rest as it opens). */
+  const warmCodex = (e: Entry) => e === 'codex' && warmPlate(circleAtPlace('collection'));
+  $effect(() => void warmCodex(ENTRIES[cursor]));
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
@@ -293,7 +305,8 @@
       return;
     }
     if (code.length < CODE_LENGTH) return codeShort();
-    startJoin(code, n);
+    // A join that failed left its code here: trying it again is still the try it was (an invite link's, say).
+    startJoin(code, n, 'join', left?.code === code ? left.via : 'code');
   }
   /** The Code too short notice up, if one is: it goes once the code is whole. */
   let shortNotice: number | null = null;
@@ -369,24 +382,28 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n, inPlace ? 'rooms' : 'join');
+    startJoin(roomCode, n, inPlace ? 'rooms' : 'join', 'open-rooms');
   }
 
   // A join that ends back here without a room (no such room, no answer):
   // its code is the one to check, and the toast (session.fail) says why. Not
   // one tapped in the Open rooms list in its own place: nobody typed that code,
   // and Join's field is out of sight up the page.
-  let joining: string | null = null;
-  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms' = 'join') {
-    joining = roomCode;
+  let joining: { code: string; via: JoinVia } | null = null;
+  /** The join that failed last, its code left in Join a room's field. */
+  let left: { code: string; via: JoinVia } | null = null;
+  /** `via`: where the join started, for the counts (lib/count.ts). */
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms', via: JoinVia) {
+    joining = { code: roomCode, via };
     busy = from;
-    session.join(roomCode, n);
+    session.join(roomCode, n, false, via);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
   }
   function settle() {
     if (joining && !session.state && busy !== 'rooms') {
-      code = joining;
+      code = joining.code;
+      left = joining;
       codeError = true;
       if (!invite) open = 'join';
     }
@@ -477,7 +494,7 @@
     e?.preventDefault();
     const n = checkName(inviteName, inviteField);
     if (!n) return;
-    startJoin(invite, n);
+    startJoin(invite, n, 'join', inviteVia);
   }
   function leaveInvite() {
     const url = new URL(location.href);
@@ -503,7 +520,7 @@
     leaveInvite();
     cursor = ENTRIES.indexOf('join');
     setTimeout(() => {
-      if (session.status === 'idle' && !session.state) startJoin(code, name);
+      if (session.status === 'idle' && !session.state) startJoin(code, name, 'join', inviteVia);
     });
   } else if (opened.code) {
     // A first visit: the room is asked whose it is and how it stands, so the
@@ -710,7 +727,7 @@
         <!-- Hot-seat and the Codex: set as the list's entries are, side by side. -->
         <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
           {#each PAIR as { e, name } (e)}
-            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)}>
+            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => warmCodex(e)} onfocus={() => warmCodex(e)}>
               <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
               {#each pairLines[e] as line}<span class="pair-line">{line}</span>{/each}
             </button>
@@ -775,29 +792,7 @@
     </div>
   {/if}
 
-  <footer>
-    <div class="rule" aria-hidden="true"></div>
-    <div class="band">
-      <div class="made">
-        <p class="credit">Made by <a class="maker" href={CREATOR_URL} target="_blank" rel="noopener noreferrer" title="{CREATOR} on Twitch">{CREATOR}</a></p>
-        <a class="support" href={DONATE_URL} target="_blank" rel="noopener noreferrer" aria-describedby="support-note">
-          <!-- Its box is the heart's own outline, so the heart itself sits centred beside the text. -->
-          <svg viewBox="5 6 14 14" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg>
-          Support the project
-          <span class="tip" id="support-note" role="tooltip">Optional tips help pay for the domain and development. Everything stays free.</span>
-        </a>
-      </div>
-      <p class="fine">
-        Unofficial fan project. Path of Exile is a trademark of Grinding Gear Games, who do not endorse this site. Data and art:
-        <a href="https://poe2db.tw/us/Unique_item" target="_blank" rel="noreferrer">poe2db.tw</a>
-      </p>
-      <nav class="legal" aria-label="Legal">
-        <a href={IMPRINT_URL}>Impressum</a>
-        <span aria-hidden="true">·</span>
-        <a href={PRIVACY_URL}>Datenschutz</a>
-      </nav>
-    </div>
-  </footer>
+  <div class="foot"><SiteFooter /></div>
 </div>
 
 <style>
@@ -845,7 +840,7 @@
     margin-top: 44px;
     transition: opacity 0.3s;
   }
-  footer {
+  .foot {
     grid-area: foot;
     margin-top: 32px;
   }
@@ -1307,158 +1302,6 @@
     color: #ab9d88;
   }
 
-  /* ---- the footer band ---- */
-  /* A plain hairline, brightest in the middle, fading out at both ends. */
-  .rule {
-    height: 1px;
-    margin: 0 4%;
-    background: linear-gradient(90deg, transparent, rgba(125, 99, 51, 0.35) 20%, rgba(201, 164, 92, 0.55) 50%, rgba(125, 99, 51, 0.35) 80%, transparent);
-  }
-  /* One line on the page's axis. No diamonds between the groups (the diamond
-     means the menu's cursor, a chosen thing): space alone sets them apart,
-     28 px between groups against 12 px inside one. */
-  .band {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 12px 28px;
-    margin-top: 22px;
-  }
-  .made {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  /* The footer's type is the display face, as drawn (handoff: Footer band). */
-  .credit {
-    margin: 0;
-    white-space: nowrap;
-    font-family: var(--font-display);
-    font-size: 13px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #9b8e89;
-  }
-  .maker {
-    font-size: 15px;
-    letter-spacing: 0.04em;
-    text-transform: none;
-    color: var(--gold-hi);
-    text-decoration: none;
-    border-bottom: 1px dotted var(--gold-lo);
-    transition:
-      color 0.2s,
-      border-color 0.2s;
-  }
-  .maker:hover {
-    color: #fff1cf;
-    border-bottom-color: var(--gold);
-  }
-  .support {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    height: 26px;
-    padding: 0 11px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    font-family: var(--font-display);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    text-decoration: none;
-    white-space: nowrap;
-    color: #bcb0a6;
-    background: rgba(0, 0, 0, 0.3);
-    transition:
-      color 0.2s,
-      border-color 0.2s,
-      background 0.2s;
-  }
-  .support:hover {
-    color: #ffd7c2;
-    border-color: #8c3a2c;
-    background: rgba(140, 58, 44, 0.2);
-  }
-  .support svg {
-    width: 7px;
-    height: 7px;
-    fill: #c0463c;
-  }
-  /* Its note as a tooltip, over the pill. */
-  .tip {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 10px);
-    width: 260px;
-    translate: -50% 4px;
-    padding: 0.55rem 0.8rem;
-    font-family: var(--font-body);
-    font-size: 15px;
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: 0;
-    text-transform: none;
-    /* The pill keeps to one line; its note wraps inside its box. */
-    white-space: normal;
-    line-height: 1.35;
-    color: var(--text);
-    background: rgba(12, 10, 8, 0.96);
-    border: 1px solid var(--gold-lo);
-    border-radius: 4px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition:
-      opacity 0.2s,
-      translate 0.2s var(--ease-out),
-      visibility 0s 0.2s;
-  }
-  .support:hover .tip {
-    opacity: 1;
-    visibility: visible;
-    translate: -50% 0;
-    transition:
-      opacity 0.2s,
-      translate 0.2s var(--ease-out);
-  }
-  .support:focus-visible .tip {
-    opacity: 1;
-    visibility: visible;
-    translate: -50% 0;
-  }
-  .fine {
-    margin: 0;
-    text-align: center;
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--muted);
-  }
-  .fine a,
-  .legal a {
-    color: inherit;
-    text-decoration-color: var(--gold-lo);
-    text-underline-offset: 3px;
-  }
-  /* As on the other pages: no underline, the footer's muted colour. */
-  .legal a {
-    text-decoration: none;
-  }
-  .legal {
-    display: flex;
-    gap: 0.4rem;
-    font-size: 13px;
-    color: var(--muted);
-  }
-  .fine a:hover,
-  .legal a:hover {
-    color: var(--gold-hi);
-  }
-
   /* Short windows (laptops): a tighter rhythm, so the first row of open
      rooms is in view on a 1440 x 725 window and the next one peeks out. */
   @media (max-height: 859px) and (min-width: 1081px) {
@@ -1538,10 +1381,6 @@
     .compact.invited .today {
       padding-top: 40px;
     }
-    .band {
-      flex-direction: column;
-      gap: 14px;
-    }
   }
   /* Phones: tighter gutters and a smaller title (the column stays at most 560 px); no cursor. */
   @media (max-width: 640px) {
@@ -1594,10 +1433,6 @@
     .slot.row .btn {
       flex: 1 0 auto;
     }
-    .made {
-      flex-direction: column;
-      gap: 14px;
-    }
   }
   /* One column on a short screen (a phone on its side): the phone's title,
      so the actions start within the first screen. Not on a phone upright,
@@ -1641,9 +1476,6 @@
   @media (pointer: coarse) {
     .row .field,
     .row .btn {
-      height: 44px;
-    }
-    .support {
       height: 44px;
     }
   }

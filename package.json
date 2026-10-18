@@ -14,12 +14,16 @@
     "fetch-stats": "node scripts/fetch-stats.mjs",
     "looks": "node scripts/looks.mjs",
     "bake-icons": "node scripts/bake-icons.mjs",
+    "screens": "node scripts/capture-screens.mjs",
+    "qa": "node scripts/qa.mjs",
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
+    "magic-string": "^1.4.2",
+    "peer": "^1.0.2",
     "playwright-core": "^1.56.1",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
@@ -27,8 +31,10 @@
     "vite": "^8.3.0"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/cinzel": "^5.3.0",
     "@fontsource/eb-garamond": "^5.3.0",
+    "@noble/ed25519": "3.2.0",
     "obscenity": "^0.4.6",
     "peerjs": "^1.5.5"
   }

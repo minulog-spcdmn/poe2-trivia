@@ -472,7 +472,7 @@ test('the lone wolf: teammates who left count from where they fell or left', () 
 });
 
 test('a fallen teammate leaving the run is kept as where they fell', () => {
-  const engine = new Engine(items, { rng: seeded(5), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(5), fakes });
   let s: GameState = createGame('a', { targetScore: 5, timer: 0, difficulty: 'cruel', mode: 'delve', public: false, locked: false });
   for (const id of ['a', 'b', 'c']) s = engine.apply(s, { type: 'join', playerId: id, name: `Delver ${id}` }, id);
   s = engine.apply(s, { type: 'start' }, 'a');
@@ -486,7 +486,7 @@ test('a fallen teammate leaving the run is kept as where they fell', () => {
 
 function setup(names: string[], o: { mode?: GameMode; target?: number; difficulty?: 'cruel' | 'merciless' | 'eternal'; start?: number } = {}) {
   let clock = o.start ?? 1000;
-  const engine = new Engine(items, { rng: seeded(3), fakes, now: () => (clock += 10) });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(3), fakes, now: () => (clock += 10) });
   let s: GameState = createGame('p0', { targetScore: o.target ?? 5, timer: 0, difficulty: o.difficulty ?? 'cruel', mode: o.mode ?? 'turns', public: false, locked: false });
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, `p${i}`)));
   return { engine, s: engine.apply(s, { type: 'start' }, 'p0') };
@@ -637,13 +637,17 @@ test('Through the Veil: race questions taken before a quarter of the art burned 
   assert.ok(!play(late.engine, late.s, 'p0', (who, q) => (who === 'p1' ? null : right(q)), true, 0.5).earned.includes('through-the-veil'));
 });
 
-test('Usurper: a win over the creator, never as the creator', () => {
+test('Usurper: a win over the creator, never as the creator, nor over the name without her signature', () => {
+  const signed = (s: GameState): GameState => ({ ...s, owner: { id: 'p1' } });
   const { engine, s } = setup(['Ash', 'zoe_arcana']);
-  const r = play(engine, s, 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q)));
+  const r = play(engine, signed(s), 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q)));
   assert.ok(r.earned.includes('usurper'));
   store.clear();
   const her = setup(['Ash', 'zoe_arcana']);
-  assert.ok(!play(her.engine, her.s, 'p1', (who, q) => (who === 'p1' ? right(q) : wrongIdx(q))).earned.includes('usurper'));
+  assert.ok(!play(her.engine, signed(her.s), 'p1', (who, q) => (who === 'p1' ? right(q) : wrongIdx(q))).earned.includes('usurper'));
+  store.clear();
+  const impostor = setup(['Ash', 'zoe_arcana']);
+  assert.ok(!play(impostor.engine, impostor.s, 'p0', (who, q) => (who === 'p0' ? right(q) : wrongIdx(q))).earned.includes('usurper'));
 });
 
 test('First Victory: any win against others that counts', () => {

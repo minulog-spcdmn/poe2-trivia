@@ -125,6 +125,17 @@ export function setVolume(value: number) {
 /** Squared, so the slider feels even to the ear rather than bunching up at the top. */
 const userGain = () => volume * volume;
 
+/** The whole mix's lift (dB, MIX.lift): another only on the levels page (levels.html), to hear it against. */
+let liftDb = MIX.lift;
+
+export function setLift(value: number) {
+  liftDb = value;
+  if (bus) bus.lift.gain.setTargetAtTime(liftGain(), bus.ac.currentTime, 0.03);
+}
+
+/** The limiter's automatic makeup gain adds about 1.7 dB of its own, counted in the lift. */
+const liftGain = () => db(liftDb - 1.7);
+
 /**
  * `reverb`: the hall, fed by `wet` (its impulse response set a moment after
  * the bus is made, see audio). `hall` (and `hallWet`, its reverb send,
@@ -137,6 +148,7 @@ const userGain = () => volume * volume;
 type Bus = {
   ac: AudioContext;
   master: AudioNode;
+  lift: GainNode;
   user: GainNode;
   wet: AudioNode;
   reverb: ConvolverNode;
@@ -153,10 +165,11 @@ let bus: Bus | null = null;
  * (client px), both (half way between them), or a screen edge (-1 the
  * left, 1 the right). With `to` and `seconds` it travels there over that
  * long from its start, as sparks flying to a slot. `far`: a teammate's, not
- * yours. Only the placer reads it (setPlacer); without one every sound
+ * yours. `speed`: how fast (px/s) the pointer came over the control it
+ * hovers. Only the placer reads it (setPlacer); without one every sound
  * plays centred.
  */
-export type SoundPlace = { from?: Element | null; x?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
+export type SoundPlace = { from?: Element | null; x?: number; speed?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
 
 /**
  * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
@@ -220,9 +233,18 @@ function audio(): Bus | null {
     shelf.gain.value = -MIX.warmth;
     const master = ac.createGain();
     master.gain.value = 0.9 * db(MIX.volume);
+    const lift = ac.createGain();
+    lift.gain.value = liftGain();
+    // Holds the peaks just under full scale.
+    const limit = ac.createDynamicsCompressor();
+    limit.threshold.value = -3;
+    limit.knee.value = 0;
+    limit.ratio.value = 20;
+    limit.attack.value = 0.001;
+    limit.release.value = 0.15;
     const user = ac.createGain();
     user.gain.value = userGain();
-    master.connect(shelf).connect(comp).connect(user).connect(ac.destination);
+    master.connect(shelf).connect(comp).connect(lift).connect(limit).connect(user).connect(ac.destination);
 
     // The hall's impulse takes a moment to work out: not in the tap that
     // starts the sound (the first sounds just play dry).
@@ -243,7 +265,7 @@ function audio(): Bus | null {
     const veinWet = ac.createGain();
     veinWet.connect(wet);
 
-    bus = { ac, master, user, wet, reverb, hall: zone, hallLp: zoneLp, hallWet: zoneWet, hallWetLp: zoneWetLp, veinWet };
+    bus = { ac, master, lift, user, wet, reverb, hall: zone, hallLp: zoneLp, hallWet: zoneWet, hallWetLp: zoneWetLp, veinWet };
     placer?.mount({ ac, master, wet, reverb, out: user, veinWet });
     placer?.depth(depth);
     // Sound starting in a vein: the hall is already behind.
@@ -1016,6 +1038,20 @@ function updateLoop(l: Loop) {
 const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled)';
 
 /**
+ * How fast (px/s) the pointer came to (`x`, `y`) at `t` (ms) over its last
+ * moves (`trail`, oldest first): from the oldest within 60 ms. The hover
+ * comes before the move that brought the pointer over its control, so that
+ * move is (`x`, `y`) itself, not in the trail; with no move that recent (it
+ * rested, then jumped there at once), the jump is taken as one quick move.
+ */
+export function pointerSpeed(trail: readonly { x: number; y: number; t: number }[], x: number, y: number, t: number): number {
+  const from = trail.find((p) => t - p.t < 60) ?? trail.at(-1);
+  if (!from) return 0;
+  const dt = Math.min(Math.max(t - from.t, 8), 60) / 1000;
+  return Math.hypot(x - from.x, y - from.y) / dt;
+}
+
+/**
  * UI sounds for every control: a faint brush when the mouse moves onto one,
  * and a click when it's pressed. Controls that play their own sound (or none)
  * opt out of the click with `data-sfx="none"`. Also starts the ambience with
@@ -1023,6 +1059,17 @@ const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[
  */
 export function installUiSounds() {
   let hovered: Element | null = null;
+  // The pointer's last few moves (client px, ms), for how fast it came over a control.
+  const trail: { x: number; y: number; t: number }[] = [];
+  addEventListener(
+    'pointermove',
+    (e) => {
+      if (e.pointerType !== 'mouse') return;
+      trail.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+      if (trail.length > 8) trail.shift();
+    },
+    { passive: true },
+  );
   addEventListener(
     'pointerover',
     (e) => {
@@ -1031,7 +1078,7 @@ export function installUiSounds() {
       const el = (e.target as Element | null)?.closest?.(HOVERABLE) ?? null;
       // Half way between the control's middle and the pointer: a wide one sounds
       // a little to the side it is hovered on, not at the edge it came in over.
-      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX } });
+      if (el && el !== hovered) sfx('hover', { from: { from: el, x: e.clientX, speed: pointerSpeed(trail, e.clientX, e.clientY, e.timeStamp) } });
       hovered = el;
     },
     { passive: true },

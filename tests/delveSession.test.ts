@@ -2,11 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTO_REASKS,
+  CAP_STRIKES,
+  CLOCK_CAP_MAX_MS,
+  CLOCK_CAP_MIN_MS,
   COOP_DRAW_MS,
   DELVE_CLOCK_CAP_MS,
   artFirst,
   blastedAway,
+  capStrikes,
+  clockCap,
   clockStart,
+  clockWaitsFor,
   delveNotices,
   drained,
   drawClockFrom,
@@ -20,9 +26,10 @@ import {
   mayAutoReask,
   pausedNow,
   reaskDelay,
+  stillWaitedFor,
 } from '../src/lib/delveSession.ts';
-import { DELVE_RULESET, VOTE_WINDOW_MS } from '../src/lib/delve.ts';
-import { createGame, type GameState, type Question } from '../src/lib/game.ts';
+import { DELVE_RULESET, VOTE_WINDOW_MS, questionTimer } from '../src/lib/delve.ts';
+import { DEFAULT_SETTINGS, createGame, type GameState, type Question } from '../src/lib/game.ts';
 
 function run(over: Partial<GameState> = {}): GameState {
   const s = createGame('a');
@@ -32,6 +39,7 @@ function run(over: Partial<GameState> = {}): GameState {
   return { ...s, ...over };
 }
 
+/** A question asked at 100 whose clock runs out at `deadline` (started at 0), or (null) hasn't started. */
 const question = (deadline: number | null): Question => ({
   category: 'Rings',
   mode: 'name',
@@ -42,6 +50,7 @@ const question = (deadline: number | null): Question => ({
   veil: null,
   askedAt: 100,
   deadline,
+  ...(deadline === null ? {} : { clockAt: 0 }),
   misses: [],
 });
 
@@ -51,6 +60,21 @@ test('the clock starts when the queue drains, at most a few seconds in, plus hal
   assert.equal(clockStart(9000, 1000, 100), 1000 + DELVE_CLOCK_CAP_MS + 50);
   assert.equal(clockStart(1200, 1000, 4000), 1700, 'half a round trip is capped at 500 ms');
   assert.equal(clockStart(1200, 1000, -50), 1200);
+  assert.equal(clockStart(null, 1000, 100, 2500), 1000 + 2500 + 50, 'a cap of its own (clockCap)');
+});
+
+test("the most the host waits for the art is a fifth of the question's time, 2 to 4 seconds", () => {
+  const room = (mode: 'turns' | 'race', timer: number) => ({ ...createGame('a', { ...DEFAULT_SETTINGS, mode, timer }), phase: 'question' as const });
+  assert.equal(clockCap(room('turns', 16)), 3200);
+  assert.equal(clockCap(room('turns', 8)), CLOCK_CAP_MIN_MS, 'at least 2 s on a short clock');
+  assert.equal(clockCap(room('turns', 32)), CLOCK_CAP_MAX_MS, 'at most 4 s on a long one');
+  assert.equal(clockCap(room('turns', 0)), CLOCK_CAP_MAX_MS, 'untimed turns: the most');
+  assert.equal(clockCap(room('race', 0)), 3200, "a race without a timer runs on the default's");
+  assert.equal(clockCap(room('race', 64)), CLOCK_CAP_MAX_MS);
+  // Delve: the depth's clock (or a find's), whatever the room's timer says.
+  const s = run({ phase: 'question', question: question(null) });
+  assert.equal(clockCap(s), Math.min(CLOCK_CAP_MAX_MS, Math.max(CLOCK_CAP_MIN_MS, Math.round(questionTimer(s) * 200))));
+  assert.ok(clockCap(s) >= CLOCK_CAP_MIN_MS && clockCap(s) <= CLOCK_CAP_MAX_MS);
 });
 
 test('art that keeps failing is asked again a few times: at once, then after 2, 5 and 10 seconds, then no more by itself', () => {
@@ -59,11 +83,47 @@ test('art that keeps failing is asked again a few times: at once, then after 2, 
   assert.equal(reaskDelay(AUTO_REASKS), null, 'an offline device does not spin through questions forever');
 });
 
-test('only a Delve question whose clock has not started is asked again by itself', () => {
+test('the clock waits for the art to reach those who answer: the player on turn, every racer, or as Delve has it', () => {
+  const s = run({ phase: 'question', question: question(null) });
+  assert.deepEqual(clockWaitsFor(s), ['a', 'b'], 'Delve together: everyone standing');
+  assert.deepEqual(clockWaitsFor({ ...s, delve: null, turn: 1 }), ['b'], 'turns: the player on turn');
+  assert.deepEqual(clockWaitsFor({ ...s, delve: null, settings: { ...s.settings, mode: 'race' } }), ['a', 'b'], 'race: everyone seated');
+});
+
+test("one throttled link can't hold every question up: the cap running out on someone twice running leaves them out of the wait, until their art is out in time again", () => {
+  let strikes = new Map<string, number>();
+  const ids = ['a', 'b', 'c'];
+  // b's link is slow: the cap runs out on it.
+  strikes = capStrikes(strikes, ['a', 'c'], ['b']);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ids, 'once is not yet');
+  strikes = capStrikes(strikes, ['a', 'c'], ['b']);
+  assert.equal(CAP_STRIKES, 2);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ['a', 'c'], 'twice running: left out');
+  // Left out, not waited for: nothing new against them while the clock starts without them.
+  strikes = capStrikes(strikes, ['a', 'c'], []);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ['a', 'c']);
+  // Their art out within the cap again: waited for again.
+  strikes = capStrikes(strikes, ['a', 'b', 'c'], []);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ids);
+  // In between, a question in time starts the count afresh.
+  strikes = capStrikes(capStrikes(capStrikes(strikes, [], ['c']), ['c'], []), [], ['c']);
+  assert.deepEqual(stillWaitedFor(ids, strikes), ids, 'not twice running');
+  // The map it was given is left as it was.
+  const was = new Map([['a', 1]]);
+  capStrikes(was, [], ['a']);
+  assert.equal(was.get('a'), 1);
+});
+
+test('only a question whose clock has not started is asked again by itself, in every mode', () => {
   assert.equal(mayAutoReask(run({ phase: 'question', question: question(null) }), 100), true);
   assert.equal(mayAutoReask(run({ phase: 'question', question: question(5000) }), 100), false, 'on the clock');
   assert.equal(mayAutoReask(run({ phase: 'question', question: question(null) }), 99), false, 'another question');
-  assert.equal(mayAutoReask(run({ phase: 'question', question: question(null), delve: null }), 100), false, 'not Delve');
+  assert.equal(mayAutoReask(run({ phase: 'question', question: question(null), delve: null }), 100), true, 'outside Delve too');
+  assert.equal(mayAutoReask(run({ phase: 'question', question: question(5000), delve: null }), 100), false, 'outside Delve, on the clock');
+  // Untimed turns: the clock runs with no deadline.
+  assert.equal(mayAutoReask(run({ phase: 'question', question: { ...question(null), clockAt: 0 }, delve: null }), 100), false, 'untimed, started');
+  // Held still by the host's reload: not started again yet.
+  assert.equal(mayAutoReask(run({ phase: 'question', question: { ...question(null), paused: { clockAt: 0, at: 50, left: 4000 } } }), 100), true, 'paused');
   assert.equal(mayAutoReask(null, 100), false);
 });
 

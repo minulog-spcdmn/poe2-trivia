@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import peerjs from 'peerjs';
 import { pack } from 'peerjs-js-binarypack';
-import { capped, FrameGuard, hookFrames, JoinGate, plausiblePack, roomSecret } from '../src/lib/guard.ts';
+import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, plausiblePack, roomSecret } from '../src/lib/guard.ts';
 import { parseClientMsg } from '../src/lib/protocol.ts';
 
 function clock() {
@@ -105,7 +105,7 @@ test('the frame hook fits the installed PeerJS: checks come before decoding, chu
   conn.emit = (ev, data) => ev === 'data' && got.push(data);
   const seen: unknown[] = [];
   let chunks = 0;
-  assert.ok(hookFrames(conn, (d) => (seen.push(d), (d as ArrayBuffer).byteLength < 100), () => chunks++));
+  assert.ok(hookFrames(conn, (d) => (seen.push(d), (d as ArrayBuffer).byteLength < 100), () => (chunks++, false)));
 
   conn._handleDataMessage({ data: frame({ t: 'pong', n: 1 }) });
   assert.deepEqual(got, [{ t: 'pong', n: 1 }]);
@@ -117,6 +117,51 @@ test('the frame hook fits the installed PeerJS: checks come before decoding, chu
   conn._handleDataMessage({ data: frame({ __peerData: 7, n: 0, total: 2, data: new ArrayBuffer(4) }) });
   assert.equal(chunks, 1);
   assert.deepEqual(conn._chunkedData, {});
+
+  // A guest's link to its host lets checked chunks through to be put back
+  // together, and the whole message is checked again before it is decoded.
+  const guest = Object.create(Binary.prototype) as typeof conn;
+  guest._chunkedData = {};
+  const whole: unknown[] = [];
+  guest.emit = (ev, data) => ev === 'data' && whole.push(data);
+  const checked: number[] = [];
+  assert.ok(hookFrames(guest, (d) => (checked.push((d as ArrayBuffer | Uint8Array).byteLength), true), () => true));
+  const packed = new Uint8Array(frame({ t: 'ping', n: 9 }));
+  const half = packed.length >> 1;
+  guest._handleDataMessage({ data: frame({ __peerData: 3, n: 0, total: 2, data: packed.slice(0, half).buffer }) });
+  guest._handleDataMessage({ data: frame({ __peerData: 3, n: 1, total: 2, data: packed.slice(half).buffer }) });
+  assert.deepEqual(whole, [{ t: 'ping', n: 9 }]);
+  assert.equal(checked.at(-1), packed.length);
+});
+
+test("what a host sends is checked too: a bomb is never decoded, a big picture is", () => {
+  const art = frame({ t: 'art', qid: 1, w: 512, h: 512, data: new ArrayBuffer(600_000) });
+  assert.ok(frameFits(art, MAX_HOST_MSG_BYTES));
+  assert.equal(frameFits(art, 2048), false);
+  assert.equal(frameFits(new Uint8Array([0xdd, 0xff, 0xff, 0xff, 0xff]), MAX_HOST_MSG_BYTES), false);
+  assert.equal(frameFits('state', MAX_HOST_MSG_BYTES), false);
+  assert.equal(frameFits(new ArrayBuffer(MAX_HOST_MSG_BYTES + 1), MAX_HOST_MSG_BYTES), false);
+});
+
+test("a host's split messages: chunks in shape, never twice, and only a couple unfinished at once", () => {
+  const chunk = (id: number, n: number, total: number, bytes = 16300) => ({ __peerData: id, n, total, data: new ArrayBuffer(bytes) });
+  const g = new ChunkGuard();
+  assert.ok(g.check(chunk(1, 0, 3)));
+  assert.equal(g.check(chunk(1, 0, 3)), false, 'the same chunk again');
+  assert.equal(g.check(chunk(1, 1, 4)), false, 'another total for the same message');
+  assert.ok(g.check(chunk(1, 1, 3)));
+  assert.ok(g.check(chunk(1, 2, 3, 100)));
+  // Finished: its id is free again, and it no longer counts as open.
+  assert.ok(g.check(chunk(2, 0, 2)));
+  assert.ok(g.check(chunk(3, 0, 2)));
+  assert.equal(g.check(chunk(4, 0, 2)), false, 'a third unfinished message');
+  const fresh = () => new ChunkGuard();
+  assert.equal(fresh().check(chunk(1, 5, 3)), false, 'past its total');
+  assert.equal(fresh().check(chunk(1, 0, 4_000_000_000)), false, 'billions of chunks');
+  assert.equal(fresh().check(chunk(1, 0, Math.ceil(MAX_HOST_MSG_BYTES / 16300) + 1)), false, 'bigger than any message');
+  assert.equal(fresh().check(chunk(1, 0, 2, 20000)), false, 'an oversized chunk');
+  assert.equal(fresh().check({ __peerData: 1, n: 0, total: 2, data: 'x' }), false);
+  assert.equal(fresh().check(null), false);
 });
 
 test("PeerJS's binary connections report their send queue, which Delve's clock waits on", () => {

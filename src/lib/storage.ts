@@ -31,6 +31,29 @@ export const SPATIAL_PAGE = typeof document !== 'undefined' && document.document
  * own browser never takes over their saves, codex or settings.
  */
 export const BOT = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-bot');
+/**
+ * The QA desk (qa.html, src/qa: dev and beta builds only) marks the desk
+ * `<html data-qa="desk">` and each frame of the game it shows
+ * `<html data-qa="<its slot>">`, before anything reads storage
+ * (src/qa/main.ts). Each gets keys of its own: frames side by side on one
+ * page share its sessionStorage and localStorage, so without a start apart
+ * every seat would be the same player, with one save between them.
+ */
+const QA_SLOT = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-qa') ? document.documentElement.getAttribute('data-qa') : null;
+/**
+ * A seat of a live room on the QA desk ("Play from here", src/qa/live: dev
+ * and beta only): its frame is named `qa:<room>:<seat>`, a name kept across
+ * the frame's reloads, as a query the app rewrites wouldn't be. Its keys
+ * start apart the same way, and its rooms are the desk room's own
+ * (lib/peer.ts). The live game never reads it: any page that opens ours can
+ * set a window's name.
+ */
+const SEAT = (BETA || LOCAL) && typeof window !== 'undefined' && typeof window.name === 'string' ? /^qa:(\w+):(\w+)$/.exec(window.name) : null;
+export const QA_ROOM = SEAT?.[1] ?? null;
+export const QA_SEAT = SEAT?.[2] ?? null;
+export const QA = QA_SLOT !== null || QA_SEAT !== null;
+/** A frame of the desk showing a still scene (not the desk, not a live seat): it stages whatever the scene holds. */
+export const QA_FRAME = QA_SLOT !== null && QA_SLOT !== 'desk';
 
 /**
  * localStorage and sessionStorage, for the whole site (a test keeps every
@@ -53,7 +76,8 @@ export const STORE =
   (ZONES_PREVIEW ? 'zones.' : '') +
   (SPATIAL_PAGE ? 'spatial.' : '') +
   (BACKDROP_TOOL ? 'backdrops.' : '') +
-  (BOT ? 'bot.' : '');
+  (BOT ? 'bot.' : '') +
+  (QA ? `qa.${(QA_SLOT ?? QA_SEAT)!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html): for settings they share. */
 export const LAB_STORE = CHANNEL + 'lab.';
 
@@ -99,11 +123,13 @@ export function writeKey(key: string, value: string, where: Area = 'local'): boo
   }
 }
 
-export function removeKey(key: string, where: Area = 'local') {
+/** Whether it could be removed. */
+export function removeKey(key: string, where: Area = 'local'): boolean {
   try {
     area(where).removeItem(key);
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
@@ -115,18 +141,37 @@ export const removeStored = (name: string, where: Area = 'local') => removeKey(s
  * its own: the beta's and the lab's keys start differently).
  */
 export function removeStoredStarting(start: string, where: Area = 'local') {
-  const from = storeKey(start);
   try {
     const s = area(where);
-    const keys: string[] = [];
+    for (const k of keysStarting(start, where)) s.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
+/** The whole keys of this build's entries whose names start with `start`. */
+function keysStarting(start: string, where: Area): string[] {
+  const from = storeKey(start);
+  const keys: string[] = [];
+  try {
+    const s = area(where);
     for (let i = 0; i < s.length; i++) {
       const k = s.key(i);
       if (k !== null && k.startsWith(from)) keys.push(k);
     }
-    for (const k of keys) s.removeItem(k);
   } catch {
     /* ignore */
   }
+  return keys;
+}
+/** Every entry of this build's whose name starts with `start`, as [the rest of its name, its value]. */
+export function readStoredStarting(start: string, where: Area = 'local'): [string, string][] {
+  const from = storeKey(start);
+  const out: [string, string][] = [];
+  for (const k of keysStarting(start, where)) {
+    const v = readKey(k, where);
+    if (v !== null) out.push([k.slice(from.length), v]);
+  }
+  return out;
 }
 /** For code that must not take a read error for an empty entry (and write over it). */
 export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey(storeKey(name), where);
@@ -135,7 +180,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || BOT ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || BOT || QA ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !BOT) removeKey(key, where);
+  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !BOT && !QA) removeKey(key, where);
 };

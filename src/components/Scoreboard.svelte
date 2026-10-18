@@ -5,7 +5,6 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
-  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
@@ -46,10 +45,10 @@
   import Gallery from './Gallery.svelte';
   import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
+  import HeartOfLight from './HeartOfLight.svelte';
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
-  const uid = $props.id();
 
   const s = $derived(session.state!);
   const target = $derived(s.settings.targetScore);
@@ -666,31 +665,6 @@
   });
 </script>
 
-<!-- The revive's glyph: a heart of the phial's rose light, set in gold, a
-     cross of pale light in it, in a glory of fine rays (in a 24 unit box
-     round its centre). -->
-{#snippet heartOfLight(id: string)}
-  <svg viewBox="-12 -12 24 24">
-    <defs>
-      <radialGradient {id} cx="0.45" cy="0.42" r="0.62">
-        <stop offset="0" stop-color="#ffe4cf" />
-        <stop offset="0.3" stop-color="#ff8a68" />
-        <stop offset="0.62" stop-color="#ec3a48" />
-        <stop offset="1" stop-color="#6e0820" />
-      </radialGradient>
-    </defs>
-    <g class="rays">
-      {#each Array.from({ length: 16 }, (_, i) => i) as i (i)}
-        {@const a = (i / 16) * Math.PI * 2}
-        {@const r1 = i % 2 ? 10.1 : 11.3}
-        <path d="M{(Math.sin(a) * 8.6).toFixed(2)} {(-Math.cos(a) * 8.6).toFixed(2)}L{(Math.sin(a) * r1).toFixed(2)} {(-Math.cos(a) * r1).toFixed(2)}" />
-      {/each}
-    </g>
-    <path class="body" fill="url(#{id})" d="M0 6.6C0 6.6-6.9 2.2-6.9-2.5C-6.9-4.9-5.2-6.4-3.2-6.4C-1.8-6.4-0.6-5.6 0-4.4C0.6-5.6 1.8-6.4 3.2-6.4C5.2-6.4 6.9-4.9 6.9-2.5C6.9 2.2 0 6.6 0 6.6Z" />
-    <path class="hair" d="M0 4.9C0 4.9-5.3 1.5-5.3-2.3C-5.3-4-4.1-5-2.8-5C-1.6-5-0.6-4.2 0-3.1C0.6-4.2 1.6-5 2.8-5C4.1-5 5.3-4 5.3-2.3C5.3 1.5 0 4.9 0 4.9Z" />
-    <path class="cross" d="M0-3.6V1.8M-2.7-0.9H2.7" />
-  </svg>
-{/snippet}
 
 <!-- While the offer to give a life is open, Escape closes it and hands focus back to its heart. -->
 <!-- Escape closes the revive question, or takes an armed kick back; a press anywhere but the armed Kick takes it back too. -->
@@ -734,7 +708,7 @@
         style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
         class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
-        <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} />
+        <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name">
             <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
@@ -774,7 +748,6 @@
             <KickButton name={p.name} armed={confirming === p.id} title="Remove {p.name} from the game" onclick={() => kick(p.id)} />
           </span>
         {/if}
-        {#if out}<span class="x" title="Answered wrong"><DrawnMark /></span>{/if}
         {#if reviveOk}
           <!-- Delve together: revive them with one of your lives. A heart of
                light in the entry, beating as the phial's lives do. -->
@@ -784,7 +757,7 @@
             onclick={() => (asking = asking === p.id ? null : p.id)}
             aria-label="Revive {p.name}: give them one of your lives"
             aria-expanded={asking === p.id}
-            ><span class="heart" aria-hidden="true">{@render heartOfLight(`${uid}-heart-${i}`)}</span></button
+            ><span class="heart" aria-hidden="true"><HeartOfLight /></span></button
           >
         {/if}
       </li>
@@ -918,7 +891,7 @@
     border-color: #8e4434;
     background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
   }
-  li.armed :global(.avatar) {
+  li.armed :global(.avatar:not(:has(> .face-down))) {
     filter: saturate(0.4) brightness(0.75);
   }
   li.armed .name {
@@ -1080,36 +1053,6 @@
     height: 100%;
     animation: heartbeat-glyph 1.3s ease-out infinite;
   }
-  .heart svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-    filter: drop-shadow(0 0 2px rgba(255, 110, 90, 0.65));
-  }
-  .heart .rays path {
-    stroke: #e9c983;
-    stroke-width: 0.6;
-    stroke-linecap: butt;
-    opacity: 0.7;
-  }
-  .heart .body {
-    stroke: #e9c983;
-    stroke-width: 0.9;
-    stroke-linejoin: miter;
-  }
-  .heart .hair {
-    fill: none;
-    stroke: rgba(255, 236, 214, 0.45);
-    stroke-width: 0.4;
-  }
-  .heart .cross {
-    fill: none;
-    stroke: #fff6ea;
-    stroke-width: 1.5;
-    stroke-linecap: butt;
-    filter: drop-shadow(0 0 1px rgba(110, 8, 32, 0.9));
-  }
   @keyframes heartbeat {
     0% {
       opacity: 0.45;
@@ -1215,29 +1158,24 @@
   li.duelist {
     border-color: rgba(224, 85, 63, 0.55);
   }
+  /* Answered wrong: the avatar turns face down (Avatar's wrong), and the rest
+     of the entry is set back, fading as the entry would; the token keeps the
+     verdict's full colour (scoped, these never reach the avatar, its own
+     component), and a ward's rim keeps its own flare. The transition as
+     :where, so a child's own transition wins over it. */
+  li > :where(:not(.kick-at, .revive, .ward-rim)) {
+    transition: opacity 0.35s;
+  }
   li.out {
-    border-color: rgba(224, 85, 63, 0.6);
+    border-color: rgba(224, 85, 63, 0.45);
+  }
+  li.out > :not(.kick-at, .revive, .ward-rim),
+  li.out .kick-at > :global(.kick) {
     opacity: 0.75;
   }
-  .x {
-    position: absolute;
-    top: -7px;
-    right: -4px;
-    width: 18px;
-    height: 18px;
-    display: grid;
-    place-items: center;
-    --mark-size: 7px;
-    --mark-stroke: 1.5px;
-    color: #fff;
-    background: var(--bad);
-    border-radius: 50%;
-    animation: pop 0.35s var(--ease-back);
-  }
-  @keyframes pop {
-    from {
-      transform: scale(0);
-    }
+  /* Perished as well: set back further, as the two together always were. */
+  li.out.fallen.revivable > :not(.kick-at, .revive, .ward-rim) {
+    opacity: calc(0.45 * 0.75);
   }
   .negative {
     color: #ff9c86;
@@ -1418,6 +1356,12 @@
     }
     li.wide {
       flex: 0 1 auto;
+    }
+    /* The kick a little further onto the corner, so it overlaps a wrong
+       answer's face-down token (Avatar) less. */
+    li .kick-at {
+      top: -10px;
+      left: -9px;
     }
     li :global(.avatar) {
       width: 26px;

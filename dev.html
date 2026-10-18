@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- The dev hub: one page linking every tool page, so nobody has to remember
+     their names. Plain static links, relative, so they work on the dev
+     server (localhost:5173/dev.html) and the beta (poe2.quest/beta/dev.html)
+     alike. Dev server and beta only. tests/devHub.test.ts checks every tool
+     page is listed. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0908" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="/src/devHub/hub.css" />
+    <title>PoE2.Quest • Dev tools</title>
+  </head>
+  <body>
+    <main class="legal hub">
+      <a class="back" href="./">← Back to the game</a>
+      <h1>Dev tools</h1>
+      <p class="muted">Every test and tuning page. The dev server and the beta have them all; the live game has none.</p>
+
+      <h2>Start here</h2>
+      <ul class="tools">
+        <li>
+          <a href="./qa.html"><span class="name">QA desk</span><span class="path">qa.html</span></a>
+          <p>Every scene of the game in the real app, one at a time, at every size from a phone to 4K and from every seat. <kbd>←</kbd> <kbd>→</kbd> walk it, <kbd>/</kbd> finds a scene; <code>docs/qa.md</code> has the rest.</p>
+        </li>
+      </ul>
+
+      <h2>Delve</h2>
+      <ul class="tools">
+        <li>
+          <a href="./lab.html"><span class="name">The lab</span><span class="path">lab.html</span></a>
+          <p>The real game screen beside a panel that sets up and plays a Delve run by hand: players, depth, cards, questions, events, end screens, spatial sound.</p>
+        </li>
+        <li>
+          <a href="./backdrop.html"><span class="name">Backdrops</span><span class="path">backdrop.html</span></a>
+          <p>Pick Delve's backdrops by hand: depth, brightness, each zone's look, the generator, the endgame strata. Saves to <code>src/data/backdrops.json</code> on the dev server.</p>
+        </li>
+        <li>
+          <a href="./zones.html"><span class="name">Zone card</span><span class="path">zones.html</span></a>
+          <p>Tune the zone title card in place: step into any zone, compare families, freeze a frame, phone width.</p>
+        </li>
+        <li>
+          <a href="./descent.html"><span class="name">The descent</span><span class="path">descent.html</span></a>
+          <p>The rules block's descent at phone, tablet and desktop width, for any deepest depth and finds met.</p>
+        </li>
+      </ul>
+
+      <h2>Screens</h2>
+      <ul class="tools">
+        <li>
+          <a href="./circle.html"><span class="name">Rune circles</span><span class="path">circle.html</span></a>
+          <p>Each of the five arcane circles at full size, whole beside hollow (as behind the end screen's one avatar), with an avatar over its heart; draw it in again, right and wrong; and where each one stands in the game, read from the list the game reads. <a href="./circle.html?c=moth">The moth</a></p>
+        </li>
+        <li>
+          <a href="./streak.html"><span class="name">Daily streak</span><span class="path">streak.html</span></a>
+          <p>The streak badge for any run of days and every colour of its ladder. <a href="./streak.html?days=30">At 30 days</a></p>
+        </li>
+      </ul>
+
+      <h2>Sound</h2>
+      <ul class="tools">
+        <li>
+          <a href="./spatial.html"><span class="name">Spatial sound</span><span class="path">spatial.html</span></a>
+          <p>The game screen full window with a menu for tuning the spatial sound on any sound. <kbd>M</kbd> hides the menu.</p>
+        </li>
+        <li>
+          <a href="./hover.html"><span class="name">Hover repeats</span><span class="path">hover.html</span></a>
+          <p>How the hover sound quietens over a sweep of the mouse across controls.</p>
+        </li>
+        <li>
+          <a href="./levels.html"><span class="name">Sound levels</span><span class="path">levels.html</span></a>
+          <p>Every sound, and a few that land together, through the game’s mix with its lift switched between before and after; blind if you like.</p>
+        </li>
+      </ul>
+
+      <!-- bot -->
+      <h2>Rooms</h2>
+      <ul class="tools">
+        <li>
+          <a href="./bot.html"><span class="name">Room bot</span><span class="path">bot.html</span></a>
+          <p>Made-up players that open or join rooms and play a while. Dev server only (or <code>npm run bot</code>); the beta doesn't build it, so it has no card there.</p>
+        </li>
+      </ul>
+      <!-- /bot -->
+
+      <h2>Analytics</h2>
+      <ul class="tools">
+        <li>
+          <a href="./stats.html"><span class="name">Analytics</span><span class="path">stats.html</span></a>
+          <p>The game's counts from GoatCounter, read with the owner's API key, which stays in this browser. Unlike the tools above it is in the live game too (poe2.quest/stats.html), linked from nowhere. <code>?demo</code> fills it with made-up numbers, no key needed; <code>#board</code> is the overview for a monitor of its own; <code>#groups</code> sets a country, a device or a mode's players against everyone.</p>
+        </li>
+      </ul>
+
+      <h2>The game</h2>
+      <ul class="tools">
+        <li>
+          <a href="./"><span class="name">PoE2.Quest</span><span class="path">index.html</span></a>
+          <p>The game itself. <a href="./impressum.html">Impressum</a> • <a href="./datenschutz.html">Datenschutz</a></p>
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

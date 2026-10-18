@@ -1,10 +1,18 @@
 @import '../app.css';
 
 body {
+  /* The dither (app.css) on top stirs each pixel a level up or down, so the
+     soft glow across the whole page doesn't band (CLAUDE.md). */
   background:
+    var(--dither),
     radial-gradient(ellipse 80% 50% at 50% -10%, rgba(120, 95, 60, 0.18), transparent 70%),
     linear-gradient(180deg, #0d0b09, #080706 60%, #0d0907);
   background-attachment: fixed;
+  image-rendering: pixelated;
+}
+/* Pixelated is for the body's own background; images on the page scale smoothly. */
+body > * {
+  image-rendering: auto;
 }
 .legal {
   /* Long German words ("Datenschutzerklärung") must not overflow on phones. */
@@ -64,4 +72,25 @@ body {
 }
 .legal .switch {
   font-size: 0.95rem;
+}
+/* "Stop counting" (countToggle.ts): its state, and the button beside it, below on a phone. */
+.legal .count-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.legal .count-toggle[hidden] {
+  display: none;
+}
+.legal .count-toggle .state {
+  margin: 0;
+  flex: 1 1 14rem;
+}
+.legal .count-toggle button[hidden] {
+  display: none;
 }

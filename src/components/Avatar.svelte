@@ -1,32 +1,88 @@
 <script lang="ts">
   import { playerColor } from '../lib/ui';
-  import { initialOf, isHeldName } from '../lib/names';
+  import { initialOf } from '../lib/names';
+  import { creatorShown } from '../lib/creator';
   import { arcaneAura } from '../lib/fx/aura';
   import { CREATOR_TITLE } from '../lib/site';
+  import VerdictSign from './VerdictSign.svelte';
+  import { motion } from '../lib/motion.svelte';
+  import { untrack } from 'svelte';
 
-  let { name, hue, size = 36, dim = false }: { name: string; hue: number; size?: number; dim?: boolean } = $props();
+  /** wrong: answered wrong, the token face down (the scoreboard). */
+  let { name, hue, size = 36, dim = false, wrong = false }: { name: string; hue: number; size?: number; dim?: boolean; wrong?: boolean } = $props();
   const initial = $derived(initialOf(name) || '?');
   // A's thin apex and wide base make it look low when its cap height is
   // centered, so lift it slightly.
   const dy = $derived(initial === 'A' ? '0.31em' : '0.35em');
   // zoe_arcana made the game: her avatar wears a gilded ring and, with
   // effects on, a living aura (lib/fx/aura.ts).
-  const creator = $derived(isHeldName(name));
+  const creator = $derived(creatorShown(name));
+  // Face down, her ring gives way to the wrong verdict's sign.
+  const crowned = $derived(creator && !wrong);
+
+  /** How long the token takes to turn over (or back up): edge on halfway, where its faces swap. */
+  const TURN_MS = 500;
+  // It turns like a coin: the face it shows goes edge on, easing in, and the
+  // other side comes round, easing out; the faces swap halfway. Turning down,
+  // the face-down side only shows from there (.turn-down's face-in); turning
+  // up, it is gone from there (untilEdgeOn).
+  const TURN: Keyframe[] = [
+    { transform: 'perspective(200px) rotateY(0deg)', easing: 'cubic-bezier(0.55, 0, 1, 0.45)' },
+    { transform: 'perspective(200px) rotateY(90deg)', offset: 0.5 },
+    { transform: 'perspective(200px) rotateY(-90deg)', offset: 0.501, easing: 'cubic-bezier(0, 0.55, 0.45, 1)' },
+    { transform: 'perspective(200px) rotateY(0deg)' },
+  ];
+  let el: HTMLElement | undefined;
+  // Turning down as they answer wrong, back up as the next question comes;
+  // not when it mounts already face down (a rejoin), nor while held still.
+  // Before the markup updates, so the face-down side's way out (untilEdgeOn)
+  // already knows it is turning up.
+  let turn = $state<'down' | 'up' | null>(null);
+  // Whether the face-down side came round with a turn, so its cross waits to
+  // draw until it has landed; mounted face down, or held still, it draws at
+  // once. Left as it is while the side leaves, so its cross isn't re-timed.
+  let landing = $state(false);
+  let was = untrack(() => wrong);
+  $effect.pre(() => {
+    if (wrong === was) return;
+    was = wrong;
+    const still = untrack(() => motion.still);
+    if (wrong) landing = !still;
+    // (Nor in the very tick it mounts, before it is bound.)
+    const next = still || !el ? null : wrong ? 'down' : 'up';
+    turn = next;
+    if (!next) return;
+    // Over when it lands. A turn cut short by the next change is cancelled
+    // (so never ends this one), and that one starts afresh.
+    const a = el!.animate(TURN, TURN_MS);
+    a.finished.then(
+      () => (turn = null),
+      () => {},
+    );
+    return () => a.cancel();
+  });
+  /** Keeps the face-down side on the token until the turn back up is edge on. */
+  const untilEdgeOn = (_node: Element) => ({ duration: turn === 'up' ? TURN_MS / 2 : 0 });
 </script>
 
 <span
   class="avatar"
   class:dim
-  class:creator
+  class:creator={crowned}
+  class:turn-down={turn === 'down'}
   style:--c={playerColor(hue)}
   style:--s="{size}px"
-  role={creator ? 'img' : undefined}
-  aria-label={creator ? CREATOR_TITLE : undefined}
-  title={creator ? CREATOR_TITLE : undefined}
-  use:arcaneAura={{ on: creator, dim }}
+  style:--turn="{TURN_MS}ms"
+  role={crowned ? 'img' : undefined}
+  aria-label={crowned ? CREATOR_TITLE : undefined}
+  title={crowned ? CREATOR_TITLE : undefined}
+  bind:this={el}
+  use:arcaneAura={{ on: creator, dim: dim || !crowned || turn !== null }}
   ><svg viewBox="0 0 100 100"
     ><text x="50" y="50" {dy} text-anchor="middle">{initial}</text></svg
-  ></span
+  >{#if wrong}<span class="face-down" class:landing out:untilEdgeOn role="img" aria-label="{name} answered wrong" title="Answered wrong"
+      ><VerdictSign icon="cross" token /></span
+    >{/if}</span
 >
 
 <style>
@@ -68,7 +124,41 @@
     font-size: 45px;
     fill: #140f0a;
   }
-  .dim {
+  /* Not while the face-down side is on it (turning back up included): red
+     stays red, whoever answered wrong. */
+  .dim:not(:has(> .face-down)) {
     filter: grayscale(1) brightness(0.55);
+  }
+  /* Answered wrong: the token turns face down, its letter hidden, its face the
+     wrong verdict's sign (VerdictSign, as at the reveal) drawn large, its rim
+     where the ring was, so it never reads as a kick's seal on the corner. */
+  /* Whenever the face-down side is on it, turning back up included. */
+  .avatar:has(> .face-down) {
+    position: relative;
+  }
+  .face-down {
+    --v-icon: var(--verdict-bad-icon);
+    --v-tint: var(--verdict-bad-tint);
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+  }
+  /* Its cross drawn as it settles from turning over (VerdictSign's --draw-at). */
+  .landing {
+    --draw-at: 0.42s;
+  }
+  /* Turning down, the face-down side shows from halfway (TURN, above). */
+  .turn-down .face-down {
+    animation: face-in var(--turn) linear;
+  }
+  @keyframes face-in {
+    0%,
+    50% {
+      opacity: 0;
+    }
+    50.1%,
+    100% {
+      opacity: 1;
+    }
   }
 </style>

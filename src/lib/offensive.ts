@@ -14,6 +14,7 @@
 // "zipperhead" → "ziperhead"). In patterns, [x] is optional and | is a word
 // edge.
 
+import { foldLookalikes } from './lookalikes.ts';
 import { DataSet, RegExpMatcher, englishDataset, englishRecommendedTransformers, parseRawPattern } from 'obscenity';
 
 /**
@@ -102,7 +103,10 @@ const joinLetters = (s: string) => s.replace(/(?<=(?:^| )\S) (?=\S(?: |$))/gu, '
 function readings(name: string) {
   const plain = name.normalize('NFKD').replace(/\p{M}/gu, '').replace(BREAKS, ' ').trim();
   const bare = plain.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  return { plain, words: splitWords(plain), others: [joinLetters(plain), bare, joinLetters(bare)] };
+  // Letters from other scripts that look like Latin ones, read as those (lookalikes.ts).
+  const folded = foldLookalikes(plain);
+  const alike = folded === plain ? [] : [folded, joinLetters(folded)];
+  return { plain, words: splitWords(plain), others: [joinLetters(plain), bare, joinLetters(bare), ...alike] };
 }
 
 const LOWER = /\p{Ll}/u;

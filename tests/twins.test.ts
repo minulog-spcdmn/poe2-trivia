@@ -28,7 +28,7 @@ const CATEGORIES = [...new Set(TWINS.map((t) => byName.get(t.names[0])!.category
 
 /** Questions in each twin category played one after another, each answer used up, as in a game. */
 function twinQuestions(settings: Partial<Settings>, seed: number, n = 1500): Question[] {
-  const engine = new Engine(items, { rng: seeded(seed), fakes });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(seed), fakes });
   return CATEGORIES.flatMap((category) => {
     const s = createGame(null, { targetScore: 5, timer: 0, mode: 'turns', public: false, locked: false, ...settings });
     return Array.from({ length: n }, () => {
@@ -167,7 +167,7 @@ test('with twins sitting out, a question that mixes groups still shows each as o
 });
 
 test('in Delve, twins meet from their depth on (a find from its deeper one)', () => {
-  const engine = new Engine(items, { rng: seeded(6), fakes, looks });
+  const engine = new Engine(items, { autoClock: true, rng: seeded(6), fakes, looks });
   let base = createGame(null, { targetScore: 10, timer: 0, difficulty: 'eternal', mode: 'delve', public: false, locked: false });
   base = engine.apply(base, { type: 'join', playerId: 'p0', name: 'Ash' }, null);
   base = engine.apply(base, { type: 'start' }, null);

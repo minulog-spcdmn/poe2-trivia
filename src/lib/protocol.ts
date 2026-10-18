@@ -2,20 +2,33 @@
 // arrives from the other side. Anything that doesn't match is dropped and the
 // sender disconnected: a real client never sends malformed messages.
 
-import type { Action, GameState } from './game';
+import { answerMs, type Action, type GameState } from './game.ts';
 import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
+import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
+import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 
-export const PROTOCOL_VERSION = 30;
+export const PROTOCOL_VERSION = 32;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
 
+const GUEST_BEHIND = 'Your game is out of date. Reload the page to join.';
+const HOST_BEHIND = "The host's game is out of date. Ask them to reload the page.";
+
 /** Why a guest on protocol `v` can't join this host, or null when it can. */
 export function versionProblem(v: number): string | null {
   if (v === PROTOCOL_VERSION) return null;
-  return v < PROTOCOL_VERSION ? 'Your game is out of date. Reload the page to join.' : "The host's game is out of date. Ask them to reload the page.";
+  return v < PROTOCOL_VERSION ? GUEST_BEHIND : HOST_BEHIND;
 }
+
+/**
+ * Whether a host's refusal is about the versions, not the room (full, locked,
+ * a name): flagged so (`version`), or, from a host older than the flag, in
+ * the words it used (versionProblem's then, or LEGACY_VERSION_TEXT).
+ */
+export const isVersionRefusal = (msg: { message: string; version?: true }) =>
+  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === LEGACY_VERSION_TEXT;
 
 /** The refusal a guest shows: an older host can't say which side is behind, so the guest says it for them. */
 export function versionRefusal(message: string): string {
@@ -27,8 +40,11 @@ export type ClientMsg =
   /**
    * `tab`: random per page load, so the host can tell another tab from this one reconnecting.
    * `watch`: the guest would rather watch than play (see the watch action).
+   * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
+   * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
+   * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -38,13 +54,16 @@ export type ClientMsg =
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
+  /** As a link opens: a challenge for a hello under the held name to be signed over (ownerKey.ts joinProof). */
+  | { t: 'hi'; c: string }
   | { t: 'welcome'; playerId: string }
   | { t: 'state'; state: GameState; now: number }
   /**
    * `askedAt`: an answer to that question was turned down, so it may be
    * given again. A guest that doesn't know the field just shows the message.
    */
-  | { t: 'error'; message: string; askedAt?: number }
+  /** `version`: turned away for the versions (isVersionRefusal). */
+  | { t: 'error'; message: string; askedAt?: number; version?: true }
   | { t: 'kicked' }
   | { t: 'closed' }
   /** The same player connected again (another tab): this connection is dropped. */
@@ -56,6 +75,13 @@ export type HostMsg =
   | { t: 'cursors'; c: CursorEntry[] }
   /** Lobby: how each player who isn't simply ready stands (presence.ts), by id; sent when it changes. */
   | { t: 'standing'; s: Record<string, Standing> }
+  /**
+   * A question's picture, sealed (seal.ts): sent as soon as it's ready, on the
+   * art lane like the plain ones; nothing in it can be read until its key comes.
+   */
+  | SealedMsg
+  /** The key to a question's sealed pictures, on the main channel to everyone as its clock starts, before the state that starts it. */
+  | KeyMsg
   | MediaMsg;
 
 export type MediaMsg =
@@ -70,6 +96,10 @@ export type MediaMsg =
   | { t: 'patch'; qid: number; tile?: number; i: number }
   /** `w`, `h`: its size in art pixels (the picture is finer, by the item's artScale). */
   | { t: 'option'; qid: number; index: number; w: number; h: number; data: ArrayBuffer };
+
+const MEDIA = new Set(['art', 'veil', 'patch', 'option']);
+/** A question's pictures and their patches: what the art lane carries (artLane.ts). */
+export const isMedia = (msg: HostMsg): msg is MediaMsg => MEDIA.has(msg.t);
 
 /** A veiled picture's labels: (patch, length) pairs of 16-bit numbers, a run per patch per row or so. */
 const MAX_LABEL_BYTES = 4 * 262144;
@@ -98,6 +128,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         return null;
       if (raw.tab !== undefined && !(isStr(raw.tab, 64) && TAB.test(raw.tab))) return null;
       if (raw.watch !== undefined && typeof raw.watch !== 'boolean') return null;
+      if (raw.lane !== undefined && typeof raw.lane !== 'boolean') return null;
+      if (raw.seal !== undefined && typeof raw.seal !== 'boolean') return null;
+      if (raw.owner !== undefined && !isOwnerProof(raw.owner)) return null;
       return {
         t: 'hello',
         secret: raw.secret,
@@ -105,6 +138,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         v: raw.v,
         ...(raw.tab !== undefined ? { tab: raw.tab } : {}),
         ...(raw.watch ? { watch: true } : {}),
+        ...(raw.lane ? { lane: true } : {}),
+        ...(raw.seal ? { seal: true } : {}),
+        ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
@@ -125,7 +161,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
           const index = a.index === null ? null : isInt(a.index, 0, 16) ? a.index : undefined;
           const askedAt = a.askedAt === undefined ? undefined : isInt(a.askedAt, 0, Number.MAX_SAFE_INTEGER) ? a.askedAt : NaN;
           if (index === undefined || Number.isNaN(askedAt)) return null;
-          return { t: 'action', action: { type: 'answer', index, askedAt } };
+          // Its time on the guest's device, for the end screen: dropped if it isn't one (game.ts answerMs).
+          const ms = answerMs(a.ms);
+          return { t: 'action', action: { type: 'answer', index, askedAt, ...(ms !== undefined ? { ms } : {}) } };
         }
         case 'next':
           return { t: 'action', action: { type: 'next' } };
@@ -157,16 +195,20 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
   const qid = isInt(raw.qid, 0, Number.MAX_SAFE_INTEGER);
   const tile = raw.tile === undefined || isInt(raw.tile, 0, 16);
   switch (raw.t) {
+    case 'hi':
+      return isChallenge(raw.c) ? { t: 'hi', c: raw.c } : null;
     case 'welcome':
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
-      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && typeof raw.now === 'number'
+      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now)
         ? (raw as HostMsg)
         : null;
     }
     case 'error':
-      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) ? (raw as HostMsg) : null;
+      return isStr(raw.message, 300) && (raw.askedAt === undefined || isInt(raw.askedAt, 0, Number.MAX_SAFE_INTEGER)) && (raw.version === undefined || raw.version === true)
+        ? (raw as HostMsg)
+        : null;
     case 'busy':
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
     case 'kicked':
@@ -203,6 +245,11 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return qid && tile && isInt(raw.i, 0, 254) ? (raw as HostMsg) : null;
     case 'option':
       return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+    // What's inside is checked as it opens (it goes through here again then).
+    case 'sealed':
+      return parseSealed(raw);
+    case 'key':
+      return parseKey(raw);
     default:
       return null;
   }

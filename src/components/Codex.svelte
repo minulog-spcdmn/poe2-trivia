@@ -15,6 +15,9 @@
   import { whenIdle } from '../lib/idle';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
+  import { circleOf } from './circles';
+  import { circleAtPlace } from '../lib/circlePlaces';
+  import { warmPlate } from '../lib/plateStore.svelte';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -32,6 +35,12 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
+  // The pages' circles, and the item window's eye, built ahead away from the
+  // page once the Codex is open (the collection's sooner, as its entry on
+  // the start page is pointed at: Home.svelte).
+  onMount(() => {
+    for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
+  });
   // A game in another tab may add to it meanwhile.
   onMount(() =>
     onStoredElsewhere({
@@ -312,7 +321,7 @@
       </div>
     {/if}
 
-    <CodexMedallion share={found}>
+    <CodexMedallion share={found} circle={circleOf('collection')}>
       <span class="medal-value">{stats.seen}</span>
       <span class="medal-of">of {stats.total}</span>
       <span class="medal-label">discovered</span>
