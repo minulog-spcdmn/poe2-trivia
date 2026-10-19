@@ -6,6 +6,9 @@ changed, so a later orchestrator can follow.
 
 | Date | Decision | Where it went |
 | --- | --- | --- |
+| 2026-10-19 | Owner: in early prototyping, no new tests, QA benches, bot tuning or headless runs. Keep the type check; skip broken prototype tests; harden before merging to main. The orchestrator smoke-tests on serving and reviews in parallel | v4 handoff (Done when); prototype session |
+| 2026-10-19 | Each corruption carries its boss rule from its seeding, shown on the map; stopping it removes that rule (from the end and boss design's questions). Seeds cap at 4, one per rule; a waiting corruption counts as alive; every vendor shows the boss's rule | v4b; both design sessions |
+| 2026-10-19 | v4 ships in two drops: v4a (rules on today's screens) for the owner to play at once, v4b (screens, answer line, wording, new supplies). Reviews run in parallel with playtests | Prototype session |
 | 2026-10-19 | Owner: the map is a first draft, nothing meant to stay, and the orchestrator may shape it. Re-stepped to 10 steps by merging the old order (camp 0; 6, 5, 4 places; Ziggurat town 4; 5, 4 places; Forest Encampment town 7; 5, 4 places; boss 10), backup in the orchestrator's scratchpad. Oriath Harbour is no longer a town, since a town right before the boss was the obvious pick every time | Placement tool; `wraeclast-map.json` |
 | 2026-10-19 | Owner: the Inscription often solved itself (only one real name could be built). Every board now holds the full tiles of decoy names: look-alikes only, real and made up (fakes.json, now from the first item), rolled and never shown: 1 to 2 early, 2 to 3 mid, 3 to 4 late, 4 to 5 at the boss. The owner accepts that look-alikes may hint at the category | v4 handoff; design doc |
 | 2026-10-19 | Owner: much of the wording was confusing, even to its creator. v4 rewrites every player-facing line plainly (design handoff), and a newcomer-read review runs before playtest 4 | v4 handoffs |

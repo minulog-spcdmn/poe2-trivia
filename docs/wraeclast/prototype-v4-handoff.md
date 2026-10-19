@@ -165,10 +165,14 @@ Add:
 
 ## Done when
 
-- A full 10-step run plays from camp to boss on a phone and a desktop, won
-  and lost, with a corrupted zone entered and one front left alive.
-- The bot shows the economy targets above and a run of about 17 items.
-- `npm test` and `npm run check` pass.
+While the prototype is this early (owner, Oct 19): no new tests, QA benches,
+bot tuning or headless runs. The owner's playtest is the check, and the
+orchestrator smoke-tests each build when serving it. Everything is hardened
+before anything merges to main.
+- v4a: the rules play end to end on today's screens. v4b: the screens, the
+  answer line, the wording and the two new supplies.
+- `npm run check` passes. Wraeclast tests broken by a rule change are marked
+  skipped ("prototype: revisit before merge"); tests outside it stay untouched.
 - The PR (#197) has a v4 section listing anything that didn't work as
-  written. Message the orchestrator with the commit; it serves the build for
+  written. Message the orchestrator with each commit; it serves the build for
   the owner.
