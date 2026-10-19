@@ -233,7 +233,7 @@
           <div class="art" bind:this={art}>
             <div class="frame"><Veil {run} /></div>
           </div>
-          <Clues {run} />
+          <Clues {run} beside={short.current} />
         </div>
       </section>
       {#if !named && !short.current}<ItemPack {run} onuse={used} />{/if}
@@ -364,7 +364,7 @@
       {#if short.current && tray}
         <div class="tray" role="dialog" aria-label="Your pack">
           <div class="tray-head"><h2>Your pack</h2></div>
-          <ItemPack {run} onuse={used} />
+          <ItemPack {run} onuse={used} tray />
         </div>
       {/if}
       {#if miss}
@@ -1237,20 +1237,6 @@
     letter-spacing: 0;
     text-transform: none;
     color: #e6dccb;
-  }
-  /* The tray's pack: four spaces a row, each with its name. */
-  .dock .tray :global(.pack) {
-    flex-wrap: wrap;
-    padding-top: 4px;
-    gap: 6px 4px;
-  }
-  .dock .tray :global(.pack .slot) {
-    flex: 0 0 calc((100% - 12px) / 4);
-    max-width: none;
-    height: 56px;
-  }
-  .dock .tray :global(.pack .slot .lbl) {
-    display: block;
   }
   /* With the pack in the tray, the art takes the room it left. */
   @media (max-width: 699px) and (max-height: 740px) {
