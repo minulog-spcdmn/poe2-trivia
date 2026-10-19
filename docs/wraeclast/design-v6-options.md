@@ -569,3 +569,241 @@ any other game.
 2. **Should the town also run a second gamble?**
    - Yes, Doomed towns beside the lead one (recommended)
    - No, one gamble per town
+
+## 11. The town as the build moment
+
+The owner's answer to section 10: none of the six. The town should hook a
+player into round after round, with all four hooks:
+- breaking the game (Balatro);
+- unlocks between runs (Hades, Vampire Survivors);
+- build synergies (Slay the Spire);
+- near-miss mastery.
+
+So the town is where you assemble a build that can break the run. Its parts
+are Pledges, supplies, gold, duel strength and what the town offers.
+Research notes: `research/v6-supports-and-orbs.md`.
+
+**The numbers below** use section 6's duel:
+- **The Seed:** 30 life, +8 a turn. After 7 zones it has about 86 and hits
+  8 or 9 as each item opens.
+- **Your hit:** 10 for a right answer, before any build.
+- **A hit is worked out in order:** flat additions first, then each
+  multiplier in turn, as Balatro reads its jokers left to right.
+- **Gold:** a right answer pays about 12, and the camp starts you with 40.
+- **Towns:** three, after about turns 2, 4 and 6.
+- **Without a build:** the duel takes 9 right answers, against 8 or 9 life
+  lost per item, which a careful player only just wins.
+
+Every number is a first guess, to show the shape of a snowball.
+
+### A. The bench: craft one weapon with PoE's own orbs
+
+**(a) A visit.**
+- You carry one weapon into the duel, and the town is its crafting bench.
+  Each visit offers 3 or 4 orbs for gold, each doing what it does in PoE2:
+  - a Transmutation makes the weapon magic, with 1 mod;
+  - an Augmentation adds a second mod;
+  - a Regal makes it rare, with a third mod;
+  - an Exalted adds a mod;
+  - a Chaos swaps one mod for a random one;
+  - an Annulment removes one;
+  - a Divine rerolls the numbers.
+- Mods trigger on how you answer: "bare answers hit ×2", "+5 hit for each
+  supply used on the item", "+4 gold for each right answer", "+1 hit for
+  every 3 gold you carry", "first-try answers hit ×1.5".
+- **A Vaal Orb** corrupts the weapon, as in PoE2. It rolls one of: nothing;
+  every mod rerolled; a corrupted enchantment (the big one, such as "gold
+  mods count double"); or a fifth mod slot.
+  - Either way the weapon is locked for good, and the Seed gains 15 life:
+    the corruption is now in your hand.
+- A visit is 2 to 4 taps: buy an orb, watch it land, keep going.
+
+**(b) Builds that break it.**
+
+*The miser* (gold that turns into hit):
+
+| | Gold | Weapon | The duel hit |
+| --- | --- | --- | --- |
+| Town 1 | 40 → 19 | Transmutation: +4 gold a right answer. Augmentation: +1 hit per 3 gold carried | |
+| Town 2 | 51 → 36 | Regal: bare answers hit ×2. A corrupted zone deals the Pledge Ornate Dagger (×1.5) | |
+| Town 3 | 68 → 48 | Vaal lands "gold mods count double": +2 hit per 3 gold. The Seed gains 15 | (10 + 32) × 2 × 1.5 = **126** |
+
+- **Result:** the Seed has 101 life, and one bare answer kills it. Every
+  right answer adds gold, so the hit grows as you go.
+- **If the Vaal had rolled every mod again:** the miser could have lost
+  both gold mods and walked in with 10 a hit. That's the "big or bricked"
+  the owner floated, as a real choice: at Town 3 an Exalted was the safe
+  buy.
+
+*The lamplighter* (supplies that turn into hit):
+
+| | Gold | Weapon | The duel hit |
+| --- | --- | --- | --- |
+| Town 1 | 40 → 11 | Transmutation: +5 hit per supply used on the item. Buys 6 Torches | |
+| Town 2 | 35 → 11 | Augmentation: supplies used on a right first try come back. Buys 2 Golden Pages and 2 Ancient Orbs | |
+| Town 3 | 35 → 7 | Vaal lands a corrupted enchantment: the supply mod doubles, to +10. Buys 2 Scrolls | 5 supplies on one item: 10 + 50 = **60**, every one refunded |
+
+- **Result:** two items kill a Seed of 101. The build turns the old "use
+  less" rule upside down, which only works because a first try must still
+  be right.
+
+**(c) Unlocks between runs.**
+- **Weapon bases, each with its own built-in mod:**
+  - a Spear to start;
+  - then a Quarterstaff ("first-try answers hit ×1.5");
+  - a Bow ("a bare answer fires twice");
+  - a Sceptre ("Pledges' edges count half again");
+  - a Crossbow ("holds one hit back and adds it to the next").
+- **New mods** in the pool.
+- **New orbs:**
+  - a Fracturing Orb, which locks a mod so a Vaal can't touch it;
+  - Essences, which add a chosen mod;
+  - Omens, which steer the next orb.
+- **They're earned by deeds in a run:** "one-shot the Seed", "win with a
+  locked weapon", "use three Vaal Orbs".
+
+**(d) Why a lost duel brings you back.** The end screen shows the last hit
+and what's left: "Seed: 14 life left. Your hit: 42. A Regal at Town 2
+instead of the Torches would have made it 84." You lost to a choice you can
+see, and you know the orb you'll buy next time.
+
+### B. The links: one skill, and support gems in its sockets
+
+**(a) A visit.**
+- Your duel attack is one skill gem, with 2 linked sockets at the start.
+  Each visit offers 3 support gems from the pool, and you pay to socket
+  one.
+- A Jeweller's Orb adds a socket, up to 5, and its price rises each time.
+- Supports are PoE2's own, each doing what it does there, read left to
+  right. Neither the gem names nor these words clash with an answer:
+  - **Combo Finisher:** every third right answer in a row hits ×3.
+  - **Practiced Combo:** a first-try answer builds 2 Combo.
+  - **Spell Echo:** a bare answer's hit repeats.
+  - **Ricochet:** half of each duel hit carries into the next item.
+  - **Brutality:** bare answers hit ×2, and clued answers hit nothing.
+  - **Fire Attunement:** +25% of the hit as extra.
+  - **Execute:** ×1.4 while the Seed is under half.
+  - **Culling Strike:** the Seed dies under 25%.
+  - **Life Leech:** hits heal 12% of their damage.
+- Chain, Fork and Behead are left out: Chain and Fork appear in answers
+  (Chain Mail, Runic Fork), and Behead is the family of the answer Einhar's
+  Beastrite.
+- No randomness after the offer: the gamble is which supports turn up, the
+  skill is the order you put them in.
+
+**(b) Builds that break it.**
+
+*The streak:*
+
+| | Sockets | Duel hit |
+| --- | --- | --- |
+| Town 1 | Combo Finisher | |
+| Town 2 | Jeweller's Orb; Practiced Combo | |
+| Town 3 | Jeweller's Orb; Spell Echo, Ricochet. Pledge Ornate Dagger (×1.5) | Item 1, bare and first try: 15, echoed 30. Item 2, Combo at 4: 15 × 3 = 45, echoed **90**, plus 15 carried |
+
+- **Result:** a Seed of 86 dies on the second item, against nine right
+  answers unbuilt. A miss breaks the Combo, so the build bets on not
+  missing.
+
+*The executioner:*
+
+| | Sockets | Duel hit |
+| --- | --- | --- |
+| Town 1 | Brutality | |
+| Town 2 | Jeweller's Orb; Fire Attunement. Pledge Sanguine Vial (the Seed has 30% less life) | |
+| Town 3 | Jeweller's Orb; Execute, Culling Strike. Pledge Ornate Dagger | Item 1: 10 × 2 × 1.25 × 1.5 = **37**, the Seed 60 → 23. Item 2: × 1.4 = 52: culled |
+
+- **Result:** two items, and only if both are bare. One clued answer hits
+  nothing, so the build is all nerve.
+
+**(c) Unlocks between runs.**
+- New supports in the pool: Spell Echo and Practiced Combo start locked.
+- New skill gems as the duel attack, each with its own base behaviour (one
+  hits twice for half; one grows with Combo).
+- A third starting socket.
+
+**(d) Why a lost duel brings you back.** The end screen replays the chain:
+"Item 3: Combo broke on the miss. With Practiced Combo before Combo
+Finisher, it would have fired on item 2." The order is the lesson, and
+order is skill.
+
+### C. The rack: upgrade your four supplies into an engine
+
+**(a) A visit.**
+- The four supplies stay (Torch, Golden Page, Ancient Orb, Scroll of
+  Wisdom), bought with gold. Each visit offers 3 upgrades, one free and the
+  others for gold, plus supplies.
+- An upgrade changes what a supply does, for the rest of the run:
+  - "each Torch also hits the Seed for 4";
+  - "an Ancient Orb strikes its sibling's tiles from the board";
+  - "every Scroll used this run adds 2 to your hit";
+  - "a Torch used on a right first try comes back".
+- A supply takes up to 3 upgrades. Names for them are still to find
+  (principle 8).
+
+**(b) Builds that break it.**
+
+*The bonfire:*
+
+| | Upgrades | Duel |
+| --- | --- | --- |
+| Town 1 | Torch: also hits the Seed for 4. Buys 8 Torches | |
+| Town 2 | Torch: comes back on a right first try | |
+| Town 3 | Torch: each Torch on an item hits 4 more than the last. Pledge Ornate Dagger | 5 Torches on item 1: 4 + 8 + 12 + 16 + 20 = 60, plus the answer's 10, × 1.5 = **105**, Torches refunded |
+
+- **Result:** a Seed of 86 dies on the first item, and the art is fully
+  burnt in by then.
+
+*The scholar:*
+
+| | Upgrades | Duel |
+| --- | --- | --- |
+| Town 1 | Scroll: each line shown pays 2 gold | |
+| Town 2 | Scroll: costs half | |
+| Town 3 | Scroll: every Scroll used this run adds 2 to your hit | 15 Scrolls used by the duel: +30. Item 1 with 3 more: 10 + 36 = **46**, then 52 |
+
+- **Result:** two items. The ramp is felt all run, since every Scroll read
+  makes you stronger.
+
+**(c) Unlocks between runs.**
+- New upgrades in the pool.
+- A fifth supply (Base reveal, or another).
+- A starting upgrade of your choice.
+
+**(d) Why a lost duel brings you back.** "6 Torches left in the pack: 60
+damage you never used." The engine was there, and you didn't spend it.
+
+**The main risk:** when supplies become the power, a broken build reveals
+the answer outright (the bonfire burns in the whole art). The duel is won,
+but the trivia stops deciding. A and B keep the clues and the power apart.
+
+### My pick: A, the bench
+
+- **It's PoE's own hook.** Crafting a weapon with orbs is what PoE players
+  already play round after round for, so it needs no explaining, and the
+  orbs do exactly what they do in the game.
+- **The town is the build and the gamble at once.** The owner wanted a
+  gamble there, and each orb is one, with odds a PoE player knows.
+- **It ties to the Seed.** A Vaal Orb feeds the Seed 15 life and locks the
+  weapon, so "big or bricked" is a choice about the duel, not a slot
+  machine.
+- **Knowledge stays the engine.** Every mod triggers on how you answer
+  (bare, first try, supplies used), so a build only breaks the run for
+  someone who answers well.
+- **Unlocks come naturally:** bases, orbs, and mods for the pool.
+- **The risk:** a 4-mod weapon has to read on a 375 px phone (four lines
+  and a base). And luck in the orbs could swamp the build; Fracturing Orbs
+  and Essences, as unlocks, give control back.
+
+B is the cleaner synergy puzzle, and a fallback if the orbs feel too
+random. C makes items play differently, but breaks the trivia.
+
+### Questions for the owner
+
+1. **Which town?**
+   - The bench: craft one weapon with PoE's orbs (recommended)
+   - The links: support gems in a skill's sockets
+   - The rack: upgrade your supplies into an engine
+2. **How much luck in the build?**
+   - Orbs land at random, and Vaal is the big gamble (recommended)
+   - Pick from offers, with no randomness after that
