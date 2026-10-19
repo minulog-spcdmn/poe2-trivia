@@ -16,7 +16,8 @@
     "bake-icons": "node scripts/bake-icons.mjs",
     "screens": "node scripts/capture-screens.mjs",
     "qa": "node scripts/qa.mjs",
-    "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts",
+    "wraeclast-depth": "node scripts/wraeclast-depth.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
