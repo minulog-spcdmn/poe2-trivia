@@ -52,10 +52,9 @@ Owner picked from design's v6 options (`decisions.md`, newest rows): open
 region, depth plus one waystone mod, the Seed of Corruption, Pledges
 (formerly Pacts), four supplies (Torch, Golden Page, Ancient Orb, Scroll of
 Wisdom), all bought with gold. Gambling lives in town, to make the shop
-interesting. Two rounds of town pitches missed (sections 9 and 10). The
-owner wants the town to be the hook: the build moment where combos snowball,
-synergies differ run to run, unlocks between runs show up, and a near miss
-says what to do next time. Design is pitching that.
+interesting. Three rounds of town pitches missed (sections 9 to 11; 11 went to crafting and
+skill gems: "you have lost the plot"). A fresh design session works from
+`design-v7-brief.md`: the town as the hook, built from knowing items.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
