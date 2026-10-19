@@ -48,8 +48,10 @@ Nothing gets built until the redesign is settled.
 
 ## Now
 
-The combined brief went to design (options first, text only, no boards).
-Next: put design's options to the owner as feel questions.
+Owner picked from design's v6 options (`decisions.md`, newest row): open
+region, three supplies each paid differently, depth plus one waystone mod,
+the Seed of Corruption, Pledges (formerly Pacts). Bets are still open; design
+is making them concrete along with the three supplies.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
