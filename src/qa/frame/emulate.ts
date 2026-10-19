@@ -16,6 +16,7 @@
 // Imported before any module of the game, which reads some of these once.
 
 import type { Size } from '../sizes.ts';
+import { realFrame } from './freeze.ts';
 
 /** Always true and always false on a screen, valid anywhere a media feature is. */
 const ALWAYS = '(min-width: 0px)';
@@ -88,7 +89,7 @@ export function emulate(size: Size) {
   const soon = () => {
     if (queued) return;
     queued = true;
-    requestAnimationFrame(() => {
+    realFrame(() => {
       queued = false;
       rewriteAll();
     });

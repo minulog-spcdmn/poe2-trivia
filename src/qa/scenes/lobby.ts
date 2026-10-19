@@ -23,7 +23,7 @@ function lobby(key: string, label: string, seats: Seat[], names: string[], setti
  * The descent drawn in a Delve lobby's rules (components/DelveRules), from
  * this device's records: none, a best, a best and a last run, past every
  * zone, past 100 (depths as the records keep them, shown one less), and the
- * finds met or not. The descent's own page (descent.html) walks it down.
+ * finds met or not. The descent's own bench (src/qa/benches/descent.ts) walks it down.
  */
 const RECORDS: Knob = {
   key: 'records',

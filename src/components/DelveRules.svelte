@@ -13,7 +13,8 @@
   // find's item and name on its right (tied to the pit the same way), and
   // the finds' rules follow under it. The lobby passes this browser's
   // records (the deepest and the last run, alone or together, and the
-  // finds met); the descent page (descent.html) drives them directly.
+  // finds met); the descent's bench on the QA desk (qa.html?b=descent) drives
+  // them directly.
   let {
     deepest = null,
     last = null,

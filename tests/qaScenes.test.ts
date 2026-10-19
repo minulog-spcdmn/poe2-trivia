@@ -6,7 +6,7 @@ import { useItems } from '../src/qa/build/engine.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
 import { SCREENS, knobValues, seatLabel } from '../src/qa/scene.ts';
-import { matches, sizesFor, walk } from '../src/qa/desk/walk.ts';
+import { matches, sizesFor } from '../src/qa/desk/walk.ts';
 import { answered } from '../src/qa/frame/emulate.ts';
 import { fakes, items } from './helpers.ts';
 
@@ -76,14 +76,14 @@ test("every size a scene names is a size, and every board is the design's", () =
   }
 });
 
-test('the walk stops at every scene, at the walk sizes and its own, a seat at a time on large screens', () => {
+test('every scene is walked at the walk sizes and its own, smallest first, and the search finds by words', () => {
   const all = catalog();
-  const stops = walk(all);
-  assert.equal(new Set(stops.map((s) => s.id)).size, stops.length, 'two stops share an id');
+  const order = SIZES.map((s) => s.key);
   for (const s of all) {
     const sizes = sizesFor(s);
     for (const k of WALK_SIZES) assert.ok(sizes.includes(k), `${s.key} isn't walked at ${k}`);
-    for (const k of sizes) assert.ok(stops.some((t) => t.scene === s && t.size === k), `${s.key} has no stop at ${k}`);
+    for (const k of s.sizes ?? []) assert.ok(sizes.includes(k), `${s.key} isn't walked at its own ${k}`);
+    assert.deepEqual(sizes, [...sizes].sort((a, b) => order.indexOf(a) - order.indexOf(b)), `${s.key}'s sizes are out of order`);
   }
   assert.ok(matches(all[0], all[0].label.split(' ')[0].toUpperCase()));
   assert.ok(!matches(all[0], 'zzzz-nothing-like-it'));

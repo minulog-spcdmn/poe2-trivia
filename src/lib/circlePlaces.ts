@@ -1,7 +1,7 @@
 // Where each rune circle stands (docs/arcane-style.md), said once: the
 // game, the codex and today's unique all take their circles from here
-// (src/components/circles.ts, DailyUnique), and the circles' test page
-// (circle.html) lists it, so it always shows where each one is. Names only,
+// (src/components/circles.ts, DailyUnique), and the circles' bench
+// on the QA desk (qa.html?b=circle) lists it, so it always shows where each one is. Names only,
 // no circles: the start page reads it without loading any.
 
 import type { PlateName } from './plates/index.ts';

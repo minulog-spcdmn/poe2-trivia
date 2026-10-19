@@ -2,6 +2,7 @@
 
 import type { GameState } from '../lib/game.ts';
 import type { Problem } from './frame/checks.ts';
+import type { Values } from './bench.ts';
 
 export type FrameMessage =
   /** The scene shows (its slot: which frame of the stop). */
@@ -9,11 +10,23 @@ export type FrameMessage =
   /** The scene came to rest (or didn't, `settled` false) and was checked: what's wrong with it, if anything. */
   | { qa: 'checked'; slot: string; settled: boolean; problems: Problem[] }
   /** One of the desk's keys, pressed (or let go: `up`) while the frame had the focus. */
-  | { qa: 'key'; key: string; shift: boolean; repeat: boolean; up?: boolean };
+  | { qa: 'key'; key: string; shift: boolean; repeat: boolean; up?: boolean }
+  /** A piece moved its own controls, as an action played out (the panel follows). */
+  | { qa: 'set'; values: Values }
+  /** One of the states side by side was clicked: show it alone. */
+  | { qa: 'pick'; index: number };
 
 export type DeskMessage =
   /** Outline the elements at fault, or don't. */
-  { qa: 'outlines'; on: boolean };
+  | { qa: 'outlines'; on: boolean }
+  /** Hold every animation still, or let them go on. */
+  | { qa: 'freeze'; on: boolean }
+  /** A piece's controls as set now. */
+  | { qa: 'values'; values: Values }
+  /** One of a piece's actions, pressed. */
+  | { qa: 'action'; key: string }
+  /** Draw it in again, as it first came. */
+  | { qa: 'replay' };
 
 /** How a live seat stands, as it tells the desk every second. */
 export interface SeatLook {
@@ -39,6 +52,6 @@ export type SeatOp = {
   on?: boolean;
 };
 
-const isQa =(m: unknown): m is { qa: string } => typeof m === 'object' && m !== null && 'qa' in m && typeof (m as { qa: unknown }).qa === 'string';
-export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'checked', 'key'].includes(m.qa);
-export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && m.qa === 'outlines';
+const isQa = (m: unknown): m is { qa: string } => typeof m === 'object' && m !== null && 'qa' in m && typeof (m as { qa: unknown }).qa === 'string';
+export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'checked', 'key', 'set', 'pick'].includes(m.qa);
+export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && ['outlines', 'freeze', 'values', 'action', 'replay'].includes(m.qa);

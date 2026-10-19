@@ -4,8 +4,11 @@
 // left running) and its layout no longer moving. scripts/capture-screens.mjs
 // waits the same way before a shot. Gives up after `capMs`, saying so.
 
+import { realFrame } from './freeze.ts';
+
 const race = <T>(p: Promise<T>, ms: number) => Promise.race([p.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), ms))]);
-const frame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 100)));
+// (The browser's own frames: a frozen frame, F in the desk, holds the app's.)
+const frame = () => new Promise((r) => realFrame(() => setTimeout(r, 100)));
 
 /** Layout boxes, which leave transforms out: an animation that only moves or scales something isn't the layout changing. */
 function snapshot() {

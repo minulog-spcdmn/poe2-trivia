@@ -8,7 +8,7 @@
   // The daily's streak badge: the game's streak badge, counted in days and
   // burning with the game's fire, in the colour of the run's step on the
   // ladder (lib/fx/streaks). Today's unique shows it under the answers; the
-  // streak's test page (streak.html) shows it on its own.
+  // QA desk's streak bench (qa.html?b=streak) shows it on its own.
   import { scale } from 'svelte/transition';
   import { ablaze, newFlame, turnsBlue, twinkle } from '../lib/fx/moments';
   import { onFxChange, type Handle } from '../lib/fx/core';

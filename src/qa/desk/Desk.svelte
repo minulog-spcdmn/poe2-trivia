@@ -1,22 +1,25 @@
 <script lang="ts">
-  // The QA desk: one stop of the walk at a time (a scene at a size, from its
-  // seats), as large as the window allows, and a strip with a mark for every
-  // stop. Arrow keys walk it (docs/qa.md has every key). The stop, the
-  // search and the zoom are in the address, so reloading, going back and
-  // sending a link all give the same view.
-  import { catalog } from '../scenes/index.ts';
+  // The QA desk: a bench for each thing of the game's (src/qa/benches), its
+  // list on the left, the thing itself live in the middle at the size
+  // picked, and its panel on the right: its states, its controls, what can
+  // happen to it. Keys do the rest (docs/qa.md lists them). The bench, its
+  // state, its controls and the size are in the address, so a reload, the
+  // back button and a link sent to someone all show the same.
+  import { benches, benchOfScene, shelfOf } from '../benches/index.ts';
+  import { sceneByKey } from '../scenes/index.ts';
   import sceneFiles from '../../data/sceneFiles.json';
-  import { touched, type Touched } from '../change.ts';
-  import { knobValues, seatLabel } from '../scene.ts';
-  import { isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
-  import { isFrameMessage, type FrameMessage } from '../messages.ts';
+  import { benchesTouched, touched } from '../change.ts';
+  import { knobValues, seatLabel, type Scene } from '../scene.ts';
+  import { SIZES, isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
+  import type { DeskMessage, FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
-  import { matches, stopOf, walk, type Stop } from './walk.ts';
+  import { stateAt, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Values } from '../bench.ts';
+  import Shelf from './Shelf.svelte';
+  import Panel from './Panel.svelte';
   import Stage from './Stage.svelte';
-  import Strip from './Strip.svelte';
+  import Grid from './Grid.svelte';
   import Live from './Live.svelte';
   import { liveRoom, type LiveRoom } from '../live/room.ts';
-  import type { Scene } from '../scene.ts';
   import { BETA, LOCAL } from '../../lib/channel.ts';
 
   /**
@@ -34,295 +37,374 @@
     ]),
   );
 
-  const ALL = catalog();
+  const ALL = benches();
+  const SCENES = ALL.flatMap((b) => (b.kind === 'scenes' ? b.scenes : []));
 
-  type View = { id: string | null; q: string; zoomed: boolean; outlines: boolean; view: 'change' | 'all' | null };
-  function fromAddress(): View {
+  /** A size to show at: a device's, or (fit) the desk's own window, the frame as large as the room there, at 1:1. */
+  type Pick = SizeKey | 'fit';
+  /** The view the address asks for. */
+  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean };
+  function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
-    const s = p.get('s');
+    const scene = sceneByKey(p.get('s')) ?? null;
+    const bench = scene ? benchOfScene(scene) : ALL.find((b) => b.key === p.get('b'));
+    if (!bench) return null;
     const size = p.get('size');
     const seat = p.get('seat');
-    return { id: s && size ? `${s}|${size}|${seat ?? 0}` : null, q: p.get('q') ?? '', zoomed: p.get('z') === '1', outlines: p.get('o') !== '0', view: p.get('v') === 'change' ? 'change' : p.get('v') === 'all' ? 'all' : null };
+    return {
+      bench,
+      scene: scene ?? (bench.kind === 'scenes' ? bench.scenes[0] : null),
+      given: Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])),
+      size: isSizeKey(size) || size === 'fit' ? size : null,
+      seat: seat === 'all' ? 'all' : seat !== null && Number.isInteger(Number(seat)) ? Number(seat) : null,
+      all: p.get('all') === '1',
+      zoomed: p.get('z') === '1',
+      outlines: p.get('o') !== '0',
+    };
   }
   const first = fromAddress();
-  let query = $state(first.q);
-  let zoomed = $state(first.zoomed);
-  let outlines = $state(first.outlines);
+
+  let bench = $state.raw<Bench>(first?.bench ?? ALL[0]);
+  let scene = $state.raw<Scene | null>(first?.scene ?? null);
+  /** The size picked: kept from bench to bench, so one size can be gone through at a time. */
+  let size = $state<Pick>(first?.size ?? 'fit');
+  let seatPicked = $state<number | 'all' | null>(first?.seat ?? null);
+  let all = $state(first?.all ?? false);
+  let zoomed = $state(first?.zoomed ?? false);
+  let outlines = $state(first?.outlines ?? true);
+  let frozen = $state(false);
+  let reloads = $state(0);
+  let holding = $state(false);
+  let panning = $state(false);
+  let query = $state('');
+
+  /** A piece's controls as set, by bench (each keeps its own while another is looked at). */
+  let values = $state<Record<string, Values>>({});
+  /** A scene's knobs as set, by scene. */
+  let knobsSet = $state<Record<string, Record<string, string>>>({});
+  if (first) {
+    if (first.bench.kind === 'piece') values[first.bench.key] = valuesOf(first.bench.controls, first.given);
+    else if (first.scene) knobsSet[first.scene.key] = first.given;
+  }
+
+  const piece = $derived<PieceBench | null>(bench.kind === 'piece' ? bench : null);
+  const scenes = $derived<SceneBench | null>(bench.kind === 'scenes' ? bench : null);
+  const v = $derived(piece ? (values[piece.key] ?? valuesOf(piece.controls)) : {});
+  const knobs = $derived(scene ? knobValues(scene.knobs, knobsSet[scene.key]) : {});
+  /** A scene's knobs set away from their defaults, as its frames' address gives them. */
+  const knobQueryOf = (s: Scene): [string, string][] => Object.entries(knobValues(s.knobs, knobsSet[s.key])).filter(([k, x]) => s.knobs?.find((o) => o.key === k)?.default !== x);
+  const knobQuery = $derived(scene ? knobQueryOf(scene) : []);
+  const built = $derived(scenes && scene ? scene.build(knobs) : undefined);
+  const sz = $derived(size === 'fit' ? null : sizeOf(size));
+  /** A scene's seats shown: all side by side on a touch screen (they fit), one at a time on a larger one, unless one was picked. */
+  // (A seat picked on a scene with more stays the last one there is on one with fewer.)
+  const seatShown = $derived<number | 'all'>(!scene || scene.seats.length === 1 ? 0 : seatPicked === 'all' ? 'all' : seatPicked !== null ? Math.min(seatPicked, scene.seats.length - 1) : sz?.touch ? 'all' : 0);
+  const seatNames = $derived(scene && built ? scene.seats.map((s) => seatLabel(s, built.state)) : []);
+  const stateIndex = $derived(piece ? stateAt(piece, v) : scenes && scene ? scenes.scenes.indexOf(scene) : -1);
+  const states = $derived(piece ? piece.states.map((s) => s.label) : (scenes?.scenes.map((s) => s.label) ?? []));
+  const board = $derived(size !== 'fit' && scene?.boards?.[size] ? BOARDS[scene.boards[size]!] : undefined);
 
   /**
-   * This change: the scenes the branch's files touch (src/qa/change.ts), from
-   * the dev server (its git) or, on the beta, the list written as it was
-   * built. Walked by default when there are some and no stop was asked for.
+   * Going to another bench or state by hand (not a slider moved, not a frame
+   * moving its own controls): a step the back button returns to.
    */
-  let change = $state<(Touched & { base: string }) | null>(null);
-  let view = $state<'change' | 'all'>(first.view ?? 'all');
+  let moves = $state(0);
+
+  /**
+   * This change: the benches the branch's files touch (src/qa/change.ts),
+   * from the dev server (its git) or, on the beta, the list written as it
+   * was built. The desk opens on the first when the address names none.
+   */
+  let change = $state<{ benches: { key: string; why: string }[]; uncovered: string[] } | null>(null);
   void (async () => {
     for (const url of ['./__qa/change', './qa-change.json']) {
       const got = await fetch(url).then((r) => (r.ok ? r.json() : null), () => null);
       if (!got?.files) continue;
-      change = { base: got.base, ...touched(got.files, sceneFiles, ALL) };
-      if (first.view === null && first.id === null && change.scenes.length) view = 'change';
+      change = benchesTouched(got.files, touched(got.files, sceneFiles, SCENES), ALL);
+      const opening = change.benches.map((t) => ALL.find((b) => b.key === t.key)).find(Boolean);
+      // Not if the address named a bench, or one was picked meanwhile; and in place of the first, not a step after it.
+      if (!first && opening && moves === 0) open(opening, undefined, false);
       return;
     }
   })();
-  const changing = $derived(new Map((change?.scenes ?? []).map((s) => [s.key, s.why])));
-  /** What each stop's frames found wrong, by stop and frame, once checked. */
-  let results = $state<Record<string, Record<string, Extract<FrameMessage, { qa: 'checked' }>>>>({});
-  /**
-   * What the last sweep found (scripts/qa.mjs, through the dev server): the
-   * problems by stop, and the sizes a scene isn't walked at but had some at,
-   * which join its walk.
-   */
-  type Shot = { scene: string; seat: number; size: string; problems: Problem[]; failed?: string; before?: string | null; changed?: number };
-  let sweep = $state<{ at: string; shots: Shot[] } | null>(null);
-  // (Not one taken from other code than this: its marks would point at problems fixed since, or miss new ones.)
-  void fetch('./__qa/latest')
-    .then((r) => (r.ok ? r.json() : null))
-    .then((m) => (sweep = m?.stale ? null : m), () => {});
-  const sweepMore = $derived.by(() => {
-    const more = new Map<string, SizeKey[]>();
-    for (const sh of sweep?.shots ?? []) if ((sh.problems.length || sh.failed) && isSizeKey(sh.size)) more.set(sh.scene, [...(more.get(sh.scene) ?? []), sh.size]);
-    return more;
-  });
-  const swept = $derived.by(() => {
-    const by: Record<string, Problem[]> = {};
-    const seatsOf = new Map(ALL.map((s) => [s.key, s.seats.length]));
-    for (const sh of sweep?.shots ?? []) {
-      const n = seatsOf.get(sh.scene);
-      if (!n || !isSizeKey(sh.size)) continue;
-      const found = sh.failed ? [{ kind: 'error' as const, count: 1, examples: [`The sweep couldn't show it: ${sh.failed}`] }, ...sh.problems] : sh.problems;
-      if (found.length) (by[stopOf(sh.scene, n, sh.size, sh.seat)] ??= []).push(...found);
+
+  function open(b: Bench, at?: Scene, step = true) {
+    if (step) moves++;
+    if (live) live = null;
+    if (b !== bench) {
+      seatPicked = null;
+      all = false;
     }
-    return by;
+    bench = b;
+    scene = b.kind === 'scenes' ? (at ?? b.scenes[0]) : null;
+  }
+  function goState(i: number) {
+    moves++;
+    if (live) live = null;
+    all = false;
+    if (piece) {
+      const s = piece.states[Math.max(0, Math.min(piece.states.length - 1, i))];
+      if (s) values[piece.key] = stateValues(piece, s, v);
+    } else if (scenes) {
+      const s = scenes.scenes[Math.max(0, Math.min(scenes.scenes.length - 1, i))];
+      if (s) scene = s;
+    }
+  }
+  /** The benches in the order the list shows them, as the search leaves them. */
+  let listed = $state.raw<Bench[]>(ALL);
+  function goBench(dir: 1 | -1) {
+    const i = listed.indexOf(bench);
+    const next = listed[i < 0 ? 0 : Math.max(0, Math.min(listed.length - 1, i + dir))];
+    if (next) open(next);
+  }
+  function setValue(key: string, value: Values[string]) {
+    if (piece) values[piece.key] = { ...v, [key]: value };
+  }
+  function setKnob(key: string, value: string) {
+    if (scene) knobsSet[scene.key] = { ...knobsSet[scene.key], [key]: value };
+  }
+
+  /** What the frames shown found wrong, by frame, once checked: only those of the view up now. */
+  let results = $state<Record<string, Problem[]>>({});
+  /** What the frames show, as one string: a change makes them afresh. A piece's controls aren't in it: they reach its frame as they move. */
+  const showing = $derived(piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(knobQuery)}|${all}|${reloads}`);
+  $effect(() => {
+    void showing;
+    results = {};
+    frozen = false;
   });
-  const stops = $derived(walk(ALL.filter((s) => matches(s, query) && (view === 'all' || changing.has(s.key))), sweepMore));
-  /** The stop shown, by id; a stop the search hides falls back to the walk's first. */
-  let wanted = $state<string | null>(first.id);
-  const at = $derived.by(() => {
-    const i = stops.findIndex((s) => s.id === wanted);
-    if (i >= 0 || wanted === null) return Math.max(0, i);
-    // Gone (another seat or size than the walk has): the scene's first stop, if it's there.
-    return Math.max(0, stops.findIndex((s) => wanted!.startsWith(`${s.scene.key}|`)));
-  });
-  const stop = $derived<Stop | undefined>(stops[at]);
-  /** A stop's problems, every frame's together: as its frames found them here, or else as the last sweep did. */
-  const problemsAt = (id: string): Problem[] => (results[id] ? Object.values(results[id]).flatMap((r) => r.problems) : (swept[id] ?? []));
-  const bad = $derived(new Set(stops.map((s) => s.id).filter((id) => problemsAt(id).length)));
-  /** Whether the stop's problems are the sweep's (it hasn't been checked here yet). */
-  const fromSweep = $derived(!!stop && !results[stop.id] && !!swept[stop.id]);
   const problems = $derived.by(() => {
     const out: Problem[] = [];
-    if (stop)
-      for (const p of problemsAt(stop.id)) {
-        const same = out.find((o) => o.kind === p.kind);
-        if (same) {
-          same.count += p.count;
-          same.examples = [...new Set([...same.examples, ...p.examples])].slice(0, 3);
-        } else out.push({ ...p, examples: [...p.examples] });
-      }
+    for (const p of Object.values(results).flat()) {
+      const same = out.find((o) => o.kind === p.kind);
+      if (same) {
+        same.count += p.count;
+        same.examples = [...new Set([...same.examples, ...p.examples])].slice(0, 3);
+      } else out.push({ ...p, examples: [...p.examples] });
+    }
     return out;
   });
-  /** The last sweep's shots of the stop's seats as they were before (--before), and how much has changed since. */
-  const shotsHere = $derived(stop ? stop.seats.map((seat) => sweep?.shots.find((sh) => sh.scene === stop.scene.key && sh.size === stop.size && sh.seat === seat)) : []);
-  const befores = $derived(shotsHere.map((sh) => (sh?.before ? `./__qa/shot/${sh.before}` : null)));
-  const changedBy = $derived(Math.max(0, ...shotsHere.map((sh) => sh?.changed ?? 0)));
-  let holdingBefore = $state(false);
-  /** Play from here: the stop's scene as a live room, while one is up. */
-  let live = $state<{ room: LiveRoom; scene: Scene; size: SizeKey } | null>(null);
-  async function play() {
-    if (!stop || !built?.state) return;
-    const room = await liveRoom(built);
-    if (room) live = { room, scene: stop.scene, size: stop.size };
-  }
-  let reloads = $state(0);
-  let holding = $state(false);
-  let panning = $state(false);
-  let searchEl = $state<HTMLInputElement>();
 
-  const board = $derived(stop && stop.scene.boards?.[stop.size] ? BOARDS[stop.scene.boards[stop.size]!] : undefined);
-  /** The knobs as set, by scene (the address keeps the shown scene's). */
-  let knobsSet = $state<Record<string, Record<string, string>>>({});
-  /** The address's knobs, as the shown scene's. */
-  function knobsFromAddress() {
-    const p = new URLSearchParams(location.search);
-    const s = p.get('s');
-    if (s) knobsSet[s] = Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
-  }
-  knobsFromAddress();
-  const knobs = $derived(stop ? knobValues(stop.scene.knobs, knobsSet[stop.scene.key]) : {});
-  /** The knobs set away from their defaults, as the frames' address gives them. */
-  const knobQuery = $derived(stop ? Object.entries(knobs).filter(([k, v]) => stop.scene.knobs?.find((x) => x.key === k)?.default !== v) : []);
-  const built = $derived(stop?.scene.build(knobs));
-  const seats = $derived(stop && built ? stop.seats.map((i) => seatLabel(stop.scene.seats[i], built.state)) : []);
-  const size = $derived(stop ? sizeOf(stop.size) : undefined);
-
-  function go(i: number) {
-    const next = stops[Math.max(0, Math.min(stops.length - 1, i))];
-    if (next) wanted = next.id;
-  }
-  /** The next scene's first stop; back: this scene's first, or from there the one before's. */
-  function goScene(dir: 1 | -1) {
-    if (!stop) return;
-    let i = at;
-    if (dir === 1) {
-      while (stops[i]?.scene === stop.scene) i++;
-      return go(i);
+  /** The frames of the view: a piece's one (every state, side by side, in that one too), or a seat's each. */
+  const frames = $derived.by(() => {
+    const base = (slot: string) => {
+      const p = new URLSearchParams({ frame: slot, size });
+      if (!outlines) p.set('o', '0');
+      return p;
+    };
+    if (piece) {
+      const p = base('p0');
+      p.set('b', piece.key);
+      for (const [k, x] of valuesQuery(piece.controls, v)) p.set(`k.${k}`, x);
+      if (all) p.set('all', '1');
+      return [{ src: `${location.pathname}?${p}`, title: piece.label, caption: all ? 'Every state' : '' }];
     }
-    if (stops[i - 1]?.scene !== stop.scene) i--;
-    const scene = stops[i]?.scene;
-    while (stops[i - 1] && stops[i - 1].scene === scene) i--;
-    go(i);
+    if (!scene) return [];
+    const seats = seatShown === 'all' ? scene.seats.map((_, i) => i) : [seatShown];
+    return seats.map((seat, i) => {
+      const p = base(`s${i}`);
+      p.set('s', scene!.key);
+      p.set('seat', String(seat));
+      for (const [k, x] of knobQuery) p.set(`k.${k}`, x);
+      return { src: `${location.pathname}?${p}`, title: seatNames[seat] ?? 'The game', caption: seats.length > 1 || scene!.seats.length > 1 ? (seatNames[seat] ?? '') : '' };
+    });
+  });
+
+  /** To every frame up (a piece's, or each seat's). */
+  function tellFrames(m: DeskMessage) {
+    for (const f of document.querySelectorAll<HTMLIFrameElement>('.middle > .stage-box iframe, .middle > .grid iframe')) f.contentWindow?.postMessage(m, location.origin);
+  }
+  $effect(() => tellFrames({ qa: 'outlines', on: outlines }));
+  $effect(() => tellFrames({ qa: 'freeze', on: frozen }));
+  // A piece's controls, as they move.
+  $effect(() => {
+    if (piece) tellFrames({ qa: 'values', values: $state.snapshot(v) });
+  });
+  function replay() {
+    frozen = false;
+    if (piece) tellFrames({ qa: 'replay' });
+    else reloads++;
+  }
+  function act(key: string) {
+    frozen = false;
+    tellFrames({ qa: 'action', key });
   }
 
-  function press(key: string, up = false) {
+  function onframe(m: FrameMessage) {
+    if (m.qa === 'checked') results = { ...results, [m.slot]: m.problems };
+    else if (m.qa === 'ready') {
+      // (What changed while it loaded, before it listened.)
+      if (frozen) tellFrames({ qa: 'freeze', on: true });
+      if (piece) tellFrames({ qa: 'values', values: $state.snapshot(v) });
+    }
+    else if (m.qa === 'set' && piece) values[piece.key] = { ...v, ...m.values };
+    else if (m.qa === 'pick') goState(m.index);
+    else if (m.qa === 'key') press(m.key, m.up, m.repeat);
+  }
+
+  /** Play from here: the scene as a live room, while one is up. */
+  let live = $state.raw<{ room: LiveRoom; scene: Scene; size: SizeKey } | null>(null);
+  async function play() {
+    if (!scene || !built?.state) return;
+    const room = await liveRoom(built);
+    if (room) live = { room, scene, size: size === 'fit' ? 'desktop' : size };
+  }
+
+  let shelf = $state<{ focus: () => void }>();
+  function press(key: string, up = false, repeat = false) {
     if (live) return;
     if (key === 'h' || key === 'H') holding = !up && !!board;
-    else if (key === 'b' || key === 'B') holdingBefore = !up && befores.some(Boolean);
     else if (key === 'Alt') panning = !up && zoomed;
     else if (up) return;
-    else if (key === 'ArrowRight') go(at + 1);
-    else if (key === 'ArrowLeft') go(at - 1);
-    else if (key === 'ArrowDown') goScene(1);
-    else if (key === 'ArrowUp') goScene(-1);
+    // Held down, only the arrows go on: a switch held a moment too long would flip back and forth.
+    else if (repeat && !key.startsWith('Arrow')) return;
+    else if (key === 'ArrowDown') goState(stateIndex + 1);
+    else if (key === 'ArrowUp') goState(Math.max(0, stateIndex - 1));
+    else if (key === 'ArrowRight') goBench(1);
+    else if (key === 'ArrowLeft') goBench(-1);
+    else if (/^[1-9]$/.test(key)) goState(Number(key) - 1);
+    else if (key === 'a' || key === 'A') all = !all;
+    else if (key === 'r' || key === 'R') replay();
+    else if (key === 'f' || key === 'F') frozen = !frozen;
     else if (key === 'z' || key === 'Z') zoomed = !zoomed;
     else if (key === 'o' || key === 'O') outlines = !outlines;
-    else if (key === 'r' || key === 'R') reloads++;
-    else if (key === '/') searchEl?.focus();
+    else if (key === '/') shelf?.focus();
   }
-
+  /** Keys a slider moves itself by, while it has the focus. */
+  const SLIDER_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
   function onkeydown(e: KeyboardEvent) {
-    if (e.target === searchEl) {
-      if (e.key === 'Escape' || e.key === 'Enter') searchEl?.blur();
+    const t = e.target;
+    // Typing in a box or a menu keeps every key; a slider keeps its own and a switch its space, the desk has the rest.
+    if (t instanceof HTMLElement && (t.matches('textarea, select, input:not([type="range"], [type="checkbox"])') || (t.matches('input[type="range"]') && SLIDER_KEYS.has(e.key)))) {
+      if (e.key === 'Escape') t.blur();
       return;
     }
     if (e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt')) return;
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '/', 'Alt'].includes(e.key)) e.preventDefault();
-    press(e.key);
+    press(e.key, false, e.repeat);
   }
   function onkeyup(e: KeyboardEvent) {
-    if (['h', 'H', 'b', 'B', 'Alt'].includes(e.key)) press(e.key, true);
+    if (['h', 'H', 'Alt'].includes(e.key)) press(e.key, true);
   }
-  // The frames hand on the desk's keys pressed in them.
-  $effect(() => {
-    const heard = (e: MessageEvent) => {
-      if (e.origin !== location.origin || !isFrameMessage(e.data) || e.data.qa !== 'key') return;
-      press(e.data.key, e.data.up);
-    };
-    addEventListener('message', heard);
-    return () => removeEventListener('message', heard);
-  });
 
-  // The address follows: a new stop is a step back can return to; the rest only changes the current one.
-  let lastStop: string | null = null;
+  // The address follows: going to another bench or state by hand is a step back
+  // can return to; the rest only changes the current one, a moment after it
+  // stops moving (a slider dragged writes it once, and the browser's limit on
+  // how often it's written is never met).
+  let lastMoves = 0;
+  let pending: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const p = new URLSearchParams();
-    if (stop) {
-      const [s, sz, seat] = stop.id.split('|');
-      p.set('s', s);
-      for (const [k, v] of knobQuery) p.set(`k.${k}`, v);
-      p.set('size', sz);
-      if (seat !== '0') p.set('seat', seat);
+    if (piece) {
+      p.set('b', piece.key);
+      for (const [k, x] of valuesQuery(piece.controls, v)) p.set(`k.${k}`, x);
+    } else if (scene) {
+      p.set('s', scene.key);
+      for (const [k, x] of knobQuery) p.set(`k.${k}`, x);
+      if (seatPicked !== null) p.set('seat', String(seatPicked));
     }
-    if (query) p.set('q', query);
+    p.set('size', size);
+    if (all) p.set('all', '1');
     if (zoomed) p.set('z', '1');
     if (!outlines) p.set('o', '0');
-    if (view === 'change') p.set('v', 'change');
     const url = `${location.pathname}?${p}`;
+    const step = moves !== lastMoves;
+    lastMoves = moves;
+    clearTimeout(pending);
     if (url === location.pathname + location.search) return;
-    if (lastStop !== null && stop && stop.id !== lastStop) history.pushState(null, '', url);
-    else history.replaceState(null, '', url);
-    lastStop = stop?.id ?? null;
+    if (step) history.pushState(null, '', url);
+    else pending = setTimeout(() => history.replaceState(null, '', url), 250);
   });
   $effect(() => {
     const back = () => {
-      const v = fromAddress();
-      lastStop = v.id;
-      wanted = v.id;
-      query = v.q;
-      zoomed = v.zoomed;
-      outlines = v.outlines;
-      view = v.view ?? 'all';
-      knobsFromAddress();
+      const a = fromAddress();
+      if (!a) return;
+      clearTimeout(pending);
+      live = null;
+      bench = a.bench;
+      scene = a.scene;
+      if (a.bench.kind === 'piece') values[a.bench.key] = valuesOf(a.bench.controls, a.given);
+      else if (a.scene) knobsSet[a.scene.key] = a.given;
+      if (a.size) size = a.size;
+      seatPicked = a.seat;
+      all = a.all;
+      zoomed = a.zoomed;
+      outlines = a.outlines;
     };
     addEventListener('popstate', back);
     return () => removeEventListener('popstate', back);
   });
+
+  /** The sizes offered as buttons; the rest are in the menu beside them. */
+  const QUICK: SizeKey[] = ['phone', 'tablet', 'laptop', 'desktop', 'uhd150', 'uhd'];
+  const SHORT: Partial<Record<SizeKey, string>> = { phone: 'Phone', tablet: 'Tablet', laptop: 'Laptop', desktop: 'Desktop', uhd150: '4K 150%', uhd: '4K' };
 </script>
 
-<svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (holdingBefore = false), (panning = false))} />
+<svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (panning = false))} />
 
 <div class="desk">
-  <div class="heads">
+  <Shelf benches={ALL} current={bench} touched={change} bind:query bind:listed bind:this={shelf} onopen={open} {shelfOf} />
+
+  <div class="middle">
     <header class="top">
       <p class="where">
-        {#if stop && size}
-          <span class="scene" title={changing.get(stop.scene.key) ?? stop.scene.key}>{stop.scene.label}</span>
-          <span class="sep">•</span>
-          <span>{seats.length > 1 ? `${seats.length} seats` : seats[0]}</span>
-          <span class="sep">•</span>
-          <span>{size.label} <span class="num">{size.w} × {size.h}</span></span>
-        {:else}
-          <span class="scene">No scene matches “{query}”.</span>
-        {/if}
+        <span class="scene">{bench.label}</span>
+        {#if stateIndex >= 0 && !all}<span class="sep">•</span><span class="state">{states[stateIndex]}</span>{:else if all}<span class="sep">•</span><span class="state">every state</span>{/if}
+        {#if scene && seatShown !== 'all' && scene.seats.length > 1}<span class="sep">•</span><span>{seatNames[seatShown]}</span>{/if}
       </p>
-      {#if board}
-        <button class="hold" onpointerdown={() => (holding = true)} onpointerup={() => (holding = false)} onpointerleave={() => (holding = false)}>Hold for design <kbd>H</kbd></button>
-      {/if}
-      {#if built?.state && !live && LIVE_ROOMS}
-        <button class="hold" onclick={play} title="This scene's room for real: every seat playable, by hand or by a bot, with its link to make bad">Play from here</button>
-      {/if}
-      {#if befores.some(Boolean)}
-        <button class="hold" onpointerdown={() => (holdingBefore = true)} onpointerup={() => (holdingBefore = false)} onpointerleave={() => (holdingBefore = false)}>Hold for before <kbd>B</kbd></button>
-      {/if}
-      {#if change?.scenes.length}
-        <div class="views" role="group" aria-label="Which scenes">
-          <button class:on={view === 'change'} onclick={() => (view = 'change')}>This change <span class="num">{change.scenes.length}</span></button>
-          <button class:on={view === 'all'} onclick={() => (view = 'all')}>Everything</button>
-        </div>
-      {/if}
-      <div class="count">
-        <button aria-label="Previous stop" onclick={() => go(at - 1)} disabled={at === 0}>‹</button>
-        <span class="num">{stops.length ? at + 1 : 0} of {stops.length}</span>
-        <button aria-label="Next stop" onclick={() => go(at + 1)} disabled={at >= stops.length - 1}>›</button>
-      </div>
-      <input class="search" type="search" placeholder="Find a scene  /" bind:value={query} bind:this={searchEl} aria-label="Find a scene" />
-    </header>
-    {#if stop?.scene.knobs?.length}
-      <div class="knobs">
-        {#each stop?.scene.knobs ?? [] as k (k.key)}
-          <label class="knob">
-            {k.label}
-            <select value={knobs[k.key]} onchange={(e) => stop && (knobsSet[stop.scene.key] = { ...knobsSet[stop.scene.key], [k.key]: e.currentTarget.value })}>
-              {#each k.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
-            </select>
-          </label>
+      <div class="sizes" role="group" aria-label="Size">
+        <button class:on={size === 'fit'} onclick={() => (size = 'fit')} title="As large as the room here, at 1:1">Window</button>
+        {#each QUICK as k (k)}
+          <button class:on={size === k} onclick={() => (size = k)} title="{sizeOf(k).label}, {sizeOf(k).w} × {sizeOf(k).h}">{SHORT[k]}</button>
         {/each}
+        <select class:on={size !== 'fit' && !QUICK.includes(size)} value={size} onchange={(e) => ((size = e.currentTarget.value as SizeKey), e.currentTarget.blur())} aria-label="Every size">
+          <option value="fit">This window</option>
+          {#each SIZES as s (s.key)}<option value={s.key}>{s.label} • {s.w} × {s.h}</option>{/each}
+        </select>
       </div>
-    {/if}
-    {#if view === 'change' && change?.uncovered.length}
-      <p class="uncovered">No scene runs {change.uncovered.length === 1 ? 'this changed file' : `these ${change.uncovered.length} changed files`}: {change.uncovered.map((f) => f.split('/').pop()).join(', ')}</p>
-    {/if}
-    {#if changedBy > 0.001}
-      <p class="different">Looks different from before: <span class="num">{changedBy < 0.01 ? '<1' : Math.round(changedBy * 100)}%</span> of the screen. Hold <kbd>B</kbd> to see it as it was.</p>
-    {/if}
+    </header>
     {#if problems.length}
       <p class="problems" role="status">
         {#each problems as p, i (p.kind)}
           {#if i > 0}<span class="sep">•</span>{/if}
           <span title={p.examples.join(' • ')}>{KIND_LABEL[p.kind]}{#if p.count > 1}<span class="num times">×{p.count}</span>{/if}<span class="example">{p.examples[0]}</span></span>
         {/each}
-        <span class="hint">{#if fromSweep}found by the last sweep{:else}<kbd>O</kbd> {outlines ? 'hides' : 'shows'} the outlines{/if}</span>
+        <span class="hint"><kbd>O</kbd> {outlines ? 'hides' : 'shows'} the outlines</span>
       </p>
+    {/if}
+
+    {#if live}
+      <Live room={live.room} scene={live.scene} size={live.size} onexit={() => (live = null)} />
+    {:else if all && scenes}
+      <Grid bench={scenes} size={size === 'fit' ? 'desktop' : size} seat={seatShown === 'all' ? 0 : seatShown} knobsOf={knobQueryOf} {outlines} current={scene} {onframe} onpick={(s) => ((scene = s), (all = false))} />
+    {:else}
+      <Stage {frames} size={sz} {showing} {zoomed} {panning} board={holding ? board : undefined} {onframe} />
     {/if}
   </div>
 
-  {#if live}
-    <Live room={live.room} scene={live.scene} size={live.size} onexit={() => (live = null)} />
-  {:else if stop}
-    <Stage {stop} {seats} {knobQuery} {zoomed} {reloads} {panning} {outlines} board={holding ? board : undefined} befores={holdingBefore ? befores : undefined} onchecked={(id, slot, r) => (results[id] = { ...results[id], [slot]: r })} />
-  {:else}
-    <div class="empty"></div>
-  {/if}
-
-  <Strip {stops} {bad} current={stop?.id} onpick={(id) => (wanted = id)} />
+  <Panel
+    {bench}
+    {states}
+    {stateIndex}
+    {all}
+    {v}
+    {scene}
+    {knobs}
+    seats={seatNames}
+    seat={seatShown}
+    {frozen}
+    hasBoard={!!board}
+    canPlay={!!built?.state && LIVE_ROOMS && !live}
+    reason={change?.benches.find((t) => t.key === bench.key)?.why}
+    onstate={goState}
+    onall={() => (all = !all)}
+    onvalue={setValue}
+    onknob={setKnob}
+    onseat={(s) => (seatPicked = s)}
+    onact={act}
+    onreplay={replay}
+    onfreeze={() => (frozen = !frozen)}
+    onplay={play}
+    onhold={(on) => (holding = on)}
+  />
 </div>
