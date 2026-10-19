@@ -10,9 +10,9 @@
 - **On the right, its panel:** its **states** (a click, **1** to **9**, or **↑ ↓** go from one to the next), its **controls** (a piece's sliders, choices and switches; a scene's settings), **what happens** (a piece's buttons: Answer right, Turn over) and its **seats** (a scene with more than one: one at a time, or side by side).
 - **Size:** **Window** (the default) shows it as large as the room in the middle, at 1:1. A device's size (a phone, a laptop, 4K) shows it as that device would, shrunk to fit (**Z** for 1:1; hold **Alt** and drag to move about). The size stays as it is from bench to bench, so one size can be gone through at a time.
 - **A** shows every state at once, side by side; click one to see it alone. A piece's controls and buttons move every state at once there.
-- **R** replays it, drawing it in again as it first came (a scene loads afresh). **F** freezes every animation where it is, to look at a moment; **F** again lets it go on.
+- **R** replays it, drawing it in again as it first came (a scene loads afresh). **F** freezes every animation where it is, the effects and the backdrop with them, to look at a moment; **F** again lets it go on (a clock in it, a question's, has run on meanwhile). The frame's own checks go on while it's frozen.
 - **← →** go to the next bench and back. **H**, held, shows the design's board for a scene, where it has one at that size. **O** hides or shows the outlines round what's wrong.
-- The address holds the bench, the state, the controls and the size, so a reload, the back button or a link sent to someone shows the same (`qa.html?b=streak&k.days=30`, `qa.html?s=game/race-reveal&size=phone`).
+- The address holds the bench, the state, the controls and the size, so a reload or a link sent to someone shows the same (`qa.html?b=streak&k.days=30`, `qa.html?s=game/race-reveal&size=phone`). The back button steps back through the benches and states picked, not through every slider moved.
 
 A frame starts with nothing of its own (its storage keys start apart, `src/lib/storage.ts`, and are cleared as it opens and closes), so nothing it shows reaches the game's saves, and no two frames share a player. At a device's size it pretends to be that device: the pixel ratio, and a touch screen's lack of hover and coarse pointer. That is close, not exact: it is still drawn at your screen's pixel ratio, and the mouse is still a mouse.
 
@@ -24,7 +24,7 @@ A change that adds or alters something on screen adds or updates its bench, the 
 
 **A piece** is a component on its own. It is a file in `src/qa/benches/` (`avatar.ts`), a view beside it (`AvatarView.svelte`) and a line in `src/qa/benches/pieces.ts`. The file says what it is (`src/qa/bench.ts` has every field):
 
-- `controls`: what can be set, each a `range` (a slider with a box), a `choice` or a `toggle`, with its default. One marked `view: true` sets how it's looked at, not what it shows (the avatar's name beside it, the descent's width): it stays as set from state to state and Replay to Replay, and no state names it.
+- `controls`: what can be set, each a `range` (a slider with a box: what's typed in it counts once it's a number the slider can be, and is brought into range once the box is left), a `choice` or a `toggle`, with its default. One marked `view: true` sets how it's looked at, not what it shows (the avatar's name beside it, the descent's width): it stays as set from state to state and Replay to Replay, and no state names it.
 - `states`: the ones that matter, each a name and the controls it sets.
 - `actions`: what can happen to it, a button each.
 - `files`: the files it shows, for This change (its own two, and what every piece runs on, count by themselves).
