@@ -87,6 +87,13 @@ export const FREE_LABEL = 'Free';
 
 export const BOSS_RULE = 'Silent: only Torches work';
 export const BOSS_RULE_SHORT = 'only Torches work';
+/** The boss rule's name, and what it leaves alone, on the boss intro's Rule panel. */
+export const BOSS_RULE_NAME = 'Silent';
+export const BOSS_RULE_NOTE = 'Your other supplies stay in the pack.';
+/** Under a boss rule the corruption added: where its corruption started. */
+export const bossRuleFrom = (place: string) => `From the corruption at ${place}`;
+/** Over the boss's added rules: how many corruptions reached it. */
+export const bossReached = (n: number) => `${n} ${n === 1 ? 'corruption' : 'corruptions'} reached the boss`;
 
 /** Blood toll, the corruption's one modifier: what it does. */
 export const BLOOD_DOES = `Each item here costs ${BLOOD_TOLL} life when you start it. Never your last life.`;
@@ -168,7 +175,9 @@ export const MARKS_LEGEND = 'Gold: right, in its place • Silver: in the name, 
 /** The flask, said in full (its tooltip), and on the drink key. */
 export const FLASK_LINE = `Heals ${FLASK_STEP} now, and again when this item ends and when the next one ends. Each drink uses one charge. Wells refill it.`;
 export const DRINK_LINE = `Heals ${FLASK_STEP} now, and again when this item ends and when the next one ends.`;
-export const DRINKING = `+${FLASK_STEP} now • more as this and the next item end`;
+/** The flask on the boss intro: what each drink left does. */
+export const FLASK_EACH = `each heals ${FLASK_STEP} now, and again as this item and the next end`;
+export const DRINKING =`+${FLASK_STEP} now • more as this and the next item end`;
 /** The flask's heal still due, for a screen reader. */
 export const flaskDue = (recovering: number) =>
   `Your flask heals ${FLASK_STEP} more when this item ends${recovering > 1 ? ' and when the next one ends' : ''}`;
