@@ -6,6 +6,8 @@ changed, so a later orchestrator can follow.
 
 | Date | Decision | Where it went |
 | --- | --- | --- |
+| 2026-10-19 | Map capped at 4 places per step so the phone map stays readable (the design's measure: 6 don't fit 333 px). Switched off Ogham Farmlands, The Grelwood, The Bone Pits, The Cuachic Vault and The Upper Prison, each crowding a neighbour: 32 nodes. Goes into v4b; v4a plays the 37-node map | Placement tool; `wraeclast-map.json` |
+| 2026-10-19 | v4a served for the owner's playtest 4 (commit ad17f321); a fresh review runs in parallel | Playtest copy |
 | 2026-10-19 | Owner: in early prototyping, no new tests, QA benches, bot tuning or headless runs. Keep the type check; skip broken prototype tests; harden before merging to main. The orchestrator smoke-tests on serving and reviews in parallel | v4 handoff (Done when); prototype session |
 | 2026-10-19 | Each corruption carries its boss rule from its seeding, shown on the map; stopping it removes that rule (from the end and boss design's questions). Seeds cap at 4, one per rule; a waiting corruption counts as alive; every vendor shows the boss's rule | v4b; both design sessions |
 | 2026-10-19 | v4 ships in two drops: v4a (rules on today's screens) for the owner to play at once, v4b (screens, answer line, wording, new supplies). Reviews run in parallel with playtests | Prototype session |
