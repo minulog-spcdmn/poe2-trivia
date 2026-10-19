@@ -42,7 +42,7 @@ const USED = [
   { value: 'none', label: 'None' },
   { value: 'flare', label: 'Flare' },
   { value: 'wisdom', label: 'Scroll of Wisdom' },
-  { value: 'lore', label: 'Lore reveal' },
+  { value: 'lore', label: 'Golden Page' },
   { value: 'category', label: 'Category reveal' },
   { value: 'base', label: 'Base reveal' },
   { value: 'decoy', label: 'Decoy sweep' },

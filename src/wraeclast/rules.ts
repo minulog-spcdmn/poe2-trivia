@@ -43,7 +43,7 @@ export const SUPPLIES: readonly Supply[] = ['flare', 'wisdom', 'lore', 'category
 export const SUPPLY_NAMES: Record<Supply, string> = {
   flare: 'Flare',
   wisdom: 'Scroll of Wisdom',
-  lore: 'Lore reveal',
+  lore: 'Golden Page',
   category: 'Category reveal',
   base: 'Base reveal',
   decoy: 'Decoy sweep',

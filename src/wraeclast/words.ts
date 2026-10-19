@@ -52,7 +52,7 @@ export function does(run: Run, supply: Supply): string {
 export const SHORT: Record<Supply, string> = {
   flare: 'Flare',
   wisdom: 'Wisdom',
-  lore: 'Lore',
+  lore: 'Page',
   category: 'Category',
   base: 'Base',
   decoy: 'Sweep',

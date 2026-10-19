@@ -353,7 +353,7 @@ test('in a Plain zone the free clue shows the first line, so the first Scroll sh
 
 // ---- Lore, Category and Base reveals ----
 
-test("a Lore reveal shows the flavour text, once: then 'done', and 'done' at once in an Incursion zone", () => {
+test("a Golden Page shows the flavour text, once: then 'done', and 'done' at once in an Incursion zone", () => {
   const { run, it } = opened(8, { type: 'essence' });
   assert.equal(it.shown.flavor, false);
   assert.ok(run.use('lore'));
@@ -362,7 +362,7 @@ test("a Lore reveal shows the flavour text, once: then 'done', and 'done' at onc
   assert.equal(opened(8, { type: 'incursion' }).run.idle('lore'), 'done');
 });
 
-test("a Lore reveal on an item with no flavour text has nothing to show: 'done'", () => {
+test("a Golden Page on an item with no flavour text has nothing to show: 'done'", () => {
   const { run, it } = opened(9, { type: 'essence' });
   const flavor = CLUES[it.itemId].flavor;
   try {
