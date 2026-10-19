@@ -176,6 +176,18 @@ export const flaskDue = (recovering: number) =>
 /** A vendor card's line: how many come for the price (the coin says gold). */
 export const stackLine = (run: Run, s: Supply) => `${run.state.tuning.stack[s]} for ${run.state.tuning.price[s]}`;
 
+/** What a vendor says under the header: the camp's and an Expedition's line, a town's rest. */
+export const CAMP_SAYS = 'Buy supplies for the road. More vendors wait in towns and after Expeditions.';
+export const EXPEDITION_SAYS = 'A vendor, after the zone. Buy, or go on.';
+/** A town's rest: "You rest: +{heal} life" (the words around the number, set in Cinzel), or at full life. */
+export const REST = { before: 'You rest: ', after: ' life', full: 'You rest: life is full' };
+/** Under every vendor's wares, with the Torch's sign. */
+export const VENDOR_BOSS_LINE = 'At the boss, only Torches work';
+/** A ware bought into a full pack: a space to pick, or the ware handed back (its gold too). */
+export const BOUGHT_FULL = 'Pack full. Tap a space to replace it';
+export const handBack = (n: number) => (n === 1 ? 'Hand it back' : 'Hand them back');
+export const handBackLabel = (n: number, name: string, price: number) => `Hand back ${n} ${name}, for your ${price} gold`;
+
 /** The pack, said. */
 export const PACK_NOTE = `${PACK_STACKS} spaces, up to ${STACK_MAX} of one supply in each.`;
 
