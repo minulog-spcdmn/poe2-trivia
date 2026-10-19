@@ -7,7 +7,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { singular } from '../lib/game';
   import { motion } from '../lib/motion.svelte';
-  import { ZONE_NAMES, sectionOf, type Run } from './rules';
+  import { ZONE_NAMES, reach, sectionOf, type Run } from './rules';
   import Veil from './Veil.svelte';
   import Clues from './Clues.svelte';
   import ItemPack from './ItemPack.svelte';
@@ -23,6 +23,7 @@
   const zone = $derived(run.zoneType(it.zoneNo));
   const pays = $derived(section === 'boss' ? 0 : Math.floor((s.tuning.reward[section] * it.multiplier) / 2 ** it.misses));
   const cost = $derived(s.tuning.missCost[section]);
+  const taps = $derived(reach(it));
   let plateScale = $state<number>();
   let art = $state<HTMLElement>();
   /** A Flare taken from the pack: the art it's tapped on brought into view (a phone's pack is below it). */
@@ -51,7 +52,7 @@
       <div class="art" bind:this={art} use:backdropShadow={{ fill: 'stage' }}>
         <div class="frame"><Veil {run} /></div>
       </div>
-      <p class="flare" role="status">{#if it.flare > 0}Tap <span class="n">{it.flare}</span> {it.flare === 1 ? 'patch' : 'patches'} on the art to lift {it.flare === 1 ? 'it' : 'them'}.{/if}</p>
+      <p class="flare" role="status">{#if taps > 0}Tap <span class="n">{taps}</span> {taps === 1 ? 'patch' : 'patches'} on the art to lift {taps === 1 ? 'it' : 'them'}.{/if}</p>
       <Clues {run} />
     </div>
     <div class="ins-area"><Inscription {run} /></div>

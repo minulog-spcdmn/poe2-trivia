@@ -22,13 +22,22 @@
   let copied = $state<'yes' | 'no' | null>(null);
   let box = $state<HTMLTextAreaElement>();
   let showLog = $state(false);
+  /** What the last copy did, said for a few seconds over the button row (it moves nothing). */
+  let said = $state<'yes' | 'no' | null>(null);
+  let unsay: ReturnType<typeof setTimeout> | undefined;
+  function say(what: 'yes' | 'no') {
+    copied = said = what;
+    clearTimeout(unsay);
+    unsay = setTimeout(() => (said = null), 4000);
+  }
+  $effect(() => () => clearTimeout(unsay));
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
-      copied = 'yes';
+      say('yes');
     } catch {
       // No clipboard here (an old browser, a page not in focus): the log shown, selected, to copy by hand.
-      copied = 'no';
+      say('no');
       showLog = true;
       queueMicrotask(() => {
         box?.focus();
@@ -63,8 +72,8 @@
   </section>
 
   <div class="go dock">
-    <!-- What the copy did, in the bar itself: pinned at the foot, it's in view wherever the button is. -->
-    <p class="copied" role="status">{#if copied === 'yes'}Copied: the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'}, to paste to the owner.{:else if copied === 'no'}It couldn't be copied here: copy it by hand from the log below.{/if}</p>
+    <!-- What the copy did, just over the buttons wherever they are (pinned at the foot or not), taking no room. -->
+    <p class="copied" role="status">{#if said === 'yes'}Copied: the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'}, to paste to the owner.{:else if said === 'no'}It couldn't be copied here: copy it by hand from the log below.{/if}</p>
     <button class="btn primary big" onclick={copy}>Copy run log</button>
     <button class="btn ghost" onclick={() => (onnew ? onnew() : play.start())}>New run</button>
   </div>
@@ -195,18 +204,33 @@
     user-select: text;
     cursor: text;
   }
+  /* The bar holds the note over it (sticky when pinned, which places it too). */
+  .go {
+    position: relative;
+  }
   .copied {
-    flex-basis: 100%;
+    position: absolute;
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    translate: -50% 0;
+    width: max-content;
+    max-width: calc(100% - 1rem);
     margin: 0;
-    text-align: center;
+    padding: 0.3rem 0.8rem;
+    border: var(--pinned-line);
+    border-radius: 4px;
+    background: var(--pinned-bg);
     font-size: 0.95rem;
+    text-align: center;
     color: #f1d99b;
+    pointer-events: none;
   }
   /* Empty, it takes no room but stays in the page, so a screen reader hears what comes into it. */
   .copied:empty {
-    position: absolute;
     width: 1px;
     height: 1px;
+    padding: 0;
+    border: 0;
     overflow: hidden;
     clip-path: inset(50%);
   }

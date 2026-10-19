@@ -1,7 +1,7 @@
 // What the Wraeclast run's screens say about its rules (rules.ts): the
 // zones, the supplies, where an item stands in the run.
 
-import { BOSS_ITEMS, CLUES, ZONE_ITEMS, ZONE_NAMES, ZONES, remaining, sectionOf, zoneOf, type Run, type Supply, type ZoneType } from './rules.ts';
+import { BOSS_ITEMS, CLUES, ZONE_ITEMS, ZONE_NAMES, ZONES, reach, remaining, sectionOf, zoneOf, type Run, type Supply, type ZoneType } from './rules.ts';
 
 /** What each supply shows when used. */
 export const REVEALS: Record<Supply, string> = {
@@ -59,7 +59,7 @@ export function why(run: Run, supply: Supply): string | null {
   const clues = CLUES[it.itemId];
   switch (supply) {
     case 'flare':
-      return it.flare ? 'Tap the patches first' : 'Nothing left to lift';
+      return reach(it) ? 'Tap the patches first' : 'Nothing left to lift';
     case 'requirement':
       return it.shown.req ? 'Shown already' : 'This item has none';
     case 'wisdom':

@@ -169,7 +169,10 @@ export interface ItemPlay {
   bare: boolean[];
   /** Random patches the zone (or the boss) still lifts as the item opens. */
   freePatches: number;
-  /** Patches the Flare in hand can still lift (the player taps them). */
+  /**
+   * Patches the Flares used can still lift (the player taps them); `reach`
+   * says how many of those can be lifted now (no more than are covered).
+   */
   flare: number;
   /** What the clues show: the requirements, how many mod lines, the flavour text. */
   shown: { req: boolean; mods: number; flavor: boolean };
@@ -366,7 +369,7 @@ export class Run {
     const clues = CLUES[it.itemId];
     switch (supply) {
       case 'flare':
-        return covered(it) > it.flare;
+        return covered(it) > reach(it);
       case 'requirement':
         return !it.shown.req && clues.req.length > 0;
       case 'wisdom':
@@ -609,23 +612,23 @@ export class Run {
 
   /**
    * Says which patches are bare (row by row: nothing of the art's box under
-   * them, as the page lays the art out now). A lifted patch stays lifted, and
-   * a Flare in hand never waits on more patches than are left to lift.
+   * them, as the page lays the art out now). A lifted patch stays lifted. A
+   * Flare's lifts are kept: a layout that bares patches only lowers its reach
+   * for as long as it lasts (a phone turned, a window resized).
    */
   setBare(bare: boolean[]): boolean {
     const it = this.state.item;
     if (this.state.phase !== 'item' || !it || bare.length !== PATCHES) return false;
     it.bare = bare.map((b, i) => b && !it.lifted[i]);
-    it.flare = Math.min(it.flare, covered(it));
     return true;
   }
 
   /** Lifts a patch the Flare in hand reaches (0 to 15, row by row; not a bare one). */
   lift(i: number): boolean {
     const it = this.state.item;
-    if (this.state.phase !== 'item' || !it || it.flare <= 0 || i < 0 || i >= PATCHES || it.lifted[i] || it.bare[i]) return false;
+    if (this.state.phase !== 'item' || !it || reach(it) <= 0 || i < 0 || i >= PATCHES || it.lifted[i] || it.bare[i]) return false;
     it.lifted[i] = true;
-    it.flare = Math.min(it.flare - 1, covered(it));
+    it.flare--;
     it.log.patches = it.lifted.filter(Boolean).length;
     return true;
   }
@@ -719,6 +722,9 @@ export class Run {
 
 /** Patches still covered (a bare one covers nothing). */
 export const covered = (it: ItemPlay) => it.lifted.filter((up, i) => !up && !it.bare[i]).length;
+
+/** Patches the Flares used can lift now: their lifts left, no more than are covered. */
+export const reach = (it: ItemPlay) => Math.min(it.flare, covered(it));
 
 /** The names not struck. */
 export const remaining = (it: ItemPlay) => it.names.filter((nm) => !it.struck.includes(nm.id));

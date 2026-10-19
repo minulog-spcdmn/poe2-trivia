@@ -9,13 +9,14 @@
   // run is told (run.setBare): it's drawn empty and can't be tapped.
   import { onMount, untrack } from 'svelte';
   import { itemImage } from '../lib/ui-paths';
-  import { GRID, PATCHES, type Run } from './rules';
+  import { GRID, PATCHES, reach, type Run } from './rules';
 
   let { run }: { run: Run } = $props();
   const it = $derived(run.state.item!);
   const item = $derived(run.engine.byId.get(it.itemId)!);
   const url = $derived(itemImage(it.itemId));
   let shown = $state(false);
+  const armed = $derived(reach(it) > 0);
   let fit = $state<HTMLElement>();
   let boxW = $state(0);
   let boxH = $state(0);
@@ -79,13 +80,13 @@
 <span class="art-slot">
   <span class="art-fit" bind:this={fit} bind:clientWidth={boxW} bind:clientHeight={boxH} style:--w={item.w} style:--h={item.h} style:--s={2.2}>
     <img src={url} alt="The item to name" class:shown decoding="async" draggable="false" />
-    <span class="veil" class:armed={it.flare > 0} role="group" aria-label="The veil: {it.lifted.filter(Boolean).length} of {PATCHES} patches lifted">
+    <span class="veil" class:armed role="group" aria-label="The veil: {it.lifted.filter(Boolean).length} of {PATCHES} patches lifted">
       {#each it.lifted as up, i (i)}
         <button
           class="patch"
           class:up
           class:bare={it.bare[i]}
-          disabled={up || it.bare[i] || it.flare <= 0}
+          disabled={up || it.bare[i] || !armed}
           aria-label="Patch {Math.floor(i / GRID) + 1}, {(i % GRID) + 1}{up ? ': lifted' : it.bare[i] ? ': nothing under it' : ''}"
           onclick={() => run.lift(i)}
         ></button>

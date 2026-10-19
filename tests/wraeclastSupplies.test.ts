@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLUES, DEFAULT_TUNING, ITEMS, MIN_NAMES, PACK_SLOTS, PATCHES, Run, covered, remaining, type ItemPlay, type Supply, type Tuning, type ZoneType } from '../src/wraeclast/rules.ts';
+import { CLUES, DEFAULT_TUNING, ITEMS, MIN_NAMES, PACK_SLOTS, PATCHES, Run, covered, reach, remaining, type ItemPlay, type Supply, type Tuning, type ZoneType } from '../src/wraeclast/rules.ts';
 
 // The Wraeclast run's supplies and flask (src/wraeclast/rules.ts), as the
 // handoff (docs/handoff/wraeclast/README.md) has them. Every run is seeded and
@@ -203,18 +203,23 @@ test("a bare patch (the page's letterbox) covers nothing: it can't be lifted, an
   assert.equal(run.state.log.items[0].patches, 8);
 });
 
-test('a Flare in hand never waits on more patches than setBare leaves covered, and a lifted patch stays lifted', () => {
+test("a layout that bares patches lowers a Flare's reach only while it lasts, and a lifted patch stays lifted", () => {
   const { run, it } = find('plain', ['flare']);
   assert.ok(run.use('flare'));
-  assert.equal(it.flare, 2);
+  assert.equal(reach(it), 2);
+  // Every patch bare (a phone turned): nothing to tap, so the Flare waits.
   assert.ok(run.setBare(Array(PATCHES).fill(true)));
   assert.equal(covered(it), 0);
-  assert.equal(it.flare, 0);
-  assert.deepEqual(
-    it.bare.map((b, i) => b || it.lifted[i]),
-    Array(PATCHES).fill(true),
-  );
+  assert.equal(reach(it), 0);
+  assert.equal(run.lift(it.lifted.indexOf(false)), false);
   assert.equal(it.bare.filter(Boolean).length, 15);
+  assert.ok(it.lifted.every((up, i) => up !== it.bare[i]));
+  // Turned back: the lifts it was used for are still there.
+  assert.ok(run.setBare(Array(PATCHES).fill(false)));
+  assert.equal(reach(it), 2);
+  assert.ok(run.lift(it.lifted.indexOf(false)));
+  assert.ok(run.lift(it.lifted.indexOf(false)));
+  assert.equal(reach(it), 0);
   assert.equal(run.setBare([true]), false);
 });
 

@@ -1,8 +1,11 @@
 <script lang="ts">
   // The Wraeclast item bench's view (./wraeclast.ts): a real run (rules.ts),
   // seeded, played up to the item the controls ask for, then the item screen
-  // as the page draws it, the run's bar above it. A change to the controls
-  // lays the item out again.
+  // as the page draws it, the run's bar above it. The Veil opens the item as
+  // on the page (its free patches lifted where there's art); then the
+  // strikes, misses and half-built answer asked for are played. A change to
+  // the controls lays the item out again.
+  import { untrack } from 'svelte';
   import '../../wraeclast/screens.css';
   import { DEFAULT_TUNING, MIN_NAMES, Run, ZONE_TYPES, remaining, type BoardSize, type Supply, type ZoneType } from '../../wraeclast/rules';
   import Hud from '../../wraeclast/Hud.svelte';
@@ -20,8 +23,10 @@
     return proxied;
   }
 
-  /** The run, played on its plain state up to the item asked for; reactive only once it's there. */
-  function build(o: { place: string; zone: ZoneType; names: string; item: number; struck: number; misses: number; built: boolean; pack: boolean; wordCount: boolean }) {
+  type Options = { place: string; zone: ZoneType; names: string; item: number; struck: number; misses: number; built: boolean; pack: boolean; wordCount: boolean };
+
+  /** The run, played on its plain state up to the item asked for and laid out there; reactive once it is. */
+  function build(o: Options) {
     const tuning = structuredClone(DEFAULT_TUNING);
     if (o.names !== 'auto') tuning.board = { early: +o.names as BoardSize, late: +o.names as BoardSize, boss: +o.names as BoardSize };
     tuning.wordCount = o.wordCount;
@@ -37,7 +42,13 @@
     s.pack = o.pack ? [...FULL] : [];
     run.leave();
     run.pick(0);
-    run.open(null);
+    run.state = reactive(s);
+    return run;
+  }
+
+  /** On the item the Veil has opened: the strikes, misses and build asked for. */
+  function play(run: Run, o: Options) {
+    const s = run.state;
     const it = s.item!;
     for (let k = 0; k < o.struck && remaining(it).length > MIN_NAMES; k++) {
       s.pack.push('strike');
@@ -53,8 +64,6 @@
       const answer = it.names.find((nm) => nm.id === it.itemId)!.words.flat();
       it.build = answer.slice(0, Math.ceil(answer.length / 2));
     }
-    run.state = reactive(s);
-    return run;
   }
 
   /** Submits a wrong name of the board's, while it leaves the run some life. */
@@ -68,19 +77,27 @@
     return true;
   }
 
-  const run = $derived(
-    build({
-      place: String(v.place),
-      zone: String(v.zone) as ZoneType,
-      names: String(v.names),
-      item: Number(v.item),
-      struck: Number(v.struck),
-      misses: Number(v.misses),
-      built: !!v.built,
-      pack: !!v.pack,
-      wordCount: !!v.wordCount,
-    }),
-  );
+  const options = $derived<Options>({
+    place: String(v.place),
+    zone: String(v.zone) as ZoneType,
+    names: String(v.names),
+    item: Number(v.item),
+    struck: Number(v.struck),
+    misses: Number(v.misses),
+    built: !!v.built,
+    pack: !!v.pack,
+    wordCount: !!v.wordCount,
+  });
+  const run = $derived(build(options));
+
+  // Once the Veil has opened this run's item, the rest is played on it, once.
+  let played: Run | null = null;
+  $effect(() => {
+    const r = run;
+    if (r.state.item?.openedAt == null || played === r) return;
+    played = r;
+    untrack(() => play(r, options));
+  });
 
   onAction('miss', () => miss(run));
   onAction('answer', () => {
