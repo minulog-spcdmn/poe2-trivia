@@ -32,6 +32,12 @@ export const SPATIAL_PAGE = typeof document !== 'undefined' && document.document
  */
 export const CARD_BENCH = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-cards');
 /**
+ * The Wraeclast run (wraeclast.html, src/wraeclast: dev and beta builds only)
+ * marks its page `<html data-wraeclast>`: its keys (the run log, the tuning)
+ * start apart from the game's and the other pages'.
+ */
+export const WRAECLAST = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-wraeclast');
+/**
  * The room bot (bot.html, src/bot: dev and bot builds only) marks its page
  * `<html data-bot>`: its keys start apart too, so a bot opened in someone's
  * own browser never takes over their saves, codex or settings.
@@ -83,6 +89,7 @@ export const STORE =
   (SPATIAL_PAGE ? 'spatial.' : '') +
   (CARD_BENCH ? 'cards.' : '') +
   (BACKDROP_TOOL ? 'backdrops.' : '') +
+  (WRAECLAST ? 'wraeclast.' : '') +
   (BOT ? 'bot.' : '') +
   (QA ? `qa.${(QA_SLOT ?? QA_SEAT)!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html, cards.html): for settings they share. */
@@ -187,7 +194,7 @@ export const tryReadStored = (name: string, where: Area = 'local') => tryReadKey
  * A key the live game wrote before it moved to a newer one. Only the live
  * game reads or clears these: they were never the beta's to take over.
  */
-export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || BOT || QA ? null : readKey(key, where));
+export const readLegacy = (key: string, where: Area = 'local') => (BETA || LOCAL || LAB || BACKDROP_TOOL || WRAECLAST || BOT || QA ? null : readKey(key, where));
 export const removeLegacy = (key: string, where: Area = 'local') => {
-  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !BOT && !QA) removeKey(key, where);
+  if (!BETA && !LOCAL && !LAB && !BACKDROP_TOOL && !WRAECLAST && !BOT && !QA) removeKey(key, where);
 };

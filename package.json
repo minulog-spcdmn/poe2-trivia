@@ -22,13 +22,15 @@
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.3",
+    "hyphen": "^1.14.1",
     "magic-string": "^1.4.2",
     "peer": "^1.0.2",
     "playwright-core": "^1.56.1",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
     "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "wordlist-english": "^1.2.1"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

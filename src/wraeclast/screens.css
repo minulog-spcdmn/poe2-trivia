@@ -1,0 +1,107 @@
+/* The Wraeclast run's shared looks (wraeclast.html): the screens' titles,
+   numbers among words in Cinzel, and the small parts every screen uses.
+   Each screen's own looks are in its component. */
+
+.wr {
+  position: relative;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0.75rem 16px 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+/* A short phone (375 by 667): the header, strip and screen closer, so a full boss pool sits above the dock. */
+@media (max-width: 699px) and (max-height: 740px) {
+  .wr {
+    gap: 0.5rem;
+  }
+}
+
+/* Numbers among words, as everywhere in the game. */
+.wr .n {
+  font-family: var(--font-cinzel);
+  font-weight: 700;
+  font-size: 0.92em;
+  color: var(--gold-hi);
+}
+
+.wr .kicker {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.wr .screen-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  text-align: center;
+}
+.wr .screen-title h1 {
+  font-size: clamp(1.6rem, 6vw, 2.3rem);
+  font-weight: 900;
+  color: var(--gold-hi);
+}
+.wr .screen-title .sub {
+  margin: 0;
+  max-width: 34rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.wr h2 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* A framed panel's inside on these screens. */
+.wr .panel {
+  padding: 1rem 1.1rem 1.1rem;
+}
+
+/* The main action's row: docked at the foot on phones and on short windows
+   (a laptop's), where it would fall below the fold (design rules). */
+.wr .go {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+@media (max-width: 640px), (max-height: 820px) {
+  .wr .go.dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 0 -16px;
+    padding: 0.65rem 16px calc(0.65rem + env(safe-area-inset-bottom));
+    background: var(--pinned-bg);
+    border-top: var(--pinned-line);
+  }
+}
+@media (max-width: 640px) {
+  .wr .go.dock .btn {
+    flex: 1;
+  }
+  /* A second, quieter action beside the main one takes only its own width. */
+  .wr .go.dock .btn.ghost {
+    flex: 0 0 auto;
+  }
+}
+
+/* Read aloud, not shown. */
+.wr .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

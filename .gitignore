@@ -37,3 +37,6 @@ __pycache__/
 
 # Screenshots from scripts/capture-screens.mjs
 /screens/
+
+# Wraeclast run logs the dev server writes (vite.config.ts, wraeclastLogs)
+/.wraeclast-logs/
