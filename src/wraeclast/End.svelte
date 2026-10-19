@@ -25,7 +25,11 @@
   /** What the last copy did, said for a few seconds over the button row (it moves nothing). */
   let said = $state<'yes' | 'no' | null>(null);
   let unsay: ReturnType<typeof setTimeout> | undefined;
+  let bar = $state<HTMLElement>();
+  /** The note goes under the buttons when they're too near the top of the screen for it to show over them. */
+  let under = $state(false);
   function say(what: 'yes' | 'no') {
+    under = (bar?.getBoundingClientRect().top ?? Infinity) < 64;
     copied = said = what;
     clearTimeout(unsay);
     unsay = setTimeout(() => (said = null), 4000);
@@ -71,9 +75,9 @@
     </dl>
   </section>
 
-  <div class="go dock">
+  <div class="go dock" bind:this={bar}>
     <!-- What the copy did, just over the buttons wherever they are (pinned at the foot or not), taking no room. -->
-    <p class="copied" role="status">{#if said === 'yes'}Copied: the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'}, to paste to the owner.{:else if said === 'no'}It couldn't be copied here: copy it by hand from the log below.{/if}</p>
+    <p class="copied" class:under role="status">{#if said === 'yes'}Copied: the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'}, to paste to the owner.{:else if said === 'no'}It couldn't be copied here: copy it by hand from the log below.{/if}</p>
     <button class="btn primary big" onclick={copy}>Copy run log</button>
     <button class="btn ghost" onclick={() => (onnew ? onnew() : play.start())}>New run</button>
   </div>
@@ -224,6 +228,10 @@
     text-align: center;
     color: #f1d99b;
     pointer-events: none;
+  }
+  .copied.under {
+    top: calc(100% + 0.5rem);
+    bottom: auto;
   }
   /* Empty, it takes no room but stays in the page, so a screen reader hears what comes into it. */
   .copied:empty {

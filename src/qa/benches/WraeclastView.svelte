@@ -71,7 +71,8 @@
     const s = run.state;
     const it = s.item;
     const wrong = it && remaining(it).find((nm) => nm.id !== it.itemId);
-    if (!it || !wrong || s.life <= s.tuning.missCost[it.boss !== null ? 'boss' : it.zoneNo > 2 ? 'late' : 'early']) return false;
+    // Not while the item is still opening (a submit then counts for nothing).
+    if (!it || it.openedAt === null || !wrong || s.life <= s.tuning.missCost[it.boss !== null ? 'boss' : it.zoneNo > 2 ? 'late' : 'early']) return false;
     it.build = wrong.words.flat();
     run.submit();
     return true;

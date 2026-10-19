@@ -194,7 +194,7 @@ test("a bare patch (the page's letterbox) covers nothing: it can't be lifted, an
   assert.equal(flare(run), 2);
   assert.equal(covered(it), 1);
   assert.equal(flare(run), 1);
-  assert.equal(it.flare, 0);
+  assert.equal(reach(it), 0);
   // Nothing with art under it is left: the fifth Flare stays in the pack.
   assert.equal(run.works('flare'), false);
   assert.equal(run.use('flare'), false);
@@ -221,6 +221,21 @@ test("a layout that bares patches lowers a Flare's reach only while it lasts, an
   assert.ok(run.lift(it.lifted.indexOf(false)));
   assert.equal(reach(it), 0);
   assert.equal(run.setBare([true]), false);
+});
+
+test('a Flare used while patches are bare keeps both its lifts, for when the layout gives them back', () => {
+  const { run, it } = find('plain', ['flare']);
+  // All but one patch bare: the Flare reaches 1 now.
+  const keep = it.lifted.indexOf(false);
+  assert.ok(run.setBare(it.lifted.map((_, i) => i !== keep)));
+  assert.ok(run.use('flare'));
+  assert.equal(reach(it), 1);
+  assert.ok(run.lift(keep));
+  assert.equal(reach(it), 0);
+  assert.ok(run.setBare(Array(PATCHES).fill(false)));
+  assert.equal(reach(it), 1);
+  assert.ok(run.lift(it.lifted.indexOf(false)));
+  assert.equal(reach(it), 0);
 });
 
 test('free patches never land on a bare patch', () => {

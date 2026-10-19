@@ -588,7 +588,9 @@ export class Run {
     s.pack.splice(s.pack.indexOf(supply), 1);
     switch (supply) {
       case 'flare':
-        it.flare = Math.min(covered(it), it.flare + this.flareLifts());
+        // Its lifts all kept: reach() says how many can be lifted now, and a
+        // layout that bares patches for a while costs none of them.
+        it.flare += this.flareLifts();
         break;
       case 'requirement':
         it.shown.req = true;
