@@ -1,11 +1,17 @@
 <script lang="ts">
-  // The run's header and strip, as the design draws them: the brand's flame,
-  // where you are (the node, its kind, Blood toll), then your entry as
-  // the scoreboard's pill (the life vessel with its walls every 25, the life
-  // a miss just took, the flask's heal still due, the charges, the gold) and
-  // the step plaque.
+  // The run's header and strip, as the design draws them: the brand's flame
+  // (its name beside it on a wide screen), where you are (the node, its kind,
+  // the item, Blood toll in red the whole time in a corrupted zone) and the
+  // sound key; then your entry as the scoreboard's pill (the life vessel with
+  // its walls every 25, the life a miss or the toll just took, the flask's
+  // heal still due, the charges, the gold and what a reveal just added) and
+  // the step plaque. On a short phone the two sit as one bar: the place and
+  // the key on a line, you and the step under it. The gold and the flask are
+  // marked (data-fly) for the reveal's loot cards to fly to.
+  import { isMuted, setMuted, sfx } from '../lib/sound';
   import { BLOOD_TOLL, FLASK_STEP, type Run } from './rules';
-  import { FLASK_LINE, flaskDue, placeName } from './words';
+  import Glyph from './Glyph.svelte';
+  import { BLOOD_DOES, FLASK_LINE, flaskDue, placeName } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
@@ -18,25 +24,42 @@
   /** The life the last wrong submit took, while its marked line stands; else a Blood toll's, till the first submit. */
   const toll = $derived(s.phase === 'item' && s.item && !s.item.log.submits.length ? s.item.log.toll : 0);
   const hit = $derived(s.item?.lineMarks ? (s.item.log.submits.at(-1)?.lost ?? 0) : toll);
+  const tollHit = $derived(!!toll && hit === toll);
   /** The flask's heal still to come, as life (capped at the vessel's top). */
   const due = $derived(Math.min(s.maxLife - s.life, s.flask.recovering * FLASK_STEP));
   const ticks = $derived(Array.from({ length: Math.ceil(due / FLASK_STEP) }, (_, i) => i));
+  /** The gold a reveal's loot just added, shown beside the gold. */
+  const gain = $derived(s.phase === 'solved' ? (s.item?.log.gold ?? 0) : 0);
   const lastStep = $derived(run.graph.boss.step);
   const pct = (n: number) => `${(n / s.maxLife) * 100}%`;
+
+  let muted = $state(isMuted());
+  function toggleSound() {
+    setMuted((muted = !muted));
+    if (!muted) sfx('click');
+  }
 </script>
 
 <header class="hdr" aria-label="Where you are">
-  <span class="flame" aria-hidden="true"></span>
+  <span class="brand"><span class="flame" aria-hidden="true"></span><span class="brand-name">PoE2.Quest</span></span>
   <p class="meta">
     <span class="zone" class:boss={place.kind === 'boss'}>{node.name}</span>
     <span class="kind"
-      >{placeName(place)}{#if s.visit && s.item}{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span>{/if}{#if hidden}{' '}<span
-          class="corrupt"
+      >{placeName(place)}{#if s.visit && s.item}<span class="count">{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}{#if hidden}{' '}<span
+          class="toll"
           role="img"
-          aria-label="Blood toll (corruption): each item here costs {BLOOD_TOLL} life when you start it">• Blood toll</span
+          aria-label="Blood toll (corruption): each item here costs {BLOOD_TOLL} life when you start it"
+          title="Blood toll: {BLOOD_DOES}"><span class="ic" aria-hidden="true"><Glyph of="corrupt" /></span>Blood toll</span
         >{/if}</span
     >
   </p>
+  <div class="tools">
+    <button class="icon-btn" onclick={toggleSound} title={muted ? 'Unmute' : 'Mute'} aria-label="Sound" aria-pressed={!muted}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"
+        ><path d="M4 9.5h3.2L11.5 6v12l-4.3-3.5H4z" />{#if muted}<path d="M15 9.5l5 5M20 9.5l-5 5" />{:else}<path d="M14.6 9.3a3.8 3.8 0 0 1 0 5.4M17 7a7 7 0 0 1 0 10" />{/if}</svg
+      >
+    </button>
+  </div>
 </header>
 
 <div class="strip">
@@ -53,15 +76,17 @@
             <span class="walls"></span>
           </span>
         </span>
-        <span class="lifenum" class:low>{s.life}{#if hit}<span class="hitn" title={toll && hit === toll ? 'Blood toll' : undefined}>−{hit}</span>{:else if due}<span class="due">+{due}</span>{/if}</span>
-        <span class="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} charges. Each drink uses one charge." title={FLASK_LINE}>
+        <span class="lifenum" class:low
+          >{s.life}{#if hit}<span class="hitn" class:toll={tollHit} title={tollHit ? 'Blood toll' : undefined}>−{hit}</span>{:else if due}<span class="due">+{due}</span>{/if}</span
+        >
+        <span class="flask" data-fly="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} charges. Each drink uses one charge." title={FLASK_LINE}>
           <span class="ch">
             {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}<i class:full={i < s.flask.charges}></i>{/each}
           </span>
         </span>
       </div>
     </div>
-    <span class="score"><span class="coin" aria-hidden="true"></span>{s.gold}</span>
+    <span class="score" data-fly="gold"><span class="coin" aria-hidden="true"></span>{s.gold}{#if gain}<span class="gain" aria-hidden="true">+{gain}</span>{/if}</span>
   </div>
   {#if place.kind === 'boss'}
     <div class="stepc boss" role="img" aria-label="The boss, the last step"><span class="k">Last</span><span class="v">Boss</span></div>
@@ -75,11 +100,13 @@
   .hdr {
     position: relative;
     display: grid;
-    grid-template-columns: 26px 1fr 26px;
+    /* Phones: the place takes what the flame and the key leave. */
+    grid-template-columns: 26px 1fr auto;
+    column-gap: 8px;
     align-items: center;
     min-height: 52px;
     margin: -0.75rem -16px 0;
-    padding: 4px 16px;
+    padding: 4px 12px 4px 16px;
     border-bottom: 1px solid rgba(125, 99, 51, 0.22);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
   }
@@ -92,8 +119,25 @@
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
   }
+  .brand {
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-title);
+    font-weight: 900;
+    font-size: 14.4px;
+    letter-spacing: 0.14em;
+    color: var(--gold);
+    text-shadow: 0 0 14px rgba(201, 164, 92, 0.25);
+    white-space: nowrap;
+  }
+  .brand-name {
+    display: none;
+  }
   /* The brand's flame, as the header's. */
   .flame {
+    flex: none;
     width: 13px;
     height: 12px;
     background: var(--unique-hi);
@@ -103,6 +147,7 @@
   /* The place over its kind, two short lines. */
   .meta {
     margin: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -125,14 +170,67 @@
     font-size: 10.5px;
     letter-spacing: 0.18em;
   }
-  .corrupt {
-    color: #f2685a;
+  /* Blood toll: red, with the corruption's swirl. */
+  .toll {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #ff8a72;
+    white-space: nowrap;
+  }
+  .toll::before {
+    content: '•';
+    margin-right: 2px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .toll .ic {
+    width: 12px;
+    height: 12px;
   }
   .num {
     color: var(--gold-hi);
   }
+  .tools {
+    justify-self: end;
+    display: flex;
+    gap: 6px;
+  }
+  .icon-btn {
+    width: 38px;
+    height: 38px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--muted);
+    box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.06);
+    cursor: pointer;
+  }
+  .icon-btn:hover {
+    color: var(--gold-hi);
+    border-color: var(--gold-lo);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 16px rgba(201, 164, 92, 0.3);
+  }
+  .icon-btn svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
 
   .strip {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -197,6 +295,12 @@
     font-size: 17px;
     line-height: 1;
     color: var(--gold-hi);
+  }
+  .gain {
+    margin-left: 3px;
+    font-size: 13px;
+    color: #a9cf8f;
+    text-shadow: 0 0 10px rgba(150, 190, 110, 0.5);
   }
   .coin {
     width: 13px;
@@ -272,6 +376,7 @@
     line-height: 1;
     color: #f3e8d2;
     min-width: 18px;
+    white-space: nowrap;
   }
   .lifenum.low {
     color: #ff9c86;
@@ -285,6 +390,12 @@
     margin-left: 4px;
     color: var(--bad);
     text-shadow: 0 0 8px rgba(224, 85, 63, 0.7);
+  }
+  /* The toll's hit says what took it. */
+  .hitn.toll::after {
+    content: ' toll';
+    font-size: 0.8em;
+    letter-spacing: 0.06em;
   }
   .flask .ch {
     display: flex;
@@ -350,9 +461,84 @@
     color: #ff9c86;
   }
 
+  /* A short phone (375 by 667): one bar. The place and the key on a 32 px
+     line, you and the step under it, the hairline under both. */
+  @media (max-width: 699px) and (max-height: 740px) {
+    .hdr {
+      min-height: 32px;
+      padding: 3px 12px 0 16px;
+      border-bottom: none;
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+    }
+    .hdr::after {
+      display: none;
+    }
+    .flame {
+      width: 16px;
+      height: 18px;
+    }
+    .meta {
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 8px;
+      overflow: hidden;
+      white-space: nowrap;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+    }
+    .zone {
+      flex: none;
+    }
+    .kind {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+    }
+    .kind::before {
+      content: '•';
+      margin-right: 8px;
+      color: var(--gold-lo);
+    }
+    /* One line holds the place, its kind and a toll; the item's count is left out, as the design's short bar does. */
+    .count {
+      display: none;
+    }
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+    }
+    .icon-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .strip {
+      min-height: 0;
+      margin: -0.5rem -16px 0;
+      padding: 0 16px 5px;
+      border-bottom: 1px solid rgba(125, 99, 51, 0.22);
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0));
+    }
+    .strip::after {
+      content: '';
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      bottom: -1px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
+    }
+  }
+
   @media (min-width: 700px) {
     .hdr {
-      min-height: 60px;
+      grid-template-columns: 1fr auto 1fr;
+      min-height: 64px;
+      padding: 4px 20px;
+    }
+    .brand-name {
+      display: inline;
     }
     .meta {
       flex-direction: row;
@@ -366,6 +552,18 @@
     .kind {
       font-size: 12.5px;
       letter-spacing: 0.14em;
+    }
+    .toll .ic {
+      width: 13px;
+      height: 13px;
+    }
+    .icon-btn {
+      width: 34px;
+      height: 34px;
+    }
+    .icon-btn svg {
+      width: 16px;
+      height: 16px;
     }
     .strip {
       justify-content: center;
