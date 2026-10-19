@@ -104,7 +104,7 @@
       {#each SECTIONS as sec (sec)}
         {@render range(`Decoy names, ${SECTION_NAMES[sec].toLowerCase()}`, t.names[sec], LIMITS.names)}
       {/each}
-      <p class="small">Decoy names are whole names that the tiles can also spell (real look-alikes or made-up ones). Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
+      <p class="small">Decoy names are whole names of real items that the tiles can also spell (the answer's look-alikes, or the closest others of its category). Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
     </fieldset>
 
     <fieldset>

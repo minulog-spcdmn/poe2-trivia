@@ -22,8 +22,6 @@ import { seededRandom } from '../lib/patches.ts';
 import { readLooks, type LooksData } from '../lib/looks.ts';
 import itemData from '../data/items.json' with { type: 'json' };
 import syllableData from '../data/syllables.json' with { type: 'json' };
-import fakeSyllableData from '../data/fakeSyllables.json' with { type: 'json' };
-import fakeData from '../data/fakes.json' with { type: 'json' };
 import looksData from '../data/looks.json' with { type: 'json' };
 import clueData from '../data/clues.json' with { type: 'json' };
 import {
@@ -191,9 +189,6 @@ export type ModLine = [string, string, number];
 export type Clues = { category: string; base: string; mods: ModLine[]; flavor: string | null; support: string | null };
 export const ITEMS = itemData as Item[];
 export const SYLLABLES = syllableData as Record<string, string[][]>;
-/** The made-up names' tiles, by name (fakes.json's names, split as the real ones are). */
-export const FAKE_SYLLABLES = fakeSyllableData as Record<string, string[][]>;
-const FAKES = fakeData as Record<string, string[]>;
 export const CLUES = clueData as unknown as Record<string, Clues>;
 const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
 /** An item's name, by id. */
@@ -541,34 +536,43 @@ export function itemSeed(seed: number, itemId: string): number {
 
 /** A name's words that count when two names are compared (of, the and and don't). */
 const wordsOf = (name: string) => new Set(name.toLowerCase().split(/\s+/).map(letters).filter((w) => w && !SMALL_WORDS.includes(w)));
+/** The shortest word looked for inside another (Girdle in Goregirdle): shorter ones sit inside too many words by chance. */
+const COMPOUND_MIN = 4;
+/** Whether two words are one, or one holds the other inside a compound (Goregirdle, Meginord's Girdle). */
+const wordsMeet = (a: string, b: string) =>
+  a === b || (a.length >= COMPOUND_MIN && b.includes(a)) || (b.length >= COMPOUND_MIN && a.includes(b));
 
 /**
  * The Ancient Orb's sibling for an answer: another item of its category (a
- * lineage gem's is another lineage gem) sharing no word with it, at random,
- * or null when there is none.
+ * lineage gem's is another lineage gem) sharing no word with it, nor holding
+ * one of its words inside a compound (or the other way), at random, or null
+ * when there is none.
  */
 export function siblingOf(answer: Item, rng: () => number): Item | null {
-  const own = wordsOf(answer.name);
-  const pool = ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category && ![...wordsOf(it.name)].some((w) => own.has(w)));
+  const own = [...wordsOf(answer.name)];
+  const pool = ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category && ![...wordsOf(it.name)].some((w) => own.some((o) => wordsMeet(w, o))));
   return pool.length ? pool[Math.floor(rng() * pool.length)] : null;
 }
 
-/** A decoy name: its name, its tiles, and whether it is made up. */
+/** A decoy name: a real item's name, and its tiles. */
 export interface DecoyName {
   name: string;
   tiles: string[];
-  fake: boolean;
 }
 
 const nameLikes = new Map<string, Item[]>();
+const wider = new Map<string, Item[]>();
 
 /**
- * The names a board's decoy names come from: the answer's look-alikes, real
- * (the items whose art looks most like it, then whose names do) and made up
- * (fakes.json's for it). Never the answer, and none whose tiles are the
- * answer's own set.
+ * The names a board's decoy names come from, all real items, best first:
+ * `near`, the answer's look-alikes (the items whose art looks most like it,
+ * then whose names do), and `wide`, the rest of its category, the closest by
+ * art and name first, for a board the near ones can't fill to its section's
+ * fewest. Never the answer, and none whose tiles are the answer's own set.
+ * (No made-up names: each was the answer with one word swapped, so the real
+ * name it shared tiles with gave the answer away.)
  */
-export function decoyNameCandidates(answer: Item): { real: DecoyName[]; fake: DecoyName[] } {
+export function decoyNameCandidates(answer: Item): { near: DecoyName[]; wide: DecoyName[] } {
   const own = new Set(SYLLABLES[answer.id].flat());
   const sameSet = (tiles: string[]) => new Set(tiles).size === own.size && tiles.every((t) => own.has(t));
   const byArt = LOOKS.looksLike(answer.id)
@@ -584,15 +588,24 @@ export function decoyNameCandidates(answer: Item): { real: DecoyName[]; fake: De
       .map((x) => x.it);
     nameLikes.set(answer.id, byName);
   }
-  const real = [...new Map([...byArt, ...byName].map((it) => [it.id, it])).values()]
-    .filter((it) => letters(it.name) !== letters(answer.name))
-    .map((it) => ({ name: it.name, tiles: SYLLABLES[it.id].flat(), fake: false }))
-    .filter((d) => !sameSet(d.tiles));
-  const fake = (FAKES[answer.name] ?? [])
-    .filter((n) => FAKE_SYLLABLES[n] && letters(n) !== letters(answer.name))
-    .map((n) => ({ name: n, tiles: FAKE_SYLLABLES[n].flat(), fake: true }))
-    .filter((d) => !sameSet(d.tiles));
-  return { real, fake };
+  let rest = wider.get(answer.id);
+  if (!rest) {
+    // The category's others, by how alike they look (art rank) and read (name), best first.
+    const artRank = new Map(LOOKS.looksLike(answer.id).map((l, i) => [l.id, i]));
+    rest = ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category)
+      .map((it) => ({ it, like: nameSimilarity(answer.name, it.name) - (artRank.get(it.id) ?? ITEMS.length) / ITEMS.length }))
+      .sort((a, b) => b.like - a.like || a.it.id.localeCompare(b.it.id))
+      .map((x) => x.it);
+    wider.set(answer.id, rest);
+  }
+  const usable = (items: Item[]) =>
+    items
+      .filter((it) => letters(it.name) !== letters(answer.name) && SYLLABLES[it.id])
+      .map((it) => ({ name: it.name, tiles: SYLLABLES[it.id].flat() }))
+      .filter((d) => !sameSet(d.tiles));
+  const nearItems = [...new Map([...byArt, ...byName].map((it) => [it.id, it])).values()];
+  const nearIds = new Set(nearItems.map((it) => it.id));
+  return { near: usable(nearItems), wide: usable(rest.filter((it) => !nearIds.has(it.id))) };
 }
 
 /** A pool, as dealPool deals it. */
@@ -626,13 +639,10 @@ export function dealPool(answer: Item, seed: number, size: number, extra: number
   // The sibling's own tiles (not the answer's too) stay off the board: else they'd show it is wrong for free.
   const off = new Set(sib ? SYLLABLES[sib.id].flat().filter((t) => !own.has(t)) : []);
   const want = between(names, rng);
-  const { real, fake } = decoyNameCandidates(answer);
+  const { near, wide } = decoyNameCandidates(answer);
   const fits = (d: DecoyName) => (!sib || letters(d.name) !== letters(sib.name)) && !d.tiles.some((t) => off.has(t));
-  const reals = shuffle(real.filter(fits), rng);
-  const fakes = shuffle(fake.filter(fits), rng);
-  // Mixed: each pick a made-up name or a real one at random, while both last.
-  const order: DecoyName[] = [];
-  while (reals.length || fakes.length) order.push((fakes.length && (!reals.length || rng() < 0.5) ? fakes : reals).shift()!);
+  // The look-alikes at random, then the rest of the category best first: a board always gets its section's fewest.
+  const order: DecoyName[] = [...shuffle(near.filter(fits), rng), ...wide.filter(fits)];
   const small = SMALL_WORDS.filter((w) => !own.has(w));
   const picked: DecoyName[] = [];
   const nameTiles = new Set<string>();
@@ -655,7 +665,8 @@ export function dealPool(answer: Item, seed: number, size: number, extra: number
   // The rolled total is the answer's tiles, the names' and the loose decoys; of, the, and and the possessives come on top.
   const room = Math.max(0, MAX_TILES - own.size - nameTiles.size - signature.length);
   const loose = Math.min(room, Math.max(MIN_DECOYS - nameTiles.size, total - own.size - nameTiles.size, 0) + extra);
-  const ordinary = pickDecoys(notLoose, loose, rng, (t) => !isPossessive(t), ownList);
+  // Against the answer's tiles and every decoy name's: else the answer's alone have look-alikes around them.
+  const ordinary = pickDecoys(notLoose, loose, rng, (t) => !isPossessive(t), [...ownList, ...picked.flatMap((d) => d.tiles)]);
   const decoys = [...signature, ...nameTiles, ...ordinary];
   return { decoys, tiles: shuffle([...own, ...decoys], rng), names: picked, sibling: sib?.id ?? null };
 }
@@ -869,9 +880,14 @@ export class Run {
 
   /** How many patches a Torch burns in here: halved under Incursion, at the boss's third item and after (a Lingering fourth too), and again at a Murky boss. */
   flareBurn(): number {
+    return this.burnSize(this.state.tuning.burnIn.flare);
+  }
+
+  /** A Torch's or a Stacked Deck's burn-in of `base` patches here, by the Torch's rules (flareBurn). */
+  private burnSize(base: number): number {
     const s = this.state;
     const it = s.item;
-    let b = s.tuning.burnIn.flare;
+    let b = base;
     if (it?.zoneType === 'incursion') b /= 2;
     if (it && it.boss !== null && it.boss >= 2) b /= 2;
     if (it && it.boss !== null && s.bossMods.includes('murky')) b /= 2;
@@ -1353,7 +1369,7 @@ export class Run {
         else if (clue === 'category') it.shown.category = true;
         else if (clue === 'base') it.shown.base = true;
         else if (clue === 'lengths') it.shown.lengths = true;
-        else this.burnIn(it, s.tuning.burnIn.deck, 'deck');
+        else this.burnIn(it, this.burnSize(s.tuning.burnIn.deck), 'deck');
         it.deck.push(drawn);
         it.log.deck.push(clue);
         break;

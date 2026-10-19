@@ -6,7 +6,7 @@
 // Pure, so a test rolls and creeps a map the same as the page does.
 //
 // The file can change under the code (the owner is re-stepping it to 10
-// steps): any step may hold 1 to 4 nodes, a step with none is skipped, a town
+// steps): a step holds 2 to 4 places (1 where a town stands alone), a step with none is skipped, a town
 // can sit at any step, and the boss's step is the last, whatever it is.
 
 import mapData from '../data/wraeclast.json' with { type: 'json' };
