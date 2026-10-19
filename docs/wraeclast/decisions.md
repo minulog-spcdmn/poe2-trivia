@@ -6,6 +6,7 @@ changed, so a later orchestrator can follow.
 
 | Date | Decision | Where it went |
 | --- | --- | --- |
+| 2026-10-19 | Owner: the map is a first draft, nothing meant to stay, and the orchestrator may shape it. Re-stepped to 10 steps by merging the old order (camp 0; 6, 5, 4 places; Ziggurat town 4; 5, 4 places; Forest Encampment town 7; 5, 4 places; boss 10), backup in the orchestrator's scratchpad. Oriath Harbour is no longer a town, since a town right before the boss was the obvious pick every time | Placement tool; `wraeclast-map.json` |
 | 2026-10-19 | Owner: the Inscription often solved itself (only one real name could be built). Every board now holds the full tiles of decoy names: look-alikes only, real and made up (fakes.json, now from the first item), rolled and never shown: 1 to 2 early, 2 to 3 mid, 3 to 4 late, 4 to 5 at the boss. The owner accepts that look-alikes may hint at the category | v4 handoff; design doc |
 | 2026-10-19 | Owner: much of the wording was confusing, even to its creator. v4 rewrites every player-facing line plainly (design handoff), and a newcomer-read review runs before playtest 4 | v4 handoffs |
 | 2026-10-19 | Playtest 3 (`playtests/playtest-3.md`): the owner found the run unfun and wanted it over. Causes named by the owner: too long, slow screens, no real choices, items got samey, and building a name was cumbersome even when known | Drives v4 |
