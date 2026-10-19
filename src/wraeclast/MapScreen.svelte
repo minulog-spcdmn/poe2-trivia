@@ -1,250 +1,88 @@
-<script module lang="ts">
-  // The map and Where next (opened from a vendor or a zone's last reveal).
-  // The map is a plain dark plate: every step a row, its places spread across
-  // it (as the owner placed them, drawn toward even slots so four fit on a
-  // phone), the paths between them and each place's kind this run. The route
-  // taken is dimmed, where the player stands is ringed, and the places one
-  // step ahead are lit and can be tapped. Under it on a phone (beside it on a
-  // desktop), Where next: the same places as rows, the main way to pick. With
-  // `plate`, the map alone fills its box (the desktop reveal's third column,
-  // its Where next being the reveal's own).
-  import { GRAPH } from './map';
-  import type { Run } from './rules';
-
-  /** The plate's sizes: a phone's, and a desktop's (860 px wide and up). */
-  export const PHONE = { node: 24, nameTop: 14, labelMax: 92, rowMin: 84, rowMax: 96, padTop: 40, padBottom: 18, gutter: 22, edge: 4, namePx: 11.5, emPx: 10 };
-  export const WIDE = { node: 28, nameTop: 16, labelMax: 130, rowMin: 53, rowMax: 80, padTop: 30, padBottom: 18, gutter: 28, edge: 8, namePx: 13, emPx: 11.5 };
-  /** The map alone in a column (the desktop reveal's, 380 px): a phone's labels, a desktop's rows. */
-  export const PLATE = { ...PHONE, rowMin: 53, rowMax: 64, padTop: 30 };
-  export type Sizes = typeof PHONE;
-  /** How far each place is drawn toward where the owner placed it across, from its even slot in its row (0: the slot). */
-  const BLEND = 0.35;
-
-  export interface Layout {
-    width: number;
-    height: number;
-    /** Each place's centre. */
-    at: Record<string, { x: number; y: number }>;
-    /** Each place's label width at most. */
-    labelW: Record<string, number>;
-    /** Each step's row. */
-    rows: { step: number; y: number }[];
-  }
-
-  /** A guess at a label's height before it's measured: two lines of name, and its kind. */
-  const guess = (z: Sizes) => 2 * z.namePx * 1.12 + z.emPx * 1.12 + 3;
-
-  /**
-   * Lays the plate out `width` px wide, in a frame `frameH` tall (0: not
-   * known yet), each label `heights` tall where measured. Rows go down by
-   * step, far enough apart that a row's labels clear the row below, and
-   * spread to fill the frame where it's taller (up to rowMax). Across, a
-   * row's places sit between their even slot and where the owner placed
-   * them, at least a label apart, clear of the step numbers.
-   */
-  export function layout(width: number, frameH: number, z: Sizes, heights: Record<string, number>, under = 0): Layout {
-    const nodes = GRAPH.nodes;
-    const minX = Math.min(...nodes.map((n) => n.x));
-    const maxX = Math.max(...nodes.map((n) => n.x));
-    const norm = (x: number) => (x - minX) / Math.max(1e-6, maxX - minX);
-    const L = z.gutter;
-    const R = width - z.edge;
-    const at: Layout['at'] = {};
-    const labelW: Layout['labelW'] = {};
-
-    for (const step of GRAPH.steps) {
-      const row = [...GRAPH.atStep.get(step)!].sort((a, b) => a.x - b.x);
-      const n = row.length;
-      const g = Math.min(z.labelMax + 4, (R - L) / n);
-      const p = row.map((m, i) => L + ((1 - BLEND) * ((i + 0.5) / n) + BLEND * norm(m.x)) * (R - L));
-      for (let i = 0; i < n; i++) p[i] = Math.max(p[i], i ? p[i - 1] + g : L + g / 2);
-      for (let i = n - 1; i >= 0; i--) p[i] = Math.min(p[i], i < n - 1 ? p[i + 1] - g : R - g / 2);
-      row.forEach((m, i) => {
-        at[m.id] = { x: p[i], y: 0 };
-        labelW[m.id] = g - 4;
-      });
-    }
-
-    const h = (id: string) => heights[id] ?? guess(z);
-    const tallest = (step: number) => Math.max(...GRAPH.atStep.get(step)!.map((m) => h(m.id)));
-    const steps = GRAPH.steps;
-    const last = steps.at(-1)!;
-    const fill = frameH > 0 && steps.length > 1 ? (frameH - under - z.padTop - z.padBottom - z.nameTop - tallest(last)) / (steps.length - 1) : 0;
-    const base = Math.min(z.rowMax, Math.max(z.rowMin, fill));
-    const rows: Layout['rows'] = [];
-    let y = z.padTop;
-    steps.forEach((step, k) => {
-      if (k) y += Math.max(base, z.nameTop + tallest(steps[k - 1]) + 6 + z.node / 2);
-      rows.push({ step, y });
-      for (const m of GRAPH.atStep.get(step)!) at[m.id].y = y;
-    });
-    return { width, height: y + z.nameTop + tallest(last) + z.padBottom + under, at, labelW, rows };
-  }
-
-</script>
-
 <script lang="ts">
-  import { MediaQuery } from 'svelte/reactivity';
-  import type { Place } from './rules';
-  import { placeDoes, placeKind, placeName } from './words';
+  // The map: the region's 14 places where the owner placed them (map.ts),
+  // the links between them, each place's mark (lit where it can be entered,
+  // dimmed once cleared, a plain red ring while corrupted, the lair red).
+  // A tap on a place shows its one line and Enter under the plate.
+  import { LINKS, REGION, layoutRegion, type PlaceKind } from './map';
+  import type { Run } from './rules';
+  import { placeLine } from './words';
 
-  /** `onclose`: opened over a vendor or a reveal, it closes to go back there. `plate`: the map alone, filling its box. */
-  let { run, onclose, plate = false }: { run: Run; onclose?: () => void; plate?: boolean } = $props();
+  let { run }: { run: Run } = $props();
   const s = $derived(run.state);
-  const here = $derived(GRAPH.byId.get(s.at)!);
-  const options = $derived(run.options());
-  const offered = $derived(new Set(options));
-  const route = $derived(new Set(s.log.route));
-  /** The route's legs, as "from>to". */
-  const legs = $derived(new Set(s.log.route.slice(1).map((id, k) => `${s.log.route[k]}>${id}`)));
-  const nextStep = $derived(options.length ? GRAPH.byId.get(options[0])!.step : here.step);
-  const name = (id: string) => GRAPH.byId.get(id)!.name;
 
-  const wideQ = new MediaQuery('(min-width: 860px)');
-  const wide = $derived(!plate && wideQ.current);
-  const Z = $derived(plate ? PLATE : wide ? WIDE : PHONE);
-
-  // ---- Words ----
-  const nodeSaid = (id: string, p: Place) => `${name(id)}: ${placeName(p)}${id === s.at ? ', you are here' : ''}`;
-  const rowSaid = (id: string, p: Place) => `Go to ${name(id)}: ${placeKind(p)}, ${placeDoes(run, p)}`;
-
-  // ---- The plate ----
   let width = $state(0);
-  let frameH = $state(0);
-  let frame: HTMLDivElement | undefined = $state();
-  /** Each label's height, measured (only ever grows, so nothing jumps). */
-  let heights: Record<string, number> = $state({});
-  const L = $derived(width > 0 ? layout(width, frameH, Z, heights) : null);
-  const measured = $derived(Object.keys(heights).length >= GRAPH.nodes.length);
+  let height = $state(0);
+  const L = $derived(width > 0 && height > 0 ? layoutRegion(width, height) : null);
 
-  function measure(node: HTMLElement, id: string) {
-    const ro = new ResizeObserver(() => {
-      const h = Math.ceil(node.offsetHeight);
-      if (h > (heights[id] ?? 0)) heights[id] = h;
-    });
-    ro.observe(node);
-    return { destroy: () => ro.disconnect() };
-  }
+  /** The place tapped, its line shown under the plate. */
+  let picked = $state<string | null>(null);
+  const place = $derived(picked ? REGION.byId.get(picked)! : null);
+  const open = $derived(picked ? run.canEnter(picked) : false);
+  /** Why the place picked can't be entered. */
+  const shut = $derived(!picked || open ? '' : s.places[picked].kind === 'zone' && s.places[picked].cleared ? 'Cleared' : 'Enter a place next to it first');
 
-  // On arriving, the frame scrolls to where the player stands and the places ahead.
-  let shown = false;
-  $effect(() => {
-    if (!L || !frame || !measured || shown) return;
-    shown = true;
-    const view = frame.clientHeight;
-    const ys = [s.at, ...options].map((id) => L.at[id].y);
-    frame.scrollTop = (Math.min(...ys) + Math.max(...ys) + Z.nameTop + 24) / 2 - view / 2;
-  });
-
-  // The screen fills the window under the run's bar (it scrolls on a short phone).
-  let root: HTMLDivElement | undefined = $state();
-  let top = $state(0);
-  $effect(() => {
-    if (!root) return;
-    const el = root;
-    const set = () => (top = Math.round(el.getBoundingClientRect().top + scrollY));
-    set();
-    const raf = requestAnimationFrame(set);
-    addEventListener('resize', set);
-    return () => {
-      cancelAnimationFrame(raf);
-      removeEventListener('resize', set);
-    };
-  });
-
-  const go = (id: string) => run.choose(id);
+  const said = (id: string) => {
+    const p = REGION.byId.get(id)!;
+    return `${p.name}: ${placeLine(run, id)}${run.corrupted(id) ? ', corrupted' : ''}${run.canEnter(id) ? '' : ', not open'}`;
+  };
 </script>
 
-{#snippet mark(kind: string)}
+{#snippet mark(kind: PlaceKind)}
   <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round">
     {#if kind === 'zone'}
       <path d="M12 3 20 12 12 21 4 12z" /><path d="M12 7.5 16.5 12 12 16.5 7.5 12z" stroke-width=".9" />
     {:else if kind === 'town'}
       <path d="M4.5 20.5v-9L12 5.5l7.5 6v9M9.6 20.5v-5.4h4.8v5.4M2.8 20.5h18.4" /><path d="M12 2.5v3" stroke-width=".9" />
-    {:else if kind === 'boss'}
-      <path d="M4 17.5 5.6 7.8l4 4.2L12 5l2.4 7 4-4.2L20 17.5z" /><path d="M4 20.5h16" /><circle cx="12" cy="14.6" r="1.1" stroke-width=".9" />
-    {:else if kind === 'camp'}
-      <path d="M3 20.2 12 5.2l9 15z" /><path d="M12 12.6l-3 7.6M12 12.6l3 7.6M12 5.2V2.8" stroke-width=".9" />
+    {:else if kind === 'lair'}
+      <path d="M12 20.5c-4.5-3-8-6.2-8-10a4.2 4.2 0 0 1 8-1.8 4.2 4.2 0 0 1 8 1.8c0 3.8-3.5 7-8 10z" /><path d="M12 8.7v7" stroke-width=".9" />
     {:else}
-      <path d="M9.5 5.5 16 12l-6.5 6.5" stroke-width="1.5" />
+      <path d="M3 20.2 12 5.2l9 15z" /><path d="M12 12.6l-3 7.6M12 12.6l3 7.6M12 5.2V2.8" stroke-width=".9" />
     {/if}
   </svg>
 {/snippet}
 
-<div class="map-screen" class:wide class:plate bind:this={root} style:--top="{top}px">
-  <!-- What to do here is the run bar's task row on a desktop (Hud.svelte). -->
-  {#if !plate}<h1 class="sr">{here.name}</h1>{/if}
-
-  <div class="body">
-    <section class="map" class:wide aria-label="The map">
-      <div class="map-sc" bind:this={frame} bind:clientWidth={width} bind:clientHeight={frameH}>
-        {#if L}
-          <div class="map-in" style:height="{L.height}px">
-            <svg class="links" width={L.width} height={L.height} aria-hidden="true">
-              {#each GRAPH.nodes as a (a.id)}
-                {#each GRAPH.next[a.id] as b (b)}
-                  <line
-                    class="lk"
-                    class:past={legs.has(`${a.id}>${b}`)}
-                    class:next={a.id === s.at && offered.has(b)}
-                    x1={L.at[a.id].x}
-                    y1={L.at[a.id].y}
-                    x2={L.at[b].x}
-                    y2={L.at[b].y}
-                  />
-                {/each}
-              {/each}
-            </svg>
-            {#each L.rows as r (r.step)}
-              <span class="sn" class:now={r.step === nextStep && options.length > 0} style:top="{r.y}px" aria-hidden="true">{r.step || ''}</span>
-            {/each}
-            {#each GRAPH.nodes as n (n.id)}
-              {@const p = s.places[n.id]}
-              {@const at = L.at[n.id]}
-              {@const lit = offered.has(n.id)}
-              <div
-                class="node {p.kind}"
-                class:past={route.has(n.id) && n.id !== s.at}
-                class:here={n.id === s.at}
-                class:lit
-                style:left="{at.x}px"
-                style:top="{at.y}px"
-              >
-                {#if lit}
-                  <button class="g" tabindex="-1" aria-label={nodeSaid(n.id, p)} onclick={() => go(n.id)}>{@render mark(p.kind)}</button>
-                {:else}
-                  <span class="g" role="img" aria-label={nodeSaid(n.id, p)}>{@render mark(p.kind)}</span>
-                {/if}
-                <span class="nl" style:max-width="{L.labelW[n.id]}px" aria-hidden="true" use:measure={n.id}>{n.name}<em>{placeName(p)}</em></span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </section>
-
-    {#if !plate}<div class="side">
-      <section class="wn" aria-labelledby="wn-h">
-        <div class="wn-head">
-          <h2 class="sub" id="wn-h">Where next</h2>
-          {#if options.length}<span class="stp">Step {nextStep} of {GRAPH.boss.step}</span>{/if}
-          <span class="grow"></span>
-          {#if onclose}<button class="btn ghost small" onclick={onclose}>Back</button>{/if}
-        </div>
-        {#each options as id (id)}
-          {@const p = s.places[id]}
-          <button class="place" aria-label={rowSaid(id, p)} onclick={() => go(id)}>
-            <span class="k">{@render mark(p.kind)}</span>
-            <span class="tx">
-              <span class="nm">{name(id)}<span class="kd">{placeKind(p)}</span></span>
-              <span class="ln">{placeDoes(run, p)}</span>
-            </span>
-            <span class="chev">{@render mark('chev')}</span>
-          </button>
+<div class="map-screen">
+  <h1 class="sr">The map</h1>
+  <section class="plate" aria-label="The map" bind:clientWidth={width} bind:clientHeight={height}>
+    {#if L}
+      <svg class="links" width={width} height={height} aria-hidden="true">
+        {#each LINKS as [a, b] (`${a}>${b}`)}
+          <line class="lk" class:open={s.places[a].cleared || s.places[b].cleared} x1={L.at[a].x} y1={L.at[a].y} x2={L.at[b].x} y2={L.at[b].y} />
         {/each}
-      </section>
-    </div>{/if}
-  </div>
+      </svg>
+      {#each REGION.places as p (p.id)}
+        {@const at = L.at[p.id]}
+        {@const lb = L.labels[p.id]}
+        <button
+          class="node {p.kind}"
+          class:lit={run.canEnter(p.id)}
+          class:cleared={s.places[p.id].cleared && p.kind === 'zone'}
+          class:bad={run.corrupted(p.id)}
+          class:here={p.id === s.at}
+          class:picked={p.id === picked}
+          style:left="{at.x}px"
+          style:top="{at.y}px"
+          aria-label={said(p.id)}
+          aria-pressed={p.id === picked}
+          onclick={() => (picked = p.id)}>{@render mark(p.kind)}</button
+        >
+        <span class="nl" class:lit={run.canEnter(p.id)} style:left="{lb.x}px" style:top="{lb.y}px" style:width="{lb.w}px" aria-hidden="true">{p.name}</span>
+      {/each}
+    {/if}
+  </section>
+
+  <section class="pick" aria-live="polite">
+    {#if place && picked}
+      <div class="say">
+        <h2 class="nm">{place.name}</h2>
+        <p class="ln">{placeLine(run, picked)}{#if run.corrupted(picked)}<span class="cor">{' '}• corrupted</span>{/if}</p>
+        {#if shut}<p class="why">{shut}</p>{/if}
+      </div>
+      <button class="btn primary" disabled={!open} onclick={() => run.enter(picked!)}>Enter</button>
+    {:else}
+      <p class="hint">Tap a place to see it. You can enter any place next to one you've cleared, and the lair at any time.</p>
+    {/if}
+  </section>
 </div>
 
 <style>
@@ -252,53 +90,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    /* The window under the run's bar, less the page's foot padding. */
-    min-height: max(30rem, calc(100svh - var(--top, 0px) - 12px));
   }
-  /* The map alone: it fills the box it's given. */
-  .map-screen.plate {
-    min-height: 0;
-    height: 100%;
-  }
-  .plate .map {
-    min-height: 0;
-  }
-  .body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .side {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .wide .body {
-    display: grid;
-    grid-template-columns: minmax(0, 640px) minmax(0, 460px);
-    justify-content: center;
-    column-gap: 40px;
-    padding-bottom: 12px;
-  }
-  .wide .side {
-    justify-content: center;
-    gap: 18px;
-  }
-
-  .ic {
-    display: inline-block;
-    flex: none;
-    width: 1em;
-    height: 1em;
-  }
-
-  /* ---- The plate ---- */
-  .map {
+  .plate {
     position: relative;
-    flex: 1 1 0;
-    min-height: 15rem;
+    height: clamp(400px, calc(100svh - 330px), 640px);
     border: 1px solid var(--line);
     border-radius: 6px;
     background: rgba(8, 6, 5, 0.9) var(--dither);
@@ -308,322 +103,163 @@
       inset 0 0 0 4px rgba(125, 99, 51, 0.28);
     overflow: hidden;
   }
-  .map.wide {
-    min-height: 26rem;
-  }
-  .map-sc {
-    position: absolute;
-    inset: 4px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
-    image-rendering: auto;
-  }
-  .map-sc::-webkit-scrollbar {
-    display: none;
-  }
-  .map-in {
-    position: relative;
-  }
   .links {
     position: absolute;
-    left: 0;
-    top: 0;
+    inset: 0;
     pointer-events: none;
   }
   .lk {
     stroke: #3b3024;
     stroke-width: 1;
   }
-  .lk.past {
-    stroke: rgba(201, 164, 92, 0.6);
-    stroke-width: 1.5;
+  .lk.open {
+    stroke: rgba(201, 164, 92, 0.55);
+    stroke-width: 1.3;
   }
-  .lk.next {
-    stroke: var(--gold-hi);
-    stroke-width: 1.5;
-    stroke-dasharray: 3 3;
-    opacity: 0.85;
+  .ic {
+    display: block;
+    width: 1em;
+    height: 1em;
   }
-  .sn {
-    position: absolute;
-    left: 6px;
-    translate: 0 -50%;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 9.5px;
-    letter-spacing: 0.08em;
-    color: #5d5242;
-  }
-  .wide .sn {
-    left: 10px;
-    font-size: 11px;
-  }
-  .sn.now {
-    color: var(--gold);
-  }
-
   .node {
     position: absolute;
-    width: 0;
-    height: 0;
-  }
-  .node .g {
-    position: absolute;
-    left: 0;
-    top: 0;
     translate: -50% -50%;
     width: 24px;
     height: 24px;
     display: grid;
     place-items: center;
     padding: 0;
+    font: inherit;
+    font-size: 12px;
     color: #8a7a60;
     background: none;
     border: 0;
-    font: inherit;
-    cursor: default;
-  }
-  .wide .node .g {
-    width: 28px;
-    height: 28px;
-  }
-  .node .g::before {
-    content: '';
-    position: absolute;
-    inset: 4px;
-    rotate: 45deg;
-    border: 1px solid currentColor;
-    background: #0e0b08;
-  }
-  .node .g .ic {
-    position: relative;
-    font-size: 15px;
-  }
-  .node.zone .g .ic {
-    font-size: 9px;
-  }
-  .node.camp .g::before,
-  .node.town .g::before,
-  .node.boss .g::before {
-    rotate: none;
-    border-radius: 50%;
-    inset: 1px;
-  }
-  .node.boss .g {
-    width: 32px;
-    height: 32px;
-    color: #e8a08a;
-  }
-  .node.boss .g .ic {
-    font-size: 19px;
-  }
-  .node .nl {
-    position: absolute;
-    left: 0;
-    top: 14px;
-    translate: -50% 0;
-    width: max-content;
-    padding: 1px 4px 2px;
-    border-radius: 3px;
-    background: rgba(8, 6, 5, 0.82);
-    font-size: 11.5px;
-    line-height: 1.12;
-    text-align: center;
-    text-wrap: balance;
-    color: #8a7f6c;
-    pointer-events: none;
-  }
-  .wide .node .nl {
-    top: 16px;
-    font-size: 13px;
-  }
-  .node .nl em {
-    display: block;
-    font-style: normal;
-    font-size: 10px;
-    color: #6b6150;
-  }
-  .wide .node .nl em {
-    font-size: 11.5px;
-  }
-  .node.past .g,
-  .node.past .nl {
-    opacity: 0.55;
-  }
-  .node.past .g {
-    color: var(--gold-lo);
-  }
-  .node.here .g {
-    color: #f1d99b;
-  }
-  .node.here .g::after {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    border-radius: 50%;
-    border: 1.5px solid #d9a066;
-    box-shadow: 0 0 12px rgba(217, 160, 102, 0.5);
-  }
-  .node.here .nl {
-    color: #e6dccb;
-  }
-  .node.lit .g {
-    color: var(--gold-hi);
     cursor: pointer;
+    image-rendering: auto;
   }
   /* A tap target 44 px across. */
-  .node.lit .g::after {
+  .node::after {
     content: '';
     position: absolute;
     inset: -10px;
     border-radius: 50%;
   }
-  .node.lit .g::before {
+  .node::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    rotate: 45deg;
+    border: 1px solid currentColor;
+    background: #0e0b08;
+  }
+  .node .ic {
+    position: relative;
+  }
+  .node.camp,
+  .node.town,
+  .node.lair {
+    width: 30px;
+    height: 30px;
+    font-size: 17px;
+  }
+  .node.camp::before,
+  .node.town::before,
+  .node.lair::before {
+    rotate: none;
+    border-radius: 50%;
+    inset: 1px;
+  }
+  .node.lair {
+    color: #e8735a;
+  }
+  .node.lair::before {
+    background: #2a0d08;
+  }
+  .node.cleared {
+    color: var(--gold-lo);
+    opacity: 0.6;
+  }
+  .node.lit {
+    color: var(--gold-hi);
+  }
+  .node.lit::before {
     background: #2a1f12;
     box-shadow:
       0 0 0 3px rgba(241, 217, 155, 0.12),
-      0 0 14px rgba(241, 190, 90, 0.45);
+      0 0 12px rgba(241, 190, 90, 0.4);
   }
-  .node.lit .g:hover::before {
-    box-shadow:
-      0 0 0 3px rgba(241, 217, 155, 0.25),
-      0 0 18px rgba(241, 190, 90, 0.6);
+  .node.lair.lit {
+    color: #ff9c86;
   }
-  .node.lit .nl {
-    font-family: var(--font-display);
-    font-weight: 700;
+  .node.lair.lit::before {
+    background: #3a120b;
+    box-shadow: 0 0 12px rgba(224, 85, 63, 0.45);
+  }
+  /* Corrupted: a plain red ring (the veins come later). */
+  .node.bad::before {
+    border-color: #d9442e;
+    box-shadow: 0 0 0 2px rgba(217, 68, 46, 0.35);
+  }
+  .node.here::after {
+    inset: -5px;
+    border: 1.5px solid #d9a066;
+  }
+  .node.picked::after {
+    inset: -6px;
+    border: 2px solid var(--gold-hi);
+  }
+  .nl {
+    position: absolute;
+    padding: 1px 4px 2px;
+    border-radius: 3px;
+    background: rgba(8, 6, 5, 0.8);
+    font-size: 11px;
+    line-height: 12.5px;
+    text-align: center;
+    color: #8a7f6c;
+    pointer-events: none;
+    box-sizing: border-box;
+    image-rendering: auto;
+  }
+  .nl.lit {
     color: #f6e7c6;
-  }
-  .node.lit .nl em {
-    font-family: var(--font-body);
-    font-weight: 500;
-    color: var(--gold);
   }
 
-  /* ---- Where next ---- */
-  .wn {
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    transition:
-      opacity 0.3s,
-      filter 0.3s;
-  }
-  .wn-head {
+  .pick {
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-height: 30px;
+    gap: 12px;
+    min-height: 64px;
   }
-  .wn-head .sub {
+  .say {
+    flex: 1;
+    min-width: 0;
+  }
+  .nm {
     margin: 0;
-    font-family: var(--font-body);
-    font-weight: 400;
-    font-size: 17px;
+    font-family: var(--font-display);
+    font-size: 16px;
     letter-spacing: 0;
     text-transform: none;
-    line-height: 1.2;
-    color: #e6dccb;
-  }
-  .wide .wn-head .sub {
-    font-size: 19px;
-  }
-  .wn-head .stp {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    color: var(--muted);
-  }
-  .wn-head .grow {
-    flex: 1;
-  }
-  .place {
-    position: relative;
-    display: grid;
-    grid-template-columns: 30px minmax(0, 1fr) 16px;
-    align-items: center;
-    column-gap: 10px;
-    min-height: 48px;
-    padding: 4px 10px;
-    font: inherit;
-    text-align: left;
-    color: inherit;
-    background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
-    border: 1px solid var(--gold-lo);
-    border-radius: 4px;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.06),
-      0 6px 14px rgba(0, 0, 0, 0.35);
-    cursor: pointer;
-  }
-  .place:hover {
-    border-color: var(--gold);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.1),
-      0 0 16px rgba(201, 164, 92, 0.25);
-  }
-  .place:focus-visible {
-    outline: 2px solid var(--gold);
-    outline-offset: 2px;
-  }
-  .place:disabled {
-    cursor: default;
-  }
-  .wide .place {
-    min-height: 64px;
-    padding: 6px 10px;
-    grid-template-columns: 36px minmax(0, 1fr) 18px;
-  }
-  .place > .k {
-    justify-self: center;
-    display: grid;
-    font-size: 24px;
-    color: var(--gold);
-  }
-  .wide .place > .k {
-    font-size: 28px;
-  }
-  .place .tx {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-  .place .nm {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 15px;
-    line-height: 1.15;
     color: #f6e7c6;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-  .wide .place .nm {
-    font-size: 17px;
+  .ln,
+  .why,
+  .hint {
+    margin: 2px 0 0;
+    font-size: 14px;
+    line-height: 1.25;
+    color: #d8ccb6;
   }
-  .place .nm .kd {
-    margin-left: 6px;
-    font-family: var(--font-body);
-    font-weight: 500;
-    font-size: 13.5px;
-    color: var(--gold);
-  }
-  .place .ln {
-    font-size: 13.5px;
-    line-height: 1.2;
+  .why,
+  .hint {
     color: var(--muted);
   }
-  .wide .place .ln {
-    font-size: 15px;
+  .cor {
+    color: #e8735a;
   }
-  .place > .chev {
-    display: grid;
-    font-size: 16px;
-    color: var(--gold-lo);
+  .pick .btn {
+    flex: none;
+    min-width: 104px;
   }
 </style>

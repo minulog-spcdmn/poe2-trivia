@@ -1,27 +1,27 @@
 // Putting a Wraeclast run (src/wraeclast/rules.ts) where a bench asks for it:
-// at a node of the map (a zone, the boss), by way of the run's own travel
-// (choose), so it arrives as a player does. And a wrong line for an item, for
-// the benches' misses.
+// in a zone or at the lair, by way of the run's own moves (enter), so it
+// arrives as a player does. And a wrong line for an item, for the benches'
+// misses.
 
-import { GRAPH } from '../../wraeclast/map.ts';
+import { REGION } from '../../wraeclast/map.ts';
 import { gridAdjacency, letters, type ItemPlay, type Pack, type Run } from '../../wraeclast/rules.ts';
 
-/** A node at a step, or at the nearest step that holds an open one (the map may change under the benches). */
-export function nodeAt(step: number): string {
-  const open = GRAPH.nodes.filter((n) => n.kind === 'open');
-  return [...open].sort((a, b) => Math.abs(a.step - step) - Math.abs(b.step - step) || a.x - b.x)[0].id;
+/** A zone at about `ring` links from the lair (the nearest ring that holds one). */
+export function nodeAt(ring: number): string {
+  const zones = REGION.places.filter((p) => p.kind === 'zone');
+  return [...zones].sort((a, b) => Math.abs(a.ring - ring) - Math.abs(b.ring - ring) || a.x - b.x)[0].id;
 }
 
-/** Brings the run to a node, arriving from a vendor on a node before it. */
+/** Brings the run into a place: onto the map, a place next to it cleared, then entered. */
 export function arrive(run: Run, id: string) {
   const s = run.state;
-  const node = GRAPH.byId.get(id)!;
-  s.at = GRAPH.prev[id][0] ?? GRAPH.camp.id;
-  s.phase = 'vendor';
-  s.visit = null;
-  s.vendor = { at: 'town', heal: 0 };
-  s.steps = Math.max(0, node.step - 1);
-  run.choose(id);
+  const place = REGION.byId.get(id)!;
+  s.phase = 'map';
+  s.vendor = null;
+  s.item = null;
+  const by = place.links[0];
+  if (by && s.places[by]) s.places[by].cleared = true;
+  run.enter(id);
 }
 
 /** A full pack, as the benches show it. */
@@ -46,21 +46,25 @@ export function wrongLine(it: ItemPlay, k: number): string[] {
 }
 
 /**
- * Plays a run on until `stop` holds or it ends: the leftmost node picked at
- * each vendor and from each zone's reveal, each item opened on a plain grid
- * and answered (wrong first now and then, when `misses`).
+ * Plays a run on until `stop` holds or it ends: out of each shop, into the
+ * first zone open (the lair once `zones` are cleared or none is open), each
+ * item opened on a plain grid and answered (wrong first now and then in a
+ * zone, when `misses`).
  */
-export function playOn(run: Run, stop: () => boolean, { misses = false }: { misses?: boolean } = {}) {
+export function playOn(run: Run, stop: () => boolean, { misses = false, zones = 6 }: { misses?: boolean; zones?: number } = {}) {
   const s = run.state;
   for (let guard = 0; guard < 2000 && !stop() && s.phase !== 'end'; guard++) {
-    if (s.phase === 'vendor' || (s.phase === 'solved' && run.leaving())) run.choose(run.options()[0]);
-    else if (s.phase === 'item') {
+    if (s.phase === 'vendor') run.leave();
+    else if (s.phase === 'map') {
+      const open = REGION.places.filter((p) => p.kind === 'zone' && run.canEnter(p.id));
+      run.enter(s.spread < zones && open.length ? open[0].id : REGION.lair.id);
+    } else if (s.phase === 'item') {
       const it = s.item!;
       if (it.openedAt === null) {
         run.open(gridAdjacency(s.tuning.seeds));
         continue;
       }
-      if (misses && it.n % 4 === 1 && !it.misses && s.life > run.missRange()[1] + 10) {
+      if (misses && !it.duel && it.n % 4 === 1 && !it.misses && s.life > run.missCost() + 10) {
         it.build = wrongLine(it, 0);
         run.submit();
         continue;
@@ -68,6 +72,7 @@ export function playOn(run: Run, stop: () => boolean, { misses = false }: { miss
       it.build = [...it.answer];
       it.lineMarks = null;
       run.submit();
-    } else run.next();
+    } else if (s.item?.duel) run.next();
+    else run.leave();
   }
 }

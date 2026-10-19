@@ -4,7 +4,7 @@
 // for someone who has never played. Counts the rules keep hidden (tiles not
 // in the name, mod lines, words, patches left) are never said.
 
-import { BOSS_ITEMS, SUPPLY_NAMES, type Mark, type Place, type Run, type Supply } from './rules.ts';
+import { SUPPLY_NAMES, type Depth, type Mark, type Mod, type PlaceKind, type Run, type Supply } from './rules.ts';
 
 /** "1 card", "3 cards", "2 patches". */
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : /(s|x|z|ch|sh)$/.test(word) ? 'es' : 's'}`;
@@ -38,34 +38,52 @@ export const SHORT: Record<Supply, string> = {
   category: 'Orb',
 };
 
-/** A node's kind as a word: Zone, Camp, Town, Boss. */
-export function placeName(p: Place): string {
-  switch (p.kind) {
+/** A depth as the player reads it. */
+export const DEPTH_NAME: Record<Depth, string> = { known: 'Known', obscure: 'Obscure', forgotten: 'Forgotten' };
+
+/** A mod as a waystone says it. */
+export const MOD_NAME: Record<Mod, string> = {
+  damage: 'Monsters deal extra damage',
+  recovery: 'Players have less recovery',
+  monsters: 'Area is inhabited by more monsters',
+  armoured: 'Monsters are armoured',
+};
+
+/** A place's kind as a word: Camp, Town, Zone, the lair. */
+export function placeName(kind: PlaceKind): string {
+  switch (kind) {
     case 'zone':
       return 'Zone';
     case 'camp':
       return 'Camp';
     case 'town':
       return 'Town';
-    case 'boss':
-      return 'Boss';
+    case 'lair':
+      return 'The lair';
   }
 }
 
-/** A place's kind on its Where next row: "Zone", "Town". */
-export const placeKind = (p: Place) => placeName(p);
+/** The Seed's duel line: "The Seed • 70 life • hits 8". */
+export const seedLine = (run: Run) => `The Seed • ${run.state.foe.life} life • hits ${run.state.foe.hit}`;
+/** Your duel line: "You • 82 life • a bare answer hits 20". */
+export const youLine = (run: Run) => `You • ${run.state.life} life • a bare answer hits ${run.duelHit(0)}`;
 
-/** What a place does when the player arrives, in a line. */
-export function placeDoes(run: Run, p: Place): string {
+/** A place's one line on the map, as a tap shows it. */
+export function placeLine(run: Run, id: string): string {
+  const s = run.state;
+  const p = s.places[id];
   switch (p.kind) {
-    case 'zone':
-      return 'One item to name, for gold';
+    case 'zone': {
+      if (p.cleared) return 'Cleared';
+      const mod = run.modAt(id);
+      return [DEPTH_NAME[run.depthAt(id)], mod ? MOD_NAME[mod] : null, `${run.goldAt(id)} gold`].filter(Boolean).join(' • ');
+    }
     case 'camp':
-      return 'The start';
     case 'town':
-      return `Heals ${run.state.tuning.townHeal} life • buy supplies`;
-    case 'boss':
-      return `The last fight: ${BOSS_ITEMS} items`;
+      if (!run.healsAt(id)) return 'Town • the shop';
+      return s.noHeal ? 'Town • no heal (less recovery) • the shop' : `Town • heals ${s.tuning.townHeal} • the shop`;
+    case 'lair':
+      return seedLine(run);
   }
 }
 
@@ -76,6 +94,8 @@ export function why(run: Run, supply: Supply): string | null {
       return null;
     case 'closed':
       return 'Opening the item';
+    case 'armoured':
+      return 'Armoured: no supply until your first try';
     case 'done':
       return 'Nothing more to show';
   }
@@ -93,10 +113,10 @@ export const MARK_KEY: readonly { mark: Mark; name: string; says: string }[] = [
 /** How many items with marks the key shows on before it goes. */
 export const MARK_KEY_ITEMS = 3;
 
-/** What a vendor says under the header: the camp's line, a town's rest. */
-export const CAMP_SAYS = 'Buy supplies for the road, one at a time. More vendors wait in towns.';
-/** A town's rest: "You rest: +{heal} life" (the words around the number, set in Cinzel), or at full life. */
-export const REST = { before: 'You rest: ', after: ' life', full: 'You rest: life is full' };
+/** What a shop says under the header: the camp's line, a town's rest. */
+export const CAMP_SAYS = 'Buy supplies, one at a time. Towns sell them too.';
+/** A town's rest: "You rest: +{heal} life" (the words around the number, set in Cinzel), at full life, or taken by less recovery. */
+export const REST = { before: 'You rest: ', after: ' life', full: 'You rest: life is full', none: 'No rest: you have less recovery', shop: 'The shop' };
 /** Each clue's label on the item. */
 export const CLUE_LABEL = { mod: 'Mod line', flavor: 'Flavor text', category: 'Ancient Orb' } as const;
 /** The clues said in words on the item, where nothing of the tooltip shows them. */

@@ -1,85 +1,149 @@
-// The Wraeclast run's map (wraeclast.html, src/wraeclast): the nodes as the
-// owner placed them (src/data/wraeclast.json, hand-placed, so not generated),
-// the paths between them (built here when the page loads, never stored), and
-// what each node is in a run (every open node a zone). Pure, so a test builds
-// a map the same as the page does.
-//
-// The file can change under the code (the owner is re-stepping it to 10
-// steps): a step holds 2 to 4 places (1 where a town stands alone), a step with none is skipped, a town
-// can sit at any step, and the boss's step is the last, whatever it is.
+// The Wraeclast run's region (wraeclast.html, src/wraeclast): v5's open map
+// of 14 places, the camp to the lair. Which places, what each is and the
+// links between them are a constant here (the v5 handoff's table: the links
+// are the Gabriel graph of the real spots, none cross); where each sits comes
+// from src/data/wraeclast.json (the owner's placements, left as they are),
+// scaled to these 14 places' box. A place's ring is how many links it lies
+// from the lair: the corruption spreads out ring by ring. Pure.
 
 import mapData from '../data/wraeclast.json' with { type: 'json' };
 
-export type NodeKind = 'camp' | 'town' | 'boss' | 'open';
+export type PlaceKind = 'camp' | 'town' | 'zone' | 'lair';
 
-export interface MapNode {
+export interface RegionPlace {
   id: string;
   name: string;
-  /** 0 (the camp) to the boss's (the last). */
-  step: number;
-  /** Where it sits on the illustrated map, as fractions of its width and height. */
+  kind: PlaceKind;
+  /** Where it sits in the region's box, 0 to 1 across and down (the screen adds its own inset for the labels). */
   x: number;
   y: number;
-  kind: NodeKind;
+  /** Links from the lair (the lair 0). */
+  ring: number;
+  links: string[];
 }
 
-export const MAP_NODES: MapNode[] = (mapData as { nodes: MapNode[] }).nodes;
+/** The region, as the v5 handoff lists it: each place's kind and the places next to it. */
+const TABLE: [id: string, kind: PlaceKind, links: string[]][] = [
+  ['clearfell-encampment', 'camp', ['the-red-vale', 'maraketh', 'the-halani-gates']],
+  ['the-red-vale', 'zone', ['clearfell-encampment', 'kaom-s-stronghold']],
+  ['maraketh', 'zone', ['clearfell-encampment', 'the-halani-gates']],
+  ['kaom-s-stronghold', 'zone', ['the-red-vale', 'the-library', 'kriar-village']],
+  ['the-halani-gates', 'zone', ['clearfell-encampment', 'maraketh', 'ziggurat-encampment', 'the-fellshrine-ruins']],
+  ['the-library', 'zone', ['kaom-s-stronghold', 'ziggurat-encampment', 'kriar-village', 'the-weaver-s-chambers']],
+  ['kriar-village', 'zone', ['kaom-s-stronghold', 'the-library', 'the-weaver-s-chambers', 'the-karui-fortress']],
+  ['ziggurat-encampment', 'town', ['the-halani-gates', 'the-library', 'the-fellshrine-ruins', 'the-weaver-s-chambers', 'the-forest-encampment']],
+  ['the-fellshrine-ruins', 'zone', ['the-halani-gates', 'ziggurat-encampment', 'heart-of-the-tribe']],
+  ['the-weaver-s-chambers', 'zone', ['the-library', 'ziggurat-encampment', 'kriar-village', 'the-forest-encampment', 'the-karui-fortress']],
+  ['the-karui-fortress', 'zone', ['kriar-village', 'the-weaver-s-chambers', 'the-forest-encampment']],
+  ['the-forest-encampment', 'town', ['ziggurat-encampment', 'the-weaver-s-chambers', 'the-karui-fortress', 'the-cathedral-rooftop']],
+  ['heart-of-the-tribe', 'zone', ['the-fellshrine-ruins', 'the-cathedral-rooftop']],
+  ['the-cathedral-rooftop', 'lair', ['heart-of-the-tribe', 'the-forest-encampment']],
+];
 
-/** The map's nodes and paths: each node's links forward (to the next non-empty step) and back. */
-export interface MapGraph {
-  nodes: MapNode[];
-  byId: Map<string, MapNode>;
-  /** The steps that hold nodes, in order. */
-  steps: number[];
-  /** Each step's nodes. */
-  atStep: Map<number, MapNode[]>;
-  next: Record<string, string[]>;
-  prev: Record<string, string[]>;
-  camp: MapNode;
-  boss: MapNode;
+const SPOTS = new Map((mapData as { nodes: { id: string; name: string; x: number; y: number }[] }).nodes.map((n) => [n.id, n]));
+
+function build() {
+  const raw = TABLE.map(([id, kind, links]) => {
+    const spot = SPOTS.get(id);
+    if (!spot) throw new Error(`wraeclast.json has no ${id}`);
+    return { id, name: spot.name, kind, sx: spot.x, sy: spot.y, links };
+  });
+  const xs = raw.map((p) => p.sx);
+  const ys = raw.map((p) => p.sy);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const lair = raw.find((p) => p.kind === 'lair')!;
+  // Rings: a breadth-first walk from the lair.
+  const ring = new Map([[lair.id, 0]]);
+  const byRaw = new Map(raw.map((p) => [p.id, p]));
+  for (let queue = [lair.id]; queue.length; ) {
+    const id = queue.shift()!;
+    for (const to of byRaw.get(id)!.links) if (!ring.has(to)) ring.set(to, ring.get(id)! + 1), queue.push(to);
+  }
+  const places: RegionPlace[] = raw.map((p) => ({
+    id: p.id,
+    name: p.name,
+    kind: p.kind,
+    x: (p.sx - x0) / Math.max(1e-6, x1 - x0),
+    y: (p.sy - y0) / Math.max(1e-6, y1 - y0),
+    ring: ring.get(p.id) ?? 99,
+    links: p.links,
+  }));
+  const byId = new Map(places.map((p) => [p.id, p]));
+  return { places, byId, camp: places.find((p) => p.kind === 'camp')!, lair: byId.get(lair.id)! };
 }
 
-const dist = (a: MapNode, b: MapNode) => Math.hypot(a.x - b.x, a.y - b.y);
-const nearest = (from: MapNode, among: MapNode[]) => [...among].sort((a, b) => dist(from, a) - dist(from, b) || a.id.localeCompare(b.id));
+/** The region: its places, each by id, the camp and the lair. */
+export const REGION = build();
+
+/** The links, each once (a before b by the table's order), for drawing. */
+export const LINKS: [string, string][] = REGION.places.flatMap((p, i) => p.links.filter((to) => REGION.places.findIndex((q) => q.id === to) > i).map((to) => [p.id, to] as [string, string]));
+
+// ---- Laying the region out on a screen ----
+
+/** The plate's sizes: each place's mark, its label's font and widest line, and the inset that keeps labels inside. */
+export const PLATE = { node: 24, big: 30, font: 11, lineH: 12.5, labelMax: 86, insetX: 44, insetTop: 34, insetBottom: 34, gap: 3 };
+
+export type LabelSide = 'below' | 'above' | 'right' | 'left';
+
+export interface RegionLayout {
+  /** Each place's centre, px. */
+  at: Record<string, { x: number; y: number }>;
+  /** Each place's label: its side, its lines (as estimated), its box. */
+  labels: Record<string, { side: LabelSide; lines: string[]; x: number; y: number; w: number; h: number }>;
+}
+
+/** About how wide a run of text sets at the label's font (EB Garamond's average letter). */
+const textW = (text: string) => text.length * PLATE.font * 0.5;
+
+/** A name in lines of at most labelMax, word by word. */
+function wrap(name: string): string[] {
+  const lines: string[] = [];
+  for (const w of name.split(' ')) {
+    const last = lines.at(-1);
+    if (last !== undefined && textW(`${last} ${w}`) <= PLATE.labelMax) lines[lines.length - 1] = `${last} ${w}`;
+    else lines.push(w);
+  }
+  return lines;
+}
+
+type Box = { x: number; y: number; w: number; h: number };
+const meets = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /**
- * The paths: each node links to its 2 nearest nodes on the next non-empty
- * step (all of them when there are only 1 or 2), and each node there that no
- * link reached gets one from its nearest node on the step before. Links only
- * go forward.
+ * The region on a plate `width` by `height` px: each place where the owner
+ * placed it, scaled into the plate less its inset, and each label below its
+ * mark, or above, right or left where below would cover another mark or
+ * label (the first side clear, in that order; below when none is).
  */
-export function buildGraph(nodes: MapNode[] = MAP_NODES): MapGraph {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const steps = [...new Set(nodes.map((n) => n.step))].sort((a, b) => a - b);
-  const atStep = new Map(steps.map((s) => [s, nodes.filter((n) => n.step === s)]));
-  const next: Record<string, string[]> = Object.fromEntries(nodes.map((n) => [n.id, []]));
-  const prev: Record<string, string[]> = Object.fromEntries(nodes.map((n) => [n.id, []]));
-  const link = (a: MapNode, b: MapNode) => {
-    if (next[a.id].includes(b.id)) return;
-    next[a.id].push(b.id);
-    prev[b.id].push(a.id);
-  };
-  for (let k = 0; k + 1 < steps.length; k++) {
-    const here = atStep.get(steps[k])!;
-    const ahead = atStep.get(steps[k + 1])!;
-    for (const a of here) for (const b of ahead.length <= 2 ? ahead : nearest(a, ahead).slice(0, 2)) link(a, b);
-    for (const b of ahead) if (!prev[b.id].length) link(nearest(b, here)[0], b);
+export function layoutRegion(width: number, height: number): RegionLayout {
+  const z = PLATE;
+  const at: RegionLayout['at'] = {};
+  for (const p of REGION.places) {
+    at[p.id] = { x: z.insetX + p.x * Math.max(0, width - 2 * z.insetX), y: z.insetTop + p.y * Math.max(0, height - z.insetTop - z.insetBottom) };
   }
-  // Left to right on the map, so lists read as the map does.
-  for (const id of Object.keys(next)) next[id].sort((a, b) => byId.get(a)!.x - byId.get(b)!.x);
-  const camp = nodes.find((n) => n.kind === 'camp') ?? atStep.get(steps[0])![0];
-  const boss = nodes.find((n) => n.kind === 'boss') ?? atStep.get(steps.at(-1)!)![0];
-  return { nodes, byId, steps, atStep, next, prev, camp, boss };
-}
-
-export const GRAPH = buildGraph();
-
-// ---- What a run plays ----
-
-/** What a node is in this run. */
-export type Place = { kind: 'camp' } | { kind: 'town' } | { kind: 'boss' } | { kind: 'zone' };
-
-/** What each node is this run: every open node a zone, the rest as the map marks them. */
-export function rollPlaces(g: MapGraph): Record<string, Place> {
-  return Object.fromEntries(g.nodes.map((n) => [n.id, { kind: n.kind === 'open' ? 'zone' : n.kind } as Place]));
+  const size = (p: RegionPlace) => (p.kind === 'zone' ? z.node : z.big);
+  const taken: Box[] = REGION.places.map((p) => ({ x: at[p.id].x - size(p) / 2, y: at[p.id].y - size(p) / 2, w: size(p), h: size(p) }));
+  const labels: RegionLayout['labels'] = {};
+  // Top to bottom, so a label above finds the ones over it laid already.
+  for (const p of [...REGION.places].sort((a, b) => a.y - b.y)) {
+    const lines = wrap(p.name);
+    const w = Math.min(z.labelMax, Math.max(...lines.map(textW))) + 8;
+    const h = lines.length * z.lineH + 3;
+    const { x, y } = at[p.id];
+    const r = size(p) / 2 + z.gap;
+    const boxes: Record<LabelSide, Box> = {
+      below: { x: x - w / 2, y: y + r, w, h },
+      above: { x: x - w / 2, y: y - r - h, w, h },
+      right: { x: x + r, y: y - h / 2, w, h },
+      left: { x: x - r - w, y: y - h / 2, w, h },
+    };
+    const inside = (b: Box) => b.x >= 0 && b.y >= 0 && b.x + b.w <= width && b.y + b.h <= height;
+    const own = REGION.places.indexOf(p);
+    const others = taken.filter((_, i) => i !== own);
+    const side = (['below', 'above', 'right', 'left'] as const).find((sd) => inside(boxes[sd]) && !others.some((o) => meets(o, boxes[sd]))) ?? 'below';
+    const box = boxes[side];
+    taken.push(box);
+    labels[p.id] = { side, lines, ...box };
+  }
+  return { at, labels };
 }

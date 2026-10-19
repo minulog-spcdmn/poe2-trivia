@@ -1,18 +1,21 @@
-// The Wraeclast run's rules (wraeclast.html, src/wraeclast): a solo run across
-// the map (map.ts) from the camp to the boss, the mode's prototype (v5 in the
-// making: v4e with what v5 drops taken out, still on v4e's linear route).
-// Pure: the run's state is a plain object (the page makes it reactive), every
-// action a method that changes it, so a run plays the same in a test as on
-// the page.
+// The Wraeclast run's rules (wraeclast.html, src/wraeclast): a solo run in an
+// open region (map.ts) from the camp to the Seed of Corruption's lair, the
+// mode's prototype (v5). Pure: the run's state is a plain object (the page
+// makes it reactive), every action a method that changes it, so a run plays
+// the same in a test as on the page.
 //
-// A run: the camp (a vendor), then a node at a time along the paths ahead:
-// zones (one item each), towns (healed, a vendor again) and at the end the
-// boss's items. Each item: its name built from tiles (the Inscription: the
-// answer's tiles among those of a few look-alike names and loose decoys), its
-// art all under the Veil, and the supplies from the pack. A miss costs life
-// and marks the line as Wordle does; a zone's item named pays its gold.
-// docs/wraeclast (the prototype's handoffs, on the orchestrator's branch) has
-// the reasons.
+// A run: the camp's shop, then any place linked to one cleared (the lair at
+// any time). A zone holds one item, at its depth (Known, Obscure, Forgotten:
+// src/data/wraeclastDepth.json) and maybe a waystone mod; named, it pays gold
+// and spreads the corruption one ring out from the lair, which makes the Seed
+// stronger and the zones it reaches deeper. Towns heal once and sell the four
+// supplies. At the lair, the duel: an item at a time, one submit each, the
+// Seed hitting you as each opens and a right name hitting it back.
+// Each item: its name built from tiles (the Inscription: the answer's tiles
+// among those of a few look-alike names and loose decoys), its art all under
+// the Veil, and the supplies from the pack. A zone's miss costs life and
+// marks the line as Wordle does. docs/wraeclast (the prototype's handoffs, on
+// the orchestrator's branch) has the reasons.
 
 import { shuffle, type Item } from '../lib/game.ts';
 import { seededRandom } from '../lib/patches.ts';
@@ -21,9 +24,10 @@ import itemData from '../data/items.json' with { type: 'json' };
 import syllableData from '../data/syllables.json' with { type: 'json' };
 import looksData from '../data/looks.json' with { type: 'json' };
 import clueData from '../data/clues.json' with { type: 'json' };
-import { GRAPH, rollPlaces, type MapGraph, type MapNode, type Place } from './map.ts';
+import depthData from '../data/wraeclastDepth.json' with { type: 'json' };
+import { REGION, type PlaceKind, type RegionPlace } from './map.ts';
 
-export type { Place, MapNode } from './map.ts';
+export type { PlaceKind, RegionPlace } from './map.ts';
 
 /** The supplies, by their working keys (the log's): flare is the Torch, lore the Golden Page, category the Ancient Orb, wisdom the Scroll of Wisdom. */
 export type Supply = 'flare' | 'lore' | 'category' | 'wisdom';
@@ -35,9 +39,17 @@ export const SUPPLY_NAMES: Record<Supply, string> = {
   wisdom: 'Scroll of Wisdom',
 };
 
-/** Where a node's step puts it, for its board, miss costs and gold. */
-export type Section = 'early' | 'mid' | 'late' | 'boss';
-export const SECTIONS: readonly Section[] = ['early', 'mid', 'late', 'boss'];
+/** How well known an item is (poe.ninja's listings, scripts/wraeclast-depth.mjs): a zone's depth. */
+export type Depth = 'known' | 'obscure' | 'forgotten';
+export const DEPTHS: readonly Depth[] = ['known', 'obscure', 'forgotten'];
+/** Each item's depth, by id (an item the file lacks is Forgotten). */
+const DEPTH_OF = (depthData as { depth: Record<string, Depth> }).depth;
+export const depthOf = (id: string): Depth => DEPTH_OF[id] ?? 'forgotten';
+
+/** A zone's waystone mod: extra damage (a miss costs more), less recovery (the next town's heal doesn't happen), more monsters (one more decoy name), armoured (no supply till the first submit). */
+export type Mod = 'damage' | 'recovery' | 'monsters' | 'armoured';
+export const MODS: readonly Mod[] = ['damage', 'recovery', 'monsters', 'armoured'];
+
 export type Range = [number, number];
 
 /** A tile's mark after a wrong submit: the right tile in the right place, in the answer elsewhere, or not in it. */
@@ -48,49 +60,78 @@ export type LineMark = Mark | 'none';
 /** A word gap on the answer line: the player's own, never placed or suggested by the game; the check ignores it. */
 export const GAP = ' ';
 
+/** A board: a zone's or the duel's. */
+export type Board = 'zone' | 'duel';
+export const BOARDS: readonly Board[] = ['zone', 'duel'];
+
 export interface Tuning {
   life: number;
   gold: number;
-  /** Life a town heals. */
+  /** Life a town heals the first time it's entered (the camp never heals). */
   townHeal: number;
-  /** The tiles a pool holds (the answer's, the decoy names' and the loose decoys), by section: each item rolls its own within TILE_SPREAD of it. */
-  tiles: Record<Section, number>;
-  /** How many decoy names a board holds, by section: rolled for each item, never shown. */
-  names: Record<Section, Range>;
-  /** A miss's cost, a random whole number in the range, by section. */
-  missCost: Record<Section, Range>;
+  /** The tiles a pool holds (the answer's, the decoy names' and the loose decoys), by board: each item rolls its own within TILE_SPREAD of it. */
+  tiles: Record<Board, number>;
+  /** How many decoy names a board holds, by board: rolled for each item, never shown. */
+  names: Record<Board, Range>;
+  /** A zone's miss, in life, by its depth. */
+  missCost: Record<Depth, number>;
+  /** The gold a zone's item pays when named, by its depth. */
+  pay: Record<Depth, number>;
+  /** Each zone's depth at the run's start, in percent weights (the camp's neighbours never Forgotten). */
+  depthRoll: Record<Depth, number>;
+  /** A zone rolls a mod at the start 1 in this many. */
+  modOdds: number;
+  /** The gold a mod adds to a zone's pay. */
+  modGold: number;
+  /** What "Monsters deal extra damage" adds to a miss. */
+  modDamage: number;
+  /** The Seed of Corruption: its life and hit at the start, the life each zone that spreads the corruption adds, and every how many such zones its hit grows by 1. */
+  seedLife: number;
+  seedHit: number;
+  seedGrowth: number;
+  seedHitEvery: number;
+  /** A right name at the duel hits the Seed for: no supply used, one kind, two kinds or more. */
+  duelHit: [number, number, number];
+  /** A wrong name at the duel costs this much life. */
+  duelMiss: number;
   /** Each supply's price, one at a time. */
   price: Record<Supply, number>;
   /** Patches a Torch burns in. */
   torch: number;
   /** The Veil's seeds across the art (about this many a side). */
   seeds: number;
-  /** The gold a zone's item pays when named, by section (v4e's old ranges, until v5's depth pay). */
-  pay: Record<'early' | 'mid' | 'late', Range>;
   /** Gold and silver marks, or gold only. */
   marks: 'both' | 'gold';
 }
 
-/** v4e's numbers with what v5 drops taken out; the v5 handoff's prices (docs/wraeclast/prototype-v5-handoff.md). */
+/** The v5 handoff's numbers (docs/wraeclast/prototype-v5-handoff.md). */
 export const DEFAULT_TUNING: Tuning = {
   life: 100,
-  gold: 40,
-  townHeal: 10,
-  tiles: { early: 14, mid: 20, late: 26, boss: 32 },
-  names: { early: [1, 2], mid: [2, 3], late: [3, 4], boss: [4, 5] },
-  missCost: { early: [30, 40], mid: [40, 50], late: [50, 60], boss: [65, 75] },
+  gold: 20,
+  townHeal: 25,
+  tiles: { zone: 20, duel: 32 },
+  names: { zone: [2, 3], duel: [4, 5] },
+  missCost: { known: 15, obscure: 20, forgotten: 25 },
+  pay: { known: 8, obscure: 12, forgotten: 16 },
+  depthRoll: { known: 40, obscure: 35, forgotten: 25 },
+  modOdds: 3,
+  modGold: 6,
+  modDamage: 10,
+  seedLife: 30,
+  seedHit: 5,
+  seedGrowth: 8,
+  seedHitEvery: 2,
+  duelHit: [20, 12, 6],
+  duelMiss: 10,
   price: { flare: 10, lore: 8, category: 8, wisdom: 8 },
   torch: 12,
   seeds: 9,
-  // Late zones pay no gold: past the last town it buys nothing.
-  pay: { early: [5, 7], mid: [6, 8], late: [0, 0] },
   marks: 'both',
 };
 
-export const BOSS_ITEMS = 3;
 /** The most tiles a pool holds, the answer's included. */
 export const MAX_TILES = 36;
-/** How far an item's pool total strays from its section's, either way, so the total never gives the answer's tile count away. */
+/** How far an item's pool total strays from its board's, either way, so the total never gives the answer's tile count away. */
 export const TILE_SPREAD = 3;
 /** The fewest decoys a pool holds besides of, the, and and the possessives (the decoy names' tiles counting). */
 export const MIN_DECOYS = 5;
@@ -116,26 +157,40 @@ const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
 export const nameOf = (id: string) => BY_ID.get(id)?.name ?? id;
 const LOOKS = readLooks(looksData as unknown as LooksData);
 
-/**
- * vendor: the camp's or a town's (the next place picked from it). item: an
- * item open. solved: named, its gold paid, then the next item or, a zone's
- * last, the next place.
- */
-export type Phase = 'vendor' | 'item' | 'solved' | 'end';
 
-/** A screen between items, as the log times it: a vendor (the camp's, a town's), or a named item's reveal. */
-export type Screen = 'camp' | 'town' | 'reveal';
+/**
+ * vendor: a town's shop (the camp's at the start). map: the region, a place
+ * to enter picked. item: an item open. solved: a zone's item named (its
+ * reveal, then the map), or a duel item answered, right or wrong (then the
+ * next). end: won or lost.
+ */
+export type Phase = 'vendor' | 'map' | 'item' | 'solved' | 'end';
+
+/** A screen between items, as the log times it: a shop (the camp's, a town's), the map, or an item's reveal. */
+export type Screen = 'camp' | 'town' | 'map' | 'reveal';
 
 /** The pack: how many of each supply, no stacks, no cap. */
 export type Pack = Record<Supply, number>;
+
+/** The duel's two lines as a duel item opens (after the Seed's hit): the Seed's life and hit, your life and what a bare answer hits. */
+export interface DuelLines {
+  seed: { life: number; hit: number };
+  you: { life: number; hit: number };
+}
 
 export interface ItemLog {
   itemId: string;
   name: string;
   category: string;
-  step: number;
   node: string;
-  boss: boolean;
+  /** A zone's item, or the duel's. */
+  duel: boolean;
+  /** Its depth (a duel item's own, from any depth). */
+  depth: Depth;
+  /** The zone's mod, or null. */
+  mod: Mod | null;
+  /** Whether the zone was corrupted as it was entered. */
+  corrupted: boolean;
   /** The board: the answer's tiles, the decoys (the decoy names' tiles, of, the, and, the possessives and the loose ones), and the decoy names. */
   tiles: { answer: string[]; decoys: string[]; names: string[] };
   /** The Ancient Orb's sibling, by name (its tiles kept off the board), or null when the category has none. */
@@ -152,17 +207,22 @@ export interface ItemLog {
   lifeBefore: number;
   lifeAfter: number;
   misses: number;
-  /** The gold it paid when named (0 at the boss). */
+  /** The gold it paid when named (0 at the duel). */
   gold: number;
+  /** The spread after it (a zone's named item spreads it one ring). */
+  spread: number;
+  /** At the duel: both lines as it opened, the Seed's hit on you, the supply kinds used, and your hit on the Seed (0 on a miss). Null in a zone. */
+  duelLog: (DuelLines & { took: number; kinds: number; dealt: number }) | null;
 }
 
 export interface ItemPlay {
   /** Its place in the run, from 0. */
   n: number;
-  step: number;
   node: string;
-  /** Which of the boss's items (from 0), or null before the boss. */
-  boss: number | null;
+  /** At the duel (the lair), or in a zone. */
+  duel: boolean;
+  depth: Depth;
+  mod: Mod | null;
   category: string;
   itemId: string;
   /** The answer's words, each as its tiles. */
@@ -194,15 +254,19 @@ export interface ItemPlay {
   log: ItemLog;
 }
 
-/** The node being played: how many items it holds, and how many are done. */
-export interface Visit {
-  node: string;
-  items: number;
-  done: number;
+/** What a place is this run: its kind, a zone's depth and mod as rolled at the start (and the mod corruption gives it, if it has none), and whether it's cleared. */
+export interface PlaceState {
+  kind: PlaceKind;
+  depth: Depth | null;
+  mod: Mod | null;
+  /** The mod corruption gives a zone that has none. */
+  spare: Mod | null;
+  /** The camp from the start, a town once entered, a zone once its item is named. */
+  cleared: boolean;
 }
 
 export interface RunLog {
-  v: 5;
+  v: 6;
   seed: number;
   start: string;
   end: string | null;
@@ -211,12 +275,16 @@ export interface RunLog {
   result: 'win' | 'loss' | null;
   /** The item the run ended on: its place, id, name and node. */
   endedOn: { n: number; itemId: string; name: string; node: string } | null;
-  /** The node ids, from the camp. */
+  /** The places entered, in order, the camp first. */
   route: string[];
-  /** Each travel step: the nodes offered (what each was) and the one picked. */
-  travel: { offered: string[]; picked: string; options: { node: string; kind: Place['kind'] }[] }[];
-  /** Each place arrived at, the camp first: a town's heal, and the gold spent and supplies bought there. */
-  met: { node: string; kind: Place['kind']; healed: number; spent: number; bought: number }[];
+  /** Each zone's depth and mod as the run started. */
+  region: { node: string; depth: Depth; mod: Mod | null }[];
+  /** Each place entered, the camp first: a town's heal (or the heal less recovery took), and the gold spent and supplies bought there. */
+  met: { node: string; kind: PlaceKind; healed: number; noHeal: boolean; spent: number; bought: number }[];
+  /** Zones that spread the corruption. */
+  spread: number;
+  /** The Seed's line at the end. */
+  seedEnd: { life: number; hit: number };
   misses: number;
   bought: Record<Supply, number>;
   used: Record<Supply, number>;
@@ -234,26 +302,28 @@ export interface RunLog {
 export interface RunState {
   seed: number;
   tuning: Tuning;
-  /** What each node is this run. */
-  places: Record<string, Place>;
-  /** The node the player is at. */
+  /** What each place is this run. */
+  places: Record<string, PlaceState>;
+  /** The place the player is at (or last was). */
   at: string;
-  /** Steps taken from the camp. */
-  steps: number;
   phase: Phase;
-  /** At a vendor: where, and the town's heal on arrival. */
-  vendor: { at: 'camp' | 'town'; heal: number } | null;
+  /** In a shop: where, the heal on this entry, whether less recovery took it, and whether it's the first entry. */
+  vendor: { at: 'camp' | 'town'; heal: number; noHeal: boolean; first: boolean } | null;
   life: number;
   maxLife: number;
   gold: number;
   pack: Pack;
+  /** Zones that spread the corruption: places at that ring from the lair or nearer are corrupted (cleared ones and towns aside). */
+  spread: number;
+  /** The Seed of Corruption's line: its life and its hit. */
+  foe: { life: number; hit: number };
+  /** A zone with less recovery was cleared: the next town's heal doesn't happen. */
+  noHeal: boolean;
   /** Items done. */
   done: number;
-  visit: Visit | null;
   item: ItemPlay | null;
   log: RunLog;
 }
-
 const count = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, 0])) as Record<K, number>;
 
 /** A name or build as the check compares it: its letters only, lower case. */
@@ -262,15 +332,6 @@ export const letters = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N
 /** The line's tiles, its word gaps left out. */
 export const tilesOf = (build: readonly string[]) => build.filter((t) => t !== GAP);
 
-/**
- * The section a step puts an item in: the route's steps between the camp and
- * the boss in thirds (early, mid, late), whatever its length, then the boss.
- */
-export function sectionOf(step: number, boss: boolean, last = GRAPH.boss.step): Section {
-  if (boss) return 'boss';
-  const n = Math.max(1, last - 1);
-  return step * 3 <= n ? 'early' : step * 3 <= 2 * n ? 'mid' : 'late';
-}
 
 /** A whole number in [lo, hi], at random. */
 const between = ([lo, hi]: Range, rng: () => number) => lo + Math.floor(rng() * (Math.max(lo, hi) - lo + 1));
@@ -517,7 +578,7 @@ function pickWeighted<T>(xs: readonly T[], weight: (x: T, i: number) => number, 
  * The names a board's decoy names come from, all real items, best first:
  * `near`, the answer's look-alikes (the items whose art looks most like it,
  * then whose names do), and `wide`, the rest of its category, the closest by
- * art and name first, for a board the near ones can't fill to its section's
+ * art and name first, for a board the near ones can't fill to its board's
  * fewest. Never the answer, and none whose tiles are the answer's own set.
  * (No made-up names: each was the answer with one word swapped, so the real
  * name it shared tiles with gave the answer away.)
@@ -555,7 +616,7 @@ export interface Pool {
  * answer; and the fewer look-alike lists a name sits in, the likelier it is
  * picked, so a name seldom seen as a decoy says nothing either.
  * Loose decoys (length-matched) fill the rest of the total, rolled within
- * TILE_SPREAD of the section's `size`; the decoys besides of, the, and and
+ * TILE_SPREAD of the board's `size`; the decoys besides of, the, and and
  * the possessives are at least MIN_DECOYS.
  * On top, every board holds of, the and and, and POSSESSIVES possessive
  * tiles in all (the names' counting). Where the names don't fit the total it
@@ -634,14 +695,15 @@ export interface RunOptions {
   now?: () => number;
   /** The device's viewport width, for the log. */
   viewport?: number;
-  /** The map (tests and the bot play other routes); the owner's by default. */
-  graph?: MapGraph;
 }
+
+/** One depth deeper (Forgotten stays Forgotten). */
+const deeper = (d: Depth): Depth => DEPTHS[Math.min(DEPTHS.length - 1, DEPTHS.indexOf(d) + 1)];
 
 export class Run {
   state: RunState;
-  /** The map this run plays. */
-  readonly graph: MapGraph;
+  /** The region this run plays. */
+  readonly region = REGION;
   private readonly rng: () => number;
   private readonly now: () => number;
   /** Items drawn so far: none comes up twice. */
@@ -649,37 +711,41 @@ export class Run {
   /** The screen between items being shown, and since when. */
   private screen: { screen: Screen; node: string; since: number } | null = null;
 
-  constructor({ tuning = DEFAULT_TUNING, seed = Math.floor(Math.random() * 2 ** 32), now = Date.now, viewport = 0, graph = GRAPH }: RunOptions = {}) {
+  constructor({ tuning = DEFAULT_TUNING, seed = Math.floor(Math.random() * 2 ** 32), now = Date.now, viewport = 0 }: RunOptions = {}) {
     this.rng = seededRandom(seed);
     this.now = now;
-    this.graph = graph;
     const t: Tuning = structuredClone(tuning);
+    const places = this.rollPlaces(t);
+    const camp = REGION.camp.id;
     this.state = {
       seed,
       tuning: t,
-      places: rollPlaces(graph),
-      at: graph.camp.id,
-      steps: 0,
+      places,
+      at: camp,
       phase: 'vendor',
-      vendor: { at: 'camp', heal: 0 },
+      vendor: { at: 'camp', heal: 0, noHeal: false, first: true },
       life: t.life,
       maxLife: t.life,
       gold: t.gold,
       pack: count(SUPPLIES),
+      spread: 0,
+      foe: { life: t.seedLife, hit: t.seedHit },
+      noHeal: false,
       done: 0,
-      visit: null,
       item: null,
       log: {
-        v: 5,
+        v: 6,
         seed,
         start: new Date(now()).toISOString(),
         end: null,
         ms: 0,
         result: null,
         endedOn: null,
-        route: [graph.camp.id],
-        travel: [],
-        met: [{ node: graph.camp.id, kind: 'camp', healed: 0, spent: 0, bought: 0 }],
+        route: [camp],
+        region: REGION.places.filter((p) => p.kind === 'zone').map((p) => ({ node: p.id, depth: places[p.id].depth!, mod: places[p.id].mod })),
+        met: [{ node: camp, kind: 'camp', healed: 0, noHeal: false, spent: 0, bought: 0 }],
+        spread: 0,
+        seedEnd: { life: t.seedLife, hit: t.seedHit },
         misses: 0,
         bought: count(SUPPLIES),
         used: count(SUPPLIES),
@@ -695,59 +761,103 @@ export class Run {
     this.show('camp');
   }
 
+  /** Each place this run: a zone rolls its depth (the camp's neighbours never Forgotten), a mod 1 in modOdds, and the mod corruption would give it. */
+  private rollPlaces(t: Tuning): Record<string, PlaceState> {
+    const nextToCamp = new Set(REGION.camp.links);
+    const out: Record<string, PlaceState> = {};
+    for (const p of REGION.places) {
+      if (p.kind !== 'zone') {
+        out[p.id] = { kind: p.kind, depth: null, mod: null, spare: null, cleared: p.kind === 'camp' };
+        continue;
+      }
+      const depths = DEPTHS.filter((d) => !(d === 'forgotten' && nextToCamp.has(p.id)));
+      const weights = depths.map((d) => Math.max(0, t.depthRoll[d]));
+      const depth = weights.some((w) => w > 0) ? pickWeighted(depths, (_, i) => weights[i], this.rng) : depths[0];
+      const mod = this.rng() * Math.max(1, t.modOdds) < 1 ? MODS[Math.floor(this.rng() * MODS.length)] : null;
+      const spare = MODS[Math.floor(this.rng() * MODS.length)];
+      out[p.id] = { kind: 'zone', depth, mod, spare, cleared: false };
+    }
+    return out;
+  }
+
   // ---- What's where ----
 
-  /** The node the player is at. */
-  get node(): MapNode {
-    return this.graph.byId.get(this.state.at)!;
+  /** The place the player is at. */
+  get node(): RegionPlace {
+    return REGION.byId.get(this.state.at)!;
   }
 
-  /** The nodes the player can travel to now (from a vendor, or on a zone's reveal), else none. */
-  options(): string[] {
-    return this.state.phase === 'vendor' || this.leaving() ? this.graph.next[this.state.at] : [];
+  /** Whether a place is corrupted now: a zone not cleared, within the spread's ring of the lair. Towns never. */
+  corrupted(id: string): boolean {
+    const p = this.state.places[id];
+    const r = REGION.byId.get(id);
+    return !!p && !!r && p.kind === 'zone' && !p.cleared && r.ring <= this.state.spread;
   }
 
-  /** Whether the named item is a zone's last, and the next place is picked from its reveal. */
-  leaving(): boolean {
+  /** A zone's depth now: one deeper while corrupted. */
+  depthAt(id: string): Depth {
+    const d = this.state.places[id]?.depth ?? 'known';
+    return this.corrupted(id) ? deeper(d) : d;
+  }
+
+  /** A zone's mod now: its own, or the one corruption gives it. */
+  modAt(id: string): Mod | null {
+    const p = this.state.places[id];
+    if (!p) return null;
+    return p.mod ?? (this.corrupted(id) ? p.spare : null);
+  }
+
+  /** The gold a zone pays when its item is named, now. */
+  goldAt(id: string): number {
+    const t = this.state.tuning;
+    return t.pay[this.depthAt(id)] + (this.modAt(id) ? t.modGold : 0);
+  }
+
+  /** Whether a town's next entry heals: its first, and not after less recovery. The camp never heals. */
+  healsAt(id: string): boolean {
+    const p = this.state.places[id];
+    return !!p && p.kind === 'town' && !p.cleared;
+  }
+
+  /** Whether a place can be entered from the map: the lair always; a town or a zone not yet cleared, linked to a place cleared. */
+  canEnter(id: string): boolean {
     const s = this.state;
-    const v = s.visit;
-    return s.phase === 'solved' && !!v && v.done + 1 >= v.items && s.places[s.at].kind === 'zone';
+    const p = s.places[id];
+    const r = REGION.byId.get(id);
+    if (s.phase !== 'map' || !p || !r) return false;
+    if (p.kind === 'lair') return true;
+    if (p.kind === 'zone' && p.cleared) return false;
+    return r.links.some((to) => s.places[to]?.cleared);
   }
 
-  /** On a named item's reveal: whether next() goes on, and to what (the boss's next item, the win). */
-  ahead(): 'item' | 'win' | null {
+  /** A miss's cost on the open item: the duel's, or the zone's by depth (more under extra damage). */
+  missCost(): number {
     const s = this.state;
-    const v = s.visit;
-    if (s.phase !== 'solved' || !v) return null;
-    if (v.done + 1 < v.items) return 'item';
-    return s.places[s.at].kind === 'boss' ? 'win' : null;
+    const it = s.item;
+    const t = s.tuning;
+    if (!it) return 0;
+    if (it.duel) return t.duelMiss;
+    return t.missCost[it.depth] + (it.mod === 'damage' ? t.modDamage : 0);
   }
 
-  /** The section a step puts an item in, on this run's map. */
-  sectionAt(step: number, boss: boolean): Section {
-    return sectionOf(step, boss, this.graph.boss.step);
-  }
-
-  /** The section the open item (or the node the player is at) is in. */
-  section(): Section {
+  /** The gold the open item pays when named: none at the duel. */
+  payGold(): number {
     const it = this.state.item;
-    if (it) return this.sectionAt(it.step, it.boss !== null);
-    const n = this.node;
-    return this.sectionAt(n.step, n.kind === 'boss');
+    if (!it || it.duel) return 0;
+    const t = this.state.tuning;
+    return t.pay[it.depth] + (it.mod ? t.modGold : 0);
   }
 
-  /** A miss's cost on the open item (or at the node ahead), as a range: the item shows it before a submit. */
-  missRange(): Range {
-    const [lo, hi] = this.state.tuning.missCost[this.section()];
-    return [lo, hi];
+  /** What a right name at the duel hits the Seed for, by how many kinds of supply were used on the item. */
+  duelHit(kinds: number): number {
+    const [none, one, more] = this.state.tuning.duelHit;
+    return kinds <= 0 ? none : kinds === 1 ? one : more;
   }
 
-  /** The gold the open item (or a zone at the node ahead) pays when named, as a range; nothing at the boss. */
-  payRange(): Range {
-    const sec = this.section();
-    if (sec === 'boss') return [0, 0];
-    const [lo, hi] = this.state.tuning.pay[sec];
-    return [lo, hi];
+  /** The kinds of supply used on the open item. */
+  kindsUsed(): number {
+    const it = this.state.item;
+    return it ? new Set(it.log.supplies.map((u) => u.type)).size : 0;
   }
 
   /** How many of a supply the pack holds. */
@@ -755,13 +865,13 @@ export class Run {
     return this.state.pack[supply];
   }
 
-  /** Whether one of a supply can be bought: at a vendor, with the gold. */
+  /** Whether one of a supply can be bought: in a shop, with the gold. */
   canBuy(supply: Supply): boolean {
     const s = this.state;
     return s.phase === 'vendor' && s.gold >= s.tuning.price[supply];
   }
 
-  /** The open item, while it can be played on (opened, not yet named). */
+  /** The open item, while it can be played on (opened, not yet answered). */
   private live(): ItemPlay | null {
     const it = this.state.item;
     return this.state.phase === 'item' && it && it.openedAt !== null ? it : null;
@@ -772,10 +882,11 @@ export class Run {
     return Math.max(1, this.state.tuning.torch);
   }
 
-  /** Why a supply would do nothing on the open item: none open, or nothing left for it to show (the Ancient Orb with no sibling too). Null when it works. */
-  idle(supply: Supply): 'closed' | 'done' | null {
+  /** Why a supply would do nothing on the open item: none open, armoured (before the first submit), or nothing left for it to show (the Ancient Orb with no sibling too). Null when it works. */
+  idle(supply: Supply): 'closed' | 'armoured' | 'done' | null {
     const it = this.live();
     if (!it) return 'closed';
+    if (it.mod === 'armoured' && !it.log.submits.length) return 'armoured';
     const c = CLUES[it.itemId];
     const done: Record<Supply, boolean> = {
       flare: !it.adjacency || it.burned.length >= it.patches,
@@ -823,7 +934,7 @@ export class Run {
 
   // ---- Actions ----
 
-  /** Buys one of a supply at a vendor: its price out of the gold, one more in the pack. */
+  /** Buys one of a supply in a shop: its price out of the gold, one more in the pack. */
   buy(supply: Supply): boolean {
     if (!this.canBuy(supply)) return false;
     const s = this.state;
@@ -838,73 +949,95 @@ export class Run {
     return true;
   }
 
-  /**
-   * Travels to a node linked ahead (from a vendor, or from a zone's reveal),
-   * and arrives there: a town heals and opens its vendor, a zone or the boss
-   * opens its first item at once.
-   */
-  choose(id: string): boolean {
+  /** Back to the map: out of a shop, or on from a zone's reveal. */
+  leave(): boolean {
     const s = this.state;
-    const offered = this.options();
-    if (!offered.includes(id)) return false;
-    if (s.phase === 'solved') this.logItem();
+    if (s.phase === 'solved' && s.item && !s.item.duel) this.logItem();
+    else if (s.phase !== 'vendor') return false;
     s.vendor = null;
-    s.visit = null;
+    s.phase = 'map';
+    this.show('map');
+    return true;
+  }
+
+  /**
+   * Enters a place from the map (canEnter): a town heals on its first entry
+   * (not after less recovery) and opens its shop; a zone opens its item at
+   * once; the lair starts the duel.
+   */
+  enter(id: string): boolean {
+    if (!this.canEnter(id)) return false;
+    const s = this.state;
+    const place = s.places[id];
     this.show(null);
-    s.log.travel.push({ offered: [...offered], picked: id, options: offered.map((o) => ({ node: o, kind: s.places[o].kind })) });
     s.log.route.push(id);
     s.at = id;
-    s.steps++;
-    const place = s.places[id];
-    s.log.met.push({ node: id, kind: place.kind, healed: 0, spent: 0, bought: 0 });
-    if (place.kind === 'town') {
-      const heal = Math.min(s.tuning.townHeal, s.maxLife - s.life);
-      s.life += heal;
-      s.log.met.at(-1)!.healed = heal;
-      s.vendor = { at: 'town', heal };
+    s.log.met.push({ node: id, kind: place.kind, healed: 0, noHeal: false, spent: 0, bought: 0 });
+    if (place.kind === 'town' || place.kind === 'camp') {
+      const first = !place.cleared;
+      let heal = 0;
+      let noHeal = false;
+      if (place.kind === 'town' && first) {
+        if (s.noHeal) {
+          noHeal = true;
+          s.noHeal = false;
+        } else {
+          heal = Math.min(s.tuning.townHeal, s.maxLife - s.life);
+          s.life += heal;
+        }
+      }
+      place.cleared = true;
+      const met = s.log.met.at(-1)!;
+      met.healed = heal;
+      met.noHeal = noHeal;
+      s.vendor = { at: place.kind === 'camp' ? 'camp' : 'town', heal, noHeal, first };
       s.phase = 'vendor';
-      this.show('town');
-    } else {
-      s.visit = { node: id, items: place.kind === 'boss' ? BOSS_ITEMS : 1, done: 0 };
-      this.draw();
+      this.show(place.kind === 'camp' ? 'camp' : 'town');
+      return true;
     }
+    if (place.kind === 'zone') this.draw({ duel: false, depth: this.depthAt(id), mod: this.modAt(id), corrupted: this.corrupted(id) });
+    else this.draw({ duel: true, depth: null, mod: null, corrupted: false });
     return true;
   }
 
-  /** On from a named item's reveal (ahead()): the boss's next item, or the win. */
+  /** On from a duel item answered: the next one. */
   next(): boolean {
-    const to = this.ahead();
-    if (!to) return false;
+    const s = this.state;
+    if (s.phase !== 'solved' || !s.item?.duel) return false;
     this.logItem();
-    if (to === 'item') this.draw();
-    else this.end(true);
+    this.draw({ duel: true, depth: null, mod: null, corrupted: false });
     return true;
   }
 
-  /** Lays out the next item of the visit: any item not drawn before this run, at random (never by place or category). It opens with open(). */
-  private draw() {
+  /** Lays out an item: a zone's at its depth, the duel's from any depth, never one drawn before this run. It opens with open(). */
+  private draw({ duel, depth, mod, corrupted }: { duel: boolean; depth: Depth | null; mod: Mod | null; corrupted: boolean }) {
     const s = this.state;
     const t = s.tuning;
     const node = this.node;
-    const boss = s.places[node.id].kind === 'boss' ? s.visit!.done : null;
     const fresh = ITEMS.filter((it) => !this.drawn.has(it.id));
-    const answer = fresh[Math.floor(this.rng() * fresh.length)];
+    const atDepth = depth ? fresh.filter((it) => depthOf(it.id) === depth) : fresh;
+    const pool = atDepth.length ? atDepth : fresh;
+    const answer = pool[Math.floor(this.rng() * pool.length)];
     const category = answer.category;
     this.drawn.add(answer.id);
     const words = SYLLABLES[answer.id];
     const answerTiles = words.flat();
-    const sec = this.sectionAt(node.step, boss !== null);
+    const board: Board = duel ? 'duel' : 'zone';
+    const [lo, hi] = t.names[board];
+    const names: Range = mod === 'monsters' ? [lo + 1, hi + 1] : [lo, hi];
     // The pool's total is rolled, not the decoys: the board's size says next to nothing of the answer's.
-    const pool = dealPool(answer, s.seed, t.tiles[sec], t.names[sec]);
+    const dealt = dealPool(answer, s.seed, t.tiles[board], names);
     const log: ItemLog = {
       itemId: answer.id,
       name: answer.name,
       category,
-      step: node.step,
       node: node.id,
-      boss: boss !== null,
-      tiles: { answer: [...answerTiles], decoys: [...pool.decoys], names: pool.names.map((d) => d.name) },
-      sibling: pool.sibling ? BY_ID.get(pool.sibling)!.name : null,
+      duel,
+      depth: depthOf(answer.id),
+      mod,
+      corrupted,
+      tiles: { answer: [...answerTiles], decoys: [...dealt.decoys], names: dealt.names.map((d) => d.name) },
+      sibling: dealt.sibling ? BY_ID.get(dealt.sibling)!.name : null,
       supplies: [],
       burnIns: [],
       patches: 0,
@@ -914,19 +1047,22 @@ export class Run {
       lifeAfter: s.life,
       misses: 0,
       gold: 0,
+      spread: s.spread,
+      duelLog: null,
     };
     s.item = {
       n: s.done,
-      step: node.step,
       node: node.id,
-      boss,
+      duel,
+      depth: depth ?? depthOf(answer.id),
+      mod,
       category,
       itemId: answer.id,
       words,
       answer: answerTiles,
-      decoys: pool.decoys,
-      tiles: pool.tiles,
-      sibling: pool.sibling,
+      decoys: dealt.decoys,
+      tiles: dealt.tiles,
+      sibling: dealt.sibling,
       marks: {},
       burned: [],
       patches: 0,
@@ -944,7 +1080,8 @@ export class Run {
   /**
    * Opens the item laid out by draw(), once the page has cut its Veil:
    * `adjacency` lists, for each of its patches, the patches it touches. The
-   * art starts all under the Veil, and the clock starts.
+   * art starts all under the Veil, and the clock starts. At the duel the Seed
+   * hits you as it opens (at 0 life the run is lost).
    */
   open(adjacency: number[][]): boolean {
     const s = this.state;
@@ -955,6 +1092,17 @@ export class Run {
     it.log.patches = it.patches;
     it.log.pack = { ...s.pack };
     it.openedAt = this.now();
+    if (it.duel) {
+      const took = Math.min(s.life, s.foe.hit);
+      s.life -= took;
+      it.log.lifeBefore = s.life + took;
+      it.log.lifeAfter = s.life;
+      it.log.duelLog = { seed: { ...s.foe }, you: { life: s.life, hit: this.duelHit(0) }, took, kinds: 0, dealt: 0 };
+      if (s.life <= 0) {
+        s.log.items.push(it.log);
+        this.end(false);
+      }
+    }
     return true;
   }
 
@@ -1073,40 +1221,52 @@ export class Run {
   }
 
   /**
-   * Submits the line, its word gaps ignored. Right (its letters are the
-   * answer's): the item is named, and a zone's pays its gold at once. Wrong:
-   * life drops by a random miss cost, and the line is marked tile by tile,
-   * the board's tiles keeping their best marks. At 0 life the run ends.
-   * Returns whether it was right, or null if nothing could be submitted.
+   * Submits the line, its word gaps ignored. In a zone: right (its letters
+   * are the answer's), the item is named, its gold paid and the corruption
+   * spreads a ring (the Seed growing with it); wrong, life drops by the
+   * miss's cost and the line is marked tile by tile, the board's tiles
+   * keeping their best marks. At the duel, one submit an item: right hits
+   * the Seed (at 0 the run is won at once), wrong costs the duel's miss and
+   * shows the answer. At 0 life the run ends. Returns whether it was right,
+   * or null if nothing could be submitted.
    */
   submit(): boolean | null {
     if (!this.canSubmit()) return null;
     const s = this.state;
+    const t = s.tuning;
     const it = s.item!;
     const line = tilesOf(it.build);
     const breaks: number[] = [];
     let k = 0;
-    for (const t of it.build) t === GAP ? breaks.push(k) : k++;
+    for (const tile of it.build) tile === GAP ? breaks.push(k) : k++;
     const right = letters(line.join('')) === letters(it.log.name);
     const sub = { tiles: [...line], breaks, right, marks: [] as LineMark[], lost: 0, ms: this.since(it) };
     it.log.submits.push(sub);
+    if (it.duel) return this.answerDuel(it, sub, right);
     if (right) {
       it.log.lifeAfter = s.life;
       s.phase = 'solved';
-      if (it.boss === null) {
-        const gold = between(this.payRange(), this.rng);
-        s.gold += gold;
-        s.log.goldEarned += gold;
-        it.log.gold = gold;
-      }
+      const gold = this.payGold();
+      s.gold += gold;
+      s.log.goldEarned += gold;
+      it.log.gold = gold;
+      // The zone is cleared and the corruption spreads one ring; the Seed grows with it.
+      s.places[it.node].cleared = true;
+      if (it.mod === 'recovery') s.noHeal = true;
+      s.spread++;
+      s.foe.life += t.seedGrowth;
+      if (s.spread % Math.max(1, t.seedHitEvery) === 0) s.foe.hit++;
+      it.log.spread = s.spread;
+      s.log.spread = s.spread;
+      s.log.seedEnd = { ...s.foe };
       this.show('reveal');
       return true;
     }
     const marks = markLine(line, it.answer);
-    const goldOnly = s.tuning.marks === 'gold';
+    const goldOnly = t.marks === 'gold';
     sub.marks = marks.map((m) => (goldOnly && m !== 'gold' ? 'none' : m));
     let j = 0;
-    it.lineMarks = it.build.map((t) => (t === GAP ? 'none' : sub.marks[j++]));
+    it.lineMarks = it.build.map((tile) => (tile === GAP ? 'none' : sub.marks[j++]));
     line.forEach((tile, i) => {
       const m = sub.marks[i];
       if (m === 'none') return;
@@ -1116,7 +1276,7 @@ export class Run {
     it.misses++;
     it.log.misses = it.misses;
     s.log.misses++;
-    sub.lost = Math.min(s.life, between(this.missRange(), this.rng));
+    sub.lost = Math.min(s.life, this.missCost());
     s.life -= sub.lost;
     it.log.lifeAfter = s.life;
     if (s.life <= 0) {
@@ -1126,7 +1286,38 @@ export class Run {
     return false;
   }
 
-  /** The named item done, as its reveal is left: logged, and off the screen. */
+  /** A duel item's one submit: right hits the Seed by the kinds of supply used, wrong costs life; either way it's answered. */
+  private answerDuel(it: ItemPlay, sub: ItemLog['submits'][number], right: boolean): boolean {
+    const s = this.state;
+    const kinds = this.kindsUsed();
+    const duel = it.log.duelLog ?? { seed: { ...s.foe }, you: { life: s.life, hit: this.duelHit(0) }, took: 0, kinds: 0, dealt: 0 };
+    duel.kinds = kinds;
+    if (right) {
+      const hit = Math.min(s.foe.life, this.duelHit(kinds));
+      s.foe.life -= hit;
+      duel.dealt = hit;
+    } else {
+      it.misses++;
+      it.log.misses = it.misses;
+      s.log.misses++;
+      sub.marks = markLine(sub.tiles, it.answer);
+      sub.lost = Math.min(s.life, s.tuning.duelMiss);
+      s.life -= sub.lost;
+    }
+    it.log.duelLog = duel;
+    it.log.lifeAfter = s.life;
+    s.log.seedEnd = { ...s.foe };
+    if (s.foe.life <= 0 || s.life <= 0) {
+      s.log.items.push(it.log);
+      this.end(s.foe.life <= 0);
+      return right;
+    }
+    s.phase = 'solved';
+    this.show('reveal');
+    return right;
+  }
+
+  /** The answered item done, as its reveal is left: logged, and off the screen. */
   private logItem() {
     const s = this.state;
     const it = s.item!;
@@ -1135,10 +1326,9 @@ export class Run {
     s.log.items.push(it.log);
     s.done++;
     s.item = null;
-    s.visit!.done++;
   }
 
-  /** The run ends: won after the boss, lost at 0 life (on the item still open, or the last one logged). */
+  /** The run ends: won when the Seed falls, lost at 0 life (on the item still open). */
   private end(won: boolean) {
     const s = this.state;
     this.show(null);
@@ -1148,8 +1338,8 @@ export class Run {
     s.log.result = won ? 'win' : 'loss';
     s.log.endedOn = last ? { n: s.log.items.length - 1, itemId: last.itemId, name: last.name, node: last.node } : null;
     s.log.lifeEnd = s.life;
+    s.log.seedEnd = { ...s.foe };
     s.item = null;
-    s.visit = null;
     s.phase = 'end';
   }
 }

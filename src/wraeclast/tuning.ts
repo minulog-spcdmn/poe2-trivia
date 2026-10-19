@@ -3,10 +3,10 @@
 // what was kept falls back to the handoff's number.
 
 import { readStored, writeStored } from '../lib/storage.ts';
-import { DEFAULT_TUNING, SECTIONS, SUPPLIES, type Range, type Tuning } from './rules.ts';
+import { BOARDS, DEFAULT_TUNING, DEPTHS, SUPPLIES, type Range, type Tuning } from './rules.ts';
 
-// 6: v5's slimmed rules (no flask, loot, corruption or free clues; prices one at a time).
-const KEY = 'wraeclastTuning6';
+// 7: v5's open region (depth, mods, the Seed and the duel).
+const KEY = 'wraeclastTuning7';
 
 /** Each number's range, for the panel's fields and for reading back what was kept. */
 export const LIMITS = {
@@ -14,12 +14,22 @@ export const LIMITS = {
   gold: [0, 999],
   townHeal: [0, 999],
   tiles: [8, 36],
+  names: [0, 6],
   missCost: [0, 999],
+  pay: [0, 999],
+  depthRoll: [0, 100],
+  modOdds: [1, 99],
+  modGold: [0, 999],
+  modDamage: [0, 999],
+  seedLife: [1, 999],
+  seedHit: [0, 999],
+  seedGrowth: [0, 999],
+  seedHitEvery: [1, 99],
+  duelHit: [0, 999],
+  duelMiss: [0, 999],
   price: [0, 999],
   torch: [1, 99],
   seeds: [3, 15],
-  pay: [0, 999],
-  names: [0, 6],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** A whole number in [lo, hi], or the fallback. */
@@ -44,22 +54,28 @@ const each = <K extends string>(keys: readonly K[], v: unknown, limits: readonly
 export function cleanTuning(raw: unknown): Tuning {
   const r = rec(raw);
   const d = DEFAULT_TUNING;
-  const pay = rec(r.pay);
+  const hits = Array.isArray(r.duelHit) && r.duelHit.length === 3 ? r.duelHit : [];
   return {
     life: whole(r.life, LIMITS.life, d.life),
     gold: whole(r.gold, LIMITS.gold, d.gold),
     townHeal: whole(r.townHeal, LIMITS.townHeal, d.townHeal),
-    tiles: each(SECTIONS, r.tiles, LIMITS.tiles, d.tiles),
-    names: Object.fromEntries(SECTIONS.map((s) => [s, range(rec(r.names)[s], LIMITS.names, d.names[s])])) as Tuning['names'],
-    missCost: Object.fromEntries(SECTIONS.map((s) => [s, range(rec(r.missCost)[s], LIMITS.missCost, d.missCost[s])])) as Tuning['missCost'],
+    tiles: each(BOARDS, r.tiles, LIMITS.tiles, d.tiles),
+    names: Object.fromEntries(BOARDS.map((b) => [b, range(rec(r.names)[b], LIMITS.names, d.names[b])])) as Tuning['names'],
+    missCost: each(DEPTHS, r.missCost, LIMITS.missCost, d.missCost),
+    pay: each(DEPTHS, r.pay, LIMITS.pay, d.pay),
+    depthRoll: each(DEPTHS, r.depthRoll, LIMITS.depthRoll, d.depthRoll),
+    modOdds: whole(r.modOdds, LIMITS.modOdds, d.modOdds),
+    modGold: whole(r.modGold, LIMITS.modGold, d.modGold),
+    modDamage: whole(r.modDamage, LIMITS.modDamage, d.modDamage),
+    seedLife: whole(r.seedLife, LIMITS.seedLife, d.seedLife),
+    seedHit: whole(r.seedHit, LIMITS.seedHit, d.seedHit),
+    seedGrowth: whole(r.seedGrowth, LIMITS.seedGrowth, d.seedGrowth),
+    seedHitEvery: whole(r.seedHitEvery, LIMITS.seedHitEvery, d.seedHitEvery),
+    duelHit: d.duelHit.map((h, i) => whole(hits[i], LIMITS.duelHit, h)) as Tuning['duelHit'],
+    duelMiss: whole(r.duelMiss, LIMITS.duelMiss, d.duelMiss),
     price: each(SUPPLIES, r.price, LIMITS.price, d.price),
     torch: whole(r.torch, LIMITS.torch, d.torch),
     seeds: whole(r.seeds, LIMITS.seeds, d.seeds),
-    pay: {
-      early: range(pay.early, LIMITS.pay, d.pay.early),
-      mid: range(pay.mid, LIMITS.pay, d.pay.mid),
-      late: range(pay.late, LIMITS.pay, d.pay.late),
-    },
     marks: r.marks === 'gold' || r.marks === 'both' ? r.marks : d.marks,
   };
 }

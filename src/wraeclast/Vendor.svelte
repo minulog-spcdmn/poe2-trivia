@@ -1,17 +1,19 @@
 <script lang="ts">
-  // A vendor: at the camp, and in a town (the rest first). Its wares are the
-  // four supplies as small cards with their price; each tap buys one. Then
-  // the pack (a count of each), and the way on (Where next opens the map).
+  // A shop: at the camp, and in a town (its rest first, on the first entry).
+  // Its wares are the four supplies as small cards with their price; each tap
+  // buys one. Then the pack (a count of each), and Leave (to the map).
   // Phones stack it all; wide screens put the pack beside the wares.
   import { SUPPLIES, SUPPLY_NAMES, type Run, type Supply } from './rules';
   import DealtCard from './DealtCard.svelte';
   import PackList from './PackList.svelte';
   import { CAMP_SAYS, REST, does } from './words';
 
-  let { run, onmap }: { run: Run; onmap: () => void } = $props();
+  let { run }: { run: Run } = $props();
   const s = $derived(run.state);
   const at = $derived(s.vendor?.at ?? 'camp');
   const heal = $derived(s.vendor?.heal ?? 0);
+  const first = $derived(s.vendor?.first ?? false);
+  const noHeal = $derived(s.vendor?.noHeal ?? false);
   /** The supply just bought, lit in the pack. */
   let lit = $state<Supply | null>(null);
 
@@ -24,8 +26,10 @@
   <h1 class="sr">{run.node.name}</h1>
   <div class="cols">
     <div class="shop">
-      {#if at === 'town'}
-        <p class="say rest">{#if heal}{REST.before}<b>+{heal}</b>{REST.after}{:else}{REST.full}{/if}</p>
+      {#if at === 'town' && first}
+        <p class="say rest">{#if noHeal}{REST.none}{:else if heal}{REST.before}<b>+{heal}</b>{REST.after}{:else}{REST.full}{/if}</p>
+      {:else if !first}
+        <p class="say">{REST.shop}</p>
       {:else}
         <p class="say">{CAMP_SAYS}</p>
       {/if}
@@ -62,7 +66,7 @@
   </div>
 
   <div class="go dock">
-    <button class="btn primary big" onclick={onmap}>Where next</button>
+    <button class="btn primary big" onclick={() => run.leave()}>Leave</button>
   </div>
 </div>
 

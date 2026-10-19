@@ -2,18 +2,18 @@
   // The tuning panel, collapsed at the page's foot: the numbers the next run
   // starts with, kept in storage as they change, and in each run's log.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { DEFAULT_TUNING, SECTIONS, SUPPLIES, SUPPLY_NAMES, type Range } from './rules';
+  import { DEFAULT_TUNING, DEPTHS, SUPPLIES, SUPPLY_NAMES, type Range } from './rules';
   import { LIMITS, isDefault } from './tuning';
   import { play } from './play.svelte';
-  import { GRAPH } from './map';
-  import { sectionNames } from './markup';
+  import { DEPTH_NAME } from './words';
 
   /** Whether it's open: from the start on the QA desk's bench, collapsed on the page till tapped. */
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const t = $derived(play.tuning);
   const changed = $derived(!isDefault(t));
-  const SECTION_NAMES = sectionNames(GRAPH.boss.step);
-  const PAID = ['early', 'mid', 'late'] as const;
+  const BOARD_NAMES = { zone: 'A zone', duel: 'The duel' } as const;
+  const BOARDS = ['zone', 'duel'] as const;
+  const HIT_NAMES = ['No supply', 'One kind', 'Two kinds or more'] as const;
 
   /**
    * A number field's value, kept whole and in range (a blank or a stray value
@@ -73,35 +73,47 @@
       <legend>Start</legend>
       {@render field('Life', t.life, LIMITS.life, (n) => (t.life = n))}
       {@render field('Gold', t.gold, LIMITS.gold, (n) => (t.gold = n))}
-      {@render field('A town heals (life)', t.townHeal, LIMITS.townHeal, (n) => (t.townHeal = n))}
+      {@render field('A town heals (life, first entry)', t.townHeal, LIMITS.townHeal, (n) => (t.townHeal = n))}
     </fieldset>
 
     <fieldset>
-      <legend>Miss cost (life)</legend>
-      {#each SECTIONS as sec (sec)}
-        {@render range(SECTION_NAMES[sec], t.missCost[sec], LIMITS.missCost)}
+      <legend>Zones by depth</legend>
+      {#each DEPTHS as d (d)}
+        {@render field(`${DEPTH_NAME[d]}: rolls (weight)`, t.depthRoll[d], LIMITS.depthRoll, (n) => (t.depthRoll[d] = n))}
+        {@render field(`${DEPTH_NAME[d]}: pays (gold)`, t.pay[d], LIMITS.pay, (n) => (t.pay[d] = n))}
+        {@render field(`${DEPTH_NAME[d]}: a miss (life)`, t.missCost[d], LIMITS.missCost, (n) => (t.missCost[d] = n))}
       {/each}
     </fieldset>
 
     <fieldset>
-      <legend>Gold for a zone's item named</legend>
-      {#each PAID as sec (sec)}
-        {@render range(SECTION_NAMES[sec], t.pay[sec], LIMITS.pay)}
-      {/each}
+      <legend>Waystone mods</legend>
+      {@render field('A zone rolls one 1 in', t.modOdds, LIMITS.modOdds, (n) => (t.modOdds = n))}
+      {@render field('A mod adds (gold)', t.modGold, LIMITS.modGold, (n) => (t.modGold = n))}
+      {@render field('Extra damage adds to a miss', t.modDamage, LIMITS.modDamage, (n) => (t.modDamage = n))}
     </fieldset>
 
     <fieldset>
-      <legend>Tiles per section</legend>
-      {#each SECTIONS as sec (sec)}
-        {@render field(SECTION_NAMES[sec], t.tiles[sec], LIMITS.tiles, (n) => (t.tiles[sec] = n))}
+      <legend>The Seed and the duel</legend>
+      {@render field('The Seed: life at the start', t.seedLife, LIMITS.seedLife, (n) => (t.seedLife = n))}
+      {@render field('The Seed: hit at the start', t.seedHit, LIMITS.seedHit, (n) => (t.seedHit = n))}
+      {@render field('Life a zone adds', t.seedGrowth, LIMITS.seedGrowth, (n) => (t.seedGrowth = n))}
+      {@render field('Hit +1 every (zones)', t.seedHitEvery, LIMITS.seedHitEvery, (n) => (t.seedHitEvery = n))}
+      {#each HIT_NAMES as name, i (name)}
+        {@render field(`Your hit: ${name.toLowerCase()}`, t.duelHit[i], LIMITS.duelHit, (n) => (t.duelHit[i] = n))}
+      {/each}
+      {@render field('A wrong answer (life)', t.duelMiss, LIMITS.duelMiss, (n) => (t.duelMiss = n))}
+    </fieldset>
+
+    <fieldset>
+      <legend>Boards</legend>
+      {#each BOARDS as b (b)}
+        {@render field(`${BOARD_NAMES[b]}: tiles`, t.tiles[b], LIMITS.tiles, (n) => (t.tiles[b] = n))}
+        {@render range(`${BOARD_NAMES[b]}: decoy names`, t.names[b], LIMITS.names)}
       {/each}
       <label class="check">
         <input type="checkbox" checked={t.marks === 'gold'} onchange={setMarks} />
         <span>Gold marks only (no silver or struck)</span>
       </label>
-      {#each SECTIONS as sec (sec)}
-        {@render range(`Decoy names, ${SECTION_NAMES[sec].toLowerCase()}`, t.names[sec], LIMITS.names)}
-      {/each}
       <p class="small">Decoy names are whole names of real items that the tiles can also spell (the answer's look-alikes, or the closest others of its category). Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top, up to 36 tiles.</p>
     </fieldset>
 

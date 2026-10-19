@@ -1,43 +1,39 @@
 <script lang="ts">
   // The run's header and strip, as the design draws them: the brand's flame
-  // (its name beside it on a wide screen), where you are (the node, its kind,
-  // the item) and the sound key; then your entry as the scoreboard's pill
-  // (the life vessel with its walls every 25, the life a miss just took, the
-  // gold and what a reveal just added) and the step plaque. On a short phone
-  // the two sit as one bar: the place and the key on a line, you and the step
-  // under it.
+  // (its name beside it on a wide screen), where you are (the place, its kind
+  // or a zone's depth and mod, the duel's item) and the sound key; then your
+  // entry as the scoreboard's pill (the life vessel with its walls every 25,
+  // the life a miss just took, the gold and what a reveal just added).
   import { MediaQuery } from 'svelte/reactivity';
   import { isMuted, setMuted, sfx } from '../lib/sound';
   import type { Run } from './rules';
-  import { placeName } from './words';
+  import { DEPTH_NAME, MOD_NAME, placeName } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
   const node = $derived(run.node);
-  const place = $derived(s.places[s.at]);
+  const kind = $derived(s.places[s.at].kind);
   const share = $derived(Math.max(0, Math.min(1, s.life / s.maxLife)));
   const low = $derived(share <= 0.3);
   /** The life the last wrong submit took, while its marked line stands. */
   const hit = $derived(s.item?.lineMarks ? (s.item.log.submits.at(-1)?.lost ?? 0) : 0);
   /** The gold a named item just paid, shown beside the gold. */
   const gain = $derived(s.phase === 'solved' ? (s.item?.log.gold ?? 0) : 0);
-  const lastStep = $derived(run.graph.boss.step);
   const pct = (n: number) => `${(n / s.maxLife) * 100}%`;
-
-  /** A desktop (860 px and up, as the screens): the step plaque moves from the strip to the task row. */
-  const wideQ = new MediaQuery('(min-width: 860px)');
-  /** The line naming what the player is doing, on a desktop: the item just named, the town or camp they're in. Not at the end (its screen says it). */
-  const task = $derived(
-    wideQ.current
-      ? s.phase === 'solved' && s.item
-          ? `Named: ${s.item.log.name}`
-          : s.phase === 'item' && s.visit && s.item
-            ? `Item ${s.visit.done + 1} of ${s.visit.items} in ${node.name}`
-            : s.phase === 'vendor'
-              ? node.name
-              : ''
-      : '',
+  /** Under the place's name: a zone's depth and mod, the duel's item, else the kind. */
+  const sub = $derived(
+    s.phase === 'map'
+      ? 'The map'
+      : s.item && !s.item.duel
+        ? [DEPTH_NAME[s.item.depth], s.item.mod ? MOD_NAME[s.item.mod] : null].filter(Boolean).join(' • ')
+        : s.item?.duel
+          ? `The duel • item ${s.item.n - s.log.items.filter((it) => !it.duel).length + 1}`
+          : placeName(kind),
   );
+
+  /** A desktop (860 px and up): what the player is doing, on a line of its own. */
+  const wideQ = new MediaQuery('(min-width: 860px)');
+  const task = $derived(wideQ.current && s.phase === 'solved' && s.item ? `${s.item.log.submits.at(-1)?.right ? 'Named' : 'It was'}: ${s.item.log.name}` : '');
 
   let muted = $state(isMuted());
   function toggleSound() {
@@ -49,10 +45,8 @@
 <header class="hdr" aria-label="Where you are">
   <span class="brand"><span class="flame" aria-hidden="true"></span><span class="brand-name">PoE2.Quest</span></span>
   <p class="meta">
-    <span class="zone" class:boss={place.kind === 'boss'}>{node.name}</span>
-    <span class="kind"
-      >{placeName(place)}{#if place.kind === 'zone'}<span class="zw">{' '}zone</span>{/if}{#if s.visit && s.item}<span class="count" class:dup={!!task}>{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}</span
-    >
+    <span class="zone" class:boss={kind === 'lair'}>{s.phase === 'map' ? 'Wraeclast' : node.name}</span>
+    <span class="kind">{sub}</span>
   </p>
   <div class="tools">
     <button class="icon-btn" onclick={toggleSound} title={muted ? 'Unmute' : 'Mute'} aria-label="Sound" aria-pressed={!muted}>
@@ -63,15 +57,7 @@
   </div>
 </header>
 
-{#snippet step()}
-  {#if place.kind === 'boss'}
-    <div class="stepc boss" role="img" aria-label="The boss, the last step"><span class="k">Last</span><span class="v">Boss</span></div>
-  {:else if place.kind === 'camp'}
-    <div class="stepc start" role="img" aria-label="The camp, the start of the run"><span class="k">Run</span><span class="v">Start</span></div>
-  {:else}
-    <div class="stepc" role="img" aria-label="Step {node.step} of {lastStep}"><span class="k">Step</span><span class="v">{node.step}<small>/{lastStep}</small></span></div>
-  {/if}
-{/snippet}
+
 
 <div class="strip">
   <div class="chip me" aria-label="You: {s.life} life, {s.gold} gold">
@@ -91,12 +77,10 @@
     </div>
     <span class="score"><span class="coin" aria-hidden="true"></span>{s.gold}{#if gain}<span class="gain" aria-hidden="true">+{gain}</span>{/if}</span>
   </div>
-  {#if !task}{@render step()}{/if}
 </div>
 {#if task}
-  <div class="task" class:reveal={s.phase === 'solved'} class:vend={s.phase === 'vendor'}>
+  <div class="task" class:reveal={s.phase === 'solved'}>
     <p class="sub">{task}</p>
-    {@render step()}
   </div>
 {/if}
 
@@ -173,13 +157,6 @@
   .kind {
     font-size: 10.5px;
     letter-spacing: 0.18em;
-  }
-  /* On a desktop the task row says which item this is. */
-  .count.dup {
-    display: none;
-  }
-  .num {
-    color: var(--gold-hi);
   }
   .tools {
     justify-self: end;
@@ -368,59 +345,8 @@
     text-shadow: 0 0 8px rgba(224, 85, 63, 0.7);
   }
 
-  /* Where the run stands: a waypoint plaque. */
-  .stepc {
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    min-width: 58px;
-    height: 44px;
-    padding: 0 8px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: rgba(12, 10, 8, 0.75);
-    box-shadow: inset 0 1px 0 rgba(241, 217, 155, 0.06);
-  }
-  .k {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 8.5px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--muted);
-    line-height: 1;
-  }
-  .v {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 19px;
-    line-height: 1;
-    color: var(--gold-hi);
-  }
-  .v small {
-    font-size: 11px;
-    color: var(--muted);
-    margin-left: 1px;
-  }
-  .stepc.boss {
-    border-color: #8e4434;
-  }
-  .stepc.boss .v,
-  .stepc.start .v {
-    font-size: 14px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #ff9c86;
-  }
-  .stepc.start .v {
-    color: var(--gold-hi);
-  }
-
   /* A short phone (375 by 667): one bar. The place and the key on a 32 px
-     line, you and the step under it, the hairline under both. */
+     line, you under it, the hairline under both. */
   @media (max-width: 699px) and (max-height: 740px) {
     .hdr {
       min-height: 32px;
@@ -458,11 +384,6 @@
       content: '•';
       margin-right: 8px;
       color: var(--gold-lo);
-    }
-    /* One line holds the place and its kind; the item's count is left out, as the design's short bar does, and "zone" too. */
-    .count,
-    .zw {
-      display: none;
     }
     .icon-btn {
       width: 32px;
@@ -509,12 +430,6 @@
     font-size: 19px;
     line-height: 1.2;
     color: #e6dccb;
-  }
-  .task .stepc {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    translate: 0 -50%;
   }
 
   @media (min-width: 700px) {

@@ -7,34 +7,33 @@
   // in a tray the dock's pack key opens. Wide screens set the tooltip beside
   // the answer line, the dock under both.
   //
-  // Named, the screen turns into the reveal: the tooltip whole, the gold
-  // paid, and the way on in one tap: Next item in the dock at the boss, or
-  // from a zone the places one step ahead as rows (the whole map one tap more).
+  // Named, the screen turns into the reveal: the tooltip whole, then one line
+  // for the item and one for the gold, and the way on: the map from a zone,
+  // the next item at the duel. At the duel an item takes one submit: wrong,
+  // the reveal shows the answer.
   import { tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import NamePlate from '../components/NamePlate.svelte';
   import { motion } from '../lib/motion.svelte';
-  import { CLUES, type Place, type Run } from './rules';
+  import { CLUES, type Run } from './rules';
   import Veil from './Veil.svelte';
   import Clues from './Clues.svelte';
   import ItemPack from './ItemPack.svelte';
   import Inscription from './Inscription.svelte';
-  import MapScreen from './MapScreen.svelte';
-  import { placeDoes, placeKind, plural } from './words';
+  import { plural } from './words';
 
-  /** `onmap`: the whole map, opened from the reveal's Where next. */
-  let { run, onmap }: { run: Run; onmap?: () => void } = $props();
+  let { run }: { run: Run } = $props();
   const s = $derived(run.state);
   const it = $derived(s.item!);
   const named = $derived(s.phase === 'solved');
-  const boss = $derived(it.boss !== null);
-  const [lo, hi] = $derived(run.missRange());
-  const [plo, phi] = $derived(run.payRange());
-  const payLine = $derived(boss ? 'No gold at the boss' : plo === phi ? `Named: ${plo} gold` : `Named: ${plo} to ${phi} gold`);
+  const duel = $derived(it.duel);
+  const cost = $derived(run.missCost());
+  const payLine = $derived(duel ? `Right: hits the Seed for ${run.duelHit(run.kindsUsed())}` : `Named: ${run.payGold()} gold`);
+  /** Answered right (a duel item can be answered wrong: then the answer is shown). */
+  const right = $derived(!!it.log.submits.at(-1)?.right);
   const last = $derived(it.log.submits.at(-1));
   /** The last wrong submit, while its marked line stands. */
   const miss = $derived(it.lineMarks && last && !last.right ? last : null);
-  const ahead = $derived(run.ahead());
   /** The board's height, about (rows of tiles at a phone's width), for the art to give way to it on a short screen. */
   const boardH = $derived.by(() => {
     const dense = it.tiles.length > 26;
@@ -55,17 +54,10 @@
 
   // ---- The reveal ----
 
-  /** A zone's item named: the places one step ahead. */
-  const ways = $derived(named && run.leaving() ? run.graph.next[s.at] : []);
-  const nextStep = $derived(ways.length ? run.graph.byId.get(ways[0])!.step : 0);
-  /** A wide desktop: the map stands beside the reveal (V4RevealDesk). */
-  const mapCol = new MediaQuery('(min-width: 1400px)');
-  const withMap = $derived(mapCol.current && ways.length > 0);
-
   let tipEl = $state<HTMLElement>();
   let headEl = $state<HTMLElement>();
   let sideEl = $state<HTMLElement>();
-  /** The tooltip's body height on a phone: what the window leaves under the run bar, over Where next and the dock. */
+  /** The tooltip's body height on a phone: what the window leaves under the run bar, over the dock. */
   let rh = $state<number>();
 
   async function measure() {
@@ -85,31 +77,7 @@
     const raf = requestAnimationFrame(() => void measure());
     return () => cancelAnimationFrame(raf);
   });
-
-  /** A place's row under Where next: its kind, its line, and all of it said. */
-  function row(id: string) {
-    const n = run.graph.byId.get(id)!;
-    const p: Place = s.places[id];
-    const line = placeDoes(run, p);
-    return { n, p, line, label: `Go to ${n.name}: ${placeKind(p)}, ${line}` };
-  }
 </script>
-
-{#snippet placeMark(p: Place)}
-  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round">
-    {#if p.kind === 'town' || p.kind === 'camp'}
-      <path d="M4.5 20.5v-9L12 5.5l7.5 6v9M9.6 20.5v-5.4h4.8v5.4M2.8 20.5h18.4" /><path d="M12 2.5v3" stroke-width=".9" />
-    {:else if p.kind === 'boss'}
-      <path d="M4 17.5 5.6 7.8l4 4.2L12 5l2.4 7 4-4.2L20 17.5z" /><path d="M4 20.5h16" /><circle cx="12" cy="14.6" r="1.1" stroke-width=".9" />
-    {:else}
-      <path d="M12 3 20 12 12 21 4 12z" /><path d="M12 7.5 16.5 12 12 16.5 7.5 12z" stroke-width=".9" />
-    {/if}
-  </svg>
-{/snippet}
-
-{#snippet chev()}
-  <svg class="chev" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5 16 12l-6.5 6.5" /></svg>
-{/snippet}
 
 {#snippet plate()}
   <div class="head" bind:this={headEl} style:--plate-scale={plateScale}>
@@ -126,7 +94,7 @@
 {/snippet}
 
 <!-- One tree for the item and its reveal, so the tooltip (its Veil mid-finale) stays as it is named. -->
-<div class="item" class:reveal={named} class:withmap={named && withMap} style:--board="{boardH}px" style:--rh={named && rh ? `${rh}px` : undefined}>
+<div class="item" class:reveal={named} style:--board="{boardH}px" style:--rh={named && rh ? `${rh}px` : undefined}>
   <div class="desk">
     <div class="col">
       <section class="tip" class:good={named} bind:this={tipEl} aria-label="The item">
@@ -143,52 +111,24 @@
 
   {#if named}
     <div class="side" bind:this={sideEl}>
-      {#if ways.length}
-        <section class="wn" aria-labelledby="wn-h">
-          <div class="wn-head">
-            <h2 id="wn-h">Where next</h2>
-            <span class="stp">Step <span class="n">{nextStep}</span> of <span class="n">{run.graph.boss.step}</span></span>
-            <span class="grow"></span>
-            {#if onmap}
-              <button class="btn ghost small" onclick={onmap} aria-label="The whole map">
-                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"
-                  ><path d="M3.5 6.2 9 4.2l6 2 5.5-2v13.6l-5.5 2-6-2-5.5 2z" /><path d="M9 4.2v13.6M15 6.2v13.6" stroke-width=".9" /></svg
-                >Map
-              </button>
-            {/if}
-          </div>
-          {#each ways as id (id)}
-            {@const r = row(id)}
-            <button class="place" onclick={() => run.choose(id)} aria-label={r.label}>
-              <span class="k">{@render placeMark(r.p)}</span>
-              <span class="tx">
-                <span class="nm">{r.n.name}<span class="kd">{placeKind(r.p)}</span></span>
-                <span class="ln">{r.line}</span>
-              </span>
-              {@render chev()}
-            </button>
-          {/each}
-        </section>
-      {/if}
-
       <div class="dock">
         <div class="result" role="status">
-          <span class="vsign" aria-hidden="true">✓</span>
+          <span class="vsign" class:bad={!right} aria-hidden="true">{right ? '✓' : '✕'}</span>
           <p>
             {it.log.name}
             <!-- One idea a line. -->
-            <small>{it.misses ? plural(it.misses, 'miss') : 'First try'}</small>
-            {#if it.log.gold}<small><b>+{it.log.gold}</b> gold</small>{/if}
+            {#if duel && right}<small>Hits the Seed for <b>{it.log.duelLog?.dealt ?? 0}</b></small>
+            {:else if duel}<small><b class="minus">−{it.log.submits.at(-1)?.lost ?? 0}</b> life • the answer</small>
+            {:else}<small><b>+{it.log.gold}</b> gold</small>{/if}
           </p>
         </div>
-        {#if ahead === 'item' || ahead === 'win'}
-          <button class="btn primary" onclick={() => run.next()}>{ahead === 'win' ? 'Claim the win' : 'Next item'}</button>
+        {#if duel}
+          <button class="btn primary" onclick={() => run.next()}>Next item</button>
+        {:else}
+          <button class="btn primary" onclick={() => run.leave()}>To the map</button>
         {/if}
       </div>
     </div>
-    {#if withMap}
-      <div class="mapcol"><MapScreen {run} plate /></div>
-    {/if}
   {:else}
     <div class="col"><Inscription {run} /></div>
   {/if}
@@ -208,14 +148,14 @@
           <span class="lost-vial" aria-hidden="true"></span>
           <p>
             <b class="minus">−{miss.lost}</b> life
-            <small>A miss costs <b>{lo}</b> to <b>{hi}</b> life</small>
+            <small>A miss costs <b>{cost}</b> life</small>
           </p>
         </div>
       {:else}
         <div class="stakes">
-          <div class="row miss">Miss: <b>{lo}</b> to <b>{hi}</b> life</div>
+          <div class="row miss">{duel ? 'One try • wrong' : 'Miss'}: <b>{cost}</b> life</div>
           <div class="row reward">{payLine}</div>
-          {#if run.blocked() === 'tried'}<div class="row warn">You tried this one. Change a tile</div>{:else if s.life <= lo}<div class="row warn">Low life: one miss ends the run</div>{/if}
+          {#if run.blocked() === 'tried'}<div class="row warn">You tried this one. Change a tile</div>{:else if it.mod === 'armoured' && !it.log.submits.length}<div class="row warn">Armoured: no supply until your first try</div>{:else if s.life <= cost}<div class="row warn">Low life: one miss ends the run</div>{/if}
         </div>
       {/if}
       {#if short.current}
@@ -383,122 +323,6 @@
   .reveal .ibody :global(.lines) {
     overflow: hidden;
     mask: linear-gradient(180deg, #000 calc(100% - 40px), transparent);
-  }
-
-  /* Where next: the places one step ahead, as rows; a tap goes there. */
-  .wn {
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .wn-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 30px;
-  }
-  .wn-head h2 {
-    margin: 0;
-    font-family: var(--font-body);
-    font-weight: 400;
-    font-size: 17px;
-    line-height: 1.2;
-    letter-spacing: 0;
-    text-transform: none;
-    color: #e6dccb;
-  }
-  .stp {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    color: var(--muted);
-  }
-  :global(.wr) .stp .n {
-    font-size: 1em;
-    color: inherit;
-  }
-  .grow {
-    flex: 1;
-  }
-  .wn-head .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .wn-head .btn svg {
-    width: 14px;
-    height: 14px;
-  }
-  .place {
-    position: relative;
-    display: grid;
-    grid-template-columns: 30px minmax(0, 1fr) 16px;
-    align-items: center;
-    column-gap: 10px;
-    min-height: 48px;
-    padding: 4px 10px;
-    text-align: left;
-    font: inherit;
-    color: inherit;
-    background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
-    border: 1px solid var(--gold-lo);
-    border-radius: 4px;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.06),
-      0 6px 14px rgba(0, 0, 0, 0.35);
-    cursor: pointer;
-  }
-  .place:hover:not(:disabled) {
-    border-color: var(--gold);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.1),
-      0 0 16px rgba(201, 164, 92, 0.25);
-  }
-  .place .k {
-    justify-self: center;
-    width: 24px;
-    height: 24px;
-    color: var(--gold);
-  }
-  .place .k svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-  .place .tx {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-  .place .nm {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 15px;
-    line-height: 1.15;
-    color: #f6e7c6;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .place .kd {
-    margin-left: 6px;
-    font-family: var(--font-body);
-    font-weight: 500;
-    font-size: 13.5px;
-    color: var(--gold);
-  }
-  .place .ln {
-    font-size: 13.5px;
-    line-height: 1.2;
-    color: var(--muted);
-  }
-  .place .chev {
-    width: 16px;
-    height: 16px;
-    color: var(--gold-lo);
   }
 
   /* The dock: the one gold button, in reach of a thumb (QuestionView .dock). */
@@ -762,41 +586,7 @@
       padding: 0;
       border-top: none;
     }
-    .place {
-      min-height: 64px;
-      grid-template-columns: 36px minmax(0, 1fr) 18px;
-    }
-    .place .k {
-      width: 28px;
-      height: 28px;
-    }
-    .place .nm {
-      font-size: 17px;
-    }
-    .place .ln {
-      font-size: 15px;
-    }
-    .wn-head h2 {
-      font-size: 19px;
-    }
   }
-  /* A wide desktop's reveal: the map in a third column (V4RevealDesk), the three wider than the page's column, centred on it. */
-  @media (min-width: 1400px) {
-    .item.withmap {
-      width: 1320px;
-      margin-inline: calc((100% - 1320px) / 2);
-    }
-    .withmap .desk {
-      grid-template-columns: 400px 460px 380px;
-    }
-    .mapcol {
-      align-self: stretch;
-      min-height: 560px;
-      display: flex;
-      flex-direction: column;
-    }
-  }
-
   /* A short window (a laptop's): the dock stays pinned, so Identify is never below the fold. */
   @media (max-height: 820px) {
     .item:not(.reveal) .dock {

@@ -8,7 +8,7 @@
   import { untrack } from 'svelte';
   import '../../wraeclast/screens.css';
   import { DEFAULT_TUNING, Run, type Supply } from '../../wraeclast/rules';
-  import { GRAPH } from '../../wraeclast/map';
+  import { REGION } from '../../wraeclast/map';
   import Hud from '../../wraeclast/Hud.svelte';
   import ItemScreen from '../../wraeclast/ItemScreen.svelte';
   import type { PieceProps } from '../bench.ts';
@@ -33,8 +33,8 @@
     named: boolean;
     pack: boolean;
   };
-  /** A step in each section of the 10-step map (4 and 7 are its towns). */
-  const STEPS: Record<string, number> = { early: 2, mid: 5, late: 8 };
+  /** A ring from the lair for each of the old sections (the region's rings run 1 to 5). */
+  const STEPS: Record<string, number> = { early: 4, mid: 3, late: 2 };
 
   /** The run, brought to the node asked for and its item laid out there; reactive once it is. */
   function build(o: Options) {
@@ -42,11 +42,10 @@
     if (o.goldOnly) tuning.marks = 'gold';
     const run = new Run({ tuning, seed: o.item, now: () => 0 });
     const s = run.state;
-    const boss = o.place.startsWith('boss') ? Number(o.place.slice(4)) - 1 : null;
-    const id = boss !== null ? GRAPH.boss.id : nodeAt(STEPS[o.place] ?? 2);
+    const boss = o.place.startsWith('boss');
+    const id = boss ? REGION.lair.id : nodeAt(STEPS[o.place] ?? 4);
     s.pack = o.pack ? structuredClone(FULL_PACK) : { flare: 0, wisdom: 0, lore: 0, category: 0 };
     arrive(run, id);
-    if (boss !== null) s.visit!.done = Math.min(boss, s.visit!.items - 1);
     run.state = reactive(s);
     return run;
   }
@@ -74,7 +73,7 @@
     const s = run.state;
     const it = s.item;
     // Not while the item is still opening (a submit then counts for nothing).
-    if (!it || it.openedAt === null || s.phase !== 'item' || s.life <= run.missRange()[1]) return false;
+    if (!it || it.openedAt === null || s.phase !== 'item' || s.life <= run.missCost()) return false;
     it.build = wrongLine(it, it.misses);
     it.lineMarks = null;
     return run.submit() === false;
@@ -114,7 +113,7 @@
 <main class="wr bench" class:small>
   {#key run}
     {#if !small}<Hud {run} />{/if}
-    {#if run.state.item}<ItemScreen {run} onmap={() => {}} />{/if}
+    {#if run.state.item}<ItemScreen {run} />{/if}
   {/key}
 </main>
 
