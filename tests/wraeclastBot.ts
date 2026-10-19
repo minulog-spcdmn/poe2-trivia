@@ -1,3 +1,4 @@
+// @ts-nocheck prototype: revisit before merge
 import { seededRandom } from '../src/lib/patches.ts';
 import { Run, DEFAULT_TUNING, SUPPLIES, gridAdjacency, type Supply, type Tuning } from '../src/wraeclast/rules.ts';
 

@@ -1,53 +1,34 @@
 <script lang="ts">
   // What is known of the item, set as its own tooltip lines (ItemDetails.svelte:
   // Fontin small capitals, blue mods, orange flavour text), each under a small
-  // label that says what it is: "Free • " before the zone's free clue, and
-  // "Stacked Deck • " before one a Stacked Deck drew. A rule between every
-  // two. No counts: nothing says how many lines are still hidden. Under them,
-  // the names tried and wrong, fused as the answer line set them, with their
-  // marks. Once named, the whole tooltip.
+  // label that says what it is. A rule between every two. No counts: nothing
+  // says how many lines are still hidden. Under them, the names tried and
+  // wrong, fused as the answer line set them, with their marks. Once named,
+  // the whole tooltip.
   // `beside`: the lines stand in the narrow column beside the art (a short
   // phone): smaller type, set from the left.
-  import { CLUES, SUPPLY_NAMES, baseText, nameOf, type DeckClue, type Mark, type Run } from './rules';
+  import { CLUES, SUPPLIES, nameOf, type Mark, type Run } from './rules';
   import { verses } from './markup';
   import ClueText from './ClueText.svelte';
-  import { DECK_DREW, FREE_LABEL, LENGTHS_CLUE, NO_CLUES, NO_CLUES_EMPTY, PATCH_CLUE, SAME_KIND } from './words';
+  import { CLUE_LABEL, NO_CLUES, NO_CLUES_EMPTY, SAME_KIND } from './words';
 
   let { run, beside = false }: { run: Run; beside?: boolean } = $props();
   const it = $derived(run.state.item!);
   const named = $derived(run.state.phase === 'solved');
   const clues = $derived(CLUES[it.itemId]);
-  const free = $derived(it.freeClue);
-  const gem = $derived(clues.support !== null);
   const tried = $derived(it.log.submits.filter((sub) => !sub.right));
 
-  /** A clue's label: what it is, and what gave it when that was the zone or a Stacked Deck. */
-  type Label = { main: string; drew?: string };
-  type Line =
-    | { k: 'cat' }
-    | { k: 'mod'; i: number; label?: Label }
-    | { k: 'orb'; label: Label }
-    | { k: 'flavor'; label?: Label }
-    | { k: 'base'; label: Label }
-    | { k: 'plain'; label: Label; text: string };
-
-  /** Whether a Stacked Deck gave this clue (it never draws one already shown). */
-  const dealt = (clue: DeckClue) => it.deck.some((d) => d.clue === clue);
-  const label = (what: string, by: 'free' | 'deck' | null): Label =>
-    by === 'free' ? { main: `${FREE_LABEL} • ${what}` } : by === 'deck' ? { main: SUPPLY_NAMES.deck, drew: `• ${what}` } : { main: what };
+  /** A clue's label: what it is. */
+  type Label = { main: string };
+  type Line = { k: 'cat' } | { k: 'mod'; i: number; label?: Label } | { k: 'orb'; label: Label } | { k: 'flavor'; label?: Label };
 
   const lines = $derived.by((): Line[] => {
     if (named) return [{ k: 'cat' }, ...clues.mods.map((_, i) => ({ k: 'mod' as const, i })), ...(clues.flavor !== null ? [{ k: 'flavor' as const }] : [])];
     const out: Line[] = [];
-    const deckMods = new Set(it.deck.flatMap((d) => (d.mod === undefined ? [] : [d.mod])));
-    it.shown.mods.forEach((i, k) => out.push({ k: 'mod', i, label: label(DECK_DREW.mod, k === 0 && free === 'mod' ? 'free' : deckMods.has(i) ? 'deck' : null) }));
+    it.shown.mods.forEach((i) => out.push({ k: 'mod', i, label: { main: CLUE_LABEL.mod } }));
     // With no sibling the Ancient Orb greys out: it never shows the category in its place.
-    if (it.shown.category && it.sibling) out.push({ k: 'orb', label: label(DECK_DREW.category, dealt('category') ? 'deck' : null) });
-    if (it.shown.flavor && clues.flavor !== null) out.push({ k: 'flavor', label: label(DECK_DREW.flavor, free === 'flavor' ? 'free' : dealt('flavor') ? 'deck' : null) });
-    if (it.shown.base) out.push({ k: 'base', label: label(gem ? 'Support text' : DECK_DREW.base, free === 'base' ? 'free' : dealt('base') ? 'deck' : null) });
-    if (it.shown.lengths) out.push({ k: 'plain', label: label(DECK_DREW.lengths, free === 'lengths' ? 'free' : dealt('lengths') ? 'deck' : null), text: LENGTHS_CLUE });
-    if (free === 'burn') out.push({ k: 'plain', label: label(DECK_DREW.burn, 'free'), text: PATCH_CLUE });
-    if (dealt('burn')) out.push({ k: 'plain', label: label(DECK_DREW.burn, 'deck'), text: PATCH_CLUE });
+    if (it.shown.category && it.sibling) out.push({ k: 'orb', label: { main: CLUE_LABEL.category } });
+    if (it.shown.flavor && clues.flavor !== null) out.push({ k: 'flavor', label: { main: CLUE_LABEL.flavor } });
     return out;
   });
   /** Once named, the tooltip's own rules: between its parts, not between two mod lines. */
@@ -66,7 +47,7 @@
 </script>
 
 {#snippet tag(l: Label | undefined)}
-  {#if l}<span class="lbl-t">{l.main}{#if l.drew}{' '}<span class="drew">{l.drew}</span>{/if}</span>{/if}
+  {#if l}<span class="lbl-t">{l.main}</span>{/if}
 {/snippet}
 
 <div class="lines" class:beside>
@@ -84,14 +65,10 @@
         {@render tag(line.label)}
         {#each verses(clues.flavor!) as v, j (j)}<span class="verse"><ClueText text={v} /></span>{/each}
       </p>
-    {:else if line.k === 'base'}
-      <p class="tline base">{@render tag(line.label)}<ClueText text={baseText(clues)} /></p>
-    {:else}
-      <p class="tline plain">{@render tag(line.label)}{line.text}</p>
     {/if}
   {/each}
   {#if !lines.length}
-    <p class="tline plain">{run.state.pack.length ? NO_CLUES : NO_CLUES_EMPTY}</p>
+    <p class="tline plain">{SUPPLIES.some((sp) => run.state.pack[sp] > 0) ? NO_CLUES : NO_CLUES_EMPTY}</p>
   {/if}
   {#if !named}
     {#each tried as sub, k (k)}
@@ -159,7 +136,7 @@
     font-style: italic;
     color: var(--muted);
   }
-  /* What each line is, and what gave it. */
+  /* What each line is. */
   .lbl-t {
     display: block;
     margin-bottom: 2px;
@@ -170,10 +147,6 @@
     text-transform: uppercase;
     color: #8a7a62;
     font-style: normal;
-  }
-  .lbl-t .drew {
-    color: var(--muted);
-    letter-spacing: 0.12em;
   }
   .rule {
     flex: none;

@@ -1,9 +1,8 @@
 <script lang="ts">
   // A vendor's ware as the v4 design draws it: a small engraved card, its
-  // mark and name, what it does, and the price ("2 for 8", the coin saying
-  // gold). Tap to buy. Too dear, the price goes red; bought, it stays where
-  // it lay, dashed, saying Bought (dealt again on the next visit). The cards
-  // are dealt in one after another as the vendor opens.
+  // mark and name, what it does, and the price (the coin saying gold). Each
+  // tap buys one. Too dear, the price goes red. The cards are dealt in one
+  // after another as the vendor opens.
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { motion } from '../lib/motion.svelte';
@@ -14,11 +13,9 @@
     mark,
     title,
     line,
-    q,
     price,
     label,
     i,
-    bought = false,
     dear = false,
     disabled = false,
     onpick,
@@ -26,14 +23,11 @@
     mark: Supply;
     title: string;
     line: string;
-    /** How many come in the stack. */
-    q: number;
     price: number;
     /** What a screen reader says it does when picked. */
     label: string;
     /** Its place on the table, for the deal's order. */
     i: number;
-    bought?: boolean;
     /** More than the gold there is: the price goes red. */
     dear?: boolean;
     disabled?: boolean;
@@ -43,17 +37,16 @@
 
 <button
   class="ware"
-  class:bought
-  class:dear={dear && !bought}
-  disabled={disabled || bought}
-  aria-label={bought ? `${title}: Bought` : label}
+  class:dear
+  {disabled}
+  aria-label={label}
   onclick={() => onpick?.()}
   in:fly|global={{ y: motion.still ? 0 : 14, duration: motion.still ? 0 : 320, delay: motion.still ? 0 : 60 + i * 45, easing: cubicOut }}
 >
   <span class="hd"><span class="ic" aria-hidden="true"><Glyph of={mark} /></span><span class="nm">{title}</span></span>
   <span class="does">{line}</span>
   <span class="pr" aria-hidden="true">
-    {#if bought}<span class="sold">Bought</span>{:else}<span class="q">{q}</span> for <b><span class="coin"><Glyph of="gold" /></span>{price}</b>{/if}
+    <b><span class="coin"><Glyph of="gold" /></span>{price}</b>
   </span>
 </button>
 
@@ -139,34 +132,11 @@
     height: 12px;
     color: #d9a45a;
   }
-  .q {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    color: #e6dccb;
-  }
   .dear .pr b {
     color: #f0a68c;
   }
   .dear .coin {
     color: #c97a62;
-  }
-  .ware.bought {
-    border-style: dashed;
-    background: rgba(0, 0, 0, 0.25);
-    box-shadow: none;
-  }
-  .ware.bought .hd,
-  .ware.bought .does {
-    opacity: 0.38;
-  }
-  .sold {
-    margin-left: auto;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: #a9cf8f;
   }
 
   /* Wider screens: the bigger cards of the desktop board. */
@@ -193,9 +163,6 @@
     .coin {
       width: 14px;
       height: 14px;
-    }
-    .sold {
-      font-size: 11px;
     }
   }
 </style>

@@ -1,47 +1,35 @@
 <script lang="ts">
   // The run's header and strip, as the design draws them: the brand's flame
   // (its name beside it on a wide screen), where you are (the node, its kind,
-  // the item, Blood toll in red the whole time in a corrupted zone) and the
-  // sound key; then your entry as the scoreboard's pill (the life vessel with
-  // its walls every 25, the life a miss or the toll just took, the flask's
-  // heal still due, the charges, the gold and what a reveal just added) and
-  // the step plaque. On a short phone the two sit as one bar: the place and
-  // the key on a line, you and the step under it. The gold and the flask are
-  // marked (data-fly) for the reveal's loot cards to fly to.
+  // the item) and the sound key; then your entry as the scoreboard's pill
+  // (the life vessel with its walls every 25, the life a miss just took, the
+  // gold and what a reveal just added) and the step plaque. On a short phone
+  // the two sit as one bar: the place and the key on a line, you and the step
+  // under it.
   import { MediaQuery } from 'svelte/reactivity';
   import { isMuted, setMuted, sfx } from '../lib/sound';
-  import { BLOOD_TOLL, FLASK_STEP, type Run } from './rules';
-  import Glyph from './Glyph.svelte';
-  import { BLOOD_DOES, FLASK_LINE, flaskDue, placeName } from './words';
+  import type { Run } from './rules';
+  import { placeName } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
   const node = $derived(run.node);
   const place = $derived(s.places[s.at]);
-  /** Blood toll, the whole time in the zone (its last reveal too, though the corruption there is gone). */
-  const hidden = $derived(s.item ? s.item.hidden : run.hiddenHere());
   const share = $derived(Math.max(0, Math.min(1, s.life / s.maxLife)));
   const low = $derived(share <= 0.3);
-  /** The life the last wrong submit took, while its marked line stands; else a Blood toll's, till the first submit. */
-  const toll = $derived(s.phase === 'item' && s.item && !s.item.log.submits.length ? s.item.log.toll : 0);
-  const hit = $derived(s.item?.lineMarks ? (s.item.log.submits.at(-1)?.lost ?? 0) : toll);
-  const tollHit = $derived(!!toll && hit === toll);
-  /** The flask's heal still to come, as life (capped at the vessel's top). */
-  const due = $derived(Math.min(s.maxLife - s.life, s.flask.recovering * FLASK_STEP));
-  const ticks = $derived(Array.from({ length: Math.ceil(due / FLASK_STEP) }, (_, i) => i));
-  /** The gold a reveal's loot just added, shown beside the gold. */
+  /** The life the last wrong submit took, while its marked line stands. */
+  const hit = $derived(s.item?.lineMarks ? (s.item.log.submits.at(-1)?.lost ?? 0) : 0);
+  /** The gold a named item just paid, shown beside the gold. */
   const gain = $derived(s.phase === 'solved' ? (s.item?.log.gold ?? 0) : 0);
   const lastStep = $derived(run.graph.boss.step);
   const pct = (n: number) => `${(n / s.maxLife) * 100}%`;
 
   /** A desktop (860 px and up, as the screens): the step plaque moves from the strip to the task row. */
   const wideQ = new MediaQuery('(min-width: 860px)');
-  /** The line naming what the player is doing, on a desktop: picking a place on the map, the item just named, the town or camp they're in. Not while an item is open, at the threshold or at the end (their screens say it). */
+  /** The line naming what the player is doing, on a desktop: the item just named, the town or camp they're in. Not at the end (its screen says it). */
   const task = $derived(
     wideQ.current
-      ? s.phase === 'map'
-        ? 'Pick where to go next. The lit places are one step ahead.'
-        : s.phase === 'solved' && s.item
+      ? s.phase === 'solved' && s.item
           ? `Named: ${s.item.log.name}`
           : s.phase === 'item' && s.visit && s.item
             ? `Item ${s.visit.done + 1} of ${s.visit.items} in ${node.name}`
@@ -50,9 +38,6 @@
               : ''
       : '',
   );
-  /** A Well's refill, as the flask pill shows it: the pips it just filled, one after another (each from the first empty one). */
-  const refilled = $derived(s.beat?.kind === 'well' ? s.beat.refilled : 0);
-  const firstFilled = $derived(s.flask.charges - refilled);
 
   let muted = $state(isMuted());
   function toggleSound() {
@@ -66,12 +51,7 @@
   <p class="meta">
     <span class="zone" class:boss={place.kind === 'boss'}>{node.name}</span>
     <span class="kind"
-      >{placeName(place)}{#if place.kind === 'zone'}<span class="zw">{' '}zone</span>{/if}{#if s.visit && s.item}<span class="count" class:dup={!!task}>{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}{#if hidden}{' '}<span
-          class="toll"
-          role="img"
-          aria-label="Blood toll: each item here costs {BLOOD_TOLL} life when you start it"
-          title="Blood toll: {BLOOD_DOES}"><span class="ic" aria-hidden="true"><Glyph of="corrupt" /></span>Blood toll</span
-        >{/if}</span
+      >{placeName(place)}{#if place.kind === 'zone'}<span class="zw">{' '}zone</span>{/if}{#if s.visit && s.item}<span class="count" class:dup={!!task}>{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}</span
     >
   </p>
   <div class="tools">
@@ -102,32 +82,23 @@
         <span class="vessel" class:low role="meter" aria-label="Life: {s.life} of {s.maxLife}" aria-valuemin={0} aria-valuemax={s.maxLife} aria-valuenow={s.life}>
           <span class="glass">
             <span class="fill" style:width={pct(s.life)}></span>
-            {#each ticks as t (t)}<span class="due" style:left={pct(s.life + t * FLASK_STEP)} style:width="calc({pct(Math.min(FLASK_STEP, due - t * FLASK_STEP))} - 1.5px)"></span>{/each}
             {#if hit}<span class="lost" style:left={pct(s.life)} style:width={pct(hit)}></span>{/if}
             <span class="walls"></span>
           </span>
         </span>
-        <span class="lifenum" class:low
-          >{s.life}{#if hit}<span class="hitn" class:toll={tollHit} title={tollHit ? 'Blood toll' : undefined}>−{hit}</span>{:else if due}<span class="due">+{due}</span>{/if}</span
-        >
-        <span class="flask" data-fly="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} {s.tuning.flask === 1 ? 'charge' : 'charges'}. Each drink uses one charge." title={FLASK_LINE}>
-          <span class="ch">
-            {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}<i class:full={i < s.flask.charges} class:filling={refilled > 0 && i >= firstFilled} style:animation-delay="{Math.max(0, i - firstFilled) * 0.28}s"></i>{/each}
-          </span>
-        </span>
+        <span class="lifenum" class:low>{s.life}{#if hit}<span class="hitn">−{hit}</span>{/if}</span>
       </div>
     </div>
-    <span class="score" data-fly="gold"><span class="coin" aria-hidden="true"></span>{s.gold}{#if gain}<span class="gain" aria-hidden="true">+{gain}</span>{/if}</span>
+    <span class="score"><span class="coin" aria-hidden="true"></span>{s.gold}{#if gain}<span class="gain" aria-hidden="true">+{gain}</span>{/if}</span>
   </div>
   {#if !task}{@render step()}{/if}
 </div>
 {#if task}
-  <div class="task" class:map={s.phase === 'map'} class:reveal={s.phase === 'solved'} class:vend={s.phase === 'vendor'}>
+  <div class="task" class:reveal={s.phase === 'solved'} class:vend={s.phase === 'vendor'}>
     <p class="sub">{task}</p>
     {@render step()}
   </div>
 {/if}
-<span class="sr">{s.flask.recovering ? flaskDue(s.flask.recovering) : ''}</span>
 
 <style>
   .hdr {
@@ -202,26 +173,6 @@
   .kind {
     font-size: 10.5px;
     letter-spacing: 0.18em;
-  }
-  /* Blood toll: red, with the corruption's swirl. */
-  .toll {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    color: #ff8a72;
-    white-space: nowrap;
-  }
-  .toll::before {
-    content: '•';
-    margin-right: 2px;
-    font-weight: 400;
-    color: var(--muted);
-  }
-  .toll .ic {
-    width: 12px;
-    height: 12px;
   }
   /* On a desktop the task row says which item this is. */
   .count.dup {
@@ -382,13 +333,6 @@
       linear-gradient(180deg, rgba(255, 200, 190, 0.35) 0, rgba(255, 200, 190, 0) 30%),
       linear-gradient(180deg, #f25a52 0%, #c81e38 42%, #6e0820 78%, #2a030c 100%);
   }
-  /* Life the flask still has to give: ticks of pale light. */
-  .vessel .due {
-    position: absolute;
-    top: 1.5px;
-    bottom: 1.5px;
-    background: rgba(255, 190, 170, 0.5);
-  }
   /* Life just lost: its light flaring as it pours out. */
   .lost {
     position: absolute;
@@ -418,53 +362,10 @@
   .lifenum.low {
     color: #ff9c86;
   }
-  .lifenum .due {
-    margin-left: 3px;
-    color: #f2b8a6;
-    font-size: 10.5px;
-  }
   .hitn {
     margin-left: 4px;
     color: var(--bad);
     text-shadow: 0 0 8px rgba(224, 85, 63, 0.7);
-  }
-  /* The toll's hit says what took it. */
-  .hitn.toll::after {
-    content: ' toll';
-    font-size: 0.8em;
-    letter-spacing: 0.06em;
-  }
-  .flask .ch {
-    display: flex;
-    gap: 2px;
-  }
-  .flask .ch i {
-    width: 4px;
-    height: 9px;
-    border-radius: 1px 1px 2px 2px;
-    border: 1px solid #6b5230;
-    background: #120a08;
-  }
-  .flask .ch i.full {
-    background: linear-gradient(180deg, #ffa585, #d8432e 55%, #7a160e);
-    border-color: #b98b52;
-    box-shadow: 0 0 4px rgba(224, 85, 63, 0.55);
-  }
-  /* A Well filled these pips: they light one after another. */
-  .flask .ch i.filling {
-    animation: pip-fill 0.9s ease-out both;
-  }
-  @keyframes pip-fill {
-    0% {
-      background: #120a08;
-      border-color: #6b5230;
-      box-shadow: none;
-    }
-    45% {
-      background: linear-gradient(180deg, #ffd2bd, #f06a50 55%, #a82a1c);
-      border-color: #e0b97c;
-      box-shadow: 0 0 10px rgba(255, 170, 140, 0.95);
-    }
   }
 
   /* Where the run stands: a waypoint plaque. */
@@ -558,7 +459,7 @@
       margin-right: 8px;
       color: var(--gold-lo);
     }
-    /* One line holds the place, its kind and a toll; the item's count is left out, as the design's short bar does, and "zone" too, so the toll keeps its room. */
+    /* One line holds the place and its kind; the item's count is left out, as the design's short bar does, and "zone" too. */
     .count,
     .zw {
       display: none;
@@ -599,9 +500,6 @@
     width: min(100%, 1240px);
     margin: 0 auto;
   }
-  .task.map {
-    width: min(100%, 1140px);
-  }
   .task.reveal {
     width: min(100%, 1320px);
   }
@@ -617,11 +515,6 @@
     right: 0;
     top: 50%;
     translate: 0 -50%;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .flask .ch i.filling {
-      animation: none;
-    }
   }
 
   @media (min-width: 700px) {
@@ -645,10 +538,6 @@
     .kind {
       font-size: 12.5px;
       letter-spacing: 0.14em;
-    }
-    .toll .ic {
-      width: 13px;
-      height: 13px;
     }
     .icon-btn {
       width: 34px;

@@ -2,17 +2,15 @@
   // The answer line and the tiles, as the v4 design draws them. The line is
   // fused: the tiles of a word stand in one plaque with faint seams, and a
   // word break (the break key at the line's end) is a notch of its own, tapped
-  // to remove it. Tap a placed tile to take it back (a first tile placed for
-  // you stays); Clear empties the line. Once shown, the word lengths sit on a
-  // tab above the line, a dot per tile, grouped by word, lit as the line fills.
+  // to remove it. Tap a placed tile to take it back; Clear empties the line.
   // Under the line, after a miss, each tile on it keeps its own mark (gold,
   // silver, struck) until the next change starts a fresh line, and the key to
   // the marks shows on a run's first items with marks. Under that, the tiles,
   // each distinct tile once (a tile can be placed again), each keeping its
   // best mark; one not in the name is struck where it lies. No counts.
-  import { GAP, lengthsOf, markOf, type ItemLog, type LineMark, type Run } from './rules';
+  import { GAP, markOf, type ItemLog, type LineMark, type Run } from './rules';
   import Glyph from './Glyph.svelte';
-  import { MARK_KEY, MARK_KEY_ITEMS, MARK_SAYS, lengthsSaid } from './words';
+  import { MARK_KEY, MARK_KEY_ITEMS, MARK_SAYS } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
@@ -22,7 +20,7 @@
   const marks = $derived(it.lineMarks);
   const has = $derived(it.build.length > 0);
 
-  type Seg = { tile: string; i: number; mark: LineMark | null; locked: boolean };
+  type Seg = { tile: string; i: number; mark: LineMark | null };
   /** The line as the player sees it: words (runs of tiles) and the breaks between them, each break by its place on the line. */
   const parts = $derived.by(() => {
     const out: ({ gap: false; segs: Seg[] } | { gap: true; i: number })[] = [];
@@ -32,33 +30,20 @@
         return;
       }
       const last = out.at(-1);
-      const seg = { tile, i, mark: marks?.[i] ?? null, locked: i < it.locked };
+      const seg = { tile, i, mark: marks?.[i] ?? null };
       if (last && !last.gap) last.segs.push(seg);
       else out.push({ gap: false, segs: [seg] });
     });
     return out;
   });
-  const lengths = $derived(lengthsOf(it));
-  /**
-   * The word lengths' dots, lit as the line fills: in order while the line
-   * has no breaks, else word by word (the line's 2nd word lights the name's 2nd).
-   */
-  const dots = $derived.by(() => {
-    const runs = parts.flatMap((p) => (p.gap ? [] : [p.segs.length]));
-    const broken = parts.some((p) => p.gap);
-    let k = 0;
-    const placed = runs.reduce((a, b) => a + b, 0);
-    return lengths.map((n, j) => Array.from({ length: n }, (_, d) => (broken ? (runs[j] ?? 0) > d : k++ < placed)));
-  });
   /** A break goes after a tile, never two together, never on a marked line. */
   const canBreak = $derived(open && !marks && has && it.build.at(-1) !== GAP);
   /** The marks' key: while this item shows marks, on the run's first few items that had them. */
-  const marked = (l: ItemLog) => l.misses > 0 || l.supplies.some((u) => u.type === 'decoy' || u.type === 'first');
+  const marked = (l: ItemLog) => l.misses > 0;
   const legend = $derived(!named && Object.keys(it.marks).length > 0 && s.log.items.filter((l) => l !== it.log && marked(l)).length < MARK_KEY_ITEMS);
   const dense = $derived(it.tiles.length > 26);
 
   function segLabel(g: Seg) {
-    if (g.locked) return `${g.tile}, placed for you`;
     if (g.mark && g.mark !== 'none') return `${g.tile}: ${MARK_SAYS[g.mark]}. Tap to take it back`;
     return `Take back ${g.tile}`;
   }
@@ -70,12 +55,6 @@
 
 <div class="ins">
   <div class="line" class:has class:marked={!!marks} class:good={named} role="group" aria-label="The answer line">
-    {#if it.shown.lengths}
-      <span class="lengths" role="img" aria-label={lengthsSaid(lengths)}>
-        <span class="cap2">Tiles per word</span>
-        {#each dots as w, j (j)}<span class="w">{#each w as on, d (d)}<i class:on></i>{/each}</span>{/each}
-      </span>
-    {/if}
     <div class="placed">
       {#if has}
         {#each parts as p, k (k)}
@@ -84,7 +63,7 @@
           {:else}
             <span class="fw">
               {#each p.segs as g (g.i)}
-                <button class="seg {g.mark ?? ''}" class:locked={g.locked} disabled={g.locked || !open} onclick={() => run.unplace(g.i)} aria-label={segLabel(g)}><span>{g.tile}</span></button>
+                <button class="seg {g.mark ?? ''}" disabled={!open} onclick={() => run.unplace(g.i)} aria-label={segLabel(g)}><span>{g.tile}</span></button>
               {/each}
             </span>
           {/if}
@@ -96,7 +75,7 @@
     </div>
     <button class="key brk" disabled={!canBreak} onclick={() => run.gap()} aria-label="Add a word break (optional)" title="Add a word break (optional)">{@render notch()}</button>
     {#if has && !named}
-      <button class="key clear" aria-label="Clear the line" title="Clear" disabled={!open || it.build.length <= it.locked} onclick={() => run.clear()}><Glyph of="clear" /></button>
+      <button class="key clear" aria-label="Clear the line" title="Clear" disabled={!open || !it.build.length} onclick={() => run.clear()}><Glyph of="clear" /></button>
     {/if}
   </div>
 
@@ -120,7 +99,7 @@
     flex-direction: column;
     gap: 10px;
   }
-  /* The answer line: the answers' own dark row, a fine line. Room above it for the word lengths' tab, kept whether it shows or not. */
+  /* The answer line: the answers' own dark row, a fine line. */
   .line {
     position: relative;
     display: flex;
@@ -261,31 +240,12 @@
   .fw:has(.seg.struck) {
     border-color: #8a7348;
   }
-  /* The first tile, placed for you (the First tile supply): a lock, not taken back. */
-  .seg.locked {
-    padding-left: 20px;
-    color: #f1d99b;
-  }
-  .seg.locked:first-child::before {
-    content: '';
-    position: absolute;
-    left: 6px;
-    top: 50%;
-    translate: 0 -50%;
-    width: 10px;
-    height: 10px;
-    background: var(--gold);
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'%3E%3Crect x='5' y='10.5' width='14' height='10' rx='1.5' fill='black'/%3E%3Cpath d='M8 10.5V7.5a4 4 0 0 1 8 0v3'/%3E%3C/svg%3E") center / contain no-repeat;
-  }
   .line.good .fw {
     border-color: #5d8a50;
     background: linear-gradient(90deg, rgba(44, 64, 36, 0.9), rgba(22, 28, 17, 0.92));
   }
   .line.good .seg {
     color: #d6e8c0;
-  }
-  .line.good .seg.locked::before {
-    background: #a9cf8f;
   }
 
   /* A word break: its own tap target, a cut notch between two plaques. */
@@ -346,55 +306,6 @@
   .key:disabled {
     opacity: 0.35;
     cursor: default;
-  }
-
-  /* Word lengths: a tab above the line, between two hairlines, a ring per tile, grouped by word, filled as the line fills. */
-  .lengths {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 4px);
-    translate: -50% 0;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    height: 12px;
-    white-space: nowrap;
-  }
-  .lengths::before,
-  .lengths::after {
-    content: '';
-    flex: none;
-    width: 22px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--gold-lo));
-  }
-  .lengths::after {
-    background: linear-gradient(270deg, transparent, var(--gold-lo));
-  }
-  .cap2 {
-    margin-right: 1px;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--gold) 70%, var(--muted));
-  }
-  .w {
-    display: flex;
-    gap: 2px;
-    padding: 0 1px;
-  }
-  .w i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    border: 1.2px solid var(--gold-lo);
-  }
-  .w i.on {
-    background: var(--gold-hi);
-    border-color: var(--gold-hi);
-    box-shadow: 0 0 4px rgba(241, 217, 155, 0.6);
   }
 
   /* The marks' key: a small swatch of each mark and what it means. No control. */
@@ -585,15 +496,9 @@
     .seg:last-child {
       padding-right: 11px;
     }
-    .seg.locked {
-      padding-left: 22px;
-    }
     .gap {
       width: 20px;
       height: 42px;
-    }
-    .cap2 {
-      font-size: 11px;
     }
   }
 </style>

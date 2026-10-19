@@ -3,32 +3,22 @@
 // what was kept falls back to the handoff's number.
 
 import { readStored, writeStored } from '../lib/storage.ts';
-import { DEFAULT_TUNING, LOOT_KINDS, SECTIONS, SUPPLIES, ZONE_TYPES, type Range, type Tuning } from './rules.ts';
+import { DEFAULT_TUNING, SECTIONS, SUPPLIES, type Range, type Tuning } from './rules.ts';
 
-// 5: v4d's stakes (misses, the town's heal, one flask charge) reach a tuning kept before them.
-const KEY = 'wraeclastTuning5';
+// 6: v5's slimmed rules (no flask, loot, corruption or free clues; prices one at a time).
+const KEY = 'wraeclastTuning6';
 
 /** Each number's range, for the panel's fields and for reading back what was kept. */
 export const LIMITS = {
   life: [1, 999],
   gold: [0, 999],
-  flask: [0, 9],
   townHeal: [0, 999],
-  itemsPerZone: [1, 3],
-  zoneShare: [0, 100],
   tiles: [8, 36],
   missCost: [0, 999],
   price: [0, 999],
-  stack: [1, 5],
-  burnIn: [1, 99],
+  torch: [1, 99],
   seeds: [3, 15],
-  cards: [0, 9],
-  weight: [0, 99],
-  lootGold: [0, 999],
-  supplies: [1, 5],
-  fronts: [0, 4],
-  creep: [1, 3],
-  multiplier: [1, 5],
+  pay: [0, 999],
   names: [0, 6],
 } as const satisfies Record<string, readonly [number, number]>;
 
@@ -54,47 +44,23 @@ const each = <K extends string>(keys: readonly K[], v: unknown, limits: readonly
 export function cleanTuning(raw: unknown): Tuning {
   const r = rec(raw);
   const d = DEFAULT_TUNING;
-  const loot = rec(r.loot);
-  const free = rec(r.freeClue);
-  const burn = rec(r.burnIn);
-  const cor = rec(r.corruption);
-  const gold = rec(loot.gold);
+  const pay = rec(r.pay);
   return {
     life: whole(r.life, LIMITS.life, d.life),
     gold: whole(r.gold, LIMITS.gold, d.gold),
-    flask: whole(r.flask, LIMITS.flask, d.flask),
     townHeal: whole(r.townHeal, LIMITS.townHeal, d.townHeal),
-    itemsPerZone: whole(r.itemsPerZone, LIMITS.itemsPerZone, d.itemsPerZone),
-    zoneShare: whole(r.zoneShare, LIMITS.zoneShare, d.zoneShare),
     tiles: each(SECTIONS, r.tiles, LIMITS.tiles, d.tiles),
     names: Object.fromEntries(SECTIONS.map((s) => [s, range(rec(r.names)[s], LIMITS.names, d.names[s])])) as Tuning['names'],
     missCost: Object.fromEntries(SECTIONS.map((s) => [s, range(rec(r.missCost)[s], LIMITS.missCost, d.missCost[s])])) as Tuning['missCost'],
     price: each(SUPPLIES, r.price, LIMITS.price, d.price),
-    stack: each(SUPPLIES, r.stack, LIMITS.stack, d.stack),
-    burnIn: {
-      flare: whole(burn.flare, LIMITS.burnIn, d.burnIn.flare),
-      blight: whole(burn.blight, LIMITS.burnIn, d.burnIn.blight),
-      boss: whole(burn.boss, LIMITS.burnIn, d.burnIn.boss),
-      deck: whole(burn.deck, LIMITS.burnIn, d.burnIn.deck),
-    },
+    torch: whole(r.torch, LIMITS.torch, d.torch),
     seeds: whole(r.seeds, LIMITS.seeds, d.seeds),
-    loot: {
-      cards: each(ZONE_TYPES, loot.cards, LIMITS.cards, d.loot.cards),
-      weights: each(LOOT_KINDS, loot.weights, LIMITS.weight, d.loot.weights),
-      gold: {
-        early: range(gold.early, LIMITS.lootGold, d.loot.gold.early),
-        mid: range(gold.mid, LIMITS.lootGold, d.loot.gold.mid),
-        late: range(gold.late, LIMITS.lootGold, d.loot.gold.late),
-      },
-      supplies: whole(loot.supplies, LIMITS.supplies, d.loot.supplies),
-    },
-    corruption: {
-      seeds: whole(cor.seeds, LIMITS.fronts, d.corruption.seeds),
-      creep: whole(cor.creep, LIMITS.creep, d.corruption.creep),
-      multiplier: whole(cor.multiplier, LIMITS.multiplier, d.corruption.multiplier),
+    pay: {
+      early: range(pay.early, LIMITS.pay, d.pay.early),
+      mid: range(pay.mid, LIMITS.pay, d.pay.mid),
+      late: range(pay.late, LIMITS.pay, d.pay.late),
     },
     marks: r.marks === 'gold' || r.marks === 'both' ? r.marks : d.marks,
-    freeClue: Object.fromEntries(ZONE_TYPES.map((z) => [z, typeof free[z] === 'boolean' ? free[z] : d.freeClue[z]])) as Tuning['freeClue'],
   };
 }
 

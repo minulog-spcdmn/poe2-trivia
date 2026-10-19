@@ -4,13 +4,13 @@
 import { readStored, writeStored } from '../lib/storage.ts';
 import type { RunLog } from './rules.ts';
 
-const KEY = 'wraeclastRuns4';
+const KEY = 'wraeclastRuns5';
 export const RUNS_KEPT = 20;
 
 export function readRuns(): RunLog[] {
   try {
     const runs = JSON.parse(readStored(KEY) ?? '[]');
-    return Array.isArray(runs) ? runs.filter((r) => r && typeof r === 'object' && r.v === 4) : [];
+    return Array.isArray(runs) ? runs.filter((r) => r && typeof r === 'object' && r.v === 5) : [];
   } catch {
     return [];
   }

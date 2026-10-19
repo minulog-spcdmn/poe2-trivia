@@ -1,18 +1,16 @@
 <script lang="ts">
   // The run's end: won or lost, where, the run in numbers, your road (a row
   // per step from the camp to the boss: the step's places as the map draws
-  // them, the items there, the life after it), the corruption (each one:
-  // stopped, still out, or at the boss with its rule), gold, supplies, item
-  // by item (phones; the wide road names them), the Copy run log button
+  // them, the items there, the life after it), gold, supplies, item by item
+  // (phones; the wide road names them), the Copy run log button
   // (every run kept, as JSON, for the owner) and New run. Phones dock the two
   // buttons at the foot; wide screens set the road beside the rest.
-  import { BOSS_MOD_NAMES, LOOT_KINDS, SUPPLIES, SUPPLY_NAMES, ZONE_NAMES, type Run, type RunLog } from './rules';
+  import { SUPPLIES, SUPPLY_NAMES, type Run, type RunLog } from './rules';
   import { backdropShadow } from '../lib/backdropShadow';
   import { GRAPH, type MapNode } from './map';
   import { logText } from './runLog';
   import { play } from './play.svelte';
-  import { BOSS_MOD_SHORT, placeKind } from './words';
-  import Glyph from './Glyph.svelte';
+  import { placeKind } from './words';
   import Numbered from './Numbered.svelte';
 
   /** The runs kept and New run are the page's (play.svelte.ts) unless given (the QA desk's bench gives its own). */
@@ -24,7 +22,7 @@
   const named = $derived(log.items.filter((it) => it.submits.at(-1)?.right).length);
   const minutes = $derived(Math.max(1, Math.round(log.ms / 60000)));
   const node = (id: string) => GRAPH.byId.get(id)?.name ?? id;
-  const where = (it: RunLog['items'][number]) => (it.boss ? 'Boss' : `Step ${it.step} • ${node(it.node)} • ${ZONE_NAMES[it.zoneType as keyof typeof ZONE_NAMES]}`);
+  const where = (it: RunLog['items'][number]) => (it.boss ? 'Boss' : `Step ${it.step} • ${node(it.node)}`);
 
   /** Wide screens: the road beside the rest, its rows naming the items. */
   const WIDE = '(min-width: 1100px)';
@@ -43,25 +41,18 @@
     id: string;
     n: MapNode;
     items: Item[];
-    blood: boolean;
     life: number | null;
     delta: number;
     gold: number;
-    /** The boss rule the corruption here carried (a Blood toll zone), or null. */
-    rule: string | null;
-    /** A corruption was stopped here. */
-    cleared: boolean;
     /** A town's heal on arrival. */
     healed: number;
-    /** Gold spent and supplies bought here (a vendor: the camp, a town, an Expedition). */
+    /** Gold spent and supplies bought here (a vendor: the camp, a town). */
     spent: number;
     bought: number;
     /** The run ended here. */
     fell: boolean;
     /** Not reached (the boss, on a lost run). */
     ahead: boolean;
-    /** The places offered beside it that were corrupted then. */
-    tainted: Set<string>;
   }
   const rows = $derived.by(() => {
     const out: Row[] = [];
@@ -72,29 +63,23 @@
       const later = log.items.find((it) => log.route.indexOf(it.node) > k);
       const life = items.length ? items.at(-1)!.lifeAfter : (later?.lifeBefore ?? prev ?? log.lifeEnd);
       const met = log.met.find((m) => m.node === id);
-      const blood = met?.corruption === 'blood';
-      const offer = log.travel[k - 1];
       out.push({
         id,
         n: GRAPH.byId.get(id)!,
         items,
-        blood,
         life,
         delta: prev === null ? 0 : life - prev,
         gold: items.reduce((t, it) => t + it.gold, 0),
-        rule: blood && met?.rule ? BOSS_MOD_NAMES[met.rule] : null,
-        cleared: s.fronts.some((f) => f.stoppedAt === id),
         healed: met?.healed ?? 0,
         spent: met?.spent ?? 0,
         bought: met?.bought ?? 0,
         fell: id === fellAt,
         ahead: false,
-        tainted: new Set(offer ? offer.options.filter((o) => o.corrupted && o.node !== id).map((o) => o.node) : []),
       });
       prev = life;
     });
     if (!log.route.includes(GRAPH.boss.id))
-      out.push({ id: GRAPH.boss.id, n: GRAPH.boss, items: [], blood: false, life: null, delta: 0, gold: 0, rule: null, cleared: false, healed: 0, spent: 0, bought: 0, fell: false, ahead: true, tainted: new Set() });
+      out.push({ id: GRAPH.boss.id, n: GRAPH.boss, items: [], life: null, delta: 0, gold: 0, healed: 0, spent: 0, bought: 0, fell: false, ahead: true });
     return out.filter((r) => r.n);
   });
   const reachedStep = $derived(GRAPH.byId.get(log.route.at(-1) ?? '')?.step ?? 0);
@@ -114,31 +99,14 @@
   /** A row's place, said under its name on wide screens. */
   function kindLine(r: Row) {
     const p = s.places[r.id];
-    if (!p) return '';
-    return p.kind === 'zone' && r.blood ? ZONE_NAMES[p.type] : placeKind(p);
+    return p ? placeKind(p) : '';
   }
   const supplyCount = (n: number) => `Bought ${n} ${n === 1 ? 'supply' : 'supplies'}`;
   const shown = $derived(rows.filter((r) => !r.ahead));
 
-  // ---- Corruption, gold, supplies ----
-  const fronts = $derived(
-    s.fronts.map((f) => {
-      const rule = `${BOSS_MOD_NAMES[f.rule]} (${BOSS_MOD_SHORT[f.rule]})`;
-      if (!f.alive) return { rule, alive: false, line: `Stopped at ${node(f.stoppedAt ?? f.at)}` };
-      if (log.fronts.aliveAtBoss !== null) return { rule, alive: true, line: `Reached the boss from ${node(f.at)}` };
-      return { rule, alive: true, line: `Still at ${node(f.at)}` };
-    }),
-  );
-  const bloodZones = $derived(log.met.filter((m) => m.corruption === 'blood').length);
-  const madeHarder = $derived(log.bossMods.map((m) => `${BOSS_MOD_NAMES[m]} (${BOSS_MOD_SHORT[m]})`).join(' • ') || (log.fronts.aliveAtBoss === null ? 'Not reached' : 'Nothing'));
+  // ---- Gold, supplies ----
   const spentShare = $derived(log.goldSpent / Math.max(1, log.goldSpent + s.gold));
-  const LOOT_WORDS = { gold: 'gold', supply: 'supplies', flask: 'flask' } as const;
-  const loot = $derived(
-    LOOT_KINDS.filter((k) => log.loot.dealt[k])
-      .map((k) => `${LOOT_WORDS[k]} ${log.loot.taken[k]} of ${log.loot.dealt[k]}`)
-      .join(' • ') || 'None',
-  );
-  const supplies = $derived(SUPPLIES.filter((k) => log.bought[k] || log.found[k] || log.used[k]));
+  const supplies = $derived(SUPPLIES.filter((k) => log.bought[k] || log.used[k]));
 
   // ---- The run log ----
   const text = $derived(logText(kept));
@@ -194,13 +162,8 @@
       {:else if kind === 'town' || kind === 'camp'}
         {@const h = me ? 4.2 : 3}
         <rect x={p.x - h} y={y - h} width={h * 2} height={h * 2} {fill} {stroke} stroke-width={me ? 0.8 : 1} />
-      {:else if kind === 'well'}
-        <path d="M{p.x} {y - 3.6}L{p.x + 3.4} {y + 2.6}H{p.x - 3.4}Z" {fill} {stroke} stroke-width="1" />
       {:else}
         <circle cx={p.x} cy={y} r={me ? 4.3 : 3} {fill} {stroke} stroke-width={me ? 0.8 : 1} />
-      {/if}
-      {#if (me && r.blood) || r.tainted.has(p.m.id)}
-        <circle cx={p.x} cy={y} r={me ? 7.2 : 5.6} fill="none" stroke="#e0553f" stroke-width="1.1" />
       {/if}
     {/each}
   </svg>
@@ -218,11 +181,7 @@
           <span class="st n">{r.n.step}</span>
           {@render minimap(r, i)}
           {#if wide}
-            <span class="pl"
-              ><span>{r.n.name}</span><span class="k"
-                >{kindLine(r)}{#if r.blood}<span class="bt">{' '}• Blood toll{#if r.rule}{' '}• {r.rule}{/if}</span>{/if}</span
-              ></span
-            >
+            <span class="pl"><span>{r.n.name}</span><span class="k">{kindLine(r)}</span></span>
             <span class="its">
               {#each r.items as it, j (j)}
                 {@const right = it.submits.at(-1)?.right}
@@ -230,7 +189,6 @@
                   ><span class="mk" class:x={!right} aria-hidden="true">{right ? '✓' : '✕'}</span>{it.name}{#if !right}{' '}<small>lost here</small>{:else if it.misses}{' '}<small><Numbered text={it.misses === 1 ? '1 miss' : `${it.misses} misses`} /></small>{/if}</span
                 >
               {/each}
-              {#if r.cleared}<span class="plain gone">The corruption here is gone</span>{/if}
               {#if r.healed > 0 || r.bought > 0}
                 <span class="plain"
                   >{#if r.healed > 0}You rested: <span class="n heal">+{r.healed}</span> life{/if}{#if r.healed > 0 && r.bought > 0}{' • '}{/if}{#if r.bought > 0}<Numbered text={supplyCount(r.bought)} />{/if}</span
@@ -240,7 +198,7 @@
             </span>
             <span class="gd n">{r.gold ? `+${r.gold}` : ''}{#if r.spent}<span class="sp">−{r.spent}</span>{/if}</span>
           {:else}
-            <span class="pl">{r.n.name}{#if r.blood}<span class="bt">{' '}• Blood toll</span>{/if}</span>
+            <span class="pl">{r.n.name}</span>
             <span class="mks">
               {#each r.items as it, j (j)}
                 {@const right = it.submits.at(-1)?.right}
@@ -262,35 +220,9 @@
     <div class="key" aria-hidden="true">
       <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#c9a45c" /></svg>Your road</span>
       <span><svg width="10" height="10"><rect x="1" y="1" width="8" height="8" fill="#c9a45c" /></svg>Town</span>
-      <span><svg width="10" height="10"><path d="M5 1.2L8.6 8.2H1.4Z" fill="none" stroke="#968a77" /></svg>Well</span>
-      <span><svg width="14" height="14"><circle cx="7" cy="7" r="5.6" fill="none" stroke="#e0553f" stroke-width="1.1" /></svg>Blood toll</span>
       <span><span class="mk small">✓</span>Named</span>
       <span><span class="mn"></span>A miss</span>
     </div>
-  </section>
-{/snippet}
-
-{#snippet corruption()}
-  <section class="panel blk" aria-labelledby="cor-h" use:backdropShadow={{ fill: 'linear' }}>
-    <div class="hd"><h2 id="cor-h">Corruption</h2></div>
-    <p class="cline">
-      Started with <span class="n">{log.fronts.seeded}</span> • stopped <span class="n">{log.fronts.stopped}</span> •
-      {#if log.fronts.aliveAtBoss !== null}<span class="n">{log.fronts.aliveAtBoss}</span> still out at the boss{:else}boss not reached{/if}
-    </p>
-    {#if fronts.length}
-      <ul class="crows">
-        {#each fronts as f, i (i)}
-          <li class:off={!f.alive}>
-            <span class="seal" class:stopped={!f.alive} role="img" aria-label={f.alive ? 'Still out' : 'Stopped'}><Glyph of="corrupt" /></span>
-            <p><b>{f.rule}</b> • {f.line}</p>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-    <dl class="pairs">
-      <div><dt>Boss made harder by</dt><dd>{madeHarder}</dd></div>
-      <div><dt>Blood toll zones entered</dt><dd class="n">{bloodZones}</dd></div>
-    </dl>
   </section>
 {/snippet}
 
@@ -299,9 +231,6 @@
     <div class="hd"><h2 id="gold-h">Gold</h2><span class="aside"><span class="n">{s.gold}</span> left at the end</span></div>
     <div class="gbar" role="img" aria-label="{log.goldSpent} of {log.goldEarned} gold spent"><i style:width="{spentShare * 100}%"></i></div>
     <p class="cline"><span class="n">{log.goldEarned}</span> earned • <span class="n">{log.goldSpent}</span> spent</p>
-    <dl class="pairs">
-      <div><dt>Rewards taken</dt><dd><Numbered text={loot} /></dd></div>
-    </dl>
   </section>
 {/snippet}
 
@@ -310,12 +239,12 @@
     <div class="hd"><h2 id="sup-h">Supplies</h2></div>
     {#if supplies.length}
       <table class="sup">
-        <thead><tr><th>Supply</th><th>Bought</th><th>Found</th><th>Used</th></tr></thead>
+        <thead><tr><th>Supply</th><th>Bought</th><th>Used</th></tr></thead>
         <tbody>
           {#each supplies as k (k)}
             <tr>
               <td>{SUPPLY_NAMES[k]}</td>
-              {#each [log.bought[k], log.found[k], log.used[k]] as v, j (j)}<td class:z={!v}>{v}</td>{/each}
+              {#each [log.bought[k], log.used[k]] as v, j (j)}<td class:z={!v}>{v}</td>{/each}
             </tr>
           {/each}
         </tbody>
@@ -360,7 +289,6 @@
     {:else}
       <div><dt>Reached</dt><dd>Step {reachedStep}<small>/{GRAPH.boss.step}</small></dd></div>
     {/if}
-    <div><dt>Flask drinks</dt><dd>{log.drinks}</dd></div>
     <div><dt>Gold left</dt><dd>{s.gold}</dd></div>
   </dl>
 
@@ -368,7 +296,6 @@
     <div class="ecols">
       <div class="lcol">{@render road()}</div>
       <div class="rcol">
-        {@render corruption()}
         {@render gold()}
         {@render supplyTable()}
         <div class="fill"></div>
@@ -378,7 +305,6 @@
     </div>
   {:else}
     {@render road()}
-    {@render corruption()}
     {@render gold()}
     <section class="panel blk" aria-labelledby="items-h" use:backdropShadow={{ fill: 'linear' }}>
       <div class="hd"><h2 id="items-h">Item by item</h2></div>
@@ -389,7 +315,7 @@
             <span class="no n">{i + 1}</span>
             <span class="what">
               <span class="nm">{it.name}</span>
-              <span class="wh">{where(it)} • {it.category}{#if it.corruption}{' '}• <span class="bt">Blood toll</span>{/if}</span>
+              <span class="wh">{where(it)} • {it.category}</span>
             </span>
             <span class="res">
               {#if right}{#if it.misses}<span class="n">{it.misses}</span> {it.misses === 1 ? 'miss' : 'misses'}{' • '}{/if}{#if it.gold}<span class="n">+{it.gold}</span> gold{:else}Named{/if}{:else}<span class="red">Lost here</span>{/if}{#if it.supplies.length}{' • '}<span class="n">{it.supplies.length}</span> {it.supplies.length === 1 ? 'supply' : 'supplies'}{/if}
@@ -592,10 +518,6 @@
     font-size: 12.5px;
     color: var(--muted);
   }
-  .bt {
-    font-size: 12.5px;
-    color: #f0a68c;
-  }
   .rrow.ahead .pl,
   .rrow.ahead .st {
     color: #6f6555;
@@ -641,9 +563,6 @@
   .its .plain {
     font-size: 13.5px;
     color: var(--muted);
-  }
-  .its .plain.gone {
-    color: #cdb79a;
   }
   .gd {
     font-size: 12.5px;
@@ -760,7 +679,7 @@
     background: #e0553f;
   }
 
-  /* Corruption and gold. */
+  /* Gold. */
   .cline {
     font-size: 15px;
     line-height: 1.3;
@@ -769,87 +688,6 @@
   .cline.m {
     font-size: 14px;
     color: var(--muted);
-  }
-  .crows {
-    margin: 6px 0 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-  }
-  .crows li {
-    display: grid;
-    grid-template-columns: 26px minmax(0, 1fr);
-    column-gap: 10px;
-    align-items: center;
-    padding: 5px 0;
-    border-top: 1px solid rgba(125, 99, 51, 0.16);
-  }
-  .crows li:first-child {
-    border-top: 0;
-  }
-  .crows p {
-    font-size: 14.5px;
-    line-height: 1.25;
-    color: #e6dccb;
-  }
-  .crows b {
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 0.04em;
-    color: #f0a68c;
-  }
-  .crows li.off b {
-    color: #a99a80;
-  }
-  /* The corruption's seal: a Vaal Orb's swirl in a red ring; struck through and dimmed once stopped. */
-  .seal {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    box-sizing: border-box;
-    padding: 4px;
-    border-radius: 50%;
-    border: 1px solid rgba(224, 85, 63, 0.75);
-    color: #f0a68c;
-  }
-  .seal.stopped {
-    border-color: rgba(125, 99, 51, 0.5);
-    color: #7a6e5c;
-  }
-  .seal.stopped::after {
-    content: '';
-    position: absolute;
-    left: 3px;
-    right: 3px;
-    top: 50%;
-    height: 1px;
-    background: #a99a80;
-    rotate: -35deg;
-  }
-  .pairs {
-    margin: 8px 0 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .pairs > div {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 10px;
-    font-size: 14px;
-  }
-  .pairs dt {
-    color: var(--muted);
-  }
-  .pairs dd {
-    margin: 0;
-    text-align: right;
-    color: #e6dccb;
   }
   .gbar {
     display: flex;

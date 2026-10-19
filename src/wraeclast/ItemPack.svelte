@@ -1,42 +1,40 @@
 <script lang="ts">
-  // The pack on an item, as the design's row: all its spaces, each stack (up
-  // to five of one supply; a supply may fill several) with its mark and short
-  // name, the count on a badge, and the spaces still free dashed. On a phone
-  // the row shows marks and counts only. A slot that would do nothing here is
-  // set back, dimmed and struck. A tap uses one; a press held (a phone has no
-  // hover) shows what it does, or why it does nothing here, above the row
-  // instead. The flask is the dock's.
-  // `tray`: the pack in the dock's tray (a short phone), four spaces a row,
-  // taller, with their names.
-  import { PACK_STACKS, SUPPLY_NAMES, type Run, type Supply } from './rules';
+  // The pack on an item, as the design's row: each supply held, with its
+  // mark and short name, the count on a badge. On a phone the row shows marks
+  // and counts only. A slot that would do nothing here is set back, dimmed
+  // and struck. A tap uses one; a press held (a phone has no hover) shows
+  // what it does, or why it does nothing here, above the row instead.
+  // `tray`: the pack in the dock's tray (a short phone), four a row, taller,
+  // with their names.
+  import { SUPPLIES, SUPPLY_NAMES, type Run, type Supply } from './rules';
   import Glyph from './Glyph.svelte';
   import { SHORT, does, why } from './words';
 
   let { run, onuse, tray = false }: { run: Run; onuse?: (supply: Supply) => void; tray?: boolean } = $props();
-  const stacks = $derived(run.state.pack);
-  const free = $derived(Math.max(0, PACK_STACKS - stacks.length));
+  /** The supplies held. */
+  const held = $derived(SUPPLIES.filter((sp) => run.state.pack[sp] > 0));
 
   /** How long a press is held before it shows the slot's line instead of using it. */
   const HOLD_MS = 450;
   /** The line a held slot shows ("Torch: Reveals ..."), and the slot it's for. */
-  let said = $state<{ slot: number; text: string } | null>(null);
+  let said = $state<{ slot: Supply; text: string } | null>(null);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let at: { x: number; y: number } | null = null;
   /** A hold just showed a line: the click its release makes uses nothing. */
-  let held = false;
+  let holding = false;
 
   const lineOf = (sp: Supply) => `${SUPPLY_NAMES[sp]}: ${why(run, sp) ?? does(run, sp)}`;
 
-  function press(e: PointerEvent, sp: Supply, slot: number) {
+  function press(e: PointerEvent, sp: Supply) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    held = false;
+    holding = false;
     at = { x: e.clientX, y: e.clientY };
     clearTimeout(timer);
     timer = setTimeout(() => {
-      held = true;
+      holding = true;
       clearTimeout(hideTimer);
-      said = { slot, text: lineOf(sp) };
+      said = { slot: sp, text: lineOf(sp) };
     }, HOLD_MS);
   }
   function move(e: PointerEvent) {
@@ -50,14 +48,14 @@
       hideTimer = setTimeout(() => (said = null), 1800);
     }
   }
-  function use(sp: Supply, slot: number) {
-    if (held) {
-      held = false;
+  function use(sp: Supply) {
+    if (holding) {
+      holding = false;
       return;
     }
     if (why(run, sp)) return;
     said = null;
-    if (run.use(sp, slot)) onuse?.(sp);
+    if (run.use(sp)) onuse?.(sp);
   }
   $effect(() => () => {
     clearTimeout(timer);
@@ -65,32 +63,29 @@
   });
 </script>
 
-{#if stacks.length}
-  <div class="pack" class:tray role="group" aria-label="Your pack: {stacks.length} of {PACK_STACKS} spaces used">
-    {#each stacks as st, i (i)}
-      {@const sp = st.supply}
+{#if held.length}
+  <div class="pack" class:tray role="group" aria-label="Your pack">
+    {#each held as sp (sp)}
+      {@const n = run.state.pack[sp]}
       {@const off = why(run, sp)}
       <button
         class="slot"
         class:off={!!off}
         aria-disabled={off ? 'true' : undefined}
-        onclick={() => use(sp, i)}
-        onpointerdown={(e) => press(e, sp, i)}
+        onclick={() => use(sp)}
+        onpointerdown={(e) => press(e, sp)}
         onpointermove={move}
         onpointerup={release}
         onpointercancel={release}
         onpointerleave={release}
         oncontextmenu={(e) => e.preventDefault()}
         title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`}
-        aria-label="{SUPPLY_NAMES[sp]}: {st.n} in your pack. {off ?? does(run, sp)}"
+        aria-label="{SUPPLY_NAMES[sp]}: {n} in your pack. {off ?? does(run, sp)}"
       >
-        <span class="n" aria-hidden="true">{st.n}</span>
+        <span class="n" aria-hidden="true">{n}</span>
         <span class="ic" aria-hidden="true"><Glyph of={sp} /></span>
         <span class="lbl" aria-hidden="true">{SHORT[sp]}</span>
       </button>
-    {/each}
-    {#each Array.from({ length: free }, (_, k) => k) as k (k)}
-      <span class="slot empty" role="img" aria-label="Empty space"></span>
     {/each}
     {#if said}<p class="said" aria-hidden="true">{said.text}</p>{/if}
   </div>
@@ -144,7 +139,7 @@
     -webkit-touch-callout: none;
     user-select: none;
   }
-  .slot:hover:not(.off):not(.empty) {
+  .slot:hover:not(.off) {
     border-color: var(--gold-lo);
     color: var(--gold-hi);
   }
@@ -195,14 +190,6 @@
     height: 1px;
     rotate: -28deg;
     background: rgba(233, 200, 162, 0.6);
-  }
-  /* A space still free: dashed, empty. */
-  .slot.empty {
-    background: rgba(0, 0, 0, 0.25);
-    border-style: dashed;
-    border-color: #3b3024;
-    box-shadow: none;
-    cursor: default;
   }
   /* In the dock's tray: four a row, taller, named. */
   .pack.tray {

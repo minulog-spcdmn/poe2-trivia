@@ -1,13 +1,13 @@
 <script lang="ts">
   // The Wraeclast item bench's view (./wraeclast.ts): a real run (rules.ts),
-  // seeded, brought to the node the controls ask for (./wraeclastSetup.ts)
-  // under its zone type, corruption and boss modifiers, then the item screen
+  // seeded, brought to the node the controls ask for (./wraeclastSetup.ts),
+  // then the item screen
   // as the page draws it, the run's header above it. The art opens
   // the item as on the page; then the supply, misses and build asked for are
   // played. A change to the controls lays the item out again.
   import { untrack } from 'svelte';
   import '../../wraeclast/screens.css';
-  import { DEFAULT_TUNING, Run, type BossMod, type Hidden, type Supply, type ZoneType } from '../../wraeclast/rules';
+  import { DEFAULT_TUNING, Run, type Supply } from '../../wraeclast/rules';
   import { GRAPH } from '../../wraeclast/map';
   import Hud from '../../wraeclast/Hud.svelte';
   import ItemScreen from '../../wraeclast/ItemScreen.svelte';
@@ -25,9 +25,6 @@
 
   type Options = {
     place: string;
-    zone: ZoneType;
-    hidden: Hidden | 'none';
-    mods: string;
     item: number;
     used: Supply | 'none';
     misses: number;
@@ -38,7 +35,6 @@
   };
   /** A step in each section of the 10-step map (4 and 7 are its towns). */
   const STEPS: Record<string, number> = { early: 2, mid: 5, late: 8 };
-  const MODS: Record<string, BossMod[]> = { none: [], three: ['bloodied', 'murky', 'teeming'] };
 
   /** The run, brought to the node asked for and its item laid out there; reactive once it is. */
   function build(o: Options) {
@@ -48,14 +44,9 @@
     const s = run.state;
     const boss = o.place.startsWith('boss') ? Number(o.place.slice(4)) - 1 : null;
     const id = boss !== null ? GRAPH.boss.id : nodeAt(STEPS[o.place] ?? 2);
-    s.pack = o.pack ? structuredClone(FULL_PACK) : [];
-    arrive(run, id, {
-      place: boss !== null ? undefined : { kind: 'zone', type: o.zone },
-      hidden: o.hidden === 'none' ? null : o.hidden,
-      mods: MODS[o.mods] ?? [o.mods as BossMod],
-    });
+    s.pack = o.pack ? structuredClone(FULL_PACK) : { flare: 0, wisdom: 0, lore: 0, category: 0 };
+    arrive(run, id);
     if (boss !== null) s.visit!.done = Math.min(boss, s.visit!.items - 1);
-    if (s.phase === 'boss') run.face();
     run.state = reactive(s);
     return run;
   }
@@ -64,19 +55,18 @@
   function play(run: Run, o: Options) {
     const it = run.state.item!;
     if (o.used !== 'none') {
-      // Not in the pack (the full one leaves the Base reveal out): it takes the last space.
+      // Not in the pack: one put in it.
       const s = run.state;
-      if (!run.held(o.used)) s.pack[Math.min(s.pack.length, 7)] = { supply: o.used, n: 1 };
-      // A supply the zone or the boss won't let work still shows as used, for a look at it.
+      if (!run.held(o.used)) s.pack[o.used] = 1;
+      // An Ancient Orb with no sibling still shows as used, for a look at it.
       if (!run.use(o.used) && o.used === 'category') it.shown.category = true;
-      if (o.used === 'category' && run.works('base')) run.use('base');
     }
     for (let k = 0; k < o.misses; k++) if (!miss(run)) break;
     if (o.named) {
       it.build = [...it.answer];
       it.lineMarks = null;
       run.submit();
-    } else if (o.built) it.build = it.answer.slice(0, Math.max(it.locked, Math.ceil(it.answer.length / 2)));
+    } else if (o.built) it.build = it.answer.slice(0, Math.ceil(it.answer.length / 2));
   }
 
   /** Submits a wrong line, while it leaves the run some life. */
@@ -92,9 +82,6 @@
 
   const options = $derived<Options>({
     place: String(v.place),
-    zone: String(v.zone) as ZoneType,
-    hidden: String(v.hidden) as Hidden | 'none',
-    mods: String(v.mods),
     item: Number(v.item),
     used: String(v.used) as Supply | 'none',
     misses: Number(v.misses),

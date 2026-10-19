@@ -2,19 +2,18 @@
   // The tuning panel, collapsed at the page's foot: the numbers the next run
   // starts with, kept in storage as they change, and in each run's log.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { DEFAULT_TUNING, LOOT_KINDS, SECTIONS, SUPPLIES, SUPPLY_NAMES, ZONE_TYPES, ZONE_NAMES, type Range } from './rules';
+  import { DEFAULT_TUNING, SECTIONS, SUPPLIES, SUPPLY_NAMES, type Range } from './rules';
   import { LIMITS, isDefault } from './tuning';
   import { play } from './play.svelte';
   import { GRAPH } from './map';
   import { sectionNames } from './markup';
-  import { FREE_CLUE } from './words';
 
   /** Whether it's open: from the start on the QA desk's bench, collapsed on the page till tapped. */
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const t = $derived(play.tuning);
   const changed = $derived(!isDefault(t));
-  const LOOT_NAMES = { gold: 'Gold', supply: 'Supplies', flask: 'Flask charge' } as const;
   const SECTION_NAMES = sectionNames(GRAPH.boss.step);
+  const PAID = ['early', 'mid', 'late'] as const;
 
   /**
    * A number field's value, kept whole and in range (a blank or a stray value
@@ -33,12 +32,6 @@
   function setEnd(r: Range, end: 0 | 1, n: number) {
     r[end] = n;
     if (r[0] > r[1]) r[end === 0 ? 1 : 0] = n;
-  }
-  function toggle(set: (on: boolean) => void) {
-    return (e: Event) => {
-      set((e.currentTarget as HTMLInputElement).checked);
-      play.saveTuning();
-    };
   }
   function setMarks(e: Event) {
     t.marks = (e.currentTarget as HTMLInputElement).checked ? 'gold' : 'both';
@@ -80,16 +73,20 @@
       <legend>Start</legend>
       {@render field('Life', t.life, LIMITS.life, (n) => (t.life = n))}
       {@render field('Gold', t.gold, LIMITS.gold, (n) => (t.gold = n))}
-      {@render field('Flask charges', t.flask, LIMITS.flask, (n) => (t.flask = n))}
       {@render field('A town heals (life)', t.townHeal, LIMITS.townHeal, (n) => (t.townHeal = n))}
-      {@render field('Items per zone', t.itemsPerZone, LIMITS.itemsPerZone, (n) => (t.itemsPerZone = n))}
-      {@render field('Open nodes that are zones (%)', t.zoneShare, LIMITS.zoneShare, (n) => (t.zoneShare = n))}
     </fieldset>
 
     <fieldset>
       <legend>Miss cost (life)</legend>
       {#each SECTIONS as sec (sec)}
         {@render range(SECTION_NAMES[sec], t.missCost[sec], LIMITS.missCost)}
+      {/each}
+    </fieldset>
+
+    <fieldset>
+      <legend>Gold for a zone's item named</legend>
+      {#each PAID as sec (sec)}
+        {@render range(SECTION_NAMES[sec], t.pay[sec], LIMITS.pay)}
       {/each}
     </fieldset>
 
@@ -105,63 +102,20 @@
       {#each SECTIONS as sec (sec)}
         {@render range(`Decoy names, ${SECTION_NAMES[sec].toLowerCase()}`, t.names[sec], LIMITS.names)}
       {/each}
-      <p class="small">Decoy names are whole names of real items that the tiles can also spell (the answer's look-alikes, or the closest others of its category). Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
+      <p class="small">Decoy names are whole names of real items that the tiles can also spell (the answer's look-alikes, or the closest others of its category). Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top, up to 36 tiles.</p>
     </fieldset>
 
     <fieldset>
-      <legend>Prices (gold) and stacks</legend>
+      <legend>Prices (gold, one at a time)</legend>
       {#each SUPPLIES as w (w)}
-        <div class="knob">
-          <span>{SUPPLY_NAMES[w]}</span>
-          <span class="pair">
-            <input class="field" type="number" inputmode="numeric" aria-label="{SUPPLY_NAMES[w]}, how many" min={LIMITS.stack[0]} max={LIMITS.stack[1]} step="1" value={t.stack[w]} onchange={(e) => num(e.currentTarget, t.stack[w], LIMITS.stack, (n) => (t.stack[w] = n))} />
-            <span class="to">for</span>
-            <input class="field" type="number" inputmode="numeric" aria-label="{SUPPLY_NAMES[w]}, price" min={LIMITS.price[0]} max={LIMITS.price[1]} step="1" value={t.price[w]} onchange={(e) => num(e.currentTarget, t.price[w], LIMITS.price, (n) => (t.price[w] = n))} />
-          </span>
-        </div>
+        {@render field(SUPPLY_NAMES[w], t.price[w], LIMITS.price, (n) => (t.price[w] = n))}
       {/each}
     </fieldset>
 
     <fieldset>
       <legend>The art (patches)</legend>
       {@render field('Seeds a side', t.seeds, LIMITS.seeds, (n) => (t.seeds = n))}
-      {@render field('A Torch burns in', t.burnIn.flare, LIMITS.burnIn, (n) => (t.burnIn.flare = n))}
-      {@render field("Blight's free burn-in", t.burnIn.blight, LIMITS.burnIn, (n) => (t.burnIn.blight = n))}
-      {@render field("The boss's first item, free", t.burnIn.boss, LIMITS.burnIn, (n) => (t.burnIn.boss = n))}
-      {@render field("A Stacked Deck's patch", t.burnIn.deck, LIMITS.burnIn, (n) => (t.burnIn.deck = n))}
-      <p class="small">Incursion and a Murky boss halve a Torch's.</p>
-    </fieldset>
-
-    <fieldset>
-      <legend>Loot</legend>
-      {#each ZONE_TYPES as z (z)}
-        {@render field(`Cards, ${ZONE_NAMES[z]}`, t.loot.cards[z], LIMITS.cards, (n) => (t.loot.cards[z] = n))}
-      {/each}
-      {#each LOOT_KINDS as k (k)}
-        {@render field(`${LOOT_NAMES[k]} (weight)`, t.loot.weights[k], LIMITS.weight, (n) => (t.loot.weights[k] = n))}
-      {/each}
-      {@render range(`Gold, ${SECTION_NAMES.early.toLowerCase()}`, t.loot.gold.early, LIMITS.lootGold)}
-      {@render range(`Gold, ${SECTION_NAMES.mid.toLowerCase()}`, t.loot.gold.mid, LIMITS.lootGold)}
-      {@render range(`Gold, ${SECTION_NAMES.late.toLowerCase()}`, t.loot.gold.late, LIMITS.lootGold)}
-      {@render field('Supplies on a card', t.loot.supplies, LIMITS.supplies, (n) => (t.loot.supplies = n))}
-    </fieldset>
-
-    <fieldset>
-      <legend>Corruption</legend>
-      {@render field('Corruptions seeded (up to 4: one per boss rule)', t.corruption.seeds, LIMITS.fronts, (n) => (t.corruption.seeds = n))}
-      {@render field('Creeps every (steps)', t.corruption.creep, LIMITS.creep, (n) => (t.corruption.creep = n))}
-      {@render field('Loot multiplier', t.corruption.multiplier, LIMITS.multiplier, (n) => (t.corruption.multiplier = n))}
-      <p class="small">A corrupted zone takes a Blood toll of 10 life an item and deals its loot times the multiplier.</p>
-    </fieldset>
-
-    <fieldset>
-      <legend>Free clues</legend>
-      {#each ZONE_TYPES as z (z)}
-        <label class="check">
-          <input type="checkbox" checked={t.freeClue[z]} onchange={toggle((on) => (t.freeClue[z] = on))} />
-          <span>{ZONE_NAMES[z]} <span class="small">({FREE_CLUE[z].toLowerCase()})</span></span>
-        </label>
-      {/each}
+      {@render field('A Torch burns in', t.torch, LIMITS.torch, (n) => (t.torch = n))}
     </fieldset>
   </div>
 

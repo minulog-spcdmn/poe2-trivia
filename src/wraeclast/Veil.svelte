@@ -3,8 +3,8 @@
   // cut, lib/patches.ts, about tuning.seeds a side over the art), burned in as
   // the game burns its veiled art (lib/materialize.ts, lib/frontier.ts). The
   // art is decoded and cut first; the run is then told which patches touch
-  // which (run.open), and burns in a cluster of them at a time (a Flare, the
-  // zone's free burn-in, Unveiled). Each patch the run burns comes in here, a
+  // which (run.open), and burns in a cluster of them at a time (a Torch).
+  // Each patch the run burns comes in here, a
   // few at a time; a right answer burns in the rest quickly (the finale).
   // It fills the square frame its parent gives it, the art fit inside and
   // centred, so every item looks the same from outside: until a patch burns
