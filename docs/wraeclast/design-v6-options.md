@@ -238,3 +238,114 @@ life, and the duel would have taken 4 or 5 bare answers.
    - The boon's name, with its affliction named as the price (recommended)
    - The boon's name only
    - Called a Pledge, as PoE2 calls these deals
+
+## 8. After the owner's picks: three supplies, and bets made concrete
+
+Picked: the open region, zones with depth and one waystone mod, the Seed of
+Corruption, and Pacts renamed **Pledges**. This section replaces sections 3
+and 4 (the clue ladder is out).
+
+### Three supplies, each paid differently
+
+The rule for both sets:
+- **Gold:** the gold supply is bought at towns, in stacks.
+- **Life and reward:** the other two are always at hand on every item, at
+  most 2 each per item, and paid at the moment you use them.
+
+So the pack is just one stack of the gold supply, and only that one needs
+shopping.
+
+**Set 1 (recommended): see, cut, read.** One for the art, one for the board,
+one for the text.
+
+| Supply | What it does | Paid in | Best on |
+| --- | --- | --- | --- |
+| Torch | Burns in about a sixth of the art | Gold: 2 for 8 | Items with art you'd know: weapons, armour |
+| Tangled Fossil | Strikes 4 decoys from the board | Life: 5 a use | Big boards: corrupted zones, a mod's extra decoy name, the duel |
+| Scroll of Wisdom | The next mod line, common first | Reward: the answer pays one card less, and at the duel hits 8 less | Items whose art looks like others: jewels, flasks, rings |
+
+**Set 2: context, kin, base.** All three read the item, but each costs more
+the more it gives away.
+
+| Supply | What it does | Paid in | Best on |
+| --- | --- | --- | --- |
+| Golden Page | The flavor text, name words masked | Gold: 2 for 8 | Items with lore you'd recognise |
+| Ancient Orb | Another unique of the same category, by name | Life: 5 a use | Placing the kind of item when nothing else does |
+| Base reveal (working name) | The base type | Reward: the answer pays half, and at the duel hits half | Expert trivia: it names about 3 uniques in 4 |
+
+**Why Set 1:**
+- Its three jobs can't stand in for each other: a Torch doesn't shrink a
+  board, and a Fossil shows no art.
+- None is plainly better, because each wins on different items, and the
+  three costs pull against different things: gold against the duel's
+  Whetstones, life against the bets, reward against the drop.
+- Set 2's three jobs are all "tell me about the item". That's the sameness
+  the owner named, and its reward supply is close to giving the answer
+  away.
+
+**What gold is for:**
+- the gold supply;
+- a Blacksmith's Whetstone (+2 to every hit);
+- an Armourer's Scrap (the Seed hits 1 less);
+- healing (20 life);
+- a flask drink.
+
+At every town the question is "Torches for the next zones, or Whetstones for
+the duel?"
+
+### Bets, as a player sees them on a phone
+
+**A. The zone's mod (on the map, before you pick)**
+
+```
+The Grelwood
+Obscure • Monsters deal extra damage
+Misses cost 20 here • Win a Whetstone
+[ Enter ]                  [ Not now ]
+```
+
+- **You risk:** 10 more life on every miss in this zone.
+- **You win:** a Whetstone (+2 to every hit at the duel), on top of the gold.
+- **Feels like:** "I know Obscure items; I'll take it." It costs no extra
+  tap, since entering the place is the bet.
+
+**B. A stake on a first try (on the item, after the free clue)**
+
+```
+Stake 10 gold on a first try?
+Right first time: +20 gold • Any miss: the 10 is lost
+[ Stake ]                  [ No ]
+```
+
+- **You risk:** 10 gold, on top of the miss's life.
+- **You win:** 10 gold net, which is a Whetstone sooner.
+- **Feels like:** a nod to yourself on items you know cold. The cost is one
+  tap on every item, even when you say no.
+
+**C. A Strongbox (a place on the map, now and then)**
+
+```
+Strongbox
+One item • the art stays veiled • no supplies
+Right: 40 gold • Wrong: 15 life
+[ Open ]                   [ Leave it ]
+```
+
+- **You risk:** 15 life, with no clue beyond the free one.
+- **You win:** 40 gold, about two Whetstones.
+- **Feels like:** a dare. It's rare, and it uses a turn of the spread like
+  any zone.
+
+**Which to keep: A.** It's the bet the owner already picked (the waystone
+mod), and it adds no tap. B taxes every item for a small gain. C is good fun
+but can wait, as a place type to add once A has been played.
+
+### Questions for the owner
+
+1. **Which three supplies?**
+   - Set 1: Torch (gold), Tangled Fossil (life), Scroll of Wisdom (reward) (recommended)
+   - Set 2: Golden Page (gold), Ancient Orb (life), Base reveal (reward)
+2. **Which bets?**
+   - The zone's mod only (recommended)
+   - The mod, plus a gold stake on a first try
+   - The mod, plus Strongbox places
