@@ -58,7 +58,8 @@ pitches judged by owner-proxy agents) missed too: "all overcomplicated and
 none sound like they would be addictive". No more paper rounds on a design
 brief: the owner sketches what a town visit should feel like (the pull lives
 in the town; closest games Slay the Spire and Hades), and design only makes
-that sketch work with items. Waiting for the owner's sketch.
+that sketch work with items. The sketch (a Hades boon draft in town) is
+filled in as `design-v8-town.md`; waiting for the owner's read.
 
 Sessions: an orchestrator opened from the owner's phone (Remote Control)
 can't start sessions; it runs design as a Workflow instead.
