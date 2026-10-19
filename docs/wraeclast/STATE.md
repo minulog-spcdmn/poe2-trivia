@@ -59,7 +59,9 @@ none sound like they would be addictive". No more paper rounds on a design
 brief: the owner sketches what a town visit should feel like (the pull lives
 in the town; closest games Slay the Spire and Hades), and design only makes
 that sketch work with items. The sketch (a Hades boon draft in town) is
-filled in as `design-v8-town.md`; waiting for the owner's read.
+filled in as `design-v8-town.md`, and the owner said "build it". The
+redesign is settled; prototype v5 is being built from `prototype-v5-handoff.md`
+on branch `claude/wraeclast-prototype-v5` (in the playtest worktree).
 
 Sessions: an orchestrator opened from the owner's phone (Remote Control)
 can't start sessions; it runs design as a Workflow instead.
