@@ -34,10 +34,10 @@ A house word may still appear where it is a PoE item or place name (Torch, Golde
 | Where next, corrupted row | • Corrupted | Blood toll |
 | Where next, corrupted row | A hidden modifier waits here; twice the loot. | −{BLOOD_TOLL} life per item • double loot |
 | Where next, corrupted row | A hidden modifier waits here; {multiplier} times the loot. | −{BLOOD_TOLL} life per item • {multiplier}× loot |
+| Where next, corrupted row (new) | (none) | If it reaches the boss: {its boss rule} (Lingering, Bloodied, Murky or Teeming) |
 | Where next, town row | Heals 20 life; the vendor deals every ware. | Heals {TOWN_HEAL} life • buy supplies |
 | Where next, Well row | Refills every flask charge. Heals no life. | Refills your flask |
-| Where next, boss row | {BOSS_RULE}. No loot. | The last fight • {boss rule, short} |
-| Where next, boss row | Each front still alive adds a modifier: {n front(s)} now. | Each corruption left adds a rule here: {n} |
+| Where next, boss row | {BOSS_RULE}. No loot. | Only Torches work • each corruption left adds its rule (the boss rule, short, first) |
 | Where next, boss row | No front is alive: no modifiers. | No corruption left: no extra rules |
 | Where next, Expedition stop | (none) | Expedition vendor • buy before you go on |
 | Where next, row aria | (none) | Go to {place}: {kind}, {its line} |
@@ -54,6 +54,10 @@ A house word may still appear where it is a PoE item or place name (Torch, Golde
 | Map node | {node name, wrapped} | stays |
 | Map node | {placeName}: Camp, Town, Well, Boss or a zone type | stays (Camp, Town, Well, Boss, {zone type}) |
 | Map node, corrupted | (none) | Blood toll |
+| Map node, corrupted (new) | (none) | Boss: {its boss rule} (moves with the corruption; gone when it's stopped) |
+| Map node, corrupted aria (new) | (none) | {place}: {zone type}, Blood toll (corruption), if it reaches the boss: {its boss rule} |
+| Map node, boss (new) | (none) | Only Torches work (the boss rule, short, under Boss) |
+| Map node, boss aria (new) | (none) | {boss place}: Boss, at the boss, only Torches work |
 | Map key | You | You |
 | Map key | Corrupted | Blood toll (corruption): −{BLOOD_TOLL} life per item, double loot |
 | Map key | A front | Gone (only the zone the corruption stands on is corrupted) |
@@ -293,6 +297,7 @@ The threshold screen goes in v4: you go straight from the place you tap to its f
 | Vendor card, too dear | (none) | Not enough gold (aria; the price goes red) |
 | Vendor card, no space | (none) | Pack full. Tap a space to replace it |
 | Vendor flask | Flask / {charges} of {max} charges. {FLASK_LINE} A Well refills every charge. | Gone (the flask is on the pill; its tooltip has the line) |
+| Vendor, every one (new) | (none) | At the boss, only Torches work (a line under the wares, with the Torch's sign) |
 | Vendor | Set out (camp) / To the map (town, Expedition) | Gone (tap a place under Where next to set out) |
 | Bigger flask (ware, if kept) | (design doc) +1 maximum charge, empty until the next Well | One more flask charge. It fills at the next Well. |
 
@@ -323,6 +328,7 @@ The threshold screen goes in v4: you go straight from the place you tap to its f
 | Boss threshold | The boss / {BOSS_RULE}. No loot; beat it to win the run. | Keep this one screen (the run's last stop): The boss • {boss rule}. Name all {n} items to win. |
 | Boss threshold | Rule / {BOSS_RULE} | Rule / {boss rule} |
 | Boss threshold | Modifiers | Made harder by the corruption |
+| Boss threshold, each rule (new) | (none) | {rule} • from {the place its corruption started} (each corruption carries its rule from the start, so the intro can name it) |
 | Boss threshold | {Mod name} {mod does} | {Mod name} • {what it does} |
 | Boss threshold | No corruption reached the boss. | No corruption reached the boss. (stays) |
 | Boss threshold | Face the boss | Face the boss (stays) |
