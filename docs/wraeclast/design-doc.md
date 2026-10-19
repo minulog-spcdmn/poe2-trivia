@@ -347,12 +347,12 @@ These settle the cases a coder would otherwise have to guess.
 - **No repeats:** an item never comes up twice in a run. A Necropolis zone with too few past misses draws the items you have seen least.
 - **Full pack:** loot that doesn't fit can replace a stack, or be left behind.
 - **The art can't be revealed** (Delirium, Strongbox, the Blind boss, a Dark corruption): it stays fully veiled for the whole item.
-- **Drinking:** a flask charge is drunk during an item. It heals 10 at once, then 10 after each of the next 2 items, including a boss item, and stops if the run ends. Life never goes above 100.
+- **Drinking:** a flask charge is drunk during an item. It heals 10 at once, then 10 after the item it is drunk in and 10 after the next one, a boss item included, and stops if the run ends. Life never goes above 100.
 - **Corruption:** a front with no zone left to creep into waits. A corrupted zone counts as cleansed only once all 3 items are answered.
 - **Rounding:** gold earned rounds down; changed prices round up.
-- **Common mod line:** the most common line among those 3 or more items share. An item with none gets Word lengths as the Plain or Expedition free clue. A Scroll of Wisdom counts the free line as read.
+- **Common mod line:** the most common line among those 3 or more items share; for a lineage gem, among those 3 or more gems share. A gem's support description is its base clue only, never one of its mod lines. An item with none gets Word lengths as the Plain or Expedition free clue. A Scroll of Wisdom counts the free line as read.
 - **The Veil before a burn-in:** only the square shows; nothing marks the art's own size or shape.
-- **Pools:** each item's pool is seeded from the run and the item, so a re-deal after a reload is identical. Decoys fill a rolled total, at least 5 of them.
+- **Pools:** each item's pool is seeded from the run and the item, so a re-deal after a reload is identical. Each section's total rolls within 3 of its size. The always-present tiles (of, the, and, and 2 or 3 possessives) come on top of it, and ordinary decoys fill the rest, at least 5. Decoys are drawn to match the lengths of the answer's tiles, so a tile's length never tells whether it is the answer's.
 - **Item draw:** uniform over the items not yet seen in the run, never themed by place, zone type or category.
 - **Blood toll** never takes the last life point, since it strikes before the player can drink.
 - **Clashing rules:** the stricter one wins. Blight's free burn-in is lost in a Dark zone.
