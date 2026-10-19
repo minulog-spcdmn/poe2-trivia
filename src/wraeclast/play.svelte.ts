@@ -36,7 +36,10 @@ class Play {
   keep() {
     const run = this.run;
     if (!run || !run.state.log.items.length) return;
-    this.runs = keepRun($state.snapshot(run.state.log) as RunLog);
+    const log = $state.snapshot(run.state.log) as RunLog;
+    this.runs = keepRun(log);
+    // The dev server writes it to .wraeclast-logs/ too (vite.config.ts, wraeclastLogs); never in a build.
+    if (import.meta.env.DEV) void fetch('/__wraeclast/log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(log) }).catch(() => {});
   }
 }
 

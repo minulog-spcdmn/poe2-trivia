@@ -1,5 +1,5 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -149,6 +149,52 @@ function platesVersion() {
 
 /** Where the backdrop tool saves to (and the game reads its zones' looks from). */
 const BACKDROPS_FILE = fileURLToPath(new URL('./src/data/backdrops.json', import.meta.url));
+
+/** Where the dev server writes Wraeclast run logs: this worktree's root. */
+const WRAECLAST_LOGS = fileURLToPath(new URL('./.wraeclast-logs/', import.meta.url));
+
+/**
+ * Wraeclast run logs to disk, on the dev server only (the page posts only
+ * under import.meta.env.DEV): a POST of a run's log to /__wraeclast/log writes
+ * .wraeclast-logs/<run start, : as ->_<seed>.json, the same run's file
+ * overwritten after every item and at its end. Read them with
+ * scripts/wraeclast-log-summary.mjs.
+ */
+function wraeclastLogs(): Plugin {
+  return {
+    name: 'wraeclast-logs',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__wraeclast/log', (req, res) => {
+        const reply = (status: number) => {
+          res.statusCode = status;
+          res.end();
+        };
+        const origin = req.headers.origin;
+        if (req.method !== 'POST') return reply(405);
+        if (!String(req.headers['content-type']).startsWith('application/json') || (origin && new URL(origin).host !== req.headers.host)) return reply(403);
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', (chunk: string) => {
+          body += chunk;
+          if (body.length > 5_000_000) req.destroy();
+        });
+        req.on('end', () => {
+          let log: { start?: unknown; seed?: unknown };
+          try {
+            log = JSON.parse(body);
+          } catch {
+            return reply(400);
+          }
+          if (typeof log.start !== 'string' || typeof log.seed !== 'number' || !/^[\dT:.Z-]+$/.test(log.start)) return reply(400);
+          mkdirSync(WRAECLAST_LOGS, { recursive: true });
+          writeFileSync(join(WRAECLAST_LOGS, `${log.start.replaceAll(':', '-')}_${log.seed}.json`), JSON.stringify(log, null, 1));
+          reply(204);
+        });
+      });
+    },
+  };
+}
 
 /**
  * The backdrop tool's Save (backdrop.html, src/backdropTool): on the dev
@@ -311,7 +357,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), wraeclastLogs(), devHub(env), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
