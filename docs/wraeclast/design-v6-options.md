@@ -484,3 +484,88 @@ Pledge, too: **Chipped Dice**, "your first reroll each town is free"
    - A rolled market you can reroll for gold, with a Stacked Deck now and then (recommended)
    - Stacked Decks beside a plain shop
    - Haggling over each price
+
+## 10. Six town gambles, grown from this game
+
+The owner's answers to section 9:
+- **Supplies:** all four cost gold, with the four jobs kept (Torch the art,
+  Golden Page lore, Ancient Orb the kind, Scroll stats). The Seed's share is
+  out.
+- **The town gamble:** rolled markets, Stacked Decks, haggling and every
+  stock shop trick are out.
+
+Each pitch below is what you do, what you risk, and why it couldn't be in
+any other game.
+
+**1. Lucky syllables**
+- **You do:** buy a syllable tile, say "thorn", "Ullr" or "of the". Each later
+  answer that holds it pays you gold. A rare syllable is cheap and pays big;
+  a common one is dear and pays a little.
+- **You risk:** the gold, if no answer ever holds your syllable.
+- **Only here:** the bet is on knowing how uniques are named. Prices and
+  payouts come from the name pool itself (principle 10), and owning a tile
+  changes nothing on the board.
+
+**2. The scout's tale**
+- **You do:** pay for a clue from a place you haven't entered yet: one mod
+  line or a scrap of flavor text from the item waiting there. Then decide
+  whether to go.
+- **You risk:** the gold, if the clue says nothing to you, or the place is
+  the wrong way.
+- **Only here:** you are buying a look at a question before choosing to
+  face it, which turns the open map into a choice about what you know.
+
+**3. Trophies**
+- **You do:** every item you named this run is a trophy, priced by its depth
+  (Forgotten trophies are dear). At a town, sell trophies for gold, or keep
+  them: each one kept adds 2 to your hit at the duel.
+- **You risk:** a miss later on loses your newest trophy.
+- **Only here:** your own right answers are the currency, and keeping them
+  is a bet that you won't miss again.
+
+**4. Doomed towns**
+- **You do:** shop in a town the spread is heading for. Its prices fall each
+  turn as the Seed nears, and the town is lost when the spread reaches it.
+- **You risk:** waiting a turn too long and finding the town gone, gold
+  unspent and nowhere to buy.
+- **Only here:** the Seed's spread across Wraeclast's real places is the
+  price tag, so the soft timer reaches into the shop.
+
+**5. Burn back the Seed**
+- **You do:** pay gold for a cleansing at the town's shrine: one item, the
+  art veiled, no supplies. Right, and the nearest corrupted place is
+  cleansed and the Seed loses 10 life.
+- **You risk:** the gold, and the spread jumps a ring if you're wrong.
+- **Only here:** you wager your knowledge against the corruption itself;
+  the duel starts in town.
+
+**6. The town's bounty**
+- **You do:** each town posts one veiled item with its free clue. You can
+  pay 10 to name it from that clue alone. The bounty grows each time a town
+  is passed by unclaimed, and it carries on from town to town.
+- **You risk:** 10 gold a try, and the item stays posted if you miss.
+- **Only here:** the bet is a question you can see before you pay, and only
+  someone who knows that item should take it.
+
+**My pick: Lucky syllables (1).**
+- It's the most this game's own: it bets on how the item pool names things,
+  and no other game has that.
+- It's a one-tap buy, so a visit stays under a minute, and it adds no item
+  or screen.
+- Each answer afterwards gets a small second thrill ("it had 'thorn'!") and
+  never a hint.
+- **Second choice: Doomed towns (4).** It needs no new screen: the town's
+  prices just move with the spread. It sits well beside Lucky syllables.
+- **What 5 and 6 add:** a trivia item to the town, which the owner said
+  other phases already have enough of.
+
+### Questions for the owner
+
+1. **Which town gamble leads?**
+   - Lucky syllables (recommended)
+   - The scout's tale
+   - Trophies
+   - Doomed towns
+2. **Should the town also run a second gamble?**
+   - Yes, Doomed towns beside the lead one (recommended)
+   - No, one gamble per town
