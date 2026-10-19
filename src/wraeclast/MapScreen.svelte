@@ -1,194 +1,99 @@
 <script module lang="ts">
-  // The map (past a Well, or opened from a vendor or a zone's last reveal):
-  // every node as the owner placed it, the paths between them, each node's
-  // kind this run (its zone type, or Camp, Town, Well, Boss) and whether it's
-  // corrupted (Blood toll, shown in full), the route taken and where the
-  // player stands. The nodes the player can go to stand out and can be tapped; under
-  // the map the same choices are cards, the main way to pick on a phone. A
-  // plain dark panel for now (no map art yet), scrolling down inside its
-  // frame, never sideways.
-  //
-  // The layout, for a given width: every node where the owner placed it,
-  // mapped to the nodes' bounding box (not to 0..1) and stretched down more
-  // than across, then spread where it crowds, and its name placed where it
-  // covers no other.
+  // The map and Where next (past a Well, or opened from a vendor or a zone's
+  // last reveal). The map is a plain dark plate: every step a row, its places
+  // spread across it (as the owner placed them, drawn toward even slots so
+  // four fit on a phone), the paths between them, each place's kind this run
+  // and, on a corrupted zone, Blood toll and the boss rule that corruption
+  // carries. The route taken is dimmed, where the player stands is ringed,
+  // and the places one step ahead are lit and can be tapped. Under it on a
+  // phone (beside it on a desktop), Where next: the same places as rows, the
+  // main way to pick. A Well's line sits between them; as the corruption
+  // moves on, the map shows it happen once, then settles.
   import { GRAPH } from './map';
+  import type { Run } from './rules';
 
-  /** Half a node's tap target (44 px across). */
-  export const R = 22;
-  /** The drawn dot's radius. */
-  export const DOT = 8;
-  const PAD_X = 30;
-  const PAD_TOP = 26;
-  const PAD_BOTTOM = 14;
-  /** Down is stretched this much more than across. */
-  const STRETCH = 1.5;
-  /** How far each x is drawn toward its rank across (0 keeps it as placed). */
-  const SPREAD = 0.5;
-  export const NAME_PX = 12.5;
-  export const NAME_LH = 14;
-  export const KIND_PX = 8.5;
-  export const KIND_LH = 11;
-  const LABEL_MAX = 100;
-  const GAP = 3;
+  /** The plate's sizes: a phone's, and a desktop's (860 px wide and up). */
+  export const PHONE = { node: 24, nameTop: 14, labelMax: 92, rowMin: 84, rowMax: 96, padTop: 40, padBottom: 18, gutter: 22, edge: 4, namePx: 11.5, emPx: 10 };
+  export const WIDE = { node: 28, nameTop: 16, labelMax: 130, rowMin: 53, rowMax: 80, padTop: 30, padBottom: 18, gutter: 28, edge: 8, namePx: 13, emPx: 11.5 };
+  export type Sizes = typeof PHONE;
+  /** How far each place is drawn toward where the owner placed it across, from its even slot in its row (0: the slot). */
+  const BLEND = 0.35;
 
-  export interface Box {
-    x0: number;
-    y0: number;
-    x1: number;
-    y1: number;
-  }
-  export interface Label extends Box {
-    lines: string[];
-    /** No spot was free: the least crowded one. */
-    fallback?: boolean;
-  }
   export interface Layout {
     width: number;
     height: number;
+    /** Each place's centre. */
     at: Record<string, { x: number; y: number }>;
-    label: Record<string, Label>;
+    /** Each place's label width at most. */
+    labelW: Record<string, number>;
+    /** Each step's row. */
+    rows: { step: number; y: number }[];
   }
 
-  /** A guess at a line's width: EB Garamond's (or Cinzel's capitals') letters, by how wide each kind runs. */
-  function textWidth(s: string, px: number, caps = false): number {
-    let em = 0;
-    for (const c of s) {
-      if (caps) em += c === ' ' ? 0.3 : /[MW]/i.test(c) ? 0.95 : /[IJ]/i.test(c) ? 0.42 : 0.74;
-      else em += /[ .,'’]/.test(c) ? 0.26 : /[ijlrtf]/.test(c) ? 0.3 : /[mwMW]/.test(c) ? 0.8 : /[A-Z]/.test(c) ? 0.66 : 0.48;
-    }
-    return em * px + (caps ? s.length * 0.14 * px : 0);
-  }
-
-  /** A name in at most two lines of LABEL_MAX, broken at spaces. */
-  function wrap(name: string): string[] {
-    const words = name.split(' ');
-    const lines: string[] = [];
-    for (const w of words) {
-      const last = lines.at(-1);
-      if (last !== undefined && (lines.length === 2 || textWidth(`${last} ${w}`, NAME_PX) <= LABEL_MAX)) lines[lines.length - 1] = `${last} ${w}`;
-      else lines.push(w);
-    }
-    return lines;
-  }
-
-  const overlap = (a: Box, b: Box) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+  /** A guess at a label's height before it's measured: two lines of name, and its kind. */
+  const guess = (z: Sizes) => 2 * z.namePx * 1.12 + z.emPx * 1.12 + 3;
 
   /**
-   * Lays the map out `width` px wide, each node's kind (`kinds`, a word) on
-   * the second line of its label.
-   *
-   * Down the map, nodes go in order of their y. Each keeps its x; its y is
-   * where the stretch puts it, moved down as far as it takes to clear the
-   * nodes above (a tap target apart, and below the name of one it sits
-   * under), and everything after it moves down as much: so the map keeps its
-   * shape and only gains room where it crowds.
-   *
-   * Names go under their node where they fit; else slid sideways, a line
-   * lower, above the node or beside it. Where none of those is free, the
-   * lower of the two that clash moves down a little (with all below it) and
-   * the names are placed again.
+   * Lays the plate out `width` px wide, in a frame `frameH` tall (0: not
+   * known yet), each label `heights` tall where measured. Rows go down by
+   * step, far enough apart that a row's labels clear the row below, and
+   * spread to fill the frame where it's taller (up to rowMax). Across, a
+   * row's places sit between their even slot and where the owner placed
+   * them, at least a label apart, clear of the step numbers.
    */
-  export function layout(width: number, kinds: Record<string, string> = {}): Layout {
+  export function layout(width: number, frameH: number, z: Sizes, heights: Record<string, number>, under = 0): Layout {
     const nodes = GRAPH.nodes;
     const minX = Math.min(...nodes.map((n) => n.x));
     const maxX = Math.max(...nodes.map((n) => n.x));
-    const minY = Math.min(...nodes.map((n) => n.y));
-    const sx = (width - 2 * PAD_X) / Math.max(1e-6, maxX - minX);
-    const sy = sx * STRETCH;
-    // Across, the few nodes out at the sides would leave the rest bunched in
-    // the middle: each x is drawn partway to its rank among the xs, which
-    // keeps left left of right but spreads the bunch.
-    const xs = [...new Set(nodes.map((n) => n.x))].sort((a, b) => a - b);
-    const across = (x: number) => {
-      const rank = xs.length > 1 ? xs.indexOf(x) / (xs.length - 1) : 0.5;
-      return PAD_X + ((1 - SPREAD) * (x - minX) / Math.max(1e-6, maxX - minX) + SPREAD * rank) * (width - 2 * PAD_X);
-    };
+    const norm = (x: number) => (x - minX) / Math.max(1e-6, maxX - minX);
+    const L = z.gutter;
+    const R = width - z.edge;
+    const at: Layout['at'] = {};
+    const labelW: Layout['labelW'] = {};
 
-    const size: Record<string, { w: number; h: number; lines: string[] }> = {};
-    for (const n of nodes) {
-      const lines = wrap(n.name);
-      const kind = kinds[n.id] ?? '';
-      const w = Math.max(...lines.map((l) => textWidth(l, NAME_PX)), kind ? textWidth(kind.toUpperCase(), KIND_PX, true) : 0) + 4;
-      size[n.id] = { w, h: lines.length * NAME_LH + (kind ? KIND_LH : 0), lines };
+    for (const step of GRAPH.steps) {
+      const row = [...GRAPH.atStep.get(step)!].sort((a, b) => a.x - b.x);
+      const n = row.length;
+      const g = Math.min(z.labelMax + 4, (R - L) / n);
+      const p = row.map((m, i) => L + ((1 - BLEND) * ((i + 0.5) / n) + BLEND * norm(m.x)) * (R - L));
+      for (let i = 0; i < n; i++) p[i] = Math.max(p[i], i ? p[i - 1] + g : L + g / 2);
+      for (let i = n - 1; i >= 0; i--) p[i] = Math.min(p[i], i < n - 1 ? p[i + 1] - g : R - g / 2);
+      row.forEach((m, i) => {
+        at[m.id] = { x: p[i], y: 0 };
+        labelW[m.id] = g - 4;
+      });
     }
 
-    const order = [...nodes].sort((a, b) => a.y - b.y || a.step - b.step);
-    const rank = new Map(order.map((n, k) => [n.id, k]));
-    // Room let in above a node (and so everything below it) where its name, or one it covered, found no free spot.
-    const room: Record<string, number> = {};
-    let at: Layout['at'] = {};
-    let label: Layout['label'] = {};
-    for (let pass = 0; pass < 8; pass++) {
-      at = {};
-      const placed: { id: string; x: number; y: number }[] = [];
-      let carry = 0;
-      for (const n of order) {
-        const x = across(n.x);
-        const lin = PAD_TOP + (n.y - minY) * sy;
-        let y = lin + carry + (room[n.id] ?? 0);
-        for (const p of placed) {
-          const dx = Math.abs(x - p.x);
-          if (dx < 2 * R) y = Math.max(y, p.y + Math.sqrt(4 * R * R - dx * dx));
-          if (dx < size[p.id].w / 2 + DOT) y = Math.max(y, p.y + DOT + GAP + size[p.id].h + GAP + DOT);
-        }
-        carry = y - lin;
-        at[n.id] = { x, y };
-        placed.push({ id: n.id, x, y });
-      }
-
-      const dots = order.map((n) => ({ id: n.id, box: { x0: at[n.id].x - DOT - 2, y0: at[n.id].y - DOT - 2, x1: at[n.id].x + DOT + 2, y1: at[n.id].y + DOT + 2 } }));
-      label = {};
-      const taken: { id: string; box: Box }[] = [];
-      const clashes: [string, string][] = [];
-      for (const { id, x, y } of placed) {
-        const { w, h, lines } = size[id];
-        const box = (cx: number, top: number): Box => {
-          const x0 = Math.min(width - 2 - w, Math.max(2, cx - w / 2));
-          return { x0, y0: top, x1: x0 + w, y1: top + h };
-        };
-        const below = y + DOT + GAP;
-        const tries: Box[] = [
-          box(x, below),
-          box(x - w / 3, below),
-          box(x + w / 3, below),
-          box(x, below + NAME_LH * 0.6),
-          box(x, below + NAME_LH * 1.2),
-          box(x, y - DOT - GAP - h),
-          box(x + DOT + GAP + w / 2, y - h / 2),
-          box(x - DOT - GAP - w / 2, y - h / 2),
-        ];
-        const others = [...taken, ...dots.filter((d) => d.id !== id)];
-        const cost = (b: Box) => others.reduce((t, o) => t + overlap(b, o.box), 0);
-        let best = tries[0];
-        let bestCost = Infinity;
-        for (const b of tries) {
-          const c = cost(b);
-          if (c < bestCost) [best, bestCost] = [b, c];
-          if (c === 0) break;
-        }
-        label[id] = { ...best, lines, fallback: bestCost > 0 };
-        for (const o of others) if (overlap(best, o.box) > 0) clashes.push([id, o.id]);
-        taken.push({ id, box: best });
-      }
-      if (!clashes.length) break;
-      // The later of each clashing pair moves down, with all after it.
-      for (const [a, b] of clashes) {
-        const later = rank.get(a)! > rank.get(b)! ? a : b;
-        room[later] = (room[later] ?? 0) + NAME_LH / 2;
-      }
-    }
-
-    const bottom = Math.max(...Object.values(at).map((p) => p.y + R), ...Object.values(label).map((l) => l.y1));
-    return { width, height: bottom + PAD_BOTTOM, at, label };
+    const h = (id: string) => heights[id] ?? guess(z);
+    const tallest = (step: number) => Math.max(...GRAPH.atStep.get(step)!.map((m) => h(m.id)));
+    const steps = GRAPH.steps;
+    const last = steps.at(-1)!;
+    const fill = frameH > 0 && steps.length > 1 ? (frameH - under - z.padTop - z.padBottom - z.nameTop - tallest(last)) / (steps.length - 1) : 0;
+    const base = Math.min(z.rowMax, Math.max(z.rowMin, fill));
+    const rows: Layout['rows'] = [];
+    let y = z.padTop;
+    steps.forEach((step, k) => {
+      if (k) y += Math.max(base, z.nameTop + tallest(steps[k - 1]) + 6 + z.node / 2);
+      rows.push({ step, y });
+      for (const m of GRAPH.atStep.get(step)!) at[m.id].y = y;
+    });
+    return { width, height: y + z.nameTop + tallest(last) + z.padBottom + under, at, labelW, rows };
   }
+
+  /** The creep each run last showed (the step count the corruption last moved at), so it plays once. */
+  const creepShown = new WeakMap<Run, number>();
+  /** How long the creep plays before the beat goes on by itself. */
+  const CREEP_MS = 3200;
 </script>
 
 <script lang="ts">
-  import { backdropShadow } from '../lib/backdropShadow';
-  import type { Run } from './rules';
-  import { BLOOD_TOLL } from './rules';
-  import { bloodLine, bossAdds, placeDoes, placeKind, placeName, zoneLines } from './words';
+  import { fade } from 'svelte/transition';
+  import { MediaQuery } from 'svelte/reactivity';
+  import type { BossMod, Place } from './rules';
+  import type { Front } from './map';
+  import { BOSS_MOD_NAMES } from './rules';
+  import Glyph from './Glyph.svelte';
+  import { bloodLine, bossAdds, bossIfReached, bossLine, bossOnNode, bossRuleLines, placeDoes, placeKind, placeName, zoneLines } from './words';
 
   /** `onclose`: opened over a vendor or a reveal, it closes to go back there. */
   let { run, onclose }: { run: Run; onclose?: () => void } = $props();
@@ -196,58 +101,170 @@
   const here = $derived(GRAPH.byId.get(s.at)!);
   const options = $derived(run.options());
   const offered = $derived(new Set(options));
-  const kinds = $derived(Object.fromEntries(GRAPH.nodes.map((n) => [n.id, placeName(s.places[n.id])])));
   const route = $derived(new Set(s.log.route));
   /** The route's legs, as "from>to". */
   const legs = $derived(new Set(s.log.route.slice(1).map((id, k) => `${s.log.route[k]}>${id}`)));
-  const corrupted = (id: string) => run.corrupted(id);
-  const every = $derived(s.tuning.corruption.creep);
+  const live = $derived(s.fronts.filter((f) => f.alive));
+  const frontAt = (id: string): Front | undefined => (run.corrupted(id) ? live.find((f) => f.at === id) : undefined);
   const creepIn = $derived(run.creepIn());
-  const moved = $derived(s.moves.map((m) => `Corruption moved from ${GRAPH.byId.get(m.from)!.name} to ${GRAPH.byId.get(m.to)!.name}`).join('. '));
-  const well = $derived(s.beat?.kind === 'well' ? s.beat : null);
-  /** Out of reach for good: on a step the player has passed (or beside them), and not on their route. */
-  const gone = (id: string) => GRAPH.byId.get(id)!.step <= here.step && !route.has(id);
+  const nextStep = $derived(options.length ? GRAPH.byId.get(options[0])!.step : here.step);
+  const well = $derived(s.beat?.kind === 'well' && s.beat.node === s.at ? s.beat : null);
+  const name = (id: string) => GRAPH.byId.get(id)!.name;
 
+  const wideQ = new MediaQuery('(min-width: 860px)');
+  const wide = $derived(wideQ.current);
+  const Z = $derived(wide ? WIDE : PHONE);
+
+  // ---- The corruption moving on: once per creep, then the map settles. ----
+  const moves = $derived(s.moves.filter((m) => m.from !== m.to));
+  const fromIds = $derived(new Set(moves.map((m) => m.from)));
+  const toIds = $derived(new Set(moves.map((m) => m.to)));
+  const movedSaid = $derived(moves.length ? `Corruption moved ${moves.map((m) => `from ${name(m.from)} to ${name(m.to)}`).join(', and ')}` : '');
+  let creeping = $state(false);
+  $effect(() => {
+    if (!moves.length || creepShown.get(run) === s.crept) return;
+    creepShown.set(run, s.crept);
+    creeping = true;
+  });
+  $effect(() => {
+    if (!creeping) return;
+    const t = setTimeout(() => (creeping = false), CREEP_MS);
+    return () => clearTimeout(t);
+  });
+  /** A node the corruption is leaving (as it plays): shown corrupted, fading. */
+  const leaving = (id: string) => creeping && fromIds.has(id) && !toIds.has(id);
+  /** A node the corruption is reaching (as it plays): shown plain, turning. */
+  const arriving = (id: string) => creeping && toIds.has(id) && !fromIds.has(id);
+  /** The rule on a node's label: its corruption's, or (as it plays) the one leaving it. */
+  function ruleOn(id: string): BossMod | null {
+    if (leaving(id)) {
+      const m = moves.find((v) => v.from === id)!;
+      return s.fronts.find((f) => f.id === m.front)?.rule ?? null;
+    }
+    return frontAt(id)?.rule ?? null;
+  }
+
+  // ---- Words ----
+  const bossRules = $derived(live.map((f) => BOSS_MOD_NAMES[f.rule]));
+  function nodeSaid(id: string, p: Place): string {
+    const n = name(id);
+    if (p.kind === 'boss') return `${n}: Boss, at the boss, only Torches work${bossRules.length ? `, ${bossRules.join(', ')}` : ''}`;
+    const rule = ruleOn(id);
+    const said = rule && p.kind === 'zone' ? `${n}: ${placeName(p)}, Blood toll (corruption), if it reaches the boss: ${BOSS_MOD_NAMES[rule]}` : `${n}: ${placeName(p)}`;
+    return `${said}${id === s.at ? ', you are here' : ''}`;
+  }
+  /** A Where next row's lines, under its name and kind. */
+  function rowLines(p: Place): string[] {
+    if (p.kind !== 'zone') return [placeDoes(run, p)];
+    const z = zoneLines(run, p.type);
+    return z.rule ? [z.free, z.rule] : [z.free];
+  }
+  function rowSaid(id: string, p: Place): string {
+    const lines = p.kind === 'boss' ? [placeDoes(run, p), bossAdds(run)] : rowLines(p);
+    const f = frontAt(id);
+    const toll = f ? `. Blood toll (corruption): ${bloodLine(run).replace(' • ', ', ')}. ${bossIfReached(f.rule)}` : '';
+    return `Go to ${name(id)}: ${placeKind(p)}, ${lines.join(', ')}${toll}`;
+  }
+  const keyLine = $derived(`Blood toll (corruption): ${bloodLine(run).replace(' • ', ', ')}`);
+  const footLine = $derived(
+    `${creepIn === 0 ? 'It moves after this step.' : `It moves in ${creepIn === 1 ? '1 step' : `${creepIn} steps`}.`} Name every item in its zone to stop it.`,
+  );
+
+  // ---- The plate ----
   let width = $state(0);
+  let frameH = $state(0);
+  let keyH = $state(0);
   let frame: HTMLDivElement | undefined = $state();
-  const L = $derived(width > 0 ? layout(width, kinds) : null);
+  /** Each label's height, measured (only ever grows, so nothing jumps as the creep's lines fade). */
+  let heights: Record<string, number> = $state({});
+  const L = $derived(width > 0 ? layout(width, frameH, Z, heights, keyH) : null);
+  const measured = $derived(Object.keys(heights).length >= GRAPH.nodes.length);
 
-  // On arriving, the frame scrolls to where the player stands and the nodes ahead.
+  function measure(node: HTMLElement, id: string) {
+    const ro = new ResizeObserver(() => {
+      const h = Math.ceil(node.offsetHeight);
+      if (h > (heights[id] ?? 0)) heights[id] = h;
+    });
+    ro.observe(node);
+    return { destroy: () => ro.disconnect() };
+  }
+
+  // On arriving, the frame scrolls to where the player stands and the places ahead (and the corruption's moves, where they fit).
   let shown = false;
   $effect(() => {
-    if (!L || !frame || shown) return;
+    if (!L || !frame || !measured || shown) return;
     shown = true;
-    const ys = [s.at, ...options].map((id) => L.at[id].y);
-    frame.scrollTop = (Math.min(...ys) + Math.max(...ys)) / 2 - frame.clientHeight / 2;
+    const view = frame.clientHeight - keyH;
+    const span = (ids: string[]) => ids.map((id) => L.at[id].y);
+    let ys = span([s.at, ...options]);
+    const withMoves = [...ys, ...span(moves.flatMap((m) => [m.from, m.to]))];
+    if (Math.max(...withMoves) - Math.min(...withMoves) < view - 2 * Z.padTop) ys = withMoves;
+    frame.scrollTop = (Math.min(...ys) + Math.max(...ys) + Z.nameTop + 24) / 2 - view / 2;
   });
 
-  const go = (id: string) => run.choose(id);
+  // The screen fills the window under the run's bar (it scrolls on a short phone).
+  let root: HTMLDivElement | undefined = $state();
+  let top = $state(0);
+  $effect(() => {
+    if (!root) return;
+    const el = root;
+    const set = () => (top = Math.round(el.getBoundingClientRect().top + scrollY));
+    set();
+    const raf = requestAnimationFrame(set);
+    addEventListener('resize', set);
+    return () => {
+      cancelAnimationFrame(raf);
+      removeEventListener('resize', set);
+    };
+  });
+
+  const go = (id: string) => {
+    if (!creeping) run.choose(id);
+  };
+  const icon = (p: Place) => (p.kind === 'zone' ? 'zone' : p.kind);
 </script>
 
-<div class="map-screen">
-  <header class="screen-title">
-    <p class="kicker">{here.step === 0 ? 'The camp' : 'Step '}{#if here.step}<span class="n">{here.step}</span> of <span class="n">{GRAPH.boss.step}</span>{/if}</p>
-    <h1>{here.name}</h1>
-    {#if well}<p class="sub beat">{here.name} • your flask {well.refilled ? 'is full again' : 'was already full'}</p>{/if}
-    {#if s.moves.length}<p class="sub beat corrupt" role="status" aria-label={moved}>The corruption moves on</p>{/if}
-    <p class="sub">Pick where to go next. The lit places are one step ahead.</p>
-    {#if onclose}<button class="btn ghost close" onclick={onclose}>Back</button>{/if}
-  </header>
+{#snippet mark(kind: string)}
+  {#if kind === 'vaal'}
+    <span class="ic"><Glyph of="corrupt" /></span>
+  {:else if kind === 'flask'}
+    <span class="ic"><Glyph of="flask" /></span>
+  {:else}
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round">
+      {#if kind === 'zone'}
+        <path d="M12 3 20 12 12 21 4 12z" /><path d="M12 7.5 16.5 12 12 16.5 7.5 12z" stroke-width=".9" />
+      {:else if kind === 'town'}
+        <path d="M4.5 20.5v-9L12 5.5l7.5 6v9M9.6 20.5v-5.4h4.8v5.4M2.8 20.5h18.4" /><path d="M12 2.5v3" stroke-width=".9" />
+      {:else if kind === 'well'}
+        <path d="M5 12.5h14M6.4 12.5v7.6h11.2v-7.6M7.6 12.5V6.2M16.4 12.5V6.2M5.4 6.2 12 3.4l6.6 2.8z" />
+        <path d="M12 6.2v2.4M10.6 8.6h2.8v2h-2.8z" stroke-width=".9" /><path d="M6.4 16.3h11.2" stroke-width=".8" />
+      {:else if kind === 'boss'}
+        <path d="M4 17.5 5.6 7.8l4 4.2L12 5l2.4 7 4-4.2L20 17.5z" /><path d="M4 20.5h16" /><circle cx="12" cy="14.6" r="1.1" stroke-width=".9" />
+      {:else if kind === 'camp'}
+        <path d="M3 20.2 12 5.2l9 15z" /><path d="M12 12.6l-3 7.6M12 12.6l3 7.6M12 5.2V2.8" stroke-width=".9" />
+      {:else}
+        <path d="M9.5 5.5 16 12l-6.5 6.5" stroke-width="1.5" />
+      {/if}
+    </svg>
+  {/if}
+{/snippet}
+
+<div class="map-screen" class:wide bind:this={root} style:--top="{top}px">
+  <h1 class="sr">{here.name}</h1>
+  <p class="task">Pick where to go next. The lit places are one step ahead.</p>
 
   <div class="body">
-    <section class="panel mapbox" aria-label="The map" use:backdropShadow={{ fill: 'linear' }}>
-      <div class="frame" bind:this={frame} bind:clientWidth={width}>
+    <section class="map" class:wide aria-label="The map">
+      <div class="map-sc" bind:this={frame} bind:clientWidth={width} bind:clientHeight={frameH}>
         {#if L}
-          <div class="canvas" style:height="{L.height}px">
-            <svg width={L.width} height={L.height} viewBox="0 0 {L.width} {L.height}" aria-hidden="true">
+          <div class="map-in" style:height="{L.height}px">
+            <svg class="links" width={L.width} height={L.height} aria-hidden="true">
               {#each GRAPH.nodes as a (a.id)}
                 {#each GRAPH.next[a.id] as b (b)}
-                  {@const leg = legs.has(`${a.id}>${b}`)}
                   <line
-                    class="path"
-                    class:taken={leg}
-                    class:open={a.id === s.at && offered.has(b)}
-                    class:gone={!leg && (gone(a.id) || gone(b))}
+                    class="lk"
+                    class:past={legs.has(`${a.id}>${b}`)}
+                    class:next={a.id === s.at && offered.has(b)}
                     x1={L.at[a.id].x}
                     y1={L.at[a.id].y}
                     x2={L.at[b].x}
@@ -255,382 +272,801 @@
                   />
                 {/each}
               {/each}
-              {#each GRAPH.nodes as n (n.id)}
-                {@const p = L.at[n.id]}
-                {@const k = s.places[n.id].kind}
-                <g
-                  class="node {k}"
-                  class:visited={route.has(n.id)}
-                  class:gone={gone(n.id)}
-                  class:corrupt={corrupted(n.id)}
-                  transform="translate({p.x} {p.y})"
-                >
-                  {#if offered.has(n.id)}<circle class="ring" r="12" />{/if}
-                  {#if k === 'town' || k === 'camp'}
-                    <rect class="dot" x="-6" y="-6" width="12" height="12" rx="1.5" />
-                  {:else if k === 'boss'}
-                    <circle class="dot" r="8" /><circle class="inner" r="4" />
-                  {:else if k === 'well'}
-                    <circle class="dot" r="6" /><circle class="pip" r="2" />
-                  {:else}
-                    <circle class="dot" r="6" />
-                  {/if}
-                  {#if n.id === s.at}<path class="you" d="M0 -7 7 0 0 7 -7 0Z" />{/if}
-                </g>
-              {/each}
-              {#each GRAPH.nodes as n (n.id)}
-                {@const l = L.label[n.id]}
-                {@const cx = (l.x0 + l.x1) / 2}
-                <text class="tag" class:lit={offered.has(n.id) || n.id === s.at} class:gone={gone(n.id)} x={cx}>
-                  {#each l.lines as line, k (k)}<tspan class="tag-name" x={cx} y={l.y0 + (k + 1) * NAME_LH - 3}>{line}</tspan>{/each}<tspan
-                    class="tag-kind {s.places[n.id].kind}"
-                    class:corrupt={corrupted(n.id)}
-                    x={cx}
-                    y={l.y0 + l.lines.length * NAME_LH + KIND_LH - 2}>{corrupted(n.id) ? 'Blood toll' : kinds[n.id]}</tspan
-                  >
-                </text>
+              {#each moves as m (m.front)}
+                <line class="lk trail" x1={L.at[m.from].x} y1={L.at[m.from].y} x2={L.at[m.to].x} y2={L.at[m.to].y} />
               {/each}
             </svg>
-            <!-- Tap targets for the nodes ahead. Screen readers (and tests) get the cards under the map instead. -->
-            {#each options as id (id)}
-              <button class="hit" style:left="{L.at[id].x - R}px" style:top="{L.at[id].y - R}px" tabindex="-1" aria-hidden="true" onclick={() => go(id)}
-              ></button>
+            {#each L.rows as r (r.step)}
+              <span class="sn" class:now={r.step === nextStep && options.length > 0} style:top="{r.y}px" aria-hidden="true">{r.step || ''}</span>
             {/each}
+            {#each GRAPH.nodes as n (n.id)}
+              {@const p = s.places[n.id]}
+              {@const at = L.at[n.id]}
+              {@const lit = offered.has(n.id)}
+              {@const rule = ruleOn(n.id)}
+              <div
+                class="node {icon(p)}"
+                class:past={route.has(n.id) && n.id !== s.at}
+                class:here={n.id === s.at}
+                class:lit
+                class:cor={!!rule && !leaving(n.id) && !arriving(n.id)}
+                class:leaving={leaving(n.id)}
+                class:arriving={arriving(n.id)}
+                style:left="{at.x}px"
+                style:top="{at.y}px"
+              >
+                {#if lit}
+                  <button class="g" tabindex="-1" aria-label={nodeSaid(n.id, p)} disabled={creeping} onclick={() => go(n.id)}>{@render mark(icon(p))}</button>
+                {:else}
+                  <span class="g" role="img" aria-label={nodeSaid(n.id, p)}>{@render mark(icon(p))}</span>
+                {/if}
+                <span class="nl" style:max-width="{L.labelW[n.id]}px" aria-hidden="true" use:measure={n.id}
+                  >{n.name}<em>{placeName(p)}</em>{#if rule && p.kind === 'zone'}<em class="r">Blood toll</em><em class="br">{bossOnNode(rule)}</em
+                    >{/if}{#if p.kind === 'boss'}<em class="br">{bossLine(run)}</em>{/if}</span
+                >
+              </div>
+            {/each}
+            {#if creeping}
+              {#each moves as m (m.front)}
+                {@const a = L.at[m.from]}
+                {@const b = L.at[m.to]}
+                <span class="ember" style:left="{a.x}px" style:top="{a.y}px" style:--dx="{b.x - a.x}px" style:--dy="{b.y - a.y}px" aria-hidden="true"></span>
+              {/each}
+            {/if}
           </div>
         {/if}
       </div>
-      <ul class="key" aria-hidden="true">
-        <li><svg viewBox="-8 -8 16 16"><path class="you" d="M0 -6 6 0 0 6 -6 0Z" /></svg>You</li>
-        <li><svg viewBox="-8 -8 16 16"><circle class="key-corrupt" r="5" /></svg>Blood toll (corruption): −{BLOOD_TOLL} life per item, double loot</li>
-      </ul>
-      {#if s.fronts.some((f) => f.alive)}
-        <p class="foot">
-          It moves on every {every === 1 ? 'step' : every === 2 ? '2nd step' : `${every}rd step`}. Name every item in its zone to stop it.
-          {creepIn === 0 ? 'It moves after this step.' : `It moves in ${creepIn === 1 ? '1 step' : `${creepIn} steps`}.`}
-        </p>
+      {#if creeping}
+        <div class="creep" role="status" out:fade={{ duration: 300 }}>
+          <span class="sr">{movedSaid}</span>
+          <span class="t" aria-hidden="true">{@render mark('vaal')}The corruption moves on</span>
+          <button class="tap" onclick={() => (creeping = false)}>Tap to go on</button>
+        </div>
+      {/if}
+      {#if live.length}
+        <div class="map-key" bind:offsetHeight={keyH}>
+          <span class="r">{@render mark('vaal')} {keyLine}</span>
+          <span>{footLine}</span>
+        </div>
       {/if}
     </section>
 
-    <section class="ahead" aria-labelledby="ahead-h">
-      <h2 id="ahead-h">Where next</h2>
-      <ul class="choices">
+    <div class="side">
+      {#if well}
+        <p class="beat" role="status">
+          {@render mark('flask')}<span><span class="pl">{here.name}</span> • your flask {well.refilled ? 'is full again' : 'was already full'}</span>
+        </p>
+      {/if}
+      <section class="wn" class:resting={creeping} aria-labelledby="wn-h">
+        <div class="wn-head">
+          <h2 class="sub" id="wn-h">Where next</h2>
+          {#if options.length}<span class="stp">Step {nextStep} of {GRAPH.boss.step}</span>{/if}
+          <span class="grow"></span>
+          {#if onclose}<button class="btn ghost small" onclick={onclose}>Back</button>{/if}
+        </div>
         {#each options as id (id)}
-          {@const n = GRAPH.byId.get(id)!}
           {@const p = s.places[id]}
-          {@const bad = corrupted(id)}
-          <li>
-            <button class="choice" class:corrupt={bad} onclick={() => go(id)}>
-              <span class="head">
-                <span class="name">{n.name}</span>
-                <span class="kind">{placeKind(p)}{#if bad}<span class="bad">{' • Blood toll'}</span>{/if}</span>
-              </span>
-              {#if p.kind === 'zone'}
-                {@const z = zoneLines(run, p.type)}
-                <span class="does">{z.free}</span>
-                {#if z.rule}<span class="does">{z.rule}</span>{/if}
-                {#if bad}<span class="note">{bloodLine(run)}</span>{/if}
-              {:else}
-                <span class="does">{placeDoes(run, p)}</span>
-                {#if p.kind === 'boss'}<span class="note">{bossAdds(run)}</span>{/if}
+          {@const f = frontAt(id)}
+          <button class="place" class:cor={!!f} aria-label={rowSaid(id, p)} disabled={creeping} onclick={() => go(id)}>
+            <span class="k">{@render mark(f ? 'vaal' : icon(p))}</span>
+            <span class="tx">
+              <span class="nm">{name(id)}<span class="kd">{placeKind(p)}</span></span>
+              {#each rowLines(p) as line, k (k)}<span class="ln">{line}</span>{/each}
+              {#if p.kind === 'boss'}
+                {#each bossRuleLines(run) as line, k (k)}<span class="ln t">{line}</span>{:else}<span class="ln">{bossAdds(run)}</span>{/each}
               {/if}
-            </button>
-          </li>
+              {#if f}
+                <span class="ln t"><b>Blood toll</b> • {bloodLine(run)}</span>
+                <span class="ln t">{bossIfReached(f.rule)}</span>
+              {/if}
+            </span>
+            <span class="chev">{@render mark('chev')}</span>
+          </button>
         {/each}
-      </ul>
-    </section>
+      </section>
+    </div>
   </div>
 </div>
 
 <style>
-  .foot {
-    margin: 0.5rem 0 0;
-    font-size: 0.95rem;
-    color: var(--muted);
-  }
-  .beat {
-    color: var(--gold-hi);
-  }
-  .beat.corrupt {
-    color: #f2685a;
-  }
-  .close {
-    margin-top: 0.5rem;
-  }
   .map-screen {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 8px;
+    /* The window under the run's bar, less the page's foot padding. */
+    min-height: max(30rem, calc(100svh - var(--top, 0px) - 12px));
+  }
+  .task {
+    display: none;
   }
   .body {
-    display: grid;
-    gap: 1rem;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  @media (min-width: 860px) {
-    .body {
-      grid-template-columns: minmax(0, 32rem) minmax(0, 1fr);
-      align-items: start;
-    }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .wide .task {
+    display: block;
+    margin: 0;
+    text-align: center;
+    font-size: 1.19rem;
+    color: #e6dccb;
+    line-height: 1.2;
+  }
+  .wide .body {
+    display: grid;
+    grid-template-columns: minmax(0, 640px) minmax(0, 460px);
+    justify-content: center;
+    column-gap: 40px;
+    padding-bottom: 12px;
+  }
+  .wide .side {
+    justify-content: center;
+    gap: 18px;
   }
 
-  /* ---- The map ---- */
-  :global(.wr) .mapbox {
-    padding: 0;
+  .ic {
+    display: inline-block;
+    flex: none;
+    width: 1em;
+    height: 1em;
   }
-  .frame {
-    /* Phones: room under it for the choices. Scrolls down inside, never across. */
-    max-height: clamp(18rem, 56svh, 40rem);
+
+  /* ---- The plate ---- */
+  .map {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 15rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(8, 6, 5, 0.9) var(--dither);
+    image-rendering: pixelated;
+    box-shadow:
+      inset 0 0 0 3px #080605,
+      inset 0 0 0 4px rgba(125, 99, 51, 0.28);
+    overflow: hidden;
+  }
+  .map.wide {
+    min-height: 26rem;
+  }
+  .map-sc {
+    position: absolute;
+    inset: 4px;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
-    scrollbar-color: var(--gold-lo) transparent;
-    border-bottom: 1px solid var(--line);
-    border-radius: var(--radius) var(--radius) 0 0;
+    scrollbar-width: none;
+    image-rendering: auto;
   }
-  @media (min-width: 860px) {
-    .frame {
-      max-height: max(22rem, calc(100svh - 16rem));
-    }
+  .map-sc::-webkit-scrollbar {
+    display: none;
   }
-  .canvas {
+  .map-in {
     position: relative;
   }
-  .canvas > svg {
-    display: block;
+  .links {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
   }
-  .path {
-    stroke: rgba(125, 99, 51, 0.6);
-    stroke-width: 1.2;
-  }
-  .path.gone {
-    stroke: rgba(125, 99, 51, 0.22);
-  }
-  .path.taken {
-    stroke: var(--gold);
-    stroke-width: 2.2;
-  }
-  .path.open {
-    stroke: var(--gold-hi);
-    stroke-width: 1.6;
-    stroke-dasharray: 4 3;
-  }
-  .node .dot {
-    fill: #241b13;
-    stroke: var(--gold-lo);
-    stroke-width: 1.4;
-  }
-  .node.town .dot,
-  .node.camp .dot {
-    stroke: var(--gold);
-  }
-  .node.boss .dot,
-  .node .inner {
-    stroke: #c8604a;
-  }
-  .node .inner {
-    fill: none;
+  .lk {
+    stroke: #3b3024;
     stroke-width: 1;
   }
-  .node .pip {
-    fill: #9cc4c8;
-  }
-  .node.visited .dot {
-    fill: var(--gold);
-    stroke: var(--gold-hi);
-  }
-  .node.gone {
-    opacity: 0.4;
-  }
-  .node.corrupt .dot,
-  .key-corrupt {
-    fill: #a3221b;
-    stroke: #ff8a70;
-    stroke-width: 1.2;
-  }
-  /* A small glow, so a corrupted node reads at a glance. */
-  .node.corrupt .dot {
-    filter: drop-shadow(0 0 3px rgba(226, 52, 43, 0.9));
-  }
-  .ring {
-    fill: none;
-    stroke: var(--gold-hi);
+  .lk.past {
+    stroke: rgba(201, 164, 92, 0.6);
     stroke-width: 1.5;
   }
-  .you {
-    fill: var(--gold-hi);
-    stroke: #3a2a12;
-    stroke-width: 1;
-    filter: drop-shadow(0 0 3px rgba(241, 217, 155, 0.7));
+  .lk.next {
+    stroke: var(--gold-hi);
+    stroke-width: 1.5;
+    stroke-dasharray: 3 3;
+    opacity: 0.85;
   }
-  .tag {
-    font-family: var(--font-body);
-    text-anchor: middle;
-    paint-order: stroke;
-    stroke: #0e0b08;
-    stroke-width: 3px;
-    stroke-linejoin: round;
+  .lk.trail {
+    stroke: #e0553f;
+    stroke-width: 1.5;
+    stroke-dasharray: 2 3;
   }
-  .tag-name {
-    font-size: 12.5px;
-    fill: #cbbfa9;
-  }
-  .tag.lit .tag-name {
-    fill: var(--gold-hi);
-  }
-  .tag.gone {
-    opacity: 0.45;
-  }
-  .tag-kind {
-    font-family: var(--font-cinzel);
-    font-size: 8.5px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    fill: var(--muted);
-  }
-  .tag-kind.town,
-  .tag-kind.camp {
-    fill: var(--gold);
-  }
-  .tag-kind.boss {
-    fill: #ff9c86;
-  }
-  .tag-kind.corrupt {
-    fill: #f2846e;
-  }
-  .hit {
+  .sn {
     position: absolute;
-    width: 44px;
-    height: 44px;
+    left: 6px;
+    translate: 0 -50%;
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    color: #5d5242;
+  }
+  .wide .sn {
+    left: 10px;
+    font-size: 11px;
+  }
+  .sn.now {
+    color: var(--gold);
+  }
+
+  .node {
+    position: absolute;
+    width: 0;
+    height: 0;
+  }
+  .node .g {
+    position: absolute;
+    left: 0;
+    top: 0;
+    translate: -50% -50%;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
     padding: 0;
-    border: 0;
-    border-radius: 50%;
+    color: #8a7a60;
     background: none;
+    border: 0;
+    font: inherit;
+    cursor: default;
+  }
+  .wide .node .g {
+    width: 28px;
+    height: 28px;
+  }
+  .node .g::before {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    rotate: 45deg;
+    border: 1px solid currentColor;
+    background: #0e0b08;
+  }
+  .node .g .ic {
+    position: relative;
+    font-size: 15px;
+  }
+  .node.zone .g .ic {
+    font-size: 9px;
+  }
+  .node.camp .g::before,
+  .node.town .g::before,
+  .node.well .g::before,
+  .node.boss .g::before {
+    rotate: none;
+    border-radius: 50%;
+    inset: 1px;
+  }
+  .node.boss .g {
+    width: 32px;
+    height: 32px;
+    color: #e8a08a;
+  }
+  .node.boss .g .ic {
+    font-size: 19px;
+  }
+  .node .nl {
+    position: absolute;
+    left: 0;
+    top: 14px;
+    translate: -50% 0;
+    width: max-content;
+    padding: 1px 4px 2px;
+    border-radius: 3px;
+    background: rgba(8, 6, 5, 0.82);
+    font-size: 11.5px;
+    line-height: 1.12;
+    text-align: center;
+    text-wrap: balance;
+    color: #8a7f6c;
+    pointer-events: none;
+  }
+  .wide .node .nl {
+    top: 16px;
+    font-size: 13px;
+  }
+  .node .nl em {
+    display: block;
+    font-style: normal;
+    font-size: 10px;
+    color: #6b6150;
+  }
+  .wide .node .nl em {
+    font-size: 11.5px;
+  }
+  .node .nl em.r {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 8.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #ff8a72;
+  }
+  .wide .node .nl em.r {
+    font-size: 9.5px;
+  }
+  .node .nl em.br {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 10px;
+    color: #d39a86;
+  }
+  .wide .node .nl em.br {
+    font-size: 11px;
+  }
+  .node.past .g,
+  .node.past .nl {
+    opacity: 0.55;
+  }
+  .node.past .g {
+    color: var(--gold-lo);
+  }
+  .node.past .nl em.br {
+    color: #6b6150;
+  }
+  .node.here .g {
+    color: #f1d99b;
+  }
+  .node.here .g::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 1.5px solid #d9a066;
+    box-shadow: 0 0 12px rgba(217, 160, 102, 0.5);
+  }
+  .node.here .nl {
+    color: #e6dccb;
+  }
+  .node.lit .g {
+    color: var(--gold-hi);
     cursor: pointer;
   }
-  .hit:hover {
-    background: rgba(241, 217, 155, 0.12);
-    box-shadow: 0 0 0 1px rgba(241, 217, 155, 0.45);
+  /* A tap target 44 px across. */
+  .node.lit .g::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
   }
-  .key {
-    margin: 0;
-    padding: 0.5rem 0.9rem 0.6rem;
-    list-style: none;
+  .node.lit .g::before {
+    background: #2a1f12;
+    box-shadow:
+      0 0 0 3px rgba(241, 217, 155, 0.12),
+      0 0 14px rgba(241, 190, 90, 0.45);
+  }
+  .node.lit .g:hover::before {
+    box-shadow:
+      0 0 0 3px rgba(241, 217, 155, 0.25),
+      0 0 18px rgba(241, 190, 90, 0.6);
+  }
+  .node.lit .g:disabled {
+    cursor: default;
+  }
+  .node.lit .nl {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: #f6e7c6;
+  }
+  .node.lit .nl em:not(.r):not(.br) {
+    font-family: var(--font-body);
+    font-weight: 500;
+    color: var(--gold);
+  }
+  .node.cor .g {
+    color: #ff8a72;
+  }
+  .node.cor .g::before {
+    background: #2a0d08;
+    border-color: #e0553f;
+    box-shadow: 0 0 12px rgba(224, 85, 63, 0.45);
+  }
+  .node.lit.cor .g::before {
+    box-shadow:
+      0 0 0 3px rgba(224, 85, 63, 0.18),
+      0 0 16px rgba(224, 85, 63, 0.6);
+  }
+
+  /* ---- The corruption moving on, once ---- */
+  .ember {
+    position: absolute;
+    z-index: 3;
+    width: 0;
+    height: 0;
+    animation: ember 3s ease-in-out both;
+  }
+  .ember::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: -5px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffe4cf 0 25%, #ff7a50 45%, rgba(224, 60, 30, 0) 72%);
+    box-shadow: 0 0 10px rgba(255, 110, 60, 0.9);
+  }
+  @keyframes ember {
+    0%,
+    12% {
+      translate: 0 0;
+      opacity: 0;
+    }
+    18% {
+      opacity: 1;
+    }
+    62% {
+      translate: var(--dx) var(--dy);
+      opacity: 1;
+    }
+    75%,
+    100% {
+      translate: var(--dx) var(--dy);
+      opacity: 0;
+    }
+  }
+  .node.leaving .g {
+    animation: leave-ink 3s ease-in-out both;
+  }
+  .node.leaving .g::before {
+    animation: leave 3s ease-in-out both;
+  }
+  .node.leaving .nl em.r,
+  .node.leaving .nl em.br {
+    animation: tagout 3s ease-in-out both;
+  }
+  .node.arriving .g {
+    animation: arrive-ink 3s ease-in-out both;
+  }
+  .node.arriving .g::before {
+    animation: arrive 3s ease-in-out both;
+  }
+  .node.arriving .nl em.r,
+  .node.arriving .nl em.br {
+    animation: tagin 3s ease-in-out both;
+  }
+  @keyframes leave {
+    0%,
+    15% {
+      border-color: #e0553f;
+      background: #2a0d08;
+      box-shadow: 0 0 12px rgba(224, 85, 63, 0.45);
+    }
+    45%,
+    100% {
+      border-color: #8a7a60;
+      background: #0e0b08;
+      box-shadow: none;
+    }
+  }
+  @keyframes leave-ink {
+    0%,
+    15% {
+      color: #ff8a72;
+    }
+    45%,
+    100% {
+      color: #8a7a60;
+    }
+  }
+  @keyframes arrive {
+    0%,
+    55% {
+      border-color: #8a7a60;
+      background: #0e0b08;
+      box-shadow: none;
+    }
+    70%,
+    100% {
+      border-color: #e0553f;
+      background: #2a0d08;
+      box-shadow: 0 0 12px rgba(224, 85, 63, 0.45);
+    }
+  }
+  @keyframes arrive-ink {
+    0%,
+    55% {
+      color: #8a7a60;
+    }
+    70%,
+    100% {
+      color: #ff8a72;
+    }
+  }
+  @keyframes tagout {
+    0%,
+    15% {
+      opacity: 1;
+    }
+    40%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes tagin {
+    0%,
+    58% {
+      opacity: 0;
+    }
+    75%,
+    100% {
+      opacity: 1;
+    }
+  }
+  /* Held still: the corruption is shown where it went, the beat's line kept a moment. */
+  @media (prefers-reduced-motion: reduce) {
+    .ember {
+      display: none;
+    }
+    .node.leaving .g,
+    .node.leaving .g::before,
+    .node.leaving .nl em,
+    .node.arriving .g,
+    .node.arriving .g::before,
+    .node.arriving .nl em {
+      animation: none;
+    }
+    .node.leaving .nl em.r,
+    .node.leaving .nl em.br {
+      opacity: 0;
+    }
+    .node.arriving .g {
+      color: #ff8a72;
+    }
+    .node.arriving .g::before {
+      background: #2a0d08;
+      border-color: #e0553f;
+    }
+  }
+  .creep {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 4;
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.3rem 1rem;
-    font-size: 0.85rem;
-    color: var(--muted);
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 12px 10px 18px;
+    text-align: center;
+    background:
+      linear-gradient(180deg, rgba(30, 8, 5, 0.97) 60%, rgba(30, 8, 5, 0)),
+      var(--dither);
+    image-rendering: pixelated;
   }
-  .key li {
+  .creep .t {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 7px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: 0.04em;
+    color: #ffc4b2;
   }
-  .key svg {
-    width: 14px;
-    height: 14px;
-    overflow: visible;
+  .creep .t .ic {
+    font-size: 17px;
+    color: #ff8a72;
+  }
+  .creep .tap {
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
+    color: var(--muted);
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  /* The whole line takes the tap. */
+  .creep .tap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .map-key {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 8px 10px 7px;
+    font-size: 12.5px;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--muted);
+    background: rgba(8, 6, 5, 0.94) var(--dither);
+    border-top: 1px solid rgba(125, 99, 51, 0.25);
+  }
+  .wide .map-key {
+    font-size: 14px;
+  }
+  .map-key .r {
+    color: #ff9c86;
+  }
+  .map-key .r .ic {
+    font-size: 12px;
+    vertical-align: -1px;
+  }
+
+  /* ---- A Well's line ---- */
+  .beat {
+    flex: none;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 30px;
+    font-size: 16px;
+    text-align: center;
+    color: #e6dccb;
+  }
+  .beat .ic {
+    font-size: 18px;
+    color: #a9cf8f;
+  }
+  .beat .pl {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: #f6e7c6;
   }
 
   /* ---- Where next ---- */
-  .ahead {
+  .wn {
+    flex: none;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 6px;
+    transition:
+      opacity 0.3s,
+      filter 0.3s;
   }
-  .ahead h2 {
+  .wn.resting {
+    opacity: 0.4;
+    filter: saturate(0.6);
+    pointer-events: none;
+  }
+  .wn-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+  }
+  .wn-head .sub {
     margin: 0;
-    text-align: center;
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 17px;
+    letter-spacing: 0;
+    text-transform: none;
+    line-height: 1.2;
+    color: #e6dccb;
   }
-  .choices {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
+  .wide .wn-head .sub {
+    font-size: 19px;
   }
-  .choice {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    width: 100%;
-    min-height: 44px;
-    padding: 0.75rem 1rem 0.8rem;
+  .wn-head .stp {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .wn-head .grow {
+    flex: 1;
+  }
+  .place {
+    position: relative;
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 16px;
+    align-items: center;
+    column-gap: 10px;
+    min-height: 48px;
+    padding: 4px 10px;
     font: inherit;
     text-align: left;
-    color: var(--text);
+    color: inherit;
+    background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
     border: 1px solid var(--gold-lo);
-    border-radius: var(--radius);
-    background: linear-gradient(170deg, #211912, #0d0a07 80%);
+    border-radius: 4px;
     box-shadow:
-      inset 0 0 0 3px rgba(0, 0, 0, 0.45),
-      inset 0 0 0 4px rgba(125, 99, 51, 0.3);
+      inset 0 1px 0 rgba(255, 220, 150, 0.06),
+      0 6px 14px rgba(0, 0, 0, 0.35);
     cursor: pointer;
-    transition:
-      border-color 0.2s,
-      transform 0.2s var(--ease-out);
   }
-  .choice:hover {
+  .place:hover {
     border-color: var(--gold);
-    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 220, 150, 0.1),
+      0 0 16px rgba(201, 164, 92, 0.25);
   }
-  .choice:focus-visible {
+  .place:focus-visible {
     outline: 2px solid var(--gold);
     outline-offset: 2px;
   }
-  .choice.corrupt {
-    border-color: #7a2a1e;
+  .place:disabled {
+    cursor: default;
   }
-  .choice.corrupt:hover {
-    border-color: #c8604a;
+  .wide .place {
+    min-height: 64px;
+    padding: 6px 10px;
+    grid-template-columns: 36px minmax(0, 1fr) 18px;
   }
-  .head {
+  .place > .k {
+    justify-self: center;
+    display: grid;
+    font-size: 24px;
+    color: var(--gold);
+  }
+  .wide .place > .k {
+    font-size: 28px;
+  }
+  .place .tx {
+    min-width: 0;
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.1rem 0.8rem;
+    flex-direction: column;
+    gap: 1px;
   }
-  .head .name {
+  .place .nm {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 1.05rem;
-    letter-spacing: 0.03em;
-    color: var(--gold-hi);
+    font-size: 15px;
+    line-height: 1.15;
+    color: #f6e7c6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .head .kind {
-    font-family: var(--font-cinzel);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+  .wide .place .nm {
+    font-size: 17px;
+  }
+  .place .nm .kd {
+    margin-left: 6px;
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 13.5px;
+    color: var(--gold);
+  }
+  .place .ln {
+    font-size: 13.5px;
+    line-height: 1.2;
     color: var(--muted);
   }
-  .bad {
-    color: #f2846e;
+  .wide .place .ln {
+    font-size: 15px;
   }
-  .row {
+  .place .ln b {
+    font-weight: 500;
+    color: #cfc4b2;
+  }
+  .place .ln.t {
+    color: #d39a86;
+  }
+  .place > .chev {
     display: grid;
-    grid-template-columns: 5.5rem minmax(0, 1fr);
-    gap: 0.6rem;
-    align-items: baseline;
-    color: #e9c8a2;
-    line-height: 1.3;
+    font-size: 16px;
+    color: var(--gold-lo);
   }
-  .does {
-    color: #e9c8a2;
-    line-height: 1.3;
+  .place.cor {
+    border-color: #8e2a1e;
+    background: linear-gradient(90deg, rgba(52, 20, 14, 0.95), rgba(22, 12, 9, 0.95));
   }
-  .note {
-    font-style: italic;
-    color: var(--muted);
-    line-height: 1.3;
+  .place.cor > .k {
+    color: #ff8a72;
   }
-  .choice.corrupt .note {
-    color: #f2a08e;
+  .place.cor .ln.t {
+    color: #ff9c86;
+  }
+  .place.cor .ln.t b {
+    color: #ffc4b2;
   }
 </style>

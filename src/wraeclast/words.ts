@@ -8,6 +8,7 @@
 import {
   BLOODIED,
   BLOOD_TOLL,
+  BOSS_MOD_NAMES,
   DECOY_SWEEP,
   FLASK_STEP,
   PACK_STACKS,
@@ -94,6 +95,8 @@ export const BOSS_RULE_NOTE = 'Your other supplies stay in the pack.';
 export const bossRuleFrom = (place: string) => `From the corruption at ${place}`;
 /** Over the boss's added rules: how many corruptions reached it. */
 export const bossReached = (n: number) => `${n} ${n === 1 ? 'corruption' : 'corruptions'} reached the boss`;
+/** The boss rule, short, starting a line (the boss's node and Where next row). */
+export const BOSS_RULE_LINE = 'Only Torches work';
 
 /** Blood toll, the corruption's one modifier: what it does. */
 export const BLOOD_DOES = `Each item here costs ${BLOOD_TOLL} life when you start it. Never your last life.`;
@@ -110,6 +113,17 @@ export const BOSS_MOD_DOES: Record<BossMod, string> = {
   murky: 'Torches reveal half as much',
   teeming: "More tiles that aren't in the name",
 };
+
+/** A corruption's own boss rule, on its node (it moves with it, and goes when it's stopped). */
+export const bossOnNode = (rule: BossMod) => `Boss: ${BOSS_MOD_NAMES[rule]}`;
+/** A corruption's own boss rule, on its Where next row. */
+export const bossIfReached = (rule: BossMod) => `If it reaches the boss: ${BOSS_MOD_NAMES[rule]}`;
+/** The rules each corruption left adds at the boss, in the order seeded. */
+export const bossRulesLeft = (run: Run): BossMod[] => run.state.fronts.filter((f) => f.alive).map((f) => f.rule);
+/** The boss's line on its node and row: the boss rule, short, first, then each corruption left adds its rule. */
+export const bossLine = (run: Run) => [BOSS_RULE_LINE, ...bossRulesLeft(run).map((m) => BOSS_MOD_NAMES[m])].join(' • ');
+/** Each rule the corruption left adds at the boss, with what it does ("Murky: Torches reveal half as much"). */
+export const bossRuleLines = (run: Run) => bossRulesLeft(run).map((m) => `${BOSS_MOD_NAMES[m]}: ${BOSS_MOD_DOES[m]}`);
 
 /** A node's kind as a word: its zone type, or Camp, Town, Well, Boss. */
 export function placeName(p: Place): string {
@@ -142,14 +156,14 @@ export function placeDoes(run: Run, p: Place): string {
     case 'well':
       return 'Refills your flask';
     case 'boss':
-      return `The last fight • ${BOSS_RULE_SHORT}`;
+      return bossLine(run);
   }
 }
 
-/** The boss's row: how many rules the corruption left adds there. */
+/** The boss's row, under its line: what each rule the corruption left adds does, or that none is left. */
 export function bossAdds(run: Run): string {
-  const n = run.state.fronts.filter((f) => f.alive).length;
-  return n ? `Each corruption left adds a rule here: ${Math.min(3, n)}` : 'No corruption left: no extra rules';
+  const lines = bossRuleLines(run);
+  return lines.length ? lines.join(' • ') : 'No corruption left: no extra rules';
 }
 
 /** Why a supply does nothing on the open item now, or null when it can be used. No counts. */
