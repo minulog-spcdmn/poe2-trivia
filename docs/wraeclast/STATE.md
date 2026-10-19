@@ -48,10 +48,11 @@ Nothing gets built until the redesign is settled.
 
 ## Now
 
-Owner picked from design's v6 options (`decisions.md`, newest row): open
-region, three supplies each paid differently, depth plus one waystone mod,
-the Seed of Corruption, Pledges (formerly Pacts). Bets are still open; design
-is making them concrete along with the three supplies.
+Owner picked from design's v6 options (`decisions.md`, newest rows): open
+region, depth plus one waystone mod, the Seed of Corruption, Pledges
+(formerly Pacts), four supplies (Torch, Golden Page, Ancient Orb, Scroll of
+Wisdom). Gambling lives in town, to make the shop interesting. Design is
+proposing the four supplies' costs and the town's gambling.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
