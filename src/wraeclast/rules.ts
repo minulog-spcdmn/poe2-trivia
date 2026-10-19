@@ -30,7 +30,7 @@ import {
   GRAPH,
   corruptedAt,
   creep,
-  rollBossMods,
+  bossRulesOf,
   rollPlaces,
   seedFronts,
   weighted,
@@ -358,7 +358,7 @@ export interface RunLog {
   travel: { offered: string[]; picked: string; options: { node: string; kind: Place['kind']; zoneType: ZoneType | null; corrupted: boolean }[] }[];
   /** Each node arrived at: what it was, and its corruption. */
   met: { node: string; kind: Place['kind']; zoneType: ZoneType | null; corruption: Hidden | null }[];
-  fronts: { seeded: number; stopped: number; aliveAtBoss: number | null };
+  fronts: { seeded: number; stopped: number; aliveAtBoss: number | null; seeds: { node: string; rule: BossMod }[] };
   bossMods: BossMod[];
   misses: number;
   bought: Record<Supply, number>;
@@ -396,6 +396,8 @@ export interface RunState {
   phase: Phase;
   /** At a vendor: where (an Expedition's deals after its zone), and the town's heal on arrival. */
   vendor: { at: 'camp' | 'town' | 'expedition'; heal: number } | null;
+  /** A ware bought into a full pack, waiting for a space to replace (or to be handed back), and where its card lay. */
+  bought: { supply: Supply; n: number; price: number; at: number } | null;
   /** What the last Well or town did, for its line, until the next step. */
   beat: Beat | null;
   life: number;
@@ -687,6 +689,7 @@ export class Run {
       bossMods: [],
       phase: 'vendor',
       vendor: { at: 'camp', heal: 0 },
+      bought: null,
       beat: null,
       life: t.life,
       maxLife: t.life,
@@ -709,7 +712,7 @@ export class Run {
         route: [graph.camp.id],
         travel: [],
         met: [],
-        fronts: { seeded: fronts.length, stopped: 0, aliveAtBoss: null },
+        fronts: { seeded: fronts.length, stopped: 0, aliveAtBoss: null, seeds: fronts.map((f) => ({ node: f.at, rule: f.rule })) },
         bossMods: [],
         misses: 0,
         bought: count(SUPPLIES),
@@ -739,7 +742,7 @@ export class Run {
   /** The nodes the player can travel to now (past a Well, from a vendor, or on a zone's last reveal), else none. */
   options(): string[] {
     const p = this.state.phase;
-    return p === 'map' || p === 'vendor' || this.leaving() ? this.graph.next[this.state.at] : [];
+    return p === 'map' || (p === 'vendor' && !this.state.bought) || this.leaving() ? this.graph.next[this.state.at] : [];
   }
 
   /** Whether the named item is a zone's last, its loot settled, and the next place is picked from its reveal (an Expedition's trader comes first). */
@@ -831,11 +834,11 @@ export class Run {
     return true;
   }
 
-  /** Whether the ware at `i` on the vendor's table can be bought: at a vendor, with the gold and the room. */
+  /** Whether the ware at `i` on the vendor's table can be bought: at a vendor, with the gold, nothing bought still waiting for a space. A full pack doesn't stop it: a space is picked after. */
   canBuy(i: number): boolean {
     const s = this.state;
     const ware = s.stock[i];
-    return s.phase === 'vendor' && !!ware && s.gold >= s.tuning.price[ware] && this.fits(ware, s.tuning.stack[ware]);
+    return s.phase === 'vendor' && !!ware && !s.bought && s.gold >= s.tuning.price[ware];
   }
 
   /** The open item, while it can be played on (opened, not yet named). */
@@ -947,11 +950,32 @@ export class Run {
     const s = this.state;
     const ware = s.stock[i];
     const price = s.tuning.price[ware];
+    const n = s.tuning.stack[ware];
     s.gold -= price;
-    this.stow(ware, s.tuning.stack[ware]);
-    s.stock.splice(i, 1);
-    s.log.bought[ware] += s.tuning.stack[ware];
     s.log.goldSpent += price;
+    s.stock.splice(i, 1);
+    if (this.fits(ware, n)) {
+      this.stow(ware, n);
+      s.log.bought[ware] += n;
+    } else s.bought = { supply: ware, n, price, at: i };
+    return true;
+  }
+
+  /** A ware bought into a full pack: it replaces the stack at `slot`, or (null) goes back on the table, its gold handed back. */
+  placeBought(slot: number | null): boolean {
+    const s = this.state;
+    const b = s.bought;
+    if (s.phase !== 'vendor' || !b) return false;
+    if (slot !== null) {
+      if (slot < 0 || slot >= s.pack.length) return false;
+      s.pack[slot] = { supply: b.supply, n: b.n };
+      s.log.bought[b.supply] += b.n;
+    } else {
+      s.gold += b.price;
+      s.log.goldSpent -= b.price;
+      s.stock.splice(Math.min(b.at, s.stock.length), 0, b.supply);
+    }
+    s.bought = null;
     return true;
   }
 
@@ -1032,9 +1056,8 @@ export class Run {
       this.depart();
       this.show('town');
     } else if (place.kind === 'boss') {
-      const alive = s.fronts.filter((f) => f.alive).length;
-      s.log.fronts.aliveAtBoss = alive;
-      s.bossMods = rollBossMods(alive, this.rng);
+      s.log.fronts.aliveAtBoss = s.fronts.filter((f) => f.alive).length;
+      s.bossMods = bossRulesOf(s.fronts);
       s.log.bossMods = [...s.bossMods];
       s.visit = { node: id, items: BOSS_ITEMS + (s.bossMods.includes('lingering') ? 1 : 0), done: 0 };
       s.phase = 'boss';

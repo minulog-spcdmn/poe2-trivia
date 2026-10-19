@@ -24,7 +24,7 @@ export const LIMITS = {
   weight: [0, 99],
   lootGold: [0, 999],
   supplies: [1, 5],
-  fronts: [0, 5],
+  fronts: [0, 4],
   creep: [1, 3],
   multiplier: [1, 5],
   names: [0, 6],

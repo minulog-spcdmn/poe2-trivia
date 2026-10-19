@@ -147,7 +147,7 @@
 
     <fieldset>
       <legend>Corruption</legend>
-      {@render field('Fronts seeded', t.corruption.seeds, LIMITS.fronts, (n) => (t.corruption.seeds = n))}
+      {@render field('Corruptions seeded (up to 4: one per boss rule)', t.corruption.seeds, LIMITS.fronts, (n) => (t.corruption.seeds = n))}
       {@render field('Creeps every (steps)', t.corruption.creep, LIMITS.creep, (n) => (t.corruption.creep = n))}
       {@render field('Loot multiplier', t.corruption.multiplier, LIMITS.multiplier, (n) => (t.corruption.multiplier = n))}
       <p class="small">A corrupted zone takes a Blood toll of 10 life an item and deals its loot times the multiplier.</p>

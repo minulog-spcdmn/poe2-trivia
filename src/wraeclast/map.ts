@@ -97,7 +97,8 @@ export const HIDDEN_NAMES: Record<Hidden, string> = { blood: 'Blood toll' };
 export type BossMod = 'lingering' | 'bloodied' | 'murky' | 'teeming';
 export const BOSS_MODS: readonly BossMod[] = ['lingering', 'bloodied', 'murky', 'teeming'];
 export const BOSS_MOD_NAMES: Record<BossMod, string> = { lingering: 'Lingering', bloodied: 'Bloodied', murky: 'Murky', teeming: 'Teeming' };
-export const MAX_BOSS_MODS = 3;
+/** The most rules the corruption can add at the boss: one per corruption, each its own. */
+export const MAX_BOSS_MODS = 4;
 
 /** What a node is in this run. */
 export type Place = { kind: 'camp' } | { kind: 'town' } | { kind: 'boss' } | { kind: 'well' } | { kind: 'zone'; type: ZoneType };
@@ -114,6 +115,8 @@ export interface Front {
   alive: boolean;
   /** The node it was stopped at (cleared there), or null. */
   stoppedAt: string | null;
+  /** The rule it adds at the boss if it's still alive there, dealt as it's seeded (no two alike). */
+  rule: BossMod;
 }
 
 /** Whether a node is corrupted: a live front stands on it. */
@@ -174,10 +177,11 @@ export function rollPlaces(g: MapGraph, zoneShare: number, rng: () => number): R
 /**
  * Where corruption starts: `count` zones in the route's first half
  * (seedSteps), on different branches where possible (at least SEED_GAP apart
- * across the map).
+ * across the map), each with its own boss rule (so at most one per rule).
  */
 export function seedFronts(g: MapGraph, places: Record<string, Place>, count: number, rng: () => number): Front[] {
   const [lo, hi] = seedSteps(g);
+  count = Math.min(count, BOSS_MODS.length);
   const zones = shuffled(
     g.nodes.filter((n) => n.step >= lo && n.step <= hi && places[n.id].kind === 'zone'),
     rng,
@@ -196,7 +200,8 @@ export function seedFronts(g: MapGraph, places: Record<string, Place>, count: nu
   const picked: MapNode[] = best.slice(0, count);
   // Where the map can't keep them apart, the nearest ones fill in.
   for (const n of zones) if (picked.length < count && !picked.includes(n)) picked.push(n);
-  return picked.map((n, id) => ({ id, at: n.id, alive: true, stoppedAt: null }));
+  const rules = shuffled(BOSS_MODS, rng);
+  return picked.map((n, id) => ({ id, at: n.id, alive: true, stoppedAt: null, rule: rules[id] }));
 }
 
 /** A front's move as it creeps. */
@@ -232,7 +237,5 @@ export function creep(g: MapGraph, places: Record<string, Place>, fronts: Front[
   return moves;
 }
 
-/** The boss's modifiers: one per live front, rolled without repeats, at most MAX_BOSS_MODS. */
-export function rollBossMods(alive: number, rng: () => number): BossMod[] {
-  return shuffled(BOSS_MODS, rng).slice(0, Math.min(MAX_BOSS_MODS, alive));
-}
+/** The boss's rules the corruption adds: each live front's own (a waiting one too), in the order seeded. */
+export const bossRulesOf = (fronts: readonly Front[]): BossMod[] => fronts.filter((f) => f.alive).map((f) => f.rule);

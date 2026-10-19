@@ -4,7 +4,7 @@
 // travel (choose), so it arrives as a player does. And a wrong line for an
 // item, for the benches' misses.
 
-import { GRAPH, type BossMod, type Hidden, type Place } from '../../wraeclast/map.ts';
+import { BOSS_MODS, GRAPH, type BossMod, type Hidden, type Place } from '../../wraeclast/map.ts';
 import { BOSS_ITEMS, gridAdjacency, letters, type ItemPlay, type Run, type Supply } from '../../wraeclast/rules.ts';
 
 /** A node at a step, or at the nearest step that holds an open one (the map may change under the benches). */
@@ -20,7 +20,8 @@ export function arrive(run: Run, id: string, { place, hidden = null, mods = [] }
   if (place) s.places[id] = place;
   // Corrupted as asked: a live front on the node (a zone), or none.
   s.fronts = s.fronts.filter((f) => f.at !== id);
-  if (hidden && s.places[id].kind === 'zone') s.fronts.push({ id: s.fronts.length, at: id, alive: true, stoppedAt: null });
+  const rule = BOSS_MODS.find((r) => !s.fronts.some((f) => f.rule === r)) ?? BOSS_MODS[0];
+  if (hidden && s.places[id].kind === 'zone') s.fronts.push({ id: s.fronts.length, at: id, alive: true, stoppedAt: null, rule });
   s.at = GRAPH.prev[id][0] ?? GRAPH.camp.id;
   s.phase = 'map';
   s.visit = null;

@@ -66,7 +66,11 @@ export function botRun(seed: number, tuning: Tuning = DEFAULT_TUNING, trace?: (l
         if (i < 0) continue;
         // At the last town nothing is kept back: what's left goes on supplies.
         const enough = !ahead.last && (want === 'flare' ? run.held('flare') >= need('flare') : units() >= need('wisdom'));
-        if (!enough && run.canBuy(i)) run.buy(i);
+        if (!enough && run.canBuy(i)) {
+          run.buy(i);
+          // Bought into a full pack: handed back.
+          if (s.bought) run.placeBought(null);
+        }
         else if (!enough && s.gold < s.tuning.price[want]) cantAfford++;
       }
       trace?.(`${s.at} step ${run.node.step}: ahead ${ahead.zones}+${boss}, gold ${s.gold}, pack ${s.pack.map((st) => st.supply + st.n).join(' ')}`);

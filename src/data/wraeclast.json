@@ -18,22 +18,6 @@
       "kind": "open"
     },
     {
-      "id": "ogham-farmlands",
-      "name": "Ogham Farmlands",
-      "step": 1,
-      "x": 0.4658,
-      "y": 0.2805,
-      "kind": "open"
-    },
-    {
-      "id": "the-grelwood",
-      "name": "The Grelwood",
-      "step": 1,
-      "x": 0.4814,
-      "y": 0.2531,
-      "kind": "open"
-    },
-    {
       "id": "freythorn",
       "name": "Freythorn",
       "step": 1,
@@ -79,14 +63,6 @@
       "step": 2,
       "x": 0.55,
       "y": 0.36,
-      "kind": "open"
-    },
-    {
-      "id": "the-bone-pits",
-      "name": "The Bone Pits",
-      "step": 2,
-      "x": 0.6,
-      "y": 0.375,
       "kind": "open"
     },
     {
@@ -143,14 +119,6 @@
       "step": 5,
       "x": 0.39,
       "y": 0.505,
-      "kind": "open"
-    },
-    {
-      "id": "the-cuachic-vault",
-      "name": "The Cuachic Vault",
-      "step": 5,
-      "x": 0.42,
-      "y": 0.555,
       "kind": "open"
     },
     {
@@ -223,14 +191,6 @@
       "step": 8,
       "x": 0.432,
       "y": 0.742,
-      "kind": "open"
-    },
-    {
-      "id": "the-upper-prison",
-      "name": "The Upper Prison",
-      "step": 8,
-      "x": 0.455,
-      "y": 0.68,
       "kind": "open"
     },
     {
