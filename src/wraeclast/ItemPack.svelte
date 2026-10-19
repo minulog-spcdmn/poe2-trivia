@@ -1,16 +1,19 @@
 <script lang="ts">
-  // The pack on an item, as the design's row: its stacks (8 at most, up to 5
-  // each; a supply may fill several), each with its mark and short name, the
-  // count on a badge.
-  // A slot that would do nothing here is set back, dimmed and struck, and says
-  // why when held or focused; a tap uses one. The flask is the dock's.
-  import { SUPPLY_NAMES, type Run, type Supply } from './rules';
+  // The pack on an item, as the design's row: all its spaces, each stack (up
+  // to five of one supply; a supply may fill several) with its mark and short
+  // name, the count on a badge, and the spaces still free dashed. On a phone
+  // the row shows marks and counts only. A slot that would do nothing here is
+  // set back, dimmed and struck, and says why when held or focused; a tap
+  // uses one. The flask is the dock's.
+  // `tray`: the pack in the dock's tray (a short phone), four spaces a row,
+  // taller, with their names.
+  import { PACK_STACKS, SUPPLY_NAMES, type Run, type Supply } from './rules';
   import Glyph from './Glyph.svelte';
   import { SHORT, does, why } from './words';
 
-  let { run, onuse }: { run: Run; onuse?: (supply: Supply) => void } = $props();
-  const s = $derived(run.state);
-  const stacks = $derived(s.pack);
+  let { run, onuse, tray = false }: { run: Run; onuse?: (supply: Supply) => void; tray?: boolean } = $props();
+  const stacks = $derived(run.state.pack);
+  const free = $derived(Math.max(0, PACK_STACKS - stacks.length));
 
   function use(sp: Supply, slot: number) {
     if (run.use(sp, slot)) onuse?.(sp);
@@ -18,25 +21,28 @@
 </script>
 
 {#if stacks.length}
-  <div class="pack" class:compact={stacks.length > 6} role="group" aria-label="Your pack">
+  <div class="pack" class:tray role="group" aria-label="Your pack: {stacks.length} of {PACK_STACKS} spaces used">
     {#each stacks as st, i (i)}
       {@const sp = st.supply}
       {@const off = why(run, sp)}
-      <button class="slot" class:off={!!off} disabled={!!off} onclick={() => use(sp, i)} title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`} aria-label="{SUPPLY_NAMES[sp]}, a stack of {st.n}{off ? `: ${off}` : `. ${does(run, sp)}`}">
+      <button class="slot" class:off={!!off} disabled={!!off} onclick={() => use(sp, i)} title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`} aria-label="{SUPPLY_NAMES[sp]}: {st.n} in your pack. {off ?? does(run, sp)}">
         <span class="n" aria-hidden="true">{st.n}</span>
         <span class="ic" aria-hidden="true"><Glyph of={sp} /></span>
         <span class="lbl" aria-hidden="true">{SHORT[sp]}</span>
       </button>
     {/each}
+    {#each Array.from({ length: free }, (_, k) => k) as k (k)}
+      <span class="slot empty" role="img" aria-label="Empty space"></span>
+    {/each}
   </div>
 {:else}
-  <p class="empty">{s.item?.boss !== null && s.item ? 'Your pack is empty. Only Flares work here.' : 'Your pack is empty.'}</p>
+  <p class="empty-pack">Your pack is empty.</p>
 {/if}
 
 <style>
   .pack {
     display: flex;
-    gap: 7px;
+    gap: 4px;
     padding-top: 5px;
   }
   .slot {
@@ -44,7 +50,7 @@
     flex: 1 1 0;
     min-width: 0;
     max-width: 92px;
-    height: 52px;
+    height: 40px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -58,15 +64,17 @@
     color: var(--gold);
     cursor: pointer;
   }
-  .slot:hover:not(:disabled) {
+  .slot:hover:not(:disabled):not(.empty) {
     border-color: var(--gold-lo);
     color: var(--gold-hi);
   }
   .ic {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
+  /* On a phone's row the marks and counts only; the names come back in the tray and on wide screens. */
   .lbl {
+    display: none;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -77,20 +85,20 @@
   .n {
     position: absolute;
     top: -6px;
-    right: -5px;
+    right: -4px;
     display: grid;
     place-items: center;
-    min-width: 18px;
-    height: 18px;
+    min-width: 16px;
+    height: 16px;
     padding: 0 4px;
     font-family: var(--font-cinzel);
     font-weight: 700;
-    font-size: 11.5px;
+    font-size: 10.5px;
     line-height: 1;
     color: var(--gold-hi);
     background: #0c0a08;
     border: 1px solid var(--gold-lo);
-    border-radius: 9px;
+    border-radius: 8px;
   }
   /* Can't be used here: set back as a dimmed answer, struck through. */
   .slot.off {
@@ -108,22 +116,44 @@
     rotate: -28deg;
     background: rgba(233, 200, 162, 0.6);
   }
-  /* Seven or eight supplies on a phone: their marks and counts only. */
-  .compact .slot {
-    height: 42px;
+  /* A space still free: dashed, empty. */
+  .slot.empty {
+    background: rgba(0, 0, 0, 0.25);
+    border-style: dashed;
+    border-color: #3b3024;
+    box-shadow: none;
+    cursor: default;
   }
-  .compact .lbl {
-    display: none;
+  /* In the dock's tray: four a row, taller, named. */
+  .pack.tray {
+    flex-wrap: wrap;
+    padding-top: 4px;
+  }
+  .tray .slot {
+    flex: 0 0 calc((100% - 12px) / 4);
+    max-width: none;
+    height: 56px;
+  }
+  .tray .lbl {
+    display: block;
+    font-size: 11.5px;
   }
   @container item (min-width: 700px) {
-    .compact .slot {
+    .pack {
+      gap: 7px;
+    }
+    .slot {
       height: 52px;
     }
-    .compact .lbl {
+    .ic {
+      width: 22px;
+      height: 22px;
+    }
+    .lbl {
       display: block;
     }
   }
-  .empty {
+  .empty-pack {
     margin: 0;
     padding: 4px 0;
     text-align: center;

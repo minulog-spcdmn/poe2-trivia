@@ -171,6 +171,14 @@ export function why(run: Run, supply: Supply): string | null {
 /** A mark, said. */
 export const MARK_SAYS: Record<Mark, string> = { gold: 'right here', silver: 'in the name, elsewhere', struck: 'not in the name' };
 export const MARKS_LEGEND = 'Gold: right, in its place • Silver: in the name, elsewhere • Struck: not in the name';
+/** The marks' key under the answer line, each mark's name and what it means (MARKS_LEGEND, in parts). */
+export const MARK_KEY: readonly { mark: Mark; name: string; says: string }[] = [
+  { mark: 'gold', name: 'Gold', says: 'right, in its place' },
+  { mark: 'silver', name: 'Silver', says: 'in the name, elsewhere' },
+  { mark: 'struck', name: 'Struck', says: 'not in the name' },
+];
+/** How many items with marks the key shows on before it goes. */
+export const MARK_KEY_ITEMS = 3;
 
 /** The flask, said in full (its tooltip), and on the drink key. */
 export const FLASK_LINE = `Heals ${FLASK_STEP} now, and again when this item ends and when the next one ends. Each drink uses one charge. Wells refill it.`;
@@ -221,6 +229,11 @@ export const DECK_DREW: Record<DeckClue, string> = {
   lengths: 'Word lengths',
   burn: 'A patch',
 };
+/** The clues said in words on the item, where nothing of the tooltip shows them. */
+export const SAME_KIND = 'the same kind as this one';
+export const LENGTHS_CLUE = 'Shown above the answer line: a dot for each tile, grouped by word';
+export const PATCH_CLUE = 'A patch of the art is revealed';
+export const NO_CLUES = 'No clues yet. Use a supply from your pack';
 
 /** "2 words: 3 and 2 tiles". */
 export function lengthsSaid(lengths: number[]): string {

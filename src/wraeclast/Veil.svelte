@@ -160,10 +160,10 @@
     style:--h={H}
     style:--s={2.2}
     role="img"
-    aria-label={named ? 'The item, named' : burnedCount ? 'The item under the Veil, parts of it burned in' : 'The item, under the Veil'}
+    aria-label={named ? "The item's art" : burnedCount ? "The item's art, patches revealed" : "The item's art, hidden"}
   >
     {#if !plain && !shapes.length}
-      <span class="loading">Lifting the Veil</span>
+      <span class="loading">Loading the art</span>
     {:else if plain}
       {#if named}<img src={itemImage(it.itemId)} alt="" />{/if}
     {:else}
