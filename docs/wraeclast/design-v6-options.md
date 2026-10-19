@@ -349,3 +349,138 @@ but can wait, as a place type to add once A has been played.
    - The zone's mod only (recommended)
    - The mod, plus a gold stake on a first try
    - The mod, plus Strongbox places
+
+## 9. Four supplies, and the town as the gamble
+
+The owner's answers to section 8: four supplies, not three, and the
+gambling lives in the town. This section replaces section 8's supplies and
+its bets. There are no zone-mod or first-try bets; a zone's waystone mod
+stays only as its character (section 2).
+
+### Four supplies, four jobs, four prices
+
+Each supply tests a different kind of knowing:
+- **Torch:** the art (do you know its look?);
+- **Golden Page:** the flavor text (its lore);
+- **Ancient Orb:** another unique of the same category (what kind of thing
+  it is);
+- **Scroll of Wisdom:** the next mod line, common first (its stats).
+
+The fourth price is **the Seed's share**: the supply feeds the corruption,
+and the Seed gains 5 life. Before the duel that's a debt you'll meet later.
+At the duel it heals the Seed in front of you.
+
+Recommended:
+
+| Supply | Paid in | How | Why it isn't plainly better |
+| --- | --- | --- | --- |
+| Torch | Gold | Bought at towns, 2 for 8 | The strongest on most items, so it's the one gold rations. Every Torch is a Whetstone not bought |
+| Scroll of Wisdom | Reward | At hand; the answer drops a card less and hits 8 less at the duel | The first line is weak and the third gives a lot away, so each one costs more than the last is worth |
+| Golden Page | Life | At hand, 5 life a use | Decides an item for a lore reader and does nothing for anyone else |
+| Ancient Orb | The Seed's share | At hand; the Seed gains 5 life | Cheap now, dear late: the same price grows with every turn you wander, so early it's nearly free |
+
+Alternative (the board as the fourth price):
+
+| Supply | Paid in | How |
+| --- | --- | --- |
+| Torch | The board | Each Torch adds one more decoy name to the Inscription |
+| Scroll of Wisdom | Gold | Bought at towns, 2 for 8 |
+| Golden Page | Reward | The answer drops a card less and hits 8 less |
+| Ancient Orb | Life | 5 life a use |
+
+The alternative makes the art cost a harder build: see more, then pick from
+more. It reads well but stacks two costs on the one supply people use most.
+The Seed's share ties the fourth price to the run's own clock. That's why I
+recommend it.
+
+**Limits for both:** a supply paid at use is at hand on every item, at most
+2 per item. Only the gold supply is shopped for.
+
+**What gold is for:**
+- the gold supply;
+- a Blacksmith's Whetstone (+2 to every hit);
+- an Armourer's Scrap (the Seed hits 1 less);
+- healing (20 life);
+- a flask drink;
+- the town's gamble, below.
+
+### The town as the gamble
+
+A town is the only place you spend, and every visit stays under a minute. I
+drew these from PoE's own gambling: buying unidentified items blind, haggling
+over a price, opening a Stacked Deck for a random divination card, and the
+Ritual shop's rolled wares. They take only the mechanics, never an NPC's
+name. That keeps them clear of the rejected "Gwennen" idea. They are still
+the gamba that idea rejected, but now it's the owner's ask, and it lives in
+the main loop: the town is the shop.
+
+**A. A rolled market (recommended)**
+
+```
+Ziggurat Encampment                        gold 46
+Whetstone        12   (sale)
+Torch ×2          8
+Armourer's Scrap 20   (dear)
+Healing          10
+[ Reroll the market • 5 ]           [ Leave ]
+```
+
+- **What's offered:** 4 wares, rolled each visit at half to double their
+  usual price; a sale or a dear price is marked. A reroll deals 4 new wares
+  at new prices, for 5 gold, then 8, then 12.
+- **You risk:** the reroll's gold, and the chance the next deal is worse than
+  what you passed up.
+- **You might win:** two Whetstones on sale, which is a duel won.
+- **Feels like:** a dice roll at the counter: "do I take a fair price now, or
+  roll for a great one?" That's two or three taps a visit.
+
+**B. Stacked Decks at the counter**
+
+```
+Forest Encampment                          gold 46
+Whetstone 16 • Torch ×2 8 • Scrap 16 • Healing 10
+Stacked Deck 10   open it here:
+  Whetstone ×2 • Torch ×4 • 30 gold • Scrap • nothing
+```
+
+- **What's offered:** fixed wares at list price, plus Stacked Decks for 10
+  gold each, opened on the spot. The prize table is shown, so the odds are
+  fair to see.
+- **You risk:** 10 gold a deck; one deck in five gives nothing.
+- **You might win:** two Whetstones for 10 gold.
+- **Feels like:** a scratch card beside a plain shop. It's the most fun to
+  open, but the shop itself stays as boring as now.
+- **Name:** Stacked Deck is free again, since it's no longer a supply. In
+  PoE it opens into a random divination card, so here it does what it does
+  in the game.
+
+**C. A haggle**
+
+```
+Whetstone • list 16
+Offer:  [ 16 • sure ]  [ 11 • often ]  [ 6 • rarely ]
+Refused: the Whetstone is gone until the next town
+```
+
+- **What's offered:** every ware at list price, or a lower offer that may be
+  refused. A refused ware leaves the shop for this visit.
+- **You risk:** losing the ware you needed most.
+- **You might win:** a third off everything, if the offers land.
+- **Feels like:** a bluff with the shopkeeper. It's quick, but it's one
+  gamble per ware, which gets busy on a phone.
+
+**Recommendation: A, with one Stacked Deck as a ware it can roll.** The
+market makes the shopping itself the gamble, as the owner asked. A Deck
+turning up now and then adds the scratch card. A Sekhemas boon fits it as a
+Pledge, too: **Chipped Dice**, "your first reroll each town is free"
+(price: Trade Tariff, wares cost a quarter more).
+
+### Questions for the owner
+
+1. **Which prices for the four supplies?**
+   - Torch gold, Scroll reward, Golden Page life, Ancient Orb the Seed's share (recommended)
+   - Torch the board, Scroll gold, Golden Page reward, Ancient Orb life
+2. **Which town gamble?**
+   - A rolled market you can reroll for gold, with a Stacked Deck now and then (recommended)
+   - Stacked Decks beside a plain shop
+   - Haggling over each price
