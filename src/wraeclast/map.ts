@@ -3,7 +3,8 @@
 // links between them are a constant here (the v5 handoff's table: the links
 // are the Gabriel graph of the real spots, none cross); where each sits comes
 // from src/data/wraeclast.json (the owner's placements, left as they are),
-// scaled to these 14 places' box. A place's ring is how many links it lies
+// scaled to these 14 places' box (only each node's id, name, x and y are
+// read: its step and kind are v4's route, left in the file, unused). A place's ring is how many links it lies
 // from the lair: the corruption spreads out ring by ring. Pure.
 
 import mapData from '../data/wraeclast.json' with { type: 'json' };
@@ -69,10 +70,10 @@ function build() {
     links: p.links,
   }));
   const byId = new Map(places.map((p) => [p.id, p]));
-  return { places, byId, camp: places.find((p) => p.kind === 'camp')!, lair: byId.get(lair.id)! };
+  return { places, byId, camp: places.find((p) => p.kind === 'camp')!, lair: byId.get(lair.id)!, maxRing: Math.max(...places.map((p) => p.ring)) };
 }
 
-/** The region: its places, each by id, the camp and the lair. */
+/** The region: its places, each by id, the camp, the lair and the farthest ring (the spread past it corrupts nothing more). */
 export const REGION = build();
 
 /** The links, each once (a before b by the table's order), for drawing. */
@@ -80,12 +81,15 @@ export const LINKS: [string, string][] = REGION.places.flatMap((p, i) => p.links
 
 // ---- Laying the region out on a screen ----
 
-/** The plate's sizes: each place's mark, its label's font and widest line, and the inset that keeps labels inside. */
-export const PLATE = { node: 24, big: 30, font: 11, lineH: 12.5, labelMax: 86, insetX: 44, insetTop: 34, insetBottom: 34, gap: 3 };
+/** The plate's sizes: each place's mark (a zone's, a town's or the lair's), what the lair's heart grows by each ring the spread moves, its label's font and widest line, and the inset that keeps labels inside. */
+const PLATE = { node: 24, big: 30, grow: 5, font: 11, lineH: 12.5, labelMax: 86, insetX: 44, insetTop: 34, insetBottom: 34, gap: 3 };
 
-export type LabelSide = 'below' | 'above' | 'right' | 'left';
+/** The lair's heart across, px, with the spread at `spread`: a size larger each ring, till the farthest ring. */
+export const heartSize = (spread: number) => PLATE.big + PLATE.grow * Math.max(0, Math.min(spread, REGION.maxRing));
 
-export interface RegionLayout {
+type LabelSide = 'below' | 'above' | 'right' | 'left';
+
+interface RegionLayout {
   /** Each place's centre, px. */
   at: Record<string, { x: number; y: number }>;
   /** Each place's label: its side, its lines (as estimated), its box. */
@@ -110,18 +114,19 @@ type Box = { x: number; y: number; w: number; h: number };
 const meets = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /**
- * The region on a plate `width` by `height` px: each place where the owner
+ * The region on a plate `width` by `height` px, the lair's heart `heart` px
+ * across: each place where the owner
  * placed it, scaled into the plate less its inset, and each label below its
  * mark, or above, right or left where below would cover another mark or
  * label (the first side clear, in that order; below when none is).
  */
-export function layoutRegion(width: number, height: number): RegionLayout {
+export function layoutRegion(width: number, height: number, heart: number = PLATE.big): RegionLayout {
   const z = PLATE;
   const at: RegionLayout['at'] = {};
   for (const p of REGION.places) {
     at[p.id] = { x: z.insetX + p.x * Math.max(0, width - 2 * z.insetX), y: z.insetTop + p.y * Math.max(0, height - z.insetTop - z.insetBottom) };
   }
-  const size = (p: RegionPlace) => (p.kind === 'zone' ? z.node : z.big);
+  const size = (p: RegionPlace) => (p.kind === 'zone' ? z.node : p.kind === 'lair' ? heart : z.big);
   const taken: Box[] = REGION.places.map((p) => ({ x: at[p.id].x - size(p) / 2, y: at[p.id].y - size(p) / 2, w: size(p), h: size(p) }));
   const labels: RegionLayout['labels'] = {};
   // Top to bottom, so a label above finds the ones over it laid already.

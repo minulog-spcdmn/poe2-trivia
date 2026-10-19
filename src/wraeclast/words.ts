@@ -21,7 +21,7 @@ const SUPPLY_PLURALS: Record<Supply, string> = {
 export const supplies = (n: number, supply: Supply) => `${n} ${n === 1 ? SUPPLY_NAMES[supply] : SUPPLY_PLURALS[supply]}`;
 
 /** What each supply does when used. */
-export const DOES: Record<Supply, string> = {
+const DOES: Record<Supply, string> = {
   flare: 'Reveals a patch of the art.',
   wisdom: 'Shows a mod line, rarer each time.',
   lore: 'Shows the flavor text, with the name hidden.',
@@ -69,6 +69,13 @@ export const seedLine = (run: Run) => `The Seed • ${run.state.foe.life} life �
 /** Your duel line: "You • 82 life • a bare answer hits 20". */
 export const youLine = (run: Run) => `You • ${run.state.life} life • a bare answer hits ${run.bareHit()}`;
 
+/** What the map says under the plate before a place is tapped. */
+export const MAP_HINT = "Tap a place to see it. You can enter any place next to one you've cleared, and the lair at any time. Red veins: corrupted. A red outline: the next zone you name corrupts it.";
+/** The corruption spreading, as the map plays it once. */
+export const SPREAD_SAYS = { title: 'The corruption spreads', tap: 'Tap to go on' };
+/** The spread, read aloud: "The corruption spreads to Maraketh and The Red Vale." */
+export const spreadSaid = (names: string[]) => (names.length ? `The corruption spreads to ${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]}.` : 'The corruption spreads.');
+
 /** A place's one line on the map, as a tap shows it. */
 export function placeLine(run: Run, id: string): string {
   const s = run.state;
@@ -104,8 +111,7 @@ export function why(run: Run, supply: Supply): string | null {
 
 /** A mark, said. */
 export const MARK_SAYS: Record<Mark, string> = { gold: 'right spot', silver: 'in the name, wrong spot', struck: 'not in the name' };
-export const MARKS_LEGEND = 'Gold: right spot • Silver: wrong spot • Struck: not in the name';
-/** The marks' key under the answer line, each mark's name and what it means (MARKS_LEGEND, in parts). */
+/** The marks' key under the answer line, each mark's name and what it means. */
 export const MARK_KEY: readonly { mark: Mark; name: string; says: string }[] = [
   { mark: 'gold', name: 'Gold', says: 'right spot' },
   { mark: 'silver', name: 'Silver', says: 'wrong spot' },

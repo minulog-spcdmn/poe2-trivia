@@ -2,7 +2,7 @@
   // The tuning panel, collapsed at the page's foot: the numbers the next run
   // starts with, kept in storage as they change, and in each run's log.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { DEFAULT_TUNING, DEPTHS, SUPPLIES, SUPPLY_NAMES, type Range } from './rules';
+  import { BOARDS, DEFAULT_TUNING, DEPTHS, SUPPLIES, SUPPLY_NAMES, type Range } from './rules';
   import { LIMITS, isDefault } from './tuning';
   import { play } from './play.svelte';
   import { DEPTH_NAME } from './words';
@@ -12,7 +12,6 @@
   const t = $derived(play.tuning);
   const changed = $derived(!isDefault(t));
   const BOARD_NAMES = { zone: 'A zone', duel: 'The duel' } as const;
-  const BOARDS = ['zone', 'duel'] as const;
   const HIT_NAMES = ['No supply', 'One kind', 'Two kinds or more'] as const;
 
   /**

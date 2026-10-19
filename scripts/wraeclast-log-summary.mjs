@@ -1,5 +1,5 @@
-// Wraeclast run logs, summed up as plain text: about 40 lines a run, then one
-// line per item. Reads a run's file (.wraeclast-logs/, written by the dev
+// Wraeclast run logs (v5, log v7), summed up as plain text: about 40 lines a
+// run, one line per item, then each item's board and tries, and the tuning. Reads a run's file (.wraeclast-logs/, written by the dev
 // server: vite.config.ts, wraeclastLogs), a folder of them, or the end
 // screen's copied log ({ wraeclastRuns: [...] }).
 //
@@ -117,9 +117,11 @@ function summary(log) {
     if (!b && !u) continue;
     out.push(`  ${name}: ${b} • ${u} • ${Math.max(0, b - u)}`);
   }
-  const heals = (log.met ?? []).filter((m) => m.healed || m.noHeal).map((m) => (m.noHeal ? `${m.node} none (less recovery)` : `${m.node} +${m.healed}`));
-  out.push(`Town heals: ${heals.length ? heals.join(' • ') : 'none'}`);
+  out.push('Places entered (place • kind • heal • gold spent • supplies bought):');
+  for (const m of log.met ?? []) out.push(`  ${m.node} • ${m.kind} • ${m.noHeal ? 'none (less recovery)' : m.healed ? `+${m.healed}` : 'none'} • ${m.spent} • ${m.bought}`);
   out.push(`Route: ${(log.route ?? []).join(' > ')}`);
+  // Time on each screen between items, in order: "map 12s".
+  out.push(`Screens: ${screens.map((sc) => `${sc.screen} ${sc.node} ${secs(sc.ms)}`).join(' • ') || 'none'}`);
   out.push('Drafts (where • offered • taken):');
   if (!(log.drafts ?? []).length) out.push('  none');
   for (const d of log.drafts ?? []) out.push(`  ${d.node} • ${d.offered.map(boonName).join(', ')} • ${d.took ? boonName(d.took) : 'passed'}`);
@@ -128,25 +130,46 @@ function summary(log) {
   const rolled = (log.region ?? []).map((z) => `${z.node} ${DEPTH_NAMES[z.depth] ?? z.depth}${z.mod ? ` (${MOD_NAMES[z.mod] ?? z.mod})` : ''}`);
   if (rolled.length) out.push(`Zones as rolled: ${rolled.join(' • ')}`);
 
+  /** The pack as an item opened: "Torch 2, Golden Page 1", or empty. */
+  const packOf = (it) =>
+    Object.entries(it.pack ?? {})
+      .filter(([, n]) => n)
+      .map(([k, n]) => `${SUPPLY_NAMES[k] ?? k} ${n}`)
+      .join(', ') || 'empty';
+  /** The boons held as an item opened. */
+  const heldOn = (it) => (it.boons ?? []).map(boonName).join(', ') || 'none';
   const used = (it) => [...it.supplies].sort((a, b) => a.order - b.order).map((s) => SUPPLY_NAMES[s.type] ?? s.type);
   const zoneItems = items.filter((it) => !it.duel);
   const duelItems = items.filter((it) => it.duel);
-  out.push('Zones (name • place • depth • mod • corrupted • supplies used • time • misses • life before to after • gold • spread after • boons fired):');
+  out.push('Zones (name • category • place • depth • mod • corrupted • pack as it opened • supplies used • time • misses • life before to after • gold • spread after • boons held • boons fired):');
   zoneItems.forEach((it, i) => {
     const right = it.submits.some((s) => s.right);
     out.push(
-      `  ${String(i + 1).padStart(2)}. ${it.name} • ${it.node} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${it.mod ? (MOD_NAMES[it.mod] ?? it.mod) : 'no mod'} • ${it.corrupted ? 'corrupted' : 'clean'} • ${used(it).join(', ') || 'none'} • ${secs(itemMs(it))} • ${it.misses} • ${it.lifeBefore} to ${it.lifeAfter} • ${it.gold ?? 0} • ${it.spread ?? '?'} • ${firedOn(it)}${right ? '' : ' • lost here'}`,
+      `  ${String(i + 1).padStart(2)}. ${it.name} • ${it.category} • ${it.node} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${it.mod ? (MOD_NAMES[it.mod] ?? it.mod) : 'no mod'} • ${it.corrupted ? 'corrupted' : 'clean'} • ${packOf(it)} • ${used(it).join(', ') || 'none'} • ${secs(itemMs(it))} • ${it.misses} • ${it.lifeBefore} to ${it.lifeAfter} • ${it.gold ?? 0} • ${it.spread ?? '?'} • ${heldOn(it)} • ${firedOn(it)}${right ? '' : ' • lost here'}`,
     );
   });
-  out.push('Duel (name • depth • the Seed as it opened • you as it opened • its hit on you • supplies used • right or wrong • your hit • boons fired):');
+  out.push('Duel (name • category • depth • the Seed as it opened • you as it opened • its hit on you • pack as it opened • supplies used (kinds) • right or wrong • your hit • boons held • boons fired):');
   if (!duelItems.length) out.push('  not reached');
   duelItems.forEach((it, i) => {
     const d = it.duelLog;
     const right = it.submits.some((s) => s.right);
     out.push(
-      `  ${String(i + 1).padStart(2)}. ${it.name} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${d ? `The Seed ${d.seed.life} life, hits ${d.seed.hit} • You ${d.you.life} life, a bare answer hits ${d.you.hit} • took ${d.took}` : 'no lines'} • ${used(it).join(', ') || 'none'} • ${it.submits.length ? (right ? 'right' : `wrong, -${it.submits.at(-1).lost} life`) : 'no answer'} • ${d ? d.dealt : 0} • ${firedOn(it)}`,
+      `  ${String(i + 1).padStart(2)}. ${it.name} • ${it.category} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${d ? `The Seed ${d.seed.life} life, hits ${d.seed.hit} • You ${d.you.life} life, a bare answer hits ${d.you.hit} • took ${d.took}` : 'no lines'} • ${packOf(it)} • ${used(it).join(', ') || 'none'} (${d ? d.kinds : 0}) • ${it.submits.length ? (right ? 'right' : `wrong, -${it.submits.at(-1).lost} life`) : 'no answer'} • ${d ? d.dealt : 0} • ${heldOn(it)} • ${firedOn(it)}`,
     );
   });
+  // Each item's board and tries, for a closer look: its tiles and patches, the decoy names, the Ancient Orb's sibling, each Torch's burn-in, each submit's tiles and marks (+ gold, ~ silver, - struck).
+  out.push('Boards and tries:');
+  items.forEach((it, i) => {
+    out.push(
+      `  ${String(i + 1).padStart(2)}. ${it.name} (${it.itemId}): ${it.tiles.answer.length + it.tiles.decoys.length} tiles, ${it.patches} patches • decoy names ${it.tiles.names.join(', ') || 'none'} • sibling ${it.sibling ?? 'none'} • burn-ins ${it.burnIns.map((b) => `${b.patches} at ${secs(b.ms)}`).join(', ') || 'none'}`,
+    );
+    for (const sub of it.submits) {
+      const line = sub.tiles.map((tile, k) => `${tile}${{ gold: '+', silver: '~', struck: '-' }[sub.marks[k]] ?? ''}`).join(' ');
+      out.push(`      ${sub.right ? 'right' : `miss -${sub.lost}`} at ${secs(sub.ms)}: ${line}${sub.breaks.length ? ` (breaks after ${sub.breaks.join(', ')})` : ''}`);
+    }
+  });
+  out.push(`Tuning: ${Object.entries(log.tuning ?? {}).map(([k, v]) => `${k} ${typeof v === 'object' ? JSON.stringify(v).replace(/"/g, '') : v}`).join(' • ')}`);
+  out.push(`Log v${log.v} • ended ${log.end ?? 'not yet'} • ended on item ${log.endedOn ? log.endedOn.n + 1 : 'none'}`);
   return out.join('\n');
 }
 

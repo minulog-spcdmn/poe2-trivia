@@ -5,7 +5,6 @@
   // entry as the scoreboard's pill (the life vessel with its walls every 25,
   // the life a miss just took, the gold and what a reveal just added), and
   // the boons held as seals: a tap opens a sheet with one line each.
-  import { MediaQuery } from 'svelte/reactivity';
   import { isMuted, setMuted, sfx } from '../lib/sound';
   import type { Run } from './rules';
   import { NAMES } from './boons';
@@ -33,10 +32,6 @@
           : placeName(kind),
   );
 
-  /** A desktop (860 px and up): what the player is doing, on a line of its own. */
-  const wideQ = new MediaQuery('(min-width: 860px)');
-  const task = $derived(wideQ.current && s.phase === 'solved' && s.item ? `${s.item.log.submits.at(-1)?.right ? 'Named' : 'It was'}: ${s.item.log.name}` : '');
-
   /** The boons' sheet, open. */
   let sheet = $state(false);
 
@@ -50,7 +45,7 @@
 <header class="hdr" aria-label="Where you are">
   <span class="brand"><span class="flame" aria-hidden="true"></span><span class="brand-name">PoE2.Quest</span></span>
   <p class="meta">
-    <span class="zone" class:boss={kind === 'lair'}>{s.phase === 'map' ? 'Wraeclast' : node.name}</span>
+    <span class="zone" class:lair={kind === 'lair'}>{s.phase === 'map' ? 'Wraeclast' : node.name}</span>
     <span class="kind">{sub}</span>
   </p>
   <div class="tools">
@@ -61,8 +56,6 @@
     </button>
   </div>
 </header>
-
-
 
 <div class="strip">
   <div class="chip me" aria-label="You: {s.life} life, {s.gold} gold">
@@ -99,11 +92,6 @@
         <li><span class="seal" class:duo={NAMES[b].length > 1} aria-hidden="true">{sealOf(b)}</span><span><b>{BOON_NAME[b]}</b>{boonDoes(run, b)}</span></li>
       {/each}
     </ul>
-  </div>
-{/if}
-{#if task}
-  <div class="task" class:reveal={s.phase === 'solved'}>
-    <p class="sub">{task}</p>
   </div>
 {/if}
 
@@ -174,7 +162,7 @@
   .zone {
     color: color-mix(in srgb, #d8a26a 75%, var(--gold-hi));
   }
-  .zone.boss {
+  .zone.lair {
     color: #ff9c86;
   }
   .kind {
@@ -529,27 +517,6 @@
       height: 1px;
       background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
     }
-  }
-
-  /* The desktop's task row: the line over the screen, the plaque at the end of it (as the boards: 1140, 1320 and 1240 px wide by the screen). */
-  .task {
-    position: relative;
-    flex: none;
-    display: grid;
-    place-items: center;
-    height: 50px;
-    width: min(100%, 1240px);
-    margin: 0 auto;
-  }
-  .task.reveal {
-    width: min(100%, 1320px);
-  }
-  .task .sub {
-    margin: 0;
-    text-align: center;
-    font-size: 19px;
-    line-height: 1.2;
-    color: #e6dccb;
   }
 
   @media (min-width: 700px) {

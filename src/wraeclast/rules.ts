@@ -28,7 +28,7 @@ import depthData from '../data/wraeclastDepth.json' with { type: 'json' };
 import { REGION, type PlaceKind, type RegionPlace } from './map.ts';
 import { HOLD, NAMES, dealDraft, namedBy, type Boon } from './boons.ts';
 
-export type { PlaceKind, RegionPlace } from './map.ts';
+export type { PlaceKind } from './map.ts';
 export type { Boon } from './boons.ts';
 
 /** The supplies, by their working keys (the log's): flare is the Torch, lore the Golden Page, category the Ancient Orb, wisdom the Scroll of Wisdom. */
@@ -50,7 +50,7 @@ export const depthOf = (id: string): Depth => DEPTH_OF[id] ?? 'forgotten';
 
 /** A zone's waystone mod: extra damage (a miss costs more), less recovery (the next town's heal doesn't happen), more monsters (one more decoy name), armoured (no supply till the first submit). */
 export type Mod = 'damage' | 'recovery' | 'monsters' | 'armoured';
-export const MODS: readonly Mod[] = ['damage', 'recovery', 'monsters', 'armoured'];
+const MODS: readonly Mod[] = ['damage', 'recovery', 'monsters', 'armoured'];
 
 export type Range = [number, number];
 
@@ -63,7 +63,7 @@ export type LineMark = Mark | 'none';
 export const GAP = ' ';
 
 /** A board: a zone's or the duel's. */
-export type Board = 'zone' | 'duel';
+type Board = 'zone' | 'duel';
 export const BOARDS: readonly Board[] = ['zone', 'duel'];
 
 export interface Tuning {
@@ -149,7 +149,7 @@ export const TILE_SPREAD = 3;
 /** The fewest decoys a pool holds besides of, the, and and the possessives (the decoy names' tiles counting). */
 export const MIN_DECOYS = 5;
 /** Loose decoys are drawn at random from the best this many look-alikes. */
-export const DECOY_POOL = 30;
+const DECOY_POOL = 30;
 /** Words that stay whole tiles, on every board. */
 export const SMALL_WORDS: readonly string[] = ['of', 'the', 'and'];
 /** Possessive tiles on every board, the answer's and the decoy names' counting toward them: a gem's name nearly always has one, so every board shows a few. */
@@ -160,7 +160,7 @@ export const isPossessive = (tile: string) => /('s|s')$/.test(tile);
 export const LOOKALIKES = 8;
 
 /** A mod line: its kind (the tooltip section), its text (name words masked), and how many items share it. */
-export type ModLine = [string, string, number];
+type ModLine = [string, string, number];
 export type Clues = { category: string; base: string; mods: ModLine[]; flavor: string | null; support: string | null };
 export const ITEMS = itemData as Item[];
 export const SYLLABLES = syllableData as Record<string, string[][]>;
@@ -194,7 +194,7 @@ export interface Fired {
 export type Pack = Record<Supply, number>;
 
 /** The duel's two lines as a duel item opens (after the Seed's hit): the Seed's life and hit, your life and what a bare answer hits. */
-export interface DuelLines {
+interface DuelLines {
   seed: { life: number; hit: number };
   you: { life: number; hit: number };
 }
@@ -280,7 +280,7 @@ export interface ItemPlay {
 }
 
 /** What a place is this run: its kind, a zone's depth and mod as rolled at the start (and the mod corruption gives it, if it has none), and whether it's cleared. */
-export interface PlaceState {
+interface PlaceState {
   kind: PlaceKind;
   depth: Depth | null;
   mod: Mod | null;
@@ -328,7 +328,7 @@ export interface RunLog {
   items: ItemLog[];
 }
 
-export interface RunState {
+interface RunState {
   seed: number;
   tuning: Tuning;
   /** What each place is this run. */
@@ -369,7 +369,7 @@ const count = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.
 export const letters = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 /** The line's tiles, its word gaps left out. */
-export const tilesOf = (build: readonly string[]) => build.filter((t) => t !== GAP);
+const tilesOf = (build: readonly string[]) => build.filter((t) => t !== GAP);
 
 
 /** A whole number in [lo, hi], at random. */
@@ -455,7 +455,7 @@ function pickDecoys(not: ReadonlySet<string>, k: number, rng: () => number, fit:
 }
 
 /** An item's own seed in a run: its pool is the same however often it is dealt. */
-export function itemSeed(seed: number, itemId: string): number {
+function itemSeed(seed: number, itemId: string): number {
   let h = (seed ^ 0x9e3779b9) >>> 0;
   for (let i = 0; i < itemId.length; i++) h = Math.imul(h ^ itemId.charCodeAt(i), 2654435761) >>> 0;
   return (h ^ (h >>> 16)) >>> 0;
@@ -486,14 +486,14 @@ const wordsMeet = (a: string, b: string) =>
  * one of its words inside a compound (or the other way), at random, or null
  * when there is none.
  */
-export function siblingOf(answer: Item, rng: () => number): Item | null {
+function siblingOf(answer: Item, rng: () => number): Item | null {
   const own = [...wordsOf(answer.name)];
   const pool = ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category && ![...wordsOf(it.name)].some((w) => own.some((o) => wordsMeet(w, o))));
   return pool.length ? pool[Math.floor(rng() * pool.length)] : null;
 }
 
 /** A decoy name: a real item's name, and its tiles. */
-export interface DecoyName {
+interface DecoyName {
   name: string;
   tiles: string[];
 }
@@ -613,31 +613,8 @@ function pickWeighted<T>(xs: readonly T[], weight: (x: T, i: number) => number, 
   return xs[xs.length - 1];
 }
 
-/**
- * The names a board's decoy names come from, all real items, best first:
- * `near`, the answer's look-alikes (the items whose art looks most like it,
- * then whose names do), and `wide`, the rest of its category, the closest by
- * art and name first, for a board the near ones can't fill to its board's
- * fewest. Never the answer, and none whose tiles are the answer's own set.
- * (No made-up names: each was the answer with one word swapped, so the real
- * name it shared tiles with gave the answer away.)
- */
-export function decoyNameCandidates(answer: Item): { near: DecoyName[]; wide: DecoyName[] } {
-  const own = new Set(SYLLABLES[answer.id].flat());
-  const sameSet = (tiles: string[]) => new Set(tiles).size === own.size && tiles.every((t) => own.has(t));
-  const nearItems = nearOf(answer);
-  const rest = wideOf(answer);
-  const usable = (items: Item[]) =>
-    items
-      .filter((it) => letters(it.name) !== letters(answer.name) && SYLLABLES[it.id])
-      .map((it) => ({ name: it.name, tiles: SYLLABLES[it.id].flat() }))
-      .filter((d) => !sameSet(d.tiles));
-  const nearIds = new Set(nearItems.map((it) => it.id));
-  return { near: usable(nearItems), wide: usable(rest.filter((it) => !nearIds.has(it.id))) };
-}
-
 /** A pool, as dealPool deals it. */
-export interface Pool {
+interface Pool {
   decoys: string[];
   tiles: string[];
   /** The decoy names whose tiles are all on the board. */
@@ -725,10 +702,7 @@ export function dealPool(answer: Item, seed: number, size: number, names: Range 
   return { decoys, tiles: shuffle([...own, ...decoys], rng), names: picked, sibling: sib?.id ?? null };
 }
 
-/** The names a board lets the player build: the answer and every decoy name whose tiles are all there. */
-export const buildable = (tiles: readonly string[], names: readonly DecoyName[]) => names.filter((d) => d.tiles.every((t) => tiles.includes(t)));
-
-export interface RunOptions {
+interface RunOptions {
   tuning?: Tuning;
   seed?: number;
   now?: () => number;
@@ -838,6 +812,19 @@ export class Run {
     const p = this.state.places[id];
     const r = REGION.byId.get(id);
     return !!p && !!r && p.kind === 'zone' && !p.cleared && r.ring <= this.state.spread;
+  }
+
+  /** What the spread has changed since it stood at `since`: the places it corrupted (the map plays them once), and the rings it moved. */
+  spreadSince(since: number): { places: string[]; rings: number } {
+    const s = this.state;
+    return { places: REGION.places.filter((p) => p.ring > since && this.corrupted(p.id)).map((p) => p.id), rings: Math.max(0, s.spread - since) };
+  }
+
+  /** Whether the next zone named would corrupt a place: a zone not cleared, at the next ring out. */
+  corruptsNext(id: string): boolean {
+    const p = this.state.places[id];
+    const r = REGION.byId.get(id);
+    return !!p && !!r && p.kind === 'zone' && !p.cleared && r.ring === this.state.spread + 1;
   }
 
   /** A zone's depth now: one deeper while corrupted. */

@@ -1,10 +1,9 @@
 <script lang="ts">
   // A supply's or a tool's mark, engraved in fine lines (currentColor), as
-  // the design draws them: the four supplies, gold, an unidentified card,
-  // and the line's Clear.
+  // the design draws them: the four supplies, gold, and the line's Clear.
   import type { Supply } from './rules';
 
-  let { of }: { of: Supply | 'gold' | 'unid' | 'clear' } = $props();
+  let { of }: { of: Supply | 'gold' | 'clear' } = $props();
 </script>
 
 <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
@@ -26,13 +25,9 @@
     <circle cx="12" cy="12" r="8.2" />
     <circle cx="12" cy="12" r="5.4" stroke-width="1" />
     <path d="M12 8.6l1 3.4-1 3.4-1-3.4z" fill="currentColor" stroke="none" />
-  {:else if of === 'clear'}
+  {:else}
     <path d="M9 6h11v12H9l-5.5-6z" />
     <path d="M11.5 9.5l5 5M16.5 9.5l-5 5" />
-  {:else}
-    <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6" />
-    <path d="M12 17.2v.1" />
-    <path d="M12 2.5 21.5 12 12 21.5 2.5 12z" />
   {/if}
 </svg>
 
