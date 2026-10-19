@@ -1,95 +1,174 @@
-# Handoff: Wraeclast run, prototype v4 (after playtest 3) • DRAFT
+# Handoff: Wraeclast run, prototype v4 (after playtest 3)
 
-Draft, not handed out. It fills in once the owner's playtest 3 of v3.1 comes
-back with its run log. Until then it collects what is already decided for v4,
-so the handoff can go out the same day.
+Builds on v3.2 (commit 6375a4ab, PR #197, branch `claude/wraeclast-prototype-v3`;
+keep working there). Every rule in `CLAUDE.md` applies. Where this file and
+`prototype-v3-handoff.md` differ, this file wins; `decisions.md` has the
+reasons and `playtests/playtest-3.md` the evidence.
 
-Builds on v3.1 (PR #197, branch `claude/wraeclast-prototype-v3`). Every rule
-in `CLAUDE.md` applies. Where this file and `prototype-v3-handoff.md` differ,
-this file wins; `decisions.md` has the reasons.
+The owner now playtests on their own machine; the orchestrator serves each
+version from a pinned worktree. No beta deploy is needed.
 
 ## What playtest 3 found, and what changes
 
+The owner found the run unfun and wanted it to end. The item itself worked
+(median 47 s, 20% answered with no supply, knowledge decided). Everything
+around it did not.
+
 | Found | Change |
 | --- | --- |
-| (from the playtest 3 log and the owner's notes) | |
+| Too long: 52.6 min to step 11 of 16; a full run would be about 75 min | A 10-step route and 2 items per zone: about 17 items, aiming at 15 to 20 min |
+| Building a known name was cumbersome; single-letter tiles are hard to find and read | Tiles are never a single letter; fewer, longer tiles. The answer line reads as one word with player-set breaks |
+| Slow screens between items: about 25 of the 52.6 min | Loot is collected at the reveal; the next route choice follows at once (the design handoff draws it) |
+| No real choices: few places per step, a one-place zone step, corruption unavoidable | The owner re-steps the map to 10 steps with 2 to 4 places per step; corruption sits only on a front's own zone |
+| Corruption was neither harder nor tempting: 6 of 9 zones corrupted, Blood toll a flat tax, double gold worthless | Only the front's zone is corrupted, Blood toll only, shown on the map; double loot stays, and the economy makes gold matter |
+| Gold never mattered: 317 earned, 80 spent | Most supplies are bought, not found; tune to the targets below |
+| Base reveal never used; Category reveal used 8 times | Category reveal becomes the Ancient Orb (below); Base reveal unchanged for now |
+| "Often the Inscription told me what it was without any clue: it was the only valid name I could make" (owner) | Every board also holds the full tiles of a few look-alike names, real and made up, so several names can be built |
+| "A lot of the wordings were really confusing, even to me" (owner) | Every line a player reads is rewritten plainly (the design handoff), and a newcomer-read review runs before playtest 4 |
 
-## Already decided for v4
+## The route
 
-### The answer line reads as words
+- The owner re-steps `wraeclast-map.json` in the placement tool to steps 0
+  (camp) to 10 (boss), with 2 to 4 places per step and towns at two steps.
+  The orchestrator commits the new export as `src/data/wraeclast.json`. Until
+  then, keep working against the current file: the code must take any last
+  step, not assume 16.
+- Sections scale with the route: early is the first third of the steps, mid
+  the second, late the rest, then the boss. Miss costs, tile counts and gold
+  follow the section as now.
+- Items per zone default to 2 (tuning keeps 1 to 3).
+- Corruption seeds sit in the first half of the route (steps 2 to 5 on a
+  10-step map), on different branches where possible.
 
-The owner found separate tiles awkward to read. Fusing words by the answer
-leaked word breaks, so the player sets them instead:
-- Every build on the answer line is drawn as one continuous word. Each
-  syllable keeps a faint seam and its own mark (gold, silver, struck) after
-  a miss.
-- A break key sits beside Clear. Tapping it adds a word gap at the end of the
-  line, like placing a tile. Tapping a gap removes it, as a placed tile comes
-  back.
-- The gap is its own tap target, never the seam between two tiles, since
-  tapping a tile takes it back.
-- The game never places, suggests or snaps a break, and nothing reacts to
-  whether the line holds real words. Checking ignores breaks, as now.
-- Word lengths still shows its own pattern; it does not line up with the
-  player's breaks.
+## Corruption
 
-The item screen design draws it first (next design handoff).
+- A front is a zone. Only the zone a front stands on is corrupted. When the
+  front creeps on (after every second step the player takes), the zone it
+  left is a normal zone again.
+- Every corrupted zone has the same modifier, Blood toll: each item takes 10
+  life when it opens, never the last life point. The map shows it on the
+  node. There is no hidden modifier and no flip card.
+- A corrupted zone deals double loot, as now.
+- Clearing a front's zone (answering all its items) stops that front for
+  good. A front with no zone ahead waits, as now.
+- Every front still alive at the boss adds one boss modifier (Lingering,
+  Bloodied, Murky, Teeming), distinct, at most 3, as now.
+- Tuning keeps seeds (0 to 5) and the creep interval; the modifier weights go.
 
-### Supply names
+## Tiles
 
-- Golden Page replaced Lore reveal in v3.1.
-- Decoy sweep becomes the **Tangled Fossil** (a fossil rules outcomes out of
-  a pool, as this rules decoys off the board).
-- Flare becomes **Torch**, a working name: Delve's Flare does something
-  else, and no PoE item lights part of a picture.
-- Base reveal, Word lengths and First syllable keep their working names.
-- Rename them wherever a player sees them; log keys may stay.
+- No tile is a single letter. The splitter merges a one-letter piece into a
+  neighbour in the same word; a short word (2 or 3 letters) may be one tile.
+  Keep "'s" on its tile.
+- Tiles run 2 to 5 letters (plus "'s"); avoid 5 unless a 1-letter piece is the
+  alternative. Names should need fewer taps than now.
+- Decoys still match the answer's tile lengths, so no length is a tell.
+- Update the tests: no tile under 2 letters, every name rebuilds, the
+  length-tell and pool-size tests still pass. Report the new tiles-per-name
+  distribution (v3.2: mostly 4 to 5).
 
-### A new supply: the Stacked Deck
+## Decoy names
 
-In PoE a Stacked Deck draws one unknown divination card. Here it shows one
-random clue the item hasn't shown yet:
-- drawn from the clues this item has and the zone allows: a mod line, the
-  flavor text, the category, the base, the word lengths, or a small burn-in;
-- sold 3 for 4 gold (first guess, tunable);
-- it follows every rule a supply follows (Sealed, the Silent boss, Hoarder),
-  and it counts as using a supply;
-- greyed out when nothing is left to draw, like the other supplies.
+The board solved itself: loose decoy tiles rarely add up to another name, so
+the answer was often the only real name a player could build. Now:
+- Every board holds the full tiles of a few decoy names besides the answer.
+  How many is rolled per item and never shown: 1 to 2 early, 2 to 3 mid,
+  3 to 4 late, 4 to 5 at the boss.
+- Decoy names are look-alikes of the answer only (the owner's choice; it may
+  hint at the category, and that is accepted): real names from its look-alike
+  lists (art look-alikes in `looks.json`, name look-alikes in
+  `src/lib/lookalikes.ts`) and made-up names from `fakes.json`, mixed.
+- Never the Ancient Orb's sibling (its tiles stay off the board), and never a
+  name sharing the answer's full tile set.
+- Building a decoy name is a wrong answer like any other: it costs life and
+  marks the tiles.
+- Loose filler tiles fill the rest of the pool total, length-matched as now.
+  If the answer, the decoy names and the always-present tiles don't fit a
+  section's total, the total grows, up to the cap of 36.
+- A Tangled Fossil strikes decoy tiles at random, decoy-name tiles included.
+- Tests: every board lets the player build at least the section's minimum of
+  decoy names; how many there are never appears anywhere; the length and
+  pool-size tests still pass.
 
-With nine kinds of supply and 8 stacks, the pack can't hold every kind.
+This changes `fakes.json`'s role: the design doc allowed made-up names only
+from tier 4. They now appear from the first item, as decoy names only.
 
-### Category reveal becomes the Ancient Orb
+## The answer line
 
-In PoE the Ancient Orb reforges a unique into another of the same class.
-Here it shows, by name, another unique of the same category, so knowing
-that unique's category is the trivia. The design session confirmed it fits
-the phone as one clue line.
-- The sibling is a random other unique of the same category, never the
-  answer, and the same for every player in co-op. Lineage gems draw another
-  lineage gem.
-- It shares no word with the answer's name.
-- Its own tiles are kept off that item's board, so its name can't be used to
-  rule decoys out.
-- It is set like any clue (label "Ancient Orb", plain body colour, never
-  unique orange, never on the plate or the line) and worded so it never
-  names the category: "Ventor's Gamble • the same kind of item".
-- On screens under 700 px tall, a clue list past 4 clues puts the art beside
-  the clues, so the art keeps its size.
+As decided before playtest 3 (`decisions.md`):
+- Every build is drawn as one continuous word; each tile keeps a faint seam
+  and its own mark after a miss.
+- A break key beside Clear adds a word gap at the end of the line; tapping a
+  gap removes it. The gap is its own tap target.
+- The game never places or suggests a break; checking ignores breaks.
 
-## Open until the log is in
+Take the look from the design handoff when it lands.
 
-| Question | What decides it |
+## Supplies
+
+| Supply | Change |
 | --- | --- |
-| Does a stack of Decoy sweeps strip boards down to the answer? | Sweeps used per item; misses after sweeping |
-| Is gold scarce, or is the pack the real limit? | Gold left at the end; full-pack moments |
-| Do zone penalties bite (Incursion, Essence)? | Zone types picked vs offered |
-| Is corruption a real choice? | Fronts stopped vs in reach; modifiers met |
-| Is Oriath Harbour (a town at step 15) always taken? | Routes through step 15 |
-| Do the Wordle marks make guessing cheaper than supplies? | Right answers right after a miss; supplies per item |
+| Torch (was Flare; a working name) | Rename only |
+| Tangled Fossil (was Decoy sweep) | Rename only |
+| Ancient Orb (was Category reveal) | Shows another unique of the same category by name, as a clue line, never naming the category: "Ventor's Gamble • the same kind of item". Random among same-category uniques that share no word with the answer; lineage gems draw another lineage gem; the same for every player in co-op later. Its tiles stay off that board |
+| Stacked Deck (new) | One random clue the item hasn't shown yet, among those the zone allows (a mod line, the flavor, the Ancient Orb's sibling, the base, word lengths, or a small burn-in). Follows every rule a supply follows; counts as a supply used; greyed out when nothing is left |
+| Golden Page, Scroll of Wisdom, Base reveal, Word lengths, First syllable | Unchanged |
+
+Nine kinds against 8 stacks: the pack shows stacks, not a slot per kind.
+Rename wherever a player sees a name; log keys may stay.
+
+## Economy
+
+Make gold matter. Set the tuning defaults with your bot so that a player who
+uses about 1.9 supplies per item:
+- finds about a third of them as loot and buys the rest;
+- ends a run with under about 15% of the gold earned unspent;
+- can afford roughly what they use, but not everything.
+
+Levers, in this order: fewer supply cards in loot, the Jackpot card out (it
+stood in for boons), then prices. Report the numbers you chose and the bot's
+results.
+
+## Faster between items
+
+- A right answer collects the loot into the pack at the reveal; there is no
+  separate collect step. Only a full pack asks something: which stack to
+  replace, or leave the card.
+- The next route choice comes straight after, without an extra screen when
+  nothing is to be bought.
+- The vendor stays at the camp, the towns and after an Expedition zone.
+
+The design handoff draws these screens; build the flow first and take the
+look when it lands.
+
+## Wording
+
+The owner found much of v3's text confusing. Take every player-facing line
+from the design handoff's copy. Where it gives none, write for someone who
+has never played: short, plain words, one idea per line, no house terms
+without a word of explanation. Before playtest 4 the orchestrator runs a
+newcomer-read review of every screen and sends back what to fix.
+
+## The run log
+
+Add:
+- time spent on each non-item screen (camp, vendor, travel, loot, town,
+  Well), per visit;
+- for each travel step, the offered nodes' kind, zone type and corruption;
+- the pack's contents when each item opens, and any stack replaced in a full
+  pack.
+
+## Still open (not for v4)
+
+- Word lengths as the Plain or Expedition free clue leans gem (45 of the 86
+  items without a common line are gems).
 
 ## Done when
 
-- Everything above, as decided after playtest 3.
+- A full 10-step run plays from camp to boss on a phone and a desktop, won
+  and lost, with a corrupted zone entered and one front left alive.
+- The bot shows the economy targets above and a run of about 17 items.
 - `npm test` and `npm run check` pass.
-- The page is on the beta (`beta-deploy` skill), never live.
-- The PR lists anything here that didn't work as written.
+- The PR (#197) has a v4 section listing anything that didn't work as
+  written. Message the orchestrator with the commit; it serves the build for
+  the owner.
