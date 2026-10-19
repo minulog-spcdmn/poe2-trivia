@@ -2,37 +2,33 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { memoryStorage } from './helpers.ts';
 import { storeKey } from '../src/lib/storage.ts';
+import { GRAPH } from '../src/wraeclast/map.ts';
 import {
   Run,
   CLUES,
-  CORRUPTIONS,
   DEFAULT_TUNING,
-  ITEMS,
-  PACK_SLOTS,
+  LOOT_KINDS,
   SUPPLIES,
-  WARES,
-  answerOf,
-  buildText,
-  commonLines,
-  type Corruption,
+  SYLLABLES,
+  gridAdjacency,
+  itemOf,
+  markLine,
   type ItemLog,
-  type ItemPlay,
-  type LootCard,
+  type LootKind,
   type RunLog,
   type Supply,
   type Tuning,
-  type Ware,
-  type ZoneType,
 } from '../src/wraeclast/rules.ts';
 import { RUNS_KEPT, keepRun, logText, readRuns } from '../src/wraeclast/runLog.ts';
 import { LIMITS, cleanTuning, isDefault, readTuning, writeTuning } from '../src/wraeclast/tuning.ts';
+import { arrive, nodeAt, playOn, wrongLine } from '../src/qa/benches/wraeclastSetup.ts';
 
 // The Wraeclast run's log and tuning (src/wraeclast/rules.ts, runLog.ts,
-// tuning.ts) against the handoff, docs/handoff/wraeclast/v2.md ("Run log",
-// "Tuning panel"). A played run is scripted on a fake clock, and what its log
-// should say is worked out here as it plays, from the handoff's rules, then
-// compared with the whole log. The handoff's numbers are written out again
-// here, so rules.ts can't move both.
+// tuning.ts) against the handoff, docs/handoff/wraeclast/v3.md ("Run log",
+// "Tuning panel"). One item is scripted on a fake clock and its log written
+// out in full here, from the handoff's rules; whole runs are played and their
+// logs checked against what they played. The handoff's numbers are written
+// out again here, so rules.ts can't move both.
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
@@ -41,30 +37,32 @@ const HANDOFF: Tuning = {
   life: 100,
   gold: 20,
   flask: 2,
-  missCost: { early: [20, 30], late: [30, 40], boss: [55, 65] },
-  price: { flare: 5, wisdom: 5, strike: 6, lengths: 4, first: 8, decoy: 6, vaal: 4 },
-  board: { early: 4, late: 6, boss: 10 },
-  otherNames: 50,
-  burnIn: { flare: 4, blight: 2, unveiled: 12, boss: 4 },
+  itemsPerZone: 3,
+  zoneShare: 83,
+  tiles: { early: 14, mid: 20, late: 26, boss: 32 },
+  missCost: { early: [20, 30], mid: [30, 40], late: [40, 50], boss: [55, 65] },
+  price: { flare: 6, wisdom: 6, lore: 6, category: 6, base: 6, decoy: 6, lengths: 4, first: 6 },
+  stack: { flare: 3, wisdom: 3, lore: 2, category: 2, base: 1, decoy: 3, lengths: 3, first: 2 },
+  burnIn: { flare: 12, blight: 4 },
   seeds: 9,
   loot: {
-    deal: 3,
-    weights: { gold: 10, supply: 8, vaal: 3, flask: 2, jackpot: 1 },
-    gold: { early: [4, 8], late: [6, 10] },
+    cards: { plain: 2, incursion: 2, essence: 1, ritual: 2, expedition: 1, blight: 2 },
+    weights: { gold: 10, supply: 8, flask: 2, jackpot: 1 },
+    gold: { early: [4, 8], mid: [6, 10], late: [8, 12] },
     jackpot: 25,
+    supplies: 2,
   },
-  corruption: { gilded: 2, unveiled: 2, twisted: 2, bricked: 1 },
-  freeClue: { plain: true, incursion: true, ritual: true, blight: true },
-  spacing: true,
+  corruption: { seeds: 3, creep: 2, weights: { blood: 2, sealed: 2, swarming: 2, dark: 2, bounty: 1 }, multiplier: 2 },
+  marks: 'both',
+  freeClue: { plain: true, incursion: true, essence: true, ritual: true, expedition: true, blight: true },
 };
 
-/** Every field the handoff's "Run log" lists, per item and per run (v1's and v2's). */
-const ITEM_FIELDS = ['itemId', 'category', 'zone', 'zoneType', 'corruption', 'boss', 'names', 'board', 'freeClue', 'supplies', 'burnIns', 'submits', 'lifeBefore', 'lifeAfter', 'deal', 'took', 'drank', 'vaal'] as const;
-const RUN_FIELDS = ['start', 'end', 'result', 'endedOn', 'misses', 'noSupply', 'bought', 'used', 'found', 'vaalUsed', 'outcomes', 'unid', 'goldEarned', 'goldSpent', 'drinks', 'lifeEnd', 'spacing', 'tuning', 'viewport'] as const;
+/** Every field the handoff's "Run log" lists, per item and per run. */
+const ITEM_FIELDS = ['itemId', 'category', 'step', 'zoneType', 'corruption', 'boss', 'tiles', 'freeClue', 'supplies', 'burnIns', 'submits', 'lifeBefore', 'lifeAfter', 'drank', 'loot'] as const;
+const RUN_FIELDS = ['route', 'travel', 'met', 'fronts', 'bossMods', 'bought', 'found', 'used', 'loot', 'goldEarned', 'goldSpent', 'ms', 'result', 'tuning', 'viewport'] as const;
 
 const T0 = Date.UTC(2026, 9, 19, 12);
 const iso = (ms: number) => new Date(ms).toISOString();
-const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
 const count = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, 0])) as Record<K, number>;
 
 const tuned = (change: (t: Tuning) => void) => {
@@ -73,326 +71,116 @@ const tuned = (change: (t: Tuning) => void) => {
   return t;
 };
 
-/** The Veil the page would cut: a side x side grid, each patch touching its 4 neighbours. */
-function grid(side = 9): number[][] {
-  const out: number[][] = [];
-  for (let y = 0; y < side; y++)
-    for (let x = 0; x < side; x++) {
-      const nb: number[] = [];
-      if (x > 0) nb.push(y * side + x - 1);
-      if (x < side - 1) nb.push(y * side + x + 1);
-      if (y > 0) nb.push((y - 1) * side + x);
-      if (y < side - 1) nb.push((y + 1) * side + x);
-      out.push(nb);
-    }
-  return out;
+/** A run on a fake clock that `tick` moves on. */
+function ticking(seed: number, tuning: Tuning = DEFAULT_TUNING, viewport = 0) {
+  const clock = { t: T0 };
+  const run = new Run({ seed, tuning, viewport, now: () => clock.t });
+  return { run, tick: () => (clock.t += 50) };
 }
 
-/**
- * A scripted run on a fake clock, and what its log should say: each item's
- * and the run's, worked out from the handoff's rules as the script plays.
- */
-class Play {
-  run: Run;
-  t = T0;
-  opened = T0;
-  life: number;
-  max: number;
-  /** Items the last drink still heals after. */
-  recovering = 0;
-  w: ItemLog | null = null;
-  want: RunLog;
+/** A whole run played: vendors and Wells left, the leftmost node picked, wrong first now and then, a drink after. */
+function played(seed: number, { misses = true, tuning = DEFAULT_TUNING } = {}) {
+  const { run, tick } = ticking(seed, tuning, 375);
+  // Something bought at the camp, for the log's purchases.
+  run.buy(run.state.stock.indexOf('lengths'));
+  run.buy(run.state.stock.indexOf('flare'));
+  const s = run.state;
+  // Supplies used on every item they work on, for the log's uses.
+  playOn(
+    run,
+    () => {
+      tick();
+      if (s.phase === 'item' && s.item!.openedAt !== null && !s.item!.log.supplies.length) for (const sup of ['flare', 'lengths'] as const) run.use(sup);
+      return false;
+    },
+    { misses },
+  );
+  return run;
+}
 
-  constructor(seed: number, tuning: Tuning = DEFAULT_TUNING, viewport = 0) {
-    this.run = new Run({ seed, tuning, viewport, now: () => this.t });
-    this.life = this.max = tuning.life;
-    this.want = {
-      v: 2,
-      seed,
-      start: iso(T0),
-      end: null,
-      result: null,
-      endedOn: null,
-      zones: [...this.run.state.zones],
-      misses: 0,
-      noSupply: 0,
-      bought: count(WARES),
-      used: count(SUPPLIES),
-      found: count(WARES),
-      vaalUsed: 0,
-      outcomes: count(CORRUPTIONS),
-      unid: { offered: 0, taken: 0 },
-      goldEarned: 0,
-      goldSpent: 0,
-      drinks: 0,
-      lifeEnd: tuning.life,
-      spacing: tuning.spacing,
-      tuning: structuredClone(tuning),
-      viewport,
-      items: [],
-    };
+const sum = <T>(list: T[], f: (x: T) => number) => list.reduce((n, x) => n + f(x), 0);
+const byKind = (cards: { kind: LootKind }[]) => {
+  const out = count(LOOT_KINDS);
+  for (const c of cards) out[c.kind]++;
+  return out;
+};
+
+/** What a played run's log must say of itself: each total the sum of its items', the route the travel's picks. */
+function consistent(run: Run) {
+  const s = run.state;
+  const log = s.log;
+  assert.equal(log.v, 3);
+  // The route: the camp, then each travel step's pick, among the nodes linked ahead.
+  assert.deepEqual(log.route, [GRAPH.camp.id, ...log.travel.map((t) => t.picked)]);
+  log.travel.forEach((t, k) => {
+    assert.deepEqual(t.offered, GRAPH.next[log.route[k]]);
+    assert.ok(t.offered.includes(t.picked));
+  });
+  // What each node was, met in the order of the route.
+  assert.deepEqual(
+    log.met.map((m) => m.node),
+    log.route.slice(1),
+  );
+  for (const m of log.met) {
+    const p = s.places[m.node];
+    assert.equal(m.kind, p.kind);
+    assert.equal(m.zoneType, p.kind === 'zone' ? p.type : null);
+    if (m.corruption) assert.equal(m.corruption, s.corrupt[m.node].hidden);
   }
-
-  get it(): ItemPlay {
-    return this.run.state.item!;
+  for (const it of log.items) {
+    const m = log.met.find((x) => x.node === it.node)!;
+    assert.equal(it.corruption, m.corruption, `${it.itemId} at ${it.node}`);
+    assert.equal(it.zoneType, m.zoneType ?? 'boss');
+    assert.equal(it.boss, m.kind === 'boss');
+    assert.equal(it.step, GRAPH.byId.get(it.node)!.step);
+    assert.equal(it.category, itemOf(it.itemId).category);
+    assert.deepEqual(it.tiles.answer, SYLLABLES[it.itemId].flat());
+    assert.ok(it.tiles.decoys.every((d) => !it.tiles.answer.includes(d)));
   }
-
-  wait(ms: number) {
-    this.t += ms;
+  // The fronts.
+  assert.equal(log.fronts.seeded, s.fronts.length);
+  assert.equal(log.fronts.stopped, s.fronts.filter((f) => !f.alive).length);
+  if (log.route.at(-1) === GRAPH.boss.id) {
+    assert.equal(log.fronts.aliveAtBoss, s.fronts.filter((f) => f.alive).length);
+    assert.deepEqual(log.bossMods, s.bossMods);
+    assert.equal(log.bossMods.length, Math.min(3, log.fronts.aliveAtBoss!));
+  } else assert.deepEqual([log.fronts.aliveAtBoss, log.bossMods], [null, []]);
+  // Supplies used and found, and the loot dealt and taken.
+  const used = count(SUPPLIES);
+  const found = count(SUPPLIES);
+  for (const it of log.items) {
+    for (const u of it.supplies) used[u.type]++;
+    for (const c of it.loot) if (c.supply) found[c.supply] += c.n;
   }
-
-  get ms() {
-    return this.t - this.opened;
-  }
-
-  buy(ware: Ware) {
-    const s = this.run.state;
-    assert.ok(this.run.buy(s.stock.indexOf(ware)), `buying ${ware}`);
-    this.want.bought[ware]++;
-    this.want.goldSpent += s.tuning.price[ware];
-  }
-
-  /** On to the next item and opens it 2.5 s after it's laid out (time the log doesn't count). */
-  open(): ItemLog {
-    const { run } = this;
-    const s = run.state;
-    for (;;) {
-      if (s.phase === 'camp' || s.phase === 'town') assert.ok(run.leave());
-      else if (s.phase === 'travel') assert.ok(run.enter());
-      else if (s.phase === 'item') break;
-      else assert.fail(`no item in phase ${s.phase}`);
-    }
-    const it = this.it;
-    const n = it.n;
-    this.wait(2500);
-    assert.ok(run.open(grid()));
-    this.opened = this.t;
-    const zoneType: ZoneType | 'boss' = n < 12 ? s.zones[Math.floor(n / 3)] : 'boss';
-    const t = s.tuning;
-    const common = commonLines(CLUES[it.itemId]).length > 0;
-    const freeClue = zoneType === 'boss' ? (n === 12 ? 'burn' : 'none') : !t.freeClue[zoneType] ? 'none' : { plain: common ? 'mod' : 'lengths', incursion: 'flavor', ritual: 'lengths', blight: 'burn' }[zoneType];
-    const size = Math.min(10, t.board[n < 6 ? 'early' : n < 12 ? 'late' : 'boss'] + (zoneType === 'blight' ? 2 : 0));
-    assert.equal(it.names.length, size);
-    this.w = {
-      itemId: it.itemId,
-      name: BY_ID.get(it.itemId)!.name,
-      category: BY_ID.get(it.itemId)!.category,
-      zone: n < 12 ? Math.floor(n / 3) + 1 : 5,
-      zoneType,
-      corruption: null,
-      boss: n >= 12,
-      names: size,
-      board: it.names.map((nm) => (nm.id === it.itemId ? { name: nm.name, answer: true as const } : { name: nm.name })),
-      freeClue: freeClue as ItemLog['freeClue'],
-      supplies: [],
-      burnIns: freeClue === 'burn' ? [{ by: n === 12 ? 'boss' : 'zone', patches: n === 12 ? t.burnIn.boss : t.burnIn.blight, ms: 0 }] : [],
-      patches: 81,
-      submits: [],
-      lifeBefore: this.life,
-      lifeAfter: this.life,
-      healed: 0,
-      deal: [],
-      took: null,
-      drank: [],
-      vaal: null,
-      misses: 0,
-      gold: 0,
-    };
-    this.want.items.push(this.w);
-    return this.w;
-  }
-
-  use(sup: Supply) {
-    const w = this.w!;
-    const size = this.run.flareBurn();
-    const burned = this.it.burned.length;
-    assert.ok(this.run.use(sup), `using ${sup}`);
-    w.supplies.push({ type: sup, order: w.supplies.length + 1, ms: this.ms });
-    if (sup === 'flare') w.burnIns.push({ by: 'flare', patches: Math.min(size, 81 - burned), ms: this.ms });
-    this.want.used[sup]++;
-  }
-
-  corrupt(): Corruption {
-    const w = this.w!;
-    const it = this.it;
-    const burned = it.burned.length;
-    const outcome = this.run.corrupt()!;
-    assert.ok(outcome);
-    w.corruption = outcome;
-    w.vaal = { outcome, suppliesBefore: w.supplies.length, ms: this.ms };
-    if (outcome === 'unveiled') w.burnIns.push({ by: 'vaal', patches: Math.min(12, 81 - burned), ms: this.ms });
-    if (outcome === 'twisted') {
-      w.names = Math.min(10, w.names + 3);
-      w.board = it.names.map((nm) => (nm.id === it.itemId ? { name: nm.name, answer: true as const } : { name: nm.name }));
-    }
-    this.want.vaalUsed++;
-    this.want.outcomes[outcome]++;
-    return outcome;
-  }
-
-  drink() {
-    assert.ok(this.run.drink());
-    this.life = Math.min(this.max, this.life + 10);
-    this.recovering = 2;
-    this.w!.drank.push(this.ms);
-    this.want.drinks++;
-  }
-
-  private send(syllables: string[], right: boolean) {
-    const { run } = this;
-    const it = this.it;
-    const w = this.w!;
-    run.clear();
-    for (const syl of syllables.slice(it.locked)) assert.ok(run.place(syl), syl);
-    const text = buildText(it, run.state.tuning.spacing);
-    const range = run.missRange();
-    assert.equal(run.submit(), right);
-    const lost = right ? 0 : it.log.submits.at(-1)!.lost;
-    if (!right) {
-      assert.ok(lost === this.life || (lost >= range[0] && lost <= range[1]), `a miss lost ${lost}`);
-      this.life -= lost;
-      w.misses++;
-      this.want.misses++;
-    }
-    w.submits.push({ text, right, ms: this.ms, lost });
-    w.lifeAfter = this.life;
-    if (this.life <= 0) this.ended('loss');
-  }
-
-  /** A build that is no name: the answer and its first syllable once more per miss so far. */
-  miss() {
-    const syl = answerOf(this.it).words.flat();
-    this.send([...syl, ...Array<string>(this.w!.misses + 1).fill(syl[0])], false);
-  }
-
-  /** The answer: the flask heals as the item ends; then the loot deal, or on. */
-  answer() {
-    const w = this.w!;
-    this.send(answerOf(this.it).words.flat(), true);
-    if (!w.supplies.length) this.want.noSupply++;
-    if (this.recovering > 0) {
-      w.healed = Math.min(10, this.max - this.life);
-      this.life += w.healed;
-      this.recovering--;
-    }
-    w.lifeAfter = this.life;
-    const dealt = !w.boss && w.corruption !== 'bricked';
-    assert.ok(this.run.next());
-    if (dealt) {
-      assert.equal(this.run.state.phase, 'loot');
-      w.deal = structuredClone(this.run.state.loot!.cards);
-      this.want.unid.offered++;
-    } else this.done();
-  }
-
-  /** Takes loot card `i`; a ware the full pack can't hold replaces `slot`, or is left. */
-  take(i: number, slot: number | null = null) {
-    const { run } = this;
-    const w = this.w!;
-    const card: LootCard = w.deal[i];
-    const full = run.state.pack.length >= PACK_SLOTS;
-    assert.ok(run.take(i));
-    w.took = { index: i, kept: true };
-    if (card.unid) this.want.unid.taken++;
-    if (card.kind === 'gold' || card.kind === 'jackpot') {
-      w.gold = card.gold;
-      this.want.goldEarned += card.gold;
-    } else if (card.kind === 'supply' || card.kind === 'vaal') {
-      this.want.found[card.kind === 'vaal' ? 'vaal' : card.supply!]++;
-      if (full) {
-        assert.ok(run.keep(slot));
-        if (slot === null) w.took.kept = false;
+  assert.deepEqual(log.used, used);
+  assert.deepEqual(log.found, found);
+  assert.deepEqual(log.loot.dealt, byKind(log.items.flatMap((it) => it.loot)));
+  for (const k of LOOT_KINDS) assert.ok(log.loot.taken[k] <= log.loot.dealt[k], k);
+  for (const k of ['gold', 'jackpot', 'flask'] as const) assert.equal(log.loot.taken[k], log.loot.dealt[k], k);
+  // Gold, misses, drinks, life.
+  assert.equal(log.goldEarned, sum(log.items, (it) => it.gold));
+  assert.equal(s.gold, s.tuning.gold - log.goldSpent + log.goldEarned);
+  assert.equal(log.misses, sum(log.items, (it) => it.misses));
+  assert.equal(log.drinks, sum(log.items, (it) => it.drank.length));
+  assert.equal(log.lifeEnd, s.life);
+  // Each item's submits: the last right (in a won run), every miss marked as Wordle does and its cost logged.
+  for (const it of log.items) {
+    assert.equal(it.misses, it.submits.filter((x) => !x.right).length);
+    for (const x of it.submits) {
+      if (x.right) assert.deepEqual([x.marks, x.lost], [[], 0]);
+      else {
+        assert.deepEqual(x.marks, markLine(x.tiles, it.tiles.answer));
+        assert.ok(x.lost > 0);
       }
     }
-    assert.ok(run.next());
-    this.done();
+    // Life: what the toll and the misses took, and back no more than the drinks heal (capped at the most as they come in).
+    const lost = it.lifeBefore - it.toll - sum(it.submits, (x) => x.lost);
+    assert.ok(it.lifeAfter >= lost && it.lifeAfter <= Math.min(100, lost + 10 * it.drank.length + it.healed), `${it.itemId}: life ${it.lifeBefore} to ${it.lifeAfter}`);
   }
-
-  /** The item done: the town's heal after zone 2, the end after the boss. */
-  private done() {
-    const n = this.want.items.length;
-    if (n === 6) this.life += Math.min(20, this.max - this.life);
-    if (n === 15) this.ended('win');
-  }
-
-  private ended(result: 'win' | 'loss') {
-    const last = this.want.items.at(-1)!;
-    Object.assign(this.want, {
-      end: iso(this.t),
-      result,
-      endedOn: { n: this.want.items.length - 1, itemId: last.itemId, name: last.name },
-      lifeEnd: this.life,
-    });
-  }
-}
-
-/** A won run: supplies bought at the camp and the town, used, a Vaal Orb, two drinks, misses in every section, every kind of take. */
-function wonRun(seed = 2, tuning = tuned((t) => ((t.missCost.boss = [10, 10]), (t.gold = 40)))) {
-  const p = new Play(seed, tuning, 375);
-  p.wait(30_000);
-  for (const ware of ['flare', 'decoy', 'vaal'] as const) p.buy(ware);
-  for (let n = 0; n < 15; n++) {
-    p.open();
-    p.wait(700 + n * 100);
-    if (n === 0) {
-      p.use('flare');
-      p.wait(1500);
-      p.miss();
-      p.wait(400);
-      p.drink();
-    }
-    if (n === 1 && p.run.canUse('decoy')) p.use('decoy');
-    if (n === 2) {
-      p.wait(300);
-      p.corrupt();
-      p.wait(300);
-      p.miss();
-    }
-    if (n === 4) {
-      p.miss();
-      p.miss();
-      p.drink();
-    }
-    if (n === 7) p.miss();
-    if (n === 12) {
-      p.use('flare');
-      p.miss();
-    }
-    p.wait(2000);
-    p.answer();
-    if (p.run.state.phase === 'loot') {
-      const cards = p.w!.deal;
-      // Turns through: the face-down card, the first, the last.
-      const i = n % 3 === 0 ? cards.findIndex((c) => c.unid) : n % 3 === 1 ? 0 : cards.length - 1;
-      p.take(i);
-    }
-    if (n === 5) {
-      assert.equal(p.run.state.phase, 'town');
-      p.buy('flare');
-      p.buy('lengths');
-    }
-    if (n === 6 && p.run.canUse('lengths')) p.use('lengths');
-  }
-  assert.equal(p.run.state.phase, 'end');
-  return p;
-}
-
-/** A lost run: one item right, then misses until life runs out. */
-function lostRun() {
-  const p = new Play(1, DEFAULT_TUNING, 390);
-  p.buy('lengths');
-  p.open();
-  p.wait(4200);
-  p.answer();
-  p.take(0);
-  p.open();
-  p.wait(1000);
-  if (p.run.canUse('lengths')) p.use('lengths');
-  while (p.run.state.phase !== 'end') {
-    p.wait(1000);
-    p.miss();
-  }
-  return p;
+  // Between items life only rises (a town's heal).
+  log.items.forEach((it, k) => k && assert.ok(it.lifeBefore >= log.items[k - 1].lifeAfter));
+  // The run's times.
+  if (log.end) assert.equal(log.ms, Date.parse(log.end) - Date.parse(log.start));
 }
 
 // ---- The tuning a run plays with ----
@@ -404,140 +192,234 @@ test("the default tuning is the handoff's numbers, and a run starts with them", 
   assert.deepEqual(s.log.tuning, HANDOFF);
 });
 
-test("starting life, gold and flask charges are the tuning's", () => {
-  const { state: s } = new Run({ seed: 8, now: () => T0, tuning: tuned((t) => Object.assign(t, { life: 40, gold: 9, flask: 3 })) });
-  assert.deepEqual([s.life, s.maxLife, s.gold, s.flask.charges], [40, 40, 9, 3]);
-  assert.deepEqual([s.log.tuning.life, s.log.tuning.gold, s.log.tuning.flask, s.log.lifeEnd], [40, 9, 3, 40]);
-});
-
 test("the log keeps its own copy of the tuning: later changes to the tuning given, or to the run's, don't alter it", () => {
   const tuning = tuned((t) => (t.gold = 33));
   const kept = structuredClone(tuning);
   const run = new Run({ seed: 7, now: () => T0, tuning });
   tuning.life = 1;
   tuning.missCost.early[0] = 99;
-  tuning.price.flare = 99;
-  tuning.loot.weights.gold = 0;
-  tuning.corruption.bricked = 99;
+  tuning.corruption.weights.dark = 99;
   tuning.freeClue.plain = false;
-  tuning.spacing = false;
   assert.deepEqual(run.state.log.tuning, kept);
   assert.deepEqual(run.state.tuning, kept);
   run.state.tuning.price.wisdom = 1;
   run.state.tuning.loot.gold.early[1] = 1;
   assert.deepEqual(run.state.log.tuning, kept);
-  assert.equal(run.state.log.spacing, true);
 });
 
-// ---- A played run's log ----
+// ---- A fresh log ----
+
+test('a fresh log is v3: its start, the camp, the fronts seeded, nothing played', () => {
+  const s = new Run({ seed: 3, now: () => T0, viewport: 412 }).state;
+  assert.deepEqual({ ...s.log, tuning: null }, {
+    v: 3,
+    seed: 3,
+    start: iso(T0),
+    end: null,
+    ms: 0,
+    result: null,
+    endedOn: null,
+    route: [GRAPH.camp.id],
+    travel: [],
+    met: [],
+    fronts: { seeded: 3, stopped: 0, aliveAtBoss: null },
+    bossMods: [],
+    misses: 0,
+    bought: count(SUPPLIES),
+    found: count(SUPPLIES),
+    used: count(SUPPLIES),
+    loot: { dealt: count(LOOT_KINDS), taken: count(LOOT_KINDS) },
+    goldEarned: 0,
+    goldSpent: 0,
+    drinks: 0,
+    lifeEnd: 100,
+    tuning: null,
+    viewport: 412,
+    items: [],
+  });
+});
+
+// ---- One item, in full ----
+
+test("an item's log, in full: its tiles, free clue, supplies, burn-ins, submits with their marks and cost, toll, life, drink and loot", () => {
+  const clock = { t: T0 };
+  const run = new Run({ seed: 2, now: () => clock.t, viewport: 375 });
+  const s = run.state;
+  assert.ok(run.buy(s.stock.indexOf('flare')));
+  const id = nodeAt(2);
+  arrive(run, id, { place: { kind: 'zone', type: 'plain' }, hidden: 'blood' });
+  clock.t += 1000;
+  run.enter();
+  const it = s.item!;
+  clock.t += 2500;
+  run.open(gridAdjacency(9));
+  clock.t += 1000;
+  assert.ok(run.use('flare'));
+  clock.t += 1000;
+  const line = wrongLine(it, 0);
+  it.build = line;
+  assert.equal(run.submit(), false);
+  const lost = it.log.submits[0].lost;
+  assert.ok(lost >= 20 && lost <= 30);
+  clock.t += 500;
+  assert.ok(run.drink());
+  clock.t += 1500;
+  run.clear();
+  for (const t of it.answer) run.place(t);
+  assert.equal(run.submit(), true);
+  run.next();
+  const cards = structuredClone(s.loot!.cards);
+  run.collect();
+  while (s.loot!.pending.length) run.keep(null);
+  run.next();
+  const c = CLUES[it.itemId];
+  const want: ItemLog = {
+    itemId: it.itemId,
+    name: itemOf(it.itemId).name,
+    category: itemOf(it.itemId).category,
+    step: 2,
+    node: id,
+    zoneType: 'plain',
+    corruption: 'blood',
+    boss: false,
+    tiles: { answer: SYLLABLES[it.itemId].flat(), decoys: [...it.decoys] },
+    freeClue: c.mods.length ? 'mod' : 'lengths',
+    supplies: [{ type: 'flare', order: 1, ms: 1000 }],
+    burnIns: [{ by: 'flare', patches: 12, ms: 1000 }],
+    patches: 81,
+    submits: [
+      { tiles: line, right: false, marks: markLine(line, it.answer), lost, ms: 2000 },
+      { tiles: [...it.answer], right: true, marks: [], lost: 0, ms: 4000 },
+    ],
+    lifeBefore: 100,
+    lifeAfter: 100 - 10 - lost + 10 + 10,
+    toll: 10,
+    healed: 10,
+    drank: [2500],
+    loot: cards,
+    misses: 1,
+    gold: sum(cards, (x) => x.gold),
+  };
+  assert.deepEqual(s.log.items[0], want);
+  // A blood-tolled zone corrupted: twice the plain zone's 2 cards, one lost to the miss.
+  assert.equal(cards.length, 3);
+  assert.deepEqual(s.log.met.at(-1), { node: id, kind: 'zone', zoneType: 'plain', corruption: 'blood' });
+  assert.deepEqual([s.log.bought.flare, s.log.used.flare, s.log.goldSpent, s.log.misses, s.log.drinks], [3, 1, 6, 1, 1]);
+  assert.deepEqual(s.log.loot.dealt, byKind(cards));
+});
+
+test("a free burn-in is logged as the zone's, and a gold-only miss logs 'none' for the marks it hides", () => {
+  const run = new Run({ seed: 4, now: () => T0, tuning: tuned((t) => (t.marks = 'gold')) });
+  arrive(run, nodeAt(2), { place: { kind: 'zone', type: 'blight' } });
+  run.enter();
+  run.open(gridAdjacency(9));
+  const it = run.state.item!;
+  assert.deepEqual([it.log.freeClue, it.log.burnIns], ['burn', [{ by: 'zone', patches: 4, ms: 0 }]]);
+  it.build = wrongLine(it, 0);
+  run.submit();
+  const sub = it.log.submits[0];
+  assert.deepEqual(
+    sub.marks,
+    markLine(sub.tiles, it.answer).map((m) => (m === 'gold' ? m : 'none')),
+  );
+});
+
+// ---- Whole runs ----
 
 test('every field the handoff lists is in the log, per item and per run', () => {
-  const log = wonRun().run.state.log;
+  const log = played(1).state.log;
   const missing = log.items.flatMap((it, n) => ITEM_FIELDS.filter((f) => !Object.hasOwn(it, f)).map((f) => `item ${n}: ${f}`));
   missing.push(...RUN_FIELDS.filter((f) => !Object.hasOwn(log, f)));
   assert.deepEqual(missing, []);
 });
 
-test('a won run logs each item exactly: zone, board, free clue, supplies, burn-ins, submits, life, deal, take, drinks and Vaal Orb', () => {
-  const p = wonRun();
-  const log = p.run.state.log;
-  assert.equal(log.items.length, 15);
-  log.items.forEach((it, n) => assert.deepEqual(it, p.want.items[n], `item ${n}`));
-});
-
-test("a won run logs the run's totals: times, result, misses, wares bought, used and found, Vaal Orbs, outcomes, unidentified cards, gold, drinks, life, spacing, tuning, viewport", () => {
-  const p = wonRun();
-  const log = p.run.state.log;
-  assert.deepEqual(log, p.want);
-  assert.equal(log.result, 'win');
-  assert.equal(log.viewport, 375);
-  assert.deepEqual(log.endedOn, { n: 14, itemId: log.items[14].itemId, name: log.items[14].name });
-  assert.equal(log.vaalUsed, 1);
-  assert.equal(log.bought.vaal, 1);
-  assert.equal(log.bought.flare, 2);
-  assert.equal(log.drinks, 2);
-  assert.equal(log.misses, 6);
-  assert.ok(log.unid.taken >= 3 && log.unid.taken <= log.unid.offered, JSON.stringify(log.unid));
-  assert.equal(p.run.state.gold, 40 - log.goldSpent + log.goldEarned);
-});
-
-test('the run logs what it played over many seeds, not one lucky one', () => {
-  for (const seed of [3, 4, 5, 6, 11, 12]) {
-    const p = wonRun(seed);
-    assert.deepEqual(p.run.state.log, p.want, `seed ${seed}`);
+test('a played run logs what it played: route, travel, nodes met, fronts, boss modifiers, supplies, loot, gold, misses and life', () => {
+  for (const seed of [1, 2, 3, 5, 8]) {
+    const run = played(seed);
+    const log = run.state.log;
+    consistent(run);
+    if (log.result === 'win') {
+      assert.equal(log.route.at(-1), GRAPH.boss.id);
+      assert.deepEqual(log.endedOn, { n: log.items.length - 1, itemId: log.items.at(-1)!.itemId, name: log.items.at(-1)!.name, node: GRAPH.boss.id });
+    }
+    assert.ok(log.result !== null);
+    assert.deepEqual([log.bought.lengths, log.bought.flare, log.goldSpent, log.viewport], [3, 3, 10, 375]);
+    assert.ok(log.used.flare > 0 && log.misses > 0 && log.drinks > 0, `seed ${seed}`);
   }
 });
 
-test('a lost run logs each item exactly, the last with life at 0 and the cost of its last miss cut to the life left', () => {
-  const p = lostRun();
-  const log = p.run.state.log;
-  assert.deepEqual(log, p.want);
+test('the run logs each travel step: the nodes offered and the one picked', () => {
+  const log = played(6, { misses: false }).state.log;
+  assert.equal(log.travel.length, log.route.length - 1);
+  assert.equal(log.travel.length, GRAPH.steps.length - 1);
+  assert.deepEqual(log.travel[0].offered, GRAPH.next[GRAPH.camp.id]);
+  // The leftmost each time, as the play picks.
+  assert.ok(log.travel.every((t) => t.picked === t.offered[0]));
+});
+
+test('a lost run logs the item it ended on, at 0 life, its last miss cut to the life left', () => {
+  const { run, tick } = ticking(10, DEFAULT_TUNING, 390);
+  const s = run.state;
+  playOn(run, () => tick() > 0 && s.log.items.length === 1 && s.phase === 'item' && s.item!.openedAt !== null);
+  const it = s.item!;
+  while (s.phase !== 'end') {
+    tick();
+    it.build = wrongLine(it, it.misses);
+    it.lineMarks = null;
+    run.submit();
+  }
+  const log = s.log;
+  consistent(run);
   assert.deepEqual([log.result, log.lifeEnd, log.items.length, log.viewport], ['loss', 0, 2, 390]);
-  assert.deepEqual(log.endedOn, { n: 1, itemId: log.items[1].itemId, name: log.items[1].name });
+  assert.deepEqual(log.endedOn, { n: 1, itemId: it.itemId, name: it.log.name, node: it.node });
   const last = log.items[1];
   assert.equal(last.lifeAfter, 0);
-  assert.equal(
-    last.submits.reduce((t, s) => t + s.lost, 0),
-    last.lifeBefore,
-  );
-  assert.deepEqual([last.deal, last.took], [[], null]);
+  assert.equal(sum(last.submits, (x) => x.lost), last.lifeBefore - last.toll);
+  assert.deepEqual(last.loot, []);
+  assert.ok(log.end && log.ms > 0);
 });
 
-test('each submit logs what the miss cost, 0 when right', () => {
-  const p = wonRun();
-  for (const it of p.run.state.log.items)
-    for (const s of it.submits) {
-      if (s.right) assert.equal(s.lost, 0);
-      else assert.ok(s.lost > 0);
-    }
-  assert.equal(
-    p.run.state.log.items.reduce((t, it) => t + it.submits.reduce((u, s) => u + s.lost, 0), 0) > 0,
-    true,
-  );
+test('a lost Blood toll logs its toll and ends on its item', () => {
+  const run = new Run({ seed: 11, now: () => T0 });
+  arrive(run, nodeAt(3), { place: { kind: 'zone', type: 'ritual' }, hidden: 'blood' });
+  run.state.life = 6;
+  run.enter();
+  run.open(gridAdjacency(9));
+  const log = run.state.log;
+  assert.deepEqual([log.result, log.items.length, log.items[0].toll, log.items[0].lifeAfter, log.items[0].corruption], ['loss', 1, 6, 0, 'blood']);
+  assert.equal(log.endedOn!.itemId, log.items[0].itemId);
 });
 
-test('a ware taken with the pack full and left is logged as taken, not kept, and still found', () => {
-  const p = new Play(3, tuned((t) => (t.loot.weights = { gold: 0, supply: 1, vaal: 0, flask: 0, jackpot: 0 })));
-  p.run.state.pack = Array<Ware>(PACK_SLOTS).fill('vaal');
-  p.open();
-  p.answer();
-  p.take(1, null);
-  p.open();
-  p.answer();
-  p.take(0, 2);
-  const log = p.run.state.log;
-  assert.deepEqual(log.items.map((it) => it.took), [{ index: 1, kept: false }, { index: 0, kept: true }]);
-  assert.deepEqual(log.items, p.want.items);
-  assert.deepEqual(log.found, p.want.found);
-  assert.equal(Object.values(log.found).reduce((a, b) => a + b, 0), 2);
+test('a supply card left with the pack full is dealt and found, but not taken', () => {
+  const run = new Run({ seed: 12, now: () => T0, tuning: tuned((t) => (t.loot.weights = { gold: 0, supply: 1, flask: 0, jackpot: 0 })) });
+  const s = run.state;
+  s.pack = Array.from({ length: 8 }, () => ({ supply: 'base' as Supply, n: 5 }));
+  arrive(run, nodeAt(2), { place: { kind: 'zone', type: 'plain' } });
+  run.enter();
+  run.open(gridAdjacency(9));
+  s.item!.build = [...s.item!.answer];
+  run.submit();
+  run.next();
+  run.collect();
+  run.keep(0);
+  run.keep(null);
+  assert.deepEqual([s.log.loot.dealt.supply, s.log.loot.taken.supply], [2, 1]);
+  assert.equal(sum(Object.values(s.log.found), (n) => n), 4);
 });
 
-test('spacing is logged on or off, and the submits keep the line as it read', () => {
-  for (const spacing of [true, false]) {
-    const p = wonRun(5, tuned((t) => ((t.spacing = spacing), (t.missCost.boss = [10, 10]), (t.gold = 40))));
-    const log = p.run.state.log;
-    assert.deepEqual([log.spacing, log.tuning.spacing], [spacing, spacing]);
-    assert.deepEqual(log, p.want);
-    const spaced = log.items.flatMap((it) => it.submits).filter((s) => s.text.includes(' ')).length;
-    if (spacing) assert.ok(spaced > 5, `${spaced} spaced`);
-    else assert.equal(spaced, 0);
-  }
-});
-
-test('the log is plain JSON: fresh, won and lost', () => {
-  const fresh = new Run({ seed: 3, now: () => T0, viewport: 412 }).state.log;
-  for (const log of [fresh, wonRun().run.state.log, lostRun().run.state.log]) assert.deepEqual(JSON.parse(JSON.stringify(log)), log);
-  assert.deepEqual([fresh.v, fresh.start, fresh.end, fresh.result, fresh.endedOn, fresh.items.length, fresh.viewport], [2, iso(T0), null, null, null, 0, 412]);
+test('the log is plain JSON: fresh, and played to its end', () => {
+  const fresh = new Run({ seed: 3, now: () => T0 }).state.log;
+  for (const log of [fresh, played(1).state.log, played(6, { tuning: tuned((t) => (t.missCost.early = [60, 60])) }).state.log]) assert.deepEqual(JSON.parse(JSON.stringify(log)), log);
 });
 
 // ---- Kept runs ----
 
-const RUNS = storeKey('wraeclastRuns2');
+const RUNS = storeKey('wraeclastRuns3');
 const fakeLog = (seed: number, start = iso(T0)): RunLog => ({ ...structuredClone(new Run({ seed, now: () => T0 }).state.log), start });
 
 test('a kept run reads back, as the log text the tester sends', () => {
   store.clear();
-  const log = wonRun().run.state.log;
+  const log = played(2).state.log;
   assert.deepEqual(readRuns(), []);
   assert.deepEqual(keepRun(log), [log]);
   assert.deepEqual(readRuns(), [log]);
@@ -554,8 +436,7 @@ test('the same run kept again replaces itself', () => {
   const later = { ...a, result: 'win' as const };
   assert.deepEqual(keepRun(later), [b, later]);
   // Same seed, another start: another run.
-  const again = fakeLog(1, iso(T0 + 1));
-  assert.deepEqual(keepRun(again).length, 3);
+  assert.equal(keepRun(fakeLog(1, iso(T0 + 1))).length, 3);
 });
 
 test(`only the last ${RUNS_KEPT} runs are kept, newest last`, () => {
@@ -563,102 +444,106 @@ test(`only the last ${RUNS_KEPT} runs are kept, newest last`, () => {
   assert.equal(RUNS_KEPT, 20);
   const logs = Array.from({ length: 25 }, (_, k) => fakeLog(k + 1));
   for (const log of logs) keepRun(log);
-  const runs = readRuns();
-  assert.equal(runs.length, 20);
   assert.deepEqual(
-    runs.map((r) => r.seed),
+    readRuns().map((r) => r.seed),
     logs.slice(5).map((r) => r.seed),
   );
 });
 
-test('only v2 logs are read: v1 logs, junk and a broken store read as nothing', () => {
+test('only v3 logs are read: v2 logs, junk and a broken store read as nothing', () => {
   store.clear();
-  const v2 = fakeLog(4);
-  store.set(RUNS, JSON.stringify([{ v: 1, seed: 1 }, { seed: 2 }, null, 7, 'x', v2]));
-  assert.deepEqual(readRuns(), [v2]);
-  assert.deepEqual(keepRun(fakeLog(5)).map((r) => r.seed), [4, 5]);
-  store.set(RUNS, '{"v":2}');
+  const v3 = fakeLog(4);
+  store.set(RUNS, JSON.stringify([{ v: 2, seed: 1 }, { seed: 2 }, null, 7, 'x', v3]));
+  assert.deepEqual(readRuns(), [v3]);
+  assert.deepEqual(
+    keepRun(fakeLog(5)).map((r) => r.seed),
+    [4, 5],
+  );
+  store.set(RUNS, '{"v":3}');
   assert.deepEqual(readRuns(), []);
   store.set(RUNS, 'not json');
   assert.deepEqual(readRuns(), []);
-  // v1's key is never read.
+  // v2's key is never read.
   store.clear();
-  store.set(storeKey('wraeclastRuns'), JSON.stringify([v2]));
+  store.set(storeKey('wraeclastRuns2'), JSON.stringify([v3]));
   assert.deepEqual(readRuns(), []);
 });
 
 // ---- The tuning panel's numbers ----
 
-test('cleanTuning gives the handoff\'s tuning for nothing, and keeps a right one as it is', () => {
+test("cleanTuning gives the handoff's tuning for nothing, and round-trips a right one as it is", () => {
   for (const raw of [null, undefined, 7, 'x', [], {}]) assert.deepEqual(cleanTuning(raw), HANDOFF);
+  assert.deepEqual(cleanTuning(structuredClone(DEFAULT_TUNING)), HANDOFF);
+  assert.deepEqual(cleanTuning(JSON.parse(JSON.stringify(DEFAULT_TUNING))), HANDOFF);
   const own = tuned((t) => {
     t.life = 250;
+    t.itemsPerZone = 1;
+    t.zoneShare = 100;
+    t.tiles = { early: 8, mid: 36, late: 20, boss: 30 };
     t.missCost.late = [0, 999];
-    t.price.vaal = 0;
-    t.board = { early: 2, late: 10, boss: 3 };
-    t.otherNames = 0;
-    t.burnIn = { flare: 1, blight: 99, unveiled: 5, boss: 2 };
+    t.price.first = 0;
+    t.stack = { flare: 5, wisdom: 1, lore: 1, category: 1, base: 5, decoy: 2, lengths: 1, first: 1 };
+    t.burnIn = { flare: 1, blight: 99 };
     t.seeds = 15;
-    t.loot = { deal: 9, weights: { gold: 0, supply: 99, vaal: 1, flask: 2, jackpot: 3 }, gold: { early: [0, 0], late: [5, 999] }, jackpot: 0 };
-    t.corruption = { gilded: 0, unveiled: 99, twisted: 1, bricked: 0 };
-    t.freeClue = { plain: false, incursion: true, ritual: false, blight: true };
-    t.spacing = false;
+    t.loot = { cards: { plain: 0, incursion: 9, essence: 1, ritual: 2, expedition: 3, blight: 4 }, weights: { gold: 0, supply: 99, flask: 2, jackpot: 3 }, gold: { early: [0, 0], mid: [1, 2], late: [5, 999] }, jackpot: 0, supplies: 5 };
+    t.corruption = { seeds: 0, creep: 3, weights: { blood: 0, sealed: 99, swarming: 1, dark: 0, bounty: 5 }, multiplier: 5 };
+    t.marks = 'gold';
+    t.freeClue = { plain: false, incursion: true, essence: false, ritual: false, expedition: true, blight: true };
   });
   assert.deepEqual(cleanTuning(structuredClone(own)), own);
   assert.deepEqual(cleanTuning(JSON.parse(JSON.stringify(own))), own);
 });
 
-test('cleanTuning falls back field by field: a range with its low end above its high end', () => {
-  const t = cleanTuning({ ...HANDOFF, missCost: { early: [30, 20], late: [31, 39], boss: [65, 55] }, loot: { ...HANDOFF.loot, gold: { early: [9, 1], late: [7, 7] } } });
-  assert.deepEqual(t.missCost, { early: [20, 30], late: [31, 39], boss: [55, 65] });
-  assert.deepEqual(t.loot.gold, { early: [4, 8], late: [7, 7] });
+test('cleanTuning repairs field by field: a range with its low end above its high end', () => {
+  const t = cleanTuning({ ...HANDOFF, missCost: { early: [30, 20], mid: [31, 39], late: [50, 40], boss: [65, 55] }, loot: { ...HANDOFF.loot, gold: { early: [9, 1], mid: [7, 7], late: [8] } } });
+  assert.deepEqual(t.missCost, { early: [20, 30], mid: [31, 39], late: [40, 50], boss: [55, 65] });
+  assert.deepEqual(t.loot.gold, { early: [4, 8], mid: [7, 7], late: [8, 12] });
 });
 
-test('cleanTuning falls back field by field: numbers out of their limits, or not whole', () => {
+test('cleanTuning repairs field by field: numbers out of their limits, or not whole', () => {
   const bad = {
     life: 0,
     gold: 1000,
     flask: 10,
-    missCost: { early: [-1, 5], late: [30, 1000], boss: [55.5, 60] },
-    price: { flare: -1, wisdom: 1000, strike: 2.5, lengths: 3, first: 8, decoy: 6, vaal: 4 },
-    board: { early: 1, late: 11, boss: 7 },
-    otherNames: 101,
-    burnIn: { flare: 0, blight: 100, unveiled: 12, boss: 3 },
+    itemsPerZone: 4,
+    zoneShare: 101,
+    tiles: { early: 7, mid: 37, late: 20.5, boss: 30 },
+    missCost: { early: [-1, 5], mid: [30, 1000], late: [40.5, 50], boss: [55, 60] },
+    price: { flare: -1, wisdom: 1000, lore: 2.5, category: 3 },
+    stack: { flare: 0, wisdom: 6, lore: 4 },
+    burnIn: { flare: 0, blight: 100 },
     seeds: 2,
-    loot: { deal: 0, weights: { gold: -1, supply: 100, vaal: 3, flask: 2.5, jackpot: 1 }, gold: { early: [4, 8], late: [6, 1000] }, jackpot: 1000 },
-    corruption: { gilded: 100, unveiled: -2, twisted: 2, bricked: 1 },
+    loot: { cards: { plain: 10, essence: -1, ritual: 3 }, weights: { gold: -1, supply: 100, flask: 2.5, jackpot: 1 }, jackpot: 1000, supplies: 6 },
+    corruption: { seeds: 6, creep: 0, weights: { blood: 100, dark: 3 }, multiplier: 0 },
+    marks: 'silver',
   };
   const t = cleanTuning(bad);
-  assert.deepEqual(
-    { ...t, freeClue: undefined, spacing: undefined },
-    {
-      ...HANDOFF,
-      price: { ...HANDOFF.price, lengths: 3 },
-      board: { ...HANDOFF.board, boss: 7 },
-      burnIn: { ...HANDOFF.burnIn, boss: 3 },
-      freeClue: undefined,
-      spacing: undefined,
-    },
-  );
-  assert.deepEqual([cleanTuning({ seeds: 16 }).seeds, cleanTuning({ seeds: 3 }).seeds, cleanTuning({ loot: { deal: 10 } }).loot.deal], [9, 3, 3]);
-  assert.deepEqual([LIMITS.board, LIMITS.otherNames, LIMITS.seeds], [[2, 10], [0, 100], [3, 15]]);
+  assert.deepEqual(t, {
+    ...HANDOFF,
+    tiles: { ...HANDOFF.tiles, boss: 30 },
+    missCost: { ...HANDOFF.missCost, boss: [55, 60] },
+    price: { ...HANDOFF.price, category: 3 },
+    stack: { ...HANDOFF.stack, lore: 4 },
+    loot: { ...HANDOFF.loot, cards: { ...HANDOFF.loot.cards, ritual: 3 }, weights: { ...HANDOFF.loot.weights, jackpot: 1 } },
+    corruption: { ...HANDOFF.corruption, weights: { ...HANDOFF.corruption.weights, dark: 3 } },
+  });
+  assert.deepEqual([LIMITS.tiles, LIMITS.itemsPerZone, LIMITS.fronts, LIMITS.creep, LIMITS.stack], [[8, 36], [1, 3], [0, 5], [1, 3], [1, 5]]);
 });
 
-test('cleanTuning falls back field by field: wrong types', () => {
+test('cleanTuning repairs field by field: wrong types', () => {
   const t = cleanTuning({
     life: '100',
     gold: true,
     flask: null,
-    missCost: { early: '20-30', late: [30], boss: [55, 60, 65] },
+    tiles: 'many',
+    missCost: { early: '20-30', mid: [30], late: [40, 45, 50] },
     price: [1, 2, 3],
-    board: 'big',
-    otherNames: [50],
-    burnIn: 4,
+    burnIn: 12,
     seeds: {},
-    loot: { deal: '3', weights: null, gold: { early: { 0: 4, 1: 8 }, late: [6, '10'] }, jackpot: false },
+    loot: { cards: null, weights: 'x', gold: { early: { 0: 4, 1: 8 }, mid: [6, '10'] }, jackpot: false },
     corruption: 'all',
+    marks: true,
     freeClue: { plain: 'no', incursion: 0, ritual: false, blight: null },
-    spacing: 'off',
   });
   assert.deepEqual(t, { ...HANDOFF, freeClue: { ...HANDOFF.freeClue, ritual: false } });
 });
@@ -676,12 +561,18 @@ test('the tuning panel keeps its numbers in storage and reads them back cleaned'
   store.clear();
   assert.deepEqual(readTuning(), HANDOFF);
   assert.ok(isDefault(readTuning()));
-  const own = tuned((t) => ((t.otherNames = 30), (t.spacing = false), (t.loot.deal = 4)));
+  const own = tuned((t) => ((t.itemsPerZone = 1), (t.marks = 'gold'), (t.corruption.seeds = 5)));
   writeTuning(own);
   assert.deepEqual(readTuning(), own);
   assert.equal(isDefault(own), false);
-  store.set(storeKey('wraeclastTuning2'), JSON.stringify({ ...own, life: -5 }));
+  const key = storeKey('wraeclastTuning3');
+  assert.ok(store.has(key));
+  store.set(key, JSON.stringify({ ...own, life: -5 }));
   assert.deepEqual(readTuning(), { ...own, life: 100 });
-  store.set(storeKey('wraeclastTuning2'), '{not json');
+  store.set(key, '{not json');
+  assert.deepEqual(readTuning(), HANDOFF);
+  // v2's kept tuning is never read.
+  store.clear();
+  store.set(storeKey('wraeclastTuning2'), JSON.stringify(own));
   assert.deepEqual(readTuning(), HANDOFF);
 });

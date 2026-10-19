@@ -1,61 +1,57 @@
 <script lang="ts">
-  // The camp (before zone 1) and the town (between zones 2 and 3): the
-  // vendor deals every ware as a card with its price, and buying takes the
-  // card (dealt again on the next visit); the pack, the flask, and the road
-  // ahead.
+  // A vendor: at the camp, in a town, and after an Expedition zone. It deals
+  // every supply as a card with its stack and price ("3 for 6 gold"), and
+  // buying takes the card (dealt again on the next visit). The pack's stacks,
+  // the flask, and the way on to the map.
   import { untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { backdropShadow } from '../lib/backdropShadow';
   import { motion } from '../lib/motion.svelte';
-  import { BOSS_ITEMS, PACK_SLOTS, WARE_NAMES, ZONE_NAMES, ZONES, type Run } from './rules';
+  import { SUPPLY_NAMES, type Run } from './rules';
   import DealtCard from './DealtCard.svelte';
   import PackList from './PackList.svelte';
-  import { BOSS_RULE, FLASK_LINE, does, zoneLines } from './words';
+  import { FLASK_LINE, does, stackLine } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
-  const camp = $derived(s.phase === 'camp');
-  /** The zones still ahead: all four from the camp, 3 and 4 from the town. */
-  const ahead = $derived(s.zones.map((z, i) => ({ z, no: i + 1 })).filter((z) => (camp ? true : z.no > 2)));
-  const full = $derived(s.pack.length >= PACK_SLOTS);
+  const at = $derived(s.vendor?.at ?? 'camp');
+  const heal = $derived(s.vendor?.heal ?? 0);
   /** The wares as dealt this visit (their places on the table don't move as cards are taken). */
   const dealt = untrack(() => [...run.state.stock]);
+  const TITLE = { camp: 'Camp', town: 'Town', expedition: 'Expedition vendor' } as const;
 </script>
 
 <div class="vendor">
   <header class="screen-title">
-    <p class="kicker">{camp ? 'Before zone 1' : 'Between zones 2 and 3'}</p>
-    <h1>{camp ? 'Camp' : 'Town'}</h1>
+    <p class="kicker">{run.node.name}</p>
+    <h1>{TITLE[at]}</h1>
     <p class="sub">
-      {#if camp}The vendor deals its wares. Stock your pack: nothing can be bought once an item is open.
-      {:else if s.arrivalHeal}The town heals you <span class="n">{s.arrivalHeal}</span> life. The vendor deals its wares again.
+      {#if at === 'camp'}The vendor deals its wares. Stock your pack: the next vendor is in a town, or after an Expedition.
+      {:else if at === 'expedition'}The Expedition's vendor deals its wares after the zone.
+      {:else if heal}The town heals you <span class="n">{heal}</span> life. The vendor deals its wares again.
       {:else}You arrive at full life. The vendor deals its wares again.{/if}
     </p>
   </header>
 
   <section class="table" aria-labelledby="shop-h">
     <h2 id="shop-h" class="sr">The vendor's wares</h2>
-    <p class="purse">
-      {#if full}The pack is full.{:else}<span class="n">{s.gold}</span> gold to spend, <span class="n">{PACK_SLOTS - s.pack.length}</span> {PACK_SLOTS - s.pack.length === 1 ? 'slot' : 'slots'} free.{/if}
-    </p>
+    <p class="purse"><span class="n">{s.gold}</span> gold to spend.</p>
     <ul class="cards">
       {#each dealt as ware, i (ware)}
-        {@const at = s.stock.indexOf(ware)}
+        {@const k = s.stock.indexOf(ware)}
         <li>
-          {#if at >= 0}
+          {#if k >= 0}
             <div out:fade={{ duration: motion.still ? 0 : 260 }}>
               <DealtCard
                 mark={ware}
-                title={WARE_NAMES[ware]}
+                title={SUPPLY_NAMES[ware]}
                 line={does(run, ware)}
-                tag="{s.tuning.price[ware]} gold"
-                rare={ware === 'vaal'}
-                label="Buy a {WARE_NAMES[ware]} for {s.tuning.price[ware]} gold"
+                tag={stackLine(run, ware)}
+                label="Buy {s.tuning.stack[ware]} {SUPPLY_NAMES[ware]} for {s.tuning.price[ware]} gold"
                 {i}
                 n={dealt.length}
-                disabled={!run.canBuy(at)}
-                faded={!run.canBuy(at)}
-                onpick={() => run.buy(at)}
+                disabled={!run.canBuy(k)}
+                faded={!run.canBuy(k)}
+                onpick={() => run.buy(k)}
               />
             </div>
           {:else}
@@ -67,29 +63,19 @@
   </section>
 
   <div class="cols">
-    <section class="panel" aria-labelledby="pack-h" use:backdropShadow={{ fill: 'linear' }}>
+    <section class="panel" aria-labelledby="pack-h">
       <h2 id="pack-h">Pack</h2>
       <PackList {run} />
+      <p class="note">Eight stacks of up to five. A ware is bought only when its whole stack fits.</p>
     </section>
-    <section class="panel" aria-labelledby="flask-h" use:backdropShadow={{ fill: 'linear' }}>
+    <section class="panel" aria-labelledby="flask-h">
       <h2 id="flask-h">Flask</h2>
-      <p class="flask"><span class="n">{s.flask.charges}</span> of <span class="n">{s.tuning.flask}</span> {s.tuning.flask === 1 ? 'charge' : 'charges'}. {FLASK_LINE}</p>
-    </section>
-    <section class="panel road-panel" aria-labelledby="road-h" use:backdropShadow={{ fill: 'linear' }}>
-      <h2 id="road-h">The road</h2>
-      <ol class="road">
-        {#each ahead as z (z.no)}
-          {@const l = zoneLines(run, z.z)}
-          <li><span class="zn">Zone <span class="n">{z.no}</span> • {ZONE_NAMES[z.z]}</span> <span class="rule">{l.free}. {l.rule}.</span></li>
-        {/each}
-        <li><span class="zn">The boss • <span class="n">{BOSS_ITEMS}</span> items</span> <span class="rule">{BOSS_RULE}. No loot.</span></li>
-      </ol>
-      {#if camp}<p class="note">The town comes after zone <span class="n">2</span> of <span class="n">{ZONES}</span>.</p>{/if}
+      <p class="flask"><span class="n">{s.flask.charges}</span> of <span class="n">{s.tuning.flask}</span> {s.tuning.flask === 1 ? 'charge' : 'charges'}. {FLASK_LINE} A Well refills every charge.</p>
     </section>
   </div>
 
   <div class="go dock">
-    <button class="btn primary big" onclick={() => run.leave()}>{camp ? 'Set out' : 'Leave town'}</button>
+    <button class="btn primary big" onclick={() => run.leave()}>{at === 'camp' ? 'Set out' : 'To the map'}</button>
   </div>
 </div>
 
@@ -126,7 +112,7 @@
   }
   .cols {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 1rem;
     align-items: start;
   }
@@ -140,29 +126,6 @@
   .note {
     margin: 0.6rem 0 0;
     font-size: 0.95rem;
-    color: var(--muted);
-  }
-  .road {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .road li {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.3;
-  }
-  .zn {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: #e9c8a2;
-  }
-  .rule {
-    font-size: 0.92rem;
     color: var(--muted);
   }
   @media (max-width: 900px) {

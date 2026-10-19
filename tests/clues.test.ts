@@ -7,7 +7,7 @@ import { cluesFile, sameLine } from '../scripts/make-clues.mjs';
 // The Wraeclast run's clues (scripts/make-clues.mjs): what its supplies and
 // zones reveal, with every word of the item's own name masked.
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-type Clues = { base: string; mods: [string, string, number][]; flavor: string | null };
+type Clues = { category: string; base: string; mods: [string, string, number][]; flavor: string | null; support: string | null };
 const raw = readFileSync(new URL('../src/data/clues.json', import.meta.url), 'utf8');
 const clues: Record<string, Clues> = JSON.parse(raw);
 const stats = JSON.parse(readFileSync(new URL('../src/data/itemStats.json', import.meta.url), 'utf8'));
@@ -20,7 +20,7 @@ const MASK = '▮▮▮';
 const SMALL = new Set(['of', 'the', 'and']);
 /** A clue as it reads: colour marks ({w|65}) off. */
 const plain = (text: string) => text.replace(/\{[a-z]\|([^{}|]*)\}/g, '$1');
-const allText = (c: Clues) => [c.base, ...c.mods.map(([, t]) => t), ...(c.flavor === null ? [] : [c.flavor])];
+const allText = (c: Clues) => [c.base, ...c.mods.map(([, t]) => t), ...(c.flavor === null ? [] : [c.flavor]), ...(c.support === null ? [] : [c.support])];
 
 test('every item has its clues, and only items do (node scripts/make-clues.mjs)', () => {
   assert.deepEqual(
@@ -79,6 +79,22 @@ test('the clues hold what each kind of item has', () => {
     if (it.kind === 'gem' && !c.mods[0]?.[1].startsWith('Category:')) bad.push(`${it.name}: no Category line first`);
   }
   assert.deepEqual(bad, []);
+});
+
+test('every item has its category as items.json names it, and a gem its support description', () => {
+  const bad: string[] = [];
+  for (const it of items) {
+    const c = clues[it.id];
+    if (!c.category || c.category !== it.category) bad.push(`${it.name}: category ${JSON.stringify(c.category)}`);
+    if (it.kind === 'gem' ? typeof c.support !== 'string' || !c.support.trim() : c.support !== null) bad.push(`${it.name}: support ${JSON.stringify(c.support)}`);
+  }
+  assert.deepEqual(bad, []);
+  const byName = new Map(items.map((it) => [it.name, clues[it.id]]));
+  assert.ok(byName.get("Ahn's Citadel")?.support?.startsWith('Supports skills that create walls in a line'));
+  // A granted skill's own description isn't the support's.
+  assert.ok(byName.get("Paquate's Pact")?.support?.startsWith('Supports Warcries'));
+  // The support is masked like the other clues.
+  assert.ok(byName.get("Khatal's Rejuvenation")?.support?.endsWith(`grants ${MASK} ${MASK}.`));
 });
 
 test('a gem whose Category repeats its name has it masked', () => {

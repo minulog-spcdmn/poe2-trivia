@@ -1,226 +1,257 @@
-// The Wraeclast run's rules (wraeclast.html, src/wraeclast): a solo run of 15
-// items, the mode's prototype (v2, after the first playtest). Pure: the run's
-// state is a plain object (the page makes it reactive), every action a method
-// that changes it, so a run plays the same in a test as on the page.
+// The Wraeclast run's rules (wraeclast.html, src/wraeclast): a solo run across
+// the map (map.ts) from the camp to the boss, the mode's prototype (v3, after
+// the second playtest). Pure: the run's state is a plain object (the page
+// makes it reactive), every action a method that changes it, so a run plays
+// the same in a test as on the page.
 //
-// A run: the camp (a vendor), zones 1 and 2 (three items each), the town
-// (heals, a vendor again), zones 3 and 4, then the boss's chain of three
-// under the Silent rule (only Flares work). Each item: its name built from
-// syllables (the Inscription, its board mixing names of its own category and
-// others), its art under the Veil (burned in a cluster at a time), the zone's
-// free clue, supplies from the pack, and a Vaal Orb to gamble on. A miss costs
-// life; a right answer deals loot cards to take one of. docs/handoff/wraeclast
-// (the prototype's handoffs) has the reasons.
+// A run: the camp (a vendor), then a node at a time along the paths ahead:
+// zones (items under the zone's type), Wells (the flask refilled), towns
+// (healed, a vendor again) and at the end the boss's items under the Silent
+// rule (only Flares work), with a modifier for each corruption front still
+// alive. Each item: its name built from tiles (the Inscription: the answer's
+// tiles among decoys), its art under the Veil (burned in a cluster at a
+// time), the zone's free clue and supplies from the pack. A miss costs life
+// and marks the line as Wordle does; a right answer deals loot, all of it
+// taken. docs/handoff/wraeclast (the prototype's handoffs) has the reasons.
 
 import { shuffle, type Item } from '../lib/game.ts';
 import { seededRandom } from '../lib/patches.ts';
 import itemData from '../data/items.json' with { type: 'json' };
 import syllableData from '../data/syllables.json' with { type: 'json' };
 import clueData from '../data/clues.json' with { type: 'json' };
+import {
+  GRAPH,
+  creep,
+  rollBossMods,
+  rollPlaces,
+  seedFronts,
+  weighted,
+  type BossMod,
+  type Corrupt,
+  type Front,
+  type Hidden,
+  type MapNode,
+  type Place,
+  type ZoneType,
+} from './map.ts';
 
-export type ZoneType = 'plain' | 'incursion' | 'ritual' | 'blight';
-export const ZONE_TYPES: readonly ZoneType[] = ['plain', 'incursion', 'ritual', 'blight'];
-export const ZONE_NAMES: Record<ZoneType, string> = { plain: 'Plain', incursion: 'Incursion', ritual: 'Ritual', blight: 'Blight' };
+export { ZONE_TYPES, ZONE_NAMES, HIDDEN, HIDDEN_NAMES, BOSS_MODS, BOSS_MOD_NAMES } from './map.ts';
+export type { ZoneType, Hidden, BossMod, Place, MapNode } from './map.ts';
 
-export type Supply = 'flare' | 'wisdom' | 'strike' | 'lengths' | 'first' | 'decoy';
-export const SUPPLIES: readonly Supply[] = ['flare', 'wisdom', 'strike', 'lengths', 'first', 'decoy'];
+export type Supply = 'flare' | 'wisdom' | 'lore' | 'category' | 'base' | 'decoy' | 'lengths' | 'first';
+export const SUPPLIES: readonly Supply[] = ['flare', 'wisdom', 'lore', 'category', 'base', 'decoy', 'lengths', 'first'];
 export const SUPPLY_NAMES: Record<Supply, string> = {
   flare: 'Flare',
   wisdom: 'Scroll of Wisdom',
-  strike: 'Name strike',
+  lore: 'Lore reveal',
+  category: 'Category reveal',
+  base: 'Base reveal',
+  decoy: 'Decoy sweep',
   lengths: 'Word lengths',
   first: 'First syllable',
-  decoy: 'Decoy sweep',
 };
 
-/** What the vendor sells and the pack holds: the supplies and Vaal Orbs. */
-export type Ware = Supply | 'vaal';
-export const WARES: readonly Ware[] = [...SUPPLIES, 'vaal'];
-export const WARE_NAMES: Record<Ware, string> = { ...SUPPLY_NAMES, vaal: 'Vaal Orb' };
+export type LootKind = 'gold' | 'supply' | 'flask' | 'jackpot';
+export const LOOT_KINDS: readonly LootKind[] = ['gold', 'supply', 'flask', 'jackpot'];
 
-export type LootKind = 'gold' | 'supply' | 'vaal' | 'flask' | 'jackpot';
-export const LOOT_KINDS: readonly LootKind[] = ['gold', 'supply', 'vaal', 'flask', 'jackpot'];
-/** The loot cards an unidentified card rolls twice as often. */
-export const RARE_LOOT: readonly LootKind[] = ['vaal', 'flask', 'jackpot'];
-
-export type Corruption = 'gilded' | 'unveiled' | 'twisted' | 'bricked';
-export const CORRUPTIONS: readonly Corruption[] = ['gilded', 'unveiled', 'twisted', 'bricked'];
-export const CORRUPTION_NAMES: Record<Corruption, string> = { gilded: 'Gilded', unveiled: 'Unveiled', twisted: 'Twisted', bricked: 'Bricked' };
-/** The cards each outcome adds to the item's deal (Bricked: a right answer deals nothing). */
-export const CORRUPTION_CARDS: Record<Corruption, number> = { gilded: 2, unveiled: 1, twisted: 2, bricked: 0 };
-/** The names a Twisted corruption adds to the board. */
-export const TWISTED_NAMES = 3;
-
-/** The parts of a run that share their numbers: zones 1 and 2, zones 3 and 4, the boss. */
-export type Section = 'early' | 'late' | 'boss';
-export const SECTIONS: readonly Section[] = ['early', 'late', 'boss'];
+/** Where a node's step puts it, for its decoys, miss costs and gold. */
+export type Section = 'early' | 'mid' | 'late' | 'boss';
+export const SECTIONS: readonly Section[] = ['early', 'mid', 'late', 'boss'];
 export type Range = [number, number];
 
-/** The numbers a run is played with (the page's tuning panel sets them; the log keeps them). */
+/** A tile's mark after a wrong submit: the right tile in the right place, in the answer elsewhere, or not in it. */
+export type Mark = 'gold' | 'silver' | 'struck';
+/** A placed tile's mark on the line; "none" where only gold is marked (tuning). */
+export type LineMark = Mark | 'none';
+
 export interface Tuning {
   life: number;
   gold: number;
-  /** The flask's charges, at the start and at most. */
+  /** Flask charges. */
   flask: number;
-  /** A miss's cost, a random whole number in the range. */
+  /** Items in a zone (1 to 3, for shorter test runs). */
+  itemsPerZone: number;
+  /** The share of open nodes that become zones (the rest Wells), percent. */
+  zoneShare: number;
+  /** The tiles a pool holds in all (the answer's and the decoys), by section: each item rolls its own within TILE_SPREAD of it. */
+  tiles: Record<Section, number>;
+  /** A miss's cost, a random whole number in the range, by section. */
   missCost: Record<Section, Range>;
-  price: Record<Ware, number>;
-  /** Names on the board (before Blight and Twisted add theirs). */
-  board: Record<Section, number>;
-  /** The share of a board's wrong names drawn from other categories, in percent. */
-  otherNames: number;
-  /** Patches a burn-in takes: a Flare's (halved by Incursion and the boss's third), Blight's free one, Unveiled's, the boss's first free one. */
-  burnIn: { flare: number; blight: number; unveiled: number; boss: number };
-  /** The Veil's cut: about this many seeds a side over the item's art (the page cuts it). */
+  price: Record<Supply, number>;
+  /** How many of each supply one card from the vendor holds. */
+  stack: Record<Supply, number>;
+  /** Patches a Flare burns in, and a free burn-in (Blight). */
+  burnIn: { flare: number; blight: number };
+  /** The Veil's seeds across the art (about this many a side). */
   seeds: number;
   loot: {
-    /** Cards a zone deals for a right answer, before misses and corruption. */
-    deal: number;
+    /** Loot cards a right answer deals, by zone type. */
+    cards: Record<ZoneType, number>;
     weights: Record<LootKind, number>;
-    gold: Record<Exclude<Section, 'boss'>, Range>;
+    gold: Record<'early' | 'mid' | 'late', Range>;
     jackpot: number;
+    /** How many of its supply a supply card holds. */
+    supplies: number;
   };
-  corruption: Record<Corruption, number>;
-  /** Whether each zone type gives its free clue (off: to see how experts do without). */
+  corruption: {
+    /** Fronts seeded at the start (0 to 5). */
+    seeds: number;
+    /** Every how many steps the player takes the fronts creep (1 to 3). */
+    creep: number;
+    weights: Record<Hidden, number>;
+    /** How many times its loot cards a corrupted zone deals. */
+    multiplier: number;
+  };
+  /** Gold and silver marks, or gold only. */
+  marks: 'both' | 'gold';
   freeClue: Record<ZoneType, boolean>;
-  /** Whether the answer line spaces words by itself. */
-  spacing: boolean;
 }
 
+/** The handoff's numbers (docs/handoff/wraeclast/v3.md). */
 export const DEFAULT_TUNING: Tuning = {
   life: 100,
   gold: 20,
   flask: 2,
-  missCost: { early: [20, 30], late: [30, 40], boss: [55, 65] },
-  price: { flare: 5, wisdom: 5, strike: 6, lengths: 4, first: 8, decoy: 6, vaal: 4 },
-  board: { early: 4, late: 6, boss: 10 },
-  otherNames: 50,
-  burnIn: { flare: 4, blight: 2, unveiled: 12, boss: 4 },
+  itemsPerZone: 3,
+  zoneShare: 83,
+  tiles: { early: 14, mid: 20, late: 26, boss: 32 },
+  missCost: { early: [20, 30], mid: [30, 40], late: [40, 50], boss: [55, 65] },
+  price: { flare: 6, wisdom: 6, lore: 6, category: 6, base: 6, decoy: 6, lengths: 4, first: 6 },
+  stack: { flare: 3, wisdom: 3, lore: 2, category: 2, base: 1, decoy: 3, lengths: 3, first: 2 },
+  burnIn: { flare: 12, blight: 4 },
   seeds: 9,
   loot: {
-    deal: 3,
-    weights: { gold: 10, supply: 8, vaal: 3, flask: 2, jackpot: 1 },
-    gold: { early: [4, 8], late: [6, 10] },
+    cards: { plain: 2, incursion: 2, essence: 1, ritual: 2, expedition: 1, blight: 2 },
+    weights: { gold: 10, supply: 8, flask: 2, jackpot: 1 },
+    gold: { early: [4, 8], mid: [6, 10], late: [8, 12] },
     jackpot: 25,
+    supplies: 2,
   },
-  corruption: { gilded: 2, unveiled: 2, twisted: 2, bricked: 1 },
-  freeClue: { plain: true, incursion: true, ritual: true, blight: true },
-  spacing: true,
+  corruption: {
+    seeds: 3,
+    creep: 2,
+    weights: { blood: 2, sealed: 2, swarming: 2, dark: 2, bounty: 1 },
+    multiplier: 2,
+  },
+  marks: 'both',
+  freeClue: { plain: true, incursion: true, essence: true, ritual: true, expedition: true, blight: true },
 };
 
-export const PACK_SLOTS = 8;
-export const ZONES = 4;
-export const ZONE_ITEMS = 3;
-export const BOSS_ITEMS = 3;
-export const ITEMS_IN_RUN = ZONES * ZONE_ITEMS + BOSS_ITEMS;
-/** Items done when the town comes: after zone 2. */
-export const TOWN_AFTER = 2 * ZONE_ITEMS;
-export const TOWN_HEAL = 20;
-/** A drink heals this much at once, and again after each of the next FLASK_ITEMS items. */
+/** The pack: this many stacks, each up to STACK_MAX of one supply. */
+export const PACK_STACKS = 8;
+export const STACK_MAX = 5;
+/** A flask charge heals this much at once, and again as each of the next FLASK_ITEMS items ends. */
 export const FLASK_STEP = 10;
 export const FLASK_ITEMS = 2;
-/** Blight puts this many more names on the board. */
-export const BLIGHT_NAMES = 2;
-/** The board never holds more names than this, and Name strike never leaves fewer than MIN_NAMES. */
-export const MAX_NAMES = 10;
-export const MIN_NAMES = 3;
-/** Wrong names are drawn at random from this many of the most alike. */
-export const LOOKALIKE_POOL = 15;
-/** A Decoy sweep greys out this many syllables. */
-export const DECOY_SWEEP = 3;
-/** A mod line this many items share (or more) is common: a Scroll of Wisdom or a Plain zone shows only those. */
-export const COMMON_LINE = 3;
-/** The three small words that are whole tiles. */
+export const TOWN_HEAL = 20;
+export const BOSS_ITEMS = 3;
+/** Decoys a Blight zone, a Swarming corruption and a Teeming boss add. */
+export const BLIGHT_DECOYS = 6;
+export const SWARMING_DECOYS = 8;
+export const TEEMING_DECOYS = 8;
+/** The most tiles a pool holds, the answer's included. */
+export const MAX_TILES = 36;
+/** How far an item's pool total strays from its section's, either way, so the total never gives the answer's tile count away. */
+export const TILE_SPREAD = 3;
+/** The fewest decoys a pool holds (before Blight, Swarming and Teeming add theirs). */
+export const MIN_DECOYS = 8;
+/** Decoys are drawn at random from the best this many look-alikes. */
+export const DECOY_POOL = 30;
+/** Decoys one Decoy sweep strikes. */
+export const DECOY_SWEEP = 4;
+/** Life a Blood toll takes as each item opens; misses a Bloodied boss costs more. */
+export const BLOOD_TOLL = 10;
+export const BLOODIED = 10;
+/** Words that stay whole tiles. */
 export const SMALL_WORDS: readonly string[] = ['of', 'the', 'and'];
 
-/** A mod line: its kind as the tooltip draws it, its text (name words masked), and how many items share it. */
+/** A mod line: its kind (the tooltip section), its text (name words masked), and how many items share it. */
 export type ModLine = [string, string, number];
-export type Clues = { base: string; mods: ModLine[]; flavor: string | null };
+export type Clues = { category: string; base: string; mods: ModLine[]; flavor: string | null; support: string | null };
 export const ITEMS = itemData as Item[];
 export const SYLLABLES = syllableData as Record<string, string[][]>;
 export const CLUES = clueData as unknown as Record<string, Clues>;
 const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
 const CATEGORIES = [...new Set(ITEMS.map((it) => it.category))].sort();
 
-/** What a zone (or the boss) gave for free when an item opened. */
-export type FreeClue = 'none' | 'mod' | 'flavor' | 'lengths' | 'burn';
+/** What a zone gave for free when an item opened. */
+export type FreeClue = 'none' | 'mod' | 'flavor' | 'base' | 'lengths' | 'burn';
 
-export type Phase = 'camp' | 'travel' | 'item' | 'solved' | 'loot' | 'town' | 'end';
+export type Phase = 'vendor' | 'map' | 'well' | 'zone' | 'item' | 'solved' | 'loot' | 'end';
 
-export interface BoardName {
-  id: string;
-  name: string;
-  /** Its words, each as its syllables (syllables.json, lower case). */
-  words: string[][];
+/** A stack in the pack. */
+export interface Stack {
+  supply: Supply;
+  n: number;
 }
 
-/** A loot card: what it gives (gold, or a supply), and whether it was dealt face down. */
+/** A loot card: what it gives. */
 export interface LootCard {
   kind: LootKind;
   /** Gold for gold and the jackpot, else 0. */
   gold: number;
-  /** The supply on a supply card, else null. */
+  /** The supply on a supply card, and how many, else null and 0. */
   supply: Supply | null;
-  unid: boolean;
+  n: number;
 }
 
-export type BurnBy = 'zone' | 'boss' | 'flare' | 'vaal';
+export type BurnBy = 'zone' | 'flare';
 
 export interface ItemLog {
   itemId: string;
   name: string;
   category: string;
-  /** Which zone: 1 to 4, or 5 for the boss. */
-  zone: number;
-  /** The zone's type, or "boss". */
+  step: number;
+  node: string;
   zoneType: ZoneType | 'boss';
-  corruption: Corruption | null;
+  /** The zone's hidden modifier, or null. */
+  corruption: Hidden | null;
   boss: boolean;
-  /** How many names the board held at the end (a Twisted corruption adds some). */
-  names: number;
-  /** The board's names, the answer marked. */
-  board: { name: string; answer?: true }[];
+  tiles: { answer: string[]; decoys: string[] };
   freeClue: FreeClue;
   supplies: { type: Supply; order: number; ms: number }[];
   /** Each burn-in: what made it, how many patches it took, when (ms after the item opened). */
   burnIns: { by: BurnBy; patches: number; ms: number }[];
   /** The Veil's patches, as the page cut it. */
   patches: number;
-  /** Each submit: the line as built, right or not, when, and the life a miss cost (0 when right). */
-  submits: { text: string; right: boolean; ms: number; lost: number }[];
+  /** Each submit: the tiles placed, right or not, the line's marks, the life a miss cost, when. */
+  submits: { tiles: string[]; right: boolean; marks: LineMark[]; lost: number; ms: number }[];
   lifeBefore: number;
   lifeAfter: number;
+  /** Life a Blood toll took as it opened. */
+  toll: number;
   /** The flask's heal as the item ended (in lifeAfter already). */
   healed: number;
-  /** The loot cards offered (none at the boss, or Bricked). */
-  deal: LootCard[];
-  /** The card taken: its place in the deal, and whether the pack kept what it gave. */
-  took: { index: number; kept: boolean } | null;
-  /** When a flask charge was drunk, ms after the item opened (each drink). */
+  /** When a flask charge was drunk, ms after the item opened. */
   drank: number[];
-  /** The Vaal Orb used: its outcome, how many supplies were used before it, when. */
-  vaal: { outcome: Corruption; suppliesBefore: number; ms: number } | null;
+  /** The loot cards dealt (none at the boss). */
+  loot: LootCard[];
   misses: number;
   gold: number;
 }
 
 export interface ItemPlay {
-  /** Its place in the run, 0 to 14. */
+  /** Its place in the run, from 0. */
   n: number;
-  /** 1 to 4, or 5 at the boss. */
-  zoneNo: number;
+  step: number;
+  node: string;
   zoneType: ZoneType | null;
-  /** Which of the boss's three, or null before the boss. */
+  /** Which of the boss's items (from 0), or null before the boss. */
   boss: number | null;
+  /** The zone's hidden modifier, while it's corrupted. */
+  hidden: Hidden | null;
   category: string;
   itemId: string;
-  /** The names on the board, the answer among them. */
-  names: BoardName[];
-  /** The distinct syllables of every name on the board, shuffled. */
+  /** The answer's words, each as its tiles. */
+  words: string[][];
+  /** The answer's tiles, in order. */
+  answer: string[];
+  decoys: string[];
+  /** Every distinct tile of the pool (the answer's and the decoys), shuffled. */
   tiles: string[];
-  /** Ids of the names struck from the board. */
-  struck: string[];
-  /** Syllables a Decoy sweep greyed out. */
+  /** Each board tile's best mark so far. */
+  marks: Record<string, Mark>;
+  /** Decoys a Decoy sweep struck. */
   swept: string[];
   /** The Veil's patches burned in, in the order they burned. */
   burned: number[];
@@ -228,54 +259,62 @@ export interface ItemPlay {
   patches: number;
   /** Which patches touch which (the page's cut), null until the item opens. */
   adjacency: number[][] | null;
-  /** The clues shown: mod lines (their places in the tooltip), the flavour text, the word lengths. */
-  shown: { mods: number[]; flavor: boolean; lengths: boolean };
+  /** The clues shown: mod lines (in the order shown, by their place in the tooltip), and which reveals. */
+  shown: { mods: number[]; flavor: boolean; lengths: boolean; category: boolean; base: boolean };
   freeClue: FreeClue;
-  /** The syllables placed on the answer line, in order. */
+  /** The tiles placed on the answer line, in order. */
   build: string[];
-  /** How many syllables at the start of the line are locked (First syllable). */
+  /** The last wrong submit's marks while its line stands, else null. */
+  lineMarks: LineMark[] | null;
+  /** How many tiles at the start of the line are locked (First syllable). */
   locked: number;
   misses: number;
-  corruption: Corruption | null;
   /** When it opened (its Veil cut), or null while it's being laid out. */
   openedAt: number | null;
   log: ItemLog;
 }
 
-/** The loot deal after a right answer. */
+/** The loot deal after a right answer: every card taken at once; a supply that doesn't fit waits for keep(). */
 export interface LootDeal {
   cards: LootCard[];
-  /** The card taken, or null. */
-  taken: number | null;
-  /** A supply or Vaal Orb taken with the pack full, waiting for keep(). */
-  pending: Ware | null;
+  collected: boolean;
+  pending: LootCard[];
+}
+
+/** The node being played: how many items it holds, and how many are done. */
+export interface Visit {
+  node: string;
+  items: number;
+  done: number;
 }
 
 export interface RunLog {
-  v: 2;
+  v: 3;
   seed: number;
   start: string;
   end: string | null;
+  /** Run time, ms. */
+  ms: number;
   result: 'win' | 'loss' | null;
-  /** The item the run ended on: its place (0 to 14), id and name. */
-  endedOn: { n: number; itemId: string; name: string } | null;
-  zones: ZoneType[];
+  /** The item the run ended on: its place, id, name and node. */
+  endedOn: { n: number; itemId: string; name: string; node: string } | null;
+  /** The node ids, from the camp. */
+  route: string[];
+  /** Each travel step: the nodes offered and the one picked. */
+  travel: { offered: string[]; picked: string }[];
+  /** Each node arrived at: what it was, and its corruption. */
+  met: { node: string; kind: Place['kind']; zoneType: ZoneType | null; corruption: Hidden | null }[];
+  fronts: { seeded: number; stopped: number; aliveAtBoss: number | null };
+  bossMods: BossMod[];
   misses: number;
-  /** Items answered right without a supply used. */
-  noSupply: number;
-  bought: Record<Ware, number>;
+  bought: Record<Supply, number>;
+  found: Record<Supply, number>;
   used: Record<Supply, number>;
-  /** Supplies and Vaal Orbs taken from loot. */
-  found: Record<Ware, number>;
-  vaalUsed: number;
-  outcomes: Record<Corruption, number>;
-  /** Unidentified cards offered and taken. */
-  unid: { offered: number; taken: number };
+  loot: { dealt: Record<LootKind, number>; taken: Record<LootKind, number> };
   goldEarned: number;
   goldSpent: number;
   drinks: number;
   lifeEnd: number;
-  spacing: boolean;
   tuning: Tuning;
   /** The device's viewport width, CSS pixels. */
   viewport: number;
@@ -285,90 +324,123 @@ export interface RunLog {
 export interface RunState {
   seed: number;
   tuning: Tuning;
-  /** The four zones' types, zone 1 first: all different. */
-  zones: ZoneType[];
+  /** What each node is this run. */
+  places: Record<string, Place>;
+  /** Corrupted nodes, by id. */
+  corrupt: Record<string, Corrupt>;
+  fronts: Front[];
+  /** The node the player is at. */
+  at: string;
+  /** Steps taken from the camp. */
+  steps: number;
+  /** The step count the fronts last crept at. */
+  crept: number;
+  /** The boss's modifiers, rolled as the player reaches it. */
+  bossMods: BossMod[];
   phase: Phase;
+  /** At a vendor: where (an Expedition deals after its zone), and the town's heal on arrival. */
+  vendor: { at: 'camp' | 'town' | 'expedition'; heal: number } | null;
   life: number;
   maxLife: number;
   gold: number;
   flask: { charges: number; /** Item ends the last drink still heals after. */ recovering: number };
-  pack: Ware[];
-  /** The vendor's wares left on this visit (each dealt once a visit). */
-  stock: Ware[];
+  pack: Stack[];
+  /** The vendor's wares left on this visit (the full set dealt again on each visit). */
+  stock: Supply[];
   /** Items done. */
   done: number;
+  visit: Visit | null;
   item: ItemPlay | null;
   loot: LootDeal | null;
-  /** The town's heal on arrival, for its screen. */
-  arrivalHeal: number;
   log: RunLog;
 }
 
 const count = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, 0])) as Record<K, number>;
 
-/** A name as the board compares it: no spaces, lower case. */
-const key = (text: string) => text.replace(/\s+/g, '').toLowerCase();
+/** A name or build as the check compares it: its letters only, lower case. */
+export const letters = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
-/** The section an item (0 to 14) is in. */
-export const sectionOf = (n: number): Section => (n >= ZONES * ZONE_ITEMS ? 'boss' : n >= TOWN_AFTER ? 'late' : 'early');
-/** The zone an item (0 to 14) is in: 1 to 4, 5 for the boss. */
-export const zoneOf = (n: number) => Math.min(ZONES + 1, Math.floor(n / ZONE_ITEMS) + 1);
+/** The section a step puts an item in. */
+export const sectionOf = (step: number, boss: boolean): Section => (boss ? 'boss' : step <= 5 ? 'early' : step <= 10 ? 'mid' : 'late');
 
 /** A whole number in [lo, hi], at random. */
 const between = ([lo, hi]: Range, rng: () => number) => lo + Math.floor(rng() * (Math.max(lo, hi) - lo + 1));
 
-/** A draw by weight, or null when every weight is 0. */
-function weighted<K extends string>(weights: Record<K, number>, keys: readonly K[], rng: () => number): K | null {
-  const total = keys.reduce((t, k) => t + Math.max(0, weights[k]), 0);
-  if (total <= 0) return null;
-  let r = rng() * total;
-  for (const k of keys) if ((r -= Math.max(0, weights[k])) < 0) return k;
-  return keys[keys.length - 1];
-}
+/** Mod lines from the most common to the rarest (by how many items share them, ties in tooltip order). */
+export const wisdomOrder = (clues: Clues) =>
+  clues.mods
+    .map((m, i) => ({ i, shared: m[2] }))
+    .sort((a, b) => b.shared - a.shared || a.i - b.i)
+    .map((m) => m.i);
 
-const boardName = (it: Item): BoardName => ({ id: it.id, name: it.name, words: SYLLABLES[it.id] });
+/** The base reveal's text: the base type, or a gem's support description. */
+export const baseText = (clues: Clues) => clues.support ?? clues.base;
 
 /**
- * `k` wrong names for `answer` from `pool`, the ones most alike first: ranked
- * by the syllables they share with it, then by how close their syllable count
- * is, drawn at random from the top LOOKALIKE_POOL so boards vary. Names whose
- * text is already in `taken` (the board's) are left out, and the drawn ones
- * are added to it.
+ * Marks a line against the answer's tiles, as Wordle does: the right tile in
+ * the right place gold, a tile the answer holds elsewhere silver (as often as
+ * the answer holds it), the rest struck.
  */
-function lookalikes(answer: Item, pool: Item[], k: number, taken: Set<string>, rng: () => number): Item[] {
-  if (k <= 0) return [];
-  const own = SYLLABLES[answer.id].flat();
-  const mine = new Set(own);
-  const ranked = pool
-    .filter((it) => !taken.has(key(it.name)))
-    .map((it) => {
-      const syl = SYLLABLES[it.id].flat();
-      return { it, shared: new Set(syl.filter((s) => mine.has(s))).size, gap: Math.abs(syl.length - own.length), tie: rng() };
-    })
-    .sort((a, b) => b.shared - a.shared || a.gap - b.gap || a.tie - b.tie);
-  const out: Item[] = [];
-  for (const { it } of shuffle(ranked.slice(0, Math.max(LOOKALIKE_POOL, k)), rng)) {
-    if (out.length >= k) break;
-    if (taken.has(key(it.name))) continue;
-    taken.add(key(it.name));
-    out.push(it);
+export function markLine(build: string[], answer: string[]): Mark[] {
+  const marks: Mark[] = build.map(() => 'struck');
+  const left = new Map<string, number>();
+  answer.forEach((t, i) => {
+    if (build[i] === t) marks[i] = 'gold';
+    else left.set(t, (left.get(t) ?? 0) + 1);
+  });
+  build.forEach((t, i) => {
+    if (marks[i] === 'gold') return;
+    const c = left.get(t) ?? 0;
+    if (c > 0) {
+      marks[i] = 'silver';
+      left.set(t, c - 1);
+    }
+  });
+  return marks;
+}
+
+const RANK: Record<Mark, number> = { struck: 1, silver: 2, gold: 3 };
+
+/** How alike a decoy tile looks to the answer's: shared letters with its nearest tile, less half the length gap. */
+function likeness(tile: string, answer: string[]) {
+  let best = -Infinity;
+  for (const a of answer) {
+    const pool = [...a];
+    let shared = 0;
+    for (const ch of tile) {
+      const k = pool.indexOf(ch);
+      if (k >= 0) shared++, pool.splice(k, 1);
+    }
+    best = Math.max(best, shared - Math.abs(tile.length - a.length) / 2);
   }
-  return out;
+  return best;
 }
 
 /**
- * `k` wrong names for a board: of them, `otherNames` percent (the rest of
- * rounding the own category's share down) from other categories, the rest
- * from the answer's own; either side short fills from the other.
+ * `k` decoy tiles for an item: about half from the tiles of names in its own
+ * category, half from all others, each side drawn at random from its best
+ * DECOY_POOL look-alikes; a side short fills from the other. Never a tile the
+ * answer has.
  */
-function wrongNames(answer: Item, k: number, otherNames: number, taken: Set<string>, rng: () => number): Item[] {
-  const others = ITEMS.filter((it) => it.id !== answer.id && it.category !== answer.category);
-  const own = ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category);
-  const ownCount = Math.floor((k * (100 - otherNames)) / 100);
-  const fromOwn = lookalikes(answer, own, ownCount, taken, rng);
-  const fromOthers = lookalikes(answer, others, k - fromOwn.length, taken, rng);
-  const more = lookalikes(answer, own, k - fromOwn.length - fromOthers.length, taken, rng);
-  return [...fromOwn, ...fromOthers, ...more];
+function pickDecoys(answer: Item, k: number, rng: () => number): string[] {
+  const own = new Set(SYLLABLES[answer.id].flat());
+  const tilesOf = (items: Item[]) => [...new Set(items.flatMap((it) => SYLLABLES[it.id].flat()))].filter((t) => !own.has(t));
+  const ranked = (tiles: string[]) =>
+    tiles
+      .map((t) => ({ t, like: likeness(t, [...own]), tie: rng() }))
+      .sort((a, b) => b.like - a.like || a.tie - b.tie)
+      .map((x) => x.t);
+  const mine = ranked(tilesOf(ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category)));
+  const theirs = ranked(tilesOf(ITEMS.filter((it) => it.category !== answer.category)));
+  const out = new Set<string>();
+  const draw = (from: string[], n: number) => {
+    const left = from.filter((t) => !out.has(t));
+    for (const t of shuffle(left.slice(0, Math.max(DECOY_POOL, n)), rng).slice(0, n)) out.add(t);
+  };
+  draw(mine, Math.ceil(k / 2));
+  draw(theirs, k - out.size);
+  draw(mine, k - out.size);
+  return [...out];
 }
 
 export interface RunOptions {
@@ -390,43 +462,52 @@ export class Run {
     this.rng = seededRandom(seed);
     this.now = now;
     const t: Tuning = structuredClone(tuning);
-    const zones = shuffle([...ZONE_TYPES], this.rng);
+    const places = rollPlaces(GRAPH, t.zoneShare, this.rng);
+    const { corrupt, fronts } = seedFronts(GRAPH, places, t.corruption.seeds, t.corruption.weights, this.rng);
     this.state = {
       seed,
       tuning: t,
-      zones,
-      phase: 'camp',
+      places,
+      corrupt,
+      fronts,
+      at: GRAPH.camp.id,
+      steps: 0,
+      crept: 0,
+      bossMods: [],
+      phase: 'vendor',
+      vendor: { at: 'camp', heal: 0 },
       life: t.life,
       maxLife: t.life,
       gold: t.gold,
       flask: { charges: t.flask, recovering: 0 },
       pack: [],
-      stock: [...WARES],
+      stock: [...SUPPLIES],
       done: 0,
+      visit: null,
       item: null,
       loot: null,
-      arrivalHeal: 0,
       log: {
-        v: 2,
+        v: 3,
         seed,
         start: new Date(now()).toISOString(),
         end: null,
+        ms: 0,
         result: null,
         endedOn: null,
-        zones: [...zones],
+        route: [GRAPH.camp.id],
+        travel: [],
+        met: [],
+        fronts: { seeded: fronts.length, stopped: 0, aliveAtBoss: null },
+        bossMods: [],
         misses: 0,
-        noSupply: 0,
-        bought: count(WARES),
+        bought: count(SUPPLIES),
+        found: count(SUPPLIES),
         used: count(SUPPLIES),
-        found: count(WARES),
-        vaalUsed: 0,
-        outcomes: count(CORRUPTIONS),
-        unid: { offered: 0, taken: 0 },
+        loot: { dealt: count(LOOT_KINDS), taken: count(LOOT_KINDS) },
         goldEarned: 0,
         goldSpent: 0,
         drinks: 0,
         lifeEnd: t.life,
-        spacing: t.spacing,
         tuning: structuredClone(t),
         viewport,
         items: [],
@@ -436,227 +517,353 @@ export class Run {
 
   // ---- What's where ----
 
-  /** The zone type of zone 1 to 4 (null at the boss). */
-  zoneType(zoneNo: number): ZoneType | null {
-    return zoneNo >= 1 && zoneNo <= ZONES ? this.state.zones[zoneNo - 1] : null;
+  /** The node the player is at. */
+  get node(): MapNode {
+    return GRAPH.byId.get(this.state.at)!;
   }
 
-  /** The zone the run is in or heads into next: 1 to 4, 5 for the boss. */
-  get zoneNo() {
-    const s = this.state;
-    return s.item ? s.item.zoneNo : zoneOf(s.done);
+  /** The nodes the player can travel to now (on the map), else none. */
+  options(): string[] {
+    return this.state.phase === 'map' ? GRAPH.next[this.state.at] : [];
   }
 
-  /** How many names the board of item n holds, before a Twisted corruption adds its own. */
-  boardSize(n: number): number {
-    const base = this.state.tuning.board[sectionOf(n)];
-    const blight = this.zoneType(zoneOf(n)) === 'blight' ? BLIGHT_NAMES : 0;
-    return Math.max(2, Math.min(MAX_NAMES, base + blight));
-  }
-
-  /** A miss's cost on the open item, as a range: the item shows it before a submit. */
-  missRange(): Range {
+  /** The section the open item (or the node the player is at) is in. */
+  section(): Section {
     const it = this.state.item;
-    return this.state.tuning.missCost[sectionOf(it ? it.n : this.state.done)];
+    if (it) return sectionOf(it.step, it.boss !== null);
+    const n = this.node;
+    return sectionOf(n.step, n.kind === 'boss');
   }
 
-  /** Whether a ware on the vendor's table (its place in stock) can be bought: at a vendor, with the gold and a free slot. */
+  /** A miss's cost on the open item (or at the node ahead), as a range: the item shows it before a submit. */
+  missRange(): Range {
+    const sec = this.section();
+    const [lo, hi] = this.state.tuning.missCost[sec];
+    const more = sec === 'boss' && this.state.bossMods.includes('bloodied') ? BLOODIED : 0;
+    return [lo + more, hi + more];
+  }
+
+  /** The hidden modifier of the zone the player is at, while it's corrupted (not yet cleansed). */
+  hiddenHere(): Hidden | null {
+    const c = this.state.corrupt[this.state.at];
+    return c && !c.cleansed && this.state.places[this.state.at].kind === 'zone' ? c.hidden : null;
+  }
+
+  /** The loot cards a right answer deals here before misses: the zone type's, times the corruption's multiplier. */
+  dealHere(): number {
+    const p = this.state.places[this.state.at];
+    if (p.kind !== 'zone') return 0;
+    const t = this.state.tuning;
+    return t.loot.cards[p.type] * (this.hiddenHere() ? t.corruption.multiplier : 1);
+  }
+
+  /** How many of a supply the pack holds. */
+  held(supply: Supply): number {
+    return this.state.pack.reduce((n, st) => n + (st.supply === supply ? st.n : 0), 0);
+  }
+
+  /** Whether `n` of a supply fit in the pack: topping its stacks up to STACK_MAX, then new stacks. */
+  fits(supply: Supply, n: number): boolean {
+    const s = this.state;
+    const room = s.pack.reduce((r, st) => r + (st.supply === supply ? STACK_MAX - st.n : 0), 0);
+    const more = Math.ceil(Math.max(0, n - room) / STACK_MAX);
+    return s.pack.length + more <= PACK_STACKS;
+  }
+
+  /** Puts `n` of a supply in the pack (when it fits). */
+  private stow(supply: Supply, n: number): boolean {
+    if (!this.fits(supply, n)) return false;
+    const s = this.state;
+    for (const st of s.pack) {
+      if (st.supply !== supply || n <= 0) continue;
+      const add = Math.min(n, STACK_MAX - st.n);
+      st.n += add;
+      n -= add;
+    }
+    while (n > 0) {
+      const add = Math.min(n, STACK_MAX);
+      s.pack.push({ supply, n: add });
+      n -= add;
+    }
+    return true;
+  }
+
+  /** Whether the ware at `i` on the vendor's table can be bought: at a vendor, with the gold and the room. */
   canBuy(i: number): boolean {
     const s = this.state;
     const ware = s.stock[i];
-    return (s.phase === 'camp' || s.phase === 'town') && !!ware && s.gold >= s.tuning.price[ware] && s.pack.length < PACK_SLOTS;
+    return s.phase === 'vendor' && !!ware && s.gold >= s.tuning.price[ware] && this.fits(ware, s.tuning.stack[ware]);
   }
 
-  /** Whether the open item can be played on (opened, not yet named). */
+  /** The open item, while it can be played on (opened, not yet named). */
   private live(): ItemPlay | null {
     const it = this.state.item;
     return this.state.phase === 'item' && it && it.openedAt !== null ? it : null;
   }
 
-  /** Whether the flask can be drunk now: during an item, with a charge left. */
+  /** Whether a flask charge can be drunk: an item open, a charge left, life below its most. */
   canDrink(): boolean {
-    return !!this.live() && this.state.flask.charges > 0;
+    const s = this.state;
+    return !!this.live() && s.flask.charges > 0 && s.life < s.maxLife;
   }
 
-  /** How many patches a Flare burns in on the open item: half under Incursion and on the boss's third. */
+  /** How many patches a Flare burns in here: halved under Incursion, and again at a Murky boss. */
   flareBurn(): number {
-    const it = this.state.item;
-    const full = this.state.tuning.burnIn.flare;
-    const half = it && (it.zoneType === 'incursion' || it.boss === BOSS_ITEMS - 1);
-    return half ? Math.max(1, Math.round(full / 2)) : full;
+    const s = this.state;
+    const it = s.item;
+    let b = s.tuning.burnIn.flare;
+    if (it?.zoneType === 'incursion') b /= 2;
+    if (it && it.boss !== null && s.bossMods.includes('murky')) b /= 2;
+    return Math.max(1, Math.round(b));
+  }
+
+  /** The decoys still on the board unstruck: what a Decoy sweep can strike. */
+  decoysLeft(it: ItemPlay): string[] {
+    return it.decoys.filter((t) => it.marks[t] !== 'struck');
   }
 
   /**
-   * Why a supply has nothing to do on the open item, or null when it has:
-   * 'silent' at the boss (only Flares work), 'corrupted', 'ritual' (Scrolls
-   * don't work there), or 'done' (nothing left for it to show).
+   * Why a supply would do nothing on the open item: none open, the boss's
+   * Silent rule, a Sealed zone, a Dark one (no Flares), a Ritual zone (no
+   * Scrolls), or nothing left for it to show. Null when it works.
    */
-  idle(supply: Supply): 'closed' | 'silent' | 'corrupted' | 'ritual' | 'done' | null {
+  idle(supply: Supply): 'closed' | 'silent' | 'sealed' | 'dark' | 'ritual' | 'done' | null {
     const it = this.live();
     if (!it) return 'closed';
     if (it.boss !== null && supply !== 'flare') return 'silent';
-    if (it.corruption) return 'corrupted';
-    switch (supply) {
-      case 'flare':
-        return it.burned.length < it.patches ? null : 'done';
-      case 'wisdom':
-        if (it.zoneType === 'ritual') return 'ritual';
-        return commonUnshown(it).length ? null : 'done';
-      case 'strike':
-        return remaining(it).length > MIN_NAMES ? null : 'done';
-      case 'lengths':
-        return it.shown.lengths ? 'done' : null;
-      case 'first':
-        return it.locked ? 'done' : null;
-      case 'decoy':
-        return decoys(it).length ? null : 'done';
-    }
+    if (it.hidden === 'sealed') return 'sealed';
+    if (supply === 'flare' && it.hidden === 'dark') return 'dark';
+    if (supply === 'wisdom' && it.zoneType === 'ritual') return 'ritual';
+    const c = CLUES[it.itemId];
+    const done: Record<Supply, boolean> = {
+      flare: !it.adjacency || it.burned.length >= it.patches,
+      wisdom: it.shown.mods.length >= c.mods.length,
+      lore: it.shown.flavor || !c.flavor,
+      category: it.shown.category,
+      base: it.shown.base,
+      decoy: !this.decoysLeft(it).length,
+      lengths: it.shown.lengths,
+      first: it.locked > 0,
+    };
+    return done[supply] ? 'done' : null;
   }
 
-  /** Whether a supply has anything to do on the open item (whether or not the pack holds one). */
+  /** Whether a supply would do something on the open item. */
   works(supply: Supply): boolean {
     return this.idle(supply) === null;
   }
 
-  /** Whether a supply can be used now: one in the pack, and something for it to do. */
+  /** Whether a supply can be used now: the pack holds one and it works. */
   canUse(supply: Supply): boolean {
-    return this.state.pack.includes(supply) && this.works(supply);
+    return this.held(supply) > 0 && this.works(supply);
   }
 
-  /** Whether a Vaal Orb can be used now: one in the pack, an item open that isn't the boss's or corrupted. */
-  canCorrupt(): boolean {
-    const it = this.live();
-    return !!it && it.boss === null && !it.corruption && this.state.pack.includes('vaal');
-  }
-
-  /**
-   * Why the build can't be sent though there is one: it is a name already
-   * struck, or a build already sent on this item (so a miss never costs life
-   * twice). Null when it can be.
-   */
-  blocked(): 'struck' | 'tried' | null {
+  /** Why the build can't be sent though there is one: the same line was sent on this item already (a miss never costs life twice). */
+  blocked(): 'tried' | null {
     const it = this.state.item;
     if (this.state.phase !== 'item' || !it || !it.build.length) return null;
-    const k = key(it.build.join(''));
-    if (it.names.some((n) => it.struck.includes(n.id) && key(n.name) === k)) return 'struck';
-    if (it.log.submits.some((sub) => key(sub.text) === k)) return 'tried';
-    return null;
+    return it.log.submits.some((sub) => sub.tiles.join('\u0001') === it.build.join('\u0001')) ? 'tried' : null;
   }
 
-  /** Whether the build can be submitted: something built, the item open, and the build not blocked. */
+  /** Whether the build can be submitted: something built, the item open, the line not sent before. */
   canSubmit(): boolean {
     const it = this.live();
-    return !!it && it.build.length > 0 && this.blocked() === null;
+    return !!it && it.build.length > 0 && !it.lineMarks && this.blocked() === null;
   }
 
   // ---- Actions ----
 
-  /** Buys the ware at `i` on the vendor's table: it goes in the pack, and off the table until the next visit. */
+  /** Buys the ware at `i` on the vendor's table: its stack goes in the pack, and the card off the table until the next visit. */
   buy(i: number): boolean {
     if (!this.canBuy(i)) return false;
     const s = this.state;
     const ware = s.stock[i];
     const price = s.tuning.price[ware];
     s.gold -= price;
-    s.pack.push(ware);
+    this.stow(ware, s.tuning.stack[ware]);
     s.stock.splice(i, 1);
-    s.log.bought[ware]++;
+    s.log.bought[ware] += s.tuning.stack[ware];
     s.log.goldSpent += price;
     return true;
   }
 
-  /** Leaves the camp or the town for the next zone. */
+  /** Leaves a vendor or a Well for the map. */
   leave(): boolean {
     const s = this.state;
-    if (s.phase !== 'camp' && s.phase !== 'town') return false;
+    if (s.phase !== 'vendor' && s.phase !== 'well') return false;
     s.stock = [];
-    s.phase = 'travel';
+    s.vendor = null;
+    this.toMap();
     return true;
   }
 
-  /** From the zone's threshold into its first item. */
+  /** The map, the fronts creeping first after every `creep` steps the player takes. */
+  private toMap() {
+    const s = this.state;
+    s.phase = 'map';
+    s.visit = null;
+    const every = Math.max(1, s.tuning.corruption.creep);
+    if (s.steps > 0 && s.steps % every === 0 && s.crept < s.steps) {
+      s.crept = s.steps;
+      creep(GRAPH, s.places, s.corrupt, s.fronts, this.node.step, s.tuning.corruption.weights, this.rng);
+    }
+  }
+
+  /** Travels to a node linked ahead, and arrives there: a Well refills the flask, a town heals and deals its wares, a zone or the boss shows its threshold. */
+  choose(id: string): boolean {
+    const s = this.state;
+    const offered = this.options();
+    if (!offered.includes(id)) return false;
+    s.log.travel.push({ offered: [...offered], picked: id });
+    s.log.route.push(id);
+    s.at = id;
+    s.steps++;
+    const place = s.places[id];
+    const hidden = this.hiddenHere();
+    s.log.met.push({ node: id, kind: place.kind, zoneType: place.kind === 'zone' ? place.type : null, corruption: hidden });
+    if (place.kind === 'well') {
+      s.flask.charges = s.tuning.flask;
+      s.phase = 'well';
+    } else if (place.kind === 'town') {
+      const heal = Math.min(TOWN_HEAL, s.maxLife - s.life);
+      s.life += heal;
+      s.stock = [...SUPPLIES];
+      s.vendor = { at: 'town', heal };
+      s.phase = 'vendor';
+    } else if (place.kind === 'boss') {
+      const alive = s.fronts.filter((f) => f.alive).length;
+      s.log.fronts.aliveAtBoss = alive;
+      s.bossMods = rollBossMods(alive, this.rng);
+      s.log.bossMods = [...s.bossMods];
+      s.visit = { node: id, items: BOSS_ITEMS + (s.bossMods.includes('lingering') ? 1 : 0), done: 0 };
+      s.phase = 'zone';
+    } else {
+      s.visit = { node: id, items: Math.max(1, Math.min(3, s.tuning.itemsPerZone)), done: 0 };
+      s.phase = 'zone';
+    }
+    return true;
+  }
+
+  /** From a zone's (or the boss's) threshold into its first item. */
   enter(): boolean {
-    if (this.state.phase !== 'travel') return false;
+    if (this.state.phase !== 'zone' || !this.state.visit) return false;
     this.draw();
     return true;
   }
 
   /**
-   * On from a named item (or a taken card): the loot deal after a right
-   * answer in a zone (none at the boss or when Bricked), else the next item,
-   * the next zone's threshold, the town after zone 2, or the end after the
-   * boss.
+   * On from a named item, or from its loot once collected (and any supply
+   * that didn't fit kept or left): the loot deal after a right answer in a
+   * zone (none at the boss), else the next item, or the node done.
    */
   next(): boolean {
     const s = this.state;
     const it = s.item;
     if (s.phase === 'solved' && it) {
-      if (it.boss === null && it.corruption !== 'bricked') {
+      if (it.boss === null) {
         this.dealLoot(it);
-        if (s.loot && s.loot.cards.length) {
-          s.phase = 'loot';
-          return true;
-        }
+        s.phase = 'loot';
+        return true;
       }
       this.finish();
       return true;
     }
-    if (s.phase === 'loot' && s.loot && s.loot.taken !== null && s.loot.pending === null) {
+    if (s.phase === 'loot' && s.loot?.collected && !s.loot.pending.length) {
       this.finish();
       return true;
     }
     return false;
   }
 
-  /** Draws the next item: from a category picked at random (not the last item's), an item not drawn before; its board laid out. It opens with open(). */
+  /** Lays out the next item of the visit: from a category picked at random (not the last item's), an item not drawn before. It opens with open(). */
   private draw() {
     const s = this.state;
-    const n = s.done;
-    const zoneNo = zoneOf(n);
-    const boss = sectionOf(n) === 'boss' ? n - ZONES * ZONE_ITEMS : null;
+    const t = s.tuning;
+    const node = this.node;
+    const place = s.places[node.id];
+    const boss = place.kind === 'boss' ? s.visit!.done : null;
+    const zoneType = place.kind === 'zone' ? place.type : null;
+    const hidden = this.hiddenHere();
     const last = s.log.items.at(-1)?.category;
     const fresh = CATEGORIES.filter((c) => ITEMS.some((it) => it.category === c && !this.drawn.has(it.id)));
     const cats = fresh.filter((c) => c !== last);
-    const category = (cats.length ? cats : fresh)[Math.floor(this.rng() * (cats.length ? cats : fresh).length)];
+    const pick = cats.length ? cats : fresh;
+    const category = pick[Math.floor(this.rng() * pick.length)];
     const pool = ITEMS.filter((it) => it.category === category && !this.drawn.has(it.id));
     const answer = pool[Math.floor(this.rng() * pool.length)];
     this.drawn.add(answer.id);
-    const taken = new Set([key(answer.name)]);
-    const wrong = wrongNames(answer, this.boardSize(n) - 1, s.tuning.otherNames, taken, this.rng);
-    const names = shuffle([answer, ...wrong], this.rng).map(boardName);
-    const zoneType = this.zoneType(zoneNo);
-    const clues = CLUES[answer.id];
-    const t = s.tuning;
+    const words = SYLLABLES[answer.id];
+    const answerTiles = words.flat();
+    const own = [...new Set(answerTiles)];
+    const sec = sectionOf(node.step, boss !== null);
+    // The pool's total is rolled, not the decoys: the board's size says next to nothing of the answer's.
+    const total = t.tiles[sec] - TILE_SPREAD + Math.floor(this.rng() * (2 * TILE_SPREAD + 1));
+    let k = Math.max(MIN_DECOYS, total - own.length);
+    if (zoneType === 'blight') k += BLIGHT_DECOYS;
+    if (hidden === 'swarming') k += SWARMING_DECOYS;
+    if (boss !== null && s.bossMods.includes('teeming')) k += TEEMING_DECOYS;
+    k = Math.max(0, Math.min(k, MAX_TILES - own.length));
+    const decoys = pickDecoys(answer, k, this.rng);
+    const tiles = shuffle([...own, ...decoys], this.rng);
+    const c = CLUES[answer.id];
+    const shown = { mods: [] as number[], flavor: false, lengths: false, category: false, base: false };
     let freeClue: FreeClue = 'none';
-    const shown = { mods: [] as number[], flavor: false, lengths: false };
-    if (boss !== null) {
-      // The boss's first item starts with a burn-in (at open), the others with nothing.
-      if (boss === 0) freeClue = 'burn';
-    } else if (zoneType && t.freeClue[zoneType]) {
-      const common = commonLines(clues);
-      if (zoneType === 'plain' && common.length) {
+    if (zoneType && t.freeClue[zoneType]) {
+      const order = wisdomOrder(c);
+      if ((zoneType === 'plain' || zoneType === 'expedition') && order.length) {
+        shown.mods.push(order[0]);
         freeClue = 'mod';
-        shown.mods.push(common[Math.floor(this.rng() * common.length)]);
-      } else if (zoneType === 'incursion' && clues.flavor !== null) {
-        freeClue = 'flavor';
+      } else if (zoneType === 'incursion' && c.flavor) {
         shown.flavor = true;
-      } else if (zoneType === 'blight') freeClue = 'burn';
+        freeClue = 'flavor';
+      } else if (zoneType === 'essence') {
+        shown.base = true;
+        freeClue = 'base';
+      } else if (zoneType === 'blight' && hidden !== 'dark') freeClue = 'burn';
       else {
-        // Ritual's own clue, and the Plain clue of an item with no common line.
-        freeClue = 'lengths';
+        // Ritual's own, and every free clue the item lacks.
         shown.lengths = true;
+        freeClue = 'lengths';
       }
     }
+    const log: ItemLog = {
+      itemId: answer.id,
+      name: answer.name,
+      category,
+      step: node.step,
+      node: node.id,
+      zoneType: zoneType ?? 'boss',
+      corruption: hidden,
+      boss: boss !== null,
+      tiles: { answer: [...answerTiles], decoys: [...decoys] },
+      freeClue,
+      supplies: [],
+      burnIns: [],
+      patches: 0,
+      submits: [],
+      lifeBefore: s.life,
+      lifeAfter: s.life,
+      toll: 0,
+      healed: 0,
+      drank: [],
+      loot: [],
+      misses: 0,
+      gold: 0,
+    };
     s.item = {
-      n,
-      zoneNo,
+      n: s.done,
+      step: node.step,
+      node: node.id,
       zoneType,
       boss,
+      hidden,
       category,
       itemId: answer.id,
-      names,
-      tiles: shuffle([...new Set(names.flatMap((nm) => nm.words.flat()))], this.rng),
-      struck: [],
+      words,
+      answer: answerTiles,
+      decoys,
+      tiles,
+      marks: {},
       swept: [],
       burned: [],
       patches: 0,
@@ -664,35 +871,11 @@ export class Run {
       shown,
       freeClue,
       build: [],
+      lineMarks: null,
       locked: 0,
       misses: 0,
-      corruption: null,
       openedAt: null,
-      log: {
-        itemId: answer.id,
-        name: answer.name,
-        category,
-        zone: zoneNo,
-        zoneType: zoneType ?? 'boss',
-        corruption: null,
-        boss: boss !== null,
-        names: names.length,
-        board: names.map((nm) => (nm.id === answer.id ? { name: nm.name, answer: true } : { name: nm.name })),
-        freeClue,
-        supplies: [],
-        burnIns: [],
-        patches: 0,
-        submits: [],
-        lifeBefore: s.life,
-        lifeAfter: s.life,
-        healed: 0,
-        deal: [],
-        took: null,
-        drank: [],
-        vaal: null,
-        misses: 0,
-        gold: 0,
-      },
+      log,
     };
     s.loot = null;
     s.phase = 'item';
@@ -700,20 +883,27 @@ export class Run {
 
   /**
    * Opens the item laid out by draw(), once the page has cut its Veil:
-   * `adjacency` lists, for each of its patches, the patches it touches. The
-   * zone's (or the boss's) free burn-in burns here, and the item's clock
-   * starts.
+   * `adjacency` lists, for each of its patches, the patches it touches. A
+   * Blood toll takes its life, the free burn-in burns, and the clock starts.
    */
   open(adjacency: number[][]): boolean {
-    const it = this.state.item;
-    if (this.state.phase !== 'item' || !it || it.openedAt !== null || !adjacency.length) return false;
+    const s = this.state;
+    const it = s.item;
+    if (s.phase !== 'item' || !it || it.openedAt !== null || !adjacency.length) return false;
     it.adjacency = adjacency.map((nb) => nb.filter((j) => j >= 0 && j < adjacency.length));
     it.patches = adjacency.length;
     it.log.patches = it.patches;
     it.openedAt = this.now();
-    if (it.freeClue === 'burn') {
-      const b = this.state.tuning.burnIn;
-      this.burnIn(it, it.boss !== null ? b.boss : b.blight, it.boss !== null ? 'boss' : 'zone');
+    if (it.freeClue === 'burn') this.burnIn(it, s.tuning.burnIn.blight, 'zone');
+    if (it.hidden === 'blood') {
+      const toll = Math.min(s.life, BLOOD_TOLL);
+      s.life -= toll;
+      it.log.toll = toll;
+      it.log.lifeAfter = s.life;
+      if (s.life <= 0) {
+        s.log.items.push(it.log);
+        this.end(false);
+      }
     }
     return true;
   }
@@ -756,77 +946,61 @@ export class Run {
     return out;
   }
 
+  /** Takes one of a supply out of the pack (its last stack first). */
+  private spend(supply: Supply) {
+    const s = this.state;
+    for (let i = s.pack.length - 1; i >= 0; i--) {
+      if (s.pack[i].supply !== supply) continue;
+      if (--s.pack[i].n <= 0) s.pack.splice(i, 1);
+      return;
+    }
+  }
+
   /** Uses a supply from the pack on the open item. */
   use(supply: Supply): boolean {
     if (!this.canUse(supply)) return false;
     const s = this.state;
     const it = s.item!;
-    s.pack.splice(s.pack.indexOf(supply), 1);
+    this.spend(supply);
     switch (supply) {
       case 'flare':
         this.burnIn(it, this.flareBurn(), 'flare');
         break;
       case 'wisdom': {
-        const lines = commonUnshown(it);
-        it.shown.mods.push(lines[Math.floor(this.rng() * lines.length)]);
+        const nextLine = wisdomOrder(CLUES[it.itemId]).find((i) => !it.shown.mods.includes(i));
+        if (nextLine !== undefined) it.shown.mods.push(nextLine);
         break;
       }
-      case 'strike': {
-        const wrong = remaining(it).filter((nm) => nm.id !== it.itemId);
-        it.struck.push(wrong[Math.floor(this.rng() * wrong.length)].id);
+      case 'lore':
+        it.shown.flavor = true;
         break;
-      }
+      case 'category':
+        it.shown.category = true;
+        break;
+      case 'base':
+        it.shown.base = true;
+        break;
+      case 'decoy':
+        for (const t of shuffle(this.decoysLeft(it), this.rng).slice(0, DECOY_SWEEP)) {
+          it.marks[t] = 'struck';
+          it.swept.push(t);
+        }
+        break;
       case 'lengths':
         it.shown.lengths = true;
         break;
       case 'first': {
-        const first = answerOf(it).words[0][0];
-        if (it.build[0] !== first) it.build.unshift(first);
+        const first = it.answer[0];
+        it.build = it.lineMarks ? [first] : it.build[0] === first ? it.build : [first, ...it.build];
+        it.lineMarks = null;
         it.locked = 1;
+        it.marks[first] = 'gold';
         break;
       }
-      case 'decoy':
-        it.swept.push(...shuffle(decoys(it), this.rng).slice(0, DECOY_SWEEP));
-        break;
     }
     it.log.supplies.push({ type: supply, order: it.log.supplies.length + 1, ms: this.since(it) });
     s.log.used[supply]++;
     return true;
-  }
-
-  /**
-   * Uses a Vaal Orb on the open item: it is corrupted (no more supplies on
-   * it, the flask still), with an outcome drawn by the tuning's weights that
-   * holds through all its submits. Returns the outcome, or null.
-   */
-  corrupt(): Corruption | null {
-    if (!this.canCorrupt()) return null;
-    const s = this.state;
-    const it = s.item!;
-    const outcome = weighted(s.tuning.corruption, CORRUPTIONS, this.rng) ?? 'gilded';
-    s.pack.splice(s.pack.indexOf('vaal'), 1);
-    it.corruption = outcome;
-    it.log.corruption = outcome;
-    it.log.vaal = { outcome, suppliesBefore: it.log.supplies.length, ms: this.since(it) };
-    s.log.vaalUsed++;
-    s.log.outcomes[outcome]++;
-    if (outcome === 'unveiled') this.burnIn(it, s.tuning.burnIn.unveiled, 'vaal');
-    if (outcome === 'twisted') this.twist(it);
-    return outcome;
-  }
-
-  /** A Twisted corruption's names: up to TWISTED_NAMES more on the board (never above MAX_NAMES), their new syllables among the tiles at random places. */
-  private twist(it: ItemPlay) {
-    const answer = BY_ID.get(it.itemId)!;
-    const room = Math.min(TWISTED_NAMES, MAX_NAMES - it.names.length);
-    const taken = new Set(it.names.map((nm) => key(nm.name)));
-    for (const extra of wrongNames(answer, room, this.state.tuning.otherNames, taken, this.rng)) {
-      const nm = boardName(extra);
-      it.names.splice(Math.floor(this.rng() * (it.names.length + 1)), 0, nm);
-      for (const syl of nm.words.flat()) if (!it.tiles.includes(syl)) it.tiles.splice(Math.floor(this.rng() * (it.tiles.length + 1)), 0, syl);
-    }
-    it.log.names = it.names.length;
-    it.log.board = it.names.map((nm) => (nm.id === it.itemId ? { name: nm.name, answer: true } : { name: nm.name }));
   }
 
   /** Drinks a flask charge: it heals FLASK_STEP at once, and again as each of the next FLASK_ITEMS items ends (this one first). A drink while one still heals starts over; the rest of that one is lost. */
@@ -842,47 +1016,56 @@ export class Run {
     return true;
   }
 
-  /** Adds a syllable to the answer line (one greyed out can't be). A syllable can be placed more than once. */
+  /** After a wrong submit the marked line stands; the next change starts a fresh line (the locked tile kept). */
+  private fresh(it: ItemPlay) {
+    if (!it.lineMarks) return;
+    it.build = it.build.slice(0, it.locked);
+    it.lineMarks = null;
+  }
+
+  /** Places a tile on the answer line. A tile can be placed more than once. */
   place(tile: string): boolean {
     const it = this.live();
-    if (!it || !it.tiles.includes(tile) || greyed(it, tile)) return false;
+    if (!it || !it.tiles.includes(tile)) return false;
+    this.fresh(it);
     it.build.push(tile);
     return true;
   }
 
-  /** Takes the syllable at `index` back off the answer line (not a locked one). */
+  /** Takes a placed tile back off the line (a locked one stays). */
   unplace(index: number): boolean {
     const it = this.live();
     if (!it || index < it.locked || index >= it.build.length) return false;
-    it.build.splice(index, 1);
+    if (it.lineMarks) this.fresh(it);
+    else it.build.splice(index, 1);
     return true;
   }
 
-  /** Empties the answer line, but for its locked start. */
+  /** Empties the line, the locked tile kept. */
   clear(): boolean {
     const it = this.live();
     if (!it || it.build.length <= it.locked) return false;
     it.build = it.build.slice(0, it.locked);
+    it.lineMarks = null;
     return true;
   }
 
   /**
-   * Submits the answer line. Right: the item is named (next() deals its
-   * loot). Wrong: life drops by a random miss cost, the coming deal loses a
-   * card, and if the build is a name on the board, it's struck. At 0 life
-   * the run ends. Returns whether it was right, or null if nothing could be
-   * submitted.
+   * Submits the line. Right (its letters are the answer's): the item is
+   * named, the flask's heal comes in, and next() deals the loot. Wrong: life
+   * drops by a random miss cost, the deal loses a card, and the line is
+   * marked tile by tile, the board's tiles keeping their best marks. At 0
+   * life the run ends. Returns whether it was right, or null if nothing
+   * could be submitted.
    */
   submit(): boolean | null {
     if (!this.canSubmit()) return null;
     const s = this.state;
     const it = s.item!;
-    const k = key(it.build.join(''));
-    const right = key(answerOf(it).name) === k;
-    const sub = { text: buildText(it, s.tuning.spacing), right, ms: this.since(it), lost: 0 };
+    const right = letters(it.build.join('')) === letters(it.log.name);
+    const sub = { tiles: [...it.build], right, marks: [] as LineMark[], lost: 0, ms: this.since(it) };
     it.log.submits.push(sub);
     if (right) {
-      if (!it.log.supplies.length) s.log.noSupply++;
       let healed = 0;
       if (s.flask.recovering > 0) {
         healed = Math.min(FLASK_STEP, s.maxLife - s.life);
@@ -894,14 +1077,22 @@ export class Run {
       s.phase = 'solved';
       return true;
     }
+    const marks = markLine(it.build, it.answer);
+    const goldOnly = s.tuning.marks === 'gold';
+    sub.marks = marks.map((m) => (goldOnly && m !== 'gold' ? 'none' : m));
+    it.lineMarks = sub.marks;
+    it.build.forEach((tile, i) => {
+      const m = sub.marks[i];
+      if (m === 'none') return;
+      const was = it.marks[tile];
+      if (!was || RANK[m] > RANK[was]) it.marks[tile] = m;
+    });
     it.misses++;
     it.log.misses = it.misses;
     s.log.misses++;
     sub.lost = Math.min(s.life, between(this.missRange(), this.rng));
     s.life -= sub.lost;
     it.log.lifeAfter = s.life;
-    const named = it.names.find((nm) => nm.id !== it.itemId && !it.struck.includes(nm.id) && key(nm.name) === k);
-    if (named) it.struck.push(named.id);
     if (s.life <= 0) {
       s.log.items.push(it.log);
       this.end(false);
@@ -909,76 +1100,74 @@ export class Run {
     return false;
   }
 
-  /** The loot deal for a named zone item: the zone's cards less one a miss (never below 1), plus its corruption's; one dealt face down. */
+  /** The loot deal for a named zone item: the zone's cards (times the corruption's multiplier) less one a miss, never below 1. */
   private dealLoot(it: ItemPlay) {
     const s = this.state;
-    const t = s.tuning;
-    const size = Math.max(1, t.loot.deal - it.misses) + (it.corruption ? CORRUPTION_CARDS[it.corruption] : 0);
-    const unid = Math.floor(this.rng() * size);
-    const cards = Array.from({ length: size }, (_, i) => this.rollCard(sectionOf(it.n) === 'late' ? 'late' : 'early', i === unid));
-    s.loot = { cards, taken: null, pending: null };
-    it.log.deal = cards.map((c) => ({ ...c }));
-    s.log.unid.offered++;
+    const size = Math.max(1, this.dealHere() - it.misses);
+    const sec = sectionOf(it.step, false) as 'early' | 'mid' | 'late';
+    const cards: LootCard[] = [];
+    for (let k = 0; k < size; k++) cards.push(this.rollCard(sec, cards.filter((c) => c.kind === 'flask').length));
+    s.loot = { cards, collected: false, pending: [] };
+    it.log.loot = cards.map((c) => ({ ...c }));
+    for (const c of cards) s.log.loot.dealt[c.kind]++;
   }
 
-  /** One loot card, by the tuning's weights (an unidentified one rolls the rare kinds twice as often; a flask card only while a charge is empty). */
-  private rollCard(section: 'early' | 'late', unid: boolean): LootCard {
+  /** One loot card, by the tuning's weights (a flask card only while a charge is empty, counting the `flasks` already dealt with it: else rolled again). */
+  private rollCard(section: 'early' | 'mid' | 'late', flasks = 0): LootCard {
     const s = this.state;
     const t = s.tuning.loot;
     const weights = { ...t.weights };
-    if (unid) for (const k of RARE_LOOT) weights[k] *= 2;
-    if (s.flask.charges >= s.tuning.flask) weights.flask = 0;
+    if (s.flask.charges + flasks >= s.tuning.flask) weights.flask = 0;
     const kind = weighted(weights, LOOT_KINDS, this.rng) ?? 'gold';
     return {
       kind,
       gold: kind === 'gold' ? between(t.gold[section], this.rng) : kind === 'jackpot' ? t.jackpot : 0,
       supply: kind === 'supply' ? SUPPLIES[Math.floor(this.rng() * SUPPLIES.length)] : null,
-      unid,
+      n: kind === 'supply' ? t.supplies : 0,
     };
   }
 
-  /**
-   * Takes the loot card at `i`: its gold, its flask charge, or its supply or
-   * Vaal Orb into the pack. With the pack full, the ware waits for keep() to
-   * replace a slot with it or leave it.
-   */
-  take(i: number): boolean {
+  /** Takes every loot card: the gold, the flask charge, the supplies into the pack. A supply that doesn't fit waits for keep(). */
+  collect(): boolean {
     const s = this.state;
     const loot = s.loot;
-    const card = loot?.cards[i];
-    if (s.phase !== 'loot' || !loot || !card || loot.taken !== null) return false;
-    loot.taken = i;
+    if (s.phase !== 'loot' || !loot || loot.collected) return false;
+    loot.collected = true;
     const it = s.item!;
-    it.log.took = { index: i, kept: true };
-    if (card.unid) s.log.unid.taken++;
-    if (card.kind === 'gold' || card.kind === 'jackpot') {
-      s.gold += card.gold;
-      s.log.goldEarned += card.gold;
-      it.log.gold = card.gold;
-    } else if (card.kind === 'flask') s.flask.charges = Math.min(s.tuning.flask, s.flask.charges + 1);
-    else {
-      const ware: Ware = card.kind === 'vaal' ? 'vaal' : card.supply!;
-      s.log.found[ware]++;
-      if (s.pack.length < PACK_SLOTS) s.pack.push(ware);
-      else loot.pending = ware;
+    for (const card of loot.cards) {
+      if (card.kind === 'gold' || card.kind === 'jackpot') {
+        s.gold += card.gold;
+        s.log.goldEarned += card.gold;
+        it.log.gold += card.gold;
+        s.log.loot.taken[card.kind]++;
+      } else if (card.kind === 'flask') {
+        s.flask.charges = Math.min(s.tuning.flask, s.flask.charges + 1);
+        s.log.loot.taken.flask++;
+      } else {
+        s.log.found[card.supply!] += card.n;
+        if (this.stow(card.supply!, card.n)) s.log.loot.taken.supply++;
+        else loot.pending.push(card);
+      }
     }
     return true;
   }
 
-  /** With the pack full, keeps the ware taken in place of the pack's slot `slot`, or leaves it (null). */
+  /** With the pack full, the first waiting supply card replaces the pack's stack `slot`, or is left (null). */
   keep(slot: number | null): boolean {
     const s = this.state;
     const loot = s.loot;
-    if (s.phase !== 'loot' || !loot || loot.pending === null) return false;
+    if (s.phase !== 'loot' || !loot?.pending.length) return false;
+    const card = loot.pending[0];
     if (slot !== null) {
       if (slot < 0 || slot >= s.pack.length) return false;
-      s.pack[slot] = loot.pending;
-    } else s.item!.log.took!.kept = false;
-    loot.pending = null;
+      s.pack[slot] = { supply: card.supply!, n: card.n };
+      s.log.loot.taken.supply++;
+    }
+    loot.pending.shift();
     return true;
   }
 
-  /** The named item done: logged, and the run moves on. */
+  /** The named item done: logged, then the visit's next item, or the node done. */
   private finish() {
     const s = this.state;
     const it = s.item!;
@@ -987,27 +1176,50 @@ export class Run {
     s.done++;
     s.item = null;
     s.loot = null;
-    if (s.done === ITEMS_IN_RUN) this.end(true);
-    else if (s.done === TOWN_AFTER) {
-      const heal = Math.min(TOWN_HEAL, s.maxLife - s.life);
-      s.life += heal;
-      s.arrivalHeal = heal;
-      s.stock = [...WARES];
-      s.phase = 'town';
-    } else if (s.done % ZONE_ITEMS === 0) s.phase = 'travel';
-    else this.draw();
+    const v = s.visit!;
+    v.done++;
+    if (v.done < v.items) {
+      this.draw();
+      return;
+    }
+    const place = s.places[v.node];
+    if (place.kind === 'boss') {
+      this.end(true);
+      return;
+    }
+    // Answering all its items cleanses a zone; cleansing a front's head stops it for good.
+    const c = s.corrupt[v.node];
+    if (c && !c.cleansed) {
+      c.cleansed = true;
+      for (const f of s.fronts)
+        if (f.alive && f.at === v.node) {
+          f.alive = false;
+          f.stoppedAt = v.node;
+          s.log.fronts.stopped++;
+        }
+    }
+    if (place.kind === 'zone' && place.type === 'expedition') {
+      s.stock = [...SUPPLIES];
+      s.vendor = { at: 'expedition', heal: 0 };
+      s.visit = null;
+      s.phase = 'vendor';
+      return;
+    }
+    this.toMap();
   }
 
   /** The run ends: won after the boss, lost at 0 life (on the item still open, or the last one logged). */
   private end(won: boolean) {
     const s = this.state;
-    const last = s.log.items.at(-1)!;
+    const last = s.log.items.at(-1);
     s.log.end = new Date(this.now()).toISOString();
+    s.log.ms = Math.max(0, this.now() - Date.parse(s.log.start));
     s.log.result = won ? 'win' : 'loss';
-    s.log.endedOn = { n: s.log.items.length - 1, itemId: last.itemId, name: last.name };
+    s.log.endedOn = last ? { n: s.log.items.length - 1, itemId: last.itemId, name: last.name, node: last.node } : null;
     s.log.lifeEnd = s.life;
     s.item = null;
     s.loot = null;
+    s.visit = null;
     s.phase = 'end';
   }
 }
@@ -1017,42 +1229,11 @@ export class Run {
 /** An item by its id. */
 export const itemOf = (id: string) => BY_ID.get(id)!;
 
-/** The answer's board name. */
-export const answerOf = (it: ItemPlay) => it.names.find((nm) => nm.id === it.itemId)!;
+/** The answer's word lengths, in tiles. */
+export const lengthsOf = (it: ItemPlay) => it.words.map((w) => w.length);
 
-/** The names not struck. */
-export const remaining = (it: ItemPlay) => it.names.filter((nm) => !it.struck.includes(nm.id));
-
-/** Whether a syllable is greyed out: no name left on the board uses it, or a Decoy sweep took it. */
-export const greyed = (it: ItemPlay, tile: string) => it.swept.includes(tile) || !remaining(it).some((nm) => nm.words.some((w) => w.includes(tile)));
-
-/** The syllables only wrong names left on the board use, not greyed out yet: what a Decoy sweep can take. */
-export function decoys(it: ItemPlay) {
-  const answer = new Set(answerOf(it).words.flat());
-  return it.tiles.filter((t) => !answer.has(t) && !greyed(it, t));
-}
-
-/** A clue file's common mod lines: their places in the tooltip. */
-export const commonLines = (clues: Clues) => clues.mods.flatMap(([, , shared], i) => (shared >= COMMON_LINE ? [i] : []));
-
-/** The open item's common mod lines not shown yet. */
-export const commonUnshown = (it: ItemPlay) => commonLines(CLUES[it.itemId]).filter((i) => !it.shown.mods.includes(i));
-
-/** The answer's word lengths: its syllables in each word, as Word lengths shows them ("2 · 1 · 1 · 2"). */
-export const lengthsOf = (it: ItemPlay) => answerOf(it).words.map((w) => w.length);
-
-/** Whether a syllable starts a word in any name on the board: the answer line puts a space before one. */
-export const startsWord = (it: ItemPlay, tile: string) => it.names.some((nm) => nm.words.some((w) => w[0] === tile));
-
-/**
- * The answer line as text: syllables joined, with `spacing` a space before
- * each that starts a word in any name on the board (not first, not after a
- * hyphen). A syllable that starts a word in some names and not in others
- * gets one too, so the spaces never confirm the answer.
- */
-export function buildText(it: ItemPlay, spacing: boolean) {
-  return it.build.map((syl, i) => (spacing && i > 0 && startsWord(it, syl) && !it.build[i - 1].endsWith('-') ? ` ${syl}` : syl)).join('');
-}
+/** A board tile's look: its best mark, or plain. Struck tiles grey out where they lie. */
+export const markOf = (it: ItemPlay, tile: string): Mark | null => it.marks[tile] ?? null;
 
 /** A plain n by n grid's adjacency: the patches of art that won't load (the run still plays, its Veil dark), and of tests and benches. */
 export function gridAdjacency(n: number): number[][] {
@@ -1071,3 +1252,4 @@ export function gridAdjacency(n: number): number[][] {
       );
   return out;
 }
+

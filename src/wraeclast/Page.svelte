@@ -1,12 +1,14 @@
 <script lang="ts">
   // The Wraeclast run's page (wraeclast.html): the game's backdrop, the run's
-  // bar (life, flask, gold, pack, where), the screen its phase calls for, and
-  // the tuning panel (collapsed) at the foot.
+  // header and strip (where, life, flask, gold, the step), the screen its
+  // phase calls for (a vendor, the map, a zone's or a Well's threshold, an
+  // item, its loot, the end), and the tuning panel (collapsed) at the foot.
   import Background from '../components/Background.svelte';
   import { play } from './play.svelte';
   import Hud from './Hud.svelte';
   import Vendor from './Vendor.svelte';
-  import Travel from './Travel.svelte';
+  import MapScreen from './MapScreen.svelte';
+  import Threshold from './Threshold.svelte';
   import ItemScreen from './ItemScreen.svelte';
   import Loot from './Loot.svelte';
   import End from './End.svelte';
@@ -22,7 +24,7 @@
   });
 
   // Each new screen starts at its top (phones scroll); a named item stays on its screen, for its finale.
-  const screen = $derived(`${s.seed}:${s.phase === 'solved' ? 'item' : s.phase}:${s.done}`);
+  const screen = $derived(`${s.seed}:${s.phase === 'solved' ? 'item' : s.phase}:${s.done}:${s.steps}`);
   $effect(() => {
     void screen;
     scrollTo({ top: 0 });
@@ -34,10 +36,12 @@
   {#key run}
     <Hud {run} />
     {#key screen}
-      {#if s.phase === 'camp' || s.phase === 'town'}
+      {#if s.phase === 'vendor'}
         <Vendor {run} />
-      {:else if s.phase === 'travel'}
-        <Travel {run} />
+      {:else if s.phase === 'map'}
+        <MapScreen {run} />
+      {:else if s.phase === 'zone' || s.phase === 'well'}
+        <Threshold {run} />
       {:else if s.phase === 'item' || s.phase === 'solved'}
         <ItemScreen {run} />
       {:else if s.phase === 'loot'}

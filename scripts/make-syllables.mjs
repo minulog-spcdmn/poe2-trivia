@@ -6,8 +6,8 @@
 // lower case, so the name rebuilds (in lower case) as the syllables joined
 // within a word and the words joined with a space; the word boundaries are
 // what the answer line's spacing and the Word lengths supply read
-// (tests/syllables.test.ts checks every name rebuilds, and that the file is
-// what this script makes).
+// (tests/syllables.test.ts checks every name rebuilds, no tile is longer than
+// 4 letters, and that the file is what this script makes).
 // - "of", "the" and "and" stay whole. No other word is a single tile.
 // - A possessive keeps its mark on its last syllable (v / oll's).
 // - A word that is two English words splits between them first: black /
@@ -22,6 +22,12 @@
 // - A part the patterns leave whole splits between its vowels (kal / ten /
 //   halt); one of a single vowel sound splits before its vowel (gr / ip,
 //   b / ond, bl / ack), or after it when it starts with one (a / sh).
+// - A syllable longer than 4 letters (a possessive mark or a hyphen not
+//   counted) is cut again near its middle at a vowel, before the consonants
+//   that start the next vowel's syllable, until none is: man / dra / go /
+//   ra, not man / drago / ra; one of a single vowel sound before its vowel
+//   (str / ict). A word of one letter (the o' of Cat O' Nine Tails) can't
+//   split and stays one tile.
 // - A hyphen stays on the part before it: kn / ight- / er / rant.
 // Run: node scripts/make-syllables.mjs (after npm run fetch-data)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -165,12 +171,100 @@ function onsetSplit(part) {
   return [part.slice(0, at), part.slice(at)].filter((s) => s !== '');
 }
 
+/** The most letters a tile holds, not counting a possessive mark or a hyphen. */
+const LONGEST = 4;
+/** Consonants that start a syllable together (dr / ago, not d / rago). */
+const ONSETS = new Set([
+  ...['bl', 'br', 'ch', 'cl', 'cr', 'dr', 'fl', 'fr', 'gl', 'gr', 'kl', 'kr', 'ph', 'pl', 'pr', 'qu', 'sc', 'sh', 'sk', 'sl', 'sm', 'sn', 'sp', 'st', 'sw', 'th', 'tr', 'tw', 'wh', 'wr'],
+  ...['chr', 'phr', 'sch', 'scr', 'shr', 'spl', 'spr', 'squ', 'str', 'thr'],
+]);
+/** Letter pairs a cut never goes between. */
+const KEEP = new Set(['ch', 'ck', 'gh', 'ph', 'qu', 'sh', 'th', 'wh']);
+/** Vowel pairs that sound as one, which a cut never goes between either. */
+const DIPHTHONGS = new Set(['ai', 'au', 'ay', 'ea', 'ee', 'ei', 'eu', 'ey', 'ie', 'oa', 'oe', 'oi', 'oo', 'ou', 'oy', 'ue', 'ui']);
+
+/**
+ * Which letters of a part are vowels: a y before a vowel (or at the start)
+ * and the u of qu are consonants here.
+ * @param {string} w the part, lower case
+ */
+function vowelsOf(w) {
+  return [...w].map((c, i) => VOWELS.includes(c) && !(c === 'y' && (i === 0 || (i + 1 < w.length && VOWELS.includes(w[i + 1])))) && !(c === 'u' && w[i - 1] === 'q'));
+}
+
+/**
+ * Whether letter i is a silent final e: after a consonant, but not the e of
+ * a final syllable like ble or tle (cru / ci / ble).
+ * @param {string} w @param {boolean[]} vowel @param {number} i
+ */
+const silentE = (w, vowel, i) => i === w.length - 1 && i > 0 && w[i] === 'e' && !vowel[i - 1] && !(w[i - 1] === 'l' && i > 1 && !vowel[i - 2]);
+
+/**
+ * What a cut before letter i costs: 1 where the next tile starts with a
+ * consonant, or consonants that start a syllable together, before its vowel
+ * (man / dra / go), and none of them would rather go with the tile before
+ * (an s may: mas / ter and ma / ster both read), 1 more if that vowel is a
+ * silent e (par / a / dise, not par / adi / se); 2 between two vowels that
+ * don't sound as one (ae / ris); 3 anywhere else; 10 inside a pair that sounds
+ * as one (c / h, o / u).
+ * @param {string} w @param {boolean[]} vowel @param {number} i
+ */
+function cutCost(w, vowel, i) {
+  const pair = w.slice(i - 1, i + 1);
+  if (KEEP.has(pair)) return 10;
+  if (vowel[i]) return !vowel[i - 1] ? 3 : DIPHTHONGS.has(pair) ? 10 : 2;
+  let end = i;
+  while (end < w.length && !vowel[end]) end++;
+  if (end === w.length) return 3;
+  const onset = w.slice(i, end);
+  const starts = onset.length === 1 || ONSETS.has(onset);
+  const keepsAll = vowel[i - 1] || w[i - 1] === 's' || !ONSETS.has(w[i - 1] + onset);
+  return (starts && keepsAll ? 1 : 3) + (silentE(w, vowel, end) ? 1 : 0);
+}
+
+/**
+ * A part longer than LONGEST letters cut into tiles of at most that many: one
+ * of a single vowel sound that starts with a consonant before its vowel, as
+ * onsetSplit does (str / ict, st / one), where both halves are short enough;
+ * any other at the cheapest cuts (cutCost, 4 more for a tile with no vowel),
+ * so as few cuts as read well, and of those the most even tiles (ama / na,
+ * not a / mana; gai / nst, not g / ai / nst).
+ * @param {string} part
+ * @returns {string[]}
+ */
+function shorten(part) {
+  if ([...part].length <= LONGEST) return [part];
+  const w = part.toLowerCase();
+  const vowel = vowelsOf(w);
+  const sounds = vowel.filter((v, i) => v && !vowel[i - 1] && !silentE(w, vowel, i)).length;
+  const at = vowel.indexOf(true);
+  if (sounds <= 1 && at > 0 && at <= LONGEST && w.length - at <= LONGEST) return [part.slice(0, at), part.slice(at)];
+  // best[j]: the cheapest way to cut the first j letters, as [cost, sum of squared tile lengths, cut before].
+  /** @type {[number, number, number][]} */
+  const best = [[0, 0, -1]];
+  for (let j = 1; j <= w.length; j++) {
+    /** @type {[number, number, number] | null} */
+    let pick = null;
+    for (let k = Math.max(0, j - LONGEST); k < j; k++) {
+      const [cost, even] = best[k];
+      const tile = vowel.slice(k, j).some(Boolean) ? 0 : 4;
+      const here = /** @type {[number, number, number]} */ ([cost + (k > 0 ? cutCost(w, vowel, k) : 0) + tile, even + (j - k) ** 2, k]);
+      if (!pick || less(here, pick)) pick = here;
+    }
+    best.push(/** @type {[number, number, number]} */ (pick));
+  }
+  /** @type {string[]} */
+  const out = [];
+  for (let j = w.length; j > 0; j = best[j][2]) out.unshift(part.slice(best[j][2], j));
+  return out;
+}
+
 /** A part of a word (no hyphens, no possessive mark) as its syllables. @param {string} part */
 function partSyllables(part) {
   let out = joinLoneConsonants(hyphenateSync(part, { hyphenChar: '|' }).split('|')).filter((s) => s !== '');
   if (out.length === 1) out = vowelSplit(part);
   if (out.length === 1) out = onsetSplit(part);
-  return out;
+  return out.flatMap(shorten);
 }
 
 /**

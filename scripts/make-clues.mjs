@@ -1,5 +1,8 @@
 // Builds src/data/clues.json, what the Wraeclast run's supplies and zones
-// reveal about an item (src/wraeclast), from its tooltip in itemStats.json:
+// reveal about an item (src/wraeclast), from items.json and its tooltip in
+// itemStats.json:
+// - category: its category as items.json names it (Rings, Lineage Gems), the
+//   names the other modes use,
 // - base: its base type (Gold Ring, or a gem's Lineage Support),
 // - mods: its mod lines in tooltip order, each [kind, text, shared] with the
 //   kind as ItemDetails draws it (a unique's implicits (i) and explicits (e);
@@ -9,6 +12,9 @@
 //   line shared by 3 or more is common: the only kind a Scroll of Wisdom or
 //   a Plain zone shows, since a line only its own item has gives it away.
 // - flavor: its flavour text, or null.
+// - support: a gem's support description, its first description section (d)
+//   (a granted skill's own description comes later), or null for an item
+//   that isn't a gem.
 // Values keep their colour marks ({w|65}), as the tooltip writes them.
 //
 // Every word of the item's own name (3 letters or more, but not "of", "the"
@@ -126,7 +132,7 @@ export function sharedLines(items, stats) {
 
 /**
  * One item's clues.
- * @param {{ name: string, base: string, kind: string }} item
+ * @param {{ name: string, base: string, category: string, kind: string }} item
  * @param {[string, string][][]} sections its tooltip, as itemStats.json holds it
  * @param {Map<string, number>} shared how many items have each line (sharedLines)
  */
@@ -134,12 +140,20 @@ export function cluesOf(item, sections, shared) {
   const pattern = namePattern(item.name);
   const mods = modLines(item, sections).map(([k, t]) => [k, mask(t, pattern), shared.get(sameLine(t)) ?? 1]);
   const f = sections.flat().find(([k]) => k === 'f');
-  return { base: mask(item.base, pattern), mods, flavor: f ? mask(f[1], pattern) : null };
+  const d = item.kind === 'gem' ? sections.flat().find(([k]) => k === 'd') : undefined;
+  const support = d ? clean(d[1]) : null;
+  return {
+    category: item.category,
+    base: mask(item.base, pattern),
+    mods,
+    flavor: f ? mask(f[1], pattern) : null,
+    support: support ? mask(support, pattern) : null,
+  };
 }
 
 /**
  * The whole file for these items, as this script writes it.
- * @param {{ id: string, name: string, base: string, kind: string }[]} items
+ * @param {{ id: string, name: string, base: string, category: string, kind: string }[]} items
  * @param {Record<string, [string, string][][]>} stats
  */
 export function cluesFile(items, stats) {

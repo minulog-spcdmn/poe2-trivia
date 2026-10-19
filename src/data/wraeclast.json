@@ -1,0 +1,301 @@
+{
+ "note": "Exported from the placement tool on 2026-10-19 while placements are still being edited. Positions are fractions (0 to 1) of the illustrated map. kind: camp, town, boss, or open (rolls zone or Well per run).",
+ "nodes": [
+  {
+   "id": "clearfell-encampment",
+   "name": "Clearfell Encampment",
+   "step": 0,
+   "x": 0.485,
+   "y": 0.225,
+   "kind": "camp"
+  },
+  {
+   "id": "the-red-vale",
+   "name": "The Red Vale",
+   "step": 1,
+   "x": 0.4297,
+   "y": 0.2777,
+   "kind": "open"
+  },
+  {
+   "id": "the-grelwood",
+   "name": "The Grelwood",
+   "step": 1,
+   "x": 0.4814,
+   "y": 0.2531,
+   "kind": "open"
+  },
+  {
+   "id": "freythorn",
+   "name": "Freythorn",
+   "step": 1,
+   "x": 0.515,
+   "y": 0.24,
+   "kind": "open"
+  },
+  {
+   "id": "ogham-farmlands",
+   "name": "Ogham Farmlands",
+   "step": 2,
+   "x": 0.4658,
+   "y": 0.2805,
+   "kind": "open"
+  },
+  {
+   "id": "maraketh",
+   "name": "Maraketh",
+   "step": 2,
+   "x": 0.58,
+   "y": 0.28,
+   "kind": "open"
+  },
+  {
+   "id": "qimah",
+   "name": "Qimah",
+   "step": 2,
+   "x": 0.65,
+   "y": 0.28,
+   "kind": "open"
+  },
+  {
+   "id": "ogham-manor",
+   "name": "Ogham Manor",
+   "step": 3,
+   "x": 0.5,
+   "y": 0.305,
+   "kind": "open"
+  },
+  {
+   "id": "pools-of-khatal",
+   "name": "Pools of Khatal",
+   "step": 3,
+   "x": 0.62,
+   "y": 0.29,
+   "kind": "open"
+  },
+  {
+   "id": "kaom-s-stronghold",
+   "name": "Kaom's Stronghold",
+   "step": 5,
+   "x": 0.425,
+   "y": 0.39,
+   "kind": "open"
+  },
+  {
+   "id": "the-halani-gates",
+   "name": "The Halani Gates",
+   "step": 5,
+   "x": 0.55,
+   "y": 0.36,
+   "kind": "open"
+  },
+  {
+   "id": "the-bone-pits",
+   "name": "The Bone Pits",
+   "step": 5,
+   "x": 0.6,
+   "y": 0.375,
+   "kind": "open"
+  },
+  {
+   "id": "buried-shrines",
+   "name": "Buried Shrines",
+   "step": 6,
+   "x": 0.575,
+   "y": 0.415,
+   "kind": "open"
+  },
+  {
+   "id": "the-library",
+   "name": "The Library",
+   "step": 7,
+   "x": 0.455,
+   "y": 0.452,
+   "kind": "open"
+  },
+  {
+   "id": "temple-of-kopec",
+   "name": "Temple of Kopec",
+   "step": 7,
+   "x": 0.565,
+   "y": 0.5,
+   "kind": "open"
+  },
+  {
+   "id": "pondium",
+   "name": "Pondium",
+   "step": 7,
+   "x": 0.77,
+   "y": 0.46,
+   "kind": "open"
+  },
+  {
+   "id": "ziggurat-encampment",
+   "name": "Ziggurat Encampment",
+   "step": 8,
+   "x": 0.53,
+   "y": 0.5,
+   "kind": "town"
+  },
+  {
+   "id": "kriar-village",
+   "name": "Kriar Village",
+   "step": 9,
+   "x": 0.39,
+   "y": 0.505,
+   "kind": "open"
+  },
+  {
+   "id": "the-cuachic-vault",
+   "name": "The Cuachic Vault",
+   "step": 9,
+   "x": 0.42,
+   "y": 0.555,
+   "kind": "open"
+  },
+  {
+   "id": "the-lunaris-temple",
+   "name": "The Lunaris Temple",
+   "step": 9,
+   "x": 0.492,
+   "y": 0.508,
+   "kind": "open"
+  },
+  {
+   "id": "the-weaver-s-chambers",
+   "name": "The Weaver's Chambers",
+   "step": 10,
+   "x": 0.47,
+   "y": 0.595,
+   "kind": "open"
+  },
+  {
+   "id": "the-causeway",
+   "name": "The Causeway",
+   "step": 10,
+   "x": 0.536,
+   "y": 0.566,
+   "kind": "open"
+  },
+  {
+   "id": "the-fellshrine-ruins",
+   "name": "The Fellshrine Ruins",
+   "step": 10,
+   "x": 0.62,
+   "y": 0.56,
+   "kind": "open"
+  },
+  {
+   "id": "holten",
+   "name": "Holten",
+   "step": 11,
+   "x": 0.272,
+   "y": 0.6,
+   "kind": "open"
+  },
+  {
+   "id": "journey-s-end",
+   "name": "Journey's End",
+   "step": 11,
+   "x": 0.55,
+   "y": 0.63,
+   "kind": "open"
+  },
+  {
+   "id": "heart-of-the-tribe",
+   "name": "Heart of the Tribe",
+   "step": 11,
+   "x": 0.637,
+   "y": 0.612,
+   "kind": "open"
+  },
+  {
+   "id": "the-forest-encampment",
+   "name": "The Forest Encampment",
+   "step": 12,
+   "x": 0.505,
+   "y": 0.645,
+   "kind": "town"
+  },
+  {
+   "id": "the-upper-prison",
+   "name": "The Upper Prison",
+   "step": 13,
+   "x": 0.455,
+   "y": 0.68,
+   "kind": "open"
+  },
+  {
+   "id": "the-submerged-passage",
+   "name": "The Submerged Passage",
+   "step": 13,
+   "x": 0.495,
+   "y": 0.7,
+   "kind": "open"
+  },
+  {
+   "id": "trial-of-the-ancestors",
+   "name": "Trial of the Ancestors",
+   "step": 13,
+   "x": 0.61,
+   "y": 0.672,
+   "kind": "open"
+  },
+  {
+   "id": "the-karui-fortress",
+   "name": "The Karui Fortress",
+   "step": 14,
+   "x": 0.432,
+   "y": 0.742,
+   "kind": "open"
+  },
+  {
+   "id": "tidal-island",
+   "name": "Tidal Island",
+   "step": 14,
+   "x": 0.525,
+   "y": 0.745,
+   "kind": "open"
+  },
+  {
+   "id": "cape-awanotui",
+   "name": "Cape Awanotui",
+   "step": 15,
+   "x": 0.28,
+   "y": 0.86,
+   "kind": "open"
+  },
+  {
+   "id": "the-brine-king-s-reef",
+   "name": "The Brine King's Reef",
+   "step": 15,
+   "x": 0.44,
+   "y": 0.792,
+   "kind": "open"
+  },
+  {
+   "id": "twilight-strand",
+   "name": "Twilight Strand",
+   "step": 15,
+   "x": 0.48,
+   "y": 0.785,
+   "kind": "open"
+  },
+  {
+   "id": "oriath-harbour",
+   "name": "Oriath Harbour",
+   "step": 15,
+   "x": 0.6038,
+   "y": 0.7604,
+   "kind": "town"
+  },
+  {
+   "id": "the-cathedral-rooftop",
+   "name": "The Cathedral Rooftop",
+   "step": 16,
+   "x": 0.574,
+   "y": 0.788,
+   "kind": "boss"
+  }
+ ]
+}

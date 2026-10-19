@@ -5,8 +5,8 @@ import type { Item } from '../src/lib/game.ts';
 import { syllablesFile } from '../scripts/make-syllables.mjs';
 
 // The Wraeclast run's syllables (scripts/make-syllables.mjs): every name split,
-// lower case, so the Inscription can rebuild it, and no tile a whole word but
-// "of", "the" and "and".
+// lower case, so the Inscription can rebuild it, no tile a whole word but
+// "of", "the" and "and", and none longer than 4 letters.
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = readFileSync(new URL('../src/data/syllables.json', import.meta.url), 'utf8');
 const syllables: Record<string, string[][]> = JSON.parse(raw);
@@ -52,6 +52,28 @@ test("no tile is a whole word but 'of', 'the' and 'and' (a word of one letter ca
     syllables[it.id].filter((w) => w.length === 1 && !['of', 'the', 'and'].includes(w[0]) && w[0].replace(/\P{L}/gu, '').length > 1).map((w) => `${it.name}: ${w[0]}`),
   );
   assert.deepEqual(whole, []);
+  // The one word that can't split today, kept whole as an exemption.
+  const exempt = items.flatMap((it) => syllables[it.id].filter((w) => w.length === 1 && !['of', 'the', 'and'].includes(w[0])).map((w) => `${it.name}: ${w[0]}`));
+  assert.deepEqual(exempt, ["Cat O' Nine Tails: o'"]);
+});
+
+test("no tile is longer than 4 letters, not counting a trailing 's, ' or hyphen", () => {
+  const long = items.flatMap((it) =>
+    syllables[it.id].flat().filter((s) => [...s.replace(/(?:['’]s?|-)$/, '')].length > 4).map((s) => `${it.name}: ${s}`),
+  );
+  assert.deepEqual(long, []);
+});
+
+test('a syllable too long is cut again near its middle at a vowel', () => {
+  const byName = new Map(items.map((it) => [it.name, syllables[it.id]]));
+  assert.deepEqual(byName.get('Amor Mandragora')?.[1], ['man', 'dra', 'go', 'ra']);
+  assert.deepEqual(byName.get('Mask of the Sanguimancer')?.[3], ['san', 'gui', 'man', 'cer']);
+  assert.deepEqual(byName.get("Vruun's Inevitability")?.[1], ['in', 'evi', 'ta', 'bil', 'i', 'ty']);
+  assert.deepEqual(byName.get('Olrovasara'), [['ol', 'rova', 'sara']]);
+  // The mark stays on the last tile and isn't counted: ae / ris / vane's.
+  assert.deepEqual(byName.get("Aerisvane's Wings")?.[0], ['ae', 'ris', "vane's"]);
+  // One of a single vowel sound splits before its vowel.
+  assert.deepEqual(byName.get('Constricting Command')?.[0], ['con', 'str', 'ict', 'ing']);
 });
 
 test('the small words stay whole, possessives keep their mark, compounds split between their words and then by syllable', () => {
@@ -63,7 +85,7 @@ test('the small words stay whole, possessives keep their mark, compounds split b
   assert.deepEqual(byName.get('Blackheart'), [['bl', 'ack', 'h', 'eart']]);
   assert.deepEqual(byName.get('Bramblejack'), [['bram', 'ble', 'j', 'ack']]);
   // Words that only look like two are left to the patterns.
-  assert.deepEqual(byName.get('Bursting Decay')?.[0], ['burst', 'ing']);
+  assert.deepEqual(byName.get('Bursting Decay')?.[0], ['b', 'urst', 'ing']);
   assert.deepEqual(byName.get('The Burrower')?.[1], ['bur', 'row', 'er']);
   // A word the patterns leave whole splits between its vowels.
   assert.deepEqual(byName.get('Kaltenhalt'), [['kal', 'ten', 'halt']]);

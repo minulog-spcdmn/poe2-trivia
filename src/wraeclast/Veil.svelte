@@ -6,6 +6,9 @@
   // which (run.open), and burns in a cluster of them at a time (a Flare, the
   // zone's free burn-in, Unveiled). Each patch the run burns comes in here, a
   // few at a time; a right answer burns in the rest quickly (the finale).
+  // It fills the square frame its parent gives it, the art fit inside and
+  // centred, so every item looks the same from outside. Nothing says how
+  // many patches are left.
   import { onMount } from 'svelte';
   import { itemImage } from '../lib/ui-paths';
   import { labelPatches, litMask, patchShapes, spreadOrder, type PatchShape } from '../lib/patches';
@@ -156,7 +159,7 @@
     style:--h={H}
     style:--s={2.2}
     role="img"
-    aria-label={named ? 'The item, named' : it.patches ? `The item under the Veil: ${burnedCount} of ${it.patches} patches burned in` : 'The item, under the Veil'}
+    aria-label={named ? 'The item, named' : burnedCount ? 'The item under the Veil, parts of it burned in' : 'The item, under the Veil'}
   >
     <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span><span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
     {#if plain}

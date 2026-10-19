@@ -38,4 +38,4 @@ export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0'
 export const times = (m: number) => `×${m}`;
 
 /** The tuning's word for a section of the run. */
-export const SECTION_NAMES: Record<keyof Tuning['missCost'], string> = { early: 'Zones 1 and 2', late: 'Zones 3 and 4', boss: 'Boss' };
+export const SECTION_NAMES: Record<keyof Tuning['missCost'], string> = { early: 'Steps 1 to 5', mid: 'Steps 6 to 10', late: 'Steps 11 to 15', boss: 'Boss' };

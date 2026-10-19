@@ -11,6 +11,12 @@
   flex-direction: column;
   gap: 1rem;
 }
+/* A short phone (375 by 667): the header, strip and screen closer, so a full boss pool sits above the dock. */
+@media (max-width: 699px) and (max-height: 740px) {
+  .wr {
+    gap: 0.5rem;
+  }
+}
 
 /* Numbers among words, as everywhere in the game. */
 .wr .n {

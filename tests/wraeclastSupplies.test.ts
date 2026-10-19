@@ -1,38 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { GRAPH } from '../src/wraeclast/map.ts';
 import {
   Run,
   CLUES,
-  CORRUPTIONS,
+  DECOY_SWEEP,
   DEFAULT_TUNING,
+  ITEMS,
+  PACK_STACKS,
+  STACK_MAX,
   SUPPLIES,
-  answerOf,
-  commonLines,
-  decoys,
-  greyed,
+  baseText,
+  gridAdjacency,
   lengthsOf,
-  remaining,
-  type Corruption,
+  wisdomOrder,
+  type BossMod,
+  type Clues,
+  type Hidden,
   type ItemPlay,
+  type Supply,
   type Tuning,
-  type Ware,
   type ZoneType,
 } from '../src/wraeclast/rules.ts';
-import { labelPatches, patchShapes } from '../src/lib/patches.ts';
+import { FULL_PACK, arrive, nodeAt, wrongLine } from '../src/qa/benches/wraeclastSetup.ts';
 
-// The Wraeclast run's supplies, burn-ins and corruption (src/wraeclast/rules.ts)
-// held to the handoff, docs/handoff/wraeclast/v2.md ("Supplies", "The Veil",
-// "Corruption"). Every run is seeded and its clock fake. Supplies are put in
-// the pack directly, as many as a test needs: the vendor deals each ware once
-// a visit (wraeclastFlow.test.ts has the buying).
+// The Wraeclast run's supplies and pack (src/wraeclast/rules.ts) held to its
+// handoff, docs/handoff/wraeclast/v3.md ("Supplies", "The Veil", the zones'
+// and corruption's rules on them): what each supply does on an item, why one
+// would do nothing, and how the pack and the vendor hold them. Every run is
+// seeded and its clock fake, so each plays the same every time. The
+// handoff's numbers are written out again here, so rules.ts can't move both.
 
 const T0 = Date.UTC(2026, 9, 19, 12);
-
-function start(seed: number, tuning: Tuning = DEFAULT_TUNING) {
-  const clock = { t: T0 };
-  const run = new Run({ seed, tuning, now: () => clock.t });
-  return { run, clock };
-}
 
 const tuned = (change: (t: Tuning) => void) => {
   const t = structuredClone(DEFAULT_TUNING);
@@ -40,606 +39,449 @@ const tuned = (change: (t: Tuning) => void) => {
   return t;
 };
 
-/** Corruption weights with every outcome but `outcome` at 0. */
-const always = (outcome: Corruption) => tuned((t) => (t.corruption = Object.fromEntries(CORRUPTIONS.map((c) => [c, c === outcome ? 1 : 0])) as Tuning['corruption']));
-
-/** The Veil the page would cut: a side x side grid, each patch touching its 4 neighbours. */
-function grid(side = 9): number[][] {
-  const out: number[][] = [];
-  for (let y = 0; y < side; y++)
-    for (let x = 0; x < side; x++) {
-      const nb: number[] = [];
-      if (x > 0) nb.push(y * side + x - 1);
-      if (x < side - 1) nb.push(y * side + x + 1);
-      if (y > 0) nb.push((y - 1) * side + x);
-      if (y < side - 1) nb.push((y + 1) * side + x);
-      out.push(nb);
-    }
-  return out;
+interface At {
+  type?: ZoneType;
+  hidden?: Hidden | null;
+  boss?: boolean;
+  mods?: BossMod[];
+  tuning?: Tuning;
 }
 
-/** The patches reachable from `from` through `within` on the adjacency. */
-function reachable(from: number, within: Set<number>, adjacency: number[][]) {
-  const seen = new Set([from]);
-  const todo = [from];
-  while (todo.length) for (const q of adjacency[todo.pop()!]) if (within.has(q) && !seen.has(q)) seen.add(q), todo.push(q);
-  return seen;
+/** A run's first item open in a zone at step 2 (or at the boss), on a 9 by 9 Veil, the pack holding every supply. */
+function opened(seed: number, { type = 'plain', hidden = null, boss = false, mods = [], tuning = DEFAULT_TUNING }: At = {}) {
+  const clock = { t: T0 };
+  const run = new Run({ seed, tuning, now: () => clock.t });
+  if (boss) arrive(run, GRAPH.boss.id, { mods });
+  else arrive(run, nodeAt(2), { place: { kind: 'zone', type }, hidden });
+  assert.ok(run.enter());
+  assert.ok(run.open(gridAdjacency(9)));
+  run.state.pack = structuredClone(FULL_PACK);
+  return { run, clock, it: run.state.item! };
 }
 
-/** Whether patches are one connected cluster on the adjacency. */
-const connected = (patches: number[], adjacency: number[][]) => reachable(patches[0], new Set(patches), adjacency).size === new Set(patches).size;
-
-/** On to the next item, laid out and opened on `adjacency`: through the camp or town, the threshold, the solved screen and the loot. */
-function toItem(run: Run, adjacency = grid()): ItemPlay {
-  const s = run.state;
-  for (;;) {
-    if (s.phase === 'camp' || s.phase === 'town') assert.ok(run.leave());
-    else if (s.phase === 'travel') assert.ok(run.enter());
-    else if (s.phase === 'solved') assert.ok(run.next());
-    else if (s.phase === 'loot') {
-      // A card that leaves the pack as it was, so a test's pack holds only what it put there.
-      const cards = s.loot!.cards;
-      const card = cards.findIndex((c) => c.kind === 'gold' || c.kind === 'jackpot' || c.kind === 'flask');
-      const pack = s.pack.length;
-      assert.ok(run.take(Math.max(0, card)));
-      if (s.loot!.pending !== null) assert.ok(run.keep(null));
-      else if (s.pack.length > pack) s.pack.pop();
-      assert.ok(run.next());
-    } else if (s.phase === 'item') {
-      if (s.item!.openedAt === null) assert.ok(run.open(adjacency));
-      return s.item!;
-    } else assert.fail(`no item to go to in phase ${s.phase}`);
+/** The first seed whose first item `ok` takes. */
+function find(ok: (it: ItemPlay) => boolean, at: At = {}) {
+  for (let seed = 1; seed < 500; seed++) {
+    const got = opened(seed, at);
+    if (ok(got.it)) return got;
   }
+  throw new Error('no such item');
 }
 
-function build(run: Run, syllables: string[]) {
-  const it = run.state.item!;
-  run.clear();
-  for (const syl of syllables.slice(it.locked)) assert.ok(run.place(syl), `placing ${syl}`);
+/** Whether `patches` touch one another on the 9 by 9 grid, as one cluster. */
+function connected(patches: number[]) {
+  const adj = gridAdjacency(9);
+  const set = new Set(patches);
+  const seen = new Set([patches[0]]);
+  const todo = [patches[0]];
+  while (todo.length) for (const q of adj[todo.pop()!]) if (set.has(q) && !seen.has(q)) seen.add(q), todo.push(q);
+  return seen.size === set.size;
 }
 
-function answer(run: Run) {
-  build(run, answerOf(run.state.item!).words.flat());
-  assert.equal(run.submit(), true);
-}
+// ---- Prices, stacks and the pack ----
 
-/** Plays every item right, at once, until item n is open. */
-function reach(run: Run, n: number, adjacency = grid()): ItemPlay {
-  for (;;) {
-    const it = toItem(run, adjacency);
-    if (it.n === n) return it;
-    answer(run);
-  }
-}
-
-/** Puts wares in the pack. */
-const give = (run: Run, ...wares: Ware[]) => run.state.pack.push(...wares);
-
-/** The first open item, over seeds from 1, that `fits` (items 0 to 11 only, unless `boss`). */
-function find(fits: (it: ItemPlay, run: Run) => boolean, tuning?: Tuning, last = 11) {
-  for (let seed = 1; seed <= 300; seed++) {
-    const { run, clock } = start(seed, tuning);
-    for (let n = 0; n <= last; n++) {
-      const it = reach(run, n);
-      if (fits(it, run)) return { run, clock, it };
-      answer(run);
-    }
-  }
-  assert.fail('no item fits');
-}
-
-/** An open item of the first seed (from 1) whose zone `z` is of this type, its first item in that zone. */
-function inZone(type: ZoneType, zone = 1, tuning?: Tuning) {
-  for (let seed = 1; ; seed++) {
-    const { run, clock } = start(seed, tuning);
-    if (run.state.zones[zone - 1] !== type) continue;
-    return { run, clock, it: reach(run, (zone - 1) * 3) };
-  }
-}
-
-const OFF_RITUAL = (it: ItemPlay) => it.zoneType !== 'ritual';
-
-// ---- Every supply ----
-
-test("the supplies' prices are the handoff's", () => {
-  assert.deepEqual(DEFAULT_TUNING.price, { flare: 5, wisdom: 5, strike: 6, lengths: 4, first: 8, decoy: 6, vaal: 4 });
+test("the supplies' prices and stacks are the handoff's", () => {
+  assert.deepEqual(DEFAULT_TUNING.price, { flare: 6, wisdom: 6, lore: 6, category: 6, base: 6, decoy: 6, lengths: 4, first: 6 });
+  assert.deepEqual(DEFAULT_TUNING.stack, { flare: 3, wisdom: 3, lore: 2, category: 2, base: 1, decoy: 3, lengths: 3, first: 2 });
+  assert.deepEqual([PACK_STACKS, STACK_MAX, DECOY_SWEEP], [8, 5, 4]);
 });
 
-test('a supply is used up when used, and logged with its type, order and time on the item', () => {
-  const { run, clock, it } = inZone('plain');
-  give(run, 'flare', 'lengths', 'flare', 'decoy');
+test("buying a ware costs its price, puts its stack in the pack, and takes its card off the table", () => {
+  const run = new Run({ seed: 1, tuning: tuned((t) => (t.gold = 100)) });
+  const s = run.state;
+  assert.deepEqual([s.phase, s.stock], ['vendor', [...SUPPLIES]]);
+  for (const ware of SUPPLIES) {
+    const gold = s.gold;
+    assert.ok(run.buy(s.stock.indexOf(ware)), ware);
+    assert.equal(s.gold, gold - DEFAULT_TUNING.price[ware]);
+    assert.equal(run.held(ware), DEFAULT_TUNING.stack[ware]);
+    assert.ok(!s.stock.includes(ware));
+  }
+  assert.deepEqual(s.stock, []);
+  assert.equal(run.buy(0), false);
+  assert.equal(s.pack.length, 8);
+  assert.equal(s.log.goldSpent, 7 * 6 + 4);
+  assert.deepEqual(s.log.bought, DEFAULT_TUNING.stack);
+});
+
+test("a ware's price and stack are the tuning's", () => {
+  const run = new Run({ seed: 1, tuning: tuned((t) => ((t.price.flare = 2), (t.stack.flare = 5))) });
+  assert.ok(run.buy(0));
+  assert.deepEqual([run.state.gold, run.held('flare'), run.state.log.bought.flare], [18, 5, 5]);
+});
+
+test('buying needs the gold, and a vendor', () => {
+  const run = new Run({ seed: 1, tuning: tuned((t) => (t.gold = 5)) });
+  const s = run.state;
+  assert.equal(run.canBuy(s.stock.indexOf('flare')), false);
+  assert.equal(run.buy(s.stock.indexOf('flare')), false);
+  assert.ok(run.buy(s.stock.indexOf('lengths')));
+  assert.equal(s.gold, 1);
+  s.gold = 99;
+  run.leave();
+  assert.equal(s.phase, 'map');
+  assert.equal(run.buy(0), false);
+  assert.equal(run.canBuy(0), false);
+});
+
+test('the pack holds 8 stacks of up to 5 of one supply: a stack tops up first, then the rest fills a new stack', () => {
+  const run = new Run({ seed: 1, tuning: tuned((t) => ((t.gold = 100), (t.stack.flare = 3))) });
+  const s = run.state;
+  s.pack = [{ supply: 'flare', n: 4 }];
+  assert.ok(run.buy(s.stock.indexOf('flare')));
+  assert.deepEqual(s.pack, [
+    { supply: 'flare', n: 5 },
+    { supply: 'flare', n: 2 },
+  ]);
+  assert.equal(run.held('flare'), 7);
+  // fits: room in its own stacks first, then whole new stacks.
+  s.pack = Array.from({ length: 7 }, () => ({ supply: 'lore' as Supply, n: 5 }));
+  assert.equal(run.fits('lore', 1), true);
+  assert.equal(run.fits('lore', 6), false);
+  assert.equal(run.fits('flare', 5), true);
+  s.pack.push({ supply: 'wisdom', n: 3 });
+  assert.deepEqual([run.fits('wisdom', 2), run.fits('wisdom', 3), run.fits('flare', 1), run.fits('flare', 0)], [true, false, false, true]);
+});
+
+test('buying needs room for the whole stack', () => {
+  const run = new Run({ seed: 1, tuning: tuned((t) => (t.gold = 100)) });
+  const s = run.state;
+  const seven = Array.from({ length: 7 }, () => ({ supply: 'lore' as Supply, n: 5 }));
+  // A flare stack of 4 holds only 1 more of the 3: no stack free for the other 2.
+  s.pack = [...structuredClone(seven), { supply: 'flare', n: 4 }];
+  assert.equal(run.canBuy(s.stock.indexOf('flare')), false);
+  assert.equal(run.buy(s.stock.indexOf('flare')), false);
+  assert.deepEqual([s.gold, s.stock.length], [100, 8]);
+  // A flare stack of 2 holds all 3.
+  s.pack = [...structuredClone(seven), { supply: 'flare', n: 2 }];
+  assert.ok(run.buy(s.stock.indexOf('flare')));
+  assert.deepEqual(s.pack.at(-1), { supply: 'flare', n: 5 });
+});
+
+test('a supply is used up when used (from its last stack), and logged with its type, order and time on the item', () => {
+  const { run, clock, it } = opened(1, { type: 'essence' });
+  run.state.pack = [
+    { supply: 'flare', n: 1 },
+    { supply: 'lengths', n: 1 },
+    { supply: 'flare', n: 2 },
+  ];
   clock.t += 1200;
   assert.ok(run.use('flare'));
   clock.t += 800;
   assert.ok(run.use('lengths'));
   clock.t += 500;
-  assert.ok(run.use('decoy'));
-  assert.deepEqual(run.state.pack, ['flare']);
+  assert.ok(run.use('flare'));
+  assert.deepEqual(run.state.pack, [{ supply: 'flare', n: 1 }]);
   assert.deepEqual(it.log.supplies, [
     { type: 'flare', order: 1, ms: 1200 },
     { type: 'lengths', order: 2, ms: 2000 },
-    { type: 'decoy', order: 3, ms: 2500 },
+    { type: 'flare', order: 3, ms: 2500 },
   ]);
-  assert.deepEqual(run.state.log.used, { flare: 1, wisdom: 0, strike: 0, lengths: 1, first: 0, decoy: 1 });
+  assert.deepEqual(run.state.log.used, { flare: 2, wisdom: 0, lore: 0, category: 0, base: 0, decoy: 0, lengths: 1, first: 0 });
 });
 
 test("a supply not in the pack can't be used, though it would work", () => {
-  const { run } = inZone('plain');
+  const { run } = opened(2, { type: 'essence' });
+  run.state.pack = [];
   for (const sup of SUPPLIES) {
     assert.equal(run.canUse(sup), false);
     assert.equal(run.use(sup), false, sup);
   }
   assert.equal(run.works('flare'), true);
-  assert.deepEqual(run.state.log.used, { flare: 0, wisdom: 0, strike: 0, lengths: 0, first: 0, decoy: 0 });
+  assert.ok(Object.values(run.state.log.used).every((n) => n === 0));
 });
+
+// ---- Why a supply would do nothing ----
 
 test("no supply is used away from an open item: idle says 'closed'", () => {
-  const { run } = start(1);
-  give(run, ...SUPPLIES);
+  const run = new Run({ seed: 1 });
+  run.state.pack = structuredClone(FULL_PACK);
   for (const sup of SUPPLIES) assert.deepEqual([run.idle(sup), run.use(sup)], ['closed', false]);
-  run.leave();
+  arrive(run, nodeAt(2), { place: { kind: 'zone', type: 'plain' } });
   run.enter();
-  for (const sup of SUPPLIES) assert.deepEqual([run.idle(sup), run.use(sup)], ['closed', false], 'laid out, not open');
-  run.open(grid());
-  answer(run);
+  for (const sup of SUPPLIES) assert.equal(run.idle(sup), 'closed', 'laid out, not open');
+  run.open(gridAdjacency(9));
+  run.state.item!.build = [...run.state.item!.answer];
+  run.submit();
   for (const sup of SUPPLIES) assert.equal(run.idle(sup), 'closed', 'solved');
-  assert.equal(run.state.pack.length, 6);
 });
 
-test("the Silent boss: every supply but the Flare is idle with 'silent'", () => {
-  const { run } = start(2);
-  for (const n of [12, 13, 14]) {
-    reach(run, n);
-    give(run, ...SUPPLIES);
-    for (const sup of SUPPLIES) assert.equal(run.idle(sup), sup === 'flare' ? null : 'silent', `${sup} on boss item ${n - 12}`);
+test("the Silent boss: every supply but the Flare is idle with 'silent', on each of its items", () => {
+  const { run } = opened(2, { boss: true });
+  for (let k = 0; k < 3; k++) {
+    run.state.pack = structuredClone(FULL_PACK);
+    assert.equal(run.state.item!.boss, k);
+    for (const sup of SUPPLIES) assert.equal(run.idle(sup), sup === 'flare' ? null : 'silent', `${sup} on boss item ${k}`);
     for (const sup of SUPPLIES) assert.equal(run.use(sup), sup === 'flare');
-    run.state.pack = [];
-    answer(run);
+    run.state.item!.build = [...run.state.item!.answer];
+    run.submit();
+    run.next();
+    if (k < 2) run.open(gridAdjacency(9));
   }
+  assert.equal(run.state.log.result, 'win');
 });
 
-test("a corrupted item: every supply is idle with 'corrupted'", () => {
-  const { run } = inZone('plain', 1, always('gilded'));
-  give(run, 'vaal', ...SUPPLIES);
-  for (const sup of SUPPLIES) assert.equal(run.idle(sup), null, sup);
-  assert.ok(run.corrupt());
-  for (const sup of SUPPLIES) assert.deepEqual([run.idle(sup), run.use(sup)], ['corrupted', false], sup);
-  assert.equal(run.state.pack.length, 6);
+test("a Sealed zone: every supply is idle with 'sealed', but a flask charge still works", () => {
+  const { run } = opened(3, { hidden: 'sealed' });
+  for (const sup of SUPPLIES) assert.deepEqual([run.idle(sup), run.use(sup)], ['sealed', false], sup);
+  run.state.life = 50;
+  assert.ok(run.canDrink());
+  assert.ok(run.drink());
+});
+
+test("a Dark zone: Flares are idle with 'dark', the other supplies work", () => {
+  const { run } = opened(4, { hidden: 'dark' });
+  assert.equal(run.idle('flare'), 'dark');
+  assert.equal(run.use('flare'), false);
+  for (const sup of SUPPLIES) if (sup !== 'flare') assert.equal(run.idle(sup), sup === 'wisdom' && !CLUES[run.state.item!.itemId].mods.length ? 'done' : null, sup);
+});
+
+test("a Ritual zone: Scrolls of Wisdom are idle with 'ritual', and Word lengths 'done' (the zone shows them)", () => {
+  const { run } = opened(5, { type: 'ritual' });
+  assert.deepEqual([run.idle('wisdom'), run.use('wisdom')], ['ritual', false]);
+  assert.equal(run.idle('lengths'), 'done');
+  assert.equal(run.idle('flare'), null);
+});
+
+test("the other hidden modifiers leave the supplies working", () => {
+  for (const hidden of ['blood', 'swarming', 'bounty'] as const) {
+    const { run } = opened(6, { type: 'essence', hidden });
+    for (const sup of ['flare', 'lore', 'category', 'decoy', 'lengths', 'first'] as const) assert.equal(run.idle(sup), null, `${sup} under ${hidden}`);
+  }
 });
 
 // ---- Flare ----
 
-test('a Flare burns in 4 neighbouring patches around a random spot', () => {
+test('a Flare burns in 12 neighbouring patches, about a sixth of the Veil, as one cluster', () => {
   const spots = new Set<number>();
-  for (const type of ['plain', 'ritual', 'blight'] as const) {
-    const { run, clock, it } = inZone(type);
-    assert.equal(run.flareBurn(), 4);
-    give(run, 'flare');
-    const before = [...it.burned];
+  for (let seed = 1; seed <= 15; seed++) {
+    const { run, clock, it } = opened(seed, { type: 'essence' });
+    assert.equal(run.flareBurn(), 12);
     clock.t += 900;
     assert.ok(run.use('flare'));
-    const fresh = it.burned.slice(before.length);
-    assert.equal(fresh.length, 4);
-    assert.ok(fresh.every((p) => !before.includes(p)));
-    assert.ok(connected(fresh, grid()), `${fresh}`);
-    assert.deepEqual(it.log.burnIns.at(-1), { by: 'flare', patches: 4, ms: 900 });
-    spots.add(fresh[0]);
+    assert.equal(it.burned.length, 12);
+    assert.ok(connected(it.burned), `${it.burned}`);
+    assert.deepEqual(it.log.burnIns, [{ by: 'flare', patches: 12, ms: 900 }]);
+    spots.add(it.burned[0]);
   }
-  for (let seed = 1; seed <= 20; seed++) {
-    const { run } = start(seed);
-    const it = reach(run, 0);
-    give(run, 'flare');
-    const before = it.burned.length;
-    run.use('flare');
-    spots.add(it.burned[before]);
-  }
-  assert.ok(spots.size > 10, `the spot is random: ${spots.size} spots`);
+  assert.ok(spots.size > 8, `the spot is random: ${spots.size} spots`);
 });
 
-test("a Flare burns in half as much under Incursion and on the boss's third item, 4 on its first two", () => {
-  const { run, it } = inZone('incursion');
-  assert.equal(run.flareBurn(), 2);
-  give(run, 'flare');
-  run.use('flare');
-  assert.equal(it.burned.length, 2);
-  assert.ok(connected(it.burned, grid()));
-  const boss = start(3).run;
-  for (const [n, size] of [[12, 4], [13, 4], [14, 2]] as const) {
-    const b = reach(boss, n);
-    const before = b.burned.length;
-    give(boss, 'flare');
-    assert.equal(boss.flareBurn(), size);
-    assert.ok(boss.use('flare'));
-    assert.equal(b.burned.length - before, size, `boss item ${n - 12}`);
-    answer(boss);
-  }
-});
-
-test("a Flare's size is the tuning's, halved the same way", () => {
-  const t = tuned((t) => (t.burnIn.flare = 6));
-  const { run, it } = inZone('plain', 1, t);
-  give(run, 'flare');
+test('Incursion halves a Flare to 6; Murky at the boss halves it too; neither elsewhere', () => {
+  assert.equal(opened(1, { type: 'incursion' }).run.flareBurn(), 6);
+  const { run, it } = opened(1, { type: 'incursion' });
   run.use('flare');
   assert.equal(it.burned.length, 6);
-  assert.equal(inZone('incursion', 1, t).run.flareBurn(), 3);
+  assert.equal(opened(1, { boss: true, mods: ['murky'] }).run.flareBurn(), 6);
+  assert.equal(opened(1, { boss: true, mods: ['teeming', 'bloodied'] }).run.flareBurn(), 12);
+  for (const type of ['plain', 'essence', 'ritual', 'expedition', 'blight'] as const) assert.equal(opened(1, { type }).run.flareBurn(), 12, type);
 });
 
-test('Flares never burn a patch twice, each burn touching what burned before, and stop when all are burned', () => {
-  const adjacency = grid();
-  const { run, it } = inZone('plain');
-  give(run, ...Array<Ware>(30).fill('flare'));
-  let flares = 0;
-  while (run.idle('flare') === null) {
-    const before = new Set(it.burned);
-    assert.ok(run.use('flare'));
-    flares++;
-    const fresh = it.burned.slice(before.size);
-    assert.equal(fresh.length, Math.min(4, 81 - before.size));
-    // The new patches reach one another through themselves and what burned before.
-    const within = new Set([...before, ...fresh]);
-    const from = reachable(fresh[0], within, adjacency);
-    assert.ok(fresh.every((p) => from.has(p)), `flare ${flares}: ${fresh}`);
-  }
-  assert.equal(flares, 21);
-  assert.deepEqual([...it.burned].sort((a, b) => a - b), [...Array(81).keys()]);
-  assert.deepEqual([run.idle('flare'), run.use('flare'), run.state.pack.length], ['done', false, 9]);
-  assert.deepEqual(it.log.burnIns.at(-1), { by: 'flare', patches: 1, ms: 0 });
+test("the halvings multiply, on the tuning's Flare", () => {
+  const t = tuned((x) => (x.burnIn.flare = 24));
+  assert.equal(opened(1, { type: 'incursion', tuning: t }).run.flareBurn(), 12);
+  assert.equal(opened(1, { boss: true, mods: ['murky'], tuning: t }).run.flareBurn(), 12);
+  // Both at once (no zone does both today): a quarter.
+  const { run } = opened(1, { boss: true, mods: ['murky'], tuning: t });
+  run.state.item!.zoneType = 'incursion';
+  assert.equal(run.flareBurn(), 6);
+  // Never below 1.
+  assert.equal(opened(1, { type: 'incursion', tuning: tuned((x) => (x.burnIn.flare = 1)) }).run.flareBurn(), 1);
 });
 
-test('the first Flare on an untouched Veil is one connected cluster', () => {
-  for (let seed = 1; seed <= 30; seed++) {
-    const { run } = start(seed);
-    const it = reach(run, 0);
-    if (it.burned.length) continue;
-    give(run, 'flare');
+test("Flares never burn a patch twice, and once every patch is burned they're 'done'", () => {
+  const { run, it } = opened(7, { type: 'essence' });
+  run.state.pack = [{ supply: 'flare', n: 5 }, { supply: 'flare', n: 5 }];
+  let uses = 0;
+  while (run.canUse('flare')) {
     run.use('flare');
-    assert.ok(connected(it.burned, grid()), `seed ${seed}: ${it.burned}`);
+    uses++;
   }
-});
-
-test("on the Veil as the page cuts it (labelPatches), Flares burn neighbouring patches and every patch once", () => {
-  // An ellipse of art on a 120 x 90 picture, cut about 9 seeds a side, as veilCut does.
-  const W = 120;
-  const H = 90;
-  const lit = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (((x - 60) / 55) ** 2 + ((y - 45) / 40) ** 2 <= 1) lit[y * W + x] = 1;
-  for (const cutSeed of [7, 77]) {
-    const shapes = patchShapes(labelPatches(W, H, 9, cutSeed, lit), W, H);
-    const adjacency = shapes.map((sh) => {
-      const nb = new Set<number>();
-      for (let i = 2; i < sh.edges.length; i += 3) nb.add(sh.edges[i]);
-      return [...nb];
-    });
-    assert.ok(adjacency.length > 30, `${adjacency.length} patches`);
-    // The cut's adjacency goes both ways.
-    adjacency.forEach((nb, k) => nb.forEach((j) => assert.ok(adjacency[j].includes(k))));
-    const { run } = start(cutSeed);
-    run.leave();
-    run.enter();
-    const it = reach(run, 0, adjacency);
-    assert.equal(it.patches, adjacency.length);
-    give(run, ...Array<Ware>(40).fill('flare'));
-    while (run.use('flare')) {
-      const before = new Set(it.burned.slice(0, -it.log.burnIns.at(-1)!.patches));
-      const fresh = it.burned.slice(before.size);
-      const from = reachable(fresh[0], new Set([...before, ...fresh]), adjacency);
-      assert.ok(fresh.every((p) => from.has(p)));
-    }
-    assert.equal(new Set(it.burned).size, it.burned.length);
-    assert.equal(it.burned.length, adjacency.length);
-    // A cluster on an untouched cut is connected on the cut's own edges.
-    assert.ok(connected(it.burned.slice(0, it.log.burnIns[0].patches), adjacency));
-  }
-});
-
-test('a Flare on a Veil in islands starts again elsewhere once its island is burned', () => {
-  // Two islands of 3 patches each: a cluster of 4 needs both.
-  const islands = [[1, 2], [0, 2], [0, 1], [4, 5], [3, 5], [3, 4]];
-  let seed = 1;
-  while (new Run({ seed, now: () => T0 }).state.zones[0] !== 'plain') seed++;
-  const { run } = start(seed);
-  const it = reach(run, 0, islands);
-  assert.equal(run.flareBurn(), 4);
-  const before = it.burned.length;
-  give(run, 'flare', 'flare', 'flare');
-  run.use('flare');
-  assert.equal(it.burned.length - before, Math.min(4, 6 - before));
-  while (run.use('flare'));
-  assert.deepEqual([...it.burned].sort(), [0, 1, 2, 3, 4, 5]);
+  assert.equal(uses, 7);
+  assert.equal(it.burned.length, 81);
+  assert.equal(new Set(it.burned).size, 81);
   assert.equal(run.idle('flare'), 'done');
+  assert.equal(it.log.burnIns.at(-1)!.patches, 81 - 6 * 12);
 });
 
 // ---- Scroll of Wisdom ----
 
-test('a Scroll of Wisdom shows a common mod line not shown yet, until none is left', () => {
-  const { run, it } = find((it) => OFF_RITUAL(it) && commonLines(CLUES[it.itemId]).length >= 3 && it.zoneType === 'plain');
-  const common = commonLines(CLUES[it.itemId]);
-  assert.equal(it.shown.mods.length, 1, "the Plain zone's line");
-  give(run, ...Array<Ware>(10).fill('wisdom'));
-  while (run.idle('wisdom') === null) {
-    const before = [...it.shown.mods];
+test("wisdomOrder reads the mod lines from the most shared to the rarest, ties in tooltip order", () => {
+  const c: Clues = {
+    category: 'x',
+    base: 'x',
+    mods: [
+      ['a', 'one', 2],
+      ['a', 'two', 9],
+      ['a', 'three', 2],
+      ['a', 'four', 9],
+      ['a', 'five', 0],
+    ],
+    flavor: null,
+    support: null,
+  };
+  assert.deepEqual(wisdomOrder(c), [1, 3, 0, 2, 4]);
+  for (const it of ITEMS) {
+    const mods = CLUES[it.id].mods;
+    const order = wisdomOrder(CLUES[it.id]);
+    assert.deepEqual([...order].sort((a, b) => a - b), mods.map((_, i) => i));
+    for (let k = 1; k < order.length; k++) {
+      const [p, q] = [mods[order[k - 1]][2], mods[order[k]][2]];
+      assert.ok(p > q || (p === q && order[k - 1] < order[k]), it.id);
+    }
+  }
+});
+
+test("Scrolls of Wisdom show the item's mod lines most shared first, until none is left: 'done'", () => {
+  const { run, it } = find((x) => CLUES[x.itemId].mods.length >= 3, { type: 'essence' });
+  const order = wisdomOrder(CLUES[it.itemId]);
+  run.state.pack = [{ supply: 'wisdom', n: 5 }, { supply: 'wisdom', n: 5 }, { supply: 'wisdom', n: 5 }];
+  for (let k = 0; k < order.length; k++) {
     assert.ok(run.use('wisdom'));
-    const shown = it.shown.mods.at(-1)!;
-    assert.ok(!before.includes(shown));
-    assert.ok(CLUES[it.itemId].mods[shown][2] >= 3, 'a common line, shared by 3 items or more');
+    assert.deepEqual(it.shown.mods, order.slice(0, k + 1));
   }
-  assert.deepEqual([...it.shown.mods].sort(), [...common].sort());
-  assert.deepEqual([run.idle('wisdom'), run.use('wisdom')], ['done', false]);
-  assert.equal(it.log.supplies.length, common.length - 1);
+  assert.equal(run.idle('wisdom'), 'done');
 });
 
-test('a Scroll of Wisdom never shows a line fewer than 3 items share', () => {
-  const { run, it } = find((it) => it.zoneType !== 'ritual' && it.zoneType !== 'plain' && CLUES[it.itemId].mods.some((m) => m[2] < 3) && commonLines(CLUES[it.itemId]).length > 0);
-  give(run, ...Array<Ware>(10).fill('wisdom'));
-  while (run.use('wisdom'));
-  assert.ok(it.shown.mods.every((i) => CLUES[it.itemId].mods[i][2] >= 3));
-  assert.equal(it.shown.mods.length, commonLines(CLUES[it.itemId]).length);
+test('in a Plain zone the free clue shows the first line, so the first Scroll shows the second', () => {
+  const { run, it } = find((x) => CLUES[x.itemId].mods.length >= 2);
+  const order = wisdomOrder(CLUES[it.itemId]);
+  assert.deepEqual(it.shown.mods, [order[0]]);
+  run.use('wisdom');
+  assert.deepEqual(it.shown.mods, [order[0], order[1]]);
 });
 
-test("a Scroll of Wisdom on an item with no common line has nothing to do: 'done'", () => {
-  const { run } = find((it) => OFF_RITUAL(it) && commonLines(CLUES[it.itemId]).length === 0);
-  give(run, 'wisdom');
-  assert.deepEqual([run.idle('wisdom'), run.use('wisdom'), run.state.pack], ['done', false, ['wisdom']]);
+// ---- Lore, Category and Base reveals ----
+
+test("a Lore reveal shows the flavour text, once: then 'done', and 'done' at once in an Incursion zone", () => {
+  const { run, it } = opened(8, { type: 'essence' });
+  assert.equal(it.shown.flavor, false);
+  assert.ok(run.use('lore'));
+  assert.equal(it.shown.flavor, true);
+  assert.equal(run.idle('lore'), 'done');
+  assert.equal(opened(8, { type: 'incursion' }).run.idle('lore'), 'done');
 });
 
-test("Scrolls of Wisdom don't work in a Ritual zone: 'ritual'", () => {
-  const { run } = find((it) => it.zoneType === 'ritual' && commonLines(CLUES[it.itemId]).length > 0);
-  give(run, 'wisdom');
-  assert.deepEqual([run.idle('wisdom'), run.use('wisdom')], ['ritual', false]);
-});
-
-// ---- Name strike ----
-
-test('a Name strike strikes 1 wrong name, never the answer, and never leaves fewer than 3', () => {
-  const { run, it } = find((it) => it.names.length === 8);
-  give(run, ...Array<Ware>(9).fill('strike'));
-  let strikes = 0;
-  while (run.idle('strike') === null) {
-    const left = remaining(it).length;
-    assert.ok(run.use('strike'));
-    strikes++;
-    assert.equal(remaining(it).length, left - 1);
-    assert.ok(!it.struck.includes(it.itemId));
+test("a Lore reveal on an item with no flavour text has nothing to show: 'done'", () => {
+  const { run, it } = opened(9, { type: 'essence' });
+  const flavor = CLUES[it.itemId].flavor;
+  try {
+    CLUES[it.itemId].flavor = null;
+    assert.equal(run.idle('lore'), 'done');
+  } finally {
+    CLUES[it.itemId].flavor = flavor;
   }
-  assert.deepEqual([strikes, remaining(it).length, run.idle('strike'), run.use('strike')], [5, 3, 'done', false]);
-  answer(run);
 });
 
-test("a Name strike on a board of 4: one strike, then 'done'", () => {
-  const { run, it } = find((it) => it.names.length === 4);
-  give(run, 'strike', 'strike');
-  assert.ok(run.use('strike'));
-  assert.deepEqual([remaining(it).length, run.idle('strike'), run.state.pack], [3, 'done', ['strike']]);
+test("a Category reveal shows the item's category, once", () => {
+  const { run, it } = opened(10);
+  assert.ok(run.use('category'));
+  assert.equal(it.shown.category, true);
+  assert.equal(CLUES[it.itemId].category.length > 0, true);
+  assert.equal(run.idle('category'), 'done');
 });
 
-test("a Name strike's struck name greys out the syllables no remaining name uses", () => {
-  const { run, it } = find((it) => it.names.length >= 6);
-  give(run, ...Array<Ware>(5).fill('strike'));
-  while (run.use('strike'));
-  const left = new Set(remaining(it).flatMap((nm) => nm.words.flat()));
-  for (const t of it.tiles) assert.equal(greyed(it, t), !left.has(t), t);
-  for (const t of it.tiles.filter((t) => !left.has(t))) assert.equal(run.place(t), false);
+test("a Base reveal shows the base type (a gem's support description), once, and 'done' at once in an Essence zone", () => {
+  const { run, it } = opened(11);
+  assert.ok(run.use('base'));
+  assert.equal(it.shown.base, true);
+  assert.equal(run.idle('base'), 'done');
+  assert.equal(opened(11, { type: 'essence' }).run.idle('base'), 'done');
+  const gem = ITEMS.find((x) => CLUES[x.id].support)!;
+  assert.equal(baseText(CLUES[gem.id]), CLUES[gem.id].support);
+  const unique = ITEMS.find((x) => !CLUES[x.id].support)!;
+  assert.equal(baseText(CLUES[unique.id]), CLUES[unique.id].base);
+});
+
+// ---- Decoy sweep ----
+
+test('a Decoy sweep strikes 4 decoys at random, never an answer tile', () => {
+  const seen = new Set<string>();
+  for (let seed = 1; seed <= 10; seed++) {
+    const { run, it } = opened(seed);
+    const before = run.decoysLeft(it).length;
+    assert.ok(run.use('decoy'));
+    assert.equal(it.swept.length, 4);
+    assert.equal(run.decoysLeft(it).length, before - 4);
+    for (const t of it.swept) {
+      assert.ok(it.decoys.includes(t));
+      assert.ok(!it.answer.includes(t));
+      assert.equal(it.marks[t], 'struck');
+    }
+    seen.add(it.swept.join(' '));
+  }
+  assert.ok(seen.size > 5, 'at random');
+});
+
+test("Decoy sweeps skip decoys a miss struck, strike the rest when fewer than 4 are left, then have nothing to do: 'done'", () => {
+  const { run, it } = opened(12);
+  run.state.pack = [{ supply: 'decoy', n: 5 }, { supply: 'decoy', n: 5 }];
+  it.build = [it.decoys[0]];
+  run.submit();
+  assert.equal(it.marks[it.decoys[0]], 'struck');
+  const left = run.decoysLeft(it).length;
+  assert.equal(left, it.decoys.length - 1);
+  let uses = 0;
+  while (run.canUse('decoy')) {
+    run.use('decoy');
+    uses++;
+  }
+  assert.equal(uses, Math.ceil(left / 4));
+  assert.ok(!it.swept.includes(it.decoys[0]));
+  assert.equal(it.swept.length, left);
+  assert.ok(it.decoys.every((d) => it.marks[d] === 'struck'));
+  assert.ok(it.answer.every((t) => it.marks[t] !== 'struck' || !it.swept.includes(t)));
+  assert.equal(run.idle('decoy'), 'done');
 });
 
 // ---- Word lengths ----
 
-test("Word lengths shows the answer's words and the syllables in each, once", () => {
-  const { run, it } = inZone('plain');
-  if (it.shown.lengths) return assert.fail('the free clue showed them');
-  give(run, 'lengths', 'lengths');
+test("Word lengths shows the answer's word count and tiles per word, once", () => {
+  const { run, it } = opened(13, { type: 'essence' });
   assert.ok(run.use('lengths'));
   assert.equal(it.shown.lengths, true);
-  assert.deepEqual(lengthsOf(it), answerOf(it).words.map((w) => w.length));
-  assert.deepEqual([run.idle('lengths'), run.use('lengths'), run.state.pack], ['done', false, ['lengths']]);
-});
-
-test("Word lengths has nothing to do in a Ritual zone, which shows them already: 'done'", () => {
-  const { run, it } = inZone('ritual');
-  assert.equal(it.shown.lengths, true);
+  assert.deepEqual(lengthsOf(it), it.words.map((w) => w.length));
+  assert.equal(lengthsOf(it).reduce((a, b) => a + b, 0), it.answer.length);
   assert.equal(run.idle('lengths'), 'done');
 });
 
 // ---- First syllable ----
 
-test("First syllable places the answer's first syllable, locked: unplace and Clear keep it", () => {
-  const { run, it } = inZone('plain');
-  const first = answerOf(it).words[0][0];
-  const other = it.tiles.find((t) => t !== first)!;
-  run.place(other);
-  give(run, 'first', 'first');
+test("First syllable places the answer's first tile on the line, locked and gold: take-back and Clear keep it", () => {
+  const { run, it } = opened(14);
   assert.ok(run.use('first'));
-  assert.deepEqual([it.build, it.locked], [[first, other], 1]);
+  assert.deepEqual([it.build, it.locked, it.marks[it.answer[0]]], [[it.answer[0]], 1, 'gold']);
   assert.equal(run.unplace(0), false);
+  run.place(it.decoys[0]);
   assert.ok(run.unplace(1));
-  assert.deepEqual(it.build, [first]);
-  assert.equal(run.clear(), false, 'nothing but the locked start');
-  run.place(other);
-  assert.ok(run.clear());
-  assert.deepEqual(it.build, [first]);
-  assert.deepEqual([run.idle('first'), run.use('first'), run.state.pack], ['done', false, ['first']]);
-  answer(run);
+  run.place(it.decoys[0]);
+  run.clear();
+  assert.deepEqual(it.build, [it.answer[0]]);
+  assert.equal(run.idle('first'), 'done');
+  // The rest of the answer after it is right.
+  for (const t of it.answer.slice(1)) run.place(t);
+  assert.equal(run.submit(), true);
 });
 
-test('First syllable on a line that starts with it already locks it without placing it again', () => {
-  const { run, it } = inZone('plain');
-  const first = answerOf(it).words[0][0];
-  run.place(first);
-  give(run, 'first');
-  assert.ok(run.use('first'));
-  assert.deepEqual([it.build, it.locked], [[first], 1]);
+test('First syllable on a line already started puts the tile in front, or locks it where the line starts with it', () => {
+  const a = opened(15);
+  a.run.place(a.it.decoys[0]);
+  a.run.use('first');
+  assert.deepEqual(a.it.build, [a.it.answer[0], a.it.decoys[0]]);
+  const b = opened(15);
+  b.run.place(b.it.answer[0]);
+  b.run.place(b.it.decoys[0]);
+  b.run.use('first');
+  assert.deepEqual(b.it.build, [b.it.answer[0], b.it.decoys[0]]);
+  assert.equal(b.it.locked, 1);
 });
 
-// ---- Decoy sweep ----
-
-test("a Decoy sweep greys out 3 syllables only wrong names use, never the answer's", () => {
-  for (let seed = 1; seed <= 20; seed++) {
-    const { run } = start(seed);
-    const it = reach(run, 0);
-    const mine = new Set(answerOf(it).words.flat());
-    const could = decoys(it);
-    if (could.length < 3) continue;
-    give(run, 'decoy');
-    assert.ok(run.use('decoy'));
-    assert.equal(it.swept.length, 3);
-    for (const s of it.swept) {
-      assert.ok(could.includes(s) && !mine.has(s), s);
-      assert.ok(greyed(it, s));
-      assert.equal(run.place(s), false);
-    }
-    for (const s of mine) assert.ok(!greyed(it, s));
-    answer(run);
-  }
-});
-
-test("Decoy sweeps grey out every syllable only wrong names use, then have nothing to do: 'done'", () => {
-  const { run, it } = find((it) => decoys(it).length >= 7);
-  const mine = new Set(answerOf(it).words.flat());
-  give(run, ...Array<Ware>(30).fill('decoy'));
-  while (run.idle('decoy') === null) {
-    const could = decoys(it).length;
-    const before = it.swept.length;
-    assert.ok(run.use('decoy'));
-    assert.equal(it.swept.length - before, Math.min(3, could));
-  }
-  assert.equal(new Set(it.swept).size, it.swept.length);
-  assert.deepEqual(
-    it.tiles.filter((t) => !greyed(it, t)).sort(),
-    [...mine].sort(),
-  );
-  assert.deepEqual([run.idle('decoy'), run.use('decoy')], ['done', false]);
-  answer(run);
-});
-
-test("a Decoy sweep leaves names whole: it greys syllables, it strikes nothing", () => {
-  const { run, it } = find((it) => decoys(it).length >= 3);
-  give(run, 'decoy');
-  run.use('decoy');
-  assert.deepEqual(it.struck, []);
-});
-
-// ---- Corruption ----
-
-test('a Vaal Orb needs one in the pack and an open item not of the boss and not corrupted', () => {
-  const { run } = start(5, always('gilded'));
-  const s = run.state;
-  give(run, 'vaal', 'vaal');
-  assert.deepEqual([run.canCorrupt(), run.corrupt()], [false, null], 'at the camp');
-  run.leave();
-  run.enter();
-  assert.equal(run.corrupt(), null, 'laid out, not open');
-  run.open(grid());
-  assert.equal(run.corrupt(), 'gilded');
-  assert.deepEqual([run.canCorrupt(), run.corrupt(), s.pack], [false, null, ['vaal']], 'corrupted already');
-  answer(run);
-  assert.equal(run.corrupt(), null, 'solved');
-  s.pack = [];
-  reach(run, 1);
-  assert.deepEqual([run.canCorrupt(), run.corrupt()], [false, null], 'none in the pack');
-  reach(run, 12);
-  give(run, 'vaal');
-  assert.deepEqual([run.canCorrupt(), run.corrupt(), s.pack], [false, null, ['vaal']], 'the boss');
-});
-
-test('the outcome is drawn by the tuning\'s weights', () => {
-  assert.deepEqual(DEFAULT_TUNING.corruption, { gilded: 2, unveiled: 2, twisted: 2, bricked: 1 });
-  for (const outcome of CORRUPTIONS) {
-    for (let seed = 1; seed <= 5; seed++) {
-      const { run } = start(seed, always(outcome));
-      const it = reach(run, seed % 3);
-      give(run, 'vaal');
-      assert.equal(run.corrupt(), outcome);
-      assert.deepEqual([it.corruption, it.log.corruption], [outcome, outcome]);
-    }
-  }
-  const counts = Object.fromEntries(CORRUPTIONS.map((c) => [c, 0])) as Record<Corruption, number>;
-  for (let seed = 1; seed <= 700; seed++) {
-    const { run } = start(seed);
-    run.leave();
-    run.enter();
-    run.open(grid());
-    give(run, 'vaal');
-    counts[run.corrupt()!]++;
-  }
-  // 2 : 2 : 2 : 1 of 700: 200, 200, 200, 100.
-  for (const c of CORRUPTIONS) assert.ok(Math.abs(counts[c] - (c === 'bricked' ? 100 : 200)) < 45, JSON.stringify(counts));
-});
-
-test('a Vaal Orb is used up and logged: its outcome, the supplies used before it, when', () => {
-  const { run, clock, it } = inZone('plain', 1, always('gilded'));
-  give(run, 'flare', 'vaal', 'lengths');
-  clock.t += 500;
-  run.use('flare');
-  run.use('lengths');
-  clock.t += 1500;
-  assert.equal(run.corrupt(), 'gilded');
-  assert.deepEqual(run.state.pack, []);
-  assert.deepEqual(it.log.vaal, { outcome: 'gilded', suppliesBefore: 2, ms: 2000 });
-  assert.equal(run.state.log.vaalUsed, 1);
-  assert.deepEqual(run.state.log.outcomes, { gilded: 1, unveiled: 0, twisted: 0, bricked: 0 });
-});
-
-test('the outcome holds through all the item\'s submits', () => {
-  const { run, it } = inZone('plain', 1, always('twisted'));
-  give(run, 'vaal');
-  run.corrupt();
-  const names = it.names.length;
-  build(run, [...answerOf(it).words.flat(), answerOf(it).words[0][0]]);
-  assert.equal(run.submit(), false);
-  assert.deepEqual([it.corruption, it.names.length], ['twisted', names]);
-  answer(run);
-  assert.equal(it.log.corruption, 'twisted');
-});
-
-test('Unveiled burns in 12 patches at once', () => {
-  const { run, clock, it } = inZone('plain', 1, always('unveiled'));
-  give(run, 'vaal');
-  clock.t += 300;
-  assert.equal(run.corrupt(), 'unveiled');
-  assert.equal(it.burned.length, 12);
-  assert.equal(new Set(it.burned).size, 12);
-  assert.ok(connected(it.burned, grid()));
-  assert.deepEqual(it.log.burnIns, [{ by: 'vaal', patches: 12, ms: 300 }]);
-});
-
-test('Twisted adds 3 names and their syllables to the tiles, the tiles already there kept in their order', () => {
-  for (let seed = 1; seed <= 10; seed++) {
-    const { run } = start(seed, always('twisted'));
-    const it = reach(run, 0);
-    const names = it.names.map((nm) => nm.id);
-    const tiles = [...it.tiles];
-    give(run, 'vaal');
-    assert.equal(run.corrupt(), 'twisted');
-    assert.equal(it.names.length, names.length + 3);
-    const added = it.names.filter((nm) => !names.includes(nm.id));
-    assert.equal(added.length, 3);
-    assert.ok(added.every((nm) => nm.id !== it.itemId));
-    assert.equal(new Set(it.names.map((nm) => nm.name.toLowerCase())).size, it.names.length, 'no name twice');
-    assert.deepEqual(new Set(it.tiles), new Set(it.names.flatMap((nm) => nm.words.flat())));
-    assert.equal(new Set(it.tiles).size, it.tiles.length);
-    assert.deepEqual(
-      it.tiles.filter((t) => tiles.includes(t)),
-      tiles,
-    );
-    assert.deepEqual([it.log.names, it.log.board.length, it.log.board.filter((b) => b.answer).length], [it.names.length, it.names.length, 1]);
-    for (const nm of added) for (const s of nm.words.flat()) assert.ok(run.place(s), s);
-  }
-});
-
-test('Twisted never takes a board above 10 names', () => {
-  for (const [early, size] of [[7, 7], [9, 9], [8, 10]] as const) {
-    const t = tuned((t) => ((t.corruption = { gilded: 0, unveiled: 0, twisted: 1, bricked: 0 }), (t.board.early = early)));
-    const { run, it } = find((it) => it.names.length === size, t, 5);
-    give(run, 'vaal');
-    assert.equal(run.corrupt(), 'twisted');
-    assert.equal(it.names.length, 10, `a board of ${size}`);
-    assert.equal(new Set(it.names.map((nm) => nm.id)).size, 10);
-  }
-});
-
-test("Gilded changes nothing on the item but its deal", () => {
-  const { run, it } = inZone('plain', 1, always('gilded'));
-  const before = structuredClone({ names: it.names, tiles: it.tiles, burned: it.burned, shown: it.shown });
-  give(run, 'vaal');
-  run.corrupt();
-  assert.deepEqual({ names: it.names, tiles: it.tiles, burned: it.burned, shown: it.shown }, before);
+test('First syllable on a marked line starts a fresh one with the tile', () => {
+  const { run, it } = opened(16);
+  it.build = wrongLine(it, 0);
+  run.submit();
+  assert.ok(it.lineMarks);
+  run.use('first');
+  assert.deepEqual([it.build, it.lineMarks], [[it.answer[0]], null]);
+  assert.equal(run.canSubmit(), true);
 });

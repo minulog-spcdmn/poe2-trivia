@@ -1,8 +1,11 @@
 <script lang="ts">
-  // The run's end: won or lost, where, the run in numbers, the Copy run log
-  // button (every run kept, as JSON, for the owner), and the run item by item.
+  // The run's end: won or lost, where, the route and the corruption (fronts
+  // seeded, stopped, alive at the boss, its modifiers), the run in numbers,
+  // the Copy run log button (every run kept, as JSON, for the owner), and the
+  // run item by item.
+  import { BOSS_MOD_NAMES, HIDDEN_NAMES, LOOT_KINDS, SUPPLIES, SUPPLY_NAMES, ZONE_NAMES, type Run, type RunLog } from './rules';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { CORRUPTIONS, CORRUPTION_NAMES, ITEMS_IN_RUN, SUPPLIES, WARES, WARE_NAMES, ZONE_NAMES, type Run, type RunLog } from './rules';
+  import { GRAPH } from './map';
   import { logText } from './runLog';
   import { play } from './play.svelte';
   import Numbered from './Numbered.svelte';
@@ -14,12 +17,21 @@
   const log = $derived(s.log);
   const won = $derived(log.result === 'win');
   const named = $derived(log.items.filter((it) => it.submits.at(-1)?.right).length);
-  const bought = $derived(WARES.filter((w) => log.bought[w]).map((w) => `${WARE_NAMES[w]} × ${log.bought[w]}`));
-  const found = $derived(WARES.filter((w) => log.found[w]).map((w) => `${WARE_NAMES[w]} × ${log.found[w]}`));
-  const used = $derived([...SUPPLIES.filter((sup) => log.used[sup]).map((sup) => `${WARE_NAMES[sup]} × ${log.used[sup]}`), ...(log.vaalUsed ? [`${WARE_NAMES.vaal} × ${log.vaalUsed}`] : [])]);
-  const outcomes = $derived(CORRUPTIONS.filter((c) => log.outcomes[c]).map((c) => `${CORRUPTION_NAMES[c]} × ${log.outcomes[c]}`));
+  const per = (rec: Record<string, number>) =>
+    SUPPLIES.filter((k) => rec[k])
+      .map((k) => `${SUPPLY_NAMES[k]} × ${rec[k]}`)
+      .join(' • ') || 'Nothing';
+  const LOOT_WORDS = { gold: 'Gold', supply: 'Supplies', flask: 'Flask', jackpot: 'Jackpot' } as const;
+  const loot = $derived(
+    LOOT_KINDS.filter((k) => log.loot.dealt[k])
+      .map((k) => `${LOOT_WORDS[k]} ${log.loot.taken[k]} of ${log.loot.dealt[k]}`)
+      .join(' • ') || 'None',
+  );
+  const met = $derived(log.met.filter((m) => m.corruption).map((m) => HIDDEN_NAMES[m.corruption!]));
+  const route = $derived(log.route.map((id) => GRAPH.byId.get(id)?.name ?? id));
   const text = $derived(logText(kept));
-
+  const node = (id: string) => GRAPH.byId.get(id)?.name ?? id;
+  const where = (it: RunLog['items'][number]) => (it.boss ? 'Boss' : `Step ${it.step} • ${node(it.node)} • ${ZONE_NAMES[it.zoneType as keyof typeof ZONE_NAMES]}`);
   let copied = $state<'yes' | 'no' | null>(null);
   let box = $state<HTMLTextAreaElement>();
   let showLog = $state(false);
@@ -50,32 +62,33 @@
       });
     }
   }
-  const zoneOf = (z: string, no: number) => (z === 'boss' ? 'Boss' : `Zone ${no} • ${ZONE_NAMES[z as keyof typeof ZONE_NAMES]}`);
 </script>
 
 <div class="end">
   <header class="screen-title">
-    <p class="kicker">{won ? 'The boss is beaten' : `Fell on item ${(log.endedOn?.n ?? 0) + 1} of ${ITEMS_IN_RUN}`}</p>
+    <p class="kicker">{won ? 'The boss is beaten' : `Fell at ${node(log.endedOn?.node ?? s.at)}`}</p>
     <h1 class:lost={!won}>{won ? 'The run is won' : 'The run is lost'}</h1>
     <p class="sub">
-      {#if won}All <span class="n">{ITEMS_IN_RUN}</span> items named, with <span class="n">{log.lifeEnd}</span> life left.{:else}{log.endedOn?.name} took the last of your life.{/if}
+      {#if won}<span class="n">{named}</span> items named, with <span class="n">{log.lifeEnd}</span> life left.{:else}{log.endedOn?.name ?? 'The road'} took the last of your life.{/if}
     </p>
   </header>
 
-  <section class="panel sums" aria-label="The run in numbers" use:backdropShadow={{ fill: 'linear' }}>
+  <section class="panel sums" aria-label="The run in numbers">
     <dl>
-      <div><dt>Named</dt><dd><span class="n">{named}</span> of <span class="n">{ITEMS_IN_RUN}</span></dd></div>
+      <div><dt>Named</dt><dd class="n">{named}</dd></div>
       <div><dt>Misses</dt><dd class="n">{log.misses}</dd></div>
-      <div><dt>Named with no supply</dt><dd class="n">{log.noSupply}</dd></div>
       <div><dt>Life at the end</dt><dd class="n">{log.lifeEnd}</dd></div>
+      <div><dt>Flask drinks</dt><dd class="n">{log.drinks}</dd></div>
       <div><dt>Gold earned</dt><dd class="n">{log.goldEarned}</dd></div>
       <div><dt>Gold spent</dt><dd class="n">{log.goldSpent}</dd></div>
-      <div><dt>Flask drinks</dt><dd class="n">{log.drinks}</dd></div>
-      <div><dt>Unidentified cards taken</dt><dd><span class="n">{log.unid.taken}</span> of <span class="n">{log.unid.offered}</span></dd></div>
-      <div><dt>Bought</dt><dd><Numbered text={bought.join(' • ') || 'Nothing'} /></dd></div>
-      <div><dt>Found</dt><dd><Numbered text={found.join(' • ') || 'Nothing'} /></dd></div>
-      <div><dt>Used</dt><dd><Numbered text={used.join(' • ') || 'Nothing'} /></dd></div>
-      <div><dt>Corrupted</dt><dd><Numbered text={outcomes.join(' • ') || 'Nothing'} /></dd></div>
+      <div><dt>Fronts</dt><dd><Numbered text={`${log.fronts.seeded} seeded • ${log.fronts.stopped} stopped${log.fronts.aliveAtBoss !== null ? ` • ${log.fronts.aliveAtBoss} alive at the boss` : ''}`} /></dd></div>
+      <div><dt>Boss modifiers</dt><dd>{log.bossMods.map((m) => BOSS_MOD_NAMES[m]).join(' • ') || (log.fronts.aliveAtBoss === null ? 'Not reached' : 'None')}</dd></div>
+      <div><dt>Corruption met</dt><dd>{met.join(' • ') || 'None'}</dd></div>
+      <div><dt>Loot taken</dt><dd><Numbered text={loot} /></dd></div>
+      <div><dt>Bought</dt><dd><Numbered text={per(log.bought)} /></dd></div>
+      <div><dt>Found</dt><dd><Numbered text={per(log.found)} /></dd></div>
+      <div><dt>Used</dt><dd><Numbered text={per(log.used)} /></dd></div>
+      <div class="wide"><dt>Route</dt><dd>{route.join(' • ')}</dd></div>
     </dl>
   </section>
 
@@ -107,7 +120,7 @@
           <span class="no n">{i + 1}</span>
           <span class="what">
             <span class="name">{it.name}</span>
-            <span class="where">{zoneOf(it.zoneType, it.zone)} • {it.category} • <span class="n">{it.names}</span> names{#if it.corruption}{' '}• <span class="corrupt">{CORRUPTION_NAMES[it.corruption]}</span>{/if}</span>
+            <span class="where">{where(it)} • {it.category}{#if it.corruption}{' '}• <span class="corrupt">{HIDDEN_NAMES[it.corruption]}</span>{/if}</span>
           </span>
           <span class="res">
             {#if right}{#if it.misses}<span class="n">{it.misses}</span> {it.misses === 1 ? 'miss' : 'misses'}{' • '}{/if}{#if it.gold}<span class="n">+{it.gold}</span> gold{:else}Named{/if}{:else}Lost here{/if}
@@ -136,6 +149,9 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
     gap: 0.5rem 1.2rem;
+  }
+  dl > .wide {
+    grid-column: 1 / -1;
   }
   dl > div {
     display: flex;

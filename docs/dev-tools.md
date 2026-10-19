@@ -75,22 +75,27 @@ With two players or more the run is co-op:
 ## The Wraeclast run
 
 `wraeclast.html` (`src/wraeclast/`) is the playable prototype of the new
-mode, built to answer a few design questions with real play: a solo run of
-15 items (the camp, zones 1 and 2, the town, zones 3 and 4, the boss's
-three), each item's name built from lower-case syllables (the Inscription)
-on a board mixing look-alike names, its art under a Veil that burns in a
-patch at a time, supplies and Vaal Orbs bought from the vendor's dealt
-cards and spent from the pack, loot dealt after each right answer, life,
-the flask and gold. Its rules, numbers and data are the handoff's
-(`docs/handoff/wraeclast/README.md`, then `v2.md` after the first
-playtest); `src/wraeclast/rules.ts` plays them, the same in the tests
+mode, built to answer a few design questions with real play: a solo run
+across the map (`src/data/wraeclast.json`, the owner's nodes, hand-placed;
+the paths are built when the page loads) from the camp to the boss, picking
+a node at each step: zones of six types (each with its free clue and rule),
+Wells, towns and corruption creeping between them. Each item's name is
+built from lower-case tiles among decoys (the Inscription), marked as
+Wordle does after a miss; its art sits under a Veil in a square frame,
+burned in a cluster at a time. Supplies come from the vendors' dealt cards
+into a pack of stacks; a right answer deals its loot, all of it taken. Its
+rules, numbers and data are the handoff's (`docs/handoff/wraeclast/`,
+`README.md`, then `v2.md` and `v3.md` after each playtest);
+`src/wraeclast/rules.ts` and `map.ts` play them, the same in the tests
 (`tests/wraeclast*.test.ts`) as on the page.
 
 - **The tuning panel** (collapsed at the page's foot) sets the numbers the
-  next run starts with: life, gold, the flask, miss cost ranges, prices,
-  board sizes and the share of names from other categories, auto spacing,
-  the Veil's seeds and burn-ins, loot weights and gold, corruption weights,
-  each zone's free clue. They're kept, and each run's log has a copy.
+  next run starts with: life, gold, the flask, items per zone, the share of
+  zones to Wells, tiles per section, gold-only marks, miss cost ranges,
+  prices and stacks, the Veil's seeds and burn-ins, loot cards per zone type,
+  loot weights and gold, corruption (fronts, creep, hidden-modifier weights,
+  the loot multiplier), each zone's free clue. They're kept, and each run's
+  log has a copy.
 - **The run log:** the end screen's Copy run log puts the last 20 runs on
   the clipboard as JSON (or shows it, to copy by hand), for testers to send
   to the owner.
@@ -105,11 +110,15 @@ playtest); `src/wraeclast/rules.ts` plays them, the same in the tests
   and `src/lib/storage.ts` then starts its keys with `wraeclast.`.
 - **On the QA desk:** two pieces, each played to its state by the real
   rules. **Wraeclast item** (`qa.html?b=wraeclast`) is the item screen at
-  any place in the run, zone type and board size (4 to 10 names), a supply
-  used, names struck, misses made, the item corrupted, the answer half
-  built or named; **Wraeclast screens** (`qa.html?b=wraeclastRun`) the
-  rest: the camp and the town, the zone's threshold and the boss's, the
-  loot deal, the end won and lost, the tuning panel.
+  any step or the boss, zone type, corruption and boss modifier (up to the
+  36 tiles a pool holds), a supply used, misses made (the board marked),
+  the answer half built or named; **Wraeclast screens**
+  (`qa.html?b=wraeclastRun`) the rest: the camp, the map, a zone's
+  threshold (a corrupted one's card turning), a Well, the boss's, the loot,
+  the vendors, the end won and lost, the tuning panel.
+- **The map file can change under the code:** the owner is still placing
+  nodes. Any step may hold 1 to 4, a step with none is skipped, and a town
+  can sit at any step.
 
 ## The backdrop tool
 

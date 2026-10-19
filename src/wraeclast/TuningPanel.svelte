@@ -2,7 +2,7 @@
   // The tuning panel, collapsed at the page's foot: the numbers the next run
   // starts with, kept in storage as they change, and in each run's log.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { CORRUPTIONS, CORRUPTION_NAMES, DEFAULT_TUNING, LOOT_KINDS, SECTIONS, WARES, WARE_NAMES, ZONE_TYPES, ZONE_NAMES, type Range } from './rules';
+  import { DEFAULT_TUNING, HIDDEN, HIDDEN_NAMES, LOOT_KINDS, SECTIONS, SUPPLIES, SUPPLY_NAMES, ZONE_TYPES, ZONE_NAMES, type Range } from './rules';
   import { LIMITS, isDefault } from './tuning';
   import { play } from './play.svelte';
   import { SECTION_NAMES } from './markup';
@@ -12,7 +12,7 @@
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const t = $derived(play.tuning);
   const changed = $derived(!isDefault(t));
-  const LOOT_NAMES = { gold: 'Gold', supply: 'Supply', vaal: 'Vaal Orb', flask: 'Flask charge', jackpot: 'Jackpot' } as const;
+  const LOOT_NAMES = { gold: 'Gold', supply: 'Supplies', flask: 'Flask charge', jackpot: 'Jackpot' } as const;
 
   /**
    * A number field's value, kept whole and in range (a blank or a stray value
@@ -37,6 +37,10 @@
       set((e.currentTarget as HTMLInputElement).checked);
       play.saveTuning();
     };
+  }
+  function setMarks(e: Event) {
+    t.marks = (e.currentTarget as HTMLInputElement).checked ? 'gold' : 'both';
+    play.saveTuning();
   }
   function reset() {
     play.tuning = structuredClone(DEFAULT_TUNING);
@@ -75,6 +79,8 @@
       {@render field('Life', t.life, LIMITS.life, (n) => (t.life = n))}
       {@render field('Gold', t.gold, LIMITS.gold, (n) => (t.gold = n))}
       {@render field('Flask charges', t.flask, LIMITS.flask, (n) => (t.flask = n))}
+      {@render field('Items per zone', t.itemsPerZone, LIMITS.itemsPerZone, (n) => (t.itemsPerZone = n))}
+      {@render field('Open nodes that are zones (%)', t.zoneShare, LIMITS.zoneShare, (n) => (t.zoneShare = n))}
     </fieldset>
 
     <fieldset>
@@ -85,23 +91,29 @@
     </fieldset>
 
     <fieldset>
-      <legend>Prices (gold)</legend>
-      {#each WARES as w (w)}
-        {@render field(WARE_NAMES[w], t.price[w], LIMITS.price, (n) => (t.price[w] = n))}
+      <legend>Tiles per section</legend>
+      {#each SECTIONS as sec (sec)}
+        {@render field(SECTION_NAMES[sec], t.tiles[sec], LIMITS.tiles, (n) => (t.tiles[sec] = n))}
       {/each}
+      <label class="check">
+        <input type="checkbox" checked={t.marks === 'gold'} onchange={setMarks} />
+        <span>Gold marks only (no silver or struck)</span>
+      </label>
+      <p class="small">Each item rolls its total within 3 either way, at least 8 of them decoys. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
     </fieldset>
 
     <fieldset>
-      <legend>The board</legend>
-      {#each SECTIONS as sec (sec)}
-        {@render field(`Names, ${SECTION_NAMES[sec].toLowerCase()}`, t.board[sec], LIMITS.board, (n) => (t.board[sec] = n))}
+      <legend>Prices (gold) and stacks</legend>
+      {#each SUPPLIES as w (w)}
+        <div class="knob">
+          <span>{SUPPLY_NAMES[w]}</span>
+          <span class="pair">
+            <input class="field" type="number" inputmode="numeric" aria-label="{SUPPLY_NAMES[w]}, how many" min={LIMITS.stack[0]} max={LIMITS.stack[1]} step="1" value={t.stack[w]} onchange={(e) => num(e.currentTarget, t.stack[w], LIMITS.stack, (n) => (t.stack[w] = n))} />
+            <span class="to">for</span>
+            <input class="field" type="number" inputmode="numeric" aria-label="{SUPPLY_NAMES[w]}, price" min={LIMITS.price[0]} max={LIMITS.price[1]} step="1" value={t.price[w]} onchange={(e) => num(e.currentTarget, t.price[w], LIMITS.price, (n) => (t.price[w] = n))} />
+          </span>
+        </div>
       {/each}
-      {@render field('From other categories (%)', t.otherNames, LIMITS.otherNames, (n) => (t.otherNames = n))}
-      <label class="check">
-        <input type="checkbox" checked={t.spacing} onchange={toggle((on) => (t.spacing = on))} />
-        <span>The answer line spaces words by itself</span>
-      </label>
-      <p class="small">Blight adds 2 names, Twisted 3, up to 10.</p>
     </fieldset>
 
     <fieldset>
@@ -109,26 +121,31 @@
       {@render field('Seeds a side', t.seeds, LIMITS.seeds, (n) => (t.seeds = n))}
       {@render field('A Flare burns in', t.burnIn.flare, LIMITS.burnIn, (n) => (t.burnIn.flare = n))}
       {@render field("Blight's free burn-in", t.burnIn.blight, LIMITS.burnIn, (n) => (t.burnIn.blight = n))}
-      {@render field("The boss's first", t.burnIn.boss, LIMITS.burnIn, (n) => (t.burnIn.boss = n))}
-      {@render field('Unveiled', t.burnIn.unveiled, LIMITS.burnIn, (n) => (t.burnIn.unveiled = n))}
-      <p class="small">Incursion and the boss's third halve a Flare's.</p>
+      <p class="small">Incursion and a Murky boss halve a Flare's.</p>
     </fieldset>
 
     <fieldset>
       <legend>Loot</legend>
-      {@render field('Cards a right answer deals', t.loot.deal, LIMITS.deal, (n) => (t.loot.deal = n))}
+      {#each ZONE_TYPES as z (z)}
+        {@render field(`Cards, ${ZONE_NAMES[z]}`, t.loot.cards[z], LIMITS.cards, (n) => (t.loot.cards[z] = n))}
+      {/each}
       {#each LOOT_KINDS as k (k)}
         {@render field(`${LOOT_NAMES[k]} (weight)`, t.loot.weights[k], LIMITS.weight, (n) => (t.loot.weights[k] = n))}
       {/each}
-      {@render range('Gold, zones 1 and 2', t.loot.gold.early, LIMITS.lootGold)}
-      {@render range('Gold, zones 3 and 4', t.loot.gold.late, LIMITS.lootGold)}
+      {@render range('Gold, steps 1 to 5', t.loot.gold.early, LIMITS.lootGold)}
+      {@render range('Gold, steps 6 to 10', t.loot.gold.mid, LIMITS.lootGold)}
+      {@render range('Gold, steps 11 to 15', t.loot.gold.late, LIMITS.lootGold)}
       {@render field('Jackpot (gold)', t.loot.jackpot, LIMITS.lootGold, (n) => (t.loot.jackpot = n))}
+      {@render field('Supplies on a card', t.loot.supplies, LIMITS.supplies, (n) => (t.loot.supplies = n))}
     </fieldset>
 
     <fieldset>
-      <legend>Corruption (weights)</legend>
-      {#each CORRUPTIONS as c (c)}
-        {@render field(CORRUPTION_NAMES[c], t.corruption[c], LIMITS.weight, (n) => (t.corruption[c] = n))}
+      <legend>Corruption</legend>
+      {@render field('Fronts seeded', t.corruption.seeds, LIMITS.fronts, (n) => (t.corruption.seeds = n))}
+      {@render field('Creeps every (steps)', t.corruption.creep, LIMITS.creep, (n) => (t.corruption.creep = n))}
+      {@render field('Loot multiplier', t.corruption.multiplier, LIMITS.multiplier, (n) => (t.corruption.multiplier = n))}
+      {#each HIDDEN as c (c)}
+        {@render field(`${HIDDEN_NAMES[c]} (weight)`, t.corruption.weights[c], LIMITS.weight, (n) => (t.corruption.weights[c] = n))}
       {/each}
     </fieldset>
 

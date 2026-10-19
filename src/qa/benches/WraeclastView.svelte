@@ -1,21 +1,21 @@
 <script lang="ts">
   // The Wraeclast item bench's view (./wraeclast.ts): a real run (rules.ts),
-  // seeded, played up to the item the controls ask for, then the item screen
-  // as the page draws it, the run's bar above it. The Veil opens the item as
-  // on the page (its free patches burned in where there's art); then the
-  // supply, strikes, misses, corruption and build asked for are played. A
-  // change to the controls lays the item out again.
+  // seeded, brought to the node the controls ask for (./wraeclastSetup.ts)
+  // under its zone type, corruption and boss modifiers, then the item screen
+  // as the page draws it, the run's header and strip above it. The Veil opens
+  // the item as on the page; then the supply, misses and build asked for are
+  // played. A change to the controls lays the item out again.
   import { untrack } from 'svelte';
   import '../../wraeclast/screens.css';
-  import { CORRUPTIONS, DEFAULT_TUNING, MIN_NAMES, Run, ZONE_TYPES, answerOf, remaining, type Corruption, type Supply, type Ware, type ZoneType } from '../../wraeclast/rules';
+  import { DEFAULT_TUNING, Run, type BossMod, type Hidden, type Supply, type ZoneType } from '../../wraeclast/rules';
+  import { GRAPH } from '../../wraeclast/map';
   import Hud from '../../wraeclast/Hud.svelte';
   import ItemScreen from '../../wraeclast/ItemScreen.svelte';
   import type { PieceProps } from '../bench.ts';
   import { onAction } from '../frame/pieceState.svelte.ts';
+  import { FULL_PACK, arrive, nodeAt, wrongLine } from './wraeclastSetup.ts';
 
   let { v, small }: PieceProps = $props();
-
-  const FULL: Ware[] = ['flare', 'flare', 'wisdom', 'strike', 'lengths', 'first', 'decoy', 'vaal'];
 
   /** A plain object made deeply reactive, for the screens to follow (as play.svelte.ts does). */
   function reactive<T extends object>(value: T): T {
@@ -26,95 +26,78 @@
   type Options = {
     place: string;
     zone: ZoneType;
-    names: string;
+    hidden: Hidden | 'none';
+    mods: string;
     item: number;
     used: Supply | 'none';
-    struck: number;
     misses: number;
-    corrupt: Corruption | 'none';
+    goldOnly: boolean;
     built: boolean;
     named: boolean;
     pack: boolean;
-    spacing: boolean;
   };
+  const STEPS: Record<string, number> = { early: 2, mid: 9, late: 14 };
+  const MODS: Record<string, BossMod[]> = { none: [], three: ['bloodied', 'murky', 'teeming'] };
 
-  /** The run, played on its plain state up to the item asked for and laid out there; reactive once it is. */
+  /** The run, brought to the node asked for and its item laid out there; reactive once it is. */
   function build(o: Options) {
     const tuning = structuredClone(DEFAULT_TUNING);
-    if (o.names !== 'auto') tuning.board = { early: +o.names, late: +o.names, boss: +o.names };
-    tuning.spacing = o.spacing;
-    // The corruption asked for, the only one the orb can roll.
-    if (o.corrupt !== 'none') for (const c of CORRUPTIONS) tuning.corruption[c] = c === o.corrupt ? 1 : 0;
+    if (o.goldOnly) tuning.marks = 'gold';
     const run = new Run({ tuning, seed: o.item, now: () => 0 });
     const s = run.state;
     const boss = o.place.startsWith('boss') ? Number(o.place.slice(4)) - 1 : null;
-    const zoneNo = boss !== null ? 5 : o.place === 'late' ? 3 : 1;
-    // The zone asked for where the item is (zone 1 or 3), the other three around it.
-    const others = ZONE_TYPES.filter((z) => z !== o.zone);
-    if (zoneNo === 1) s.zones = [o.zone, ...others];
-    if (zoneNo === 3) s.zones = [others[0], others[1], o.zone, others[2]];
-    s.done = boss !== null ? 12 + boss : zoneNo === 3 ? 6 : 0;
-    s.pack = o.pack ? [...FULL] : [];
-    run.leave();
+    const id = boss !== null ? GRAPH.boss.id : nodeAt(STEPS[o.place] ?? 2);
+    s.pack = o.pack ? structuredClone(FULL_PACK) : [];
+    arrive(run, id, {
+      place: boss !== null ? undefined : { kind: 'zone', type: o.zone },
+      hidden: o.hidden === 'none' ? null : o.hidden,
+      mods: MODS[o.mods] ?? [o.mods as BossMod],
+    });
+    if (boss !== null) s.visit!.done = Math.min(boss, s.visit!.items - 1);
     run.enter();
     run.state = reactive(s);
     return run;
   }
 
-  /** On the item the Veil has opened: the supply, strikes, misses, corruption and build asked for. */
+  /** On the item the Veil has opened: the supply, misses and build asked for. */
   function play(run: Run, o: Options) {
-    const s = run.state;
-    const it = s.item!;
+    const it = run.state.item!;
     if (o.used !== 'none') {
-      s.pack.push(o.used);
-      if (!run.use(o.used)) s.pack.pop();
-    }
-    for (let k = 0; k < o.struck && remaining(it).length > MIN_NAMES; k++) {
-      s.pack.push('strike');
-      // At the boss a strike does nothing (Silent): struck as if it had.
-      if (!run.use('strike')) {
-        s.pack.pop();
-        const wrong = remaining(it).filter((nm) => nm.id !== it.itemId);
-        it.struck.push(wrong[k % wrong.length].id);
-      }
+      // A supply the zone or the boss won't let work still shows as used, for a look at it.
+      if (!run.use(o.used) && o.used === 'category') it.shown.category = true;
+      if (o.used === 'category' && run.works('base')) run.use('base');
     }
     for (let k = 0; k < o.misses; k++) if (!miss(run)) break;
-    if (o.corrupt !== 'none') {
-      if (!s.pack.includes('vaal')) s.pack.push('vaal');
-      run.corrupt();
-    }
-    const answer = answerOf(it).words.flat();
     if (o.named) {
-      it.build = [...answer];
+      it.build = [...it.answer];
+      it.lineMarks = null;
       run.submit();
-    } else if (o.built) it.build = answer.slice(0, Math.max(it.locked, Math.ceil(answer.length / 2)));
+    } else if (o.built) it.build = it.answer.slice(0, Math.max(it.locked, Math.ceil(it.answer.length / 2)));
   }
 
-  /** Submits a wrong name of the board's, while it leaves the run some life. */
+  /** Submits a wrong line, while it leaves the run some life. */
   function miss(run: Run) {
     const s = run.state;
     const it = s.item;
-    const wrong = it && remaining(it).find((nm) => nm.id !== it.itemId);
     // Not while the item is still opening (a submit then counts for nothing).
-    if (!it || it.openedAt === null || s.phase !== 'item' || !wrong || s.life <= run.missRange()[1]) return false;
-    it.build = [...it.build.slice(0, it.locked), ...wrong.words.flat().slice(it.locked)];
-    run.submit();
-    return true;
+    if (!it || it.openedAt === null || s.phase !== 'item' || s.life <= run.missRange()[1]) return false;
+    it.build = wrongLine(it, it.misses);
+    it.lineMarks = null;
+    return run.submit() === false;
   }
 
   const options = $derived<Options>({
     place: String(v.place),
     zone: String(v.zone) as ZoneType,
-    names: String(v.names),
+    hidden: String(v.hidden) as Hidden | 'none',
+    mods: String(v.mods),
     item: Number(v.item),
     used: String(v.used) as Supply | 'none',
-    struck: Number(v.struck),
     misses: Number(v.misses),
-    corrupt: String(v.corrupt) as Corruption | 'none',
+    goldOnly: !!v.goldOnly,
     built: !!v.built,
     named: !!v.named,
     pack: !!v.pack,
-    spacing: !!v.spacing,
   });
   const run = $derived(build(options));
 
@@ -130,7 +113,10 @@
   onAction('miss', () => miss(run));
   onAction('answer', () => {
     const it = run.state.item;
-    if (it && run.state.phase === 'item') it.build = answerOf(it).words.flat();
+    if (it && run.state.phase === 'item') {
+      it.build = [...it.answer];
+      it.lineMarks = null;
+    }
   });
 </script>
 

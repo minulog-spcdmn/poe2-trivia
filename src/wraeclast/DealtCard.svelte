@@ -9,7 +9,7 @@
   import CardEngraving from '../components/CardEngraving.svelte';
   import { motion } from '../lib/motion.svelte';
   import Glyph from './Glyph.svelte';
-  import type { LootKind, Ware } from './rules';
+  import type { LootKind, Supply } from './rules';
 
   let {
     mark,
@@ -27,7 +27,7 @@
     disabled = false,
     onpick,
   }: {
-    mark: Ware | LootKind | 'unid';
+    mark: Supply | LootKind | 'unid' | 'corrupt';
     title: string;
     line?: string;
     tag?: string;
