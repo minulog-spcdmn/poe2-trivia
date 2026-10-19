@@ -1,614 +1,729 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isDeepStrictEqual } from 'node:util';
-import { Run, DEFAULT_TUNING, ITEMS, PACK_SLOTS, SUPPLIES, ZONE_TYPES, type Card, type Supply, type Tuning } from '../src/wraeclast/rules.ts';
-import { RARE_GROUPS } from '../src/lib/game.ts';
+import {
+  Run,
+  DEFAULT_TUNING,
+  ITEMS,
+  LOOT_KINDS,
+  PACK_SLOTS,
+  SUPPLIES,
+  WARES,
+  ZONE_TYPES,
+  answerOf,
+  type ItemPlay,
+  type LootKind,
+  type Tuning,
+  type Ware,
+  type ZoneType,
+} from '../src/wraeclast/rules.ts';
 
-// The run's flow and economy as docs/handoff/wraeclast/README.md has them: the
-// camp, the vendor, the zones, the town, the boss, the deal and the board.
+// The Wraeclast run's flow and economy (src/wraeclast/rules.ts) held to its
+// handoff, docs/handoff/wraeclast/v2.md ("A run", "Life and the flask",
+// "Loot", the vendor in "Look"). Every run is seeded and its clock fake, so
+// each plays the same every time. The handoff's numbers are written out again
+// here, so rules.ts can't move both.
 
-const SEEDS = 200;
+const T0 = Date.UTC(2026, 9, 19, 12);
 const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
-const MULTIPLIER_SHARES: [number, number][] = [
-  [1, 0.4],
-  [1.25, 0.3],
-  [1.5, 0.2],
-  [2, 0.1],
-];
 
-const clocks = new WeakMap<Run, { t: number }>();
-
-/** A run on a fake clock of its own (wait moves it). */
-function newRun(seed: number, tuning?: Tuning) {
-  const clock = { t: Date.UTC(2026, 9, 19) };
+function start(seed: number, tuning: Tuning = DEFAULT_TUNING) {
+  const clock = { t: T0 };
   const run = new Run({ seed, tuning, now: () => clock.t });
-  clocks.set(run, clock);
-  return run;
+  return { run, clock };
 }
 
-const wait = (run: Run, ms: number) => void (clocks.get(run)!.t += ms);
-
-const withTuning = (change: Partial<Tuning>): Tuning => ({ ...structuredClone(DEFAULT_TUNING), ...change });
-
-const answerOf = (run: Run) => {
-  const it = run.state.item!;
-  return it.names.find((nm) => nm.id === it.itemId)!;
+const tuned = (change: (t: Tuning) => void) => {
+  const t = structuredClone(DEFAULT_TUNING);
+  change(t);
+  return t;
 };
 
-function build(run: Run, syllables: string[]) {
-  for (const syl of syllables) assert.ok(run.place(syl), `placing ${syl}`);
+/** Loot weights with every kind but `kind` at 0. */
+const only = (kind: LootKind) => Object.fromEntries(LOOT_KINDS.map((k) => [k, k === kind ? 1 : 0])) as Record<LootKind, number>;
+
+/** The Veil the page would cut: a side x side grid, each patch touching its 4 neighbours. */
+function grid(side = 9): number[][] {
+  const out: number[][] = [];
+  for (let y = 0; y < side; y++)
+    for (let x = 0; x < side; x++) {
+      const nb: number[] = [];
+      if (x > 0) nb.push(y * side + x - 1);
+      if (x < side - 1) nb.push(y * side + x + 1);
+      if (y > 0) nb.push((y - 1) * side + x);
+      if (y < side - 1) nb.push((y + 1) * side + x);
+      out.push(nb);
+    }
+  return out;
 }
 
-/** Builds the answer and submits it. */
-function answer(run: Run) {
-  wait(run, 4000);
-  build(run, answerOf(run).words.flat());
-  return run.submit();
+/** Takes loot card `card` (the first if there's no such card), leaving a ware the full pack can't hold. */
+function takeLoot(run: Run, card = 0) {
+  const loot = run.state.loot!;
+  assert.ok(run.take(card < loot.cards.length ? card : 0));
+  if (loot.pending !== null) assert.ok(run.keep(null));
 }
 
-/** Builds the answer with its first syllable once more per miss so far (no name, and never sent before), submits it and clears the line. */
-function miss(run: Run) {
-  const syllables = answerOf(run).words.flat();
-  wait(run, 4000);
-  build(run, [...syllables, ...Array<string>(run.state.item!.misses + 1).fill(syllables[0])]);
-  const right = run.submit();
-  run.clear();
-  return right;
-}
-
-/** On to the next item, opened: the camp or town left, card `card` picked (the boss's own at the boss). */
-function toItem(run: Run, card = 0) {
+/** On to the next item, opened: through the camp or town, the threshold, the solved screen and the loot (card 0). */
+function toItem(run: Run): ItemPlay {
   const s = run.state;
-  if (s.phase === 'between') assert.ok(run.next());
-  if (s.phase === 'camp' || s.phase === 'town') assert.ok(run.leave());
-  assert.equal(s.phase, 'deal');
-  assert.ok(run.pick(s.offer.length === 1 ? 0 : card));
-  wait(run, 1000);
-  assert.ok(run.open());
-  return s.item!;
-}
-
-/** Answers every item right until `done` items are done. */
-function playTo(run: Run, done: number) {
-  while (run.state.done < done) {
-    toItem(run);
-    assert.equal(answer(run), true);
-  }
-}
-
-interface Deal {
-  n: number;
-  offer: Card[];
-  pick: number;
-  /** boardSize(n) and the names the board got. */
-  size: number;
-  names: number;
-  /** Whether the answer is of a rare group (Tablets). */
-  rare: boolean;
-}
-
-interface Played {
-  seed: number;
-  run: Run;
-  deals: Deal[];
-  phases: string[];
-}
-
-/** A run won by answering every item at once; the card picked turns with the seed. */
-function playWin(seed: number): Played {
-  const run = newRun(seed);
-  const s = run.state;
-  const deals: Deal[] = [];
-  const phases: string[] = [s.phase];
-  while (s.phase !== 'end') {
+  for (;;) {
     if (s.phase === 'camp' || s.phase === 'town') assert.ok(run.leave());
-    else if (s.phase === 'between') assert.ok(run.next());
-    else {
-      assert.equal(s.phase, 'deal');
-      const n = s.done;
-      const offer = structuredClone(s.offer);
-      const pick = offer.length === 1 ? 0 : (seed + n) % offer.length;
-      assert.ok(run.pick(pick));
-      phases.push(s.phase);
-      const it = s.item!;
-      deals.push({ n, offer, pick, size: run.boardSize(n), names: it.names.length, rare: Object.hasOwn(RARE_GROUPS, BY_ID.get(it.itemId)!.group) });
-      wait(run, 1000);
-      assert.ok(run.open());
-      assert.equal(answer(run), true);
-    }
-    phases.push(s.phase);
+    else if (s.phase === 'travel') assert.ok(run.enter());
+    else if (s.phase === 'solved') assert.ok(run.next());
+    else if (s.phase === 'loot') {
+      if (s.loot!.taken === null) takeLoot(run);
+      else if (s.loot!.pending !== null) assert.ok(run.keep(null));
+      assert.ok(run.next());
+    } else if (s.phase === 'item') {
+      if (s.item!.openedAt === null) assert.ok(run.open(grid()));
+      return s.item!;
+    } else assert.fail(`no item to go to in phase ${s.phase}`);
   }
-  return { seed, run, deals, phases };
 }
 
-let played: Played[] | undefined;
-const plays = () => (played ??= Array.from({ length: SEEDS }, (_, i) => playWin(i + 1)));
+/** Puts syllables on the answer line after its locked start. */
+function build(run: Run, syllables: string[]) {
+  const it = run.state.item!;
+  run.clear();
+  for (const syl of syllables.slice(it.locked)) assert.ok(run.place(syl), `placing ${syl}`);
+}
 
-test('a run starts at the camp with 100 life, a flask of 2 charges, 20 gold and an empty pack of 8 slots', () => {
-  const s = newRun(1).state;
-  assert.equal(s.phase, 'camp');
-  assert.equal(s.life, 100);
-  assert.equal(s.maxLife, 100);
-  assert.deepEqual(s.flask, { charges: 2, recovering: 0 });
-  assert.equal(s.gold, 20);
-  assert.deepEqual(s.pack, []);
-  assert.equal(PACK_SLOTS, 8);
-  assert.equal(s.done, 0);
-  assert.equal(s.item, null);
-  assert.deepEqual(s.offer, []);
-});
+/** Builds the open item's answer and submits it. */
+function answer(run: Run) {
+  build(run, answerOf(run.state.item!).words.flat());
+  assert.equal(run.submit(), true);
+}
 
-test('the camp vendor sells every supply at its price, for gold the player has', () => {
-  assert.deepEqual(DEFAULT_TUNING.price, { flare: 4, requirement: 3, wisdom: 6, strike: 6, lore: 8 });
-  for (const supply of SUPPLIES) {
-    const run = newRun(2);
-    assert.ok(run.canBuy(supply));
-    assert.ok(run.buy(supply));
-    assert.equal(run.state.gold, 20 - DEFAULT_TUNING.price[supply]);
-    assert.deepEqual(run.state.pack, [supply]);
-    assert.equal(run.state.log.bought[supply], 1);
-    assert.equal(run.state.log.goldSpent, DEFAULT_TUNING.price[supply]);
+/** A miss with a build that is no name: the answer and its first syllable once more per miss so far (a build is sent once). */
+function miss(run: Run) {
+  const it = run.state.item!;
+  const syl = answerOf(it).words.flat();
+  build(run, [...syl, ...Array<string>(it.misses + 1).fill(syl[0])]);
+  assert.equal(run.submit(), false);
+}
+
+/** Plays every item right, at once, until item n is open. */
+function reach(run: Run, n: number): ItemPlay {
+  for (;;) {
+    const it = toItem(run);
+    if (it.n === n) return it;
+    answer(run);
   }
-  // 20 gold: two Lore reveals leave 4, enough for a Flare and then nothing.
-  const run = newRun(2);
+}
+
+/** Plays on to the end, every item answered at once; `each` gets each item as it opens. */
+function playOn(run: Run, each: (it: ItemPlay) => void = () => {}) {
+  while (run.state.phase !== 'end') {
+    const it = toItem(run);
+    each(it);
+    if (run.state.phase === 'item') answer(run);
+    // The boss's last: on to the end.
+    if (run.state.phase === 'solved' && it.n === 14) assert.ok(run.next());
+  }
+  return run.state.log;
+}
+
+// ---- A run ----
+
+test('the camp: 100 life, a flask of 2 charges, 20 gold, an empty pack of 8, and the vendor deals every ware once', () => {
+  const { run } = start(1);
   const s = run.state;
-  assert.ok(run.buy('lore'));
-  assert.ok(run.buy('lore'));
-  assert.equal(s.gold, 4);
-  const before = JSON.stringify(s);
-  assert.equal(run.canBuy('lore'), false);
-  assert.equal(run.buy('lore'), false);
-  assert.equal(JSON.stringify(s), before);
-  assert.ok(run.buy('flare'));
-  assert.equal(s.gold, 0);
-  assert.deepEqual(
-    SUPPLIES.filter((supply) => run.canBuy(supply) || run.buy(supply)),
-    [],
-  );
-  assert.deepEqual(s.pack, ['lore', 'lore', 'flare']);
+  assert.deepEqual([s.phase, s.life, s.maxLife, s.flask.charges, s.gold, s.pack, PACK_SLOTS], ['camp', 100, 100, 2, 20, [], 8]);
+  assert.deepEqual([...s.stock].sort(), [...WARES].sort());
+  assert.equal(new Set(s.stock).size, s.stock.length);
+  assert.deepEqual([...WARES].sort(), [...SUPPLIES, 'vaal'].sort());
+  assert.deepEqual([s.done, s.item, s.loot], [0, null, null]);
 });
 
-test('the pack holds 8 supplies and no more', () => {
-  const run = newRun(3, withTuning({ gold: 1000 }));
-  for (let i = 0; i < PACK_SLOTS; i++) assert.ok(run.buy('requirement'));
-  const before = JSON.stringify(run.state);
-  assert.deepEqual(
-    SUPPLIES.filter((supply) => run.canBuy(supply) || run.buy(supply)),
-    [],
-  );
-  assert.equal(JSON.stringify(run.state), before);
-  assert.equal(run.state.pack.length, 8);
-  assert.equal(run.state.gold, 1000 - 8 * 3);
-});
-
-test('nothing can be bought at a deal, during an item or between items, only at the camp and the town', () => {
-  const run = newRun(4, withTuning({ gold: 1000 }));
+test('leave goes to the threshold, enter lays out the first item, and it opens with its Veil cut', () => {
+  const { run, clock } = start(2);
   const s = run.state;
-  const bad: string[] = [];
-  const check = (where: string, open: boolean) => {
-    for (const supply of SUPPLIES) {
-      const before = JSON.stringify(s);
-      if (run.canBuy(supply) !== open) bad.push(`${where}: ${supply}`);
-      else if (!open && (run.buy(supply) || JSON.stringify(s) !== before)) bad.push(`${where}: bought ${supply}`);
-    }
-  };
-  let vendors = 0;
-  while (s.phase !== 'end') {
-    if (s.phase === 'camp' || s.phase === 'town') {
-      check(s.phase, true);
-      vendors++;
-      assert.ok(run.leave());
-    }
-    check(`deal ${s.done}`, false);
-    assert.ok(run.pick(0));
-    check(`item ${s.done} laid out`, false);
-    assert.ok(run.open());
-    check(`item ${s.done}`, false);
-    assert.equal(answer(run), true);
-    check(`after item ${s.done}`, false);
-    if (s.phase === 'between') assert.ok(run.next());
-  }
-  assert.deepEqual(bad, []);
-  assert.equal(vendors, 2);
-});
-
-test('the four zones are each of a different type, rolled anew for each run', () => {
-  const orders = new Set<string>();
-  const seen = new Set<string>();
-  const bad: string[] = [];
-  for (let seed = 1; seed <= SEEDS; seed++) {
-    const s = newRun(seed).state;
-    if (!isDeepStrictEqual([...s.zones].sort(), [...ZONE_TYPES].sort())) bad.push(`seed ${seed}: ${s.zones}`);
-    if (!isDeepStrictEqual(s.log.zones, s.zones)) bad.push(`seed ${seed}: logged ${s.log.zones}`);
-    orders.add(s.zones.join());
-    s.zones.forEach((z, i) => seen.add(`${z} ${i}`));
-  }
-  assert.deepEqual(bad, []);
-  assert.ok(orders.size >= 20, `${orders.size} of the 24 orders`);
-  assert.equal(seen.size, 16, 'every type in every zone');
-});
-
-test('each of the 4 zones has 3 items of its type, the boss 3 more, and beating the boss wins the run', () => {
-  const phases = ['camp'];
-  for (let n = 0; n < 15; n++) phases.push('deal', 'item', n === 14 ? 'end' : 'between', ...(n === 5 ? ['town'] : []));
-  const bad: string[] = [];
-  for (const p of plays()) {
-    const s = p.run.state;
-    const got = {
-      zoneNos: s.log.items.map((it) => it.zoneNo),
-      zones: s.log.items.map((it) => it.zone),
-      boss: s.log.items.map((it) => it.boss),
-      result: s.log.result,
-      endedOn: s.log.endedOn?.n,
-      done: s.done,
-      phases: p.phases,
-    };
-    const want = {
-      zoneNos: [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5],
-      zones: [...s.zones.flatMap((z) => [z, z, z]), 'boss', 'boss', 'boss'],
-      boss: [...Array(12).fill(false), true, true, true],
-      result: 'win',
-      endedOn: 14,
-      done: 15,
-      phases,
-    };
-    if (!isDeepStrictEqual(got, want)) bad.push(`seed ${p.seed}: ${JSON.stringify(got)}`);
-  }
-  assert.deepEqual(bad, []);
-});
-
-test('the town comes after zone 2, heals 20 life without passing 100, and its vendor sells again', () => {
-  // One miss in zone 1: 75 life, 95 in town.
-  let run = newRun(5);
-  let s = run.state;
-  toItem(run);
-  assert.equal(miss(run), false);
-  assert.equal(answer(run), true);
-  playTo(run, 6);
-  assert.equal(s.phase, 'between');
-  assert.equal(s.life, 75);
-  assert.equal(run.canBuy('flare'), false);
-  assert.ok(run.next());
-  assert.equal(s.phase, 'town');
-  assert.equal(s.life, 95);
-  assert.equal(s.arrivalHeal, 20);
-  assert.deepEqual(
-    SUPPLIES.filter((supply) => !run.canBuy(supply)),
-    [],
-  );
-  const gold = s.gold;
-  assert.ok(run.buy('lore'));
-  assert.equal(s.gold, gold - 8);
-  assert.deepEqual(s.pack, ['lore']);
+  assert.equal(run.enter(), false);
   assert.ok(run.leave());
-  assert.equal(s.phase, 'deal');
-  assert.equal(s.offer.length, 3);
-  assert.equal(toItem(run).zoneNo, 3);
-
-  // No miss: 100 stays 100.
-  run = newRun(5);
-  s = run.state;
-  playTo(run, 6);
-  assert.ok(run.next());
-  assert.equal(s.phase, 'town');
-  assert.equal(s.life, 100);
-  assert.equal(s.arrivalHeal, 0);
-
-  // A miss of 10: 90 life heals only 10.
-  run = newRun(5, withTuning({ missCost: { early: 10, late: 35, boss: 60 } }));
-  s = run.state;
-  toItem(run);
-  miss(run);
-  answer(run);
-  playTo(run, 6);
-  assert.equal(s.life, 90);
-  assert.ok(run.next());
-  assert.equal(s.life, 100);
-  assert.equal(s.arrivalHeal, 10);
+  assert.deepEqual([s.phase, s.stock], ['travel', []]);
+  assert.equal(run.leave(), false);
+  assert.ok(run.enter());
+  assert.equal(s.phase, 'item');
+  const it = s.item!;
+  assert.deepEqual([it.n, it.zoneNo, it.zoneType, it.boss, it.openedAt, it.patches], [0, 1, s.zones[0], null, null, 0]);
+  // Laid out, not open: nothing can be placed yet, and an empty cut opens nothing.
+  assert.equal(run.place(it.tiles[0]), false);
+  assert.equal(run.open([]), false);
+  clock.t += 1500;
+  assert.ok(run.open(grid()));
+  assert.deepEqual([it.openedAt, it.patches, it.log.patches], [T0 + 1500, 81, 81]);
+  assert.equal(run.open(grid()), false);
+  assert.ok(run.place(answerOf(it).words[0][0]));
 });
 
-test('a miss costs 25 life in zones 1 and 2, 35 in zones 3 and 4 and 60 at the boss', () => {
-  const run = newRun(6);
-  const s = run.state;
-  toItem(run);
-  miss(run);
-  assert.equal(s.life, 75);
-  answer(run);
-  playTo(run, 6);
-  assert.ok(run.next());
-  assert.equal(s.life, 95);
-  toItem(run);
-  miss(run);
-  assert.equal(s.life, 60);
-  answer(run);
-  assert.deepEqual(
-    s.log.items.map((it) => [it.lifeBefore, it.lifeAfter]).filter(([before, after]) => before !== after),
-    [
-      [100, 75],
-      [95, 60],
-    ],
-  );
-
-  const boss = newRun(6);
-  playTo(boss, 12);
-  assert.equal(toItem(boss).boss, 0);
-  assert.equal(miss(boss), false);
-  assert.equal(boss.state.life, 40);
-  assert.equal(boss.state.phase, 'item');
-});
-
-test('the run is lost at 0 life, ending on the item it was lost on', () => {
-  const run = newRun(7);
-  const s = run.state;
-  playTo(run, 1);
-  const it = toItem(run);
-  const lost = { n: it.n, itemId: it.itemId, name: answerOf(run).name };
-  for (const life of [75, 50, 25]) {
-    assert.equal(miss(run), false);
-    assert.equal(s.life, life);
-    assert.equal(s.phase, 'item');
+test('the four zones are of four different types, and each item is of its zone', () => {
+  const firsts = new Set<ZoneType>();
+  for (let seed = 1; seed <= 200; seed++) {
+    const zones = new Run({ seed, now: () => T0 }).state.zones;
+    assert.deepEqual([...zones].sort(), [...ZONE_TYPES].sort(), `seed ${seed}`);
+    firsts.add(zones[0]);
   }
-  assert.equal(miss(run), false);
-  assert.equal(s.life, 0);
-  assert.equal(s.phase, 'end');
-  assert.equal(s.item, null);
-  assert.equal(s.log.result, 'loss');
-  assert.deepEqual(s.log.endedOn, lost);
-  assert.notEqual(s.log.end, null);
-  assert.equal(s.log.lifeEnd, 0);
-  assert.equal(s.log.items.length, 2);
+  assert.equal(firsts.size, 4);
+  const { run } = start(3);
+  const log = playOn(run);
   assert.deepEqual(
-    s.log.items[1].submits.map((sub) => sub.right),
-    [false, false, false, false],
+    log.items.map((it) => [it.zone, it.zoneType]),
+    log.items.map((_, n) => (n < 12 ? [Math.floor(n / 3) + 1, run.state.zones[Math.floor(n / 3)]] : [5, 'boss'])),
   );
-  assert.equal(s.log.items[1].lifeAfter, 0);
-  const bad: string[] = [];
-  tryWrong(run, bad);
-  assert.deepEqual(bad, []);
-
-  // Life never goes below 0.
-  const deep = newRun(7, withTuning({ missCost: { early: 30, late: 35, boss: 60 } }));
-  toItem(deep);
-  for (let i = 0; i < 4; i++) miss(deep);
-  assert.equal(deep.state.life, 0);
-  assert.equal(deep.state.log.lifeEnd, 0);
-  assert.equal(deep.state.log.result, 'loss');
-
-  // At the boss: two misses.
-  const boss = newRun(7);
-  playTo(boss, 13);
-  toItem(boss);
-  miss(boss);
-  miss(boss);
-  assert.equal(boss.state.life, 0);
-  assert.equal(boss.state.log.result, 'loss');
-  assert.equal(boss.state.log.endedOn?.n, 13);
+  assert.deepEqual(log.zones, run.state.zones);
 });
 
-test('a right answer pays the base reward times the card, halved per miss and rounded down, and the boss pays nothing', () => {
-  const bad: string[] = [];
-  for (const { seed, run } of plays()) {
-    const s = run.state;
-    for (const it of s.log.items) {
-      const want = it.boss ? 0 : Math.floor((it.zoneNo <= 2 ? 5 : 7) * it.multiplier);
-      if (it.gold !== want) bad.push(`seed ${seed}, item ${it.itemId}: ${it.gold} gold, not ${want}`);
+test('zone 1 ends on the threshold of zone 2, not the town', () => {
+  const { run } = start(4);
+  reach(run, 2);
+  answer(run);
+  assert.ok(run.next());
+  takeLoot(run);
+  assert.ok(run.next());
+  assert.equal(run.state.phase, 'travel');
+  assert.equal(run.state.done, 3);
+});
+
+test('the town after zone 2 heals 20 on arrival and deals every ware again', () => {
+  const { run } = start(5, tuned((t) => (t.missCost.early = [25, 25])));
+  const s = run.state;
+  assert.ok(run.buy(s.stock.indexOf('flare')));
+  assert.ok(!s.stock.includes('flare'));
+  reach(run, 1);
+  miss(run);
+  miss(run);
+  assert.equal(s.life, 50);
+  answer(run);
+  reach(run, 5);
+  answer(run);
+  assert.ok(run.next());
+  takeLoot(run);
+  assert.ok(run.next());
+  assert.deepEqual([s.phase, s.done, s.life, s.arrivalHeal], ['town', 6, 70, 20]);
+  assert.deepEqual([...s.stock].sort(), [...WARES].sort());
+  // The next item starts at the healed life.
+  assert.equal(toItem(run).log.lifeBefore, 70);
+});
+
+test("the town's heal never takes life above the most", () => {
+  const { run } = start(6, tuned((t) => (t.missCost.early = [5, 5])));
+  reach(run, 5);
+  miss(run);
+  assert.equal(run.state.life, 95);
+  answer(run);
+  run.next();
+  takeLoot(run);
+  run.next();
+  assert.deepEqual([run.state.phase, run.state.life, run.state.arrivalHeal], ['town', 100, 5]);
+});
+
+test('the boss: three items of 10 names each in zone 5, with no zone type', () => {
+  for (const seed of [7, 8, 9]) {
+    const { run } = start(seed);
+    for (const n of [12, 13, 14]) {
+      const it = reach(run, n);
+      assert.deepEqual([it.boss, it.zoneNo, it.zoneType, it.names.length, run.boardSize(n)], [n - 12, 5, null, 10, 10], `seed ${seed}, item ${n}`);
+      assert.deepEqual([it.log.boss, it.log.zoneType, it.log.zone], [true, 'boss', 5]);
+      answer(run);
     }
-    const earned = s.log.items.reduce((t, it) => t + it.gold, 0);
-    if (s.log.goldEarned !== earned || s.gold !== 20 + earned) bad.push(`seed ${seed}: ${s.gold} gold, ${s.log.goldEarned} earned of ${earned}`);
   }
-  assert.deepEqual(bad, []);
+});
 
-  const run = newRun(8);
+test('a run is won after the boss: the end, its result and the item it ended on', () => {
+  const { run, clock } = start(10);
+  clock.t += 60_000;
+  const log = playOn(run);
   const s = run.state;
-  const paid = (misses: number) => {
-    const it = toItem(run, 1);
-    for (let i = 0; i < misses; i++) miss(run);
-    const gold = s.gold;
-    assert.equal(answer(run), true);
-    return [s.gold - gold, Math.floor(((it.zoneNo <= 2 ? 5 : 7) * it.multiplier) / 2 ** misses)];
-  };
-  const [one, oneWant] = paid(1);
-  assert.equal(one, oneWant);
-  const [two, twoWant] = paid(2);
-  assert.equal(two, twoWant);
-  playTo(run, 6);
-  const [late, lateWant] = paid(1);
-  assert.equal(late, lateWant);
+  assert.deepEqual([s.phase, s.done, s.item, s.loot], ['end', 15, null, null]);
+  assert.deepEqual([log.result, log.items.length, log.lifeEnd, log.end], ['win', 15, 100, new Date(T0 + 60_000).toISOString()]);
+  assert.deepEqual(log.endedOn, { n: 14, itemId: log.items[14].itemId, name: log.items[14].name });
+  assert.deepEqual([run.leave(), run.enter(), run.next(), run.drink()], [false, false, false, false]);
+});
+
+test('a run is lost at 0 life, on the item still open', () => {
+  const { run } = start(11, tuned((t) => (t.missCost.late = [40, 40])));
+  const s = run.state;
+  const it = reach(run, 7);
+  const before = s.life;
+  assert.equal(before, 100);
+  for (let k = 0; k < 2; k++) miss(run);
+  assert.equal(s.life, 20);
+  miss(run);
+  assert.deepEqual([s.phase, s.life, s.item, s.loot], ['end', 0, null, null]);
+  const log = s.log;
+  assert.deepEqual([log.result, log.lifeEnd, log.items.length, log.misses], ['loss', 0, 8, 3]);
+  assert.deepEqual(log.endedOn, { n: 7, itemId: it.itemId, name: BY_ID.get(it.itemId)!.name });
+  assert.deepEqual([log.items[7].lifeBefore, log.items[7].lifeAfter, log.items[7].misses], [100, 0, 3]);
+  assert.ok(log.end !== null);
+  assert.deepEqual([run.submit(), run.next(), run.drink()], [null, false, false]);
 });
 
 test('no item comes up twice in a run', () => {
-  const bad: string[] = [];
-  for (const { seed, run } of plays()) {
-    const ids = run.state.log.items.map((it) => it.itemId);
-    if (new Set(ids).size !== ids.length) bad.push(`seed ${seed}: ${ids.filter((id, i) => ids.indexOf(id) !== i)}`);
+  for (let seed = 1; seed <= 40; seed++) {
+    const ids = playOn(start(seed).run).items.map((it) => it.itemId);
+    assert.equal(new Set(ids).size, 15, `seed ${seed}`);
   }
-  assert.deepEqual(bad, []);
 });
 
-test('the board holds 4 names in zones 1 and 2, 6 in zones 3 and 4 and 10 at the boss, 2 more in Blight', () => {
-  // The engine asks a Tablet (a rare group) with 8 names at most, as in Delve.
-  const bad: string[] = [];
-  for (const { seed, run, deals } of plays()) {
-    for (const d of deals) {
-      const it = run.state.log.items[d.n];
-      const want = (it.zoneNo <= 2 ? 4 : it.zoneNo <= 4 ? 6 : 10) + (it.zone === 'blight' ? 2 : 0);
-      const names = d.rare ? Math.min(want, 8) : want;
-      if (d.size !== want || d.names !== names || it.names !== names) bad.push(`seed ${seed}, item ${d.n} (${it.zone}): boardSize ${d.size}, ${d.names} names, not ${want}`);
-    }
+test('a run plays the same for the same seed, and differently for another', () => {
+  const play = (seed: number) => {
+    const { run, clock } = start(seed);
+    run.buy(0);
+    return playOn(run, (it) => {
+      clock.t += 1000 + it.n * 10;
+      if (it.n % 4 === 1) miss(run);
+      if (it.n === 3) run.drink();
+    });
+  };
+  assert.deepEqual(play(12), play(12));
+  assert.notDeepEqual(play(12).items, play(13).items);
+});
+
+test("each item's category differs from the last item's", () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const cats = playOn(start(seed).run).items.map((it) => it.category);
+    cats.forEach((c, n) => n && assert.notEqual(c, cats[n - 1], `seed ${seed}, item ${n}`));
   }
-  assert.deepEqual(bad, []);
 });
 
-test('Blight never takes a board past 10 names', () => {
-  const tuning = withTuning({ board: { early: 10, late: 10, boss: 10 } });
-  const seed = Array.from({ length: 50 }, (_, i) => i + 1).find((sd) => newRun(sd).state.zones[0] === 'blight')!;
-  const run = newRun(seed, tuning);
-  assert.equal(run.state.zones[0], 'blight');
-  assert.deepEqual(
-    Array.from({ length: 15 }, (_, n) => run.boardSize(n)),
-    Array(15).fill(10),
-  );
-  const it = toItem(run);
-  const rare = Object.hasOwn(RARE_GROUPS, BY_ID.get(it.itemId)!.group);
-  assert.equal(it.names.length, rare ? 8 : 10);
-  assert.equal(new Set(it.names.map((nm) => nm.id)).size, it.names.length);
-});
+// ---- The vendor ----
 
-test('a deal is 3 different cards from the 10 categories, and the item is of the card picked', () => {
-  const categories = [...new Set(ITEMS.map((it) => it.category))].sort();
-  assert.equal(categories.length, 10);
-  const bad: string[] = [];
-  for (const { seed, run, deals } of plays()) {
-    assert.deepEqual(run.engine.categories, categories);
-    for (const d of deals.filter((dl) => dl.n < 12)) {
-      const cats = d.offer.map((c) => c.category);
-      if (cats.length !== 3 || new Set(cats).size !== 3 || cats.some((c) => !categories.includes(c))) bad.push(`seed ${seed}, item ${d.n}: ${cats}`);
-      const it = run.state.log.items[d.n];
-      if (it.category !== cats[d.pick] || it.multiplier !== d.offer[d.pick].multiplier) bad.push(`seed ${seed}, item ${d.n}: ${it.category} x${it.multiplier} for the card ${JSON.stringify(d.offer[d.pick])}`);
-      if (BY_ID.get(it.itemId)!.category !== it.category) bad.push(`seed ${seed}, item ${d.n}: ${it.itemId} isn't in ${it.category}`);
-    }
-  }
-  assert.deepEqual(bad, []);
-});
-
-test('a category picked is locked for the next 3 picks, and comes back after', () => {
-  const bad: string[] = [];
-  let chances = 0;
-  let back = 0;
-  for (const { seed, deals } of plays()) {
-    const zone = deals.filter((d) => d.n < 12);
-    for (const d of zone) {
-      const cat = d.offer[d.pick].category;
-      for (const later of zone.filter((l) => l.n > d.n && l.n <= d.n + 3)) if (later.offer.some((c) => c.category === cat)) bad.push(`seed ${seed}: ${cat}, picked for item ${d.n}, dealt again for item ${later.n}`);
-      const fourth = zone.find((l) => l.n === d.n + 4);
-      if (!fourth) continue;
-      chances++;
-      if (fourth.offer.some((c) => c.category === cat)) back++;
-    }
-  }
-  assert.deepEqual(bad, []);
-  // Free again, it's one of the 7 categories not locked, so about 3 deals in 7 have it.
-  assert.ok(back / chances > 0.3, `back in ${back} of ${chances} fourth deals`);
-});
-
-test('a card multiplies by 1, 1.25, 1.5 or 2, weighted 4 : 3 : 2 : 1', () => {
-  const counts = new Map<number, number>();
-  for (const { deals } of plays()) for (const d of deals.filter((dl) => dl.n < 12)) for (const c of d.offer) counts.set(c.multiplier, (counts.get(c.multiplier) ?? 0) + 1);
-  assert.deepEqual(
-    [...counts.keys()].filter((m) => !MULTIPLIER_SHARES.some(([x]) => x === m)),
-    [],
-  );
-  const total = [...counts.values()].reduce((t, c) => t + c, 0);
-  assert.equal(total, SEEDS * 12 * 3);
-  // 7200 cards: a share's standard error is under 0.006.
-  assert.deepEqual(
-    MULTIPLIER_SHARES.filter(([m, share]) => Math.abs((counts.get(m) ?? 0) / total - share) > 0.03).map(([m]) => `x${m}: ${(counts.get(m) ?? 0) / total}`),
-    [],
-  );
-});
-
-test('the boss picks its own category from the 10, never the same twice in its chain', () => {
-  const bad: string[] = [];
-  const firsts = new Set<string>();
-  for (const { seed, run, deals } of plays()) {
-    const boss = deals.filter((d) => d.n >= 12);
-    const cats = boss.map((d) => d.offer.map((c) => c.category));
-    if (boss.length !== 3 || cats.some((c) => c.length !== 1) || new Set(cats.flat()).size !== 3) bad.push(`seed ${seed}: ${JSON.stringify(cats)}`);
-    if (!isDeepStrictEqual(run.state.bossCats, cats.flat())) bad.push(`seed ${seed}: bossCats ${run.state.bossCats}`);
-    if (cats.flat().some((c) => !run.engine.categories.includes(c))) bad.push(`seed ${seed}: ${cats}`);
-    firsts.add(cats[0][0]);
-  }
-  assert.deepEqual(bad, []);
-  assert.equal(firsts.size, 10, 'any of the 10 can be the first');
-
-  // The player can't pick a card the boss didn't deal.
-  const run = newRun(9);
-  playTo(run, 12);
-  assert.ok(run.next());
-  assert.equal(run.state.phase, 'deal');
-  assert.equal(run.state.offer.length, 1);
-  const before = JSON.stringify(run.state);
-  assert.equal(run.pick(1), false);
-  assert.equal(run.pick(2), false);
-  assert.equal(JSON.stringify(run.state), before);
-  assert.ok(run.pick(0));
-  assert.equal(run.state.item!.boss, 0);
-});
-
-// ---- Actions in the wrong phase ----
-
-type Action = [string, (run: Run) => boolean | null];
-const ACTIONS: Action[] = [
-  ...SUPPLIES.map((supply: Supply): Action => [`buy ${supply}`, (run) => run.buy(supply)]),
-  ['drink', (run) => run.drink()],
-  ['leave', (run) => run.leave()],
-  ['next', (run) => run.next()],
-  ...[0, 1, 2].map((i): Action => [`pick ${i}`, (run) => run.pick(i)]),
-  ['open', (run) => run.open()],
-  ...SUPPLIES.map((supply: Supply): Action => [`use ${supply}`, (run) => run.use(supply)]),
-  ['lift', (run) => run.lift(0)],
-  ['place', (run) => run.place(run.state.item?.tiles[0] ?? 'of')],
-  ['unplace', (run) => run.unplace(0)],
-  ['clear', (run) => run.clear()],
-  ['submit', (run) => run.submit()],
-];
-
-/** What each place in a run allows (prefixes of ACTIONS' names); everything else is the wrong phase. */
-const ALLOWED: Record<string, string[]> = {
-  camp: ['buy', 'drink', 'leave'],
-  deal: ['pick'],
-  'boss deal': ['pick 0'],
-  'item laid out': ['open'],
-  'item open': ['use', 'lift', 'place', 'unplace', 'clear', 'submit'],
-  between: ['drink', 'next'],
-  town: ['buy', 'drink', 'leave'],
-  end: [],
-};
-
-const placeOf = (run: Run) => {
+test('buying takes the card off the table: a ware is bought once a visit, and goes in the pack for its price', () => {
+  const { run } = start(13, tuned((t) => (t.gold = 999)));
   const s = run.state;
-  if (s.phase === 'item') return s.item!.openedAt === null ? 'item laid out' : 'item open';
-  if (s.phase === 'deal' && s.done >= 12) return 'boss deal';
-  return s.phase;
-};
-
-/** Tries every action the run's place doesn't allow: each must refuse (submit with null) and change nothing. */
-function tryWrong(run: Run, bad: string[]) {
-  const where = placeOf(run);
-  for (const [name, act] of ACTIONS) {
-    if (ALLOWED[where].some((ok) => name.startsWith(ok))) continue;
-    const before = JSON.stringify(run.state);
-    const result = act(run);
-    if (result !== (name === 'submit' ? null : false)) bad.push(`${where}: ${name} gave ${result}`);
-    if (JSON.stringify(run.state) !== before) bad.push(`${where}: ${name} changed the state`);
+  const wares: Ware[] = [];
+  while (s.stock.length) {
+    const ware = s.stock[0];
+    const gold = s.gold;
+    assert.ok(run.buy(0));
+    assert.equal(gold - s.gold, DEFAULT_TUNING.price[ware]);
+    wares.push(ware);
   }
-  return where;
+  assert.deepEqual([...wares].sort(), [...WARES].sort());
+  assert.deepEqual(s.pack, wares);
+  assert.equal(run.buy(0), false);
+  assert.equal(s.log.goldSpent, 5 + 5 + 6 + 4 + 8 + 6 + 4);
+  assert.deepEqual(s.log.bought, Object.fromEntries(WARES.map((w) => [w, 1])));
+});
+
+test("the vendor's prices are the handoff's, and the tuning's when changed", () => {
+  const prices = { flare: 5, wisdom: 5, strike: 6, lengths: 4, first: 8, decoy: 6, vaal: 4 };
+  assert.deepEqual(DEFAULT_TUNING.price, prices);
+  const own = { flare: 1, wisdom: 2, strike: 3, lengths: 4, first: 5, decoy: 6, vaal: 7 };
+  const { run } = start(14, tuned((t) => ((t.price = { ...own }), (t.gold = 999))));
+  const paid: Record<string, number> = {};
+  while (run.state.stock.length) {
+    const ware = run.state.stock[0];
+    const gold = run.state.gold;
+    assert.ok(run.buy(0));
+    paid[ware] = gold - run.state.gold;
+  }
+  assert.deepEqual(paid, own);
+});
+
+test('buying needs the gold', () => {
+  const { run } = start(15, tuned((t) => (t.gold = 9)));
+  const s = run.state;
+  assert.ok(run.buy(s.stock.indexOf('flare')));
+  assert.equal(s.gold, 4);
+  assert.equal(run.buy(s.stock.indexOf('first')), false);
+  assert.equal(run.buy(s.stock.indexOf('wisdom')), false);
+  assert.ok(run.buy(s.stock.indexOf('vaal')));
+  assert.deepEqual([s.gold, s.pack], [0, ['flare', 'vaal']]);
+  assert.ok(s.stock.every((_, i) => !run.canBuy(i)));
+});
+
+test('buying needs a free slot in the pack', () => {
+  const { run } = start(16, tuned((t) => (t.gold = 999)));
+  const s = run.state;
+  s.pack = Array<Ware>(PACK_SLOTS - 1).fill('flare');
+  assert.ok(run.buy(0));
+  assert.equal(s.pack.length, PACK_SLOTS);
+  assert.ok(s.stock.every((_, i) => !run.canBuy(i)));
+  assert.equal(run.buy(0), false);
+});
+
+test('nothing is bought away from a vendor, and the town deals again what the camp sold', () => {
+  const { run } = start(17, tuned((t) => (t.gold = 999)));
+  const s = run.state;
+  while (s.stock.length) run.buy(0);
+  assert.ok(run.leave());
+  assert.equal(run.buy(0), false);
+  reach(run, 0);
+  assert.equal(run.buy(0), false);
+  reach(run, 5);
+  answer(run);
+  run.next();
+  takeLoot(run);
+  run.next();
+  assert.equal(s.phase, 'town');
+  assert.deepEqual([...s.stock].sort(), [...WARES].sort());
+  assert.equal(run.buy(s.stock.length), false);
+});
+
+// ---- Life and the flask ----
+
+test("a miss costs a random 20 to 30 in zones 1 and 2, 30 to 40 in 3 and 4, 55 to 65 at the boss, as missRange shows", () => {
+  const want = { early: [20, 30], late: [30, 40], boss: [55, 65] };
+  assert.deepEqual(DEFAULT_TUNING.missCost, want);
+  const seen = { early: new Set<number>(), late: new Set<number>(), boss: new Set<number>() };
+  for (let seed = 1; seed <= 60; seed++) {
+    const { run } = start(seed, tuned((t) => (t.life = 999)));
+    for (const [n, section] of [[1, 'early'], [8, 'late'], [13, 'boss']] as const) {
+      reach(run, n);
+      assert.deepEqual(run.missRange(), want[section]);
+      for (let k = 0; k < 3; k++) {
+        const before = run.state.life;
+        miss(run);
+        seen[section].add(before - run.state.life);
+      }
+      answer(run);
+    }
+  }
+  for (const section of ['early', 'late', 'boss'] as const) {
+    const [lo, hi] = want[section];
+    const costs = [...seen[section]].sort((a, b) => a - b);
+    assert.ok(costs.every((c) => c >= lo && c <= hi), `${section}: ${costs}`);
+    assert.deepEqual([costs[0], costs.at(-1)], [lo, hi], `${section}: both ends come up`);
+  }
+});
+
+test("a miss costs the tuning's range", () => {
+  const { run } = start(18, tuned((t) => (t.missCost = { early: [3, 3], late: [7, 7], boss: [11, 11] })));
+  const drops: number[] = [];
+  for (const n of [0, 6, 12]) {
+    reach(run, n);
+    const before = run.state.life;
+    miss(run);
+    drops.push(before - run.state.life);
+    answer(run);
+  }
+  assert.deepEqual(drops, [3, 7, 11]);
+});
+
+test('the flask is drunk only during an open item', () => {
+  const { run } = start(19);
+  const s = run.state;
+  assert.equal(run.drink(), false);
+  run.leave();
+  assert.equal(run.drink(), false);
+  run.enter();
+  assert.equal(run.drink(), false, 'laid out, not open');
+  run.open(grid());
+  assert.ok(run.drink());
+  answer(run);
+  assert.equal(s.phase, 'solved');
+  assert.equal(run.drink(), false);
+  run.next();
+  assert.equal(s.phase, 'loot');
+  assert.equal(run.drink(), false);
+  assert.equal(s.flask.charges, 1);
+});
+
+test('a drink heals 10 at once and 10 as each of the next 2 items ends, the item drunk in counting as the first', () => {
+  const { run } = start(20, tuned((t) => (t.missCost.early = [40, 40])));
+  const s = run.state;
+  reach(run, 0);
+  miss(run);
+  assert.equal(s.life, 60);
+  assert.ok(run.drink());
+  assert.deepEqual([s.life, s.flask.charges, s.log.drinks], [70, 1, 1]);
+  answer(run);
+  assert.deepEqual([s.life, s.item!.log.healed], [80, 10]);
+  reach(run, 1);
+  answer(run);
+  assert.deepEqual([s.life, s.item!.log.healed], [90, 10]);
+  reach(run, 2);
+  answer(run);
+  assert.deepEqual([s.life, s.item!.log.healed], [90, 0]);
+  assert.deepEqual(
+    s.log.items.map((it) => [it.lifeBefore, it.lifeAfter]),
+    [
+      [100, 80],
+      [80, 90],
+    ],
+  );
+});
+
+test('drinking again restarts the heal: the rest of the old one is lost, and the charges run out', () => {
+  const { run } = start(21, tuned((t) => (t.missCost.early = [30, 30])));
+  const s = run.state;
+  reach(run, 0);
+  miss(run);
+  miss(run);
+  assert.equal(s.life, 40);
+  assert.ok(run.drink());
+  answer(run);
+  assert.equal(s.life, 60);
+  reach(run, 1);
+  assert.ok(run.drink());
+  assert.equal(s.life, 70);
+  assert.equal(run.drink(), false, 'no charge left');
+  answer(run);
+  assert.equal(s.life, 80);
+  reach(run, 2);
+  answer(run);
+  assert.equal(s.life, 90);
+  reach(run, 3);
+  answer(run);
+  assert.equal(s.life, 90);
+  assert.deepEqual([s.flask.charges, s.log.drinks], [0, 2]);
+});
+
+test('the flask never heals above the most life', () => {
+  const { run } = start(22, tuned((t) => (t.missCost.early = [5, 5])));
+  const s = run.state;
+  reach(run, 0);
+  assert.ok(run.drink());
+  assert.equal(s.life, 100);
+  miss(run);
+  answer(run);
+  assert.deepEqual([s.life, s.item!.log.healed], [100, 5]);
+});
+
+test('the flask still works on a corrupted item and at the boss', () => {
+  const { run } = start(23, tuned((t) => (t.loot.weights = only('gold'))));
+  const s = run.state;
+  reach(run, 0);
+  s.pack.push('vaal');
+  assert.ok(run.corrupt());
+  assert.ok(run.drink());
+  answer(run);
+  reach(run, 13);
+  assert.ok(run.drink());
+  assert.equal(s.flask.charges, 0);
+});
+
+// ---- Loot ----
+
+/** Plays items right with `misses` misses each on item n, and returns the deal its loot drew. */
+function dealAfter(run: Run, n: number, misses: number) {
+  reach(run, n);
+  for (let k = 0; k < misses; k++) miss(run);
+  answer(run);
+  assert.ok(run.next());
+  assert.equal(run.state.phase, 'loot');
+  return run.state.loot!;
 }
 
-test('an action in the wrong phase is refused, changes nothing and draws nothing from the seed', () => {
-  const tuning = withTuning({ gold: 1000 });
-  const plain = newRun(10, tuning);
-  const tried = newRun(10, tuning);
-  for (const run of [plain, tried]) for (const supply of SUPPLIES) assert.ok(run.buy(supply));
-  const bad: string[] = [];
-  const places = new Set<string>();
-  const step = (run: Run) => {
-    const s = run.state;
-    if (s.phase === 'camp' || s.phase === 'town') assert.ok(run.leave());
-    else if (s.phase === 'between') assert.ok(run.next());
-    else if (s.phase === 'deal') assert.ok(run.pick(0));
-    else if (s.item!.openedAt === null) {
-      wait(run, 1000);
-      assert.ok(run.open());
-    } else assert.equal(answer(run), true);
-  };
-  places.add(tryWrong(tried, bad));
-  while (plain.state.phase !== 'end') {
-    step(plain);
-    step(tried);
-    places.add(tryWrong(tried, bad));
+test('a right answer deals 3 cards, one fewer per miss, never fewer than 1', () => {
+  assert.equal(DEFAULT_TUNING.loot.deal, 3);
+  const { run } = start(24, tuned((t) => ((t.missCost.early = [1, 1]), (t.missCost.late = [1, 1]))));
+  const sizes = [0, 1, 2, 3, 5].map((misses, n) => {
+    const loot = dealAfter(run, n, misses);
+    const size = loot.cards.length;
+    takeLoot(run);
+    return size;
+  });
+  assert.deepEqual(sizes, [3, 2, 1, 1, 1]);
+});
+
+test("the deal's size is the tuning's", () => {
+  const { run } = start(25, tuned((t) => (t.loot.deal = 5)));
+  assert.equal(dealAfter(run, 0, 0).cards.length, 5);
+  takeLoot(run);
+  assert.equal(dealAfter(run, 1, 1).cards.length, 4);
+});
+
+test('a corrupted item deals its bonus: Gilded 2 more cards, Unveiled 1, Twisted 2, after the misses', () => {
+  for (const [outcome, bonus] of [['gilded', 2], ['unveiled', 1], ['twisted', 2]] as const) {
+    const { run } = start(26, tuned((t) => ((t.corruption = { gilded: 0, unveiled: 0, twisted: 0, bricked: 0, [outcome]: 1 }), (t.missCost.early = [1, 1]))));
+    for (const misses of [0, 1, 3]) {
+      const it = reach(run, misses);
+      run.state.pack.push('vaal');
+      assert.equal(run.corrupt(), outcome);
+      for (let k = 0; k < misses; k++) miss(run);
+      answer(run);
+      assert.ok(run.next());
+      assert.equal(run.state.loot!.cards.length, Math.max(1, 3 - misses) + bonus, `${outcome}, ${misses} misses`);
+      assert.equal(it.log.deal.length, Math.max(1, 3 - misses) + bonus);
+      takeLoot(run);
+      run.next();
+    }
   }
-  assert.deepEqual(bad, []);
-  assert.deepEqual([...places].sort(), Object.keys(ALLOWED).sort());
-  assert.deepEqual(tried.state, plain.state);
+});
+
+test('a Bricked item deals nothing: its right answer goes on to the next item', () => {
+  const { run } = start(27, tuned((t) => (t.corruption = { gilded: 0, unveiled: 0, twisted: 0, bricked: 1 })));
+  const s = run.state;
+  const it = reach(run, 0);
+  s.pack.push('vaal');
+  assert.equal(run.corrupt(), 'bricked');
+  answer(run);
+  assert.ok(run.next());
+  assert.deepEqual([s.phase, s.done, s.loot, s.item!.n], ['item', 1, null, 1]);
+  assert.deepEqual([it.log.deal, it.log.took, s.log.unid.offered], [[], null, 0]);
+});
+
+test('every deal has exactly one unidentified card', () => {
+  for (let seed = 1; seed <= 6; seed++) {
+    const { run } = start(seed, tuned((t) => (t.missCost = { early: [1, 1], late: [1, 1], boss: [1, 1] })));
+    playOn(run, (it) => {
+      if (it.n % 3 === 1) miss(run);
+    });
+    assert.equal(run.state.log.result, 'win');
+    for (const it of run.state.log.items.slice(0, 12)) assert.equal(it.deal.filter((c) => c.unid).length, 1, `seed ${seed}, item ${it.itemId}`);
+    assert.equal(run.state.log.unid.offered, 12);
+  }
+});
+
+test('an unidentified card rolls the uncommon and rare cards twice as often', () => {
+  // Gold and Vaal Orbs at 1 each: a face-up card is a Vaal Orb half the time, a face-down one two thirds.
+  const weights = { ...only('gold'), vaal: 1 };
+  const shown = { vaal: 0, all: 0 };
+  const hidden = { vaal: 0, all: 0 };
+  for (let seed = 1; seed <= 50; seed++) {
+    const { run } = start(seed, tuned((t) => ((t.loot.weights = weights), (t.loot.deal = 6))));
+    playOn(run);
+    for (const it of run.state.log.items)
+      for (const c of it.deal) {
+        const side = c.unid ? hidden : shown;
+        side.all++;
+        if (c.kind === 'vaal') side.vaal++;
+      }
+  }
+  const up = shown.vaal / shown.all;
+  const down = hidden.vaal / hidden.all;
+  assert.ok(Math.abs(up - 1 / 2) < 0.05, `face up: ${up}`);
+  assert.ok(Math.abs(down - 2 / 3) < 0.07, `face down: ${down}`);
+});
+
+test("gold cards give 4 to 8 in zones 1 and 2, 6 to 10 in zones 3 and 4, and taking one adds it", () => {
+  assert.deepEqual(DEFAULT_TUNING.loot.gold, { early: [4, 8], late: [6, 10] });
+  const seen = { early: new Set<number>(), late: new Set<number>() };
+  for (let seed = 1; seed <= 20; seed++) {
+    const { run } = start(seed, tuned((t) => (t.loot.weights = only('gold'))));
+    const s = run.state;
+    let earned = 0;
+    playOn(run);
+    for (const [n, it] of s.log.items.slice(0, 12).entries()) {
+      assert.ok(it.deal.every((c) => c.kind === 'gold' && c.supply === null));
+      for (const c of it.deal) seen[n < 6 ? 'early' : 'late'].add(c.gold);
+      assert.equal(it.gold, it.deal[it.took!.index].gold);
+      earned += it.gold;
+    }
+    assert.deepEqual([s.log.goldEarned, s.gold], [earned, 20 + earned]);
+  }
+  assert.deepEqual([...seen.early].sort((a, b) => a - b), [4, 5, 6, 7, 8]);
+  assert.deepEqual([...seen.late].sort((a, b) => a - b), [6, 7, 8, 9, 10]);
+});
+
+test('a jackpot gives 25 gold', () => {
+  const { run } = start(28, tuned((t) => (t.loot.weights = only('jackpot'))));
+  const loot = dealAfter(run, 0, 0);
+  assert.ok(loot.cards.every((c) => c.kind === 'jackpot' && c.gold === 25));
+  assert.ok(run.take(1));
+  assert.deepEqual([run.state.gold, run.state.log.goldEarned, run.state.item!.log.gold], [45, 25, 25]);
+});
+
+test('a flask card comes only while a charge is empty, and refills one', () => {
+  const { run } = start(29, tuned((t) => (t.loot.weights = only('flask'))));
+  const s = run.state;
+  // Both charges full: the flask card is rolled again (gold, when nothing else can come).
+  assert.ok(dealAfter(run, 0, 0).cards.every((c) => c.kind === 'gold'));
+  takeLoot(run);
+  reach(run, 1);
+  assert.ok(run.drink());
+  answer(run);
+  run.next();
+  assert.ok(s.loot!.cards.every((c) => c.kind === 'flask' && c.gold === 0));
+  assert.ok(run.take(0));
+  assert.equal(s.flask.charges, 2);
+});
+
+test('a supply card puts its supply in the pack, and a Vaal Orb card a Vaal Orb', () => {
+  const { run } = start(30, tuned((t) => (t.loot.weights = only('supply'))));
+  const s = run.state;
+  const loot = dealAfter(run, 0, 0);
+  assert.ok(loot.cards.every((c) => c.kind === 'supply' && SUPPLIES.includes(c.supply!) && c.gold === 0));
+  const supply = loot.cards[2].supply!;
+  assert.ok(run.take(2));
+  assert.deepEqual([s.pack, s.log.found[supply], s.item!.log.took], [[supply], 1, { index: 2, kept: true }]);
+
+  const v = start(31, tuned((t) => (t.loot.weights = only('vaal')))).run;
+  assert.ok(dealAfter(v, 0, 0).cards.every((c) => c.kind === 'vaal'));
+  assert.ok(v.take(0));
+  assert.deepEqual([v.state.pack, v.state.log.found.vaal], [['vaal'], 1]);
+});
+
+test('every supply comes up on supply cards', () => {
+  const seen = new Set<string>();
+  for (let seed = 1; seed <= 5; seed++) {
+    const { run } = start(seed, tuned((t) => (t.loot.weights = only('supply'))));
+    for (const it of playOn(run).items) for (const c of it.deal) seen.add(c.supply!);
+  }
+  assert.deepEqual([...seen].sort(), [...SUPPLIES].sort());
+});
+
+test('with the pack full, a ware taken replaces the slot kept for it', () => {
+  const { run } = start(32, tuned((t) => (t.loot.weights = only('vaal'))));
+  const s = run.state;
+  s.pack = Array<Ware>(PACK_SLOTS).fill('flare');
+  dealAfter(run, 0, 0);
+  assert.ok(run.take(0));
+  assert.deepEqual([s.loot!.pending, s.pack.length], ['vaal', 8]);
+  assert.equal(run.next(), false, 'not before the ware is kept or left');
+  assert.equal(run.keep(8), false);
+  assert.equal(run.keep(-1), false);
+  assert.ok(run.keep(3));
+  assert.deepEqual([s.pack[3], s.pack.length, s.loot!.pending, s.item!.log.took], ['vaal', 8, null, { index: 0, kept: true }]);
+  assert.equal(run.keep(3), false);
+  assert.ok(run.next());
+});
+
+test('with the pack full, a ware taken can be left', () => {
+  const { run } = start(33, tuned((t) => (t.loot.weights = only('supply'))));
+  const s = run.state;
+  s.pack = Array<Ware>(PACK_SLOTS).fill('vaal');
+  dealAfter(run, 0, 0);
+  assert.ok(run.take(1));
+  assert.ok(run.keep(null));
+  assert.deepEqual([s.pack, s.item!.log.took], [Array(8).fill('vaal'), { index: 1, kept: false }]);
+  assert.ok(run.next());
+});
+
+test('the loot moves on only once a card is taken, and only one is', () => {
+  const { run } = start(34);
+  const s = run.state;
+  dealAfter(run, 0, 0);
+  assert.equal(run.next(), false);
+  assert.equal(run.take(3), false);
+  assert.equal(run.keep(null), false, 'nothing waits to be kept');
+  assert.ok(run.take(0));
+  assert.equal(run.take(1), false);
+  if (s.loot!.pending !== null) run.keep(null);
+  assert.ok(run.next());
+  assert.equal(s.item!.n, 1);
+});
+
+test('the boss deals no loot', () => {
+  const { run } = start(35);
+  const s = run.state;
+  for (const n of [12, 13]) {
+    const it = reach(run, n);
+    answer(run);
+    assert.equal(s.phase, 'solved');
+    assert.ok(run.next());
+    assert.deepEqual([s.phase, s.loot, s.item!.n], ['item', null, n + 1]);
+    assert.deepEqual([it.log.deal, it.log.took, it.log.gold], [[], null, 0]);
+  }
+  reach(run, 14);
+  answer(run);
+  assert.ok(run.next());
+  assert.equal(s.phase, 'end');
+  assert.equal(s.log.unid.offered, 12);
+});
+
+test('an unidentified card taken is counted', () => {
+  const { run } = start(36);
+  const s = run.state;
+  let taken = 0;
+  for (let n = 0; n < 6; n++) {
+    dealAfter(run, n, 0);
+    const pick = n % 2 ? s.loot!.cards.findIndex((c) => c.unid) : s.loot!.cards.findIndex((c) => !c.unid);
+    if (s.loot!.cards[pick].unid) taken++;
+    takeLoot(run, pick);
+  }
+  assert.deepEqual(s.log.unid, { offered: 6, taken });
+  assert.equal(taken, 3);
 });

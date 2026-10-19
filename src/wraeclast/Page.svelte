@@ -6,9 +6,9 @@
   import { play } from './play.svelte';
   import Hud from './Hud.svelte';
   import Vendor from './Vendor.svelte';
-  import Deal from './Deal.svelte';
+  import Travel from './Travel.svelte';
   import ItemScreen from './ItemScreen.svelte';
-  import Between from './Between.svelte';
+  import Loot from './Loot.svelte';
   import End from './End.svelte';
   import TuningPanel from './TuningPanel.svelte';
 
@@ -21,8 +21,8 @@
     if (s.phase === 'end') play.keep();
   });
 
-  // Each new screen starts at its top (phones scroll).
-  const screen = $derived(`${s.seed}:${s.phase}:${s.done}`);
+  // Each new screen starts at its top (phones scroll); a named item stays on its screen, for its finale.
+  const screen = $derived(`${s.seed}:${s.phase === 'solved' ? 'item' : s.phase}:${s.done}`);
   $effect(() => {
     void screen;
     scrollTo({ top: 0 });
@@ -36,12 +36,12 @@
     {#key screen}
       {#if s.phase === 'camp' || s.phase === 'town'}
         <Vendor {run} />
-      {:else if s.phase === 'deal'}
-        <Deal {run} />
-      {:else if s.phase === 'item'}
+      {:else if s.phase === 'travel'}
+        <Travel {run} />
+      {:else if s.phase === 'item' || s.phase === 'solved'}
         <ItemScreen {run} />
-      {:else if s.phase === 'between'}
-        <Between {run} />
+      {:else if s.phase === 'loot'}
+        <Loot {run} />
       {:else}
         <End {run} />
       {/if}

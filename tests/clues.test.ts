@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
-import { cluesFile } from '../scripts/make-clues.mjs';
+import { cluesFile, sameLine } from '../scripts/make-clues.mjs';
 
 // The Wraeclast run's clues (scripts/make-clues.mjs): what its supplies and
 // zones reveal, with every word of the item's own name masked.
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
-type Clues = { req: string[]; mods: [string, string][]; flavor: string | null };
+type Clues = { base: string; mods: [string, string, number][]; flavor: string | null };
 const raw = readFileSync(new URL('../src/data/clues.json', import.meta.url), 'utf8');
 const clues: Record<string, Clues> = JSON.parse(raw);
 const stats = JSON.parse(readFileSync(new URL('../src/data/itemStats.json', import.meta.url), 'utf8'));
@@ -20,7 +20,7 @@ const MASK = '▮▮▮';
 const SMALL = new Set(['of', 'the', 'and']);
 /** A clue as it reads: colour marks ({w|65}) off. */
 const plain = (text: string) => text.replace(/\{[a-z]\|([^{}|]*)\}/g, '$1');
-const allText = (c: Clues) => [...c.req, ...c.mods.map(([, t]) => t), ...(c.flavor === null ? [] : [c.flavor])];
+const allText = (c: Clues) => [c.base, ...c.mods.map(([, t]) => t), ...(c.flavor === null ? [] : [c.flavor])];
 
 test('every item has its clues, and only items do (node scripts/make-clues.mjs)', () => {
   assert.deepEqual(
@@ -66,7 +66,8 @@ test('the clues hold what each kind of item has', () => {
   const bad: string[] = [];
   for (const it of items) {
     const c = clues[it.id];
-    if (!c.req.length) bad.push(`${it.name}: no requirements`);
+    if ('req' in c) bad.push(`${it.name}: requirements, no longer used`);
+    if (!c.base.trim()) bad.push(`${it.name}: no base`);
     if (c.flavor === null) bad.push(`${it.name}: no flavour text`);
     for (const [kind, text] of c.mods) {
       if (!text.trim()) bad.push(`${it.name}: an empty mod line`);
@@ -84,4 +85,20 @@ test('a gem whose Category repeats its name has it masked', () => {
   const byName = new Map(items.map((it) => [it.name, clues[it.id]]));
   assert.equal(byName.get("Ailith's Chimes")?.mods[0][1], `Category: {w|${MASK} ${MASK}}`);
   assert.equal(byName.get("Dominus' Grasp")?.mods[0][1], `Category: {w|${MASK} ${MASK}}`);
+});
+
+test('every mod line says how many items share it, at least its own', () => {
+  const bad: string[] = [];
+  for (const it of items) for (const [, text, shared] of clues[it.id].mods) if (!Number.isInteger(shared) || shared < 1) bad.push(`${it.name}: ${shared} for ${text}`);
+  assert.deepEqual(bad, []);
+  // Today's data: most items have a common line (shared by 3 or more), a few each.
+  const common = items.map((it) => clues[it.id].mods.filter(([, , n]) => n >= 3).length);
+  assert.ok(common.filter((n) => n > 0).length > items.length * 0.7, 'most items have a common line');
+});
+
+test('lines are the same line once their numbers are set aside', () => {
+  assert.equal(sameLine('+(10-20) to maximum {w|Life}'), '# to maximum Life');
+  assert.equal(sameLine('+35 to maximum Life'), '# to maximum Life');
+  assert.equal(sameLine('(15-30)% increased Movement Speed'), '#% increased Movement Speed');
+  assert.equal(sameLine('Regenerate 1.5% of maximum Life per second'), 'Regenerate #% of maximum Life per second');
 });

@@ -1,22 +1,22 @@
 <script lang="ts">
   // The run's bar: where it stands, life (a bar and its number), the flask's
   // charges and its heal still to come, gold, and how full the pack is.
-  import { FLASK_ITEMS, FLASK_STEP, PACK_SLOTS, type Run } from './rules';
-  import { whereOf } from './words';
+  import { FLASK_STEP, PACK_SLOTS, type Run } from './rules';
+  import { FLASK_LINE, whereOf } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
 
-  /** The item the bar speaks for: the open one, the one just done, or the next. */
-  const n = $derived(s.item?.n ?? (s.phase === 'between' || s.phase === 'end' ? s.done - 1 : s.done));
-  const where = $derived(s.phase === 'camp' ? { zone: 'Camp', of: '' } : s.phase === 'town' ? { zone: 'Town', of: '' } : whereOf(run, Math.max(0, n)));
+  /** The item the bar speaks for: the open one, the last one at the end, or the next. */
+  const n = $derived(s.item?.n ?? (s.phase === 'end' ? s.done - 1 : s.done));
+  const where = $derived(s.phase === 'camp' ? { zone: 'Camp', k: 0, of: 0 } : s.phase === 'town' ? { zone: 'Town', k: 0, of: 0 } : whereOf(run, Math.max(0, n)));
   const share = $derived(Math.max(0, Math.min(1, s.life / s.maxLife)));
 </script>
 
 <header class="hud" aria-label="The run">
   <p class="where">
     <span class="kicker">{where.zone}</span>
-    {#if where.of}<span class="of">Item <span class="n">{where.of.split(' of ')[0]}</span> of <span class="n">{where.of.split(' of ')[1]}</span></span>{/if}
+    {#if where.of && s.phase !== 'travel'}<span class="of">Item <span class="n">{where.k}</span> of <span class="n">{where.of}</span></span>{/if}
   </p>
   <div class="stats">
     <div class="life" class:low={share <= 0.35}>
@@ -24,7 +24,7 @@
       <span class="bar" role="meter" aria-label="Life" aria-valuemin={0} aria-valuemax={s.maxLife} aria-valuenow={s.life}><span class="fill" style:width="{share * 100}%"></span></span>
       <span class="n">{s.life}</span>
     </div>
-    <div class="flask" title="Flask: drink between items; a drink heals {FLASK_STEP} after each of the next {FLASK_ITEMS} items">
+    <div class="flask" title="Flask: {FLASK_LINE}">
       <span class="label">Flask</span>
       <span class="sr">{s.flask.charges} {s.flask.charges === 1 ? 'charge' : 'charges'}</span>
       <span class="pips" aria-hidden="true">

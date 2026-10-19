@@ -1,49 +1,47 @@
 <script lang="ts">
   // What the item's tooltip shows so far, in the game's tooltip font and
-  // colours (ItemDetails.svelte): the requirements, the mod lines in tooltip
-  // order, the flavour text; each part not shown yet as a quiet line that
-  // says what's still hidden.
-  import { CLUES, type Run } from './rules';
+  // colours (ItemDetails.svelte): the mod lines shown (common ones only: the
+  // zone's free one, a Scroll of Wisdom's), in tooltip order, and the
+  // flavour text; each part not shown as a quiet line that says what's
+  // hidden. Once named, the whole tooltip.
+  import { CLUES, commonUnshown, type Run } from './rules';
   import { verses } from './markup';
   import ClueText from './ClueText.svelte';
-  import Numbered from './Numbered.svelte';
   import { plural } from './words';
 
   let { run }: { run: Run } = $props();
   const it = $derived(run.state.item!);
+  const named = $derived(run.state.phase === 'solved');
   const clues = $derived(CLUES[it.itemId]);
-  const ritual = $derived(run.zoneType(it.zoneNo) === 'ritual');
-  const hiddenMods = $derived(clues.mods.length - it.shown.mods);
+  const mods = $derived(named ? clues.mods.map((_, i) => i) : [...it.shown.mods].sort((a, b) => a - b));
+  const hidden = $derived(clues.mods.length - mods.length);
+  const common = $derived(commonUnshown(it).length);
+  const flavor = $derived(named || it.shown.flavor);
 </script>
 
 <div class="tooltip-body">
-  {#if clues.req.length}
-    <div class="section">
-      {#if it.shown.req}
-        {#each clues.req as line, i (i)}<p class="line r"><ClueText text={line} /></p>{/each}
-      {:else}
-        <p class="line hidden">Requirements hidden</p>
-      {/if}
-    </div>
-  {/if}
   {#if clues.mods.length}
-    <div class="rule" aria-hidden="true"></div>
     <div class="section">
-      {#each clues.mods.slice(0, it.shown.mods) as [kind, line], i (i)}
+      {#each mods as i (i)}
+        {@const [kind, line] = clues.mods[i]}
         <p class="line {kind}"><ClueText text={line} /></p>
       {/each}
-      {#if hiddenMods}<p class="line hidden"><Numbered text={it.shown.mods ? `${plural(hiddenMods, 'more line')} hidden` : `${plural(hiddenMods, 'mod line')} hidden`} /></p>{/if}
+      {#if hidden && !named}
+        <p class="line hidden">
+          {mods.length ? `${plural(hidden, 'more line')} hidden` : `${plural(hidden, 'mod line')} hidden`}{common ? `, ${common} common` : ', none common'}
+        </p>
+      {/if}
     </div>
   {/if}
   {#if clues.flavor !== null}
     <div class="rule" aria-hidden="true"></div>
     <div class="section">
-      {#if it.shown.flavor}
+      {#if flavor}
         <p class="line f">
           {#each verses(clues.flavor) as v, k (k)}<span class="verse"><ClueText text={v} /></span>{/each}
         </p>
       {:else}
-        <p class="line hidden">Flavour text hidden{ritual ? ': Lore reveals don\'t work in Ritual' : ''}</p>
+        <p class="line hidden">Flavour text hidden</p>
       {/if}
     </div>
   {/if}

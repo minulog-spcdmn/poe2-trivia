@@ -4,12 +4,16 @@ import {
   Run,
   CLUES,
   DEFAULT_TUNING,
-  PATCHES,
-  SUPPLIES,
+  ITEMS,
   SYLLABLES,
-  covered,
+  ZONE_TYPES,
+  answerOf,
+  buildText,
+  commonLines,
   greyed,
+  lengthsOf,
   remaining,
+  startsWord,
   type BoardName,
   type ItemPlay,
   type Tuning,
@@ -17,15 +21,16 @@ import {
 } from '../src/wraeclast/rules.ts';
 
 // One item of the Wraeclast run (src/wraeclast/rules.ts) held to its handoff,
-// docs/handoff/wraeclast/README.md ("An item", "Zones", "A run"): the
-// Inscription, submits, the free clues, the boss's three and the veil.
+// docs/handoff/wraeclast/v2.md ("An item", "Board", "Auto spacing", "Zones"):
+// the mixed board, the Inscription and its spacing, submits, and the free
+// clues.
 
 const T0 = Date.UTC(2026, 9, 19, 12);
+const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
 
-/** A run on a clock that moves only when the test moves it. */
 function start(seed: number, tuning: Tuning = DEFAULT_TUNING) {
-  const clock = { now: T0 };
-  const run = new Run({ seed, tuning, now: () => clock.now });
+  const clock = { t: T0 };
+  const run = new Run({ seed, tuning, now: () => clock.t });
   return { run, clock };
 }
 
@@ -35,428 +40,542 @@ const tuned = (change: (t: Tuning) => void) => {
   return t;
 };
 
-const answerOf = (it: ItemPlay) => it.names.find((nm) => nm.id === it.itemId)!;
-const wrongNames = (it: ItemPlay) => it.names.filter((nm) => nm.id !== it.itemId);
-const lifted = (it: ItemPlay) => it.lifted.flatMap((up, i) => (up ? [i] : []));
+/** A name as the board compares it: no spaces, lower case. */
+const key = (text: string) => text.replace(/\s+/g, '').toLowerCase();
 
-/** Puts a board name on the answer line, syllable by syllable. */
-function build(run: Run, name: BoardName) {
-  run.clear();
-  for (const syl of name.words.flat()) assert.ok(run.place(syl), `${syl} of ${name.name} can't be placed`);
+/** The Veil the page would cut: a side x side grid, each patch touching its 4 neighbours. */
+function grid(side = 9): number[][] {
+  const out: number[][] = [];
+  for (let y = 0; y < side; y++)
+    for (let x = 0; x < side; x++) {
+      const nb: number[] = [];
+      if (x > 0) nb.push(y * side + x - 1);
+      if (x < side - 1) nb.push(y * side + x + 1);
+      if (y > 0) nb.push((y - 1) * side + x);
+      if (y < side - 1) nb.push((y + 1) * side + x);
+      out.push(nb);
+    }
+  return out;
 }
 
-/** A build that is no name: one syllable twice or more (no name in the game repeats one). */
-function nonsense(run: Run, it: ItemPlay) {
-  run.clear();
-  const syl = answerOf(it).words[0][0];
-  // Once more per miss so far: a build is sent once.
-  const syls = Array<string>(it.misses + 2).fill(syl);
-  assert.ok(!it.names.some((nm) => nm.words.flat().join('') === syls.join('')));
-  for (const s of syls) assert.ok(run.place(s));
+/** Whether patches are one connected cluster on the adjacency. */
+function connected(patches: number[], adjacency: number[][]) {
+  const all = new Set(patches);
+  const seen = new Set([patches[0]]);
+  const todo = [patches[0]];
+  while (todo.length) for (const q of adjacency[todo.pop()!]) if (all.has(q) && !seen.has(q)) seen.add(q), todo.push(q);
+  return seen.size === all.size;
 }
 
-/** Plays on to item n (0 to 14), every item before it answered right at once, and lays it out (not opened yet). */
-function reach(run: Run, n: number): ItemPlay {
+/** On to the next item, laid out (opened too unless `open` is false): through the camp or town, the threshold, the solved screen and the loot. */
+function toItem(run: Run, open = true): ItemPlay {
   const s = run.state;
   for (;;) {
-    if (s.phase === 'item' && s.done === n) return s.item!;
     if (s.phase === 'camp' || s.phase === 'town') assert.ok(run.leave());
-    else if (s.phase === 'between') assert.ok(run.next());
-    else if (s.phase === 'deal') assert.ok(run.pick(0));
-    else if (s.phase === 'item') {
-      run.open();
-      build(run, answerOf(s.item!));
-      assert.equal(run.submit(), true);
-    } else assert.fail(`the run ended before item ${n}`);
+    else if (s.phase === 'travel') assert.ok(run.enter());
+    else if (s.phase === 'solved') assert.ok(run.next());
+    else if (s.phase === 'loot') {
+      if (s.loot!.taken === null) assert.ok(run.take(0));
+      if (s.loot!.pending !== null) assert.ok(run.keep(null));
+      assert.ok(run.next());
+    } else if (s.phase === 'item') {
+      if (open && s.item!.openedAt === null) assert.ok(run.open(grid()));
+      return s.item!;
+    } else assert.fail(`no item to go to in phase ${s.phase}`);
   }
 }
 
-/** Plays a whole run: `each` gets every item as it's laid out, and whatever it leaves open is answered right. */
-function playAll(run: Run, each: (it: ItemPlay) => void) {
-  for (let n = 0; n < 15 && run.state.phase !== 'end'; n++) each(reach(run, n));
-}
-
-/** The first `count` seeds whose zone 1 is of a type. */
-function zoneOneSeeds(type: ZoneType, count: number) {
-  const seeds: number[] = [];
-  for (let seed = 1; seeds.length < count && seed < 500; seed++) if (start(seed).run.state.zones[0] === type) seeds.push(seed);
-  assert.equal(seeds.length, count);
-  return seeds;
-}
-
-const zoneOne = (type: ZoneType) => zoneOneSeeds(type, 1)[0];
-
-test('the Inscription holds the distinct syllables of every name on the board, and nothing else', () => {
-  const bad: string[] = [];
-  let boards = 0;
-  let inOrder = 0;
-  for (let seed = 1; seed <= 5; seed++)
-    playAll(start(seed).run, (it) => {
-      boards++;
-      const where = `seed ${seed}, item ${it.n}`;
-      for (const nm of it.names) if (JSON.stringify(nm.words) !== JSON.stringify(SYLLABLES[nm.id])) bad.push(`${where}: ${nm.name} not split as syllables.json`);
-      if (!it.names.some((nm) => nm.id === it.itemId)) bad.push(`${where}: the answer is not on the board`);
-      const all = [...new Set(it.names.flatMap((nm) => nm.words.flat()))];
-      if (new Set(it.tiles).size !== it.tiles.length) bad.push(`${where}: a syllable twice`);
-      if (JSON.stringify([...it.tiles].sort()) !== JSON.stringify([...all].sort())) bad.push(`${where}: ${it.tiles.join(' ')}`);
-      if (it.tiles.join('|') === all.join('|')) inOrder++;
-    });
-  assert.deepEqual(bad, []);
-  assert.ok(inOrder < boards / 2, `${inOrder} of ${boards} boards unshuffled`);
-});
-
-test('a tile of the other case ("the" for "The") builds the name all the same, and keeps it from greying', () => {
-  let found = 0;
-  for (let seed = 1; seed <= 300 && found < 3; seed++) {
-    const { run } = start(seed);
-    playAll(run, (it) => {
-      if (found >= 3) return;
-      run.open();
-      const answer = answerOf(it).words.flat();
-      const twin = (syl: string) => it.tiles.find((t) => t !== syl && t.toLowerCase() === syl.toLowerCase());
-      const at = answer.findIndex((syl) => twin(syl) !== undefined);
-      if (at < 0) return;
-      found++;
-      assert.equal(greyed(it, twin(answer[at])!), false);
-      run.clear();
-      answer.forEach((syl, i) => assert.ok(run.place(i === at ? twin(syl)! : syl)));
-      assert.equal(run.submit(), true, `${answerOf(it).name} built with ${twin(answer[at])}`);
-    });
-  }
-  assert.equal(found, 3, 'no board with a syllable in both cases');
-});
-
-test('placing a syllable never uses it up, so one can go on the line twice', () => {
-  const { run } = start(1);
-  const it = reach(run, 0);
-  run.open();
-  const tiles = [...it.tiles];
-  assert.ok(run.place(tiles[0]));
-  assert.ok(run.place(tiles[0]));
-  assert.deepEqual(it.build, [tiles[0], tiles[0]]);
-  assert.deepEqual(it.tiles, tiles);
-});
-
-test('a placed syllable comes back off the line by its place, and Clear empties the line', () => {
-  const { run } = start(1);
-  const it = reach(run, 0);
-  run.open();
-  const [a, b, c] = it.tiles;
-  for (const syl of [a, b, c]) run.place(syl);
-  assert.ok(run.unplace(1));
-  assert.deepEqual(it.build, [a, c]);
-  assert.equal(run.unplace(2), false);
-  assert.deepEqual(it.build, [a, c]);
-  assert.ok(run.unplace(0));
-  assert.deepEqual(it.build, [c]);
-  run.place(a);
-  run.place(b);
+/** Puts a board name (or any syllables) on the answer line, after its locked start. */
+function build(run: Run, what: BoardName | string[]) {
+  const it = run.state.item!;
+  const syl = Array.isArray(what) ? what : what.words.flat();
   run.clear();
-  assert.deepEqual(it.build, []);
-  assert.ok(run.place(b));
-});
+  for (const s of syl.slice(it.locked)) assert.ok(run.place(s), `placing ${s}`);
+}
 
-test('only the board\'s own syllables can be placed', () => {
-  const { run } = start(1);
-  const it = reach(run, 0);
-  run.open();
-  const elsewhere = Object.values(SYLLABLES)
-    .flatMap((words) => words.flat())
-    .find((syl) => !it.tiles.includes(syl))!;
-  assert.equal(run.place(elsewhere), false);
-  assert.equal(run.place('Wraeclast'), false);
-  assert.deepEqual(it.build, []);
-});
-
-test('a right build pays 5 (zones 1 and 2) or 7 (zones 3 and 4) times the multiplier, halved per miss and rounded down; the boss pays nothing', () => {
-  const bad: string[] = [];
-  const multipliers = new Set<number>();
-  const base = (n: number) => (n < 6 ? 5 : n < 12 ? 7 : 0);
-  const cost = (n: number) => (n < 6 ? 25 : n < 12 ? 35 : 60);
-  for (let seed = 1; seed <= 8; seed++) {
-    const { run } = start(seed, tuned((t) => (t.life = 100_000)));
-    const s = run.state;
-    playAll(run, (it) => {
-      const misses = (it.n + seed) % 4;
-      run.open();
-      const [life, gold] = [s.life, s.gold];
-      for (let k = 0; k < misses; k++) {
-        nonsense(run, it);
-        assert.equal(run.submit(), false);
-      }
-      build(run, answerOf(it));
-      assert.equal(run.submit(), true);
-      multipliers.add(it.multiplier);
-      const pay = Math.floor((base(it.n) * it.multiplier) / 2 ** misses);
-      if (s.gold - gold !== pay || it.log.gold !== pay) bad.push(`seed ${seed}, item ${it.n} (x${it.multiplier}, ${misses} misses): paid ${s.gold - gold}, logged ${it.log.gold}, not ${pay}`);
-      if (life - s.life !== misses * cost(it.n)) bad.push(`seed ${seed}, item ${it.n}: ${misses} misses cost ${life - s.life}`);
-      if (it.log.submits.length !== misses + 1) bad.push(`seed ${seed}, item ${it.n}: ${it.log.submits.length} submits logged`);
-    });
-  }
-  assert.deepEqual(bad, []);
-  assert.deepEqual([...multipliers].sort(), [1, 1.25, 1.5, 2]);
-});
-
-test('every submit counts, a build that is no name at all too, timed from when the item opened', () => {
-  const { run, clock } = start(1);
-  const s = run.state;
-  const it = reach(run, 0);
-  clock.now += 700;
-  run.open();
-  clock.now += 1500;
-  nonsense(run, it);
-  assert.equal(run.submit(), false);
-  assert.equal(s.life, 75);
-  assert.equal(it.misses, 1);
-  assert.deepEqual(it.struck, []);
-  clock.now += 2500;
-  build(run, answerOf(it));
+function answer(run: Run) {
+  build(run, answerOf(run.state.item!));
   assert.equal(run.submit(), true);
-  assert.deepEqual(
-    it.log.submits.map(({ right, ms }) => [right, ms]),
-    [
-      [false, 1500],
-      [true, 4000],
-    ],
-  );
-  assert.equal(it.log.submits[1].text, answerOf(it).name);
-  assert.equal(it.log.gold, Math.floor((5 * it.multiplier) / 2));
-});
+}
 
-test('a miss costs 25 life in zones 1 and 2, 35 in zones 3 and 4 and 60 at the boss', () => {
-  const lost: number[] = [];
-  for (let n = 0; n < 15; n++) {
-    const { run } = start(3);
-    const it = reach(run, n);
-    run.open();
-    const life = run.state.life;
-    nonsense(run, it);
-    assert.equal(run.submit(), false);
-    lost.push(life - run.state.life);
+/** A build that is no name: the answer and its first syllable once more per miss so far. */
+function nonsense(run: Run) {
+  const it = run.state.item!;
+  const syl = answerOf(it).words.flat();
+  build(run, [...syl, ...Array<string>(it.misses + 1).fill(syl[0])]);
+}
+
+/** Plays every item right, at once, until item n is laid out (and opened unless `open` is false). */
+function reach(run: Run, n: number, open = true): ItemPlay {
+  for (;;) {
+    const it = toItem(run, open);
+    if (it.n === n) return it;
+    if (it.openedAt === null) run.open(grid());
+    answer(run);
   }
-  assert.deepEqual(lost, [25, 25, 25, 25, 25, 25, 35, 35, 35, 35, 35, 35, 60, 60, 60]);
-});
+}
 
-test('a wrong build that is a board name strikes it, and the syllables no name left uses grey out and can\'t be placed', () => {
-  const bad: string[] = [];
-  let greys = 0;
-  for (let seed = 1; seed <= 20; seed++) {
-    const { run } = start(seed);
-    const it = reach(run, 0);
-    run.open();
-    // A name's syllables no other name has, in either case (the board compares them so).
-    const lower = (nm: BoardName) => nm.words.flat().map((syl) => syl.toLowerCase());
-    const own = (nm: BoardName) => lower(nm).filter((syl) => !it.names.some((other) => other !== nm && lower(other).includes(syl)));
-    const wrong = wrongNames(it).find((nm) => own(nm).length) ?? wrongNames(it)[0];
-    build(run, wrong);
-    assert.equal(run.submit(), false);
-    if (JSON.stringify(it.struck) !== JSON.stringify([wrong.id])) bad.push(`seed ${seed}: struck ${it.struck.join(', ')}, not ${wrong.id}`);
-    const left = remaining(it);
-    for (const tile of it.tiles) {
-      const grey = !left.some((nm) => lower(nm).includes(tile.toLowerCase()));
-      greys += +grey;
-      if (grey !== own(wrong).includes(tile.toLowerCase())) bad.push(`seed ${seed}: ${tile} grey ${grey}`);
-      if (greyed(it, tile) !== grey) bad.push(`seed ${seed}: greyed(${tile}) says ${!grey}`);
-      run.clear();
-      if (run.place(tile) === grey) bad.push(`seed ${seed}: ${tile} ${grey ? 'placed though greyed' : 'not placed'}`);
+/** Every item of a run as it's laid out, then opened, then answered right; `each` gets it once opened. */
+function playAll(run: Run, each: (it: ItemPlay) => void = () => {}) {
+  for (let n = 0; n < 15 && run.state.phase !== 'end'; n++) {
+    const it = reach(run, n);
+    each(it);
+    if (run.state.phase === 'item') answer(run);
+  }
+  // The boss's last: on to the end.
+  if (run.state.phase === 'solved') assert.ok(run.next());
+}
+
+/** The first open item, over seeds from 1, that `fits`. */
+function find(fits: (it: ItemPlay, run: Run) => boolean, tuning?: Tuning, seeds = 200) {
+  for (let seed = 1; seed <= seeds; seed++) {
+    const { run, clock } = start(seed, tuning);
+    for (let n = 0; n < 15; n++) {
+      const it = reach(run, n);
+      if (fits(it, run)) return { run, clock, it };
+      answer(run);
     }
   }
-  assert.deepEqual(bad, []);
-  assert.ok(greys > 0);
-});
-
-test("a build already sent on the item, or a struck name, can't be sent again: a miss never costs life twice", () => {
-  const { run } = start(zoneOne('plain'));
-  const s = run.state;
-  const it = reach(run, 0);
-  run.open();
-  nonsense(run, it);
-  assert.equal(run.blocked(), null);
-  assert.equal(run.submit(), false);
-  const life = s.life;
-  // The same build again, still on the line or built afresh.
-  assert.equal(run.blocked(), 'tried');
-  assert.equal(run.canSubmit(), false);
-  assert.equal(run.submit(), null);
-  const sent = [...it.build];
-  run.clear();
-  for (const syl of sent) run.place(syl);
-  assert.equal(run.submit(), null);
-  // A board name, once struck (its own syllables grey out, so it is laid on the line here).
-  const wrong = wrongNames(it)[0];
-  build(run, wrong);
-  assert.equal(run.submit(), false);
-  it.build = wrong.words.flat();
-  assert.equal(run.blocked(), 'struck');
-  assert.equal(run.submit(), null);
-  assert.equal(s.life, life - 25);
-  assert.equal(it.misses, 2);
-  assert.equal(it.log.submits.length, 2);
-  // Something new can be sent.
-  nonsense(run, it);
-  assert.equal(run.blocked(), null);
-  assert.equal(run.canSubmit(), true);
-});
-
-test('every wrong board name built is struck, down to the answer alone', () => {
-  const { run } = start(zoneOne('plain'));
-  const s = run.state;
-  const it = reach(run, 0);
-  run.open();
-  assert.equal(it.names.length, 4);
-  for (const nm of wrongNames(it)) {
-    build(run, nm);
-    assert.equal(run.submit(), false);
-  }
-  assert.deepEqual([...it.struck].sort(), wrongNames(it).map((nm) => nm.id).sort());
-  assert.deepEqual(remaining(it).map((nm) => nm.id), [it.itemId]);
-  assert.equal(s.life, 25);
-  assert.deepEqual(
-    [...new Set(it.tiles.filter((tile) => !greyed(it, tile)).map((tile) => tile.toLowerCase()))].sort(),
-    [...new Set(answerOf(it).words.flat().map((syl) => syl.toLowerCase()))].sort(),
-  );
-  build(run, answerOf(it));
-  assert.equal(run.submit(), true);
-  assert.equal(it.log.gold, Math.floor((5 * it.multiplier) / 8));
-});
-
-/** What an item of each zone type opens with when its free clue is on. */
-function freeClueOf(type: ZoneType, it: ItemPlay) {
-  const clues = CLUES[it.itemId];
-  const none = { freeClue: 'none', patches: 0, shown: { req: false, mods: 0, flavor: false } };
-  if (type === 'plain') return { ...none, freeClue: 'patch', patches: 1 };
-  if (type === 'blight') return { ...none, freeClue: 'patches', patches: 2 };
-  if (type === 'incursion') return clues.flavor === null ? null : { ...none, freeClue: 'flavor', shown: { ...none.shown, flavor: true } };
-  return clues.mods.length ? { ...none, freeClue: 'mod', shown: { ...none.shown, mods: 1 } } : null;
+  assert.fail('no item fits');
 }
 
-const opened = (it: ItemPlay) => ({ freeClue: it.freeClue, patches: lifted(it).length, shown: { ...it.shown } });
+/** The first `count` seeds from 1 whose zones fit. */
+function seedsWhere(fits: (zones: ZoneType[]) => boolean, count: number) {
+  const out: number[] = [];
+  for (let seed = 1; out.length < count; seed++) if (fits(new Run({ seed, now: () => T0 }).state.zones)) out.push(seed);
+  return out;
+}
 
-test('each zone gives its free clue as an item opens: Plain one patch, Blight two, Incursion the flavour text, Ritual the first mod line', () => {
+const wrong = (it: ItemPlay) => it.names.filter((nm) => nm.id !== it.itemId);
+
+// ---- The board ----
+
+test('boards hold 4 names in zones 1 and 2, 6 in 3 and 4, 10 at the boss, Blight 2 more', () => {
+  assert.deepEqual(DEFAULT_TUNING.board, { early: 4, late: 6, boss: 10 });
+  for (const seed of [...seedsWhere((z) => z.indexOf('blight') < 2, 3), ...seedsWhere((z) => z.indexOf('blight') >= 2, 3)]) {
+    const { run } = start(seed);
+    const sizes: number[] = [];
+    playAll(run, (it) => sizes.push(it.names.length));
+    const want = sizes.map((_, n) => {
+      const blight = n < 12 && run.state.zones[Math.floor(n / 3)] === 'blight' ? 2 : 0;
+      return (n < 6 ? 4 : n < 12 ? 6 : 10) + blight;
+    });
+    assert.deepEqual(sizes, want, `seed ${seed}, zones ${run.state.zones}`);
+    assert.deepEqual(
+      run.state.log.items.map((it) => it.names),
+      want,
+    );
+  }
+});
+
+test("boards hold the tuning's names, and never more than 10 with Blight's", () => {
+  const tuning = tuned((t) => (t.board = { early: 9, late: 3, boss: 7 }));
+  for (const seed of seedsWhere((z) => z.indexOf('blight') < 2, 2)) {
+    const { run } = start(seed, tuning);
+    const sizes: number[] = [];
+    playAll(run, (it) => sizes.push(it.names.length));
+    const want = sizes.map((_, n) => {
+      const blight = n < 12 && run.state.zones[Math.floor(n / 3)] === 'blight' ? 2 : 0;
+      return Math.min(10, (n < 6 ? 9 : n < 12 ? 3 : 7) + blight);
+    });
+    assert.deepEqual(sizes, want);
+    assert.ok(sizes.includes(10), 'Blight at 9 names stops at 10');
+  }
+});
+
+test('half the wrong names, rounded down, are of the answer\'s own category, the rest of others', () => {
   const bad: string[] = [];
-  const seen = new Map<ZoneType, number>();
-  const plainPatches = new Set<number>();
+  for (let seed = 1; seed <= 10; seed++) {
+    const { run } = start(seed);
+    playAll(run, (it) => {
+      const k = it.names.length - 1;
+      const own = wrong(it).filter((nm) => BY_ID.get(nm.id)!.category === it.category).length;
+      if (own !== Math.floor(k / 2)) bad.push(`seed ${seed}, item ${it.n}: ${own} of ${k} own`);
+      if (BY_ID.get(it.itemId)!.category !== it.category) bad.push(`seed ${seed}, item ${it.n}: answer of another category`);
+    });
+  }
+  assert.deepEqual(bad, []);
+});
+
+test("the share of wrong names from other categories is the tuning's: 0 and 100", () => {
+  for (const otherNames of [0, 100]) {
+    const { run } = start(3, tuned((t) => (t.otherNames = otherNames)));
+    playAll(run, (it) => {
+      const others = wrong(it).filter((nm) => BY_ID.get(nm.id)!.category !== it.category).length;
+      assert.equal(others, otherNames ? it.names.length - 1 : 0, `${otherNames}%, item ${it.n}`);
+    });
+  }
+});
+
+test('no board holds a name twice, and the answer is on it once', () => {
+  for (let seed = 1; seed <= 10; seed++) {
+    const { run } = start(seed);
+    playAll(run, (it) => {
+      assert.equal(new Set(it.names.map((nm) => nm.id)).size, it.names.length);
+      assert.equal(new Set(it.names.map((nm) => key(nm.name))).size, it.names.length);
+      assert.equal(it.names.filter((nm) => nm.id === it.itemId).length, 1);
+      for (const nm of it.names) assert.deepEqual([nm.name, nm.words], [BY_ID.get(nm.id)!.name, SYLLABLES[nm.id]]);
+    });
+  }
+});
+
+test('the tiles are the distinct syllables of every name on the board, lower case, each once', () => {
   for (let seed = 1; seed <= 6; seed++) {
     const { run } = start(seed);
     playAll(run, (it) => {
-      const type = run.zoneType(it.zoneNo);
-      if (!type) return;
-      run.open();
-      const want = freeClueOf(type, it);
-      if (!want) return;
-      seen.set(type, (seen.get(type) ?? 0) + 1);
-      if (type === 'plain') plainPatches.add(lifted(it)[0]);
-      if (JSON.stringify(opened(it)) !== JSON.stringify(want)) bad.push(`seed ${seed}, item ${it.n} (${type}): ${JSON.stringify(opened(it))}`);
-      if (it.log.freeClue !== want.freeClue || it.log.patches !== want.patches) bad.push(`seed ${seed}, item ${it.n} (${type}): logged ${it.log.freeClue}, ${it.log.patches} patches`);
+      const want = new Set(it.names.flatMap((nm) => nm.words.flat()));
+      assert.equal(it.tiles.length, want.size);
+      assert.deepEqual(new Set(it.tiles), want);
+      assert.ok(it.tiles.every((t) => t === t.toLowerCase() && t.length > 0));
     });
   }
-  assert.deepEqual(bad, []);
-  assert.deepEqual([...seen.keys()].sort(), ['blight', 'incursion', 'plain', 'ritual']);
-  assert.ok(plainPatches.size > 3, 'the free patch is always in the same few places');
 });
 
-test('turning a zone type\'s free clue off in the tuning leaves its items with none, and the other types theirs', () => {
-  const bad: string[] = [];
-  const none = { freeClue: 'none', patches: 0, shown: { req: false, mods: 0, flavor: false } };
-  for (const off of ['plain', 'incursion', 'ritual', 'blight'] as const) {
-    const { run } = start(2, tuned((t) => (t.freeClue[off] = false)));
-    playAll(run, (it) => {
-      const type = run.zoneType(it.zoneNo);
-      if (!type) return;
-      run.open();
-      const want = type === off ? none : freeClueOf(type, it);
-      if (want && JSON.stringify(opened(it)) !== JSON.stringify(want)) bad.push(`${off} off, item ${it.n} (${type}): ${JSON.stringify(opened(it))}`);
-    });
-  }
-  assert.deepEqual(bad, []);
-});
-
-test('the boss\'s first item opens with one patch lifted, its second and third with nothing', () => {
-  const got: unknown[] = [];
-  for (const seed of [1, 2, 3]) {
+test('the tiles are shuffled, not in the order the names read', () => {
+  let inOrder = 0;
+  let boards = 0;
+  for (let seed = 1; seed <= 4; seed++) {
     const { run } = start(seed);
     playAll(run, (it) => {
-      if (it.boss === null) return;
-      assert.equal(it.n, 12 + it.boss);
-      run.open();
-      got.push([seed, it.boss, opened(it)]);
+      boards++;
+      if (it.tiles.join('|') === [...new Set(it.names.flatMap((nm) => nm.words.flat()))].join('|')) inOrder++;
     });
   }
-  const none = { req: false, mods: 0, flavor: false };
-  assert.deepEqual(
-    got,
-    [1, 2, 3].flatMap((seed) => [
-      [seed, 0, { freeClue: 'patch', patches: 1, shown: none }],
-      [seed, 1, { freeClue: 'none', patches: 0, shown: none }],
-      [seed, 2, { freeClue: 'none', patches: 0, shown: none }],
-    ]),
-  );
+  assert.ok(inOrder < boards / 4, `${inOrder} of ${boards}`);
 });
 
-test('the boss is Silent: only Flares work, and on its third item a Flare lifts one patch', () => {
-  const { run } = start(4, tuned((t) => (t.gold = 100)));
-  const s = run.state;
-  for (const supply of [...SUPPLIES, 'flare', 'flare'] as const) assert.ok(run.buy(supply));
-  const usable = () => SUPPLIES.filter((supply) => run.canUse(supply));
-  const flares: number[] = [];
-  for (const n of [12, 13, 14]) {
-    const it = reach(run, n);
-    run.open();
-    assert.deepEqual(usable(), ['flare'], `boss item ${n - 11}`);
-    assert.deepEqual(SUPPLIES.filter((supply) => run.works(supply)), ['flare']);
-    assert.ok(run.use('flare'));
-    flares.push(it.flare);
-    const before = covered(it);
-    while (it.flare > 0) assert.ok(run.lift(it.lifted.indexOf(false)));
-    assert.equal(run.lift(it.lifted.indexOf(false)), false);
-    assert.equal(before - covered(it), flares.at(-1));
+test('wrong names look alike: they share more syllables with the answer than random names of the same side would', () => {
+  const sharedWith = (a: string, b: string) => {
+    const mine = new Set(SYLLABLES[a].flat());
+    return new Set(SYLLABLES[b].flat().filter((s) => mine.has(s))).size;
+  };
+  let picked = 0;
+  let pickedN = 0;
+  let chance = 0;
+  let chanceN = 0;
+  for (let seed = 1; seed <= 10; seed++) {
+    const { run } = start(seed);
+    playAll(run, (it) => {
+      for (const nm of wrong(it)) {
+        picked += sharedWith(it.itemId, nm.id);
+        pickedN++;
+        const same = BY_ID.get(nm.id)!.category === it.category;
+        const pool = ITEMS.filter((o) => o.id !== it.itemId && (o.category === it.category) === same);
+        chance += pool.reduce((t, o) => t + sharedWith(it.itemId, o.id), 0) / pool.length;
+        chanceN++;
+      }
+    });
   }
-  assert.deepEqual(flares, [2, 2, 1]);
-  assert.deepEqual(s.pack, ['requirement', 'wisdom', 'strike', 'lore']);
+  const mean = picked / pickedN;
+  const random = chance / chanceN;
+  assert.ok(mean > random * 2, `wrong names share ${mean.toFixed(2)} syllables on average, random ones ${random.toFixed(2)}`);
 });
 
-test('open lifts the free patches among those the art covers, and anywhere when it covers too few', () => {
-  const art = (cells: number[]) => Array.from({ length: PATCHES }, (_, i) => (cells.includes(i) ? 0.6 : 0));
-  const bad: string[] = [];
-  for (const seed of zoneOneSeeds('blight', 4)) {
+test('boards vary: the same answer gets other wrong names in other runs', () => {
+  const boards = new Map<string, Set<string>>();
+  for (let seed = 1; seed <= 120; seed++) {
     const { run } = start(seed);
     const it = reach(run, 0);
-    run.open(art([5, 10]));
-    if (lifted(it).join() !== '5,10') bad.push(`blight, seed ${seed}: ${lifted(it).join()}`);
+    const names = wrong(it).map((nm) => nm.id).sort().join(',');
+    boards.set(it.itemId, (boards.get(it.itemId) ?? new Set()).add(names));
   }
-  for (const cell of [0, 7, 15]) {
-    const { run } = start(zoneOne('plain'));
-    const it = reach(run, 0);
-    run.open(art([cell]));
-    if (lifted(it).join() !== String(cell)) bad.push(`plain on ${cell}: ${lifted(it).join()}`);
-  }
-  {
-    const { run } = start(zoneOne('blight'));
-    const it = reach(run, 0);
-    run.open(art([3]));
-    if (!it.lifted[3] || lifted(it).length !== 2) bad.push(`blight on 3 alone: ${lifted(it).join()}`);
-  }
-  {
-    const { run } = start(zoneOne('blight'));
-    const it = reach(run, 0);
-    run.open(art([]));
-    if (lifted(it).length !== 2) bad.push(`blight on no art: ${lifted(it).join()}`);
-  }
-  {
-    const { run } = start(5);
-    const it = reach(run, 12);
-    run.open(art([9]));
-    if (lifted(it).join() !== '9') bad.push(`boss item 1 on 9: ${lifted(it).join()}`);
-  }
-  assert.deepEqual(bad, []);
+  const repeated = [...boards.values()].filter((b) => b.size > 1);
+  assert.ok(repeated.length > 0);
 });
 
-test('the veil is a 4 x 4 grid: 16 patches, every one down until the item opens', () => {
-  assert.equal(PATCHES, 16);
-  const { run } = start(zoneOne('plain'));
+// ---- The Inscription ----
+
+test('a syllable is placed, taken back by its place on the line, and Clear empties the line', () => {
+  const { run } = start(1);
   const it = reach(run, 0);
-  assert.equal(it.lifted.length, 16);
-  assert.equal(covered(it), 16);
-  run.open();
-  assert.equal(covered(it), 15);
+  const [a, b, c] = it.tiles;
+  assert.ok(run.place(a));
+  assert.ok(run.place(b));
+  assert.ok(run.place(c));
+  assert.deepEqual(it.build, [a, b, c]);
+  assert.ok(run.unplace(1));
+  assert.deepEqual(it.build, [a, c]);
+  assert.equal(run.unplace(2), false);
+  assert.equal(run.unplace(-1), false);
+  assert.ok(run.clear());
+  assert.deepEqual(it.build, []);
+  assert.equal(run.clear(), false);
+  assert.equal(run.place('no such tile'), false);
+  assert.equal(run.submit(), null, 'nothing built');
+});
+
+test('a syllable can be placed more than once', () => {
+  const { run } = start(2);
+  const it = reach(run, 0);
+  for (let k = 0; k < 4; k++) assert.ok(run.place(it.tiles[0]));
+  assert.deepEqual(it.build, Array(4).fill(it.tiles[0]));
+});
+
+test('nothing is placed on an item laid out but not open', () => {
+  const { run } = start(3);
+  const it = reach(run, 0, false);
+  assert.equal(run.place(it.tiles[0]), false);
+  assert.equal(run.clear(), false);
+  assert.equal(run.unplace(0), false);
+});
+
+test("a miss on one of the board's names strikes it, and a syllable no remaining name uses is greyed out and can't be placed", () => {
+  // A wrong name with a syllable no other name on the board uses.
+  const lone = (it: ItemPlay) =>
+    wrong(it)
+      .map((nm) => ({ nm, syl: nm.words.flat().find((s) => it.names.every((o) => o.id === nm.id || !o.words.flat().includes(s))) }))
+      .find((x) => x.syl);
+  const { run, it } = find((it) => !!lone(it));
+  const { nm, syl } = lone(it)!;
+  const life = run.state.life;
+  build(run, nm);
+  assert.equal(run.submit(), false);
+  assert.deepEqual([it.struck, it.misses, it.log.misses, run.state.log.misses], [[nm.id], 1, 1, 1]);
+  assert.ok(run.state.life < life);
+  assert.ok(!remaining(it).includes(nm));
+  assert.ok(greyed(it, syl!));
+  assert.ok(it.tiles.includes(syl!), 'a greyed tile stays on the board');
+  run.clear();
+  assert.equal(run.place(syl!), false);
+  assert.ok(!greyed(it, answerOf(it).words[0][0]));
+});
+
+test('every submit counts: a build that is no name costs life and a miss, and strikes nothing', () => {
+  const { run } = start(4);
+  const it = reach(run, 0);
+  nonsense(run);
+  const life = run.state.life;
+  assert.equal(run.submit(), false);
+  assert.deepEqual([it.misses, it.struck], [1, []]);
+  assert.ok(run.state.life < life);
+  assert.deepEqual(it.log.submits.map((s) => s.right), [false]);
+});
+
+test("a struck name can't be sent again, and costs nothing more", () => {
+  // A wrong name whose every syllable another name uses too, so it can still be built once struck.
+  const shared = (it: ItemPlay) => wrong(it).find((nm) => nm.words.flat().every((s) => it.names.some((o) => o.id !== nm.id && o.words.flat().includes(s))));
+  const { run, it } = find((it) => !!shared(it));
+  const nm = shared(it)!;
+  build(run, nm);
+  assert.equal(run.submit(), false);
+  const life = run.state.life;
+  build(run, nm);
+  assert.deepEqual([run.blocked(), run.canSubmit(), run.submit()], ['struck', false, null]);
+  assert.deepEqual([run.state.life, it.misses, it.log.submits.length], [life, 1, 1]);
+});
+
+test("a build already sent can't be sent again, and costs nothing more", () => {
+  const { run } = start(5);
+  const it = reach(run, 0);
+  nonsense(run);
+  const sent = [...it.build];
+  assert.equal(run.blocked(), null);
+  assert.equal(run.submit(), false);
+  const life = run.state.life;
+  build(run, sent);
+  assert.deepEqual([run.blocked(), run.canSubmit(), run.submit()], ['tried', false, null]);
+  assert.deepEqual([run.state.life, it.misses, it.log.submits.length], [life, 1, 1]);
+  // One more syllable makes it a new build.
+  assert.ok(run.place(sent[0]));
+  assert.equal(run.blocked(), null);
+});
+
+test('the right answer names the item, after misses too', () => {
+  const { run, clock } = start(6);
+  const it = reach(run, 0);
+  clock.t += 1000;
+  nonsense(run);
+  assert.equal(run.submit(), false);
+  clock.t += 2000;
+  answer(run);
+  assert.equal(run.state.phase, 'solved');
+  assert.deepEqual(
+    it.log.submits.map((s) => [s.right, s.ms]),
+    [
+      [false, 1000],
+      [true, 3000],
+    ],
+  );
+  assert.deepEqual([run.place(it.tiles[0]), run.submit()], [false, null]);
+});
+
+// ---- Auto spacing ----
+
+test('auto spacing puts a space before a syllable that starts a word in any name on the board, never first', () => {
+  const bad: string[] = [];
+  for (let seed = 1; seed <= 6; seed++) {
+    const { run } = start(seed);
+    playAll(run, (it) => {
+      const starts = new Set(it.names.flatMap((nm) => nm.words.map((w) => w[0])));
+      for (const t of it.tiles) if (startsWord(it, t) !== starts.has(t)) bad.push(`${t}: startsWord ${startsWord(it, t)}`);
+      // Every tile once, in the board's order, then once more in reverse.
+      it.build = [...it.tiles, ...[...it.tiles].reverse()];
+      const want = it.build.map((s, i) => (i > 0 && starts.has(s) && !it.build[i - 1].endsWith('-') ? ' ' + s : s)).join('');
+      if (buildText(it, true) !== want) bad.push(`seed ${seed}, item ${it.n}: ${buildText(it, true)}`);
+      if (buildText(it, false) !== it.build.join('')) bad.push(`seed ${seed}, item ${it.n}: spacing off`);
+      it.build = [];
+    });
+  }
+  assert.deepEqual(bad, []);
+});
+
+test("auto spacing spaces the answer's words, and also a syllable inside its word that starts a word in another name", () => {
+  // An answer with a syllable inside a word that starts a word in another name on the board.
+  const inner = (it: ItemPlay) => answerOf(it).words.some((w) => w.slice(1).some((s) => startsWord(it, s)));
+  const { run, it } = find(inner);
+  const a = answerOf(it);
+  build(run, a);
+  const text = buildText(it, true);
+  // Every word of the answer starts after a space (but the first).
+  const pieces = text.split(' ');
+  assert.ok(pieces.length > a.words.length, `${text} spaces more than ${a.name}`);
+  assert.equal(key(text), key(a.name));
+  for (const w of a.words.slice(1)) assert.ok(text.includes(' ' + w[0]), `${text}: no space before ${w[0]}`);
+  assert.equal(run.submit(), true, 'the extra space never makes it wrong');
+});
+
+test('a right answer is right with spacing on and off, and the log keeps the text as the line showed it', () => {
+  for (const spacing of [true, false]) {
+    const { run } = start(7, tuned((t) => (t.spacing = spacing)));
+    playAll(run);
+    const log = run.state.log;
+    assert.deepEqual([log.result, log.spacing, log.misses], ['win', spacing, 0]);
+    for (const it of log.items) {
+      const [sub] = it.submits;
+      assert.equal(sub.right, true);
+      assert.equal(key(sub.text), key(it.name));
+      if (!spacing) assert.ok(!sub.text.includes(' '), sub.text);
+    }
+    if (spacing) assert.ok(log.items.filter((it) => it.submits[0].text.includes(' ')).length >= 8);
+  }
+});
+
+test("a wrong name of the board's is built with the same spaces, so the spacing never confirms the answer", () => {
+  const { run, it } = find((it) => wrong(it).some((nm) => nm.words.length > 1));
+  const nm = wrong(it).find((n) => n.words.length > 1)!;
+  build(run, nm);
+  const text = buildText(it, true);
+  for (const w of nm.words.slice(1)) assert.ok(text.includes(' ' + w[0]));
+  assert.equal(run.submit(), false);
+  assert.equal(it.log.submits[0].text, text);
+});
+
+// ---- Free clues ----
+
+test('a Plain zone shows one common mod line, or the word lengths when the item has none', () => {
+  const seen = { mod: 0, lengths: 0 };
+  for (const seed of seedsWhere(() => true, 60)) {
+    const { run } = start(seed);
+    const z = run.state.zones.indexOf('plain');
+    for (let n = z * 3; n < z * 3 + 3; n++) {
+      const it = reach(run, n);
+      const common = commonLines(CLUES[it.itemId]);
+      if (common.length) {
+        assert.deepEqual([it.freeClue, it.shown.mods.length, it.shown.flavor, it.shown.lengths], ['mod', 1, false, false]);
+        assert.ok(common.includes(it.shown.mods[0]));
+        assert.ok(CLUES[it.itemId].mods[it.shown.mods[0]][2] >= 3);
+        seen.mod++;
+      } else {
+        assert.deepEqual([it.freeClue, it.shown.mods, it.shown.lengths], ['lengths', [], true]);
+        seen.lengths++;
+      }
+      assert.deepEqual([it.burned, it.log.freeClue], [[], it.freeClue]);
+      answer(run);
+    }
+  }
+  assert.ok(seen.mod > 0 && seen.lengths > 0, JSON.stringify(seen));
+});
+
+test('an Incursion zone shows the flavour text', () => {
+  for (const seed of seedsWhere(() => true, 10)) {
+    const { run } = start(seed);
+    const z = run.state.zones.indexOf('incursion');
+    for (let n = z * 3; n < z * 3 + 3; n++) {
+      const it = reach(run, n);
+      assert.ok(CLUES[it.itemId].flavor);
+      assert.deepEqual([it.freeClue, it.shown, it.burned], ['flavor', { mods: [], flavor: true, lengths: false }, []]);
+      answer(run);
+    }
+  }
+});
+
+test("a Ritual zone shows the answer's word lengths", () => {
+  for (const seed of seedsWhere(() => true, 10)) {
+    const { run } = start(seed);
+    const z = run.state.zones.indexOf('ritual');
+    for (let n = z * 3; n < z * 3 + 3; n++) {
+      const it = reach(run, n);
+      assert.deepEqual([it.freeClue, it.shown, it.burned], ['lengths', { mods: [], flavor: false, lengths: true }, []]);
+      assert.deepEqual(lengthsOf(it), SYLLABLES[it.itemId].map((w) => w.length));
+      answer(run);
+    }
+  }
+});
+
+test('a Blight zone burns in 2 neighbouring patches as the item opens', () => {
+  for (const seed of seedsWhere(() => true, 10)) {
+    const { run, clock } = start(seed);
+    const z = run.state.zones.indexOf('blight');
+    for (let n = z * 3; n < z * 3 + 3; n++) {
+      const it = reach(run, n, false);
+      assert.deepEqual([it.freeClue, it.burned], ['burn', []]);
+      clock.t += 700;
+      assert.ok(run.open(grid()));
+      assert.equal(it.burned.length, 2);
+      assert.ok(connected(it.burned, grid()), `${it.burned}`);
+      assert.deepEqual(it.log.burnIns, [{ by: 'zone', patches: 2, ms: 0 }]);
+      assert.deepEqual(it.shown, { mods: [], flavor: false, lengths: false });
+      answer(run);
+    }
+  }
+});
+
+test("the boss's first item opens with a burn-in of 4, its second and third with nothing", () => {
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const { run } = start(seed);
+    const first = reach(run, 12);
+    assert.deepEqual([first.freeClue, first.burned.length, first.log.burnIns.map((b) => [b.by, b.patches])], ['burn', 4, [['boss', 4]]]);
+    assert.ok(connected(first.burned, grid()));
+    answer(run);
+    for (const n of [13, 14]) {
+      const it = reach(run, n);
+      assert.deepEqual([it.freeClue, it.burned, it.shown, it.log.burnIns], ['none', [], { mods: [], flavor: false, lengths: false }, []]);
+      answer(run);
+    }
+  }
+});
+
+test("a zone type's free clue turned off gives its items none, and leaves the other zones and the boss's as they were", () => {
+  const bad: string[] = [];
+  for (const off of ZONE_TYPES) {
+    const freeClue = Object.fromEntries(ZONE_TYPES.map((z) => [z, z !== off])) as Tuning['freeClue'];
+    const { run } = start(8, tuned((t) => (t.freeClue = freeClue)));
+    const clues: string[] = [];
+    playAll(run, (it) => {
+      const zone = it.zoneType;
+      if (zone === off) {
+        const got = { clue: it.freeClue, shown: it.shown, burned: it.burned.length };
+        if (JSON.stringify(got) !== JSON.stringify({ clue: 'none', shown: { mods: [], flavor: false, lengths: false }, burned: 0 })) bad.push(`${off} off, item ${it.n}: ${JSON.stringify(got)}`);
+      }
+      clues.push(it.freeClue);
+    });
+    const want = run.state.zones.flatMap((z) => Array(3).fill(z === off ? 'none' : z === 'plain' ? 'plain' : { incursion: 'flavor', ritual: 'lengths', blight: 'burn' }[z]));
+    clues.slice(0, 12).forEach((c, n) => {
+      const w = want[n];
+      if (w === 'plain' ? c !== 'mod' && c !== 'lengths' : c !== w) bad.push(`${off} off, item ${n}: ${c}, not ${w}`);
+    });
+    if (clues.slice(12).join() !== 'burn,none,none') bad.push(`${off} off: the boss's ${clues.slice(12)}`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('the item logs its free clue and board, the answer marked', () => {
+  const { run } = start(9);
+  playAll(run, (it) => {
+    assert.equal(it.log.freeClue, it.freeClue);
+    assert.deepEqual(
+      it.log.board,
+      it.names.map((nm) => (nm.id === it.itemId ? { name: nm.name, answer: true } : { name: nm.name })),
+    );
+  });
 });

@@ -1,10 +1,10 @@
 <script lang="ts">
-  // What the pack holds, each supply once with how many: at the vendors.
-  import { PACK_SLOTS, SUPPLIES, SUPPLY_NAMES, type Run } from './rules';
+  // What the pack holds, each ware once with how many: at the vendors.
+  import { PACK_SLOTS, WARES, WARE_NAMES, type Run } from './rules';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
-  const held = $derived(SUPPLIES.map((sup) => ({ sup, count: s.pack.filter((p) => p === sup).length })).filter((h) => h.count));
+  const held = $derived(WARES.map((sup) => ({ sup, count: s.pack.filter((p) => p === sup).length })).filter((h) => h.count));
 </script>
 
 <div class="pack">
@@ -16,11 +16,11 @@
   {#if held.length}
     <ul class="held">
       {#each held as h (h.sup)}
-        <li>{SUPPLY_NAMES[h.sup]} <span class="n">× {h.count}</span></li>
+        <li>{WARE_NAMES[h.sup]} <span class="n">× {h.count}</span></li>
       {/each}
     </ul>
   {:else}
-    <p class="muted">Eight slots, one supply each.</p>
+    <p class="muted">Eight slots, one ware each.</p>
   {/if}
 </div>
 

@@ -1,97 +1,180 @@
 <script lang="ts">
-  // The Veil: the item's art under a 4 x 4 grid of patches. The art is loaded
-  // and decoded first, then measured (how much of each patch it fills), and
-  // only then does the item open (run.open): the zone's free patches lift
-  // where there is art to see, and its clock starts. With a Flare in hand,
-  // the covered patches can be tapped to lift them. A small or narrow item's
-  // box is kept big enough to tap (its art letterboxed in it), and measured
-  // as drawn there; a patch over the letterbox alone covers nothing, so the
-  // run is told (run.setBare): it's drawn empty and can't be tapped.
-  import { onMount, untrack } from 'svelte';
+  // The Veil: the item's art cut into small organic patches (the game's own
+  // cut, lib/patches.ts, about tuning.seeds a side over the art), burned in as
+  // the game burns its veiled art (lib/materialize.ts, lib/frontier.ts). The
+  // art is decoded and cut first; the run is then told which patches touch
+  // which (run.open), and burns in a cluster of them at a time (a Flare, the
+  // zone's free burn-in, Unveiled). Each patch the run burns comes in here, a
+  // few at a time; a right answer burns in the rest quickly (the finale).
+  import { onMount } from 'svelte';
   import { itemImage } from '../lib/ui-paths';
-  import { GRID, PATCHES, reach, type Run } from './rules';
+  import { labelPatches, litMask, patchShapes, spreadOrder, type PatchShape } from '../lib/patches';
+  import { VeilCut } from '../lib/veilCut';
+  import { materialize, FINALE_MS, type BurnParams } from '../lib/materialize';
+  import { frontier } from '../lib/frontier';
+  import type { ShownPatch } from '../lib/media.svelte';
+  import { sfx } from '../lib/sound';
+  import { gridAdjacency, itemOf, type Run } from './rules';
 
   let { run }: { run: Run } = $props();
   const it = $derived(run.state.item!);
-  const item = $derived(run.engine.byId.get(it.itemId)!);
-  const url = $derived(itemImage(it.itemId));
-  let shown = $state(false);
-  const armed = $derived(reach(it) > 0);
-  let fit = $state<HTMLElement>();
-  let boxW = $state(0);
-  let boxH = $state(0);
+  const item = $derived(itemOf(it.itemId));
+  const W = $derived(item.w);
+  const H = $derived(item.h);
+  const named = $derived(run.state.phase === 'solved');
 
-  /** The patches (row by row) all but wholly outside the art's own box, in a box widened or heightened to be tapped. */
-  const outside = $derived.by(() => {
-    if (!boxW || !boxH) return Array<boolean>(PATCHES).fill(false);
-    const k = Math.min(boxW / item.w, boxH / item.h);
-    // How much of row or column i's span (0 to 1) lies over the art, which fills `a` of the box's span, centred.
-    const over = (i: number, a: number) => Math.max(0, Math.min((i + 1) / GRID, (1 + a) / 2) - Math.max(i / GRID, (1 - a) / 2)) * GRID;
-    return Array.from({ length: PATCHES }, (_, p) => over(p % GRID, (item.w * k) / boxW) < 0.15 || over(Math.floor(p / GRID), (item.h * k) / boxH) < 0.15);
-  });
-  // The run counts only the patches there's something under (as the box is laid out now).
-  $effect(() => {
-    const bare = outside;
-    untrack(() => run.setBare(bare));
-  });
+  /** How long a patch takes to burn in, ms. */
+  const BURN = 1300;
+  /** Between one patch of a burn-in and the next, ms. */
+  const GAP = 160;
 
-  /** How much of each patch the art fills (0 to 1, row by row), as it's drawn in its box, or null if it can't be read. */
-  function coverage(img: HTMLImageElement): number[] | null {
-    try {
-      const N = 64;
-      const per = N / GRID;
-      const c = document.createElement('canvas');
-      c.width = c.height = N;
-      const g = c.getContext('2d', { willReadFrequently: true });
-      const box = fit?.getBoundingClientRect();
-      if (!g || !box?.width || !box.height || !img.naturalWidth || !img.naturalHeight) return null;
-      // The art as object-fit: contain draws it: as big as fits, centred.
-      const k = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
-      const w = (N * img.naturalWidth * k) / box.width;
-      const h = (N * img.naturalHeight * k) / box.height;
-      g.drawImage(img, (N - w) / 2, (N - h) / 2, w, h);
-      const d = g.getImageData(0, 0, N, N).data;
-      const filled = Array<number>(PATCHES).fill(0);
-      for (let y = 0; y < N; y++)
-        for (let x = 0; x < N; x++) if (d[(y * N + x) * 4 + 3] > 40) filled[Math.floor(y / per) * GRID + Math.floor(x / per)]++;
-      return filled.map((f) => f / (per * per));
-    } catch {
-      return null;
-    }
+  let shapes = $state.raw<PatchShape[]>([]);
+  let cut: VeilCut<HTMLCanvasElement> | null = null;
+  let order: number[] = [];
+  /** The patches on the page, in the order they came in. */
+  let shown = $state<ShownPatch[]>([]);
+  /** The art couldn't be cut (it didn't load): shown whole once named. */
+  let plain = $state(false);
+  let quick = $state(false);
+  let timers: ReturnType<typeof setTimeout>[] = [];
+
+  /** Which patches touch which, from their edges ((x, y, patch) triples). */
+  const adjacencyOf = (list: PatchShape[]) =>
+    list.map((p) => {
+      const near = new Set<number>();
+      for (let j = 2; j < p.edges.length; j += 3) near.add(p.edges[j]);
+      return [...near];
+    });
+
+  const canvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+
+  /** Cuts the decoded art: its visible pixels (at art size) cut into patches about `seeds` a side across the art itself. */
+  function cutArt(img: HTMLImageElement) {
+    const S = Math.max(1, Math.round(img.naturalWidth / W));
+    const full = canvas(W * S, H * S);
+    const fg = full.getContext('2d', { willReadFrequently: true })!;
+    fg.imageSmoothingQuality = 'high';
+    fg.drawImage(img, 0, 0, full.width, full.height);
+    const small = canvas(W, H);
+    const sg = small.getContext('2d', { willReadFrequently: true })!;
+    sg.imageSmoothingQuality = 'high';
+    sg.drawImage(full, 0, 0, W, H);
+    const lit = litMask(sg.getImageData(0, 0, W, H).data, W, H);
+    let on = 0;
+    for (const v of lit) on += v;
+    if (!on) return null;
+    // labelPatches puts size² × the art's share of its box seeds on it: so many a side over the art itself.
+    const size = run.state.tuning.seeds / Math.sqrt(on / (W * H));
+    const seed = (run.state.seed ^ Math.imul(it.n + 1, 0x9e3779b1)) >>> 0;
+    const list = patchShapes(labelPatches(W, H, size, seed, lit), W, H);
+    if (!list.length) return null;
+    cut = new VeilCut({ w: W, h: H, data: new ArrayBuffer(0), labels: new Uint16Array() }, canvas, { shapes: list, lit, pixels: fg.getImageData(0, 0, full.width, full.height) });
+    order = spreadOrder(list, seed);
+    return list;
   }
 
   onMount(() => {
     let live = true;
     const img = new Image();
-    img.src = url;
-    // A picture that won't come within a few seconds: the item opens anyway, its free patches anywhere.
+    img.src = itemImage(it.itemId);
+    // A picture that won't come within a few seconds: the item opens anyway, on a plain grid.
     const late = new Promise<'late'>((r) => setTimeout(() => r('late'), 6000));
-    Promise.race([img.decode().then(() => coverage(img), () => null), late]).then((cov) => {
+    Promise.race([img.decode().then(() => 'ok' as const, () => 'late' as const), late]).then((got) => {
       if (!live) return;
-      shown = true;
-      run.open(cov === 'late' ? null : cov);
+      let list: PatchShape[] | null = null;
+      try {
+        if (got === 'ok') list = cutArt(img);
+      } catch {
+        list = null;
+      }
+      if (list) {
+        shapes = list;
+        run.open(adjacencyOf(list));
+      } else {
+        plain = true;
+        run.open(gridAdjacency(run.state.tuning.seeds));
+      }
     });
     return () => {
       live = false;
+      for (const t of timers) clearTimeout(t);
     };
+  });
+
+  const patchOf = (i: number): ShownPatch => {
+    const p = shapes[i];
+    return { i, x: p.x, y: p.y, w: p.w, h: p.h, edges: p.edges, picture: () => cut!.picture(i) };
+  };
+
+  /** Patches the run has burned that are on their way in (queued, not on the page yet). */
+  let queued = new Set<number>();
+  // Each patch the run burns comes in, one after another.
+  $effect(() => {
+    const burned = it.burned;
+    if (!shapes.length) return;
+    let k = 0;
+    for (const i of burned) {
+      if (queued.has(i)) continue;
+      queued.add(i);
+      const at = k++ * (quick ? Math.min(30, 300 / shapes.length) : GAP);
+      timers.push(setTimeout(() => (shown = [...shown, patchOf(i)]), at));
+    }
+  });
+  // Named: the rest of the art comes in quickly, as the game's does.
+  $effect(() => {
+    if (!named || quick || !shapes.length) return;
+    quick = true;
+    const gap = Math.min(30, 300 / shapes.length);
+    let k = 0;
+    for (const i of order) {
+      if (queued.has(i)) continue;
+      queued.add(i);
+      timers.push(setTimeout(() => (shown = [...shown, patchOf(i)]), k++ * gap));
+    }
+  });
+
+  function appear(node: HTMLCanvasElement, params: BurnParams) {
+    if (!params.quick) sfx('burn', { from: { from: node } });
+    return materialize(node, params);
+  }
+
+  const burnedCount = $derived(it.burned.length);
+  /** Whether the art is all in: the finale's done. */
+  const whole = $derived(named && shapes.length > 0 && shown.length === shapes.length);
+  let settled = $state(false);
+  $effect(() => {
+    if (!whole) return;
+    const t = setTimeout(() => (settled = true), FINALE_MS + 80);
+    return () => clearTimeout(t);
   });
 </script>
 
 <span class="art-slot">
-  <span class="art-fit" bind:this={fit} bind:clientWidth={boxW} bind:clientHeight={boxH} style:--w={item.w} style:--h={item.h} style:--s={2.2}>
-    <img src={url} alt="The item to name" class:shown decoding="async" draggable="false" />
-    <span class="veil" class:armed role="group" aria-label="The veil: {it.lifted.filter(Boolean).length} of {PATCHES} patches lifted">
-      {#each it.lifted as up, i (i)}
-        <button
+  <span
+    class="art-fit veil"
+    style:--w={W}
+    style:--h={H}
+    style:--s={2.2}
+    role="img"
+    aria-label={named ? 'The item, named' : it.patches ? `The item under the Veil: ${burnedCount} of ${it.patches} patches burned in` : 'The item, under the Veil'}
+  >
+    <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span><span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
+    {#if plain}
+      {#if named}<img src={itemImage(it.itemId)} alt="" />{/if}
+    {:else}
+      {#each shown as p (p.i)}
+        <canvas
           class="patch"
-          class:up
-          class:bare={it.bare[i]}
-          disabled={up || it.bare[i] || !armed}
-          aria-label="Patch {Math.floor(i / GRID) + 1}, {(i % GRID) + 1}{up ? ': lifted' : it.bare[i] ? ': nothing under it' : ''}"
-          onclick={() => run.lift(i)}
-        ></button>
+          aria-hidden="true"
+          style:left="{(p.x / W) * 100}%"
+          style:top="{(p.y / H) * 100}%"
+          style:width="{(p.w / W) * 100}%"
+          style:height="{(p.h / H) * 100}%"
+          use:appear={{ picture: p.picture, w: p.w, h: p.h, edges: p.edges, before: shown.filter((o) => o.i !== p.i).map((o) => o.i), burn: BURN, quick }}
+        ></canvas>
       {/each}
-    </span>
+      {#if !settled}<canvas class="frontier" aria-hidden="true" use:frontier={{ w: W, h: H, burn: BURN, quick, patches: shown }}></canvas>{/if}
+    {/if}
   </span>
 </span>
 
@@ -100,71 +183,56 @@
     position: absolute;
     inset: 0;
   }
-  /* Big enough to tap a patch, whatever the item's size or shape. */
-  .art-fit {
-    min-width: min(100cqw, 7rem);
-    min-height: min(100cqh, 7rem);
+  .patch {
+    position: absolute;
+    display: block;
   }
-  img {
-    object-fit: contain;
-    opacity: 0;
-    transition: opacity 0.4s;
-    user-select: none;
-  }
-  img.shown {
-    opacity: 1;
-  }
-  .veil {
+  /* The fire along seams where the item is still missing a part, as light over the patches. */
+  .frontier {
     position: absolute;
     inset: 0;
-    display: grid;
-    grid-template: repeat(4, minmax(0, 1fr)) / repeat(4, minmax(0, 1fr));
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    mix-blend-mode: screen;
   }
-  /* A patch: a dark worked plate, a faint diamond engraved at its middle. */
-  .patch {
-    position: relative;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background:
-      radial-gradient(circle at 50% 50%, rgba(201, 164, 92, 0.16) 0 1.5px, transparent 2.5px),
-      linear-gradient(160deg, #1e1813, #0c0a08);
-    box-shadow:
-      0 0 0 0.5px #0c0a08,
-      inset 0 0 0 1px rgba(125, 99, 51, 0.32);
-    cursor: default;
-    transition:
-      opacity 0.45s,
-      transform 0.45s var(--ease-out),
-      box-shadow 0.3s;
+  @supports (mix-blend-mode: plus-lighter) {
+    .frontier {
+      mix-blend-mode: plus-lighter;
+    }
   }
-  /* Over the letterbox alone: an empty slot. */
-  .patch.bare {
-    background: none;
-    box-shadow: inset 0 0 0 1px rgba(125, 99, 51, 0.14);
+  img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
-  .patch.up {
-    opacity: 0;
-    transform: scale(0.82);
+  /* The art's box, marked at its corners only: the rest is the dark stage. */
+  .corner {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 0 solid rgba(201, 164, 92, 0.35);
     pointer-events: none;
   }
-  /* A Flare in hand: every covered patch waits to be tapped. */
-  .armed .patch:not(.up, .bare) {
-    cursor: pointer;
-    box-shadow:
-      0 0 0 0.5px #0c0a08,
-      inset 0 0 0 1px rgba(224, 138, 68, 0.6),
-      inset 0 0 14px rgba(224, 138, 68, 0.18);
+  .tl {
+    top: 0;
+    left: 0;
+    border-width: 1px 0 0 1px;
   }
-  .armed .patch:not(.up, .bare):hover,
-  .armed .patch:not(.up, .bare):focus-visible {
-    outline: none;
-    background:
-      radial-gradient(circle at 50% 50%, rgba(255, 210, 150, 0.4) 0 2px, transparent 3px),
-      linear-gradient(160deg, #2c2118, #120e0a);
-    box-shadow:
-      0 0 0 0.5px #0c0a08,
-      inset 0 0 0 1px rgba(255, 190, 120, 0.9),
-      inset 0 0 18px rgba(255, 170, 90, 0.3);
+  .tr {
+    top: 0;
+    right: 0;
+    border-width: 1px 1px 0 0;
+  }
+  .bl {
+    bottom: 0;
+    left: 0;
+    border-width: 0 0 1px 1px;
+  }
+  .br {
+    bottom: 0;
+    right: 0;
+    border-width: 0 1px 1px 0;
   }
 </style>

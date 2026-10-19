@@ -1,67 +1,76 @@
 <script lang="ts">
-  // An item: its terms (the card, what it pays, what a miss costs), its
-  // tooltip as the game draws one (the nameplate, the art under the Veil,
-  // the clues shown so far), the Inscription, and the pack. Clear and Submit
-  // sit at the foot (docked on phones).
+  // An item: its terms (the zone's rule, what a miss costs, a corruption),
+  // its tooltip as the game draws one (the nameplate, the art under the
+  // Veil, the clues shown so far), the Inscription, and the pack. Clear and
+  // Submit sit at the foot (docked on phones); once named, the way on.
   import NamePlate from '../components/NamePlate.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { singular } from '../lib/game';
   import { motion } from '../lib/motion.svelte';
-  import { ZONE_NAMES, reach, sectionOf, type Run } from './rules';
+  import { BOSS_ITEMS, CLUES, CORRUPTION_NAMES, ZONE_NAMES, type Run, type Supply } from './rules';
   import Veil from './Veil.svelte';
   import Clues from './Clues.svelte';
   import ItemPack from './ItemPack.svelte';
   import Inscription from './Inscription.svelte';
-  import Numbered from './Numbered.svelte';
-  import { times } from './markup';
   import { BOSS_RULE, ZONE_RULE } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
   const it = $derived(s.item!);
-  const section = $derived(sectionOf(it.n));
-  const zone = $derived(run.zoneType(it.zoneNo));
-  const pays = $derived(section === 'boss' ? 0 : Math.floor((s.tuning.reward[section] * it.multiplier) / 2 ** it.misses));
-  const cost = $derived(s.tuning.missCost[section]);
-  const taps = $derived(reach(it));
+  const named = $derived(s.phase === 'solved');
+  const zone = $derived(it.zoneType);
+  const [lo, hi] = $derived(run.missRange());
+  const healed = $derived(it.log.healed);
+  /** The way on, once named: the loot (none at the boss, or Bricked), or the next item. */
+  const onward = $derived(it.boss !== null ? (it.boss === BOSS_ITEMS - 1 ? 'See the end' : 'Next item') : it.corruption === 'bricked' ? 'Go on' : 'Take your loot');
   let plateScale = $state<number>();
   let art = $state<HTMLElement>();
-  /** A Flare taken from the pack: the art it's tapped on brought into view (a phone's pack is below it). */
-  function flared() {
-    art?.scrollIntoView({ block: 'nearest', behavior: motion.still ? 'auto' : 'smooth' });
+  let ins = $state<HTMLElement>();
+  /** A supply used: what it changed brought into view (on a phone the art is above the pack, the line further up). */
+  function used(what: Supply | 'vaal') {
+    const to = what === 'flare' || what === 'vaal' ? art : what === 'wisdom' ? art : ins;
+    to?.scrollIntoView({ block: 'nearest', behavior: motion.still ? 'auto' : 'smooth' });
   }
 </script>
 
-<div class="item">
+<div class="item" class:named>
   <p class="terms">
-    <span class="term">{it.category} <span class="n">{times(it.multiplier)}</span></span>
-    <span class="term">{#if section === 'boss'}The boss pays no gold{:else}Pays <span class="n">{pays}</span> gold{/if}</span>
-    <span class="term">A miss costs <span class="n">{cost}</span> life</span>
-    <span class="term rule"><Numbered text={zone ? `${ZONE_NAMES[zone]}: ${ZONE_RULE[zone]}` : BOSS_RULE} /></span>
+    <span class="term rule">{zone ? `${ZONE_NAMES[zone]}: ${ZONE_RULE[zone]}` : BOSS_RULE}</span>
+    <span class="term">A miss costs <span class="n">{lo}</span> to <span class="n">{hi}</span> life</span>
+    {#if it.corruption}<span class="term corrupt">Corrupted • {CORRUPTION_NAMES[it.corruption]}</span>{/if}
   </p>
 
   <div class="layout">
-    <div class="tooltip" use:backdropShadow={{ fill: 'linear' }}>
+    <div class="tooltip" class:good={named} class:corrupt={!!it.corruption} use:backdropShadow={{ fill: 'linear' }}>
       <div class="head" style:--plate-scale={plateScale}>
         <NamePlate fit bind:scale={plateScale} />
         <div class="head-text">
-          <span class="iname unknown">Unidentified</span>
-          <span class="ibase">{singular(it.category)}</span>
+          {#if named}
+            <span class="iname">{it.log.name}</span>
+            <span class="ibase">{CLUES[it.itemId].base}</span>
+          {:else}
+            <span class="iname unknown">Unidentified</span>
+          {/if}
         </div>
       </div>
       <div class="art" bind:this={art} use:backdropShadow={{ fill: 'stage' }}>
         <div class="frame"><Veil {run} /></div>
       </div>
-      <p class="flare" role="status">{#if taps > 0}Tap <span class="n">{taps}</span> {taps === 1 ? 'patch' : 'patches'} on the art to lift {taps === 1 ? 'it' : 'them'}.{/if}</p>
       <Clues {run} />
     </div>
-    <div class="ins-area"><Inscription {run} /></div>
-    <div class="pack-area"><ItemPack {run} onflare={flared} /></div>
+    <div class="ins-area" bind:this={ins}><Inscription {run} /></div>
+    <div class="pack-area"><ItemPack {run} onuse={used} /></div>
   </div>
 
   <div class="go dock">
-    <button class="btn ghost" disabled={!it.build.length} onclick={() => run.clear()}>Clear</button>
-    <button class="btn primary big" disabled={!run.canSubmit()} onclick={() => run.submit()}>Submit</button>
+    {#if named}
+      <p class="result" role="status">
+        <span class="tick" aria-hidden="true">✓</span> Named{#if healed}: the flask heals <span class="n">+{healed}</span>{/if}{#if it.corruption === 'bricked'}. Bricked: nothing drops{/if}.
+      </p>
+      <button class="btn primary big" onclick={() => run.next()}>{onward}</button>
+    {:else}
+      <button class="btn ghost" disabled={it.build.length <= it.locked} onclick={() => run.clear()}>Clear</button>
+      <button class="btn primary big" disabled={!run.canSubmit()} onclick={() => run.submit()}>Submit</button>
+    {/if}
   </div>
 </div>
 
@@ -88,6 +97,30 @@
     font-family: var(--font-display);
     font-weight: 700;
     color: #e9c8a2;
+  }
+  .term.corrupt {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: #ff6a55;
+  }
+  /* Named: the tooltip turns green, as at the game's reveal. */
+  .tooltip.good {
+    border-color: #5d8a50;
+  }
+  .tooltip.corrupt:not(.good) {
+    border-color: #7a2418;
+  }
+  .result {
+    margin: 0;
+    align-self: center;
+    color: #cfe3b8;
+  }
+  .tick {
+    color: #a9cf8f;
+    font-weight: 700;
+  }
+  .iname:not(.unknown) {
+    color: var(--unique-hi, #d8a26a);
   }
   .layout {
     display: grid;
@@ -180,24 +213,6 @@
     height: 86%;
   }
 
-  /* A Flare's taps still to make, right under the art they're made on. */
-  .flare {
-    margin: 0;
-    padding: 0.35rem 0.8rem;
-    border-block: 1px solid rgba(224, 138, 68, 0.45);
-    background: rgba(224, 138, 68, 0.1);
-    font-size: 0.95rem;
-    text-align: center;
-    color: #f1c99a;
-  }
-  /* Empty, it takes no room but stays in the page, so a screen reader hears what comes into it. */
-  .flare:empty {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
 
   @container item (max-width: 860px) {
     .layout {

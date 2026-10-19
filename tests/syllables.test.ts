@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
 import { syllablesFile } from '../scripts/make-syllables.mjs';
 
-// The Wraeclast run's syllables (scripts/make-syllables.mjs): every name split
-// so the Inscription can rebuild it.
+// The Wraeclast run's syllables (scripts/make-syllables.mjs): every name split,
+// lower case, so the Inscription can rebuild it, and no tile a whole word but
+// "of", "the" and "and".
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = readFileSync(new URL('../src/data/syllables.json', import.meta.url), 'utf8');
 const syllables: Record<string, string[][]> = JSON.parse(raw);
@@ -26,46 +27,45 @@ test('every item has its syllables, and only items do (node scripts/make-syllabl
   );
 });
 
-test('every name rebuilds exactly from its syllables, the words joined by a space', () => {
-  const wrong = items.filter((it) => syllables[it.id].map((w) => w.join('')).join(' ') !== it.name);
+test('every name rebuilds exactly from its syllables, the words joined by a space (in lower case)', () => {
+  const wrong = items.filter((it) => syllables[it.id].map((w) => w.join('')).join(' ') !== it.name.toLowerCase());
   assert.deepEqual(
     wrong.map((it) => `${it.name}: ${JSON.stringify(syllables[it.id])}`),
     [],
   );
 });
 
-test('no syllable is empty or holds a space, and no word is without one', () => {
+test('no syllable is empty, holds a space or a capital, and no word is without one', () => {
   const bad: string[] = [];
   for (const [id, words] of Object.entries(syllables)) {
     if (!words.length) bad.push(`${id}: no words`);
     for (const word of words) {
       if (!word.length) bad.push(`${id}: an empty word`);
-      for (const s of word) if (!s.trim() || /\s/.test(s)) bad.push(`${id}: ${JSON.stringify(s)}`);
+      for (const s of word) if (!s.trim() || /\s/.test(s) || s !== s.toLowerCase()) bad.push(`${id}: ${JSON.stringify(s)}`);
     }
   }
   assert.deepEqual(bad, []);
 });
 
-test('small words and possessives stay whole, and compounds split between their words', () => {
-  const byName = new Map(items.map((it) => [it.name, syllables[it.id]]));
-  assert.deepEqual(byName.get("Voll's Protector")?.[0], ["Voll's"]);
-  assert.deepEqual(byName.get("Atziri's Splendour")?.[0], ["Atziri's"]);
-  assert.deepEqual(byName.get('Belly of the Beast')?.slice(1, 3), [['of'], ['the']]);
-  assert.deepEqual(byName.get('Blackheart'), [['Black', 'heart']]);
-  assert.deepEqual(byName.get('Bramblejack'), [['Bramble', 'jack']]);
-  // Words that only look like two are left to the patterns.
-  assert.deepEqual(byName.get('Bursting Decay')?.[0], ['Burst', 'ing']);
-  assert.deepEqual(byName.get('The Burrower')?.[1], ['Bur', 'row', 'er']);
+test("no tile is a whole word but 'of', 'the' and 'and' (a word of one letter can't split)", () => {
+  const whole = items.flatMap((it) =>
+    syllables[it.id].filter((w) => w.length === 1 && !['of', 'the', 'and'].includes(w[0]) && w[0].replace(/\P{L}/gu, '').length > 1).map((w) => `${it.name}: ${w[0]}`),
+  );
+  assert.deepEqual(whole, []);
 });
 
-test('no name is a single tile: a one-word name the patterns leave whole splits between its vowels', () => {
+test('the small words stay whole, possessives keep their mark, compounds split between their words and then by syllable', () => {
   const byName = new Map(items.map((it) => [it.name, syllables[it.id]]));
-  assert.deepEqual(
-    items.filter((it) => syllables[it.id].flat().length === 1).map((it) => it.name),
-    [],
-  );
-  assert.deepEqual(byName.get('Kaltenhalt'), [['Kal', 'ten', 'halt']]);
-  assert.deepEqual(byName.get('Svalinn'), [['Sva', 'linn']]);
-  assert.deepEqual(byName.get('Elevore'), [['E', 'le', 'vore']]);
-  assert.deepEqual(byName.get('Killjoy'), [['Kill', 'joy']]);
+  assert.deepEqual(byName.get('Belly of the Beast'), [['bel', 'ly'], ['of'], ['the'], ['b', 'east']]);
+  assert.deepEqual(byName.get("Voll's Protector")?.[0], ['v', "oll's"]);
+  assert.deepEqual(byName.get("Berek's Grip"), [['be', "rek's"], ['gr', 'ip']]);
+  assert.deepEqual(byName.get('Blistering Bond')?.[1], ['b', 'ond']);
+  assert.deepEqual(byName.get('Blackheart'), [['bl', 'ack', 'h', 'eart']]);
+  assert.deepEqual(byName.get('Bramblejack'), [['bram', 'ble', 'j', 'ack']]);
+  // Words that only look like two are left to the patterns.
+  assert.deepEqual(byName.get('Bursting Decay')?.[0], ['burst', 'ing']);
+  assert.deepEqual(byName.get('The Burrower')?.[1], ['bur', 'row', 'er']);
+  // A word the patterns leave whole splits between its vowels.
+  assert.deepEqual(byName.get('Kaltenhalt'), [['kal', 'ten', 'halt']]);
+  assert.deepEqual(byName.get('Svalinn'), [['sva', 'linn']]);
 });

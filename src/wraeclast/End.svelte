@@ -2,10 +2,9 @@
   // The run's end: won or lost, where, the run in numbers, the Copy run log
   // button (every run kept, as JSON, for the owner), and the run item by item.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { ITEMS_IN_RUN, SUPPLIES, SUPPLY_NAMES, ZONE_NAMES, type Run, type RunLog } from './rules';
+  import { CORRUPTIONS, CORRUPTION_NAMES, ITEMS_IN_RUN, SUPPLIES, WARES, WARE_NAMES, ZONE_NAMES, type Run, type RunLog } from './rules';
   import { logText } from './runLog';
   import { play } from './play.svelte';
-  import { times } from './markup';
   import Numbered from './Numbered.svelte';
 
   /** The runs kept and New run are the page's (play.svelte.ts) unless given (the QA desk's bench gives its own). */
@@ -15,8 +14,10 @@
   const log = $derived(s.log);
   const won = $derived(log.result === 'win');
   const named = $derived(log.items.filter((it) => it.submits.at(-1)?.right).length);
-  const bought = $derived(SUPPLIES.filter((sup) => log.bought[sup]).map((sup) => `${SUPPLY_NAMES[sup]} × ${log.bought[sup]}`));
-  const used = $derived(SUPPLIES.filter((sup) => log.used[sup]).map((sup) => `${SUPPLY_NAMES[sup]} × ${log.used[sup]}`));
+  const bought = $derived(WARES.filter((w) => log.bought[w]).map((w) => `${WARE_NAMES[w]} × ${log.bought[w]}`));
+  const found = $derived(WARES.filter((w) => log.found[w]).map((w) => `${WARE_NAMES[w]} × ${log.found[w]}`));
+  const used = $derived([...SUPPLIES.filter((sup) => log.used[sup]).map((sup) => `${WARE_NAMES[sup]} × ${log.used[sup]}`), ...(log.vaalUsed ? [`${WARE_NAMES.vaal} × ${log.vaalUsed}`] : [])]);
+  const outcomes = $derived(CORRUPTIONS.filter((c) => log.outcomes[c]).map((c) => `${CORRUPTION_NAMES[c]} × ${log.outcomes[c]}`));
   const text = $derived(logText(kept));
 
   let copied = $state<'yes' | 'no' | null>(null);
@@ -70,8 +71,11 @@
       <div><dt>Gold earned</dt><dd class="n">{log.goldEarned}</dd></div>
       <div><dt>Gold spent</dt><dd class="n">{log.goldSpent}</dd></div>
       <div><dt>Flask drinks</dt><dd class="n">{log.drinks}</dd></div>
+      <div><dt>Unidentified cards taken</dt><dd><span class="n">{log.unid.taken}</span> of <span class="n">{log.unid.offered}</span></dd></div>
       <div><dt>Bought</dt><dd><Numbered text={bought.join(' • ') || 'Nothing'} /></dd></div>
+      <div><dt>Found</dt><dd><Numbered text={found.join(' • ') || 'Nothing'} /></dd></div>
       <div><dt>Used</dt><dd><Numbered text={used.join(' • ') || 'Nothing'} /></dd></div>
+      <div><dt>Corrupted</dt><dd><Numbered text={outcomes.join(' • ') || 'Nothing'} /></dd></div>
     </dl>
   </section>
 
@@ -103,11 +107,11 @@
           <span class="no n">{i + 1}</span>
           <span class="what">
             <span class="name">{it.name}</span>
-            <span class="where">{zoneOf(it.zone, it.zoneNo)} • {it.category} <span class="n">{times(it.multiplier)}</span> • <span class="n">{it.names}</span> names</span>
+            <span class="where">{zoneOf(it.zoneType, it.zone)} • {it.category} • <span class="n">{it.names}</span> names{#if it.corruption}{' '}• <span class="corrupt">{CORRUPTION_NAMES[it.corruption]}</span>{/if}</span>
           </span>
           <span class="res">
-            {#if right}{#if it.submits.length > 1}<span class="n">{it.submits.length - 1}</span> {it.submits.length - 1 === 1 ? 'miss' : 'misses'} • {/if}<span class="n">+{it.gold}</span> gold{:else}Lost here{/if}
-            {#if it.supplies.length} • <span class="n">{it.supplies.length}</span> {it.supplies.length === 1 ? 'supply' : 'supplies'}{/if}
+            {#if right}{#if it.misses}<span class="n">{it.misses}</span> {it.misses === 1 ? 'miss' : 'misses'}{' • '}{/if}{#if it.gold}<span class="n">+{it.gold}</span> gold{:else}Named{/if}{:else}Lost here{/if}
+            {#if it.supplies.length}{' • '}<span class="n">{it.supplies.length}</span> {it.supplies.length === 1 ? 'supply' : 'supplies'}{/if}
           </span>
         </li>
       {/each}
@@ -257,5 +261,8 @@
     text-decoration: underline;
     text-underline-offset: 2px;
     cursor: pointer;
+  }
+  .corrupt {
+    color: #e0503c;
   }
 </style>

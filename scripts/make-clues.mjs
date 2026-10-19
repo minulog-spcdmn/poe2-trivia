@@ -1,10 +1,13 @@
 // Builds src/data/clues.json, what the Wraeclast run's supplies and zones
 // reveal about an item (src/wraeclast), from its tooltip in itemStats.json:
-// - req: its requirement lines ("Requires: Level 65, 34 Str"; a gem's
-//   Support Requirements too),
-// - mods: its mod lines in tooltip order, each [kind, text] with the kind as
-//   ItemDetails draws it: a unique's implicits (i) and explicits (e); a
-//   gem's Category line (p), descriptions (d), mods (e) and granted skills (t),
+// - base: its base type (Gold Ring, or a gem's Lineage Support),
+// - mods: its mod lines in tooltip order, each [kind, text, shared] with the
+//   kind as ItemDetails draws it (a unique's implicits (i) and explicits (e);
+//   a gem's Category line (p), descriptions (d), mods (e) and granted skills
+//   (t)) and shared the number of items with the same line once its numbers
+//   are set aside (sameLine: parentheses off, any number or range a #). A
+//   line shared by 3 or more is common: the only kind a Scroll of Wisdom or
+//   a Plain zone shows, since a line only its own item has gives it away.
 // - flavor: its flavour text, or null.
 // Values keep their colour marks ({w|65}), as the tooltip writes them.
 //
@@ -76,37 +79,72 @@ function clean(text) {
 }
 
 /**
- * One item's clues.
- * @param {{ name: string, kind: string }} item
- * @param {[string, string][][]} sections its tooltip, as itemStats.json holds it
+ * A mod line as lines are compared across items: colour marks and
+ * parentheses off, any number or range (10-20, 1.5) a #. "+(10-20) to
+ * maximum Life" and "+35 to maximum Life" are the same line.
+ * @param {string} text
  */
-export function cluesOf(item, sections) {
-  const pattern = namePattern(item.name);
-  const lines = sections.flat();
+export const sameLine = (text) =>
+  text
+    .replace(/\{\w+\|([^{}]*)\}/g, '$1')
+    .replace(/[()]/g, '')
+    .replace(/[+-]?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?/g, '#')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * One item's mod lines in tooltip order, each [kind, text] as the tooltip
+ * writes it (not yet masked).
+ * @param {{ kind: string }} item
+ * @param {[string, string][][]} sections its tooltip, as itemStats.json holds it
+ * @returns {[string, string][]}
+ */
+function modLines(item, sections) {
   const gem = item.kind === 'gem';
-  /** @type {string[]} */
-  const req = [];
-  const r = lines.find(([k]) => k === 'r');
-  if (r) req.push(`Requires: ${r[1]}`);
-  if (gem) for (const [k, t] of lines) if (k === 'p' && t.startsWith('Support Requirements:')) req.push(t);
   /** @type {[string, string][]} */
   const mods = [];
-  for (const [k, t] of lines) {
+  for (const [k, t] of sections.flat()) {
     const own = gem ? (k === 'p' && t.startsWith('Category:')) || 'det'.includes(k) : 'ie'.includes(k);
     const text = own ? clean(t) : null;
-    if (text) mods.push([k, mask(text, pattern)]);
+    if (text) mods.push([k, text]);
   }
-  const f = lines.find(([k]) => k === 'f');
-  return { req: req.map((t) => mask(t, pattern)), mods, flavor: f ? mask(f[1], pattern) : null };
+  return mods;
+}
+
+/**
+ * How many items have each mod line (sameLine), an item counted once however
+ * often it has a line.
+ * @param {{ id: string, kind: string }[]} items
+ * @param {Record<string, [string, string][][]>} stats
+ */
+export function sharedLines(items, stats) {
+  /** @type {Map<string, number>} */
+  const count = new Map();
+  for (const item of items) for (const line of new Set(modLines(item, stats[item.id]).map(([, t]) => sameLine(t)))) count.set(line, (count.get(line) ?? 0) + 1);
+  return count;
+}
+
+/**
+ * One item's clues.
+ * @param {{ name: string, base: string, kind: string }} item
+ * @param {[string, string][][]} sections its tooltip, as itemStats.json holds it
+ * @param {Map<string, number>} shared how many items have each line (sharedLines)
+ */
+export function cluesOf(item, sections, shared) {
+  const pattern = namePattern(item.name);
+  const mods = modLines(item, sections).map(([k, t]) => [k, mask(t, pattern), shared.get(sameLine(t)) ?? 1]);
+  const f = sections.flat().find(([k]) => k === 'f');
+  return { base: mask(item.base, pattern), mods, flavor: f ? mask(f[1], pattern) : null };
 }
 
 /**
  * The whole file for these items, as this script writes it.
- * @param {{ id: string, name: string, kind: string }[]} items
+ * @param {{ id: string, name: string, base: string, kind: string }[]} items
  * @param {Record<string, [string, string][][]>} stats
  */
 export function cluesFile(items, stats) {
-  const lines = items.map((item) => `  ${JSON.stringify(item.id)}: ${JSON.stringify(cluesOf(item, stats[item.id]))}`);
+  const shared = sharedLines(items, stats);
+  const lines = items.map((item) => `  ${JSON.stringify(item.id)}: ${JSON.stringify(cluesOf(item, stats[item.id], shared))}`);
   return `{\n${lines.join(',\n')}\n}\n`;
 }
 

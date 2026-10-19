@@ -2,24 +2,27 @@
 // the Wraeclast run's Inscription (src/wraeclast): the player builds a name
 // from the shuffled syllables of the names on the board.
 //
-// Each name is a list of its words, each word a list of its syllables, so the
-// name rebuilds as the syllables joined within a word and the words joined
-// with a space (tests/syllables.test.ts checks every one does, and that the
-// file is what this script makes).
-// - Short words (4 letters or fewer: "of", "the", "Ahn") and possessives
-//   ("Voll's", "Atziri's", "Brutus'") stay whole.
-// - A word that is two English words splits between them, each part whole:
-//   Black / heart, Bramble / jack. The parts come from SCOWL's word lists
-//   (wordlist-english), common words only. A coined word may split anywhere
-//   both parts are words of 3 letters or more; a word that is a word of its
-//   own only where both parts have 4 or more (Head / hunter, but not
-//   Pass / ion or Con / tempt). A few words that only look like two
-//   (Burs / ting, Bur / rower) are left to the patterns (NOT_COMPOUNDS).
-// - The rest is hyphenated with Liang's English patterns (the hyphen
+// Each name is a list of its words, each word a list of its syllables, all
+// lower case, so the name rebuilds (in lower case) as the syllables joined
+// within a word and the words joined with a space; the word boundaries are
+// what the answer line's spacing and the Word lengths supply read
+// (tests/syllables.test.ts checks every name rebuilds, and that the file is
+// what this script makes).
+// - "of", "the" and "and" stay whole. No other word is a single tile.
+// - A possessive keeps its mark on its last syllable (v / oll's).
+// - A word that is two English words splits between them first: black /
+//   heart. The parts come from SCOWL's word lists (wordlist-english), common
+//   words only. A coined word may split anywhere both parts are words of 3
+//   letters or more; a word that is a word of its own only where both parts
+//   have 4 or more (Head / hunter, but not Pass / ion or Con / tempt). A few
+//   words that only look like two (Burs / ting, Bur / rower) are left to the
+//   patterns (NOT_COMPOUNDS).
+// - Each part is then hyphenated with Liang's English patterns (the hyphen
 //   package), a lone consonant it leaves joined to the syllable before it.
-// - A name of one word the patterns leave whole (Kaltenhalt, Svalinn) splits
-//   between its vowels instead, so no name is a single tile.
-// - A hyphen stays on the part before it: Knight- / errant.
+// - A part the patterns leave whole splits between its vowels (kal / ten /
+//   halt); one of a single vowel sound splits before its vowel (gr / ip,
+//   b / ond, bl / ack), or after it when it starts with one (a / sh).
+// - A hyphen stays on the part before it: kn / ight- / er / rant.
 // Run: node scripts/make-syllables.mjs (after npm run fetch-data)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -52,8 +55,6 @@ const NOT_COMPOUNDS = new Set(['bursting', 'burrower']);
 const isWord = (s) => sizeOf.has(s.toLowerCase());
 /** @param {string} s */
 const sizeOfWord = (s) => sizeOf.get(s.toLowerCase()) ?? Infinity;
-/** @param {string} word */
-const possessive = (word) => /['’]s?$/.test(word);
 
 /** Whether one rank comes before another, element by element. @param {number[]} a @param {number[]} b */
 function less(a, b) {
@@ -99,7 +100,7 @@ function joinLoneConsonants(parts) {
   return out;
 }
 
-const VOWELS = 'aeiouy';
+const VOWELS = 'aeiouyàáâäèéêëìíîïòóôöùúûü';
 /** Consonant pairs that sound as one: a split goes before them, or after ck. */
 const DIGRAPHS = ['ch', 'ph', 'sh', 'th', 'wh'];
 
@@ -145,12 +146,46 @@ function vowelSplit(word) {
   return out.filter((s) => s !== '');
 }
 
-/** One word (no spaces, no hyphens) as its syllables. @param {string} word */
+/** The three small words that stay whole. */
+const SMALL = new Set(['of', 'the', 'and']);
+
+/**
+ * A part of a word of one vowel sound split before its vowel (gr / ip,
+ * b / ond), or after it when it starts with one (a / sh, i / ce); a part with
+ * no vowel at all after its first letter.
+ * @param {string} part
+ */
+function onsetSplit(part) {
+  const w = part.toLowerCase();
+  let at = [...w].findIndex((c, i) => VOWELS.includes(c) && !(c === 'y' && i === 0));
+  if (at === 0) {
+    while (at < w.length && VOWELS.includes(w[at])) at++;
+    if (at >= w.length) at = 1;
+  } else if (at < 0) at = 1;
+  return [part.slice(0, at), part.slice(at)].filter((s) => s !== '');
+}
+
+/** A part of a word (no hyphens, no possessive mark) as its syllables. @param {string} part */
+function partSyllables(part) {
+  let out = joinLoneConsonants(hyphenateSync(part, { hyphenChar: '|' }).split('|')).filter((s) => s !== '');
+  if (out.length === 1) out = vowelSplit(part);
+  if (out.length === 1) out = onsetSplit(part);
+  return out;
+}
+
+/**
+ * One word (no spaces, a hyphen only at its end) as its syllables: its
+ * possessive mark or hyphen set aside, then split as a compound and each part
+ * by syllable, the mark put back on the last.
+ * @param {string} word
+ */
 function piece(word) {
-  if (word.length <= 4 || possessive(word)) return [word];
-  const parts = compoundOf(word);
-  if (parts) return parts;
-  return joinLoneConsonants(hyphenateSync(word, { hyphenChar: '|' }).split('|'));
+  if (SMALL.has(word)) return [word];
+  const [, base, mark] = /** @type {RegExpExecArray} */ (/^(.*?)((?:['’]s?)?-?)$/.exec(word));
+  if (!base) return [word];
+  const out = (compoundOf(base) ?? [base]).flatMap(partSyllables);
+  out[out.length - 1] += mark;
+  return out;
 }
 
 /** One word of a name as its syllables: a hyphenated word's halves each split on their own. @param {string} word */
@@ -162,14 +197,12 @@ function wordSyllables(word) {
 }
 
 /**
- * A name as its words, each word as its syllables.
+ * A name as its words, each word as its syllables, lower case.
  * @param {string} name
  * @returns {string[][]}
  */
 export function syllablesOf(name) {
-  const words = name.split(' ').map(wordSyllables);
-  if (words.length === 1 && words[0].length === 1 && !possessive(name)) return [vowelSplit(name)];
-  return words;
+  return name.toLowerCase().split(' ').map(wordSyllables);
 }
 
 /**
