@@ -54,7 +54,7 @@ map).
 
 | What | Where |
 | --- | --- |
-| Prototype | Branch `claude/wraeclast-prototype-v3`, PR #197 (not merged), latest v4e `8d24ad5e`. Session "Wraeclast prototype first playable": its last task is the logs to disk (`.wraeclast-logs/` at the served worktree's root, `scripts/wraeclast-log-summary.mjs`), then it idles |
+| Prototype | Branch `claude/wraeclast-prototype-v3`, PR #197 (not merged), latest `391a0926` (v4e plus run logs to disk). Session "Wraeclast prototype first playable", idle. Dev runs write their log to `.wraeclast-logs/` at the served worktree's root; `node scripts/wraeclast-log-summary.mjs <file or folder>` prints a short summary (it also reads a pasted `{ wraeclastRuns: [...] }`). The playtest worktree is still at v4d, which has no logging: pin 391a0926 or later before the next playtest |
 | Design | Session "Design", branch `claude/design-4ca3ba`; `docs/wraeclast/design-v5-options.md` at `d56f6890` (not pushed). Holding for the combined brief |
 | Playtest server | Worktree `.claude/worktrees/wraeclast-playtest`, detached at v4d `8b883c79`; stopped. To serve: `.claude/launch.json` entry `wraeclast-playtest` runs `npm --prefix <that worktree> run dev -- --port 5199 --strictPort --host`. Phone: `http://192.168.178.88:5199/wraeclast.html`. Pin only when the owner says they're between runs |
 | Docs | `docs/wraeclast/` on branch `claude/poe2-feature-orchestrator-0e9b63` (pushed). Main has PR #199's older copy |
