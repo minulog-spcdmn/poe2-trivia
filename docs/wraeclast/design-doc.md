@@ -171,14 +171,14 @@ There are three resources. **Gold** buys supplies and gear between items: at the
 | Torch | Burns in about a sixth of the art at a random spot | 3 for 6 gold |
 | Scroll of Wisdom | The item's next mod line, from the most common to the rarest, name words masked | 3 for 6 gold |
 | Golden Page | The flavor text, name words masked | 2 for 6 gold |
-| Category reveal | The item's category, such as Rings | 2 for 6 gold |
+| Ancient Orb | Another unique of the same category, by name, sharing no word with the answer (from the prototype after playtest 3; until then, the category's name) | 2 for 6 gold |
 | Base reveal | The base type (gems: the support description) | 1 for 6 gold |
 | Tangled Fossil | Strikes 4 decoys from the Inscription | 3 for 6 gold |
 | Word lengths | How many words the answer has, and the syllables in each | 3 for 4 gold |
 | First syllable | Places the answer's first syllable on the line, locked and gold | 2 for 6 gold |
 | Stacked Deck | One random clue the item hasn't shown yet, among those the zone allows (from the prototype after playtest 3) | 3 for 4 gold (first guess) |
 
-Playtest 2 showed that supplies were too scarce, that Torches revealed too little for their price, and that there was no way to learn the base type, the category or the flavor text. So supplies come in cheap stacks, Torches burn in twice as much, and three reveals are back. The base type gives the answer away for about 3 uniques in 4, which makes naming the unique from it real expert trivia, so it is sold one at a time. The Scroll of Wisdom now reads from the most common line to the rarest: a first Scroll is weak, and a third may give the item away. Scroll of Wisdom, Golden Page and Tangled Fossil are PoE items that do here what they do in the game (a fossil rules outcomes out of a pool, as the Tangled Fossil rules decoys off the board). The others have working names until fitting PoE items are found. Torch is the working name for what was the Flare, which Delve already uses for something else. A supply's name must be an item you can buy, carry and use: never an NPC, an action or a league mechanic.
+Playtest 2 showed that supplies were too scarce, that Torches revealed too little for their price, and that there was no way to learn the base type, the category or the flavor text. So supplies come in cheap stacks, Torches burn in twice as much, and three reveals are back. The base type gives the answer away for about 3 uniques in 4, which makes naming the unique from it real expert trivia, so it is sold one at a time. The Scroll of Wisdom now reads from the most common line to the rarest: a first Scroll is weak, and a third may give the item away. Scroll of Wisdom, Golden Page, Ancient Orb, Tangled Fossil and Stacked Deck are PoE items that do here what they do in the game (a fossil rules outcomes out of a pool, as the Tangled Fossil rules decoys off the board). The others have working names until fitting PoE items are found. Torch is the working name for what was the Flare, which Delve already uses for something else. A supply's name must be an item you can buy, carry and use: never an NPC, an action or a league mechanic.
 
 **The pack** holds 8 stacks of up to 5 of one supply each, and the flask doesn't take a slot. A full pack means choosing what to leave behind at the next town.
 
