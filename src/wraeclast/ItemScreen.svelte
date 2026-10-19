@@ -22,6 +22,7 @@
   import ItemPack from './ItemPack.svelte';
   import Inscription from './Inscription.svelte';
   import Glyph from './Glyph.svelte';
+  import MapScreen from './MapScreen.svelte';
   import { BLOOD_DOES, BOSS_MOD_DOES, BOSS_RULE, DRINK_LINE, SHORT, ZONE_RULE, bloodLine, bossAdds, lootLine, placeDoes, placeKind, plural, zoneLines } from './words';
 
   /** `onmap`: the whole map, opened from the reveal's Where next. */
@@ -79,6 +80,12 @@
   /** A zone's last item: the places one step ahead (shown dimmed while a supply waits for a space). */
   const ways = $derived(lastHere && place.kind === 'zone' && place.type !== 'expedition' ? run.graph.next[s.at] : []);
   const nextStep = $derived(ways.length ? run.graph.byId.get(ways[0])!.step : 0);
+  /** A wide desktop: the map stands beside the reveal (V4RevealDesk), the corruption moving on in it. */
+  const mapCol = new MediaQuery('(min-width: 1400px)');
+  const withMap = $derived(mapCol.current && ways.length > 0);
+  /** The corruption's moves as this zone was left: said in Where next where the map isn't beside it (it plays on the map). */
+  const moves = $derived(ways.length ? s.moves.filter((m) => m.from !== m.to) : []);
+  const movesLine = $derived(moves.map((m) => `${run.graph.byId.get(m.from)!.name} to ${run.graph.byId.get(m.to)!.name}`).join(' • '));
   /** The loot's cards (none at the boss). */
   const cards = $derived<LootCard[]>(named && !boss ? (s.loot?.cards ?? it.log.loot) : []);
   /** The cards still waiting for a space, by their place among the cards. */
@@ -224,7 +231,7 @@
 {/snippet}
 
 <!-- One tree for the item and its reveal, so the tooltip (its Veil mid-finale) stays as it is named. -->
-<div class="item" class:reveal={named} style:--board="{boardH}px" style:--rh={named && rh ? `${rh}px` : undefined}>
+<div class="item" class:reveal={named} class:withmap={named && withMap} style:--board="{boardH}px" style:--rh={named && rh ? `${rh}px` : undefined}>
   <div class="desk">
     <div class="col">
       <section class="tip" class:good={named} class:corrupted={!named && boss && s.bossMods.length > 0} bind:this={tipEl} aria-label="The item">
@@ -315,6 +322,18 @@
               </button>
             {/if}
           </div>
+          {#if moves.length && !withMap}
+            <button
+              class="place cor creepline"
+              disabled={!!pending || !onmap}
+              onclick={onmap}
+              aria-label="The corruption moves on: {moves.map((m) => `from ${run.graph.byId.get(m.from)!.name} to ${run.graph.byId.get(m.to)!.name}`).join(', and ')}. See it on the map"
+            >
+              <span class="k"><Glyph of="corrupt" /></span>
+              <span class="tx"><span class="nm">The corruption moves on</span><span class="ln">{movesLine}</span></span>
+              {@render chev()}
+            </button>
+          {/if}
           {#if expedition}
             <button class="place" disabled={!!pending} onclick={() => run.next()} aria-label="Go to the Expedition vendor: buy before you go on">
               <span class="k">{@render placeMark({ kind: 'town' } as Place, false)}</span>
@@ -354,6 +373,9 @@
         {/if}
       </div>
     </div>
+    {#if withMap}
+      <div class="mapcol"><MapScreen {run} plate /></div>
+    {/if}
   {:else}
     <div class="col" bind:this={ins}><Inscription {run} /></div>
   {/if}
@@ -1341,6 +1363,23 @@
       font-size: 19px;
     }
   }
+  /* A wide desktop's reveal: the map in a third column (V4RevealDesk), the three wider than the page's column, centred on it. */
+  @media (min-width: 1400px) {
+    .item.withmap {
+      width: 1320px;
+      margin-inline: calc((100% - 1320px) / 2);
+    }
+    .withmap .desk {
+      grid-template-columns: 400px 460px 380px;
+    }
+    .mapcol {
+      align-self: stretch;
+      min-height: 560px;
+      display: flex;
+      flex-direction: column;
+    }
+  }
+
   /* A short window (a laptop's): the dock stays pinned, so Identify is never below the fold. */
   @media (max-height: 820px) {
     .item:not(.reveal) .dock {
