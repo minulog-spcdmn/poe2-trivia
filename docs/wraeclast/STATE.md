@@ -53,8 +53,15 @@ region, depth plus one waystone mod, the Seed of Corruption, Pledges
 (formerly Pacts), four supplies (Torch, Golden Page, Ancient Orb, Scroll of
 Wisdom), all bought with gold. Gambling lives in town, to make the shop
 interesting. Three rounds of town pitches missed (sections 9 to 11; 11 went to crafting and
-skill gems: "you have lost the plot"). A fresh design session works from
-`design-v7-brief.md`: the town as the hook, built from knowing items.
+skill gems: "you have lost the plot"). Round 4 (`design-v7-town.md`, three
+pitches judged by owner-proxy agents) missed too: "all overcomplicated and
+none sound like they would be addictive". No more paper rounds on a design
+brief: the owner sketches what a town visit should feel like (the pull lives
+in the town; closest games Slay the Spire and Hades), and design only makes
+that sketch work with items. Waiting for the owner's sketch.
+
+Sessions: an orchestrator opened from the owner's phone (Remote Control)
+can't start sessions; it runs design as a Workflow instead.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
