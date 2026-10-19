@@ -8,6 +8,7 @@
   // the step plaque. On a short phone the two sit as one bar: the place and
   // the key on a line, you and the step under it. The gold and the flask are
   // marked (data-fly) for the reveal's loot cards to fly to.
+  import { MediaQuery } from 'svelte/reactivity';
   import { isMuted, setMuted, sfx } from '../lib/sound';
   import { BLOOD_TOLL, FLASK_STEP, type Run } from './rules';
   import Glyph from './Glyph.svelte';
@@ -33,6 +34,26 @@
   const lastStep = $derived(run.graph.boss.step);
   const pct = (n: number) => `${(n / s.maxLife) * 100}%`;
 
+  /** A desktop (860 px and up, as the screens): the step plaque moves from the strip to the task row. */
+  const wideQ = new MediaQuery('(min-width: 860px)');
+  /** The line naming what the player is doing, on a desktop: picking a place on the map, the item just named, the town or camp they're in. Not while an item is open, at the threshold or at the end (their screens say it). */
+  const task = $derived(
+    wideQ.current
+      ? s.phase === 'map'
+        ? 'Pick where to go next. The lit places are one step ahead.'
+        : s.phase === 'solved' && s.item
+          ? `Named: ${s.item.log.name}`
+          : s.phase === 'item' && s.visit && s.item
+            ? `Item ${s.visit.done + 1} of ${s.visit.items} in ${node.name}`
+            : s.phase === 'vendor'
+              ? node.name
+              : ''
+      : '',
+  );
+  /** A Well's refill, as the flask pill shows it: the pips it just filled, one after another (each from the first empty one). */
+  const refilled = $derived(s.beat?.kind === 'well' ? s.beat.refilled : 0);
+  const firstFilled = $derived(s.flask.charges - refilled);
+
   let muted = $state(isMuted());
   function toggleSound() {
     setMuted((muted = !muted));
@@ -45,7 +66,7 @@
   <p class="meta">
     <span class="zone" class:boss={place.kind === 'boss'}>{node.name}</span>
     <span class="kind"
-      >{placeName(place)}{#if s.visit && s.item}<span class="count">{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}{#if hidden}{' '}<span
+      >{placeName(place)}{#if s.visit && s.item}<span class="count" class:dup={!!task}>{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}{#if hidden}{' '}<span
           class="toll"
           role="img"
           aria-label="Blood toll (corruption): each item here costs {BLOOD_TOLL} life when you start it"
@@ -61,6 +82,14 @@
     </button>
   </div>
 </header>
+
+{#snippet step()}
+  {#if place.kind === 'boss'}
+    <div class="stepc boss" role="img" aria-label="The boss, the last step"><span class="k">Last</span><span class="v">Boss</span></div>
+  {:else}
+    <div class="stepc" role="img" aria-label="Step {node.step} of {lastStep}"><span class="k">Step</span><span class="v">{node.step}<small>/{lastStep}</small></span></div>
+  {/if}
+{/snippet}
 
 <div class="strip">
   <div class="chip me" aria-label="You: {s.life} life, {s.gold} gold">
@@ -81,19 +110,21 @@
         >
         <span class="flask" data-fly="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} charges. Each drink uses one charge." title={FLASK_LINE}>
           <span class="ch">
-            {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}<i class:full={i < s.flask.charges}></i>{/each}
+            {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}<i class:full={i < s.flask.charges} class:filling={refilled > 0 && i >= firstFilled} style:animation-delay="{Math.max(0, i - firstFilled) * 0.28}s"></i>{/each}
           </span>
         </span>
       </div>
     </div>
     <span class="score" data-fly="gold"><span class="coin" aria-hidden="true"></span>{s.gold}{#if gain}<span class="gain" aria-hidden="true">+{gain}</span>{/if}</span>
   </div>
-  {#if place.kind === 'boss'}
-    <div class="stepc boss" role="img" aria-label="The boss, the last step"><span class="k">Last</span><span class="v">Boss</span></div>
-  {:else}
-    <div class="stepc" role="img" aria-label="Step {node.step} of {lastStep}"><span class="k">Step</span><span class="v">{node.step}<small>/{lastStep}</small></span></div>
-  {/if}
+  {#if !task}{@render step()}{/if}
 </div>
+{#if task}
+  <div class="task" class:map={s.phase === 'map'} class:reveal={s.phase === 'solved'} class:vend={s.phase === 'vendor'}>
+    <p class="sub">{task}</p>
+    {@render step()}
+  </div>
+{/if}
 <span class="sr">{s.flask.recovering ? flaskDue(s.flask.recovering) : ''}</span>
 
 <style>
@@ -189,6 +220,10 @@
   .toll .ic {
     width: 12px;
     height: 12px;
+  }
+  /* On a desktop the task row says which item this is. */
+  .count.dup {
+    display: none;
   }
   .num {
     color: var(--gold-hi);
@@ -413,6 +448,22 @@
     border-color: #b98b52;
     box-shadow: 0 0 4px rgba(224, 85, 63, 0.55);
   }
+  /* A Well filled these pips: they light one after another. */
+  .flask .ch i.filling {
+    animation: pip-fill 0.9s ease-out both;
+  }
+  @keyframes pip-fill {
+    0% {
+      background: #120a08;
+      border-color: #6b5230;
+      box-shadow: none;
+    }
+    45% {
+      background: linear-gradient(180deg, #ffd2bd, #f06a50 55%, #a82a1c);
+      border-color: #e0b97c;
+      box-shadow: 0 0 10px rgba(255, 170, 140, 0.95);
+    }
+  }
 
   /* Where the run stands: a waypoint plaque. */
   .stepc {
@@ -528,6 +579,41 @@
       bottom: -1px;
       height: 1px;
       background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
+    }
+  }
+
+  /* The desktop's task row: the line over the screen, the plaque at the end of it (as the boards: 1140, 1320 and 1240 px wide by the screen). */
+  .task {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    height: 50px;
+    width: min(100%, 1240px);
+    margin: 0 auto;
+  }
+  .task.map {
+    width: min(100%, 1140px);
+  }
+  .task.reveal {
+    width: min(100%, 1320px);
+  }
+  .task .sub {
+    margin: 0;
+    text-align: center;
+    font-size: 19px;
+    line-height: 1.2;
+    color: #e6dccb;
+  }
+  .task .stepc {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    translate: 0 -50%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .flask .ch i.filling {
+      animation: none;
     }
   }
 

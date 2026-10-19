@@ -8,13 +8,17 @@
   // and the places one step ahead are lit and can be tapped. Under it on a
   // phone (beside it on a desktop), Where next: the same places as rows, the
   // main way to pick. A Well's line sits between them; as the corruption
-  // moves on, the map shows it happen once, then settles.
+  // moves on, the map shows it happen once, then settles. With `plate`, the
+  // map alone fills its box (the desktop reveal's third column, its Where
+  // next being the reveal's own).
   import { GRAPH } from './map';
   import type { Run } from './rules';
 
   /** The plate's sizes: a phone's, and a desktop's (860 px wide and up). */
   export const PHONE = { node: 24, nameTop: 14, labelMax: 92, rowMin: 84, rowMax: 96, padTop: 40, padBottom: 18, gutter: 22, edge: 4, namePx: 11.5, emPx: 10 };
   export const WIDE = { node: 28, nameTop: 16, labelMax: 130, rowMin: 53, rowMax: 80, padTop: 30, padBottom: 18, gutter: 28, edge: 8, namePx: 13, emPx: 11.5 };
+  /** The map alone in a column (the desktop reveal's, 380 px): a phone's labels, a desktop's rows. */
+  export const PLATE = { ...PHONE, rowMin: 53, rowMax: 64, padTop: 30 };
   export type Sizes = typeof PHONE;
   /** How far each place is drawn toward where the owner placed it across, from its even slot in its row (0: the slot). */
   const BLEND = 0.35;
@@ -95,8 +99,8 @@
   import Glyph from './Glyph.svelte';
   import { bloodLine, bossAdds, bossIfReached, bossLine, bossOnNode, bossRuleLines, placeDoes, placeKind, placeName, zoneLines } from './words';
 
-  /** `onclose`: opened over a vendor or a reveal, it closes to go back there. */
-  let { run, onclose }: { run: Run; onclose?: () => void } = $props();
+  /** `onclose`: opened over a vendor or a reveal, it closes to go back there. `plate`: the map alone, filling its box. */
+  let { run, onclose, plate = false }: { run: Run; onclose?: () => void; plate?: boolean } = $props();
   const s = $derived(run.state);
   const here = $derived(GRAPH.byId.get(s.at)!);
   const options = $derived(run.options());
@@ -112,8 +116,8 @@
   const name = (id: string) => GRAPH.byId.get(id)!.name;
 
   const wideQ = new MediaQuery('(min-width: 860px)');
-  const wide = $derived(wideQ.current);
-  const Z = $derived(wide ? WIDE : PHONE);
+  const wide = $derived(!plate && wideQ.current);
+  const Z = $derived(plate ? PLATE : wide ? WIDE : PHONE);
 
   // ---- The corruption moving on: once per creep, then the map settles. ----
   const moves = $derived(s.moves.filter((m) => m.from !== m.to));
@@ -249,9 +253,9 @@
   {/if}
 {/snippet}
 
-<div class="map-screen" class:wide bind:this={root} style:--top="{top}px">
-  <h1 class="sr">{here.name}</h1>
-  <p class="task">Pick where to go next. The lit places are one step ahead.</p>
+<div class="map-screen" class:wide class:plate bind:this={root} style:--top="{top}px">
+  <!-- What to do here is the run bar's task row on a desktop (Hud.svelte). -->
+  {#if !plate}<h1 class="sr">{here.name}</h1>{/if}
 
   <div class="body">
     <section class="map" class:wide aria-label="The map">
@@ -331,7 +335,7 @@
       {/if}
     </section>
 
-    <div class="side">
+    {#if !plate}<div class="side">
       {#if well}
         <p class="beat" role="status">
           {@render mark('flask')}<span><span class="pl">{here.name}</span> • your flask {well.refilled ? 'is full again' : 'was already full'}</span>
@@ -364,7 +368,7 @@
           </button>
         {/each}
       </section>
-    </div>
+    </div>{/if}
   </div>
 </div>
 
@@ -376,8 +380,13 @@
     /* The window under the run's bar, less the page's foot padding. */
     min-height: max(30rem, calc(100svh - var(--top, 0px) - 12px));
   }
-  .task {
-    display: none;
+  /* The map alone: it fills the box it's given. */
+  .map-screen.plate {
+    min-height: 0;
+    height: 100%;
+  }
+  .plate .map {
+    min-height: 0;
   }
   .body {
     flex: 1;
@@ -390,14 +399,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .wide .task {
-    display: block;
-    margin: 0;
-    text-align: center;
-    font-size: 1.19rem;
-    color: #e6dccb;
-    line-height: 1.2;
   }
   .wide .body {
     display: grid;
