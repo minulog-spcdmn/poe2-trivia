@@ -5,6 +5,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { itemImage } from '../lib/ui-paths';
   import { FLASK_ITEMS, FLASK_STEP, TOWN_AFTER, ZONES, ZONE_ITEMS, ZONE_NAMES, sectionOf, zoneOf, type Run } from './rules';
+  import Numbered from './Numbered.svelte';
   import { BOSS_RULE, zoneLine } from './words';
 
   let { run }: { run: Run } = $props();
@@ -42,7 +43,7 @@
     {#if last.healed}<li>The flask heals <span class="n">+{last.healed}</span> life</li>{/if}
   </ul>
 
-  <section class="panel flask" aria-labelledby="flask-h" use:backdropShadow>
+  <section class="panel flask" aria-labelledby="flask-h" use:backdropShadow={{ fill: 'linear' }}>
     <div>
       <h2 id="flask-h">Flask</h2>
       <p>
@@ -53,7 +54,7 @@
     <button class="btn small ghost" disabled={!run.canDrink()} onclick={() => run.drink()}>Drink</button>
   </section>
 
-  {#if next.line}<p class="next">{next.line}</p>{/if}
+  {#if next.line}<p class="next"><Numbered text={next.line} /></p>{/if}
 
   <div class="go dock">
     <button class="btn primary big" onclick={() => run.next()}>{next.label}</button>
@@ -71,8 +72,11 @@
     width: 100%;
     max-width: 34rem;
   }
+  /* The dock spans the screen (screens.css bleeds it to the edges on phones). */
   .between > .go {
+    width: auto;
     max-width: none;
+    align-self: stretch;
   }
   .show {
     position: relative;

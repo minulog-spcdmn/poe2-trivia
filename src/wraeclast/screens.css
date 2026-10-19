@@ -61,14 +61,15 @@
   padding: 1rem 1.1rem 1.1rem;
 }
 
-/* The main action's row: docked at the foot on phones (design rules). */
+/* The main action's row: docked at the foot on phones and on short windows
+   (a laptop's), where it would fall below the fold (design rules). */
 .wr .go {
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
   gap: 0.75rem;
 }
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-height: 820px) {
   .wr .go.dock {
     position: sticky;
     bottom: 0;
@@ -78,6 +79,8 @@
     background: var(--pinned-bg);
     border-top: var(--pinned-line);
   }
+}
+@media (max-width: 640px) {
   .wr .go.dock .btn {
     flex: 1;
   }

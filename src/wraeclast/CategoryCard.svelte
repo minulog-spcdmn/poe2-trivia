@@ -401,6 +401,8 @@
       display: block;
       height: auto;
       flex: 1;
+      /* Clear of the plaque. */
+      padding-right: 5rem;
       text-align: left;
     }
     /* The plaque on the row's right end. */

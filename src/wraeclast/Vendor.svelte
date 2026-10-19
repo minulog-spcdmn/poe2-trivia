@@ -3,6 +3,7 @@
   // vendor selling every supply, the pack, the flask, and the road ahead.
   import { backdropShadow } from '../lib/backdropShadow';
   import { BOSS_ITEMS, FLASK_ITEMS, FLASK_STEP, PACK_SLOTS, SUPPLIES, SUPPLY_NAMES, ZONE_NAMES, ZONES, type Run } from './rules';
+  import Numbered from './Numbered.svelte';
   import PackList from './PackList.svelte';
   import { BOSS_RULE, REVEALS, zoneLine } from './words';
 
@@ -26,14 +27,14 @@
   </header>
 
   <div class="cols">
-    <section class="panel shop" aria-labelledby="shop-h" use:backdropShadow>
+    <section class="panel shop" aria-labelledby="shop-h" use:backdropShadow={{ fill: 'linear' }}>
       <h2 id="shop-h">Vendor</h2>
       <ul class="wares">
         {#each SUPPLIES as sup (sup)}
           <li>
             <div class="what">
               <span class="name">{SUPPLY_NAMES[sup]}</span>
-              <span class="does">{REVEALS[sup]}</span>
+              <span class="does"><Numbered text={REVEALS[sup]} /></span>
             </div>
             <span class="price"><span class="n">{s.tuning.price[sup]}</span> gold</span>
             <button class="btn small" disabled={!run.canBuy(sup)} onclick={() => run.buy(sup)} aria-label="Buy a {SUPPLY_NAMES[sup]}">Buy</button>
@@ -46,22 +47,22 @@
     </section>
 
     <div class="side">
-      <section class="panel" aria-labelledby="pack-h" use:backdropShadow>
+      <section class="panel" aria-labelledby="pack-h" use:backdropShadow={{ fill: 'linear' }}>
         <h2 id="pack-h">Pack</h2>
         <PackList {run} />
       </section>
-      <section class="panel" aria-labelledby="flask-h" use:backdropShadow>
+      <section class="panel" aria-labelledby="flask-h" use:backdropShadow={{ fill: 'linear' }}>
         <h2 id="flask-h">Flask</h2>
         <p class="flask">
           <span><span class="n">{s.flask.charges}</span> {s.flask.charges === 1 ? 'charge' : 'charges'} left. A drink heals <span class="n">{FLASK_STEP}</span> after each of the next <span class="n">{FLASK_ITEMS}</span> items.</span>
           <button class="btn small ghost" disabled={!run.canDrink()} onclick={() => run.drink()}>Drink</button>
         </p>
       </section>
-      <section class="panel" aria-labelledby="road-h" use:backdropShadow>
+      <section class="panel" aria-labelledby="road-h" use:backdropShadow={{ fill: 'linear' }}>
         <h2 id="road-h">The road</h2>
         <ol class="road">
           {#each ahead as z (z.no)}
-            <li><span class="zn">Zone <span class="n">{z.no}</span> • {ZONE_NAMES[z.z]}</span> <span class="rule">{zoneLine(run, z.z)}</span></li>
+            <li><span class="zn">Zone <span class="n">{z.no}</span> • {ZONE_NAMES[z.z]}</span> <span class="rule"><Numbered text={zoneLine(run, z.z)} /></span></li>
           {/each}
           <li><span class="zn">The boss • <span class="n">{BOSS_ITEMS}</span> items</span> <span class="rule">{BOSS_RULE}.</span></li>
         </ol>

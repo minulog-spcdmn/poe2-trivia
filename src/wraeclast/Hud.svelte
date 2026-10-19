@@ -1,7 +1,7 @@
 <script lang="ts">
   // The run's bar: where it stands, life (a bar and its number), the flask's
   // charges and its heal still to come, gold, and how full the pack is.
-  import { FLASK_STEP, PACK_SLOTS, type Run } from './rules';
+  import { FLASK_ITEMS, FLASK_STEP, PACK_SLOTS, type Run } from './rules';
   import { whereOf } from './words';
 
   let { run }: { run: Run } = $props();
@@ -24,9 +24,10 @@
       <span class="bar" role="meter" aria-label="Life" aria-valuemin={0} aria-valuemax={s.maxLife} aria-valuenow={s.life}><span class="fill" style:width="{share * 100}%"></span></span>
       <span class="n">{s.life}</span>
     </div>
-    <div class="flask" title="Flask: drink between items; each charge heals {FLASK_STEP} after each of the next 3 items">
+    <div class="flask" title="Flask: drink between items; a drink heals {FLASK_STEP} after each of the next {FLASK_ITEMS} items">
       <span class="label">Flask</span>
-      <span class="pips" aria-label="{s.flask.charges} charges">
+      <span class="sr">{s.flask.charges} {s.flask.charges === 1 ? 'charge' : 'charges'}</span>
+      <span class="pips" aria-hidden="true">
         {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}
           <span class="pip" class:full={i < s.flask.charges}></span>
         {/each}

@@ -13,9 +13,12 @@
 //   (wordlist-english), common words only. A coined word may split anywhere
 //   both parts are words of 3 letters or more; a word that is a word of its
 //   own only where both parts have 4 or more (Head / hunter, but not
-//   Pass / ion or Con / tempt).
+//   Pass / ion or Con / tempt). A few words that only look like two
+//   (Burs / ting, Bur / rower) are left to the patterns (NOT_COMPOUNDS).
 // - The rest is hyphenated with Liang's English patterns (the hyphen
 //   package), a lone consonant it leaves joined to the syllable before it.
+// - A name of one word the patterns leave whole (Kaltenhalt, Svalinn) splits
+//   between its vowels instead, so no name is a single tile.
 // - A hyphen stays on the part before it: Knight- / errant.
 // Run: node scripts/make-syllables.mjs (after npm run fetch-data)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -42,6 +45,9 @@ for (const size of SIZES) {
   }
 }
 
+/** Words that split into two words but aren't made of them. */
+const NOT_COMPOUNDS = new Set(['bursting', 'burrower']);
+
 /** @param {string} s */
 const isWord = (s) => sizeOf.has(s.toLowerCase());
 /** @param {string} s */
@@ -63,6 +69,7 @@ function less(a, b) {
  * @returns {string[] | null}
  */
 function compoundOf(word) {
+  if (NOT_COMPOUNDS.has(word.toLowerCase())) return null;
   const min = isWord(word) ? 4 : 3;
   /** @type {{ parts: string[], rank: number[] } | null} */
   let best = null;
@@ -92,6 +99,52 @@ function joinLoneConsonants(parts) {
   return out;
 }
 
+const VOWELS = 'aeiouy';
+/** Consonant pairs that sound as one: a split goes before them, or after ck. */
+const DIGRAPHS = ['ch', 'ph', 'sh', 'th', 'wh'];
+
+/**
+ * A word split between its vowels, for a one-word name the patterns leave
+ * whole: one consonant between two vowels starts the next syllable
+ * (Sva / linn), of two or more the last does (Kal / ten / halt), a pair that
+ * sounds as one staying together. A final e after a consonant is silent
+ * (E / le / vore, not E / le / vo / re).
+ * @param {string} word
+ */
+function vowelSplit(word) {
+  const w = word.toLowerCase();
+  /** @param {number} i */
+  const vowel = (i) => VOWELS.includes(w[i]) && !(w[i] === 'y' && i === 0) && !(w[i] === 'e' && i === w.length - 1 && i > 0 && !VOWELS.includes(w[i - 1]));
+  /** Where each run of vowels starts and ends. @type {[number, number][]} */
+  const groups = [];
+  for (let i = 0; i < w.length; i++) {
+    if (!vowel(i)) continue;
+    if (groups.length && groups[groups.length - 1][1] === i) groups[groups.length - 1][1] = i + 1;
+    else groups.push([i, i + 1]);
+  }
+  /** @type {number[]} */
+  const cuts = [];
+  for (let g = 1; g < groups.length; g++) {
+    const from = groups[g - 1][1];
+    const to = groups[g][0];
+    if (to - from === 0) continue;
+    let cut = to - 1;
+    const pair = w.slice(to - 2, to);
+    if (to - from >= 2 && DIGRAPHS.includes(pair)) cut = to - 2;
+    else if (to - from >= 2 && pair === 'ck') cut = to;
+    cuts.push(cut);
+  }
+  /** @type {string[]} */
+  const out = [];
+  let at = 0;
+  for (const c of cuts) {
+    out.push(word.slice(at, c));
+    at = c;
+  }
+  out.push(word.slice(at));
+  return out.filter((s) => s !== '');
+}
+
 /** One word (no spaces, no hyphens) as its syllables. @param {string} word */
 function piece(word) {
   if (word.length <= 4 || possessive(word)) return [word];
@@ -114,7 +167,9 @@ function wordSyllables(word) {
  * @returns {string[][]}
  */
 export function syllablesOf(name) {
-  return name.split(' ').map(wordSyllables);
+  const words = name.split(' ').map(wordSyllables);
+  if (words.length === 1 && words[0].length === 1 && !possessive(name)) return [vowelSplit(name)];
+  return words;
 }
 
 /**

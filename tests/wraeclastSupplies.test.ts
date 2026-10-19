@@ -45,7 +45,7 @@ function miss(run: Run) {
   const it = run.state.item!;
   const right = it.names.find((nm) => nm.id === it.itemId)!.words;
   const wrong = remaining(it).find((nm) => nm.id !== it.itemId);
-  build(run, wrong ? wrong.words : [...right, ...right]);
+  build(run, wrong ? wrong.words : Array<string[][]>(it.misses + 2).fill(right).flat());
   assert.equal(run.submit(), false);
 }
 
@@ -171,6 +171,65 @@ test('a Flare can\'t be used once the patches still covered are lifted or in its
   assert.equal(run.works('flare'), false);
   assert.equal(run.use('flare'), false);
   assert.deepEqual(run.state.pack, ['flare']);
+});
+
+/** The two side columns, bare as the page's letterbox leaves them on a narrow item. */
+const SIDES = Array.from({ length: PATCHES }, (_, i) => i % 4 === 0 || i % 4 === 3);
+
+test("a bare patch (the page's letterbox) covers nothing: it can't be lifted, and a Flare waits only on patches with art under them", () => {
+  const middle = (it: ItemPlay) => [1, 2].includes(it.lifted.indexOf(true) % 4);
+  const { run, it } = find('plain', Array(5).fill('flare'), middle);
+  assert.ok(run.setBare(SIDES));
+  assert.deepEqual(it.bare, SIDES);
+  assert.equal(covered(it), 7);
+  // A tap on a bare patch lifts nothing, the Flare still in hand.
+  assert.ok(run.use('flare'));
+  assert.equal(run.lift(0), false);
+  assert.equal(it.flare, 2);
+  let lifted = 0;
+  for (let i = 0; i < PATCHES; i++) if (!it.lifted[i] && run.lift(i)) lifted++;
+  assert.equal(lifted, 2);
+  // Two more Flares lift 4, and the fourth reaches the one left: it isn't left waiting on a bare patch.
+  assert.equal(flare(run), 2);
+  assert.equal(flare(run), 2);
+  assert.equal(covered(it), 1);
+  assert.equal(flare(run), 1);
+  assert.equal(it.flare, 0);
+  // Nothing with art under it is left: the fifth Flare stays in the pack.
+  assert.equal(run.works('flare'), false);
+  assert.equal(run.use('flare'), false);
+  assert.deepEqual(run.state.pack, ['flare']);
+  answer(run);
+  assert.equal(run.state.log.items[0].patches, 8);
+});
+
+test('a Flare in hand never waits on more patches than setBare leaves covered, and a lifted patch stays lifted', () => {
+  const { run, it } = find('plain', ['flare']);
+  assert.ok(run.use('flare'));
+  assert.equal(it.flare, 2);
+  assert.ok(run.setBare(Array(PATCHES).fill(true)));
+  assert.equal(covered(it), 0);
+  assert.equal(it.flare, 0);
+  assert.deepEqual(
+    it.bare.map((b, i) => b || it.lifted[i]),
+    Array(PATCHES).fill(true),
+  );
+  assert.equal(it.bare.filter(Boolean).length, 15);
+  assert.equal(run.setBare([true]), false);
+});
+
+test('free patches never land on a bare patch', () => {
+  const bad: string[] = [];
+  for (let seed = 1; seed <= 40; seed++) {
+    const { run } = start(seed);
+    run.leave();
+    run.pick(0);
+    run.setBare(SIDES);
+    run.open(null);
+    const it = run.state.item!;
+    it.lifted.forEach((up, i) => up && SIDES[i] && bad.push(`seed ${seed}: patch ${i}`));
+  }
+  assert.deepEqual(bad, []);
 });
 
 test('at the boss only Flares work, and they lift 2 patches on its first two items and 1 on its third', () => {

@@ -6,11 +6,13 @@
   import NamePlate from '../components/NamePlate.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { singular } from '../lib/game';
+  import { motion } from '../lib/motion.svelte';
   import { ZONE_NAMES, sectionOf, type Run } from './rules';
   import Veil from './Veil.svelte';
   import Clues from './Clues.svelte';
   import ItemPack from './ItemPack.svelte';
   import Inscription from './Inscription.svelte';
+  import Numbered from './Numbered.svelte';
   import { times } from './markup';
   import { BOSS_RULE, ZONE_RULE } from './words';
 
@@ -21,9 +23,12 @@
   const zone = $derived(run.zoneType(it.zoneNo));
   const pays = $derived(section === 'boss' ? 0 : Math.floor((s.tuning.reward[section] * it.multiplier) / 2 ** it.misses));
   const cost = $derived(s.tuning.missCost[section]);
-  /** The build is a name already struck: it can't be sent again. */
-  const isStruck = $derived(it.build.length > 0 && it.openedAt !== null && !run.canSubmit());
   let plateScale = $state<number>();
+  let art = $state<HTMLElement>();
+  /** A Flare taken from the pack: the art it's tapped on brought into view (a phone's pack is below it). */
+  function flared() {
+    art?.scrollIntoView({ block: 'nearest', behavior: motion.still ? 'auto' : 'smooth' });
+  }
 </script>
 
 <div class="item">
@@ -31,7 +36,7 @@
     <span class="term">{it.category} <span class="n">{times(it.multiplier)}</span></span>
     <span class="term">{#if section === 'boss'}The boss pays no gold{:else}Pays <span class="n">{pays}</span> gold{/if}</span>
     <span class="term">A miss costs <span class="n">{cost}</span> life</span>
-    <span class="term rule">{zone ? `${ZONE_NAMES[zone]}: ${ZONE_RULE[zone]}` : BOSS_RULE}</span>
+    <span class="term rule"><Numbered text={zone ? `${ZONE_NAMES[zone]}: ${ZONE_RULE[zone]}` : BOSS_RULE} /></span>
   </p>
 
   <div class="layout">
@@ -43,17 +48,17 @@
           <span class="ibase">{singular(it.category)}</span>
         </div>
       </div>
-      <div class="art" use:backdropShadow={{ fill: 'stage' }}>
+      <div class="art" bind:this={art} use:backdropShadow={{ fill: 'stage' }}>
         <div class="frame"><Veil {run} /></div>
       </div>
+      <p class="flare" role="status">{#if it.flare > 0}Tap <span class="n">{it.flare}</span> {it.flare === 1 ? 'patch' : 'patches'} on the art to lift {it.flare === 1 ? 'it' : 'them'}.{/if}</p>
       <Clues {run} />
     </div>
     <div class="ins-area"><Inscription {run} /></div>
-    <div class="pack-area"><ItemPack {run} /></div>
+    <div class="pack-area"><ItemPack {run} onflare={flared} /></div>
   </div>
 
   <div class="go dock">
-    {#if isStruck}<p class="why">That name is struck off the board.</p>{/if}
     <button class="btn ghost" disabled={!it.build.length} onclick={() => run.clear()}>Clear</button>
     <button class="btn primary big" disabled={!run.canSubmit()} onclick={() => run.submit()}>Submit</button>
   </div>
@@ -174,13 +179,23 @@
     height: 86%;
   }
 
-  .why {
-    flex-basis: 100%;
+  /* A Flare's taps still to make, right under the art they're made on. */
+  .flare {
     margin: 0;
+    padding: 0.35rem 0.8rem;
+    border-block: 1px solid rgba(224, 138, 68, 0.45);
+    background: rgba(224, 138, 68, 0.1);
+    font-size: 0.95rem;
     text-align: center;
-    font-size: 0.92rem;
-    font-style: italic;
-    color: #e79a86;
+    color: #f1c99a;
+  }
+  /* Empty, it takes no room but stays in the page, so a screen reader hears what comes into it. */
+  .flare:empty {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
 
   @container item (max-width: 860px) {

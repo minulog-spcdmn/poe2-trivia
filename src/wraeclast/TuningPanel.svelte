@@ -1,21 +1,30 @@
 <script lang="ts">
   // The tuning panel, collapsed at the page's foot: the numbers the next run
   // starts with, kept in storage as they change, and in each run's log.
+  import { backdropShadow } from '../lib/backdropShadow';
   import { BOARD_SIZES, DEFAULT_TUNING, SUPPLIES, SUPPLY_NAMES, ZONE_TYPES, ZONE_NAMES, type Section } from './rules';
   import { LIMITS, isDefault } from './tuning';
   import { play } from './play.svelte';
   import { SECTION_NAMES } from './markup';
   import { FREE_CLUE } from './words';
 
+  /** Whether it's open: from the start on the QA desk's bench, collapsed on the page till tapped. */
+  let { open = $bindable(false) }: { open?: boolean } = $props();
   const t = $derived(play.tuning);
   const SECTIONS: Section[] = ['early', 'late', 'boss'];
   const changed = $derived(!isDefault(t));
 
-  /** A number field's value, kept whole and in range (a blank or a stray value leaves the number as it was). */
-  function num(value: string, [lo, hi]: readonly [number, number], set: (n: number) => void) {
-    const n = Math.round(Number(value));
-    if (value.trim() === '' || !Number.isFinite(n)) return;
-    set(Math.max(lo, Math.min(hi, n)));
+  /**
+   * A number field's value, kept whole and in range (a blank or a stray value
+   * leaves the number as it was), written back to the field so it shows the
+   * number kept.
+   */
+  function num(field: HTMLInputElement, was: number, [lo, hi]: readonly [number, number], set: (n: number) => void) {
+    const n = Math.round(Number(field.value));
+    const kept = field.value.trim() === '' || !Number.isFinite(n) ? was : Math.max(lo, Math.min(hi, n));
+    field.value = String(kept);
+    if (kept === was) return;
+    set(kept);
     play.saveTuning();
   }
   function reset() {
@@ -27,11 +36,11 @@
 {#snippet field(label: string, value: number, limits: readonly [number, number], set: (n: number) => void)}
   <label class="knob">
     <span>{label}</span>
-    <input class="field" type="number" inputmode="numeric" min={limits[0]} max={limits[1]} step="1" {value} onchange={(e) => num(e.currentTarget.value, limits, set)} />
+    <input class="field" type="number" inputmode="numeric" min={limits[0]} max={limits[1]} step="1" {value} onchange={(e) => num(e.currentTarget, value, limits, set)} />
   </label>
 {/snippet}
 
-<details class="panel tuning">
+<details class="panel tuning" bind:open use:backdropShadow={{ fill: 'linear' }}>
   <summary>
     <span class="title">Tuning</span>
     {#if changed}<span class="tag">Changed</span>{/if}

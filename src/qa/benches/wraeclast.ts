@@ -33,6 +33,8 @@ export const wraeclast: PieceBench = {
     'src/wraeclast/ClueText.svelte',
     'src/wraeclast/ItemPack.svelte',
     'src/wraeclast/Hud.svelte',
+    'src/wraeclast/Numbered.svelte',
+    'src/wraeclast/markup.ts',
     'src/wraeclast/rules.ts',
     'src/wraeclast/words.ts',
     'src/wraeclast/screens.css',

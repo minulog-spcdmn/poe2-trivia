@@ -45,12 +45,14 @@ function build(run: Run, name: BoardName) {
   for (const syl of name.words.flat()) assert.ok(run.place(syl), `${syl} of ${name.name} can't be placed`);
 }
 
-/** A build that is no name: one syllable twice (no name in the game repeats one). */
+/** A build that is no name: one syllable twice or more (no name in the game repeats one). */
 function nonsense(run: Run, it: ItemPlay) {
   run.clear();
   const syl = answerOf(it).words[0][0];
-  assert.ok(!it.names.some((nm) => nm.words.flat().join('') === syl + syl));
-  assert.ok(run.place(syl) && run.place(syl));
+  // Once more per miss so far: a build is sent once.
+  const syls = Array<string>(it.misses + 2).fill(syl);
+  assert.ok(!it.names.some((nm) => nm.words.flat().join('') === syls.join('')));
+  for (const s of syls) assert.ok(run.place(s));
 }
 
 /** Plays on to item n (0 to 14), every item before it answered right at once, and lays it out (not opened yet). */
@@ -261,6 +263,39 @@ test('a wrong build that is a board name strikes it, and the syllables no name l
   }
   assert.deepEqual(bad, []);
   assert.ok(greys > 0);
+});
+
+test("a build already sent on the item, or a struck name, can't be sent again: a miss never costs life twice", () => {
+  const { run } = start(zoneOne('plain'));
+  const s = run.state;
+  const it = reach(run, 0);
+  run.open();
+  nonsense(run, it);
+  assert.equal(run.blocked(), null);
+  assert.equal(run.submit(), false);
+  const life = s.life;
+  // The same build again, still on the line or built afresh.
+  assert.equal(run.blocked(), 'tried');
+  assert.equal(run.canSubmit(), false);
+  assert.equal(run.submit(), null);
+  const sent = [...it.build];
+  run.clear();
+  for (const syl of sent) run.place(syl);
+  assert.equal(run.submit(), null);
+  // A board name, once struck (its own syllables grey out, so it is laid on the line here).
+  const wrong = wrongNames(it)[0];
+  build(run, wrong);
+  assert.equal(run.submit(), false);
+  it.build = wrong.words.flat();
+  assert.equal(run.blocked(), 'struck');
+  assert.equal(run.submit(), null);
+  assert.equal(s.life, life - 25);
+  assert.equal(it.misses, 2);
+  assert.equal(it.log.submits.length, 2);
+  // Something new can be sent.
+  nonsense(run, it);
+  assert.equal(run.blocked(), null);
+  assert.equal(run.canSubmit(), true);
 });
 
 test('every wrong board name built is struck, down to the answer alone', () => {

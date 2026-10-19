@@ -6,6 +6,7 @@
   import { CLUES, type Run } from './rules';
   import { verses } from './markup';
   import ClueText from './ClueText.svelte';
+  import Numbered from './Numbered.svelte';
   import { plural } from './words';
 
   let { run }: { run: Run } = $props();
@@ -31,7 +32,7 @@
       {#each clues.mods.slice(0, it.shown.mods) as [kind, line], i (i)}
         <p class="line {kind}"><ClueText text={line} /></p>
       {/each}
-      {#if hiddenMods}<p class="line hidden">{it.shown.mods ? `${plural(hiddenMods, 'more line')} hidden` : `${plural(hiddenMods, 'mod line')} hidden`}</p>{/if}
+      {#if hiddenMods}<p class="line hidden"><Numbered text={it.shown.mods ? `${plural(hiddenMods, 'more line')} hidden` : `${plural(hiddenMods, 'mod line')} hidden`} /></p>{/if}
     </div>
   {/if}
   {#if clues.flavor !== null}

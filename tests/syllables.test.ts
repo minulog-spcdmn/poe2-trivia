@@ -53,4 +53,19 @@ test('small words and possessives stay whole, and compounds split between their 
   assert.deepEqual(byName.get('Belly of the Beast')?.slice(1, 3), [['of'], ['the']]);
   assert.deepEqual(byName.get('Blackheart'), [['Black', 'heart']]);
   assert.deepEqual(byName.get('Bramblejack'), [['Bramble', 'jack']]);
+  // Words that only look like two are left to the patterns.
+  assert.deepEqual(byName.get('Bursting Decay')?.[0], ['Burst', 'ing']);
+  assert.deepEqual(byName.get('The Burrower')?.[1], ['Bur', 'row', 'er']);
+});
+
+test('no name is a single tile: a one-word name the patterns leave whole splits between its vowels', () => {
+  const byName = new Map(items.map((it) => [it.name, syllables[it.id]]));
+  assert.deepEqual(
+    items.filter((it) => syllables[it.id].flat().length === 1).map((it) => it.name),
+    [],
+  );
+  assert.deepEqual(byName.get('Kaltenhalt'), [['Kal', 'ten', 'halt']]);
+  assert.deepEqual(byName.get('Svalinn'), [['Sva', 'linn']]);
+  assert.deepEqual(byName.get('Elevore'), [['E', 'le', 'vore']]);
+  assert.deepEqual(byName.get('Killjoy'), [['Kill', 'joy']]);
 });

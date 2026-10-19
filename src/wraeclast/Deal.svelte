@@ -5,6 +5,7 @@
   import { motion } from '../lib/motion.svelte';
   import { LOCKOUT, ZONES, ZONE_ITEMS, type Run } from './rules';
   import CategoryCard from './CategoryCard.svelte';
+  import Numbered from './Numbered.svelte';
   import { BOSS_RULE, BOSS_STEPS, zoneLine } from './words';
 
   let { run }: { run: Run } = $props();
@@ -26,10 +27,10 @@
   <header class="screen-title">
     {#if bossNo === null}
       <h1>Pick a category</h1>
-      <p class="sub">{zone ? zoneLine(run, zone) : ''} A category you pick is locked for the next <span class="n">{LOCKOUT}</span> picks.</p>
+      <p class="sub">{#if zone}<Numbered text={zoneLine(run, zone)} />{' '}{/if}A category you pick is locked for the next <span class="n">{LOCKOUT}</span> picks.</p>
     {:else}
       <h1>The boss picks</h1>
-      <p class="sub">{BOSS_RULE}. {BOSS_STEPS[bossNo]} The boss pays no gold.</p>
+      <p class="sub">{BOSS_RULE}. <Numbered text={BOSS_STEPS[bossNo]} /> The boss pays no gold.</p>
     {/if}
   </header>
 

@@ -1,7 +1,7 @@
 // What the Wraeclast run's screens say about its rules (rules.ts): the
 // zones, the supplies, where an item stands in the run.
 
-import { BOSS_ITEMS, CLUES, MIN_NAMES, ZONE_ITEMS, ZONE_NAMES, ZONES, sectionOf, zoneOf, type Run, type Supply, type ZoneType } from './rules.ts';
+import { BOSS_ITEMS, CLUES, ZONE_ITEMS, ZONE_NAMES, ZONES, remaining, sectionOf, zoneOf, type Run, type Supply, type ZoneType } from './rules.ts';
 
 /** What each supply shows when used. */
 export const REVEALS: Record<Supply, string> = {
@@ -54,6 +54,7 @@ export const BOSS_STEPS = ['It starts with one patch lifted.', 'It starts with n
 export function why(run: Run, supply: Supply): string | null {
   const it = run.state.item;
   if (!it || run.works(supply)) return null;
+  if (it.openedAt === null) return 'The item is opening';
   if (it.boss !== null && supply !== 'flare') return 'Silent: it does nothing here';
   const clues = CLUES[it.itemId];
   switch (supply) {
@@ -64,7 +65,7 @@ export function why(run: Run, supply: Supply): string | null {
     case 'wisdom':
       return clues.mods.length ? 'Every line is shown' : 'This item has no mod lines';
     case 'strike':
-      return `Only ${MIN_NAMES} names are left`;
+      return `Only ${plural(remaining(it).length, 'name')} left`;
     case 'lore':
       if (run.zoneType(it.zoneNo) === 'ritual') return "Lore reveals don't work in Ritual";
       return it.shown.flavor ? 'Shown already' : 'This item has none';

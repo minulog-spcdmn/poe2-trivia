@@ -160,6 +160,13 @@ export interface ItemPlay {
   struck: string[];
   /** Which of the 16 patches are lifted, row by row. */
   lifted: boolean[];
+  /**
+   * Which patches have nothing of the art's own box under them, row by row:
+   * the page letterboxes a small or narrow item's art so its patches are big
+   * enough to tap, and the patches over the letterbox alone (setBare) can't
+   * be lifted and don't count as covered.
+   */
+  bare: boolean[];
   /** Random patches the zone (or the boss) still lifts as the item opens. */
   freePatches: number;
   /** Patches the Flare in hand can still lift (the player taps them). */
@@ -385,12 +392,25 @@ export class Run {
     return 2;
   }
 
-  /** Whether the build can be submitted: something built, and not a name already struck. */
+  /**
+   * Why the build can't be sent though there is one: it is a name already
+   * struck, or a build already sent on this item (so a miss never costs life
+   * twice). Null when it can be.
+   */
+  blocked(): 'struck' | 'tried' | null {
+    const it = this.state.item;
+    if (this.state.phase !== 'item' || !it || !it.build.length) return null;
+    const k = key(it.build.join(''));
+    if (it.names.some((n) => it.struck.includes(n.id) && key(n.name) === k)) return 'struck';
+    if (it.log.submits.some((sub) => key(sub.text) === k)) return 'tried';
+    return null;
+  }
+
+  /** Whether the build can be submitted: something built, the item open, and the build not blocked. */
   canSubmit(): boolean {
     const it = this.state.item;
     if (this.state.phase !== 'item' || !it || it.openedAt === null || !it.build.length) return false;
-    const k = key(it.build.join(''));
-    return !it.names.some((n) => it.struck.includes(n.id) && key(n.name) === k);
+    return this.blocked() === null;
   }
 
   // ---- Actions ----
@@ -496,6 +516,7 @@ export class Run {
       tiles,
       struck: [],
       lifted: Array(PATCHES).fill(false),
+      bare: Array(PATCHES).fill(false),
       freePatches,
       flare: 0,
       shown,
@@ -539,7 +560,7 @@ export class Run {
     const it = this.state.item;
     if (this.state.phase !== 'item' || !it || it.openedAt !== null) return false;
     for (let k = 0; k < it.freePatches; k++) {
-      const closed = it.lifted.flatMap((up, i) => (up ? [] : [i]));
+      const closed = it.lifted.flatMap((up, i) => (up || it.bare[i] ? [] : [i]));
       const showing = coverage ? closed.filter((i) => (coverage[i] ?? 0) >= 0.08) : [];
       const from = showing.length ? showing : closed;
       if (!from.length) break;
@@ -586,10 +607,23 @@ export class Run {
     return true;
   }
 
-  /** Lifts a patch the Flare in hand reaches (0 to 15, row by row). */
+  /**
+   * Says which patches are bare (row by row: nothing of the art's box under
+   * them, as the page lays the art out now). A lifted patch stays lifted, and
+   * a Flare in hand never waits on more patches than are left to lift.
+   */
+  setBare(bare: boolean[]): boolean {
+    const it = this.state.item;
+    if (this.state.phase !== 'item' || !it || bare.length !== PATCHES) return false;
+    it.bare = bare.map((b, i) => b && !it.lifted[i]);
+    it.flare = Math.min(it.flare, covered(it));
+    return true;
+  }
+
+  /** Lifts a patch the Flare in hand reaches (0 to 15, row by row; not a bare one). */
   lift(i: number): boolean {
     const it = this.state.item;
-    if (this.state.phase !== 'item' || !it || it.flare <= 0 || i < 0 || i >= PATCHES || it.lifted[i]) return false;
+    if (this.state.phase !== 'item' || !it || it.flare <= 0 || i < 0 || i >= PATCHES || it.lifted[i] || it.bare[i]) return false;
     it.lifted[i] = true;
     it.flare = Math.min(it.flare - 1, covered(it));
     it.log.patches = it.lifted.filter(Boolean).length;
@@ -683,8 +717,8 @@ export class Run {
 
 // ---- Reading an item ----
 
-/** Patches still covered. */
-export const covered = (it: ItemPlay) => it.lifted.filter((up) => !up).length;
+/** Patches still covered (a bare one covers nothing). */
+export const covered = (it: ItemPlay) => it.lifted.filter((up, i) => !up && !it.bare[i]).length;
 
 /** The names not struck. */
 export const remaining = (it: ItemPlay) => it.names.filter((nm) => !it.struck.includes(nm.id));

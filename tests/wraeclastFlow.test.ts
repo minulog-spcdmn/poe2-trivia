@@ -46,11 +46,11 @@ function answer(run: Run) {
   return run.submit();
 }
 
-/** Builds the answer with its first syllable once more (no name), submits it and clears the line. */
+/** Builds the answer with its first syllable once more per miss so far (no name, and never sent before), submits it and clears the line. */
 function miss(run: Run) {
   const syllables = answerOf(run).words.flat();
   wait(run, 4000);
-  build(run, [...syllables, syllables[0]]);
+  build(run, [...syllables, ...Array<string>(run.state.item!.misses + 1).fill(syllables[0])]);
   const right = run.submit();
   run.clear();
   return right;

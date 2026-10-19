@@ -1,10 +1,11 @@
 <script lang="ts">
   // The Inscription: the answer line (tap a placed syllable to take it back),
   // the board's syllables (every name's, shuffled; tap one to place it, as
-  // often as the name needs), the names struck so far, and what the last
-  // wrong submit cost. Clear and Submit are the item screen's (its dock).
+  // often as the name needs), what the last wrong submit cost (or why the
+  // build can't be sent), and the names struck so far. Clear and Submit are
+  // the item screen's (its dock).
   import { backdropShadow } from '../lib/backdropShadow';
-  import { answerWords, greyed, remaining, sectionOf, startsWord, type Run } from './rules';
+  import { answerWords, buildText, greyed, remaining, sectionOf, startsWord, type Run } from './rules';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
@@ -14,11 +15,17 @@
   const struck = $derived(it.names.filter((nm) => it.struck.includes(nm.id)));
   const last = $derived(it.log.submits.at(-1));
   const cost = $derived(s.tuning.missCost[sectionOf(it.n)]);
+  const missed = $derived(!!last && !last.right);
+  /** Why the build can't be sent, unless it's the miss just shown. */
+  const blocked = $derived.by(() => {
+    const why = run.blocked();
+    return why && !(missed && buildText(it) === last!.text) ? why : null;
+  });
   /** Whether a word starts at placed syllable i: a gap goes before it. */
   const gapAt = (i: number) => i > 0 && startsWord(it, it.build[i]) && !it.build[i - 1].endsWith('-');
 </script>
 
-<section class="panel inscription" aria-labelledby="ins-h" use:backdropShadow>
+<section class="panel inscription" aria-labelledby="ins-h" use:backdropShadow={{ fill: 'linear' }}>
   <div class="top">
     <h2 id="ins-h">Inscription</h2>
     <span class="meta">
@@ -26,7 +33,7 @@
     </span>
   </div>
 
-  <div class="line" class:empty={!it.build.length} aria-label="Your answer">
+  <div class="line" class:empty={!it.build.length} role="group" aria-label="Your answer">
     {#if it.build.length}
       {#each it.build as syl, i (i)}
         <button class="placed" class:gap={gapAt(i)} onclick={() => run.unplace(i)} aria-label="Take back {syl}">{syl}</button>
@@ -36,19 +43,24 @@
     {/if}
   </div>
 
-  {#if last && !last.right}
-    <p class="miss" role="status">
-      “{last.text}” is not it: <span class="n">−{cost}</span> life, the reward halved.{#if it.misses > 1}
-        <span class="n">{it.misses}</span> misses on this item.{/if}
-    </p>
-  {/if}
-
   <div class="tiles" role="group" aria-label="The board's syllables">
     {#each it.tiles as tile (tile)}
       {@const grey = greyed(it, tile)}
       <button class="tile" class:grey disabled={!open || grey} onclick={() => run.place(tile)}>{tile}</button>
     {/each}
   </div>
+
+  <!-- Under the tiles, so a line coming or going never moves them under a finger. -->
+  <p class="status" role="status">
+    {#if blocked === 'struck'}
+      That name is struck off the board.
+    {:else if blocked === 'tried'}
+      “{buildText(it)}” was sent already.
+    {:else if missed}
+      “{last!.text}” is not it: <span class="n">−{cost}</span> life, the reward halved.{#if it.misses > 1}
+        <span class="n">{it.misses}</span> misses on this item.{/if}
+    {/if}
+  </p>
 
   {#if struck.length}
     <p class="struck"><span class="label">Struck</span> {#each struck as nm, i (nm.id)}{#if i}<span class="sep"> • </span>{/if}<s>{nm.name}</s>{/each}</p>
@@ -94,6 +106,7 @@
     color: #6f665c;
   }
   .placed {
+    min-width: 24px;
     padding: 0.18rem 0.3rem;
     border: 1px solid transparent;
     border-radius: 3px;
@@ -116,12 +129,20 @@
     text-decoration: line-through;
     text-decoration-thickness: 1px;
   }
-  .miss {
+  .status {
     margin: -0.2rem 0 0;
     font-size: 0.95rem;
     color: #e79a86;
   }
-  .miss .n {
+  /* Empty, it takes no room but stays in the page, so a screen reader hears what comes into it. */
+  .status:empty {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .status .n {
     color: #ff9c86;
   }
   /* The board: every name's syllables as tiles. */
@@ -180,6 +201,16 @@
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--muted);
+  }
+  /* A placed syllable is a finger's width on a touch screen; the empty line
+     is as tall as one with a syllable on it, so the tiles under it never move. */
+  @media (pointer: coarse) {
+    .placed {
+      min-height: 2.4rem;
+    }
+    .line {
+      min-height: calc(2.4rem + 0.9rem + 2px);
+    }
   }
   @container board (max-width: 420px) {
     .tiles {

@@ -99,6 +99,12 @@ the same in the tests (`tests/wraeclast*.test.ts`) as on the page.
   out.
 - **Its storage is its own:** the page is marked `<html data-wraeclast>`,
   and `src/lib/storage.ts` then starts its keys with `wraeclast.`.
+- **On the QA desk:** two pieces, each played to its state by the real
+  rules. **Wraeclast item** (`qa.html?b=wraeclast`) is the item screen at
+  any place in the run, zone type and board size (4 to 10 names), names
+  struck, misses made, the answer half built; **Wraeclast screens**
+  (`qa.html?b=wraeclastRun`) the rest: the camp and the town, the deal (the
+  boss's too), between items, the end won and lost, the tuning panel.
 
 ## The backdrop tool
 

@@ -1,21 +1,19 @@
 <script lang="ts">
   // The pack during an item: each supply it holds, how many, what it shows
-  // (or why it can't be used here), and its Use button.
+  // (or why it can't be used here), and its Use button. A Flare used calls
+  // onflare, for the screen to bring the art it's tapped on into view.
   import { backdropShadow } from '../lib/backdropShadow';
   import { SUPPLIES, SUPPLY_NAMES, type Run } from './rules';
+  import Numbered from './Numbered.svelte';
   import { reveals, why } from './words';
 
-  let { run }: { run: Run } = $props();
+  let { run, onflare }: { run: Run; onflare?: () => void } = $props();
   const s = $derived(run.state);
-  const it = $derived(s.item!);
   const held = $derived(SUPPLIES.map((sup) => ({ sup, count: s.pack.filter((p) => p === sup).length })).filter((h) => h.count));
 </script>
 
-<section class="panel pack" aria-labelledby="pack-h" use:backdropShadow>
+<section class="panel pack" aria-labelledby="pack-h" use:backdropShadow={{ fill: 'linear' }}>
   <h2 id="pack-h">Pack</h2>
-  {#if it.flare > 0}
-    <p class="flare" role="status">Tap {it.flare === 1 ? 'a patch' : `${it.flare} patches`} on the art to lift {it.flare === 1 ? 'it' : 'them'}.</p>
-  {/if}
   {#if held.length}
     <ul>
       {#each held as h (h.sup)}
@@ -23,9 +21,9 @@
         <li class:off={!!no}>
           <div class="what">
             <span class="name">{SUPPLY_NAMES[h.sup]} <span class="n">× {h.count}</span></span>
-            <span class="does">{no ?? reveals(run, h.sup)}</span>
+            <span class="does"><Numbered text={no ?? reveals(run, h.sup)} /></span>
           </div>
-          <button class="btn small" disabled={!run.canUse(h.sup)} onclick={() => run.use(h.sup)} aria-label="Use a {SUPPLY_NAMES[h.sup]}">Use</button>
+          <button class="btn small" disabled={!run.canUse(h.sup)} onclick={() => run.use(h.sup) && h.sup === 'flare' && onflare?.()} aria-label="Use a {SUPPLY_NAMES[h.sup]}">Use</button>
         </li>
       {/each}
     </ul>
@@ -75,15 +73,6 @@
   }
   .off .does {
     font-style: italic;
-  }
-  .flare {
-    margin: 0 0 0.5rem;
-    padding: 0.4rem 0.6rem;
-    border: 1px solid rgba(224, 138, 68, 0.45);
-    border-radius: 4px;
-    background: rgba(224, 138, 68, 0.08);
-    font-size: 0.95rem;
-    color: #f1c99a;
   }
   .empty {
     margin: 0;

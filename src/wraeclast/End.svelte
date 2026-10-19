@@ -1,20 +1,23 @@
 <script lang="ts">
-  // The run's end: won or lost, where, the run in numbers and item by item,
-  // and the Copy run log button (every run kept, as JSON, for the owner).
+  // The run's end: won or lost, where, the run in numbers, the Copy run log
+  // button (every run kept, as JSON, for the owner), and the run item by item.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { ITEMS_IN_RUN, SUPPLIES, SUPPLY_NAMES, ZONE_NAMES, type Run } from './rules';
+  import { ITEMS_IN_RUN, SUPPLIES, SUPPLY_NAMES, ZONE_NAMES, type Run, type RunLog } from './rules';
   import { logText } from './runLog';
   import { play } from './play.svelte';
   import { times } from './markup';
+  import Numbered from './Numbered.svelte';
 
-  let { run }: { run: Run } = $props();
+  /** The runs kept and New run are the page's (play.svelte.ts) unless given (the QA desk's bench gives its own). */
+  let { run, runs, onnew }: { run: Run; runs?: RunLog[]; onnew?: () => void } = $props();
+  const kept = $derived(runs ?? play.runs);
   const s = $derived(run.state);
   const log = $derived(s.log);
   const won = $derived(log.result === 'win');
   const named = $derived(log.items.filter((it) => it.submits.at(-1)?.right).length);
   const bought = $derived(SUPPLIES.filter((sup) => log.bought[sup]).map((sup) => `${SUPPLY_NAMES[sup]} × ${log.bought[sup]}`));
   const used = $derived(SUPPLIES.filter((sup) => log.used[sup]).map((sup) => `${SUPPLY_NAMES[sup]} × ${log.used[sup]}`));
-  const text = $derived(logText(play.runs));
+  const text = $derived(logText(kept));
 
   let copied = $state<'yes' | 'no' | null>(null);
   let box = $state<HTMLTextAreaElement>();
@@ -27,7 +30,10 @@
       // No clipboard here (an old browser, a page not in focus): the log shown, selected, to copy by hand.
       copied = 'no';
       showLog = true;
-      queueMicrotask(() => box?.select());
+      queueMicrotask(() => {
+        box?.focus();
+        box?.select();
+      });
     }
   }
   const zoneOf = (z: string, no: number) => (z === 'boss' ? 'Boss' : `Zone ${no} • ${ZONE_NAMES[z as keyof typeof ZONE_NAMES]}`);
@@ -42,7 +48,7 @@
     </p>
   </header>
 
-  <section class="panel sums" aria-label="The run in numbers" use:backdropShadow>
+  <section class="panel sums" aria-label="The run in numbers" use:backdropShadow={{ fill: 'linear' }}>
     <dl>
       <div><dt>Named</dt><dd><span class="n">{named}</span> of <span class="n">{ITEMS_IN_RUN}</span></dd></div>
       <div><dt>Misses</dt><dd class="n">{log.misses}</dd></div>
@@ -51,12 +57,31 @@
       <div><dt>Gold earned</dt><dd class="n">{log.goldEarned}</dd></div>
       <div><dt>Gold spent</dt><dd class="n">{log.goldSpent}</dd></div>
       <div><dt>Flask drinks</dt><dd class="n">{log.drinks}</dd></div>
-      <div><dt>Bought</dt><dd>{bought.join(' • ') || 'Nothing'}</dd></div>
-      <div><dt>Used</dt><dd>{used.join(' • ') || 'Nothing'}</dd></div>
+      <div><dt>Bought</dt><dd><Numbered text={bought.join(' • ') || 'Nothing'} /></dd></div>
+      <div><dt>Used</dt><dd><Numbered text={used.join(' • ') || 'Nothing'} /></dd></div>
     </dl>
   </section>
 
-  <section class="panel items" aria-labelledby="items-h" use:backdropShadow>
+  <div class="go dock">
+    <!-- What the copy did, in the bar itself: pinned at the foot, it's in view wherever the button is. -->
+    <p class="copied" role="status">{#if copied === 'yes'}Copied: the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'}, to paste to the owner.{:else if copied === 'no'}It couldn't be copied here: copy it by hand from the log below.{/if}</p>
+    <button class="btn primary big" onclick={copy}>Copy run log</button>
+    <button class="btn ghost" onclick={() => (onnew ? onnew() : play.start())}>New run</button>
+  </div>
+  <p class="foot">
+    The log holds the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'} on this device.
+    {#if !showLog}<button class="link" onclick={() => (showLog = true)}>Show it</button>{/if}
+  </p>
+
+  {#if showLog}
+    <section class="panel" aria-labelledby="log-h" use:backdropShadow={{ fill: 'linear' }}>
+      <h2 id="log-h">Run log</h2>
+      <p class="note">{copied === 'no' ? "It couldn't be copied here: select it all and copy it by hand." : 'Every run kept on this device, newest last.'}</p>
+      <textarea bind:this={box} readonly rows="8" value={text}></textarea>
+    </section>
+  {/if}
+
+  <section class="panel items" aria-labelledby="items-h" use:backdropShadow={{ fill: 'linear' }}>
     <h2 id="items-h">Item by item</h2>
     <ol>
       {#each log.items as it, i (i)}
@@ -75,23 +100,6 @@
       {/each}
     </ol>
   </section>
-
-  {#if showLog}
-    <section class="panel" aria-labelledby="log-h">
-      <h2 id="log-h">Run log</h2>
-      <p class="note">{copied === 'no' ? "It couldn't be copied here: select it all and copy it by hand." : 'Every run kept on this device, newest last.'}</p>
-      <textarea bind:this={box} readonly rows="8" value={text}></textarea>
-    </section>
-  {/if}
-
-  <div class="go dock">
-    <button class="btn primary big" onclick={copy}>{copied === 'yes' ? 'Copied' : 'Copy run log'}</button>
-    <button class="btn ghost" onclick={() => play.start()}>New run</button>
-  </div>
-  <p class="foot">
-    {#if copied === 'yes'}The log of the last <span class="n">{play.runs.length}</span> {play.runs.length === 1 ? 'run' : 'runs'} is on the clipboard: paste it to the owner.{:else}The log holds the last <span class="n">{play.runs.length}</span> {play.runs.length === 1 ? 'run' : 'runs'} on this device.{/if}
-    {#if !showLog}<button class="link" onclick={() => (showLog = true)}>Show it</button>{/if}
-  </p>
 </div>
 
 <style>
@@ -186,6 +194,21 @@
     padding: 0.5rem;
     user-select: text;
     cursor: text;
+  }
+  .copied {
+    flex-basis: 100%;
+    margin: 0;
+    text-align: center;
+    font-size: 0.95rem;
+    color: #f1d99b;
+  }
+  /* Empty, it takes no room but stays in the page, so a screen reader hears what comes into it. */
+  .copied:empty {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
   .foot {
     margin: 0;

@@ -56,10 +56,10 @@ function place(run: Run, words: string[][]) {
   for (const syl of words.flat()) assert.ok(run.place(syl), syl);
 }
 
-/** A miss with a build that is no real name: the answer twice. */
+/** A miss with a build that is no real name: the answer twice, once more per miss so far (a build is sent once). */
 function missTwice(run: Run) {
   const a = answerOf(run);
-  place(run, [...a.words, ...a.words]);
+  place(run, Array<string[][]>(run.state.item!.misses + 2).fill(a.words).flat());
   assert.equal(run.submit(), false);
 }
 
@@ -153,9 +153,11 @@ function wrongName(p: Play, w: Want) {
   submit(p, w, d.words, d.name, false);
 }
 
+/** The answer twice, once more per miss so far (a build is sent once): no name. */
 function wrongTwice(p: Play, w: Want) {
   const a = answerOf(p.run);
-  submit(p, w, [...a.words, ...a.words], `${a.name} ${a.name}`, false);
+  const times = p.run.state.item!.misses + 2;
+  submit(p, w, Array<string[][]>(times).fill(a.words).flat(), Array<string>(times).fill(a.name).join(' '), false);
 }
 
 /** The answer, built right: it pays the section's base reward x the card, halved once per miss, rounded down (none at the boss). */
