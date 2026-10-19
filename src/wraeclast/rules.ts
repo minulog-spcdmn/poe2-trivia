@@ -357,7 +357,21 @@ export interface RunLog {
   /** Each travel step: the nodes offered (what each was, and whether corrupted) and the one picked. */
   travel: { offered: string[]; picked: string; options: { node: string; kind: Place['kind']; zoneType: ZoneType | null; corrupted: boolean }[] }[];
   /** Each node arrived at: what it was, and its corruption. */
-  met: { node: string; kind: Place['kind']; zoneType: ZoneType | null; corruption: Hidden | null }[];
+  /**
+   * Each place arrived at, the camp first: its corruption and the boss rule
+   * that corruption carries, a town's heal, and the gold spent and supplies
+   * bought there.
+   */
+  met: {
+    node: string;
+    kind: Place['kind'];
+    zoneType: ZoneType | null;
+    corruption: Hidden | null;
+    rule: BossMod | null;
+    healed: number;
+    spent: number;
+    bought: number;
+  }[];
   fronts: { seeded: number; stopped: number; aliveAtBoss: number | null; seeds: { node: string; rule: BossMod }[] };
   bossMods: BossMod[];
   misses: number;
@@ -711,7 +725,7 @@ export class Run {
         endedOn: null,
         route: [graph.camp.id],
         travel: [],
-        met: [],
+        met: [{ node: graph.camp.id, kind: 'camp', zoneType: null, corruption: null, rule: null, healed: 0, spent: 0, bought: 0 }],
         fronts: { seeded: fronts.length, stopped: 0, aliveAtBoss: null, seeds: fronts.map((f) => ({ node: f.at, rule: f.rule })) },
         bossMods: [],
         misses: 0,
@@ -954,9 +968,12 @@ export class Run {
     s.gold -= price;
     s.log.goldSpent += price;
     s.stock.splice(i, 1);
+    const here = s.log.met.at(-1)!;
+    here.spent += price;
     if (this.fits(ware, n)) {
       this.stow(ware, n);
       s.log.bought[ware] += n;
+      here.bought += n;
     } else s.bought = { supply: ware, n, price, at: i };
     return true;
   }
@@ -970,9 +987,11 @@ export class Run {
       if (slot < 0 || slot >= s.pack.length) return false;
       s.pack[slot] = { supply: b.supply, n: b.n };
       s.log.bought[b.supply] += b.n;
+      s.log.met.at(-1)!.bought += b.n;
     } else {
       s.gold += b.price;
       s.log.goldSpent -= b.price;
+      s.log.met.at(-1)!.spent -= b.price;
       s.stock.splice(Math.min(b.at, s.stock.length), 0, b.supply);
     }
     s.bought = null;
@@ -1039,7 +1058,8 @@ export class Run {
     s.beat = null;
     const place = s.places[id];
     const hidden = this.hiddenHere();
-    s.log.met.push({ node: id, kind: place.kind, zoneType: place.kind === 'zone' ? place.type : null, corruption: hidden });
+    const by = hidden ? s.fronts.find((f) => f.alive && f.at === id) : undefined;
+    s.log.met.push({ node: id, kind: place.kind, zoneType: place.kind === 'zone' ? place.type : null, corruption: hidden, rule: by?.rule ?? null, healed: 0, spent: 0, bought: 0 });
     if (place.kind === 'well') {
       s.beat = { kind: 'well', node: id, refilled: s.tuning.flask - s.flask.charges };
       s.flask.charges = s.tuning.flask;
@@ -1049,6 +1069,7 @@ export class Run {
     } else if (place.kind === 'town') {
       const heal = Math.min(TOWN_HEAL, s.maxLife - s.life);
       s.life += heal;
+      s.log.met.at(-1)!.healed = heal;
       s.beat = { kind: 'town', node: id, healed: heal };
       s.stock = [...SUPPLIES];
       s.vendor = { at: 'town', heal };
