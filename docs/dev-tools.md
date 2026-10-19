@@ -72,6 +72,34 @@ With two players or more the run is co-op:
   start on the beta), so its runs, codex, saves and settings never reach the
   game's.
 
+## The Wraeclast run
+
+`wraeclast.html` (`src/wraeclast/`) is the first playable prototype of the
+new mode, built to answer a few design questions with real play: a solo run
+of 15 items (the camp, zones 1 and 2, the town, zones 3 and 4, the boss's
+three), each item's name built from syllables (the Inscription) with its art
+under a 4 x 4 veil, supplies bought at the vendors and spent from the pack,
+life, the flask and gold. Its rules, numbers and data are the handoff's
+(`docs/handoff/wraeclast/README.md`); `src/wraeclast/rules.ts` plays them,
+the same in the tests (`tests/wraeclast*.test.ts`) as on the page.
+
+- **The tuning panel** (collapsed at the page's foot) sets the numbers the
+  next run starts with: life, gold, flask charges, miss costs, rewards,
+  prices, board sizes, each zone's free clue, the word count. They're kept,
+  and each run's log has a copy.
+- **The run log:** the end screen's Copy run log puts the last 20 runs on
+  the clipboard as JSON (or shows it, to copy by hand), for testers to send
+  to the owner.
+- **Its data:** `src/data/syllables.json` (`node scripts/make-syllables.mjs`)
+  and `src/data/clues.json` (`node scripts/make-clues.mjs`), generated from
+  `items.json` and `itemStats.json`; run both again after `npm run
+  fetch-data`.
+- **Open it:** `npm run dev`, then `http://localhost:5173/wraeclast.html`;
+  on the beta, **poe2.quest/beta/wraeclast.html**. The live build leaves it
+  out.
+- **Its storage is its own:** the page is marked `<html data-wraeclast>`,
+  and `src/lib/storage.ts` then starts its keys with `wraeclast.`.
+
 ## The backdrop tool
 
 `backdrop.html` (`src/backdropTool/`) is a page for picking Delve's

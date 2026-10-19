@@ -328,10 +328,11 @@ export default defineConfig(({ command, mode }) => {
           // the zone tuning page (src/zonebanner), the card bench (src/cardBench), the
           // spatial sound page (src/spatialPage), the hover tuning page
           // (src/hoverPage), the sound levels page (src/levelsPage), the QA
-          // desk (src/qa) and the hub linking them all (dev.html): the dev
+          // desk (src/qa), the Wraeclast run's prototype (src/wraeclast) and
+          // the hub linking them all (dev.html): the dev
           // server serves them by itself; of the builds only the beta has
           // them, never the live game.
-          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', qa: 'qa.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', cards: 'cards.html', spatial: 'spatial.html', hover: 'hover.html', levels: 'levels.html' } : {}),
+          ...(env.VITE_CHANNEL === 'beta' ? { dev: 'dev.html', qa: 'qa.html', lab: 'lab.html', backdrop: 'backdrop.html', zones: 'zones.html', cards: 'cards.html', spatial: 'spatial.html', hover: 'hover.html', levels: 'levels.html', wraeclast: 'wraeclast.html' } : {}),
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },

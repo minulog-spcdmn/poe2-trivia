@@ -50,6 +50,7 @@ test('pages apart from the game keep keys of their own, and leave the keys from 
     [{ marks: { 'data-lab': '', 'data-zones': '' } }, 'poe2trivia.lab.zones.'],
     [{ marks: { 'data-backdrop-tool': '' } }, 'poe2trivia.backdrops.'],
     [{ marks: { 'data-bot': '' } }, 'poe2trivia.bot.'],
+    [{ marks: { 'data-wraeclast': '' } }, 'poe2trivia.wraeclast.'],
     [{ marks: { 'data-qa': 'desk' } }, 'poe2trivia.qa.desk.'],
     // A frame's slot keeps only what a key can hold.
     [{ marks: { 'data-qa': 'seat 2/../x' } }, 'poe2trivia.qa.seat2x.'],
