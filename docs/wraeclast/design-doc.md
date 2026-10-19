@@ -93,12 +93,12 @@ A zone's place on the map is fixed, but its zone type is rolled per run. Each ty
 | Zone type | Free clue | Rule | Available |
 | --- | --- | --- | --- |
 | Plain (no mechanic) | One common mod line | None; the baseline | From the start |
-| Incursion | Flavor text, name words masked | Flares burn in half as much | From the start |
+| Incursion | Flavor text, name words masked | Torches burn in half as much | From the start |
 | Essence | Base type (gems: the support description) | 1 fewer loot card, because the base often gives the item away | From the start |
 | Ritual | The answer's word lengths | Scrolls of Wisdom don't work here | From the start |
 | Expedition | One common mod line | A vendor opens after the zone; 1 fewer loot card | From the start |
 | Blight | A small burn-in | 6 extra decoys on the Inscription | From the start |
-| Delirium | Flavor text and one common mod line | The art can't be revealed; Flares don't work | Found in the fog |
+| Delirium | Flavor text and one common mod line | The art can't be revealed; Torches don't work | Found in the fog |
 | Kalandra | A larger burn-in, mirrored | +1 loot card | Found in the fog |
 | Ultimatum | None | +2 loot cards; misses cost double life | Found in the fog |
 | Necropolis | One common mod line | Items come from your own past misses; +1 loot card | Found in the fog |
@@ -168,16 +168,17 @@ There are three resources. **Gold** buys supplies and gear between items: at the
 
 | Supply | What it does | Sold as |
 | --- | --- | --- |
-| Flare | Burns in about a sixth of the art at a random spot | 3 for 6 gold |
+| Torch | Burns in about a sixth of the art at a random spot | 3 for 6 gold |
 | Scroll of Wisdom | The item's next mod line, from the most common to the rarest, name words masked | 3 for 6 gold |
 | Golden Page | The flavor text, name words masked | 2 for 6 gold |
 | Category reveal | The item's category, such as Rings | 2 for 6 gold |
 | Base reveal | The base type (gems: the support description) | 1 for 6 gold |
-| Decoy sweep | Strikes 4 decoys from the Inscription | 3 for 6 gold |
+| Tangled Fossil | Strikes 4 decoys from the Inscription | 3 for 6 gold |
 | Word lengths | How many words the answer has, and the syllables in each | 3 for 4 gold |
 | First syllable | Places the answer's first syllable on the line, locked and gold | 2 for 6 gold |
+| Stacked Deck | One random clue the item hasn't shown yet, among those the zone allows (from the prototype after playtest 3) | 3 for 4 gold (first guess) |
 
-Playtest 2 showed that supplies were too scarce, that Flares revealed too little for their price, and that there was no way to learn the base type, the category or the flavor text. So supplies come in cheap stacks, Flares burn in twice as much, and three reveals are back. The base type gives the answer away for about 3 uniques in 4, which makes naming the unique from it real expert trivia, so it is sold one at a time. The Scroll of Wisdom now reads from the most common line to the rarest: a first Scroll is weak, and a third may give the item away. Scroll of Wisdom and Golden Page are PoE items that do here what they do in the game. The others have working names until fitting PoE items are found, Flare included, since Delve already has a Flare that does something else. A supply's name must be an item you can buy, carry and use: never an NPC, an action or a league mechanic.
+Playtest 2 showed that supplies were too scarce, that Torches revealed too little for their price, and that there was no way to learn the base type, the category or the flavor text. So supplies come in cheap stacks, Torches burn in twice as much, and three reveals are back. The base type gives the answer away for about 3 uniques in 4, which makes naming the unique from it real expert trivia, so it is sold one at a time. The Scroll of Wisdom now reads from the most common line to the rarest: a first Scroll is weak, and a third may give the item away. Scroll of Wisdom, Golden Page and Tangled Fossil are PoE items that do here what they do in the game (a fossil rules outcomes out of a pool, as the Tangled Fossil rules decoys off the board). The others have working names until fitting PoE items are found. Torch is the working name for what was the Flare, which Delve already uses for something else. A supply's name must be an item you can buy, carry and use: never an NPC, an action or a league mechanic.
 
 **The pack** holds 8 stacks of up to 5 of one supply each, and the flask doesn't take a slot. A full pack means choosing what to leave behind at the next town.
 
@@ -200,7 +201,7 @@ After every second zone you pick 1 of 3 boons for the rest of the run, so a run 
 | --- | --- | --- |
 | Lamplighter | Every item starts with an extra small burn-in, the boss's items too | Information |
 | Archivist | Each Scroll of Wisdom shows 2 common mod lines | Information |
-| Keen Eye | Each Decoy sweep strikes 6 decoys instead of 4 | Information |
+| Keen Eye | Each Tangled Fossil strikes 6 decoys instead of 4 | Information |
 | Strike Through | Each Scroll of Wisdom you use also strikes 2 decoys | Information |
 | Scribe | Every Inscription has 6 fewer decoys | Board |
 | Prospector | Gold cards pay 50% more | Economy |
@@ -220,7 +221,7 @@ Some combinations that make a run feel like a build:
 - **The expert:** Clean Hands, High Roller and Lamplighter. Answer from the free clue and one small burn-in for a fat drop, and hope you are right.
 - **The cautious one:** Second Wind, Fortify and Haggler. Stock up cheaply in every town and make every miss hurt less.
 
-More boons unlock from the fog (see Progression). Most of them are tied to the hidden zone types, for example "Ultimatum misses cost normal life" or "Flares burn in twice as much in Necropolis zones".
+More boons unlock from the fog (see Progression). Most of them are tied to the hidden zone types, for example "Ultimatum misses cost normal life" or "Torches burn in twice as much in Necropolis zones".
 
 ## Towns and events
 
@@ -258,16 +259,16 @@ The boss is a chain of 3 items under one rule, and beating all 3 wins the run. T
 - **The chain:** each of the 3 items has a boss-size Inscription (about 32 tiles).
   - **Item 1** starts with a small burn-in.
   - **Item 2** starts with nothing.
-  - **Item 3** starts with nothing, and Flares burn in half as much.
+  - **Item 3** starts with nothing, and Torches burn in half as much.
 - **Misses:** each costs 55 to 65 life, and reaching 0 ends the run at the boss. A tier 5 boss has a 4th item, which works like item 3.
 - **Category:** the boss's items are drawn like any other item, from any category.
 
-**Corruption that reaches the boss.** Every corruption front still creeping when you arrive adds one of these, rolled: Lingering (a 4th item, like item 3), Bloodied (misses cost 10 more life), Murky (Flares burn in half as much) or Teeming (8 more decoys on every item). At most 3.
+**Corruption that reaches the boss.** Every corruption front still creeping when you arrive adds one of these, rolled: Lingering (a 4th item, like item 3), Bloodied (misses cost 10 more life), Murky (Torches burn in half as much) or Teeming (8 more decoys on every item). At most 3.
 
 | Boss rule | Effect |
 | --- | --- |
-| Blind | The art can't be revealed; Flares don't work |
-| Silent | Only Flares work |
+| Blind | The art can't be revealed; Torches don't work |
+| Silent | Only Torches work |
 | Mirrored | Every burn-in is mirrored and grayscale |
 | Hoarder | Every supply used takes two from your pack |
 | Shifting | After each miss, the board reshuffles and every struck tile is replaced by a new decoy |
@@ -341,7 +342,7 @@ These settle the cases a coder would otherwise have to guess.
 - **Syllables:** the board shows each distinct syllable once. Placing one doesn't use it up, so a name that repeats a syllable can place it twice.
 - **Checking:** a build is right when its letters, joined, spell the answer's name without spaces and punctuation. A build split differently from the tiles' own split still counts.
 - **Marks:** a wrong build is compared with the answer syllable by syllable, as in Wordle. Gold: the right syllable in the right place. Silver: a syllable the answer holds elsewhere (counted as often as the answer holds it). Struck: the rest. A tile keeps its best mark.
-- **Inscription supplies:** a Decoy sweep strikes tiles exactly like a miss. First syllable places a locked, gold tile at the start of the line. A supply with nothing to do on an item (no mod line left, no decoy left, the reveal already shown) can't be used on it.
+- **Inscription supplies:** a Tangled Fossil strikes tiles exactly like a miss. First syllable places a locked, gold tile at the start of the line. A supply with nothing to do on an item (no mod line left, no decoy left, the reveal already shown) can't be used on it.
 - **Board size:** extra decoys from Blight, Swarming, Teeming or tier 4 add up, to at most 36 tiles in all, so the boss board fits a 375 x 667 phone. The Shifting boss replaces struck decoys instead of adding.
 - **No repeats:** an item never comes up twice in a run. A Necropolis zone with too few past misses draws the items you have seen least.
 - **Full pack:** loot that doesn't fit can replace a stack, or be left behind.
@@ -358,7 +359,7 @@ These settle the cases a coder would otherwise have to guess.
 - **Fronts:** only a front's head zone stops it, and cleansing a zone two fronts share stops both. Boss modifiers never repeat.
 - **Board cap:** the 36-tile cap trims ordinary decoys first, never the answer's tiles or the signature tiles.
 - **A tile placed twice:** marked as in Wordle: gold first, then silver from left to right as often as the answer holds it, the rest struck.
-- **Decoy sweep:** strikes unstruck decoys picked at random.
+- **Tangled Fossil:** strikes unstruck decoys picked at random.
 
 ## Data and automation
 
@@ -389,7 +390,7 @@ The script replaces those words, possessives and plurals included, with a mask o
 
 **Decoys.** Decoy syllables come from other items' names, from every category alike, preferring ones that look like the answer's (similar length, shared letters). Every board also holds "of", "the" and "and" and 2 or 3 possessive tiles: the picker alone rarely chose them, so their presence gave multi-word names and lineage gems away. They don't have to add up to whole names, and a decoy that happens to complete another real name is just a wrong answer. From tier 4, syllables from the made-up names in fakes.json can join; nothing new is written by hand.
 
-**Veil.** No grid of tiles, and every item sits in the same square frame, so its size gives nothing away. Art is revealed with the game's existing burn-in (unveil) effect, or a new shader: each Flare burns in a small area at a random spot, and zones and bosses can bend it further with colour (grayscale, tinted), mirroring or a smaller burn. The art already in `public/items/` is used as it is; nothing new is stored. Guests receive only the burned-in part, never the whole picture before the reveal.
+**Veil.** No grid of tiles, and every item sits in the same square frame, so its size gives nothing away. Art is revealed with the game's existing burn-in (unveil) effect, or a new shader: each Torch burns in a small area at a random spot, and zones and bosses can bend it further with colour (grayscale, tinted), mirroring or a smaller burn. The art already in `public/items/` is used as it is; nothing new is stored. Guests receive only the burned-in part, never the whole picture before the reveal.
 
 **Map art.** The illustrated Wraeclast map is a single image to source and place nodes on. Check its use against GGG's fan content terms, the same way as for the item art.
 
@@ -416,33 +417,33 @@ Guests only ever receive what the party has revealed, and a run survives a reloa
 
 ## Sample run
 
-A solo run at tier 1, on a map where nothing has been found in the fog yet. It starts at the camp with 100 life, a 2-charge flask and 20 gold. The boss rolled is Silent (only Flares work), and knowing that from the camp on shapes every purchase.
+A solo run at tier 1, on a map where nothing has been found in the fog yet. It starts at the camp with 100 life, a 2-charge flask and 20 gold. The boss rolled is Silent (only Torches work), and knowing that from the camp on shapes every purchase.
 
-1. **Camp.** She buys 3 Flares (6), 3 Scrolls of Wisdom (6) and 3 Word lengths (4). Gold: 4.
+1. **Camp.** She buys 3 Torches (6), 3 Scrolls of Wisdom (6) and 3 Word lengths (4). Gold: 4.
 2. **Step 1,** Freythorn (Plain). The free clue is a common mod line, "(3-6) Life Regeneration per second", which 22 items share.
    - The Inscription holds about 14 tiles.
-   - She builds bl / ack / he / art without using a supply. Right: 2 loot cards, 6 gold and 2 Decoy sweeps, and she takes both. Gold: 10.
+   - She builds bl / ack / he / art without using a supply. Right: 2 loot cards, 6 gold and 2 Tangled Fossils, and she takes both. Gold: 10.
 3. **Step 2, the Ogham Farmlands (Incursion).** The free flavor text reads "There is no safer place / Than the ▮▮▮ of the ▮▮▮". She builds bram / ble / jack. Wrong: 25 life gone (75), the drop loses a card, and bram, ble and jack are all struck.
-   - She uses a Flare. The small burn-in is enough next to the flavor text, and she builds bel / ly / of / the / b / east. Right: 1 card, 5 gold. Gold: 15.
+   - She uses a Torch. The small burn-in is enough next to the flavor text, and she builds bel / ly / of / the / b / east. Right: 1 card, 5 gold. Gold: 15.
    - **Boon pick** after her second zone: Lamplighter (an extra burn-in on every item), because the Silent boss is all art.
 4. **Step 3 and the town at step 4.** Three items, one miss (50 life), and the Scroll used on one of them. Gold: 29.
-   - The town heals her to 70. She buys 6 Flares (12) and a Base reveal (6). A Bigger pack (20) would have left her nothing for supplies. Gold: 11.
+   - The town heals her to 70. She buys 6 Torches (12) and a Base reveal (6). A Bigger pack (20) would have left her nothing for supplies. Gold: 11.
 5. **Steps 5 to 15.** The Inscriptions grow to about 26 tiles, and two more towns restock her.
    - She drinks a charge before a Blight stretch she fears, but not before the towns, since each heals 20 anyway. She refills at the Well at step 10.
    - She routes through Blight zones for their free burn-in, which is practice for the art-only boss. At step 6 she catches a corruption front at the Buried Shrines. It flips to Blood toll, and the 30 life it costs her stops a front that would have fed the boss. A second front, on the far branch, stays out of reach.
-   - Her 8-slot pack is full at the third town, so she leaves the Decoy sweeps behind to fit more Flares.
-   - She arrives with 70 life, 2 charges and 8 Flares, and drinks one charge on the first boss item: 10 at once and 10 after each of the first two.
-6. **Boss, Silent.** The surviving front gives it Bloodied: misses cost 10 more life. Three items, and Flares are the only supply that works.
+   - Her 8-slot pack is full at the third town, so she leaves the Tangled Fossils behind to fit more Torches.
+   - She arrives with 70 life, 2 charges and 8 Torches, and drinks one charge on the first boss item: 10 at once and 10 after each of the first two.
+6. **Boss, Silent.** The surviving front gives it Bloodied: misses cost 10 more life. Three items, and Torches are the only supply that works.
    - Item 1: she wins on the boss's free burn-in plus Lamplighter's.
-   - Item 2: 3 Flares.
-   - Item 3: Flares burn in half as much here. She burns 5 Flares and misses once (70 + 30 from the flask − 70 = 30 life) before Atziri's Disdain reads true.
+   - Item 2: 3 Torches.
+   - Item 3: Torches burn in half as much here. She burns 5 Torches and misses once (70 + 30 from the flask − 70 = 30 life) before Atziri's Disdain reads true.
    - Run won, tier 2 unlocked.
 
 What made it a run and not a quiz:
 
 - knowing the boss in advance decided what she bought at the camp and in every town;
 - drinking before hard stretches and letting towns heal the rest kept a charge for the boss;
-- the 8-slot pack forced a choice between Flares for the boss and Decoy sweeps for the zones.
+- the 8-slot pack forced a choice between Torches for the boss and Tangled Fossils for the zones.
 
 ## Build order
 
@@ -460,7 +461,7 @@ Milestones 1 and 2 already make a playable mode. Each later milestone adds depth
 
 The biggest unknown is whether experts can answer from the free clue too often. The first playtest has to measure that before anything else is tuned.
 
-Playtest 3 should also measure how many corruption fronts players stop, which hidden modifiers they meet and what those cost them, how many boss modifiers runs end up with, and how often a wrong answer is followed by a right one on the next try (the Wordle marks doing too much). It should also check what the leak hunt of Oct 19 flagged on paper: whether Decoy sweeps strip boards down to the answer, how much gold is left at the end (the pack, not gold, may be the real limit), which zone types routes pick, and whether every corrupted zone in reach gets taken.
+Playtest 3 should also measure how many corruption fronts players stop, which hidden modifiers they meet and what those cost them, how many boss modifiers runs end up with, and how often a wrong answer is followed by a right one on the next try (the Wordle marks doing too much). It should also check what the leak hunt of Oct 19 flagged on paper: whether Tangled Fossils strip boards down to the answer, how much gold is left at the end (the pack, not gold, may be the real limit), which zone types routes pick, and whether every corrupted zone in reach gets taken.
 
 **Measure in every playtest**
 
