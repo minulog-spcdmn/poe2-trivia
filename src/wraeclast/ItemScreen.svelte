@@ -8,7 +8,7 @@
   // the answer line, the dock under both.
   //
   // Named, the screen turns into the reveal: the tooltip whole, then one line
-  // for the item and one for the gold, and the way on: the map from a zone,
+  // for the item and one for the gold, one for each boon that fired, and the way on: the map from a zone,
   // the next item at the duel. At the duel an item takes one submit: wrong,
   // the reveal shows the answer.
   import { tick, untrack } from 'svelte';
@@ -20,7 +20,7 @@
   import Clues from './Clues.svelte';
   import ItemPack from './ItemPack.svelte';
   import Inscription from './Inscription.svelte';
-  import { plural } from './words';
+  import { firedLine } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
@@ -28,12 +28,14 @@
   const named = $derived(s.phase === 'solved');
   const duel = $derived(it.duel);
   const cost = $derived(run.missCost());
-  const payLine = $derived(duel ? `Right: hits the Seed for ${run.duelHit(run.kindsUsed())}` : `Named: ${run.payGold()} gold`);
+  const payLine = $derived(duel ? `Right: hits the Seed for ${run.hitNow()}` : `Named: ${run.payNow()} gold`);
   /** Answered right (a duel item can be answered wrong: then the answer is shown). */
   const right = $derived(!!it.log.submits.at(-1)?.right);
   const last = $derived(it.log.submits.at(-1));
   /** The last wrong submit, while its marked line stands. */
   const miss = $derived(it.lineMarks && last && !last.right ? last : null);
+  /** The boons that fired on the last miss. */
+  const missFired = $derived(miss ? it.log.fired.filter((f) => f.submit === it.log.submits.length - 1) : []);
   /** The board's height, about (rows of tiles at a phone's width), for the art to give way to it on a short screen. */
   const boardH = $derived.by(() => {
     const dense = it.tiles.length > 26;
@@ -120,6 +122,7 @@
             {#if duel && right}<small>Hits the Seed for <b>{it.log.duelLog?.dealt ?? 0}</b></small>
             {:else if duel}<small><b class="minus">−{it.log.submits.at(-1)?.lost ?? 0}</b> life • the answer</small>
             {:else}<small><b>+{it.log.gold}</b> gold</small>{/if}
+            {#each it.log.fired as f, i (i)}<small class="boon">{firedLine(f)}</small>{/each}
           </p>
         </div>
         {#if duel}
@@ -149,6 +152,7 @@
           <p>
             <b class="minus">−{miss.lost}</b> life
             <small>A miss costs <b>{cost}</b> life</small>
+            {#each missFired as f, i (i)}<small class="boon">{firedLine(f)}</small>{/each}
           </p>
         </div>
       {:else}
@@ -398,6 +402,12 @@
     display: block;
     font-size: 13.5px;
     color: var(--muted);
+  }
+  .result small.boon {
+    font-family: var(--font-cinzel);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    color: #e9c8a2;
   }
   .result small b {
     font-size: 13px;

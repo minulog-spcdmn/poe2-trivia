@@ -18,6 +18,7 @@ export function arrive(run: Run, id: string) {
   const place = REGION.byId.get(id)!;
   s.phase = 'map';
   s.vendor = null;
+  s.draft = null;
   s.item = null;
   const by = place.links[0];
   if (by && s.places[by]) s.places[by].cleared = true;
@@ -54,7 +55,8 @@ export function wrongLine(it: ItemPlay, k: number): string[] {
 export function playOn(run: Run, stop: () => boolean, { misses = false, zones = 6 }: { misses?: boolean; zones?: number } = {}) {
   const s = run.state;
   for (let guard = 0; guard < 2000 && !stop() && s.phase !== 'end'; guard++) {
-    if (s.phase === 'vendor') run.leave();
+    if (s.phase === 'draft') run.pass();
+    else if (s.phase === 'vendor') run.leave();
     else if (s.phase === 'map') {
       const open = REGION.places.filter((p) => p.kind === 'zone' && run.canEnter(p.id));
       run.enter(s.spread < zones && open.length ? open[0].id : REGION.lair.id);

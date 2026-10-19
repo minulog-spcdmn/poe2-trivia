@@ -26,8 +26,10 @@ import looksData from '../data/looks.json' with { type: 'json' };
 import clueData from '../data/clues.json' with { type: 'json' };
 import depthData from '../data/wraeclastDepth.json' with { type: 'json' };
 import { REGION, type PlaceKind, type RegionPlace } from './map.ts';
+import { HOLD, NAMES, dealDraft, namedBy, type Boon } from './boons.ts';
 
 export type { PlaceKind, RegionPlace } from './map.ts';
+export type { Boon } from './boons.ts';
 
 /** The supplies, by their working keys (the log's): flare is the Torch, lore the Golden Page, category the Ancient Orb, wisdom the Scroll of Wisdom. */
 export type Supply = 'flare' | 'lore' | 'category' | 'wisdom';
@@ -102,6 +104,12 @@ export interface Tuning {
   seeds: number;
   /** Gold and silver marks, or gold only. */
   marks: 'both' | 'gold';
+  /** Boons: Honoured Challenger's heal, Earned Honour's, the life Sanguine Vial takes off the Seed, the gold each Upward Path step adds, and what Ornate Dagger and Assassin's Blade multiply a hit by. */
+  challengerHeal: number;
+  honourHeal: number;
+  vialLife: number;
+  upwardGold: number;
+  boonHit: number;
 }
 
 /** The v5 handoff's numbers (docs/wraeclast/prototype-v5-handoff.md). */
@@ -127,6 +135,11 @@ export const DEFAULT_TUNING: Tuning = {
   torch: 12,
   seeds: 9,
   marks: 'both',
+  challengerHeal: 15,
+  honourHeal: 30,
+  vialLife: 5,
+  upwardGold: 5,
+  boonHit: 2,
 };
 
 /** The most tiles a pool holds, the answer's included. */
@@ -159,15 +172,23 @@ const LOOKS = readLooks(looksData as unknown as LooksData);
 
 
 /**
- * vendor: a town's shop (the camp's at the start). map: the region, a place
+ * draft: a town's boon draft, on its first entry (the camp's at the start),
+ * before its shop. vendor: a town's shop. map: the region, a place
  * to enter picked. item: an item open. solved: a zone's item named (its
  * reveal, then the map), or a duel item answered, right or wrong (then the
  * next). end: won or lost.
  */
-export type Phase = 'vendor' | 'map' | 'item' | 'solved' | 'end';
+export type Phase = 'draft' | 'vendor' | 'map' | 'item' | 'solved' | 'end';
 
-/** A screen between items, as the log times it: a shop (the camp's, a town's), the map, or an item's reveal. */
-export type Screen = 'camp' | 'town' | 'map' | 'reveal';
+/** A screen between items, as the log times it: a boon draft, a shop (the camp's, a town's), the map, or an item's reveal. */
+export type Screen = 'draft' | 'camp' | 'town' | 'map' | 'reveal';
+
+/** A boon firing on an item: which, its number (the hit, the life, the gold, the Seed's new hit), and on which submit (its index). */
+export interface Fired {
+  boon: Boon;
+  n: number;
+  submit: number;
+}
 
 /** The pack: how many of each supply, no stacks, no cap. */
 export type Pack = Record<Supply, number>;
@@ -213,6 +234,10 @@ export interface ItemLog {
   spread: number;
   /** At the duel: both lines as it opened, the Seed's hit on you, the supply kinds used, and your hit on the Seed (0 on a miss). Null in a zone. */
   duelLog: (DuelLines & { took: number; kinds: number; dealt: number }) | null;
+  /** The boons held as it opened. */
+  boons: Boon[];
+  /** The boons that fired on it, in order. */
+  fired: Fired[];
 }
 
 export interface ItemPlay {
@@ -266,7 +291,7 @@ export interface PlaceState {
 }
 
 export interface RunLog {
-  v: 6;
+  v: 7;
   seed: number;
   start: string;
   end: string | null;
@@ -281,6 +306,10 @@ export interface RunLog {
   region: { node: string; depth: Depth; mod: Mod | null }[];
   /** Each place entered, the camp first: a town's heal (or the heal less recovery took), and the gold spent and supplies bought there. */
   met: { node: string; kind: PlaceKind; healed: number; noHeal: boolean; spent: number; bought: number }[];
+  /** Each boon draft: where, the cards offered, the one taken (null: passed). */
+  drafts: { node: string; offered: Boon[]; took: Boon | null }[];
+  /** The boons held, in the order taken. */
+  boons: Boon[];
   /** Zones that spread the corruption. */
   spread: number;
   /** The Seed's line at the end. */
@@ -307,8 +336,18 @@ export interface RunState {
   /** The place the player is at (or last was). */
   at: string;
   phase: Phase;
-  /** In a shop: where, the heal on this entry, whether less recovery took it, and whether it's the first entry. */
-  vendor: { at: 'camp' | 'town'; heal: number; noHeal: boolean; first: boolean } | null;
+  /** In a town (a draft, then its shop): where, the heal on this entry, whether less recovery took it, whether it's the first entry, whether a draft came first, and the Torches bought this visit (Balbala's Gift). */
+  vendor: { at: 'camp' | 'town'; heal: number; noHeal: boolean; first: boolean; drafted: boolean; torches: number } | null;
+  /** The boons held, in the order taken (at most HOLD). */
+  boons: Boon[];
+  /** The draft's cards while it's open, else null. */
+  draft: Boon[] | null;
+  /** The once-a-run boons that have fired (Moment's Peace, Earned Honour, Sekhema's Cloak). */
+  spent: Boon[];
+  /** The item Moment's Peace fired on: every miss on it costs no life. */
+  peaceOn: number | null;
+  /** Upward Path's streak: items named in a row with no supply while it's held (a supply used or bought ends it). */
+  streak: number;
   life: number;
   maxLife: number;
   gold: number;
@@ -723,7 +762,12 @@ export class Run {
       places,
       at: camp,
       phase: 'vendor',
-      vendor: { at: 'camp', heal: 0, noHeal: false, first: true },
+      vendor: { at: 'camp', heal: 0, noHeal: false, first: true, drafted: false, torches: 0 },
+      boons: [],
+      draft: null,
+      spent: [],
+      peaceOn: null,
+      streak: 0,
       life: t.life,
       maxLife: t.life,
       gold: t.gold,
@@ -734,7 +778,7 @@ export class Run {
       done: 0,
       item: null,
       log: {
-        v: 6,
+        v: 7,
         seed,
         start: new Date(now()).toISOString(),
         end: null,
@@ -744,6 +788,8 @@ export class Run {
         route: [camp],
         region: REGION.places.filter((p) => p.kind === 'zone').map((p) => ({ node: p.id, depth: places[p.id].depth!, mod: places[p.id].mod })),
         met: [{ node: camp, kind: 'camp', healed: 0, noHeal: false, spent: 0, bought: 0 }],
+        drafts: [],
+        boons: [],
         spread: 0,
         seedEnd: { life: t.seedLife, hit: t.seedHit },
         misses: 0,
@@ -758,7 +804,7 @@ export class Run {
         items: [],
       },
     };
-    this.show('camp');
+    this.openDraft(true);
   }
 
   /** Each place this run: a zone rolls its depth (the camp's neighbours never Forgotten), a mod 1 in modOdds, and the mod corruption would give it. */
@@ -848,6 +894,115 @@ export class Run {
     return t.pay[it.depth] + (it.mod ? t.modGold : 0);
   }
 
+  /** The kinds of supply used on an item. */
+  private usedOn(it: ItemPlay): Set<Supply> {
+    return new Set(it.log.supplies.map((u) => u.type));
+  }
+
+  /** Whether only this supply was used on an item (no other, and it at least once). */
+  private only(it: ItemPlay, supply: Supply): boolean {
+    const used = this.usedOn(it);
+    return used.size === 1 && used.has(supply);
+  }
+
+  /** The gold boons on a zone's item named now (Raincaller, Upward Path): each with what it adds. */
+  private goldBoons(it: ItemPlay): { boon: Boon; n: number }[] {
+    const s = this.state;
+    if (it.duel) return [];
+    const out: { boon: Boon; n: number }[] = [];
+    if (this.has('raincaller') && this.only(it, 'lore')) out.push({ boon: 'raincaller', n: this.payGold() });
+    if (this.has('upward') && this.usedOn(it).size === 0) out.push({ boon: 'upward', n: s.tuning.upwardGold * (s.streak + 1) });
+    return out;
+  }
+
+  /** The gold the open item pays if named now, its boons with it. */
+  payNow(): number {
+    const it = this.state.item;
+    return it ? this.payGold() + this.goldBoons(it).reduce((a, g) => a + g.n, 0) : 0;
+  }
+
+  /** The boon that doubles a right name at the duel now: Ornate Dagger (only the Torch) or Assassin's Blade (no supply). */
+  private hitBoon(it: ItemPlay): Boon | null {
+    if (this.has('dagger') && this.only(it, 'flare')) return 'dagger';
+    if (this.has('assassin') && this.usedOn(it).size === 0) return 'assassin';
+    return null;
+  }
+
+  /** What a right name on the open duel item hits the Seed for now, its boons with it. */
+  hitNow(): number {
+    const it = this.state.item;
+    if (!it) return 0;
+    const hit = this.duelHit(this.kindsUsed());
+    return this.hitBoon(it) ? hit * this.state.tuning.boonHit : hit;
+  }
+
+  /** What a bare answer (no supply) hits the Seed for: Assassin's Blade doubles it. */
+  bareHit(): number {
+    const hit = this.duelHit(0);
+    return this.has('assassin') ? hit * this.state.tuning.boonHit : hit;
+  }
+
+  /** A boon fires on an item, on its last submit. */
+  private fire(it: ItemPlay, boon: Boon, n: number) {
+    it.log.fired.push({ boon, n, submit: it.log.submits.length - 1 });
+  }
+
+  /** Heals up to `n`, never past the most life; returns what it healed. */
+  private heal(n: number): number {
+    const s = this.state;
+    const h = Math.max(0, Math.min(n, s.maxLife - s.life));
+    s.life += h;
+    return h;
+  }
+
+  /** The boons of a right name, in a zone and at the duel alike: Honoured Challenger, Earned Honour, Sanguine Vial, Fright Mask. */
+  private namedBoons(it: ItemPlay) {
+    const s = this.state;
+    const t = s.tuning;
+    const used = this.usedOn(it);
+    if (this.has('challenger') && this.only(it, 'lore')) this.fire(it, 'challenger', this.heal(t.challengerHeal));
+    if (this.has('honour') && !s.spent.includes('honour') && used.size === 2 && used.has('lore') && used.has('wisdom')) {
+      s.spent.push('honour');
+      this.fire(it, 'honour', this.heal(t.honourHeal));
+    }
+    if (this.has('vial') && this.only(it, 'category')) {
+      const off = Math.max(0, Math.min(t.vialLife, s.foe.life - 1));
+      s.foe.life -= off;
+      this.fire(it, 'vial', off);
+    }
+    if (this.has('fright') && this.only(it, 'wisdom')) {
+      s.foe.hit = Math.max(1, s.foe.hit - 1);
+      this.fire(it, 'fright', s.foe.hit);
+    }
+  }
+
+  /**
+   * A miss's life on the open item, its boons applied: Moment's Peace (a
+   * Torch and a Golden Page used: no life, on the one item it fires on),
+   * Sekhema's Cloak (a Torch and an Ancient Orb used: a miss that would end
+   * the run leaves you at full life, once). Returns the life lost.
+   */
+  private missBoons(it: ItemPlay, cost: number): number {
+    const s = this.state;
+    const used = this.usedOn(it);
+    if (cost > 0 && this.has('peace') && used.has('flare') && used.has('lore') && (!s.spent.includes('peace') || s.peaceOn === it.n)) {
+      if (!s.spent.includes('peace')) s.spent.push('peace');
+      s.peaceOn = it.n;
+      this.fire(it, 'peace', cost);
+      return 0;
+    }
+    if (s.life - cost <= 0 && this.has('cloak') && !s.spent.includes('cloak') && used.has('flare') && used.has('category')) {
+      s.spent.push('cloak');
+      const back = s.maxLife - s.life;
+      s.life = s.maxLife;
+      this.fire(it, 'cloak', back);
+      return 0;
+    }
+    const lost = Math.min(s.life, cost);
+    s.life -= lost;
+    return lost;
+  }
+
   /** What a right name at the duel hits the Seed for, by how many kinds of supply were used on the item. */
   duelHit(kinds: number): number {
     const [none, one, more] = this.state.tuning.duelHit;
@@ -865,10 +1020,24 @@ export class Run {
     return this.state.pack[supply];
   }
 
+  /** Whether a boon is held. */
+  has(boon: Boon): boolean {
+    return this.state.boons.includes(boon);
+  }
+
+  /** A supply's price in this shop: Balbala's Gift makes the visit's first Torch free; Silver Tongue halves (rounded up) the supplies the boons held name. */
+  priceOf(supply: Supply): number {
+    const s = this.state;
+    const base = s.tuning.price[supply];
+    if (supply === 'flare' && this.has('balbala') && s.vendor && s.vendor.torches === 0) return 0;
+    if (this.has('silver') && namedBy(s.boons).has(supply)) return Math.ceil(base / 2);
+    return base;
+  }
+
   /** Whether one of a supply can be bought: in a shop, with the gold. */
   canBuy(supply: Supply): boolean {
     const s = this.state;
-    return s.phase === 'vendor' && s.gold >= s.tuning.price[supply];
+    return s.phase === 'vendor' && s.gold >= this.priceOf(supply);
   }
 
   /** The open item, while it can be played on (opened, not yet answered). */
@@ -934,15 +1103,18 @@ export class Run {
 
   // ---- Actions ----
 
-  /** Buys one of a supply in a shop: its price out of the gold, one more in the pack. */
+  /** Buys one of a supply in a shop: its price out of the gold, one more in the pack (two Scrolls with Sacred Mirror). Buying ends Upward Path's streak. */
   buy(supply: Supply): boolean {
     if (!this.canBuy(supply)) return false;
     const s = this.state;
-    const price = s.tuning.price[supply];
+    const price = this.priceOf(supply);
+    const n = supply === 'wisdom' && this.has('mirror') ? 2 : 1;
     s.gold -= price;
     s.log.goldSpent += price;
-    s.pack[supply]++;
-    s.log.bought[supply]++;
+    s.pack[supply] += n;
+    s.log.bought[supply] += n;
+    if (supply === 'flare' && s.vendor) s.vendor.torches++;
+    s.streak = 0;
     const here = s.log.met.at(-1)!;
     here.spent += price;
     here.bought++;
@@ -957,6 +1129,45 @@ export class Run {
     s.vendor = null;
     s.phase = 'map';
     this.show('map');
+    return true;
+  }
+
+  /** A town's first entry: its boon draft (the camp's: three singles), or straight to the shop when the hold is full or no card is left. */
+  private openDraft(first: boolean) {
+    const s = this.state;
+    const cards = s.boons.length < HOLD ? dealDraft(s.boons, first, this.rng) : [];
+    if (!cards.length) return this.toShop();
+    // The order says nothing of why a card is there.
+    s.draft = shuffle(cards, this.rng);
+    s.vendor!.drafted = true;
+    s.log.drafts.push({ node: s.at, offered: [...s.draft], took: null });
+    s.phase = 'draft';
+    this.show('draft');
+  }
+
+  /** On to the town's shop. */
+  private toShop() {
+    const s = this.state;
+    s.draft = null;
+    s.phase = 'vendor';
+    this.show(s.vendor?.at === 'town' ? 'town' : 'camp');
+  }
+
+  /** Takes a boon from the draft (the other cards are gone), then the shop. */
+  take(boon: Boon): boolean {
+    const s = this.state;
+    if (s.phase !== 'draft' || !s.draft?.includes(boon) || s.boons.length >= HOLD) return false;
+    s.boons.push(boon);
+    s.log.boons = [...s.boons];
+    s.log.drafts.at(-1)!.took = boon;
+    this.toShop();
+    return true;
+  }
+
+  /** Passes on the draft: no boon, then the shop. */
+  pass(): boolean {
+    if (this.state.phase !== 'draft') return false;
+    this.toShop();
     return true;
   }
 
@@ -990,9 +1201,9 @@ export class Run {
       const met = s.log.met.at(-1)!;
       met.healed = heal;
       met.noHeal = noHeal;
-      s.vendor = { at: place.kind === 'camp' ? 'camp' : 'town', heal, noHeal, first };
-      s.phase = 'vendor';
-      this.show(place.kind === 'camp' ? 'camp' : 'town');
+      s.vendor = { at: place.kind === 'camp' ? 'camp' : 'town', heal, noHeal, first, drafted: false, torches: 0 };
+      if (first) this.openDraft(false);
+      else this.toShop();
       return true;
     }
     if (place.kind === 'zone') this.draw({ duel: false, depth: this.depthAt(id), mod: this.modAt(id), corrupted: this.corrupted(id) });
@@ -1049,6 +1260,8 @@ export class Run {
       gold: 0,
       spread: s.spread,
       duelLog: null,
+      boons: [...s.boons],
+      fired: [],
     };
     s.item = {
       n: s.done,
@@ -1097,7 +1310,7 @@ export class Run {
       s.life -= took;
       it.log.lifeBefore = s.life + took;
       it.log.lifeAfter = s.life;
-      it.log.duelLog = { seed: { ...s.foe }, you: { life: s.life, hit: this.duelHit(0) }, took, kinds: 0, dealt: 0 };
+      it.log.duelLog = { seed: { ...s.foe }, you: { life: s.life, hit: this.bareHit() }, took, kinds: 0, dealt: 0 };
       if (s.life <= 0) {
         s.log.items.push(it.log);
         this.end(false);
@@ -1244,18 +1457,28 @@ export class Run {
     it.log.submits.push(sub);
     if (it.duel) return this.answerDuel(it, sub, right);
     if (right) {
-      it.log.lifeAfter = s.life;
       s.phase = 'solved';
-      const gold = this.payGold();
+      let gold = this.payGold();
+      for (const g of this.goldBoons(it)) {
+        gold += g.n;
+        this.fire(it, g.boon, g.n);
+      }
+      // Upward Path's streak: on with no supply, ended by one.
+      if (this.has('upward')) s.streak = this.usedOn(it).size ? 0 : s.streak + 1;
       s.gold += gold;
       s.log.goldEarned += gold;
       it.log.gold = gold;
-      // The zone is cleared and the corruption spreads one ring; the Seed grows with it.
+      // The zone is cleared and the corruption spreads one ring (not under Hare Foot); the Seed grows with it.
       s.places[it.node].cleared = true;
       if (it.mod === 'recovery') s.noHeal = true;
-      s.spread++;
-      s.foe.life += t.seedGrowth;
-      if (s.spread % Math.max(1, t.seedHitEvery) === 0) s.foe.hit++;
+      if (this.has('hare') && this.only(it, 'category')) this.fire(it, 'hare', s.spread);
+      else {
+        s.spread++;
+        s.foe.life += t.seedGrowth;
+        if (s.spread % Math.max(1, t.seedHitEvery) === 0) s.foe.hit++;
+      }
+      this.namedBoons(it);
+      it.log.lifeAfter = s.life;
       it.log.spread = s.spread;
       s.log.spread = s.spread;
       s.log.seedEnd = { ...s.foe };
@@ -1276,8 +1499,7 @@ export class Run {
     it.misses++;
     it.log.misses = it.misses;
     s.log.misses++;
-    sub.lost = Math.min(s.life, this.missCost());
-    s.life -= sub.lost;
+    sub.lost = this.missBoons(it, this.missCost());
     it.log.lifeAfter = s.life;
     if (s.life <= 0) {
       s.log.items.push(it.log);
@@ -1290,10 +1512,14 @@ export class Run {
   private answerDuel(it: ItemPlay, sub: ItemLog['submits'][number], right: boolean): boolean {
     const s = this.state;
     const kinds = this.kindsUsed();
-    const duel = it.log.duelLog ?? { seed: { ...s.foe }, you: { life: s.life, hit: this.duelHit(0) }, took: 0, kinds: 0, dealt: 0 };
+    const duel = it.log.duelLog ?? { seed: { ...s.foe }, you: { life: s.life, hit: this.bareHit() }, took: 0, kinds: 0, dealt: 0 };
     duel.kinds = kinds;
     if (right) {
-      const hit = Math.min(s.foe.life, this.duelHit(kinds));
+      this.namedBoons(it);
+      const full = this.hitNow();
+      const boon = this.hitBoon(it);
+      if (boon) this.fire(it, boon, full);
+      const hit = Math.min(s.foe.life, full);
       s.foe.life -= hit;
       duel.dealt = hit;
     } else {
@@ -1301,8 +1527,7 @@ export class Run {
       it.log.misses = it.misses;
       s.log.misses++;
       sub.marks = markLine(sub.tiles, it.answer);
-      sub.lost = Math.min(s.life, s.tuning.duelMiss);
-      s.life -= sub.lost;
+      sub.lost = this.missBoons(it, s.tuning.duelMiss);
     }
     it.log.duelLog = duel;
     it.log.lifeAfter = s.life;

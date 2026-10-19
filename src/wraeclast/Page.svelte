@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Wraeclast run's page (wraeclast.html): the game's backdrop, the run's
   // header and strip (where, life, gold), the screen its phase calls for (a
-  // shop, the map, an item and its reveal, the end), the duel's two lines at
+  // town's boon draft or shop, the map, an item and its reveal, the end), the duel's two lines at
   // the foot, and the tuning panel (collapsed) under them.
   import { untrack } from 'svelte';
   import Background from '../components/Background.svelte';
@@ -38,7 +38,7 @@
   {#key run}
     <Hud {run} />
     {#key screen}
-      {#if s.phase === 'vendor'}
+      {#if s.phase === 'vendor' || s.phase === 'draft'}
         <Vendor {run} />
       {:else if s.phase === 'map'}
         <MapScreen {run} />

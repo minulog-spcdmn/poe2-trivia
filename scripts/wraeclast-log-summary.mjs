@@ -17,6 +17,26 @@ const SUPPLY_NAMES = {
   category: 'Ancient Orb',
 };
 const VENDOR_SCREENS = new Set(['camp', 'town']);
+// As the player reads them (BOON_NAME in src/wraeclast/words.ts).
+const BOON_NAMES = {
+  dagger: 'Ornate Dagger',
+  balbala: "Balbala's Gift",
+  challenger: 'Honoured Challenger',
+  raincaller: 'Raincaller',
+  vial: 'Sanguine Vial',
+  hare: 'Hare Foot',
+  fright: 'Fright Mask',
+  mirror: 'Sacred Mirror',
+  assassin: "Assassin's Blade",
+  upward: 'Upward Path',
+  silver: 'Silver Tongue',
+  peace: "Moment's Peace",
+  honour: 'Earned Honour',
+  cloak: "Sekhema's Cloak",
+};
+const boonName = (b) => BOON_NAMES[b] ?? b;
+/** The boons that fired on an item: "Ornate Dagger 24, Hare Foot 3" (each with its number), or none. */
+const firedOn = (it) => (it.fired ?? []).map((f) => `${boonName(f.boon)} ${f.n}`).join(', ') || 'none';
 // As the player reads them (DEPTH_NAME and MOD_NAME in src/wraeclast/words.ts).
 const DEPTH_NAMES = { known: 'Known', obscure: 'Obscure', forgotten: 'Forgotten' };
 const MOD_NAMES = {
@@ -84,7 +104,8 @@ function summary(log) {
   out.push(`Length: ${clock(log.ms)} • items ${items.length} • misses ${log.misses}`);
   out.push(`Items with no supply used: ${items.filter((it) => !it.supplies.length).length} of ${items.length}`);
   out.push(times.length ? `Item time: median ${secs(median(times))} • range ${secs(Math.min(...times))} to ${secs(Math.max(...times))}` : 'Item time: no items');
-  out.push(`Minutes: items ${min(itemsMs)} • shops ${min(vendorMs)} • reveals ${min(revealMs)} • the map ${min(mapMs)}`);
+  const draftMs = screens.filter((s) => s.screen === 'draft').reduce((a, s) => a + s.ms, 0);
+  out.push(`Minutes: items ${min(itemsMs)} • drafts ${min(draftMs)} • shops ${min(vendorMs)} • reveals ${min(revealMs)} • the map ${min(mapMs)}`);
   out.push(`Life: lowest ${lowest} of ${maxLife} • at the end ${log.lifeEnd}`);
   out.push(`Gold: start ${goldStart} • earned ${log.goldEarned} • spent ${log.goldSpent} • left ${goldStart + log.goldEarned - log.goldSpent}`);
 
@@ -99,6 +120,10 @@ function summary(log) {
   const heals = (log.met ?? []).filter((m) => m.healed || m.noHeal).map((m) => (m.noHeal ? `${m.node} none (less recovery)` : `${m.node} +${m.healed}`));
   out.push(`Town heals: ${heals.length ? heals.join(' • ') : 'none'}`);
   out.push(`Route: ${(log.route ?? []).join(' > ')}`);
+  out.push('Drafts (where • offered • taken):');
+  if (!(log.drafts ?? []).length) out.push('  none');
+  for (const d of log.drafts ?? []) out.push(`  ${d.node} • ${d.offered.map(boonName).join(', ')} • ${d.took ? boonName(d.took) : 'passed'}`);
+  out.push(`Boons held at the end: ${(log.boons ?? []).map(boonName).join(', ') || 'none'}`);
   out.push(`Spread: ${log.spread ?? 0} • the Seed at the end: ${log.seedEnd?.life ?? '?'} life, hits ${log.seedEnd?.hit ?? '?'}`);
   const rolled = (log.region ?? []).map((z) => `${z.node} ${DEPTH_NAMES[z.depth] ?? z.depth}${z.mod ? ` (${MOD_NAMES[z.mod] ?? z.mod})` : ''}`);
   if (rolled.length) out.push(`Zones as rolled: ${rolled.join(' • ')}`);
@@ -106,20 +131,20 @@ function summary(log) {
   const used = (it) => [...it.supplies].sort((a, b) => a.order - b.order).map((s) => SUPPLY_NAMES[s.type] ?? s.type);
   const zoneItems = items.filter((it) => !it.duel);
   const duelItems = items.filter((it) => it.duel);
-  out.push('Zones (name • place • depth • mod • corrupted • supplies used • time • misses • life before to after • gold • spread after):');
+  out.push('Zones (name • place • depth • mod • corrupted • supplies used • time • misses • life before to after • gold • spread after • boons fired):');
   zoneItems.forEach((it, i) => {
     const right = it.submits.some((s) => s.right);
     out.push(
-      `  ${String(i + 1).padStart(2)}. ${it.name} • ${it.node} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${it.mod ? (MOD_NAMES[it.mod] ?? it.mod) : 'no mod'} • ${it.corrupted ? 'corrupted' : 'clean'} • ${used(it).join(', ') || 'none'} • ${secs(itemMs(it))} • ${it.misses} • ${it.lifeBefore} to ${it.lifeAfter} • ${it.gold ?? 0} • ${it.spread ?? '?'}${right ? '' : ' • lost here'}`,
+      `  ${String(i + 1).padStart(2)}. ${it.name} • ${it.node} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${it.mod ? (MOD_NAMES[it.mod] ?? it.mod) : 'no mod'} • ${it.corrupted ? 'corrupted' : 'clean'} • ${used(it).join(', ') || 'none'} • ${secs(itemMs(it))} • ${it.misses} • ${it.lifeBefore} to ${it.lifeAfter} • ${it.gold ?? 0} • ${it.spread ?? '?'} • ${firedOn(it)}${right ? '' : ' • lost here'}`,
     );
   });
-  out.push('Duel (name • depth • the Seed as it opened • you as it opened • its hit on you • supplies used • right or wrong • your hit):');
+  out.push('Duel (name • depth • the Seed as it opened • you as it opened • its hit on you • supplies used • right or wrong • your hit • boons fired):');
   if (!duelItems.length) out.push('  not reached');
   duelItems.forEach((it, i) => {
     const d = it.duelLog;
     const right = it.submits.some((s) => s.right);
     out.push(
-      `  ${String(i + 1).padStart(2)}. ${it.name} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${d ? `The Seed ${d.seed.life} life, hits ${d.seed.hit} • You ${d.you.life} life, a bare answer hits ${d.you.hit} • took ${d.took}` : 'no lines'} • ${used(it).join(', ') || 'none'} • ${it.submits.length ? (right ? 'right' : `wrong, -${it.submits.at(-1).lost} life`) : 'no answer'} • ${d ? d.dealt : 0}`,
+      `  ${String(i + 1).padStart(2)}. ${it.name} • ${DEPTH_NAMES[it.depth] ?? it.depth} • ${d ? `The Seed ${d.seed.life} life, hits ${d.seed.hit} • You ${d.you.life} life, a bare answer hits ${d.you.hit} • took ${d.took}` : 'no lines'} • ${used(it).join(', ') || 'none'} • ${it.submits.length ? (right ? 'right' : `wrong, -${it.submits.at(-1).lost} life`) : 'no answer'} • ${d ? d.dealt : 0} • ${firedOn(it)}`,
     );
   });
   return out.join('\n');

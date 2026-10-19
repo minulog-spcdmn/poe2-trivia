@@ -4,7 +4,8 @@
 // for someone who has never played. Counts the rules keep hidden (tiles not
 // in the name, mod lines, words, patches left) are never said.
 
-import { SUPPLY_NAMES, type Depth, type Mark, type Mod, type PlaceKind, type Run, type Supply } from './rules.ts';
+import { SUPPLY_NAMES, type Boon, type Depth, type Fired, type Mark, type Mod, type PlaceKind, type Run, type Supply } from './rules.ts';
+import { HOLD } from './boons.ts';
 
 /** "1 card", "3 cards", "2 patches". */
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : /(s|x|z|ch|sh)$/.test(word) ? 'es' : 's'}`;
@@ -66,7 +67,7 @@ export function placeName(kind: PlaceKind): string {
 /** The Seed's duel line: "The Seed • 70 life • hits 8". */
 export const seedLine = (run: Run) => `The Seed • ${run.state.foe.life} life • hits ${run.state.foe.hit}`;
 /** Your duel line: "You • 82 life • a bare answer hits 20". */
-export const youLine = (run: Run) => `You • ${run.state.life} life • a bare answer hits ${run.duelHit(0)}`;
+export const youLine = (run: Run) => `You • ${run.state.life} life • a bare answer hits ${run.bareHit()}`;
 
 /** A place's one line on the map, as a tap shows it. */
 export function placeLine(run: Run, id: string): string {
@@ -81,7 +82,7 @@ export function placeLine(run: Run, id: string): string {
     case 'camp':
     case 'town':
       if (!run.healsAt(id)) return 'Town • the shop';
-      return s.noHeal ? 'Town • no heal (less recovery) • the shop' : `Town • heals ${s.tuning.townHeal} • the shop`;
+      return [s.noHeal ? 'Town • no heal (less recovery)' : `Town • heals ${s.tuning.townHeal}`, s.boons.length < HOLD ? 'a boon' : null, 'the shop'].filter(Boolean).join(' • ');
     case 'lair':
       return seedLine(run);
   }
@@ -124,3 +125,101 @@ export const SAME_KIND = 'the same kind of item';
 export const NO_CLUES = 'No clues yet. Use a supply from your pack';
 /** No clues and nothing in the pack to get one. */
 export const NO_CLUES_EMPTY = 'No clues yet.';
+
+// ---- Boons (boons.ts) ----
+
+/** A boon's name, as in the trial or the v8 table. */
+export const BOON_NAME: Record<Boon, string> = {
+  dagger: 'Ornate Dagger',
+  balbala: "Balbala's Gift",
+  challenger: 'Honoured Challenger',
+  raincaller: 'Raincaller',
+  vial: 'Sanguine Vial',
+  hare: 'Hare Foot',
+  fright: 'Fright Mask',
+  mirror: 'Sacred Mirror',
+  assassin: "Assassin's Blade",
+  upward: 'Upward Path',
+  silver: 'Silver Tongue',
+  peace: "Moment's Peace",
+  honour: 'Earned Honour',
+  cloak: "Sekhema's Cloak",
+};
+
+/** A boon's seal in the header: its initials. */
+export const sealOf = (boon: Boon) =>
+  BOON_NAME[boon]
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2);
+
+/** What a boon does, in one line (its numbers the run's tuning). */
+export function boonDoes(run: Run, boon: Boon): string {
+  const t = run.state.tuning;
+  switch (boon) {
+    case 'dagger':
+      return 'An item you name with only the Torch hits the Seed double.';
+    case 'balbala':
+      return 'Your first Torch at each town is free, each visit.';
+    case 'challenger':
+      return `An item you name with only the Golden Page heals ${t.challengerHeal}.`;
+    case 'raincaller':
+      return 'An item you name with only the Golden Page pays double gold.';
+    case 'vial':
+      return `Each item you name with only the Ancient Orb takes ${t.vialLife} off the Seed's life.`;
+    case 'hare':
+      return "A zone whose item you name with only the Ancient Orb doesn't spread the corruption.";
+    case 'fright':
+      return 'Each item you name with only the Scroll makes the Seed hit 1 less for the rest of the run, never below 1.';
+    case 'mirror':
+      return 'Every Scroll of Wisdom you buy comes as two.';
+    case 'assassin':
+      return 'An item you name with no supply hits the Seed double.';
+    case 'upward':
+      return `Each item in a row you name with no supply pays ${t.upwardGold} more gold than the last. Buying a supply ends the streak.`;
+    case 'silver':
+      return 'The supplies your boons name cost half, rounded up.';
+    case 'peace':
+      return "Once a run, on an item where you've used a Torch and a Golden Page, misses cost no life.";
+    case 'honour':
+      return `Once a run, an item you name with only a Golden Page and a Scroll, both used, heals ${t.honourHeal}.`;
+    case 'cloak':
+      return "Once a run, a miss that would end the run on an item where you've used a Torch and an Ancient Orb leaves you at full life.";
+  }
+}
+
+/** A boon firing, as the reveal says it: "Ornate Dagger • hit 24". */
+export function firedLine(f: Fired): string {
+  const what = ((): string => {
+    switch (f.boon) {
+      case 'dagger':
+      case 'assassin':
+        return `hit ${f.n}`;
+      case 'challenger':
+      case 'honour':
+        return `+${f.n} life`;
+      case 'raincaller':
+      case 'upward':
+        return `+${f.n} gold`;
+      case 'vial':
+        return `the Seed −${f.n} life`;
+      case 'hare':
+        return 'no spread';
+      case 'fright':
+        return `the Seed hits ${f.n}`;
+      case 'peace':
+        return 'no life lost';
+      case 'cloak':
+        return 'back to full life';
+      default:
+        return 'fired';
+    }
+  })();
+  return `${BOON_NAME[f.boon]} • ${what}`;
+}
+
+/** What a draft says over its cards. */
+export const DRAFT_SAYS = 'Take one boon for the run, or pass.';
+/** The sheet's title, and what it says with no boon held. */
+export const BOONS_TITLE = 'Your boons';

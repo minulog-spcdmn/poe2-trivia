@@ -1,10 +1,12 @@
 <script lang="ts">
-  // The run's end, slim: won or lost, where, the run in numbers, Copy run
+  // The run's end, slim: won or lost, where, the run in numbers, the boons
+  // held, Copy run
   // log (every run kept, as JSON, for the owner) and New run, docked at the
   // foot on phones.
   import type { Run, RunLog } from './rules';
   import { REGION } from './map';
   import { logText } from './runLog';
+  import { BOON_NAME } from './words';
   import { play } from './play.svelte';
 
   /** The runs kept and New run are the page's (play.svelte.ts) unless given (the QA desk's bench gives its own). */
@@ -59,6 +61,8 @@
     <div><dt>Spent</dt><dd>{log.goldSpent}</dd></div>
     <div><dt>Life</dt><dd>{log.lifeEnd}</dd></div>
   </dl>
+
+  <p class="held" aria-label="Boons held">{log.boons.length ? log.boons.map((b) => BOON_NAME[b]).join(' • ') : 'No boons'}</p>
 
   {#if copied === 'yes'}<p class="note" role="status">Copied: the last <span class="n">{kept.length}</span> {kept.length === 1 ? 'run' : 'runs'}, to paste to the owner.</p>{/if}
 
@@ -138,6 +142,15 @@
     margin-left: 3px;
     font-size: 11px;
     color: var(--muted);
+  }
+  .held {
+    font-family: var(--font-cinzel);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    text-align: center;
+    color: #e9c8a2;
   }
   .note {
     margin: 0.3rem 0 0.5rem;

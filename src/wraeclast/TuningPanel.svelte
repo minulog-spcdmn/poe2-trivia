@@ -105,6 +105,15 @@
     </fieldset>
 
     <fieldset>
+      <legend>Boons</legend>
+      {@render field('Honoured Challenger heals', t.challengerHeal, LIMITS.challengerHeal, (n) => (t.challengerHeal = n))}
+      {@render field('Earned Honour heals', t.honourHeal, LIMITS.honourHeal, (n) => (t.honourHeal = n))}
+      {@render field('Sanguine Vial takes (Seed life)', t.vialLife, LIMITS.vialLife, (n) => (t.vialLife = n))}
+      {@render field('Upward Path adds (gold a step)', t.upwardGold, LIMITS.upwardGold, (n) => (t.upwardGold = n))}
+      {@render field('Dagger and Blade multiply a hit by', t.boonHit, LIMITS.boonHit, (n) => (t.boonHit = n))}
+    </fieldset>
+
+    <fieldset>
       <legend>Boards</legend>
       {#each BOARDS as b (b)}
         {@render field(`${BOARD_NAMES[b]}: tiles`, t.tiles[b], LIMITS.tiles, (n) => (t.tiles[b] = n))}

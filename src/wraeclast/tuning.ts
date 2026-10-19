@@ -5,8 +5,8 @@
 import { readStored, writeStored } from '../lib/storage.ts';
 import { BOARDS, DEFAULT_TUNING, DEPTHS, SUPPLIES, type Range, type Tuning } from './rules.ts';
 
-// 7: v5's open region (depth, mods, the Seed and the duel).
-const KEY = 'wraeclastTuning7';
+// 8: v5's boons.
+const KEY = 'wraeclastTuning8';
 
 /** Each number's range, for the panel's fields and for reading back what was kept. */
 export const LIMITS = {
@@ -30,6 +30,11 @@ export const LIMITS = {
   price: [0, 999],
   torch: [1, 99],
   seeds: [3, 15],
+  challengerHeal: [0, 999],
+  honourHeal: [0, 999],
+  vialLife: [0, 999],
+  upwardGold: [0, 999],
+  boonHit: [1, 9],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** A whole number in [lo, hi], or the fallback. */
@@ -77,6 +82,11 @@ export function cleanTuning(raw: unknown): Tuning {
     torch: whole(r.torch, LIMITS.torch, d.torch),
     seeds: whole(r.seeds, LIMITS.seeds, d.seeds),
     marks: r.marks === 'gold' || r.marks === 'both' ? r.marks : d.marks,
+    challengerHeal: whole(r.challengerHeal, LIMITS.challengerHeal, d.challengerHeal),
+    honourHeal: whole(r.honourHeal, LIMITS.honourHeal, d.honourHeal),
+    vialLife: whole(r.vialLife, LIMITS.vialLife, d.vialLife),
+    upwardGold: whole(r.upwardGold, LIMITS.upwardGold, d.upwardGold),
+    boonHit: whole(r.boonHit, LIMITS.boonHit, d.boonHit),
   };
 }
 

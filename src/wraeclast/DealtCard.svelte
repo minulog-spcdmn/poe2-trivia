@@ -2,7 +2,8 @@
   // A vendor's ware as the v4 design draws it: a small engraved card, its
   // mark and name, what it does, and the price (the coin saying gold). Each
   // tap buys one. Too dear, the price goes red. The cards are dealt in one
-  // after another as the vendor opens.
+  // after another as the vendor opens. A draft's boon card is the same card
+  // with no price (its mark the supply it names, if any).
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { motion } from '../lib/motion.svelte';
@@ -20,10 +21,10 @@
     disabled = false,
     onpick,
   }: {
-    mark: Supply;
+    mark?: Supply | null;
     title: string;
     line: string;
-    price: number;
+    price?: number | null;
     /** What a screen reader says it does when picked. */
     label: string;
     /** Its place on the table, for the deal's order. */
@@ -43,11 +44,13 @@
   onclick={() => onpick?.()}
   in:fly|global={{ y: motion.still ? 0 : 14, duration: motion.still ? 0 : 320, delay: motion.still ? 0 : 60 + i * 45, easing: cubicOut }}
 >
-  <span class="hd"><span class="ic" aria-hidden="true"><Glyph of={mark} /></span><span class="nm">{title}</span></span>
+  <span class="hd">{#if mark}<span class="ic" aria-hidden="true"><Glyph of={mark} /></span>{/if}<span class="nm">{title}</span></span>
   <span class="does">{line}</span>
-  <span class="pr" aria-hidden="true">
-    <b><span class="coin"><Glyph of="gold" /></span>{price}</b>
-  </span>
+  {#if price != null}
+    <span class="pr" aria-hidden="true">
+      <b><span class="coin"><Glyph of="gold" /></span>{price}</b>
+    </span>
+  {/if}
 </button>
 
 <style>

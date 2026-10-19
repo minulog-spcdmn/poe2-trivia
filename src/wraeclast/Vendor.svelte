@@ -1,12 +1,14 @@
 <script lang="ts">
-  // A shop: at the camp, and in a town (its rest first, on the first entry).
-  // Its wares are the four supplies as small cards with their price; each tap
-  // buys one. Then the pack (a count of each), and Leave (to the map).
+  // A town: on its first entry (the camp's at the start) its rest and the
+  // boon draft (three cards, a tap takes one, or Pass), then its shop. The
+  // shop's wares are the four supplies as small cards with their price; each
+  // tap buys one. Then the pack (a count of each), and Leave (to the map).
   // Phones stack it all; wide screens put the pack beside the wares.
   import { SUPPLIES, SUPPLY_NAMES, type Run, type Supply } from './rules';
+  import { NAMES } from './boons';
   import DealtCard from './DealtCard.svelte';
   import PackList from './PackList.svelte';
-  import { CAMP_SAYS, REST, does } from './words';
+  import { BOON_NAME, CAMP_SAYS, DRAFT_SAYS, REST, boonDoes, does } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
@@ -14,6 +16,8 @@
   const heal = $derived(s.vendor?.heal ?? 0);
   const first = $derived(s.vendor?.first ?? false);
   const noHeal = $derived(s.vendor?.noHeal ?? false);
+  const drafted = $derived(s.vendor?.drafted ?? false);
+  const draft = $derived(s.phase === 'draft' ? (s.draft ?? []) : null);
   /** The supply just bought, lit in the pack. */
   let lit = $state<Supply | null>(null);
 
@@ -22,13 +26,43 @@
   }
 </script>
 
+{#snippet rest()}
+  <p class="say rest">{#if noHeal}{REST.none}{:else if heal}{REST.before}<b>+{heal}</b>{REST.after}{:else}{REST.full}{/if}</p>
+{/snippet}
+
+{#if draft}
+  <div class="vendor">
+    <h1 class="sr">{run.node.name}</h1>
+    {#if at === 'town'}{@render rest()}{/if}
+    <p class="say">{DRAFT_SAYS}</p>
+    <section aria-label="Boons">
+      <ul class="boons">
+        {#each draft as boon, i (boon)}
+          <li>
+            <DealtCard
+              mark={NAMES[boon][0] ?? null}
+              title={BOON_NAME[boon]}
+              line={boonDoes(run, boon)}
+              label="Take {BOON_NAME[boon]}. {boonDoes(run, boon)}"
+              {i}
+              onpick={() => run.take(boon)}
+            />
+          </li>
+        {/each}
+      </ul>
+    </section>
+    <div class="go dock">
+      <button class="btn big" onclick={() => run.pass()}>Pass</button>
+    </div>
+  </div>
+{:else}
 <div class="vendor">
   <h1 class="sr">{run.node.name}</h1>
   <div class="cols">
     <div class="shop">
-      {#if at === 'town' && first}
-        <p class="say rest">{#if noHeal}{REST.none}{:else if heal}{REST.before}<b>+{heal}</b>{REST.after}{:else}{REST.full}{/if}</p>
-      {:else if !first}
+      {#if at === 'town' && first && !drafted}
+        {@render rest()}
+      {:else if !first || at === 'town'}
         <p class="say">{REST.shop}</p>
       {:else}
         <p class="say">{CAMP_SAYS}</p>
@@ -38,7 +72,7 @@
         <h2 id="shop-h" class="sr">For sale</h2>
         <ul class="wares">
           {#each SUPPLIES as ware, i (ware)}
-            {@const price = s.tuning.price[ware]}
+            {@const price = run.priceOf(ware)}
             <li>
               <DealtCard
                 mark={ware}
@@ -69,6 +103,7 @@
     <button class="btn primary big" onclick={() => run.leave()}>Leave</button>
   </div>
 </div>
+{/if}
 
 <style>
   .vendor {
@@ -112,6 +147,13 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+  }
+  .boons {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
   }
   .head {
     display: flex;

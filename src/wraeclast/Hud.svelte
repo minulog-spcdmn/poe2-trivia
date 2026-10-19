@@ -3,11 +3,13 @@
   // (its name beside it on a wide screen), where you are (the place, its kind
   // or a zone's depth and mod, the duel's item) and the sound key; then your
   // entry as the scoreboard's pill (the life vessel with its walls every 25,
-  // the life a miss just took, the gold and what a reveal just added).
+  // the life a miss just took, the gold and what a reveal just added), and
+  // the boons held as seals: a tap opens a sheet with one line each.
   import { MediaQuery } from 'svelte/reactivity';
   import { isMuted, setMuted, sfx } from '../lib/sound';
   import type { Run } from './rules';
-  import { DEPTH_NAME, MOD_NAME, placeName } from './words';
+  import { NAMES } from './boons';
+  import { BOON_NAME, BOONS_TITLE, DEPTH_NAME, MOD_NAME, boonDoes, placeName, sealOf } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
@@ -34,6 +36,9 @@
   /** A desktop (860 px and up): what the player is doing, on a line of its own. */
   const wideQ = new MediaQuery('(min-width: 860px)');
   const task = $derived(wideQ.current && s.phase === 'solved' && s.item ? `${s.item.log.submits.at(-1)?.right ? 'Named' : 'It was'}: ${s.item.log.name}` : '');
+
+  /** The boons' sheet, open. */
+  let sheet = $state(false);
 
   let muted = $state(isMuted());
   function toggleSound() {
@@ -77,7 +82,25 @@
     </div>
     <span class="score"><span class="coin" aria-hidden="true"></span>{s.gold}{#if gain}<span class="gain" aria-hidden="true">+{gain}</span>{/if}</span>
   </div>
+  {#if s.boons.length}
+    <button class="seals" onclick={() => (sheet = !sheet)} aria-label={BOONS_TITLE} aria-expanded={sheet}>
+      {#each s.boons as b (b)}<span class="seal" class:duo={NAMES[b].length > 1} title={BOON_NAME[b]}>{sealOf(b)}</span>{/each}
+    </button>
+  {/if}
 </div>
+{#if sheet && s.boons.length}
+  <div class="sheet" role="dialog" aria-label={BOONS_TITLE}>
+    <div class="sheet-head">
+      <h2>{BOONS_TITLE}</h2>
+      <button class="btn small" onclick={() => (sheet = false)}>Close</button>
+    </div>
+    <ul>
+      {#each s.boons as b (b)}
+        <li><span class="seal" class:duo={NAMES[b].length > 1} aria-hidden="true">{sealOf(b)}</span><span><b>{BOON_NAME[b]}</b>{boonDoes(run, b)}</span></li>
+      {/each}
+    </ul>
+  </div>
+{/if}
 {#if task}
   <div class="task" class:reveal={s.phase === 'solved'}>
     <p class="sub">{task}</p>
@@ -273,6 +296,103 @@
     border-radius: 50%;
     border: 1.3px solid #d9a45a;
     box-shadow: inset 0 0 0 2.2px #1a120a, inset 0 0 0 3.2px #d9a45a;
+  }
+
+  /* The boons held: small engraved seals, their initials in Cinzel. */
+  .seals {
+    flex: none;
+    display: flex;
+    gap: 4px;
+    padding: 2px;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+  .seal {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-cinzel);
+    font-weight: 900;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--gold-hi);
+    background: radial-gradient(circle at 50% 35%, rgba(201, 164, 92, 0.22), rgba(12, 10, 8, 0.95) 70%);
+    box-shadow:
+      inset 0 0 0 1px var(--gold-lo),
+      0 0 0 2px #0a0806,
+      0 0 0 3px rgba(125, 99, 51, 0.5);
+  }
+  .seal.duo {
+    color: #f3c9a0;
+    box-shadow:
+      inset 0 0 0 1px #d9a066,
+      0 0 0 2px #0a0806,
+      0 0 0 3px rgba(217, 160, 102, 0.6);
+  }
+  .seals:hover .seal {
+    color: #fff4e0;
+  }
+  /* The sheet: one line per boon, over the foot of the screen. */
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    max-height: 70dvh;
+    overflow-y: auto;
+    padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+    background-color: rgb(10, 8, 6);
+    border-top: 1px solid rgba(125, 99, 51, 0.5);
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.6);
+  }
+  .sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .sheet h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 16px;
+    color: #e9c8a2;
+  }
+  .sheet ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sheet li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 15px;
+    line-height: 1.25;
+    color: #cfc4b2;
+  }
+  .sheet li b {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 14px;
+    color: #f6e7c6;
+  }
+  @media (min-width: 700px) {
+    .sheet {
+      left: 50%;
+      right: auto;
+      width: min(560px, 100%);
+      transform: translateX(-50%);
+      border: 1px solid rgba(125, 99, 51, 0.5);
+      border-bottom: none;
+    }
   }
 
   /* The life vessel: the phial's glass (Phial.svelte), drawn out long for a

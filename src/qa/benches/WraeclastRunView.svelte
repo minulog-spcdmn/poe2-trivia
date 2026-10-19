@@ -30,6 +30,7 @@
   /** The run, played on its plain state to the screen asked for; reactive only once it's there. */
   function build(o: Options) {
     const run = new Run({ seed: o.seed, now: () => 0 });
+    run.pass();
     const s = run.state;
     const stock: Supply[] = ['flare', 'wisdom', 'lore'];
     if (o.stocked) for (const ware of stock) run.buy(ware);
