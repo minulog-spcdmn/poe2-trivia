@@ -52,8 +52,10 @@ Owner picked from design's v6 options (`decisions.md`, newest rows): open
 region, depth plus one waystone mod, the Seed of Corruption, Pledges
 (formerly Pacts), four supplies (Torch, Golden Page, Ancient Orb, Scroll of
 Wisdom), all bought with gold. Gambling lives in town, to make the shop
-interesting; the owner rejected stock roguelike gambles as uncreative, and
-design is pitching original ones.
+interesting. Two rounds of town pitches missed (sections 9 and 10). The
+owner wants the town to be the hook: the build moment where combos snowball,
+synergies differ run to run, unlocks between runs show up, and a near miss
+says what to do next time. Design is pitching that.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
