@@ -94,7 +94,7 @@
         <span class="ph">{open ? "Tap tiles to spell the item's name" : 'Opening the item'}</span>
       {/if}
     </div>
-    <button class="key brk" disabled={!canBreak} onclick={() => run.gap()} aria-label="Add a word break" title="Add a word break">{@render notch()}</button>
+    <button class="key brk" disabled={!canBreak} onclick={() => run.gap()} aria-label="Add a word break (optional)" title="Add a word break (optional)">{@render notch()}</button>
     {#if has && !named}
       <button class="key clear" aria-label="Clear the line" title="Clear" disabled={!open || it.build.length <= it.locked} onclick={() => run.clear()}><Glyph of="clear" /></button>
     {/if}

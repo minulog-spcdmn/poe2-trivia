@@ -3,15 +3,14 @@
   // Expedition zone. Its wares are small cards with their stack and price
   // ("2 for 8"); tap to buy. A bought card stays where it lay, saying Bought
   // (dealt again on the next visit). Bought into a full pack, the ware waits
-  // for a space to replace, or is handed back with its gold. Under the wares,
-  // the boss's rule; then the pack, and the way on (Where next opens the map).
+  // for a space to replace, or is handed back with its gold. Then the pack,
+  // and the way on (Where next opens the map).
   // Phones stack it all; wide screens put the pack beside the wares.
   import { untrack } from 'svelte';
   import { SUPPLY_NAMES, type Run } from './rules';
   import DealtCard from './DealtCard.svelte';
-  import Glyph from './Glyph.svelte';
   import PackList from './PackList.svelte';
-  import { BOUGHT_FULL, CAMP_SAYS, EXPEDITION_SAYS, PACK_NOTE, REST, VENDOR_BOSS_LINE, does, handBack, handBackLabel } from './words';
+  import { BOUGHT_FULL, CAMP_SAYS, EXPEDITION_SAYS, PACK_NOTE, REST, does, handBack, handBackLabel, supplies } from './words';
 
   let { run, onmap }: { run: Run; onmap: () => void } = $props();
   const s = $derived(run.state);
@@ -56,7 +55,7 @@
                 line={does(run, ware)}
                 {q}
                 {price}
-                label="Buy {q} {SUPPLY_NAMES[ware]} for {price} gold{s.gold < price ? '. Not enough gold' : !run.fits(ware, q) ? `. ${BOUGHT_FULL}` : ''}"
+                label="Buy {supplies(q, ware)} for {price} gold. {does(run, ware)}{s.gold < price ? ' Not enough gold.' : !run.fits(ware, q) ? ` ${BOUGHT_FULL}` : ''}"
                 {i}
                 bought={k < 0}
                 dear={s.gold < price}
@@ -67,8 +66,6 @@
           {/each}
         </ul>
       </section>
-
-      <p class="rule"><span class="ic" aria-hidden="true"><Glyph of="flare" /></span>{VENDOR_BOSS_LINE}</p>
     </div>
 
     <section class="side" aria-labelledby="pack-h">
@@ -83,7 +80,7 @@
   <div class="go dock">
     {#if s.bought}
       <p class="swap" role="status">{BOUGHT_FULL}</p>
-      <button class="btn ghost" onclick={() => place(null)} aria-label={handBackLabel(s.bought.n, SUPPLY_NAMES[s.bought.supply], s.bought.price)}
+      <button class="btn ghost" onclick={() => place(null)} aria-label={handBackLabel(s.bought.n, s.bought.supply, s.bought.price)}
         >{handBack(s.bought.n)}</button
       >
     {/if}
@@ -134,22 +131,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
-  .rule {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    font-size: 14px;
-    line-height: 1.2;
-    color: #d6c39a;
-  }
-  .rule .ic {
-    flex: none;
-    width: 16px;
-    height: 16px;
-    color: var(--gold);
-  }
   .head {
     display: flex;
     align-items: baseline;
@@ -189,13 +170,6 @@
     .say.rest {
       font-size: 18px;
     }
-    .rule {
-      font-size: 15px;
-    }
-    .rule .ic {
-      width: 17px;
-      height: 17px;
-    }
   }
   /* Wide screens (the desktop board): the pack beside the wares. */
   @media (min-width: 1000px) {
@@ -211,9 +185,6 @@
     }
     .say {
       text-align: left;
-    }
-    .rule {
-      justify-content: flex-start;
     }
   }
 </style>

@@ -11,7 +11,7 @@
   import { CLUES, SUPPLY_NAMES, baseText, nameOf, type DeckClue, type Mark, type Run } from './rules';
   import { verses } from './markup';
   import ClueText from './ClueText.svelte';
-  import { DECK_DREW, FREE_LABEL, LENGTHS_CLUE, NO_CLUES, PATCH_CLUE, SAME_KIND } from './words';
+  import { DECK_DREW, FREE_LABEL, LENGTHS_CLUE, NO_CLUES, NO_CLUES_EMPTY, PATCH_CLUE, SAME_KIND } from './words';
 
   let { run, beside = false }: { run: Run; beside?: boolean } = $props();
   const it = $derived(run.state.item!);
@@ -41,7 +41,8 @@
     const out: Line[] = [];
     const deckMods = new Set(it.deck.flatMap((d) => (d.mod === undefined ? [] : [d.mod])));
     it.shown.mods.forEach((i, k) => out.push({ k: 'mod', i, label: label(DECK_DREW.mod, k === 0 && free === 'mod' ? 'free' : deckMods.has(i) ? 'deck' : null) }));
-    if (it.shown.category) out.push({ k: 'orb', label: label(DECK_DREW.category, dealt('category') ? 'deck' : null) });
+    // With no sibling the Ancient Orb greys out: it never shows the category in its place.
+    if (it.shown.category && it.sibling) out.push({ k: 'orb', label: label(DECK_DREW.category, dealt('category') ? 'deck' : null) });
     if (it.shown.flavor && clues.flavor !== null) out.push({ k: 'flavor', label: label(DECK_DREW.flavor, free === 'flavor' ? 'free' : dealt('flavor') ? 'deck' : null) });
     if (it.shown.base) out.push({ k: 'base', label: label(gem ? 'Support text' : DECK_DREW.base, free === 'base' ? 'free' : dealt('base') ? 'deck' : null) });
     if (it.shown.lengths) out.push({ k: 'plain', label: label(DECK_DREW.lengths, free === 'lengths' ? 'free' : dealt('lengths') ? 'deck' : null), text: LENGTHS_CLUE });
@@ -77,7 +78,7 @@
       {@const [kind, text] = clues.mods[line.i]}
       <p class="tline mod {kind}">{@render tag(line.label)}<ClueText {text} /></p>
     {:else if line.k === 'orb'}
-      <p class="tline orb">{@render tag(line.label)}{#if it.sibling}<b>{nameOf(it.sibling)}</b> • {SAME_KIND}{:else}{clues.category}{/if}</p>
+      <p class="tline orb">{@render tag(line.label)}<b>{nameOf(it.sibling!)}</b> • {SAME_KIND}</p>
     {:else if line.k === 'flavor'}
       <p class="tline flav">
         {@render tag(line.label)}
@@ -90,7 +91,7 @@
     {/if}
   {/each}
   {#if !lines.length}
-    <p class="tline plain">{NO_CLUES}</p>
+    <p class="tline plain">{run.state.pack.length ? NO_CLUES : NO_CLUES_EMPTY}</p>
   {/if}
   {#if !named}
     {#each tried as sub, k (k)}

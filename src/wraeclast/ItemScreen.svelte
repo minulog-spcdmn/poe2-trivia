@@ -23,7 +23,7 @@
   import Inscription from './Inscription.svelte';
   import Glyph from './Glyph.svelte';
   import MapScreen from './MapScreen.svelte';
-  import { BLOOD_DOES, BOSS_MOD_DOES, BOSS_RULE, DRINK_LINE, SHORT, ZONE_RULE, bloodLine, bossAdds, lootLine, placeDoes, placeKind, plural, zoneLines } from './words';
+  import { BLOOD_DOES, BOSS_MOD_DOES, BOSS_MOD_SHORT, DRINK_LINE, SHORT, ZONE_RULE, bloodLine, bossAdds, bossIfReached, chargesLeft, lootLine, placeDoes, placeKind, plural, supplies, zoneLines } from './words';
 
   /** `onmap`: the whole map, opened from the reveal's Where next. */
   let { run, onmap }: { run: Run; onmap?: () => void } = $props();
@@ -44,11 +44,11 @@
   const pending = $derived(s.loot?.pending[0] ?? null);
   /** The corruption here stopped as the zone's last item was named. */
   const cleared = $derived(named && !!it.hidden && s.fronts.some((f) => f.stoppedAt === it.node));
-  /** The zone's rule on the plate (none for a zone without one; the boss's own line says Silent). */
+  /** The zone's rule on the plate (none for a zone without one; the boss's are the corruption's rules). */
   const rule = $derived(!boss && it.zoneType ? (ZONE_RULE[it.zoneType] ?? '') : '');
   /** The plate's terms in full, one line each, for a long press or a hover. */
   const terms = $derived(
-    [it.hidden ? `Blood toll: ${BLOOD_DOES}` : '', boss ? BOSS_RULE : rule, ...(boss ? s.bossMods.map((m) => `${BOSS_MOD_NAMES[m]}: ${BOSS_MOD_DOES[m]}`) : [])].filter(Boolean).join('\n'),
+    [it.hidden ? `Blood toll: ${BLOOD_DOES}` : '', boss ? '' : rule, ...(boss ? s.bossMods.map((m) => `${BOSS_MOD_NAMES[m]}: ${BOSS_MOD_DOES[m]}`) : [])].filter(Boolean).join('\n'),
   );
   /** The board's height, about (rows of tiles at a phone's width), for the art to give way to it on a short screen. */
   const boardH = $derived.by(() => {
@@ -180,8 +180,8 @@
       bad,
       lines,
       blood: bad ? bloodLine(run) : '',
-      bossIf: front ? `If it reaches the boss: ${BOSS_MOD_NAMES[front.rule]}` : '',
-      label: bad ? `${said}. Blood toll (corruption): ${bloodLine(run).replace(' • ', ', ')}${front ? `. If it reaches the boss: ${BOSS_MOD_NAMES[front.rule]}` : ''}` : said,
+      bossIf: front ? bossIfReached(front.rule) : '',
+      label: bad ? `${said}. Blood toll: ${bloodLine(run).replace(' • ', ', ')}${front ? `. ${bossIfReached(front.rule)}` : ''}` : said,
     };
   }
 </script>
@@ -220,9 +220,9 @@
         <span class="ibase">{CLUES[it.itemId].base}</span>
       {:else}
         <span class="iname unknown">Unidentified</span>
-        {#if boss || rule}
+        {#if (boss && s.bossMods.length) || rule}
           <span class="terms" title={terms}>
-            {#if boss}<span class="corrupt-line">Boss: {['Silent', ...s.bossMods.map((m) => BOSS_MOD_NAMES[m])].join(' • ')}</span>{:else if rule}<span class="rule-line">{rule}</span>{/if}
+            {#if boss}<span class="corrupt-line">Boss: {s.bossMods.map((m) => BOSS_MOD_SHORT[m]).join(' • ')}</span>{:else if rule}<span class="rule-line">{rule}</span>{/if}
           </span>
         {/if}
       {/if}
@@ -249,7 +249,7 @@
   {#if named}
     <div class="side" bind:this={sideEl}>
       {#if cards.length}
-        <div class="flyrow" role="img" aria-label="The loot: {plural(cards.length, 'card')}, going into your pack">
+        <div class="flyrow" role="img" aria-label="The loot: {plural(cards.length, 'reward')}, going into your pack">
           {#each cards as c, k (k)}
             {@const f = flights[k]}
             {@const wait = held.has(k)}
@@ -274,7 +274,7 @@
         {#each Array.from({ length: PACK_STACKS }, (_, i) => i) as i (i)}
           {@const st = s.pack[i]}
           {#if st && pending}
-            <button class="slot target" bind:this={slotEls[i]} onclick={() => run.keep(i)} aria-label="Replace {st.n} {SUPPLY_NAMES[st.supply]} with the new supply" title="{st.n} {SUPPLY_NAMES[st.supply]}">
+            <button class="slot target" bind:this={slotEls[i]} onclick={() => run.keep(i)} aria-label="Replace {supplies(st.n, st.supply)} with the new supply" title={supplies(st.n, st.supply)}>
               <span class="n" aria-hidden="true">{st.n}</span>
               <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span>
               <span class="lbl" aria-hidden="true">{SHORT[st.supply]}</span>
@@ -286,7 +286,7 @@
               bind:this={slotEls[i]}
               role="img"
               aria-label="{SUPPLY_NAMES[st.supply]}: {st.n} in your pack{plus[i] ? `, ${plus[i]} new` : ''}"
-              title="{st.n} {SUPPLY_NAMES[st.supply]}"
+              title={supplies(st.n, st.supply)}
             >
               <span class="n" aria-hidden="true">{st.n}</span>
               {#if plus[i]}<span class="plus" aria-hidden="true">+{plus[i]}</span>{/if}
@@ -302,7 +302,7 @@
       {#if asked}
         <div class="fullask" role={pending ? 'alertdialog' : undefined} aria-label={pending ? 'Pack full' : undefined}>
           {#if pending}
-            <p>Pack full. Tap a space to replace it with <b>{pending.n} {SUPPLY_NAMES[pending.supply!]}</b>.</p>
+            <p>Pack full. Tap a space to replace it with <b>{supplies(pending.n, pending.supply!)}</b>.</p>
             <button class="btn ghost small" onclick={() => run.keep(null)}>{pending.n === 1 ? 'Leave it' : 'Leave them'}</button>
           {/if}
         </div>
@@ -363,9 +363,11 @@
           <span class="vsign" aria-hidden="true">✓</span>
           <p>
             {it.log.name}
-            <small
-              >{#if boss}Named{:else}{it.misses ? plural(it.misses, 'miss') : 'First try'}{#if it.hidden}{' '}• Blood toll: double loot{/if}{/if}{#if healed}{' '}• Your flask healed <b>{healed}</b> life{/if}{#if cleared}{' '}• The corruption here is gone{/if}</small
-            >
+            <!-- One idea a line. -->
+            <small>{#if boss}Named{:else}{it.misses ? plural(it.misses, 'miss') : 'First try'}{/if}</small>
+            {#if !boss && it.hidden}<small>Double loot (Blood toll)</small>{/if}
+            {#if healed}<small>Flask healed <b>{healed}</b></small>{/if}
+            {#if cleared}<small>The Blood toll here is gone</small>{/if}
           </p>
         </div>
         {#if ahead === 'item' || ahead === 'win'}
@@ -395,7 +397,7 @@
           <span class="lost-vial" aria-hidden="true"></span>
           <p>
             <b class="minus">−{miss.lost}</b> life
-            <small>{#if boss}A miss costs <b>{lo}</b> to <b>{hi}</b> life{:else}<span class="deal" class:many={full > 4} aria-hidden="true">{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal}></i>{/each}</span>Loot: {plural(deal, 'card')} now{/if}</small>
+            <small>{#if boss}A miss costs <b>{lo}</b> to <b>{hi}</b> life{:else}<span class="deal" class:many={full > 4} aria-hidden="true">{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal}></i>{/each}</span>Loot: {plural(deal, 'reward')}{#if deal < full}{' '}(was {full}){/if}{/if}</small>
           </p>
         </div>
       {:else}
@@ -407,13 +409,13 @@
             <div class="row reward">
               <span class="deal" class:many={full > 4} aria-hidden="true"
                 >{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal} class:extra={!!it.hidden && k >= full / 2 && k < deal}></i>{/each}</span
-              >Loot: {plural(deal, 'card')}{#if lost}{' '}<s>{full}</s>{/if}<span class="inline-note"> • a miss takes one</span>
+              >Loot: {plural(deal, 'reward')}{#if lost}{' '}(was {full}){/if}<span class="inline-note"> • each miss costs 1</span>
             </div>
           {/if}
           {#if run.blocked() === 'tried'}<div class="row warn">You tried this one. Change a tile</div>{:else if s.life <= lo}<div class="row warn">Low life: one miss ends the run</div>{:else if !boss}<div
               class="row note"
             >
-              a miss takes one
+              each miss costs 1
             </div>{/if}
         </div>
       {/if}
@@ -426,7 +428,7 @@
           >
         </button>
       {/if}
-      <button class="drink" disabled={!run.canDrink()} onclick={() => run.drink()} aria-label="Drink from your flask: {s.flask.charges} left" title={DRINK_LINE}>
+      <button class="drink" disabled={!run.canDrink()} onclick={() => run.drink()} aria-label="Drink from your flask: {chargesLeft(s.flask.charges)}. {DRINK_LINE}" title={DRINK_LINE}>
         <span class="ic" aria-hidden="true"><Glyph of="flask" /></span><span class="n" aria-hidden="true">{s.flask.charges}</span>
       </button>
       <button class="btn primary" disabled={!run.canSubmit()} onclick={() => run.submit()}>Identify</button>
@@ -1010,12 +1012,6 @@
     font-weight: 700;
     font-size: 14.5px;
     color: #f0a68c;
-  }
-  .stakes s {
-    color: #7a6e5c;
-    font-family: var(--font-cinzel);
-    font-size: 12.5px;
-    text-decoration-color: rgba(224, 85, 63, 0.8);
   }
   .stakes .warn {
     color: #ff9c86;

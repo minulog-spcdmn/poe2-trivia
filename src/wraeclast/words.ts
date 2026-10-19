@@ -14,7 +14,6 @@ import {
   PACK_STACKS,
   STACK_MAX,
   SUPPLY_NAMES,
-  TOWN_HEAL,
   ZONE_NAMES,
   type BossMod,
   type DeckClue,
@@ -29,10 +28,25 @@ import {
 /** "1 card", "3 cards", "2 patches". */
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : /(s|x|z|ch|sh)$/.test(word) ? 'es' : 's'}`;
 
+/** A supply's name for more than one ("3 Torches", "2 Scrolls of Wisdom"). */
+const SUPPLY_PLURALS: Record<Supply, string> = {
+  flare: 'Torches',
+  wisdom: 'Scrolls of Wisdom',
+  lore: 'Golden Pages',
+  category: 'Ancient Orbs',
+  base: 'Base reveals',
+  decoy: 'Tangled Fossils',
+  lengths: 'Word lengths',
+  first: 'First tiles',
+  deck: 'Stacked Decks',
+};
+/** A count of a supply, its name plural past one: "1 Torch", "3 Torches". */
+export const supplies = (n: number, supply: Supply) => `${n} ${n === 1 ? SUPPLY_NAMES[supply] : SUPPLY_PLURALS[supply]}`;
+
 /** What each supply does when used. */
 export const DOES: Record<Supply, string> = {
   flare: 'Reveals a patch of the art.',
-  wisdom: 'Shows a mod line. Each one is rarer than the last.',
+  wisdom: 'Shows a mod line, rarer each time.',
   lore: 'Shows the flavor text, with the name hidden.',
   category: 'Names another item of the same kind as this one.',
   base: 'Shows the base type (on a gem: its support text).',
@@ -54,17 +68,17 @@ export const SHORT: Record<Supply, string> = {
   base: 'Base',
   decoy: 'Fossil',
   lengths: 'Lengths',
-  first: 'First',
+  first: '1st tile',
   deck: 'Deck',
 };
 
-/** A zone type's free clue, short ("Free clue: a mod line"). */
+/** A zone type's free clue, short ("Free clue: a mod line"), with what comes where the item has none. */
 export const FREE_CLUE: Record<ZoneType, string> = {
-  plain: 'a mod line',
-  incursion: 'flavor text',
+  plain: 'a mod line, else word lengths',
+  incursion: 'flavor text, else word lengths',
   essence: 'base type (a gem: support text)',
   ritual: 'word lengths',
-  expedition: 'a mod line',
+  expedition: 'a mod line, else word lengths',
   blight: 'a patch of the art',
 };
 
@@ -86,17 +100,10 @@ export function zoneLines(run: Run, zone: ZoneType) {
 /** The label above a free clue on the item: what gave it. */
 export const FREE_LABEL = 'Free';
 
-export const BOSS_RULE = 'Silent: only Torches work';
-export const BOSS_RULE_SHORT = 'only Torches work';
-/** The boss rule's name, and what it leaves alone, on the boss intro's Rule panel. */
-export const BOSS_RULE_NAME = 'Silent';
-export const BOSS_RULE_NOTE = 'Your other supplies stay in the pack.';
 /** Under a boss rule the corruption added: where its corruption started. */
 export const bossRuleFrom = (place: string) => `From the corruption at ${place}`;
 /** Over the boss's added rules: how many corruptions reached it. */
 export const bossReached = (n: number) => `${n} ${n === 1 ? 'corruption' : 'corruptions'} reached the boss`;
-/** The boss rule, short, starting a line (the boss's node and Where next row). */
-export const BOSS_RULE_LINE = 'Only Torches work';
 
 /** Blood toll, the corruption's one modifier: what it does. */
 export const BLOOD_DOES = `Each item here costs ${BLOOD_TOLL} life when you start it. Never your last life.`;
@@ -109,19 +116,33 @@ export const bloodLine = (run: Run) => {
 /** A boss rule the corruption adds: what it does. */
 export const BOSS_MOD_DOES: Record<BossMod, string> = {
   lingering: 'One more item to name',
-  bloodied: `Misses cost ${BLOODIED} more life`,
+  bloodied: `Each boss item takes ${BLOODIED} life as it opens`,
   murky: 'Torches reveal half as much',
   teeming: "More tiles that aren't in the name",
 };
+/** A boss rule, in a few words, where its name alone would say nothing (a row, the plate). */
+export const BOSS_MOD_SHORT: Record<BossMod, string> = {
+  lingering: 'one more item',
+  bloodied: `each boss item takes ${BLOODIED} life`,
+  murky: 'Torches reveal half',
+  teeming: 'more wrong tiles',
+};
+/** A boss rule on a map node, where a label is narrow. */
+const BOSS_MOD_NODE: Record<BossMod, string> = {
+  lingering: '+1 item',
+  bloodied: `−${BLOODIED} life an item`,
+  murky: 'Torches half',
+  teeming: 'more wrong tiles',
+};
 
 /** A corruption's own boss rule, on its node (it moves with it, and goes when it's stopped). */
-export const bossOnNode = (rule: BossMod) => `Boss: ${BOSS_MOD_NAMES[rule]}`;
+export const bossOnNode = (rule: BossMod) => `Boss: ${BOSS_MOD_NODE[rule]}`;
 /** A corruption's own boss rule, on its Where next row. */
-export const bossIfReached = (rule: BossMod) => `If it reaches the boss: ${BOSS_MOD_NAMES[rule]}`;
+export const bossIfReached = (rule: BossMod) => `If it reaches the boss: ${BOSS_MOD_SHORT[rule]}`;
 /** The rules each corruption left adds at the boss, in the order seeded. */
 export const bossRulesLeft = (run: Run): BossMod[] => run.state.fronts.filter((f) => f.alive).map((f) => f.rule);
-/** The boss's line on its node and row: the boss rule, short, first, then each corruption left adds its rule. */
-export const bossLine = (run: Run) => [BOSS_RULE_LINE, ...bossRulesLeft(run).map((m) => BOSS_MOD_NAMES[m])].join(' • ');
+/** The boss's line on its node: each rule the corruption left adds, short ("" with none). */
+export const bossLine = (run: Run) => bossRulesLeft(run).map((m) => BOSS_MOD_NODE[m]).join(' • ');
 /** Each rule the corruption left adds at the boss, with what it does ("Murky: Torches reveal half as much"). */
 export const bossRuleLines = (run: Run) => bossRulesLeft(run).map((m) => `${BOSS_MOD_NAMES[m]}: ${BOSS_MOD_DOES[m]}`);
 
@@ -152,11 +173,11 @@ export function placeDoes(run: Run, p: Place): string {
     case 'camp':
       return 'The start';
     case 'town':
-      return `Heals ${TOWN_HEAL} life • buy supplies`;
+      return `Heals ${run.state.tuning.townHeal} life • buy supplies`;
     case 'well':
       return 'Refills your flask';
     case 'boss':
-      return bossLine(run);
+      return 'The last fight';
   }
 }
 
@@ -173,8 +194,6 @@ export function why(run: Run, supply: Supply): string | null {
       return null;
     case 'closed':
       return 'Opening the item';
-    case 'silent':
-      return 'Boss rule: only Torches work';
     case 'ritual':
       return "Ritual zone: Scrolls of Wisdom don't work";
     case 'done':
@@ -183,44 +202,43 @@ export function why(run: Run, supply: Supply): string | null {
 }
 
 /** A mark, said. */
-export const MARK_SAYS: Record<Mark, string> = { gold: 'right here', silver: 'in the name, elsewhere', struck: 'not in the name' };
-export const MARKS_LEGEND = 'Gold: right, in its place • Silver: in the name, elsewhere • Struck: not in the name';
+export const MARK_SAYS: Record<Mark, string> = { gold: 'right spot', silver: 'in the name, wrong spot', struck: 'not in the name' };
+export const MARKS_LEGEND = 'Gold: right spot • Silver: wrong spot • Struck: not in the name';
 /** The marks' key under the answer line, each mark's name and what it means (MARKS_LEGEND, in parts). */
 export const MARK_KEY: readonly { mark: Mark; name: string; says: string }[] = [
-  { mark: 'gold', name: 'Gold', says: 'right, in its place' },
-  { mark: 'silver', name: 'Silver', says: 'in the name, elsewhere' },
+  { mark: 'gold', name: 'Gold', says: 'right spot' },
+  { mark: 'silver', name: 'Silver', says: 'wrong spot' },
   { mark: 'struck', name: 'Struck', says: 'not in the name' },
 ];
 /** How many items with marks the key shows on before it goes. */
 export const MARK_KEY_ITEMS = 3;
 
 /** The flask, said in full (its tooltip), and on the drink key. */
-export const FLASK_LINE = `Heals ${FLASK_STEP} now, and again when this item ends and when the next one ends. Each drink uses one charge. Wells refill it.`;
-export const DRINK_LINE = `Heals ${FLASK_STEP} now, and again when this item ends and when the next one ends.`;
-/** The flask on the boss intro: what each drink left does. */
-export const FLASK_EACH = `each heals ${FLASK_STEP} now, and again as this item and the next end`;
-export const DRINKING =`+${FLASK_STEP} now • more as this and the next item end`;
+export const DRINK_LINE = `Heals ${FLASK_STEP} now, ${FLASK_STEP} after this item, ${FLASK_STEP} after the next.`;
+export const FLASK_LINE = `${DRINK_LINE} Each drink uses one charge. Wells refill it.`;
+/** The flask on the boss intro: what each charge left does (DRINK_LINE, as one line everywhere). */
+export const FLASK_EACH = DRINK_LINE;
 /** The flask's heal still due, for a screen reader. */
 export const flaskDue = (recovering: number) =>
-  `Your flask heals ${FLASK_STEP} more when this item ends${recovering > 1 ? ' and when the next one ends' : ''}`;
+  `Your flask heals ${FLASK_STEP} more after this item${recovering > 1 ? ` and ${FLASK_STEP} after the next` : ''}.`;
+/** The flask's charges, counted ("1 charge left"). */
+export const chargesLeft = (n: number) => `${n} ${n === 1 ? 'charge' : 'charges'} left`;
 
 /** A vendor card's line: how many come for the price (the coin says gold). */
 export const stackLine = (run: Run, s: Supply) => `${run.state.tuning.stack[s]} for ${run.state.tuning.price[s]}`;
 
 /** What a vendor says under the header: the camp's and an Expedition's line, a town's rest. */
-export const CAMP_SAYS = 'Buy supplies for the road. More vendors wait in towns and after Expeditions.';
-export const EXPEDITION_SAYS = 'A vendor, after the zone. Buy, or go on.';
+export const CAMP_SAYS = 'Buy supplies for the road. More vendors wait in towns and after Expedition zones.';
+export const EXPEDITION_SAYS = 'An Expedition vendor is here. Buy, or go on.';
 /** A town's rest: "You rest: +{heal} life" (the words around the number, set in Cinzel), or at full life. */
 export const REST = { before: 'You rest: ', after: ' life', full: 'You rest: life is full' };
-/** Under every vendor's wares, with the Torch's sign. */
-export const VENDOR_BOSS_LINE = 'At the boss, only Torches work';
 /** A ware bought into a full pack: a space to pick, or the ware handed back (its gold too). */
 export const BOUGHT_FULL = 'Pack full. Tap a space to replace it';
 export const handBack = (n: number) => (n === 1 ? 'Hand it back' : 'Hand them back');
-export const handBackLabel = (n: number, name: string, price: number) => `Hand back ${n} ${name}, for your ${price} gold`;
+export const handBackLabel = (n: number, supply: Supply, price: number) => `Hand back ${supplies(n, supply)}, for your ${price} gold`;
 
 /** The pack, said. */
-export const PACK_NOTE = `${PACK_STACKS} spaces, up to ${STACK_MAX} of one supply in each.`;
+export const PACK_NOTE = `${PACK_STACKS} spaces. Each holds up to ${STACK_MAX} of one supply.`;
 
 /** A loot card's name (one line: the count is in it). */
 export function lootLine(card: LootCard): { name: string; gives: string | null } {
@@ -230,7 +248,7 @@ export function lootLine(card: LootCard): { name: string; gives: string | null }
     case 'flask':
       return { name: 'Flask charge', gives: '+1 charge' };
     case 'supply':
-      return { name: `${card.n} ${SUPPLY_NAMES[card.supply!]}`, gives: null };
+      return { name: supplies(card.n, card.supply!), gives: null };
   }
 }
 
@@ -244,10 +262,12 @@ export const DECK_DREW: Record<DeckClue, string> = {
   burn: 'A patch',
 };
 /** The clues said in words on the item, where nothing of the tooltip shows them. */
-export const SAME_KIND = 'the same kind as this one';
-export const LENGTHS_CLUE = 'Shown above the answer line: a dot for each tile, grouped by word';
+export const SAME_KIND = 'the same kind of item';
+export const LENGTHS_CLUE = 'Dots above the answer line: one per tile, grouped by word.';
 export const PATCH_CLUE = 'A patch of the art is revealed';
 export const NO_CLUES = 'No clues yet. Use a supply from your pack';
+/** No clues and nothing in the pack to get one. */
+export const NO_CLUES_EMPTY = 'No clues yet.';
 
 /** "2 words: 3 and 2 tiles". */
 export function lengthsSaid(lengths: number[]): string {

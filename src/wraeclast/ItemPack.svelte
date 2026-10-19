@@ -3,8 +3,9 @@
   // to five of one supply; a supply may fill several) with its mark and short
   // name, the count on a badge, and the spaces still free dashed. On a phone
   // the row shows marks and counts only. A slot that would do nothing here is
-  // set back, dimmed and struck, and says why when held or focused; a tap
-  // uses one. The flask is the dock's.
+  // set back, dimmed and struck. A tap uses one; a press held (a phone has no
+  // hover) shows what it does, or why it does nothing here, above the row
+  // instead. The flask is the dock's.
   // `tray`: the pack in the dock's tray (a short phone), four spaces a row,
   // taller, with their names.
   import { PACK_STACKS, SUPPLY_NAMES, type Run, type Supply } from './rules';
@@ -15,9 +16,53 @@
   const stacks = $derived(run.state.pack);
   const free = $derived(Math.max(0, PACK_STACKS - stacks.length));
 
+  /** How long a press is held before it shows the slot's line instead of using it. */
+  const HOLD_MS = 450;
+  /** The line a held slot shows ("Torch: Reveals ..."), and the slot it's for. */
+  let said = $state<{ slot: number; text: string } | null>(null);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  let at: { x: number; y: number } | null = null;
+  /** A hold just showed a line: the click its release makes uses nothing. */
+  let held = false;
+
+  const lineOf = (sp: Supply) => `${SUPPLY_NAMES[sp]}: ${why(run, sp) ?? does(run, sp)}`;
+
+  function press(e: PointerEvent, sp: Supply, slot: number) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    held = false;
+    at = { x: e.clientX, y: e.clientY };
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      held = true;
+      clearTimeout(hideTimer);
+      said = { slot, text: lineOf(sp) };
+    }, HOLD_MS);
+  }
+  function move(e: PointerEvent) {
+    if (at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) release();
+  }
+  function release() {
+    clearTimeout(timer);
+    at = null;
+    if (said) {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => (said = null), 1800);
+    }
+  }
   function use(sp: Supply, slot: number) {
+    if (held) {
+      held = false;
+      return;
+    }
+    if (why(run, sp)) return;
+    said = null;
     if (run.use(sp, slot)) onuse?.(sp);
   }
+  $effect(() => () => {
+    clearTimeout(timer);
+    clearTimeout(hideTimer);
+  });
 </script>
 
 {#if stacks.length}
@@ -25,7 +70,20 @@
     {#each stacks as st, i (i)}
       {@const sp = st.supply}
       {@const off = why(run, sp)}
-      <button class="slot" class:off={!!off} disabled={!!off} onclick={() => use(sp, i)} title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`} aria-label="{SUPPLY_NAMES[sp]}: {st.n} in your pack. {off ?? does(run, sp)}">
+      <button
+        class="slot"
+        class:off={!!off}
+        aria-disabled={off ? 'true' : undefined}
+        onclick={() => use(sp, i)}
+        onpointerdown={(e) => press(e, sp, i)}
+        onpointermove={move}
+        onpointerup={release}
+        onpointercancel={release}
+        onpointerleave={release}
+        oncontextmenu={(e) => e.preventDefault()}
+        title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`}
+        aria-label="{SUPPLY_NAMES[sp]}: {st.n} in your pack. {off ?? does(run, sp)}"
+      >
         <span class="n" aria-hidden="true">{st.n}</span>
         <span class="ic" aria-hidden="true"><Glyph of={sp} /></span>
         <span class="lbl" aria-hidden="true">{SHORT[sp]}</span>
@@ -34,6 +92,7 @@
     {#each Array.from({ length: free }, (_, k) => k) as k (k)}
       <span class="slot empty" role="img" aria-label="Empty space"></span>
     {/each}
+    {#if said}<p class="said" aria-hidden="true">{said.text}</p>{/if}
   </div>
 {:else}
   <p class="empty-pack">Your pack is empty.</p>
@@ -41,9 +100,28 @@
 
 <style>
   .pack {
+    position: relative;
     display: flex;
     gap: 4px;
     padding-top: 5px;
+  }
+  /* A held slot's line, over the row (the row doesn't move for it). */
+  .said {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 3;
+    margin: 0;
+    padding: 7px 10px;
+    font-size: 14px;
+    line-height: 1.25;
+    text-align: center;
+    color: #e6dccb;
+    background: #14100c;
+    border: 1px solid var(--gold-lo);
+    border-radius: 4px;
+    pointer-events: none;
   }
   .slot {
     position: relative;
@@ -63,8 +141,10 @@
     box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.05);
     color: var(--gold);
     cursor: pointer;
+    -webkit-touch-callout: none;
+    user-select: none;
   }
-  .slot:hover:not(:disabled):not(.empty) {
+  .slot:hover:not(.off):not(.empty) {
     border-color: var(--gold-lo);
     color: var(--gold-hi);
   }

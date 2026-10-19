@@ -5,13 +5,15 @@
 import { readStored, writeStored } from '../lib/storage.ts';
 import { DEFAULT_TUNING, LOOT_KINDS, SECTIONS, SUPPLIES, ZONE_TYPES, type Range, type Tuning } from './rules.ts';
 
-const KEY = 'wraeclastTuning4';
+// 5: v4d's stakes (misses, the town's heal, one flask charge) reach a tuning kept before them.
+const KEY = 'wraeclastTuning5';
 
 /** Each number's range, for the panel's fields and for reading back what was kept. */
 export const LIMITS = {
   life: [1, 999],
   gold: [0, 999],
   flask: [0, 9],
+  townHeal: [0, 999],
   itemsPerZone: [1, 3],
   zoneShare: [0, 100],
   tiles: [8, 36],
@@ -61,6 +63,7 @@ export function cleanTuning(raw: unknown): Tuning {
     life: whole(r.life, LIMITS.life, d.life),
     gold: whole(r.gold, LIMITS.gold, d.gold),
     flask: whole(r.flask, LIMITS.flask, d.flask),
+    townHeal: whole(r.townHeal, LIMITS.townHeal, d.townHeal),
     itemsPerZone: whole(r.itemsPerZone, LIMITS.itemsPerZone, d.itemsPerZone),
     zoneShare: whole(r.zoneShare, LIMITS.zoneShare, d.zoneShare),
     tiles: each(SECTIONS, r.tiles, LIMITS.tiles, d.tiles),

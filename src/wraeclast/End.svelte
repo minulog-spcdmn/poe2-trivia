@@ -11,7 +11,7 @@
   import { GRAPH, type MapNode } from './map';
   import { logText } from './runLog';
   import { play } from './play.svelte';
-  import { placeKind } from './words';
+  import { BOSS_MOD_SHORT, placeKind } from './words';
   import Glyph from './Glyph.svelte';
   import Numbered from './Numbered.svelte';
 
@@ -123,16 +123,16 @@
   // ---- Corruption, gold, supplies ----
   const fronts = $derived(
     s.fronts.map((f) => {
-      const rule = BOSS_MOD_NAMES[f.rule];
+      const rule = `${BOSS_MOD_NAMES[f.rule]} (${BOSS_MOD_SHORT[f.rule]})`;
       if (!f.alive) return { rule, alive: false, line: `Stopped at ${node(f.stoppedAt ?? f.at)}` };
       if (log.fronts.aliveAtBoss !== null) return { rule, alive: true, line: `Reached the boss from ${node(f.at)}` };
       return { rule, alive: true, line: `Still at ${node(f.at)}` };
     }),
   );
   const bloodZones = $derived(log.met.filter((m) => m.corruption === 'blood').length);
-  const madeHarder = $derived(log.bossMods.map((m) => BOSS_MOD_NAMES[m]).join(' • ') || (log.fronts.aliveAtBoss === null ? 'Not reached' : 'Nothing'));
+  const madeHarder = $derived(log.bossMods.map((m) => `${BOSS_MOD_NAMES[m]} (${BOSS_MOD_SHORT[m]})`).join(' • ') || (log.fronts.aliveAtBoss === null ? 'Not reached' : 'Nothing'));
   const spentShare = $derived(log.goldSpent / Math.max(1, log.goldSpent + s.gold));
-  const LOOT_WORDS = { gold: 'Gold', supply: 'Supplies', flask: 'Flask' } as const;
+  const LOOT_WORDS = { gold: 'gold', supply: 'supplies', flask: 'flask' } as const;
   const loot = $derived(
     LOOT_KINDS.filter((k) => log.loot.dealt[k])
       .map((k) => `${LOOT_WORDS[k]} ${log.loot.taken[k]} of ${log.loot.dealt[k]}`)
@@ -274,14 +274,14 @@
   <section class="panel blk" aria-labelledby="cor-h" use:backdropShadow={{ fill: 'linear' }}>
     <div class="hd"><h2 id="cor-h">Corruption</h2></div>
     <p class="cline">
-      <span class="n">{log.fronts.seeded}</span> at the start • <span class="n">{log.fronts.stopped}</span> stopped •
-      {#if log.fronts.aliveAtBoss !== null}<span class="n">{log.fronts.aliveAtBoss}</span> reached the boss{:else}boss not reached{/if}
+      Started with <span class="n">{log.fronts.seeded}</span> • stopped <span class="n">{log.fronts.stopped}</span> •
+      {#if log.fronts.aliveAtBoss !== null}<span class="n">{log.fronts.aliveAtBoss}</span> still out at the boss{:else}boss not reached{/if}
     </p>
     {#if fronts.length}
       <ul class="crows">
         {#each fronts as f, i (i)}
           <li class:off={!f.alive}>
-            <span class="seal" class:stopped={!f.alive} role="img" aria-label={f.alive ? 'Alive' : 'Stopped'}><Glyph of="corrupt" /></span>
+            <span class="seal" class:stopped={!f.alive} role="img" aria-label={f.alive ? 'Still out' : 'Stopped'}><Glyph of="corrupt" /></span>
             <p><b>{f.rule}</b> • {f.line}</p>
           </li>
         {/each}
@@ -289,7 +289,7 @@
     {/if}
     <dl class="pairs">
       <div><dt>Boss made harder by</dt><dd>{madeHarder}</dd></div>
-      <div><dt>Blood toll zones</dt><dd class="n">{bloodZones}</dd></div>
+      <div><dt>Blood toll zones entered</dt><dd class="n">{bloodZones}</dd></div>
     </dl>
   </section>
 {/snippet}
@@ -300,7 +300,7 @@
     <div class="gbar" role="img" aria-label="{log.goldSpent} of {log.goldEarned} gold spent"><i style:width="{spentShare * 100}%"></i></div>
     <p class="cline"><span class="n">{log.goldEarned}</span> earned • <span class="n">{log.goldSpent}</span> spent</p>
     <dl class="pairs">
-      <div><dt>Loot taken</dt><dd><Numbered text={loot} /></dd></div>
+      <div><dt>Rewards taken</dt><dd><Numbered text={loot} /></dd></div>
     </dl>
   </section>
 {/snippet}

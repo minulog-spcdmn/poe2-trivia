@@ -81,6 +81,7 @@
       {@render field('Life', t.life, LIMITS.life, (n) => (t.life = n))}
       {@render field('Gold', t.gold, LIMITS.gold, (n) => (t.gold = n))}
       {@render field('Flask charges', t.flask, LIMITS.flask, (n) => (t.flask = n))}
+      {@render field('A town heals (life)', t.townHeal, LIMITS.townHeal, (n) => (t.townHeal = n))}
       {@render field('Items per zone', t.itemsPerZone, LIMITS.itemsPerZone, (n) => (t.itemsPerZone = n))}
       {@render field('Open nodes that are zones (%)', t.zoneShare, LIMITS.zoneShare, (n) => (t.zoneShare = n))}
     </fieldset>

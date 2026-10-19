@@ -9,7 +9,7 @@
   // went into.
   import { PACK_STACKS, SUPPLY_NAMES, type Run } from './rules';
   import Glyph from './Glyph.svelte';
-  import { SHORT, does } from './words';
+  import { SHORT, does, supplies } from './words';
 
   let {
     run,
@@ -27,7 +27,7 @@
     {@const st = s.pack[i]}
     <li>
       {#if st && onpick}
-        <button class="stack target" onclick={() => onpick(i)} aria-label="Replace {st.n} {SUPPLY_NAMES[st.supply]} with the new supply">
+        <button class="stack target" onclick={() => onpick(i)} aria-label="Replace {supplies(st.n, st.supply)} with the new supply">
           <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span><span class="lbl">{SHORT[st.supply]}</span><span class="n">{st.n}</span>
         </button>
       {:else if st}

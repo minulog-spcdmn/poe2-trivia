@@ -66,10 +66,10 @@
   <p class="meta">
     <span class="zone" class:boss={place.kind === 'boss'}>{node.name}</span>
     <span class="kind"
-      >{placeName(place)}{#if s.visit && s.item}<span class="count" class:dup={!!task}>{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}{#if hidden}{' '}<span
+      >{placeName(place)}{#if place.kind === 'zone'}<span class="zw">{' '}zone</span>{/if}{#if s.visit && s.item}<span class="count" class:dup={!!task}>{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span></span>{/if}{#if hidden}{' '}<span
           class="toll"
           role="img"
-          aria-label="Blood toll (corruption): each item here costs {BLOOD_TOLL} life when you start it"
+          aria-label="Blood toll: each item here costs {BLOOD_TOLL} life when you start it"
           title="Blood toll: {BLOOD_DOES}"><span class="ic" aria-hidden="true"><Glyph of="corrupt" /></span>Blood toll</span
         >{/if}</span
     >
@@ -86,6 +86,8 @@
 {#snippet step()}
   {#if place.kind === 'boss'}
     <div class="stepc boss" role="img" aria-label="The boss, the last step"><span class="k">Last</span><span class="v">Boss</span></div>
+  {:else if place.kind === 'camp'}
+    <div class="stepc start" role="img" aria-label="The camp, the start of the run"><span class="k">Run</span><span class="v">Start</span></div>
   {:else}
     <div class="stepc" role="img" aria-label="Step {node.step} of {lastStep}"><span class="k">Step</span><span class="v">{node.step}<small>/{lastStep}</small></span></div>
   {/if}
@@ -108,7 +110,7 @@
         <span class="lifenum" class:low
           >{s.life}{#if hit}<span class="hitn" class:toll={tollHit} title={tollHit ? 'Blood toll' : undefined}>−{hit}</span>{:else if due}<span class="due">+{due}</span>{/if}</span
         >
-        <span class="flask" data-fly="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} charges. Each drink uses one charge." title={FLASK_LINE}>
+        <span class="flask" data-fly="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} {s.tuning.flask === 1 ? 'charge' : 'charges'}. Each drink uses one charge." title={FLASK_LINE}>
           <span class="ch">
             {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}<i class:full={i < s.flask.charges} class:filling={refilled > 0 && i >= firstFilled} style:animation-delay="{Math.max(0, i - firstFilled) * 0.28}s"></i>{/each}
           </span>
@@ -505,11 +507,15 @@
   .stepc.boss {
     border-color: #8e4434;
   }
-  .stepc.boss .v {
+  .stepc.boss .v,
+  .stepc.start .v {
     font-size: 14px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: #ff9c86;
+  }
+  .stepc.start .v {
+    color: var(--gold-hi);
   }
 
   /* A short phone (375 by 667): one bar. The place and the key on a 32 px
@@ -552,8 +558,9 @@
       margin-right: 8px;
       color: var(--gold-lo);
     }
-    /* One line holds the place, its kind and a toll; the item's count is left out, as the design's short bar does. */
-    .count {
+    /* One line holds the place, its kind and a toll; the item's count is left out, as the design's short bar does, and "zone" too, so the toll keeps its room. */
+    .count,
+    .zw {
       display: none;
     }
     .icon-btn {

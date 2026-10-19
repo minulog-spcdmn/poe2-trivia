@@ -95,9 +95,8 @@
   import { MediaQuery } from 'svelte/reactivity';
   import type { BossMod, Place } from './rules';
   import type { Front } from './map';
-  import { BOSS_MOD_NAMES } from './rules';
   import Glyph from './Glyph.svelte';
-  import { bloodLine, bossAdds, bossIfReached, bossLine, bossOnNode, bossRuleLines, placeDoes, placeKind, placeName, zoneLines } from './words';
+  import { BOSS_MOD_SHORT, bloodLine, bossAdds, bossIfReached, bossLine, bossOnNode, bossRuleLines, placeDoes, placeKind, placeName, zoneLines } from './words';
 
   /** `onclose`: opened over a vendor or a reveal, it closes to go back there. `plate`: the map alone, filling its box. */
   let { run, onclose, plate = false }: { run: Run; onclose?: () => void; plate?: boolean } = $props();
@@ -149,12 +148,12 @@
   }
 
   // ---- Words ----
-  const bossRules = $derived(live.map((f) => BOSS_MOD_NAMES[f.rule]));
+  const bossRules = $derived(live.map((f) => BOSS_MOD_SHORT[f.rule]));
   function nodeSaid(id: string, p: Place): string {
     const n = name(id);
-    if (p.kind === 'boss') return `${n}: Boss, at the boss, only Torches work${bossRules.length ? `, ${bossRules.join(', ')}` : ''}`;
+    if (p.kind === 'boss') return `${n}: Boss${bossRules.length ? `, ${bossRules.join(', ')}` : ''}`;
     const rule = ruleOn(id);
-    const said = rule && p.kind === 'zone' ? `${n}: ${placeName(p)}, Blood toll (corruption), if it reaches the boss: ${BOSS_MOD_NAMES[rule]}` : `${n}: ${placeName(p)}`;
+    const said = rule && p.kind === 'zone' ? `${n}: ${placeName(p)}, Blood toll, if it reaches the boss: ${BOSS_MOD_SHORT[rule]}` : `${n}: ${placeName(p)}`;
     return `${said}${id === s.at ? ', you are here' : ''}`;
   }
   /** A Where next row's lines, under its name and kind. */
@@ -166,12 +165,12 @@
   function rowSaid(id: string, p: Place): string {
     const lines = p.kind === 'boss' ? [placeDoes(run, p), bossAdds(run)] : rowLines(p);
     const f = frontAt(id);
-    const toll = f ? `. Blood toll (corruption): ${bloodLine(run).replace(' • ', ', ')}. ${bossIfReached(f.rule)}` : '';
+    const toll = f ? `. Blood toll: ${bloodLine(run).replace(' • ', ', ')}. ${bossIfReached(f.rule)}` : '';
     return `Go to ${name(id)}: ${placeKind(p)}, ${lines.join(', ')}${toll}`;
   }
-  const keyLine = $derived(`Blood toll (corruption): ${bloodLine(run).replace(' • ', ', ')}`);
+  const keyLine = $derived(`Blood toll: ${bloodLine(run).replace(' • ', ', ')}`);
   const footLine = $derived(
-    `${creepIn === 0 ? 'It moves after this step.' : `It moves in ${creepIn === 1 ? '1 step' : `${creepIn} steps`}.`} Name every item in its zone to stop it.`,
+    `${creepIn === 0 ? 'Moves on after your next pick.' : `Moves on in ${creepIn === 1 ? '1 step' : `${creepIn} steps`}.`} Name every item there to stop it.`,
   );
 
   // ---- The plate ----
@@ -306,7 +305,7 @@
                 {/if}
                 <span class="nl" style:max-width="{L.labelW[n.id]}px" aria-hidden="true" use:measure={n.id}
                   >{n.name}<em>{placeName(p)}</em>{#if rule && p.kind === 'zone'}<em class="r">Blood toll</em><em class="br">{bossOnNode(rule)}</em
-                    >{/if}{#if p.kind === 'boss'}<em class="br">{bossLine(run)}</em>{/if}</span
+                    >{/if}{#if p.kind === 'boss' && bossLine(run)}<em class="br">{bossLine(run)}</em>{/if}</span
                 >
               </div>
             {/each}
@@ -331,6 +330,7 @@
         <div class="map-key" bind:offsetHeight={keyH}>
           <span class="r">{@render mark('vaal')} {keyLine}</span>
           <span>{footLine}</span>
+          <span>Still out at the boss, it makes the boss harder.</span>
         </div>
       {/if}
     </section>

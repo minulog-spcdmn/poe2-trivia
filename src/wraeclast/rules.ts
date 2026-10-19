@@ -6,9 +6,8 @@
 //
 // A run: the camp (a vendor), then a node at a time along the paths ahead:
 // zones (2 items under the zone's type), Wells (the flask refilled on the way
-// past), towns (healed, a vendor again) and at the end the boss's items under
-// the Silent rule (only Torches work), with a modifier for each corruption
-// front still alive. A front is a zone: only the zone it stands on is
+// past), towns (healed, a vendor again) and at the end the boss's items, with
+// a modifier for each corruption front still alive. A front is a zone: only the zone it stands on is
 // corrupted (Blood toll, double loot), and the map shows it. Each item: its
 // name built from tiles (the Inscription: the answer's tiles among those of a
 // few look-alike names and loose decoys), its art under the Veil, the zone's
@@ -81,6 +80,8 @@ export interface Tuning {
   gold: number;
   /** Flask charges. */
   flask: number;
+  /** Life a town heals. */
+  townHeal: number;
   /** Items in a zone (1 to 3). */
   itemsPerZone: number;
   /** The share of open nodes that become zones (the rest Wells), percent. */
@@ -123,12 +124,13 @@ export interface Tuning {
 export const DEFAULT_TUNING: Tuning = {
   life: 100,
   gold: 40,
-  flask: 2,
+  flask: 1,
+  townHeal: 10,
   itemsPerZone: 2,
   zoneShare: 83,
   tiles: { early: 14, mid: 20, late: 26, boss: 32 },
   names: { early: [1, 2], mid: [2, 3], late: [3, 4], boss: [4, 5] },
-  missCost: { early: [20, 30], mid: [30, 40], late: [40, 50], boss: [55, 65] },
+  missCost: { early: [30, 40], mid: [40, 50], late: [50, 60], boss: [65, 75] },
   price: { flare: 10, wisdom: 10, lore: 10, category: 10, base: 10, decoy: 10, lengths: 10, first: 10, deck: 10 },
   stack: { flare: 3, wisdom: 3, lore: 2, category: 2, base: 1, decoy: 3, lengths: 3, first: 2, deck: 2 },
   burnIn: { flare: 12, blight: 4, boss: 4, deck: 4 },
@@ -155,7 +157,6 @@ export const STACK_MAX = 5;
 /** A flask charge heals this much at once, and again as each of the next FLASK_ITEMS items ends. */
 export const FLASK_STEP = 10;
 export const FLASK_ITEMS = 2;
-export const TOWN_HEAL = 20;
 export const BOSS_ITEMS = 3;
 /** Loose decoys a Blight zone and a Teeming boss add. */
 export const BLIGHT_DECOYS = 6;
@@ -170,7 +171,7 @@ export const MIN_DECOYS = 5;
 export const DECOY_POOL = 30;
 /** Decoys one Tangled Fossil strikes. */
 export const DECOY_SWEEP = 4;
-/** Life a Blood toll takes as each item opens; misses a Bloodied boss costs more. */
+/** Life a Blood toll takes as each item opens, and a Bloodied boss as each of its items opens. */
 export const BLOOD_TOLL = 10;
 export const BLOODIED = 10;
 /** Words that stay whole tiles, on every board. */
@@ -811,8 +812,7 @@ export class Run {
   missRange(): Range {
     const sec = this.section();
     const [lo, hi] = this.state.tuning.missCost[sec];
-    const more = sec === 'boss' && this.state.bossMods.includes('bloodied') ? BLOODIED : 0;
-    return [lo + more, hi + more];
+    return [lo, hi];
   }
 
   /** The corruption of the zone the player is at, or null. */
@@ -913,14 +913,13 @@ export class Run {
   }
 
   /**
-   * Why a supply would do nothing on the open item: none open, the boss's
-   * Silent rule, a Ritual zone (no Scrolls), or nothing left for it to show.
-   * Null when it works.
+   * Why a supply would do nothing on the open item: none open, a Ritual zone
+   * (no Scrolls), or nothing left for it to show (the Ancient Orb with no
+   * sibling too). Null when it works.
    */
-  idle(supply: Supply): 'closed' | 'silent' | 'ritual' | 'done' | null {
+  idle(supply: Supply): 'closed' | 'ritual' | 'done' | null {
     const it = this.live();
     if (!it) return 'closed';
-    if (it.boss !== null && supply !== 'flare') return 'silent';
     if (supply === 'wisdom' && it.zoneType === 'ritual') return 'ritual';
     const c = CLUES[it.itemId];
     const done: Record<Supply, boolean> = {
@@ -1083,7 +1082,7 @@ export class Run {
       this.depart();
       this.show('well');
     } else if (place.kind === 'town') {
-      const heal = Math.min(TOWN_HEAL, s.maxLife - s.life);
+      const heal = Math.min(s.tuning.townHeal, s.maxLife - s.life);
       s.life += heal;
       s.log.met.at(-1)!.healed = heal;
       s.beat = { kind: 'town', node: id, healed: heal };
@@ -1252,9 +1251,10 @@ export class Run {
     it.log.pack = s.pack.map((st) => ({ ...st }));
     it.openedAt = this.now();
     if (it.freeClue === 'burn') this.burnIn(it, it.boss !== null ? s.tuning.burnIn.boss : s.tuning.burnIn.blight, 'zone');
-    if (it.hidden === 'blood') {
-      // Never the last life point: it comes before the player can drink.
-      const toll = Math.max(0, Math.min(s.life - 1, BLOOD_TOLL));
+    // A Blood toll, or a Bloodied boss: never the last life point, as it comes before the player can drink.
+    const due = it.hidden === 'blood' ? BLOOD_TOLL : it.boss !== null && s.bossMods.includes('bloodied') ? BLOODIED : 0;
+    if (due) {
+      const toll = Math.max(0, Math.min(s.life - 1, due));
       s.life -= toll;
       it.log.toll = toll;
       it.log.lifeAfter = s.life;

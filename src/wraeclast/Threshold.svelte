@@ -1,14 +1,14 @@
 <script lang="ts">
-  // The boss's threshold (phase 'boss'), the run's last stop: its rule, the
-  // rules the corruption still alive added (each with the place its
-  // corruption started), what the player brings (life, flask, pack: only
-  // Torches work here), a miss's cost, and the one way on. Phones dock the
+  // The boss's threshold (phase 'boss'), the run's last stop: the rules the
+  // corruption still alive added (each with the place its corruption
+  // started), what the player brings (life, flask, pack), a miss's cost, and
+  // the one way on. Phones dock the
   // stakes and Face the boss at the foot; wide screens set the rules beside
   // what the player has, the stakes and the button under both.
   import { backdropShadow } from '../lib/backdropShadow';
   import { BOSS_MOD_NAMES, PACK_STACKS, SUPPLY_NAMES, type Run } from './rules';
   import { GRAPH } from './map';
-  import { BOSS_MOD_DOES, BOSS_RULE, BOSS_RULE_NAME, BOSS_RULE_NOTE, BOSS_RULE_SHORT, FLASK_EACH, SHORT, bossReached, bossRuleFrom } from './words';
+  import { BOSS_MOD_DOES, FLASK_EACH, SHORT, bossReached, bossRuleFrom, chargesLeft } from './words';
   import Glyph from './Glyph.svelte';
   import Numbered from './Numbered.svelte';
 
@@ -33,22 +33,11 @@
   <header class="screen-title">
     <p class="kicker">The boss</p>
     <h1 class="boss">{run.node.name}</h1>
-    <p class="sub">{BOSS_RULE}. Name all <span class="n">{items}</span> items to win.</p>
+    <p class="sub">Name all <span class="n">{items}</span> items to win.</p>
   </header>
 
   <div class="cols">
     <div class="col">
-      <section class="panel blk" aria-labelledby="rule-h" use:backdropShadow={{ fill: 'linear' }}>
-        <div class="hd"><h2 id="rule-h">Rule</h2></div>
-        <div class="rule-row">
-          <span class="rule-ic" aria-hidden="true"><Glyph of="flare" /></span>
-          <div>
-            <p><b>{BOSS_RULE_NAME}</b>: {BOSS_RULE_SHORT}</p>
-            <p class="m">{BOSS_RULE_NOTE}</p>
-          </div>
-        </div>
-      </section>
-
       <section class="panel blk" aria-labelledby="mods-h" use:backdropShadow={{ fill: 'linear' }}>
         <div class="hd">
           <h2 id="mods-h">Made harder by the corruption</h2>
@@ -87,17 +76,17 @@
             <span class="hl">Flask</span>
             <span class="hv">
               <span class="pips" aria-hidden="true">{#each Array.from({ length: max }, (_, k) => k) as k (k)}<i class:full={k < s.flask.charges}></i>{/each}</span>
-              <span><span class="n">{s.flask.charges}</span> {s.flask.charges === 1 ? 'drink' : 'drinks'} left{#if s.flask.charges}{' '}<span class="m">• <Numbered text={FLASK_EACH} /></span>{/if}</span>
+              <span><Numbered text={chargesLeft(s.flask.charges)} />{#if s.flask.charges}{' '}<span class="m">• <Numbered text={FLASK_EACH} /></span>{/if}</span>
             </span>
           </div>
           <div class="hrow stack">
-            <span class="hl">Pack <span class="m">• {BOSS_RULE_SHORT} here</span></span>
+            <span class="hl">Pack</span>
             <ul class="pack" aria-label="Your pack">
               {#each Array.from({ length: PACK_STACKS }, (_, i) => i) as i (i)}
                 {@const st = s.pack[i]}
                 <li>
                   {#if st}
-                    <span class="slot" class:off={st.supply !== 'flare'} aria-label="{SUPPLY_NAMES[st.supply]}: {st.n} in your pack{st.supply !== 'flare' ? `. Boss rule: ${BOSS_RULE_SHORT}` : ''}">
+                    <span class="slot" aria-label="{SUPPLY_NAMES[st.supply]}: {st.n} in your pack">
                       <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span><span class="lbl" aria-hidden="true">{SHORT[st.supply]}</span><span class="cnt" aria-hidden="true">{st.n}</span>
                     </span>
                   {:else}
@@ -167,45 +156,17 @@
     margin: 0;
   }
 
-  .rule-row {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
-    column-gap: 10px;
-    align-items: center;
-  }
-  .rule-ic {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    box-sizing: border-box;
-    padding: 8px;
-    border-radius: 50%;
-    border: 1px solid rgba(201, 164, 92, 0.6);
-    background: rgba(12, 10, 8, 0.7);
-    color: var(--gold-hi);
-  }
-  .rule-row p,
   .mods p {
     font-size: 16px;
     line-height: 1.25;
     color: #e6dccb;
   }
-  .rule-row b,
   .mods b {
     font-family: var(--font-cinzel);
     font-weight: 700;
-    font-size: 15px;
+    font-size: 14px;
     letter-spacing: 0.04em;
-    color: #ff9c86;
-  }
-  .mods b {
-    font-size: 14px;
     color: #f0a68c;
-  }
-  .rule-row p.m {
-    font-size: 14px;
-    color: var(--muted);
   }
 
   .mods {
@@ -277,13 +238,6 @@
     text-transform: uppercase;
     color: var(--muted);
   }
-  .hl .m {
-    font-family: var(--font-body);
-    font-size: 13px;
-    font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
-  }
   .hv {
     display: flex;
     align-items: center;
@@ -336,7 +290,7 @@
     border-color: #e0b070;
   }
 
-  /* The pack, as it stands at the boss: Torches lit, the rest dimmed. */
+  /* The pack, as it stands at the boss. */
   .pack {
     margin: 0;
     padding: 0;
@@ -360,12 +314,6 @@
     box-shadow:
       inset 0 1px 0 rgba(255, 220, 150, 0.08),
       0 0 10px rgba(201, 164, 92, 0.18);
-  }
-  .slot.off {
-    border-color: var(--line);
-    box-shadow: none;
-    opacity: 0.4;
-    filter: saturate(0.4);
   }
   .slot.empty {
     background: rgba(0, 0, 0, 0.3);
@@ -451,17 +399,6 @@
     }
     .col {
       gap: 14px;
-    }
-    .rule-row {
-      grid-template-columns: 48px minmax(0, 1fr);
-    }
-    .rule-ic {
-      width: 48px;
-      height: 48px;
-      padding: 10px;
-    }
-    .rule-row p {
-      font-size: 17px;
     }
     .mods p {
       font-size: 16.5px;
