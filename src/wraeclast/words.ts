@@ -187,9 +187,9 @@ export function boonDoes(run: Run, boon: Boon): string {
     case 'silver':
       return 'The supplies your boons name cost half, rounded up.';
     case 'peace':
-      return "Once a run, on an item where you've used a Torch and a Golden Page, misses cost no life.";
+      return "On an item where you've used a Torch and a Golden Page, misses cost no life.";
     case 'honour':
-      return `Once a run, an item you name with only a Golden Page and a Scroll, both used, heals ${t.honourHeal}.`;
+      return `An item you name with only a Golden Page and a Scroll, both used, heals ${t.honourHeal}.`;
     case 'cloak':
       return "Once a run, a miss that would end the run on an item where you've used a Torch and an Ancient Orb leaves you at full life.";
   }

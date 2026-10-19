@@ -336,16 +336,16 @@ interface RunState {
   /** The place the player is at (or last was). */
   at: string;
   phase: Phase;
-  /** In a town (a draft, then its shop): where, the heal on this entry, whether less recovery took it, whether it's the first entry, whether a draft came first, and the Torches bought this visit (Balbala's Gift). */
-  vendor: { at: 'camp' | 'town'; heal: number; noHeal: boolean; first: boolean; drafted: boolean; torches: number } | null;
+  /** In a town (a draft, then its shop): where, the heal on this entry, whether less recovery took it, whether it's the first entry, and whether a draft came first. */
+  vendor: { at: 'camp' | 'town'; heal: number; noHeal: boolean; first: boolean; drafted: boolean } | null;
   /** The boons held, in the order taken (at most HOLD). */
   boons: Boon[];
   /** The draft's cards while it's open, else null. */
   draft: Boon[] | null;
-  /** The once-a-run boons that have fired (Moment's Peace, Earned Honour, Sekhema's Cloak). */
+  /** The once-a-run boons that have fired (Sekhema's Cloak). */
   spent: Boon[];
-  /** The item Moment's Peace fired on: every miss on it costs no life. */
-  peaceOn: number | null;
+  /** Balbala's Gift: whether the next Torch bought in a town is free (once per arrival after a zone, and at the start). */
+  freeTorch: boolean;
   /** Upward Path's streak: items named in a row with no supply while it's held (a supply used or bought ends it). */
   streak: number;
   life: number;
@@ -639,7 +639,7 @@ interface Pool {
  * grows, up to MAX_TILES: the cap trims the loose decoys first, and a name
  * that would pass it is never dealt.
  */
-export function dealPool(answer: Item, seed: number, size: number, names: Range = [0, 0]): Pool {
+export function dealPool(answer: Item, seed: number, size: number, names: Range = [0, 0], shut: ReadonlySet<string> = new Set()): Pool {
   const rng = seededRandom(itemSeed(seed, answer.id));
   const ownList = SYLLABLES[answer.id].flat();
   const own = new Set(ownList);
@@ -651,6 +651,7 @@ export function dealPool(answer: Item, seed: number, size: number, names: Range 
   const sameSet = (tiles: string[]) => new Set(tiles).size === own.size && tiles.every((t) => own.has(t));
   const ok = (it: Item) =>
     it.id !== answer.id &&
+    !shut.has(it.id) &&
     !!SYLLABLES[it.id] &&
     letters(it.name) !== letters(answer.name) &&
     (!sib || letters(it.name) !== letters(sib.name)) &&
@@ -736,11 +737,11 @@ export class Run {
       places,
       at: camp,
       phase: 'vendor',
-      vendor: { at: 'camp', heal: 0, noHeal: false, first: true, drafted: false, torches: 0 },
+      vendor: { at: 'camp', heal: 0, noHeal: false, first: true, drafted: false },
       boons: [],
       draft: null,
       spent: [],
-      peaceOn: null,
+      freeTorch: true,
       streak: 0,
       life: t.life,
       maxLife: t.life,
@@ -948,10 +949,7 @@ export class Run {
     const t = s.tuning;
     const used = this.usedOn(it);
     if (this.has('challenger') && this.only(it, 'lore')) this.fire(it, 'challenger', this.heal(t.challengerHeal));
-    if (this.has('honour') && !s.spent.includes('honour') && used.size === 2 && used.has('lore') && used.has('wisdom')) {
-      s.spent.push('honour');
-      this.fire(it, 'honour', this.heal(t.honourHeal));
-    }
+    if (this.has('honour') && used.size === 2 && used.has('lore') && used.has('wisdom')) this.fire(it, 'honour', this.heal(t.honourHeal));
     if (this.has('vial') && this.only(it, 'category')) {
       const off = Math.max(0, Math.min(t.vialLife, s.foe.life - 1));
       s.foe.life -= off;
@@ -963,22 +961,37 @@ export class Run {
     }
   }
 
+  /** The boon that would cover a miss of `cost` on an item now: Moment's Peace (a Torch and a Golden Page used), else Sekhema's Cloak (a Torch and an Ancient Orb used, the miss would end the run, once a run). */
+  private coverOf(it: ItemPlay, cost: number): 'peace' | 'cloak' | null {
+    const s = this.state;
+    const used = this.usedOn(it);
+    if (cost > 0 && this.has('peace') && used.has('flare') && used.has('lore')) return 'peace';
+    if (s.life - cost <= 0 && this.has('cloak') && !s.spent.includes('cloak') && used.has('flare') && used.has('category')) return 'cloak';
+    return null;
+  }
+
+  /** The life a miss on the open item would cost now, its boons applied (Moment's Peace or Sekhema's Cloak covering it: none). */
+  missNow(): number {
+    const it = this.state.item;
+    if (!it) return 0;
+    const cost = this.missCost();
+    return this.coverOf(it, cost) ? 0 : Math.min(this.state.life, cost);
+  }
+
   /**
    * A miss's life on the open item, its boons applied: Moment's Peace (a
-   * Torch and a Golden Page used: no life, on the one item it fires on),
-   * Sekhema's Cloak (a Torch and an Ancient Orb used: a miss that would end
-   * the run leaves you at full life, once). Returns the life lost.
+   * Torch and a Golden Page used: no life), Sekhema's Cloak (a Torch and an
+   * Ancient Orb used: a miss that would end the run leaves you at full life,
+   * once). Returns the life lost.
    */
   private missBoons(it: ItemPlay, cost: number): number {
     const s = this.state;
-    const used = this.usedOn(it);
-    if (cost > 0 && this.has('peace') && used.has('flare') && used.has('lore') && (!s.spent.includes('peace') || s.peaceOn === it.n)) {
-      if (!s.spent.includes('peace')) s.spent.push('peace');
-      s.peaceOn = it.n;
+    const cover = this.coverOf(it, cost);
+    if (cover === 'peace') {
       this.fire(it, 'peace', cost);
       return 0;
     }
-    if (s.life - cost <= 0 && this.has('cloak') && !s.spent.includes('cloak') && used.has('flare') && used.has('category')) {
+    if (cover === 'cloak') {
       s.spent.push('cloak');
       const back = s.maxLife - s.life;
       s.life = s.maxLife;
@@ -1012,11 +1025,11 @@ export class Run {
     return this.state.boons.includes(boon);
   }
 
-  /** A supply's price in this shop: Balbala's Gift makes the visit's first Torch free; Silver Tongue halves (rounded up) the supplies the boons held name. */
+  /** A supply's price in this shop: Balbala's Gift makes the first Torch after a zone free; Silver Tongue halves (rounded up) the supplies the boons held name. */
   priceOf(supply: Supply): number {
     const s = this.state;
     const base = s.tuning.price[supply];
-    if (supply === 'flare' && this.has('balbala') && s.vendor && s.vendor.torches === 0) return 0;
+    if (supply === 'flare' && this.has('balbala') && s.vendor && s.freeTorch) return 0;
     if (this.has('silver') && namedBy(s.boons).has(supply)) return Math.ceil(base / 2);
     return base;
   }
@@ -1100,11 +1113,11 @@ export class Run {
     s.log.goldSpent += price;
     s.pack[supply] += n;
     s.log.bought[supply] += n;
-    if (supply === 'flare' && s.vendor) s.vendor.torches++;
+    if (supply === 'flare' && price === 0) s.freeTorch = false;
     s.streak = 0;
     const here = s.log.met.at(-1)!;
     here.spent += price;
-    here.bought++;
+    here.bought += n;
     return true;
   }
 
@@ -1188,11 +1201,12 @@ export class Run {
       const met = s.log.met.at(-1)!;
       met.healed = heal;
       met.noHeal = noHeal;
-      s.vendor = { at: place.kind === 'camp' ? 'camp' : 'town', heal, noHeal, first, drafted: false, torches: 0 };
+      s.vendor = { at: place.kind === 'camp' ? 'camp' : 'town', heal, noHeal, first, drafted: false };
       if (first) this.openDraft(false);
       else this.toShop();
       return true;
     }
+    if (place.kind === 'zone') s.freeTorch = true;
     if (place.kind === 'zone') this.draw({ duel: false, depth: this.depthAt(id), mod: this.modAt(id), corrupted: this.corrupted(id) });
     else this.draw({ duel: true, depth: null, mod: null, corrupted: false });
     return true;
@@ -1224,7 +1238,7 @@ export class Run {
     const [lo, hi] = t.names[board];
     const names: Range = mod === 'monsters' ? [lo + 1, hi + 1] : [lo, hi];
     // The pool's total is rolled, not the decoys: the board's size says next to nothing of the answer's.
-    const dealt = dealPool(answer, s.seed, t.tiles[board], names);
+    const dealt = dealPool(answer, s.seed, t.tiles[board], names, this.drawn);
     const log: ItemLog = {
       itemId: answer.id,
       name: answer.name,
@@ -1369,6 +1383,8 @@ export class Run {
         break;
       case 'category':
         it.shown.category = true;
+        // A sibling shown by name is never a later answer, nor a decoy name.
+        if (it.sibling) this.drawn.add(it.sibling);
         break;
     }
     it.log.supplies.push({ type: supply, order: it.log.supplies.length + 1, ms: this.since(it) });

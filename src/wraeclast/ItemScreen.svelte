@@ -28,6 +28,8 @@
   const named = $derived(s.phase === 'solved');
   const duel = $derived(it.duel);
   const cost = $derived(run.missCost());
+  /** What a miss would cost now, the boons that would cover it counted. */
+  const risk = $derived(run.missNow());
   const payLine = $derived(duel ? `Right: hits the Seed for ${run.hitNow()}` : `Named: ${run.payNow()} gold`);
   /** Answered right (a duel item can be answered wrong: then the answer is shown). */
   const right = $derived(!!it.log.submits.at(-1)?.right);
@@ -157,9 +159,9 @@
         </div>
       {:else}
         <div class="stakes">
-          <div class="row miss">{duel ? 'One try • wrong' : 'Miss'}: <b>{cost}</b> life</div>
+          <div class="row miss">{duel ? 'One try • wrong' : 'Miss'}: <b>{risk}</b> life</div>
           <div class="row reward">{payLine}</div>
-          {#if run.blocked() === 'tried'}<div class="row warn">You tried this one. Change a tile</div>{:else if it.mod === 'armoured' && !it.log.submits.length}<div class="row warn">Armoured: no supply until your first try</div>{:else if s.life <= cost}<div class="row warn">Low life: one miss ends the run</div>{/if}
+          {#if run.blocked() === 'tried'}<div class="row warn">You tried this one. Change a tile</div>{:else if it.mod === 'armoured' && !it.log.submits.length}<div class="row warn">Armoured: no supply until your first try</div>{:else if risk > 0 && s.life <= risk}<div class="row warn">Low life: one miss ends the run</div>{/if}
         </div>
       {/if}
       {#if short.current}
