@@ -51,8 +51,9 @@ Nothing gets built until the redesign is settled.
 Owner picked from design's v6 options (`decisions.md`, newest rows): open
 region, depth plus one waystone mod, the Seed of Corruption, Pledges
 (formerly Pacts), four supplies (Torch, Golden Page, Ancient Orb, Scroll of
-Wisdom). Gambling lives in town, to make the shop interesting. Design is
-proposing the four supplies' costs and the town's gambling.
+Wisdom), all bought with gold. Gambling lives in town, to make the shop
+interesting; the owner rejected stock roguelike gambles as uncreative, and
+design is pitching original ones.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
