@@ -1,4 +1,4 @@
-# Wraeclast run: state (Oct 19, evening)
+# Wraeclast run: state (Oct 19, late)
 
 The one page a fresh orchestrator reads first. Then, only as needed:
 - `ORCHESTRATOR.md`: the brief and the principles (supply naming, principle 8);
@@ -35,17 +35,21 @@ Nothing gets built until the redesign is settled.
 - **No league mechanics on the map.** Zone types named after leagues
   (Incursion, Essence, Ritual, Expedition, Blight) go. Design proposes what
   gives a zone its character.
-- **Kept from v4:**
-  - the 10-step route with 2 items a zone;
-  - the item screen and the supplies;
-  - real look-alike decoy names, drawn as a walk;
-  - the v4d stakes: misses 30-40, 40-50, 50-60, boss 65-75; towns heal 10;
-    the flask holds 1 drink; no Silent.
+- **Owner's vision (Oct 19, `decisions.md`):** an open Wraeclast, not a
+  linear route. Start weak, clear zones for upgrades and loot until you feel
+  strong enough for the boss (perhaps the Beast, spreading corruption). The
+  spread is a soft timer: wander long and zones harden; go early and you're
+  too weak. Runs about 10 min. Stakes are bets you opt into.
+- **Also back to the drawing board:** the map and route, supplies and shops
+  (all reveal a bit of info, some just better, no downside, too many kinds),
+  corruption and fronts, life and misses.
+- **Kept from v4:** the item screen (Inscription) and real look-alike decoy
+  names, drawn as a walk.
 
-## Ask the owner first
+## Now
 
-What else goes back to the drawing board ("many things")? Then send one
-combined brief to design: options first, text only, no boards.
+The combined brief went to design (options first, text only, no boards).
+Next: put design's options to the owner as feel questions.
 
 Still open, later: the gem tell, the "o'" tile, the map art (waits for the
 map).
