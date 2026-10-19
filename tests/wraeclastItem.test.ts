@@ -8,9 +8,13 @@ import {
   ITEMS,
   MAX_TILES,
   MIN_DECOYS,
+  POSSESSIVES,
+  SMALL_WORDS,
   SYLLABLES,
   TILE_SPREAD,
+  dealPool,
   gridAdjacency,
+  isPossessive,
   letters,
   markLine,
   sectionOf,
@@ -78,6 +82,20 @@ function plainAnswer(min = 3, at: At = {}) {
   }
 }
 
+/** A run at the boss with its item `k` (from 0) laid out: the ones before it named. */
+function bossItem(seed: number, k: number, at: At = {}) {
+  const got = laidOut(seed, { ...at, boss: true });
+  const { run } = got;
+  for (let i = 0; i < k; i++) {
+    const it = run.state.item!;
+    if (it.openedAt === null) assert.ok(run.open(gridAdjacency(9)));
+    it.build = [...it.answer];
+    assert.equal(run.submit(), true);
+    assert.ok(run.next());
+  }
+  return { ...got, it: run.state.item! };
+}
+
 /** Places tiles on a fresh line (the locked start kept). */
 function build(run: Run, tiles: string[]) {
   run.clear();
@@ -102,9 +120,10 @@ function pearson(xs: number[], ys: number[]) {
 
 // ---- The pool ----
 
-test("the pool's numbers are the handoff's: 14, 20, 26 and 32 tiles by section, each item within 3, at least 8 decoys, at most MAX_TILES tiles", () => {
+test("the pool's numbers: 14, 20, 26 and 32 tiles by section, each item within 3, at least 5 decoys, at most MAX_TILES tiles", () => {
   assert.deepEqual(DEFAULT_TUNING.tiles, { early: 14, mid: 20, late: 26, boss: 32 });
-  assert.deepEqual([TILE_SPREAD, MIN_DECOYS, MAX_TILES], [3, 8, 36]);
+  assert.deepEqual([TILE_SPREAD, MIN_DECOYS, MAX_TILES], [3, 5, 36]);
+  assert.deepEqual([SMALL_WORDS, POSSESSIVES], [['of', 'the', 'and'], [2, 3]]);
   assert.deepEqual(
     [0, 1, 5, 6, 10, 11, 15].map((s) => sectionOf(s, false)),
     ['early', 'early', 'early', 'mid', 'mid', 'late', 'late'],
@@ -128,7 +147,7 @@ test("the tiles are the answer's distinct tiles and the decoys, each once, lower
     }
 });
 
-test("the pool's total is rolled for each item within its section's, 3 either way, and at least 8 are decoys", () => {
+test("the pool's total is rolled for each item within its section's, 3 either way, and at least 5 are decoys", () => {
   for (const sec of ['early', 'mid', 'late', 'boss'] as const) {
     const T = DEFAULT_TUNING.tiles[sec];
     const totals = new Set<number>();
@@ -136,7 +155,7 @@ test("the pool's total is rolled for each item within its section's, 3 either wa
       const { it } = laidOut(seed, sec === 'boss' ? { boss: true } : { step: STEP[sec] });
       const own = new Set(it.answer).size;
       assert.ok(it.decoys.length >= MIN_DECOYS, `${sec}: ${it.decoys.length} decoys`);
-      // More decoys than the fewest: the rolled total stands. The fewest: the answer's tiles and 8 reach the roll at least.
+      // More decoys than the fewest: the rolled total stands. The fewest: the answer's tiles and 5 reach the roll at least.
       if (it.decoys.length > MIN_DECOYS) assert.ok(Math.abs(it.tiles.length - T) <= TILE_SPREAD, `${sec}: ${it.tiles.length} tiles`);
       else assert.ok(own + MIN_DECOYS >= T - TILE_SPREAD);
       if (it.decoys.length > MIN_DECOYS) totals.add(it.tiles.length);
@@ -200,18 +219,62 @@ test("the pool's size says next to nothing of the answer's tile count", () => {
   assert.ok(Math.abs(mean(long) - mean(short)) < 2, `${mean(short).toFixed(1)} vs ${mean(long).toFixed(1)}`);
 });
 
-test("about half the decoys come from names of the answer's own category", () => {
-  let mine = 0;
-  let all = 0;
-  for (let seed = 1; seed <= 30; seed++) {
-    const { it } = laidOut(seed, { step: 7 });
-    const own = new Set(ITEMS.filter((x) => x.category === it.category && x.id !== it.itemId).flatMap((x) => SYLLABLES[x.id].flat()));
-    const n = it.decoys.filter((d) => own.has(d)).length;
-    assert.ok(n >= Math.ceil(it.decoys.length / 2), `seed ${seed}: ${n} of ${it.decoys.length}`);
-    mine += n;
-    all += it.decoys.length;
+test('the decoys come from names of every category alike: a pool never depends on the answer\'s category', () => {
+  for (const id of ['1', '57', '203', '400'].map((k) => ITEMS[Number(k)].id)) {
+    const answer = BY_ID.get(id)!;
+    for (const seed of [1, 9, 77]) {
+      const pool = dealPool(answer, seed, 20, 0);
+      for (const category of ['Rings', 'Gems', 'Elsewhere']) assert.deepEqual(dealPool({ ...answer, category }, seed, 20, 0), pool, `${id}, as ${category}`);
+    }
   }
-  assert.ok(mine < all, 'not all of them');
+});
+
+test('every board holds of, the and and, and 2 or 3 possessive tiles in all, the answer\'s own counting', () => {
+  const counts = new Set<number>();
+  for (let seed = 1; seed <= 40; seed++)
+    for (const at of [{ step: 2 }, { step: 13, type: 'blight' as const, hidden: 'swarming' as const }, { boss: true, mods: ['teeming' as const] }]) {
+      const { it } = laidOut(seed, at);
+      for (const w of SMALL_WORDS) assert.ok(it.tiles.includes(w), `seed ${seed}: no "${w}"`);
+      const possessive = it.tiles.filter(isPossessive).length;
+      const ownPossessive = [...new Set(it.answer)].filter(isPossessive).length;
+      assert.ok(possessive >= 2 && (possessive <= 3 || possessive === ownPossessive), `seed ${seed}: ${possessive} possessive, ${ownPossessive} the answer's`);
+      counts.add(possessive);
+    }
+  assert.ok(counts.has(2) && counts.has(3), `possessive counts ${[...counts]}`);
+});
+
+test('a small word or a possessive on the board says nothing of the answer: each shows on every board alike', () => {
+  let withSmall = 0;
+  let withPossessive = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const { it } = laidOut(seed, { step: 7 });
+    if (SMALL_WORDS.every((w) => it.tiles.includes(w))) withSmall++;
+    if (it.tiles.filter(isPossessive).length >= 2) withPossessive++;
+  }
+  assert.deepEqual([withSmall, withPossessive], [60, 60]);
+});
+
+test('the cap of 36 trims ordinary decoys first, never the answer\'s tiles or the board\'s small words and possessives', () => {
+  for (const id of ITEMS.slice(0, 60).map((x) => x.id)) {
+    const answer = BY_ID.get(id)!;
+    const { decoys, tiles } = dealPool(answer, 5, 32, 40);
+    const own = new Set(SYLLABLES[id].flat());
+    assert.ok(tiles.length <= MAX_TILES, `${id}: ${tiles.length}`);
+    assert.ok([...own].every((t) => tiles.includes(t)), `${id}: an answer tile trimmed`);
+    for (const w of SMALL_WORDS) assert.ok(tiles.includes(w), `${id}: "${w}" trimmed`);
+    assert.ok(tiles.filter(isPossessive).length >= 2, `${id}: possessives trimmed`);
+    assert.equal(tiles.length, Math.max(MAX_TILES, own.size + decoys.filter((d) => SMALL_WORDS.includes(d) || isPossessive(d)).length));
+  }
+});
+
+test("an item's pool comes from the run's seed and its id: dealt again, it is the same", () => {
+  for (let seed = 1; seed <= 10; seed++) {
+    const { it } = laidOut(seed, { step: 7 });
+    const answer = BY_ID.get(it.itemId)!;
+    assert.deepEqual(dealPool(answer, seed, DEFAULT_TUNING.tiles.mid, 0), { decoys: it.decoys, tiles: it.tiles });
+    assert.deepEqual(dealPool(answer, seed, DEFAULT_TUNING.tiles.mid, 0), dealPool(answer, seed, DEFAULT_TUNING.tiles.mid, 0));
+    assert.notDeepEqual(dealPool(answer, seed + 1000, DEFAULT_TUNING.tiles.mid, 0).tiles, it.tiles);
+  }
 });
 
 test('the tiles are shuffled, not the answer first', () => {
@@ -224,23 +287,25 @@ test('the tiles are shuffled, not the answer first', () => {
   assert.ok(inOrder <= 1, `${inOrder} pools start with the answer`);
 });
 
-test('no item comes up twice, and its category is never the last item\'s', () => {
+test('no item comes up twice; any item not seen yet may come next, its category too', () => {
   const run = new Run({ seed: 3 });
   const s = run.state;
   const seen = new Set<string>();
   let last = '';
-  for (let k = 0; k < 40; k++) {
+  let again = 0;
+  for (let k = 0; k < 80; k++) {
     arrive(run, nodeAt(2 + (k % 10)), { place: { kind: 'zone', type: 'plain' } });
     run.enter();
     const it = s.item!;
     assert.ok(!seen.has(it.itemId), it.itemId);
-    assert.notEqual(it.category, last);
+    if (it.category === last) again++;
     assert.equal(it.category, BY_ID.get(it.itemId)!.category);
     seen.add(it.itemId);
     last = it.category;
     // Logged as done, so the next draw sees it.
     s.log.items.push(it.log);
   }
+  assert.ok(again > 0, 'a category came up twice running');
 });
 
 // ---- Building the name ----
@@ -435,16 +500,33 @@ test('every submit counts: each miss costs life and is logged, and the right ans
 
 // ---- Free clues ----
 
-test("a Plain and an Expedition zone show the item's most common mod line", () => {
+test("a Plain and an Expedition zone show the item's most common mod line, when 3 or more items share it; else the word lengths", () => {
+  const seen = new Set<string>();
   for (const type of ['plain', 'expedition'] as const)
-    for (let seed = 1; seed <= 10; seed++) {
+    for (let seed = 1; seed <= 40; seed++) {
       const { it } = laidOut(seed, { type });
       const order = wisdomOrder(CLUES[it.itemId]);
-      if (!order.length) continue;
-      assert.deepEqual([it.freeClue, it.shown.mods, it.log.freeClue], ['mod', [order[0]], 'mod']);
       const shared = CLUES[it.itemId].mods.map((m) => m[2]);
-      assert.equal(shared[order[0]], Math.max(...shared));
+      if (order.length && shared[order[0]] >= 3) {
+        assert.deepEqual([it.freeClue, it.shown.mods, it.log.freeClue], ['mod', [order[0]], 'mod']);
+        assert.equal(shared[order[0]], Math.max(...shared));
+      } else assert.deepEqual([it.freeClue, it.shown.mods, it.shown.lengths], ['lengths', [], true], `${it.itemId}: its top line shared by ${shared[order[0]]}`);
+      seen.add(it.freeClue);
     }
+  assert.deepEqual([...seen].sort(), ['lengths', 'mod']);
+});
+
+test('a Scroll of Wisdom after a free mod line reads the next line, never the free one again', () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    const { run, it } = opened(seed, { type: 'plain' });
+    if (it.freeClue !== 'mod' || CLUES[it.itemId].mods.length < 2) continue;
+    run.state.pack = [{ supply: 'wisdom', n: 1 }];
+    const order = wisdomOrder(CLUES[it.itemId]);
+    assert.ok(run.use('wisdom'));
+    assert.deepEqual(it.shown.mods, [order[0], order[1]]);
+    return;
+  }
+  assert.fail('no seed with a free line and a second');
 });
 
 test('an Incursion zone shows the flavour text, an Essence zone the base type, a Ritual zone the word lengths', () => {
@@ -489,16 +571,31 @@ test('a free clue the item lacks falls back to the word lengths: a Plain item wi
   }
 });
 
-test('a Dark Blight zone burns nothing in: its free clue is the word lengths', () => {
+test('a Dark Blight zone burns nothing in: Dark wins, and nothing takes the burn-in\'s place', () => {
   const { run, it } = laidOut(5, { type: 'blight', hidden: 'dark' });
   run.open(gridAdjacency(9));
-  assert.deepEqual([it.freeClue, it.shown.lengths, it.burned, it.log.burnIns], ['lengths', true, [], []]);
+  assert.deepEqual([it.freeClue, it.shown.lengths, it.burned, it.log.burnIns], ['none', false, [], []]);
 });
 
-test("the boss's items get no free clue", () => {
+test("the boss's first item opens with a small free burn-in (4 patches); its second and third with nothing", () => {
+  const nothing = { mods: [], flavor: false, lengths: false, category: false, base: false };
   for (let seed = 1; seed <= 4; seed++) {
-    const { it } = opened(seed, { boss: true });
-    assert.deepEqual([it.freeClue, it.burned, it.shown], ['none', [], { mods: [], flavor: false, lengths: false, category: false, base: false }]);
+    const first = opened(seed, { boss: true }).it;
+    assert.deepEqual([first.freeClue, first.burned.length, first.log.burnIns.map((b) => [b.by, b.patches]), first.shown], ['burn', 4, [['zone', 4]], nothing]);
+    for (const k of [1, 2]) {
+      const { run, it } = bossItem(seed, k);
+      assert.ok(run.open(gridAdjacency(9)));
+      assert.deepEqual([it.boss, it.freeClue, it.burned, it.shown], [k, 'none', [], nothing]);
+    }
+  }
+});
+
+test("at the boss's third item (and a Lingering fourth) a Flare burns in half as much, and a Murky boss halves that again", () => {
+  for (const [k, mods, burn] of [[0, [], 12], [1, [], 12], [2, [], 6], [3, ['lingering'], 6], [2, ['murky'], 3], [1, ['murky'], 6]] as const) {
+    const { run, it } = bossItem(1, k, { mods: [...mods] });
+    assert.ok(run.open(gridAdjacency(9)));
+    assert.equal(it.boss, k);
+    assert.equal(run.flareBurn(), burn, `item ${k + 1}, ${mods.join(' ') || 'no mods'}`);
   }
 });
 

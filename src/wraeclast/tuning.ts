@@ -69,6 +69,7 @@ export function cleanTuning(raw: unknown): Tuning {
     burnIn: {
       flare: whole(burn.flare, LIMITS.burnIn, d.burnIn.flare),
       blight: whole(burn.blight, LIMITS.burnIn, d.burnIn.blight),
+      boss: whole(burn.boss, LIMITS.burnIn, d.burnIn.boss),
     },
     seeds: whole(r.seeds, LIMITS.seeds, d.seeds),
     loot: {

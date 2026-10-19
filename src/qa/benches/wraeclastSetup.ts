@@ -35,7 +35,7 @@ export function arrive(run: Run, id: string, { place, hidden = null, mods = [] }
   }
 }
 
-/** A full pack: every supply, as the benches show it. */
+/** A full pack: its 8 stacks, one of each supply, as the benches show it. */
 export const FULL_PACK: { supply: Supply; n: number }[] = [
   { supply: 'flare', n: 5 },
   { supply: 'wisdom', n: 3 },

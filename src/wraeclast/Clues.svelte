@@ -48,7 +48,7 @@
     <p class="tline plain"><span class="lbl-t">{FREE_LABEL} • word lengths</span>On the line: a dot for each tile, grouped by word.</p>
   {/if}
   {#if free === 'burn' && !named}
-    <p class="tline plain"><span class="lbl-t">{FREE_LABEL} • a burn-in</span>The zone burned in a patch of the art.</p>
+    <p class="tline plain"><span class="lbl-t">{it.boss !== null ? 'Boss' : FREE_LABEL} • a burn-in</span>{it.boss !== null ? 'The boss' : 'The zone'} burned in a patch of the art.</p>
   {/if}
   {#if nothing}
     <p class="tline plain">Nothing is known of it yet.</p>

@@ -43,7 +43,7 @@ const HANDOFF: Tuning = {
   missCost: { early: [20, 30], mid: [30, 40], late: [40, 50], boss: [55, 65] },
   price: { flare: 6, wisdom: 6, lore: 6, category: 6, base: 6, decoy: 6, lengths: 4, first: 6 },
   stack: { flare: 3, wisdom: 3, lore: 2, category: 2, base: 1, decoy: 3, lengths: 3, first: 2 },
-  burnIn: { flare: 12, blight: 4 },
+  burnIn: { flare: 12, blight: 4, boss: 4 },
   seeds: 9,
   loot: {
     cards: { plain: 2, incursion: 2, essence: 1, ritual: 2, expedition: 1, blight: 2 },
@@ -379,15 +379,15 @@ test('a lost run logs the item it ended on, at 0 life, its last miss cut to the 
   assert.ok(log.end && log.ms > 0);
 });
 
-test('a lost Blood toll logs its toll and ends on its item', () => {
+test('a Blood toll at low life logs what it took, leaving 1, and the item plays on', () => {
   const run = new Run({ seed: 11, now: () => T0 });
   arrive(run, nodeAt(3), { place: { kind: 'zone', type: 'ritual' }, hidden: 'blood' });
   run.state.life = 6;
   run.enter();
   run.open(gridAdjacency(9));
-  const log = run.state.log;
-  assert.deepEqual([log.result, log.items.length, log.items[0].toll, log.items[0].lifeAfter, log.items[0].corruption], ['loss', 1, 6, 0, 'blood']);
-  assert.equal(log.endedOn!.itemId, log.items[0].itemId);
+  const it = run.state.item!;
+  assert.deepEqual([run.state.phase, run.state.life, it.log.toll, it.log.lifeAfter, it.log.corruption], ['item', 1, 5, 1, 'blood']);
+  assert.equal(run.state.log.result, null);
 });
 
 test('a supply card left with the pack full is dealt and found, but not taken', () => {
@@ -483,7 +483,7 @@ test("cleanTuning gives the handoff's tuning for nothing, and round-trips a righ
     t.missCost.late = [0, 999];
     t.price.first = 0;
     t.stack = { flare: 5, wisdom: 1, lore: 1, category: 1, base: 5, decoy: 2, lengths: 1, first: 1 };
-    t.burnIn = { flare: 1, blight: 99 };
+    t.burnIn = { flare: 1, blight: 99, boss: 2 };
     t.seeds = 15;
     t.loot = { cards: { plain: 0, incursion: 9, essence: 1, ritual: 2, expedition: 3, blight: 4 }, weights: { gold: 0, supply: 99, flask: 2, jackpot: 3 }, gold: { early: [0, 0], mid: [1, 2], late: [5, 999] }, jackpot: 0, supplies: 5 };
     t.corruption = { seeds: 0, creep: 3, weights: { blood: 0, sealed: 99, swarming: 1, dark: 0, bounty: 5 }, multiplier: 5 };
@@ -511,7 +511,7 @@ test('cleanTuning repairs field by field: numbers out of their limits, or not wh
     missCost: { early: [-1, 5], mid: [30, 1000], late: [40.5, 50], boss: [55, 60] },
     price: { flare: -1, wisdom: 1000, lore: 2.5, category: 3 },
     stack: { flare: 0, wisdom: 6, lore: 4 },
-    burnIn: { flare: 0, blight: 100 },
+    burnIn: { flare: 0, blight: 100, boss: 0 },
     seeds: 2,
     loot: { cards: { plain: 10, essence: -1, ritual: 3 }, weights: { gold: -1, supply: 100, flask: 2.5, jackpot: 1 }, jackpot: 1000, supplies: 6 },
     corruption: { seeds: 6, creep: 0, weights: { blood: 100, dark: 3 }, multiplier: 0 },

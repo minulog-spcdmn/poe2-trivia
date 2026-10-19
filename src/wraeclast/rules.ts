@@ -81,7 +81,7 @@ export interface Tuning {
   /** How many of each supply one card from the vendor holds. */
   stack: Record<Supply, number>;
   /** Patches a Flare burns in, and a free burn-in (Blight). */
-  burnIn: { flare: number; blight: number };
+  burnIn: { flare: number; blight: number; boss: number };
   /** The Veil's seeds across the art (about this many a side). */
   seeds: number;
   loot: {
@@ -118,7 +118,7 @@ export const DEFAULT_TUNING: Tuning = {
   missCost: { early: [20, 30], mid: [30, 40], late: [40, 50], boss: [55, 65] },
   price: { flare: 6, wisdom: 6, lore: 6, category: 6, base: 6, decoy: 6, lengths: 4, first: 6 },
   stack: { flare: 3, wisdom: 3, lore: 2, category: 2, base: 1, decoy: 3, lengths: 3, first: 2 },
-  burnIn: { flare: 12, blight: 4 },
+  burnIn: { flare: 12, blight: 4, boss: 4 },
   seeds: 9,
   loot: {
     cards: { plain: 2, incursion: 2, essence: 1, ritual: 2, expedition: 1, blight: 2 },
@@ -154,7 +154,7 @@ export const MAX_TILES = 36;
 /** How far an item's pool total strays from its section's, either way, so the total never gives the answer's tile count away. */
 export const TILE_SPREAD = 3;
 /** The fewest decoys a pool holds (before Blight, Swarming and Teeming add theirs). */
-export const MIN_DECOYS = 8;
+export const MIN_DECOYS = 5;
 /** Decoys are drawn at random from the best this many look-alikes. */
 export const DECOY_POOL = 30;
 /** Decoys one Decoy sweep strikes. */
@@ -164,6 +164,12 @@ export const BLOOD_TOLL = 10;
 export const BLOODIED = 10;
 /** Words that stay whole tiles. */
 export const SMALL_WORDS: readonly string[] = ['of', 'the', 'and'];
+/** Possessive tiles on every board, the answer's own counting toward them: a gem's name nearly always has one, so every board shows a few. */
+export const POSSESSIVES: Range = [2, 3];
+/** A possessive tile ("ahn's", "tus'"). */
+export const isPossessive = (tile: string) => /('s|s')$/.test(tile);
+/** A mod line shared by this many items or more is common: the only kind a zone gives free (a rarer line gives its item away). */
+export const COMMON = 3;
 
 /** A mod line: its kind (the tooltip section), its text (name words masked), and how many items share it. */
 export type ModLine = [string, string, number];
@@ -172,7 +178,6 @@ export const ITEMS = itemData as Item[];
 export const SYLLABLES = syllableData as Record<string, string[][]>;
 export const CLUES = clueData as unknown as Record<string, Clues>;
 const BY_ID = new Map(ITEMS.map((it) => [it.id, it]));
-const CATEGORIES = [...new Set(ITEMS.map((it) => it.category))].sort();
 
 /** What a zone gave for free when an item opened. */
 export type FreeClue = 'none' | 'mod' | 'flavor' | 'base' | 'lengths' | 'burn';
@@ -416,31 +421,53 @@ function likeness(tile: string, answer: string[]) {
   return best;
 }
 
+/** Every tile of every name. */
+let allTiles: string[] | null = null;
+
 /**
- * `k` decoy tiles for an item: about half from the tiles of names in its own
- * category, half from all others, each side drawn at random from its best
- * DECOY_POOL look-alikes; a side short fills from the other. Never a tile the
- * answer has.
+ * `k` decoy tiles for an item: drawn at random from the DECOY_POOL tiles of
+ * any name (all categories alike) that look most like the answer's, among
+ * those `fit` allows. Never a tile the answer has, or one in `not`.
  */
-function pickDecoys(answer: Item, k: number, rng: () => number): string[] {
+function pickDecoys(own: Set<string>, k: number, rng: () => number, fit: (t: string) => boolean, not: ReadonlySet<string> = new Set()): string[] {
+  if (k <= 0) return [];
+  allTiles ??= [...new Set(ITEMS.flatMap((it) => SYLLABLES[it.id].flat()))];
+  const answer = [...own];
+  const ranked = allTiles
+    .filter((t) => !own.has(t) && !not.has(t) && fit(t))
+    .map((t) => ({ t, like: likeness(t, answer), tie: rng() }))
+    .sort((a, b) => b.like - a.like || a.tie - b.tie)
+    .map((x) => x.t);
+  return shuffle(ranked.slice(0, Math.max(DECOY_POOL, k)), rng).slice(0, k);
+}
+
+/** An item's own seed in a run: its pool is the same however often it is dealt. */
+export function itemSeed(seed: number, itemId: string): number {
+  let h = (seed ^ 0x9e3779b9) >>> 0;
+  for (let i = 0; i < itemId.length; i++) h = Math.imul(h ^ itemId.charCodeAt(i), 2654435761) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * An item's pool, from its own seed: the total rolled within TILE_SPREAD of
+ * the section's `size`, at least MIN_DECOYS decoys, `extra` more (Blight,
+ * Swarming, Teeming), at most MAX_TILES. Every board holds of, the and and,
+ * and POSSESSIVES possessive tiles in all (the answer's counting); the cap
+ * trims the ordinary decoys only.
+ */
+export function dealPool(answer: Item, seed: number, size: number, extra: number): { decoys: string[]; tiles: string[] } {
+  const rng = seededRandom(itemSeed(seed, answer.id));
   const own = new Set(SYLLABLES[answer.id].flat());
-  const tilesOf = (items: Item[]) => [...new Set(items.flatMap((it) => SYLLABLES[it.id].flat()))].filter((t) => !own.has(t));
-  const ranked = (tiles: string[]) =>
-    tiles
-      .map((t) => ({ t, like: likeness(t, [...own]), tie: rng() }))
-      .sort((a, b) => b.like - a.like || a.tie - b.tie)
-      .map((x) => x.t);
-  const mine = ranked(tilesOf(ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category)));
-  const theirs = ranked(tilesOf(ITEMS.filter((it) => it.category !== answer.category)));
-  const out = new Set<string>();
-  const draw = (from: string[], n: number) => {
-    const left = from.filter((t) => !out.has(t));
-    for (const t of shuffle(left.slice(0, Math.max(DECOY_POOL, n)), rng).slice(0, n)) out.add(t);
-  };
-  draw(mine, Math.ceil(k / 2));
-  draw(theirs, k - out.size);
-  draw(mine, k - out.size);
-  return [...out];
+  const total = size - TILE_SPREAD + Math.floor(rng() * (2 * TILE_SPREAD + 1));
+  const small = SMALL_WORDS.filter((w) => !own.has(w));
+  const ownPossessive = [...own].filter(isPossessive).length;
+  const possessive = pickDecoys(own, between(POSSESSIVES, rng) - ownPossessive, rng, isPossessive);
+  const signature = [...small, ...possessive];
+  const room = Math.max(0, MAX_TILES - own.size - signature.length);
+  const k = Math.min(room, Math.max(0, Math.max(MIN_DECOYS, total - own.size) + extra - signature.length));
+  const ordinary = pickDecoys(own, k, rng, (t) => !isPossessive(t), new Set(SMALL_WORDS));
+  const decoys = [...signature, ...ordinary];
+  return { decoys, tiles: shuffle([...own, ...decoys], rng) };
 }
 
 export interface RunOptions {
@@ -607,12 +634,13 @@ export class Run {
     return !!this.live() && s.flask.charges > 0 && s.life < s.maxLife;
   }
 
-  /** How many patches a Flare burns in here: halved under Incursion, and again at a Murky boss. */
+  /** How many patches a Flare burns in here: halved under Incursion, at the boss's third item and after (a Lingering fourth too), and again at a Murky boss. */
   flareBurn(): number {
     const s = this.state;
     const it = s.item;
     let b = s.tuning.burnIn.flare;
     if (it?.zoneType === 'incursion') b /= 2;
+    if (it && it.boss !== null && it.boss >= 2) b /= 2;
     if (it && it.boss !== null && s.bossMods.includes('murky')) b /= 2;
     return Math.max(1, Math.round(b));
   }
@@ -775,7 +803,7 @@ export class Run {
     return false;
   }
 
-  /** Lays out the next item of the visit: from a category picked at random (not the last item's), an item not drawn before. It opens with open(). */
+  /** Lays out the next item of the visit: any item not drawn before this run, at random (never by place, zone or category). It opens with open(). */
   private draw() {
     const s = this.state;
     const t = s.tuning;
@@ -784,33 +812,27 @@ export class Run {
     const boss = place.kind === 'boss' ? s.visit!.done : null;
     const zoneType = place.kind === 'zone' ? place.type : null;
     const hidden = this.hiddenHere();
-    const last = s.log.items.at(-1)?.category;
-    const fresh = CATEGORIES.filter((c) => ITEMS.some((it) => it.category === c && !this.drawn.has(it.id)));
-    const cats = fresh.filter((c) => c !== last);
-    const pick = cats.length ? cats : fresh;
-    const category = pick[Math.floor(this.rng() * pick.length)];
-    const pool = ITEMS.filter((it) => it.category === category && !this.drawn.has(it.id));
-    const answer = pool[Math.floor(this.rng() * pool.length)];
+    const fresh = ITEMS.filter((it) => !this.drawn.has(it.id));
+    const answer = fresh[Math.floor(this.rng() * fresh.length)];
+    const category = answer.category;
     this.drawn.add(answer.id);
     const words = SYLLABLES[answer.id];
     const answerTiles = words.flat();
-    const own = [...new Set(answerTiles)];
     const sec = sectionOf(node.step, boss !== null);
+    let extra = 0;
+    if (zoneType === 'blight') extra += BLIGHT_DECOYS;
+    if (hidden === 'swarming') extra += SWARMING_DECOYS;
+    if (boss !== null && s.bossMods.includes('teeming')) extra += TEEMING_DECOYS;
     // The pool's total is rolled, not the decoys: the board's size says next to nothing of the answer's.
-    const total = t.tiles[sec] - TILE_SPREAD + Math.floor(this.rng() * (2 * TILE_SPREAD + 1));
-    let k = Math.max(MIN_DECOYS, total - own.length);
-    if (zoneType === 'blight') k += BLIGHT_DECOYS;
-    if (hidden === 'swarming') k += SWARMING_DECOYS;
-    if (boss !== null && s.bossMods.includes('teeming')) k += TEEMING_DECOYS;
-    k = Math.max(0, Math.min(k, MAX_TILES - own.length));
-    const decoys = pickDecoys(answer, k, this.rng);
-    const tiles = shuffle([...own, ...decoys], this.rng);
+    const { decoys, tiles } = dealPool(answer, s.seed, t.tiles[sec], extra);
     const c = CLUES[answer.id];
     const shown = { mods: [] as number[], flavor: false, lengths: false, category: false, base: false };
     let freeClue: FreeClue = 'none';
-    if (zoneType && t.freeClue[zoneType]) {
+    // The boss's first item opens with a small burn-in; its others with nothing.
+    if (boss === 0) freeClue = 'burn';
+    else if (zoneType && t.freeClue[zoneType]) {
       const order = wisdomOrder(c);
-      if ((zoneType === 'plain' || zoneType === 'expedition') && order.length) {
+      if ((zoneType === 'plain' || zoneType === 'expedition') && order.length && c.mods[order[0]][2] >= COMMON) {
         shown.mods.push(order[0]);
         freeClue = 'mod';
       } else if (zoneType === 'incursion' && c.flavor) {
@@ -819,8 +841,10 @@ export class Run {
       } else if (zoneType === 'essence') {
         shown.base = true;
         freeClue = 'base';
-      } else if (zoneType === 'blight' && hidden !== 'dark') freeClue = 'burn';
-      else {
+      } else if (zoneType === 'blight') {
+        // Dark wins: no burn-in, and nothing in its place.
+        if (hidden !== 'dark') freeClue = 'burn';
+      } else {
         // Ritual's own, and every free clue the item lacks.
         shown.lengths = true;
         freeClue = 'lengths';
@@ -894,16 +918,13 @@ export class Run {
     it.patches = adjacency.length;
     it.log.patches = it.patches;
     it.openedAt = this.now();
-    if (it.freeClue === 'burn') this.burnIn(it, s.tuning.burnIn.blight, 'zone');
+    if (it.freeClue === 'burn') this.burnIn(it, it.boss !== null ? s.tuning.burnIn.boss : s.tuning.burnIn.blight, 'zone');
     if (it.hidden === 'blood') {
-      const toll = Math.min(s.life, BLOOD_TOLL);
+      // Never the last life point: it comes before the player can drink.
+      const toll = Math.max(0, Math.min(s.life - 1, BLOOD_TOLL));
       s.life -= toll;
       it.log.toll = toll;
       it.log.lifeAfter = s.life;
-      if (s.life <= 0) {
-        s.log.items.push(it.log);
-        this.end(false);
-      }
     }
     return true;
   }
@@ -946,9 +967,13 @@ export class Run {
     return out;
   }
 
-  /** Takes one of a supply out of the pack (its last stack first). */
-  private spend(supply: Supply) {
+  /** Takes one of a supply out of the pack: from the stack at `slot` when it holds that supply, else its last stack. */
+  private spend(supply: Supply, slot?: number) {
     const s = this.state;
+    if (slot !== undefined && s.pack[slot]?.supply === supply) {
+      if (--s.pack[slot].n <= 0) s.pack.splice(slot, 1);
+      return;
+    }
     for (let i = s.pack.length - 1; i >= 0; i--) {
       if (s.pack[i].supply !== supply) continue;
       if (--s.pack[i].n <= 0) s.pack.splice(i, 1);
@@ -956,12 +981,12 @@ export class Run {
     }
   }
 
-  /** Uses a supply from the pack on the open item. */
-  use(supply: Supply): boolean {
+  /** Uses a supply from the pack on the open item (from the stack at `slot`, if given). */
+  use(supply: Supply, slot?: number): boolean {
     if (!this.canUse(supply)) return false;
     const s = this.state;
     const it = s.item!;
-    this.spend(supply);
+    this.spend(supply, slot);
     switch (supply) {
       case 'flare':
         this.burnIn(it, this.flareBurn(), 'flare');

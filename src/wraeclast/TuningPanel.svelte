@@ -99,7 +99,7 @@
         <input type="checkbox" checked={t.marks === 'gold'} onchange={setMarks} />
         <span>Gold marks only (no silver or struck)</span>
       </label>
-      <p class="small">Each item rolls its total within 3 either way, at least 8 of them decoys. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
+      <p class="small">Each item rolls its total within 3 either way, at least 5 of them decoys, among them of, the, and and 2 or 3 possessive tiles. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
     </fieldset>
 
     <fieldset>
@@ -121,6 +121,7 @@
       {@render field('Seeds a side', t.seeds, LIMITS.seeds, (n) => (t.seeds = n))}
       {@render field('A Flare burns in', t.burnIn.flare, LIMITS.burnIn, (n) => (t.burnIn.flare = n))}
       {@render field("Blight's free burn-in", t.burnIn.blight, LIMITS.burnIn, (n) => (t.burnIn.blight = n))}
+      {@render field("The boss's first item, free", t.burnIn.boss, LIMITS.burnIn, (n) => (t.burnIn.boss = n))}
       <p class="small">Incursion and a Murky boss halve a Flare's.</p>
     </fieldset>
 

@@ -7,8 +7,9 @@
   // zone's free burn-in, Unveiled). Each patch the run burns comes in here, a
   // few at a time; a right answer burns in the rest quickly (the finale).
   // It fills the square frame its parent gives it, the art fit inside and
-  // centred, so every item looks the same from outside. Nothing says how
-  // many patches are left.
+  // centred, so every item looks the same from outside: until a patch burns
+  // in nothing on it follows the art's shape. Nothing says how many patches
+  // are left.
   import { onMount } from 'svelte';
   import { itemImage } from '../lib/ui-paths';
   import { labelPatches, litMask, patchShapes, spreadOrder, type PatchShape } from '../lib/patches';
@@ -153,6 +154,7 @@
 </script>
 
 <span class="art-slot">
+  <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span><span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
   <span
     class="art-fit veil"
     style:--w={W}
@@ -161,7 +163,6 @@
     role="img"
     aria-label={named ? 'The item, named' : burnedCount ? 'The item under the Veil, parts of it burned in' : 'The item, under the Veil'}
   >
-    <span class="corner tl" aria-hidden="true"></span><span class="corner tr" aria-hidden="true"></span><span class="corner bl" aria-hidden="true"></span><span class="corner br" aria-hidden="true"></span>
     {#if plain}
       {#if named}<img src={itemImage(it.itemId)} alt="" />{/if}
     {:else}
@@ -210,7 +211,7 @@
     width: 100%;
     height: 100%;
   }
-  /* The art's box, marked at its corners only: the rest is the dark stage. */
+  /* The square frame, marked at its corners only (never the art's own box: its shape would tell the item's kind before a burn-in). */
   .corner {
     position: absolute;
     width: 12px;

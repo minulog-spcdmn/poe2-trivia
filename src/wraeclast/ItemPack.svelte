@@ -1,27 +1,29 @@
 <script lang="ts">
-  // The pack on an item, as the design's row: one slot per supply held (its
-  // stacks counted together), its mark and short name, the count on a badge.
+  // The pack on an item, as the design's row: its stacks (8 at most, up to 5
+  // each; a supply may fill several), each with its mark and short name, the
+  // count on a badge.
   // A slot that would do nothing here is set back, dimmed and struck, and says
   // why when held or focused; a tap uses one. The flask is the dock's.
-  import { SUPPLIES, SUPPLY_NAMES, type Run, type Supply } from './rules';
+  import { SUPPLY_NAMES, type Run, type Supply } from './rules';
   import Glyph from './Glyph.svelte';
   import { SHORT, does, why } from './words';
 
   let { run, onuse }: { run: Run; onuse?: (supply: Supply) => void } = $props();
   const s = $derived(run.state);
-  const held = $derived(SUPPLIES.filter((sp) => run.held(sp) > 0));
+  const stacks = $derived(s.pack);
 
-  function use(sp: Supply) {
-    if (run.use(sp)) onuse?.(sp);
+  function use(sp: Supply, slot: number) {
+    if (run.use(sp, slot)) onuse?.(sp);
   }
 </script>
 
-{#if held.length}
-  <div class="pack" class:compact={held.length > 6} role="group" aria-label="Your pack">
-    {#each held as sp (sp)}
+{#if stacks.length}
+  <div class="pack" class:compact={stacks.length > 6} role="group" aria-label="Your pack">
+    {#each stacks as st, i (i)}
+      {@const sp = st.supply}
       {@const off = why(run, sp)}
-      <button class="slot" class:off={!!off} disabled={!!off} onclick={() => use(sp)} title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`} aria-label="{SUPPLY_NAMES[sp]}, {run.held(sp)} held{off ? `: ${off}` : `. ${does(run, sp)}`}">
-        <span class="n" aria-hidden="true">{run.held(sp)}</span>
+      <button class="slot" class:off={!!off} disabled={!!off} onclick={() => use(sp, i)} title={off ?? `${SUPPLY_NAMES[sp]}: ${does(run, sp)}`} aria-label="{SUPPLY_NAMES[sp]}, a stack of {st.n}{off ? `: ${off}` : `. ${does(run, sp)}`}">
+        <span class="n" aria-hidden="true">{st.n}</span>
         <span class="ic" aria-hidden="true"><Glyph of={sp} /></span>
         <span class="lbl" aria-hidden="true">{SHORT[sp]}</span>
       </button>

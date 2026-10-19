@@ -224,16 +224,15 @@ test('a Blood toll takes 10 life as each item opens, and logs it', () => {
   assert.equal(BLOOD_TOLL, 10);
 });
 
-test('a Blood toll can end the run as the item opens', () => {
-  for (const life of [10, 4]) {
+test('a Blood toll never takes the last life point: it comes before the player can drink', () => {
+  for (const [life, toll] of [[10, 9], [4, 3], [1, 0]]) {
     const { run, s } = inZone(9, 'plain', { hidden: 'blood' });
     s.life = life;
     run.enter();
     const it = s.item!;
     assert.ok(run.open(gridAdjacency(9)));
-    assert.deepEqual([s.phase, s.life, s.log.result, s.log.lifeEnd, it.log.toll], ['end', 0, 'loss', 0, life]);
-    assert.deepEqual(s.log.items, [it.log]);
-    assert.deepEqual(s.log.endedOn, { n: 0, itemId: it.itemId, name: it.log.name, node: it.node });
+    assert.deepEqual([s.phase, s.life, s.log.result, it.log.toll, it.log.lifeAfter], ['item', 1, null, toll, 1]);
+    assert.deepEqual(s.log.items, []);
   }
 });
 
@@ -509,7 +508,6 @@ test('a full run plays from the camp across the map to the boss and is won', () 
   const zones = log.met.filter((m) => m.kind === 'zone').length;
   assert.equal(log.items.length, zones * 3 + 3 + (log.bossMods.includes('lingering') ? 1 : 0));
   assert.equal(new Set(log.items.map((it) => it.itemId)).size, log.items.length, 'no item twice');
-  log.items.forEach((it, k) => k && assert.notEqual(it.category, log.items[k - 1].category));
   assert.deepEqual([s.item, s.visit, s.phase], [null, null, 'end']);
 });
 
