@@ -47,8 +47,15 @@
     life: number | null;
     delta: number;
     gold: number;
-    /** The rule of the corruption cleared here, or null. */
-    cleared: string | null;
+    /** The boss rule the corruption here carried (a Blood toll zone), or null. */
+    rule: string | null;
+    /** A corruption was stopped here. */
+    cleared: boolean;
+    /** A town's heal on arrival. */
+    healed: number;
+    /** Gold spent and supplies bought here (a vendor: the camp, a town, an Expedition). */
+    spent: number;
+    bought: number;
     /** The run ended here. */
     fell: boolean;
     /** Not reached (the boss, on a lost run). */
@@ -64,17 +71,22 @@
       const items = log.items.filter((it) => it.node === id);
       const later = log.items.find((it) => log.route.indexOf(it.node) > k);
       const life = items.length ? items.at(-1)!.lifeAfter : (later?.lifeBefore ?? prev ?? log.lifeEnd);
-      const front = s.fronts.find((f) => f.stoppedAt === id);
+      const met = log.met.find((m) => m.node === id);
+      const blood = met?.corruption === 'blood';
       const offer = log.travel[k - 1];
       out.push({
         id,
         n: GRAPH.byId.get(id)!,
         items,
-        blood: log.met.some((m) => m.node === id && m.corruption === 'blood'),
+        blood,
         life,
         delta: prev === null ? 0 : life - prev,
         gold: items.reduce((t, it) => t + it.gold, 0),
-        cleared: front ? BOSS_MOD_NAMES[front.rule] : null,
+        rule: blood && met?.rule ? BOSS_MOD_NAMES[met.rule] : null,
+        cleared: s.fronts.some((f) => f.stoppedAt === id),
+        healed: met?.healed ?? 0,
+        spent: met?.spent ?? 0,
+        bought: met?.bought ?? 0,
         fell: id === fellAt,
         ahead: false,
         tainted: new Set(offer ? offer.options.filter((o) => o.corrupted && o.node !== id).map((o) => o.node) : []),
@@ -82,7 +94,7 @@
       prev = life;
     });
     if (!log.route.includes(GRAPH.boss.id))
-      out.push({ id: GRAPH.boss.id, n: GRAPH.boss, items: [], blood: false, life: null, delta: 0, gold: 0, cleared: null, fell: false, ahead: true, tainted: new Set() });
+      out.push({ id: GRAPH.boss.id, n: GRAPH.boss, items: [], blood: false, life: null, delta: 0, gold: 0, rule: null, cleared: false, healed: 0, spent: 0, bought: 0, fell: false, ahead: true, tainted: new Set() });
     return out.filter((r) => r.n);
   });
   const reachedStep = $derived(GRAPH.byId.get(log.route.at(-1) ?? '')?.step ?? 0);
@@ -103,8 +115,9 @@
   function kindLine(r: Row) {
     const p = s.places[r.id];
     if (!p) return '';
-    return p.kind === 'zone' && (r.blood || r.cleared) ? ZONE_NAMES[p.type] : placeKind(p);
+    return p.kind === 'zone' && r.blood ? ZONE_NAMES[p.type] : placeKind(p);
   }
+  const supplyCount = (n: number) => `Bought ${n} ${n === 1 ? 'supply' : 'supplies'}`;
   const shown = $derived(rows.filter((r) => !r.ahead));
 
   // ---- Corruption, gold, supplies ----
@@ -207,20 +220,25 @@
           {#if wide}
             <span class="pl"
               ><span>{r.n.name}</span><span class="k"
-                >{kindLine(r)}{#if r.blood}<span class="bt">{' '}• Blood toll{#if r.cleared}{' '}• {r.cleared}{/if}</span>{/if}</span
+                >{kindLine(r)}{#if r.blood}<span class="bt">{' '}• Blood toll{#if r.rule}{' '}• {r.rule}{/if}</span>{/if}</span
               ></span
             >
             <span class="its">
               {#each r.items as it, j (j)}
                 {@const right = it.submits.at(-1)?.right}
                 <span class="it" class:lostit={!right}
-                  ><span class="mk" class:x={!right} aria-hidden="true">{right ? '✓' : '✕'}</span>{it.name}{#if it.misses}{' '}<small><Numbered text={it.misses === 1 ? '1 miss' : `${it.misses} misses`} /></small>{/if}</span
+                  ><span class="mk" class:x={!right} aria-hidden="true">{right ? '✓' : '✕'}</span>{it.name}{#if !right}{' '}<small>lost here</small>{:else if it.misses}{' '}<small><Numbered text={it.misses === 1 ? '1 miss' : `${it.misses} misses`} /></small>{/if}</span
                 >
               {/each}
               {#if r.cleared}<span class="plain gone">The corruption here is gone</span>{/if}
-              {#if !r.items.length && r.delta > 0 && kindOf(r.id) === 'town'}<span class="plain">You rested: <span class="n heal">+{r.delta}</span> life</span>{/if}
+              {#if r.healed > 0 || r.bought > 0}
+                <span class="plain"
+                  >{#if r.healed > 0}You rested: <span class="n heal">+{r.healed}</span> life{/if}{#if r.healed > 0 && r.bought > 0}{' • '}{/if}{#if r.bought > 0}<Numbered text={supplyCount(r.bought)} />{/if}</span
+                >
+              {/if}
+              {#if r.ahead}<span class="plain">Not reached</span>{/if}
             </span>
-            <span class="gd n">{r.gold ? `+${r.gold}` : ''}</span>
+            <span class="gd n">{r.gold ? `+${r.gold}` : ''}{#if r.spent}<span class="sp">−{r.spent}</span>{/if}</span>
           {:else}
             <span class="pl">{r.n.name}{#if r.blood}<span class="bt">{' '}• Blood toll</span>{/if}</span>
             <span class="mks">
@@ -229,7 +247,7 @@
                 {#each Array.from({ length: Math.max(0, it.misses - (right ? 0 : 1)) }, (_, k) => k) as k (k)}<span class="mn" role="img" aria-label="A miss"></span>{/each}
                 <span class="mk" class:x={!right} role="img" aria-label={right ? 'Named' : 'Lost here'}>{right ? '✓' : '✕'}</span>
               {/each}
-              {#if !r.items.length && r.delta > 0 && kindOf(r.id) === 'town'}<span class="heal n">+{r.delta}</span>{/if}
+              {#if r.healed > 0}<span class="heal n">+{r.healed}</span>{/if}
             </span>
           {/if}
           <span class="lf">
@@ -629,7 +647,14 @@
   }
   .gd {
     font-size: 12.5px;
+    line-height: 1.3;
     text-align: right;
+    color: var(--gold-hi);
+  }
+  /* Gold spent here, under what was earned. */
+  .gd .sp {
+    display: block;
+    color: #a99a80;
   }
   .lf {
     display: flex;
