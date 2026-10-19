@@ -118,21 +118,21 @@ export const BOSS_MOD_DOES: Record<BossMod, string> = {
   lingering: 'One more item to name',
   bloodied: `Each boss item takes ${BLOODIED} life as it opens`,
   murky: 'Torches reveal half as much',
-  teeming: "More tiles that aren't in the name",
+  teeming: 'One more wrong name on every board',
 };
 /** A boss rule, in a few words, where its name alone would say nothing (a row, the plate). */
 export const BOSS_MOD_SHORT: Record<BossMod, string> = {
   lingering: 'one more item',
   bloodied: `each boss item takes ${BLOODIED} life`,
   murky: 'Torches reveal half',
-  teeming: 'more wrong tiles',
+  teeming: 'one more wrong name',
 };
 /** A boss rule on a map node, where a label is narrow. */
 const BOSS_MOD_NODE: Record<BossMod, string> = {
   lingering: '+1 item',
   bloodied: `−${BLOODIED} life an item`,
   murky: 'Torches half',
-  teeming: 'more wrong tiles',
+  teeming: '+1 wrong name',
 };
 
 /** A corruption's own boss rule, on its node (it moves with it, and goes when it's stopped). */

@@ -273,7 +273,7 @@
       <div class="rpack" role="group" aria-label="Your pack: {s.pack.length} of {PACK_STACKS} spaces used">
         {#each Array.from({ length: PACK_STACKS }, (_, i) => i) as i (i)}
           {@const st = s.pack[i]}
-          {#if st && pending}
+          {#if st && pending && run.replaceable(i)}
             <button class="slot target" bind:this={slotEls[i]} onclick={() => run.keep(i)} aria-label="Replace {supplies(st.n, st.supply)} with the new supply" title={supplies(st.n, st.supply)}>
               <span class="n" aria-hidden="true">{st.n}</span>
               <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span>

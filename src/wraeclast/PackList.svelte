@@ -26,7 +26,7 @@
   {#each Array.from({ length: PACK_STACKS }, (_, i) => i) as i (i)}
     {@const st = s.pack[i]}
     <li>
-      {#if st && onpick}
+      {#if st && onpick && run.replaceable(i)}
         <button class="stack target" onclick={() => onpick(i)} aria-label="Replace {supplies(st.n, st.supply)} with the new supply">
           <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span><span class="lbl">{SHORT[st.supply]}</span><span class="n">{st.n}</span>
         </button>

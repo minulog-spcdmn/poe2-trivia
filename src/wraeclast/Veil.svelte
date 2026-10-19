@@ -77,12 +77,20 @@
     return list;
   }
 
+  /** How long an item waits for a picture that neither loads nor fails (a stalled request on a phone). */
+  const PICTURE_WAIT = 8000;
+
   onMount(() => {
     let live = true;
     const img = new Image();
     img.src = itemImage(it.itemId);
-    // The item waits for its picture, however long it takes (the clock starts at open()); only a picture that fails to load opens on a plain grid.
-    img.decode().then(() => 'ok' as const, () => 'failed' as const).then((got) => {
+    // The item waits for its picture (the clock starts at open()); a picture that fails to load, or stalls past PICTURE_WAIT, opens on a plain grid.
+    let stalled: ReturnType<typeof setTimeout> | undefined;
+    Promise.race([
+      img.decode().then(() => 'ok' as const, () => 'failed' as const),
+      new Promise<'failed'>((done) => (stalled = setTimeout(() => done('failed'), PICTURE_WAIT))),
+    ]).then((got) => {
+      clearTimeout(stalled);
       if (!live) return;
       let list: PatchShape[] | null = null;
       try {
@@ -100,6 +108,7 @@
     });
     return () => {
       live = false;
+      clearTimeout(stalled);
       for (const t of timers) clearTimeout(t);
     };
   });

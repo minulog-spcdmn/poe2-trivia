@@ -16,7 +16,7 @@
 // docs/wraeclast (the prototype's handoffs, on the orchestrator's branch) has
 // the reasons.
 
-import { nameSimilarity, shuffle, type Item } from '../lib/game.ts';
+import { shuffle, type Item } from '../lib/game.ts';
 import { seededRandom } from '../lib/patches.ts';
 import { readLooks, type LooksData } from '../lib/looks.ts';
 import itemData from '../data/items.json' with { type: 'json' };
@@ -158,9 +158,10 @@ export const STACK_MAX = 5;
 export const FLASK_STEP = 10;
 export const FLASK_ITEMS = 2;
 export const BOSS_ITEMS = 3;
-/** Loose decoys a Blight zone and a Teeming boss add. */
+/** Loose decoys a Blight zone adds. */
 export const BLIGHT_DECOYS = 6;
-export const TEEMING_DECOYS = 8;
+/** Decoy names a Teeming boss adds, on each end of the boss's range (the cap makes room by trimming loose decoys). */
+export const TEEMING_NAMES = 1;
 /** The most tiles a pool holds, the answer's included. */
 export const MAX_TILES = 36;
 /** How far an item's pool total strays from its section's, either way, so the total never gives the answer's tile count away. */
@@ -539,9 +540,20 @@ export function itemSeed(seed: number, itemId: string): number {
 const wordsOf = (name: string) => new Set(name.toLowerCase().split(/\s+/).map(letters).filter((w) => w && !SMALL_WORDS.includes(w)));
 /** The shortest word looked for inside another (Girdle in Goregirdle): shorter ones sit inside too many words by chance. */
 const COMPOUND_MIN = 4;
-/** Whether two words are one, or one holds the other inside a compound (Goregirdle, Meginord's Girdle). */
+/** Two words starting with this many letters alike share a stem (Blackflame, Blackheart). */
+const STEM = 5;
+/**
+ * Whether two words are one, one holds the other inside a compound
+ * (Goregirdle, Meginord's Girdle), they share a stem, or a short word starts
+ * the other (Red, Redflare).
+ */
 const wordsMeet = (a: string, b: string) =>
-  a === b || (a.length >= COMPOUND_MIN && b.includes(a)) || (b.length >= COMPOUND_MIN && a.includes(b));
+  a === b ||
+  (a.length >= COMPOUND_MIN && b.includes(a)) ||
+  (b.length >= COMPOUND_MIN && a.includes(b)) ||
+  (a.length >= STEM && b.length >= STEM && a.slice(0, STEM) === b.slice(0, STEM)) ||
+  (a.length >= 3 && b.startsWith(a)) ||
+  (b.length >= 3 && a.startsWith(b));
 
 /**
  * The Ancient Orb's sibling for an answer: another item of its category (a
@@ -561,8 +573,120 @@ export interface DecoyName {
   tiles: string[];
 }
 
+/** A name, read once for `likeness`: what nameSimilarity reads off it on every call. */
+interface NameShape {
+  pairs: Int16Array;
+  first: string;
+  two: string;
+  possessive: boolean;
+  the: boolean;
+  words: number;
+  significant: Set<string>;
+  length: number;
+}
+const shapes = new Map<string, NameShape>();
+function shapeOf(name: string): NameShape {
+  let sh = shapes.get(name);
+  if (sh) return sh;
+  const clean = name.toLowerCase().replace(/[^a-z]/g, '');
+  const pairs = new Int16Array(Math.max(0, clean.length - 1));
+  for (let i = 0; i < pairs.length; i++) pairs[i] = (clean.charCodeAt(i) - 97) * 26 + clean.charCodeAt(i + 1) - 97;
+  const la = name.toLowerCase();
+  const words = la.split(/\s+/);
+  sh = {
+    pairs,
+    first: la[0],
+    two: la.slice(0, 2),
+    possessive: /'s?\b/.test(la),
+    the: la.startsWith('the '),
+    words: words.length,
+    significant: new Set(words.map((x) => x.replace(/[^a-z]/g, '')).filter((x) => x.length > 3)),
+    length: name.length,
+  };
+  shapes.set(name, sh);
+  return sh;
+}
+const pairCounts = new Int16Array(26 * 26);
+/** nameSimilarity (src/lib/game.ts), the same sum in the same order, off names read once: the look-alike lists of every item take it 250,000 times. */
+function likeness(a: string, b: string): number {
+  const sa = shapeOf(a);
+  const sb = shapeOf(b);
+  for (const g of sa.pairs) pairCounts[g]++;
+  let shared = 0;
+  for (const g of sb.pairs) {
+    if (pairCounts[g] > 0) {
+      shared++;
+      pairCounts[g]--;
+    }
+  }
+  for (const g of sa.pairs) pairCounts[g] = 0;
+  let score = sa.pairs.length + sb.pairs.length ? (2 * shared) / (sa.pairs.length + sb.pairs.length) : 0;
+  if (sa.first === sb.first) score += 0.3;
+  if (sa.two === sb.two) score += 0.2;
+  if (sa.possessive === sb.possessive) score += 0.2;
+  if (sa.the === sb.the) score += 0.15;
+  if (sa.words === sb.words) score += 0.2;
+  for (const w of sb.significant) if (sa.significant.has(w)) score += 0.5;
+  if (Math.abs(sa.length - sb.length) <= 2) score += 0.15;
+  return score;
+}
+
 const nameLikes = new Map<string, Item[]>();
+const nearLists = new Map<string, Item[]>();
 const wider = new Map<string, Item[]>();
+
+/** An item's look-alikes: the items whose art looks most like it, then whose names read most like it, never itself. */
+function nearOf(item: Item): Item[] {
+  let near = nearLists.get(item.id);
+  if (near) return near;
+  const byArt = LOOKS.looksLike(item.id)
+    .slice(0, LOOKALIKES)
+    .map((l) => BY_ID.get(l.id))
+    .filter((it): it is Item => !!it && it.id !== item.id);
+  let byName = nameLikes.get(item.id);
+  if (!byName) {
+    byName = ITEMS.filter((it) => it.id !== item.id)
+      .map((it) => ({ it, like: likeness(item.name, it.name) }))
+      .sort((a, b) => b.like - a.like || a.it.id.localeCompare(b.it.id))
+      .slice(0, LOOKALIKES)
+      .map((x) => x.it);
+    nameLikes.set(item.id, byName);
+  }
+  near = [...new Map([...byArt, ...byName].map((it) => [it.id, it])).values()];
+  nearLists.set(item.id, near);
+  return near;
+}
+
+/** The rest of an item's category, by how alike they look (art rank) and read (name), best first. */
+function wideOf(item: Item): Item[] {
+  let rest = wider.get(item.id);
+  if (rest) return rest;
+  const artRank = new Map(LOOKS.looksLike(item.id).map((l, i) => [l.id, i]));
+  rest = ITEMS.filter((it) => it.id !== item.id && it.category === item.category)
+    .map((it) => ({ it, like: likeness(item.name, it.name) - (artRank.get(it.id) ?? ITEMS.length) / ITEMS.length }))
+    .sort((a, b) => b.like - a.like || a.it.id.localeCompare(b.it.id))
+    .map((x) => x.it);
+  wider.set(item.id, rest);
+  return rest;
+}
+
+let heldByCount: Map<string, number> | null = null;
+/** How many items' look-alike lists hold this one (some sit in 30, others in under 10). */
+function heldBy(id: string): number {
+  if (!heldByCount) {
+    heldByCount = new Map();
+    for (const it of ITEMS) for (const x of nearOf(it)) heldByCount.set(x.id, (heldByCount.get(x.id) ?? 0) + 1);
+  }
+  return heldByCount.get(id) ?? 1;
+}
+
+/** One of `xs` at random, each as likely as its weight. */
+function pickWeighted<T>(xs: readonly T[], weight: (x: T, i: number) => number, rng: () => number): T {
+  const w = xs.map(weight);
+  let r = rng() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < xs.length; i++) if ((r -= w[i]) < 0) return xs[i];
+  return xs[xs.length - 1];
+}
 
 /**
  * The names a board's decoy names come from, all real items, best first:
@@ -576,35 +700,13 @@ const wider = new Map<string, Item[]>();
 export function decoyNameCandidates(answer: Item): { near: DecoyName[]; wide: DecoyName[] } {
   const own = new Set(SYLLABLES[answer.id].flat());
   const sameSet = (tiles: string[]) => new Set(tiles).size === own.size && tiles.every((t) => own.has(t));
-  const byArt = LOOKS.looksLike(answer.id)
-    .slice(0, LOOKALIKES)
-    .map((l) => BY_ID.get(l.id))
-    .filter((it): it is Item => !!it && it.id !== answer.id);
-  let byName = nameLikes.get(answer.id);
-  if (!byName) {
-    byName = ITEMS.filter((it) => it.id !== answer.id)
-      .map((it) => ({ it, like: nameSimilarity(answer.name, it.name) }))
-      .sort((a, b) => b.like - a.like || a.it.id.localeCompare(b.it.id))
-      .slice(0, LOOKALIKES)
-      .map((x) => x.it);
-    nameLikes.set(answer.id, byName);
-  }
-  let rest = wider.get(answer.id);
-  if (!rest) {
-    // The category's others, by how alike they look (art rank) and read (name), best first.
-    const artRank = new Map(LOOKS.looksLike(answer.id).map((l, i) => [l.id, i]));
-    rest = ITEMS.filter((it) => it.id !== answer.id && it.category === answer.category)
-      .map((it) => ({ it, like: nameSimilarity(answer.name, it.name) - (artRank.get(it.id) ?? ITEMS.length) / ITEMS.length }))
-      .sort((a, b) => b.like - a.like || a.it.id.localeCompare(b.it.id))
-      .map((x) => x.it);
-    wider.set(answer.id, rest);
-  }
+  const nearItems = nearOf(answer);
+  const rest = wideOf(answer);
   const usable = (items: Item[]) =>
     items
       .filter((it) => letters(it.name) !== letters(answer.name) && SYLLABLES[it.id])
       .map((it) => ({ name: it.name, tiles: SYLLABLES[it.id].flat() }))
       .filter((d) => !sameSet(d.tiles));
-  const nearItems = [...new Map([...byArt, ...byName].map((it) => [it.id, it])).values()];
   const nearIds = new Set(nearItems.map((it) => it.id));
   return { near: usable(nearItems), wide: usable(rest.filter((it) => !nearIds.has(it.id))) };
 }
@@ -621,15 +723,19 @@ export interface Pool {
 
 /**
  * An item's pool, from its own seed. The answer's tiles, and the full tiles of
- * `names` decoy names (rolled, never shown), look-alikes real and made up,
- * mixed: never the Ancient Orb's sibling, whose tiles stay off the board.
+ * `names` decoy names (rolled, never shown), real items: never the Ancient
+ * Orb's sibling, whose tiles stay off the board. Each decoy name is a
+ * look-alike of a name already on the board, picked at random (the answer
+ * half as often), so the names look like each other and not only like the
+ * answer; and the fewer look-alike lists a name sits in, the likelier it is
+ * picked, so a name seldom seen as a decoy says nothing either.
  * Loose decoys (length-matched) fill the rest of the total, rolled within
  * TILE_SPREAD of the section's `size`; the decoys besides of, the, and and
- * the possessives are at least MIN_DECOYS, and `extra` more come (Blight,
- * Teeming). On top, every board holds of, the and and, and POSSESSIVES
- * possessive tiles in all (the names' counting). Where the names don't fit
- * the total it grows, up to MAX_TILES: the cap trims the loose decoys first,
- * then decoy names past the fewest the section's range allows.
+ * the possessives are at least MIN_DECOYS, and `extra` more come (Blight).
+ * On top, every board holds of, the and and, and POSSESSIVES possessive
+ * tiles in all (the names' counting). Where the names don't fit the total it
+ * grows, up to MAX_TILES: the cap trims the loose decoys first, and a name
+ * that would pass it is never dealt.
  */
 export function dealPool(answer: Item, seed: number, size: number, extra: number, names: Range = [0, 0]): Pool {
   const rng = seededRandom(itemSeed(seed, answer.id));
@@ -640,27 +746,49 @@ export function dealPool(answer: Item, seed: number, size: number, extra: number
   // The sibling's own tiles (not the answer's too) stay off the board: else they'd show it is wrong for free.
   const off = new Set(sib ? SYLLABLES[sib.id].flat().filter((t) => !own.has(t)) : []);
   const want = between(names, rng);
-  const { near, wide } = decoyNameCandidates(answer);
-  const fits = (d: DecoyName) => (!sib || letters(d.name) !== letters(sib.name)) && !d.tiles.some((t) => off.has(t));
-  // The look-alikes at random, then the rest of the category best first: a board always gets its section's fewest.
-  const order: DecoyName[] = [...shuffle(near.filter(fits), rng), ...wide.filter(fits)];
+  const sameSet = (tiles: string[]) => new Set(tiles).size === own.size && tiles.every((t) => own.has(t));
+  const ok = (it: Item) =>
+    it.id !== answer.id &&
+    !!SYLLABLES[it.id] &&
+    letters(it.name) !== letters(answer.name) &&
+    (!sib || letters(it.name) !== letters(sib.name)) &&
+    !sameSet(SYLLABLES[it.id].flat()) &&
+    !SYLLABLES[it.id].flat().some((t) => off.has(t));
   const small = SMALL_WORDS.filter((w) => !own.has(w));
   const picked: DecoyName[] = [];
   const nameTiles = new Set<string>();
   const signatureFor = (tiles: Set<string>) => [...tiles].filter(isPossessive).length;
-  for (const d of order) {
-    if (picked.length >= want) break;
-    const more = d.tiles.filter((t) => !own.has(t) && !nameTiles.has(t) && !small.includes(t));
+  /** The answer, then each name dealt: the names the next one is a look-alike of. */
+  const onBoard: Item[] = [answer];
+  const tried = new Set<string>([answer.id]);
+  const take = (it: Item) => {
+    tried.add(it.id);
+    const tiles = SYLLABLES[it.id].flat();
+    const more = tiles.filter((t) => !own.has(t) && !nameTiles.has(t) && !small.includes(t));
     // The board's tiles so far, with this name's: room left under the cap, of, the and and on top.
-    if (own.size + nameTiles.size + more.length + small.length > MAX_TILES && picked.length >= names[0]) continue;
-    picked.push(d);
+    if (own.size + nameTiles.size + more.length + small.length > MAX_TILES) return;
+    picked.push({ name: it.name, tiles });
+    onBoard.push(it);
     for (const t of more) nameTiles.add(t);
+  };
+  for (let guard = 0; picked.length < want && guard < 60; guard++) {
+    const pivot = pickWeighted(onBoard, (_, i) => (i === 0 ? 0.5 : 1), rng);
+    const can = nearOf(pivot).filter((it) => !tried.has(it.id) && ok(it));
+    if (can.length) take(pickWeighted(can, (it) => 1 / heldBy(it.id), rng));
+  }
+  // Still short (a thin answer, a crowded board): the answer's own look-alikes, then the rest of its category, each at random.
+  if (picked.length < want) {
+    for (const it of [...shuffle(nearOf(answer), rng), ...shuffle(wideOf(answer), rng)]) {
+      if (picked.length >= want) break;
+      if (!tried.has(it.id) && ok(it)) take(it);
+    }
   }
   // The possessives: the answer's and the names' count; loose ones make up the rest.
   possessivesInNames ??= ITEMS.flatMap((it) => SYLLABLES[it.id].flat().filter(isPossessive));
   const have = signatureFor(new Set([...own, ...nameTiles]));
   const notLoose = new Set([...own, ...nameTiles, ...off, ...SMALL_WORDS]);
-  const possessive = pickDecoys(notLoose, between(POSSESSIVES, rng) - have, rng, isPossessive, possessivesInNames);
+  // Never past the cap: a board the names filled gets fewer.
+  const possessive = pickDecoys(notLoose, Math.min(between(POSSESSIVES, rng) - have, MAX_TILES - own.size - nameTiles.size - small.length), rng, isPossessive, possessivesInNames);
   const signature = [...small, ...possessive];
   for (const t of possessive) notLoose.add(t);
   // The rolled total is the answer's tiles, the names' and the loose decoys; of, the, and and the possessives come on top.
@@ -859,6 +987,33 @@ export class Run {
     return true;
   }
 
+  /**
+   * Puts `n` of a supply in the pack in place of the stack at `slot`: its own
+   * stacks topped up first, the rest in the slot. Never the supply's own
+   * stack (replacing it would lose what it held).
+   */
+  private replace(slot: number, supply: Supply, n: number): { supply: Supply; n: number } | null {
+    const s = this.state;
+    if (slot < 0 || slot >= s.pack.length || s.pack[slot].supply === supply) return null;
+    for (const st of s.pack) {
+      if (st.supply !== supply || n <= 0) continue;
+      const add = Math.min(n, STACK_MAX - st.n);
+      st.n += add;
+      n -= add;
+    }
+    const by = { supply, n };
+    if (n > 0) s.pack[slot] = by;
+    return by;
+  }
+
+  /** Whether the pack's stack at `slot` can take the supply waiting for a space (a ware bought, a loot card): not one of its own. */
+  replaceable(slot: number): boolean {
+    const s = this.state;
+    const waiting = s.bought?.supply ?? s.loot?.pending[0]?.supply ?? null;
+    const st = s.pack[slot];
+    return !!waiting && !!st && st.supply !== waiting;
+  }
+
   /** Whether the ware at `i` on the vendor's table can be bought: at a vendor, with the gold, nothing bought still waiting for a space. A full pack doesn't stop it: a space is picked after. */
   canBuy(i: number): boolean {
     const s = this.state;
@@ -999,8 +1154,7 @@ export class Run {
     const b = s.bought;
     if (s.phase !== 'vendor' || !b) return false;
     if (slot !== null) {
-      if (slot < 0 || slot >= s.pack.length) return false;
-      s.pack[slot] = { supply: b.supply, n: b.n };
+      if (!this.replace(slot, b.supply, b.n)) return false;
       s.log.bought[b.supply] += b.n;
       s.log.met.at(-1)!.bought += b.n;
     } else {
@@ -1149,9 +1303,10 @@ export class Run {
     const sec = this.sectionAt(node.step, boss !== null);
     let extra = 0;
     if (zoneType === 'blight') extra += BLIGHT_DECOYS;
-    if (boss !== null && s.bossMods.includes('teeming')) extra += TEEMING_DECOYS;
+    const [lo, hi] = t.names[sec];
+    const more = boss !== null && s.bossMods.includes('teeming') ? TEEMING_NAMES : 0;
     // The pool's total is rolled, not the decoys: the board's size says next to nothing of the answer's.
-    const pool = dealPool(answer, s.seed, t.tiles[sec], extra, t.names[sec]);
+    const pool = dealPool(answer, s.seed, t.tiles[sec], extra, [lo + more, hi + more]);
     const c = CLUES[answer.id];
     const shown = { mods: [] as number[], flavor: false, lengths: false, category: false, base: false };
     let freeClue: FreeClue = 'none';
@@ -1548,7 +1703,7 @@ export class Run {
     };
   }
 
-  /** With the pack full, the first waiting supply card replaces the pack's stack `slot`, or is left (null). */
+  /** With the pack full, the first waiting supply card replaces the pack's stack `slot` (never its own supply's: that tops up), or is left (null). */
   keep(slot: number | null): boolean {
     const s = this.state;
     const loot = s.loot;
@@ -1556,14 +1711,21 @@ export class Run {
     if (s.phase !== 'solved' || !it || !loot?.pending.length) return false;
     const card = loot.pending[0];
     if (slot !== null) {
-      if (slot < 0 || slot >= s.pack.length) return false;
-      const by = { supply: card.supply!, n: card.n };
-      it.log.replaced.push({ slot, was: { ...s.pack[slot] }, by: { ...by } });
-      s.pack[slot] = by;
+      const was = s.pack[slot] ? { ...s.pack[slot] } : null;
+      const by = this.replace(slot, card.supply!, card.n);
+      if (!by || !was) return false;
+      it.log.replaced.push({ slot, was, by: { ...by } });
       s.log.found[card.supply!] += card.n;
       s.log.loot.taken.supply++;
     }
     loot.pending.shift();
+    // A card still waiting that fits now (on the stack just put in): stowed, not asked about.
+    loot.pending = loot.pending.filter((c) => {
+      if (!this.stow(c.supply!, c.n)) return true;
+      s.log.found[c.supply!] += c.n;
+      s.log.loot.taken.supply++;
+      return false;
+    });
     return true;
   }
 
