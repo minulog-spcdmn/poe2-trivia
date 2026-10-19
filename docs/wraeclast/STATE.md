@@ -1,4 +1,4 @@
-# Wraeclast run: state (Oct 19, late)
+# Wraeclast run: state (Oct 20)
 
 The one page a fresh orchestrator reads first. Then, only as needed:
 - `ORCHESTRATOR.md`: the brief and the principles (supply naming, principle 8);
@@ -15,7 +15,7 @@ The working rules are in memory, which loads on its own:
 - early prototype: no hardening;
 - `orchestration-token-efficiency`: build only what changes the feel.
 
-## Phase: back to the drawing board
+## Phase: playtesting the redesign (v5)
 
 The owner paused playtests after playtest 5: "we have to fix the workflow
 for efficiency first and go back to the drawing board on many things".
@@ -73,9 +73,9 @@ map).
 
 | What | Where |
 | --- | --- |
-| Prototype | Branch `claude/wraeclast-prototype-v3`, PR #197 (not merged), latest `391a0926` (v4e plus run logs to disk). Session "Wraeclast prototype first playable", idle. Dev runs write their log to `.wraeclast-logs/` at the served worktree's root; `node scripts/wraeclast-log-summary.mjs <file or folder>` prints a short summary (it also reads a pasted `{ wraeclastRuns: [...] }`). The playtest worktree is still at v4d, which has no logging: pin 391a0926 or later before the next playtest |
-| Design | Session "Design", branch `claude/design-4ca3ba`; `docs/wraeclast/design-v5-options.md` at `d56f6890` (not pushed). Holding for the combined brief |
-| Playtest server | Worktree `.claude/worktrees/wraeclast-playtest`, detached at v4d `8b883c79`; stopped. To serve: `.claude/launch.json` entry `wraeclast-playtest` runs `npm --prefix <that worktree> run dev -- --port 5199 --strictPort --host`. Phone: `http://192.168.178.88:5199/wraeclast.html`. Pin only when the owner says they're between runs |
+| Prototype | v5, the redesign: branch `claude/wraeclast-prototype-v5` (cut from v4e, no PR), latest `ff1403f1`. Built by a workflow from `prototype-v5-handoff.md` (code map: `prototype-v5-code-map.md`). 152 Wraeclast tests skipped ("prototype: revisit before merge"). Depth comes from `scripts/wraeclast-depth.mjs` (poe.ninja listings) into `src/data/wraeclastDepth.json`. Dev runs write logs to `.wraeclast-logs/` in the served worktree; `node scripts/wraeclast-log-summary.mjs <file or folder>` summarises them. v4e (`391a0926`, PR #197) is the old route |
+| Design | No design session: the orchestrator runs design as Workflows (it's opened from the owner's phone and can't start sessions). Docs `design-v7-town.md` (missed), `design-v8-town.md` (settled) |
+| Playtest server | Worktree `.claude/worktrees/wraeclast-playtest`, now on branch `claude/wraeclast-prototype-v5` (builds happen there too). `.claude/launch.json` in the main checkout (git-excluded) has the entry `wraeclast-playtest` (port 5199, `--host`). Phone: `http://192.168.178.88:5199/wraeclast.html` |
 | Docs | `docs/wraeclast/` on branch `claude/poe2-feature-orchestrator-0e9b63` (pushed). Main has PR #199's older copy |
 | Evidence | `playtests/playtest-3.md` to `playtest-5.md`, `reviews/v4b-review.md`, `reviews/v4b-newcomer-read.md` |
 | Map, boards | Placement tool `https://claude.ai/artifact/8aoZJ5SWLxdVmsDpDGKVei` (collection `places`); canvas `https://claude.ai/artifact/EEvHCvHLeL3hcJ38aocxrp` |
