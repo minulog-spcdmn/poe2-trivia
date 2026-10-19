@@ -406,39 +406,51 @@ export function markLine(build: string[], answer: string[]): Mark[] {
 
 const RANK: Record<Mark, number> = { struck: 1, silver: 2, gold: 3 };
 
-/** How alike a decoy tile looks to the answer's: shared letters with its nearest tile, less half the length gap. */
-function likeness(tile: string, answer: string[]) {
-  let best = -Infinity;
-  for (const a of answer) {
-    const pool = [...a];
-    let shared = 0;
-    for (const ch of tile) {
-      const k = pool.indexOf(ch);
-      if (k >= 0) shared++, pool.splice(k, 1);
-    }
-    best = Math.max(best, shared - Math.abs(tile.length - a.length) / 2);
+/** How many letters a tile shares with another, each letter counted once a match. */
+function sharedLetters(tile: string, other: string) {
+  const pool = [...other];
+  let shared = 0;
+  for (const ch of tile) {
+    const k = pool.indexOf(ch);
+    if (k >= 0) shared++, pool.splice(k, 1);
   }
-  return best;
+  return shared;
 }
 
-/** Every tile of every name. */
-let allTiles: string[] | null = null;
+/** Every tile of every name, by its length. */
+let tilesByLength: Map<number, string[]> | null = null;
+
+/** Every possessive tile as often as names hold it: what a possessive decoy is drawn against. */
+let possessivesInNames: string[] | null = null;
 
 /**
- * `k` decoy tiles for an item: drawn at random from the DECOY_POOL tiles of
- * any name (all categories alike) that look most like the answer's, among
- * those `fit` allows. Never a tile the answer has, or one in `not`.
+ * `k` decoy tiles for an item, among those `fit` allows: each drawn against
+ * one of `against` (the answer's tiles) picked at random, from the tiles of its length
+ * (any name, all categories alike; the nearest length when none is left),
+ * at random among the DECOY_POOL sharing the most letters with it. So a
+ * tile's length says nothing of whose it is. Never a tile the answer has, or
+ * one in `not`.
  */
-function pickDecoys(own: Set<string>, k: number, rng: () => number, fit: (t: string) => boolean, not: ReadonlySet<string> = new Set()): string[] {
+function pickDecoys(own: Set<string>, k: number, rng: () => number, fit: (t: string) => boolean, not: ReadonlySet<string> = new Set(), against = [...own]): string[] {
   if (k <= 0) return [];
-  allTiles ??= [...new Set(ITEMS.flatMap((it) => SYLLABLES[it.id].flat()))];
-  const answer = [...own];
-  const ranked = allTiles
-    .filter((t) => !own.has(t) && !not.has(t) && fit(t))
-    .map((t) => ({ t, like: likeness(t, answer), tie: rng() }))
-    .sort((a, b) => b.like - a.like || a.tie - b.tie)
-    .map((x) => x.t);
-  return shuffle(ranked.slice(0, Math.max(DECOY_POOL, k)), rng).slice(0, k);
+  if (!tilesByLength) {
+    tilesByLength = new Map();
+    for (const t of new Set(ITEMS.flatMap((it) => SYLLABLES[it.id].flat()))) tilesByLength.set(t.length, [...(tilesByLength.get(t.length) ?? []), t]);
+  }
+  const out = new Set<string>();
+  const open = (len: number) => (tilesByLength!.get(len) ?? []).filter((t) => !own.has(t) && !not.has(t) && !out.has(t) && fit(t));
+  for (let tries = 0; out.size < k && tries < k * 4; tries++) {
+    const a = against[Math.floor(rng() * against.length)];
+    let pool: string[] = [];
+    for (let d = 0; d <= 12 && !pool.length; d++) pool = shuffle([...open(a.length - d), ...(d ? open(a.length + d) : [])], rng);
+    if (!pool.length) break;
+    const ranked = pool
+      .map((t) => ({ t, like: sharedLetters(t, a), tie: rng() }))
+      .sort((x, y) => y.like - x.like || x.tie - y.tie)
+      .slice(0, DECOY_POOL);
+    out.add(ranked[Math.floor(rng() * ranked.length)].t);
+  }
+  return [...out];
 }
 
 /** An item's own seed in a run: its pool is the same however often it is dealt. */
@@ -449,11 +461,12 @@ export function itemSeed(seed: number, itemId: string): number {
 }
 
 /**
- * An item's pool, from its own seed: the total rolled within TILE_SPREAD of
- * the section's `size`, at least MIN_DECOYS decoys, `extra` more (Blight,
- * Swarming, Teeming), at most MAX_TILES. Every board holds of, the and and,
- * and POSSESSIVES possessive tiles in all (the answer's counting); the cap
- * trims the ordinary decoys only.
+ * An item's pool, from its own seed: the answer's tiles and its ordinary
+ * decoys, their total rolled within TILE_SPREAD of the section's `size`, at
+ * least MIN_DECOYS ordinary decoys, `extra` more (Blight, Swarming, Teeming).
+ * On top, every board holds of, the and and, and POSSESSIVES possessive tiles
+ * in all (the answer's counting). At most MAX_TILES: the cap trims the
+ * ordinary decoys only.
  */
 export function dealPool(answer: Item, seed: number, size: number, extra: number): { decoys: string[]; tiles: string[] } {
   const rng = seededRandom(itemSeed(seed, answer.id));
@@ -461,10 +474,13 @@ export function dealPool(answer: Item, seed: number, size: number, extra: number
   const total = size - TILE_SPREAD + Math.floor(rng() * (2 * TILE_SPREAD + 1));
   const small = SMALL_WORDS.filter((w) => !own.has(w));
   const ownPossessive = [...own].filter(isPossessive).length;
-  const possessive = pickDecoys(own, between(POSSESSIVES, rng) - ownPossessive, rng, isPossessive);
+  // Drawn against possessives as names hold them, so their lengths match any answer's.
+  possessivesInNames ??= ITEMS.flatMap((it) => SYLLABLES[it.id].flat().filter(isPossessive));
+  const possessive = pickDecoys(own, between(POSSESSIVES, rng) - ownPossessive, rng, isPossessive, new Set(), possessivesInNames);
   const signature = [...small, ...possessive];
+  // The small words and possessives come on top: the rolled total is the answer's tiles and the ordinary decoys.
   const room = Math.max(0, MAX_TILES - own.size - signature.length);
-  const k = Math.min(room, Math.max(0, Math.max(MIN_DECOYS, total - own.size) + extra - signature.length));
+  const k = Math.min(room, Math.max(MIN_DECOYS, total - own.size) + extra);
   const ordinary = pickDecoys(own, k, rng, (t) => !isPossessive(t), new Set(SMALL_WORDS));
   const decoys = [...signature, ...ordinary];
   return { decoys, tiles: shuffle([...own, ...decoys], rng) };
@@ -1169,9 +1185,11 @@ export class Run {
         s.flask.charges = Math.min(s.tuning.flask, s.flask.charges + 1);
         s.log.loot.taken.flask++;
       } else {
-        s.log.found[card.supply!] += card.n;
-        if (this.stow(card.supply!, card.n)) s.log.loot.taken.supply++;
-        else loot.pending.push(card);
+        // Found once it is in the pack: a card left behind counts for nothing.
+        if (this.stow(card.supply!, card.n)) {
+          s.log.found[card.supply!] += card.n;
+          s.log.loot.taken.supply++;
+        } else loot.pending.push(card);
       }
     }
     return true;
@@ -1186,6 +1204,7 @@ export class Run {
     if (slot !== null) {
       if (slot < 0 || slot >= s.pack.length) return false;
       s.pack[slot] = { supply: card.supply!, n: card.n };
+      s.log.found[card.supply!] += card.n;
       s.log.loot.taken.supply++;
     }
     loot.pending.shift();

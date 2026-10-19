@@ -6,11 +6,12 @@
 // - base: its base type (Gold Ring, or a gem's Lineage Support),
 // - mods: its mod lines in tooltip order, each [kind, text, shared] with the
 //   kind as ItemDetails draws it (a unique's implicits (i) and explicits (e);
-//   a gem's Category line (p), descriptions (d), mods (e) and granted skills
-//   (t)) and shared the number of items with the same line once its numbers
-//   are set aside (sameLine: parentheses off, any number or range a #). A
-//   line shared by 3 or more is common: the only kind a Scroll of Wisdom or
-//   a Plain zone shows, since a line only its own item has gives it away.
+//   a gem's Category line (p), descriptions (d) but the first (its support,
+//   below), mods (e) and granted skills (t)) and shared the number of items
+//   with the same line once its numbers are set aside (sameLine: parentheses
+//   off, any number or range a #). A line shared by 3 or more is common: the
+//   only kind a Plain zone gives free, since a line only its own item has
+//   gives it away.
 // - flavor: its flavour text, or null.
 // - support: a gem's support description, its first description section (d)
 //   (a granted skill's own description comes later), or null for an item
@@ -109,7 +110,11 @@ function modLines(item, sections) {
   const gem = item.kind === 'gem';
   /** @type {[string, string][]} */
   const mods = [];
-  for (const [k, t] of sections.flat()) {
+  // A gem's first description is its support text: its base clue, never a mod line too.
+  const support = gem ? sections.flat().find(([k]) => k === 'd') : undefined;
+  for (const line of sections.flat()) {
+    const [k, t] = line;
+    if (line === support) continue;
     const own = gem ? (k === 'p' && t.startsWith('Category:')) || 'det'.includes(k) : 'ie'.includes(k);
     const text = own ? clean(t) : null;
     if (text) mods.push([k, text]);

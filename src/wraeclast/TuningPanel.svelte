@@ -99,7 +99,7 @@
         <input type="checkbox" checked={t.marks === 'gold'} onchange={setMarks} />
         <span>Gold marks only (no silver or struck)</span>
       </label>
-      <p class="small">Each item rolls its total within 3 either way, at least 5 of them decoys, among them of, the, and and 2 or 3 possessive tiles. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
+      <p class="small">Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
     </fieldset>
 
     <fieldset>

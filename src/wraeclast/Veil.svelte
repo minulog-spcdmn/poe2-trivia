@@ -81,9 +81,8 @@
     let live = true;
     const img = new Image();
     img.src = itemImage(it.itemId);
-    // A picture that won't come within a few seconds: the item opens anyway, on a plain grid.
-    const late = new Promise<'late'>((r) => setTimeout(() => r('late'), 6000));
-    Promise.race([img.decode().then(() => 'ok' as const, () => 'late' as const), late]).then((got) => {
+    // The item waits for its picture, however long it takes (the clock starts at open()); only a picture that fails to load opens on a plain grid.
+    img.decode().then(() => 'ok' as const, () => 'failed' as const).then((got) => {
       if (!live) return;
       let list: PatchShape[] | null = null;
       try {
@@ -163,7 +162,9 @@
     role="img"
     aria-label={named ? 'The item, named' : burnedCount ? 'The item under the Veil, parts of it burned in' : 'The item, under the Veil'}
   >
-    {#if plain}
+    {#if !plain && !shapes.length}
+      <span class="loading">Lifting the Veil</span>
+    {:else if plain}
       {#if named}<img src={itemImage(it.itemId)} alt="" />{/if}
     {:else}
       {#each shown as p (p.i)}
@@ -183,6 +184,28 @@
 </span>
 
 <style>
+  .loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    color: var(--muted);
+    animation: breathe 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes breathe {
+    from {
+      opacity: 0.35;
+    }
+    to {
+      opacity: 0.9;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .loading {
+      animation: none;
+    }
+  }
   .art-slot {
     position: absolute;
     inset: 0;

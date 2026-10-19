@@ -147,13 +147,14 @@ function consistent(run: Run) {
   } else assert.deepEqual([log.fronts.aliveAtBoss, log.bossMods], [null, []]);
   // Supplies used and found, and the loot dealt and taken.
   const used = count(SUPPLIES);
-  const found = count(SUPPLIES);
+  const dealt = count(SUPPLIES);
   for (const it of log.items) {
     for (const u of it.supplies) used[u.type]++;
-    for (const c of it.loot) if (c.supply) found[c.supply] += c.n;
+    for (const c of it.loot) if (c.supply) dealt[c.supply] += c.n;
   }
   assert.deepEqual(log.used, used);
-  assert.deepEqual(log.found, found);
+  // Found only once in the pack: a card left behind isn't.
+  for (const k of SUPPLIES) assert.ok(log.found[k] <= dealt[k], k);
   assert.deepEqual(log.loot.dealt, byKind(log.items.flatMap((it) => it.loot)));
   for (const k of LOOT_KINDS) assert.ok(log.loot.taken[k] <= log.loot.dealt[k], k);
   for (const k of ['gold', 'jackpot', 'flask'] as const) assert.equal(log.loot.taken[k], log.loot.dealt[k], k);
@@ -390,7 +391,7 @@ test('a Blood toll at low life logs what it took, leaving 1, and the item plays 
   assert.equal(run.state.log.result, null);
 });
 
-test('a supply card left with the pack full is dealt and found, but not taken', () => {
+test('a supply card left with the pack full is dealt, but neither taken nor found', () => {
   const run = new Run({ seed: 12, now: () => T0, tuning: tuned((t) => (t.loot.weights = { gold: 0, supply: 1, flask: 0, jackpot: 0 })) });
   const s = run.state;
   s.pack = Array.from({ length: 8 }, () => ({ supply: 'base' as Supply, n: 5 }));
@@ -404,7 +405,7 @@ test('a supply card left with the pack full is dealt and found, but not taken', 
   run.keep(0);
   run.keep(null);
   assert.deepEqual([s.log.loot.dealt.supply, s.log.loot.taken.supply], [2, 1]);
-  assert.equal(sum(Object.values(s.log.found), (n) => n), 4);
+  assert.equal(sum(Object.values(s.log.found), (n) => n), 2);
 });
 
 test('the log is plain JSON: fresh, and played to its end', () => {

@@ -147,21 +147,24 @@ test("the tiles are the answer's distinct tiles and the decoys, each once, lower
     }
 });
 
-test("the pool's total is rolled for each item within its section's, 3 either way, and at least 5 are decoys", () => {
+test("the pool's total is rolled for each item within its section's, 3 either way, with at least 5 ordinary decoys; of, the, and and the possessives come on top", () => {
   for (const sec of ['early', 'mid', 'late', 'boss'] as const) {
     const T = DEFAULT_TUNING.tiles[sec];
     const totals = new Set<number>();
     for (let seed = 1; seed <= 50; seed++) {
       const { it } = laidOut(seed, sec === 'boss' ? { boss: true } : { step: STEP[sec] });
       const own = new Set(it.answer).size;
-      assert.ok(it.decoys.length >= MIN_DECOYS, `${sec}: ${it.decoys.length} decoys`);
-      // More decoys than the fewest: the rolled total stands. The fewest: the answer's tiles and 5 reach the roll at least.
-      if (it.decoys.length > MIN_DECOYS) assert.ok(Math.abs(it.tiles.length - T) <= TILE_SPREAD, `${sec}: ${it.tiles.length} tiles`);
+      const ordinary = it.decoys.filter((d) => !SMALL_WORDS.includes(d) && !isPossessive(d)).length;
+      const rolled = own + ordinary;
+      assert.ok(ordinary >= MIN_DECOYS || it.tiles.length === MAX_TILES, `${sec}: ${ordinary} ordinary decoys`);
+      // At the cap the boss trims ordinary decoys; otherwise more than the fewest: the rolled total stands. The fewest: the answer's tiles and 5 reach the roll at least.
+      if (it.tiles.length === MAX_TILES) assert.ok(rolled <= T + TILE_SPREAD);
+      else if (ordinary > MIN_DECOYS) assert.ok(Math.abs(rolled - T) <= TILE_SPREAD, `${sec}: ${rolled} tiles before the signature`);
       else assert.ok(own + MIN_DECOYS >= T - TILE_SPREAD);
-      if (it.decoys.length > MIN_DECOYS) totals.add(it.tiles.length);
+      if (ordinary > MIN_DECOYS && it.tiles.length < MAX_TILES) totals.add(rolled);
     }
-    // Rolled, not fixed: most of the 7 totals come up (the lowest is rare early, where 8 decoys often reach past it).
-    assert.ok(totals.size >= 5, `${sec}: totals ${[...totals]}`);
+    // Rolled, not fixed: most of the 7 totals come up (the lowest is rare early, where 5 decoys often reach past it). At the boss the top ones mostly meet the cap once of, the, and and the possessives are on.
+    assert.ok(totals.size >= (sec === 'boss' ? 3 : 5), `${sec}: totals ${[...totals]}`);
   }
 });
 
@@ -169,7 +172,9 @@ test("the pool's total is the tuning's", () => {
   const t = tuned((x) => (x.tiles.early = 24));
   for (let seed = 1; seed <= 20; seed++) {
     const { it } = laidOut(seed, { tuning: t });
-    assert.ok(it.tiles.length >= 21 && it.tiles.length <= Math.max(27, new Set(it.answer).size + 8), `${it.tiles.length}`);
+    const signature = it.decoys.filter((d) => SMALL_WORDS.includes(d) || isPossessive(d)).length;
+    const rolled = it.tiles.length - signature;
+    assert.ok(rolled >= 21 && rolled <= Math.max(27, new Set(it.answer).size + MIN_DECOYS), `${rolled}`);
   }
 });
 
@@ -217,6 +222,48 @@ test("the pool's size says next to nothing of the answer's tile count", () => {
   const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
   assert.ok(short.length >= 5 && long.length >= 5);
   assert.ok(Math.abs(mean(long) - mean(short)) < 2, `${mean(short).toFixed(1)} vs ${mean(long).toFixed(1)}`);
+});
+
+// One sweep for the two below: every item dealt at 4 seeds, a section each.
+let sweep: { byLength: Map<string, [number, number]>; asDecoy: Set<string> } | null = null;
+function swept() {
+  if (sweep) return sweep;
+  const byLength = new Map<string, [number, number]>();
+  const asDecoy = new Set<string>();
+  for (let seed = 1; seed <= 4; seed++)
+    for (const it of ITEMS) {
+      const { decoys, tiles } = dealPool(it, seed, [14, 20, 26, 32][seed - 1], 0);
+      const own = new Set(SYLLABLES[it.id].flat());
+      for (const t of tiles) {
+        if (SMALL_WORDS.includes(t)) continue;
+        const key = `${isPossessive(t) ? 'possessive ' : ''}${Math.min(t.length, 6)}`;
+        const n = byLength.get(key) ?? [0, 0];
+        n[1]++;
+        if (own.has(t)) n[0]++;
+        byLength.set(key, n);
+      }
+      for (const d of decoys) asDecoy.add(d);
+    }
+  return (sweep = { byLength, asDecoy });
+}
+
+test("a tile's length says next to nothing of whether it is the answer's", () => {
+  const { byLength } = swept();
+  const p = (key: string) => {
+    const [a, n] = byLength.get(key)!;
+    return a / n;
+  };
+  // Ordinary tiles of 1 to 4 letters (nearly all of them; 5 or more are rare and rarely the answer's): within a few points.
+  const ordinary = [1, 2, 3, 4].map((l) => p(`${l}`));
+  assert.ok(Math.max(...ordinary) - Math.min(...ordinary) < 0.08, `P(answer | length) ${ordinary.map((x) => x.toFixed(2))}`);
+  const possessive = [4, 5, 6].map((l) => p(`possessive ${l}`));
+  assert.ok(Math.max(...possessive) - Math.min(...possessive) < 0.06, `possessives ${possessive.map((x) => x.toFixed(2))}`);
+});
+
+test("no tile only ever shows as the answer's: every one is dealt as a decoy too", () => {
+  const { asDecoy } = swept();
+  const never = [...new Set(ITEMS.flatMap((it) => SYLLABLES[it.id].flat()))].filter((t) => !asDecoy.has(t));
+  assert.deepEqual(never, []);
 });
 
 test('the decoys come from names of every category alike: a pool never depends on the answer\'s category', () => {

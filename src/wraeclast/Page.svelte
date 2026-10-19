@@ -3,6 +3,7 @@
   // header and strip (where, life, flask, gold, the step), the screen its
   // phase calls for (a vendor, the map, a zone's or a Well's threshold, an
   // item, its loot, the end), and the tuning panel (collapsed) at the foot.
+  import { untrack } from 'svelte';
   import Background from '../components/Background.svelte';
   import { play } from './play.svelte';
   import Hud from './Hud.svelte';
@@ -18,9 +19,11 @@
   const run = $derived(play.run!);
   const s = $derived(run.state);
 
-  // A run ends: its log is kept, for the end screen to copy.
+  // After every item and as the run ends, its log is kept (for the end screen to copy): a reload loses nothing.
   $effect(() => {
-    if (s.phase === 'end') play.keep();
+    void s.log.items.length;
+    void s.phase;
+    untrack(() => play.keep());
   });
 
   // Each new screen starts at its top (phones scroll); a named item stays on its screen, for its finale.

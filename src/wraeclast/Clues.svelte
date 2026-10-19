@@ -40,7 +40,7 @@
   {#if flavor}
     {#if mods.length || it.shown.category || it.shown.base}<div class="rule" aria-hidden="true"></div>{/if}
     <p class="tline flav">
-      {#if !named}<span class="lbl-t">{free === 'flavor' ? `${FREE_LABEL} • flavour text` : 'Lore reveal'}</span>{/if}
+      {#if !named}<span class="lbl-t">{free === 'flavor' ? `${FREE_LABEL} • flavour text` : 'Lore'}</span>{/if}
       {#each verses(clues.flavor!) as v, k (k)}<span class="verse"><ClueText text={v} /></span>{/each}
     </p>
   {/if}

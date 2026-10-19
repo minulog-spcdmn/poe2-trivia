@@ -1,5 +1,6 @@
 // The run on the page (wraeclast.html): one Run (rules.ts) at a time, its
-// state made reactive so the screens follow it, its log kept once it ends.
+// state made reactive so the screens follow it, its log kept after every
+// item (its result null till it ends), so a reload or a new run loses none.
 
 import { Run, type RunLog, type Tuning } from './rules.ts';
 import { readTuning, writeTuning } from './tuning.ts';
@@ -16,16 +17,13 @@ class Play {
   run = $state.raw<Run | null>(null);
   /** The numbers the next run starts with (the tuning panel's). */
   tuning = $state<Tuning>(readTuning());
-  /** The runs kept, newest last (this one too, once it ends). */
+  /** The runs kept, newest last (this one too, after its first item). */
   runs = $state.raw<RunLog[]>(readRuns());
-  /** Whether this run's log is kept yet. */
-  private kept = false;
 
   /** Starts a run with the tuning panel's numbers. */
   start() {
     const run = new Run({ tuning: $state.snapshot(this.tuning), viewport: Math.round(innerWidth) });
     run.state = reactive(run.state);
-    this.kept = false;
     this.run = run;
   }
 
@@ -34,11 +32,10 @@ class Play {
     writeTuning($state.snapshot(this.tuning));
   }
 
-  /** Keeps the run's log once it has ended. */
+  /** Keeps the run's log as it stands (once it has an item), replacing what was kept of it before. */
   keep() {
     const run = this.run;
-    if (!run || this.kept || run.state.phase !== 'end') return;
-    this.kept = true;
+    if (!run || !run.state.log.items.length) return;
     this.runs = keepRun($state.snapshot(run.state.log) as RunLog);
   }
 }

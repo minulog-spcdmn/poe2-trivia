@@ -90,6 +90,9 @@ test('every item has its category as items.json names it, and a gem its support 
   }
   assert.deepEqual(bad, []);
   const byName = new Map(items.map((it) => [it.name, clues[it.id]]));
+  // The support is the gem's base clue only, never one of its mod lines too.
+  const twice = items.filter((it) => it.kind === 'gem' && clues[it.id].mods.some(([, text]) => text === clues[it.id].support));
+  assert.deepEqual(twice.map((it) => it.name), []);
   assert.ok(byName.get("Ahn's Citadel")?.support?.startsWith('Supports skills that create walls in a line'));
   // A granted skill's own description isn't the support's.
   assert.ok(byName.get("Paquate's Pact")?.support?.startsWith('Supports Warcries'));
