@@ -20,8 +20,9 @@ export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyG
  * balance between the sounds stays as tuned; a limiter after it keeps
  * moments that land together from clipping. Set by ear-model loudness
  * (Zwicker, ISO 532-1) against speech and music played at -14 LUFS, as
- * YouTube and Spotify play them: lifted 4 dB, the loudest moment
- * (deathmatch) peaks about as loud as their loud passages, and no louder.
+ * YouTube and Spotify play them: lifted 4 dB, the loudest moment then
+ * (deathmatch) peaked about as loud as their loud passages, and no louder.
+ * Deathmatch and defeat have since come down to sit with start and victory.
  */
 export const MIX = { volume: 7, warmth: 1, lift: 4 };
 
@@ -372,12 +373,15 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'deathmatch-7', gain: -17, rate: 1, delay: 340, hp: 37, lp: 20000, send: 0.2 },
     ],
   },
+  // Deathmatch and defeat are leveled by Zwicker peak loudness (Nmax, phon)
+  // against the other big moments: defeat about as loud as victory, the
+  // deathmatch a touch (2 phon) over the start.
   deathmatch: {
     soften: 3,
     varyPitch: 0.015,
     varyGain: 0.5,
     layers: [
-      { file: 'deathmatch-4', gain: -13, rate: 1.01, delay: 0, hp: 40, lp: 9000, send: 0.45 },
+      { file: 'deathmatch-4', gain: -23, rate: 1.01, delay: 0, hp: 40, lp: 9000, send: 0.45 },
     ],
   },
   victory: {
@@ -395,7 +399,7 @@ export const MOMENTS: Record<Sfx, Moment> = {
     varyPitch: 0.015,
     varyGain: 0.5,
     layers: [
-      { file: 'defeat-4', gain: -13, rate: 0.86, delay: 0, hp: 40, lp: 9000, send: 0.65 },
+      { file: 'defeat-4', gain: -19, rate: 0.86, delay: 0, hp: 40, lp: 9000, send: 0.65 },
     ],
   },
   // Delve, as picked on the Delve sound page.

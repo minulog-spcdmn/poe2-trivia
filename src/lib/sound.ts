@@ -133,6 +133,16 @@ export function setLift(value: number) {
   if (bus) bus.lift.gain.setTargetAtTime(liftGain(), bus.ac.currentTime, 0.03);
 }
 
+/**
+ * Each moment's offset (dB) on top of its design: none in the game; only the
+ * levels page (levels.html) sets them, to play a moment at its level before a change.
+ */
+let trims: Partial<Record<Sfx, number>> = {};
+
+export function setTrims(value: Partial<Record<Sfx, number>>) {
+  trims = value;
+}
+
 /** The limiter's automatic makeup gain adds about 1.7 dB of its own, counted in the lift. */
 const liftGain = () => db(liftDb - 1.7);
 
@@ -641,7 +651,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   const m = MOMENTS[name];
   // One random nudge for the whole moment, so its layers stay together.
   const pitch = 1 + (Math.random() * 2 - 1) * m.varyPitch;
-  const gainDb = (Math.random() * 2 - 1) * m.varyGain;
+  const gainDb = (Math.random() * 2 - 1) * m.varyGain + (trims[name] ?? 0);
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   const inS = Math.max(0, opts.inMs ?? 0) / 1000;
   // In a vein, its own moments ring in its room (Bus veinWet).

@@ -167,9 +167,12 @@ ducked, with the last one's speed.
 `levels.html` (`src/levelsPage/`) plays every sound as the game plays it,
 grouped by role, and a few that land together in the game (a wrong answer
 with the lives it takes, the blast with what it destroys, a run's end, and
-the loudest three at once for the limiter), with the whole mix's lift
-(`MIX.lift`, `src/lib/soundDesign.ts`) switched between **Before** (0 dB,
-the mix as it was) and **After** (the game's now), keys 1 and 2. Switching
+the loudest three at once for the limiter), switched between **Before**
+(the mix as it was before the last change to the levels) and **After**
+(the game's now), keys 1 and 2. What Before undoes is `BEFORE` in
+`src/levelsPage/Page.svelte`: the whole mix's lift (`MIX.lift`,
+`src/lib/soundDesign.ts`) and each moment's level as they were, set anew
+with each change to the levels. Switching
 plays the last sound again (**Space** switches, **R** plays it again), and
 **Blind** hides which is which as X and Y until **Reveal**.
 

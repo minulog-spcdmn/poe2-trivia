@@ -1,16 +1,31 @@
 <script lang="ts">
   // The sound levels page (levels.html): every moment's sound, and a few
   // that land together in the game, played as the game plays them
-  // (lib/sound.ts, placed by lib/spatial.svelte.ts), with the whole mix's
-  // lift (MIX.lift) switched between before (0 dB, the mix as it was) and
+  // (lib/sound.ts, placed by lib/spatial.svelte.ts), switched between
+  // before (the levels as they were before the last change, BEFORE) and
   // after (the game's now). Switching plays the last sound again, so the
   // two can be heard one after the other; blind hides which is which.
   import { onDestroy } from 'svelte';
   import { MIX, MOMENTS } from '../lib/soundDesign';
-  import { getVolume, setLift, sfx, type Sfx } from '../lib/sound';
+  import { getVolume, setLift, setTrims, sfx, type Sfx } from '../lib/sound';
 
   type Side = 'before' | 'after';
-  const LIFT: Record<Side, number> = { before: 0, after: MIX.lift };
+
+  /**
+   * The last change to the levels, undone: the whole mix's lift (dB, MIX.lift)
+   * and each moment's level (dB on top of the game's now) as they were, and
+   * what changed, in words. Set it anew with each change to hear it against.
+   */
+  const BEFORE: { lift: number; trims: Partial<Record<Sfx, number>>; change: string } = {
+    lift: MIX.lift,
+    trims: { deathmatch: 10, defeat: 6 },
+    change: 'deathmatch 10 dB and defeat 6 dB quieter, to sit with start and victory',
+  };
+
+  function apply(s: Side) {
+    setLift(s === 'before' ? BEFORE.lift : MIX.lift);
+    setTrims(s === 'before' ? BEFORE.trims : {});
+  }
 
   const GROUPS: { name: string; ids: Sfx[] }[] = [
     { name: 'Big moments', ids: ['start', 'deathmatch', 'victory', 'defeat', 'stratum', 'blast', 'caveIn', 'fallen', 'itemBlown', 'flare', 'plunge'] },
@@ -53,10 +68,10 @@
   let pending = 0;
 
   // The page opens on after, the game's own.
-  setLift(LIFT.after);
+  apply('after');
   onDestroy(() => {
     clearTimeout(pending);
-    setLift(MIX.lift);
+    apply('after');
   });
 
   function play(ids: Sfx[], again = false) {
@@ -81,7 +96,7 @@
     if (s === side) return;
     side = s;
     for (const stop of stops) stop();
-    setLift(LIFT[s]);
+    apply(s);
     clearTimeout(pending);
     const ids = last;
     if (replay && ids) pending = window.setTimeout(() => play(ids, true), SETTLE);
@@ -102,8 +117,8 @@
           { side: xIsAfter ? 'before' : 'after', label: 'Y', hint: revealed ? (xIsAfter ? 'before' : 'after') : '?' },
         ]
       : [
-          { side: 'before', label: 'Before', hint: `${LIFT.before} dB` },
-          { side: 'after', label: 'After', hint: `+${LIFT.after} dB` },
+          { side: 'before', label: 'Before', hint: 'as it was' },
+          { side: 'after', label: 'After', hint: 'now' },
         ],
   );
 
@@ -133,8 +148,8 @@
   <header>
     <h1>Sound levels</h1>
     <p class="hint">
-      Every sound through the game’s whole mix, with its lift switched: <b>before</b> is the mix as it was, <b>after</b> the game’s now, {LIFT.after} dB up. Set the computer’s
-      volume as for a video, and the game’s own volume ({Math.round(getVolume() * 100)}%) is used as it is.
+      Every sound through the game’s whole mix, switched between <b>before</b>, the mix as it was, and <b>after</b>, the game’s now: {BEFORE.change}. Set the
+      computer’s volume as for a video, and the game’s own volume ({Math.round(getVolume() * 100)}%) is used as it is.
     </p>
   </header>
 
