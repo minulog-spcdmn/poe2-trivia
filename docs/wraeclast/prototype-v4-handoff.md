@@ -23,7 +23,7 @@ around it did not.
 | Corruption was neither harder nor tempting: 6 of 9 zones corrupted, Blood toll a flat tax, double gold worthless | Only the front's zone is corrupted, Blood toll only, shown on the map; double loot stays, and the economy makes gold matter |
 | Gold never mattered: 317 earned, 80 spent | Most supplies are bought, not found; tune to the targets below |
 | Base reveal never used; Category reveal used 8 times | Category reveal becomes the Ancient Orb (below); Base reveal unchanged for now |
-| "Often the Inscription told me what it was without any clue: it was the only valid name I could make" (owner) | Every board also holds the full tiles of a few look-alike names, real and made up, so several names can be built |
+| "Often the Inscription told me what it was without any clue: it was the only valid name I could make" (owner) | Every board also holds the full tiles of a few real look-alike names, so several names can be built |
 | "A lot of the wordings were really confusing, even to me" (owner) | Every line a player reads is rewritten plainly (the design handoff), and a newcomer-read review runs before playtest 4 |
 
 ## The route
@@ -74,24 +74,26 @@ the answer was often the only real name a player could build. Now:
 - Every board holds the full tiles of a few decoy names besides the answer.
   How many is rolled per item and never shown: 1 to 2 early, 2 to 3 mid,
   3 to 4 late, 4 to 5 at the boss.
-- Decoy names are look-alikes of the answer only (the owner's choice; it may
-  hint at the category, and that is accepted): real names from its look-alike
-  lists (art look-alikes in `looks.json`, name look-alikes in
-  `src/lib/lookalikes.ts`) and made-up names from `fakes.json`, mixed.
+- Decoy names are real look-alikes of the answer only (the owner's choice; it
+  may hint at the category, and that is accepted): art look-alikes in
+  `looks.json`, name look-alikes in `src/lib/lookalikes.ts`. If an answer has
+  too few, widen to its next best look-alikes in the same category.
+- No made-up names (owner, after the v4a review). Each `fakes.json` entry is
+  the answer with one word swapped, so the answer was the one real name
+  sharing tiles with them: on 57 to 66% of boards an expert could read it off
+  (Tabula Nova and Carta Rasa point at Tabula Rasa). `fakes.json` no longer
+  feeds the board.
+- Every board holds at least its section's minimum of decoy names.
 - Never the Ancient Orb's sibling (its tiles stay off the board), and never a
   name sharing the answer's full tile set.
 - Building a decoy name is a wrong answer like any other: it costs life and
   marks the tiles.
-- Loose filler tiles fill the rest of the pool total, length-matched as now.
-  If the answer, the decoy names and the always-present tiles don't fit a
+- Loose filler tiles fill the rest of the pool total, length-matched as now,
+  and drawn against the tiles of the answer and every decoy name alike, so the
+  answer's tiles don't stand out by having more look-alikes around them. If
+  the answer, the decoy names and the always-present tiles don't fit a
   section's total, the total grows, up to the cap of 36.
 - A Tangled Fossil strikes decoy tiles at random, decoy-name tiles included.
-- Tests: every board lets the player build at least the section's minimum of
-  decoy names; how many there are never appears anywhere; the length and
-  pool-size tests still pass.
-
-This changes `fakes.json`'s role: the design doc allowed made-up names only
-from tier 4. They now appear from the first item, as decoy names only.
 
 ## The answer line
 
