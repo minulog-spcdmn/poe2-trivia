@@ -58,17 +58,23 @@ random clue the item hasn't shown yet:
 
 With nine kinds of supply and 8 stacks, the pack can't hold every kind.
 
-### Pending: the Ancient Orb
+### Category reveal becomes the Ancient Orb
 
-The owner likes Category reveal becoming the "Ancient Orb": instead of the
-category's name it shows another unique of the same category (in PoE the
-orb reforges a unique into another of the same class), so knowing that
-unique's category is the trivia. It goes in only if the item screen design
-confirms it fits the phone's clue list. If it does:
-- the sibling is a random other unique of the same category, never the
-  answer, and the same for every player in co-op;
-- the sibling's own tiles are kept off that item's board, so its name can't
-  be used to rule decoys out.
+In PoE the Ancient Orb reforges a unique into another of the same class.
+Here it shows, by name, another unique of the same category, so knowing
+that unique's category is the trivia. The design session confirmed it fits
+the phone as one clue line.
+- The sibling is a random other unique of the same category, never the
+  answer, and the same for every player in co-op. Lineage gems draw another
+  lineage gem.
+- It shares no word with the answer's name.
+- Its own tiles are kept off that item's board, so its name can't be used to
+  rule decoys out.
+- It is set like any clue (label "Ancient Orb", plain body colour, never
+  unique orange, never on the plate or the line) and worded so it never
+  names the category: "Ventor's Gamble • the same kind of item".
+- On screens under 700 px tall, a clue list past 4 clues puts the art beside
+  the clues, so the art keeps its size.
 
 ## Open until the log is in
 
