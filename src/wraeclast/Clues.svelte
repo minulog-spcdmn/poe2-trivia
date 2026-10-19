@@ -4,10 +4,10 @@
   // label that says what gave it: the zone's free clue, or a supply. No counts:
   // nothing says how many lines are still hidden. Under them, the names tried
   // and wrong. Once named, the whole tooltip.
-  import { CLUES, baseText, type Run } from './rules';
+  import { CLUES, SUPPLY_NAMES, baseText, nameOf, type DeckClue, type Run } from './rules';
   import { verses } from './markup';
   import ClueText from './ClueText.svelte';
-  import { FREE_LABEL } from './words';
+  import { DECK_DREW, FREE_LABEL } from './words';
 
   let { run }: { run: Run } = $props();
   const it = $derived(run.state.item!);
@@ -18,34 +18,44 @@
   const flavor = $derived((named || it.shown.flavor) && clues.flavor !== null);
   const gem = $derived(clues.support !== null);
   const tried = $derived(it.log.submits.filter((sub) => !sub.right));
-  const nothing = $derived(!named && !mods.length && !flavor && !it.shown.category && !it.shown.base && free !== 'burn' && free !== 'lengths');
+  /** Whether a Stacked Deck gave this clue (it never draws one already shown), and the mod lines it gave. */
+  const dealt = (clue: DeckClue) => it.deck.some((d) => d.clue === clue);
+  const dealtMods = $derived(new Set(it.deck.flatMap((d) => (d.mod === undefined ? [] : [d.mod]))));
+  const fromDeck = (clue: DeckClue) => `${SUPPLY_NAMES.deck} • ${DECK_DREW[clue].toLowerCase()}`;
+  const nothing = $derived(!named && !mods.length && !flavor && !it.shown.category && !it.shown.base && free !== 'burn' && free !== 'lengths' && !it.deck.length);
 </script>
 
 <div class="lines">
   {#if named}
     <p class="tline cat">{clues.category}</p>
   {:else if it.shown.category}
-    <p class="tline cat"><span class="lbl-t">Category reveal</span>{clues.category}</p>
+    <p class="tline cat"><span class="lbl-t">{dealt('category') ? SUPPLY_NAMES.deck : SUPPLY_NAMES.category}</span>{it.sibling ? `${nameOf(it.sibling)} • the same kind as this one` : clues.category}</p>
   {/if}
   {#if it.shown.base && !named}
-    <p class="tline base"><span class="lbl-t">{free === 'base' ? `${FREE_LABEL} • ${gem ? 'its support text' : 'the base type'}` : gem ? 'Base reveal • support text' : 'Base reveal'}</span><ClueText text={baseText(clues)} /></p>
+    <p class="tline base"><span class="lbl-t">{free === 'base' ? `${FREE_LABEL} • ${gem ? 'its support text' : 'the base type'}` : dealt('base') ? fromDeck('base') : gem ? `${SUPPLY_NAMES.base} • support text` : SUPPLY_NAMES.base}</span><ClueText text={baseText(clues)} /></p>
   {/if}
   {#each mods as i, k (i)}
     {@const [kind, line] = clues.mods[i]}
     {#if k === 0 && (named || it.shown.category || it.shown.base)}<div class="rule" aria-hidden="true"></div>{/if}
     <p class="tline mod {kind}">
-      {#if !named}<span class="lbl-t">{k === 0 && free === 'mod' ? `${FREE_LABEL} • a common mod line` : 'Scroll of Wisdom'}</span>{/if}<ClueText text={line} />
+      {#if !named}<span class="lbl-t">{k === 0 && free === 'mod' ? `${FREE_LABEL} • a common mod line` : dealtMods.has(i) ? fromDeck('mod') : SUPPLY_NAMES.wisdom}</span>{/if}<ClueText text={line} />
     </p>
   {/each}
   {#if flavor}
     {#if mods.length || it.shown.category || it.shown.base}<div class="rule" aria-hidden="true"></div>{/if}
     <p class="tline flav">
-      {#if !named}<span class="lbl-t">{free === 'flavor' ? `${FREE_LABEL} • flavour text` : 'Lore'}</span>{/if}
+      {#if !named}<span class="lbl-t">{free === 'flavor' ? `${FREE_LABEL} • flavor text` : dealt('flavor') ? fromDeck('flavor') : SUPPLY_NAMES.lore}</span>{/if}
       {#each verses(clues.flavor!) as v, k (k)}<span class="verse"><ClueText text={v} /></span>{/each}
     </p>
   {/if}
   {#if free === 'lengths' && !named}
     <p class="tline plain"><span class="lbl-t">{FREE_LABEL} • word lengths</span>On the line: a dot for each tile, grouped by word.</p>
+  {/if}
+  {#if dealt('lengths') && !named}
+    <p class="tline plain"><span class="lbl-t">{fromDeck('lengths')}</span>On the line: a dot for each tile, grouped by word.</p>
+  {/if}
+  {#if dealt('burn') && !named}
+    <p class="tline plain"><span class="lbl-t">{fromDeck('burn')}</span>A patch of the art burned in.</p>
   {/if}
   {#if free === 'burn' && !named}
     <p class="tline plain"><span class="lbl-t">{it.boss !== null ? 'Boss' : FREE_LABEL} • a burn-in</span>{it.boss !== null ? 'The boss' : 'The zone'} burned in a patch of the art.</p>

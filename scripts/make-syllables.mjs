@@ -1,14 +1,19 @@
-// Builds src/data/syllables.json, every item's name split into syllables, for
-// the Wraeclast run's Inscription (src/wraeclast): the player builds a name
-// from the shuffled syllables of the names on the board.
+// Builds src/data/syllables.json, every item's name split into tiles, for the
+// Wraeclast run's Inscription (src/wraeclast): the player builds a name from
+// the shuffled tiles of the names on the board. And src/data/fakeSyllables.json,
+// the made-up names of src/data/fakes.json split the same way, by name: a
+// board holds a few of them as decoy names.
 //
-// Each name is a list of its words, each word a list of its syllables, all
-// lower case, so the name rebuilds (in lower case) as the syllables joined
-// within a word and the words joined with a space; the word boundaries are
-// what the answer line's spacing and the Word lengths supply read
-// (tests/syllables.test.ts checks every name rebuilds, no tile is longer than
-// 4 letters, and that the file is what this script makes).
-// - "of", "the" and "and" stay whole. No other word is a single tile.
+// Each name is a list of its words, each word a list of its tiles, all lower
+// case, so the name rebuilds (in lower case) as the tiles joined within a word
+// and the words joined with a space; the word boundaries are what the Word
+// lengths supply reads (tests/syllables.test.ts checks every name rebuilds,
+// every tile holds 2 to 5 letters, and that the files are what this script
+// makes).
+// - A word is first split into syllables (below), then joined and cut again
+//   into tiles of 2 to 4 letters, 5 now and then, never 1 (join): fewer
+//   tiles, so fewer taps. A word of 2 to 5 letters is mostly one tile.
+// - "of", "the" and "and" stay whole.
 // - A possessive keeps its mark on its last syllable (v / oll's).
 // - A word that is two English words splits between them first: black /
 //   heart. The parts come from SCOWL's word lists (wordlist-english), common
@@ -27,7 +32,7 @@
 //   that start the next vowel's syllable, until none is: man / dra / go /
 //   ra, not man / drago / ra; one of a single vowel sound before its vowel
 //   (str / ict). A word of one letter (the o' of Cat O' Nine Tails) can't
-//   split and stays one tile.
+//   join another and stays one tile, the only one of a single letter.
 // - A hyphen stays on the part before it: kn / ight- / er / rant.
 // Run: node scripts/make-syllables.mjs (after npm run fetch-data)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -39,7 +44,9 @@ const require = createRequire(import.meta.url);
 const hyphenateSync = require('hyphen/en-us').hyphenateSync;
 
 const ITEMS = new URL('../src/data/items.json', import.meta.url);
+const FAKES = new URL('../src/data/fakes.json', import.meta.url);
 const OUT = new URL('../src/data/syllables.json', import.meta.url);
+const FAKES_OUT = new URL('../src/data/fakeSyllables.json', import.meta.url);
 
 // SCOWL's sizes up to 50 are its common words; past that come rare and archaic ones.
 const SIZES = [10, 20, 35, 40, 50];
@@ -259,6 +266,51 @@ function shorten(part) {
   return out;
 }
 
+/** A tile's cost in the joining below: fewer tiles, fewer taps. */
+const PER_TILE = 2.5;
+/** A tile of 5 letters costs about as much as an awkward cut: only where the rest would leave one letter alone or cut badly. */
+const FIVE = 3;
+
+/**
+ * A word (its possessive mark or hyphen set aside) as its tiles: the
+ * syllables `syl` found, joined and cut again into tiles of 2 to 4 letters
+ * (5 now and then), never one. A cut where the syllables had one is free;
+ * anywhere else it costs what cutCost says. Of the ways to cut, the cheapest
+ * (a tile costs PER_TILE, a tile with no vowel 4 more), so short syllables
+ * join (man / dra / gora, black / heart) and a lone letter goes with its
+ * neighbour (beast, not b / east). A word of 1 letter (o') stays whole.
+ * @param {string} word @param {string[]} syl
+ */
+function join(word, syl) {
+  const n = [...word].length;
+  if (n <= 1 || n !== word.length) return n <= 1 ? [word] : syl;
+  const w = word.toLowerCase();
+  const vowel = vowelsOf(w);
+  const free = new Set();
+  let at = 0;
+  for (const p of syl.slice(0, -1)) free.add((at += p.length));
+  // best[j]: the cheapest way to cut the first j letters, as [cost, sum of squared tile lengths, cut before].
+  /** @type {([number, number, number] | null)[]} */
+  const best = [[0, 0, -1]];
+  for (let j = 1; j <= n; j++) {
+    /** @type {[number, number, number] | null} */
+    let pick = null;
+    for (let k = Math.max(0, j - 5); k <= j - 2; k++) {
+      const from = best[k];
+      if (!from) continue;
+      const tile = PER_TILE + (j - k === 5 ? FIVE : 0) + (vowel.slice(k, j).some(Boolean) ? 0 : 4);
+      const cut = k > 0 && !free.has(k) ? cutCost(w, vowel, k) : 0;
+      const here = /** @type {[number, number, number]} */ ([from[0] + tile + cut, from[1] + (j - k) ** 2, k]);
+      if (!pick || less(here, pick)) pick = here;
+    }
+    best.push(pick);
+  }
+  /** @type {string[]} */
+  const out = [];
+  for (let j = n; j > 0; j = /** @type {[number, number, number]} */ (best[j])[2]) out.unshift(word.slice(/** @type {[number, number, number]} */ (best[j])[2], j));
+  return out;
+}
+
 /** A part of a word (no hyphens, no possessive mark) as its syllables. @param {string} part */
 function partSyllables(part) {
   let out = joinLoneConsonants(hyphenateSync(part, { hyphenChar: '|' }).split('|')).filter((s) => s !== '');
@@ -277,7 +329,7 @@ function piece(word) {
   if (SMALL.has(word)) return [word];
   const [, base, mark] = /** @type {RegExpExecArray} */ (/^(.*?)((?:['’]s?)?-?)$/.exec(word));
   if (!base) return [word];
-  const out = (compoundOf(base) ?? [base]).flatMap(partSyllables);
+  const out = join(base, (compoundOf(base) ?? [base]).flatMap(partSyllables));
   out[out.length - 1] += mark;
   return out;
 }
@@ -308,8 +360,20 @@ export function syllablesFile(items) {
   return `{\n${lines.join(',\n')}\n}\n`;
 }
 
+/**
+ * The made-up names' file, as this script writes it: each name once, by name, in the order fakes.json lists them.
+ * @param {Record<string, string[]>} fakes
+ */
+export function fakeSyllablesFile(fakes) {
+  const names = [...new Set(Object.values(fakes).flat())];
+  const lines = names.map((name) => `  ${JSON.stringify(name)}: ${JSON.stringify(syllablesOf(name))}`);
+  return `{\n${lines.join(',\n')}\n}\n`;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const items = JSON.parse(readFileSync(ITEMS, 'utf8'));
   writeFileSync(OUT, syllablesFile(items));
-  console.log(`Wrote ${items.length} names to src/data/syllables.json.`);
+  const fakes = JSON.parse(readFileSync(FAKES, 'utf8'));
+  writeFileSync(FAKES_OUT, fakeSyllablesFile(fakes));
+  console.log(`Wrote ${items.length} names to src/data/syllables.json and ${Object.values(fakes).flat().length} made-up ones to src/data/fakeSyllables.json.`);
 }

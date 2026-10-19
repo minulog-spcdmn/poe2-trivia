@@ -8,30 +8,29 @@ import {
   MAP_NODES,
   MAX_BOSS_MODS,
   SEED_GAP,
-  SEED_STEPS,
   ZONE_TYPES,
   buildGraph,
+  corruptedAt,
   creep,
   rollBossMods,
   rollPlaces,
   seedFronts,
+  seedSteps,
   weighted,
-  type Corrupt,
   type Front,
-  type Hidden,
   type MapGraph,
   type MapNode,
   type Place,
 } from '../src/wraeclast/map.ts';
-import { Run, DEFAULT_TUNING, MAX_TILES, gridAdjacency, type Tuning } from '../src/wraeclast/rules.ts';
-import { arrive, nodeAt, playOn, wrongLine } from '../src/qa/benches/wraeclastSetup.ts';
+import { Run, BLOOD_TOLL, DEFAULT_TUNING, MAX_TILES, gridAdjacency, type Tuning } from '../src/wraeclast/rules.ts';
+import { arrive, playOn, wrongLine } from '../src/qa/benches/wraeclastSetup.ts';
 
 // The Wraeclast run's map (src/wraeclast/map.ts) and its corruption in a run
-// (src/wraeclast/rules.ts) held to the handoff, docs/handoff/wraeclast/v3.md
-// ("The map", "Corruption"). The paths are worked out again here from the
-// handoff's rule, on the owner's map and on made-up ones (the owner is still
-// placing nodes, so the code must take any file); each run's rolls are
-// seeded, so every test plays the same every time.
+// (src/wraeclast/rules.ts) held to the v4 handoff,
+// docs/wraeclast/prototype-v4-handoff.md ("The route", "Corruption"), with
+// the paths as v3 built them. The paths are worked out again here from that
+// rule, on the owner's map and on made-up ones (the code must take any file);
+// each run's rolls are seeded, so every test plays the same every time.
 
 const tuned = (change: (t: Tuning) => void) => {
   const t = structuredClone(DEFAULT_TUNING);
@@ -85,20 +84,45 @@ const allZones = (g: MapGraph): Record<string, Place> =>
   Object.fromEntries(g.nodes.map((n) => [n.id, n.kind === 'open' ? { kind: 'zone', type: 'plain' } : { kind: n.kind }])) as Record<string, Place>;
 
 const front = (at: string, id = 0): Front => ({ id, at, alive: true, stoppedAt: null });
-const W = DEFAULT_TUNING.corruption.weights;
 const stepOf = (id: string) => GRAPH.byId.get(id)!.step;
+const ZIGGURAT = 'ziggurat-encampment';
+const FOREST = 'the-forest-encampment';
 
 // ---- The paths ----
 
-test("the owner's map: a camp at step 0, a boss at step 16, 1 to 4 nodes a step", () => {
+test("the owner's map: a camp at step 0, The Cathedral Rooftop at step 10, every step between held, its 37 nodes each once", () => {
   assert.equal(GRAPH.nodes, MAP_NODES);
-  assert.deepEqual([GRAPH.camp.kind, GRAPH.camp.step, GRAPH.boss.kind, GRAPH.boss.step], ['camp', 0, 'boss', 16]);
-  for (const s of GRAPH.steps) {
-    const n = GRAPH.atStep.get(s)!.length;
-    assert.ok(n >= 1 && n <= 4, `step ${s}: ${n} nodes`);
-  }
-  assert.deepEqual(GRAPH.steps, [...GRAPH.steps].sort((a, b) => a - b));
+  assert.equal(GRAPH.nodes.length, 37);
+  assert.deepEqual([GRAPH.camp.kind, GRAPH.camp.step, GRAPH.boss.kind, GRAPH.boss.step, GRAPH.boss.name], ['camp', 0, 'boss', 10, 'The Cathedral Rooftop']);
+  assert.deepEqual(GRAPH.steps, Array.from({ length: 11 }, (_, s) => s));
   assert.equal(new Set(GRAPH.nodes.map((n) => n.id)).size, GRAPH.nodes.length);
+  // The camp and the boss alone at their ends; the other steps offer a choice.
+  for (const s of GRAPH.steps) {
+    const here = GRAPH.atStep.get(s)!;
+    if (here.some((n) => n.kind !== 'open')) assert.equal(here.length, 1, `step ${s}`);
+    else assert.ok(here.length >= 2, `step ${s}: ${here.length} nodes`);
+  }
+});
+
+test('its towns: Ziggurat Encampment at step 4 and The Forest Encampment at step 7, each alone on its step, so every route passes both', () => {
+  const towns = GRAPH.nodes.filter((n) => n.kind === 'town');
+  assert.deepEqual(
+    towns.map((n) => [n.name, n.step]),
+    [
+      ['Ziggurat Encampment', 4],
+      ['The Forest Encampment', 7],
+    ],
+  );
+  for (const t of towns) {
+    assert.deepEqual(GRAPH.atStep.get(t.step), [t]);
+    // Every node the step before links only to it, and every node the step after only from it.
+    for (const n of GRAPH.atStep.get(t.step - 1)!) assert.deepEqual(GRAPH.next[n.id], [t.id], n.id);
+    for (const n of GRAPH.atStep.get(t.step + 1)!) assert.deepEqual(GRAPH.prev[n.id], [t.id], n.id);
+    // Without it, the camp reaches no node past it.
+    const cut = buildGraph(MAP_NODES);
+    for (const id of cut.prev[t.id]) cut.next[id] = [];
+    assert.ok(!reach(cut, cut.camp.id).has(cut.boss.id), t.id);
+  }
 });
 
 test('each node links forward only, to the next non-empty step, and the links back mirror them', () => {
@@ -145,11 +169,10 @@ test('every node past the camp has a link in, and every node before the boss a l
   assert.deepEqual([GRAPH.prev[GRAPH.camp.id], GRAPH.next[GRAPH.boss.id]], [[], []]);
 });
 
-test('the boss is reachable from the camp, and so is every node', () => {
+test('every node is reachable from the camp, and every node leads on to the boss', () => {
   for (const g of [GRAPH, buildGraph(MADE_UP)]) {
-    const seen = reach(g, g.camp.id);
-    assert.ok(seen.has(g.boss.id));
-    assert.equal(seen.size, g.nodes.length);
+    assert.equal(reach(g, g.camp.id).size, g.nodes.length);
+    for (const n of g.nodes) assert.ok(reach(g, n.id).has(g.boss.id), `${n.id} leads to the boss`);
   }
 });
 
@@ -192,22 +215,23 @@ test('the first and last steps between the camp and the boss are always zones, e
         else assert.equal(p.kind, 'well', `${n.id} on seed ${seed}`);
       }
     }
-  assert.deepEqual([GRAPH.steps[1], GRAPH.steps.at(-2)], [1, 15]);
+  assert.deepEqual([GRAPH.steps[1], GRAPH.steps.at(-2)], [1, 9]);
 });
 
-test('about 1 open node in 6 is a Well, over many seeds', () => {
+test(`about ${100 - DEFAULT_TUNING.zoneShare}% of the open nodes between are Wells, over many seeds`, () => {
   let wells = 0;
   let open = 0;
   for (let seed = 1; seed <= 600; seed++) {
     const places = rollPlaces(GRAPH, DEFAULT_TUNING.zoneShare, seededRandom(seed));
     for (const n of GRAPH.nodes)
-      if (n.kind === 'open' && n.step !== 1 && n.step !== 15) {
+      if (n.kind === 'open' && n.step !== 1 && n.step !== 9) {
         open++;
         if (places[n.id].kind === 'well') wells++;
       }
   }
-  const share = wells / open;
-  assert.ok(share > 0.13 && share < 0.21, `${(share * 100).toFixed(1)}% Wells`);
+  const share = (wells / open) * 100;
+  const want = 100 - DEFAULT_TUNING.zoneShare;
+  assert.ok(Math.abs(share - want) < 3, `${share.toFixed(1)}% Wells`);
 });
 
 test('no Wells at a zone share of 100', () => {
@@ -232,274 +256,401 @@ test("every zone gets a type, a step's zones differ where they can, and every ty
 
 // ---- Corruption seeds ----
 
-test(`seeds sit on zones at steps ${SEED_STEPS[0]} to ${SEED_STEPS[1]}, as many as asked, each once, with a modifier`, () => {
+test('seeds go in the route\'s first half, from step 2: steps 2 to 5 on the owner\'s map', () => {
+  assert.deepEqual(seedSteps(GRAPH), [2, 5]);
+  const ending = (last: number) => buildGraph([node('camp', 0, 0.5, 0, 'camp'), ...Array.from({ length: last - 1 }, (_, i) => node(`n${i + 1}`, i + 1, 0.5, 0.1)), node('boss', last, 0.5, 1, 'boss')]);
+  assert.deepEqual(seedSteps(ending(16)), [2, 8]);
+  assert.deepEqual(seedSteps(ending(7)), [2, 3]);
+  // A route too short for a first half still seeds at step 2.
+  assert.deepEqual(seedSteps(ending(3)), [2, 2]);
+  assert.deepEqual(HIDDEN, ['blood']);
+});
+
+test('fronts seed on zones at steps 2 to 5, as many as asked (as the zones there allow), each on its own zone, alive', () => {
+  const [lo, hi] = seedSteps(GRAPH);
   for (let seed = 1; seed <= 200; seed++) {
     const rng = seededRandom(seed);
     const places = rollPlaces(GRAPH, DEFAULT_TUNING.zoneShare, rng);
-    const zones = GRAPH.nodes.filter((n) => n.step >= 3 && n.step <= 7 && places[n.id].kind === 'zone');
+    const zones = GRAPH.nodes.filter((n) => n.step >= lo && n.step <= hi && places[n.id].kind === 'zone');
     for (const count of [0, 1, 3, 5]) {
-      const { corrupt, fronts } = seedFronts(GRAPH, places, count, W, rng);
+      const fronts = seedFronts(GRAPH, places, count, rng);
       assert.equal(fronts.length, Math.min(count, zones.length));
-      assert.deepEqual(Object.keys(corrupt).sort(), fronts.map((f) => f.at).sort());
+      assert.equal(new Set(fronts.map((f) => f.at)).size, fronts.length, `seed ${seed}: a zone twice`);
       fronts.forEach((f, i) => {
         const n = GRAPH.byId.get(f.at)!;
-        assert.ok(n.step >= 3 && n.step <= 7, `${f.at} at step ${n.step}`);
+        assert.ok(n.step >= lo && n.step <= hi, `${f.at} at step ${n.step}`);
         assert.equal(places[f.at].kind, 'zone');
         assert.deepEqual(f, { id: i, at: f.at, alive: true, stoppedAt: null });
-        assert.ok(HIDDEN.includes(corrupt[f.at].hidden));
-        assert.equal(corrupt[f.at].cleansed, false);
       });
     }
   }
-});
-
-test("seeds' modifiers follow the weights", () => {
-  const places = rollPlaces(GRAPH, 100, seededRandom(4));
-  for (const h of HIDDEN) {
-    const only = Object.fromEntries(HIDDEN.map((k) => [k, k === h ? 1 : 0])) as Record<Hidden, number>;
-    const { corrupt } = seedFronts(GRAPH, places, 3, only, seededRandom(5));
-    assert.ok(Object.values(corrupt).every((c) => c.hidden === h), h);
-  }
-  // Every weight 0: a Bounty, the modifier with no catch.
-  const none = Object.fromEntries(HIDDEN.map((k) => [k, 0])) as Record<Hidden, number>;
-  assert.ok(Object.values(seedFronts(GRAPH, places, 3, none, seededRandom(5)).corrupt).every((c) => c.hidden === 'bounty'));
+  // No zones there, no fronts.
+  const wells = Object.fromEntries(GRAPH.nodes.map((n) => [n.id, n.kind === 'open' ? { kind: 'well' } : { kind: n.kind }])) as Record<string, Place>;
+  assert.deepEqual(seedFronts(GRAPH, wells, 3, seededRandom(1)), []);
 });
 
 test(`seeds sit at least ${SEED_GAP} apart across the map when the map keeps them apart, and fill in close when it can't`, () => {
-  // Three groups far apart, two nodes each close together: any 3 picks one of each.
+  // Three groups far apart, two nodes each close together, all at steps 2 to 5: any 3 picks one of each.
   const nodes = [
     node('camp', 0, 0.5, 0, 'camp'),
     node('s1', 1, 0.5, 0.1),
-    node('s2', 2, 0.5, 0.2),
-    node('l1', 3, 0.1, 0.3),
-    node('l2', 4, 0.12, 0.4),
-    node('m1', 5, 0.5, 0.5),
-    node('m2', 6, 0.52, 0.6),
-    node('r1', 7, 0.9, 0.7),
-    node('r2', 7, 0.88, 0.75),
-    node('end', 8, 0.5, 0.8),
-    node('boss', 9, 0.5, 0.9, 'boss'),
+    node('l1', 2, 0.1, 0.2),
+    node('r1', 2, 0.9, 0.2),
+    node('l2', 3, 0.12, 0.3),
+    node('r2', 3, 0.88, 0.3),
+    node('m1', 4, 0.5, 0.4),
+    node('m2', 5, 0.52, 0.5),
+    ...[6, 7, 8, 9].map((s) => node(`e${s}`, s, 0.5, s / 10)),
+    node('boss', 10, 0.5, 1, 'boss'),
   ];
   const g = buildGraph(nodes);
+  assert.deepEqual(seedSteps(g), [2, 5]);
   const places = rollPlaces(g, 100, seededRandom(1));
   for (let seed = 1; seed <= 100; seed++) {
-    const { fronts } = seedFronts(g, places, 3, W, seededRandom(seed));
+    const fronts = seedFronts(g, places, 3, seededRandom(seed));
     assert.deepEqual(fronts.map((f) => f.at[0]).sort(), ['l', 'm', 'r'], `seed ${seed}`);
   }
   // All in one column: no way to keep them apart, so 3 still seed.
   const column = nodes.map((n) => ({ ...n, x: 0.5 }));
   const cg = buildGraph(column);
-  assert.equal(seedFronts(cg, rollPlaces(cg, 100, seededRandom(1)), 3, W, seededRandom(2)).fronts.length, 3);
+  assert.equal(seedFronts(cg, rollPlaces(cg, 100, seededRandom(1)), 3, seededRandom(2)).length, 3);
 });
 
 test("on the owner's map, seeds sit apart whenever some 3 of its zones there could (\"on different branches where possible\")", () => {
-  // seedFronts keeps the first zones of a shuffle that sit apart, so an early
-  // pick in the middle can leave no third far enough from both, though another
-  // choice of three would have been.
-  let fails = 0;
+  const [lo, hi] = seedSteps(GRAPH);
   let possible = 0;
   for (let seed = 1; seed <= 300; seed++) {
     const rng = seededRandom(seed);
     const places = rollPlaces(GRAPH, DEFAULT_TUNING.zoneShare, rng);
-    const { fronts } = seedFronts(GRAPH, places, 3, W, rng);
-    const xs = GRAPH.nodes.filter((n) => n.step >= 3 && n.step <= 7 && places[n.id].kind === 'zone').map((n) => n.x);
+    const fronts = seedFronts(GRAPH, places, 3, rng);
+    const xs = GRAPH.nodes.filter((n) => n.step >= lo && n.step <= hi && places[n.id].kind === 'zone').map((n) => n.x);
     const apart = (p: number[]) => p.every((a, i) => p.every((b, j) => i === j || Math.abs(a - b) >= SEED_GAP));
     let can = false;
     for (let a = 0; a < xs.length; a++) for (let b = a + 1; b < xs.length; b++) for (let c = b + 1; c < xs.length; c++) can ||= apart([xs[a], xs[b], xs[c]]);
     if (!can) continue;
     possible++;
-    if (!apart(fronts.map((f) => GRAPH.byId.get(f.at)!.x))) fails++;
+    assert.ok(apart(fronts.map((f) => GRAPH.byId.get(f.at)!.x)), `seed ${seed}: ${fronts.map((f) => f.at)} sit close, though 3 there could sit apart`);
   }
-  assert.ok(possible > 0);
-  assert.equal(fails, 0, `${fails} of ${possible} seeds left seeds close that could have sat apart`);
+  assert.ok(possible > 200, `${possible} of 300`);
+});
+
+test('a node is corrupted while a live front stands on it, and only then', () => {
+  const fronts: Front[] = [front('the-library', 0), { id: 1, at: 'pondium', alive: false, stoppedAt: 'pondium' }];
+  assert.equal(corruptedAt(fronts, 'the-library'), true);
+  assert.equal(corruptedAt(fronts, 'pondium'), false);
+  assert.equal(corruptedAt(fronts, 'buried-shrines'), false);
+  assert.equal(corruptedAt([], 'the-library'), false);
+  // A run reads the same, and never a node that isn't a zone.
+  const run = new Run({ seed: 1 });
+  run.state.places = allZones(GRAPH);
+  run.state.fronts = [...fronts, front(ZIGGURAT, 2)];
+  assert.deepEqual(
+    ['the-library', 'pondium', 'buried-shrines', ZIGGURAT].map((id) => run.corrupted(id)),
+    [true, false, false, false],
+  );
 });
 
 // ---- Creep ----
 
-test('creep never enters a step at or behind the player, and a front only ever moves forward', () => {
+test('creep never enters a step at or behind the player, and a front only ever moves forward, onto a zone', () => {
   for (let seed = 1; seed <= 150; seed++) {
     const rng = seededRandom(seed);
     const places = rollPlaces(GRAPH, DEFAULT_TUNING.zoneShare, rng);
-    const { corrupt, fronts } = seedFronts(GRAPH, places, 5, W, rng);
-    for (let player = 0; player <= 16; player++) {
+    const fronts = seedFronts(GRAPH, places, 5, rng);
+    for (let player = 0; player <= GRAPH.boss.step; player++) {
       const was = fronts.map((f) => f.at);
-      const fresh = creep(GRAPH, places, corrupt, fronts, player, W, rng);
-      for (const id of fresh) assert.ok(stepOf(id) > player, `${id} at step ${stepOf(id)}, the player at ${player}`);
-      fronts.forEach((f, i) => {
-        if (f.at === was[i]) return;
-        assert.ok(stepOf(f.at) > player, `front ${i} into ${f.at}, the player at ${player}`);
-        assert.ok(stepOf(f.at) > stepOf(was[i]));
-        assert.equal(places[f.at].kind, 'zone');
-      });
+      const moves = creep(GRAPH, places, fronts, player, rng);
+      // One move for each front that moved, from where it was to where it is.
+      assert.deepEqual(
+        moves,
+        fronts.flatMap((f, i) => (f.at === was[i] ? [] : [{ front: f.id, from: was[i], to: f.at }])),
+      );
+      for (const m of moves) {
+        assert.ok(stepOf(m.to) > player, `${m.to} at step ${stepOf(m.to)}, the player at ${player}`);
+        assert.ok(stepOf(m.to) > stepOf(m.from));
+        assert.equal(places[m.to].kind, 'zone');
+      }
     }
+    // Past the last zones, every front waits where it is, alive.
+    assert.ok(fronts.every((f) => f.alive && places[f.at].kind === 'zone'));
   }
 });
 
-test("a front creeps one step, into one zone it links to, at random, and that zone rolls its modifier", () => {
+test('a front creeps one step, into one zone it links to, at random, and the zone it left is normal again', () => {
   const places = allZones(GRAPH);
   const from = 'the-red-vale';
   const seen = new Set<string>();
   for (let seed = 1; seed <= 40; seed++) {
-    const corrupt: Record<string, Corrupt> = { [from]: { hidden: 'bounty', cleansed: false } };
     const fronts = [front(from)];
-    const fresh = creep(GRAPH, places, corrupt, fronts, 0, W, seededRandom(seed));
+    const moves = creep(GRAPH, places, fronts, 0, seededRandom(seed));
     assert.ok(GRAPH.next[from].includes(fronts[0].at));
-    assert.deepEqual(fresh, [fronts[0].at]);
-    assert.ok(HIDDEN.includes(corrupt[fronts[0].at].hidden));
-    // The node it left stays corrupted.
-    assert.deepEqual(corrupt[from], { hidden: 'bounty', cleansed: false });
+    assert.deepEqual(moves, [{ front: 0, from, to: fronts[0].at }]);
+    assert.deepEqual([corruptedAt(fronts, from), corruptedAt(fronts, fronts[0].at)], [false, true]);
     seen.add(fronts[0].at);
   }
   assert.deepEqual([...seen].sort(), [...GRAPH.next[from]].sort());
 });
 
+test('a front creeps onto a zone no other live front stands on where it can, else onto one that does', () => {
+  const places = allZones(GRAPH);
+  assert.deepEqual(GRAPH.next['the-red-vale'], ['kaom-s-stronghold', 'ogham-manor']);
+  for (let seed = 1; seed <= 20; seed++) {
+    // Front 1 on Kaom's Stronghold: front 0 takes Ogham Manor.
+    const fronts = [front('the-red-vale', 0), front('kaom-s-stronghold', 1)];
+    creep(GRAPH, places, fronts, 0, seededRandom(seed));
+    assert.equal(fronts[0].at, 'ogham-manor', `seed ${seed}`);
+    // Both held: it creeps onto one all the same.
+    const held = [front('the-red-vale', 0), front('kaom-s-stronghold', 1), front('ogham-manor', 2)];
+    creep(GRAPH, places, held, 0, seededRandom(seed));
+    assert.ok(GRAPH.next['the-red-vale'].includes(held[0].at), held[0].at);
+    // A stopped front holds no zone.
+    const stopped = [front('the-red-vale', 0), { id: 1, at: 'ogham-manor', alive: false, stoppedAt: 'ogham-manor' }];
+    const seen = new Set<string>();
+    for (let k = 0; k < 20; k++) {
+      const f = structuredClone(stopped);
+      creep(GRAPH, places, f, 0, seededRandom(seed * 100 + k));
+      seen.add(f[0].at);
+    }
+    assert.ok(seen.has('ogham-manor'), `seed ${seed}`);
+  }
+});
+
 test('a front facing only a town jumps through it to a zone the step after', () => {
   const places = allZones(GRAPH);
-  // The Library (step 7) faces only the town at step 8.
-  assert.deepEqual(GRAPH.next['the-library'], ['ziggurat-encampment']);
-  const fronts = [front('the-library')];
-  const fresh = creep(GRAPH, places, {}, fronts, 0, W, seededRandom(1));
-  assert.ok(GRAPH.next['ziggurat-encampment'].includes(fronts[0].at), fronts[0].at);
-  assert.equal(stepOf(fronts[0].at), 9);
-  assert.deepEqual(fresh, [fronts[0].at]);
+  for (const [from, town] of [
+    ['the-library', ZIGGURAT],
+    ['holten', FOREST],
+  ]) {
+    assert.deepEqual(GRAPH.next[from], [town]);
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 60; seed++) {
+      const fronts = [front(from)];
+      const moves = creep(GRAPH, places, fronts, 0, seededRandom(seed));
+      assert.deepEqual(moves, [{ front: 0, from, to: fronts[0].at }]);
+      assert.equal(stepOf(fronts[0].at), stepOf(town) + 1);
+      seen.add(fronts[0].at);
+    }
+    assert.deepEqual([...seen].sort(), [...GRAPH.next[town]].sort(), from);
+  }
 });
 
 test('a front facing only Wells jumps through them to a zone the step after', () => {
   const places = allZones(GRAPH);
-  places['buried-shrines'] = { kind: 'well' };
-  const fronts = [front('kaom-s-stronghold')];
-  creep(GRAPH, places, {}, fronts, 0, W, seededRandom(2));
-  assert.ok(GRAPH.next['buried-shrines'].includes(fronts[0].at), fronts[0].at);
-  assert.equal(places['buried-shrines'].kind, 'well');
-});
-
-test('a front with nowhere to go waits: facing only the boss, or Wells and towns with only the boss after', () => {
-  const places = allZones(GRAPH);
-  const last = GRAPH.prev[GRAPH.boss.id][0];
-  const fronts = [front(last)];
-  assert.deepEqual(creep(GRAPH, places, {}, fronts, 0, W, seededRandom(1)), []);
-  assert.equal(fronts[0].at, last);
-  for (const n of GRAPH.atStep.get(15)!) if (n.kind === 'open') places[n.id] = { kind: 'well' };
-  const before = [front('tidal-island')];
-  assert.deepEqual(creep(GRAPH, places, {}, before, 0, W, seededRandom(1)), []);
-  assert.equal(before[0].at, 'tidal-island');
-});
-
-test("a front whose zones ahead the player stands on or has passed waits", () => {
-  const places = allZones(GRAPH);
+  places['kaom-s-stronghold'] = { kind: 'well' };
+  places['ogham-manor'] = { kind: 'well' };
   const fronts = [front('the-red-vale')];
-  // The player at step 2: every zone the front links to is at the player's step.
-  assert.deepEqual(creep(GRAPH, places, {}, fronts, 3, W, seededRandom(1)), []);
-  assert.equal(fronts[0].at, 'the-red-vale');
+  creep(GRAPH, places, fronts, 0, seededRandom(2));
+  const beyond = new Set([...GRAPH.next['kaom-s-stronghold'], ...GRAPH.next['ogham-manor']]);
+  assert.ok(beyond.has(fronts[0].at), fronts[0].at);
+  assert.equal(stepOf(fronts[0].at), 3);
 });
 
-test("a front facing only zones at the player's step waits: it jumps only through towns, Wells or the boss", () => {
-  // creep (map.ts) treats a zone at or behind the player like a town or a
-  // Well and jumps through it, so a front just behind the player leaps past
-  // the player's step. The handoff jumps only a front "facing only towns,
-  // Wells or the boss"; any other front with nowhere to go waits.
+test('a front with nowhere to go waits: facing only the boss, or Wells with only a town or the boss after', () => {
   const places = allZones(GRAPH);
-  assert.deepEqual(GRAPH.next['kaom-s-stronghold'], ['buried-shrines']);
-  const fronts = [front('kaom-s-stronghold')];
-  // The player on Buried Shrines (step 6), the only node the front faces.
-  assert.deepEqual(creep(GRAPH, places, {}, fronts, 6, W, seededRandom(1)), []);
-  assert.equal(fronts[0].at, 'kaom-s-stronghold');
+  for (const n of GRAPH.prev[GRAPH.boss.id]) {
+    const fronts = [front(n)];
+    assert.deepEqual(creep(GRAPH, places, fronts, 0, seededRandom(1)), []);
+    assert.equal(fronts[0].at, n);
+  }
+  // Step 9 all Wells: a front at step 8 faces them, then only the boss.
+  for (const n of GRAPH.atStep.get(9)!) places[n.id] = { kind: 'well' };
+  const late = [front('tidal-island')];
+  assert.deepEqual(creep(GRAPH, places, late, 0, seededRandom(1)), []);
+  assert.equal(late[0].at, 'tidal-island');
+  // Step 3 all Wells: a front at step 2 faces them, then only the town; it jumps once, never twice.
+  for (const n of GRAPH.atStep.get(3)!) places[n.id] = { kind: 'well' };
+  const early = [front('kaom-s-stronghold')];
+  assert.deepEqual(creep(GRAPH, places, early, 0, seededRandom(1)), []);
+  assert.equal(early[0].at, 'kaom-s-stronghold');
+});
+
+test("a front whose zones ahead are at the player's step waits: it jumps only through towns, Wells or the boss", () => {
+  const places = allZones(GRAPH);
+  // The player at step 2: every zone the front links to is at the player's step.
+  const fronts = [front('the-red-vale')];
+  assert.deepEqual(creep(GRAPH, places, fronts, 2, seededRandom(1)), []);
+  assert.equal(fronts[0].at, 'the-red-vale');
+  // Past a town too: the zones after it at or behind the player.
+  const town = [front('the-library')];
+  assert.deepEqual(creep(GRAPH, places, town, 5, seededRandom(1)), []);
+  assert.equal(town[0].at, 'the-library');
 });
 
 test('a stopped front stays where it was stopped', () => {
   const places = allZones(GRAPH);
   const fronts: Front[] = [{ id: 0, at: 'the-red-vale', alive: false, stoppedAt: 'the-red-vale' }, front('freythorn', 1)];
-  const fresh = creep(GRAPH, places, {}, fronts, 0, W, seededRandom(3));
+  const moves = creep(GRAPH, places, fronts, 0, seededRandom(3));
   assert.deepEqual(fronts[0], { id: 0, at: 'the-red-vale', alive: false, stoppedAt: 'the-red-vale' });
-  assert.deepEqual(fresh, [fronts[1].at]);
+  assert.deepEqual(moves, [{ front: 1, from: 'freythorn', to: fronts[1].at }]);
   assert.notEqual(fronts[1].at, 'freythorn');
-});
-
-test('a front into a zone corrupted already moves there, but rolls no new modifier', () => {
-  const places = allZones(GRAPH);
-  const corrupt: Record<string, Corrupt> = {};
-  for (const id of GRAPH.next['the-red-vale']) corrupt[id] = { hidden: 'bounty', cleansed: true };
-  const fronts = [front('the-red-vale')];
-  const dark = Object.fromEntries(HIDDEN.map((k) => [k, k === 'dark' ? 1 : 0])) as Record<Hidden, number>;
-  assert.deepEqual(creep(GRAPH, places, corrupt, fronts, 0, dark, seededRandom(1)), []);
-  assert.ok(GRAPH.next['the-red-vale'].includes(fronts[0].at));
-  assert.deepEqual(corrupt[fronts[0].at], { hidden: 'bounty', cleansed: true });
 });
 
 // ---- Corruption in a run ----
 
-/** A run arrived at a zone at step `step`, corrupted with `hidden` and the head of front 0 (front 1 elsewhere). */
-function atFront(seed: number, hidden: Hidden = 'bounty', step = 5) {
-  const run = new Run({ seed, tuning: tuned((t) => (t.missCost.early = [1, 1])) });
-  const id = nodeAt(step);
-  arrive(run, id, { place: { kind: 'zone', type: 'plain' }, hidden });
-  run.state.fronts = [front(id, 0), front('pondium', 1)];
-  run.state.corrupt.pondium = { hidden: 'dark', cleansed: false };
-  return { run, id };
-}
-
 test("a run seeds the tuning's fronts as it starts, and logs how many", () => {
+  assert.deepEqual(DEFAULT_TUNING.corruption, { seeds: 3, creep: 2, multiplier: 2 });
   for (const seeds of [0, 1, 3, 5]) {
     const s = new Run({ seed: 2, tuning: tuned((t) => (t.corruption.seeds = seeds)) }).state;
     assert.equal(s.fronts.length, seeds);
-    assert.equal(Object.keys(s.corrupt).length, seeds);
+    assert.ok(s.fronts.every((f) => f.alive && s.places[f.at].kind === 'zone'));
+    assert.deepEqual([s.steps, s.crept, s.moves], [0, 0, []]);
     assert.deepEqual(s.log.fronts, { seeded: seeds, stopped: 0, aliveAtBoss: null });
   }
 });
 
-test("cleansing a corrupted zone at a front's head (every item answered) stops that front for good", () => {
-  const { run, id } = atFront(3);
+/** Plays a run to the boss's threshold, recording at each arrival its step count, creepIn(), and what the fronts crept as. */
+function travel(seed: number, every: number) {
+  const run = new Run({ seed, tuning: tuned((t) => ((t.corruption.creep = every), (t.corruption.seeds = 5))) });
   const s = run.state;
-  assert.equal(run.hiddenHere(), 'bounty');
-  playOn(run, () => s.phase === 'map');
-  assert.equal(s.visit, null);
-  assert.deepEqual(s.corrupt[id], { hidden: 'bounty', cleansed: true });
-  assert.deepEqual(s.fronts[0], { id: 0, at: id, alive: false, stoppedAt: id });
-  assert.deepEqual(s.fronts[1], front('pondium', 1));
-  assert.equal(s.log.fronts.stopped, 1);
-  assert.equal(run.hiddenHere(), null);
-  // It creeps no more.
-  creep(GRAPH, s.places, s.corrupt, s.fronts, 0, W, seededRandom(1));
-  assert.equal(s.fronts[0].at, id);
+  const arrivals: { steps: number; creepIn: number; crept: number }[] = [];
+  const crept: { at: number; playerStep: number; moves: number }[] = [];
+  let ats = s.fronts.map((f) => f.at).join();
+  let lastCrept = 0;
+  assert.equal(run.creepIn(), every);
+  playOn(run, () => {
+    if (s.crept !== lastCrept) {
+      crept.push({ at: s.crept, playerStep: run.node.step, moves: s.moves.length });
+      lastCrept = s.crept;
+    }
+    const now = s.fronts.map((f) => f.at).join();
+    // The fronts move only as they creep.
+    if (now !== ats) assert.equal(crept.at(-1)?.at, s.crept, `moved at step count ${s.steps} without a creep`);
+    ats = now;
+    if (arrivals.at(-1)?.steps !== s.steps) arrivals.push({ steps: s.steps, creepIn: run.creepIn(), crept: s.crept });
+    return s.phase === 'boss';
+  });
+  return { run, arrivals, crept };
+}
+
+test('the fronts creep every `creep` steps the player takes, as a node is left, and creepIn() says when next', () => {
+  for (const every of [1, 2, 3])
+    for (let seed = 1; seed <= 15; seed++) {
+      const { run, arrivals, crept } = travel(seed, every);
+      const s = run.state;
+      assert.equal(s.phase, 'boss', `seed ${seed}`);
+      // One creep each multiple of `every` short of the boss (it's never left), and none else.
+      const want = Array.from({ length: Math.floor((GRAPH.boss.step - 1) / every) }, (_, i) => (i + 1) * every);
+      assert.deepEqual(
+        crept.map((c) => c.at),
+        want,
+        `every ${every} on seed ${seed}`,
+      );
+      // Each as the node at that step count is left (the route takes one node a step).
+      for (const c of crept) assert.equal(c.playerStep, c.at);
+      // creepIn() at each arrival: the creep comes as the node that many steps on is left.
+      for (const a of arrivals) {
+        const next = a.steps + a.creepIn;
+        if (next >= GRAPH.boss.step) continue;
+        assert.ok(a.creepIn >= 0 && a.creepIn <= every);
+        assert.ok(want.includes(next), `every ${every}, at ${a.steps}: creepIn ${a.creepIn}`);
+        assert.equal(Math.min(...want.filter((w) => w > a.crept)), next, `every ${every}, at ${a.steps}: creepIn ${a.creepIn}`);
+      }
+    }
 });
 
-test("cleansing a corrupted zone no front's head is on stops no front", () => {
-  const { run, id } = atFront(4);
+test("a front stops when the player clears its zone and leaves it; that zone is normal again, and the run's other fronts creep on", () => {
+  const run = new Run({ seed: 3, tuning: tuned((t) => (t.missCost.early = [1, 1])) });
   const s = run.state;
-  s.fronts[0].at = 'the-library';
-  playOn(run, () => s.phase === 'map');
-  assert.equal(s.corrupt[id].cleansed, true);
+  const id = 'the-library';
+  arrive(run, id, { place: { kind: 'zone', type: 'plain' }, hidden: 'blood' });
+  const mine = s.fronts.find((f) => f.at === id)!;
+  assert.equal(run.hiddenHere(), 'blood');
+  // Leaving at step count 2, with the default creep of 2: the others creep as it stops.
+  s.steps = 2;
+  s.crept = 0;
+  const others = s.fronts.filter((f) => f !== mine).map((f) => ({ ...f }));
+  playOn(run, () => run.leaving());
+  assert.ok(run.leaving());
+  assert.deepEqual(mine, { id: mine.id, at: id, alive: false, stoppedAt: id });
+  assert.equal(s.log.fronts.stopped, 1);
+  assert.equal(run.corrupted(id), false);
+  assert.equal(run.hiddenHere(), null);
+  assert.equal(s.crept, 2);
+  assert.ok(s.moves.every((m) => m.front !== mine.id));
+  for (const was of others) {
+    const now = s.fronts.find((f) => f.id === was.id)!;
+    assert.ok(now.alive);
+    assert.ok(now.at === was.at || s.moves.some((m) => m.front === was.id && m.from === was.at && m.to === now.at));
+  }
+  // It creeps no more.
+  creep(GRAPH, s.places, s.fronts, 0, seededRandom(1));
+  assert.equal(mine.at, id);
+});
+
+test("clearing a zone no front stands on stops no front", () => {
+  const run = new Run({ seed: 4, tuning: tuned((t) => (t.missCost.early = [1, 1])) });
+  const s = run.state;
+  arrive(run, 'the-library', { place: { kind: 'zone', type: 'plain' } });
+  assert.equal(run.hiddenHere(), null);
+  playOn(run, () => run.leaving());
   assert.ok(s.fronts.every((f) => f.alive));
   assert.equal(s.log.fronts.stopped, 0);
 });
 
-test('a zone is not cleansed before its last item is answered, and a run lost in it leaves the front alive', () => {
-  const { run, id } = atFront(5);
+test('a front is not stopped before its zone\'s last item is answered, and a run lost in it leaves the front alive', () => {
+  const run = new Run({ seed: 5, tuning: tuned((t) => (t.itemsPerZone = 2)) });
   const s = run.state;
-  playOn(run, () => s.visit!.done === 2 && s.phase === 'item');
-  assert.equal(s.corrupt[id].cleansed, false);
-  assert.ok(s.fronts[0].alive);
+  const id = 'the-library';
+  arrive(run, id, { place: { kind: 'zone', type: 'plain' }, hidden: 'blood' });
+  const mine = s.fronts.find((f) => f.at === id)!;
+  playOn(run, () => s.visit!.done === 1 && s.phase === 'item');
+  assert.ok(mine.alive);
   run.open(gridAdjacency(9));
   s.life = 1;
   s.item!.build = wrongLine(s.item!, 0);
   assert.equal(run.submit(), false);
   assert.equal(s.phase, 'end');
-  assert.deepEqual([s.corrupt[id].cleansed, s.fronts[0].alive, s.log.fronts.stopped], [false, true, 0]);
+  assert.deepEqual([mine.alive, mine.stoppedAt, s.log.fronts.stopped, run.corrupted(id)], [true, null, 0, true]);
 });
 
-/** A run brought to the boss with `alive` of 5 fronts still alive, by its own travel. */
+test('a corrupted zone deals its loot times the multiplier, and each item opening there takes a Blood toll, never the last life point', () => {
+  for (const multiplier of [2, 3]) {
+    const run = new Run({ seed: 6, tuning: tuned((t) => (t.corruption.multiplier = multiplier)) });
+    const s = run.state;
+    arrive(run, 'the-library', { place: { kind: 'zone', type: 'plain' }, hidden: 'blood' });
+    assert.equal(run.dealHere(), DEFAULT_TUNING.loot.cards.plain * multiplier);
+    const life = s.life;
+    run.open(gridAdjacency(9));
+    assert.equal(BLOOD_TOLL, 10);
+    assert.deepEqual([s.item!.log.toll, s.life], [BLOOD_TOLL, life - BLOOD_TOLL]);
+    s.item!.build = [...s.item!.answer];
+    s.item!.lineMarks = null;
+    assert.equal(run.submit(), true);
+    assert.equal(s.loot!.cards.length, run.dealHere());
+    // The next item, at 5 life: the toll leaves 1.
+    run.next();
+    s.life = 5;
+    run.open(gridAdjacency(9));
+    assert.deepEqual([s.item!.log.toll, s.life], [4, 1]);
+  }
+  // Uncorrupted, the zone's own loot and no toll.
+  const run = new Run({ seed: 6 });
+  arrive(run, 'the-library', { place: { kind: 'zone', type: 'plain' } });
+  assert.equal(run.dealHere(), DEFAULT_TUNING.loot.cards.plain);
+  const life = run.state.life;
+  run.open(gridAdjacency(9));
+  assert.equal(run.state.life, life);
+});
+
+// ---- The boss ----
+
+/** A run brought to the boss with `alive` of its 5 fronts still alive, by its own travel. */
 function toBoss(seed: number, alive: number) {
   const run = new Run({ seed, tuning: tuned((t) => (t.corruption.seeds = 5)) });
   const s = run.state;
-  s.fronts.forEach((f, i) => (f.alive = i < alive));
+  s.fronts.forEach((f, i) => {
+    f.alive = i < alive;
+    f.stoppedAt = i < alive ? null : f.at;
+  });
   s.at = GRAPH.prev[GRAPH.boss.id][0];
   s.phase = 'map';
   assert.ok(run.choose(GRAPH.boss.id));
   return run;
 }
 
-test(`the boss: one modifier for each front still alive, rolled without repeats, at most ${MAX_BOSS_MODS}`, () => {
+test(`the boss: one rule for each front still alive as the player arrives, rolled without repeats, at most ${MAX_BOSS_MODS}`, () => {
   assert.equal(MAX_BOSS_MODS, 3);
+  assert.deepEqual([...BOSS_MODS].sort(), ['bloodied', 'lingering', 'murky', 'teeming']);
   const seen = new Set<string>();
   for (let seed = 1; seed <= 40; seed++)
     for (let alive = 0; alive <= 5; alive++) {
@@ -511,11 +662,26 @@ test(`the boss: one modifier for each front still alive, rolled without repeats,
       assert.deepEqual(s.log.bossMods, s.bossMods);
       assert.equal(s.log.fronts.aliveAtBoss, alive);
       assert.equal(s.visit!.items, s.bossMods.includes('lingering') ? 4 : 3);
-      assert.equal(s.phase, 'zone');
+      assert.equal(s.phase, 'boss');
       for (const m of s.bossMods) seen.add(m);
     }
   assert.deepEqual([...seen].sort(), [...BOSS_MODS].sort());
   for (let alive = 0; alive <= 6; alive++) assert.equal(rollBossMods(alive, seededRandom(alive)).length, Math.min(3, alive));
+});
+
+test('a whole run counts the fronts alive at the boss: seeded, less those stopped', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const run = new Run({ seed, tuning: tuned((t) => (t.corruption.seeds = 5)) });
+    const s = run.state;
+    playOn(run, () => s.phase === 'boss', { route: seed % 2 ? 'corrupt' : 'clean' });
+    assert.equal(s.phase, 'boss');
+    const alive = s.fronts.filter((f) => f.alive).length;
+    assert.equal(s.log.fronts.aliveAtBoss, alive);
+    assert.equal(alive, s.log.fronts.seeded - s.log.fronts.stopped);
+    assert.equal(s.bossMods.length, Math.min(MAX_BOSS_MODS, alive));
+    // Each stopped front was stopped on a node the route took.
+    for (const f of s.fronts) if (!f.alive) assert.ok(s.log.route.includes(f.stoppedAt!) && f.at === f.stoppedAt);
+  }
 });
 
 test('Lingering gives the boss a 4th item, played like the 3rd, and the run is won after it', () => {
@@ -533,14 +699,18 @@ test('Lingering gives the boss a 4th item, played like the 3rd, and the run is w
     s.log.items.map((it) => [it.boss, it.zoneType]),
     Array.from({ length: 4 }, () => [true, 'boss']),
   );
-  assert.deepEqual(ranges, [[55, 65], [55, 65], [55, 65], [55, 65]]);
+  assert.deepEqual(ranges, Array.from({ length: 4 }, () => DEFAULT_TUNING.missCost.boss));
 });
 
 test('Bloodied makes a miss at the boss cost 10 more', () => {
-  for (const [mods, range] of [[[], [55, 65]], [['bloodied'], [65, 75]]] as const) {
+  const [lo, hi] = DEFAULT_TUNING.missCost.boss;
+  for (const [mods, range] of [
+    [[], [lo, hi]],
+    [['bloodied'], [lo + 10, hi + 10]],
+  ] as const) {
     const run = new Run({ seed: 7 });
     arrive(run, GRAPH.boss.id, { mods: [...mods] });
-    run.enter();
+    run.face();
     run.open(gridAdjacency(9));
     assert.deepEqual(run.missRange(), range);
     run.state.item!.build = wrongLine(run.state.item!, 0);
@@ -550,21 +720,20 @@ test('Bloodied makes a miss at the boss cost 10 more', () => {
   }
 });
 
-test('Murky halves the Flares at the boss, and Teeming adds 8 decoys there, up to MAX_TILES tiles', () => {
+test('Murky halves the Torches at the boss, and Teeming puts more tiles on its board, up to MAX_TILES', () => {
   for (let seed = 1; seed <= 10; seed++) {
     const plain = new Run({ seed });
     arrive(plain, GRAPH.boss.id);
-    plain.enter();
+    plain.face();
     const teeming = new Run({ seed });
     arrive(teeming, GRAPH.boss.id, { mods: ['teeming', 'murky'] });
-    teeming.enter();
+    teeming.face();
     const a = plain.state.item!;
     const b = teeming.state.item!;
     assert.equal(a.itemId, b.itemId);
-    const own = new Set(a.answer).size;
-    assert.equal(b.decoys.length, Math.min(a.decoys.length + 8, MAX_TILES - own), `seed ${seed}`);
     assert.ok(b.tiles.length <= MAX_TILES);
-    assert.deepEqual([plain.flareBurn(), teeming.flareBurn()], [12, 6]);
+    assert.ok(b.tiles.length > a.tiles.length || b.tiles.length === MAX_TILES, `seed ${seed}: ${a.tiles.length} to ${b.tiles.length}`);
+    assert.deepEqual([plain.flareBurn(), teeming.flareBurn()], [DEFAULT_TUNING.burnIn.flare, DEFAULT_TUNING.burnIn.flare / 2]);
   }
 });
 

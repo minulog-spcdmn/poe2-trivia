@@ -1,9 +1,9 @@
 <script module lang="ts">
-  // The map (phase 'map'): every node as the owner placed it, the paths
-  // between them, each node's kind this run (its zone type, or Camp, Town,
-  // Well, Boss) and whether it's corrupted (the hidden modifier shows only on
-  // arriving), the fronts' heads, the route taken and where the player
-  // stands. The nodes the player can go to stand out and can be tapped; under
+  // The map (past a Well, or opened from a vendor or a zone's last reveal):
+  // every node as the owner placed it, the paths between them, each node's
+  // kind this run (its zone type, or Camp, Town, Well, Boss) and whether it's
+  // corrupted (Blood toll, shown in full), the route taken and where the
+  // player stands. The nodes the player can go to stand out and can be tapped; under
   // the map the same choices are cards, the main way to pick on a phone. A
   // plain dark panel for now (no map art yet), scrolling down inside its
   // frame, never sideways.
@@ -187,9 +187,11 @@
 <script lang="ts">
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Run } from './rules';
-  import { placeDoes, placeName, plural, zoneLines } from './words';
+  import { BLOOD_TOLL } from './rules';
+  import { bloodLine, bossAdds, placeDoes, placeKind, placeName, zoneLines } from './words';
 
-  let { run }: { run: Run } = $props();
+  /** `onclose`: opened over a vendor or a reveal, it closes to go back there. */
+  let { run, onclose }: { run: Run; onclose?: () => void } = $props();
   const s = $derived(run.state);
   const here = $derived(GRAPH.byId.get(s.at)!);
   const options = $derived(run.options());
@@ -198,11 +200,11 @@
   const route = $derived(new Set(s.log.route));
   /** The route's legs, as "from>to". */
   const legs = $derived(new Set(s.log.route.slice(1).map((id, k) => `${s.log.route[k]}>${id}`)));
-  const heads = $derived(new Set(s.fronts.filter((f) => f.alive).map((f) => f.at)));
-  const live = $derived(s.fronts.filter((f) => f.alive).length);
-  const multiplier = $derived(s.tuning.corruption.multiplier);
-  const corrupted = (id: string) => !!s.corrupt[id] && !s.corrupt[id].cleansed;
-  const cleansed = (id: string) => !!s.corrupt[id]?.cleansed;
+  const corrupted = (id: string) => run.corrupted(id);
+  const every = $derived(s.tuning.corruption.creep);
+  const creepIn = $derived(run.creepIn());
+  const moved = $derived(s.moves.map((m) => `Corruption moved from ${GRAPH.byId.get(m.from)!.name} to ${GRAPH.byId.get(m.to)!.name}`).join('. '));
+  const well = $derived(s.beat?.kind === 'well' ? s.beat : null);
   /** Out of reach for good: on a step the player has passed (or beside them), and not on their route. */
   const gone = (id: string) => GRAPH.byId.get(id)!.step <= here.step && !route.has(id);
 
@@ -224,9 +226,12 @@
 
 <div class="map-screen">
   <header class="screen-title">
-    <p class="kicker">{here.step === 0 ? 'The camp' : 'Step '}{#if here.step}<span class="n">{here.step}</span> of <span class="n">{GRAPH.boss.step - 1}</span>{/if}</p>
+    <p class="kicker">{here.step === 0 ? 'The camp' : 'Step '}{#if here.step}<span class="n">{here.step}</span> of <span class="n">{GRAPH.boss.step}</span>{/if}</p>
     <h1>{here.name}</h1>
-    <p class="sub">Pick the road ahead.</p>
+    {#if well}<p class="sub beat">{here.name} • your flask {well.refilled ? 'is full again' : 'was already full'}</p>{/if}
+    {#if s.moves.length}<p class="sub beat corrupt" role="status" aria-label={moved}>The corruption moves on</p>{/if}
+    <p class="sub">Pick where to go next. The lit places are one step ahead.</p>
+    {#if onclose}<button class="btn ghost close" onclick={onclose}>Back</button>{/if}
   </header>
 
   <div class="body">
@@ -258,10 +263,8 @@
                   class:visited={route.has(n.id)}
                   class:gone={gone(n.id)}
                   class:corrupt={corrupted(n.id)}
-                  class:cleansed={cleansed(n.id)}
                   transform="translate({p.x} {p.y})"
                 >
-                  {#if heads.has(n.id)}<circle class="front" r="13" />{/if}
                   {#if offered.has(n.id)}<circle class="ring" r="12" />{/if}
                   {#if k === 'town' || k === 'camp'}
                     <rect class="dot" x="-6" y="-6" width="12" height="12" rx="1.5" />
@@ -282,9 +285,8 @@
                   {#each l.lines as line, k (k)}<tspan class="tag-name" x={cx} y={l.y0 + (k + 1) * NAME_LH - 3}>{line}</tspan>{/each}<tspan
                     class="tag-kind {s.places[n.id].kind}"
                     class:corrupt={corrupted(n.id)}
-                    class:cleansed={cleansed(n.id)}
                     x={cx}
-                    y={l.y0 + l.lines.length * NAME_LH + KIND_LH - 2}>{kinds[n.id]}</tspan
+                    y={l.y0 + l.lines.length * NAME_LH + KIND_LH - 2}>{corrupted(n.id) ? 'Blood toll' : kinds[n.id]}</tspan
                   >
                 </text>
               {/each}
@@ -299,10 +301,14 @@
       </div>
       <ul class="key" aria-hidden="true">
         <li><svg viewBox="-8 -8 16 16"><path class="you" d="M0 -6 6 0 0 6 -6 0Z" /></svg>You</li>
-        <li><svg viewBox="-8 -8 16 16"><circle class="key-corrupt" r="5" /></svg>Corrupted</li>
-        <li><svg viewBox="-14 -14 28 28"><circle class="front" r="11" /><circle class="key-corrupt" r="5" /></svg>A front</li>
-        <li><svg viewBox="-8 -8 16 16"><circle class="key-cleansed" r="5" /></svg>Cleansed</li>
+        <li><svg viewBox="-8 -8 16 16"><circle class="key-corrupt" r="5" /></svg>Blood toll (corruption): −{BLOOD_TOLL} life per item, double loot</li>
       </ul>
+      {#if s.fronts.some((f) => f.alive)}
+        <p class="foot">
+          It moves on every {every === 1 ? 'step' : every === 2 ? '2nd step' : `${every}rd step`}. Name every item in its zone to stop it.
+          {creepIn === 0 ? 'It moves after this step.' : `It moves in ${creepIn === 1 ? '1 step' : `${creepIn} steps`}.`}
+        </p>
+      {/if}
     </section>
 
     <section class="ahead" aria-labelledby="ahead-h">
@@ -316,22 +322,16 @@
             <button class="choice" class:corrupt={bad} onclick={() => go(id)}>
               <span class="head">
                 <span class="name">{n.name}</span>
-                <span class="kind">{p.kind === 'zone' ? `${placeName(p)} zone` : placeName(p)}{#if bad}<span class="bad">{' • Corrupted'}</span>{/if}</span>
+                <span class="kind">{placeKind(p)}{#if bad}<span class="bad">{' • Blood toll'}</span>{/if}</span>
               </span>
               {#if p.kind === 'zone'}
                 {@const z = zoneLines(run, p.type)}
-                <span class="row"><span class="k">Free clue</span><span>{z.free}</span></span>
-                <span class="row"><span class="k">Rule</span><span>{z.rule}</span></span>
-                {#if bad}
-                  <span class="note">A hidden modifier waits here; {multiplier === 2 ? 'twice' : `${multiplier} times`} the loot.</span>
-                {/if}
+                <span class="does">{z.free}</span>
+                {#if z.rule}<span class="does">{z.rule}</span>{/if}
+                {#if bad}<span class="note">{bloodLine(run)}</span>{/if}
               {:else}
                 <span class="does">{placeDoes(run, p)}</span>
-                {#if p.kind === 'boss'}
-                  <span class="note">
-                    {live ? `Each front still alive adds a modifier: ${plural(live, 'front')} now.` : 'No front is alive: no modifiers.'}
-                  </span>
-                {/if}
+                {#if p.kind === 'boss'}<span class="note">{bossAdds(run)}</span>{/if}
               {/if}
             </button>
           </li>
@@ -342,6 +342,20 @@
 </div>
 
 <style>
+  .foot {
+    margin: 0.5rem 0 0;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .beat {
+    color: var(--gold-hi);
+  }
+  .beat.corrupt {
+    color: #f2685a;
+  }
+  .close {
+    margin-top: 0.5rem;
+  }
   .map-screen {
     display: flex;
     flex-direction: column;
@@ -438,19 +452,6 @@
   .node.corrupt .dot {
     filter: drop-shadow(0 0 3px rgba(226, 52, 43, 0.9));
   }
-  .node.cleansed .dot,
-  .key-cleansed {
-    fill: #2c2a22;
-    stroke: var(--verdict-good-icon);
-    stroke-width: 1.4;
-    stroke-dasharray: 2.5 1.5;
-  }
-  .front {
-    fill: none;
-    stroke: #e2342b;
-    stroke-width: 1.3;
-    stroke-dasharray: 3 2.5;
-  }
   .ring {
     fill: none;
     stroke: var(--gold-hi);
@@ -497,9 +498,6 @@
   }
   .tag-kind.corrupt {
     fill: #f2846e;
-  }
-  .tag-kind.cleansed {
-    fill: var(--verdict-good-icon);
   }
   .hit {
     position: absolute;
@@ -622,13 +620,6 @@
     align-items: baseline;
     color: #e9c8a2;
     line-height: 1.3;
-  }
-  .row .k {
-    font-family: var(--font-display);
-    font-size: 0.68rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
   .does {
     color: #e9c8a2;

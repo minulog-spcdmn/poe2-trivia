@@ -1,8 +1,9 @@
 <script lang="ts">
   // The Wraeclast run's page (wraeclast.html): the game's backdrop, the run's
   // header and strip (where, life, flask, gold, the step), the screen its
-  // phase calls for (a vendor, the map, a zone's or a Well's threshold, an
-  // item, its loot, the end), and the tuning panel (collapsed) at the foot.
+  // phase calls for (a vendor, the map, the boss's threshold, an item and its
+  // reveal, the end), and the tuning panel (collapsed) at the foot. The map
+  // opens over a vendor or a zone's last reveal, to pick where next.
   import { untrack } from 'svelte';
   import Background from '../components/Background.svelte';
   import { play } from './play.svelte';
@@ -11,7 +12,6 @@
   import MapScreen from './MapScreen.svelte';
   import Threshold from './Threshold.svelte';
   import ItemScreen from './ItemScreen.svelte';
-  import Loot from './Loot.svelte';
   import End from './End.svelte';
   import TuningPanel from './TuningPanel.svelte';
 
@@ -27,7 +27,14 @@
   });
 
   // Each new screen starts at its top (phones scroll); a named item stays on its screen, for its finale.
-  const screen = $derived(`${s.seed}:${s.phase === 'solved' ? 'item' : s.phase}:${s.done}:${s.steps}`);
+  /** The map, opened over a vendor or a reveal (closed again on any step). */
+  let mapOpen = $state(false);
+  const screen = $derived(`${s.seed}:${s.phase === 'solved' ? 'item' : s.phase}:${s.done}:${s.steps}:${mapOpen}`);
+  $effect(() => {
+    void s.steps;
+    void s.phase;
+    mapOpen = false;
+  });
   $effect(() => {
     void screen;
     scrollTo({ top: 0 });
@@ -39,16 +46,16 @@
   {#key run}
     <Hud {run} />
     {#key screen}
-      {#if s.phase === 'vendor'}
-        <Vendor {run} />
+      {#if mapOpen && run.options().length}
+        <MapScreen {run} onclose={() => (mapOpen = false)} />
+      {:else if s.phase === 'vendor'}
+        <Vendor {run} onmap={() => (mapOpen = true)} />
       {:else if s.phase === 'map'}
         <MapScreen {run} />
-      {:else if s.phase === 'zone' || s.phase === 'well'}
+      {:else if s.phase === 'boss'}
         <Threshold {run} />
       {:else if s.phase === 'item' || s.phase === 'solved'}
-        <ItemScreen {run} />
-      {:else if s.phase === 'loot'}
-        <Loot {run} />
+        <ItemScreen {run} onmap={() => (mapOpen = true)} />
       {:else}
         <End {run} />
       {/if}

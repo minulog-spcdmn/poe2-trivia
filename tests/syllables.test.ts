@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
-import { syllablesFile } from '../scripts/make-syllables.mjs';
+import { fakeSyllablesFile, syllablesFile } from '../scripts/make-syllables.mjs';
 
-// The Wraeclast run's syllables (scripts/make-syllables.mjs): every name split,
-// lower case, so the Inscription can rebuild it, no tile a whole word but
-// "of", "the" and "and", and none longer than 4 letters.
+// The Wraeclast run's tiles (scripts/make-syllables.mjs): every name split,
+// lower case, so the Inscription can rebuild it, each tile 2 to 5 letters
+// (but the o' of Cat O' Nine Tails), and the made-up names split the same way.
 const items: Item[] = JSON.parse(readFileSync(new URL('../src/data/items.json', import.meta.url), 'utf8'));
 const raw = readFileSync(new URL('../src/data/syllables.json', import.meta.url), 'utf8');
 const syllables: Record<string, string[][]> = JSON.parse(raw);
@@ -47,47 +47,55 @@ test('no syllable is empty, holds a space or a capital, and no word is without o
   assert.deepEqual(bad, []);
 });
 
-test("no tile is a whole word but 'of', 'the' and 'and' (a word of one letter can't split)", () => {
-  const whole = items.flatMap((it) =>
-    syllables[it.id].filter((w) => w.length === 1 && !['of', 'the', 'and'].includes(w[0]) && w[0].replace(/\P{L}/gu, '').length > 1).map((w) => `${it.name}: ${w[0]}`),
-  );
-  assert.deepEqual(whole, []);
-  // The one word that can't split today, kept whole as an exemption.
-  const exempt = items.flatMap((it) => syllables[it.id].filter((w) => w.length === 1 && !['of', 'the', 'and'].includes(w[0])).map((w) => `${it.name}: ${w[0]}`));
-  assert.deepEqual(exempt, ["Cat O' Nine Tails: o'"]);
+test("no tile holds a single letter, but the one word of one letter (Cat O' Nine Tails' o')", () => {
+  const ones = items.flatMap((it) => syllables[it.id].flat().filter((s) => [...s.replace(/(?:['’]s?|-)$/, '')].length < 2).map((s) => `${it.name}: ${s}`));
+  assert.deepEqual(ones, ["Cat O' Nine Tails: o'"]);
 });
 
-test("no tile is longer than 4 letters, not counting a trailing 's, ' or hyphen", () => {
-  const long = items.flatMap((it) =>
-    syllables[it.id].flat().filter((s) => [...s.replace(/(?:['’]s?|-)$/, '')].length > 4).map((s) => `${it.name}: ${s}`),
+test("no tile is longer than 5 letters, not counting a trailing 's, ' or hyphen, and few reach 5", () => {
+  const len = (s: string) => [...s.replace(/(?:['’]s?|-)$/, '')].length;
+  const tiles = items.flatMap((it) => syllables[it.id].flat());
+  assert.deepEqual(
+    items.flatMap((it) => syllables[it.id].flat().filter((s) => len(s) > 5).map((s) => `${it.name}: ${s}`)),
+    [],
   );
-  assert.deepEqual(long, []);
+  assert.ok(tiles.filter((s) => len(s) === 5).length < tiles.length * 0.15);
 });
 
-test('a syllable too long is cut again near its middle at a vowel', () => {
+test('names take fewer tiles than syllables: mostly 3 or 4', () => {
+  const counts = items.map((it) => syllables[it.id].flat().length);
+  const share = (f: (n: number) => boolean) => counts.filter(f).length / counts.length;
+  assert.ok(share((n) => n === 3 || n === 4) > 0.6, `${share((n) => n === 3 || n === 4)}`);
+  assert.ok(share((n) => n > 6) < 0.03);
+});
+
+test('syllables too short join, and a lone letter goes with its neighbour', () => {
   const byName = new Map(items.map((it) => [it.name, syllables[it.id]]));
-  assert.deepEqual(byName.get('Amor Mandragora')?.[1], ['man', 'dra', 'go', 'ra']);
+  assert.deepEqual(byName.get('Amor Mandragora'), [['amor'], ['man', 'dra', 'gora']]);
   assert.deepEqual(byName.get('Mask of the Sanguimancer')?.[3], ['san', 'gui', 'man', 'cer']);
-  assert.deepEqual(byName.get("Vruun's Inevitability")?.[1], ['in', 'evi', 'ta', 'bil', 'i', 'ty']);
   assert.deepEqual(byName.get('Olrovasara'), [['ol', 'rova', 'sara']]);
   // The mark stays on the last tile and isn't counted: ae / ris / vane's.
   assert.deepEqual(byName.get("Aerisvane's Wings")?.[0], ['ae', 'ris', "vane's"]);
-  // One of a single vowel sound splits before its vowel.
-  assert.deepEqual(byName.get('Constricting Command')?.[0], ['con', 'str', 'ict', 'ing']);
+  assert.deepEqual(byName.get("Voll's Protector")?.[0], ["voll's"]);
+  assert.deepEqual(byName.get("Berek's Grip"), [['be', "rek's"], ['grip']]);
+  assert.deepEqual(byName.get('Blistering Bond')?.[1], ['bond']);
 });
 
-test('the small words stay whole, possessives keep their mark, compounds split between their words and then by syllable', () => {
+test('the small words stay whole, and compounds split between their words', () => {
   const byName = new Map(items.map((it) => [it.name, syllables[it.id]]));
-  assert.deepEqual(byName.get('Belly of the Beast'), [['bel', 'ly'], ['of'], ['the'], ['b', 'east']]);
-  assert.deepEqual(byName.get("Voll's Protector")?.[0], ['v', "oll's"]);
-  assert.deepEqual(byName.get("Berek's Grip"), [['be', "rek's"], ['gr', 'ip']]);
-  assert.deepEqual(byName.get('Blistering Bond')?.[1], ['b', 'ond']);
-  assert.deepEqual(byName.get('Blackheart'), [['bl', 'ack', 'h', 'eart']]);
-  assert.deepEqual(byName.get('Bramblejack'), [['bram', 'ble', 'j', 'ack']]);
-  // Words that only look like two are left to the patterns.
-  assert.deepEqual(byName.get('Bursting Decay')?.[0], ['b', 'urst', 'ing']);
+  assert.deepEqual(byName.get('Belly of the Beast'), [['bel', 'ly'], ['of'], ['the'], ['beast']]);
+  assert.deepEqual(byName.get('Blackheart'), [['black', 'heart']]);
+  assert.deepEqual(byName.get('Bramblejack'), [['bram', 'ble', 'jack']]);
   assert.deepEqual(byName.get('The Burrower')?.[1], ['bur', 'row', 'er']);
-  // A word the patterns leave whole splits between its vowels.
   assert.deepEqual(byName.get('Kaltenhalt'), [['kal', 'ten', 'halt']]);
   assert.deepEqual(byName.get('Svalinn'), [['sva', 'linn']]);
+});
+
+test("the made-up names are split the same way, each rebuilding (node scripts/make-syllables.mjs)", () => {
+  const fakes: Record<string, string[]> = JSON.parse(readFileSync(new URL('../src/data/fakes.json', import.meta.url), 'utf8'));
+  const raw = readFileSync(new URL('../src/data/fakeSyllables.json', import.meta.url), 'utf8');
+  assert.ok(raw === fakeSyllablesFile(fakes), 'src/data/fakeSyllables.json is out of date or edited by hand; run node scripts/make-syllables.mjs');
+  const split: Record<string, string[][]> = JSON.parse(raw);
+  const names = [...new Set(Object.values(fakes).flat())];
+  assert.deepEqual(names.filter((n) => split[n]?.map((w) => w.join('')).join(' ') !== n.toLowerCase()), []);
 });

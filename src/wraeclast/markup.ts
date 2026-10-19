@@ -37,5 +37,10 @@ export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0'
 /** A multiplier as cards and logs write it: ×1.25. */
 export const times = (m: number) => `×${m}`;
 
-/** The tuning's word for a section of the run. */
-export const SECTION_NAMES: Record<keyof Tuning['missCost'], string> = { early: 'Steps 1 to 5', mid: 'Steps 6 to 10', late: 'Steps 11 to 15', boss: 'Boss' };
+/** The tuning's word for a section of the run: its steps, on a map whose boss is at `last`. */
+export function sectionNames(last: number): Record<keyof Tuning['missCost'], string> {
+  const n = Math.max(1, last - 1);
+  const a = Math.floor(n / 3);
+  const b = Math.floor((2 * n) / 3);
+  return { early: `Steps 1 to ${a}`, mid: `Steps ${a + 1} to ${b}`, late: `Steps ${b + 1} to ${n}`, boss: 'Boss' };
+}

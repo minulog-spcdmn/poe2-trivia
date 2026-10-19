@@ -1,16 +1,17 @@
 // The Wraeclast run's item screen (wraeclast.html, src/wraeclast): the
-// veiled art in its square frame, the clues, the pack, the Inscription's line
+// hidden art in its square frame, the clues, the pack, the Inscription's line
 // and board with their marks, and the dock, as a real run (rules.ts) lays
 // them out at any step of the map, under any zone type, corruption or boss
 // modifier; a supply used, misses made (the board marked), the answer half
-// built or the item named.
+// built or the item named. Its first states are a board of each section
+// (early, mid, late, the boss), decoy names and all, to try one quickly.
 
 import type { PieceBench } from '../bench.ts';
 
 const PLACES = [
-  { value: 'early', label: 'Step 2' },
-  { value: 'mid', label: 'Step 9' },
-  { value: 'late', label: 'Step 14' },
+  { value: 'early', label: 'Step 2 (early)' },
+  { value: 'mid', label: 'Step 5 (mid)' },
+  { value: 'late', label: 'Step 8 (late)' },
   { value: 'boss1', label: 'Boss, item 1' },
   { value: 'boss3', label: 'Boss, item 3' },
 ];
@@ -25,10 +26,6 @@ const ZONES = [
 const HIDDEN = [
   { value: 'none', label: 'None' },
   { value: 'blood', label: 'Blood toll' },
-  { value: 'sealed', label: 'Sealed' },
-  { value: 'swarming', label: 'Swarming' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'bounty', label: 'Bounty' },
 ];
 const BOSS_MODS = [
   { value: 'none', label: 'None' },
@@ -40,21 +37,22 @@ const BOSS_MODS = [
 ];
 const USED = [
   { value: 'none', label: 'None' },
-  { value: 'flare', label: 'Flare' },
+  { value: 'flare', label: 'Torch' },
   { value: 'wisdom', label: 'Scroll of Wisdom' },
   { value: 'lore', label: 'Golden Page' },
-  { value: 'category', label: 'Category reveal' },
+  { value: 'category', label: 'Ancient Orb' },
   { value: 'base', label: 'Base reveal' },
-  { value: 'decoy', label: 'Decoy sweep' },
+  { value: 'decoy', label: 'Tangled Fossil' },
   { value: 'lengths', label: 'Word lengths' },
-  { value: 'first', label: 'First syllable' },
+  { value: 'first', label: 'First tile' },
+  { value: 'deck', label: 'Stacked Deck' },
 ];
 
 export const wraeclast: PieceBench = {
   kind: 'piece',
   key: 'wraeclast',
   label: 'Wraeclast item',
-  about: "The Wraeclast run's item screen: the square Veil, the clues, the pack, the Inscription's marks and the dock, at any step, zone type, corruption or boss modifier, up to the 36 tiles a pool can hold.",
+  about: "The Wraeclast run's item screen: the square art, the clues, the pack, the Inscription's marks and the dock, at any step, zone type, corruption or boss modifier, up to the 36 tiles a pool can hold. The first states are a board of each section, to try (Item changes the board).",
   files: [
     'src/wraeclast/ItemScreen.svelte',
     'src/wraeclast/Inscription.svelte',
@@ -84,25 +82,30 @@ export const wraeclast: PieceBench = {
     { kind: 'toggle', key: 'pack', label: 'Pack full', default: true },
   ],
   states: [
-    { label: 'Step 2, Plain: a common mod line free', values: {} },
-    { label: 'Incursion: flavour text free', values: { zone: 'incursion', item: 2 } },
+    { label: 'Early board: about 14 tiles, 1 or 2 decoy names', values: {} },
+    { label: 'Early board, another', values: { item: 21 } },
+    { label: 'Mid board: about 20 tiles, 2 or 3 decoy names', values: { place: 'mid', item: 22 } },
+    { label: 'Mid board, another', values: { place: 'mid', item: 23 } },
+    { label: 'Late board: about 26 tiles, 3 or 4 decoy names', values: { place: 'late', item: 24 } },
+    { label: 'Late board, another', values: { place: 'late', item: 25 } },
+    { label: 'Boss board: about 32 tiles, 4 or 5 decoy names', values: { place: 'boss1', item: 26 } },
+    { label: 'Boss board, another', values: { place: 'boss3', item: 27 } },
+    { label: 'Incursion: flavor text free', values: { zone: 'incursion', item: 2 } },
     { label: 'Essence: the base type free', values: { zone: 'essence', item: 3 } },
     { label: 'Ritual: word lengths free, no Scrolls', values: { zone: 'ritual', item: 4 } },
-    { label: 'Blight: a burn-in free, more decoys', values: { zone: 'blight', place: 'mid', item: 5 } },
+    { label: 'Blight: a patch free, more tiles', values: { zone: 'blight', place: 'mid', item: 5 } },
     { label: 'Two misses: gold, silver and struck', values: { misses: 2, place: 'mid', item: 6 } },
     { label: 'Gold marks only', values: { misses: 2, goldOnly: true, item: 6, place: 'mid' } },
-    { label: 'Corrupted: Blood toll', values: { hidden: 'blood', item: 7 } },
-    { label: 'Corrupted: Sealed', values: { hidden: 'sealed', item: 8 } },
-    { label: 'Corrupted: Dark', values: { hidden: 'dark', item: 9 } },
-    { label: '36 tiles (the cap): Blight and Swarming at step 14', values: { place: 'late', zone: 'blight', hidden: 'swarming', item: 10 } },
-    { label: 'Boss, item 1: about 32 tiles, Silent, a free burn-in', values: { place: 'boss1', item: 11 } },
-    { label: 'Boss, item 3: Flares half, three modifiers', values: { place: 'boss3', mods: 'three', item: 12 } },
-    { label: 'A Flare used', values: { used: 'flare', item: 13 } },
-    { label: 'First syllable locked', values: { used: 'first', place: 'late', item: 14 } },
-    { label: 'Decoy sweep', values: { used: 'decoy', place: 'late', item: 15 } },
-    { label: 'Category and base shown', values: { used: 'category', zone: 'essence', item: 16 } },
+    { label: 'Blood toll: 10 life an item, double loot', values: { hidden: 'blood', item: 7 } },
+    { label: '36 tiles (the cap): Blight at step 8', values: { place: 'late', zone: 'blight', item: 10 } },
+    { label: 'Boss, item 3: Torches half, three rules added', values: { place: 'boss3', mods: 'three', item: 12 } },
+    { label: 'A Torch used', values: { used: 'flare', item: 13 } },
+    { label: 'First tile placed', values: { used: 'first', place: 'late', item: 14 } },
+    { label: 'Tangled Fossil', values: { used: 'decoy', place: 'late', item: 15 } },
+    { label: 'Ancient Orb and the base shown', values: { used: 'category', zone: 'essence', item: 16 } },
+    { label: 'Stacked Deck', values: { used: 'deck', place: 'mid', item: 20 } },
     { label: 'Half built', values: { built: true, place: 'mid', item: 17 } },
-    { label: 'Named: the Veil lifts', values: { named: true, item: 18 } },
+    { label: 'Named: the art shows', values: { named: true, item: 18 } },
     { label: 'Empty pack', values: { pack: false, item: 19 } },
   ],
   actions: [

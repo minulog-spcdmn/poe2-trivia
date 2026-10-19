@@ -2,7 +2,7 @@
   // The Wraeclast item bench's view (./wraeclast.ts): a real run (rules.ts),
   // seeded, brought to the node the controls ask for (./wraeclastSetup.ts)
   // under its zone type, corruption and boss modifiers, then the item screen
-  // as the page draws it, the run's header and strip above it. The Veil opens
+  // as the page draws it, the run's header above it. The art opens
   // the item as on the page; then the supply, misses and build asked for are
   // played. A change to the controls lays the item out again.
   import { untrack } from 'svelte';
@@ -36,7 +36,8 @@
     named: boolean;
     pack: boolean;
   };
-  const STEPS: Record<string, number> = { early: 2, mid: 9, late: 14 };
+  /** A step in each section of the 10-step map (4 and 7 are its towns). */
+  const STEPS: Record<string, number> = { early: 2, mid: 5, late: 8 };
   const MODS: Record<string, BossMod[]> = { none: [], three: ['bloodied', 'murky', 'teeming'] };
 
   /** The run, brought to the node asked for and its item laid out there; reactive once it is. */
@@ -54,7 +55,7 @@
       mods: MODS[o.mods] ?? [o.mods as BossMod],
     });
     if (boss !== null) s.visit!.done = Math.min(boss, s.visit!.items - 1);
-    run.enter();
+    if (s.phase === 'boss') run.face();
     run.state = reactive(s);
     return run;
   }
@@ -63,6 +64,9 @@
   function play(run: Run, o: Options) {
     const it = run.state.item!;
     if (o.used !== 'none') {
+      // Not in the pack (the full one leaves the Base reveal out): it takes the last space.
+      const s = run.state;
+      if (!run.held(o.used)) s.pack[Math.min(s.pack.length, 7)] = { supply: o.used, n: 1 };
       // A supply the zone or the boss won't let work still shows as used, for a look at it.
       if (!run.use(o.used) && o.used === 'category') it.shown.category = true;
       if (o.used === 'category' && run.works('base')) run.use('base');
@@ -123,7 +127,7 @@
 <main class="wr bench" class:small>
   {#key run}
     {#if !small}<Hud {run} />{/if}
-    {#if run.state.item}<ItemScreen {run} />{/if}
+    {#if run.state.item}<ItemScreen {run} onmap={() => {}} />{/if}
   {/key}
 </main>
 

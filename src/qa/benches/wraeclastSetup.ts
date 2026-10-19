@@ -18,10 +18,12 @@ export function arrive(run: Run, id: string, { place, hidden = null, mods = [] }
   const s = run.state;
   const node = GRAPH.byId.get(id)!;
   if (place) s.places[id] = place;
-  if (hidden && s.places[id].kind === 'zone') s.corrupt[id] = { hidden, cleansed: false };
-  else delete s.corrupt[id];
+  // Corrupted as asked: a live front on the node (a zone), or none.
+  s.fronts = s.fronts.filter((f) => f.at !== id);
+  if (hidden && s.places[id].kind === 'zone') s.fronts.push({ id: s.fronts.length, at: id, alive: true, stoppedAt: null });
   s.at = GRAPH.prev[id][0] ?? GRAPH.camp.id;
   s.phase = 'map';
+  s.visit = null;
   s.vendor = null;
   s.stock = [];
   // No creep on the way in: the corruption stays as asked.
@@ -35,13 +37,13 @@ export function arrive(run: Run, id: string, { place, hidden = null, mods = [] }
   }
 }
 
-/** A full pack: its 8 stacks, one of each supply, as the benches show it. */
+/** A full pack: its 8 stacks, a supply in each (all but the Base reveal; a bench that uses it swaps it in), as the benches show it. */
 export const FULL_PACK: { supply: Supply; n: number }[] = [
   { supply: 'flare', n: 5 },
   { supply: 'wisdom', n: 3 },
   { supply: 'lore', n: 2 },
   { supply: 'category', n: 2 },
-  { supply: 'base', n: 1 },
+  { supply: 'deck', n: 2 },
   { supply: 'decoy', n: 3 },
   { supply: 'lengths', n: 3 },
   { supply: 'first', n: 2 },
@@ -74,24 +76,23 @@ export type Route = 'left' | 'corrupt' | 'clean';
 export function pick(run: Run, route: Route): string {
   const s = run.state;
   const offered = run.options();
-  const bad = (id: string) => !!s.corrupt[id] && !s.corrupt[id].cleansed && s.places[id].kind === 'zone';
+  const bad = (id: string) => run.corrupted(id);
   if (route === 'corrupt') return offered.find(bad) ?? offered[0];
   if (route === 'clean') return offered.find((id) => !bad(id)) ?? offered[0];
   return offered[0];
 }
 
 /**
- * Plays a run on until `stop` holds or it ends: vendors and Wells left, the
- * route's node picked, each item opened on a plain grid and answered (wrong
- * first now and then, a drink after, when `misses`), the loot collected (a
- * supply that doesn't fit left behind).
+ * Plays a run on until `stop` holds or it ends: the route's node picked at
+ * each vendor, past each Well and from each zone's last reveal, the boss
+ * faced, each item opened on a plain grid and answered (wrong first now and
+ * then, a drink after, when `misses`), a supply that doesn't fit left behind.
  */
 export function playOn(run: Run, stop: () => boolean, { route = 'left', misses = false }: { route?: Route; misses?: boolean } = {}) {
   const s = run.state;
   for (let guard = 0; guard < 2000 && !stop() && s.phase !== 'end'; guard++) {
-    if (s.phase === 'vendor' || s.phase === 'well') run.leave();
-    else if (s.phase === 'map') run.choose(pick(run, route));
-    else if (s.phase === 'zone') run.enter();
+    if (s.phase === 'vendor' || s.phase === 'map' || (s.phase === 'solved' && run.leaving())) run.choose(pick(run, route));
+    else if (s.phase === 'boss') run.face();
     else if (s.phase === 'item') {
       const it = s.item!;
       if (it.openedAt === null) {
@@ -107,10 +108,7 @@ export function playOn(run: Run, stop: () => boolean, { route = 'left', misses =
       it.build = [...it.answer];
       it.lineMarks = null;
       run.submit();
-    } else if (s.phase === 'loot') {
-      if (!s.loot!.collected) run.collect();
-      else if (s.loot!.pending.length) run.keep(null);
-      else run.next();
-    } else run.next();
+    } else if (s.phase === 'solved' && s.loot?.pending.length) run.keep(null);
+    else run.next();
   }
 }

@@ -3,9 +3,9 @@
 // what was kept falls back to the handoff's number.
 
 import { readStored, writeStored } from '../lib/storage.ts';
-import { DEFAULT_TUNING, HIDDEN, LOOT_KINDS, SECTIONS, SUPPLIES, ZONE_TYPES, type Range, type Tuning } from './rules.ts';
+import { DEFAULT_TUNING, LOOT_KINDS, SECTIONS, SUPPLIES, ZONE_TYPES, type Range, type Tuning } from './rules.ts';
 
-const KEY = 'wraeclastTuning3';
+const KEY = 'wraeclastTuning4';
 
 /** Each number's range, for the panel's fields and for reading back what was kept. */
 export const LIMITS = {
@@ -27,6 +27,7 @@ export const LIMITS = {
   fronts: [0, 5],
   creep: [1, 3],
   multiplier: [1, 5],
+  names: [0, 6],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** A whole number in [lo, hi], or the fallback. */
@@ -63,6 +64,7 @@ export function cleanTuning(raw: unknown): Tuning {
     itemsPerZone: whole(r.itemsPerZone, LIMITS.itemsPerZone, d.itemsPerZone),
     zoneShare: whole(r.zoneShare, LIMITS.zoneShare, d.zoneShare),
     tiles: each(SECTIONS, r.tiles, LIMITS.tiles, d.tiles),
+    names: Object.fromEntries(SECTIONS.map((s) => [s, range(rec(r.names)[s], LIMITS.names, d.names[s])])) as Tuning['names'],
     missCost: Object.fromEntries(SECTIONS.map((s) => [s, range(rec(r.missCost)[s], LIMITS.missCost, d.missCost[s])])) as Tuning['missCost'],
     price: each(SUPPLIES, r.price, LIMITS.price, d.price),
     stack: each(SUPPLIES, r.stack, LIMITS.stack, d.stack),
@@ -70,6 +72,7 @@ export function cleanTuning(raw: unknown): Tuning {
       flare: whole(burn.flare, LIMITS.burnIn, d.burnIn.flare),
       blight: whole(burn.blight, LIMITS.burnIn, d.burnIn.blight),
       boss: whole(burn.boss, LIMITS.burnIn, d.burnIn.boss),
+      deck: whole(burn.deck, LIMITS.burnIn, d.burnIn.deck),
     },
     seeds: whole(r.seeds, LIMITS.seeds, d.seeds),
     loot: {
@@ -80,13 +83,11 @@ export function cleanTuning(raw: unknown): Tuning {
         mid: range(gold.mid, LIMITS.lootGold, d.loot.gold.mid),
         late: range(gold.late, LIMITS.lootGold, d.loot.gold.late),
       },
-      jackpot: whole(loot.jackpot, LIMITS.lootGold, d.loot.jackpot),
       supplies: whole(loot.supplies, LIMITS.supplies, d.loot.supplies),
     },
     corruption: {
       seeds: whole(cor.seeds, LIMITS.fronts, d.corruption.seeds),
       creep: whole(cor.creep, LIMITS.creep, d.corruption.creep),
-      weights: each(HIDDEN, cor.weights, LIMITS.weight, d.corruption.weights),
       multiplier: whole(cor.multiplier, LIMITS.multiplier, d.corruption.multiplier),
     },
     marks: r.marks === 'gold' || r.marks === 'both' ? r.marks : d.marks,

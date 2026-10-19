@@ -2,17 +2,19 @@
   // The tuning panel, collapsed at the page's foot: the numbers the next run
   // starts with, kept in storage as they change, and in each run's log.
   import { backdropShadow } from '../lib/backdropShadow';
-  import { DEFAULT_TUNING, HIDDEN, HIDDEN_NAMES, LOOT_KINDS, SECTIONS, SUPPLIES, SUPPLY_NAMES, ZONE_TYPES, ZONE_NAMES, type Range } from './rules';
+  import { DEFAULT_TUNING, LOOT_KINDS, SECTIONS, SUPPLIES, SUPPLY_NAMES, ZONE_TYPES, ZONE_NAMES, type Range } from './rules';
   import { LIMITS, isDefault } from './tuning';
   import { play } from './play.svelte';
-  import { SECTION_NAMES } from './markup';
+  import { GRAPH } from './map';
+  import { sectionNames } from './markup';
   import { FREE_CLUE } from './words';
 
   /** Whether it's open: from the start on the QA desk's bench, collapsed on the page till tapped. */
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const t = $derived(play.tuning);
   const changed = $derived(!isDefault(t));
-  const LOOT_NAMES = { gold: 'Gold', supply: 'Supplies', flask: 'Flask charge', jackpot: 'Jackpot' } as const;
+  const LOOT_NAMES = { gold: 'Gold', supply: 'Supplies', flask: 'Flask charge' } as const;
+  const SECTION_NAMES = sectionNames(GRAPH.boss.step);
 
   /**
    * A number field's value, kept whole and in range (a blank or a stray value
@@ -99,7 +101,10 @@
         <input type="checkbox" checked={t.marks === 'gold'} onchange={setMarks} />
         <span>Gold marks only (no silver or struck)</span>
       </label>
-      <p class="small">Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
+      {#each SECTIONS as sec (sec)}
+        {@render range(`Decoy names, ${SECTION_NAMES[sec].toLowerCase()}`, t.names[sec], LIMITS.names)}
+      {/each}
+      <p class="small">Decoy names are whole names that the tiles can also spell (real look-alikes or made-up ones). Each item rolls its total within 3 either way, with at least 5 decoys; of, the, and and 2 or 3 possessive tiles come on top. Blight adds 6, Swarming and Teeming 8, up to 36 tiles.</p>
     </fieldset>
 
     <fieldset>
@@ -117,12 +122,13 @@
     </fieldset>
 
     <fieldset>
-      <legend>The Veil (patches)</legend>
+      <legend>The art (patches)</legend>
       {@render field('Seeds a side', t.seeds, LIMITS.seeds, (n) => (t.seeds = n))}
-      {@render field('A Flare burns in', t.burnIn.flare, LIMITS.burnIn, (n) => (t.burnIn.flare = n))}
+      {@render field('A Torch burns in', t.burnIn.flare, LIMITS.burnIn, (n) => (t.burnIn.flare = n))}
       {@render field("Blight's free burn-in", t.burnIn.blight, LIMITS.burnIn, (n) => (t.burnIn.blight = n))}
       {@render field("The boss's first item, free", t.burnIn.boss, LIMITS.burnIn, (n) => (t.burnIn.boss = n))}
-      <p class="small">Incursion and a Murky boss halve a Flare's.</p>
+      {@render field("A Stacked Deck's patch", t.burnIn.deck, LIMITS.burnIn, (n) => (t.burnIn.deck = n))}
+      <p class="small">Incursion and a Murky boss halve a Torch's.</p>
     </fieldset>
 
     <fieldset>
@@ -133,10 +139,9 @@
       {#each LOOT_KINDS as k (k)}
         {@render field(`${LOOT_NAMES[k]} (weight)`, t.loot.weights[k], LIMITS.weight, (n) => (t.loot.weights[k] = n))}
       {/each}
-      {@render range('Gold, steps 1 to 5', t.loot.gold.early, LIMITS.lootGold)}
-      {@render range('Gold, steps 6 to 10', t.loot.gold.mid, LIMITS.lootGold)}
-      {@render range('Gold, steps 11 to 15', t.loot.gold.late, LIMITS.lootGold)}
-      {@render field('Jackpot (gold)', t.loot.jackpot, LIMITS.lootGold, (n) => (t.loot.jackpot = n))}
+      {@render range(`Gold, ${SECTION_NAMES.early.toLowerCase()}`, t.loot.gold.early, LIMITS.lootGold)}
+      {@render range(`Gold, ${SECTION_NAMES.mid.toLowerCase()}`, t.loot.gold.mid, LIMITS.lootGold)}
+      {@render range(`Gold, ${SECTION_NAMES.late.toLowerCase()}`, t.loot.gold.late, LIMITS.lootGold)}
       {@render field('Supplies on a card', t.loot.supplies, LIMITS.supplies, (n) => (t.loot.supplies = n))}
     </fieldset>
 
@@ -145,9 +150,7 @@
       {@render field('Fronts seeded', t.corruption.seeds, LIMITS.fronts, (n) => (t.corruption.seeds = n))}
       {@render field('Creeps every (steps)', t.corruption.creep, LIMITS.creep, (n) => (t.corruption.creep = n))}
       {@render field('Loot multiplier', t.corruption.multiplier, LIMITS.multiplier, (n) => (t.corruption.multiplier = n))}
-      {#each HIDDEN as c (c)}
-        {@render field(`${HIDDEN_NAMES[c]} (weight)`, t.corruption.weights[c], LIMITS.weight, (n) => (t.corruption.weights[c] = n))}
-      {/each}
+      <p class="small">A corrupted zone takes a Blood toll of 10 life an item and deals its loot times the multiplier.</p>
     </fieldset>
 
     <fieldset>

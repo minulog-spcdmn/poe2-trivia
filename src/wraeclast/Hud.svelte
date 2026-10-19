@@ -1,35 +1,40 @@
 <script lang="ts">
   // The run's header and strip, as the design draws them: the brand's flame,
-  // where the run is (the node, its kind, a corruption), then your entry as
+  // where you are (the node, its kind, Blood toll), then your entry as
   // the scoreboard's pill (the life vessel with its walls every 25, the life
   // a miss just took, the flask's heal still due, the charges, the gold) and
   // the step plaque.
-  import { FLASK_ITEMS, FLASK_STEP, type Run } from './rules';
-  import { GRAPH } from './map';
-  import { FLASK_LINE, placeName } from './words';
+  import { BLOOD_TOLL, FLASK_STEP, type Run } from './rules';
+  import { FLASK_LINE, flaskDue, placeName } from './words';
 
   let { run }: { run: Run } = $props();
   const s = $derived(run.state);
   const node = $derived(run.node);
   const place = $derived(s.places[s.at]);
-  const hidden = $derived(run.hiddenHere());
+  /** Blood toll, the whole time in the zone (its last reveal too, though the corruption there is gone). */
+  const hidden = $derived(s.item ? s.item.hidden : run.hiddenHere());
   const share = $derived(Math.max(0, Math.min(1, s.life / s.maxLife)));
   const low = $derived(share <= 0.3);
-  /** The life the last wrong submit took, while its marked line stands. */
-  const hit = $derived(s.item?.lineMarks ? (s.item.log.submits.at(-1)?.lost ?? 0) : 0);
+  /** The life the last wrong submit took, while its marked line stands; else a Blood toll's, till the first submit. */
+  const toll = $derived(s.phase === 'item' && s.item && !s.item.log.submits.length ? s.item.log.toll : 0);
+  const hit = $derived(s.item?.lineMarks ? (s.item.log.submits.at(-1)?.lost ?? 0) : toll);
   /** The flask's heal still to come, as life (capped at the vessel's top). */
   const due = $derived(Math.min(s.maxLife - s.life, s.flask.recovering * FLASK_STEP));
   const ticks = $derived(Array.from({ length: Math.ceil(due / FLASK_STEP) }, (_, i) => i));
-  const lastStep = GRAPH.boss.step - 1;
+  const lastStep = $derived(run.graph.boss.step);
   const pct = (n: number) => `${(n / s.maxLife) * 100}%`;
 </script>
 
-<header class="hdr" aria-label="Where the run is">
+<header class="hdr" aria-label="Where you are">
   <span class="flame" aria-hidden="true"></span>
   <p class="meta">
     <span class="zone" class:boss={place.kind === 'boss'}>{node.name}</span>
     <span class="kind"
-      >{placeName(place)}{#if s.visit && s.item}{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span>{:else if hidden}{' '}<span class="corrupt">• Corrupted</span>{/if}</span
+      >{placeName(place)}{#if s.visit && s.item}{' '}• Item <span class="num">{s.visit.done + 1}</span> of <span class="num">{s.visit.items}</span>{/if}{#if hidden}{' '}<span
+          class="corrupt"
+          role="img"
+          aria-label="Blood toll (corruption): each item here costs {BLOOD_TOLL} life when you start it">• Blood toll</span
+        >{/if}</span
     >
   </p>
 </header>
@@ -40,7 +45,7 @@
     <div class="info">
       <span class="name">Exile</span>
       <div class="holds">
-        <span class="vessel" class:low role="meter" aria-label="Life" aria-valuemin={0} aria-valuemax={s.maxLife} aria-valuenow={s.life}>
+        <span class="vessel" class:low role="meter" aria-label="Life: {s.life} of {s.maxLife}" aria-valuemin={0} aria-valuemax={s.maxLife} aria-valuenow={s.life}>
           <span class="glass">
             <span class="fill" style:width={pct(s.life)}></span>
             {#each ticks as t (t)}<span class="due" style:left={pct(s.life + t * FLASK_STEP)} style:width="calc({pct(Math.min(FLASK_STEP, due - t * FLASK_STEP))} - 1.5px)"></span>{/each}
@@ -48,8 +53,8 @@
             <span class="walls"></span>
           </span>
         </span>
-        <span class="lifenum" class:low>{s.life}{#if hit}<span class="hitn">−{hit}</span>{:else if due}<span class="due">+{due}</span>{/if}</span>
-        <span class="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} charges. {FLASK_LINE}" title={FLASK_LINE}>
+        <span class="lifenum" class:low>{s.life}{#if hit}<span class="hitn" title={toll && hit === toll ? 'Blood toll' : undefined}>−{hit}</span>{:else if due}<span class="due">+{due}</span>{/if}</span>
+        <span class="flask" role="img" aria-label="Flask: {s.flask.charges} of {s.tuning.flask} charges. Each drink uses one charge." title={FLASK_LINE}>
           <span class="ch">
             {#each Array.from({ length: Math.max(s.flask.charges, s.tuning.flask) }, (_, i) => i) as i (i)}<i class:full={i < s.flask.charges}></i>{/each}
           </span>
@@ -59,12 +64,12 @@
     <span class="score"><span class="coin" aria-hidden="true"></span>{s.gold}</span>
   </div>
   {#if place.kind === 'boss'}
-    <div class="stepc boss" role="img" aria-label="The boss"><span class="k">The</span><span class="v">Boss</span></div>
+    <div class="stepc boss" role="img" aria-label="The boss, the last step"><span class="k">Last</span><span class="v">Boss</span></div>
   {:else}
     <div class="stepc" role="img" aria-label="Step {node.step} of {lastStep}"><span class="k">Step</span><span class="v">{node.step}<small>/{lastStep}</small></span></div>
   {/if}
 </div>
-<span class="sr">{s.flask.recovering ? `The flask still heals ${FLASK_STEP} after each of the next ${s.flask.recovering} of ${FLASK_ITEMS} items.` : ''}</span>
+<span class="sr">{s.flask.recovering ? flaskDue(s.flask.recovering) : ''}</span>
 
 <style>
   .hdr {

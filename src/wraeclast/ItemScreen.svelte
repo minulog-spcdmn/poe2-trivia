@@ -3,20 +3,23 @@
   // in its square frame under the Veil beside what is known of it), the pack,
   // the Inscription, and the dock: what a miss costs and the deal a right
   // name drops, the flask's drink, and Identify. After a miss the dock says
-  // what it cost; once named, the name and the way on. Phones stack it all,
+  // what it cost; once named, the name, the loot (in the pack already: a full
+  // pack asks which stack a supply replaces) and the way on. Phones stack it all,
   // the dock pinned at the foot; wide screens set the tooltip beside the
   // Inscription, the dock under both.
   import NamePlate from '../components/NamePlate.svelte';
   import { motion } from '../lib/motion.svelte';
-  import { BOSS_MOD_NAMES, CLUES, HIDDEN_NAMES, type Run, type Supply } from './rules';
+  import { BOSS_MOD_NAMES, CLUES, SUPPLY_NAMES, type Run, type Supply } from './rules';
   import Veil from './Veil.svelte';
   import Clues from './Clues.svelte';
   import ItemPack from './ItemPack.svelte';
   import Inscription from './Inscription.svelte';
   import Glyph from './Glyph.svelte';
-  import { BOSS_MOD_DOES, BOSS_RULE, HIDDEN_DOES, ZONE_RULE, plural } from './words';
+  import PackList from './PackList.svelte';
+  import { BLOOD_DOES, BOSS_MOD_DOES, BOSS_RULE, DRINK_LINE, ZONE_RULE, lootLine, plural } from './words';
 
-  let { run }: { run: Run } = $props();
+  /** `onmap`: a zone's last reveal opens the map, to pick where next. */
+  let { run, onmap }: { run: Run; onmap?: () => void } = $props();
   const s = $derived(run.state);
   const it = $derived(s.item!);
   const named = $derived(s.phase === 'solved');
@@ -27,16 +30,19 @@
   /** The last wrong submit, while its marked line stands. */
   const miss = $derived(it.lineMarks && last && !last.right ? last : null);
   /** The deal a right name drops now: the zone's cards (corruption's too) less one a miss, never below 1. */
-  const full = $derived(run.dealHere());
-  const deal = $derived(boss ? 0 : Math.max(1, full - it.misses));
+  const full = $derived(named ? it.log.loot.length + it.misses : run.dealHere());
+  const deal = $derived(boss ? 0 : named ? it.log.loot.length : Math.max(1, full - it.misses));
   const lost = $derived(boss ? 0 : full - deal);
-  const visit = $derived(s.visit);
-  const onward = $derived(boss ? (visit && visit.done + 1 >= visit.items ? 'Claim the win' : 'Next item') : 'Take the loot');
+  const ahead = $derived(run.ahead());
+  const leaving = $derived(run.leaving());
+  const pending = $derived(s.loot?.pending[0] ?? null);
+  /** The corruption here stopped as the zone's last item was named. */
+  const cleared = $derived(named && !!it.hidden && s.fronts.some((f) => f.stoppedAt === it.node));
   /** The zone's rule on the plate (none for a zone without one; the boss's own line says Silent). */
-  const rule = $derived(!boss && it.zoneType && ZONE_RULE[it.zoneType] !== 'No rule' ? ZONE_RULE[it.zoneType] : '');
-  /** The plate's terms in full, for a long press or a hover. */
+  const rule = $derived(!boss && it.zoneType ? (ZONE_RULE[it.zoneType] ?? '') : '');
+  /** The plate's terms in full, one line each, for a long press or a hover. */
   const terms = $derived(
-    [it.hidden ? `${HIDDEN_NAMES[it.hidden]}: ${HIDDEN_DOES[it.hidden]}` : '', boss ? BOSS_RULE : rule, ...(boss ? s.bossMods.map((m) => `${BOSS_MOD_NAMES[m]}: ${BOSS_MOD_DOES[m]}`) : [])].filter(Boolean).join(' '),
+    [it.hidden ? `Blood toll: ${BLOOD_DOES}` : '', boss ? BOSS_RULE : rule, ...(boss ? s.bossMods.map((m) => `${BOSS_MOD_NAMES[m]}: ${BOSS_MOD_DOES[m]}`) : [])].filter(Boolean).join('\n'),
   );
   /** The board's height, about (rows of tiles at a phone's width), for the art to give way to it on a short screen. */
   const boardH = $derived.by(() => {
@@ -65,10 +71,9 @@
               <span class="ibase">{CLUES[it.itemId].base}</span>
             {:else}
               <span class="iname unknown">Unidentified</span>
-              {#if it.hidden || boss || rule}
+              {#if boss || rule}
                 <span class="terms" title={terms}>
-                  {#if it.hidden}<span class="corrupt-line">Corrupted • {HIDDEN_NAMES[it.hidden]}</span>{/if}
-                  {#if boss}<span class="corrupt-line">{['Silent', ...s.bossMods.map((m) => BOSS_MOD_NAMES[m])].join(' • ')}</span>{:else if rule}<span class="rule-line">{rule}</span>{/if}
+                  {#if boss}<span class="corrupt-line">Boss: {['Silent', ...s.bossMods.map((m) => BOSS_MOD_NAMES[m])].join(' • ')}</span>{:else if rule}<span class="rule-line">{rule}</span>{/if}
                 </span>
               {/if}
             {/if}
@@ -77,7 +82,6 @@
         <div class="ibody">
           <div class="art" bind:this={art}>
             <div class="frame"><Veil {run} /></div>
-            {#if it.hidden === 'dark' && !named}<span class="dark" aria-hidden="true"></span>{/if}
           </div>
           <Clues {run} />
         </div>
@@ -93,10 +97,26 @@
         <span class="vsign" aria-hidden="true">✓</span>
         <p>
           {it.log.name}
-          <small>{#if boss}Named.{:else}Loot: <span class="deal" aria-hidden="true">{#each Array.from({ length: deal }, (_, k) => k) as k (k)}<i></i>{/each}</span>{plural(deal, 'card')}{/if}{#if healed}{' '}The flask heals <b>+{healed}</b>.{/if}</small>
+          <small
+            >{#if boss}Named{:else}{it.misses ? plural(it.misses, 'miss') : 'First try'}{#if it.hidden}{' '}• Blood toll: double loot{/if}{#if it.log.loot.length}{' '}• {it.log.loot
+                  .map((c) => lootLine(c).name)
+                  .join(', ')}{/if}{/if}{#if healed}{' '}• Your flask healed <b>{healed}</b> life{/if}{#if cleared}{' '}• The corruption here is gone{/if}</small
+          >
         </p>
       </div>
-      <button class="btn primary" onclick={() => run.next()}>{onward}</button>
+      {#if pending}
+        <div class="swap">
+          <p>Pack full. Tap a space to replace it with {pending.n} {SUPPLY_NAMES[pending.supply!]}.</p>
+          <PackList {run} onpick={(slot) => run.keep(slot)} />
+          <button class="btn ghost" onclick={() => run.keep(null)}>{pending.n === 1 ? 'Leave it' : 'Leave them'}</button>
+        </div>
+      {:else if ahead === 'vendor'}
+        <button class="btn primary" onclick={() => run.next()}>Expedition vendor • buy before you go on</button>
+      {:else if ahead}
+        <button class="btn primary" onclick={() => run.next()}>{ahead === 'win' ? 'Claim the win' : 'Next item'}</button>
+      {:else if leaving}
+        <button class="btn primary" onclick={() => onmap?.()}>Where next</button>
+      {/if}
     {:else}
       {#if miss}
         <div class="result" role="status">
@@ -104,7 +124,7 @@
           <span class="lost-vial" aria-hidden="true"></span>
           <p>
             <b class="minus">−{miss.lost}</b> life
-            <small>{#if boss}Misses here cost <b>{lo}</b> to <b>{hi}</b>.{:else}<span class="deal" aria-hidden="true">{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal}></i>{/each}</span>The deal: {plural(deal, 'card')}{/if}</small>
+            <small>{#if boss}A miss costs <b>{lo}</b> to <b>{hi}</b> life{:else}<span class="deal" aria-hidden="true">{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal}></i>{/each}</span>Loot: {plural(deal, 'card')} now{/if}</small>
           </p>
         </div>
       {:else}
@@ -113,12 +133,12 @@
           {#if boss}
             <div class="row reward">No loot at the boss</div>
           {:else}
-            <div class="row reward"><span class="deal" aria-hidden="true">{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal} class:extra={!!it.hidden && k >= full / 2 && k < deal}></i>{/each}</span>{plural(deal, 'card')}{#if lost}{' '}<s>{full}</s>{/if}</div>
+            <div class="row reward"><span class="deal" aria-hidden="true">{#each Array.from({ length: full }, (_, k) => k) as k (k)}<i class:lost={k >= deal} class:extra={!!it.hidden && k >= full / 2 && k < deal}></i>{/each}</span>Loot: {plural(deal, 'card')}{#if lost}{' '}<s>{full}</s>{/if} • a miss takes one</div>
           {/if}
-          {#if run.blocked() === 'tried'}<div class="row warn">Sent already: change the line</div>{/if}
+          {#if run.blocked() === 'tried'}<div class="row warn">You tried this one. Change a tile</div>{:else if s.life <= lo}<div class="row warn">Low life: one miss ends the run</div>{/if}
         </div>
       {/if}
-      <button class="drink" disabled={!run.canDrink()} onclick={() => run.drink()} aria-label="Drink a flask charge: {s.flask.charges} left" title="Drink: +10 now, +10 after each of the next 2 items">
+      <button class="drink" disabled={!run.canDrink()} onclick={() => run.drink()} aria-label="Drink from your flask: {s.flask.charges} left" title={DRINK_LINE}>
         <span class="ic" aria-hidden="true"><Glyph of="flask" /></span><span class="n" aria-hidden="true">{s.flask.charges}</span>
       </button>
       <button class="btn primary" disabled={!run.canSubmit()} onclick={() => run.submit()}>Identify</button>
@@ -127,6 +147,15 @@
 </div>
 
 <style>
+  .swap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1 1 100%;
+  }
+  .swap p {
+    margin: 0;
+  }
   /* Laid out by its own width (the page's, or a cell's on the QA desk). */
   .item {
     container: item / inline-size;
@@ -278,25 +307,6 @@
     position: relative;
     width: 100%;
     height: 100%;
-  }
-  /* Dark: the art can't be revealed; a seal stands over the frame. */
-  .dark {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    background: radial-gradient(closest-side, rgba(30, 8, 6, 0.4), transparent);
-  }
-  .dark::after {
-    content: '';
-    width: 46%;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    border: 1px solid rgba(226, 52, 43, 0.55);
-    box-shadow:
-      inset 0 0 0 5px rgba(0, 0, 0, 0.6),
-      inset 0 0 0 6px rgba(226, 52, 43, 0.35),
-      0 0 16px rgba(226, 52, 43, 0.3);
   }
   .ibody :global(.lines) {
     flex: 1;

@@ -1,7 +1,7 @@
 <script lang="ts">
   // A supply's, a loot card's or a tool's mark, engraved in fine lines
-  // (currentColor), as the design draws them: the eight supplies, gold, the
-  // flask, the jackpot, an unidentified card, corruption (a Vaal Orb's
+  // (currentColor), as the design draws them: the nine supplies, gold, the
+  // flask, an unidentified card, corruption (a Vaal Orb's
   // swirl), and the line's Clear.
   import type { LootKind, Supply } from './rules';
 
@@ -45,10 +45,10 @@
   {:else if of === 'flask'}
     <path d="M9.5 3h5M10.3 3v4.4C7.4 8.5 5.6 11 5.6 14c0 3.8 2.9 6.8 6.4 6.8s6.4-3 6.4-6.8c0-3-1.8-5.5-4.7-6.6V3" />
     <path d="M6.4 13.2c1.9-.9 3.7.9 5.6 0s3.7-.9 5.6 0" stroke-width="1" />
-  {:else if of === 'jackpot'}
-    <path d="M4 10h16v9H4z" />
-    <path d="M3 7h18v3H3zM12 7v12" />
-    <path d="M12 7c-2-3-5-3-5-1s3 1 5 1c2 0 5 1 5-1s-3-2-5 1z" />
+  {:else if of === 'deck'}
+    <rect x="8.5" y="4.5" width="9" height="13" rx="1.2" transform="rotate(12 13 11)" />
+    <rect x="5.5" y="6" width="9" height="13" rx="1.2" />
+    <path d="M10 9.5l1.6 3-1.6 3-1.6-3z" stroke-width=".9" />
   {:else if of === 'corrupt'}
     <circle cx="12" cy="12" r="8.5" />
     <path d="M12 5.5c2.5 2.3 2.5 4.6 0 6.5s-2.5 4.2 0 6.5M7.5 9.2c1.6.6 3 .6 4.5 0M12 15c1.6-.6 3-.6 4.5 0" stroke-width="1.1" />

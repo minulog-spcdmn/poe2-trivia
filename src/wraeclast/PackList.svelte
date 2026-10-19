@@ -3,7 +3,7 @@
   // its slot (its supply's mark and how many, up to STACK_MAX), the empty
   // slots dashed. With `onpick`, each stack is a button (the loot's swap: a
   // supply that didn't fit replaces the stack picked).
-  import { PACK_STACKS, STACK_MAX, SUPPLY_NAMES, type Run } from './rules';
+  import { PACK_STACKS, SUPPLY_NAMES, type Run } from './rules';
   import Glyph from './Glyph.svelte';
   import { SHORT } from './words';
 
@@ -11,20 +11,20 @@
   const s = $derived(run.state);
 </script>
 
-<ul class="stacks" aria-label="The pack: {s.pack.length} of {PACK_STACKS} stacks, up to {STACK_MAX} each">
+<ul class="stacks" aria-label="Your pack: {s.pack.length} of {PACK_STACKS} spaces used">
   {#each Array.from({ length: PACK_STACKS }, (_, i) => i) as i (i)}
     {@const st = s.pack[i]}
     <li>
       {#if st && onpick}
-        <button class="stack" onclick={() => onpick(i)} aria-label="Replace {SUPPLY_NAMES[st.supply]} × {st.n}">
+        <button class="stack" onclick={() => onpick(i)} aria-label="Replace {st.n} {SUPPLY_NAMES[st.supply]} with the new supply">
           <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span><span class="lbl">{SHORT[st.supply]}</span><span class="n">{st.n}</span>
         </button>
       {:else if st}
-        <span class="stack" title="{SUPPLY_NAMES[st.supply]} × {st.n}">
+        <span class="stack" title="{st.n} {SUPPLY_NAMES[st.supply]}">
           <span class="ic" aria-hidden="true"><Glyph of={st.supply} /></span><span class="lbl">{SHORT[st.supply]}</span><span class="n">{st.n}</span>
         </span>
       {:else}
-        <span class="stack empty" aria-label="Empty"></span>
+        <span class="stack empty" aria-label="Empty space"></span>
       {/if}
     </li>
   {/each}

@@ -2,12 +2,12 @@
 // owner placed them (src/data/wraeclast.json, hand-placed, so not generated),
 // the paths between them (built here when the page loads, never stored), and
 // what each run rolls on them: which open nodes are zones and which Wells,
-// each zone's type, and where corruption starts and how it creeps. Pure, so a
-// test rolls and creeps a map the same as the page does.
+// each zone's type, and where the corruption fronts start and how they creep.
+// Pure, so a test rolls and creeps a map the same as the page does.
 //
-// The file can change under the code (the owner is still placing nodes): any
-// step may hold 1 to 4 nodes, a step with none is skipped, and a town can sit
-// at any step.
+// The file can change under the code (the owner is re-stepping it to 10
+// steps): any step may hold 1 to 4 nodes, a step with none is skipped, a town
+// can sit at any step, and the boss's step is the last, whatever it is.
 
 import mapData from '../data/wraeclast.json' with { type: 'json' };
 
@@ -16,7 +16,7 @@ export type NodeKind = 'camp' | 'town' | 'boss' | 'open';
 export interface MapNode {
   id: string;
   name: string;
-  /** 0 (the camp) to 16 (the boss). */
+  /** 0 (the camp) to the boss's (the last). */
   step: number;
   /** Where it sits on the illustrated map, as fractions of its width and height. */
   x: number;
@@ -88,10 +88,10 @@ export const ZONE_NAMES: Record<ZoneType, string> = {
   blight: 'Blight',
 };
 
-/** A corrupted zone's hidden modifier, shown on a card that flips as the player arrives. */
-export type Hidden = 'blood' | 'sealed' | 'swarming' | 'dark' | 'bounty';
-export const HIDDEN: readonly Hidden[] = ['blood', 'sealed', 'swarming', 'dark', 'bounty'];
-export const HIDDEN_NAMES: Record<Hidden, string> = { blood: 'Blood toll', sealed: 'Sealed', swarming: 'Swarming', dark: 'Dark', bounty: 'Bounty' };
+/** A corrupted zone's modifier: every one has the same, Blood toll, shown on the map. */
+export type Hidden = 'blood';
+export const HIDDEN: readonly Hidden[] = ['blood'];
+export const HIDDEN_NAMES: Record<Hidden, string> = { blood: 'Blood toll' };
 
 /** What each live front adds to the boss, rolled, at most BOSS_MODS. */
 export type BossMod = 'lingering' | 'bloodied' | 'murky' | 'teeming';
@@ -102,24 +102,25 @@ export const MAX_BOSS_MODS = 3;
 /** What a node is in this run. */
 export type Place = { kind: 'camp' } | { kind: 'town' } | { kind: 'boss' } | { kind: 'well' } | { kind: 'zone'; type: ZoneType };
 
-/** Corruption on one node: its hidden modifier, and whether the player cleansed it. */
-export interface Corrupt {
-  hidden: Hidden;
-  cleansed: boolean;
-}
-
-/** A corruption front: the node it last corrupted, and whether it still creeps. */
+/**
+ * A corruption front: a zone, the only one it corrupts. Creeping on, it
+ * leaves the zone it stood on a normal zone again. Stopped (its zone cleared),
+ * it stays where it was, and that zone is normal too.
+ */
 export interface Front {
   /** Its number, from 0, in the order seeded. */
   id: number;
   at: string;
   alive: boolean;
-  /** The node it was stopped at (cleansed there), or null. */
+  /** The node it was stopped at (cleared there), or null. */
   stoppedAt: string | null;
 }
 
-/** The steps corruption seeds at (both ends in). */
-export const SEED_STEPS: [number, number] = [3, 7];
+/** Whether a node is corrupted: a live front stands on it. */
+export const corruptedAt = (fronts: readonly Front[], id: string) => fronts.some((f) => f.alive && f.at === id);
+
+/** The steps corruption seeds at, both ends in: the route's first half, from step 2 (2 to 5 on a 10-step route). */
+export const seedSteps = (g: MapGraph): [number, number] => [2, Math.max(2, Math.floor(g.boss.step / 2))];
 /** How far apart seeds sit across the map (a fraction of its width) where the map allows: "on different branches". */
 export const SEED_GAP = 0.15;
 
@@ -171,13 +172,14 @@ export function rollPlaces(g: MapGraph, zoneShare: number, rng: () => number): R
 }
 
 /**
- * Where corruption starts: `count` zones at steps 3 to 7, on different
- * branches where possible (at least SEED_GAP apart across the map), each with
- * its hidden modifier rolled.
+ * Where corruption starts: `count` zones in the route's first half
+ * (seedSteps), on different branches where possible (at least SEED_GAP apart
+ * across the map).
  */
-export function seedFronts(g: MapGraph, places: Record<string, Place>, count: number, weights: Record<Hidden, number>, rng: () => number) {
+export function seedFronts(g: MapGraph, places: Record<string, Place>, count: number, rng: () => number): Front[] {
+  const [lo, hi] = seedSteps(g);
   const zones = shuffled(
-    g.nodes.filter((n) => n.step >= SEED_STEPS[0] && n.step <= SEED_STEPS[1] && places[n.id].kind === 'zone'),
+    g.nodes.filter((n) => n.step >= lo && n.step <= hi && places[n.id].kind === 'zone'),
     rng,
   );
   // The first set (in the shuffle's order) whose seeds all sit SEED_GAP apart, searched in full so an early
@@ -194,48 +196,40 @@ export function seedFronts(g: MapGraph, places: Record<string, Place>, count: nu
   const picked: MapNode[] = best.slice(0, count);
   // Where the map can't keep them apart, the nearest ones fill in.
   for (const n of zones) if (picked.length < count && !picked.includes(n)) picked.push(n);
-  const corrupt: Record<string, Corrupt> = {};
-  const fronts: Front[] = picked.map((n, id) => {
-    corrupt[n.id] = { hidden: weighted(weights, HIDDEN, rng) ?? 'bounty', cleansed: false };
-    return { id, at: n.id, alive: true, stoppedAt: null };
-  });
-  return { corrupt, fronts };
+  return picked.map((n, id) => ({ id, at: n.id, alive: true, stoppedAt: null }));
+}
+
+/** A front's move as it creeps. */
+export interface Move {
+  front: number;
+  from: string;
+  to: string;
 }
 
 /**
- * Each live front creeps one step: it corrupts one zone on the next step that
- * it links to, at random. Facing only towns, Wells or the boss, it jumps to a
- * zone the step after, through them. With nowhere to go, it waits. A zone
- * corrupted already (or cleansed) is still a place to go, but only a fresh one
- * rolls a modifier. `passed` (the steps the player has left behind, and the
- * node they're on) is never crept into. Returns the nodes newly corrupted.
+ * Each live front creeps one step: onto a zone on the next step it links to,
+ * at random, one no other live front stands on where it can; the zone it
+ * left is normal again. Facing only towns, Wells or the boss, it jumps to a
+ * zone the step after, through them. With nowhere to go, it waits. A zone at
+ * or behind the player's step is never crept onto. Returns the moves.
  */
-export function creep(
-  g: MapGraph,
-  places: Record<string, Place>,
-  corrupt: Record<string, Corrupt>,
-  fronts: Front[],
-  playerStep: number,
-  weights: Record<Hidden, number>,
-  rng: () => number,
-): string[] {
+export function creep(g: MapGraph, places: Record<string, Place>, fronts: Front[], playerStep: number, rng: () => number): Move[] {
   const isZone = (id: string) => places[id].kind === 'zone' && g.byId.get(id)!.step > playerStep;
-  const fresh: string[] = [];
+  const moves: Move[] = [];
   for (const f of fronts) {
     if (!f.alive) continue;
     let ahead = g.next[f.at].filter(isZone);
     // Only a front facing no zone at all (towns, Wells, the boss) jumps; one held up by zones the player has reached waits.
     if (!ahead.length && !g.next[f.at].some((id) => places[id].kind === 'zone'))
       ahead = [...new Set(g.next[f.at].flatMap((id) => g.next[id]))].filter(isZone);
-    if (!ahead.length) continue;
-    const to = ahead[Math.floor(rng() * ahead.length)];
+    const free = ahead.filter((id) => !fronts.some((o) => o !== f && o.alive && o.at === id));
+    const pick = free.length ? free : ahead;
+    if (!pick.length) continue;
+    const to = pick[Math.floor(rng() * pick.length)];
+    moves.push({ front: f.id, from: f.at, to });
     f.at = to;
-    if (!corrupt[to]) {
-      corrupt[to] = { hidden: weighted(weights, HIDDEN, rng) ?? 'bounty', cleansed: false };
-      fresh.push(to);
-    }
   }
-  return fresh;
+  return moves;
 }
 
 /** The boss's modifiers: one per live front, rolled without repeats, at most MAX_BOSS_MODS. */
