@@ -8,10 +8,11 @@
 //
 // They unlock class sigils (lib/sigils.ts), the first and then every third:
 // while there is one to unlock, a notice a few seconds after them says so,
-// and where.
+// and where, once each time they come to be worth another (not again for
+// each achievement until the next).
 
 import { loadAchievements, type Achievement, type Check } from './achievements.ts';
-import { achievementsIn, loadSigils, sigilsToUnlock } from './sigils.ts';
+import { achievementsIn, loadSigils, sigilsFor, sigilsToUnlock } from './sigils.ts';
 import { toasts } from './toasts.svelte';
 
 /** More than this at once come as one notice naming them all. */
@@ -67,9 +68,15 @@ function sigilNotice() {
   }, SIGIL_DELAY_MS);
 }
 
+/** What the achievements were worth in sigils at the last notice, so it isn't given again until that changes. */
+let toldFor = -1;
+
 function sigilsLeft() {
-  const n = sigilsToUnlock(loadSigils(), achievementsIn(loadAchievements()));
-  if (!n) return;
+  const achievements = achievementsIn(loadAchievements());
+  const n = sigilsToUnlock(loadSigils(), achievements);
+  const worth = sigilsFor(achievements);
+  if (!n || worth === toldFor) return;
+  toldFor = worth;
   toasts.show('Pick a class to wear on your avatar, in the settings or in the Codex under Achievements.', 'info', {
     title: n === 1 ? 'A class sigil to unlock' : `${n} class sigils to unlock`,
   });

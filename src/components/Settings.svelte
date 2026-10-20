@@ -111,7 +111,7 @@
   // ---- class sigils ----
 
   // (Only on the page: in a game the sigil stays as it came in.)
-  /** Achievements earned, each worth a sigil (SigilPicker), read again when another tab earns one. */
+  /** Achievements earned, which unlock sigils (SigilPicker), read again when another tab earns one. */
   let earned = $state(achievementsIn(loadAchievements()));
   onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
   let unlocked = $state(0);

@@ -1,7 +1,14 @@
+<script module lang="ts">
+  /** The achievements still to earn for the next sigil, in words while there are few. */
+  const COUNT = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
+  const count = (n: number) => COUNT[n - 1] ?? String(n);
+</script>
+
 <script lang="ts">
   // The class sigils (lib/sigils.ts): the first achievement earned unlocks
-  // one, and every third after it another, of the class picked here, and one unlocked is worn with a click. On the
-  // Codex's achievements page (CodexAchievements) and in the settings.
+  // one, and every third after it another, of the class picked here, and one
+  // unlocked is worn with a click. On the Codex's achievements page
+  // (CodexAchievements) and in the settings.
   // Unlocking is for good, so a locked class picked asks once more first.
   // `strip`: the twelve in one row beside the avatar, named on hover (the
   // settings page, which has the width but not the height).
@@ -14,7 +21,7 @@
   import { reservedHueOf } from '../lib/game';
   import Avatar from './Avatar.svelte';
 
-  /** achievements: how many this player has earned, each worth a sigil. unlocked: how many they have unlocked, for a count beside it. hue: the avatar's colour. */
+  /** achievements: how many this player has earned (lib/sigils.ts says what they're worth). unlocked: how many they have unlocked, for a count beside it. hue: the avatar's colour. */
   let {
     achievements,
     unlocked = $bindable(0),
@@ -41,7 +48,8 @@
   const left = $derived(sigilsToUnlock(sigils, achievements));
   /** Achievements still to earn for the next one, when there's none to unlock now. */
   const toNext = $derived(achievementsToNext(sigils, achievements));
-  const COUNT = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
+  /** On a locked class, when there's none to unlock now: what it takes. */
+  const locked = $derived(toNext === 1 ? 'Your next achievement unlocks one' : `${count(toNext ?? 0)} more achievements unlock one`);
   /** A locked class picked, waiting to be unlocked. */
   let asking = $state<PlayerClass | null>(null);
   // (One no longer there to unlock, after a change in another tab, isn't asked about.)
@@ -76,12 +84,12 @@
         {left === 1 ? 'One sigil' : `${left} sigils`} to unlock: pick a class.
       {:else if toNext === null}
         Every class unlocked.
-      {:else if !achievements}
+      {:else if !sigils.unlocked.length}
         Your first achievement unlocks one, of the class you pick.
       {:else if toNext === 1}
         Your next achievement unlocks another.
       {:else}
-        {COUNT[toNext] ?? toNext} more achievements unlock another.
+        {count(toNext)} more achievements unlock another.
       {/if}
     </p>
     <!-- Kept in place while hidden, so the line never moves when it shows. -->
@@ -102,7 +110,7 @@
           class:asked={ask === c}
           disabled={!have && !left}
           aria-pressed={have ? sigils.worn === c : ask === c}
-          title="{strip ? `${className(c)}: ` : ''}{have ? (sigils.worn === c ? 'Worn: click to take it off' : 'Click to wear it') : left ? 'Click to unlock it' : 'Earn an achievement to unlock it'}"
+          title="{strip ? `${className(c)}: ` : ''}{have ? (sigils.worn === c ? 'Worn: click to take it off' : 'Click to wear it') : left ? 'Click to unlock it' : locked}"
           onclick={() => pick(c)}
         >
           <span class="art" style:--sigil="url({sigilUrl(c)})"></span>
@@ -215,27 +223,32 @@
   }
   /* The avatar beside its line, the line centred on it. Asked to unlock,
      the question at the avatar's top and the step it asks for at its foot,
-     in the same height, so the row never changes. */
+     in the avatar's height; a question that wraps pushes the step down
+     rather than running under it. */
   .strip .you {
     flex: 0 0 330px;
     display: grid;
     grid-template-columns: auto 1fr;
+    grid-template-rows: 1fr auto;
     align-items: center;
     column-gap: 1rem;
+    row-gap: 0.3rem;
     min-height: 0;
   }
-  .strip :is(.line, .acts) {
-    grid-area: 1 / 2;
+  .strip .you > :global(:first-child) {
+    grid-row: 1 / span 2;
   }
   .strip .line {
+    grid-area: 1 / 2 / 3 / 3;
     line-height: 1.35;
     font-size: 0.9rem;
   }
   .strip.asking .line {
+    grid-row: 1;
     align-self: start;
   }
   .strip .acts {
-    align-self: end;
+    grid-area: 2 / 2;
   }
   .strip .classes {
     flex: 1;
