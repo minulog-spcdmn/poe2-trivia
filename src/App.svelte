@@ -25,6 +25,7 @@
   import Lobby from './components/Lobby.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { whenIdle } from './lib/idle';
+  import { loadFontsAhead } from './lib/fontsAhead';
   import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
@@ -274,10 +275,14 @@
   });
 
   // The codex page is its own chunk: fetch it ahead, so opening it doesn't wait.
+  // Its fonts and the tooltips' too (lib/fontsAhead.ts), so they don't lay the codex out again as it opens.
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () => (codexPage ??= import('./components/Codex.svelte'));
   onMount(() => {
-    const t = setTimeout(loadCodexPage, 2000);
+    const t = setTimeout(() => {
+      loadCodexPage();
+      loadFontsAhead();
+    }, 2000);
     return () => clearTimeout(t);
   });
 
@@ -369,13 +374,26 @@
    * the root (`--<name>`), kept as it changes and kept after it goes: the end
    * of a game lines its panel up with the lobby's from the header's and the
    * lobby's legal links' (GameOver.svelte), the links not showing there.
+   * Only the game's screens read them, so while the codex shows they're
+   * held until it closes: a new value restyles the whole page, on the
+   * codex's five hundred tiles some 20 ms each, as the codex came in.
    */
+  const heldVars = new Map<string, string>();
   function heightVar(node: HTMLElement, name: string) {
-    const set = () => document.documentElement.style.setProperty(`--${name}`, `${ownRect(node).height.toFixed(2)}px`);
+    const set = () => {
+      const v = `${ownRect(node).height.toFixed(2)}px`;
+      if (untrack(() => codex)) heldVars.set(name, v);
+      else document.documentElement.style.setProperty(`--${name}`, v);
+    };
     const ro = new ResizeObserver(set);
     ro.observe(node);
     return { destroy: () => ro.disconnect() };
   }
+  $effect(() => {
+    if (codex) return;
+    for (const [name, v] of heldVars) document.documentElement.style.setProperty(`--${name}`, v);
+    heldVars.clear();
+  });
 
   function overLegal(node: HTMLElement) {
     let raf = 0;

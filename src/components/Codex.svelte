@@ -13,6 +13,7 @@
   import { dialogBackdrop } from '../lib/behindDialog';
   import { calm } from '../lib/motion.svelte';
   import { whenIdle } from '../lib/idle';
+  import { ownRect } from '../lib/stage';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import { circleOf } from './circles';
@@ -83,11 +84,50 @@
   // loading, which only looks ahead a little and only on a main-thread frame,
   // so the pictures were still missing, and arrived all at once mid-scroll.
   // Not with Save-Data on: the rest are some megabytes.
-  let thumbsLoading = $state<'lazy' | 'eager'>('lazy');
+  //
+  // And the sections are laid out a few at a time. All five hundred tiles at
+  // once took some 60 ms of style and layout in the codex's first frame, and
+  // all their pictures set loading at once another 45 ms. So each section
+  // after the first is held out of layout (content-visibility) until its
+  // turn, one a frame once the codex is in (or sooner, as the browser does,
+  // when it nears the screen), standing meanwhile at the height its
+  // rows take at the first section's pitch. Its turn lays it out as any page
+  // is, so every height is exact a moment after opening, and starts its
+  // pictures loading.
+  const saveData = !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+  /** How many sections have had their turn. */
+  let staged = $state(0);
+  const held = (i: number) => i >= Math.max(1, staged);
+  const thumbsLoading = $derived<'lazy' | 'eager'>(!saveData && staged >= engine.categories.length ? 'eager' : 'lazy');
   onMount(() => {
-    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
-    return whenIdle(() => (thumbsLoading = 'eager'), { timeout: 2000 });
+    // A section a frame, from the first idle moment after the codex comes in
+    // (idle moments are few while it does: one each took seconds).
+    let raf = 0;
+    const next = () => {
+      staged++;
+      if (staged < engine.categories.length) raf = requestAnimationFrame(next);
+    };
+    const cancel = whenIdle(() => (raf = requestAnimationFrame(next)), { timeout: 500 });
+    return () => {
+      cancel();
+      cancelAnimationFrame(raf);
+    };
   });
+  /** The sections as shown (bound), the first measured for the others' height while they're held. */
+  let sectionEls = $state<HTMLElement[]>([]);
+  let pitch = $state<{ head: number; row: number; gap: number; cols: number } | null>(null);
+  $effect(() => {
+    const first = sectionEls[0];
+    const grid = first?.querySelector<HTMLElement>('.grid');
+    if (pitch || !first || !grid?.children.length) return;
+    const cs = getComputedStyle(grid);
+    const cols = cs.gridTemplateColumns.split(' ').length;
+    const gap = parseFloat(cs.rowGap) || 0;
+    const h = ownRect(grid).height;
+    // (Its grid's margin under it collapses out of a section laid out, and stays inside one held.)
+    pitch = { head: ownRect(first).height - h + (parseFloat(cs.marginBottom) || 0), row: (h + gap) / Math.ceil(grid.children.length / cols), gap, cols };
+  });
+  const heldHeight = (n: number) => (pitch ? `auto ${(pitch.head + Math.ceil(n / pitch.cols) * pitch.row - pitch.gap).toFixed(1)}px` : 'auto 800px');
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
   const sections = $derived(
@@ -476,8 +516,9 @@
       </div>
 
       {#if view === 'grid'}
-        {#each sections as sec (sec.stats.category)}
-          <section class="cat-section">
+        {#each sections as sec, i (sec.stats.category)}
+          {@const loading = !saveData && i < staged ? 'eager' : 'lazy'}
+          <section class="cat-section" class:held={held(i)} style:contain-intrinsic-height={held(i) ? heldHeight(sec.items.length) : null} bind:this={sectionEls[i]}>
             <header>
               {@render glyph(sec.stats.category)}
               <h3>{sec.stats.category}</h3>
@@ -499,7 +540,7 @@
                   {#if e}
                     {@const t = tallyOf(e)}
                     <button class="tile" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ', seen'}">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" {loading} /></span>
                       <span class="name">{it.name}</span>
                       <span class="status">
                         {#if t.n}
@@ -511,7 +552,7 @@
                     </button>
                   {:else}
                     <span class="tile unknown" title="Not discovered yet">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" {loading} /></span>
                       <span class="name">Undiscovered</span>
                       <span class="status"></span>
                     </span>
@@ -1137,6 +1178,10 @@
       0 0 14px rgba(201, 164, 92, 0.3);
   }
 
+  /* Out of layout until its turn (see staged). */
+  .cat-section.held {
+    content-visibility: auto;
+  }
   .cat-section header {
     display: flex;
     flex-wrap: wrap;
