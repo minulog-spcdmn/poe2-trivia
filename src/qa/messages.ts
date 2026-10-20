@@ -30,7 +30,9 @@ export type DeskMessage =
   /** One of a piece's actions, pressed. */
   | { qa: 'action'; key: string }
   /** Draw it in again, as it first came. */
-  | { qa: 'replay' };
+  | { qa: 'replay' }
+  /** The UI's shadows and fills left to CSS, or drawn by the backdrop (S). */
+  | { qa: 'css'; on: boolean };
 
 /** How a live seat stands, as it tells the desk every second. */
 export interface SeatLook {
@@ -69,4 +71,4 @@ export function deskOrigin(asked: URLSearchParams): string {
 
 const isQa = (m: unknown): m is { qa: string } => typeof m === 'object' && m !== null && 'qa' in m && typeof (m as { qa: unknown }).qa === 'string';
 export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'failed', 'checked', 'key', 'set', 'pick'].includes(m.qa);
-export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && ['outlines', 'freeze', 'values', 'action', 'replay'].includes(m.qa);
+export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && ['outlines', 'freeze', 'values', 'action', 'replay', 'css'].includes(m.qa);

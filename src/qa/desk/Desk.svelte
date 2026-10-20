@@ -79,6 +79,8 @@
   let zoomed = $state(first?.zoomed ?? false);
   let outlines = $state(first?.outlines ?? true);
   let frozen = $state(false);
+  /** S: the UI's shadows and fills left to CSS, not the backdrop. */
+  let css = $state(false);
   let reloads = $state(0);
   let holding = $state(false);
   let panning = $state(false);
@@ -350,6 +352,7 @@
   }
   $effect(() => tellFrames({ qa: 'outlines', on: outlines }));
   $effect(() => tellFrames({ qa: 'freeze', on: frozen }));
+  $effect(() => tellFrames({ qa: 'css', on: css }));
   // A piece's controls, as they move.
   $effect(() => {
     if (piece) tellFrames({ qa: 'values', values: $state.snapshot(v) });
@@ -371,6 +374,7 @@
     else if (m.qa === 'ready') {
       // (What changed while it loaded, before it listened.)
       if (frozen) tellFrames({ qa: 'freeze', on: true });
+      if (css) tellFrames({ qa: 'css', on: true });
       if (piece) tellFrames({ qa: 'values', values: $state.snapshot(v) });
     }
     else if (m.qa === 'set' && piece) values[piece.key] = { ...v, ...m.values };
@@ -408,6 +412,7 @@
     else if (key === 'f' || key === 'F') frozen = !frozen;
     else if (key === 'z' || key === 'Z') zoomed = !zoomed;
     else if (key === 'o' || key === 'O') outlines = !outlines;
+    else if ((key === 's' || key === 'S') && !piece) css = !css;
     else if (key === '/') shelf?.focus();
   }
   /** Keys a slider moves itself by, while it has the focus. */
@@ -575,6 +580,7 @@
     seats={seatNames}
     seat={seatShown}
     {frozen}
+    {css}
     hasBoard={!!board}
     canPlay={!!built?.state && LIVE_ROOMS && !live}
     reason={change?.benches.find((t) => t.key === bench.key)?.why}
@@ -589,6 +595,7 @@
     onact={act}
     onreplay={replay}
     onfreeze={() => (frozen = !frozen)}
+    oncss={() => (css = false)}
     onplay={play}
     onhold={(on) => (holding = on)}
   />

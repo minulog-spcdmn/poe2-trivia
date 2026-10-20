@@ -64,13 +64,28 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   nothing is alive.
 - **Loading**: the first paint waits on as few shaders as possible, since on
   a first visit (a cold shader cache) compiling them held it up by seconds.
-  The backdrop's first frame is drawn by lean programs without Delve's parts
-  (its strata's smoke and dark, the environments, the dark closing in, the
-  far city lights, the frost's glints), which draw the start page and the
-  other modes exactly as the whole would. Delve's programs are built in the
-  background once Delve is on its way (`wantDelveBackdrop`: Delve picked in a
-  lobby, a Delve room joined, a run picked up or begun from a `?delve` link,
-  the lab, the zone tuning page and the backdrop tool), with
+  The backdrop's lean programs start building before anything else it sets
+  up, all at once, so with `KHR_parallel_shader_compile` the driver builds
+  them side by side and the first paint waits for the slowest, not their
+  sum. The UI's box shadows and fills are the slowest part to build, so
+  they're a pass of their own (`uiFrag`), drawn over the main pass's colour
+  (kept in a half-float target, as the soft light is): the first frame's
+  shaders take about 60% of the time they did as one program, and the
+  picture is the same (the half float rounds a pixel by one 8-bit level now
+  and then). The extra pass costs a few hundredths of a ms a frame on a
+  desktop GPU. Without a float target it's all one main pass. On phones and
+  tablets, where CSS keeps every shadow, the main pass has none of the UI's
+  parts and there's no UI pass (Delve's leaves them out too; a pointer that
+  changes later has them built in the background, CSS painting them
+  meanwhile); without the extension everything is read at once, as before.
+  The lean programs draw
+  without Delve's parts (its strata's smoke and dark, the environments, the
+  dark closing in, the far city lights, the frost's glints), which draw the
+  start page and the other modes exactly as the whole would. Delve's
+  programs are built in the background once Delve is on its way
+  (`wantDelveBackdrop`: Delve picked in a lobby, a Delve room joined, a run
+  picked up or begun from a `?delve` link, the lab, the zone tuning page and
+  the backdrop tool), with
   `buildPrograms` in `src/lib/fx/gl.ts` (`KHR_parallel_shader_compile`
   polled once a frame, or one program per idle moment without it), and are
   drawn once each, small, so the GPU has them ready. Should a Delve scene
