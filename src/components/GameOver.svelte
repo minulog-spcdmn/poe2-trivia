@@ -481,7 +481,7 @@
     {/if}
     <span class="buttons" data-cursor="actions">
       <button class="btn ghost back" data-cursor="back" disabled={leaving} onclick={() => again(false)}>Back to lobby</button>
-      <button class="btn primary big again" data-cursor="again" disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
+      <button class="btn primary big again" data-cursor="again" use:backdropShadow disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
     </span>
   {:else if session.spectating}
     <p class="note spect" data-cursor="joining">

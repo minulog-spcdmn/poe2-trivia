@@ -438,12 +438,38 @@ input {
   text-shadow:
     0 1px 2px rgba(40, 18, 0, 0.85),
     0 0 10px rgba(255, 200, 120, 0.25);
+  /* Its glow and drop shadow are drawn by the WebGL backdrop where the
+     button is tagged (use:backdropShadow) and it can, by CSS otherwise. The
+     insets stay CSS; their hover change eases through the registered
+     --btn-hi, --btn-lo and --bs-ring, not a transition of box-shadow as a
+     whole, which would fade the CSS copy of the glow out slowly whenever the
+     backdrop takes it over. */
+  --btn-hi: rgba(255, 240, 200, 0.45);
+  --btn-lo: rgba(40, 15, 0, 0.55);
+  --bs-ring: transparent;
+  --bs1: 0px 14px;
+  --bs1-color: rgba(224, 138, 68, 0.22);
+  --bs2: 3px 12px;
+  --bs2-color: rgba(0, 0, 0, 0.55);
   box-shadow:
-    inset 0 1px 0 rgba(255, 240, 200, 0.45),
+    inset 0 1px 0 var(--btn-hi),
     inset 0 0 0 1px rgba(60, 30, 0, 0.4),
-    inset 0 -12px 18px -8px rgba(40, 15, 0, 0.55),
-    0 0 14px rgba(224, 138, 68, 0.22),
-    0 3px 12px rgba(0, 0, 0, 0.55);
+    inset 0 -12px 18px -8px var(--btn-lo),
+    0 0 0 1px var(--bs-ring),
+    var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+  transition:
+    transform 0.18s var(--ease-out),
+    --btn-hi 0.25s,
+    --btn-lo 0.25s,
+    --bs-ring 0.25s,
+    --bs1 0.25s,
+    --bs1-color 0.25s,
+    --bs2 0.25s,
+    --bs2-color 0.25s,
+    border-color 0.25s,
+    color 0.25s,
+    text-shadow 0.25s,
+    filter 0.25s;
 }
 .btn.primary::after {
   opacity: 0.6;
@@ -452,14 +478,41 @@ input {
 .btn.primary:hover:not(:disabled) {
   border-color: #f1d99b;
   color: #fffaf0;
+  --btn-hi: rgba(255, 244, 214, 0.55);
+  --btn-lo: rgba(40, 15, 0, 0.45);
+  --bs-ring: rgba(241, 217, 155, 0.2);
+  --bs1: 0px 30px;
+  --bs1-color: rgba(255, 160, 70, 0.45);
+  /* (Over .btn:hover's own.) */
   box-shadow:
-    inset 0 1px 0 rgba(255, 244, 214, 0.55),
+    inset 0 1px 0 var(--btn-hi),
     inset 0 0 0 1px rgba(60, 30, 0, 0.4),
-    inset 0 -12px 18px -8px rgba(40, 15, 0, 0.45),
-    0 0 0 1px rgba(241, 217, 155, 0.2),
-    0 0 30px rgba(255, 160, 70, 0.45),
-    0 3px 12px rgba(0, 0, 0, 0.55);
+    inset 0 -12px 18px -8px var(--btn-lo),
+    0 0 0 1px var(--bs-ring),
+    var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
   filter: brightness(1.08);
+}
+/* The button's filter brightens its CSS glow but doesn't reach what the
+   backdrop draws: the backdrop's glow, brightened as the filter would. (The
+   filter scales the glow's light past full red, which a colour can't hold;
+   its alpha scaled by the same factor adds the same light.) */
+.btn.primary:hover:not(:disabled)[data-bs-on] {
+  --bs1-color: rgba(255, 160, 70, 0.486);
+}
+.btn.primary:active:not(:disabled)[data-bs-on] {
+  --bs1-color: rgba(255, 160, 70, 0.585);
+}
+/* Dimmed and desaturated by its filter, which the backdrop doesn't apply:
+   CSS keeps its shadows. */
+.btn.primary:disabled {
+  --bs1-color: transparent;
+  --bs2-color: transparent;
+  box-shadow:
+    inset 0 1px 0 var(--btn-hi),
+    inset 0 0 0 1px rgba(60, 30, 0, 0.4),
+    inset 0 -12px 18px -8px var(--btn-lo),
+    0 0 14px rgba(224, 138, 68, 0.22),
+    0 3px 12px rgba(0, 0, 0, 0.55);
 }
 /* For what can't be undone: the primary button in crimson. */
 .btn.danger {
@@ -702,6 +755,17 @@ h3,
   initial-value: transparent;
 }
 @property --bs-shade {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+/* The gold button's inset light and shade (.btn.primary), likewise. */
+@property --btn-hi {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --btn-lo {
   syntax: '<color>';
   inherits: false;
   initial-value: transparent;

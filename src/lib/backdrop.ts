@@ -956,8 +956,12 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
     // ramp as wide as a Gaussian edge's 10-90% rise).
     float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * k);
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
+    // A shadow reaches one pixel further in, under the box's own edge: CSS
+    // covers that pixel by its coverage, so weighing the shadow by it too
+    // would count the edge twice and leave a dark seam where the glow starts.
+    float under = clamp((sdf + px) / edge + 0.5, 0.0, 1.0);
 
-    if (shade && outside > 0.0) {
+    if (shade && under > 0.0) {
       for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
         vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
         vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
@@ -968,7 +972,7 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
         vec2 far = max(lower - lp, lp - upper);
         if (max(far.x, far.y) > 4.0 * g.z) continue;
         float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
-        col = mix(col, c.rgb, c.a * a * outside);
+        col = mix(col, c.rgb, c.a * a * under);
       }
     }
     if (pass == 1 && fc.x > 0.5 && outside < 1.0) {

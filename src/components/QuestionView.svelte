@@ -1050,6 +1050,7 @@
         in:fly={{ y: 16, duration: 400, delay: 250 }}
         class="btn"
         class:primary={canNext}
+        use:backdropShadow
         data-cursor="next"
         data-sfx="none"
         disabled={!canNext}

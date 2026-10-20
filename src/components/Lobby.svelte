@@ -266,7 +266,7 @@
       {/if}
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
-    <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+    <button class="btn big primary" data-cursor="begin" use:backdropShadow disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
     <!-- The host by name, as the end screen has it; "the host" only while no name is known. -->
     <p class="muted waiting">
