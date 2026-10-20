@@ -71,7 +71,7 @@ const { backdropShadow } = await import('../src/lib/backdropShadow.ts');
 
 /** Which pass a fragment shader is: the UI pass; the main one with all the UI's parts (no float target), only its drop shadows (the UI pass after it), or none; or the soft light. */
 const kindOf = (fs: string) =>
-  fs.includes('uBackdrop') ? 'ui' : fs.includes('uElX') ? 'full' : fs.includes('uMkA') ? 'main' : fs.includes('uniform sampler2D uSmooth') ? 'bare' : 'smooth';
+  fs.includes('fragColor = ui;') ? 'ui' : fs.includes('uElX') ? 'full' : fs.includes('uMkA') ? 'main' : fs.includes('uniform sampler2D uSmooth') ? 'bare' : 'smooth';
 
 /** A WebGL2 context that logs what's linked and read, by pass. */
 function fakeGl(parallel = true, floats = true) {
