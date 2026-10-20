@@ -149,7 +149,8 @@ const browser = browsers[0];
 /** Every state of every scene the desk at `base` has: its scene's key, its number there and controls, label, seats, the sizes it is walked at. */
 async function listScenes(base) {
   const desk = await browser.newPage();
-  await desk.goto(`${base}qa.html`);
+  // (A dev server just started builds the desk's modules as it first asks for them: that can take a while.)
+  await desk.goto(`${base}qa.html`, { timeout: 120000 });
   await desk.waitForFunction(() => window.__qaDesk, null, { timeout: 60000 });
   const scenes = await desk.evaluate(() => window.__qaDesk.scenes());
   await desk.close();
