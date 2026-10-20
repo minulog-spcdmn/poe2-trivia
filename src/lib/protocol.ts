@@ -7,6 +7,7 @@ import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from
 import type { Presence, Standing } from './presence.ts';
 import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
+import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
@@ -90,7 +91,7 @@ export type ClientMsg =
    * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -187,6 +188,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         ...(raw.lane ? { lane: true } : {}),
         ...(raw.seal ? { seal: true } : {}),
         ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
+        // (One this build doesn't know, a newer one's, is left out: they come in without it.)
+        ...(isPlayerClass(raw.sigil) ? { sigil: raw.sigil } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
@@ -224,6 +227,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // Watch rather than play (or take a seat again): only ever the sender's own choice.
         case 'watch':
           return typeof a.watch === 'boolean' ? { t: 'action', action: { type: 'watch', watch: a.watch } } : null;
+        // The class sigil they wear now: only ever the sender's own (one this build doesn't know counts as none).
+        case 'sigil':
+          return { t: 'action', action: isPlayerClass(a.sigil) ? { type: 'sigil', sigil: a.sigil } : { type: 'sigil' } };
         default:
           return null;
       }

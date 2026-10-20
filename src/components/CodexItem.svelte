@@ -1,3 +1,8 @@
+<script module lang="ts">
+  /** Made once: toLocaleDateString makes a formatter of its own each time, some ms as an item opens. */
+  let dateFormat: Intl.DateTimeFormat | undefined;
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -70,7 +75,7 @@
     return () => cancelAnimationFrame(raf);
   });
 
-  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const date = (t: number) => (dateFormat ??= new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' })).format(t);
   const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
   const score = (t: Tally) => `${t.ok} of ${t.n} (${Math.round((accuracy(t) ?? 0) * 100)}%)`;
 
@@ -263,10 +268,9 @@
     background:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.025'/%3E%3C/svg%3E"),
       #030201;
-    box-shadow:
-      0 0 0 1px #000,
-      0 0 50px rgba(175, 96, 37, 0.12),
-      0 20px 60px rgba(0, 0, 0, 0.75);
+    /* A hard black edge, and no soft glow or shadow around it: over the
+       dimmed page, where the backdrop can't draw for a dialog, CSS would band. */
+    box-shadow: 0 0 0 1px #000;
     outline: none;
   }
   .head {

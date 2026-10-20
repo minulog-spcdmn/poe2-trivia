@@ -363,7 +363,7 @@
                   {@const p = nameOf(id)}
                   {#if p}
                     <span class="duelist" class:done={id in dm.results} title={p.name}>
-                      <Avatar name={p.name} hue={p.hue} size={24} />
+                      <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={24} />
                       {#if id in dm.results}<i class:ok={dm.results[id]}><DrawnMark shape={dm.results[id] ? 'check' : 'cross'} /></i>{/if}
                     </span>
                   {/if}
@@ -468,7 +468,7 @@
           {#if p}
             {#if i > 0}<span class="vs">vs</span>{/if}
             <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
-              <Avatar name={p.name} hue={p.hue} size={56} />
+              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={56} />
               <b><PlayerName name={p.name} /></b>
             </span>
           {/if}

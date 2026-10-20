@@ -70,6 +70,8 @@ export async function boot(asked: URLSearchParams) {
   const scene = await sceneOf(key);
   const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
   const built = scene && buildScene(scene, given).built;
+  // Class sigils on everyone (tweaks.ts), before anything draws an avatar.
+  if (given.sigils === '1' || given.sigils === 'true') (await import('../../lib/sigilTrial.svelte.ts')).sigilTrial.on = true;
   // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
   const seats = scene && built ? seatsIn(scene, built) : [];
   const seat = seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];
@@ -126,7 +128,7 @@ export async function boot(asked: URLSearchParams) {
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of
-  // which files each scene runs, scripts/qa.mjs --map, doesn't count rooms.ts for every scene.)
+  // which files each scene runs, scripts/sweep.mjs --map, doesn't count rooms.ts for every scene.)
   if (built.rooms !== undefined || built.invite !== undefined) rooms.useMadeUpRooms(built.rooms ?? [], built.invite);
 
   // Who it is, and what it made of the game.
@@ -218,7 +220,7 @@ export async function boot(asked: URLSearchParams) {
   await run();
   // In the desk, checked again once what it shows has changed after a click
   // or a key in it (not on the screen's own ticking: a clock, a pulse). The
-  // sweep (scripts/qa.mjs) opens a frame as a page of its own and checks it
+  // sweep (scripts/sweep.mjs) opens a frame as a page of its own and checks it
   // once.
   if (parent === window) return;
   let touchedAt = -Infinity;

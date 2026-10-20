@@ -12,7 +12,8 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { fxActive, fxUserOn, onFxChange } from './fx/core';
+import { backdropFrame, fxActive, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels } from './fx/core';
+import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
 import { ENV_GLSL } from './shaders/effects';
@@ -20,8 +21,9 @@ import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { onVein, veinLevel } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
-import { buildPrograms, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
+import { buildPrograms, maxDrawSize, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
+import { whenIdle } from './idle';
 import { switchedOff } from './switchedOff';
 
 const CITY = ENVIRONMENTS.indexOf('city');
@@ -676,11 +678,12 @@ const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**
  * Which of the UI's shadows and fills a main pass draws: all of them; only
- * the drop shadows, with the boxes' drawn over it by the UI pass (uiFrag:
- * the two are built side by side, so the page's first paint waits only for
- * the slower, not both in one); or none (where the backdrop leaves them all
- * to CSS). The UI pass needs a float target to draw over, as the soft light
- * does its own: without one (see split), it's all in the main pass.
+ * the drop shadows, with the boxes' laid over the scene from the UI pass's
+ * layer (uiFrag: the two are built side by side, so the page's first paint
+ * waits only for the slower, not both in one); or none (where the backdrop
+ * leaves them all to CSS). The UI pass needs a float target to draw into,
+ * as the soft light does its own: without one (see split), it's all in the
+ * main pass.
  */
 type UiParts = 'all' | 'drops' | 'none';
 
@@ -690,8 +693,8 @@ type UiParts = 'all' | 'drops' | 'none';
  * spores' and motes' finest points are drawn at a device pixel's size, not
  * the soft light's texel's). With `delve`, Delve's parts too. `ui` is which
  * of the UI's shadows and fills it draws (see UiParts): CSS paints the rest.
- * With 'drops' it draws into the scene's own target, for the UI pass to
- * finish (the boxes, a dialog's dimming and the dither).
+ * With 'drops' the boxes' come from the UI pass's layer (uiFrag), laid over
+ * the scene here.
  */
 const frag = (MAX_ELEMENTS: number, split: boolean, delve: boolean, ui: UiParts = 'all') => `#version 300 es
 precision highp float;
@@ -722,7 +725,7 @@ uniform vec3 uEmberCore[${PALETTE}];
 uniform vec2 uEmberK;
 #define uEmberGain uEmberK.x
 #define uStreak uEmberK.y
-${delve ? DELVE_MAIN_UNIFORMS : ''}${ui === 'all' ? BOX_SHADOW_UNIFORMS(MAX_ELEMENTS) : ''}${ui !== 'none' ? DROP_UNIFORMS : ''}${ui !== 'drops' ? DIALOG_UNIFORM : ''}${ui === 'all' ? BOX_FUNCTIONS : ''}
+${delve ? DELVE_MAIN_UNIFORMS : ''}${ui === 'all' ? BOX_SHADOW_UNIFORMS(MAX_ELEMENTS) : ''}${ui !== 'none' ? DROP_UNIFORMS : ''}${ui === 'drops' ? BOXES_UNIFORM : ''}${DIALOG_UNIFORM}${ui === 'all' ? BOX_FUNCTIONS : ''}${ui !== 'none' ? LAY : ''}
 ${HASH}
 void main() {
   vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
@@ -782,13 +785,9 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
   }
 
-${ui !== 'none' ? DROP_MAIN : ''}${ui === 'drops' ? TO_UI_PASS : (ui === 'all' ? BOX_MAIN(MAX_ELEMENTS) : '') + FINISH}`;
+${ui !== 'none' ? DROPS : ''}${ui === 'drops' ? BOXES : ui === 'all' ? BOX_MAIN(MAX_ELEMENTS, false) : ''}${ui !== 'none' ? DROPS_OVER : ''}${FINISH}`;
 
-/** The end of the main pass, with the UI pass (uiFrag) to finish it: the scene into its target, as it is. */
-const TO_UI_PASS = `  fragColor = vec4(col, 1.0);
-}
-`;
-/** The end of the backdrop's last pass (frag's, or with the UI pass uiFrag's). */
+/** The end of the main pass. */
 const FINISH = `  // A dialog dims it all here, before the dither; CSS darkening the
   // dithered output would band.
   col *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDialog;
@@ -801,10 +800,12 @@ const FINISH = `  // A dialog dims it all here, before the dither; CSS darkening
 }
 `;
 
-// The main pass's UI parts (see frag): the UI's shadows and fills, drawn here
-// once the backdrop has taken them over from CSS. Its boxes' (backdropShadow.ts:
-// soft box shadows and fills) are most of what the main pass takes to build;
-// its drop shadows (backdropDropShadow.ts: text and image glows) a little.
+// The UI's shadows and fills, drawn here once the backdrop has taken them
+// over from CSS. Its boxes' (backdropShadow.ts: soft box shadows and fills)
+// are most of what the backdrop takes to build, so they're the UI pass's
+// where it can have one (see UiParts); its drop shadows
+// (backdropDropShadow.ts: text and image glows) a little, and stay in the
+// main pass.
 const BOX_UNIFORMS = (MAX_ELEMENTS: number) => `
 // Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
 uniform vec4 uElX[${MAX_ELEMENTS}];
@@ -861,31 +862,49 @@ float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float co
   // rounded corner, the box is a plain rectangle, whose blur is erf across
   // times erf down: no sum needed. That's most of the shadow beside a large
   // element.
+  // (One return, not an early one: the shader compiler builds it faster.)
   vec2 clear = halfSize - corner - abs(point) - 3.0 * sigma;
+  float value = 0.0;
   if (max(clear.x, clear.y) >= 0.0) {
     vec2 k = vec2(0.70710678 / sigma);
     vec2 cover = 0.5 * (erf2((point + halfSize) * k) - erf2((point - halfSize) * k));
-    return cover.x * cover.y;
+    value = cover.x * cover.y;
+  } else {
+    float low = point.y - halfSize.y;
+    float high = point.y + halfSize.y;
+    float y0 = clamp(-3.0 * sigma, low, high);
+    float y1 = clamp(3.0 * sigma, low, high);
+    float dy = (y1 - y0) / 8.0;
+    float y = y0 + dy * 0.5;
+    for (int i = 0; i < 8; i++) {
+      value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
+        * exp(-y * y / (2.0 * sigma * sigma)) * dy;
+      y += dy;
+    }
+    value *= 0.39894228 / sigma;
   }
-  float low = point.y - halfSize.y;
-  float high = point.y + halfSize.y;
-  float y0 = clamp(-3.0 * sigma, low, high);
-  float y1 = clamp(3.0 * sigma, low, high);
-  float dy = (y1 - y0) / 8.0;
-  float y = y0 + dy * 0.5;
-  float value = 0.0;
-  for (int i = 0; i < 8; i++) {
-    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
-      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
-    y += dy;
-  }
-  return value * (0.39894228 / sigma);
+  return value;
 }
 `;
-const DROP_MAIN = `  // UI drop shadows. The element paints over its own shadow, so where it is
-  // opaque the shadow is hidden anyway; drawing it only where the content is
-  // transparent keeps a see-through element (like the faint showcase items)
-  // from darkening what shows through it.
+/**
+ * A layer (premultiplied colour, coverage) with `c` laid over it at `a`: so
+ * the scene with the layer over it (col * (1 - l.a) + l.rgb) is the scene
+ * mixed with each in turn, as if drawn straight onto it.
+ */
+const LAY = `vec4 lay(vec4 l, vec3 c, float a) { return vec4(mix(l.rgb, c, a), mix(l.a, 1.0, a)); }
+`;
+/**
+ * The UI's drop shadows, in two layers: those inside a fill drawn here
+ * (uMkE's y), laid over the boxes (DROPS_OVER), and the rest, over the scene
+ * now. One loop for both: a second copy of it would take the shader
+ * compiler about as long again (some 30 ms).
+ */
+const DROPS = `  // UI drop shadows. The element paints over its own shadow, so where it
+  // is opaque the shadow is hidden anyway; drawing it only where the content
+  // is transparent keeps a see-through element (like the faint showcase
+  // items) from darkening what shows through it.
+  vec4 dropsUnder = vec4(0.0);
+  vec4 dropsOver = vec4(0.0);
   for (int i = 0; i < ${MAX_MASKS}; i++) {
     vec4 mc = uMkC[i];
     if (mc.z <= 0.0) continue;
@@ -908,16 +927,40 @@ const DROP_MAIN = `  // UI drop shadows. The element paints over its own shadow,
     vec4 c1 = uMkCol[i * ${DROPS_PER_MASK}];
     vec4 c2 = uMkCol[i * ${DROPS_PER_MASK} + 1];
     // CSS paints the last shadow in the list first.
-    col = mix(col, c2.rgb, c2.a * (t2.b + t2.a / 255.0) * (1.0 - content));
-    col = mix(col, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
+    bool inFill = uMkE[i].y > 0.5;
+    vec4 l = inFill ? dropsOver : dropsUnder;
+    l = lay(l, c2.rgb, c2.a * (t2.b + t2.a / 255.0) * (1.0 - content));
+    l = lay(l, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
+    if (inFill) dropsOver = l;
+    else dropsUnder = l;
   }
+  col = col * (1.0 - dropsUnder.a) + dropsUnder.rgb;
 
 `;
-const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: every element's shadows outside its border
+/** The drop shadows inside fills drawn here, over the boxes (see DROPS). */
+const DROPS_OVER = `  col = col * (1.0 - dropsOver.a) + dropsOver.rgb;
+
+`;
+const BOXES_UNIFORM = `uniform sampler2D uBoxes; // the UI pass's layer (uiFrag), a texel per device pixel
+`;
+/** The boxes' shadows and fills, from the UI pass's layer, over the scene. */
+const BOXES = `  vec4 boxes = texelFetch(uBoxes, ivec2(gl_FragCoord.xy), 0);
+  col = col * (1.0 - boxes.a) + boxes.rgb;
+
+`;
+/** GLSL that draws `c` at `a` onto col, or lays it into the layer `ui`. */
+const paint = (layer: boolean, c: string, a: string) => (layer ? `ui = lay(ui, ${c}, ${a});` : `col = mix(col, ${c}, ${a});`);
+/**
+ * The boxes' shadows and fills, drawn onto col, or (`layer`, the UI pass's)
+ * laid into the layer `ui` (see LAY).
+ */
+const BOX_MAIN = (MAX_ELEMENTS: number, layer: boolean) => `  // UI elements in two passes: every element's shadows outside its border
   // box, then every fill inside it, in document order. So a shadow only ever
   // lands on the backdrop, never on a neighbouring box: the same as while
   // the page scrolls, when CSS paints the fills over these shadows. (CSS on
-  // its own would lay a later box's shadow over the boxes before it.)
+  // its own would lay a later box's shadow over the boxes before it.) An
+  // element inside a fill drawn here has its shadows drawn in the second
+  // pass, in its turn, so they land on that fill as CSS would lay them.
   float pxLocal = uSize.x / uRes.x; // CSS px per device px
   for (int pass = 0; pass < 2; pass++)
   for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
@@ -937,12 +980,14 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
     vec2 jx = (hx.xy - lp.x * ea.xy) / hp.z;
     vec2 jy = (hy.xy - lp.y * ea.xy) / hp.z;
     float k = sqrt(abs(jx.x * jy.y - jx.y * jy.x));
-    if (pass == 0) {
-      // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
-      // test below for all of them at once): skip those first.
-      vec2 far = max(-lp, lp - eb.xy);
-      if (max(far.x, far.y) > ea.w) continue;
-    } else if (fc.x < 0.5) continue;
+    // Inside a fill drawn here (fc.w), its shadows go over that fill, in the
+    // second pass with the fills; otherwise in the first, under them all.
+    bool over = fc.w > 0.5;
+    // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
+    // test below for all of them at once): skip those first.
+    vec2 far = max(-lp, lp - eb.xy);
+    bool shade = (pass == 1) == over && max(far.x, far.y) <= ea.w;
+    if (!shade && (pass == 0 || fc.x < 0.5)) continue;
     vec2 halfBox = eb.xy * 0.5;
     float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
@@ -952,9 +997,27 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
     // ramp as wide as a Gaussian edge's 10-90% rise).
     float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * k);
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
+    // A shadow reaches one pixel further in, under the box's own edge: CSS
+    // covers that pixel by its coverage, so weighing the shadow by it too
+    // would count the edge twice and leave a dark seam where the glow starts.
+    float under = clamp((sdf + px) / edge + 0.5, 0.0, 1.0);
 
-    if (pass == 1) {
-      if (outside >= 1.0) continue;
+    if (shade && under > 0.0) {
+      for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
+        vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
+        vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
+        vec2 lower = g.xy - g.w;
+        vec2 upper = eb.xy + g.xy + g.w;
+        // Skip pixels beyond the Gaussian's reach. (Ifs, not continues: the
+        // shader compiler builds them faster.)
+        vec2 far = max(lower - lp, lp - upper);
+        if (c.a > 0.0 && max(far.x, far.y) <= 4.0 * g.z) {
+          float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
+          ${paint(layer, 'c.rgb', 'c.a * a * under')}
+        }
+      }
+    }
+    if (pass == 1 && fc.x > 0.5 && outside < 1.0) {
       vec4 ca = uElD[i];
       vec4 cb = uElE[i];
       vec4 fill;
@@ -981,31 +1044,18 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
         s = mix(s, ca.rgb, ca.a * max(0.0, 1.0 - tg / 0.7));
         fill = vec4(s, 1.0);
       }
-      col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
-      continue;
-    }
-    if (outside <= 0.0) continue;
-    for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
-      vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
-      vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
-      if (c.a <= 0.0) continue;
-      vec2 lower = g.xy - g.w;
-      vec2 upper = eb.xy + g.xy + g.w;
-      // Skip pixels beyond the Gaussian's reach.
-      vec2 far = max(lower - lp, lp - upper);
-      if (max(far.x, far.y) > 4.0 * g.z) continue;
-      float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
-      col = mix(col, c.rgb, c.a * a * outside);
+      ${paint(layer, 'fill.rgb', 'fill.a * fc.z * (1.0 - outside)')}
     }
   }
 
 `;
 
 /**
- * The UI pass: the UI's box shadows and fills (see BOX_MAIN), drawn over the
- * scene as the main pass left it in its target (frag's 'drops'), then
- * dimmed and dithered. Their code takes the shader compiler longer than the
- * rest of the main pass, so as a program of its own it's built alongside.
+ * The UI pass: the UI's box shadows and fills (see BOX_MAIN), into a layer
+ * of their own (see LAY) that the main pass lays over the scene (frag's
+ * 'drops'). Their code takes the shader compiler longer than the rest of the
+ * main pass, so as a program of its own it's built alongside; it reads
+ * nothing of the scene, so neither waits on the other.
  */
 const uiFrag = (MAX_ELEMENTS: number) => `#version 300 es
 precision highp float;
@@ -1013,16 +1063,16 @@ out vec4 fragColor;
 
 uniform vec2 uRes;  // drawing buffer size, device pixels
 uniform vec2 uSize; // canvas size, CSS pixels
-uniform sampler2D uBackdrop; // the main pass's colour, a texel per device pixel
 ${BOX_UNIFORMS(MAX_ELEMENTS)}${BOX_SHADOW_UNIFORMS(MAX_ELEMENTS)}${DIALOG_UNIFORM}
-${RGB}${BOX_FUNCTIONS}
-${HASH}
+${RGB}${BOX_FUNCTIONS}${LAY}
 void main() {
   vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   vec2 p = dev / uRes * uSize; // CSS px, top-left origin
-  vec3 col = texelFetch(uBackdrop, ivec2(gl_FragCoord.xy), 0).rgb;
+  vec4 ui = vec4(0.0);
 
-${BOX_MAIN(MAX_ELEMENTS)}${FINISH}`;
+${BOX_MAIN(MAX_ELEMENTS, true)}  fragColor = ui;
+}
+`;
 
 // CSS `ease-in-out`: cubic-bezier(0.42, 0, 0.58, 1).
 function easeInOut(x: number): number {
@@ -1103,13 +1153,15 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
   return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE || vein > 0;
 }
 
-/** The most device pixels the backdrop draws (see scale() in startBackdrop): a 1440p screen's. */
+/** The most device pixels the backdrop draws on a GPU too slow for more (see scale() in startBackdrop): a 1440p screen's. */
 const MAX_PIXELS = 2560 * 1440;
 /** The embers' halo in an Azurite Vein: azurite blue. */
 const VEIN_EMBERS = [0.3, 0.62, 1];
 
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
+/** The idle moments a program is warmed in (see warmUp): true ones, however long they take to come; a timer's delay where there's no requestIdleCallback (Safari). */
+const WARM_IDLE = { fallback: 50 };
 
 /** The QA desk's S (see leaveUiToCss). */
 let uiToCss = false;
@@ -1170,6 +1222,21 @@ function letGo(gl: WebGL2RenderingContext): null {
   return null;
 }
 
+/**
+ * Whether an opaque WebGL canvas (alpha: false) stalls the page in this
+ * browser: Chrome and the browsers built on it (Edge, Opera, Brave) on
+ * Windows, which draw WebGL through Direct3D 11. There an opaque canvas's
+ * buffers are made in a format Direct3D has to emulate, and making one holds
+ * up the GPU process, and every frame on the page with it, for 25-85 ms at
+ * 4K (a Chrome trace on an RTX 5070: SharedImageStub::OnCreateSharedImage on
+ * the GPU process's main thread). The canvas makes them often: whenever the
+ * backdrop draws faster for a while (a reveal), it needs more of them in
+ * flight. With an alpha channel each is made in a few hundredths of a ms.
+ * Elsewhere (Firefox, Safari, phones, Chrome on macOS and Linux) the canvas
+ * stays opaque, which spares the compositor blending it with the page.
+ */
+export const opaqueCanvasStalls = (userAgent: string) => /Windows NT/.test(userAgent) && /Chrome\//.test(userAgent);
+
 /** How many backdrops draw with WebGL now (one, but an old one's stop can come after a new one's start). */
 let onWebgl = 0;
 /** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
@@ -1184,12 +1251,15 @@ export const backdropOnWebgl = () => onWebgl > 0;
  * down, so the caller can fall back to CSS.
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
+  // (With an alpha channel where an opaque canvas stalls the page: see
+  // opaqueCanvasStalls. Every pixel is drawn opaque all the same, the main
+  // pass writing alpha 1.)
   const gl = canvas.getContext('webgl2', {
-    alpha: false,
+    alpha: opaqueCanvasStalls(globalThis.navigator?.userAgent ?? ''),
     antialias: false,
     depth: false,
     stencil: false,
-    premultipliedAlpha: false,
+    premultipliedAlpha: true,
     powerPreference: 'low-power',
   });
   if (!gl) {
@@ -1222,6 +1292,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   /** Whether the backdrop draws the UI's shadows and fills, or leaves them all to CSS; and whether it would but for the QA desk's S (programs are built as for that). */
   const mayDrawUi = () => !cssShadows.matches && !fillsToCss;
   const drawsUi = () => mayDrawUi() && !uiToCss;
+  // What each frame costs the GPU, for the quality the backdrop and the
+  // effects are drawn at (fx/gpuBudget.ts). (Not on phones and tablets: their
+  // GPUs draw in tiles, later than a timer sees.)
+  const timer = cssShadows.matches ? null : new GpuTimer(gl);
 
   // The lean programs, without Delve's parts (Delve's are built later, in
   // the background: see buildDelve), started first of all, so they build
@@ -1238,12 +1312,17 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // to draw the scene into they're a pass of their own (uiFrag), built side
   // by side with it and the soft light (with KHR_parallel_shader_compile
   // the driver does that off the page's thread): the first paint waits for
-  // the slowest, not for all of it in one. Where the backdrop draws none of
-  // them (cssShadows) the main pass has none, and there's no UI pass.
+  // the slowest, not for all of it in one. That's for the first paint
+  // only: two full-screen passes and a half-float layer between them cost
+  // the GPU more every frame than one, enough to show in a reveal's
+  // frames, so once the page is idle the main pass with them all is built
+  // in the background and takes over (see replaceLean). Where the backdrop draws
+  // none of them (cssShadows) the main pass has none, and there's no UI
+  // pass.
   const offered = !!gl.getSupportedExtensions()?.includes('EXT_color_buffer_float');
   let split = offered;
-  /** Which of the UI's parts the main pass draws (see UiParts), as things stand. */
-  const uiParts = (): UiParts => (!mayDrawUi() ? 'none' : split ? 'drops' : 'all');
+  /** Which of the UI's parts a main pass built now draws (see UiParts): the first frame's leaves the boxes to the UI pass, where it can (see begin). */
+  const uiParts = (): UiParts => (!mayDrawUi() ? 'none' : 'all');
   const mainSource = (ui: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, split, false, ui), label: "The backdrop's program" });
   const smoothSources = (): ProgramSource[] => (split ? [{ vs: VERT, fs: smoothFrag(false), label: "The backdrop's soft light program" }] : []);
   const uiSources = (ui: UiParts): ProgramSource[] => (ui === 'drops' ? [{ vs: VERT, fs: uiFrag(maxElements), label: "The backdrop's UI program" }] : []);
@@ -1251,7 +1330,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   /** Which of the UI's parts the first frame's main pass draws. */
   let firstUi = 'all' as UiParts;
   const begin = () => {
-    firstUi = uiParts();
+    firstUi = split && uiParts() === 'all' ? 'drops' : uiParts();
     first = startPrograms(gl, [mainSource(firstUi), ...smoothSources(), ...uiSources(firstUi)]);
   };
   begin();
@@ -1277,15 +1356,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   };
   let smoothTex: WebGLTexture | null = null;
   let smoothFbo: WebGLFramebuffer | null = null;
-  // The scene as the main pass leaves it, for the UI pass (unit 4), a texel per device pixel.
-  let sceneTex: WebGLTexture | null = null;
-  let sceneFbo: WebGLFramebuffer | null = null;
+  // The UI pass's layer, for the main pass (unit 4), a texel per device pixel.
+  let boxTex: WebGLTexture | null = null;
+  let boxFbo: WebGLFramebuffer | null = null;
   if (offered && gl.getExtension('EXT_color_buffer_float')) {
     const soft = target(3, gl.LINEAR);
-    const scene = soft && target(4, gl.NEAREST);
-    if (soft && scene) {
+    const boxes = soft && target(4, gl.NEAREST);
+    if (soft && boxes) {
       ({ tex: smoothTex, fbo: smoothFbo } = soft);
-      ({ tex: sceneTex, fbo: sceneFbo } = scene);
+      ({ tex: boxTex, fbo: boxFbo } = boxes);
     } else if (soft) {
       gl.deleteFramebuffer(soft.fbo);
       gl.deleteTexture(soft.tex);
@@ -1298,8 +1377,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   let smoothW = 1;
   let smoothH = 1;
-  let sceneW = 1;
-  let sceneH = 1;
+  let boxW = 1;
+  let boxH = 1;
 
   // One triangle covering the viewport.
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -1370,6 +1449,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     g.uniform1i(U('uBlur'), 1);
     g.uniform1i(U('uEmbers'), 2);
     g.uniform1i(U('uSmooth'), 3);
+    g.uniform1i(U('uBoxes'), 4);
     const elLoc = {
       x: U('uElX'),
       y: U('uElY'),
@@ -1454,8 +1534,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   function uiVariant(prog: WebGLProgram) {
     const g = gl!;
     const U = (name: string) => g.getUniformLocation(prog, name);
-    g.useProgram(prog);
-    g.uniform1i(U('uBackdrop'), 4);
     const elLoc = { x: U('uElX'), y: U('uElY'), a: U('uElA'), b: U('uElB'), c: U('uElC'), d: U('uElD'), e: U('uElE'), geo: U('uShGeo'), col: U('uShCol') };
     return {
       prog,
@@ -1476,26 +1554,120 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   let lean: Variant = variant(firstProgs[0], split ? firstProgs[1] : null, firstUi);
   let ui = firstUi === 'drops' ? uiVariant(firstProgs[2]) : null;
-  // Where the backdrop drew none of the UI's parts but has come to (the
-  // pointer changed): a main pass with them, and the UI pass, built in the
-  // background; CSS paints them meanwhile. Failing, it leaves them to CSS.
-  let upgrade: Build | null = null;
-  let upgradeFailed = false;
-  function startUpgrade() {
-    const parts = uiParts();
-    upgrade = buildPrograms(gl!, [mainSource(parts), ...uiSources(parts)], (progs) => {
-      upgrade = null;
-      if (!progs) {
-        // (A lost context goes to the CSS backdrop by itself: see lost.)
-        upgradeFailed = true;
-        if (!gl!.isContextLost()) console.warn("The backdrop leaves the UI's shadows and fills to CSS.");
-        return;
-      }
-      const was = lean;
-      lean = variant(progs[0], was.smoothProg, parts);
+  // Programs that take over from those drawing now, built in the
+  // background: each set is built, then warmed (see warmUp), then takes
+  // over in the next frame drawn (see draw), the programs it replaces let
+  // go (see Successor). The lean main pass is replaced so once the page is
+  // idle after the first paint: the first frame's two passes (see begin)
+  // give way to one that draws the UI's parts itself, since two
+  // full-screen passes and a half-float layer between them cost the GPU
+  // more every frame than one, enough to show in a reveal's frames. And
+  // where the backdrop drew none of the UI's parts but has come to (the
+  // pointer changed), one with them takes over; CSS paints them meanwhile.
+  // Failing, the first keeps its two passes, the second leaves the UI's
+  // parts to CSS. Delve's are replaced the same way (see buildDelve). The
+  // UI pass and its layer are let go once nothing drawn or coming needs
+  // them (needsUiPass).
+  type Successor = {
+    /** Which of the UI's parts it draws, from the moment it's started; null while none is coming. */
+    parts: UiParts | null;
+    build: Build | null;
+    /** Built: the programs, and those built for them (a soft light kept from the ones replaced isn't). */
+    v: Variant | null;
+    own: WebGLProgram[];
+    /** Warmed: it takes over in the next frame drawn. */
+    ready: boolean;
+    /** Cancels what it waits on: the idle moment its build starts in, or its warming. */
+    stop: (() => void) | null;
+    /** Its warming's next step drawn now, in the frame (see warmUp), while it's being warmed. */
+    hurry: (() => void) | null;
+  };
+  const successor = (): Successor => ({ parts: null, build: null, v: null, own: [], ready: false, stop: null, hurry: null });
+  /** Whether nothing is coming for it, nor waits to start. */
+  const quiet = (s: Successor) => !s.parts && !s.stop;
+  /** Waits for an idle moment (`timeout` ms at most) to start `f`. */
+  function whenPageIdle(s: Successor, f: () => void, timeout: number) {
+    s.stop = whenIdle(
+      () => {
+        s.stop = null;
+        if (!gl!.isContextLost()) f();
+      },
+      { timeout, fallback: 1000 },
+    );
+  }
+  /** Builds `sources` into what takes over (`make` makes it of them), then warms it; `failed` hears if they don't build. */
+  function succeed(s: Successor, parts: UiParts, sources: ProgramSource[], make: (progs: WebGLProgram[]) => Variant, failed: () => void, oneAtATime = false) {
+    s.parts = parts;
+    s.build = buildPrograms(
+      gl!,
+      sources,
+      (progs) => {
+        s.build = null;
+        if (!progs) {
+          s.parts = null;
+          // (A lost context goes to the CSS backdrop by itself: see lost.)
+          if (!gl!.isContextLost()) failed();
+          return;
+        }
+        const v = make(progs);
+        s.v = v;
+        s.own = progs;
+        const steps = [{ prog: v.prog, fbo: warmTarget() }];
+        if (v.smoothProg && progs.includes(v.smoothProg)) steps.unshift({ prog: v.smoothProg, fbo: smoothFbo! });
+        const w = warmUp(steps, () => {
+          s.stop = s.hurry = null;
+          s.ready = true;
+          dirty = true;
+        });
+        s.stop = w.cancel;
+        s.hurry = w.now;
+      },
+      oneAtATime,
+    );
+  }
+  /** What took over from `was` (see succeed), the programs it replaces let go (but a soft light it keeps). */
+  function adopt(s: Successor, was: Variant | null): Variant {
+    const v = s.v!;
+    if (was) {
       gl!.deleteProgram(was.prog);
-      if (parts === 'drops') ui = uiVariant(progs[1]);
+      if (was.smoothProg && was.smoothProg !== v.smoothProg) gl!.deleteProgram(was.smoothProg);
+    }
+    Object.assign(s, successor());
+    return v;
+  }
+  /** Whatever is coming for it given up, and let go. */
+  function drop(s: Successor) {
+    s.stop?.();
+    s.build?.cancel();
+    for (const p of s.own) gl!.deleteProgram(p);
+    Object.assign(s, successor());
+  }
+
+  const leanNext = successor();
+  let upgradeFailed = false;
+  function replaceLean() {
+    // (With whichever of the UI's parts the backdrop draws by now.)
+    const parts = uiParts();
+    const upgrading = lean.ui === 'none';
+    succeed(leanNext, parts, [mainSource(parts)], (progs) => variant(progs[0], lean.smoothProg, parts), () => {
+      if (!upgrading) return;
+      upgradeFailed = true;
+      console.warn("The backdrop leaves the UI's shadows and fills to CSS.");
     });
+  }
+  /** Whether a main pass drawn now or coming leaves its boxes to the UI pass. */
+  const needsUiPass = () => lean.ui === 'drops' || delve?.ui === 'drops' || leanNext.parts === 'drops' || delveNext.parts === 'drops';
+  /** The UI pass and its layer let go (see needsUiPass). */
+  function letGoOfUiPass() {
+    const g = gl!;
+    g.deleteProgram(ui!.prog);
+    ui = null;
+    g.deleteFramebuffer(boxFbo);
+    g.deleteTexture(boxTex);
+    boxFbo = null;
+    boxTex = null;
+    boxW = boxH = 1;
+    frameEvent('backdrop: one pass');
   }
   /**
    * Which of the UI's parts the backdrop can draw, whichever of its programs
@@ -1505,67 +1677,109 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
    */
   const uiNow = (): UiParts => (lean.ui === 'none' || delve?.ui === 'none' ? 'none' : 'all');
   // Delve's programs: built in the background once Delve is on its way
-  // (wantDelveBackdrop), each then drawn once, a frame apart, so the GPU
-  // has made all it needs of them before they're used (warm); then ready.
-  // Until then, a Delve scene is drawn by the lean programs without
-  // Delve's parts, which come in over a moment once they're ready
-  // (delveIn). If they fail to build, the CSS backdrop takes over, as on a
-  // lost context, once a Delve scene shows (the lean ones can't draw its
-  // dark): the start page keeps this one.
-  let building: Build | null = null;
-  let warming: Variant | null = null;
-  let warmed = 0;
+  // (wantDelveBackdrop), then warmed (see warmUp); then ready. Until then,
+  // a Delve scene is drawn by the lean programs without Delve's parts,
+  // which come in over a moment once they're ready (delveIn); while one
+  // shows, their warming goes on a step a frame rather than waiting for
+  // idle moments. Like the lean ones, they're built at first to leave the
+  // UI's boxes to the UI pass, where it's still there (Delve wanted as the
+  // page starts, a Delve link or a run picked up), since a main pass with
+  // the boxes in it takes the driver several times as long to build (in a
+  // trace on an RTX 5070, 1.6 s against 0.14 s for the slowest of the two
+  // apart); then, once the page is idle, they give way
+  // to ones that draw the boxes too (mergeDelve). If they fail to build,
+  // the CSS backdrop takes over, as on a lost context, once a Delve scene
+  // shows (the lean ones can't draw its dark): the start page keeps this
+  // one.
+  const delveNext = successor();
   let delve: Variant | null = null;
   let delveFailed = false;
   /** Whether the last frame was drawn by the lean programs in Delve's place. */
   let standIn = false;
   /** How far Delve's parts have come in (0 to 1) after the lean programs stood in for them. */
   let delveIn = 1;
+  const delveSource = (parts: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, !!smoothTex, true, parts), label: "Delve's backdrop program" });
   function buildDelve() {
-    if (building || warming || delve || delveFailed || gl!.isContextLost()) return;
+    if (delve || !quiet(delveNext) || delveFailed || gl!.isContextLost()) return;
     // (Where the backdrop draws none of the UI's parts, Delve's has none
-    // either, see uiNow; nor while the UI pass it would need is still to come.)
-    const parts: UiParts = uiParts() === 'drops' && !ui ? 'none' : uiParts();
-    const sources: ProgramSource[] = [{ vs: VERT, fs: frag(maxElements, !!smoothTex, true, parts), label: "Delve's backdrop program" }];
+    // either, see uiNow.)
+    const parts: UiParts = ui && uiParts() === 'all' ? 'drops' : uiParts();
+    const sources = [delveSource(parts)];
     if (smoothTex) sources.unshift({ vs: VERT, fs: smoothFrag(true), label: "Delve's backdrop soft light program" });
-    building = buildPrograms(gl!, sources, (progs) => {
-      building = null;
-      if (!progs) {
-        // (A lost context goes to the CSS backdrop by itself: see lost.)
-        if (gl!.isContextLost()) return;
+    succeed(
+      delveNext,
+      parts,
+      sources,
+      (progs) => (smoothTex ? variant(progs[1], progs[0], parts) : variant(progs[0], null, parts)),
+      () => {
         delveFailed = true;
         console.warn("Delve's backdrop goes to the CSS one once Delve shows.");
-        return;
-      }
-      warming = smoothTex ? variant(progs[1], progs[0], parts) : variant(progs[0], null, parts);
-      warmed = 0;
-    }, true);
+      },
+      true,
+    );
+  }
+  /** Delve's main pass that leaves the boxes to the UI pass giving way to one that draws them too (see buildDelve), its soft light kept. Failing, it keeps the two passes. */
+  function mergeDelve() {
+    if (delve?.ui !== 'drops') return;
+    const parts = uiParts();
+    const smooth = delve.smoothProg;
+    succeed(delveNext, parts, [delveSource(parts)], (progs) => variant(progs[0], smooth, parts), () => {}, true);
+  }
+
+  // A texel of the drawing buffer's own kind (8-bit RGBA), off the page,
+  // for a main pass to be warmed into (see warmUp): a renderbuffer, so no
+  // texture unit's binding changes.
+  let warmFbo: WebGLFramebuffer | null = null;
+  function warmTarget() {
+    if (warmFbo) return warmFbo;
+    const g = gl!;
+    const rb = g.createRenderbuffer();
+    g.bindRenderbuffer(g.RENDERBUFFER, rb);
+    g.renderbufferStorage(g.RENDERBUFFER, g.RGBA8, 1, 1);
+    g.bindRenderbuffer(g.RENDERBUFFER, null);
+    warmFbo = g.createFramebuffer();
+    g.bindFramebuffer(g.FRAMEBUFFER, warmFbo);
+    g.framebufferRenderbuffer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.RENDERBUFFER, rb);
+    g.bindFramebuffer(g.FRAMEBUFFER, null);
+    return warmFbo;
   }
   /**
-   * One of Delve's programs drawn once, small, into the target it draws to
-   * (the soft light's first, then the main pass), so the GPU builds what it
-   * needs for it now rather than in the frame that first needs it. Called
-   * first thing in draw(), which then draws the whole frame over it.
+   * Programs drawn once each, a texel's worth, before any frame uses them,
+   * each in an idle moment of its own; then `done` (in one more). A
+   * program's first draw is when the browser has the GPU's driver finish
+   * it (on Windows, Direct3D builds the shader it really runs then, should
+   * the one it built with the program not fit), and that holds up the GPU
+   * process, and every frame on the page with it: the bigger the program,
+   * the longer. In a true idle moment it holds up only one when nothing
+   * moves but the backdrop's slow breathing: they're waited for however
+   * long it takes, since what they replace draws the same picture
+   * meanwhile. `now` draws the next step at once instead (a Delve scene
+   * showing while Delve's are warmed: see draw). Each is drawn into the
+   * target it draws to, or one of the same kind (warmTarget), so that
+   * what's built is what the frame will use; and none of it shows, the
+   * drawing buffer untouched (the next frame draws the soft light afresh).
    */
-  function warm(w: Variant) {
-    const g = gl!;
-    if (warmed === 0 && w.smoothProg) {
-      g.useProgram(w.smoothProg);
-      g.bindFramebuffer(g.FRAMEBUFFER, smoothFbo);
+  function warmUp(steps: { prog: WebGLProgram; fbo: WebGLFramebuffer }[], done: () => void): { cancel: () => void; now: () => void } {
+    let i = 0;
+    let stopIdle = () => {};
+    const next = () => {
+      // (Drawn now, the idle moment waited for isn't.)
+      stopIdle();
+      if (gl!.isContextLost()) return;
+      if (i === steps.length) return done();
+      const g = gl!;
+      const { prog, fbo } = steps[i++];
+      g.useProgram(prog);
+      g.bindFramebuffer(g.FRAMEBUFFER, fbo);
       g.viewport(0, 0, 1, 1);
       g.drawArrays(g.TRIANGLES, 0, 3);
       g.bindFramebuffer(g.FRAMEBUFFER, null);
-      warmed = 1;
-      return;
-    }
-    g.useProgram(w.prog);
-    if (w.ui === 'drops') g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
-    g.viewport(0, 0, 1, 1);
-    g.drawArrays(g.TRIANGLES, 0, 3);
-    g.bindFramebuffer(g.FRAMEBUFFER, null);
-    warming = null;
-    delve = w;
-    delveReadyNow = true;
+      // (Sent at once, so it's built in this moment, not with the next frame.)
+      g.flush();
+      stopIdle = whenIdle(next, WARM_IDLE);
+    };
+    stopIdle = whenIdle(next, WARM_IDLE);
+    return { cancel: () => stopIdle(), now: next };
   }
 
   // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
@@ -1608,7 +1822,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let pressure = 0;
   /** How far an Azurite Vein's scene has come in (lib/vein.ts). */
   let vein = 0;
+  /** Draws a frame, timed on the GPU where it can be. */
   function draw() {
+    if (timer) timer.time(canvas.width * canvas.height, drawUntimed);
+    else drawUntimed();
+  }
+  function drawUntimed() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
     // freezes them all (and the blobs and embers) at rest; the effects
@@ -1635,7 +1854,17 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const deep = delveScene(look, close, pressure, city, vein);
     if (deep && delveFailed) return lost();
     if (deep) wantDelveBackdrop();
-    if (warming) warm(warming);
+    // (A Delve scene showing before Delve's programs are warmed: the next
+    // step now, in the frame, rather than in an idle moment.)
+    if (deep && !delve) delveNext.hurry?.();
+    if (leanNext.ready) lean = adopt(leanNext, lean);
+    if (delveNext.ready) {
+      const first = !delve;
+      delve = adopt(delveNext, delve);
+      if (first) delveReadyNow = true;
+      if (delve.ui === 'drops') whenPageIdle(delveNext, mergeDelve, 3000);
+    }
+    if (ui && !needsUiPass()) letGoOfUiPass();
     const v = deep && delve ? delve : lean;
     if (v === lean) standIn = deep;
     else if (standIn) {
@@ -1752,24 +1981,28 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, SLOTS);
     gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, cols, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
     gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, 0);
-    const over = v.ui === 'drops' ? ui : null;
-    if (!over) return gl!.drawArrays(gl!.TRIANGLES, 0, 3);
-    // Into the scene's target, and the UI pass over it onto the canvas.
-    gl!.activeTexture(gl!.TEXTURE4);
-    gl!.bindTexture(gl!.TEXTURE_2D, sceneTex);
-    if (canvas.width !== sceneW || canvas.height !== sceneH) {
-      sceneW = canvas.width;
-      sceneH = canvas.height;
-      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA16F, sceneW, sceneH, 0, gl!.RGBA, gl!.HALF_FLOAT, null);
+    const boxes = v.ui === 'drops' ? ui : null;
+    if (boxes) {
+      // The UI pass first, into its layer, which the main pass lays over the scene.
+      gl!.useProgram(boxes.prog);
+      gl!.uniform2f(boxes.uRes, canvas.width, canvas.height);
+      gl!.uniform2f(boxes.uSize, cssW, cssH);
+      gl!.uniform1f(boxes.uDialog, dialog);
+      send(boxes);
+      gl!.activeTexture(gl!.TEXTURE4);
+      gl!.bindTexture(gl!.TEXTURE_2D, boxTex);
+      if (canvas.width !== boxW || canvas.height !== boxH) {
+        boxW = canvas.width;
+        boxH = canvas.height;
+        gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA16F, boxW, boxH, 0, gl!.RGBA, gl!.HALF_FLOAT, null);
+      }
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, boxFbo);
+      // With no boxes, an empty layer: cleared, not shaded pixel by pixel.
+      if (boxes.sentCount > 0) gl!.drawArrays(gl!.TRIANGLES, 0, 3);
+      else gl!.clear(gl!.COLOR_BUFFER_BIT);
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+      gl!.useProgram(prog);
     }
-    gl!.bindFramebuffer(gl!.FRAMEBUFFER, sceneFbo);
-    gl!.drawArrays(gl!.TRIANGLES, 0, 3);
-    gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
-    gl!.useProgram(over.prog);
-    gl!.uniform2f(over.uRes, canvas.width, canvas.height);
-    gl!.uniform2f(over.uSize, cssW, cssH);
-    gl!.uniform1f(over.uDialog, dialog);
-    send(over);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 
@@ -1902,8 +2135,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const frame = (now: number) => timed('backdrop', frameUntimed, now);
   function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
+    backdropFrame(now, timer?.read() ?? null);
     // (The backdrop come to draw the UI's parts after all: the pointer changed.)
-    if (lean.ui === 'none' && !upgrade && !upgradeFailed && mayDrawUi()) startUpgrade();
+    if (lean.ui === 'none' && quiet(leanNext) && !upgradeFailed && mayDrawUi()) replaceLean();
     if (catchingUp.size) {
       // (The backdrop's clock holds still meanwhile.)
       lastStep = now;
@@ -1981,8 +2215,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const d = openDialog().amount;
     const fading = d !== dialog;
     dialog = d;
-    // Delve's parts coming in once its programs are ready (see delveIn); and
-    // those programs being warmed, one a frame.
+    // Delve's parts coming in once its programs are ready (see delveIn).
     if (delveIn < 1) {
       delveIn = Math.min(1, delveIn + dt / DELVE_IN_S);
       dirty = true;
@@ -2000,7 +2233,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // either is owed a frame, at the 30fps pace.
     if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
-    const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
+    const urgent = measured === 'now' || dirty || homeMoving || fading;
     if (!urgent && ((still && !owed) || now - last < 33)) return;
     last = now;
     dirty = false;
@@ -2024,16 +2257,29 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // per CSS px anyway, the embers are soft glows, and the dither still hides
   // every band.
   //
-  // And on any screen, never more than MAX_PIXELS: a 4K screen's 8 million
-  // device pixels (or more) made this full-screen pass, drawn under the
-  // effects overlay's own, too much for the GPU in a reveal, and frames came
-  // a tenth of a second late. Up to a 1440p screen's worth it is drawn
-  // exact; past that, about one pixel per CSS px or a little more, which the
-  // crisp fills and shadows (under the UI's own 1px borders) still hold to.
-  const scale = () => {
+  // And on a GPU too slow for a big screen, never more than MAX_PIXELS: on
+  // a weak one a 4K screen's 8 million device pixels (or more) made this
+  // full-screen pass, drawn under the effects overlay's own, too much in a
+  // reveal, and frames came a tenth of a second late. Which GPU is too slow
+  // is measured (fx/gpuBudget.ts: what this pass and the effects' cost it),
+  // and as the effects come down from full resolution so does this
+  // (fxScaledDown); a GPU that keeps up draws every pixel, exact. Past a
+  // 1440p screen's worth, scaled down, it's about one pixel per CSS px or a
+  // little more, which the crisp fills and shadows (under the UI's own 1px
+  // borders) still hold to.
+  // (Nor wider or taller than the GPU can draw: a window across several screens.)
+  const most = maxDrawSize(gl);
+  const scaleAt = (down: boolean) => {
     if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
     const device = canvasW * canvasH * devicePixelRatio * devicePixelRatio;
-    return device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
+    const k = device > MAX_PIXELS && down ? Math.sqrt(MAX_PIXELS / device) : 1;
+    return Math.min(k, most / Math.max(1, canvasW * devicePixelRatio), most / Math.max(1, canvasH * devicePixelRatio));
+  };
+  const scale = () => scaleAt(fxScaledDown());
+  /** The device pixels drawn at the effects' quality `q` (see fx/gpuBudget.ts). */
+  const pixelsAt = (q: number) => {
+    const k = scaleAt(q > 0);
+    return Math.round(canvasW * devicePixelRatio * k) * Math.round(canvasH * devicePixelRatio * k);
   };
 
   // The canvas is as tall as the viewport with a phone's toolbars hidden, but
@@ -2058,22 +2304,37 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   });
   viewRo.observe(viewProbe);
 
-  const ro = new ResizeObserver(([entry]) => {
-    canvasW = Math.round(entry.contentRect.width);
-    canvasH = Math.round(entry.contentRect.height);
-    const box = entry.devicePixelContentBoxSize?.[0];
+  // The canvas's CSS size as last seen, unrounded, and its device-pixel box
+  // where the browser gives one: the buffer is fitted to them anew when the
+  // canvas resizes, and when the effects come down from full resolution or
+  // go back up (scale()).
+  let cssW = canvasW;
+  let cssH = canvasH;
+  let box: ResizeObserverSize | undefined;
+  const fit = () => {
     const k = scale();
-    const estW = entry.contentRect.width * devicePixelRatio;
-    const estH = entry.contentRect.height * devicePixelRatio;
-    const exact = k === 1 && box && Math.abs(box.inlineSize - estW) <= 2 && Math.abs(box.blockSize - estH) <= 2;
-    const w = exact ? box.inlineSize : Math.round(estW * k);
-    const h = exact ? box.blockSize : Math.round(estH * k);
+    const estW = cssW * devicePixelRatio;
+    const estH = cssH * devicePixelRatio;
+    const b = box;
+    const exact = k === 1 && b && Math.abs(b.inlineSize - estW) <= 2 && Math.abs(b.blockSize - estH) <= 2;
+    const w = exact ? b.inlineSize : Math.round(estW * k);
+    const h = exact ? b.blockSize : Math.round(estH * k);
     if (w === canvas.width && h === canvas.height) return;
     canvas.width = w;
     canvas.height = h;
     measureView();
     draw();
+  };
+  const ro = new ResizeObserver(([entry]) => {
+    canvasW = Math.round(entry.contentRect.width);
+    canvasH = Math.round(entry.contentRect.height);
+    cssW = entry.contentRect.width;
+    cssH = entry.contentRect.height;
+    box = entry.devicePixelContentBoxSize?.[0];
+    fit();
   });
+  // (Followed once the first frame is drawn: see below.)
+  let offScale = () => {};
   try {
     ro.observe(canvas, { box: 'device-pixel-content-box' });
   } catch {
@@ -2094,22 +2355,21 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
     delveWaiters.delete(buildDelve);
-    building?.cancel();
-    building = null;
-    upgrade?.cancel();
-    upgrade = null;
-    for (const v of [warming, delve]) {
-      if (!v) continue;
-      gl!.deleteProgram(v.prog);
-      if (v.smoothProg) gl!.deleteProgram(v.smoothProg);
+    drop(leanNext);
+    drop(delveNext);
+    if (delve) {
+      gl!.deleteProgram(delve.prog);
+      if (delve.smoothProg) gl!.deleteProgram(delve.smoothProg);
     }
-    warming = null;
     delve = null;
     delveReadyNow = false;
     // Whatever waited on the GPU goes ahead without the backdrop.
     setGpuCatchUp(null);
     caughtUp(true);
     ro.disconnect();
+    offScale();
+    setBackdropPixels(null);
+    timer?.dispose();
     viewRo.disconnect();
     viewProbe.remove();
     canvas.removeEventListener('webglcontextlost', lost);
@@ -2138,6 +2398,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // backdrop isn't there behind it: see Background.svelte). Should that
   // throw, everything set up so far is taken down again before the caller
   // hears of it and turns to the CSS backdrop.
+  // (What a past visit found the GPU to cost may set the quality first.)
+  setBackdropPixels(pixelsAt, !!timer?.available);
   try {
     canvas.width = Math.max(1, Math.round(canvasW * devicePixelRatio * scale()));
     canvas.height = Math.max(1, Math.round(canvasH * devicePixelRatio * scale()));
@@ -2151,7 +2413,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
+  offScale = onFxScale(fit);
   raf = requestAnimationFrame(frame);
+  if (lean.ui === 'drops') whenPageIdle(leanNext, replaceLean, 3000);
   onWebgl++;
   counted = true;
 

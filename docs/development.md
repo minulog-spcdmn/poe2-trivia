@@ -68,12 +68,38 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   up, all at once, so with `KHR_parallel_shader_compile` the driver builds
   them side by side and the first paint waits for the slowest, not their
   sum. The UI's box shadows and fills are the slowest part to build, so
-  they're a pass of their own (`uiFrag`), drawn over the main pass's colour
-  (kept in a half-float target, as the soft light is): the first frame's
-  shaders take about 60% of the time they did as one program, and the
-  picture is the same (the half float rounds a pixel by one 8-bit level now
-  and then). The extra pass costs a few hundredths of a ms a frame on a
-  desktop GPU. Without a float target it's all one main pass. On phones and
+  they're a pass of their own (`uiFrag`), drawn first into a layer of their
+  own (a half-float target, as the soft light is), which the main pass lays
+  over the scene before its drop shadows, the dialog's dimming and the
+  dither: the UI pass reads nothing of the scene, and holds nothing but the
+  boxes. The first frame's shaders take about half the time they did as one
+  program, and the picture is the same (the half float rounds a pixel by
+  one 8-bit level now and then). That's for the first paint only: once the
+  page is idle, the main pass with all the UI's parts is built in the
+  background, warmed (below) and takes over (`replaceLean`), and the UI pass
+  and its layer are let go once nothing needs them (an extra full-screen
+  pass and a half-float layer cost every frame drawn). Delve's programs go
+  the same way (`buildDelve`, `mergeDelve`): built to leave the boxes to the
+  UI pass while it's there (Delve wanted as the page starts), since with
+  the boxes in it a main pass takes several times as long to build (in a
+  trace, 1.6 s against 0.14 s for the slowest of the two apart), then
+  replaced by one that draws them too once the page is idle. Each set
+  replacing another is a `Successor` in `src/lib/backdrop.ts`.
+  A program built in the background isn't quite finished: its first draw is
+  when the browser has the driver finish it (on Windows, Direct3D builds the
+  shader it really runs then, should the one it built with the program not
+  fit), which holds up the GPU process, and every frame on the page with it.
+  So every program built after the first paint (the merged pass, Delve's,
+  one a changed pointer needs) is drawn once, a texel's worth, into a
+  target of its own kind off the page, each in an idle moment of its own,
+  before any frame uses it (`warmUp`). It waits for true idle moments,
+  however long they take, since what it replaces draws the same picture
+  meanwhile; only Delve's, while a Delve scene shows without them, go on a
+  step a frame instead. The shader compiler (Direct3D's, on Windows)
+  takes longer over code the deeper it sits in loops and branches, and a
+  second copy of a loop costs as much as the first: the drop shadows are one
+  loop, in two layers (under the boxes and over them), not one under and
+  one over. Without a float target it's all one main pass. On phones and
   tablets, where CSS keeps every shadow, the main pass has none of the UI's
   parts and there's no UI pass (Delve's leaves them out too; a pointer that
   changes later has them built in the background, CSS painting them
@@ -88,7 +114,7 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the backdrop tool), with
   `buildPrograms` in `src/lib/fx/gl.ts` (`KHR_parallel_shader_compile`
   polled once a frame, or one program per idle moment without it), and are
-  drawn once each, small, so the GPU has them ready. Should a Delve scene
+  warmed (`warmUp`) before they're ready. Should a Delve scene
   show before then, the lean programs stand in and Delve's parts come in over
   a moment once they're ready. The effects layer's renderer is made at the
   first idle moment after the first paint, or as soon as an effect is asked
@@ -102,6 +128,30 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   question's at once), and every device cuts a veiled picture's patches in
   a worker (`src/lib/veilWorker.ts`): their shapes as the question starts,
   each one's picture as it uncovers.
+- **Frame hitches** (October 2026): a turn's reveal stuttered in Chrome on
+  Windows (9 frames over 50 ms in three turns at 4K), though the GPU timer
+  (`?fps`) measured the backdrop's and the effects' draws at about a ms. The
+  cause was the backdrop's opaque canvas (`alpha: false`). Chrome on
+  Direct3D 11 makes an opaque canvas's buffers in a format Direct3D has to
+  emulate, and making one held up the GPU process's main thread, and every
+  frame on the page with it, for 25 to 85 ms at 4K; the canvas makes new
+  ones whenever it draws faster for a while, as in a reveal (53 of them in
+  three turns). There the backdrop now has an alpha channel
+  (`opaqueCanvasStalls` in `src/lib/backdrop.ts`; it's drawn opaque all the
+  same), and each buffer takes a few hundredths of a ms: the same three
+  turns had 2 frames over 50 ms, both in the first, from a cold shader cache.
+  Elsewhere it stays opaque. The effects layer always had an alpha channel.
+  To find the next one: the GPU timer only sees the draws, not what holds
+  the GPU process up around them. A Chrome trace does. Run the game in real
+  (headed) Chrome on the screen it stutters on, at its full size, with the
+  `toplevel` and `gpu` trace categories, play the turns that hitch, and read
+  the GPU process's main thread (`CrGpuMain`) for the long tasks in the slow
+  frames (here `SharedImageStub::OnCreateSharedImage`). The `?off=` switches
+  (`src/lib/switchedOff.ts`) take parts away one at a time to narrow it down.
+  Never answer a hitch by drawing less well: capping the WebGL layers at
+  1440p made the backdrop blurry and stretched its dither, and only made the
+  hitches smaller. Where the GPU can draw them (`src/lib/fx/gpuBudget.ts`),
+  the layers draw every device pixel; find what really holds the frame up.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

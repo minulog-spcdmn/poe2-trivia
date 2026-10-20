@@ -637,6 +637,14 @@ closing never does. A new achievement is announced with a notice bearing its
 seal, a moment after it is earned. Once earned it stays earned. Kept in this
 browser (`src/lib/achievements.ts`); erasing the codex erases them.
 
+**Class sigils:** each achievement unlocks the sigil of one PoE2 class, the
+one the player picks (all twelve, those not in the game yet too), on the
+achievements page; a notice after the achievement says there's one to unlock.
+One unlocked is worn on their avatar behind their initial, for everyone in the
+room to see (it comes with their join). Unlocked stays unlocked, also when the
+codex is erased; then only achievements past the sigils already unlocked
+unlock more. Kept in this browser (`src/lib/sigils.ts`).
+
 ## Multiplayer
 
 - **Online (peer-to-peer):** the host creates a room and shares the 6-character

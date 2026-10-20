@@ -97,9 +97,13 @@
       if (settle) settle.ready.then(() => time(performance.now() - Number(settle.currentTime ?? 0)), follow);
       else time(performance.now());
     };
-    follow();
+    // Asked for once the frame that shows the circle has worked out its
+    // styles, not as it mounts: there getAnimations would have to work them
+    // out on the spot (13 to 19 ms as an item opens), and again in the frame.
+    const frame = requestAnimationFrame(() => timers.push(setTimeout(follow)));
     return () => {
       stopped = true;
+      cancelAnimationFrame(frame);
       timers.forEach(clearTimeout);
       timers = [];
     };

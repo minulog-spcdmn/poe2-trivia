@@ -1,5 +1,5 @@
 // The screens the game is checked on: one list for the QA desk (qa.html),
-// its sweep (scripts/qa.mjs) and the screenshots (scripts/capture-screens.mjs),
+// its sweep (scripts/sweep.mjs) and the screenshots (scripts/capture-screens.mjs),
 // so a size means the same everywhere. Each is a browser window's inside, in
 // CSS pixels, with the device's pixel ratio and whether it is a touch screen.
 // A 4K screen is three sizes, by the system's scaling: at 100% the page is

@@ -43,6 +43,10 @@
   import type { GlyphKind } from '../lib/inventoryArt';
   import { actionOf, optionCap, optionKeys, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
+  import { readsShellHeights } from '../lib/shellHeights.svelte';
+
+  // Its styles read the shell's --header-h (App.svelte).
+  readsShellHeights();
 
   /** Beta: no arcane circle behind the art (lib/switchedOff.ts), to see what it costs as a question appears. */
   const circleOff = switchedOff('circle');
@@ -906,7 +910,7 @@
   {#if ps.length}
     <span class="who-picked">
       {#each faces as p (p.id)}
-        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} size={22} /></span>
+        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span>
       {/each}
       {#if ps.length > faces.length}
         <span class="more" title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
@@ -1057,6 +1061,7 @@
         in:fly={{ y: 16, duration: 400, delay: 250 }}
         class="btn"
         class:primary={canNext}
+        use:backdropShadow
         data-cursor="next"
         data-sfx="none"
         disabled={!canNext}

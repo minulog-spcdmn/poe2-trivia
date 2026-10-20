@@ -69,11 +69,12 @@ opens over the game (`src/lib/legalSheet.svelte.ts`).
 npm install
 npm run dev        # local dev server (its own rooms)
 npm run dev:live   # local dev server in the live rooms
+npm run qa         # local dev server, the QA desk opened in Chrome
 npm test           # tests
 npm run check      # svelte/type checks
 npm run build      # production build in dist/
 npm run screens    # screenshots at the design sizes in screens/ (sizes: src/qa/sizes.ts)
-npm run qa         # the QA sweep: every scene, seat and size, shot and checked (docs/qa.md)
+npm run sweep      # the QA sweep: every scene, seat and size, shot and checked (docs/qa.md)
 ```
 
 Stack: Svelte 5, TypeScript, Vite, PeerJS, WebGL2 and WebAudio. The dev server

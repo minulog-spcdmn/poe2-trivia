@@ -87,6 +87,8 @@ import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, act
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
+import { SIGILS_KEY, loadSigils } from './sigils';
+import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
@@ -115,6 +117,12 @@ function fetchLooks() {
 export { CODE_LENGTH, CODE_PATTERN } from './roomCode.ts';
 
 /** Connections that haven't introduced themselves yet, room-wide and per peer (a joiner races two attempts). */
+/** The class sigil this player wears (lib/sigils.ts), for their join: read as they join, so one picked meanwhile goes with them. */
+const wornSigil = (): { sigil?: PlayerClass } => {
+  const worn = loadSigils().worn;
+  return worn ? { sigil: worn } : {};
+};
+
 const MAX_PENDING = 16;
 const MAX_PENDING_PER_PEER = 2;
 /** A connection this new can't be pushed out by another one: its time to finish connecting and say hello. */
@@ -247,6 +255,8 @@ interface Guest {
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
+  /** The class sigil its hello says it wears. */
+  sigil?: PlayerClass;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
@@ -592,9 +602,17 @@ class Session {
     this.delveLink = false;
     this.reset();
     this.mode = 'local';
+    this.localSelf = null;
     this.status = 'ready';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
   }
+
+  /**
+   * The player on this device who is its own (hot-seat): the first seated,
+   * who wears the class sigil this browser wears. The others seated after
+   * them have none: whose they would be, the game can't tell.
+   */
+  private localSelf: string | null = null;
 
   /**
    * Seats a player on this device (hot-seat, or at a room host's screen); false
@@ -603,8 +621,23 @@ class Session {
    */
   seatLocal(name: string): boolean {
     const playerId = newPlayerId();
-    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}) });
-    return !!this.state?.players.some((p) => p.id === playerId);
+    const first = !this.state?.players.length;
+    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? wornSigil() : {}) });
+    const seated = !!this.state?.players.some((p) => p.id === playerId);
+    if (seated && first) this.localSelf = playerId;
+    return seated;
+  }
+
+  /**
+   * The class sigil this browser wears changed (lib/sigils.ts, here or in
+   * another tab): the game under way shows it on this player at once.
+   */
+  wearSigil() {
+    if (!this.state) return;
+    const { sigil } = wornSigil();
+    if (this.mode === 'local') {
+      if (this.localSelf) this.dispatch({ type: 'sigil', playerId: this.localSelf, ...(sigil ? { sigil } : {}) });
+    } else if (this.myPlayerId) this.dispatch({ type: 'sigil', ...(sigil ? { sigil } : {}) });
   }
 
   /**
@@ -716,6 +749,9 @@ class Session {
         // one of them may have been answering holds its clock still from the
         // host's last moment before the reload until it can start again.
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
+        // The host's own sigil as it is now: it may have changed since the room was saved.
+        const { sigil } = wornSigil();
+        s = engine.apply(s, { type: 'sigil', ...(sigil ? { sigil } : {}) }, me);
         this.setState(s);
       } else {
         const s = this.newRoomGame('host-room-not-opened');
@@ -779,7 +815,7 @@ class Session {
     const s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
     this.delveLink = false;
     try {
-      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
+      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil() }, me);
     } catch (err) {
       this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', failure ? { failure } : {});
       return null;
@@ -904,6 +940,7 @@ class Session {
           if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
           guest.laneWanted = !!msg.lane;
+          guest.sigil = msg.sigil;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -950,7 +987,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue } });
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
       }
     });
   }
@@ -1057,7 +1094,11 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}) }, playerId);
+      next = engine.apply(
+        this.state!,
+        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}) },
+        playerId,
+      );
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -1082,7 +1123,7 @@ class Session {
     const watcher = next.spectators?.find((o) => o.id === playerId);
     // The creator's first arrival has a notice of its own (see onNewState).
     if (this.heralded === playerId) return;
-    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue } });
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
     else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
@@ -2118,7 +2159,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}) });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil() });
     this.watchOwnPresence();
   }
 
@@ -2226,7 +2267,7 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue } });
+    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
     else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
   }
 
@@ -2731,7 +2772,7 @@ class Session {
     if (arrival && this.mode !== 'local' && arrival.id !== this.myPlayerId)
       this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
         title: CREATOR_TITLE,
-        who: { name: arrival.name, hue: arrival.hue ?? RUBY },
+        who: { name: arrival.name, hue: arrival.hue ?? RUBY, sigil: arrival.sigil },
         herald: true,
       });
     // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
@@ -2976,7 +3017,7 @@ class Session {
       const p = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue } });
+        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
       } catch {
         /* the turn moved on anyway */
       }
@@ -3266,6 +3307,8 @@ if (typeof window !== 'undefined') {
   });
   window.addEventListener('storage', (e) => {
     if (e.key === LEFT_KEY && e.newValue) session.stillHere();
+    // A sigil picked in another tab is worn in the game in this one too.
+    if (e.key === SIGILS_KEY) session.wearSigil();
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());

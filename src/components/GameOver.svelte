@@ -54,6 +54,10 @@
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
   import { achievementById, type Achievement } from '../lib/achievements';
+  import { readsShellHeights } from '../lib/shellHeights.svelte';
+
+  // Its styles read the shell's --header-h and --legal-h (App.svelte).
+  readsShellHeights();
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the eye or the monad, or after a Delve the moth (the
@@ -410,7 +414,7 @@
     {#if 'avatar' in ic && personOf(ic.avatar)}
       {@const p = personOf(ic.avatar)!}
       <!-- Its rim reaches 3 px round it: inside that, the size of the thumbs and the medallions. -->
-      <Avatar name={p.name} hue={p.hue} size={ICON - 4} />
+      <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={ICON - 4} />
     {:else if 'item' in ic}
       <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
     {:else if !('avatar' in ic)}
@@ -446,7 +450,7 @@
   <li>
     <button class="thumb" onclick={() => inspect(id)} aria-label="{itemName(id)}, open in the codex">
       <span class="art"><img src={itemThumb(id, 128)} srcset={itemSrcset(id)} alt="" /></span>
-      {#if by}<span class="badge"><Avatar name={by.name} hue={by.hue} size={20} /></span>{/if}
+      {#if by}<span class="badge"><Avatar name={by.name} hue={by.hue} sigil={by.sigil} size={20} /></span>{/if}
     </button>
     <span class="thumb-name">{itemName(id)}</span>
   </li>
@@ -481,7 +485,7 @@
     {/if}
     <span class="buttons" data-cursor="actions">
       <button class="btn ghost back" data-cursor="back" disabled={leaving} onclick={() => again(false)}>Back to lobby</button>
-      <button class="btn primary big again" data-cursor="again" disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
+      <button class="btn primary big again" data-cursor="again" use:backdropShadow disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
     </span>
   {:else if session.spectating}
     <p class="note spect" data-cursor="joining">
@@ -503,7 +507,7 @@
   {@const you = x.p.id === me}
   {@const gone = !local && !x.p.connected}
   <span class="rank">{x.rank}</span>
-  <Avatar name={x.p.name} hue={x.p.hue} size={28} dim={gone} />
+  <Avatar name={x.p.name} hue={x.p.hue} sigil={x.p.sigil} size={28} dim={gone} />
   <span class="name"><PlayerName name={x.p.name} />{#if you}<em class="you">&nbsp;(you)</em>{/if}</span>
   {#if gone && !pin}<StandingMark mark="offline" />{/if}
   <span class="pts">{score(x.p.score)}</span>
@@ -539,13 +543,13 @@
                 {@const p = s.players.find((x) => x.id === f.id)}
                 {#if p}
                   <span class="face" class:you={f.id === me} style:left="calc(50% + {f.x}px)" style:top="calc(50% + {f.y}px)">
-                    <Avatar name={p.name} hue={p.hue} size={ring.size} />
+                    <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={ring.size} />
                   </span>
                 {/if}
               {/each}
             {:else}
               {@const p = solo ? (s.players[0] ?? winner) : winner}
-              <Avatar name={p.name} hue={p.hue} size={avatarSize} />
+              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={avatarSize} />
             {/if}
           </div>
           <div class="words">
@@ -569,7 +573,7 @@
           <h3>Your game</h3>
           {#if mine.place}
             {@const p = s.players.find((x) => x.id === me)}
-            <p class="place">{#if p}<Avatar name={p.name} hue={p.hue} size={30} />{/if}<span>{@render say(mine.place)}</span></p>
+            <p class="place">{#if p}<Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={30} />{/if}<span>{@render say(mine.place)}</span></p>
           {/if}
           {#if mine.game}<p>{@render say(mine.game)}</p>{/if}
           {#if mine.missed.length}
@@ -681,7 +685,7 @@
               {@const p = s.players.find((x) => x.id === d.id)}
               {#if p}
                 <li class:you={d.id === me} class:gone={!p.connected} data-cursor="row:{s.players.indexOf(p)}" in:fly={{ y: 8, duration: 400, delay: 500 + i * 60 }}>
-                  <Avatar name={p.name} hue={p.hue} size={plateAvatar} dim={!p.connected} />
+                  <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={plateAvatar} dim={!p.connected} />
                   <span class="who-col">
                     <span class="name"><PlayerName name={p.name} />{#if d.id === me}<em class="you">&nbsp;(you)</em>{/if}</span>
                     <span class="dep">Depth <b class="n">{shownDepth(d.depth)}</b></span>
@@ -1340,10 +1344,15 @@
     color: var(--gold-hi);
   }
   /* The winner's row in gold; yours outlined in your orange. */
+  /* Dithered over its gradient (app.css, --dither), or so faint a gold bands. */
   .ranking li.first {
     border-color: #c9a45c;
-    background: linear-gradient(90deg, rgba(201, 164, 92, 0.2), rgba(90, 64, 30, 0.12) 60%, rgba(12, 10, 8, 0.6));
+    background: var(--dither), linear-gradient(90deg, rgba(201, 164, 92, 0.2), rgba(90, 64, 30, 0.12) 60%, rgba(12, 10, 8, 0.6));
+    image-rendering: pixelated;
     box-shadow: 0 0 14px rgba(201, 164, 92, 0.18);
+  }
+  .ranking li.first > * {
+    image-rendering: auto;
   }
   .ranking li.you:not(.first),
   .ranking .row.you {

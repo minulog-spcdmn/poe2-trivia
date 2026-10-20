@@ -12,6 +12,7 @@
   import fakeNames from '../data/fakes.json';
   import { engine, session } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
+  import { backdropShadow } from '../lib/backdropShadow';
   import { codexRoute } from '../lib/codexRoute.svelte';
   import { settingsRoute } from '../lib/settingsRoute.svelte';
   import { actionOf, optionCap, typing } from '../lib/keybinds.svelte';
@@ -351,6 +352,7 @@
         class:held={held === i}
         aria-busy={held === i || undefined}
         bind:this={optEls[i]}
+        use:backdropShadow={{ fill: 'linear' }}
         data-sfx="none"
         disabled={answered || disabled}
         title={fake ? 'Not a real item' : undefined}
@@ -524,18 +526,29 @@
     padding: 0.35rem 2.4rem 0.35rem 0.9rem;
     text-align: left;
     cursor: pointer;
-    background: linear-gradient(90deg, rgba(40, 31, 22, 0.95), rgba(20, 16, 12, 0.95));
+    /* Drawn by the WebGL backdrop when it can (see lib/backdropShadow.ts): a
+       long, dark gradient like this one bands in CSS. */
+    --bs-fill-a: rgba(40, 31, 22, 0.95);
+    --bs-fill-b: rgba(20, 16, 12, 0.95);
+    --bs-fill-angle: 90deg;
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-angle), var(--bs-fill-a), var(--bs-fill-b)));
     border: 1px solid var(--line);
     border-radius: 4px;
+    --bs1: 8px 22px;
+    --bs1-color: rgba(0, 0, 0, 0.45);
     box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.05),
-      0 8px 22px rgba(0, 0, 0, 0.45);
+      inset 0 1px 0 var(--top-light, rgba(255, 220, 150, 0.05)),
+      inset 0 0 0 1px var(--bs-ring),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     transition:
       transform 0.25s var(--ease-out),
       border-color 0.3s,
       opacity 0.4s,
-      background 0.3s,
-      box-shadow 0.3s;
+      --bs-ring 0.3s,
+      --bs1 0.3s,
+      --bs1-color 0.3s,
+      --bs-fill-a 0.3s,
+      --bs-fill-b 0.3s;
   }
   .sheen {
     position: absolute;
@@ -588,19 +601,23 @@
   .option:not(:disabled):hover,
   .option:not(:disabled):focus-visible {
     border-color: var(--gold);
-    background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
-    box-shadow:
-      inset 0 0 0 1px rgba(241, 217, 155, 0.1),
-      0 0 26px rgba(224, 138, 68, 0.2);
+    --bs-ring: rgba(241, 217, 155, 0.1);
+    --top-light: transparent;
+    --bs-fill-a: rgba(70, 48, 25, 0.96);
+    --bs-fill-b: rgba(29, 22, 14, 0.95);
+    --bs1: 0px 26px;
+    --bs1-color: rgba(224, 138, 68, 0.2);
   }
   /* Picked while the day is being made sure of (a moment, at most 1.5 s): it
      stays lit as hovered, so the tap shows it was taken. */
   .option.held {
     border-color: var(--gold);
-    background: linear-gradient(90deg, rgba(70, 48, 25, 0.96), rgba(29, 22, 14, 0.95));
-    box-shadow:
-      inset 0 0 0 1px rgba(241, 217, 155, 0.1),
-      0 0 26px rgba(224, 138, 68, 0.2);
+    --bs-ring: rgba(241, 217, 155, 0.1);
+    --top-light: transparent;
+    --bs-fill-a: rgba(70, 48, 25, 0.96);
+    --bs-fill-b: rgba(29, 22, 14, 0.95);
+    --bs1: 0px 26px;
+    --bs1-color: rgba(224, 138, 68, 0.2);
   }
   .option:not(:disabled):hover .sheen::before {
     animation: sweep 0.8s var(--ease-out);
@@ -757,10 +774,11 @@
   }
   .option.right {
     border-color: #5d8a50;
-    background: linear-gradient(90deg, rgba(44, 64, 36, 0.9), rgba(22, 28, 17, 0.92));
-    box-shadow:
-      inset 0 1px 0 rgba(220, 240, 190, 0.1),
-      0 0 16px rgba(150, 190, 110, 0.12);
+    --bs-fill-a: rgba(44, 64, 36, 0.9);
+    --bs-fill-b: rgba(22, 28, 17, 0.92);
+    --top-light: rgba(220, 240, 190, 0.1);
+    --bs1: 0px 16px;
+    --bs1-color: rgba(150, 190, 110, 0.12);
   }
   .option.right .text,
   .option.right .mark {
@@ -772,8 +790,11 @@
   }
   .option.wrong {
     border-color: #8e4434;
-    background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
-    box-shadow: 0 0 14px rgba(200, 90, 60, 0.1);
+    --bs-fill-a: rgba(78, 32, 22, 0.9);
+    --bs-fill-b: rgba(34, 15, 11, 0.92);
+    --top-light: transparent;
+    --bs1: 0px 14px;
+    --bs1-color: rgba(200, 90, 60, 0.1);
     animation: shake 0.5s;
   }
   .option.wrong .text,
@@ -783,6 +804,11 @@
   .option.dim {
     opacity: 0.55;
     filter: saturate(0.5);
+  }
+  /* The filter doesn't reach what the backdrop draws: the fill, desaturated as it would. */
+  .option.dim:global([data-bs-fill]) {
+    --bs-fill-a: rgba(36, 32, 27, 0.95);
+    --bs-fill-b: rgba(18, 16, 14, 0.95);
   }
   @keyframes shake {
     20%,
