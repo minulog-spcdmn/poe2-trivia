@@ -15,7 +15,7 @@ The working rules are in memory, which loads on its own:
 - early prototype: no hardening;
 - `orchestration-token-efficiency`: build only what changes the feel.
 
-## Phase: rethinking the loop (design v9)
+## Phase: rethinking the loop (design v10)
 
 The owner paused playtests after playtest 5: "we have to fix the workflow
 for efficiency first and go back to the drawing board on many things".
@@ -68,8 +68,11 @@ felt flat, an item took about a minute, no pull to replay, and no moment was
 fun, naming an item included. The owner: step back and rethink the loop.
 Design v9 (`design-v9-loop.md`, a Workflow: research, six pitches, two
 owner-proxy judges) offers three new loops (Identify, Pick Your Fights,
-Swarm); everything is open again, the item screen included. Waiting on the
-owner's pick. v5 stays on its branch, not served.
+Swarm); the owner took none: "an actually good game and not mobile slop",
+something must grow, art alone must not win, long but never tedious. Design
+v10 (a Workflow) writes two full designs, each critiqued by a calibrated
+owner proxy and revised, before the owner sees them. v5 stays on its branch,
+not served.
 
 Sessions: an orchestrator opened from the owner's phone (Remote Control)
 can't start sessions; it runs design as a Workflow instead.
