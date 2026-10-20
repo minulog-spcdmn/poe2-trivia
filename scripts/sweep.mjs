@@ -20,10 +20,10 @@
 // game's files each scene runs, for the desk's "This change"
 // (src/qa/change.ts). Run it when scenes or screens have changed much.
 //
-//   npm run qa -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
+//   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
 //                 [--url URL] [--no-build] [--concurrency N]
-//   npm run qa -- --map
-//   (from PowerShell, where npm eats the flags: npm run qa full webgl only=lobby)
+//   npm run sweep -- --map
+//   (from PowerShell, where npm eats the flags: npm run sweep full webgl only=lobby)
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -310,7 +310,7 @@ const BUILD = path.join(SCREENS, 'qa-build');
 let served;
 if (values.url) served = { base: values.url.endsWith('/') ? values.url : `${values.url}/`, close: () => {} };
 else {
-  if (values.build || !existsSync(path.join(BUILD, 'qa.html'))) buildBeta(ROOT, BUILD, 'this checkout (npm run qa -- --no-build skips this next time)');
+  if (values.build || !existsSync(path.join(BUILD, 'qa.html'))) buildBeta(ROOT, BUILD, 'this checkout (npm run sweep -- --no-build skips this next time)');
   served = await serveDir(BUILD);
 }
 let scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));

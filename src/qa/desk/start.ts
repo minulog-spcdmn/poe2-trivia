@@ -22,7 +22,7 @@ useItems(itemData as Item[], fakeNames);
 useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
 mount(Desk, { target: document.getElementById('app')! });
 
-// For the sweep (scripts/qa.mjs), which opens each state's frames by itself:
+// For the sweep (scripts/sweep.mjs), which opens each state's frames by itself:
 // every scene's every state (`n`, its controls as `values` sets them), with
 // its seats and the sizes it is walked at.
 Object.assign(window, {

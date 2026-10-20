@@ -1,6 +1,6 @@
 // Which scenes a change touches, from the files it changes: what the QA
 // desk's "This change" walks. Each scene's files come from running it with
-// the browser's coverage on (npm run qa -- --map writes
+// the browser's coverage on (npm run sweep -- --map writes
 // src/data/sceneFiles.json): a file counts for a scene once some function of
 // it ran there, beyond its module's top level, so App.svelte's imports don't
 // put every file in every scene. Files nearly every scene runs (the app's
@@ -9,7 +9,7 @@
 
 import { SCREENS, type Screen } from './scene.ts';
 
-/** What npm run qa -- --map found: every file's scenes, and the files almost every scene runs. */
+/** What npm run sweep -- --map found: every file's scenes, and the files almost every scene runs. */
 export interface SceneFiles {
   global: string[];
   files: Record<string, string[]>;

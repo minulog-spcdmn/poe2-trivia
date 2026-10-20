@@ -120,7 +120,7 @@ export async function boot(asked: URLSearchParams) {
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of
-  // which files each scene runs, scripts/qa.mjs --map, doesn't count rooms.ts for every scene.)
+  // which files each scene runs, scripts/sweep.mjs --map, doesn't count rooms.ts for every scene.)
   if (built.rooms !== undefined || built.invite !== undefined) rooms.useMadeUpRooms(built.rooms ?? [], built.invite);
 
   // Who it is, and what it made of the game.
@@ -211,7 +211,7 @@ export async function boot(asked: URLSearchParams) {
   await run();
   // In the desk, checked again once what it shows has changed after a click
   // or a key in it (not on the screen's own ticking: a clock, a pulse). The
-  // sweep (scripts/qa.mjs) opens a frame as a page of its own and checks it
+  // sweep (scripts/sweep.mjs) opens a frame as a page of its own and checks it
   // once.
   if (parent === window) return;
   let touchedAt = -Infinity;

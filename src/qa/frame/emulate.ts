@@ -10,7 +10,7 @@
 //
 // Only an approximation: the page is still drawn at the desk's own pixel
 // ratio, a mouse stays a mouse (pointerType), and image sets pick by the
-// real ratio. The sweep (scripts/qa.mjs) is the real thing: each size in a
+// real ratio. The sweep (scripts/sweep.mjs) is the real thing: each size in a
 // browser emulating that device.
 //
 // Imported before any module of the game, which reads some of these once.

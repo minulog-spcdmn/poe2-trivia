@@ -17,6 +17,6 @@ To check something that isn't the effects or the animations:
 Which Chromium:
 
 - Playwright's default `chromium.launch()` is the headless shell: drawn in software (SwiftShader) and every page in one process. Good for the quick checks above.
-- For anything about frames, WebGL, the GPU or many pages at once, launch new headless instead: `chromium.launch({ channel: 'chromium', args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] })` (drop the ANGLE switch off Windows). It draws on the real GPU and gives each site a process of its own. The QA sweep (`scripts/qa.mjs`) runs this way.
+- For anything about frames, WebGL, the GPU or many pages at once, launch new headless instead: `chromium.launch({ channel: 'chromium', args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] })` (drop the ANGLE switch off Windows). It draws on the real GPU and gives each site a process of its own. The QA sweep (`scripts/sweep.mjs`) runs this way.
 
-Before writing a script, see whether the QA desk already shows it: `npm run qa -- --only <scene> --sizes <size>` runs the checks on one scene at one size, and the desk's Play from here drives a live room with bots and link faults (`docs/qa.md`).
+Before writing a script, see whether the QA desk already shows it: `npm run sweep -- --only <scene> --sizes <size>` runs the checks on one scene at one size, and the desk's Play from here drives a live room with bots and link faults (`docs/qa.md`).
