@@ -15,6 +15,7 @@ import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
 import { countVisit, onCountToggle, type Toggled } from './lib/count';
 import { toasts } from './lib/toasts.svelte';
+import { preloadPeerJs } from './lib/peer';
 
 installUiSounds();
 installSpatial();
@@ -51,5 +52,9 @@ if (import.meta.env.DEV) Object.assign(window, { __fx: fxCore, __e: fxEffects, _
 const app = mount(Root, {
   target: document.getElementById('app')!,
 });
+
+// PeerJS isn't part of the startup scripts: it comes in once the page is
+// idle, ready before anyone hosts or joins (lib/peer.ts).
+preloadPeerJs();
 
 export default app;

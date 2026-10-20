@@ -13,17 +13,20 @@
 // anyway. Hot-seat, it is this device's own word (ownerUnlocked).
 //
 // Ed25519 comes from @noble/ed25519 (it needs no more of Web Crypto than
-// SHA-512, which every browser the game runs in has, unlike Ed25519 itself).
+// SHA-512, which every browser the game runs in has, unlike Ed25519 itself),
+// loaded the first time something is signed or checked: the start page
+// doesn't wait for it.
 //
 // scripts/owner-key.mjs prints the public key for new words. Pick them
 // at random (four or more) and never commit them.
 
-import { getPublicKeyAsync, signAsync, verifyAsync } from '@noble/ed25519';
 import { base64url, fromBase64url } from './base64url.ts';
 import { readKey, writeKey } from './storage.ts';
 
 /** The owner key's public half (raw Ed25519, base64url): scripts/owner-key.mjs prints it for the words. */
 export const OWNER_PUBLIC_KEY = 'SIwtcxovVQ_Mfp8NkPmSzMKgYx1ejNtyuw-VLrgkS8M';
+
+const ed25519 = () => import('@noble/ed25519');
 
 const SALT = 'poe2trivia.owner-key';
 const ITERATIONS = 600_000;
@@ -63,7 +66,7 @@ async function seedOf(words: string): Promise<Uint8Array> {
 
 /** The public key (raw, base64url) the words make. */
 export async function ownerPublicKey(words: string): Promise<string> {
-  return base64url(await getPublicKeyAsync(await seedOf(words)));
+  return base64url(await (await ed25519()).getPublicKeyAsync(await seedOf(words)));
 }
 
 /** What the stored value was last read as, so the many names on screen don't each read it again. */
@@ -90,7 +93,7 @@ export async function unlockOwner(words: string, key = OWNER_PUBLIC_KEY): Promis
   if (!key) return false;
   try {
     const seed = await seedOf(words);
-    if (base64url(await getPublicKeyAsync(seed)) !== key) return false;
+    if (base64url(await (await ed25519()).getPublicKeyAsync(seed)) !== key) return false;
     read = null;
     return writeKey(STORED, `${key}.${base64url(seed)}`);
   } catch {
@@ -102,7 +105,7 @@ async function sign(what: What, code: string, about: string, key: string): Promi
   const seed = storedSeed(key);
   if (!seed) return null;
   try {
-    return base64url(await signAsync(signed(what, code, about), seed));
+    return base64url(await (await ed25519()).signAsync(signed(what, code, about), seed));
   } catch {
     return null;
   }
@@ -114,7 +117,7 @@ async function check(what: What, code: string, about: string, proof: unknown, ke
   const sig = fromBase64url(proof);
   if (pub?.length !== 32 || sig?.length !== 64) return false;
   try {
-    return await verifyAsync(sig, signed(what, code, about), pub);
+    return await (await ed25519()).verifyAsync(sig, signed(what, code, about), pub);
   } catch {
     return false;
   }

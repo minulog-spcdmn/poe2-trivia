@@ -15,8 +15,9 @@
 // once that has passed. Silent twice, someone holds it without answering
 // pings (an older version, or a room asked too often): that one is connected to.
 
-import Peer, { util, type DataConnection } from 'peerjs';
-import { PEER_OPTIONS, PEER_PREFIX } from './peer';
+import type Peer from 'peerjs';
+import type { DataConnection } from 'peerjs';
+import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow } from './peer';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
 import { checkRoom, newChallenge } from './ownerKey';
@@ -172,7 +173,8 @@ class Prober {
       let conn: DataConnection | null = null;
       let settled = false;
       let clear = () => {};
-      const connectionId = `dc_${util.randomToken()}`;
+      // (PeerJS is loaded: this peer was made with it.)
+      const connectionId = `dc_${peerJsNow()!.util.randomToken()}`;
       // Every probe settles once, on its own; it takes itself off the
       // waiting list only if it's still the one there (a later probe of the
       // same id may have taken its place, and stays waiting).
@@ -266,7 +268,8 @@ export function answerProbes(
   });
 }
 
-function openPeer(id?: string): Promise<Peer> {
+async function openPeer(id?: string): Promise<Peer> {
+  const { default: Peer } = await loadPeerJs();
   return new Promise((resolve, reject) => {
     const peer = id ? new Peer(id, PEER_OPTIONS) : new Peer(PEER_OPTIONS);
     // Listening from the start, so a ping that comes before anyone answers it isn't kept by PeerJS for good.
