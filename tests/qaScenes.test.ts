@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
 import { useItems } from '../src/qa/build/engine.ts';
+import { Table } from '../src/qa/build/play.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
 import { SCREENS, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
 import { sceneStateAt, valuesOf, type Values } from '../src/qa/bench.ts';
-import { TWEAK_KEYS, buildScene } from '../src/qa/tweaks.ts';
+import { TWEAK_KEYS, applyTweaks, buildScene } from '../src/qa/tweaks.ts';
 import { matches, sizesFor } from '../src/qa/desk/walk.ts';
 import { answered } from '../src/qa/frame/emulate.ts';
 import { fakes, items } from './helpers.ts';
@@ -107,6 +108,27 @@ test('the controls every game has change only what they say, and leave who is se
   // A spectator seen from stays, however few watch.
   const spec = catalog().find((s) => s.key === 'over/n-spec')!;
   assert.ok(buildScene(spec, { joining: 0 }).built.state!.spectators!.some((o) => o.id === spec.seats[0].me));
+});
+
+test("Offline on a game played through the engine goes the engine's way: a race's state is the one the room reaches", () => {
+  const race = catalog().find((s) => s.key === 'game/race-answered')!;
+  const shown = buildScene(race, { offline: '*' }).built.state!;
+  // The same race played again, everyone but those seen from dropping as the room reports it.
+  const seen = race.seats.map((s) => s.me);
+  const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
+  for (const p of t.s.players) if (!seen.includes(p.id)) t.act({ type: 'connection', playerId: p.id, connected: false }, null);
+  assert.deepEqual(shown, t.s);
+  assert.deepEqual(
+    shown.players.filter((p) => p.connected).map((p) => p.id).sort(),
+    [...seen].sort(),
+  );
+  // Seen from Doryani alone, who has answered: with everyone else gone no one is left to wait on, and the answer shows.
+  const doryani = t.s.players.find((p) => p.name === 'Doryani')!.id;
+  const alone = applyTweaks(race.build({}), { offline: '*' }, [doryani]).state!;
+  const u = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
+  for (const p of u.s.players) if (p.id !== doryani) u.act({ type: 'connection', playerId: p.id, connected: false }, null);
+  assert.equal(alone.phase, 'reveal');
+  assert.deepEqual(alone, u.s);
 });
 
 test('scene keys are unique and well formed, and scenes come in the order of the screens', () => {

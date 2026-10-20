@@ -1098,6 +1098,11 @@ function letGo(gl: WebGL2RenderingContext): null {
   return null;
 }
 
+/** How many backdrops draw with WebGL now (one, but an old one's stop can come after a new one's start). */
+let onWebgl = 0;
+/** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
+export const backdropOnWebgl = () => onWebgl > 0;
+
 /**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
  * first frame drawn at once); Delve's follow in the background once Delve is
@@ -1120,6 +1125,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     refuseWebgl2();
     return null;
   }
+  // The canvas's size in CSS px, kept by the ResizeObserver below rather than
+  // read every frame: read after anything on the page has changed (measure()'s
+  // own data-bs-fill among them), it has the styles worked out again on the
+  // spot, more than once a frame.
+  let canvasW = canvas.clientWidth;
+  let canvasH = canvas.clientHeight;
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
   if (!hp || hp.precision === 0) return letGo(gl);
   warm2d();
@@ -1433,8 +1444,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const top = still ? 0 : breathe(ms, 17000, 0.6);
     const vignette = still ? 0 : breathe(ms, 23000, 0.15);
     const base = still ? 0 : breathe(ms, 29000, 0.8);
-    const cssW = canvas.clientWidth;
-    const cssH = canvas.clientHeight;
+    const cssW = canvasW;
+    const cssH = canvasH;
     const scene = currentDescent();
     const look = scene.look;
     // A plunge draws the dark in and lets it go again as the scene sinks.
@@ -1605,8 +1616,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       return 'now';
     } else {
       released = false;
-      measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvas.clientWidth, canvas.clientHeight);
-      atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvas.clientWidth, canvas.clientHeight);
+      measureShadows(maxElements, el.x, el.y, el.a, el.b, el.c, el.d, el.e, el.geo, el.col, canvasW, canvasH);
+      atlases = measureDrops(mk.a, mk.b, mk.c, mk.d, mk.e, mk.off, mk.col, canvasW, canvasH);
     }
     let changed: 'now' | 'paced' | false = false;
     if (atlases) {
@@ -1743,7 +1754,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const sunk = sinking.sink;
     if (stepPlunge(now, !still)) {
       const px = (sinking.sink - sunk) * viewH;
-      if (Math.abs(px) < viewH) embers.rise(px, canvas.clientHeight);
+      if (Math.abs(px) < viewH) embers.rise(px, canvasH);
       dirty = true;
     }
     embers.streak = Math.min(1.6, 2 * sinking.speed);
@@ -1751,7 +1762,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const slid = sinking.slide;
     if (stepSwing(now, !still)) {
       const px = (sinking.slide - slid) * viewH;
-      if (Math.abs(px) < viewH) embers.slide(px, canvas.clientWidth);
+      if (Math.abs(px) < viewH) embers.slide(px, canvasW);
       dirty = true;
     }
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
@@ -1761,8 +1772,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
     const soft = lights || moodState === 'moving';
-    if (!still) embers.step(dt, canvas.clientWidth, canvas.clientHeight, !fxActive());
-    else if (descending) embers.step(0, canvas.clientWidth, canvas.clientHeight, true, true);
+    if (!still) embers.step(dt, canvasW, canvasH, !fxActive());
+    else if (descending) embers.step(0, canvasW, canvasH, true, true);
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
     const d = openDialog().amount;
     const fading = d !== dialog;
@@ -1818,7 +1829,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // crisp fills and shadows (under the UI's own 1px borders) still hold to.
   const scale = () => {
     if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
-    const device = canvas.clientWidth * canvas.clientHeight * devicePixelRatio * devicePixelRatio;
+    const device = canvasW * canvasH * devicePixelRatio * devicePixelRatio;
     return device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
   };
 
@@ -1833,7 +1844,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let viewH = 1;
   const measureView = () => {
     const h = viewProbe.offsetHeight;
-    viewH = Math.max(1, h > 0 ? Math.min(h, canvas.clientHeight) : canvas.clientHeight);
+    // (Read, not canvasH: viewRo can run before ro has kept a new size.)
+    const ch = canvas.clientHeight;
+    viewH = Math.max(1, h > 0 ? Math.min(h, ch) : ch);
   };
   const viewRo = new ResizeObserver(() => {
     const before = viewH;
@@ -1843,6 +1856,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   viewRo.observe(viewProbe);
 
   const ro = new ResizeObserver(([entry]) => {
+    canvasW = Math.round(entry.contentRect.width);
+    canvasH = Math.round(entry.contentRect.height);
     const box = entry.devicePixelContentBoxSize?.[0];
     const k = scale();
     const estW = entry.contentRect.width * devicePixelRatio;
@@ -1867,7 +1882,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     embers.tint(on ? VEIN_EMBERS : CALM);
     embers.vein(on);
   });
+  // (Counted in onWebgl once its frames have begun; stop can come twice: lost, then the caller's.)
+  let counted = false;
   function stop() {
+    if (counted) onWebgl--;
+    counted = false;
     offVein();
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
@@ -1915,9 +1934,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // throw, everything set up so far is taken down again before the caller
   // hears of it and turns to the CSS backdrop.
   try {
-    canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio * scale()));
-    canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
-    embers.step(0, canvas.clientWidth, canvas.clientHeight);
+    canvas.width = Math.max(1, Math.round(canvasW * devicePixelRatio * scale()));
+    canvas.height = Math.max(1, Math.round(canvasH * devicePixelRatio * scale()));
+    embers.step(0, canvasW, canvasH);
     measureView();
     measure();
     draw();
@@ -1928,6 +1947,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
   raf = requestAnimationFrame(frame);
+  onWebgl++;
+  counted = true;
 
   return stop;
 }

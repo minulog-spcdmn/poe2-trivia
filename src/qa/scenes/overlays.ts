@@ -11,7 +11,7 @@ const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
 const inGame = (steps: Step[]): Built => {
   const t = new Table(THREE).start().pick();
   // (Turned out, it lands on the start page: its room list finds nothing.)
-  return { state: t.s, at: t.clock.now + 3000, steps, rooms: [] };
+  return { state: t.s, act: t.room, at: t.clock.now + 3000, steps, rooms: [] };
 };
 const overlay = (key: string, label: string, seats: Seat[], build: () => Built): Scene => ({ key: `overlay/${key}`, screen: 'overlay', group: 'Over the game', label, seats, build });
 const doryani: Seat = { mode: 'client', me: pid('Doryani') };

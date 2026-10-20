@@ -3,7 +3,7 @@
 // Scenes are plain data built from the game's own types; they never load the
 // session (src/lib/session.svelte.ts), so the tests can build every one.
 
-import type { GameState } from '../lib/game.ts';
+import type { Action, GameState } from '../lib/game.ts';
 import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
 import type { DailyRecord } from '../lib/daily.ts';
@@ -48,6 +48,13 @@ export type Step =
 export interface Built {
   /** The room's state; null out of a game. */
   state: GameState | null;
+  /**
+   * A move by the room itself on a state of this game, through the engine
+   * that played it (build/play.ts, Table.room), so what's set over it (who's
+   * offline) goes the way the game would take it. Missing: a game built by
+   * hand, set as it is.
+   */
+  act?: (s: GameState, a: Action) => GameState;
   /** The moment the scene is at (host clock, ms): its clocks stand still there. Missing: the state's own start. */
   at?: number;
   /** How the run measured up against this device's records (the session's delveResult). */

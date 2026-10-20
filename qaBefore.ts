@@ -299,20 +299,21 @@ export function qaShots(server: ViteDevServer) {
     next ? next() : running--;
   };
 
-  async function shoot(url: string, width: number, height: number, deviceScaleFactor: number, gone: () => boolean) {
+  async function shoot(url: string, width: number, height: number, deviceScaleFactor: number, gone: AbortSignal) {
     await slot();
     try {
       // (The desk gave up on it while it waited, having moved on: not shot.)
-      if (gone()) throw new Error('No longer wanted');
+      if (gone.aborted) throw new Error('No longer wanted');
       const context = await (await launch()).newContext({ viewport: { width, height }, deviceScaleFactor, reducedMotion: 'reduce' });
+      // (Given up on later, while the page comes or settles: closed at once, so its slot goes to a shot still wanted.)
+      const drop = () => void context.close().catch(() => {});
+      gone.addEventListener('abort', drop, { once: true });
       try {
         // WebGL hidden, so the effects stay off (CLAUDE.md: in software they make every step crawl).
         await context.addInitScript('delete window.WebGL2RenderingContext; delete window.WebGLRenderingContext;');
         const page = await context.newPage();
         // (The before server, just started, builds the frame's modules as it first asks for them: that can take a while.)
         await page.goto(url, { timeout: 120000 });
-        // (Given up on while the page came: its slot goes to a shot still wanted.)
-        if (gone()) throw new Error('No longer wanted');
         // The frame sets window.__qa once it has come to rest and been checked.
         await page.waitForFunction('!!window.__qa', undefined, { timeout: 60000, polling: 100 });
         // Or it couldn't start (src/qa/main.ts): no shot, but why.
@@ -321,6 +322,7 @@ export function qaShots(server: ViteDevServer) {
         await page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
         return await page.screenshot({ type: 'png' });
       } finally {
+        gone.removeEventListener('abort', drop);
         await context.close().catch(() => {});
       }
     } finally {
@@ -342,9 +344,11 @@ export function qaShots(server: ViteDevServer) {
     const dpr = Number(q.get('dpr') ?? 1);
     if (url.protocol !== 'http:' || !['localhost', '127.0.0.1'].includes(url.hostname)) return json(res, 400, { error: 'Only http://localhost or 127.0.0.1 frames' });
     if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 8000 && h <= 8000 && dpr > 0 && dpr <= 4)) return json(res, 400, { error: 'w and h are whole CSS pixels, dpr up to 4' });
-    let gone = false;
-    res.once('close', () => (gone = !res.writableFinished));
-    shoot(url.href, w, h, dpr, () => gone).then(
+    const gone = new AbortController();
+    res.once('close', () => {
+      if (!res.writableFinished) gone.abort();
+    });
+    shoot(url.href, w, h, dpr, gone.signal).then(
       (png) => {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'image/png');
