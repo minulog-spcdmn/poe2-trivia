@@ -1,6 +1,6 @@
 <script module lang="ts">
-  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows) rather than sideways. The card bench turns them the same way. */
-  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 700px)' };
+  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows) rather than sideways. The card bench turns them the same way. */
+  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
 </script>
 
 <script lang="ts">
@@ -64,6 +64,37 @@
   const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1, up: 0, left: 0 } : categoryIconTweak(cat));
   /** A card's name as players read it. */
   const cardName = (cat: string) => (isWayOut(cat) ? out.title : cat);
+  /**
+   * Svelte action: a card's name kept inside its nameplate, smaller as far
+   * as it must (down to four fifths) rather than spilling over the frame: a
+   * long one (Flasks, Charms, Jewels, Relics & Tablets) wraps to three lines
+   * where the engine measures its letters a touch wider (Safari) or a
+   * fallback font stands in. A plate as tall as its name (a row's) is left be.
+   */
+  function fitPlate(node: HTMLElement) {
+    const run = () => {
+      node.style.fontSize = '';
+      if (node.scrollHeight <= node.clientHeight + 1) return;
+      const full = parseFloat(getComputedStyle(node).fontSize);
+      let size = full;
+      while (node.scrollHeight > node.clientHeight + 1 && size > full * 0.8) {
+        size = Math.max(full * 0.8, size - 0.5);
+        node.style.fontSize = `${size}px`;
+      }
+    };
+    run();
+    void document.fonts?.ready.then(run);
+    const ro = new ResizeObserver(run);
+    ro.observe(node);
+    const mo = new MutationObserver(run);
+    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    return {
+      destroy: () => {
+        ro.disconnect();
+        mo.disconnect();
+      },
+    };
+  }
   /** The way out's colours, as custom properties on its card. */
   const outInk = Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';');
 
@@ -255,6 +286,17 @@
   const cardFinds = $derived(session.cardFinds(s).toSorted((a, b) => s.offered.indexOf(a.category) - s.offered.indexOf(b.category)));
   /** Their notes: one for each kind (the card bench may deal two of one). */
   const finds = $derived(cardFinds.filter((f, i) => cardFinds.findIndex((g) => g.kind === f.kind) === i));
+  /**
+   * Which side of the cards a note stands on, on a phone on its side: of two,
+   * the first card's on the left and the other's on the right; one alone on
+   * its card's side, the middle card's on the left.
+   */
+  /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds'. */
+  const beside = $derived(!!dig || (finds.length > 0 && finds.length <= 2 && !s.deathmatch));
+  function sideOf(i: number, all: number[]): 'left' | 'right' {
+    if (all.length > 1) return i === Math.min(...all) ? 'left' : 'right';
+    return 2 * i + 1 > s.offered.length ? 'right' : 'left';
+  }
   /**
    * The finds on the cards as they were dealt. Once a card is drawn (or
    * picked) the run has moved on to its question, where the cards carry no
@@ -593,7 +635,7 @@
   }
 </script>
 
-<div class="choose" class:coop style:--n={s.offered.length}>
+<div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
   <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
   <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
@@ -691,7 +733,7 @@
               <!-- The vein's crystals in the corner stand in front of the item. -->
               <CardEngraving side="face" find="azurite" front />
             {/if}
-            <span class="title"
+            <span class="title" use:fitPlate
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
                 >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
             >
@@ -703,7 +745,7 @@
         </span>
         {#if coop}
           <!-- Who voted for it, your own mark ringed: on the card's foot from 701px
-               wide, else a row under it that keeps its height while empty. -->
+               wide (or on a phone on its side), else a row under it that keeps its height while empty. -->
           {@const voters = votersOf(cat)}
           {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
           <span class="votes" aria-hidden="true">
@@ -723,7 +765,7 @@
     <!-- A dig's two cards: the strike ahead and what a cave-in costs; what the way out takes. -->
     <div class="find-notes" data-cursor="notes">
       {#each s.offered as cat, i (cat)}
-        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} id={isWayOut(cat) ? undefined : `${uid}-note-azurite`} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1}>
+        <p class="note find-note" data-find={isWayOut(cat) ? 'out' : 'azurite'} id={isWayOut(cat) ? undefined : `${uid}-note-azurite`} style={isWayOut(cat) ? outInk : undefined} style:--col={i + 1} data-side={sideOf(i, s.offered.map((_, j) => j))}>
           {#if isWayOut(cat)}{out.note(haul, coop)}{:else}{digNote(dig.strikes + 1, dig.light, haul, coop)}{/if}
         </p>
       {/each}
@@ -737,7 +779,16 @@
          gives is read where it is chosen; phones: one under the other. -->
     <div class="find-notes" data-cursor="notes">
       {#each finds as f (f.kind)}
-        <p class="note find-note" data-find={f.kind} id="{uid}-note-{f.kind}" style:--col={s.offered.indexOf(f.category) + 1}>
+        <p
+          class="note find-note"
+          data-find={f.kind}
+          id="{uid}-note-{f.kind}"
+          style:--col={s.offered.indexOf(f.category) + 1}
+          data-side={sideOf(
+            s.offered.indexOf(f.category),
+            finds.map((g) => s.offered.indexOf(g.category)),
+          )}
+        >
           {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
               >{FIND_TEXT[f.kind].tag}.</strong
             > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
@@ -1045,8 +1096,11 @@
     -webkit-mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
     mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
   }
-  /* As the face turns up in the deal, its emblem kindles and light runs across it. */
-  .turn:global(.dealt) .glyph {
+  /* As the face turns up in the deal, its emblem kindles and light runs across it.
+     (Kindled as a whole, with its glow and shadow, on the layer that holds
+     them: iOS Safari draws a filter animated inside other filters out of
+     step with them, the emblem dimming apart from its own glow.) */
+  .turn:global(.dealt) .icon {
     animation: kindle 0.9s ease-out var(--face, 0ms) backwards;
   }
   .turn:global(.dealt) .sheen::before {
@@ -1060,7 +1114,10 @@
   .card.out .turn:global(.dealt) :global(.gilt) {
     animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
   }
-  .card.out .turn:global(.dealt) :global(.engraving) {
+  /* (The swell on the engraving's still layers, beside the gilt rather
+     than round it: a filter animated inside another runs out of step with
+     it on iOS Safari; see .icon's kindle. The lamp's light breathes as it was.) */
+  .card.out .turn:global(.dealt) :global(.engraving > :is(.window, .glow, .lines)) {
     animation: swell 1.6s ease-out var(--face, 0ms) backwards;
   }
   @keyframes kindle-gilt {
@@ -1084,14 +1141,18 @@
       filter: brightness(1.35);
     }
   }
+  /* (.icon's glow written out in each step: its filter runs through them, the glow kept.) */
   @keyframes kindle {
     from {
       opacity: 0.2;
-      filter: brightness(0.4);
+      filter: brightness(0.4) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
     40% {
       opacity: 1;
-      filter: brightness(1.45);
+      filter: brightness(1.45) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    }
+    to {
+      filter: brightness(1) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
   }
   .sheen {
@@ -1142,7 +1203,7 @@
       text-shadow 0.3s;
   }
 
-  @media (min-width: 701px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
     .cards.single {
       grid-template-columns: minmax(0, 220px);
     }
@@ -1245,7 +1306,7 @@
      staying in its shade, and in the window (as far as heapOf finds they
      can); only the emblem grows and brightens, so it still leads. Only on
      the tall cards: the window it's worked out for isn't the rows'. */
-  @media (min-width: 701px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
     .card.mine:not(:global(.down)):hover .moon {
       --far: var(--spread, 1);
     }
@@ -1355,7 +1416,7 @@
     gap: 0.35rem;
   }
   /* Wide screens: the notes in the cards' columns, each under its card. */
-  @media (min-width: 701px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
     .find-notes {
       display: grid;
       /* The cards' own tracks (shrinking with them on a narrow tablet). */
@@ -1727,7 +1788,10 @@
     white-space: nowrap;
   }
 
-  @media (max-width: 700px) {
+  /* Narrow screens: the cards stacked as wide rows. Not on a phone on its
+     side (lib/layout.ts `flat`), too short for three: there they stand in a
+     row as on wider screens, smaller (below). */
+  @media (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px) {
     .cards {
       grid-template-columns: 1fr;
       width: min(360px, 100%);
@@ -1865,6 +1929,249 @@
   @media (min-width: 761px) and (max-height: 820px) {
     .choose {
       gap: 1rem;
+    }
+  }
+  /* A phone on its side (lib/layout.ts `flat`): the tall cards in a row,
+     scaled to the height left under the banner, step by step (zoom takes no
+     length), one size for every turn at a height (a find, the team's vote
+     or a duel never shrinks them) and never so small that their names stop
+     reading (0.66: the name at about 11px, Apple's least; a screen shorter
+     than a phone's browser leaves on its side scrolls a little). The step
+     is --z; --card-z follows it. In Delve the cards stay centred, as at
+     every depth, what the finds give beside them where there's room (under
+     them where not) and the vote's state under them. (.coop too, to
+     outweigh the short windows' own size for it above.) */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .choose,
+    .choose.coop {
+      gap: 0.5rem;
+      --z: 0.9;
+      --card-z: var(--z);
+    }
+    .prompt {
+      font-size: 1.05rem;
+    }
+    .note {
+      font-size: 0.85rem;
+    }
+    /* What each find gives, side by side in one row under the cards, each
+       told by its find's colour and tag; the standing lock rule makes way
+       for them (every other depth shows it). */
+    .choose.delve {
+      gap: 0.4rem;
+    }
+    .choose.delve .find-notes {
+      display: flex;
+      flex-flow: row wrap;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 0.3rem 1.6rem;
+      margin-top: 0;
+    }
+    .choose.delve .find-notes .find-note {
+      /* Sharing the row (never wrapping onto a second), each at most 22rem. */
+      flex: 1 1 0;
+      max-width: 22rem;
+      font-size: 0.8rem;
+      line-height: 1.25;
+    }
+    .choose.delve .find-notes .note.muted {
+      flex-basis: 100%;
+    }
+    .choose.delve .find-notes ~ .note {
+      display: none;
+    }
+    /* The team's vote: its line clear of the seals that hang off the cards'
+       feet, on one line however many it waits for. */
+    .choose.coop .vote-status {
+      margin-top: 0.55rem;
+      max-width: 100%;
+      flex-wrap: nowrap;
+      white-space: nowrap;
+    }
+    .choose.coop .vote-status .live > span:not(.sr) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+  /* Room enough across (`beside`: two notes at most; the room the game has
+     left, the notch's side taken off, so the slot is the container: Game's
+     .cards-slot): the notes stand beside the cards, in the room left and
+     right of them, each on its card's side, the cards no larger than 0.7
+     for it, and the lock rule keeps its line. */
+  @container slot (min-width: 780px) {
+    .choose.beside {
+      --card-z: min(var(--z), 0.7);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      /* (What comes under the cards takes a row each, only when it's there.) */
+      grid-template-areas:
+        'prompt prompt prompt'
+        'left cards right';
+      align-items: center;
+    }
+    /* (.delve too, to outweigh the short screens' gaps after this.) */
+    .choose.delve.beside {
+      column-gap: 2.6rem;
+    }
+    .choose.beside .prompt {
+      grid-area: prompt;
+    }
+    .choose.beside .cards {
+      grid-area: cards;
+    }
+    .choose.beside .find-notes {
+      display: contents;
+    }
+    .choose.beside .find-notes .find-note {
+      max-width: 15rem;
+      font-size: 0.85rem;
+      line-height: 1.3;
+    }
+    .choose.beside .find-note[data-side='left'] {
+      grid-area: left;
+      justify-self: end;
+      text-align: right;
+    }
+    .choose.beside .find-note[data-side='right'] {
+      grid-area: right;
+      justify-self: start;
+      text-align: left;
+    }
+    .choose.beside .find-notes .note.muted,
+    .choose.beside .vote-status,
+    .choose.beside .find-notes ~ .note {
+      grid-column: 1 / -1;
+    }
+    .choose.beside .find-notes ~ .note {
+      display: block;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 500px) {
+    /* A duel's one card: what is going on and its note beside it, as Delve's
+       column is, so the duel's strip over the banner takes no size from it. */
+    .choose.duel {
+      display: grid;
+      grid-template-columns: auto minmax(0, 300px);
+      grid-template-areas:
+        'cards prompt'
+        'cards note';
+      justify-content: center;
+      column-gap: 1.4rem;
+      row-gap: 0.5rem;
+    }
+    .choose.duel .cards {
+      grid-area: cards;
+    }
+    .choose.duel .prompt {
+      grid-area: prompt;
+      align-self: end;
+      text-align: left;
+    }
+    .choose.duel > .note {
+      grid-area: note;
+      align-self: start;
+      text-align: left;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 440px) {
+    .choose,
+    .choose.coop {
+      --z: 0.82;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 400px) {
+    .choose,
+    .choose.coop {
+      --z: 0.74;
+    }
+    /* Delve has its notes or its vote under the cards. */
+    .choose.delve {
+      --z: 0.71;
+    }
+    /* The team's vote, clear of the seals under the cards. */
+    .choose.coop {
+      --z: 0.66;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 370px) {
+    .choose,
+    .choose.coop,
+    .choose.delve {
+      --z: 0.7;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 350px) {
+    .choose,
+    .choose.coop,
+    .choose.delve {
+      --z: 0.66;
+      gap: 0.25rem;
+    }
+    /* The team's vote has a line more to fit, clear of the seals under the cards. */
+    .choose.coop {
+      --z: 0.6;
+    }
+    .choose.delve {
+      gap: 0.2rem;
+    }
+  }
+  /* A phone upright (lib/layout.ts `upright`): the game fits the screen
+     (Game.svelte), the rows at their full size, so what stands round them
+     comes a little closer: a find's notes in a smaller, tighter line, and
+     the standing lock rule makes way for them (every other depth shows it),
+     as on a phone on its side. */
+  @media (orientation: portrait) and (max-width: 640px) {
+    .choose,
+    .choose.coop,
+    .choose.delve {
+      gap: 1rem;
+    }
+    /* The question's task line's size (QuestionView), as everywhere. */
+    .prompt {
+      font-size: 1.1rem;
+      line-height: 1.3;
+    }
+    /* (Together, the rows keep room between them for the seals that hang off their feet.) */
+    .choose.delve:not(.coop):has(.find-notes) .cards {
+      gap: 0.6rem;
+    }
+    .choose.delve .find-notes .find-note {
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+    .choose.delve .find-notes ~ .note {
+      display: none;
+    }
+    .choose.delve:has(.find-notes) {
+      gap: 0.55rem;
+    }
+    .find-notes {
+      gap: 0.25rem;
+    }
+    /* The team's vote: its line on one line however many it waits for
+       (the clock, then whom), and the lock rule under it read as one block
+       of small print, as on a phone on its side. */
+    .choose.coop {
+      gap: 0.6rem;
+    }
+    .choose.coop .cards {
+      gap: 0.95rem;
+    }
+    .choose.coop .vote-status {
+      max-width: 100%;
+      flex-wrap: nowrap;
+      white-space: nowrap;
+      margin-top: 0;
+    }
+    .choose.coop .vote-status .live > span:not(.sr) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .vote-status + .note {
+      margin-top: -0.3rem;
     }
   }
 </style>

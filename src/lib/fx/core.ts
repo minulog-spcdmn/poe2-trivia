@@ -15,11 +15,13 @@
 // hold up the first paint (see startFx). Effects asked for before it's ready
 // wait for it, and play once it is.
 
-import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type Silhouette } from './renderer';
+import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, MAX_HIDES, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type HideLight, type Silhouette } from './renderer';
 import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
+import { cornerOnScreen } from '../corner';
+import { zoomOf } from '../stage';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
@@ -117,6 +119,8 @@ type LiveShape = ShapeSpec & {
   opacity: number;
   /** Light from the page, which an open dialog hides (see onPage). */
   page: boolean;
+  /** Light of what stands over the page (a toast: overPage), which is the page's again while a dialog is open over both. */
+  front: boolean;
   f: ShapeFrame;
 };
 
@@ -144,7 +148,7 @@ export type TaskOptions = {
 };
 
 /** `group`, `behind`: the group it was made in and whether that was from behind the UI, in force again as it runs (see fxGroup). */
-type LiveTask = { fn: Task; age: number; life: number; keep: boolean; group: number; behind: boolean };
+type LiveTask = { fn: Task; age: number; life: number; keep: boolean; group: number; behind: boolean; owner: Element | null };
 
 // ---------- state ----------
 
@@ -285,12 +289,15 @@ export function now() {
 /**
  * Whether light starting at `a` belongs to the page, which an open dialog
  * hides and dims (lib/behindDialog.ts), rather than to the dialog itself:
- * everything but effects that start inside the open dialog. It stays the
- * page's or the dialog's for its whole life, wherever it goes.
+ * everything but effects that start inside the open dialog. With no dialog
+ * open, the page's is everything but the light of what stands over it (a
+ * toast: overPage), which hides the page's behind it: effects on an element
+ * of it, or made for one (lightOf). It stays the page's or the dialog's for
+ * its whole life, wherever it goes.
  */
 function onPage(a: Anchor): boolean {
   const { backdrop } = openDialog();
-  if (!backdrop) return true;
+  if (!backdrop) return !inFront(a);
   if (a instanceof Element) return !backdrop.contains(a);
   const box = dialogBox();
   if (!box) return true;
@@ -317,7 +324,7 @@ export function particle(p: ParticleSpec) {
   if (!fxActive() || hidden || particlesOff) return;
   const late = waited();
   const spec = behindNow && !p.behind ? { ...p, behind: true } : p;
-  pool!.spawn(late ? { ...spec, delay: (spec.delay ?? 0) + late } : spec, onPage(p), groupNow);
+  pool!.spawn(late ? { ...spec, delay: (spec.delay ?? 0) + late } : spec, onPage(ownerNow ?? p), groupNow);
   wake();
 }
 
@@ -409,7 +416,8 @@ export function shape(spec: ShapeSpec): ShapeHandle {
     fadeTotal: 0,
     stopped: false,
     opacity: 1,
-    page: onPage(spec.at),
+    page: onPage(ownerNow ?? spec.at),
+    front: !openDialog().backdrop && inFront(ownerNow ?? spec.at),
     f: { hw: 0, hh: 0, k: 1, q: new Array(12).fill(0) },
   };
   shapes.push(s);
@@ -438,7 +446,7 @@ export function shape(spec: ShapeSpec): ShapeHandle {
  */
 export function task(fn: Task, { life = Infinity, keep = false }: TaskOptions = {}): Handle {
   if (!fxActive() || (hidden && !keep)) return NOOP;
-  const t: LiveTask = { fn, age: -waited(), life, keep, group: groupNow, behind: behindNow };
+  const t: LiveTask = { fn, age: -waited(), life, keep, group: groupNow, behind: behindNow, owner: ownerNow };
   tasks.push(t);
   wake();
   return {
@@ -453,6 +461,8 @@ export function task(fn: Task, { life = Infinity, keep = false }: TaskOptions = 
 /** The group effects made now belong to (see fxGroup), 0 for none; and whether they shine from behind the UI. */
 let groupNow = 0;
 let behindNow = false;
+/** The element effects made now belong to (see lightOf), null for their own anchor's. */
+let ownerNow: Element | null = null;
 let groupsMade = 0;
 
 function inGroup<T>(group: number, behind: boolean, fn: () => T): T {
@@ -698,7 +708,7 @@ const isCrisp = (s: LiveShape) => {
   return type === ShapeType.Sigil || type === ShapeType.Orbit;
 };
 
-function writeShape(i: number, s: LiveShape, t: number) {
+function writeShape(i: number, s: LiveShape, t: number, dialogUp: boolean) {
   const o = i * SHAPE_FLOATS;
   const f = s.f;
   const c = f.color ?? s.color;
@@ -715,7 +725,8 @@ function writeShape(i: number, s: LiveShape, t: number) {
   shapeData[o + 8] = c[0] * k;
   shapeData[o + 9] = c[1] * k;
   shapeData[o + 10] = c[2] * k;
-  shapeData[o + 11] = (s.page ? 1 : 0) + (s.behind ? BEHIND_UI : 0);
+  // (A toast's light, made before a dialog opened over it, hides behind the dialog with the page's.)
+  shapeData[o + 11] = (s.page || (s.front && dialogUp) ? 1 : 0) + (s.behind ? BEHIND_UI : 0);
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
 }
 
@@ -803,6 +814,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     // (What it makes belongs to the group it was made in.)
     groupNow = t.group;
     behindNow = t.behind;
+    ownerNow = t.owner;
     try {
       // (It ends by its life however it's written, so dropping it unseen while the tab is away loses nothing that would still run.)
       keep = t.fn(dt, t.age) && t.age < t.life;
@@ -811,6 +823,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
     } finally {
       groupNow = 0;
       behindNow = false;
+      ownerNow = null;
     }
     if (keep) i++;
     else tasks.splice(i, 1);
@@ -893,10 +906,11 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // (A picture with no size, hidden or scaled away, has no outline to keep clear.)
   const ready = (sil?: Silhouette | null) => !!sil && sil.w > 0 && sil.h > 0 && pictureReady(sil.pic);
   const silhouette = visible.map(([s]) => s.f.silhouette).find(ready) ?? null;
+  const dialogUp = !!openDialog().backdrop;
   for (const crisp of [false, true]) {
     for (const [s, t] of visible) {
       if (isCrisp(s) !== crisp || nShapes >= MAX_SHAPES) continue;
-      writeShape(nShapes, s, t);
+      writeShape(nShapes, s, t, dialogUp);
       if (silhouette && s.f.silhouette?.pic === silhouette.pic) shapeData[nShapes * SHAPE_FLOATS + 11] += BEHIND_PICTURE;
       nShapes++;
       if (crisp) nCrisp++;
@@ -935,17 +949,92 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   return busy;
 }
 
-/** The open dialog, which hides the page's light behind it and dims all light outside it (lib/behindDialog.ts). */
+/**
+ * The open dialog, which hides the page's light behind it and dims all light
+ * outside it (lib/behindDialog.ts). With none, what stands over the page (a
+ * window, a toast) hides the page's light behind it the same way, and dims
+ * nothing.
+ */
 function dialogNow(): DialogLight {
   const { amount } = openDialog();
   const box = amount > 0 ? dialogBox() : null;
-  if (box) return { amount, box: box.rect, radius: box.radius };
-  // With no dialog, a window over the page hides the page's light behind it the same way, and dims nothing.
-  for (const src of windows) {
-    const r = src();
-    if (r && r.width > 0 && r.height > 0) return { amount: 0, hide: 1, box: r, radius: 0 };
+  // (A list of its own each frame: whoever keeps it keeps that frame's boxes.)
+  const hides: HideLight[] = [];
+  if (box) {
+    hides.push({ box: box.rect, radius: box.radius, amount });
+    return { amount, box: box.rect, radius: box.radius, hides };
   }
-  return { amount, box: null, radius: 0 };
+  for (const src of windows) {
+    if (hides.length >= MAX_HIDES) break;
+    const r = src();
+    if (r && r.width > 0 && r.height > 0) hides.push({ box: r, radius: 0, amount: 1 });
+  }
+  const windowed = hides.length > 0;
+  // (Ancestors the toasts share are read once.)
+  const own = new Map<Element, number>();
+  for (const el of fronts) {
+    if (hides.length >= MAX_HIDES) break;
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) continue;
+    // As it (or what it's in) fades in and out, it hides as much as it shows.
+    const o = opacityOf(el, own);
+    if (o > 0) hides.push({ box: r, radius: cornerOnScreen(cornerOf(el), r.width, r.height, zoomOf(el)), amount: o });
+  }
+  // (A window, with a dialog's backdrop up but no box of it yet, dims nothing either.)
+  return { amount: windowed ? 0 : amount, box: null, radius: 0, hides };
+}
+
+/** What stands over the page (overPage). */
+const fronts = new Set<Element>();
+
+/** Each one's corner radius as its style gives it, read again when the window's size changes (a phone turned, a breakpoint crossed). */
+const corners = new WeakMap<Element, { at: string; radius: string }>();
+function cornerOf(el: Element): string {
+  const at = `${innerWidth}x${innerHeight}`;
+  let c = corners.get(el);
+  if (c?.at !== at) corners.set(el, (c = { at, radius: getComputedStyle(el).borderTopLeftRadius }));
+  return c.radius;
+}
+
+/** Whether `a` is an element of something that stands over the page (overPage). */
+function inFront(a: Anchor): boolean {
+  if (!(a instanceof Element) || !fronts.size) return false;
+  for (const f of fronts) if (f.contains(a)) return true;
+  return false;
+}
+
+/**
+ * Svelte action for an element that stands over the page and the effects
+ * layer's light, though the layer is drawn above it (a toast): the page's
+ * light hides behind its box, as behind an open dialog's, and its own (from
+ * effects on it, or made for it with lightOf) shows over it. Behind an open
+ * dialog, its shapes hide with the page's; its particles, which live a
+ * moment, keep showing for the rest of theirs.
+ */
+export function overPage(node: HTMLElement) {
+  fronts.add(node);
+  return {
+    destroy() {
+      fronts.delete(node);
+    },
+  };
+}
+
+/**
+ * Runs `fn`, and the effects it makes (and its emitters and later steps go
+ * on to make) are `el`'s light, wherever they start: over an element that
+ * stands over the page (overPage) when `el` is in it, or in an open dialog.
+ * For effects started at points rather than on `el`, which would otherwise
+ * count as the page's wherever they are.
+ */
+export function lightOf<T>(el: Element, fn: () => T): T {
+  const was = ownerNow;
+  ownerNow = el;
+  try {
+    return fn();
+  } finally {
+    ownerNow = was;
+  }
 }
 
 const windows = new Set<() => DOMRect | null>();
@@ -954,8 +1043,8 @@ const windows = new Set<() => DOMRect | null>();
  * While the handle is up, the box `source` gives (asked every frame it's
  * drawn; square cornered) hides the page's light as an open dialog does,
  * without dimming the page: for a window that floats over the game (an
- * item's, ItemWindow.svelte), opaque like a dialog. Only one box is drawn,
- * an open dialog's first.
+ * item's, ItemWindow.svelte), opaque like a dialog. With a dialog open, only
+ * the dialog's box is drawn.
  */
 export function hideLightIn(source: () => DOMRect | null): Handle {
   // (Nothing to wake: with no light, there's none to hide, and while there is, every frame asks.)

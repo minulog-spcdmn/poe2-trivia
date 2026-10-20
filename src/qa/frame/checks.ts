@@ -2,20 +2,25 @@
 // with something wrong is marked red in the desk's strip without anyone
 // having to spot it: something off the side of the screen, text cut off
 // without meaning to be (an ellipsis or a line clamp is meant), an error in
-// the console, a picture that didn't load, and an em dash, which CLAUDE.md
-// rules out of everything the game says. The elements at fault are marked
-// (data-qa-flag) and outlined, unless the desk has outlines off.
+// the console, a picture that didn't load, an em dash, which CLAUDE.md
+// rules out of everything the game says, and a game that scrolls on a phone,
+// on its side or upright, where it is laid out to fit the screen
+// (lib/layout.ts `flat` and `upright`).
+// The elements at fault are marked (data-qa-flag) and outlined, unless the
+// desk has outlines off.
 
 import { CRASH_MESSAGE } from './crashCue.svelte.ts';
+import { FLAT, UPRIGHT } from '../../lib/layout.ts';
 
 /** What a frame finds wrong; and banding, which only the sweep can see (scripts/qa.mjs, in a screenshot). */
-export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'banding';
+export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'scrolls' | 'banding';
 export const KIND_LABEL: Record<Kind, string> = {
   offscreen: 'Off the side of the screen',
   clipped: 'Text cut off',
   error: 'Console error',
   image: "Picture didn't load",
   dash: 'Em dash',
+  scrolls: 'Scrolls on a phone',
   banding: 'Banding',
 };
 
@@ -131,7 +136,8 @@ export function check(heard: { errors: string[]; images: string[] }): Problem[] 
     // a glow) may bleed off the edge, and whole things off the side are
     // panels waiting to slide in.
     const decor = !!el.closest('[aria-hidden="true"]');
-    const content = text ? textBox(el) : CONTROL.test(el.tagName) || el.getAttribute('role') === 'button' || (el instanceof HTMLImageElement && !!el.alt) ? r : null;
+    // (A line that ends in an ellipsis shows no more than its own box.)
+    const content = text ? (meansToCut(el) ? r : textBox(el)) : CONTROL.test(el.tagName) || el.getAttribute('role') === 'button' || (el instanceof HTMLImageElement && !!el.alt) ? r : null;
     if (content && !decor) {
       const past = content.right > W + 1 || content.left < -1;
       const gone = content.left >= W || content.right <= 0;
@@ -167,6 +173,9 @@ export function check(heard: { errors: string[]; images: string[] }): Problem[] 
   add('error', heard.errors);
   add('image', [...new Set(broken)]);
   add('dash', flagged.dash.map(describe));
+  // A game screen (Game.svelte's) on a phone, on its side or upright, fits the screen: art, answers and Next in view at once.
+  const over = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+  if ((matchMedia(FLAT).matches || matchMedia(UPRIGHT).matches) && document.querySelector('#app .game > .turns') && over > 1) add('scrolls', [`${over}px taller than the screen`]);
   return problems;
 }
 

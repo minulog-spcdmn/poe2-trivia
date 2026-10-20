@@ -32,7 +32,7 @@
 // playing (and would hide it). Effects switched off clear it, and it comes
 // back when they're on again.
 
-import { boxOf, budget, fxActive, fxHidden, fxStats, onFxChange, onFxHidden, particle, shape, task, type Box, type ShapeFrame, type Vec3 } from './core';
+import { boxOf, budget, fxActive, fxHidden, fxStats, lightOf, onFxChange, onFxHidden, particle, shape, task, type Box, type ShapeFrame, type Vec3 } from './core';
 import { C, glints, rand } from './effects';
 import { Shape } from './particles';
 import { ShapeType } from './renderer';
@@ -237,7 +237,8 @@ function ignite(el: HTMLElement, life: number): Glow {
       if (embersDue >= 1) {
         embersDue--;
         const o = sparkOpacity(el);
-        if (o) ember(form, b, sc, o);
+        // Her embers and glints are hers wherever they start: a toast she's in shows them over it (lightOf).
+        if (o) lightOf(el, () => ember(form, b, sc, o));
       }
       // A glint off the lead mote as it swings past in front.
       if (glintsLeft > 0 && age >= glintAt && age < life - SHOW.fadeOut) {
@@ -245,7 +246,7 @@ function ignite(el: HTMLElement, life: number): Glow {
         if (p.depth > 0.6) {
           const o = sparkOpacity(el);
           const g = Math.sqrt(sc);
-          if (o) glints({ x: b.x + p.x, y: b.y + p.y }, { count: 1, area: 'centre', size: [4 * g, 7 * g], life: [0.45, 0.65], color: k3(C.goldPale, o) });
+          if (o) lightOf(el, () => glints({ x: b.x + p.x, y: b.y + p.y }, { count: 1, area: 'centre', size: [4 * g, 7 * g], life: [0.45, 0.65], color: k3(C.goldPale, o) }));
           glintsLeft--;
           glintAt = age + rand(1.8, 2.8);
         }

@@ -52,26 +52,41 @@ export const PARTICLE_BEHIND_UI = 2;
 /** How far the fire's tallest tongue reaches, in flame heights: the shader stops there and effects.ts sizes the quad to it. */
 export const FIRE_REACH = 1.8;
 
+/** The most boxes the page's light hides behind at once (see BEHIND_DIALOG). */
+export const MAX_HIDES = 8;
+
 // While a dialog is open (lib/behindDialog.ts), light from the page behind it
 // hides behind the dialog, which on the page is opaque; the dialog's own light
 // (from effects that started inside it) shows over it. Outside it, the
 // composite dims both with the rest of the page. The page's light is soft
 // already, so the page's blur passes it by; the shapes drawn crisp (an aura's
-// orbit, a sigil) blur themselves by uBlur.
+// orbit, a sigil) blur themselves by uBlur. With no dialog open, what stands
+// over the page (a window, a toast: lib/fx/core.ts) hides the page's light
+// the same way, each in its own box, and dims nothing.
 const BEHIND_DIALOG = `
 uniform vec4 uDialogBox; // the open dialog: left, top, right, bottom (CSS px)
 uniform float uDialogR;  // its corner radius, CSS px
-uniform float uHide;     // how far it hides the page's light, 0-1
+uniform vec4 uHideBox[${MAX_HIDES}]; // the boxes the page's light hides behind: left, top, right, bottom (CSS px)
+uniform vec2 uHideK[${MAX_HIDES}];   // each one's corner radius (CSS px) and how far it hides, 0-1
+uniform int uHideN;      // how many there are
 uniform float uBlur;     // how far it blurs the page: the blur's standard deviation, CSS px
-// Signed distance from the dialog's edge (CSS px), negative inside.
-float dialogSdf(vec2 p) {
-  vec2 h = (uDialogBox.zw - uDialogBox.xy) * 0.5;
-  vec2 q = abs(p - uDialogBox.xy - h) - h + uDialogR;
-  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uDialogR;
+// Signed distance from the edge of box b with corner radius r (CSS px), negative inside.
+float boxSdf(vec2 p, vec4 b, float r) {
+  vec2 h = (b.zw - b.xy) * 0.5;
+  vec2 q = abs(p - b.xy - h) - h + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
-// How much of the page's light at p (CSS px) the dialog hides.
+float dialogSdf(vec2 p) {
+  return boxSdf(p, uDialogBox, uDialogR);
+}
+// How much of the page's light at p (CSS px) the boxes in front hide.
 float hiddenAt(vec2 p) {
-  return uHide > 0.0 ? uHide * clamp(0.5 - dialogSdf(p), 0.0, 1.0) : 0.0;
+  float h = 0.0;
+  for (int i = 0; i < ${MAX_HIDES}; i++) {
+    if (i >= uHideN) break;
+    h = max(h, uHideK[i].y * clamp(0.5 - boxSdf(p, uHideBox[i], uHideK[i].x), 0.0, 1.0));
+  }
+  return h;
 }`;
 
 // Light from behind the UI (a flare burning behind the question): the boxes
@@ -211,7 +226,8 @@ void main() {
   }
   float page = mod(vP.w, 2.0);
   float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);
-  vec3 lit = vCol * v * (1.0 - page * hiddenAt(vWorld)) * (1.0 - behindUi * coverAt(vWorld));
+  // (Only the page's light hides behind what stands over it: the rest skips the boxes.)
+  vec3 lit = vCol * v * (page > 0.5 ? 1.0 - hiddenAt(vWorld) : 1.0) * (1.0 - behindUi * coverAt(vWorld));
   o = vec4(lit, behindUi * coverLum(lit));
 }`;
 
@@ -767,7 +783,7 @@ void main() {
     v *= win;
     hot *= win;
   }
-  vec3 lit = (col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (1.0 - vBehind * hiddenAt(vWorld)) * (1.0 - vUi * coverAt(vWorld));
+  vec3 lit = (col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (vBehind > 0.5 ? 1.0 - hiddenAt(vWorld) : 1.0) * (1.0 - vUi * coverAt(vWorld));
   o = vec4(lit, vUi * coverLum(lit));
 }`;
 
@@ -932,13 +948,16 @@ export function coverKey(boxes: readonly number[], view: readonly [number, numbe
   return key;
 }
 
+/** A box the page's light hides behind (CSS px), its corner radius, and how far it hides it (0-1). */
+export type HideLight = { box: DOMRect; radius: number; amount: number };
+
 /**
  * An open dialog (lib/behindDialog.ts): how far it dims the page, and its box
- * and corner radius in CSS px. `hide`, when given, is how far the box hides
- * the page's light instead of `amount`: a window over the page that doesn't
- * dim it (lib/fx/core.ts hideLightIn) hides its light all the same.
+ * and corner radius in CSS px; and the boxes the page's light hides behind
+ * (the dialog's, or with none open, the windows and toasts over the page:
+ * lib/fx/core.ts), the first MAX_HIDES of them drawn.
  */
-export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hide?: number };
+export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hides?: readonly HideLight[] };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 
 export class FxRenderer {
@@ -958,6 +977,9 @@ export class FxRenderer {
   /** Shapes are soft, so they're drawn at about one texel per CSS px, not per device px. */
   private shapesT: Target | null = null;
   private mips: Target[] = [];
+  /** The boxes the page's light hides behind, packed for their uniforms (see BEHIND_DIALOG). */
+  private hideBoxes = new Float32Array(MAX_HIDES * 4);
+  private hideK = new Float32Array(MAX_HIDES * 2);
   private internal: number;
   private texType: number;
   private hdrFloat: boolean;
@@ -1278,13 +1300,24 @@ export class FxRenderer {
       gl.bindTexture(gl.TEXTURE_2D, this.coverTex);
       gl.activeTexture(gl.TEXTURE0);
     }
-    // Without a dialog box, nothing is hidden and everything is dimmed.
+    // Without a dialog box, everything is dimmed.
     const b = dialog.box;
+    const nHides = Math.min(MAX_HIDES, dialog.hides?.length ?? 0);
+    for (let i = 0; i < nHides; i++) {
+      const h = dialog.hides![i];
+      this.hideBoxes.set([h.box.left, h.box.top, h.box.right, h.box.bottom], i * 4);
+      this.hideK.set([h.radius, h.amount], i * 2);
+    }
     const behindDialog = (p: Program, hide: boolean) => {
       if (b) gl.uniform4f(p.u('uDialogBox'), b.left, b.top, b.right, b.bottom);
       else gl.uniform4f(p.u('uDialogBox'), -1, -1, -1, -1);
       gl.uniform1f(p.u('uDialogR'), dialog.radius);
-      gl.uniform1f(p.u('uHide'), hide && b ? (dialog.hide ?? dialog.amount) : 0);
+      const n = hide ? nHides : 0;
+      gl.uniform1i(p.u('uHideN'), n);
+      if (n) {
+        gl.uniform4fv(p.u('uHideBox'), this.hideBoxes);
+        gl.uniform2fv(p.u('uHideK'), this.hideK);
+      }
       gl.uniform1f(p.u('uBlur'), DIALOG_BLUR * dialog.amount);
     };
 

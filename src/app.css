@@ -137,6 +137,11 @@ body {
    the browser would otherwise give its own. */
 html {
   cursor: default;
+  /* Text at the size it's set, whichever way up the phone: iOS Safari would
+     otherwise enlarge it on its side, past the fixed rooms laid out for it
+     (a card's nameplate wrapped a long category to three lines). */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }

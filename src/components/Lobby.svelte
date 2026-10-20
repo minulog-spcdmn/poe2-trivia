@@ -1669,4 +1669,31 @@
       margin-top: 0;
     }
   }
+  /* A phone on its side (lib/layout.ts `flat`): closer to the screen's
+     edges (clear of the notch). */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .lobby {
+      padding: 0.8rem max(1rem, env(safe-area-inset-right)) 1.5rem max(1rem, env(safe-area-inset-left));
+    }
+  }
+  /* Below a desktop's width (a desktop keeps its own): the room and party
+     beside the game rather than over it, and the start, the panel's own foot,
+     stays at the foot of the screen while the panel, twice the screen's
+     height, scrolls under it; a bar across the whole of so short a screen
+     would take too much of it. */
+  @media (orientation: landscape) and (max-height: 500px) and (max-width: 1099px) {
+    .cols {
+      grid-template-columns: 1fr 1.33fr;
+    }
+    .game .start {
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      margin: 1rem -1.4rem -1.4rem;
+      padding: 0.7rem 1.4rem max(0.8rem, env(safe-area-inset-bottom));
+      /* The panel's own colour at its foot (app.css .panel), solid, so the rules pass under it. */
+      background: rgb(16, 13, 10);
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+  }
 </style>

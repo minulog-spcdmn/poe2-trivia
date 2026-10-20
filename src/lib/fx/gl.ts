@@ -99,18 +99,37 @@ function drop(gl: WebGL2RenderingContext, started: readonly Started[]) {
 }
 
 /**
- * Compiles and links `sources` at once, for what's drawn at once (the
- * backdrop's first frame): every program is started before any is asked
- * about, so with KHR_parallel_shader_compile the driver builds them side by
- * side, and then only whether each linked is asked (see linked). The
- * programs, in order, or null if one failed (a warning says why).
+ * Programs started at once (see startPrograms). `read` gives them, in order,
+ * or null if one failed (a warning says why) or the context was lost,
+ * waiting for them if need be; `cancel` drops them.
  */
-export function buildProgramsNow(gl: WebGL2RenderingContext, sources: readonly ProgramSource[]): WebGLProgram[] | null {
+export type Pending = { read(): WebGLProgram[] | null; cancel(): void };
+
+/**
+ * Starts compiling and linking `sources` at once, for what's drawn at once
+ * or soon (the backdrop's first frame): every program is started before any
+ * is asked about, so with KHR_parallel_shader_compile the driver builds
+ * them side by side, off the page's thread, while the page goes on; read,
+ * only whether each linked is asked (see linked).
+ */
+export function startPrograms(gl: WebGL2RenderingContext, sources: readonly ProgramSource[]): Pending {
   gl.getExtension('KHR_parallel_shader_compile');
   const started = sources.map((src) => begin(gl, src));
-  if (started.every((p, i) => linked(gl, p, sources[i].label))) return started.map((p) => p.prog);
-  drop(gl, started);
-  return null;
+  let over = false;
+  return {
+    read() {
+      if (over) return null;
+      over = true;
+      if (!gl.isContextLost() && started.every((p, i) => linked(gl, p, sources[i].label))) return started.map((p) => p.prog);
+      drop(gl, started);
+      return null;
+    },
+    cancel() {
+      if (over) return;
+      over = true;
+      drop(gl, started);
+    },
+  };
 }
 
 /**

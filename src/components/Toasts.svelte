@@ -7,6 +7,7 @@
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
   import { playerColor } from '../lib/ui';
   import { heraldNotice, twinkle } from '../lib/fx/moments';
+  import { lightOf, overPage } from '../lib/fx/core';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
@@ -37,7 +38,7 @@
 
   /** Svelte action: a little sparkle as good news arrives (gold round the creator's notice). */
   function sparkle(node: HTMLElement, o: { kind: ToastKind; herald?: boolean }) {
-    if (o.kind === 'info') requestAnimationFrame(() => node.isConnected && (o.herald ? heraldNotice(node) : twinkle(node)));
+    if (o.kind === 'info') requestAnimationFrame(() => node.isConnected && lightOf(node, () => (o.herald ? heraldNotice(node) : twinkle(node))));
   }
 </script>
 
@@ -64,7 +65,7 @@
   aria-live="polite"
 >
   {#if lost}
-    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" in:fly={enter} out:fade={{ duration: 200 }}>
+    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" use:overPage in:fly={enter} out:fade={{ duration: 200 }}>
       <span class="seal">
         {#if session.gaveUp}
           <span class="gem">{@render glyph('error')}</span>
@@ -91,6 +92,7 @@
       class:feat={!!t.seal}
       role="note"
       style:--life="{t.life}ms"
+      use:overPage
       use:sparkle={{ kind: t.kind, herald: t.herald }}
       animate:flip={{ duration: 260 }}
       in:fly={enter}

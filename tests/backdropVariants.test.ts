@@ -3,6 +3,10 @@
 // Delve is on its way. The lean ones must hold none of Delve's code (that's
 // what they save), be Delve's with only Delve's parts taken out (so the two
 // can't drift apart), and stand in for them only where those parts are off.
+// And the UI's box shadows and fills are a pass of their own (ui), drawn
+// over the main pass (split): together they're the main pass with all of
+// it, and nothing else changed; without a float target (whole) it's all in
+// one. The bare passes have none of the UI's parts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -31,12 +35,12 @@ const { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } = await import('../src/lib/sha
 const { ENVIRONMENTS, SURFACE, descent } = await import('../src/lib/descent.ts');
 
 /** Names only Delve's parts of the shaders use. */
-const DELVE_ONLY = /\b(env_\w+|fx_spores|fx_shafts|environments|closing|tendrils|fxSlot|vnoise|fbm|ridge|smin3|gFrost|gDark|gLit|uDark|uFx|uFxK|uEddy|uCityA|uCityB|uCityC|uIce|frost|near)\b/;
+const DELVE_ONLY = /\b(env_\w+|fx_spores|fx_shafts|environments|closing|tendrils|fxSlot|vnoise|fbm|ridge|smin3|gFrost|gDark|gLit|uDark|uFx|uFxK|uEddy|uRolled|uCityA|uCityB|uCityC|uIce|frost|near)\b/;
 
 for (const n of [4, 16]) {
   const lean = backdropShaders(n);
   const delve = backdropShaders(n, true);
-  const passes = ['smooth', 'split', 'whole'] as const;
+  const passes = ['smooth', 'split', 'whole', 'bareSplit', 'bareWhole', 'splitAll'] as const;
 
   test(`the lean programs hold none of Delve's code (${n} elements)`, () => {
     for (const k of passes) {
@@ -67,6 +71,37 @@ for (const n of [4, 16]) {
     // The main pass, with the soft light split off or not.
     assert.match(delve.split, /uniform sampler2D uSmooth;/);
     assert.match(delve.whole, /vec3 col = smoothLight\(p\);\n  float frost = gFrost;/);
+  });
+
+  test(`the UI pass holds the UI's boxes, and the main pass under it all the rest; the bare passes none of the UI (${n} elements)`, () => {
+    /** Names only the UI's boxes use, and only its drop shadows. */
+    const BOXES = /\b(uEl\w*|uShGeo|uShCol|roundedBoxShadow|shadowX|erf2|pxLocal)\b/;
+    const DROPS = /\b(uMk\w*|uSharp\w*|uBlur\w*)\b/;
+    const code = (k: keyof typeof lean) => lean[k].replace(/\/\/[^\n]*/g, '');
+    assert.doesNotMatch(code('split'), BOXES);
+    assert.match(code('split'), DROPS);
+    assert.match(code('ui'), BOXES);
+    assert.doesNotMatch(code('ui'), DROPS);
+    assert.ok(lean.ui.length < lean.splitAll.length * 0.5, 'the UI pass is the small part');
+    for (const k of ['bareSplit', 'bareWhole'] as const) for (const re of [BOXES, DROPS]) assert.doesNotMatch(code(k), re, k);
+    // The main pass's lines are the whole one's, in order, but for its end
+    // (the colour as it is, into its target); what it leaves out is the
+    // UI's boxes, a dialog's dimming and the dither, which are the UI pass's.
+    const mainLines = lean.split.split('\n');
+    const end = mainLines.findIndex((l) => l === '  fragColor = vec4(col, 1.0);');
+    assert.ok(end > 0, 'the main pass ends with the colour as it is');
+    const left: string[] = [];
+    let j = 0;
+    for (const line of lean.splitAll.split('\n')) {
+      if (j < end && line === mainLines[j]) j++;
+      else left.push(line);
+    }
+    assert.equal(j, end, `split: line ${j + 1} is not the whole one's: ${JSON.stringify(mainLines[j])}`);
+    const leftCode = left.join('\n').replace(/\/\/[^\n]*/g, '');
+    for (const part of ['uLight', 'uMood', 'uEmber', 'uVignette', 'smoothLight', 'uMk']) assert.ok(!leftCode.includes(part), `split leaves out ${part}`);
+    // Each line it leaves out is the UI pass's, word for word.
+    const uiLines = new Set(lean.ui.split('\n'));
+    for (const line of left) if (line.trim() && !line.startsWith('uniform') && !/^\s*}?\s*$/.test(line)) assert.ok(uiLines.has(line) || /^#version|^precision|^out /.test(line), `not the UI pass's: ${JSON.stringify(line)}`);
   });
 }
 
