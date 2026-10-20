@@ -86,7 +86,7 @@ import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, act
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
-import { loadSigils } from './sigils';
+import { SIGILS_KEY, loadSigils } from './sigils';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
@@ -584,6 +584,7 @@ class Session {
     this.delveLink = false;
     this.reset();
     this.mode = 'local';
+    this.localSelf = null;
     this.status = 'ready';
     this.lobbyDraft = '';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
@@ -603,14 +604,36 @@ class Session {
   }
 
   /**
+   * The player on this device who is its own (hot-seat): the first seated,
+   * who wears the class sigil this browser wears. The others seated after
+   * them have none: whose they would be, the game can't tell.
+   */
+  private localSelf: string | null = null;
+
+  /**
    * Seats a player on this device (hot-seat); false when the game turned
    * them down (and said why). The id comes from getRandomValues, which,
    * unlike randomUUID, also works on plain http.
    */
   seatLocal(name: string): boolean {
     const playerId = newPlayerId();
-    this.dispatch({ type: 'join', playerId, name });
-    return !!this.state?.players.some((p) => p.id === playerId);
+    const first = !this.state?.players.length;
+    this.dispatch({ type: 'join', playerId, name, ...(first ? wornSigil() : {}) });
+    const seated = !!this.state?.players.some((p) => p.id === playerId);
+    if (seated && first) this.localSelf = playerId;
+    return seated;
+  }
+
+  /**
+   * The class sigil this browser wears changed (lib/sigils.ts, here or in
+   * another tab): the game under way shows it on this player at once.
+   */
+  wearSigil() {
+    if (!this.state) return;
+    const { sigil } = wornSigil();
+    if (this.mode === 'local') {
+      if (this.localSelf) this.dispatch({ type: 'sigil', playerId: this.localSelf, ...(sigil ? { sigil } : {}) });
+    } else if (this.myPlayerId) this.dispatch({ type: 'sigil', ...(sigil ? { sigil } : {}) });
   }
 
   /**
@@ -716,6 +739,9 @@ class Session {
         // one of them may have been answering holds its clock still from the
         // host's last moment before the reload until it can start again.
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
+        // The host's own sigil as it is now: it may have changed since the room was saved.
+        const { sigil } = wornSigil();
+        s = engine.apply(s, { type: 'sigil', ...(sigil ? { sigil } : {}) }, me);
         this.setState(s);
       } else {
         let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
@@ -918,7 +944,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue } });
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
       }
     });
   }
@@ -1054,7 +1080,7 @@ class Session {
     const watcher = next.spectators?.find((o) => o.id === playerId);
     // The creator's first arrival has a notice of its own (see onNewState).
     if (this.heralded === playerId) return;
-    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue } });
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
     else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
@@ -2191,7 +2217,7 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue } });
+    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
     else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
   }
 
@@ -2693,7 +2719,7 @@ class Session {
     if (arrival && this.mode !== 'local' && arrival.id !== this.myPlayerId)
       this.flash(arrival.watching ? 'is watching' : 'has arrived', 'info', {
         title: CREATOR_TITLE,
-        who: { name: arrival.name, hue: arrival.hue ?? RUBY },
+        who: { name: arrival.name, hue: arrival.hue ?? RUBY, sigil: arrival.sigil },
         herald: true,
       });
     // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
@@ -2933,7 +2959,7 @@ class Session {
       const p = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue } });
+        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
       } catch {
         /* the turn moved on anyway */
       }
@@ -3220,6 +3246,8 @@ if (typeof window !== 'undefined') {
   });
   window.addEventListener('storage', (e) => {
     if (e.key === LEFT_KEY && e.newValue) session.stillHere();
+    // A sigil picked in another tab is worn in the game in this one too.
+    if (e.key === SIGILS_KEY) session.wearSigil();
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());

@@ -7,13 +7,16 @@
   import { CLASSES, className, sigilUrl, type PlayerClass } from '../lib/classSigils';
   import { SIGILS_KEY, loadSigils, sigilsToUnlock, unlockSigil, wearSigil } from '../lib/sigils';
   import { onStoredElsewhere } from '../lib/storage';
-  import { savedName } from '../lib/session.svelte';
+  import { savedName, session } from '../lib/session.svelte';
   import Avatar from './Avatar.svelte';
 
-  /** achievements: how many this player has earned, each worth a sigil. */
-  let { achievements }: { achievements: number } = $props();
+  /** achievements: how many this player has earned, each worth a sigil. unlocked: how many they have unlocked, for a count beside it. */
+  let { achievements, unlocked = $bindable(0) }: { achievements: number; unlocked?: number } = $props();
 
   let sigils = $state.raw(loadSigils());
+  $effect.pre(() => {
+    unlocked = sigils.unlocked.length;
+  });
   onMount(() => onStoredElsewhere({ [SIGILS_KEY]: () => (sigils = loadSigils()) }));
 
   const left = $derived(sigilsToUnlock(sigils, achievements));
@@ -29,11 +32,13 @@
     if (sigils.unlocked.includes(c)) {
       asking = null;
       sigils = wearSigil(sigils.worn === c ? null : c) ?? sigils;
+      session.wearSigil();
     } else if (left) asking = asking === c ? null : c;
   }
   function unlock() {
     if (!ask) return;
     sigils = unlockSigil(ask, achievements) ?? sigils;
+    session.wearSigil();
     asking = null;
   }
 </script>

@@ -110,3 +110,9 @@ test("a guest's hello carries the sigil it wears; one this build doesn't know is
   const unknown = parseClientMsg({ ...hello, sigil: 'duelist' });
   assert.ok(unknown && !('sigil' in unknown));
 });
+
+test("a guest's sigil action is only ever its own, and one this build doesn't know is none", async () => {
+  const { parseClientMsg } = await import('../src/lib/protocol.ts');
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'sigil', sigil: 'monk', playerId: 'someone' } }), { t: 'action', action: { type: 'sigil', sigil: 'monk' } });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'sigil', sigil: 'duelist' } }), { t: 'action', action: { type: 'sigil' } });
+});

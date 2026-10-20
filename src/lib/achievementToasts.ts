@@ -7,7 +7,7 @@
 // announced together a little after it, so a burst never fills the stack.
 //
 // Each one earned unlocks a class sigil (lib/sigils.ts): while there is one
-// to unlock, a notice after them says so, and where.
+// to unlock, a notice a few seconds after them says so, and where.
 
 import { loadAchievements, type Achievement, type Check } from './achievements.ts';
 import { achievementsIn, loadSigils, sigilsToUnlock } from './sigils.ts';
@@ -17,6 +17,8 @@ import { toasts } from './toasts.svelte';
 const ONE_BY_ONE = 2;
 /** How long after the moment that earned it an achievement is announced: a notice arriving with a reveal's flare would be lost in it. */
 const DELAY_MS = 1400;
+/** How long after the achievements' notice the one about class sigils to unlock comes, so they don't arrive as one. */
+const SIGIL_DELAY_MS = 3500;
 
 let pending: Achievement[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -55,8 +57,16 @@ function past(list: Achievement[]) {
   sigilNotice();
 }
 
-/** Says how many class sigils are there to unlock, if any. */
+let sigilTimer: ReturnType<typeof setTimeout> | null = null;
+/** A little later, says how many class sigils are there to unlock, if any (counted then). */
 function sigilNotice() {
+  sigilTimer ??= setTimeout(() => {
+    sigilTimer = null;
+    sigilsLeft();
+  }, SIGIL_DELAY_MS);
+}
+
+function sigilsLeft() {
   const n = sigilsToUnlock(loadSigils(), achievementsIn(loadAchievements()));
   if (!n) return;
   toasts.show('Pick a class to wear on your avatar, in the Codex under Achievements.', 'info', {

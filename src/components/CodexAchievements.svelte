@@ -37,6 +37,9 @@
       of: ACHIEVEMENTS.filter((a) => a.tier === tier).length,
     })),
   );
+  /** Achievements this build knows, each worth a class sigil; and the sigils unlocked (SigilPicker says). */
+  const sigilsEarned = $derived(achievementsIn(store));
+  let unlocked = $state(0);
   /** The earned share as an arc around the medallion (its circle's circumference is 100). */
   const share = $derived(earned.length / ACHIEVEMENTS.length);
 </script>
@@ -72,10 +75,10 @@
   <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="feats-sigils">
     <header>
       <h2 id="feats-sigils">Class sigils</h2>
-      <span class="col-label">{Math.min(achievementsIn(store), CLASSES.length)} / {CLASSES.length}</span>
+      <span class="col-label">{unlocked} / {CLASSES.length}</span>
     </header>
     <p class="hint">Each achievement unlocks a class's sigil, to wear on your avatar behind your initial.</p>
-    <SigilPicker achievements={achievementsIn(store)} />
+    <SigilPicker achievements={sigilsEarned} bind:unlocked />
   </section>
   {#each groups as g (g.key)}
     {@const done = g.rows.filter((r) => r.earned !== null).length}

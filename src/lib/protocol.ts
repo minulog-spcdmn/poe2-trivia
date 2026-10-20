@@ -227,6 +227,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // Watch rather than play (or take a seat again): only ever the sender's own choice.
         case 'watch':
           return typeof a.watch === 'boolean' ? { t: 'action', action: { type: 'watch', watch: a.watch } } : null;
+        // The class sigil they wear now: only ever the sender's own (one this build doesn't know counts as none).
+        case 'sigil':
+          return { t: 'action', action: isPlayerClass(a.sigil) ? { type: 'sigil', sigil: a.sigil } : { type: 'sigil' } };
         default:
           return null;
       }

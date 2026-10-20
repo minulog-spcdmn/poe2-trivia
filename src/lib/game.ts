@@ -1079,6 +1079,8 @@ export type Action =
    * in the lobby, where they give up their seat.
    */
   | { type: 'watch'; watch: boolean }
+  /** The class sigil the sender wears now (none: taken off); on this device (from null), `playerId`'s. */
+  | { type: 'sigil'; sigil?: PlayerClass; playerId?: string }
   /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
   | { type: 'clock'; askedAt: number; at?: number }
   /** Host only (Delve co-op): the vote's window ran out (or every vote it waits for is in): a card is drawn from the votes. */
@@ -1846,6 +1848,14 @@ export class Engine {
         // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
         if (s.spectators.length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
+        break;
+      }
+      case 'sigil': {
+        const id = from ?? action.playerId;
+        const o = s.players.find((p) => p.id === id) ?? s.spectators.find((w) => w.id === id);
+        if (!o) break;
+        if (isPlayerClass(action.sigil)) o.sigil = action.sigil;
+        else delete o.sigil;
         break;
       }
       case 'clock': {

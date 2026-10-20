@@ -7,7 +7,7 @@
   import VerdictSign from './VerdictSign.svelte';
   import { motion } from '../lib/motion.svelte';
   import { untrack } from 'svelte';
-  import { classOf, SIGIL_FITS, sigilUrl, SMALL_INK, type PlayerClass } from '../lib/classSigils';
+  import { classOf, isPlayerClass, SIGIL_FITS, sigilUrl, SMALL_INK, type PlayerClass } from '../lib/classSigils';
   import { sigilTrial } from '../lib/sigilTrial.svelte';
 
   /** wrong: answered wrong, the token face down (the scoreboard). sigil: their class's sigil, worn behind their initial (lib/classSigils.ts). */
@@ -26,9 +26,10 @@
     wrong?: boolean;
     sigil?: PlayerClass;
   } = $props();
-  // (On the QA desk, everyone can wear one, by their name.)
-  const worn = $derived(sigil ?? (sigilTrial.on ? classOf(name) : undefined));
-  const fit = $derived(worn && SIGIL_FITS[worn]);
+  // Only one this build knows (a newer host's may not be). (On the QA desk,
+  // everyone can wear one, by their name.)
+  const worn = $derived(isPlayerClass(sigil) ? sigil : sigilTrial.on ? classOf(name) : undefined);
+  const fit = $derived(worn ? SIGIL_FITS[worn] : undefined);
   const small = $derived(size < SMALL_INK);
   const initial = $derived(initialOf(name) || '?');
   // A's thin apex and wide base make it look low when its cap height is

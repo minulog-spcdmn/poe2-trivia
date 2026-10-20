@@ -376,3 +376,21 @@ test('a class sigil comes with a join, stays with a spectator who takes a seat, 
   s = engine.apply(s, { type: 'join', playerId: 'x', name: 'Xan', sigil: 'duelist' as never }, 'x');
   assert.equal(s.players.find((p) => p.id === 'x')?.sigil, undefined);
 });
+
+test('the sigil action changes the sender\'s own sigil, a spectator\'s too, and on one device the player named', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  s = engine.apply(s, { type: 'sigil', sigil: 'ranger' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger');
+  assert.equal(s.players.find((p) => p.id === 'p0')?.sigil, undefined, "never another's");
+  s = engine.apply(s, { type: 'sigil', sigil: 'monk', playerId: 'p0' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p0')?.sigil, undefined, 'a guest names only itself');
+  s = engine.apply(s, { type: 'sigil' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, undefined, 'taken off');
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren', watch: true }, 'w');
+  s = engine.apply(s, { type: 'sigil', sigil: 'druid' }, 'w');
+  assert.equal(s.spectators?.find((o) => o.id === 'w')?.sigil, 'druid');
+  let local = createGame(null);
+  local = engine.apply(local, { type: 'join', playerId: 'a', name: 'Ash' }, null);
+  local = engine.apply(local, { type: 'sigil', sigil: 'witch', playerId: 'a' }, null);
+  assert.equal(local.players[0].sigil, 'witch');
+});
