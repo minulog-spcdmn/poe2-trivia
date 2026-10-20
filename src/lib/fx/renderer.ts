@@ -1172,12 +1172,63 @@ export class FxRenderer {
   }
 
   /**
+   * How long the GPU took over the frames drawn (EXT_disjoint_timer_query_webgl2,
+   * where the browser has it: desktop Chrome does, Firefox and Safari don't).
+   * Each draw is timed in a query of its own, read a few frames on once the
+   * GPU is done with it; never waited for.
+   */
+  private timer: { ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null; free: WebGLQuery[]; pending: WebGLQuery[]; ms: number; frames: number } | null = null;
+
+  /**
+   * The GPU's time (ms) over the frames timed since the last call, and how
+   * many they were; null where it can't be timed. (A frame whose timing was
+   * spoiled, the GPU's clock disturbed by a power state, say, is left out.)
+   */
+  gpuTime(): { ms: number; frames: number } | null {
+    const gl = this.gl;
+    const t = (this.timer ??= { ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), free: [] as WebGLQuery[], pending: [] as WebGLQuery[], ms: 0, frames: 0 });
+    if (!t.ext) return null;
+    const spoiled = !!gl.getParameter(t.ext.GPU_DISJOINT_EXT);
+    while (t.pending.length && gl.getQueryParameter(t.pending[0], gl.QUERY_RESULT_AVAILABLE)) {
+      const q = t.pending.shift()!;
+      if (!spoiled) {
+        t.ms += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+        t.frames++;
+      }
+      t.free.push(q);
+    }
+    const out = { ms: t.ms, frames: t.frames };
+    t.ms = 0;
+    t.frames = 0;
+    return out;
+  }
+
+  /**
+   * Draws one frame (see drawFrame), timed on the GPU where it can be. (Not
+   * before gpuTime() has been asked for once: until then nobody reads it.)
+   */
+  draw(...args: Parameters<FxRenderer['drawFrame']>) {
+    const t = this.timer?.ext ? this.timer : null;
+    // (A few frames' queries waiting at most: if the GPU falls further behind, the frames past them go untimed.)
+    const q = t && t.pending.length < 6 ? (t.free.pop() ?? this.gl.createQuery()) : null;
+    if (q) this.gl.beginQuery(t!.ext!.TIME_ELAPSED_EXT, q);
+    try {
+      this.drawFrame(...args);
+    } finally {
+      if (q) {
+        this.gl.endQuery(t!.ext!.TIME_ELAPSED_EXT);
+        t!.pending.push(q);
+      }
+    }
+  }
+
+  /**
    * Draws one frame. `view` is the canvas size in CSS px, `dpr` device pixels
    * per CSS px of the drawing buffer. The last `nCrisp` of the shapes are
    * drawn at full resolution (thin lines); the rest at reduced resolution.
    * `dialog` is the open dialog, if any (see BEHIND_DIALOG).
    */
-  draw(
+  private drawFrame(
     view: [number, number],
     dpr: number,
     particles: Float32Array,
@@ -1580,6 +1631,7 @@ export class FxRenderer {
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
+    for (const q of [...(this.timer?.free ?? []), ...(this.timer?.pending ?? [])]) gl.deleteQuery(q);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }
