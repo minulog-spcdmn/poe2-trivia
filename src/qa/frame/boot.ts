@@ -11,7 +11,7 @@ import { freeze, installFreeze } from './freeze.ts';
 import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
-import { isDeskMessage, type FrameMessage } from '../messages.ts';
+import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
 import { seatsIn } from '../scene.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
@@ -182,7 +182,7 @@ export async function boot(asked: URLSearchParams) {
   }
 
   const slot = asked.get('frame') ?? '';
-  const tell = (m: FrameMessage) => parent.postMessage(m, location.origin);
+  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
   handOnKeys(tell);
   addEventListener('pagehide', () => {
     // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
@@ -194,7 +194,7 @@ export async function boot(asked: URLSearchParams) {
   // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
   outline(asked.get('o') !== '0');
   addEventListener('message', (e) => {
-    if (e.origin !== location.origin || !isDeskMessage(e.data)) return;
+    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
     if (e.data.qa === 'outlines') outline(e.data.on);
     else if (e.data.qa === 'freeze') freeze(e.data.on);
   });
@@ -228,7 +228,7 @@ export async function boot(asked: URLSearchParams) {
  */
 export function handOnKeys(tell: (m: FrameMessage) => void, digits = false) {
   // (The digits only from a piece's frame: in the game they answer a question, and it doesn't stop them going on.)
-  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', '/', 'Alt', ...(digits ? '123456789' : '')]);
+  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', 'b', 'B', 'd', 'D', '/', 'Alt', ...(digits ? '123456789' : '')]);
   const HELD = new Set(['h', 'H', 'Alt']);
   const hand = (e: KeyboardEvent, up: boolean) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt') || !DESK_KEYS.has(e.key)) return;

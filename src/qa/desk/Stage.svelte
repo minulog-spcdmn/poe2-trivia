@@ -8,6 +8,7 @@
   import { untrack } from 'svelte';
   import { isFrameMessage, type FrameMessage } from '../messages.ts';
   import type { Size } from '../sizes.ts';
+  import type { Shown } from './compare.ts';
 
   let {
     frames,
@@ -16,9 +17,13 @@
     zoomed,
     panning,
     board,
+    origins = [],
+    picked = -1,
     onframe,
+    onbox,
+    onmark,
   }: {
-    frames: { src: string; title: string; caption: string }[];
+    frames: Shown[];
     /** A device's size, or null: as large as the room here, at 1:1. */
     size: Size | null;
     /** What the frames show, as one string: when it changes they're made afresh. */
@@ -26,7 +31,14 @@
     zoomed: boolean;
     panning: boolean;
     board?: string;
-    onframe: (m: FrameMessage) => void;
+    /** Origins besides the desk's own a frame may be on (the code before this change's). */
+    origins?: string[];
+    /** The mark picked, if one. */
+    picked?: number;
+    onframe: (m: FrameMessage, i: number) => void;
+    /** Each frame's size (CSS px), as laid out. */
+    onbox?: (w: number, h: number) => void;
+    onmark?: (i: number) => void;
   } = $props();
 
   const GAP = 24;
@@ -57,14 +69,15 @@
     const t = setTimeout(() => (shown = { srcs }), SETTLE_MS);
     return () => clearTimeout(t);
   });
+  $effect(() => onbox?.(w, h));
   let els = $state<HTMLIFrameElement[]>([]);
   $effect(() => {
     const heard = (e: MessageEvent) => {
-      if (e.origin !== location.origin || !isFrameMessage(e.data)) return;
+      if ((e.origin !== location.origin && !origins.includes(e.origin)) || !isFrameMessage(e.data)) return;
       const i = els.findIndex((f) => f?.contentWindow === e.source);
       if (i < 0) return;
       if (e.data.qa === 'ready') ready = new Set([...ready, i]);
-      onframe(e.data);
+      onframe(e.data, i);
     };
     addEventListener('message', heard);
     return () => removeEventListener('message', heard);
@@ -98,8 +111,27 @@
                 <iframe bind:this={els[i]} title={f.title} src={shown.srcs[i]} style:width="{w}px" style:height="{h}px" style:transform="scale({scale})" class:away={!!board}></iframe>
               {/key}
             {/if}
+            {#if f.layer && !board}
+              <img class="layer" src={f.layer} alt="" style:width="{w * scale}px" style:height="{h * scale}px" />
+            {/if}
+            {#if !board}
+              {#each f.marks ?? [] as m, j (j)}
+                <button
+                  class="mark"
+                  class:picked={j === picked}
+                  style:left="{m.x * scale}px"
+                  style:top="{m.y * scale}px"
+                  style:width="{m.w * scale}px"
+                  style:height="{m.h * scale}px"
+                  onclick={() => onmark?.(j)}
+                  aria-label="How area {j + 1} differs"><span class="num">{j + 1}</span></button
+                >
+              {/each}
+            {/if}
             {#if board}
               <img class="board" src={board} alt="The design's board for this scene" style:width="{w * scale}px" />
+            {:else if !shown?.srcs[i] && f.note}
+              <p class="loading">{f.note}</p>
             {:else if !ready.has(i)}
               <p class="loading">Loading…</p>
             {/if}

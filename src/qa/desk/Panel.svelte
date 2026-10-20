@@ -19,6 +19,8 @@
     frozen,
     hasBoard,
     canPlay,
+    canCompare,
+    comparing,
     reason,
     onstate,
     onall,
@@ -30,6 +32,7 @@
     onfreeze,
     onplay,
     onhold,
+    oncompare,
   }: {
     bench: Bench;
     /** Its states, each with the heading it's listed under ('' for none). */
@@ -47,6 +50,9 @@
     frozen: boolean;
     hasBoard: boolean;
     canPlay: boolean;
+    /** Before and after: whether it can be (only the dev server has the code before), and whether it's on. */
+    canCompare: boolean;
+    comparing: boolean;
     /** Why this change touches it, if it does. */
     reason?: string;
     onstate: (i: number) => void;
@@ -59,6 +65,7 @@
     onfreeze: () => void;
     onplay: () => void;
     onhold: (on: boolean) => void;
+    oncompare: () => void;
   } = $props();
 
   const piece = $derived(bench.kind === 'piece' ? bench : null);
@@ -201,6 +208,9 @@
   <section class="tools">
     <button onclick={onreplay} title="Draw it in again, as it first came">Replay <kbd>R</kbd></button>
     <button class:on={frozen} onclick={onfreeze} title="Hold every animation where it is">{frozen ? 'Frozen' : 'Freeze'} <kbd>F</kbd></button>
+    {#if canCompare}
+      <button class:on={comparing} onclick={oncompare} title="The code before this change beside the code now, and where they differ">Before and after <kbd>B</kbd></button>
+    {/if}
     {#if hasBoard}
       <button onpointerdown={() => onhold(true)} onpointerup={() => onhold(false)} onpointerleave={() => onhold(false)}>Hold for design <kbd>H</kbd></button>
     {/if}

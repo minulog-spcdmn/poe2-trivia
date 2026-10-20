@@ -10,7 +10,7 @@ import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { handOnKeys, trackWebgl } from './boot.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
-import { isDeskMessage, type FrameMessage } from '../messages.ts';
+import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
 import { valuesOf, type Values } from '../bench.ts';
 
 /** How long it stays still after a change before it's checked again (ms). */
@@ -60,7 +60,7 @@ export async function bootPiece(asked: URLSearchParams) {
   autoscroll.installAutoscroll();
 
   const slot = asked.get('frame') ?? '';
-  const tell = (m: FrameMessage) => parent.postMessage(m, location.origin);
+  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
   mount(Host, { target: document.getElementById('app')!, props: { bench, View, all: asked.has('all'), set: (values: Values) => tell({ qa: 'set', values }), pick: (index: number) => tell({ qa: 'pick', index }) } });
   handOnKeys(tell, true);
   addEventListener('pagehide', () => {
@@ -84,7 +84,7 @@ export async function bootPiece(asked: URLSearchParams) {
     again = setTimeout(run, RECHECK_MS);
   };
   addEventListener('message', (e) => {
-    if (e.origin !== location.origin || !isDeskMessage(e.data)) return;
+    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
     const m = e.data;
     if (m.qa === 'outlines') outline(m.on);
     else if (m.qa === 'freeze') freeze(m.on);

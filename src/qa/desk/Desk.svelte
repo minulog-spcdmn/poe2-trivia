@@ -21,6 +21,8 @@
   import Stage from './Stage.svelte';
   import Grid from './Grid.svelte';
   import Live from './Live.svelte';
+  import Closeup from './Closeup.svelte';
+  import { askBefore, beforeSrc, compareShots, shotSrc, type Before, type Compared, type Shown } from './compare.ts';
   import { liveRoom, type LiveRoom } from '../live/room.ts';
   import { BETA, LOCAL } from '../../lib/channel.ts';
 
@@ -45,7 +47,7 @@
   /** A size to show at: a device's, or (fit) the desk's own window, the frame as large as the room there, at 1:1. */
   type Pick = SizeKey | 'fit';
   /** The view the address asks for. */
-  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean };
+  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean; compare: boolean };
   function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
     const scene = sceneByKey(p.get('s')) ?? null;
@@ -62,6 +64,7 @@
       all: p.get('all') === '1',
       zoomed: p.get('z') === '1',
       outlines: p.get('o') !== '0',
+      compare: p.get('cmp') === '1',
     };
   }
   const first = fromAddress();
@@ -79,6 +82,8 @@
   let holding = $state(false);
   let panning = $state(false);
   let query = $state('');
+  /** Before and after (B): the code before this change beside the code now. */
+  let comparing = $state(first?.compare ?? false);
 
   /** A piece's controls as set, by bench (each keeps its own while another is looked at). */
   let values = $state<Record<string, Values>>({});
@@ -103,7 +108,10 @@
   const seats = $derived(scene && built ? seatsIn(scene, built) : []);
   /** A scene's seats shown: all side by side on a touch screen (they fit), one at a time on a larger one, unless one was picked. */
   // (A seat picked on a scene with more stays the last one there is on one with fewer.)
-  const seatShown = $derived<number | 'all'>(seats.length <= 1 ? 0 : seatPicked === 'all' ? 'all' : seatPicked !== null ? Math.min(seatPicked, seats.length - 1) : sz?.touch ? 'all' : 0);
+  // (Before and after shows one seat: the first, if all were side by side.)
+  const seatShown = $derived<number | 'all'>(
+    seats.length <= 1 ? 0 : seatPicked === 'all' ? (comparing ? 0 : 'all') : seatPicked !== null ? Math.min(seatPicked, seats.length - 1) : sz?.touch && !comparing ? 'all' : 0,
+  );
   const seatNames = $derived(built ? seats.map((s) => seatLabel(s, built.state)) : []);
   const stateIndex = $derived(piece ? stateAt(piece, v) : screen && scene && set ? sceneStateAt(screen, scene, set.controls, set.values) : -1);
   const states = $derived(piece ? piece.states.map((s) => ({ label: s.label, group: '' })) : (screen?.states.map((s) => ({ label: s.label, group: s.group })) ?? []));
@@ -122,10 +130,13 @@
    * was built. The desk opens on the first when the address names none.
    */
   let change = $state<{ benches: { key: string; why: string }[]; uncovered: string[]; scenes: Set<string> } | null>(null);
+  /** On the dev server (it answered for This change): where before and after can run. */
+  let devServer = $state(false);
   void (async () => {
     for (const url of ['./__qa/change', './qa-change.json']) {
       const got = await fetch(url).then((r) => (r.ok ? r.json() : null), () => null);
       if (!got?.files) continue;
+      devServer = url === './__qa/change';
       const hit = touched(got.files, sceneFiles, SCENES);
       change = { ...benchesTouched(got.files, hit, ALL), scenes: new Set(hit.scenes.map((s) => s.key)) };
       const opening = change.benches.map((t) => ALL.find((b) => b.key === t.key)).find(Boolean);
@@ -188,8 +199,33 @@
 
   /** What the frames shown found wrong, by frame, once checked: only those of the view up now. */
   let results = $state<Record<string, Problem[]>>({});
+  /** The code before this change, while before and after is on (asked again until it's ready). */
+  let before = $state<Before | null>(null);
+  $effect(() => {
+    if (!comparing) return;
+    let stop = false;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    let first = true;
+    const ask = async () => {
+      // (Turned on afresh, a preparation that failed is tried again.)
+      const got = await askBefore(first);
+      first = false;
+      if (stop) return;
+      before = got;
+      if (got.state === 'preparing') t = setTimeout(ask, 1000);
+    };
+    void ask();
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
+  });
+  const beforeOrigin = $derived(comparing && before?.state === 'ready' ? before.origin : null);
+
   /** What the frames show, as one string: a change makes them afresh. A piece's controls aren't in it: they reach its frame as they move. */
-  const showing = $derived(piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(sceneQuery)}|${all}|${reloads}`);
+  const showing = $derived(
+    (piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(sceneQuery)}|${all}|${reloads}`) + (comparing ? `|before ${beforeOrigin}` : ''),
+  );
   $effect(() => {
     void showing;
     results = {};
@@ -208,7 +244,7 @@
   });
 
   /** The frames of the view: a piece's one (every state, side by side, in that one too), or a seat's each. */
-  const frames = $derived.by(() => {
+  const own = $derived.by((): Shown[] => {
     const base = (slot: string) => {
       const p = new URLSearchParams({ frame: slot, size });
       if (!outlines) p.set('o', '0');
@@ -232,9 +268,72 @@
     });
   });
 
-  /** To every frame up (a piece's, or each seat's). */
+  /** Each frame's size as the stage lays it out (CSS px): what a shot of it is taken at. */
+  let box = $state<{ w: number; h: number } | null>(null);
+  /** Where the view before and now differ, once compared (for `key`: what was shot). */
+  let compared = $state.raw<{ key: string; state: 'checking' | 'done' | 'failed'; got?: Compared; error?: string } | null>(null);
+  /** The area looked at close up, and whether what differs is laid over the frame now (D). */
+  let closeup = $state(-1);
+  let layered = $state(false);
+  /** Before and after: the view's frame as the code before draws it, then as the code now does, each with what differs marked. */
+  const frames = $derived.by((): Shown[] => {
+    if (!comparing || !own.length) return own;
+    const now = own[0];
+    const areas = compared?.state === 'done' ? compared.got!.diff.areas : undefined;
+    const base = before && 'base' in before && before.base ? ` (main at ${before.base.slice(0, 7)})` : '';
+    const note = !before || before.state === 'preparing' ? `Getting the code before this change ready${before?.state === 'preparing' && before.step ? `: ${before.step}` : ''}…` : before.state === 'ready' ? undefined : 'No code from before here';
+    return [
+      { src: beforeOrigin ? beforeSrc(now.src, beforeOrigin, 'b0') : '', title: `Before${base}`, caption: `Before this change${base}`, note, marks: areas },
+      { ...now, caption: 'Now', marks: areas, layer: layered && compared?.state === 'done' ? compared.got!.layer : undefined },
+    ];
+  });
+  // Shot and compared a moment after what's shown stops changing: the view, a piece's controls, the frames' size.
+  const shotKey = $derived(comparing && beforeOrigin && box && own[0] ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${own[0].src}` : '');
+  $effect(() => {
+    const key = shotKey;
+    closeup = -1;
+    if (!key) {
+      compared = null;
+      return;
+    }
+    const nowSrc = own[0].src;
+    const { w, h } = box!;
+    const origin = beforeOrigin!;
+    const stop = new AbortController();
+    compared = { key, state: 'checking' };
+    const t = setTimeout(async () => {
+      try {
+        const got = await compareShots(shotSrc(nowSrc, origin), shotSrc(nowSrc), w, h, stop.signal);
+        if (!stop.signal.aborted) compared = { key, state: 'done', got };
+      } catch (e) {
+        if (!stop.signal.aborted) compared = { key, state: 'failed', error: (e as Error).message };
+      }
+    }, 700);
+    return () => {
+      clearTimeout(t);
+      stop.abort();
+    };
+  });
+  // A difference's picture goes once another takes its place.
+  $effect(() => {
+    const layer = compared?.got?.layer;
+    return () => {
+      if (layer) URL.revokeObjectURL(layer);
+    };
+  });
+  function showAll(on: boolean) {
+    all = on;
+    if (on) comparing = false;
+  }
+  function compareOn(on: boolean) {
+    comparing = on;
+    if (on) all = false;
+    closeup = -1;
+  }
+
+  /** To every frame up (a piece's, or each seat's), on its own origin (the code before's is another). */
   function tellFrames(m: DeskMessage) {
-    for (const f of document.querySelectorAll<HTMLIFrameElement>('.middle > .stage-box iframe, .middle > .grid iframe')) f.contentWindow?.postMessage(m, location.origin);
+    for (const f of document.querySelectorAll<HTMLIFrameElement>('.middle > .stage-box iframe, .middle > .grid iframe')) f.contentWindow?.postMessage(m, new URL(f.src, location.href).origin);
   }
   $effect(() => tellFrames({ qa: 'outlines', on: outlines }));
   $effect(() => tellFrames({ qa: 'freeze', on: frozen }));
@@ -252,7 +351,9 @@
     tellFrames({ qa: 'action', key });
   }
 
-  function onframe(m: FrameMessage) {
+  function onframe(m: FrameMessage, i = -1) {
+    // (What's wrong is the code now's to find: the frame before only shows how it was.)
+    if (m.qa === 'checked' && comparing && i === 0) return;
     if (m.qa === 'checked') results = { ...results, [m.slot]: m.problems };
     else if (m.qa === 'ready') {
       // (What changed while it loaded, before it listened.)
@@ -285,7 +386,10 @@
     else if (key === 'ArrowRight') goBench(1);
     else if (key === 'ArrowLeft') goBench(-1);
     else if (/^[1-9]$/.test(key)) goState(Number(key) - 1);
-    else if (key === 'a' || key === 'A') all = !all;
+    else if (key === 'a' || key === 'A') showAll(!all);
+    else if ((key === 'b' || key === 'B') && devServer) compareOn(!comparing);
+    else if ((key === 'd' || key === 'D') && comparing) layered = !layered;
+    else if (key === 'Escape' && closeup >= 0) closeup = -1;
     else if (key === 'r' || key === 'R') replay();
     else if (key === 'f' || key === 'F') frozen = !frozen;
     else if (key === 'z' || key === 'Z') zoomed = !zoomed;
@@ -329,6 +433,7 @@
     if (all) p.set('all', '1');
     if (zoomed) p.set('z', '1');
     if (!outlines) p.set('o', '0');
+    if (comparing) p.set('cmp', '1');
     const url = `${location.pathname}?${p}`;
     const step = moves !== lastMoves;
     lastMoves = moves;
@@ -352,6 +457,7 @@
       all = a.all;
       zoomed = a.zoomed;
       outlines = a.outlines;
+      comparing = a.compare;
     };
     addEventListener('popstate', back);
     return () => removeEventListener('popstate', back);
@@ -403,7 +509,41 @@
     {:else if all && screen}
       <Grid bench={screen} size={size === 'fit' ? 'desktop' : size} seat={seatShown === 'all' ? 0 : seatShown} {outlines} current={stateIndex} {onframe} onpick={(i) => goState(i)} />
     {:else}
-      <Stage {frames} size={sz} {showing} {zoomed} {panning} board={holding ? board : undefined} {onframe} />
+      {#if comparing}
+        <p class="compare" role="status">
+          {#if !before || before.state === 'preparing'}Getting the code before this change ready…
+          {:else if before.state !== 'ready'}No code from before this change here{#if before.state === 'failed'}: <span class="example">{before.error}</span>{/if}
+          {:else if !compared || compared.state === 'checking'}Comparing…
+          {:else if compared.state === 'failed'}Couldn't compare: <span class="example">{compared.error}</span>
+          {:else if !compared.got!.diff.areas.length}<span class="same">Looks the same</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}
+          {:else}<span class="differs">Differs in {compared.got!.diff.areas.length} {compared.got!.diff.areas.length === 1 ? 'place' : 'places'}</span><span class="sep">•</span><span><span class="num">{(compared.got!.diff.share * 100).toFixed(compared.got!.diff.share < 0.01 ? 2 : 1)}%</span> of it</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}<span class="hint">click a mark to see it close up • <kbd>D</kbd> {layered ? 'hides' : 'lays'} what differs over now</span>{/if}
+          <button class="off" onclick={() => compareOn(false)}>Done <kbd>B</kbd></button>
+        </p>
+      {/if}
+      <Stage
+        {frames}
+        size={sz}
+        {showing}
+        {zoomed}
+        {panning}
+        board={holding ? board : undefined}
+        origins={beforeOrigin ? [beforeOrigin] : []}
+        picked={closeup}
+        {onframe}
+        onbox={(w, h) => (box = { w, h })}
+        onmark={(j) => (closeup = j)}
+      />
+      {#if closeup >= 0 && compared?.state === 'done' && compared.got!.diff.areas[closeup]}
+        <Closeup
+          before={compared.got!.before}
+          now={compared.got!.now}
+          area={compared.got!.diff.areas[closeup]}
+          n={closeup}
+          of={compared.got!.diff.areas.length}
+          onpick={(j) => (closeup = j)}
+          onclose={() => (closeup = -1)}
+        />
+      {/if}
     {/if}
   </div>
 
@@ -423,7 +563,10 @@
     canPlay={!!built?.state && LIVE_ROOMS && !live}
     reason={change?.benches.find((t) => t.key === bench.key)?.why}
     onstate={goState}
-    onall={() => (all = !all)}
+    onall={() => showAll(!all)}
+    canCompare={devServer && !live && (comparing || !!change?.benches.some((t) => t.key === bench.key))}
+    {comparing}
+    oncompare={() => compareOn(!comparing)}
     onvalue={setValue}
     onreset={resetControls}
     onseat={(s) => (seatPicked = s)}

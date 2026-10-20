@@ -1,4 +1,6 @@
-// What the QA desk and its frames tell each other (by postMessage, same origin only).
+// What the QA desk and its frames tell each other (by postMessage: same
+// origin, but for a frame of the code before this change, served by a
+// server of its own on the dev server's machine; see deskOrigin).
 
 import type { GameState } from '../lib/game.ts';
 import type { Problem } from './frame/checks.ts';
@@ -51,6 +53,17 @@ export type SeatOp = {
   id?: string;
   on?: boolean;
 };
+
+/**
+ * The desk a frame answers to: its own origin, or (a frame of the code
+ * before this change, on another port: qa.html?desk=<origin>) the desk's,
+ * as long as both are this machine's own.
+ */
+export function deskOrigin(asked: URLSearchParams): string {
+  const desk = asked.get('desk');
+  const local = (o: string) => /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o);
+  return desk && local(desk) && local(location.origin) ? desk : location.origin;
+}
 
 const isQa = (m: unknown): m is { qa: string } => typeof m === 'object' && m !== null && 'qa' in m && typeof (m as { qa: unknown }).qa === 'string';
 export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'checked', 'key', 'set', 'pick'].includes(m.qa);
