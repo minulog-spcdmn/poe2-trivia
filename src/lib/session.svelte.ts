@@ -88,6 +88,7 @@ import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
+import { COLOUR_KEY, loadColour } from './colour';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
@@ -121,6 +122,11 @@ export { CODE_LENGTH, CODE_PATTERN } from './roomCode.ts';
 const wornSigil = (): { sigil?: PlayerClass } => {
   const worn = loadSigils().worn;
   return worn ? { sigil: worn } : {};
+};
+/** The colour this player would like (lib/colour.ts), for their join, read likewise. */
+const likedColour = (): { colour?: number } => {
+  const c = loadColour();
+  return c === null ? {} : { colour: c };
 };
 
 const MAX_PENDING = 16;
@@ -257,6 +263,8 @@ interface Guest {
   tab: string | null;
   /** The class sigil its hello says it wears. */
   sigil?: PlayerClass;
+  /** The colour its hello says it would like. */
+  colour?: number;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
@@ -622,7 +630,7 @@ class Session {
   seatLocal(name: string): boolean {
     const playerId = newPlayerId();
     const first = !this.state?.players.length;
-    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? wornSigil() : {}) });
+    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? { ...wornSigil(), ...likedColour() } : {}) });
     const seated = !!this.state?.players.some((p) => p.id === playerId);
     if (seated && first) this.localSelf = playerId;
     return seated;
@@ -639,6 +647,15 @@ class Session {
     if (this.mode === 'local') {
       if (this.localSelf) this.dispatch({ type: 'sigil', playerId: this.localSelf, ...(sigil ? { sigil } : {}) });
     } else if (this.myPlayerId) this.dispatch({ type: 'sigil', ...(sigil ? { sigil } : {}) });
+  }
+
+  /** Likewise the colour this browser would like (lib/colour.ts): at once in the lobby, mid-game from the next one. */
+  likeColour() {
+    if (!this.state) return;
+    const liked = likedColour();
+    if (this.mode === 'local') {
+      if (this.localSelf) this.dispatch({ type: 'colour', playerId: this.localSelf, ...liked });
+    } else if (this.myPlayerId) this.dispatch({ type: 'colour', ...liked });
   }
 
   /**
@@ -750,9 +767,10 @@ class Session {
         // one of them may have been answering holds its clock still from the
         // host's last moment before the reload until it can start again.
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
-        // The host's own sigil as it is now, if the room was saved in its lobby: it may have changed since.
+        // The host's own sigil and colour as they are now, if the room was saved in its lobby: they may have changed since.
         const { sigil } = wornSigil();
         s = engine.apply(s, { type: 'sigil', ...(sigil ? { sigil } : {}) }, me);
+        s = engine.apply(s, { type: 'colour', ...likedColour() }, me);
         this.setState(s);
       } else {
         const s = this.newRoomGame('host-room-not-opened');
@@ -816,7 +834,7 @@ class Session {
     const s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
     this.delveLink = false;
     try {
-      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil() }, me);
+      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil(), ...likedColour() }, me);
     } catch (err) {
       this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', failure ? { failure } : {});
       return null;
@@ -942,6 +960,7 @@ class Session {
           guest.tab = msg.tab ?? null;
           guest.laneWanted = !!msg.lane;
           guest.sigil = msg.sigil;
+          guest.colour = msg.colour;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -1097,7 +1116,7 @@ class Session {
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
       next = engine.apply(
         this.state!,
-        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}) },
+        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}), ...(guest.colour !== undefined ? { colour: guest.colour } : {}) },
         playerId,
       );
     } catch (err) {
@@ -2160,7 +2179,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour() });
     this.watchOwnPresence();
   }
 
@@ -3310,6 +3329,7 @@ if (typeof window !== 'undefined') {
     if (e.key === LEFT_KEY && e.newValue) session.stillHere();
     // A sigil picked in another tab is worn in the game in this one too.
     if (e.key === SIGILS_KEY) session.wearSigil();
+    if (e.key === COLOUR_KEY) session.likeColour();
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());

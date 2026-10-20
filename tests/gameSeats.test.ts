@@ -404,3 +404,40 @@ test('mid-game the sigil stays as the game began', () => {
   s = engine.apply(s, { type: 'sigil' }, 'p1');
   assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger', 'nor taken off');
 });
+
+test('a colour asked for is given when free, taken from one who never asked, and first come keeps it', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  const hue = (id: string) => s.players.find((p) => p.id === id)?.hue;
+  // Bram has seat 1's colour without asking for it: Cora, who asks, takes it and Bram takes hers.
+  s = engine.apply(s, { type: 'join', playerId: 'c', name: 'Cora', colour: 1 }, 'c');
+  assert.equal(hue('c'), 1);
+  assert.equal(hue('p1'), 2);
+  // Dain asks for it too: Cora asked first and keeps it.
+  s = engine.apply(s, { type: 'join', playerId: 'd', name: 'Dain', colour: 1 }, 'd');
+  assert.equal(hue('c'), 1);
+  assert.equal(hue('d'), 3);
+  // A free one is simply theirs.
+  s = engine.apply(s, { type: 'colour', colour: 7 }, 'd');
+  assert.equal(hue('d'), 7);
+  // Ruby (zoe_arcana's) or one out of range is no ask at all.
+  s = engine.apply(s, { type: 'join', playerId: 'e', name: 'Ena', colour: PALETTE.length - 1 }, 'e');
+  assert.equal(s.players.find((p) => p.id === 'e')?.colour, undefined);
+  assert.notEqual(hue('e'), PALETTE.length - 1);
+  s = engine.apply(s, { type: 'colour', colour: 99 }, 'e');
+  assert.equal(s.players.find((p) => p.id === 'e')?.colour, undefined);
+  assert.equal(new Set(s.players.map((p) => p.hue)).size, s.players.length, 'no two alike');
+});
+
+test('mid-game nobody changes colour; the one asked for comes with the next game', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  s = { ...s, phase: 'choosing' };
+  s = engine.apply(s, { type: 'colour', colour: 5 }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')?.hue, 1, 'not yet');
+  s = engine.apply(s, { type: 'join', playerId: 'c', name: 'Cora', colour: 0 }, 'c');
+  assert.ok(s.spectators?.some((o) => o.id === 'c' && o.colour === 0), 'watching, the ask kept');
+  s = { ...s, phase: 'over' };
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(s.players.find((p) => p.id === 'c')?.hue, 0, "Ash never asked for amber, so it's Cora's now");
+  assert.equal(s.players.find((p) => p.id === 'p1')?.hue, 5);
+  assert.equal(new Set(s.players.map((p) => p.hue)).size, s.players.length);
+});

@@ -8,6 +8,7 @@ import type { Presence, Standing } from './presence.ts';
 import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
+import { isChoosableHue } from './palette.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
@@ -91,7 +92,7 @@ export type ClientMsg =
    * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -190,6 +191,7 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
         // (One this build doesn't know, a newer one's, is left out: they come in without it.)
         ...(isPlayerClass(raw.sigil) ? { sigil: raw.sigil } : {}),
+        ...(isChoosableHue(raw.colour) ? { colour: raw.colour } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
@@ -230,6 +232,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // The class sigil they wear now: only ever the sender's own (one this build doesn't know counts as none).
         case 'sigil':
           return { t: 'action', action: isPlayerClass(a.sigil) ? { type: 'sigil', sigil: a.sigil } : { type: 'sigil' } };
+        // The colour they'd like now: only ever the sender's own (ruby, or one out of range, counts as none).
+        case 'colour':
+          return { t: 'action', action: isChoosableHue(a.colour) ? { type: 'colour', colour: a.colour } : { type: 'colour' } };
         default:
           return null;
       }

@@ -19,6 +19,7 @@ const SOUND: Control = {
   default: 'on',
 };
 const KEYS: Control = { kind: 'toggle', key: 'keys', label: 'Keys changed', default: false };
+const COLOUR: Control = { kind: 'toggle', key: 'colour', label: 'A colour picked', default: false };
 
 /** Option 1 on Q, and Q's old place freed: what a player who moved the answers to the left hand has. */
 const CHANGED = rebind(rebind(DEFAULT_BINDINGS, 'option1', 0, 'KeyQ'), 'detonate', 1, 'KeyX');
@@ -31,17 +32,18 @@ export function settingsScenes(): Scene[] {
       group: 'Settings',
       label: 'The settings page',
       seats: [{ mode: 'none', me: null }],
-      controls: [SOUND, KEYS],
+      controls: [SOUND, KEYS, COLOUR],
       states: [
         { label: 'As it comes', values: {} },
         { label: 'Sound down, keys changed', values: { sound: 'quiet', keys: true } },
         { label: 'Sound off', values: { sound: 'off' } },
+        { label: 'Sapphire picked', values: { colour: true } },
       ],
       build: (v = {}): Built => ({
         state: null,
         hash: '#settings',
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
-        stored: v.keys ? { keys: JSON.stringify(CHANGED) } : undefined,
+        stored: v.keys || v.colour ? { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}) } : undefined,
       }),
     },
     {

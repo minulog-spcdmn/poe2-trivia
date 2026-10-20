@@ -532,7 +532,7 @@
     create: 'Host your party online or at one screen, or play alone.',
     join: 'With the code a friend sent you.',
     codex: codexLine(discovered, total, deepest),
-    settings: 'Sound, keys, your name and class sigil.',
+    settings: 'Sound, keys, your name, colour and class sigil.',
   });
   const PAIR = [
     { e: 'codex', name: 'Codex' },

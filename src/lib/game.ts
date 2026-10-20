@@ -2,7 +2,7 @@
 // place this runs; everyone else just renders the state it broadcasts.
 
 import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
-import { RUBY } from './palette.ts';
+import { RUBY, isChoosableHue } from './palette.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import type { Looks } from './looks.ts';
 import {
@@ -613,6 +613,8 @@ export interface Player {
   local?: true;
   /** The class sigil they wear on their avatar (lib/sigils.ts), if any. */
   sigil?: PlayerClass;
+  /** The colour they'd like (lib/colour.ts), if any: their `hue` once it's theirs to have (settleHue). */
+  colour?: number;
 }
 
 /**
@@ -1000,6 +1002,8 @@ export interface Spectator {
   stay?: true;
   /** The class sigil they wear, kept for when they take a seat. */
   sigil?: PlayerClass;
+  /** The colour they'd like, kept for when they take a seat. */
+  colour?: number;
 }
 
 export interface GameState {
@@ -1069,7 +1073,7 @@ export type Action =
    * `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). `sigil`: the class sigil they wear.
    * `local`: the host adds a player at its own screen (Player.local), in a Turns lobby.
    */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; local?: true }
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; colour?: number; local?: true }
   /** Host: its own player plays under the held name (the host holds the owner key). */
   | { type: 'owner'; playerId: string }
   | { type: 'rename'; playerId: string; name: string }
@@ -1095,6 +1099,8 @@ export type Action =
   | { type: 'watch'; watch: boolean }
   /** The class sigil the sender wears now (none: taken off); on this device (from null), `playerId`'s. */
   | { type: 'sigil'; sigil?: PlayerClass; playerId?: string }
+  /** The colour the sender would like now (none: any); on this device (from null), `playerId`'s. */
+  | { type: 'colour'; colour?: number; playerId?: string }
   /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
   | { type: 'clock'; askedAt: number; at?: number }
   /** Host only (Delve co-op): the vote's window ran out (or every vote it waits for is in): a card is drawn from the votes. */
@@ -1167,7 +1173,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
 function fillSeats(s: GameState) {
   const watching: Spectator[] = [];
   for (const o of s.spectators ?? []) {
-    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil });
+    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil, colour: o.colour });
     else watching.push(o);
   }
   s.spectators = watching;
@@ -1226,23 +1232,42 @@ function freeHue(s: GameState, except?: Player): number {
 /**
  * Gives a player their reserved colour if their name has one, moving whoever
  * had it to a free one; a player without one gives up a reserved colour while
- * others are free. Only between games, so nobody changes colour mid-match.
+ * others are free. Then the colour they'd like (lib/colour.ts): theirs when
+ * nobody has it, and between games from whoever has it without having asked
+ * for it, who takes theirs in exchange; first come keeps it. Nobody else
+ * changes colour mid-match.
  */
 function settleHue(s: GameState, p: Player) {
   const hue = reservedHue(p);
-  if (hue === undefined) {
-    if (RESERVED.has(p.hue)) p.hue = freeHue(s, p);
+  if (hue !== undefined) {
+    if (p.hue === hue) return;
+    const holder = s.players.find((o) => o !== p && o.hue === hue);
+    p.hue = hue;
+    if (holder) holder.hue = freeHue(s, holder);
     return;
   }
-  if (p.hue === hue) return;
-  const holder = s.players.find((o) => o !== p && o.hue === hue);
-  p.hue = hue;
-  if (holder) holder.hue = freeHue(s, holder);
+  if (RESERVED.has(p.hue)) p.hue = freeHue(s, p);
+  const want = p.colour;
+  if (want === undefined || p.hue === want) return;
+  const holder = s.players.find((o) => o !== p && o.hue === want);
+  if (holder && (holder.colour === want || s.phase !== 'lobby')) return;
+  if (holder) holder.hue = p.hue;
+  p.hue = want;
 }
 
 /** Adds a player with the first free avatar colour (or their reserved one). */
-function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass } = {}) {
-  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1, ...(o.local ? { local: true as const } : {}), ...(o.sigil ? { sigil: o.sigil } : {}) };
+function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; colour?: number } = {}) {
+  const p: Player = {
+    id,
+    name,
+    score: 0,
+    recent: [],
+    connected: true,
+    hue: -1,
+    ...(o.local ? { local: true as const } : {}),
+    ...(o.sigil ? { sigil: o.sigil } : {}),
+    ...(o.colour !== undefined ? { colour: o.colour } : {}),
+  };
   p.hue = freeHue(s);
   s.players.push(p);
   settleHue(s, p);
@@ -1452,15 +1477,20 @@ export class Engine {
           if (action.owner && isHeldName(name)) s.owner = { id: action.playerId };
         };
         const sigil = isPlayerClass(action.sigil) ? action.sigil : undefined;
-        /** The one they wear now, coming back too: it may have changed meanwhile. */
-        const wear = (o: { sigil?: PlayerClass }) => {
+        const colour = isChoosableHue(action.colour) ? action.colour : undefined;
+        const looks = { ...(sigil ? { sigil } : {}), ...(colour !== undefined ? { colour } : {}) };
+        /** The one they wear now and the colour they'd like, coming back too: they may have changed meanwhile. */
+        const wear = (o: { sigil?: PlayerClass; colour?: number }) => {
           if (sigil) o.sigil = sigil;
           else delete o.sigil;
+          if (colour !== undefined) o.colour = colour;
+          else delete o.colour;
         };
         const existing = s.players.find((p) => p.id === action.playerId);
         if (existing) {
           own(existing.name);
           wear(existing);
+          if (s.phase === 'lobby') settleHue(s, existing);
           // Rejoining keeps the original name, so a seat can't be renamed on the way back.
           existing.connected = true;
           // A guest coming back arrives here (the session only ever reports a drop as 'connection'); their excuse ends.
@@ -1484,13 +1514,13 @@ export class Engine {
         own(name);
         // Someone who'd rather watch does, while there's room (in the lobby, they take a seat otherwise).
         if (action.watch && s.spectators.length < MAX_SPECTATORS) {
-          s.spectators.push({ id: action.playerId, name, stay: true, ...(sigil ? { sigil } : {}) });
+          s.spectators.push({ id: action.playerId, name, stay: true, ...looks });
           break;
         }
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
           if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
-          s.spectators.push({ id: action.playerId, name, ...(sigil ? { sigil } : {}) });
+          s.spectators.push({ id: action.playerId, name, ...looks });
           break;
         }
         if (s.players.length >= MAX_PLAYERS) {
@@ -1499,12 +1529,12 @@ export class Engine {
           // Not on one screen (hot-seat, from null): nobody there watches, and
           // the one being added is turned down instead.
           if (from !== null && s.spectators.length < MAX_SPECTATORS) {
-            s.spectators.push({ id: action.playerId, name, ...(sigil ? { sigil } : {}) });
+            s.spectators.push({ id: action.playerId, name, ...looks });
             break;
           }
           throw new ActionError('The lobby is full.');
         }
-        seat(s, action.playerId, name, { sigil });
+        seat(s, action.playerId, name, looks);
         break;
       }
       case 'owner': {
@@ -1892,9 +1922,10 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [], streak: 0 }));
-        // Renames during the game take effect on colours now.
+        // Renames during the game take effect on colours now, and so do the colours asked for: reserved ones first.
         const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
-        for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
+        const asks = fresh.players.filter((p) => !claims.includes(p) && p.colour !== undefined);
+        for (const p of [...claims, ...asks, ...fresh.players.filter((p) => !claims.includes(p) && !asks.includes(p))]) settleHue(fresh, p);
         fresh.spectators = s.spectators;
         fillSeats(fresh);
         if (s.aside) fresh.aside = s.aside;
@@ -1938,6 +1969,17 @@ export class Engine {
         if (!o) break;
         if (isPlayerClass(action.sigil)) o.sigil = action.sigil;
         else delete o.sigil;
+        break;
+      }
+      case 'colour': {
+        // Mid-game it waits for the next one: nobody changes colour while it's played.
+        const id = from ?? action.playerId;
+        const p = s.players.find((p) => p.id === id);
+        const o = p ?? s.spectators.find((w) => w.id === id);
+        if (!o) break;
+        if (isChoosableHue(action.colour)) o.colour = action.colour;
+        else delete o.colour;
+        if (p && s.phase === 'lobby') settleHue(s, p);
         break;
       }
       case 'clock': {

@@ -23,6 +23,8 @@
   import { achievementsIn } from '../lib/sigils';
   import { CLASSES } from '../lib/classSigils';
   import { onStoredElsewhere } from '../lib/storage';
+  import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
+  import { PALETTE, RUBY, STONES } from '../lib/palette';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -79,6 +81,18 @@
     saveName(n);
     name = draft = n;
     nameField?.blur();
+  }
+
+  // ---- the colour ----
+
+  /** The avatar colour picked (lib/colour.ts), if any: every seat's but ruby. */
+  let colour = $state(loadColour());
+  onMount(() => onStoredElsewhere({ [COLOUR_KEY]: () => (colour = loadColour()) }));
+  const choosable = PALETTE.slice(0, RUBY).map((c, h) => ({ h, c }));
+  function pickColour(h: number | null) {
+    if (h === colour || !saveColour(h)) return;
+    colour = h;
+    session.likeColour();
   }
 
   // ---- class sigils ----
@@ -218,7 +232,24 @@
 
       {#if !over}
       <section class="block" in:fly={enter(-30, 170)}>
-        <header><h2>Name</h2></header>
+        <!-- The colour beside the heading, which takes no room the page hasn't got: picked again, it's let go. -->
+        <header>
+          <h2>You</h2>
+          <div class="swatches" role="radiogroup" aria-label="Your colour">
+            {#each choosable as { h, c } (h)}
+              <button
+                class="swatch"
+                class:on={colour === h}
+                style:--c={c}
+                role="radio"
+                aria-checked={colour === h}
+                aria-label={STONES[h]}
+                title={colour === h ? `${STONES[h]}, your colour in a room while nobody who picked it first is there` : STONES[h]}
+                onclick={() => pickColour(colour === h ? null : h)}
+              ></button>
+            {/each}
+          </div>
+        </header>
         <form class="name-row" onsubmit={saveDraft}>
           <input
             class="field name"
@@ -234,6 +265,7 @@
           />
           <button class="btn" type="submit" disabled={draft.trim() === name}>Save</button>
         </form>
+
       </section>
       {/if}
     </div>
@@ -251,7 +283,7 @@
           <h2>Class sigils</h2>
           <span class="count">{unlocked} / {CLASSES.length}</span>
         </header>
-        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} />
+        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={colour ?? 0} />
       </section>
     {/if}
   </div>
@@ -499,6 +531,40 @@
   .name-row .field {
     flex: 1;
     min-width: 0;
+  }
+  /* The colours as the avatars wear them, a ring of gold round the one picked. */
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.45rem;
+  }
+  .swatch {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c), white 35%), var(--c) 60%, color-mix(in srgb, var(--c), black 45%));
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 0 3px color-mix(in srgb, var(--c), black 30%);
+    cursor: pointer;
+    transition:
+      transform 0.15s,
+      box-shadow 0.15s;
+  }
+  .swatch:hover {
+    transform: scale(1.12);
+  }
+  .swatch.on {
+    box-shadow:
+      0 0 0 2px #0c0a08,
+      0 0 0 3.5px var(--gold);
+  }
+  .swatch:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
   }
   .shake {
     animation: shake 0.4s;

@@ -23,11 +23,12 @@ GitHub Pages. No server needed.
 - **Codex and achievements:** every item you have seen, your accuracy, your
   Delve runs and 36 achievements, kept in this browser.
 - **Settings:** volume and ambience, effects, the room code hidden for
-  streaming, your name, the class sigil on your avatar, and the keys: 1 to 0 answer, Enter or Space goes on,
+  streaming, your name, your avatar's colour and class sigil, and the keys: 1 to 0 answer, Enter or Space goes on,
   D detonates, M mutes, Esc opens the settings, each one rebindable. Keys are
   read by their place on the keyboard, so the number row answers on any
   layout. In a room the header's gear (or Esc) opens them over the game,
-  all but the name and the sigil, which stay as the game began.
+  all but the name, colour and sigil, which stay as the game began (a colour
+  picked meanwhile comes with the next one).
 
 The full rules are in [docs/gameplay.md](docs/gameplay.md).
 
