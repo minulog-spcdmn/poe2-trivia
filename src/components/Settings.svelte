@@ -5,8 +5,9 @@
   // the keys, each on the seal the answers wear in a game. Everything takes
   // at once and is kept in this browser; only a new name waits for Save.
   // `over`: opened in a room from the header's gear, inside App's sheet over
-  // the game. The name is left out there (the room has it already) and the
-  // keys go unframed, the sheet being their frame.
+  // the game. The name and the class sigil are left out there (the room has
+  // them already; neither changes mid-game) and the keys go unframed, the
+  // sheet being their frame.
   import { onMount } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fly } from 'svelte/transition';
@@ -82,24 +83,17 @@
 
   // ---- class sigils ----
 
+  // (Only on the page: in a game the sigil stays as it came in.)
   /** Achievements earned, each worth a sigil (SigilPicker), read again when another tab earns one. */
   let earned = $state(achievementsIn(loadAchievements()));
   onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
-  // And as a game under the sheet moves on: one ending here earns them in this tab, which no storage event tells.
-  $effect(() => {
-    void session.state?.phase;
-    earned = achievementsIn(loadAchievements());
-  });
   let unlocked = $state(0);
   /**
    * Wide enough for the twelve in a row beside the avatar, each still its
-   * full size: the desktop's columns, or the sheet at its full width; and
-   * only with a pointer that hovers, which is what names each one there.
-   * Otherwise they take the picker's own grid (and the page may scroll).
+   * full size, and only with a pointer that hovers, which is what names each
+   * one there. Otherwise they take the picker's own grid (and the page may scroll).
    */
-  const wideSheet = new MediaQuery('(min-width: 1000px) and (hover: hover)');
-  const widePage = new MediaQuery('(min-width: 1100px) and (hover: hover)');
-  const roomy = $derived(over ? wideSheet.current : widePage.current);
+  const roomy = new MediaQuery('(min-width: 1100px) and (hover: hover)');
 
   // ---- keys ----
 
@@ -251,13 +245,15 @@
     {/if}
 
     <!-- Under both columns, the width of the page: the twelve in a row. -->
-    <section class="block sigil-row" in:fly={over ? { duration: 0 } : { y: 20, duration: 500, delay: 260 }}>
-      <header>
-        <h2>Class sigils</h2>
-        <span class="count">{unlocked} / {CLASSES.length}</span>
-      </header>
-      <SigilPicker achievements={earned} bind:unlocked strip={roomy} />
-    </section>
+    {#if !over}
+      <section class="block sigil-row" in:fly={{ y: 20, duration: 500, delay: 260 }}>
+        <header>
+          <h2>Class sigils</h2>
+          <span class="count">{unlocked} / {CLASSES.length}</span>
+        </header>
+        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} />
+      </section>
+    {/if}
   </div>
 </div>
 

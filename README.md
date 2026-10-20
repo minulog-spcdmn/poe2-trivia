@@ -26,7 +26,8 @@ GitHub Pages. No server needed.
   streaming, your name, the class sigil on your avatar, and the keys: 1 to 0 answer, Enter or Space goes on,
   D detonates, M mutes, Esc opens the settings, each one rebindable. Keys are
   read by their place on the keyboard, so the number row answers on any
-  layout. In a room the header's gear (or Esc) opens them over the game.
+  layout. In a room the header's gear (or Esc) opens them over the game,
+  all but the name and the sigil, which stay as the game began.
 
 The full rules are in [docs/gameplay.md](docs/gameplay.md).
 

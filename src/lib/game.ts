@@ -1931,6 +1931,8 @@ export class Engine {
         break;
       }
       case 'sigil': {
+        // Worn as the game began until it is back in the lobby.
+        if (s.phase !== 'lobby') break;
         const id = from ?? action.playerId;
         const o = s.players.find((p) => p.id === id) ?? s.spectators.find((w) => w.id === id);
         if (!o) break;

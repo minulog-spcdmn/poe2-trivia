@@ -394,3 +394,13 @@ test('the sigil action changes the sender\'s own sigil, a spectator\'s too, and 
   local = engine.apply(local, { type: 'sigil', sigil: 'witch', playerId: 'a' }, null);
   assert.equal(local.players[0].sigil, 'witch');
 });
+
+test('mid-game the sigil stays as the game began', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  s = engine.apply(s, { type: 'sigil', sigil: 'ranger' }, 'p1');
+  s = { ...s, phase: 'choosing' };
+  s = engine.apply(s, { type: 'sigil', sigil: 'monk' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger');
+  s = engine.apply(s, { type: 'sigil' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger', 'nor taken off');
+});

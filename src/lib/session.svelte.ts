@@ -633,7 +633,8 @@ class Session {
    * another tab): the game under way shows it on this player at once.
    */
   wearSigil() {
-    if (!this.state) return;
+    // (Not mid-game: the game keeps the one each player came in with.)
+    if (this.state?.phase !== 'lobby') return;
     const { sigil } = wornSigil();
     if (this.mode === 'local') {
       if (this.localSelf) this.dispatch({ type: 'sigil', playerId: this.localSelf, ...(sigil ? { sigil } : {}) });
@@ -749,7 +750,7 @@ class Session {
         // one of them may have been answering holds its clock still from the
         // host's last moment before the reload until it can start again.
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
-        // The host's own sigil as it is now: it may have changed since the room was saved.
+        // The host's own sigil as it is now, if the room was saved in its lobby: it may have changed since.
         const { sigil } = wornSigil();
         s = engine.apply(s, { type: 'sigil', ...(sigil ? { sigil } : {}) }, me);
         this.setState(s);
