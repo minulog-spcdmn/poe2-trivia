@@ -49,7 +49,7 @@ export function parseSigils(raw: string | null): SigilStore | null {
 
 export const serializeSigils = (s: SigilStore) => JSON.stringify({ v: SIGILS_VERSION, ...s });
 
-/** How many achievements in `store` this build knows, each worth a sigil. */
+/** How many achievements in `store` this build knows, the count the sigils go by (sigilsFor). */
 export const achievementsIn = (store: AchievementStore) => Object.keys(store.earned).filter((id) => achievementById.has(id)).length;
 
 /** Achievements from one sigil to the next, after the first (which the first achievement unlocks). */
