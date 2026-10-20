@@ -1,10 +1,7 @@
-// How many pixels the effects overlay draws: as many as it may, on a GPU
-// that keeps up; fewer, level by level, on one that doesn't (core.ts,
-// sizeAt). Levels: 0 up to 1.5 per CSS px, 1 and 2 fewer (and fewer
-// particles). Both it and the backdrop keep to a 1440p screen's worth at
-// every level (backdrop.ts, scale): what the GPU is timed for here leaves
-// out the browser's compositing of the canvases, which on a 4K screen was
-// the cost.
+// How many pixels the backdrop and the effects overlay draw: as many as the
+// screen has, on a GPU that keeps up; fewer, level by level, on one that
+// doesn't (core.ts, sizeAt; backdrop.ts, scale). Levels: 0 every pixel (up
+// to 1.5 per CSS px for the effects), 1 and 2 fewer (and fewer particles).
 // On some screens two levels draw as many pixels (a 1x screen up to 1440p:
 // 0 and 1); a drop skips the one that draws no fewer, a climb takes it free.
 //

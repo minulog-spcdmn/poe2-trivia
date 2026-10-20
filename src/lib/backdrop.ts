@@ -12,7 +12,7 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { backdropFrame, fxActive, fxUserOn, onFxChange, setBackdropPixels } from './fx/core';
+import { backdropFrame, fxActive, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels } from './fx/core';
 import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
@@ -1153,7 +1153,7 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
   return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE || vein > 0;
 }
 
-/** The most device pixels the backdrop draws (see scale() in startBackdrop): a 1440p screen's. */
+/** The most device pixels the backdrop draws on a GPU too slow for more (see scale() in startBackdrop): a 1440p screen's. */
 const MAX_PIXELS = 2560 * 1440;
 /** The embers' halo in an Azurite Vein: azurite blue. */
 const VEIN_EMBERS = [0.3, 0.62, 1];
@@ -2121,27 +2121,28 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // per CSS px anyway, the embers are soft glows, and the dither still hides
   // every band.
   //
-  // And on any screen, never more than MAX_PIXELS: a 4K screen's 8 million
-  // device pixels (or more) made this full-screen pass, drawn under the
-  // effects overlay's own, too much in a reveal, and frames came a tenth of
-  // a second late. Drawing every pixel only where the GPU kept up was tried
-  // (fx/gpuBudget.ts), but its timer sees the layers' own draws, not the
-  // browser compositing two 4K canvases over the page: on an RTX 5070 at 4K
-  // it never stepped down while reveals hitched for 100 ms. Up to a 1440p
-  // screen's worth it is drawn exact; past that, about one pixel per CSS px
-  // or a little more, which the crisp fills and shadows (under the UI's own
-  // 1px borders) still hold to.
+  // And on a GPU too slow for a big screen, never more than MAX_PIXELS: on
+  // a weak one a 4K screen's 8 million device pixels (or more) made this
+  // full-screen pass, drawn under the effects overlay's own, too much in a
+  // reveal, and frames came a tenth of a second late. Which GPU is too slow
+  // is measured (fx/gpuBudget.ts: what this pass and the effects' cost it),
+  // and as the effects come down from full resolution so does this
+  // (fxScaledDown); a GPU that keeps up draws every pixel, exact. Past a
+  // 1440p screen's worth, scaled down, it's about one pixel per CSS px or a
+  // little more, which the crisp fills and shadows (under the UI's own 1px
+  // borders) still hold to.
   // (Nor wider or taller than the GPU can draw: a window across several screens.)
   const most = maxDrawSize(gl);
-  const scale = () => {
+  const scaleAt = (down: boolean) => {
     if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
     const device = canvasW * canvasH * devicePixelRatio * devicePixelRatio;
-    const k = device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
+    const k = device > MAX_PIXELS && down ? Math.sqrt(MAX_PIXELS / device) : 1;
     return Math.min(k, most / Math.max(1, canvasW * devicePixelRatio), most / Math.max(1, canvasH * devicePixelRatio));
   };
-  /** The device pixels drawn, at any of the effects' qualities (see fx/gpuBudget.ts). */
-  const pixelsAt = () => {
-    const k = scale();
+  const scale = () => scaleAt(fxScaledDown());
+  /** The device pixels drawn at the effects' quality `q` (see fx/gpuBudget.ts). */
+  const pixelsAt = (q: number) => {
+    const k = scaleAt(q > 0);
     return Math.round(canvasW * devicePixelRatio * k) * Math.round(canvasH * devicePixelRatio * k);
   };
 
@@ -2196,6 +2197,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     box = entry.devicePixelContentBoxSize?.[0];
     fit();
   });
+  // (Followed once the first frame is drawn: see below.)
+  let offScale = () => {};
   try {
     ro.observe(canvas, { box: 'device-pixel-content-box' });
   } catch {
@@ -2237,6 +2240,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     setGpuCatchUp(null);
     caughtUp(true);
     ro.disconnect();
+    offScale();
     setBackdropPixels(null);
     timer?.dispose();
     viewRo.disconnect();
@@ -2282,6 +2286,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
+  offScale = onFxScale(fit);
   raf = requestAnimationFrame(frame);
   if (lean.ui === 'drops') stopMergeIdle = whenIdle(startMerge, { timeout: 3000, fallback: 1000 });
   onWebgl++;

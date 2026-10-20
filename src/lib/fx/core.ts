@@ -192,8 +192,8 @@ const awayListeners = new Set<(away: boolean) => void>();
 
 /**
  * Quality: 0 full resolution, 1 lower, 2 lowest, as the GPU keeps up
- * (lib/fx/gpuBudget.ts weighs it; touch screens start, and stay, at 1).
- * Bloom stays on at every level:
+ * (lib/fx/gpuBudget.ts weighs it; touch screens start, and stay, at 1). The
+ * backdrop follows it (fxScaledDown). Bloom stays on at every level:
  * switching it off mid-effect would dim everything at once.
  */
 let quality = coarse?.matches ? 1 : 0;
@@ -1088,11 +1088,29 @@ export function fxRealtime() {
 
 // ---------- setup ----------
 
-/** The most pixels the overlay draws at (see sizeAt): a 1440p screen's. */
+/** The most pixels the overlay draws at below quality 0 (see sizeAt): a 1440p screen's. */
 const MAX_PIXELS = 2560 * 1440;
 
 let ro: ResizeObserver | null = null;
 let deviceBox: { w: number; h: number } | null = null;
+
+const scaleListeners = new Set<() => void>();
+
+/**
+ * Whether the quality is down from full resolution: on a touch screen from
+ * the start, elsewhere once the GPU was found too slow for every pixel (see
+ * gpuBudget.ts). The backdrop then keeps to a 1440p screen's worth too
+ * (lib/backdrop.ts).
+ */
+export function fxScaledDown() {
+  return quality > 0;
+}
+
+/** Calls `fn` when fxScaledDown() changes. */
+export function onFxScale(fn: () => void) {
+  scaleListeners.add(fn);
+  return () => scaleListeners.delete(fn);
+}
 
 /** The backdrop's device pixels at each quality (lib/backdrop.ts says, as it starts), or null while there's none. */
 let backdropPixels: ((q: number) => number) | null = null;
@@ -1184,18 +1202,20 @@ function steer(nowMs: number) {
 }
 
 /**
- * Moves to the quality weighed: the overlay's targets made anew at its size.
- * Returns whether it changed.
+ * Moves to the quality weighed: the overlay's targets made anew at its size,
+ * the backdrop told (onFxScale). Returns whether it changed.
  */
 function moveTo(nowMs: number) {
   resizeDue = false;
   const q = gpuBudget.next(nowMs);
   if (q === quality) return false;
+  const scaled = quality > 0;
   quality = q;
   gpuBudget.applied(q, nowMs);
   frameEvent(`quality ${q}`);
   save(nowMs, true);
   resize();
+  if (scaled !== q > 0) for (const l of scaleListeners) l();
   return true;
 }
 
@@ -1205,14 +1225,14 @@ function sizeAt(q: number): [number, number] {
   // crisp), less as quality drops. Shapes, which are all soft, get about one
   // texel per CSS px.
   const cap = q === 0 ? 1.5 : q === 1 ? 1 : 0.75;
-  // And never more than MAX_PIXELS in all: on a 4K screen 1.5 per CSS px
-  // came to 8 million, in half-float targets and their bloom, under a
-  // backdrop as big: a reveal's frames waited on the GPU for a tenth of a
-  // second and more, even on an RTX 5070, whose timed draws looked cheap
-  // (the cost was the browser compositing the two 4K canvases; see scale()
-  // in lib/backdrop.ts).
+  // Below quality 0, never more than MAX_PIXELS in all either: on a 4K
+  // screen 1.5 per CSS px came to 8 million, in half-float targets and their
+  // bloom, under a backdrop as big, and on a GPU too weak for that a reveal's
+  // frames waited for a tenth of a second and more. A GPU that keeps up
+  // draws a big screen whole; one that doesn't is found out
+  // (gpuBudget.ts) and comes down to this, the backdrop with it.
   const dprNow = devicePixelRatio || 1;
-  const fit = Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
+  const fit = q === 0 ? Infinity : Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
   // (Nor wider or taller than the GPU's targets can be: a window across several screens.)
   const most = renderer?.maxSize ?? Infinity;
   const k = Math.min(dprNow, cap, fit, most / Math.max(1, viewW), most / Math.max(1, viewH)) / dprNow;
