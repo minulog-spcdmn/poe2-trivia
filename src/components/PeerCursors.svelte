@@ -290,6 +290,9 @@
       last = Math.max(last, now);
       const boxes = new Map<number, Found | null>();
       const screenH = screenHeight();
+      // All read first (where each pointer's elements are, their styles), then all written at once: a read after
+      // one pointer was moved had the page's styles worked out again, once a pointer.
+      const writes: (() => void)[] = [];
       for (const c of list) {
         const el = els[c.key];
         const p = peerCursors.at.get(c.key);
@@ -315,11 +318,12 @@
         const prev = drawn.get(c.key);
         if (!place) {
           // Its elements went (the card picked, the screen moved on): it stays where it's drawn until it moves again.
-          el.classList.toggle('lost', !prev);
+          writes.push(() => el.classList.toggle('lost', !prev));
           if (prev) {
             if (pressing) prev.pressUntil = now + PRESS_SHOW_MS;
             if (lastPress >= 0) pressSeen.set(c.key, lastPress);
-            el.classList.toggle('pressed', now < prev.pressUntil);
+            const pressed = now < prev.pressUntil;
+            writes.push(() => el.classList.toggle('pressed', pressed));
           }
           continue;
         }
@@ -327,7 +331,7 @@
         // Pressed, or let go so lately its press still shows: drawn where it is, with the press (the release came at
         // once after it, often in the same frame, and the place a little behind is where it was before the click).
         const clicking = pressing || (!!prev && now < prev.pressUntil);
-        el.classList.remove('lost');
+        writes.push(() => el.classList.remove('lost'));
         const code = place.code;
         // Its trail on this screen (each place on its own elements, where they're still here), drawn a little behind.
         const ps: [number, number][] = [];
@@ -386,21 +390,27 @@
         d.top = top;
         d.scroll = scrollY;
         const position = page ? '' : 'fixed';
-        if (el.style.position !== position) el.style.position = position;
-        el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
-        el.classList.toggle('tap', touch);
+        const transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
         if (pressing) d.pressUntil = now + PRESS_SHOW_MS;
-        el.classList.toggle('pressed', now < d.pressUntil);
+        const pressed = now < d.pressUntil;
         // Over something that player can click (their own screen says, with each update), the hand, as their own cursor is.
-        el.classList.toggle('lit', litOf(dueKind));
+        const lit = litOf(dueKind);
         // Held down, it isn't idle, however still.
-        el.classList.toggle('idle', !touch && actionOf(kind) !== PRESSED && age > IDLE_MS);
-        if (touch && d.tap !== p.moved) {
-          d.tap = p.moved;
+        const idle = !touch && actionOf(kind) !== PRESSED && age > IDLE_MS;
+        const tapped = touch && d.tap !== p.moved;
+        if (tapped) d.tap = p.moved;
+        writes.push(() => {
+          if (el.style.position !== position) el.style.position = position;
+          el.style.transform = transform;
+          el.classList.toggle('tap', touch);
+          el.classList.toggle('pressed', pressed);
+          el.classList.toggle('lit', lit);
+          el.classList.toggle('idle', idle);
           // Struck, held a moment, then fading.
-          el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: TAP_MS, easing: 'ease-in' });
-        }
+          if (tapped) el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: TAP_MS, easing: 'ease-in' });
+        });
       }
+      for (const write of writes) write();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
