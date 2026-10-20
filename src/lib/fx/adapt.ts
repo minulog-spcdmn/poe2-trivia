@@ -20,7 +20,7 @@
 // Kept apart from core.ts so it can be tested without a GPU.
 
 /** Frames slower than this (ms, on average) count as slow: well past a 60Hz refresh. */
-export const SLOW_MS = 22;
+const SLOW_MS = 22;
 /** How long frames must keep slow before a drop is weighed (s). */
 const SLOW_FOR = 0.6;
 /** Of each frame's time, how much the effects' GPU work must take before a drop can help. */
@@ -38,19 +38,27 @@ type Phase = { kind: 'before' | 'after'; time: number; frames: number; before: n
 export class QualityAdapt {
   quality: number;
   /** The next level down worth trying from `q` (one that draws fewer pixels), or null. */
-  private lower: (q: number) => number | null;
+  private lowerOf: (q: number) => number | null;
+  /** lowerOf's answers, kept: they change only with the canvas's size, and a new one is made for that (core.ts). */
+  private lowered = new Map<number, number | null>();
   private frameAvg = 16;
   private slowFor = 0;
   /** The effects' GPU work as a share of frame time (null until the GPU has been timed). */
   private share: number | null = null;
-  private window = { ms: 0, gpu: 0 };
+  /** Over the last half second or so: the frames (and their ms), and the GPU's time over those of them it timed. */
+  private window = { ms: 0, frames: 0, gpu: 0, timed: 0 };
   private phase: Phase | null = null;
   /** By level: how slow frames were (ms) when a drop from it was tried and didn't help. */
   private failed = new Map<number, number>();
 
   constructor(quality: number, lower: (q: number) => number | null) {
     this.quality = quality;
-    this.lower = lower;
+    this.lowerOf = lower;
+  }
+
+  private lower(q: number) {
+    if (!this.lowered.has(q)) this.lowered.set(q, this.lowerOf(q));
+    return this.lowered.get(q)!;
   }
 
   /** Whether the effects' own work is what makes frames slow, as far as can be told. */
@@ -59,19 +67,25 @@ export class QualityAdapt {
   }
 
   /**
-   * One frame while effects run: `ms` since the one before, `gpuMs` the GPU
-   * time read this frame (of frames a few back: it's read late), or null
-   * where the GPU can't be timed. Returns true when the quality changed.
+   * One frame while effects run: `ms` since the one before, `gpu` the GPU's
+   * time read this frame and over how many frames (frames a few back: it's
+   * read late), or null where the GPU can't be timed. Returns true when the
+   * quality changed.
    */
-  frame(ms: number, gpuMs: number | null): boolean {
-    if (gpuMs !== null) {
-      this.window.ms += ms;
-      this.window.gpu += gpuMs;
-      // (Over half a second: the GPU's times come in a few frames late.)
-      if (this.window.ms > 500) {
-        const s = this.window.gpu / this.window.ms;
+  frame(ms: number, gpu: { ms: number; frames: number } | null): boolean {
+    if (gpu !== null) {
+      const w = this.window;
+      w.ms += ms;
+      w.frames++;
+      w.gpu += gpu.ms;
+      w.timed += gpu.frames;
+      // (Over half a second: the GPU's times come in a few frames late. A
+      // frame's GPU time against a frame's time, each on average: a GPU that
+      // falls behind leaves some frames untimed, which mustn't count as none.)
+      if (w.ms > 500 && w.timed > 0) {
+        const s = w.gpu / w.timed / (w.ms / w.frames);
         this.share = this.share === null ? s : this.share + (s - this.share) * 0.5;
-        this.window = { ms: 0, gpu: 0 };
+        this.window = { ms: 0, frames: 0, gpu: 0, timed: 0 };
       }
     }
     // (A frame of a stall counts as one of 100ms: one hitch alone never makes frames slow.)

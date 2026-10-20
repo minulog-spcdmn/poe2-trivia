@@ -21,7 +21,8 @@ function run(a: QualityAdapt, seconds: number, ms: (q: number) => number, gpu: (
     // (Every fourth frame twice as slow: a page's frames are never even.)
     const d = ms(a.quality) * (++i % 4 === 0 ? 2 : 0.67);
     t += d;
-    if (a.frame(d, gpu(a.quality))) went.push(a.quality);
+    const g = gpu(a.quality);
+    if (a.frame(d, g === null ? null : { ms: g, frames: 1 })) went.push(a.quality);
   }
   return went;
 }

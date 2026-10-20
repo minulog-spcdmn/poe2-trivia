@@ -751,8 +751,11 @@ function frameUntimed(nowMs: number) {
   // frames up at once. The moment plays out as it began; the next one is
   // drawn at the new size, and only then are frames timed to see whether the
   // drop helped.
-  const gpu = renderer.gpuTime();
-  if (rawDt > 0 && rawDt < 0.3 && !resizeDue && adapt.frame(rawDt * 1000, gpu && gpu.ms)) {
+  // (Not on touch screens: a phone's GPU draws in tiles, later than its
+  // timer sees, and some report next to nothing. There the drop is weighed
+  // by the frames alone.)
+  const gpu = coarse?.matches ? null : renderer.gpuTime();
+  if (rawDt > 0 && rawDt < 0.3 && !resizeDue && adapt.frame(rawDt * 1000, gpu)) {
     quality = adapt.quality;
     resizeDue = true;
     resizeDueAt = nowMs;

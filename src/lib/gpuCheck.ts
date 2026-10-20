@@ -65,8 +65,13 @@ function contextOf(strict: boolean): { renderer: string | null } | null {
 /** The browser's own probe (see drawsInSoftware), for the worker to run. */
 export const browserProbe: Probe = { strict: () => contextOf(true), plain: () => contextOf(false) };
 
-/** The fix in the player's own browser, to follow "For smooth play, ": where the setting is, and the restart it needs. */
-export function accelerationFix(userAgent: string): string {
+/**
+ * The fix in the player's own browser, to follow "For smooth play, ": where
+ * the setting is, and the restart it needs. None on phones and tablets:
+ * their browsers have no such setting (a GPU they won't use stays unused).
+ */
+export function accelerationFix(userAgent: string): string | null {
+  if (/Android|iPhone|iPad|iPod|Mobile/.test(userAgent)) return null;
   if (/Edg\//.test(userAgent)) return "turn on Edge's Settings › System and performance › “Use graphics acceleration when available”, then restart it.";
   if (/OPR\//.test(userAgent)) return "turn on Opera's Settings › System › “Use hardware acceleration when available”, then restart it.";
   if (/Firefox\//.test(userAgent)) return "turn on hardware acceleration in Firefox's Settings › General › Performance, then restart it.";

@@ -1076,6 +1076,10 @@ function letGo(gl: WebGL2RenderingContext): null {
  * context is lost later, after the renderer has shut itself down, so the
  * caller can fall back to CSS.
  */
+/** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
+let onWebgl = false;
+export const backdropOnWebgl = () => onWebgl;
+
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
   const gl = canvas.getContext('webgl2', {
     alpha: false,
@@ -1809,7 +1813,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let viewH = 1;
   const measureView = () => {
     const h = viewProbe.offsetHeight;
-    viewH = Math.max(1, h > 0 ? Math.min(h, canvasH) : canvasH);
+    // (Read, not canvasH: viewRo can run before ro has kept a new size.)
+    const ch = canvas.clientHeight;
+    viewH = Math.max(1, h > 0 ? Math.min(h, ch) : ch);
   };
   const viewRo = new ResizeObserver(() => {
     const before = viewH;
@@ -1846,6 +1852,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     embers.vein(on);
   });
   function stop() {
+    onWebgl = false;
     offVein();
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
@@ -1906,6 +1913,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
   raf = requestAnimationFrame(frame);
+  onWebgl = true;
 
   return stop;
 }

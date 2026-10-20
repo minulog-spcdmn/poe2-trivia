@@ -1188,13 +1188,16 @@ export class FxRenderer {
     const gl = this.gl;
     const t = (this.timer ??= { ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), free: [] as WebGLQuery[], pending: [] as WebGLQuery[], ms: 0, frames: 0 });
     if (!t.ext) return null;
-    const spoiled = !!gl.getParameter(t.ext.GPU_DISJOINT_EXT);
+    // (The GPU's clock disturbed: every query still out may have run through
+    // it, so none of them is read. The flag is cleared as it's read.)
+    if (gl.getParameter(t.ext.GPU_DISJOINT_EXT)) {
+      for (const q of t.pending) gl.deleteQuery(q);
+      t.pending = [];
+    }
     while (t.pending.length && gl.getQueryParameter(t.pending[0], gl.QUERY_RESULT_AVAILABLE)) {
       const q = t.pending.shift()!;
-      if (!spoiled) {
-        t.ms += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
-        t.frames++;
-      }
+      t.ms += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+      t.frames++;
       t.free.push(q);
     }
     const out = { ms: t.ms, frames: t.frames };

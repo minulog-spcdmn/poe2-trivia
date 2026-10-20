@@ -9,6 +9,7 @@
 // hidden (headless runs do that, lib/fx stays off there): they draw in
 // software on purpose.
 
+import { backdropOnWebgl } from './backdrop.ts';
 import { accelerationFix } from './gpuCheck.ts';
 import { whenIdle } from './idle.ts';
 import { BOT, QA, readStored, writeStored } from './storage.ts';
@@ -20,16 +21,23 @@ const AFTER_MS = 2500;
 const CLOSED = 'gpuNotice.closed';
 const TITLE = 'Graphics acceleration is off';
 
+/** The fix in this browser (none on phones and tablets: lib/gpuCheck.ts). */
+const fix = () => accelerationFix(navigator.userAgent);
+
 /** Puts the notice up (closing it is kept: CLOSED). */
 export const showGpuNotice = () =>
-  toasts.show(`For smooth play, ${accelerationFix(navigator.userAgent)}`, 'warn', {
+  toasts.show(`For smooth play, ${fix()}`, 'warn', {
     title: TITLE,
     sticky: true,
     onClose: () => writeStored(CLOSED, '1'),
   });
 
-/** Whether this page should ask at all. */
-const asks = () => !QA && !BOT && typeof WebGL2RenderingContext !== 'undefined' && !readStored(CLOSED);
+/**
+ * Whether this page should ask at all: not where it's driven by a script (a
+ * headless check of the effects draws in software on purpose), nor where
+ * there's no setting to point to.
+ */
+const asks = () => !QA && !BOT && !navigator.webdriver && typeof WebGL2RenderingContext !== 'undefined' && !!fix() && !readStored(CLOSED);
 
 /**
  * Follows the screens (App.svelte), as the fullscreen tip does: `calm`
@@ -43,7 +51,8 @@ export function watchGpuNotice(): { calm: (on: boolean) => void; stop: () => voi
 
   const up = () => shownId !== null && toasts.list.some((t) => t.id === shownId);
   const show = () => {
-    if (calm && software && !up() && !readStored(CLOSED)) shownId = showGpuNotice();
+    // (Only while the backdrop draws with WebGL: on the CSS one the game runs smoothly anyway.)
+    if (calm && software && backdropOnWebgl() && !up() && !readStored(CLOSED)) shownId = showGpuNotice();
   };
   const hide = () => {
     if (up()) toasts.dismiss(shownId!);
