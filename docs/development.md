@@ -68,12 +68,18 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   up, all at once, so with `KHR_parallel_shader_compile` the driver builds
   them side by side and the first paint waits for the slowest, not their
   sum. The UI's box shadows and fills are the slowest part to build, so
-  they're a pass of their own (`uiFrag`), drawn over the main pass's colour
-  (kept in a half-float target, as the soft light is): the first frame's
-  shaders take about 60% of the time they did as one program, and the
-  picture is the same (the half float rounds a pixel by one 8-bit level now
-  and then). The extra pass costs a few hundredths of a ms a frame on a
-  desktop GPU. Without a float target it's all one main pass. On phones and
+  they're a pass of their own (`uiFrag`), drawn first into a layer of their
+  own (a half-float target, as the soft light is), which the main pass lays
+  over the scene before its drop shadows, the dialog's dimming and the
+  dither: the UI pass reads nothing of the scene, and holds nothing but the
+  boxes. The first frame's shaders take about half the time they did as one
+  program, and the picture is the same (the half float rounds a pixel by
+  one 8-bit level now and then). The extra pass costs a few hundredths of a
+  ms a frame on a desktop GPU. The shader compiler (Direct3D's, on Windows)
+  takes longer over code the deeper it sits in loops and branches, and a
+  second copy of a loop costs as much as the first: the drop shadows are one
+  loop, in two layers (under the boxes and over them), not one under and
+  one over. Without a float target it's all one main pass. On phones and
   tablets, where CSS keeps every shadow, the main pass has none of the UI's
   parts and there's no UI pass (Delve's leaves them out too; a pointer that
   changes later has them built in the background, CSS painting them

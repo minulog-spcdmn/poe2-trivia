@@ -677,11 +677,12 @@ const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**
  * Which of the UI's shadows and fills a main pass draws: all of them; only
- * the drop shadows, with the boxes' drawn over it by the UI pass (uiFrag:
- * the two are built side by side, so the page's first paint waits only for
- * the slower, not both in one); or none (where the backdrop leaves them all
- * to CSS). The UI pass needs a float target to draw over, as the soft light
- * does its own: without one (see split), it's all in the main pass.
+ * the drop shadows, with the boxes' laid over the scene from the UI pass's
+ * layer (uiFrag: the two are built side by side, so the page's first paint
+ * waits only for the slower, not both in one); or none (where the backdrop
+ * leaves them all to CSS). The UI pass needs a float target to draw into,
+ * as the soft light does its own: without one (see split), it's all in the
+ * main pass.
  */
 type UiParts = 'all' | 'drops' | 'none';
 
@@ -691,8 +692,8 @@ type UiParts = 'all' | 'drops' | 'none';
  * spores' and motes' finest points are drawn at a device pixel's size, not
  * the soft light's texel's). With `delve`, Delve's parts too. `ui` is which
  * of the UI's shadows and fills it draws (see UiParts): CSS paints the rest.
- * With 'drops' it draws into the scene's own target, for the UI pass to
- * finish (the boxes, a dialog's dimming and the dither).
+ * With 'drops' the boxes' come from the UI pass's layer (uiFrag), laid over
+ * the scene here.
  */
 const frag = (MAX_ELEMENTS: number, split: boolean, delve: boolean, ui: UiParts = 'all') => `#version 300 es
 precision highp float;
@@ -723,7 +724,7 @@ uniform vec3 uEmberCore[${PALETTE}];
 uniform vec2 uEmberK;
 #define uEmberGain uEmberK.x
 #define uStreak uEmberK.y
-${delve ? DELVE_MAIN_UNIFORMS : ''}${ui === 'all' ? BOX_SHADOW_UNIFORMS(MAX_ELEMENTS) : ''}${ui !== 'none' ? DROP_UNIFORMS : ''}${ui !== 'drops' ? DIALOG_UNIFORM : ''}${ui === 'all' ? BOX_FUNCTIONS : ''}
+${delve ? DELVE_MAIN_UNIFORMS : ''}${ui === 'all' ? BOX_SHADOW_UNIFORMS(MAX_ELEMENTS) : ''}${ui !== 'none' ? DROP_UNIFORMS : ''}${ui === 'drops' ? BOXES_UNIFORM : ''}${DIALOG_UNIFORM}${ui === 'all' ? BOX_FUNCTIONS : ''}${ui !== 'none' ? LAY : ''}
 ${HASH}
 void main() {
   vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
@@ -783,13 +784,9 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
   }
 
-${ui !== 'none' ? DROPS(false) : ''}${ui === 'drops' ? TO_UI_PASS : (ui === 'all' ? BOX_MAIN(MAX_ELEMENTS) + DROPS(true) : '') + FINISH}`;
+${ui !== 'none' ? DROPS : ''}${ui === 'drops' ? BOXES : ui === 'all' ? BOX_MAIN(MAX_ELEMENTS, false) : ''}${ui !== 'none' ? DROPS_OVER : ''}${FINISH}`;
 
-/** The end of the main pass, with the UI pass (uiFrag) to finish it: the scene into its target, as it is. */
-const TO_UI_PASS = `  fragColor = vec4(col, 1.0);
-}
-`;
-/** The end of the backdrop's last pass (frag's, or with the UI pass uiFrag's). */
+/** The end of the main pass. */
 const FINISH = `  // A dialog dims it all here, before the dither; CSS darkening the
   // dithered output would band.
   col *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDialog;
@@ -802,10 +799,12 @@ const FINISH = `  // A dialog dims it all here, before the dither; CSS darkening
 }
 `;
 
-// The main pass's UI parts (see frag): the UI's shadows and fills, drawn here
-// once the backdrop has taken them over from CSS. Its boxes' (backdropShadow.ts:
-// soft box shadows and fills) are most of what the main pass takes to build;
-// its drop shadows (backdropDropShadow.ts: text and image glows) a little.
+// The UI's shadows and fills, drawn here once the backdrop has taken them
+// over from CSS. Its boxes' (backdropShadow.ts: soft box shadows and fills)
+// are most of what the backdrop takes to build, so they're the UI pass's
+// where it can have one (see UiParts); its drop shadows
+// (backdropDropShadow.ts: text and image glows) a little, and stay in the
+// main pass.
 const BOX_UNIFORMS = (MAX_ELEMENTS: number) => `
 // Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
 uniform vec4 uElX[${MAX_ELEMENTS}];
@@ -862,36 +861,52 @@ float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float co
   // rounded corner, the box is a plain rectangle, whose blur is erf across
   // times erf down: no sum needed. That's most of the shadow beside a large
   // element.
+  // (One return, not an early one: the shader compiler builds it faster.)
   vec2 clear = halfSize - corner - abs(point) - 3.0 * sigma;
+  float value = 0.0;
   if (max(clear.x, clear.y) >= 0.0) {
     vec2 k = vec2(0.70710678 / sigma);
     vec2 cover = 0.5 * (erf2((point + halfSize) * k) - erf2((point - halfSize) * k));
-    return cover.x * cover.y;
+    value = cover.x * cover.y;
+  } else {
+    float low = point.y - halfSize.y;
+    float high = point.y + halfSize.y;
+    float y0 = clamp(-3.0 * sigma, low, high);
+    float y1 = clamp(3.0 * sigma, low, high);
+    float dy = (y1 - y0) / 8.0;
+    float y = y0 + dy * 0.5;
+    for (int i = 0; i < 8; i++) {
+      value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
+        * exp(-y * y / (2.0 * sigma * sigma)) * dy;
+      y += dy;
+    }
+    value *= 0.39894228 / sigma;
   }
-  float low = point.y - halfSize.y;
-  float high = point.y + halfSize.y;
-  float y0 = clamp(-3.0 * sigma, low, high);
-  float y1 = clamp(3.0 * sigma, low, high);
-  float dy = (y1 - y0) / 8.0;
-  float y = y0 + dy * 0.5;
-  float value = 0.0;
-  for (int i = 0; i < 8; i++) {
-    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
-      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
-    y += dy;
-  }
-  return value * (0.39894228 / sigma);
+  return value;
 }
 `;
-/** The UI's drop shadows: over the scene, or (`inFill`) those inside a fill drawn here, after the fills. */
-const DROPS = (inFill: boolean) => `  // UI drop shadows, those inside a fill drawn here (uMkE's y) or not. The
-  // element paints over its own shadow, so where it is opaque the shadow is
-  // hidden anyway; drawing it only where the content is transparent keeps a
-  // see-through element (like the faint showcase items) from darkening what
-  // shows through it.
+/**
+ * A layer (premultiplied colour, coverage) with `c` laid over it at `a`: so
+ * the scene with the layer over it (col * (1 - l.a) + l.rgb) is the scene
+ * mixed with each in turn, as if drawn straight onto it.
+ */
+const LAY = `vec4 lay(vec4 l, vec3 c, float a) { return vec4(mix(l.rgb, c, a), mix(l.a, 1.0, a)); }
+`;
+/**
+ * The UI's drop shadows, in two layers: those inside a fill drawn here
+ * (uMkE's y), laid over the boxes (DROPS_OVER), and the rest, over the scene
+ * now. One loop for both: a second copy of it would take the shader
+ * compiler about as long again (some 30 ms).
+ */
+const DROPS = `  // UI drop shadows. The element paints over its own shadow, so where it
+  // is opaque the shadow is hidden anyway; drawing it only where the content
+  // is transparent keeps a see-through element (like the faint showcase
+  // items) from darkening what shows through it.
+  vec4 dropsUnder = vec4(0.0);
+  vec4 dropsOver = vec4(0.0);
   for (int i = 0; i < ${MAX_MASKS}; i++) {
     vec4 mc = uMkC[i];
-    if (mc.z <= 0.0 || (uMkE[i].y > 0.5) != ${inFill}) continue;
+    if (mc.z <= 0.0) continue;
     vec4 ma = uMkA[i];
     vec4 mb = uMkB[i];
     vec2 r = p - ma.xy;
@@ -911,12 +926,34 @@ const DROPS = (inFill: boolean) => `  // UI drop shadows, those inside a fill dr
     vec4 c1 = uMkCol[i * ${DROPS_PER_MASK}];
     vec4 c2 = uMkCol[i * ${DROPS_PER_MASK} + 1];
     // CSS paints the last shadow in the list first.
-    col = mix(col, c2.rgb, c2.a * (t2.b + t2.a / 255.0) * (1.0 - content));
-    col = mix(col, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
+    bool inFill = uMkE[i].y > 0.5;
+    vec4 l = inFill ? dropsOver : dropsUnder;
+    l = lay(l, c2.rgb, c2.a * (t2.b + t2.a / 255.0) * (1.0 - content));
+    l = lay(l, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
+    if (inFill) dropsOver = l;
+    else dropsUnder = l;
   }
+  col = col * (1.0 - dropsUnder.a) + dropsUnder.rgb;
 
 `;
-const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: every element's shadows outside its border
+/** The drop shadows inside fills drawn here, over the boxes (see DROPS). */
+const DROPS_OVER = `  col = col * (1.0 - dropsOver.a) + dropsOver.rgb;
+
+`;
+const BOXES_UNIFORM = `uniform sampler2D uBoxes; // the UI pass's layer (uiFrag), a texel per device pixel
+`;
+/** The boxes' shadows and fills, from the UI pass's layer, over the scene. */
+const BOXES = `  vec4 boxes = texelFetch(uBoxes, ivec2(gl_FragCoord.xy), 0);
+  col = col * (1.0 - boxes.a) + boxes.rgb;
+
+`;
+/** GLSL that draws `c` at `a` onto col, or lays it into the layer `ui`. */
+const paint = (layer: boolean, c: string, a: string) => (layer ? `ui = lay(ui, ${c}, ${a});` : `col = mix(col, ${c}, ${a});`);
+/**
+ * The boxes' shadows and fills, drawn onto col, or (`layer`, the UI pass's)
+ * laid into the layer `ui` (see LAY).
+ */
+const BOX_MAIN = (MAX_ELEMENTS: number, layer: boolean) => `  // UI elements in two passes: every element's shadows outside its border
   // box, then every fill inside it, in document order. So a shadow only ever
   // lands on the backdrop, never on a neighbouring box: the same as while
   // the page scrolls, when CSS paints the fills over these shadows. (CSS on
@@ -968,14 +1005,15 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
       for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
         vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
         vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
-        if (c.a <= 0.0) continue;
         vec2 lower = g.xy - g.w;
         vec2 upper = eb.xy + g.xy + g.w;
-        // Skip pixels beyond the Gaussian's reach.
+        // Skip pixels beyond the Gaussian's reach. (Ifs, not continues: the
+        // shader compiler builds them faster.)
         vec2 far = max(lower - lp, lp - upper);
-        if (max(far.x, far.y) > 4.0 * g.z) continue;
-        float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
-        col = mix(col, c.rgb, c.a * a * under);
+        if (c.a > 0.0 && max(far.x, far.y) <= 4.0 * g.z) {
+          float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
+          ${paint(layer, 'c.rgb', 'c.a * a * under')}
+        }
       }
     }
     if (pass == 1 && fc.x > 0.5 && outside < 1.0) {
@@ -1005,17 +1043,18 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
         s = mix(s, ca.rgb, ca.a * max(0.0, 1.0 - tg / 0.7));
         fill = vec4(s, 1.0);
       }
-      col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
+      ${paint(layer, 'fill.rgb', 'fill.a * fc.z * (1.0 - outside)')}
     }
   }
 
 `;
 
 /**
- * The UI pass: the UI's box shadows and fills (see BOX_MAIN), and the drop
- * shadows inside those fills, drawn over the scene as the main pass left it
- * in its target (frag's 'drops'), then dimmed and dithered. Their code takes the shader compiler longer than the
- * rest of the main pass, so as a program of its own it's built alongside.
+ * The UI pass: the UI's box shadows and fills (see BOX_MAIN), into a layer
+ * of their own (see LAY) that the main pass lays over the scene (frag's
+ * 'drops'). Their code takes the shader compiler longer than the rest of the
+ * main pass, so as a program of its own it's built alongside; it reads
+ * nothing of the scene, so neither waits on the other.
  */
 const uiFrag = (MAX_ELEMENTS: number) => `#version 300 es
 precision highp float;
@@ -1023,16 +1062,16 @@ out vec4 fragColor;
 
 uniform vec2 uRes;  // drawing buffer size, device pixels
 uniform vec2 uSize; // canvas size, CSS pixels
-uniform sampler2D uBackdrop; // the main pass's colour, a texel per device pixel
-${BOX_UNIFORMS(MAX_ELEMENTS)}${BOX_SHADOW_UNIFORMS(MAX_ELEMENTS)}${DROP_UNIFORMS}${DIALOG_UNIFORM}
-${RGB}${BOX_FUNCTIONS}
-${HASH}
+${BOX_UNIFORMS(MAX_ELEMENTS)}${BOX_SHADOW_UNIFORMS(MAX_ELEMENTS)}${DIALOG_UNIFORM}
+${RGB}${BOX_FUNCTIONS}${LAY}
 void main() {
   vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   vec2 p = dev / uRes * uSize; // CSS px, top-left origin
-  vec3 col = texelFetch(uBackdrop, ivec2(gl_FragCoord.xy), 0).rgb;
+  vec4 ui = vec4(0.0);
 
-${BOX_MAIN(MAX_ELEMENTS)}${DROPS(true)}${FINISH}`;
+${BOX_MAIN(MAX_ELEMENTS, true)}  fragColor = ui;
+}
+`;
 
 // CSS `ease-in-out`: cubic-bezier(0.42, 0, 0.58, 1).
 function easeInOut(x: number): number {
@@ -1291,15 +1330,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   };
   let smoothTex: WebGLTexture | null = null;
   let smoothFbo: WebGLFramebuffer | null = null;
-  // The scene as the main pass leaves it, for the UI pass (unit 4), a texel per device pixel.
-  let sceneTex: WebGLTexture | null = null;
-  let sceneFbo: WebGLFramebuffer | null = null;
+  // The UI pass's layer, for the main pass (unit 4), a texel per device pixel.
+  let boxTex: WebGLTexture | null = null;
+  let boxFbo: WebGLFramebuffer | null = null;
   if (offered && gl.getExtension('EXT_color_buffer_float')) {
     const soft = target(3, gl.LINEAR);
-    const scene = soft && target(4, gl.NEAREST);
-    if (soft && scene) {
+    const boxes = soft && target(4, gl.NEAREST);
+    if (soft && boxes) {
       ({ tex: smoothTex, fbo: smoothFbo } = soft);
-      ({ tex: sceneTex, fbo: sceneFbo } = scene);
+      ({ tex: boxTex, fbo: boxFbo } = boxes);
     } else if (soft) {
       gl.deleteFramebuffer(soft.fbo);
       gl.deleteTexture(soft.tex);
@@ -1312,8 +1351,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   let smoothW = 1;
   let smoothH = 1;
-  let sceneW = 1;
-  let sceneH = 1;
+  let boxW = 1;
+  let boxH = 1;
 
   // One triangle covering the viewport.
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -1384,6 +1423,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     g.uniform1i(U('uBlur'), 1);
     g.uniform1i(U('uEmbers'), 2);
     g.uniform1i(U('uSmooth'), 3);
+    g.uniform1i(U('uBoxes'), 4);
     const elLoc = {
       x: U('uElX'),
       y: U('uElY'),
@@ -1468,22 +1508,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   function uiVariant(prog: WebGLProgram) {
     const g = gl!;
     const U = (name: string) => g.getUniformLocation(prog, name);
-    g.useProgram(prog);
-    g.uniform1i(U('uBackdrop'), 4);
-    // The drop-shadow atlases, on the main pass's units (see variant).
-    g.uniform1i(U('uSharp'), 0);
-    g.uniform1i(U('uBlur'), 1);
     const elLoc = { x: U('uElX'), y: U('uElY'), a: U('uElA'), b: U('uElB'), c: U('uElC'), d: U('uElD'), e: U('uElE'), geo: U('uShGeo'), col: U('uShCol') };
-    const mkLoc = Object.fromEntries(['A', 'B', 'C', 'D', 'E', 'Off', 'Col'].map((k) => [k.toLowerCase(), U('uMk' + k)]));
     return {
       prog,
       uRes: U('uRes'),
       uSize: U('uSize'),
       uDialog: U('uDialog'),
-      uSharpSize: U('uSharpSize'),
-      uBlurSize: U('uBlurSize'),
       uElCount: U('uElCount'),
-      sent: sendList([...Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr })), ...Object.entries(mk).map(([k, arr]) => ({ loc: mkLoc[k], arr }))]),
+      sent: sendList(Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr }))),
       sentCount: -1,
     };
   }
@@ -1579,10 +1611,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       return;
     }
     g.useProgram(w.prog);
-    if (w.ui === 'drops') g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
     g.viewport(0, 0, 1, 1);
     g.drawArrays(g.TRIANGLES, 0, 3);
-    g.bindFramebuffer(g.FRAMEBUFFER, null);
     warming = null;
     delve = w;
     delveReadyNow = true;
@@ -1777,26 +1807,28 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, SLOTS);
     gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, cols, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
     gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, 0);
-    const over = v.ui === 'drops' ? ui : null;
-    if (!over) return gl!.drawArrays(gl!.TRIANGLES, 0, 3);
-    // Into the scene's target, and the UI pass over it onto the canvas.
-    gl!.activeTexture(gl!.TEXTURE4);
-    gl!.bindTexture(gl!.TEXTURE_2D, sceneTex);
-    if (canvas.width !== sceneW || canvas.height !== sceneH) {
-      sceneW = canvas.width;
-      sceneH = canvas.height;
-      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA16F, sceneW, sceneH, 0, gl!.RGBA, gl!.HALF_FLOAT, null);
+    const boxes = v.ui === 'drops' ? ui : null;
+    if (boxes) {
+      // The UI pass first, into its layer, which the main pass lays over the scene.
+      gl!.useProgram(boxes.prog);
+      gl!.uniform2f(boxes.uRes, canvas.width, canvas.height);
+      gl!.uniform2f(boxes.uSize, cssW, cssH);
+      gl!.uniform1f(boxes.uDialog, dialog);
+      send(boxes);
+      gl!.activeTexture(gl!.TEXTURE4);
+      gl!.bindTexture(gl!.TEXTURE_2D, boxTex);
+      if (canvas.width !== boxW || canvas.height !== boxH) {
+        boxW = canvas.width;
+        boxH = canvas.height;
+        gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA16F, boxW, boxH, 0, gl!.RGBA, gl!.HALF_FLOAT, null);
+      }
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, boxFbo);
+      // With no boxes, an empty layer: cleared, not shaded pixel by pixel.
+      if (boxes.sentCount > 0) gl!.drawArrays(gl!.TRIANGLES, 0, 3);
+      else gl!.clear(gl!.COLOR_BUFFER_BIT);
+      gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+      gl!.useProgram(prog);
     }
-    gl!.bindFramebuffer(gl!.FRAMEBUFFER, sceneFbo);
-    gl!.drawArrays(gl!.TRIANGLES, 0, 3);
-    gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
-    gl!.useProgram(over.prog);
-    gl!.uniform2f(over.uRes, canvas.width, canvas.height);
-    gl!.uniform2f(over.uSize, cssW, cssH);
-    gl!.uniform1f(over.uDialog, dialog);
-    gl!.uniform2f(over.uSharpSize, atlasSize[0], atlasSize[1]);
-    gl!.uniform2f(over.uBlurSize, atlasSize[2], atlasSize[3]);
-    send(over);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }
 

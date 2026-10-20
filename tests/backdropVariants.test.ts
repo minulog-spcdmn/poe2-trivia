@@ -73,7 +73,7 @@ for (const n of [4, 16]) {
     assert.match(delve.whole, /vec3 col = smoothLight\(p\);\n  float frost = gFrost;/);
   });
 
-  test(`the UI pass holds the UI's boxes, and the main pass under it all the rest; the bare passes none of the UI (${n} elements)`, () => {
+  test(`the UI pass holds the UI's boxes, into a layer, and the main pass all the rest; the bare passes none of the UI (${n} elements)`, () => {
     /** Names only the UI's boxes use, and only its drop shadows. */
     const BOXES = /\b(uEl\w*|uShGeo|uShCol|roundedBoxShadow|shadowX|erf2|pxLocal)\b/;
     const DROPS = /\b(uMk\w*|uSharp\w*|uBlur\w*)\b/;
@@ -81,31 +81,33 @@ for (const n of [4, 16]) {
     assert.doesNotMatch(code('split'), BOXES);
     assert.match(code('split'), DROPS);
     assert.match(code('ui'), BOXES);
-    // (Its drop shadows are those inside a fill it draws, laid over that fill.)
-    assert.match(code('ui'), DROPS);
-    // (Little more than half with the drop shadows inside fills: their loop is
-    // short beside the boxes', which are what takes the compiler long.)
-    assert.ok(lean.ui.length < lean.splitAll.length * 0.55, 'the UI pass is the small part');
+    assert.doesNotMatch(code('ui'), DROPS);
+    // (It reads nothing of the scene: it's built and drawn on its own.)
+    assert.doesNotMatch(code('ui'), /\b(texelFetch|texture\w*|sampler2D)\b/);
+    assert.ok(lean.ui.length < lean.splitAll.length * 0.5, 'the UI pass is the small part');
     for (const k of ['bareSplit', 'bareWhole'] as const) for (const re of [BOXES, DROPS]) assert.doesNotMatch(code(k), re, k);
-    // The main pass's lines are the whole one's, in order, but for its end
-    // (the colour as it is, into its target); what it leaves out is the
-    // UI's boxes, the drop shadows inside their fills, a dialog's dimming and
-    // the dither, which are the UI pass's.
-    const mainLines = lean.split.split('\n');
-    const end = mainLines.findIndex((l) => l === '  fragColor = vec4(col, 1.0);');
-    assert.ok(end > 0, 'the main pass ends with the colour as it is');
+    // The main pass's lines are the whole one's, in order, but for the
+    // layer it lays over the scene where the whole one draws the boxes;
+    // what it leaves out is the UI pass's, word for word, but that the
+    // UI pass lays each box's part into its layer, not onto the scene.
+    const ownLines = new Set(['uniform sampler2D uBoxes;', '  vec4 boxes = texelFetch(uBoxes, ivec2(gl_FragCoord.xy), 0);', '  col = col * (1.0 - boxes.a) + boxes.rgb;']);
+    const mainLines = lean.split.split('\n').filter((l) => !ownLines.has(l.replace(/ *\/\/.*$/, '')));
+    assert.equal(lean.split.split('\n').length - mainLines.length, ownLines.size, 'the main pass lays the layer over the scene');
+    // ...after the drop shadows under the boxes, and before those inside their fills.
+    const at = (start: string) => lean.split.split('\n').findIndex((l) => l.startsWith(start));
+    const boxesAt = at('  col = col * (1.0 - boxes.a)');
+    assert.ok(at('  col = col * (1.0 - dropsUnder.a)') >= 0 && at('  col = col * (1.0 - dropsUnder.a)') < boxesAt &&boxesAt < at('  col = col * (1.0 - dropsOver.a)'), 'drops under, the boxes, drops over');
     const left: string[] = [];
     let j = 0;
     for (const line of lean.splitAll.split('\n')) {
-      if (j < end && line === mainLines[j]) j++;
+      if (j < mainLines.length && line === mainLines[j]) j++;
       else left.push(line);
     }
-    assert.equal(j, end, `split: line ${j + 1} is not the whole one's: ${JSON.stringify(mainLines[j])}`);
+    assert.equal(j, mainLines.length, `split: line ${j + 1} is not the whole one's: ${JSON.stringify(mainLines[j])}`);
     const leftCode = left.join('\n').replace(/\/\/[^\n]*/g, '');
-    for (const part of ['uLight', 'uMood', 'uEmber', 'uVignette', 'smoothLight']) assert.ok(!leftCode.includes(part), `split leaves out ${part}`);
-    // Each line it leaves out is the UI pass's, word for word.
+    for (const part of ['uLight', 'uMood', 'uEmber', 'uVignette', 'smoothLight', 'uMk', 'hash(']) assert.ok(!leftCode.includes(part), `split leaves out ${part}`);
     const uiLines = new Set(lean.ui.split('\n'));
-    for (const line of left) if (line.trim() && !line.startsWith('uniform') && !/^\s*}?\s*$/.test(line)) assert.ok(uiLines.has(line) || /^#version|^precision|^out /.test(line), `not the UI pass's: ${JSON.stringify(line)}`);
+    for (const line of left) if (line.trim() && !line.startsWith('uniform') && !/^\s*}?\s*$/.test(line)) assert.ok(uiLines.has(line) || uiLines.has(line.replace('col = mix(col, ', 'ui = lay(ui, ')), `not the UI pass's: ${JSON.stringify(line)}`);
   });
 }
 
