@@ -1,3 +1,5 @@
 # Line breaks are LF in the repository and in every checkout, Windows too:
-# the build and the tests read files as they are.
+# the build and the tests read files as they are. A checkout made before
+# this file still has CRLF on disk; `git add --renormalize .` won't fix that,
+# `npm run fix-eol` does.
 * text=auto eol=lf
