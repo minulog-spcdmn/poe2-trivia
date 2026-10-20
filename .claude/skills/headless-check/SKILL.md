@@ -5,6 +5,8 @@ description: How to drive the app in headless Chromium (Playwright) to check som
 
 # Driving the app in headless Chromium
 
+Only when really necessary: several sessions share this machine, and every headless browser slows all of them. Tests, `npm run check` and the code come first; go headless for what they can't settle, keep it to the few pages and the one size the question needs, run it once, and close every browser and server it started.
+
 To check something that isn't the effects or the animations:
 
 - Hide WebGL before the page loads (`context.addInitScript(() => { delete window.WebGL2RenderingContext; delete window.WebGLRenderingContext; })`, which keeps `src/lib/fx/` off) and pass `reducedMotion: 'reduce'` to the context. The effects render in software there and make every step crawl.
@@ -17,4 +19,4 @@ Which Chromium:
 - Playwright's default `chromium.launch()` is the headless shell: drawn in software (SwiftShader) and every page in one process. Good for the quick checks above.
 - For anything about frames, WebGL, the GPU or many pages at once, launch new headless instead: `chromium.launch({ channel: 'chromium', args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] })` (drop the ANGLE switch off Windows). It draws on the real GPU and gives each site a process of its own. The QA sweep (`scripts/qa.mjs`) runs this way.
 
-Before writing a script, see whether the QA desk already shows it: `npm run qa -- --only <scene>` shoots any scene at any size with the checks run, and the desk's Play from here drives a live room with bots and link faults (`docs/qa.md`).
+Before writing a script, see whether the QA desk already shows it: `npm run qa -- --only <scene> --sizes <size>` runs the checks on one scene at one size, and the desk's Play from here drives a live room with bots and link faults (`docs/qa.md`).

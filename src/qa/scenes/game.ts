@@ -42,6 +42,11 @@ export function gameScenes(): Scene[] {
   const delveAlone = () => table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
   const delveTogether = () => table(THREE, { mode: 'delve' }).start();
   const turnsSeats = [guest('Doryani'), host('Kalguur')];
+  // The most options a question has (Delve's from depth 70, or custom): names or art.
+  const tenOptions = (artChance: number) =>
+    table(THREE, { difficulty: 'custom', custom: { options: 10, similarNames: 0, fakes: 0, artChance, veil: 'off', grayscale: 'off', mirror: 0, lockout: 3 } }, { host: null })
+      .start()
+      .pick();
   return [
     scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns),
     scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, () => turns().pick()),
@@ -65,6 +70,8 @@ export function gameScenes(): Scene[] {
     }),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
+    scene('ten-names', 'Take turns', 'Ten options, as names', [ALONE], () => tenOptions(0)),
+    scene('ten-art', 'Take turns', 'Ten options, as art', [ALONE], () => tenOptions(1)),
     scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani')], race),
     scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani')], () => race().answer('Doryani', false, 1800)),
     scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani')], () => race().answer('Una of the Vaal', true, 1500)),

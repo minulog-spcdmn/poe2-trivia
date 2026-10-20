@@ -35,7 +35,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
-  import { phone } from '../lib/layout';
+  import { handheld } from '../lib/layout';
   import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
@@ -650,14 +650,14 @@
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
-  // Stuck (phones only): the strip sticks 1px above the top of the screen, so
+  // Stuck (phones only, either way up): the strip sticks 1px above the top of the screen, so
   // once it has, it no longer fits in the view. Its background then covers
   // what the backdrop draws under the entries, so CSS paints their shadows.
   let strip = $state<HTMLElement>();
   let stuck = $state(false);
   $effect(() => {
     stuck = false;
-    if (!phone.current || !strip) return;
+    if (!handheld.current || !strip) return;
     const io = new IntersectionObserver(([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.top < 0), {
       threshold: 1,
     });
@@ -1334,7 +1334,8 @@
     filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000);
   }
 
-  @media (max-width: 640px) {
+  /* (And on a phone on its side, lib/layout.ts `flat`, where the screen is too short for the full entries.) */
+  @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
     /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
        row of avatars and scores, with the name and progress of whoever's turn
        it is, and the timer at the end. Sticky rather than fixed, so it shakes
@@ -1525,6 +1526,22 @@
     }
     li:not(.wide) .off-corner .off {
       --standing-size: 15px;
+    }
+  }
+  /* A phone on its side (lib/layout.ts `flat`): the strip rides in the
+     header's row (App.svelte's `folded`), from the screen's left edge to the
+     round and the buttons at its right end (--header-right), so the game
+     gets the height of a row of its own. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .strip {
+      height: var(--header-h, 53px);
+      margin: calc(-1 * var(--header-h, 53px)) calc(var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))) 0
+        calc(-1 * max(1rem, env(safe-area-inset-left)));
+      padding-block: 0;
+      padding-right: 0;
+    }
+    .board {
+      padding: 2px 0;
     }
   }
 </style>

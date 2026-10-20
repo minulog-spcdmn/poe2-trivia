@@ -22,7 +22,7 @@
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
-  import { dock, phone } from '../lib/layout';
+  import { dock, flat, phone } from '../lib/layout';
   import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
   import { FIND_RULES, FIND_TEXT, MODE_NAMES } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
@@ -117,8 +117,10 @@
 
   // ---- sizes ---------------------------------------------------------------
   const short = new MediaQuery('(max-height: 859px) and (min-width: 1081px)');
-  /** The rune circle's diameter. */
-  const circle = $derived(phone.current ? 340 : short.current ? 380 : 470);
+  /** A phone on its side in its browser, the address bar taking its share of the height. */
+  const flatShort = new MediaQuery('(orientation: landscape) and (max-height: 370px)');
+  /** The rune circle's diameter (on a phone on its side, small enough that the headline and the start row under it show on the first screen). */
+  const circle = $derived(phone.current ? 340 : flatShort.current ? 170 : flat.current ? 220 : short.current ? 380 : 470);
   /** How far up the circle the headline rides. */
   /**
    * Rows under "Where your lives went", from the run itself (the codex that
@@ -556,6 +558,12 @@
         {/if}
       </div>
 
+      {#if flat.current && !phone.current}
+        <!-- A phone on its side: what's next straight under the result, in reach on the first screen
+             (a bar docked across so short a screen would take too much of it); the details below. -->
+        <div class="start up" class:centre={!session.isHost && !session.spectating}>{@render startRow()}</div>
+      {/if}
+
       {#if mine}
         <section class="sec yours" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
           <h3>Your game</h3>
@@ -733,7 +741,7 @@
         </section>
       {/if}
 
-      {#if !phone.current}
+      {#if !phone.current && !flat.current}
         <div class="start" class:centre={!session.isHost && !session.spectating}>{@render startRow()}</div>
       {/if}
     </section>
@@ -1940,6 +1948,25 @@
   @media (pointer: coarse) {
     .share {
       min-height: 44px;
+    }
+  }
+  /* A phone on its side (lib/layout.ts `flat`): the circle (see `circle`),
+     the headline and the room over them smaller, so the result, its line
+     and the start row under them show on the first screen. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .over {
+      --h1: 44px;
+      --sub: 16px;
+    }
+    .over.delve {
+      --h1: 46px;
+    }
+    .stage {
+      padding-top: 4px;
+    }
+    .start.up {
+      margin: 0.5rem 0 1.4rem;
+      padding-top: 0.6rem;
     }
   }
 </style>

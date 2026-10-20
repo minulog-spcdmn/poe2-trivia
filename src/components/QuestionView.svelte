@@ -3184,4 +3184,148 @@
       font-size: 1.05rem;
     }
   }
+  /* A phone on its side (lib/layout.ts `flat`): the art and answers side by
+     side at any width, as tall together as the screen leaves them under the
+     header, the slim scoreboard (the timer is in it), the banner and the task
+     line, with the row under them, so the whole question is in view at once.
+     (After the 760px and short-window blocks, which it overrides.) */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .question {
+      /* The height the art and answers share: the window's, less what stands above and below them
+         (the header, the scoreboard in its row; the banner, the task line, the row under them, the home indicator's strip). */
+      --room: max(100px, 100dvh / var(--stage-zoom, 1) - var(--header-h, 53px) - 113px - env(safe-area-inset-bottom, 0px));
+    }
+    .task {
+      margin-bottom: 0.4rem;
+    }
+    .task-text {
+      font-size: 1.05rem;
+      line-height: 1.3;
+    }
+    .stage {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      gap: 1rem;
+      /* (At least: a long list on a very short screen grows it, rather than spilling over the row under it.) */
+      min-height: var(--room);
+    }
+    .stage.long .art,
+    .art {
+      flex: 1;
+      height: auto;
+      min-height: 0;
+    }
+    .head {
+      height: 52px;
+      padding: 0 3rem;
+    }
+    .iname {
+      font-size: 1.05rem;
+    }
+    .iname.unknown {
+      font-size: 0.95rem;
+    }
+    .ibase {
+      font-size: 0.85rem;
+    }
+    .options {
+      grid-auto-rows: 1fr;
+      gap: 0.4rem;
+    }
+    /* Four answers or more: two columns, so each stays a thumb's height. */
+    .options:has(> :nth-child(4)) {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .option,
+    .long .option {
+      min-height: 0;
+      gap: 0.55rem;
+      padding: 0.25rem 1.9rem 0.25rem 0.6rem;
+    }
+    .text {
+      font-size: 0.98rem;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }
+    .option .mark,
+    .long .option .mark {
+      right: 0.6rem;
+    }
+    /* A touch screen has no keys to press: the answers go without their key badges. */
+    @media (pointer: coarse) {
+      .option .key {
+        display: none;
+      }
+      .option,
+      .long .option {
+        padding-left: 0.75rem;
+      }
+    }
+    /* Ten names: three across, four rows, so each keeps a thumb's height
+       (two lines where a name needs them); the art gives them width. */
+    .stage.ten {
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 3fr);
+    }
+    .options.ten {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.3rem;
+    }
+    .options.ten .option {
+      padding-block: 0;
+      padding-left: 0.6rem;
+      padding-right: 1.4rem;
+    }
+    .options.ten .option .key {
+      display: none;
+    }
+    .options.ten .text {
+      font-size: 0.88rem;
+      line-height: 1.1;
+      overflow-wrap: normal;
+    }
+    .options.ten .option .mark {
+      right: 0.4rem;
+    }
+    /* The tenth alone in its row, in the middle of it. */
+    .options.ten .option:last-child {
+      grid-column: 2;
+    }
+    /* The pictures: one row of them, as tall as the room under the plate (ten in two rows). */
+    .tooltip.wide .head {
+      height: auto;
+      min-height: 50px;
+      padding-bottom: calc(0.2rem + 3px);
+      padding-inline: max(3.4rem, min(4.6rem, calc(var(--plate-scale, 0) * 3.1rem)));
+    }
+    .tooltip.wide .iname {
+      font-size: 1.3rem;
+    }
+    .tiles,
+    .tiles.six,
+    .tiles.many.tall,
+    .tiles.many.tall.six {
+      grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    }
+    .tiles.ten {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .tile,
+    .tiles.many .tile,
+    .tiles.many.tall .tile,
+    .tiles.many.tall.six .tile {
+      height: max(50px, var(--room) - 52px);
+      padding: 1.6rem 0.4rem 0.4rem;
+    }
+    .tiles.ten .tile {
+      height: max(50px, (var(--room) - 54px) / 2);
+      padding-top: 0.45rem;
+    }
+    .footer {
+      margin-top: 0.45rem;
+      min-height: 42px;
+    }
+    .result p {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+  }
 </style>
