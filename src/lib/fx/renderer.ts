@@ -1177,16 +1177,17 @@ export class FxRenderer {
    * Each draw is timed in a query of its own, read a few frames on once the
    * GPU is done with it; never waited for.
    */
-  private timer: { ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null; free: WebGLQuery[]; pending: WebGLQuery[]; ms: number; frames: number } | null = null;
+  private timer: { ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null; free: WebGLQuery[]; pending: WebGLQuery[]; ms: number; frames: number; drawn: number } | null = null;
 
   /**
-   * The GPU's time (ms) over the frames timed since the last call, and how
-   * many they were; null where it can't be timed. (A frame whose timing was
+   * The GPU's time (ms) over the frames timed since the last call, how many
+   * they were, and how many frames were drawn since (timed or not); null
+   * where it can't be timed. (A frame whose timing was
    * spoiled, the GPU's clock disturbed by a power state, say, is left out.)
    */
-  gpuTime(): { ms: number; frames: number } | null {
+  gpuTime(): { ms: number; frames: number; drawn: number } | null {
     const gl = this.gl;
-    const t = (this.timer ??= { ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), free: [] as WebGLQuery[], pending: [] as WebGLQuery[], ms: 0, frames: 0 });
+    const t = (this.timer ??= { ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), free: [] as WebGLQuery[], pending: [] as WebGLQuery[], ms: 0, frames: 0, drawn: 0 });
     if (!t.ext) return null;
     // (The GPU's clock disturbed: every query still out may have run through
     // it, so none of them is read. The flag is cleared as it's read.)
@@ -1200,9 +1201,10 @@ export class FxRenderer {
       t.frames++;
       t.free.push(q);
     }
-    const out = { ms: t.ms, frames: t.frames };
+    const out = { ms: t.ms, frames: t.frames, drawn: t.drawn };
     t.ms = 0;
     t.frames = 0;
+    t.drawn = 0;
     return out;
   }
 
@@ -1212,6 +1214,7 @@ export class FxRenderer {
    */
   draw(...args: Parameters<FxRenderer['drawFrame']>) {
     const t = this.timer?.ext ? this.timer : null;
+    if (t) t.drawn++;
     // (A few frames' queries waiting at most: if the GPU falls further behind, the frames past them go untimed.)
     const q = t && t.pending.length < 6 ? (t.free.pop() ?? this.gl.createQuery()) : null;
     if (q) this.gl.beginQuery(t!.ext!.TIME_ELAPSED_EXT, q);

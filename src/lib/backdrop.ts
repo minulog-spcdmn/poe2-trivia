@@ -1068,6 +1068,11 @@ function letGo(gl: WebGL2RenderingContext): null {
   return null;
 }
 
+/** How many backdrops draw with WebGL now (one, but an old one's stop can come after a new one's start). */
+let onWebgl = 0;
+/** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
+export const backdropOnWebgl = () => onWebgl > 0;
+
 /**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
  * first frame drawn at once); Delve's follow in the background once Delve is
@@ -1076,10 +1081,6 @@ function letGo(gl: WebGL2RenderingContext): null {
  * context is lost later, after the renderer has shut itself down, so the
  * caller can fall back to CSS.
  */
-/** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
-let onWebgl = false;
-export const backdropOnWebgl = () => onWebgl;
-
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
   const gl = canvas.getContext('webgl2', {
     alpha: false,
@@ -1851,8 +1852,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     embers.tint(on ? VEIN_EMBERS : CALM);
     embers.vein(on);
   });
+  // (Counted in onWebgl once its frames have begun; stop can come twice: lost, then the caller's.)
+  let counted = false;
   function stop() {
-    onWebgl = false;
+    if (counted) onWebgl--;
+    counted = false;
     offVein();
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
@@ -1913,7 +1917,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
   raf = requestAnimationFrame(frame);
-  onWebgl = true;
+  onWebgl++;
+  counted = true;
 
   return stop;
 }

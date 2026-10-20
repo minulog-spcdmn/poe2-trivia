@@ -105,12 +105,16 @@ class Toasts {
     this.run(id, t.left);
   }
 
-  /** The oldest give way beyond max: the oldest that isn't sticky first (a sticky one waits to be read and closed). */
+  /**
+   * The oldest give way beyond max: the oldest that isn't sticky first (a
+   * sticky one waits to be read and closed). The newest never does: with
+   * only sticky ones before it, the oldest of those goes.
+   */
   private trim() {
     if (this.list.length <= this.max) return;
     let list = this.list;
     while (list.length > this.max) {
-      const i = list.findIndex((t) => !t.sticky);
+      const i = list.slice(0, -1).findIndex((t) => !t.sticky);
       list = list.filter((_, j) => j !== (i < 0 ? 0 : i));
     }
     this.list = list;

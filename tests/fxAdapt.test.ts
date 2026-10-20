@@ -22,7 +22,7 @@ function run(a: QualityAdapt, seconds: number, ms: (q: number) => number, gpu: (
     const d = ms(a.quality) * (++i % 4 === 0 ? 2 : 0.67);
     t += d;
     const g = gpu(a.quality);
-    if (a.frame(d, g === null ? null : { ms: g, frames: 1 })) went.push(a.quality);
+    if (a.frame(d, g === null ? null : { ms: g, frames: 1, drawn: 1 })) went.push(a.quality);
   }
   return went;
 }

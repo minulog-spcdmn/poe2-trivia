@@ -46,10 +46,10 @@ test('no WebGL at all is not software: the CSS backdrop runs smoothly', () => {
 
 test('the fix names the setting in the browser at hand', () => {
   const chrome = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
-  assert.match(accelerationFix(chrome), /^turn on Chrome's Settings › System › “Use graphics acceleration when available”, then relaunch it\.$/);
-  assert.match(accelerationFix(`${chrome} Edg/141.0.0.0`), /^turn on Edge's Settings › System and performance/);
-  assert.match(accelerationFix(`${chrome} OPR/120.0.0.0`), /^turn on Opera's/);
-  assert.match(accelerationFix('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0'), /Firefox's Settings › General › Performance/);
+  assert.match(accelerationFix(chrome) ?? '', /^turn on Chrome's Settings › System › “Use graphics acceleration when available”, then relaunch it\.$/);
+  assert.match(accelerationFix(`${chrome} Edg/141.0.0.0`) ?? '', /^turn on Edge's Settings › System and performance/);
+  assert.match(accelerationFix(`${chrome} OPR/120.0.0.0`) ?? '', /^turn on Opera's/);
+  assert.match(accelerationFix('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0') ?? '', /Firefox's Settings › General › Performance/);
   assert.match(accelerationFix('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15') ?? '', /your browser's settings/);
 });
 

@@ -37,28 +37,21 @@ type Phase = { kind: 'before' | 'after'; time: number; frames: number; before: n
 
 export class QualityAdapt {
   quality: number;
-  /** The next level down worth trying from `q` (one that draws fewer pixels), or null. */
-  private lowerOf: (q: number) => number | null;
-  /** lowerOf's answers, kept: they change only with the canvas's size, and a new one is made for that (core.ts). */
-  private lowered = new Map<number, number | null>();
+  /** The next level down worth trying from `q` (one that draws fewer pixels), or null. Asked anew each time: it changes with the canvas's size. */
+  private lower: (q: number) => number | null;
   private frameAvg = 16;
   private slowFor = 0;
   /** The effects' GPU work as a share of frame time (null until the GPU has been timed). */
   private share: number | null = null;
-  /** Over the last half second or so: the frames (and their ms), and the GPU's time over those of them it timed. */
-  private window = { ms: 0, frames: 0, gpu: 0, timed: 0 };
+  /** Over the last half second or so: the frames' ms, the frames the effects drew, and the GPU's time over those of them it timed. */
+  private window = { ms: 0, drawn: 0, gpu: 0, timed: 0 };
   private phase: Phase | null = null;
   /** By level: how slow frames were (ms) when a drop from it was tried and didn't help. */
   private failed = new Map<number, number>();
 
   constructor(quality: number, lower: (q: number) => number | null) {
     this.quality = quality;
-    this.lowerOf = lower;
-  }
-
-  private lower(q: number) {
-    if (!this.lowered.has(q)) this.lowered.set(q, this.lowerOf(q));
-    return this.lowered.get(q)!;
+    this.lower = lower;
   }
 
   /** Whether the effects' own work is what makes frames slow, as far as can be told. */
@@ -69,23 +62,26 @@ export class QualityAdapt {
   /**
    * One frame while effects run: `ms` since the one before, `gpu` the GPU's
    * time read this frame and over how many frames (frames a few back: it's
-   * read late), or null where the GPU can't be timed. Returns true when the
-   * quality changed.
+   * read late), with how many frames the effects drew since the last read
+   * (timed or not), or null where the GPU can't be timed. Returns true when
+   * the quality changed.
    */
-  frame(ms: number, gpu: { ms: number; frames: number } | null): boolean {
+  frame(ms: number, gpu: { ms: number; frames: number; drawn: number } | null): boolean {
     if (gpu !== null) {
       const w = this.window;
       w.ms += ms;
-      w.frames++;
+      w.drawn += gpu.drawn;
       w.gpu += gpu.ms;
       w.timed += gpu.frames;
       // (Over half a second: the GPU's times come in a few frames late. A
-      // frame's GPU time against a frame's time, each on average: a GPU that
-      // falls behind leaves some frames untimed, which mustn't count as none.)
+      // drawn frame's GPU time, on average, for every frame drawn, against
+      // the time: a GPU that falls behind leaves some drawn frames untimed,
+      // which mustn't count as none, while a frame the effects skip (calm,
+      // see core.ts) costs the GPU nothing.)
       if (w.ms > 500 && w.timed > 0) {
-        const s = w.gpu / w.timed / (w.ms / w.frames);
+        const s = ((w.gpu / w.timed) * w.drawn) / w.ms;
         this.share = this.share === null ? s : this.share + (s - this.share) * 0.5;
-        this.window = { ms: 0, frames: 0, gpu: 0, timed: 0 };
+        this.window = { ms: 0, drawn: 0, gpu: 0, timed: 0 };
       }
     }
     // (A frame of a stall counts as one of 100ms: one hitch alone never makes frames slow.)
