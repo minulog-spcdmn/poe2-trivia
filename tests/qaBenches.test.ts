@@ -44,7 +44,7 @@ test('every piece has its controls, states and actions in order', () => {
   }
 });
 
-test('every scene is a state of one bench, and no two benches share a key', () => {
+test('every scene is on one bench, a screen each, and no two benches share a key', () => {
   const all = benches();
   assert.equal(new Set(all.map((b) => b.key)).size, all.length);
   const of = new Map<string, number>();
@@ -86,7 +86,7 @@ test('a change touches the pieces showing its files and the screens running them
   const got = benchesTouched(['src/components/Avatar.svelte', 'src/lib/nowhere.ts'], scenes, all);
   const keys = got.benches.map((b) => b.key);
   assert.ok(keys.includes('avatar'));
-  assert.ok(keys.includes('game/take-turns'));
+  assert.ok(keys.includes('game'));
   assert.ok(!keys.includes('streak'));
   assert.deepEqual(got.uncovered, ['src/lib/nowhere.ts']);
   // A bench's own files touch it, and what every piece runs on touches them all.
@@ -94,4 +94,15 @@ test('a change touches the pieces showing its files and the screens running them
   assert.deepEqual(benchesTouched(['src/qa/benches/StreakView.svelte'], none, all).benches.map((b) => b.key), ['streak']);
   assert.deepEqual(benchesTouched(['src/qa/benches/streakXts'], none, all).benches, []);
   assert.deepEqual(benchesTouched(['src/qa/frame/PieceHost.svelte'], none, all).benches.map((b) => b.key), PIECES.map((p) => p.key));
+});
+
+// A piece's frame loads only its own file (benches/<key>.ts, frame/piece.ts),
+// so the code before a change that adds or alters one piece still shows the rest.
+test('every piece is in a file named after it', async () => {
+  for (const p of PIECES) {
+    const file = new URL(`../src/qa/benches/${p.key}.ts`, import.meta.url);
+    assert.ok(existsSync(file), `the piece ${p.key} isn't in src/qa/benches/${p.key}.ts`);
+    const mod: Record<string, unknown> = await import(file.href);
+    assert.ok(Object.values(mod).includes(p), `src/qa/benches/${p.key}.ts doesn't export the piece ${p.key}`);
+  }
 });

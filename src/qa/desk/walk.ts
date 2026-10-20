@@ -14,10 +14,10 @@ export function sizesFor(scene: Scene, more: SizeKey[] = []): SizeKey[] {
 
 const SCREEN_LABEL = new Map<string, string>(SCREENS.map((s) => [s.key, s.label]));
 
-/** Whether a scene answers a search: every word in its label, key, group or screen. */
-export function matches(scene: Scene, query: string): boolean {
+/** Whether a scene (or one of its states, `more` its words) answers a search: every word in its label, key, group or screen. */
+export function matches(scene: Scene, query: string, more = ''): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const text = `${scene.label} ${scene.key} ${scene.group} ${SCREEN_LABEL.get(scene.screen) ?? ''}`.toLowerCase();
+  const text = `${more} ${scene.label} ${scene.key} ${scene.group} ${SCREEN_LABEL.get(scene.screen) ?? ''}`.toLowerCase();
   return words.every((w) => text.includes(w));
 }

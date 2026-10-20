@@ -1,40 +1,41 @@
-// Every bench the QA desk lists, in its order: the pieces, then the scenes
-// a screen at a time (as a game goes), a bench for each of their groups.
+// Every bench the QA desk lists, in its order: the pieces, then a bench for
+// each of the game's screens (as a game goes), its states every scene's.
 // Call useItems (../build/engine.ts), and useCaptured (../scenes/captured.ts),
 // before benches().
 
-import type { Bench, SceneBench } from '../bench.ts';
+import type { Bench, SceneBench, SceneState } from '../bench.ts';
 import { SCREENS, type Scene } from '../scene.ts';
 import { catalog } from '../scenes/index.ts';
 import { PIECES } from './pieces.ts';
 
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+/** A scene's states: its named ones, or (none named) the scene itself as it comes. */
+export const statesOf = (scene: Scene): SceneState[] =>
+  (scene.states ?? [{ label: scene.label, values: {} }]).map((s) => ({ scene, label: s.label, group: s.group ?? scene.group, values: s.values }));
 
 let built: Bench[] | null = null;
 
 /** Every bench, built once. */
 export function benches(): Bench[] {
   if (built) return built;
-  const groups = new Map<string, SceneBench>();
-  const label = new Map<string, string>(SCREENS.map((s) => [s.key, s.label]));
-  for (const scene of catalog()) {
-    const key = `${scene.screen}/${slug(scene.group)}`;
-    const bench = groups.get(key) ?? { kind: 'scenes', key, label: scene.group, screen: label.get(scene.screen)!, scenes: [] };
-    bench.scenes.push(scene);
-    groups.set(key, bench);
+  const screens: SceneBench[] = [];
+  for (const { key, label } of SCREENS) {
+    const scenes = catalog().filter((s) => s.screen === key);
+    if (!scenes.length) continue;
+    // A heading's states together, the headings in the order they first come.
+    const states = scenes.flatMap(statesOf);
+    const order = [...new Set(states.map((s) => s.group))];
+    states.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+    screens.push({ kind: 'scenes', key, label, scenes, states });
   }
-  built = [...PIECES, ...groups.values()];
+  built = [...PIECES, ...screens];
   return built;
 }
 
-export const benchByKey = (key: string | null) => (key ? benches().find((b) => b.key === key) : undefined);
+/** A bench by its key; an older address's `screen/group` is its screen's. */
+export const benchByKey = (key: string | null) => (key ? (benches().find((b) => b.key === key) ?? benches().find((b) => b.kind === 'scenes' && b.key === key.split('/')[0])) : undefined);
 
-/** The bench a scene is a state of. */
+/** The screen a scene is a state of. */
 export const benchOfScene = (scene: Scene) => benches().find((b): b is SceneBench => b.kind === 'scenes' && b.scenes.includes(scene));
 
-/** Where the desk lists a bench: the pieces together, the scenes by their screen. */
-export const shelfOf = (b: Bench) => (b.kind === 'piece' ? 'Pieces' : b.screen);
+/** Where the desk lists a bench: the pieces together, the screens together. */
+export const shelfOf = (b: Bench) => (b.kind === 'piece' ? 'Pieces' : 'Screens');

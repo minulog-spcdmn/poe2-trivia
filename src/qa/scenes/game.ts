@@ -4,59 +4,81 @@
 // Delve alone and together, deeper down too, with finds among the cards and a
 // vein's dig.
 
-import type { Settings } from '../../lib/game.ts';
+import { MAX_PLAYERS, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
+import type { Control, Values } from '../bench.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
 
-const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
-const FIVE = [...THREE, 'Rog', 'Alva'];
+/** Who sits down, in order: any game's players are the first so many. */
+const SEATED = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
+const THREE = SEATED.slice(0, 3);
 const host = (name: string): Seat => ({ mode: 'host', me: pid(name) });
 const guest = (name: string): Seat => ({ mode: 'client', me: pid(name) });
 const ALONE: Seat = { mode: 'local', me: null };
 
+/** How many play: from `min` (those the scene's moves name are among them) to a full room. */
+const players = (min: number, by: number): Control => ({ kind: 'range', key: 'players', label: 'Players', min, max: MAX_PLAYERS, default: by });
+const seated = (v: Values, by: number) => SEATED.slice(0, Number(v.players ?? by));
+
 /** How far into a question its scene stands (ms). */
 const INTO = 3000;
 
-function scene(key: string, group: string, label: string, seats: Seat[], play: () => Table, more: (t: Table) => Partial<Built> = () => ({})): Scene {
+function scene(key: string, group: string, label: string, seats: Seat[], play: (v: Values) => Table, more: Partial<Scene> = {}): Scene {
   return {
     key: `game/${key}`,
     screen: 'game',
     group,
     label,
     seats,
-    build: () => {
-      const t = play();
+    build: (v = {}) => {
+      const t = play(v);
       const at = t.s.phase === 'question' ? t.clock.now + INTO : t.clock.now;
-      return { state: t.s, at, ...more(t) };
+      return { state: t.s, at } satisfies Built;
     },
+    ...more,
   };
 }
 const table = (names: string[], settings: Partial<Settings> = {}, o: { host?: null; seed?: number } = {}) => new Table(names, settings, o);
 
 export function gameScenes(): Scene[] {
-  // Take turns: Doryani's turn first (the seed's), Kalguur hosting.
-  const turns = () => table(THREE).start();
-  const race = () => table(FIVE, { mode: 'race' }).start();
+  // Take turns: Doryani's turn first (the seed's, with three), Kalguur hosting.
+  const turns = (v: Values) => table(seated(v, 3)).start();
+  const race = (v: Values) => table(seated(v, 5), { mode: 'race' }).start();
   const delveAlone = () => table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
-  const delveTogether = () => table(THREE, { mode: 'delve' }).start();
+  const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
   const turnsSeats = [guest('Doryani'), host('Kalguur')];
+  // Una of the Vaal is in every take-turns scene's moves; the race's answer Doryani's and hers.
+  const many = { controls: [players(3, 3)] };
+  const crowd = { controls: [players(3, 5)] };
   return [
-    scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns),
-    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, () => turns().pick()),
-    scene('turns-right', 'Take turns', 'Answered right', turnsSeats, () => {
-      const t = turns().pick();
-      return t.answer(t.turn, true);
-    }),
-    scene('turns-wrong', 'Take turns', 'Answered wrong', turnsSeats, () => {
-      const t = turns().pick();
-      return t.answer(t.turn, false);
-    }),
-    scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, () => turns().playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0)),
-    scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, () =>
-      turns().act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null),
+    scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, many),
+    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), many),
+    scene(
+      'turns-right',
+      'Take turns',
+      'Answered right',
+      turnsSeats,
+      (v) => {
+        const t = turns(v).pick();
+        return t.answer(t.turn, true);
+      },
+      many,
     ),
+    scene(
+      'turns-wrong',
+      'Take turns',
+      'Answered wrong',
+      turnsSeats,
+      (v) => {
+        const t = turns(v).pick();
+        return t.answer(t.turn, false);
+      },
+      many,
+    ),
+    scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, (v) => turns(v).playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0), many),
+    scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, (v) => turns(v).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null), many),
     scene('turns-mirrored', 'Take turns', 'Answered right: the picture was mirrored', turnsSeats, () => {
       const t = table(THREE, { difficulty: 'custom', custom: { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 1, lockout: 3 } })
         .start()
@@ -65,9 +87,9 @@ export function gameScenes(): Scene[] {
     }),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
-    scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani')], race),
-    scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani')], () => race().answer('Doryani', false, 1800)),
-    scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani')], () => race().answer('Una of the Vaal', true, 1500)),
+    scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani')], race, crowd),
+    scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Doryani', false, 1800), crowd),
+    scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Una of the Vaal', true, 1500), crowd),
     scene('deathmatch', 'Deathmatch', 'A tie at the target: the deathmatch', [host('Kalguur'), guest('Doryani')], () =>
       table(['Kalguur', 'Doryani'], { targetScore: 1 })
         .start()
@@ -96,16 +118,32 @@ export function gameScenes(): Scene[] {
       const t = delveAlone().pick();
       return t.answer(null, false);
     }),
-    scene('delve-deep', 'Delve alone', 'Thirty deep', [ALONE], () => delveAlone().playTo((s) => s.round >= 30 && s.phase === 'choosing')),
-    scene('delve-together-cards', 'Delve together', 'The cards dealt, Doryani has voted', [host('Kalguur'), guest('Doryani')], () => {
-      const t = delveTogether();
-      return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
+    scene('delve-deep', 'Delve alone', 'Deep down', [ALONE], (v) => delveAlone().playTo((s) => s.round >= Number(v.depth ?? 30) && s.phase === 'choosing'), {
+      controls: [{ kind: 'range', key: 'depth', label: 'Depth', min: 2, max: 120, default: 30 }],
     }),
-    scene('delve-together-question', 'Delve together', 'A question, after the vote', [host('Kalguur'), guest('Doryani')], () => {
-      const t = delveTogether();
-      for (const name of THREE) t.act({ type: 'vote', category: t.s.offered[0] }, name);
-      // Every vote in: the room's own timer draws the card.
-      return t.s.phase === 'choosing' ? t.act({ type: 'expire' }, null) : t;
-    }),
+    scene(
+      'delve-together-cards',
+      'Delve together',
+      'The cards dealt, Doryani has voted',
+      [host('Kalguur'), guest('Doryani')],
+      (v) => {
+        const t = delveTogether(v);
+        return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
+      },
+      { controls: [players(2, 3)] },
+    ),
+    scene(
+      'delve-together-question',
+      'Delve together',
+      'A question, after the vote',
+      [host('Kalguur'), guest('Doryani')],
+      (v) => {
+        const t = delveTogether(v);
+        for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+        // Every vote in: the room's own timer draws the card.
+        return t.s.phase === 'choosing' ? t.act({ type: 'expire' }, null) : t;
+      },
+      { controls: [players(2, 3)] },
+    ),
   ];
 }

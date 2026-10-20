@@ -11,8 +11,8 @@ import { freeze, installFreeze } from './freeze.ts';
 import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
-import { isDeskMessage, type FrameMessage } from '../messages.ts';
-import { knobValues } from '../scene.ts';
+import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
+import { seatsIn } from '../scene.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
 const RECHECK_MS = 600;
@@ -55,24 +55,25 @@ export async function boot(asked: URLSearchParams) {
 
   // The scene first: what it puts in the address has to be there before the
   // app's modules read it (the codex's #codex, an invite's ?room=).
-  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }, { useCaptured }] = await Promise.all([
+  // (Its screen's scenes only, scenes/one.ts: the code before this change may lack what another screen's use.)
+  const [{ session, engine, picturesOf, veilClock }, { useItems }, { sceneOf }, { default: fakeNames }, { useCaptured }, { buildScene }] = await Promise.all([
     import('../../lib/session.svelte.ts'),
     import('../build/engine.ts'),
-    import('../scenes/index.ts'),
+    import('../scenes/one.ts'),
     import('../../data/fakes.json'),
     import('../scenes/captured.ts'),
+    import('../tweaks.ts'),
   ]);
   useItems(engine.items, fakeNames);
   useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
   const key = asked.get('s');
-  const scene = scenes.sceneByKey(key);
-  const seat = scene?.seats[Number(asked.get('seat') ?? 0)];
-  if (!scene || !seat) {
-    document.body.textContent = `No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`;
-    return;
-  }
+  const scene = await sceneOf(key);
   const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
-  const built = scene.build(knobValues(scene.knobs, given));
+  const built = scene && buildScene(scene, given).built;
+  // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
+  const seats = scene && built ? seatsIn(scene, built) : [];
+  const seat = seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];
+  if (!scene || !built || !seat) throw new Error(`No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`);
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
   await import('../../app.css');
@@ -181,7 +182,7 @@ export async function boot(asked: URLSearchParams) {
   }
 
   const slot = asked.get('frame') ?? '';
-  const tell = (m: FrameMessage) => parent.postMessage(m, location.origin);
+  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
   handOnKeys(tell);
   addEventListener('pagehide', () => {
     // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
@@ -193,7 +194,7 @@ export async function boot(asked: URLSearchParams) {
   // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
   outline(asked.get('o') !== '0');
   addEventListener('message', (e) => {
-    if (e.origin !== location.origin || !isDeskMessage(e.data)) return;
+    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
     if (e.data.qa === 'outlines') outline(e.data.on);
     else if (e.data.qa === 'freeze') freeze(e.data.on);
   });
@@ -227,7 +228,7 @@ export async function boot(asked: URLSearchParams) {
  */
 export function handOnKeys(tell: (m: FrameMessage) => void, digits = false) {
   // (The digits only from a piece's frame: in the game they answer a question, and it doesn't stop them going on.)
-  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', '/', 'Alt', ...(digits ? '123456789' : '')]);
+  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', 'b', 'B', 'd', 'D', '/', 'Alt', ...(digits ? '123456789' : '')]);
   const HELD = new Set(['h', 'H', 'Alt']);
   const hand = (e: KeyboardEvent, up: boolean) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt') || !DESK_KEYS.has(e.key)) return;
