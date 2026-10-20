@@ -7,9 +7,29 @@
   import VerdictSign from './VerdictSign.svelte';
   import { motion } from '../lib/motion.svelte';
   import { untrack } from 'svelte';
+  import { classOf, SIGIL_FITS, sigilUrl, SMALL_INK, type PlayerClass } from '../lib/classSigils';
+  import { sigilTrial } from '../lib/sigilTrial.svelte';
 
-  /** wrong: answered wrong, the token face down (the scoreboard). */
-  let { name, hue, size = 36, dim = false, wrong = false }: { name: string; hue: number; size?: number; dim?: boolean; wrong?: boolean } = $props();
+  /** wrong: answered wrong, the token face down (the scoreboard). sigil: their class's sigil, worn behind their initial (lib/classSigils.ts). */
+  let {
+    name,
+    hue,
+    size = 36,
+    dim = false,
+    wrong = false,
+    sigil,
+  }: {
+    name: string;
+    hue: number;
+    size?: number;
+    dim?: boolean;
+    wrong?: boolean;
+    sigil?: PlayerClass;
+  } = $props();
+  // (On the QA desk, everyone can wear one, by their name.)
+  const worn = $derived(sigil ?? (sigilTrial.on ? classOf(name) : undefined));
+  const fit = $derived(worn && SIGIL_FITS[worn]);
+  const small = $derived(size < SMALL_INK);
   const initial = $derived(initialOf(name) || '?');
   // A's thin apex and wide base make it look low when its cap height is
   // centered, so lift it slightly.
@@ -70,6 +90,8 @@
   class:dim
   class:creator={crowned}
   class:turn-down={turn === 'down'}
+  class:worn
+  class:small
   style:--c={playerColor(hue)}
   style:--s="{size}px"
   style:--turn="{TURN_MS}ms"
@@ -78,7 +100,15 @@
   title={crowned ? CREATOR_TITLE : undefined}
   bind:this={el}
   use:arcaneAura={{ on: creator, dim: dim || !crowned || turn !== null }}
-  ><svg viewBox="0 0 100 100"
+  >{#if worn && fit}<span
+      class="sigil"
+      class:gilt={!small}
+      style:--sigil="url({sigilUrl(worn)})"
+      style:--fw={fit[0]}
+      style:--fh={fit[1]}
+      style:--fx={fit[2]}
+      style:--fy={fit[3]}><span></span></span
+    >{/if}<svg viewBox="0 0 100 100"
     ><text x="50" y="50" {dy} text-anchor="middle">{initial}</text></svg
   >{#if wrong}<span class="face-down" class:landing out:untilEdgeOn role="img" aria-label="{name} answered wrong" title="Answered wrong"
       ><VerdictSign icon="cross" token /></span
@@ -92,11 +122,10 @@
     height: var(--s);
     display: block;
     border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c), white 35%), var(--c) 60%, color-mix(in srgb, var(--c), black 45%));
-    box-shadow:
-      0 0 0 2px #0c0a08,
-      0 0 0 3px color-mix(in srgb, var(--c), black 30%),
-      0 4px 10px rgba(0, 0, 0, 0.5);
+    --face: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c), white 35%), var(--c) 60%, color-mix(in srgb, var(--c), black 45%));
+    --rim: 0 0 0 2px #0c0a08, 0 0 0 3px color-mix(in srgb, var(--c), black 30%), 0 4px 10px rgba(0, 0, 0, 0.5);
+    background: var(--face);
+    box-shadow: var(--rim);
     transition: filter 0.3s;
   }
   /* Her ring: a gold band set in ruby, with a faint ruby glow. It marks her
@@ -123,6 +152,63 @@
     font-weight: 900;
     font-size: 45px;
     fill: #140f0a;
+  }
+  /* A class's sigil, worn behind the letter: the token's face their colour
+     darkened, with a sheen lit from the top left, the sigil in their colour
+     on it, and their colour the token's own fine rim, a gold line inside it
+     (not below SMALL_INK). The letter pale, tinted with their colour and
+     outlined in it darkened, so the sigil breaks around it; below SMALL_INK
+     white, outlined in black. */
+  .worn {
+    position: relative;
+  }
+  .worn:not(.creator) {
+    box-shadow:
+      0 0 0 1px #0c0a08,
+      0 0 0 2.5px var(--c),
+      0 4px 10px rgba(0, 0, 0, 0.5);
+  }
+  .worn svg {
+    position: relative;
+  }
+  .sigil,
+  .sigil > span {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+  }
+  .sigil {
+    background-image:
+      radial-gradient(ellipse 70% 55% at 35% 22%, rgba(255, 244, 225, 0.16), transparent 70%),
+      radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--c), black 58%), color-mix(in srgb, var(--c), black 86%) 75%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 244, 225, 0.1),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.55);
+  }
+  .gilt {
+    box-shadow:
+      inset 0 0 0 1px rgba(239, 207, 134, 0.7),
+      inset 0 2px 0 rgba(255, 244, 225, 0.08),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.55);
+  }
+  /* Each glyph fitted to the token by its own bounds (SIGIL_FITS). */
+  .sigil > span {
+    background: color-mix(in srgb, var(--c), white 8%);
+    mask: var(--sigil) no-repeat;
+    mask-size: calc(var(--s) * var(--fw)) calc(var(--s) * var(--fh));
+    mask-position: calc(var(--s) * var(--fx)) calc(var(--s) * var(--fy));
+    opacity: 0.6;
+  }
+  .worn text {
+    fill: color-mix(in srgb, var(--c), white 72%);
+    stroke: color-mix(in srgb, var(--c), black 55%);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+    paint-order: stroke;
+  }
+  .worn.small text {
+    fill: #fff;
+    stroke: #000;
   }
   /* Not while the face-down side is on it (turning back up included): red
      stays red, whoever answered wrong. */

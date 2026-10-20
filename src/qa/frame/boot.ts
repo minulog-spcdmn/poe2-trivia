@@ -70,6 +70,8 @@ export async function boot(asked: URLSearchParams) {
   const scene = await sceneOf(key);
   const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
   const built = scene && buildScene(scene, given).built;
+  // Class sigils on everyone (tweaks.ts), before anything draws an avatar.
+  if (given.sigils === '1' || given.sigils === 'true') (await import('../../lib/sigilTrial.svelte.ts')).sigilTrial.on = true;
   // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
   const seats = scene && built ? seatsIn(scene, built) : [];
   const seat = seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];

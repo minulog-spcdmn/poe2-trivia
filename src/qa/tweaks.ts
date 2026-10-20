@@ -34,7 +34,7 @@ const SCRIPTS = ['桜子', 'Ярослава', 'Exile42', 'Ἀθηνᾶ', 'Zoë'
 const WATCHERS = ['Finn', 'Renly', 'Oswin', 'Zelina', 'Dannig', 'Hooded One', 'Tujen', 'Gwennen', 'Navali', 'Einhar', 'Niko', 'Helena', 'Zana', 'Kirac'];
 
 /** The keys these take in a scene's values: a scene's own controls keep clear of them. */
-export const TWEAK_KEYS = ['names', 'joining', 'watching', 'offline'];
+export const TWEAK_KEYS = ['names', 'sigils', 'joining', 'watching', 'offline'];
 
 /**
  * What can be set in the game `built` holds, each as the scene has it.
@@ -57,6 +57,8 @@ export function tweaksFor(built: Built, seen: string[] = []): Control[] {
         { value: 'creator', label: 'The creator first' },
       ],
     },
+    // Every player wears a class's sigil, by their name (lib/classSigils.ts; the frame sets it as it starts).
+    { kind: 'toggle', key: 'sigils', label: 'Class sigils on everyone', default: false },
   ];
   // Only an online room has spectators, and players who can drop out.
   if (s.hostId === null) return out;
