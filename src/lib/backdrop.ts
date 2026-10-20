@@ -840,7 +840,9 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
   // box, then every fill inside it, in document order. So a shadow only ever
   // lands on the backdrop, never on a neighbouring box: the same as while
   // the page scrolls, when CSS paints the fills over these shadows. (CSS on
-  // its own would lay a later box's shadow over the boxes before it.)
+  // its own would lay a later box's shadow over the boxes before it.) An
+  // element inside a fill drawn here has its shadows drawn in the second
+  // pass, in its turn, so they land on that fill as CSS would lay them.
   float pxLocal = uSize.x / uRes.x; // CSS px per device px
   for (int pass = 0; pass < 2; pass++)
   for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
@@ -860,12 +862,14 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     vec2 jx = (hx.xy - lp.x * ea.xy) / hp.z;
     vec2 jy = (hy.xy - lp.y * ea.xy) / hp.z;
     float k = sqrt(abs(jx.x * jy.y - jx.y * jy.x));
-    if (pass == 0) {
-      // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
-      // test below for all of them at once): skip those first.
-      vec2 far = max(-lp, lp - eb.xy);
-      if (max(far.x, far.y) > ea.w) continue;
-    } else if (fc.x < 0.5) continue;
+    // Inside a fill drawn here (fc.w), its shadows go over that fill, in the
+    // second pass with the fills; otherwise in the first, under them all.
+    bool over = fc.w > 0.5;
+    // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
+    // test below for all of them at once): skip those first.
+    vec2 far = max(-lp, lp - eb.xy);
+    bool shade = (pass == 1) == over && max(far.x, far.y) <= ea.w;
+    if (!shade && (pass == 0 || fc.x < 0.5)) continue;
     vec2 halfBox = eb.xy * 0.5;
     float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
@@ -876,8 +880,21 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * k);
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
 
-    if (pass == 1) {
-      if (outside >= 1.0) continue;
+    if (shade && outside > 0.0) {
+      for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
+        vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
+        vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
+        if (c.a <= 0.0) continue;
+        vec2 lower = g.xy - g.w;
+        vec2 upper = eb.xy + g.xy + g.w;
+        // Skip pixels beyond the Gaussian's reach.
+        vec2 far = max(lower - lp, lp - upper);
+        if (max(far.x, far.y) > 4.0 * g.z) continue;
+        float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
+        col = mix(col, c.rgb, c.a * a * outside);
+      }
+    }
+    if (pass == 1 && fc.x > 0.5 && outside < 1.0) {
       vec4 ca = uElD[i];
       vec4 cb = uElE[i];
       vec4 fill;
@@ -905,20 +922,6 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
         fill = vec4(s, 1.0);
       }
       col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
-      continue;
-    }
-    if (outside <= 0.0) continue;
-    for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
-      vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
-      vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
-      if (c.a <= 0.0) continue;
-      vec2 lower = g.xy - g.w;
-      vec2 upper = eb.xy + g.xy + g.w;
-      // Skip pixels beyond the Gaussian's reach.
-      vec2 far = max(lower - lp, lp - upper);
-      if (max(far.x, far.y) > 4.0 * g.z) continue;
-      float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
-      col = mix(col, c.rgb, c.a * a * outside);
     }
   }
 

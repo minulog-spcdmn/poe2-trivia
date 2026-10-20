@@ -493,6 +493,7 @@
               data-cursor="card:{i}"
               class="mode"
               class:on
+              use:backdropShadow={{ fill: on ? 'linear' : undefined }}
               class:off={offline(m.id)}
               role="radio"
               aria-checked={on}
@@ -1129,9 +1130,18 @@
     min-height: 52px;
     padding: 0.5rem 0.4rem;
     color: var(--gold);
-    background: rgba(0, 0, 0, 0.35);
+    /* The chosen one's gradient and glow are drawn by the WebGL backdrop when
+       it can (see lib/backdropShadow.ts), over the panel it draws too. */
+    --bs-fill-a: rgba(0, 0, 0, 0.35);
+    --bs-fill-b: rgba(0, 0, 0, 0.35);
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
     border: 1px solid var(--line);
     border-radius: 4px;
+    --bs1: 0px 18px;
+    box-shadow:
+      inset 0 1px 0 var(--top-light, transparent),
+      inset 0 0 18px var(--inner-glow, transparent),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     cursor: pointer;
     transition: all 0.2s;
   }
@@ -1149,12 +1159,12 @@
   .mode.on {
     color: var(--gold-hi);
     --glow: 0.34;
-    background: linear-gradient(180deg, rgba(122, 79, 29, 0.55), rgba(69, 42, 14, 0.55));
+    --bs-fill-a: rgba(122, 79, 29, 0.55);
+    --bs-fill-b: rgba(69, 42, 14, 0.55);
     border-color: var(--gold);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 230, 170, 0.2),
-      inset 0 0 18px rgba(255, 150, 60, 0.12),
-      0 0 18px rgba(201, 164, 92, 0.25);
+    --top-light: rgba(255, 230, 170, 0.2);
+    --inner-glow: rgba(255, 150, 60, 0.12);
+    --bs1-color: rgba(201, 164, 92, 0.25);
   }
   .mode.on b {
     text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);

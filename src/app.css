@@ -285,7 +285,10 @@ input {
   --bs-fill-a: rgba(34, 28, 21, 0.9);
   --bs-fill-b: rgba(16, 13, 10, 0.92);
   --bs-fill-angle: 180deg;
-  background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-angle), var(--bs-fill-a), var(--bs-fill-b)));
+  /* Painted by CSS (a dialog, or the backdrop handing it back), dithered over
+     the gradient (--dither, below): so dark a fill bands otherwise. */
+  background: var(--bs-fill-paint, var(--dither), linear-gradient(var(--bs-fill-angle), var(--bs-fill-a), var(--bs-fill-b)));
+  image-rendering: pixelated;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   --bs1: 18px 50px;
@@ -301,6 +304,12 @@ input {
   content: '';
   position: absolute;
   pointer-events: none;
+}
+/* (Only the dither is drawn pixelated: what's in the panel is drawn as usual.) */
+.panel > *,
+.panel::before,
+.panel::after {
+  image-rendering: auto;
 }
 /* Filigree on all four corners, one ornament each. */
 .panel::before {
@@ -640,7 +649,12 @@ h3,
    near-black at 0 to 10/255 opacity, a different one each pixel, stirs that
    layer's opacity so what shows through it rounds up or down at random and
    the bands dissolve. Put it last (under the gradients), and give the element
-   image-rendering: pixelated so it isn't smoothed away. Built, its url is
+   image-rendering: pixelated so it isn't smoothed away. That stirs a
+   gradient carried by opacity (a dark scrim); one carried by colour (a dark
+   panel's fill in CSS) it can't reach from under it, so there it goes first,
+   over the gradient, where it stirs the colour itself before it's rounded:
+   by a level or so in the dark, and more on anything bright, so only on dark
+   gradients. Built, its url is
    relative to the stylesheets in assets/, so it only resolves in a stylesheet:
    an inline style resolves it against the page, where it isn't (an element
    styled from JS imports the tile itself, as zonecard/fume.ts does). */
@@ -649,8 +663,8 @@ h3,
 }
 
 /* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).
-   An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset
-   and blur, then colour) and paints them through
+   An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset,
+   blur and, if any, spread, then colour) and paints them through
    `var(--bs-soft-paint, …)`; while the backdrop draws them it sets
    data-bs-on, which swaps them for a no-op. Registering the properties lets
    transitions and animations interpolate them like box-shadow itself. */

@@ -12,6 +12,7 @@
   import { fade } from 'svelte/transition';
   import { glyphLanded } from '../lib/fx/moments';
   import { zoomOf } from '../lib/stage';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
 
@@ -102,7 +103,7 @@
 <span class="glyphs" class:hidden class:selected bind:this={glyphs} oncopy={copyCode} ondragstart={(e) => e.preventDefault()} onpointerdown={press}>
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
-    <span class="glyph" use:landing={i} style:animation-delay="{delay + i * 80}ms" style:--i={i} data-ch={hidden ? '•' : ch}><span class="ch">{hidden ? '•' : ch}</span></span>
+    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} data-ch={hidden ? '•' : ch}><span class="ch">{hidden ? '•' : ch}</span></span>
   {/each}
 </span>
 {#if note}
@@ -140,25 +141,34 @@
     font-weight: 900;
     font-size: min(2.6rem, (100cqi - 5 * 0.5rem) / 6 * 0.74);
     color: var(--gold-hi);
-    background: linear-gradient(180deg, #221a11, #0d0a07);
+    /* Drawn by the WebGL backdrop when it can (see lib/backdropShadow.ts): so
+       dark a gradient bands in CSS. --bs1 is the glow while selected, --bs2
+       the drop shadow. */
+    --bs-fill-a: #221a11;
+    --bs-fill-b: #0d0a07;
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
     border: 1px solid var(--gold-lo);
     border-radius: 4px;
+    --bs1-color: transparent;
+    --bs1: 0px 16px;
+    --bs2: 6px 18px;
+    --bs2-color: rgba(0, 0, 0, 0.6);
     box-shadow:
-      inset 0 0 18px rgba(201, 164, 92, 0.12),
-      0 6px 18px rgba(0, 0, 0, 0.6);
+      inset 0 0 var(--inner-glow, 18px rgba(201, 164, 92, 0.12)),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     transition:
       border-color 0.15s,
-      background 0.15s,
-      box-shadow 0.15s;
+      --bs-fill-a 0.15s,
+      --bs-fill-b 0.15s,
+      --bs1-color 0.15s;
     animation: drop 0.6s var(--ease-back) both;
   }
   .selected .glyph {
     border-color: var(--gold);
-    background: linear-gradient(180deg, #3a2a15, #17100a);
-    box-shadow:
-      inset 0 0 22px rgba(241, 217, 155, 0.22),
-      0 0 16px rgba(201, 164, 92, 0.35),
-      0 6px 18px rgba(0, 0, 0, 0.6);
+    --bs-fill-a: #3a2a15;
+    --bs-fill-b: #17100a;
+    --inner-glow: 22px rgba(241, 217, 155, 0.22);
+    --bs1-color: rgba(201, 164, 92, 0.35);
   }
   /* The letter in the title's gold (GameTitle), painted once. A text-shadow
      would be drawn over gold clipped to the letter, so the glow is a filter. */
