@@ -19,8 +19,7 @@ const hash = (d: number) => createHash('sha256').update(JSON.stringify(descent(d
 const luma = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
 test('backdrops.json is whole and well formed, as the tool writes it', () => {
-  // As git stores it: a checkout made before .gitattributes still has CRLF on disk.
-  const text = readFileSync(FILE, 'utf8').replaceAll('\r\n', '\n');
+  const text = readFileSync(FILE, 'utf8');
   const data = JSON.parse(text) as Backdrops;
   assert.deepEqual(backdropsErrors(data, names, PROFILE_NAMES), []);
   assert.equal(formatBackdrops(data), text, 'formatted as formatBackdrops writes it (so a save changes only what changed)');
