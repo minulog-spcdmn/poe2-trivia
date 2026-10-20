@@ -485,7 +485,7 @@
     {/if}
     <span class="buttons" data-cursor="actions">
       <button class="btn ghost back" data-cursor="back" disabled={leaving} onclick={() => again(false)}>Back to lobby</button>
-      <button class="btn primary big again" data-cursor="again" disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
+      <button class="btn primary big again" data-cursor="again" use:backdropShadow disabled={leaving} onclick={() => again(true)}>{run ? 'Delve again' : 'Play again'}</button>
     </span>
   {:else if session.spectating}
     <p class="note spect" data-cursor="joining">
@@ -1344,10 +1344,15 @@
     color: var(--gold-hi);
   }
   /* The winner's row in gold; yours outlined in your orange. */
+  /* Dithered over its gradient (app.css, --dither), or so faint a gold bands. */
   .ranking li.first {
     border-color: #c9a45c;
-    background: linear-gradient(90deg, rgba(201, 164, 92, 0.2), rgba(90, 64, 30, 0.12) 60%, rgba(12, 10, 8, 0.6));
+    background: var(--dither), linear-gradient(90deg, rgba(201, 164, 92, 0.2), rgba(90, 64, 30, 0.12) 60%, rgba(12, 10, 8, 0.6));
+    image-rendering: pixelated;
     box-shadow: 0 0 14px rgba(201, 164, 92, 0.18);
+  }
+  .ranking li.first > * {
+    image-rendering: auto;
   }
   .ranking li.you:not(.first),
   .ranking .row.you {

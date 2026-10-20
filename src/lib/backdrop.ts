@@ -782,7 +782,7 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
   }
 
-${ui !== 'none' ? DROP_MAIN : ''}${ui === 'drops' ? TO_UI_PASS : (ui === 'all' ? BOX_MAIN(MAX_ELEMENTS) : '') + FINISH}`;
+${ui !== 'none' ? DROPS(false) : ''}${ui === 'drops' ? TO_UI_PASS : (ui === 'all' ? BOX_MAIN(MAX_ELEMENTS) + DROPS(true) : '') + FINISH}`;
 
 /** The end of the main pass, with the UI pass (uiFrag) to finish it: the scene into its target, as it is. */
 const TO_UI_PASS = `  fragColor = vec4(col, 1.0);
@@ -882,13 +882,15 @@ float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float co
   return value * (0.39894228 / sigma);
 }
 `;
-const DROP_MAIN = `  // UI drop shadows. The element paints over its own shadow, so where it is
-  // opaque the shadow is hidden anyway; drawing it only where the content is
-  // transparent keeps a see-through element (like the faint showcase items)
-  // from darkening what shows through it.
+/** The UI's drop shadows: over the scene, or (`inFill`) those inside a fill drawn here, after the fills. */
+const DROPS = (inFill: boolean) => `  // UI drop shadows, those inside a fill drawn here (uMkE's y) or not. The
+  // element paints over its own shadow, so where it is opaque the shadow is
+  // hidden anyway; drawing it only where the content is transparent keeps a
+  // see-through element (like the faint showcase items) from darkening what
+  // shows through it.
   for (int i = 0; i < ${MAX_MASKS}; i++) {
     vec4 mc = uMkC[i];
-    if (mc.z <= 0.0) continue;
+    if (mc.z <= 0.0 || (uMkE[i].y > 0.5) != ${inFill}) continue;
     vec4 ma = uMkA[i];
     vec4 mb = uMkB[i];
     vec2 r = p - ma.xy;
@@ -917,7 +919,9 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
   // box, then every fill inside it, in document order. So a shadow only ever
   // lands on the backdrop, never on a neighbouring box: the same as while
   // the page scrolls, when CSS paints the fills over these shadows. (CSS on
-  // its own would lay a later box's shadow over the boxes before it.)
+  // its own would lay a later box's shadow over the boxes before it.) An
+  // element inside a fill drawn here has its shadows drawn in the second
+  // pass, in its turn, so they land on that fill as CSS would lay them.
   float pxLocal = uSize.x / uRes.x; // CSS px per device px
   for (int pass = 0; pass < 2; pass++)
   for (int i = 0; i < ${MAX_ELEMENTS}; i++) {
@@ -937,12 +941,14 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
     vec2 jx = (hx.xy - lp.x * ea.xy) / hp.z;
     vec2 jy = (hy.xy - lp.y * ea.xy) / hp.z;
     float k = sqrt(abs(jx.x * jy.y - jx.y * jy.x));
-    if (pass == 0) {
-      // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
-      // test below for all of them at once): skip those first.
-      vec2 far = max(-lp, lp - eb.xy);
-      if (max(far.x, far.y) > ea.w) continue;
-    } else if (fc.x < 0.5) continue;
+    // Inside a fill drawn here (fc.w), its shadows go over that fill, in the
+    // second pass with the fills; otherwise in the first, under them all.
+    bool over = fc.w > 0.5;
+    // Most pixels are beyond every shadow's reach (ea.w, the per-shadow
+    // test below for all of them at once): skip those first.
+    vec2 far = max(-lp, lp - eb.xy);
+    bool shade = (pass == 1) == over && max(far.x, far.y) <= ea.w;
+    if (!shade && (pass == 0 || fc.x < 0.5)) continue;
     vec2 halfBox = eb.xy * 0.5;
     float rr = min(eb.z, min(halfBox.x, halfBox.y));
     vec2 qd = abs(lp - eb.xy * 0.5) - halfBox + rr;
@@ -952,9 +958,26 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
     // ramp as wide as a Gaussian edge's 10-90% rise).
     float edge = max(px, 2.56 * ${DIALOG_BLUR.toFixed(2)} * uDialog * k);
     float outside = clamp(sdf / edge + 0.5, 0.0, 1.0);
+    // A shadow reaches one pixel further in, under the box's own edge: CSS
+    // covers that pixel by its coverage, so weighing the shadow by it too
+    // would count the edge twice and leave a dark seam where the glow starts.
+    float under = clamp((sdf + px) / edge + 0.5, 0.0, 1.0);
 
-    if (pass == 1) {
-      if (outside >= 1.0) continue;
+    if (shade && under > 0.0) {
+      for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
+        vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
+        vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
+        if (c.a <= 0.0) continue;
+        vec2 lower = g.xy - g.w;
+        vec2 upper = eb.xy + g.xy + g.w;
+        // Skip pixels beyond the Gaussian's reach.
+        vec2 far = max(lower - lp, lp - upper);
+        if (max(far.x, far.y) > 4.0 * g.z) continue;
+        float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
+        col = mix(col, c.rgb, c.a * a * under);
+      }
+    }
+    if (pass == 1 && fc.x > 0.5 && outside < 1.0) {
       vec4 ca = uElD[i];
       vec4 cb = uElE[i];
       vec4 fill;
@@ -982,29 +1005,15 @@ const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: ever
         fill = vec4(s, 1.0);
       }
       col = mix(col, fill.rgb, fill.a * fc.z * (1.0 - outside));
-      continue;
-    }
-    if (outside <= 0.0) continue;
-    for (int j = 0; j < ${SHADOWS_PER_ELEMENT}; j++) {
-      vec4 g = uShGeo[i * ${SHADOWS_PER_ELEMENT} + j];
-      vec4 c = uShCol[i * ${SHADOWS_PER_ELEMENT} + j];
-      if (c.a <= 0.0) continue;
-      vec2 lower = g.xy - g.w;
-      vec2 upper = eb.xy + g.xy + g.w;
-      // Skip pixels beyond the Gaussian's reach.
-      vec2 far = max(lower - lp, lp - upper);
-      if (max(far.x, far.y) > 4.0 * g.z) continue;
-      float a = roundedBoxShadow(lower, upper, lp, g.z, max(eb.z + g.w, 0.0));
-      col = mix(col, c.rgb, c.a * a * outside);
     }
   }
 
 `;
 
 /**
- * The UI pass: the UI's box shadows and fills (see BOX_MAIN), drawn over the
- * scene as the main pass left it in its target (frag's 'drops'), then
- * dimmed and dithered. Their code takes the shader compiler longer than the
+ * The UI pass: the UI's box shadows and fills (see BOX_MAIN), and the drop
+ * shadows inside those fills, drawn over the scene as the main pass left it
+ * in its target (frag's 'drops'), then dimmed and dithered. Their code takes the shader compiler longer than the
  * rest of the main pass, so as a program of its own it's built alongside.
  */
 const uiFrag = (MAX_ELEMENTS: number) => `#version 300 es
@@ -1014,7 +1023,7 @@ out vec4 fragColor;
 uniform vec2 uRes;  // drawing buffer size, device pixels
 uniform vec2 uSize; // canvas size, CSS pixels
 uniform sampler2D uBackdrop; // the main pass's colour, a texel per device pixel
-${BOX_UNIFORMS(MAX_ELEMENTS)}${BOX_SHADOW_UNIFORMS(MAX_ELEMENTS)}${DIALOG_UNIFORM}
+${BOX_UNIFORMS(MAX_ELEMENTS)}${BOX_SHADOW_UNIFORMS(MAX_ELEMENTS)}${DROP_UNIFORMS}${DIALOG_UNIFORM}
 ${RGB}${BOX_FUNCTIONS}
 ${HASH}
 void main() {
@@ -1022,7 +1031,7 @@ void main() {
   vec2 p = dev / uRes * uSize; // CSS px, top-left origin
   vec3 col = texelFetch(uBackdrop, ivec2(gl_FragCoord.xy), 0).rgb;
 
-${BOX_MAIN(MAX_ELEMENTS)}${FINISH}`;
+${BOX_MAIN(MAX_ELEMENTS)}${DROPS(true)}${FINISH}`;
 
 // CSS `ease-in-out`: cubic-bezier(0.42, 0, 0.58, 1).
 function easeInOut(x: number): number {
@@ -1456,14 +1465,20 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const U = (name: string) => g.getUniformLocation(prog, name);
     g.useProgram(prog);
     g.uniform1i(U('uBackdrop'), 4);
+    // The drop-shadow atlases, on the main pass's units (see variant).
+    g.uniform1i(U('uSharp'), 0);
+    g.uniform1i(U('uBlur'), 1);
     const elLoc = { x: U('uElX'), y: U('uElY'), a: U('uElA'), b: U('uElB'), c: U('uElC'), d: U('uElD'), e: U('uElE'), geo: U('uShGeo'), col: U('uShCol') };
+    const mkLoc = Object.fromEntries(['A', 'B', 'C', 'D', 'E', 'Off', 'Col'].map((k) => [k.toLowerCase(), U('uMk' + k)]));
     return {
       prog,
       uRes: U('uRes'),
       uSize: U('uSize'),
       uDialog: U('uDialog'),
+      uSharpSize: U('uSharpSize'),
+      uBlurSize: U('uBlurSize'),
       uElCount: U('uElCount'),
-      sent: sendList(Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr }))),
+      sent: sendList([...Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr })), ...Object.entries(mk).map(([k, arr]) => ({ loc: mkLoc[k], arr }))]),
       sentCount: -1,
     };
   }
@@ -1769,6 +1784,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(over.uRes, canvas.width, canvas.height);
     gl!.uniform2f(over.uSize, cssW, cssH);
     gl!.uniform1f(over.uDialog, dialog);
+    gl!.uniform2f(over.uSharpSize, atlasSize[0], atlasSize[1]);
+    gl!.uniform2f(over.uBlurSize, atlasSize[2], atlasSize[3]);
     send(over);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
   }

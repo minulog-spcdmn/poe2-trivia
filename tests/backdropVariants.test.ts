@@ -81,12 +81,16 @@ for (const n of [4, 16]) {
     assert.doesNotMatch(code('split'), BOXES);
     assert.match(code('split'), DROPS);
     assert.match(code('ui'), BOXES);
-    assert.doesNotMatch(code('ui'), DROPS);
-    assert.ok(lean.ui.length < lean.splitAll.length * 0.5, 'the UI pass is the small part');
+    // (Its drop shadows are those inside a fill it draws, laid over that fill.)
+    assert.match(code('ui'), DROPS);
+    // (Little more than half with the drop shadows inside fills: their loop is
+    // short beside the boxes', which are what takes the compiler long.)
+    assert.ok(lean.ui.length < lean.splitAll.length * 0.55, 'the UI pass is the small part');
     for (const k of ['bareSplit', 'bareWhole'] as const) for (const re of [BOXES, DROPS]) assert.doesNotMatch(code(k), re, k);
     // The main pass's lines are the whole one's, in order, but for its end
     // (the colour as it is, into its target); what it leaves out is the
-    // UI's boxes, a dialog's dimming and the dither, which are the UI pass's.
+    // UI's boxes, the drop shadows inside their fills, a dialog's dimming and
+    // the dither, which are the UI pass's.
     const mainLines = lean.split.split('\n');
     const end = mainLines.findIndex((l) => l === '  fragColor = vec4(col, 1.0);');
     assert.ok(end > 0, 'the main pass ends with the colour as it is');
@@ -98,7 +102,7 @@ for (const n of [4, 16]) {
     }
     assert.equal(j, end, `split: line ${j + 1} is not the whole one's: ${JSON.stringify(mainLines[j])}`);
     const leftCode = left.join('\n').replace(/\/\/[^\n]*/g, '');
-    for (const part of ['uLight', 'uMood', 'uEmber', 'uVignette', 'smoothLight', 'uMk']) assert.ok(!leftCode.includes(part), `split leaves out ${part}`);
+    for (const part of ['uLight', 'uMood', 'uEmber', 'uVignette', 'smoothLight']) assert.ok(!leftCode.includes(part), `split leaves out ${part}`);
     // Each line it leaves out is the UI pass's, word for word.
     const uiLines = new Set(lean.ui.split('\n'));
     for (const line of left) if (line.trim() && !line.startsWith('uniform') && !/^\s*}?\s*$/.test(line)) assert.ok(uiLines.has(line) || /^#version|^precision|^out /.test(line), `not the UI pass's: ${JSON.stringify(line)}`);

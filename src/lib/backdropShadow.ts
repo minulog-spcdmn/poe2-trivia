@@ -7,7 +7,8 @@
 // Gaussian falloff. Tag such an element with `use:backdropShadow`.
 //
 // The element declares up to two soft shadows in the registered properties
-// --bs1 / --bs2 (y offset and blur) and --bs1-color / --bs2-color, and paints
+// --bs1 / --bs2 (y offset, blur and, if any, spread) and --bs1-color /
+// --bs2-color, and paints
 // them through `var(--bs-soft-paint, …)` (see app.css). Being registered, they
 // transition and animate like box-shadow would, and every frame the renderer
 // reads their current computed values. While it draws an element it sets
@@ -30,6 +31,12 @@
 // or the camera shake (lib/fx/core.ts) moves the element or an ancestor, or
 // when an ancestor paints a background of its own (which would cover the
 // backdrop).
+//
+// What is under a tagged element counts for its shadows too. Inside a fill
+// the backdrop draws (a button in the lobby's settings panel), its shadows
+// are drawn over that fill, so such an element can be tagged as well; under
+// a background CSS paints (that panel's fill handed back while the page
+// scrolls), it goes back to CSS.
 
 import { shaking } from './fx/core';
 import { cornerPx } from './corner';
@@ -68,7 +75,7 @@ export function backdropShadow(node: HTMLElement, opts?: BackdropOptions) {
 export const SHADOWS_PER_ELEMENT = 2;
 const FILL_KIND: Record<Fill, number> = { linear: 1, stage: 2 };
 
-type Shadow = { color: number[]; oy: number; blur: number };
+type Shadow = { color: number[]; oy: number; blur: number; spread: number };
 
 /** Parses a computed colour (`rgb()`, `rgba()` or `color(srgb …)`) to 0-1 RGBA. */
 function parseColor(css: string): number[] | null {
@@ -79,12 +86,12 @@ function parseColor(css: string): number[] | null {
   return null;
 }
 
-/** Reads soft shadow `n` from the element's --bsN / --bsN-color. */
+/** Reads soft shadow `n` from the element's --bsN (y offset, blur and, if given, spread) / --bsN-color. */
 function readShadow(cs: CSSStyleDeclaration, n: number): Shadow | null {
   const color = parseColor(cs.getPropertyValue(`--bs${n}-color`).trim());
   if (!color || color[3] <= 0) return null;
-  const [oy = 0, blur = 0] = (cs.getPropertyValue(`--bs${n}`).match(/-?[\d.]+(?:e-?\d+)?px/g) ?? []).map(parseFloat);
-  return blur > 0 ? { color, oy, blur } : null;
+  const [oy = 0, blur = 0, spread = 0] = (cs.getPropertyValue(`--bs${n}`).match(/-?[\d.]+(?:e-?\d+)?px/g) ?? []).map(parseFloat);
+  return blur > 0 ? { color, oy, blur, spread } : null;
 }
 
 function release(node: HTMLElement) {
@@ -147,10 +154,10 @@ function keyframesMove(effect: KeyframeEffect): boolean {
  * asked at once, with nothing written in between: an ask between the
  * measuring's writes (data-bs-fill) brought the styles up to date again
  * each time, which in a reveal, with its many animations, took tens of ms.
+ * `asked` and `moved` carry over between calls in one frame, so each
+ * element is asked once however many fills share it.
  */
-function movedAmong(nodes: Iterable<Element>): Set<Element> {
-  const asked = new Set<Element>();
-  const moved = new Set<Element>();
+function movedAmong(nodes: Iterable<Element>, asked = new Set<Element>(), moved = new Set<Element>()): Set<Element> {
   for (const node of nodes)
     for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
       asked.add(el);
@@ -169,6 +176,20 @@ function movedAmong(nodes: Iterable<Element>): Set<Element> {
 /** An element as the frame meter names it: its tag and first class. */
 function nameOf(el: Element) {
   return `${el.tagName.toLowerCase()}${el.classList[0] ? '.' + el.classList[0] : ''}`;
+}
+
+/**
+ * Whether an element paints a background of its own (CSS would lay it over
+ * anything the backdrop draws under it), each element's answer kept: for one
+ * frame's measuring, where elements share most of their ancestors.
+ */
+export function backgroundPainter(): (el: Element) => boolean {
+  const paints = new Map<Element, boolean>();
+  return (el) => {
+    let p = paints.get(el);
+    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
+    return p;
+  };
 }
 
 function paintsBackground(cs: CSSStyleDeclaration) {
@@ -248,6 +269,21 @@ function screenToLocal(node: HTMLElement, cs: CSSStyleDeclaration, w: number, h:
   return { toLocal, scale };
 }
 
+/** One tagged element as measured this frame, before the budget is applied. */
+type Measured = {
+  node: HTMLElement;
+  soft: Shadow[];
+  fill: { kind: number; angle: number; a: number[]; b: number[] } | null;
+  toLocal: number[];
+  shadowReach: number;
+  w: number;
+  h: number;
+  radius: number;
+  opacity: number;
+  /** The tagged ancestor whose fill the backdrop draws under this one, if any: its shadows go over that fill. */
+  over: HTMLElement | null;
+};
+
 /**
  * Measures the tagged elements and fills the uniform arrays, `max` elements
  * at most:
@@ -256,13 +292,19 @@ function screenToLocal(node: HTMLElement, cs: CSSStyleDeclaration, w: number, h:
  *   plain offset and scale unless the element is turned). elA.w: how far
  *   beyond the border box its shadows draw, in element px (-1 with no shadow)
  * - elB: (width, height, corner radius, in use) in the element's own px
- * - elC: (fill kind, angle in radians, opacity, 0); kind 0 = no fill
+ * - elC: (fill kind, angle in radians, opacity, over a fill); kind 0 = no fill
  * - elD, elE: fill colours (r, g, b, a)
  * - geo: (offset x, offset y, sigma, spread) per shadow, element px
  * - col: (r, g, b, alpha) per shadow, alpha 0 for unused slots
  * Elements go in document order, so later fills paint over earlier ones as in
- * CSS; every shadow goes under every fill (see the shader). Shadows go in
- * paint order (--bs2 under --bs1, as listed in CSS).
+ * CSS. Shadows go under every fill (see the shader), except those of an
+ * element inside a fill the backdrop draws (the lobby's settings panel and
+ * what's in it): those go over that fill, in document order, as CSS has them.
+ * An element under an ancestor CSS paints a background for goes to CSS, or
+ * that background would hide what the backdrop drew. Shadows go in paint
+ * order (--bs2 under --bs1, as listed in CSS). The budget goes to what is
+ * drawn: fills first, then document order; an element with nothing to draw
+ * now (no shadow at rest, off screen) takes none of it.
  */
 export function measureShadows(
   max: number,
@@ -284,48 +326,45 @@ export function measureShadows(
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
   const shook = shaking();
-  // What moves, found once a frame for all the fills, and only if one asks:
-  // `node` or the ancestor of it that moves, if any.
-  let moved: Set<Element> | null = null;
+  // What moves: `node` or the ancestor of it that moves, if any. Asked
+  // only for the fills that get this far (on screen, flat), each element once.
+  const asked = new Set<Element>();
+  const moved = new Set<Element>();
   const movingOf = (node: HTMLElement): Element | null => {
-    moved ??= movedAmong(withFill.filter((n) => chosen.has(n)));
-    if (!moved.size) return null;
+    movedAmong([node], asked, moved);
     for (let el: Element | null = node; el; el = el.parentElement) if (moved.has(el)) return el;
     return null;
   };
   /** How the frame meter names what moves `node` (`el`, it or an ancestor). */
   const movingName = (node: Element, el: Element) => nameOf(el) + (el === node ? '' : ` (round ${nameOf(node)})`);
-  // Ancestors' backgrounds, read once a frame: fills share most of their
-  // ancestors. (An ancestor comes first in document order, so its own
-  // data-bs-fill is settled before any descendant reads it.)
-  const paints = new Map<Element, boolean>();
-  const paintsAt = (el: Element) => {
-    let p = paints.get(el);
-    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
-    return p;
-  };
+  // Ancestors' backgrounds, read once a frame: elements share most of their
+  // ancestors. (Read before this frame's data-bs-fill is written, so a
+  // tagged ancestor's own fill is judged by `filled` instead, below.)
+  const paintsAt = backgroundPainter();
   // Opacities and transforms likewise (nothing below changes one).
   const opacities = new Map<Element, number>();
   const linears = new Map<Element, Lin | null>();
 
-  // Fills first when there are more elements than room, then document order.
   const nodes = [...shadowed.keys()].filter((n) => n.isConnected && !shadowed.get(n)?.off);
   nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
-  const chosen = new Set([...withFill, ...nodes.filter((n) => !shadowed.get(n)?.fill)].slice(0, max));
-  for (const n of shadowed.keys())
-    if (!chosen.has(n)) {
-      if (n.hasAttribute('data-bs-on') || n.hasAttribute('data-bs-fill')) frameEvent(`backdrop: ${nameOf(n)} to CSS (more than the ${max} it can draw)`);
-      release(n);
-    }
+  const fillNodes = new Set<Element>(withFill);
+  for (const n of shadowed.keys()) if (!n.isConnected || shadowed.get(n)?.off) release(n);
 
+  // Every element measured, in document order: what it would draw. (What
+  // goes back to CSS is released after, with nothing written meanwhile.)
+  const handBack: HTMLElement[] = [];
   const filled = new Set<Element>();
-  let n = 0;
+  const measured: Measured[] = [];
   for (const node of nodes) {
-    if (!chosen.has(node)) continue;
     const cs = getComputedStyle(node);
     const soft = [readShadow(cs, 2), readShadow(cs, 1)].filter((x): x is Shadow => !!x);
     const fillKind = shadowed.get(node)?.fill;
+    // Nothing to draw now (a shadow transitioned away): back to CSS, no budget.
+    if (!soft.length && !fillKind) {
+      handBack.push(node);
+      continue;
+    }
 
     const w = node.offsetWidth;
     const h = node.offsetHeight;
@@ -347,60 +386,93 @@ export function measureShadows(
 
     // Skip elements whose shadows (or fill) can't reach the viewport.
     // (The shader skips a shadow 4 sigma beyond its offset box.)
-    const shadowReach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + 2 * s.blur), -1);
+    const shadowReach = soft.reduce((m, s) => Math.max(m, Math.abs(s.oy) + s.spread + 2 * s.blur), -1);
     const reach = Math.max(0, shadowReach) * scale;
     ok &&= rect.right + reach > 0 && rect.left - reach < viewW && rect.bottom + reach > 0 && rect.top - reach < viewH;
 
     const opacity = ok ? opacityOf(node, opacities) : 0;
     ok &&= opacity > 0;
 
-    let fill: { kind: number; angle: number; a: number[]; b: number[] } | null = null;
+    // What lies under it: the backdrop, or a fill it draws (the nearest
+    // tagged ancestor with one), or a background CSS paints, which would
+    // cover anything drawn here.
+    let over: HTMLElement | null = null;
+    let clear = true;
+    for (let el = node.parentElement; ok && el && el !== document.body; el = el.parentElement) {
+      if (filled.has(el)) {
+        over = el as HTMLElement;
+        break;
+      }
+      // (A tagged one whose fill goes to CSS this frame paints, whatever its
+      // attribute, set only below, still says.)
+      if (fillNodes.has(el) || paintsAt(el)) clear = false;
+    }
+
+    let fill: Measured['fill'] = null;
     // Why a fill goes back to CSS now (named in the beta's frame meter).
     const mover = ok && fillKind && flat && !keepFills && !scrolling && !shook ? movingOf(node) : null;
     const toCss = !ok || !fillKind ? '' : !flat ? 'turned' : keepFills ? '' : scrolling ? 'the page scrolling' : shook ? 'the shake' : mover ? 'moving' : '';
-    if (ok && fillKind && !toCss) {
+    if (ok && fillKind && !toCss && clear) {
       const a = parseColor(cs.getPropertyValue('--bs-fill-a').trim());
       const b = parseColor(cs.getPropertyValue('--bs-fill-b').trim());
       const angle = parseFloat(cs.getPropertyValue('--bs-fill-angle')) || 180;
-      // Every ancestor must let the backdrop show through (or be drawn by it).
-      let clear = !!a && !!b;
-      for (let el = node.parentElement; clear && el && el !== document.body; el = el.parentElement) {
-        if (!filled.has(el) && paintsAt(el)) clear = false;
-      }
-      if (clear) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a: a!, b: b! };
+      if (a && b) fill = { kind: FILL_KIND[fillKind], angle: (angle * Math.PI) / 180, a, b };
     }
     const had = node.hasAttribute('data-bs-fill');
     // (Named only as it's handed over: no text made each frame while something moves.)
-    if (had !== !!fill) frameEvent(`backdrop: ${nameOf(node)}'s fill ${fill ? 'back from CSS' : `to CSS (${mover ? `${movingName(node, mover)} moving` : toCss || 'covered or gone'})`}`);
+    if (had !== !!fill && fillKind) frameEvent(`backdrop: ${nameOf(node)}'s fill ${fill ? 'back from CSS' : `to CSS (${mover ? `${movingName(node, mover)} moving` : toCss || (ok && !clear ? 'covered' : 'gone')})`}`);
+    // Its descendants are drawn over it.
+    if (fill) filled.add(node);
 
-    if (!ok || (!soft.length && !fill)) {
-      if (!ok && node.hasAttribute('data-bs-on')) frameEvent(`backdrop: ${nameOf(node)}'s shadows to CSS (${opacity > 0 ? 'off screen or unmeasurable' : 'hidden'})`);
+    if (!ok || !clear || (!soft.length && !fill)) {
+      if (node.hasAttribute('data-bs-on')) frameEvent(`backdrop: ${nameOf(node)}'s shadows to CSS (${!ok ? (opacity > 0 ? 'off screen or unmeasurable' : 'hidden') : 'covered'})`);
+      handBack.push(node);
+      continue;
+    }
+    measured.push({ node, soft, fill, toLocal, shadowReach, w, h, radius: cornerPx(cs.borderTopLeftRadius, w, h), opacity, over });
+  }
+
+  for (const node of handBack) release(node);
+
+  // The budget: fills first, then document order. An element over a fill
+  // that didn't make it goes to CSS with it.
+  const byPriority = [...measured.filter((m) => m.fill), ...measured.filter((m) => !m.fill)];
+  // (A fill comes before what's over it, so that is known as each is taken.)
+  const chosen = new Set<Element>();
+  for (const m of byPriority) {
+    if (chosen.size >= max) break;
+    if (!m.over || chosen.has(m.over)) chosen.add(m.node);
+  }
+
+  let n = 0;
+  for (const m of measured) {
+    const { node } = m;
+    if (!chosen.has(node)) {
+      if (node.hasAttribute('data-bs-on') || node.hasAttribute('data-bs-fill')) frameEvent(`backdrop: ${nameOf(node)} to CSS (more than the ${max} it can draw)`);
       release(node);
       continue;
     }
-    if (soft.length) {
+    if (m.soft.length) {
       if (!node.hasAttribute('data-bs-on')) node.setAttribute('data-bs-on', '');
     } else node.removeAttribute('data-bs-on');
-    if (fill) {
+    if (m.fill) {
       if (!node.hasAttribute('data-bs-fill')) node.setAttribute('data-bs-fill', '');
-      filled.add(node);
     } else node.removeAttribute('data-bs-fill');
 
-    const radius = cornerPx(cs.borderTopLeftRadius, w, h);
-    elX.set(toLocal.slice(0, 3), n * 4);
-    elY.set(toLocal.slice(3, 6), n * 4);
-    elA.set([...toLocal.slice(6, 9), shadowReach], n * 4);
-    elB.set([w, h, radius, 1], n * 4);
-    if (fill) {
-      elC.set([fill.kind, fill.angle, opacity, 0], n * 4);
-      elD.set(fill.a, n * 4);
-      elE.set(fill.b, n * 4);
+    elX.set(m.toLocal.slice(0, 3), n * 4);
+    elY.set(m.toLocal.slice(3, 6), n * 4);
+    elA.set([...m.toLocal.slice(6, 9), m.shadowReach], n * 4);
+    elB.set([m.w, m.h, m.radius, 1], n * 4);
+    elC.set([m.fill?.kind ?? 0, m.fill?.angle ?? 0, m.opacity, m.over ? 1 : 0], n * 4);
+    if (m.fill) {
+      elD.set(m.fill.a, n * 4);
+      elE.set(m.fill.b, n * 4);
     }
-    soft.forEach((s, j) => {
+    m.soft.forEach((s, j) => {
       const k = (n * SHADOWS_PER_ELEMENT + j) * 4;
       // CSS blur radius is twice the Gaussian's standard deviation.
-      geo.set([0, s.oy, s.blur / 2, 0], k);
-      col.set([s.color[0], s.color[1], s.color[2], s.color[3] * opacity], k);
+      geo.set([0, s.oy, s.blur / 2, s.spread], k);
+      col.set([s.color[0], s.color[1], s.color[2], s.color[3] * m.opacity], k);
     });
     n++;
   }

@@ -18,6 +18,7 @@
   import WatchEye from './WatchEye.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { kickConfirm } from '../lib/kick';
   import { creatorArrived, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
@@ -54,6 +55,12 @@
   const inviteLink = $derived(inviteUrl(session.code));
   /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
   const tall = new MediaQuery('(min-height: 860px)');
+  /** The mode cards ease from one choice to the next (their mode-on and mode-off), but not as the lobby opens: only from a second in. */
+  let modesLive = $state(false);
+  $effect(() => {
+    const t = setTimeout(() => (modesLive = true), 1000);
+    return () => clearTimeout(t);
+  });
   // Measure the category cards' emblems and the items behind them
   // (lib/iconFit) while the party gathers, so the first deal doesn't have to.
   onMount(() => {
@@ -266,7 +273,7 @@
       {/if}
     {/if}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
-    <button class="btn big primary" data-cursor="begin" disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
+    <button class="btn big primary" data-cursor="begin" use:backdropShadow disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
     <!-- The host by name, as the end screen has it; "the host" only while no name is known. -->
     <p class="muted waiting">
@@ -486,13 +493,14 @@
       <header><h2>Game</h2></header>
 
       <div class="setting">
-        <div class="modes" data-cursor="modes" class:tall={tall.current} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+        <div class="modes" data-cursor="modes" class:tall={tall.current} class:live={modesLive} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
           {#each MODES as m, i (m.id)}
             {@const on = s.settings.mode === m.id}
             <button
               data-cursor="card:{i}"
               class="mode"
               class:on
+              use:backdropShadow={{ fill: on ? 'linear' : undefined }}
               class:off={offline(m.id)}
               role="radio"
               aria-checked={on}
@@ -505,7 +513,7 @@
               onclick={(e) => isHost && pickMode(m.id, e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
-              <b>{m.name}</b>
+              <b use:backdropDropShadow>{m.name}</b>
               {#if m.isNew}<span class="new" aria-hidden="true">New</span>{/if}
             </button>
           {/each}
@@ -1129,11 +1137,49 @@
     min-height: 52px;
     padding: 0.5rem 0.4rem;
     color: var(--gold);
-    background: rgba(0, 0, 0, 0.35);
+    /* The chosen one's gradient and glow are drawn by the WebGL backdrop when
+       it can (see lib/backdropShadow.ts), over the panel it draws too. */
+    --bs-fill-a: rgba(0, 0, 0, 0.35);
+    --bs-fill-b: rgba(0, 0, 0, 0.35);
+    background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
     border: 1px solid var(--line);
     border-radius: 4px;
+    /* Its glows grow from nothing (no blur, no colour) as it's chosen, as a
+       box-shadow from none would. */
+    --bs1: 0px 0px;
+    box-shadow:
+      inset 0 1px 0 var(--top-light, transparent),
+      inset 0 0 var(--mode-glow-blur, 0px) var(--mode-glow-in, transparent),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     cursor: pointer;
-    transition: all 0.2s;
+    /* (`all` leaves out custom properties.) */
+    transition:
+      all 0.2s,
+      --bs1 0.2s,
+      --bs1-color 0.2s;
+    /* Its fill eases too (mode-on, mode-off), once the lobby is open (.live). */
+    animation: mode-off 0s ease;
+  }
+  .modes.live .mode {
+    animation-duration: 0.2s;
+  }
+  /* Chosen, the gold is there at once over the dark it had, which fades from
+     under it: as one colour, the gold over that dark, easing to the gold.
+     (.mode.on's fill, alpha 0.55, over .mode's black at 0.35: alpha
+     0.55 + 0.35 x 0.45 = 0.7075, colour the gold's x 0.55 / 0.7075. Retune
+     those and these follow.) */
+  @keyframes mode-on {
+    from {
+      --bs-fill-a: rgba(94.84, 61.41, 22.54, 0.7075);
+      --bs-fill-b: rgba(53.64, 32.65, 10.88, 0.7075);
+    }
+  }
+  /* Left, the gold is gone at once and the dark fades in. */
+  @keyframes mode-off {
+    from {
+      --bs-fill-a: transparent;
+      --bs-fill-b: transparent;
+    }
   }
   .mode b {
     font-family: var(--font-display);
@@ -1149,15 +1195,21 @@
   .mode.on {
     color: var(--gold-hi);
     --glow: 0.34;
-    background: linear-gradient(180deg, rgba(122, 79, 29, 0.55), rgba(69, 42, 14, 0.55));
+    --bs-fill-a: rgba(122, 79, 29, 0.55);
+    --bs-fill-b: rgba(69, 42, 14, 0.55);
     border-color: var(--gold);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 230, 170, 0.2),
-      inset 0 0 18px rgba(255, 150, 60, 0.12),
-      0 0 18px rgba(201, 164, 92, 0.25);
+    --top-light: rgba(255, 230, 170, 0.2);
+    --mode-glow-blur: 18px;
+    --mode-glow-in: rgba(255, 150, 60, 0.12);
+    --bs1: 0px 18px;
+    --bs1-color: rgba(201, 164, 92, 0.25);
+    animation-name: mode-on;
   }
+  /* Its glow, drawn by the WebGL backdrop over the card's fill when it can
+     (lib/backdropDropShadow.ts), dithered; CSS paints it otherwise. */
   .mode.on b {
-    text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
+    --drop-shadow: drop-shadow(0 0 12px rgba(241, 217, 155, 0.45));
+    filter: var(--drop-shadow-paint, var(--drop-shadow));
   }
   /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark;
      in the teal of skill gems, so it reads as fresh rather than unfinished. */

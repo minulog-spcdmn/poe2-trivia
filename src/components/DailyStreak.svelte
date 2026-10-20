@@ -10,6 +10,7 @@
   // ladder (lib/fx/streaks). Today's unique shows it under the answers; the
   // QA desk's streak bench (qa.html?b=streak) shows it on its own.
   import { scale } from 'svelte/transition';
+  import { backdropShadow } from '../lib/backdropShadow';
   import { ablaze, newFlame, turnsBlue, twinkle } from '../lib/fx/moments';
   import { onFxChange, type Handle } from '../lib/fx/core';
   import { dailyFlameOf, dailyHeatOf } from '../lib/fx/streaks';
@@ -82,15 +83,27 @@
   }
 </script>
 
-<b class="streak" style:--flame-rgb={dailyFlameOf(burning).css} style:--heat={dailyHeatOf(burning)} use:burn={burning} in:scale={{ start: 0.5, duration: 400, delay: BADGE_IN_DELAY }}>
-  {#if days === 1}First day{:else}<span class="num">{days}</span> days in a row{/if}
-</b>
+<span class="streak-at" style:--flame-rgb={dailyFlameOf(burning).css} style:--heat={dailyHeatOf(burning)}>
+  <span class="smoulder" aria-hidden="true" use:backdropShadow></span>
+  <b class="streak" use:burn={burning} use:backdropShadow in:scale={{ start: 0.5, duration: 400, delay: BADGE_IN_DELAY }}>
+    {#if days === 1}First day{:else}<span class="num">{days}</span> days in a row{/if}
+  </b>
+</span>
 
 <style>
+  /* The pill's place, with its smouldering glow beside it rather than in it:
+     under the pill's own background the backdrop couldn't draw that glow. */
+  .streak-at {
+    position: relative;
+    display: inline-flex;
+    align-self: center;
+    /* In the colour of the run's step on the ladder (lib/fx/streaks DAILY_LADDER), hotter
+       (--heat, 0 to 1) every day, as the scoreboard's fire. */
+    --flame: rgb(var(--flame-rgb, 255, 110, 30));
+  }
   /* A streak of days: a small pill in the display type, warming with the streak. */
   .streak {
     position: relative;
-    align-self: center;
     padding: 0.15em 0.75em 0.1em;
     font-family: var(--font-display);
     font-style: normal;
@@ -99,19 +112,23 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     white-space: nowrap;
-    /* In the colour of the run's step on the ladder (lib/fx/streaks DAILY_LADDER), hotter
-       (--heat, 0 to 1) every day, as the scoreboard's fire. */
-    --flame: rgb(var(--flame-rgb, 255, 110, 30));
     color: #fff1dc;
     background: linear-gradient(180deg, rgba(var(--flame-rgb, 255, 110, 30), 0.42), rgba(var(--flame-rgb, 255, 110, 30), 0.12)), rgba(10, 8, 6, 0.6);
     border: 1px solid color-mix(in srgb, var(--flame) calc(50% + 50% * var(--heat, 0)), transparent);
     border-radius: 999px;
-    box-shadow:
-      0 0 calc(10px + 18px * var(--heat, 0)) calc(3px * var(--heat, 0)) color-mix(in srgb, var(--flame) calc(30% + 40% * var(--heat, 0)), transparent),
-      0 calc(-4px * var(--heat, 0)) calc(12px + 20px * var(--heat, 0)) color-mix(in srgb, var(--flame) calc(15% + 35% * var(--heat, 0)), transparent);
+    /* Its glow, drawn by the WebGL backdrop when it can (lib/backdropShadow.ts),
+       by CSS otherwise. */
+    --bs1: 0px calc(10px + 18px * var(--heat, 0)) calc(3px * var(--heat, 0));
+    --bs1-color: color-mix(in srgb, var(--flame) calc(30% + 40% * var(--heat, 0)), transparent);
+    --bs2: calc(-4px * var(--heat, 0)) calc(12px + 20px * var(--heat, 0));
+    --bs2-color: color-mix(in srgb, var(--flame) calc(15% + 35% * var(--heat, 0)), transparent);
+    box-shadow: var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     text-shadow: 0 0 10px color-mix(in srgb, var(--flame) 70%, transparent);
     transition:
-      box-shadow 1s,
+      --bs1 1s,
+      --bs1-color 1s,
+      --bs2 1s,
+      --bs2-color 1s,
       border-color 1s,
       background 1s;
     /* Its glow warms up as the fire catches (BADGE_IN_MS), not at full heat while it scales in. */
@@ -120,19 +137,23 @@
   @keyframes warm {
     from {
       border-color: color-mix(in srgb, var(--flame) 35%, transparent);
-      box-shadow:
-        0 0 0 0 transparent,
-        0 0 0 0 transparent;
+      --bs1: 0px 0px 0px;
+      --bs1-color: transparent;
+      --bs2: 0px 0px;
+      --bs2-color: transparent;
       text-shadow: 0 0 0 transparent;
     }
   }
-  /* It smoulders: a wider glow fades in and out on a layer of its own. */
-  .streak::before {
-    content: '';
+  /* It smoulders: a wider glow fades in and out on a layer of its own, under
+     the pill and its size (an element, not a pseudo-element, so the backdrop
+     can draw it too). */
+  .smoulder {
     position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    box-shadow: 0 0 24px color-mix(in srgb, var(--flame) 40%, transparent);
+    inset: 0;
+    border-radius: 999px;
+    --bs1: 0px 24px;
+    --bs1-color: color-mix(in srgb, var(--flame) 40%, transparent);
+    box-shadow: var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     opacity: 0;
     animation: smoulder-badge 1.6s ease-in-out 1.3s infinite;
     pointer-events: none;
