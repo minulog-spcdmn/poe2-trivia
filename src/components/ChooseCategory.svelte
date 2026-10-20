@@ -64,6 +64,37 @@
   const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1, up: 0, left: 0 } : categoryIconTweak(cat));
   /** A card's name as players read it. */
   const cardName = (cat: string) => (isWayOut(cat) ? out.title : cat);
+  /**
+   * Svelte action: a card's name kept inside its nameplate, smaller as far
+   * as it must (down to four fifths) rather than spilling over the frame: a
+   * long one (Flasks, Charms, Jewels, Relics & Tablets) wraps to three lines
+   * where the engine measures its letters a touch wider (Safari) or a
+   * fallback font stands in. A plate as tall as its name (a row's) is left be.
+   */
+  function fitPlate(node: HTMLElement) {
+    const run = () => {
+      node.style.fontSize = '';
+      if (node.scrollHeight <= node.clientHeight + 1) return;
+      const full = parseFloat(getComputedStyle(node).fontSize);
+      let size = full;
+      while (node.scrollHeight > node.clientHeight + 1 && size > full * 0.8) {
+        size = Math.max(full * 0.8, size - 0.5);
+        node.style.fontSize = `${size}px`;
+      }
+    };
+    run();
+    void document.fonts?.ready.then(run);
+    const ro = new ResizeObserver(run);
+    ro.observe(node);
+    const mo = new MutationObserver(run);
+    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    return {
+      destroy: () => {
+        ro.disconnect();
+        mo.disconnect();
+      },
+    };
+  }
   /** The way out's colours, as custom properties on its card. */
   const outInk = Object.entries(out.ink).map(([k, v]) => `${k}:${v}`).join(';');
 
@@ -702,7 +733,7 @@
               <!-- The vein's crystals in the corner stand in front of the item. -->
               <CardEngraving side="face" find="azurite" front />
             {/if}
-            <span class="title"
+            <span class="title" use:fitPlate
               >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
                 >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
             >
@@ -1065,8 +1096,11 @@
     -webkit-mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
     mask-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
   }
-  /* As the face turns up in the deal, its emblem kindles and light runs across it. */
-  .turn:global(.dealt) .glyph {
+  /* As the face turns up in the deal, its emblem kindles and light runs across it.
+     (Kindled as a whole, with its glow and shadow, on the layer that holds
+     them: iOS Safari draws a filter animated inside other filters out of
+     step with them, the emblem dimming apart from its own glow.) */
+  .turn:global(.dealt) .icon {
     animation: kindle 0.9s ease-out var(--face, 0ms) backwards;
   }
   .turn:global(.dealt) .sheen::before {
@@ -1080,7 +1114,10 @@
   .card.out .turn:global(.dealt) :global(.gilt) {
     animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
   }
-  .card.out .turn:global(.dealt) :global(.engraving) {
+  /* (The swell on the engraving's still layers, beside the gilt rather
+     than round it: a filter animated inside another runs out of step with
+     it on iOS Safari; see .icon's kindle. The lamp's light breathes as it was.) */
+  .card.out .turn:global(.dealt) :global(.engraving > :is(.window, .glow, .lines)) {
     animation: swell 1.6s ease-out var(--face, 0ms) backwards;
   }
   @keyframes kindle-gilt {
@@ -1104,14 +1141,18 @@
       filter: brightness(1.35);
     }
   }
+  /* (.icon's glow written out in each step: its filter runs through them, the glow kept.) */
   @keyframes kindle {
     from {
       opacity: 0.2;
-      filter: brightness(0.4);
+      filter: brightness(0.4) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
     40% {
       opacity: 1;
-      filter: brightness(1.45);
+      filter: brightness(1.45) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    }
+    to {
+      filter: brightness(1) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
   }
   .sheen {
