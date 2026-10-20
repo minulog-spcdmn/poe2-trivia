@@ -231,6 +231,7 @@ function allowed() {
 function audio(): Bus | null {
   if (typeof AudioContext === 'undefined' || !allowed()) return null;
   const b = build();
+  if (!primed) prime(b);
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
   if (b.ac.state !== 'running') void b.ac.resume().catch(() => {});
   return b;
@@ -239,7 +240,8 @@ function audio(): Bus | null {
 /**
  * The bus, made if it isn't yet. Making it needs no gesture: made before one,
  * its context waits, suspended, until audio() wakes it. (Making the context is
- * the slow part, some 25 ms: see installUiSounds.)
+ * the slow part, some 25 ms: see installUiSounds.) What it plays is loaded
+ * only once it may play (prime): a touch that only scrolled loads nothing.
  */
 function build(): Bus {
   if (!bus) {
@@ -268,13 +270,8 @@ function build(): Bus {
     user.gain.value = userGain();
     master.connect(shelf).connect(comp).connect(lift).connect(limit).connect(user).connect(ac.destination);
 
-    // The hall's impulse takes a moment to work out: not in the tap that
-    // starts the sound (the first sounds just play dry), and a part per idle
-    // moment, as that tap's screen comes in (whole, it held up a frame by
-    // some 50 ms in the codex's).
+    // Its impulse is worked out once sound may play (prime).
     const reverb = ac.createConvolver();
-    // (Should it fail, the context closed meanwhile, the sound stays dry.)
-    setTimeout(() => void inIdleSteps(hallSteps(ac, HALL_SECONDS)).then((b) => (reverb.buffer = b), () => {}), 300);
     const wet = ac.createGain();
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
@@ -295,11 +292,25 @@ function build(): Bus {
     placer?.depth(depth);
     // Sound starting in a vein: the hall is already behind.
     if (inTunnel()) shapeHall(bus, 0.001);
-    for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
-    // Already in a Delve: work out its sounds now (see depthAmbience).
-    if (depth > 0) prepareDelve(bus);
   }
   return bus;
+}
+
+/** Whether the bus has been primed: sound may play, and its sounds are loading (see prime). */
+let primed = false;
+
+/** Once sound may play: loads the moments' sounds and works out the hall. */
+function prime(b: Bus) {
+  primed = true;
+  // The hall's impulse takes a moment to work out: not in the tap that
+  // starts the sound (the first sounds just play dry), and a part per idle
+  // moment, as that tap's screen comes in (whole, it held up a frame by
+  // some 50 ms in the codex's).
+  // (Should it fail, the context closed meanwhile, the sound stays dry.)
+  setTimeout(() => void inIdleSteps(hallSteps(b.ac, HALL_SECONDS)).then((buf) => (b.reverb.buffer = buf), () => {}), 300);
+  for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
+  // Already in a Delve: work out its sounds now (see depthAmbience).
+  if (depth > 0) prepareDelve(b);
 }
 
 /**
@@ -636,7 +647,7 @@ function playLayer(b: Bus, buf: AudioBuffer, l: Layer, soften: number, pitch: nu
  */
 export function audioLead(): number {
   const ac = bus?.ac;
-  if (!ac) return 0;
+  if (!ac || !primed) return 0;
   return Math.round(Math.min(0.15, Math.max(0, ac.outputLatency || ac.baseLatency || 0)) * 1000);
 }
 
