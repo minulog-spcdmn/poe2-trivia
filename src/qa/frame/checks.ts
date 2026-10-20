@@ -2,20 +2,24 @@
 // with something wrong is marked red in the desk's strip without anyone
 // having to spot it: something off the side of the screen, text cut off
 // without meaning to be (an ellipsis or a line clamp is meant), an error in
-// the console, a picture that didn't load, and an em dash, which CLAUDE.md
-// rules out of everything the game says. The elements at fault are marked
-// (data-qa-flag) and outlined, unless the desk has outlines off.
+// the console, a picture that didn't load, an em dash, which CLAUDE.md
+// rules out of everything the game says, and a game that scrolls on a phone
+// on its side, where it is laid out to fit the screen (lib/layout.ts `flat`).
+// The elements at fault are marked (data-qa-flag) and outlined, unless the
+// desk has outlines off.
 
 import { CRASH_MESSAGE } from './crashCue.svelte.ts';
+import { FLAT } from '../../lib/layout.ts';
 
 /** What a frame finds wrong; and banding, which only the sweep can see (scripts/qa.mjs, in a screenshot). */
-export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'banding';
+export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'scrolls' | 'banding';
 export const KIND_LABEL: Record<Kind, string> = {
   offscreen: 'Off the side of the screen',
   clipped: 'Text cut off',
   error: 'Console error',
   image: "Picture didn't load",
   dash: 'Em dash',
+  scrolls: 'Scrolls on a phone on its side',
   banding: 'Banding',
 };
 
@@ -167,6 +171,9 @@ export function check(heard: { errors: string[]; images: string[] }): Problem[] 
   add('error', heard.errors);
   add('image', [...new Set(broken)]);
   add('dash', flagged.dash.map(describe));
+  // A game screen (Game.svelte's) on a phone on its side fits the screen: art, answers and Next in view at once.
+  const over = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+  if (matchMedia(FLAT).matches && document.querySelector('#app .game > .turns') && over > 1) add('scrolls', [`${over}px taller than the screen`]);
   return problems;
 }
 

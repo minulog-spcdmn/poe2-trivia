@@ -51,6 +51,8 @@ On the dev server the seats meet on a local signalling server (PeerJS's own, sta
 
 `npm run qa` checks every scene from every seat at the usual sizes without anyone watching, and prints what it finds: it builds the beta into `screens/qa-build/`, opens each frame as a page of its own in a browser that really is that device (its pixel ratio, touch, a phone's user agent) and runs the same checks. It's for the machine, so nobody has to look at its shots.
 
+Run it only when really necessary. Several sessions often share the machine, and a sweep's browsers slow every one of them, so it's not a routine step after a change: the tests, `npm run check` and the benches come first, and a sweep is for what they can't settle. Even then keep it narrow (`--only <scene>` and one size with `--sizes`), and run it once.
+
 - `npm run qa -- --change` checks only the scenes this branch touches; `--only lobby` the scenes whose key matches; `--sizes full` every size, or `--sizes phone,uhd`.
 - `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
 - `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.

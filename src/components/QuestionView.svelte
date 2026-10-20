@@ -33,7 +33,7 @@
   import { flameOf, heatOf, streakOf, type Flame } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
-  import { dock, phone, short, sideBySide } from '../lib/layout';
+  import { dock, flat, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
@@ -80,11 +80,15 @@
   /**
    * Svelte action: a name that is the question (the picture question's plate)
    * shrinks, down to three quarters of its size, to stay on one line, so the
-   * plate keeps its height; only a name too long even then wraps.
+   * plate keeps its height; only a name too long even then wraps. `on`
+   * false leaves it as it comes (the revealed name, but on a phone on its
+   * side, where the plate has no height to spare).
    */
-  function oneLine(node: HTMLElement) {
+  function oneLine(node: HTMLElement, on = true) {
     const run = () => {
       node.style.fontSize = '';
+      node.style.whiteSpace = '';
+      if (!on) return;
       node.style.whiteSpace = 'nowrap';
       const full = parseFloat(getComputedStyle(node).fontSize);
       // The plate's room inside its padding (the text block itself grows with an unwrapped name).
@@ -113,11 +117,23 @@
     void document.fonts?.ready.then(run);
     const ro = new ResizeObserver(run);
     const head = node.closest('.head');
-    if (head) ro.observe(head);
     // And when the name changes: once its new words are in (before the next paint).
     const mo = new MutationObserver(run);
-    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    // (Watching only while it is on.)
+    const watch = () => {
+      ro.disconnect();
+      mo.disconnect();
+      if (!on) return;
+      if (head) ro.observe(head);
+      mo.observe(node, { characterData: true, childList: true, subtree: true });
+    };
+    watch();
     return {
+      update: (now: boolean) => {
+        on = now;
+        watch();
+        run();
+      },
       destroy: () => {
         ro.disconnect();
         mo.disconnect();
@@ -1256,14 +1272,14 @@
       </div>
     </div>
   {:else}
-    <div class="stage" class:snug class:ten={count === 10} class:long class:armed={blastSlot}>
+    <div class="stage" class:snug class:crowded={count > 6} class:ten={count === 10} class:long class:armed={blastSlot}>
       <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified. -->
           <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
-              <span class="iname">{item.name}</span>
+              <span class="iname" use:oneLine={flat.current}>{item.name}</span>
               <span class="ibase">{drawn?.base}</span>
               {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
@@ -3182,6 +3198,170 @@
     }
     .task .clock :global(.timer span) {
       font-size: 1.05rem;
+    }
+  }
+  /* A phone on its side (lib/layout.ts `flat`): the art and answers side by
+     side at any width, as tall together as the screen leaves them under the
+     header (the slim scoreboard in its row), the banner and the task line
+     (the timer at its right end), with the row under them, so the whole question is in view at once.
+     (After the 760px and short-window blocks, which it overrides.) */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .question {
+      /* The height the art and answers share: the window's, less what stands above and below them
+         (the header, the scoreboard in its row; the banner, the task line, the row under them, the home indicator's strip). */
+      --room: max(100px, 100dvh / var(--stage-zoom, 1) - var(--header-h, 47px) - 118px - env(safe-area-inset-bottom, 0px));
+    }
+    .task {
+      margin-bottom: 0.4rem;
+    }
+    .task-text {
+      font-size: 1.05rem;
+      line-height: 1.3;
+    }
+    /* The timer smaller, and lifted toward the banner's row (clear of its
+       line, which ends short of the edge), to keep its distance from the answers. */
+    .task.timed .task-text {
+      padding-inline: 44px;
+    }
+    .clock {
+      translate: 0 calc(-50% - 7px);
+    }
+    .task .clock :global(.timer) {
+      width: 34px;
+      height: 34px;
+    }
+    .task .clock :global(.timer span) {
+      font-size: 0.85rem;
+    }
+    .stage {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      gap: 1rem;
+      /* (At least: a long list on a very short screen grows it, rather than spilling over the row under it.) */
+      min-height: var(--room);
+    }
+    .stage.long .art,
+    .art {
+      flex: 1;
+      height: auto;
+      min-height: 0;
+    }
+    /* The plate as tall as its lines, at least 52px: a long name, revealed
+       beside a narrow column of art, wraps and makes it (and its ends)
+       larger, the art giving up the height, as on phones. */
+    .head {
+      height: auto;
+      min-height: 52px;
+      padding: 0.2rem max(2.9rem, min(3.6rem, calc(var(--plate-scale, 0) * 3.45rem)));
+    }
+    .iname {
+      font-size: 1.05rem;
+      line-height: 1.15;
+    }
+    .iname.unknown {
+      font-size: 0.95rem;
+    }
+    .ibase {
+      font-size: 0.85rem;
+    }
+    .options {
+      grid-auto-rows: 1fr;
+      gap: 0.4rem;
+    }
+    /* Four answers or more: two columns, so each stays a thumb's height. */
+    .options:has(> :nth-child(4)) {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .option,
+    .long .option,
+    .compact .option,
+    .dense .option {
+      min-height: 0;
+      gap: 0.55rem;
+      padding: 0.25rem 1.9rem 0.25rem 0.6rem;
+    }
+    .text {
+      font-size: 0.98rem;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }
+    /* The number's seal, smaller, clear of the row's border above and below. */
+    .option .key {
+      width: 22px;
+      height: 22px;
+      padding-top: 1px;
+      font-size: 0.68rem;
+    }
+    .option .mark,
+    .long .option .mark {
+      right: 0.6rem;
+    }
+    /* Seven or eight: four rows, a little closer together. */
+    .options.compact {
+      gap: 0.3rem 0.4rem;
+    }
+    /* Ten: two columns of five, slimmer rows. */
+    .options.ten {
+      gap: 0.25rem 0.4rem;
+    }
+    .options.ten .option {
+      padding-block: 0;
+      gap: 0.45rem;
+    }
+    .options.ten .option .key {
+      width: 20px;
+      height: 20px;
+      font-size: 0.64rem;
+    }
+    .options.ten .text {
+      font-size: 0.92rem;
+      line-height: 1.1;
+    }
+    /* The pictures: one row of them, as tall as the room under the plate (ten in two rows). */
+    .tooltip.wide .head {
+      height: auto;
+      min-height: 50px;
+      padding-bottom: calc(0.2rem + 3px);
+      padding-inline: max(3.4rem, min(4.6rem, calc(var(--plate-scale, 0) * 3.1rem)));
+    }
+    .tooltip.wide .iname {
+      font-size: 1.3rem;
+    }
+    .tiles,
+    .tiles.six,
+    .tiles.many.tall,
+    .tiles.many.tall.six {
+      grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    }
+    .tiles.ten {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .tile,
+    .tiles.many .tile,
+    .tiles.many.tall .tile,
+    .tiles.many.tall.six .tile {
+      height: max(50px, var(--room) - 52px);
+      padding: 1.6rem 0.4rem 0.4rem;
+    }
+    .tiles.ten .tile {
+      height: max(50px, (var(--room) - 54px) / 2);
+      padding-top: 0.45rem;
+    }
+    .footer {
+      margin-top: 0.45rem;
+      min-height: 42px;
+    }
+    .result p {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+  }
+
+  /* Seven names or more on a wide enough screen: the art gives them some of
+     its width, so even the longest stay on one line (narrower, they wrap
+     whatever it gives, and the plate keeps its width for the revealed name). */
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 760px) {
+    .stage.crowded {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
     }
   }
 </style>

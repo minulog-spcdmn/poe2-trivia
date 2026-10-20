@@ -34,6 +34,7 @@
   import Recorder from './components/Recorder.svelte';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
+  import { flat, fullRoom } from './lib/layout';
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
@@ -238,6 +239,32 @@
    * (the .screen's outroend), not a timer, which a busy first frame of the
    * new screen can beat; the timer is only a fallback.
    */
+  /**
+   * A game on a phone on its side: the scoreboard (Scoreboard.svelte) rides
+   * in the header's row, where the name stood, so the question gets that
+   * row's height; the room code makes way for it (the lobby has it).
+   * `--header-right` is how much of the row's right end the round and the
+   * buttons take, which the scoreboard keeps clear of.
+   */
+  const folded = $derived(screen === 'game' && flat.current);
+  let headerEl = $state<HTMLElement>();
+  let metaEl = $state<HTMLElement>();
+  $effect(() => {
+    const root = document.documentElement.style;
+    if (!folded || !headerEl || !metaEl) {
+      root.removeProperty('--header-right');
+      return;
+    }
+    const [h, m] = [headerEl, metaEl];
+    const set = () => root.setProperty('--header-right', `${(ownRect(h).right - ownRect(m).left).toFixed(2)}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(h);
+    ro.observe(m);
+    return () => {
+      ro.disconnect();
+      root.removeProperty('--header-right');
+    };
+  });
   let headerOn = $state(untrack(() => screen !== 'home'));
   const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
@@ -377,7 +404,7 @@
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
-    <header data-cursor="header" in:fade={{ duration: 300 }} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
+    <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
       <button class="brand" data-cursor="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -386,16 +413,18 @@
         </span>
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{:else if LOCAL}{' '}<small class="beta">Local</small>{/if}</span>
       </button>
-      <div class="meta" data-cursor="meta">
+      <div class="meta" data-cursor="meta" bind:this={metaEl}>
         {#if gs?.delve && (screen === 'game' || screen === 'over')}
           <!-- Delve: no target, just how deep. -->
-          {#if session.code && !session.hideCode}
+          {#if folded}
+            <!-- (Folded: no room code, the depth and zone alone.) -->
+          {:else if session.code && !session.hideCode}
             <span>Room <b class="code">{session.code}</b></span>
           {:else}
             <span>Delve</span>
           {/if}
           {#if session.spectating}
-            <span class="dot">•</span>
+            {#if !folded}<span class="dot">•</span>{/if}
             <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
           {/if}
           <!-- The depth as players count it (shownDepth). A run under way at 0
@@ -404,16 +433,16 @@
           <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
           {@const round = shownRound(gs)}
           {#if screen !== 'game' || shownDepth(round) > 0}
-            <span class="dot">•</span>
+            {#if !folded || session.spectating}<span class="dot">•</span>{/if}
             <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
           {/if}
           <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
-          <span class="dot zone-dot">•</span>
+          {#if !folded || session.spectating || shownDepth(round) > 0}<span class="dot zone-dot">•</span>{/if}
           {#key zoneAt(round)}
             <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
           {/key}
         {:else if gs && screen === 'game'}
-          {#if session.code && !session.hideCode}
+          {#if session.code && !session.hideCode && !folded}
             <span>Room <b class="code">{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
@@ -427,8 +456,8 @@
             <span>Round {gs.deathmatch.round}</span>
           {:else}
             <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
-            <span class="dot">•</span>
-            <span>First to <b>{gs.settings.targetScore}</b></span>
+            <span class="dot target">•</span>
+            <span class="target">First to <b>{gs.settings.targetScore}</b></span>
           {/if}
         {:else if session.mode === 'local'}
           <span>Hot-seat</span>
@@ -770,6 +799,18 @@
       box-shadow 0.25s,
       transform 0.2s var(--ease-out);
   }
+  /* On a touch screen a thumb's size to tap (44pt, Apple's least), the button drawn as it is. */
+  @media (pointer: coarse) {
+    .icon-btn {
+      position: relative;
+    }
+    .icon-btn::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+    }
+  }
   .icon-btn:hover {
     color: var(--gold-hi);
     border-color: var(--gold-lo);
@@ -1010,6 +1051,51 @@
       text-align: center;
       font-size: 0.6rem;
       line-height: 1.2;
+    }
+  }
+
+  /* A phone on its side (lib/layout.ts `flat`): a slimmer header, clear of
+     the notch, so the game below it fits the screen's height (its buttons
+     keep their size: a thumb's to tap). */
+  @media (orientation: landscape) and (max-height: 500px) {
+    header {
+      padding: 0.25rem max(1rem, env(safe-area-inset-right)) 0.25rem max(1rem, env(safe-area-inset-left));
+    }
+    /* In a game (`folded`): the round and the buttons at the row's right end,
+       the scoreboard laid over the rest of it (Scoreboard.svelte). */
+    header.folded {
+      grid-template-columns: 1fr auto auto;
+      column-gap: 0.9rem;
+    }
+    header.folded .brand {
+      visibility: hidden;
+    }
+    header.folded .meta {
+      gap: 0.45rem;
+      letter-spacing: 0.12em;
+    }
+    /* A full room on a narrower phone: the round alone, the players its room. */
+    @media (max-width: 759px) {
+      header.full .target {
+        display: none;
+      }
+    }
+    .brand {
+      white-space: nowrap;
+    }
+    /* The game's links, hidden (two clicks away in the Leave dialog), take no
+       height under it: there is none to spare. */
+    .legal.hidden {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+  }
+  /* Narrower ones keep the header to one line: the name goes without its Beta, as on phones. */
+  @media (orientation: landscape) and (max-height: 500px) and (max-width: 760px) {
+    .beta {
+      display: none;
     }
   }
 

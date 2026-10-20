@@ -20,6 +20,13 @@ function given() {
   return data;
 }
 
+/** The `n` items with the longest names (one each), longest first: the most a question's answers, and the plate's name once answered, ever have to fit. */
+export function longestNamed(n: number): Item[] {
+  const seen = new Set<string>();
+  const items = given().items.filter((it) => !seen.has(it.name) && seen.add(it.name));
+  return items.sort((a, b) => b.name.length - a.name.length || a.name.localeCompare(b.name)).slice(0, n);
+}
+
 /** An engine to look items up in. */
 export function sceneEngine(): Engine {
   return (shared ??= new Engine(given().items, { fakes: given().fakes }));
