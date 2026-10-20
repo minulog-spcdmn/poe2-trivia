@@ -359,3 +359,20 @@ test("the owner's place in the game goes only to whoever joins under the held na
   assert.throws(() => engine.apply(s, { type: 'owner', playerId: 'p1' }, 'p1'), /Not allowed/);
   assert.deepEqual(engine.apply(s, { type: 'owner', playerId: 'p0' }, 'p0').owner, { id: 'p0' });
 });
+
+test('a class sigil comes with a join, stays with a spectator who takes a seat, and changes as they come back', () => {
+  let { engine, s } = lobby(['Ash']);
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren', sigil: 'witch' }, 'w');
+  assert.equal(s.players.find((p) => p.id === 'w')?.sigil, 'witch');
+  s = engine.apply(s, { type: 'start' }, 'p0');
+  s = engine.apply(s, { type: 'join', playerId: 'late', name: 'Late', sigil: 'monk' }, 'late');
+  assert.deepEqual(s.spectators, [{ id: 'late', name: 'Late', sigil: 'monk' }]);
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(s.players.find((p) => p.id === 'late')?.sigil, 'monk');
+  s = engine.apply(s, { type: 'connection', playerId: 'w', connected: false }, null);
+  s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren', returning: true }, 'w');
+  assert.equal(s.players.find((p) => p.id === 'w')?.sigil, undefined, 'taken off meanwhile');
+  // One this build doesn't know is left out.
+  s = engine.apply(s, { type: 'join', playerId: 'x', name: 'Xan', sigil: 'duelist' as never }, 'x');
+  assert.equal(s.players.find((p) => p.id === 'x')?.sigil, undefined);
+});

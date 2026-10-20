@@ -8,6 +8,9 @@
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import { circleOf } from './circles';
   import AchievementSeal from './AchievementSeal.svelte';
+  import SigilPicker from './SigilPicker.svelte';
+  import { achievementsIn } from '../lib/sigils';
+  import { CLASSES } from '../lib/classSigils';
 
   // The Codex's third page: every achievement, earned or not, by group, each
   // on its seal, with how far along you are where that is kept (a moment has
@@ -65,6 +68,15 @@
 </section>
 
 <div class="groups">
+  <!-- What they unlock: a class sigil each (lib/sigils.ts). -->
+  <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="feats-sigils">
+    <header>
+      <h2 id="feats-sigils">Class sigils</h2>
+      <span class="col-label">{Math.min(achievementsIn(store), CLASSES.length)} / {CLASSES.length}</span>
+    </header>
+    <p class="hint">Each achievement unlocks a class's sigil, to wear on your avatar behind your initial.</p>
+    <SigilPicker achievements={achievementsIn(store)} />
+  </section>
   {#each groups as g (g.key)}
     {@const done = g.rows.filter((r) => r.earned !== null).length}
     <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="feats-{g.key}">

@@ -6,8 +6,9 @@ import type { PieceBench } from '../bench.ts';
 import { avatar } from './avatar.ts';
 import { circle } from './circle.ts';
 import { descent } from './descent.ts';
+import { sigils } from './sigils.ts';
 import { streak } from './streak.ts';
 
-export const PIECES: PieceBench[] = [avatar, streak, descent, circle];
+export const PIECES: PieceBench[] = [avatar, sigils, streak, descent, circle];
 
 export const pieceByKey = (key: string | null) => PIECES.find((p) => p.key === key);

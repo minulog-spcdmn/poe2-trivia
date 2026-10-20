@@ -86,6 +86,8 @@ import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, act
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
+import { loadSigils } from './sigils';
+import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
@@ -114,6 +116,12 @@ function fetchLooks() {
 export { CODE_LENGTH, CODE_PATTERN } from './roomCode.ts';
 
 /** Connections that haven't introduced themselves yet, room-wide and per peer (a joiner races two attempts). */
+/** The class sigil this player wears (lib/sigils.ts), for their join: read as they join, so one picked meanwhile goes with them. */
+const wornSigil = (): { sigil?: PlayerClass } => {
+  const worn = loadSigils().worn;
+  return worn ? { sigil: worn } : {};
+};
+
 const MAX_PENDING = 16;
 const MAX_PENDING_PER_PEER = 2;
 /** A connection this new can't be pushed out by another one: its time to finish connecting and say hello. */
@@ -246,6 +254,8 @@ interface Guest {
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
   tab: string | null;
+  /** The class sigil its hello says it wears. */
+  sigil?: PlayerClass;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
@@ -711,7 +721,7 @@ class Session {
         let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
         this.delveLink = false;
         try {
-          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
+          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil() }, me);
         } catch (err) {
           this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', { failure: 'host-room-not-opened' });
           return;
@@ -861,6 +871,7 @@ class Session {
           if (guest.playerId || guest.checking) return;
           guest.tab = msg.tab ?? null;
           guest.laneWanted = !!msg.lane;
+          guest.sigil = msg.sigil;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -1014,7 +1025,11 @@ class Session {
     try {
       if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
-      next = engine.apply(this.state!, { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}) }, playerId);
+      next = engine.apply(
+        this.state!,
+        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}) },
+        playerId,
+      );
     } catch (err) {
       this.joins.rejected(secret, !!known);
       throw err;
@@ -2075,7 +2090,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}) });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil() });
     this.watchOwnPresence();
   }
 

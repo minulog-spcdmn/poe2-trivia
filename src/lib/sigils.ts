@@ -85,8 +85,8 @@ function change(change: (s: SigilStore) => SigilStore): SigilStore | null {
   return next === was || writeStored(NAME, serializeSigils(next)) ? next : null;
 }
 
-/** Unlocks `c` with one of the achievements earned, and wears it. */
-export const unlockSigil = (c: PlayerClass) => change((s) => unlock(s, c, achievementsIn(loadAchievements())));
+/** Unlocks `c` with one of the `achievements` earned (those stored, unless given), and wears it. */
+export const unlockSigil = (c: PlayerClass, achievements = achievementsIn(loadAchievements())) => change((s) => unlock(s, c, achievements));
 
 /** Wears `c`, one unlocked (null: none). */
 export const wearSigil = (c: PlayerClass | null) => change((s) => wear(s, c));

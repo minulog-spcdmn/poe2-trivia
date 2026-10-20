@@ -903,7 +903,7 @@
   {#if ps.length}
     <span class="who-picked">
       {#each faces as p (p.id)}
-        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} size={22} /></span>
+        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span>
       {/each}
       {#if ps.length > faces.length}
         <span class="more" title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>

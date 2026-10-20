@@ -434,7 +434,7 @@
               class:absent={notReady(mark)}
               style:--c={playerColor(p.hue)}
             >
-              <Avatar name={p.name} hue={p.hue} size={32} dim={greyed(mark)} />
+              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={greyed(mark)} />
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
               {#if mark}<StandingMark {mark} />{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->

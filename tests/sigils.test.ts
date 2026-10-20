@@ -102,3 +102,11 @@ test("never writes over a newer build's", () => {
   assert.equal(unlockSigil('witch'), null);
   assert.equal(store.get(SIGILS_KEY), newer);
 });
+
+test("a guest's hello carries the sigil it wears; one this build doesn't know is left out", async () => {
+  const { parseClientMsg } = await import('../src/lib/protocol.ts');
+  const hello = { t: 'hello', secret: 'a'.repeat(24), name: 'Wren', v: 1 };
+  assert.equal((parseClientMsg({ ...hello, sigil: 'witch' }) as { sigil?: string }).sigil, 'witch');
+  const unknown = parseClientMsg({ ...hello, sigil: 'duelist' });
+  assert.ok(unknown && !('sigil' in unknown));
+});
