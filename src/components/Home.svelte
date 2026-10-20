@@ -811,7 +811,8 @@
      content, under which a growing row always takes its most.
      On a wide window everything fits, the footer too: three rhythms by the
      window's height, each adding up to it (980, which big screens zoom to;
-     900, from 860; 725, the 13-inch laptop, below that). */
+     the laptop's from 979 down to 845, 900 say; and below that a smaller
+     one, for the 13-inch laptop's 725). */
   .home {
     --slot: 108px;
     width: 100%;
@@ -853,20 +854,12 @@
     grid-area: foot;
     margin-top: 32px;
   }
-  /* Wide windows, 980 tall and up: 20 + 673 (the columns) + 28 + 144 (the
-     rooms) + 20 + 80 (the footer) + 14 = 979. */
+  /* Wide windows, 980 tall and up: 26 + 650 (the columns) + 44 + 153 (the
+     rooms) + 32 + 49 (the footer) + 22 = 976. */
   @media (min-width: 1081px) {
     .home {
-      /* The rooms' block below its margin: the list's header (48) and its frame, a row of rooms (72), the gap and the next row's top. */
-      --rooms-h: calc(48px + 96px);
-      padding-top: 20px;
-      padding-bottom: 14px;
-    }
-    .rooms {
-      margin-top: 28px;
-    }
-    .foot {
-      margin-top: 20px;
+      /* The rooms' block below its margin: the list's header (48) and its frame, a row of rooms (72), the gap and 21 of the next row. */
+      --rooms-h: calc(48px + 105px);
     }
     /* A height of its own (none on an invite, which has no rooms): the list's frame takes what its header leaves and scrolls a long list. */
     .rooms {
@@ -1354,8 +1347,8 @@
     color: #ab9d88;
   }
 
-  /* Under 980 tall (900, say): a tighter rhythm. 16 + 577 + 8 + 144 + 20 +
-     80 + 14 = 859. */
+  /* Under 980 tall (900, say): a tighter rhythm. 16 + 574 + 8 + 144 + 32 +
+     49 + 22 = 845. */
   @media (max-height: 979px) and (min-width: 1081px) {
     .home {
       --slot: 92px;
@@ -1392,30 +1385,25 @@
       margin-top: 8px;
     }
   }
-  /* Under 860 tall (a 13-inch laptop's 725): tighter still, and smaller.
-     10 + 494 + 6 + 120 + 10 + 70 + 10 = 720. The menu's rows keep room for
-     an open one's field (36 + 10 + 40); the blurb goes on one line, in a
-     wider column (the two have 238 px between them at 1440). */
-  @media (max-height: 859px) and (min-width: 1081px) {
+  /* Under 845 tall (a 13-inch laptop's 725): tighter still, and a smaller
+     title and Today's unique. 10 + 527 + 6 + 120 + 10 + 39 + 10 = 722. */
+  @media (max-height: 844px) and (min-width: 1081px) {
     .home {
-      --slot: 86px;
       /* Header 40, a row of rooms (72) and 8 of the gap. */
       --rooms-h: calc(40px + 80px);
-      --daily-stage-h: 330px;
-      --daily-circle: 375px;
-      --daily-circle-y: 189px;
+      --daily-stage-h: 363px;
+      --daily-circle: 413px;
+      --daily-circle-y: 208px;
       --daily-legend-gap: 8px;
       --daily-after-h: 32px;
       --daily-after-gap: 2px;
-      grid-template-columns: minmax(0, 520px) minmax(0, 510px);
       padding-top: 10px;
       padding-bottom: 10px;
     }
     .intro {
-      --title-size: 60px;
+      --title-size: 64px;
     }
     .greeting {
-      min-height: 40px;
       margin: 3px 0 1px;
     }
     .rooms {
