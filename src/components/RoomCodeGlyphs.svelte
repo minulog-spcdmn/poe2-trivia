@@ -154,7 +154,7 @@
     --bs2: 6px 18px;
     --bs2-color: rgba(0, 0, 0, 0.6);
     box-shadow:
-      inset 0 0 var(--glyph-glow-in, 18px rgba(201, 164, 92, 0.12)),
+      inset 0 0 18px rgba(201, 164, 92, 0.12),
       var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     transition:
       border-color 0.15s,
@@ -167,7 +167,9 @@
     border-color: var(--gold);
     --bs-fill-a: #3a2a15;
     --bs-fill-b: #17100a;
-    --glyph-glow-in: 22px rgba(241, 217, 155, 0.22);
+    box-shadow:
+      inset 0 0 22px rgba(241, 217, 155, 0.22),
+      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     --bs1-color: rgba(201, 164, 92, 0.35);
   }
   /* The letter in the title's gold (GameTitle), painted once. A text-shadow

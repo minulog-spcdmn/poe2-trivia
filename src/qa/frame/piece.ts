@@ -70,6 +70,7 @@ export async function bootPiece(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
+  (await import('../../lib/ditheredGlow.ts')).installDitheredGlows();
 
   const slot = asked.get('frame') ?? '';
   const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));

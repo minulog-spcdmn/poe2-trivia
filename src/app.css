@@ -720,6 +720,45 @@ h3,
   --drop-shadow-paint: opacity(1);
 }
 
+/* Soft glows the page draws dithered (lib/ditheredGlow.ts). A build step
+   (lib/glowCss.ts) copies every text-shadow's and box-shadow's soft parts
+   into these and paints them through the -paint variables; while the page
+   draws a kind, data-glow lists it and the CSS copy turns into a no-op. Not
+   inherited: each element's own shadows, not its parent's. */
+@property --text-glow {
+  syntax: '*';
+  inherits: false;
+}
+@property --box-glow-in {
+  syntax: '*';
+  inherits: false;
+}
+@property --box-glow-out {
+  syntax: '*';
+  inherits: false;
+}
+@property --text-glow-paint {
+  syntax: '*';
+  inherits: false;
+}
+@property --box-glow-in-paint {
+  syntax: '*';
+  inherits: false;
+}
+@property --box-glow-out-paint {
+  syntax: '*';
+  inherits: false;
+}
+[data-glow~='text'] {
+  --text-glow-paint: 0 0 transparent;
+}
+[data-glow~='in'] {
+  --box-glow-in-paint: inset 0 0 transparent;
+}
+[data-glow~='out'] {
+  --box-glow-out-paint: 0 0 transparent;
+}
+
 /* Large gradient backgrounds the WebGL backdrop can draw without banding (see
    lib/backdropShadow.ts). An element declares its gradient in --bs-fill-a,
    --bs-fill-b and --bs-fill-angle and paints it through

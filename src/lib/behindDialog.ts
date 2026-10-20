@@ -99,12 +99,47 @@ export function dialogBox(): { rect: DOMRect; radius: number } | null {
   return box;
 }
 
+// Darkening rounds the page again with a third of its levels, and the blur
+// before it has smoothed away any dither that was in it: bands. So between
+// the two, a filter stirs each pixel by a few levels of noise (and the
+// darkening shrinks that to about one), which dithers the darkened result.
+// The noise only takes from colour (a premultiplied colour can't go above
+// its alpha), never from alpha: see-through parts of a layer stay see-through.
+const NOISE_ID = 'behind-dialog-noise';
+let noise: SVGFEColorMatrixElement | null = null;
+
+/** The noise filter, made once, set for darkening to `b` of the brightness. */
+function noiseFor(b: number) {
+  if (!noise) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.style.cssText = 'position: absolute; width: 0; height: 0; overflow: hidden';
+    svg.innerHTML =
+      `<filter id="${NOISE_ID}" x="-1" y="-1" width="3" height="3" color-interpolation-filters="sRGB">` +
+      '<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="7"/>' +
+      // Noise in colour from 1 - s to 1, opaque; added as (noise - 1), so 0 to -s.
+      '<feColorMatrix result="n"/>' +
+      '<feComposite in="SourceGraphic" in2="n" operator="arithmetic" k1="0" k2="1" k3="1" k4="-1"/>' +
+      '</filter>';
+    document.body.append(svg);
+    noise = svg.querySelector('feColorMatrix')!;
+  }
+  // Five levels before darkening, about two after (turbulence keeps mostly
+  // to the middle of its range, so most pixels move less).
+  const s = Math.min(1, 5 / 255 / b);
+  const values = `${s} 0 0 0 ${1 - s}  0 ${s} 0 0 ${1 - s}  0 0 ${s} 0 ${1 - s}  0 0 0 0 1`;
+  if (noise.getAttribute('values') !== values) noise.setAttribute('values', values);
+  return `url(#${NOISE_ID})`;
+}
+
 /** The filter a marked layer takes with the page dimmed `v` of the way (0: none), by its mark. */
 export function behindFilter(mark: string, v: number): string {
   if (v <= 0) return '';
-  const dim = `brightness(${(1 - DIALOG_DIM * v).toFixed(3)})`;
+  const b = 1 - DIALOG_DIM * v;
+  const dim = `${noiseFor(b)} brightness(${b.toFixed(3)})`;
   const blur = `blur(${(DIALOG_BLUR * v).toFixed(2)}px)`;
-  return mark === 'dim' ? dim : mark === 'blur' ? blur : `${dim} ${blur}`;
+  return mark === 'dim' ? dim : mark === 'blur' ? blur : `${blur} ${dim}`;
 }
 
 /** The layers filtered last, so they're let go of as the dialog goes (or when one leaves the page meanwhile). */

@@ -151,6 +151,7 @@ export async function boot(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
+  (await import('../../lib/ditheredGlow.ts')).installDitheredGlows();
   const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crashCue.svelte.ts')]);
   mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
 

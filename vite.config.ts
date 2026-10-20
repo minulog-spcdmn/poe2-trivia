@@ -10,6 +10,7 @@ import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
+import { ditheredGlows } from './src/lib/glowCss.ts';
 import { glslMinify } from './glslMinify.ts';
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
@@ -312,7 +313,7 @@ export default defineConfig(({ command, mode }) => {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
     plugins: [svelte(), glslMinify(), peerjsProbe(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env), qaServer(process.cwd())],
-    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors, ditheredGlows] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
     build: {
