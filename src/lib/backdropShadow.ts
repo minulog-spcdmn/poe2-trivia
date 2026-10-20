@@ -178,7 +178,8 @@ function nameOf(el: Element) {
   return `${el.tagName.toLowerCase()}${el.classList[0] ? '.' + el.classList[0] : ''}`;
 }
 
-function paintsBackground(cs: CSSStyleDeclaration) {
+/** Whether an element paints a background of its own (CSS would lay it over anything the backdrop draws under it). */
+export function paintsBackground(cs: CSSStyleDeclaration) {
   if (cs.backgroundImage !== 'none') return true;
   const c = parseColor(cs.backgroundColor);
   return !!c && c[3] > 0;

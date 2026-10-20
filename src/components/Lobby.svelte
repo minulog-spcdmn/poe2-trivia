@@ -18,6 +18,7 @@
   import WatchEye from './WatchEye.svelte';
   import PlayerName from './PlayerName.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { kickConfirm } from '../lib/kick';
   import { creatorArrived, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { onMount } from 'svelte';
@@ -506,7 +507,7 @@
               onclick={(e) => isHost && pickMode(m.id, e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
-              <b>{m.name}</b>
+              <b use:backdropDropShadow>{m.name}</b>
               {#if m.isNew}<span class="new" aria-hidden="true">New</span>{/if}
             </button>
           {/each}
@@ -1166,8 +1167,11 @@
     --mode-glow-in: rgba(255, 150, 60, 0.12);
     --bs1-color: rgba(201, 164, 92, 0.25);
   }
+  /* Its glow, drawn by the WebGL backdrop over the card's fill when it can
+     (lib/backdropDropShadow.ts), dithered; CSS paints it otherwise. */
   .mode.on b {
-    text-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
+    --drop-shadow: drop-shadow(0 0 12px rgba(241, 217, 155, 0.45));
+    filter: var(--drop-shadow-paint, var(--drop-shadow));
   }
   /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark;
      in the teal of skill gems, so it reads as fresh rather than unfinished. */

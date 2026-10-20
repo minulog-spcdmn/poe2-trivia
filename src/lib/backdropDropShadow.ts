@@ -21,6 +21,7 @@
 // (such as the title's thin decorative lines) cast no shadow here. Their CSS
 // shadow is faint enough not to matter.
 
+import { paintsBackground } from './backdropShadow';
 import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
@@ -357,7 +358,7 @@ function buildAtlases(list: Mask[]): Atlases {
  * - b: inverse linear map (a, b, c, d), viewport to local
  * - c: mask region (x, y, w, h) in local px; w = 0 marks an unused slot
  * - d: mask placement in the sharp and blur atlases (texels)
- * - e: (blur texels per local px, 0, 0, 0)
+ * - e: (blur texels per local px, inside a fill the backdrop draws (1) or not (0), 0, 0)
  * - off: (x1, y1, x2, y2) drop offsets, local px
  * - col: (r, g, b, alpha) per drop, alpha 0 for none
  * Returns new atlases when any mask changed (to upload), else null.
@@ -374,12 +375,18 @@ export function measureDrops(
   viewH: number,
 ): Atlases | null {
   for (const arr of [a, b, c, d, e, off, col]) arr.fill(0);
-  const active: [HTMLElement, Mask, Lin, number, DOMRect][] = [];
+  const active: [HTMLElement, Mask, Lin, number, DOMRect, boolean][] = [];
   // Per-element style reads, shared by the tagged elements' common ancestors.
   // Nothing below changes a transform or an opacity (data-bs-drop only swaps
   // the filter), so they hold for the whole pass.
   const linears = new Map<Element, Lin | null>();
   const opacities = new Map<Element, number>();
+  const paints = new Map<Element, boolean>();
+  const paintsAt = (el: Element) => {
+    let p = paints.get(el);
+    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
+    return p;
+  };
   for (const node of tagged) {
     let ok = node.isConnected && active.length < MAX_MASKS;
     const cs = ok ? getComputedStyle(node) : null;
@@ -392,6 +399,18 @@ export function measureDrops(
     ok &&= opacity > 0;
     if (ok && node instanceof HTMLImageElement) ok = node.complete && node.naturalWidth > 0;
     if (ok && !(node instanceof HTMLImageElement)) ok = document.fonts?.status !== 'loading';
+    // What lies under it: the backdrop; or a fill the backdrop draws (an
+    // ancestor with data-bs-fill, measureShadows having just written them),
+    // so the shadow is drawn after the fills, over it; or a background CSS
+    // paints, which would cover the shadow drawn here.
+    let inFill = false;
+    for (let el = node.parentElement; ok && el && el !== document.body; el = el.parentElement) {
+      if (el.hasAttribute('data-bs-fill')) {
+        inFill = true;
+        break;
+      }
+      if (paintsAt(el)) ok = false;
+    }
 
     const rect = ok ? node.getBoundingClientRect() : null;
     if (rect) {
@@ -433,7 +452,7 @@ export function measureDrops(
       continue;
     }
     if (!node.hasAttribute('data-bs-drop')) node.setAttribute('data-bs-drop', '');
-    active.push([node, mask!, lin!, opacity, rect!]);
+    active.push([node, mask!, lin!, opacity, rect!, inFill]);
   }
 
   let atlases: Atlases | null = null;
@@ -442,13 +461,13 @@ export function measureDrops(
     atlasDirty = false;
   }
 
-  active.forEach(([node, m, lin, opacity, rect], i) => {
+  active.forEach(([node, m, lin, opacity, rect, inFill], i) => {
     const det = lin[0] * lin[3] - lin[1] * lin[2];
     a.set([rect.left + rect.width / 2, rect.top + rect.height / 2, node.offsetWidth, node.offsetHeight], i * 4);
     b.set([lin[3] / det, -lin[1] / det, -lin[2] / det, lin[0] / det], i * 4);
     c.set([m.x, m.y, m.w, m.h], i * 4);
     d.set([m.sx, m.sy, m.bx, m.by], i * 4);
-    e.set([m.q, 0, 0, 0], i * 4);
+    e.set([m.q, inFill ? 1 : 0, 0, 0], i * 4);
     m.drops.forEach((dd, k) => {
       off[i * 4 + k * 2] = dd.ox;
       off[i * 4 + k * 2 + 1] = dd.oy;
