@@ -118,7 +118,7 @@
           <p class="msg">{t.message}</p>
         {/if}
       </div>
-      <button class="close" data-sfx="none" onclick={() => toasts.dismiss(t.id)} aria-label="Dismiss">
+      <button class="close" data-sfx="none" onclick={() => (t.onClose?.(), toasts.dismiss(t.id))} aria-label="Dismiss">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
       </button>
       {#if !t.sticky}<span class="fuse" aria-hidden="true"></span>{/if}

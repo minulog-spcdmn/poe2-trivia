@@ -28,6 +28,7 @@
   import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
+  import { watchGpuNotice } from './lib/gpuNotice';
   import { setCursorColor } from './lib/ownCursor';
   import PeerCursors from './components/PeerCursors.svelte';
   import Recorder from './components/Recorder.svelte';
@@ -130,6 +131,14 @@
     const calm = screen !== 'game';
     // Untracked: taking the tip down writes the toast list, which mustn't rerun this.
     untrack(() => fullscreenTip.calm(calm));
+  });
+  // Whoever's browser draws without the GPU is told how to switch it back
+  // on, on the same calm screens (see lib/gpuNotice.ts).
+  const gpuNotice = watchGpuNotice();
+  $effect(() => gpuNotice.stop);
+  $effect(() => {
+    const calm = screen !== 'game';
+    untrack(() => gpuNotice.calm(calm));
   });
 
   // Delve: the scene descends with the run, and holds its depth on the end screen

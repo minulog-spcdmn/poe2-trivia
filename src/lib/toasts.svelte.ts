@@ -25,6 +25,8 @@ export interface ToastOptions {
   herald?: boolean;
   /** An achievement earned (lib/achievementToasts.ts): its seal in place of the gem, in its metal. */
   seal?: { sign: Sign; tier: Tier };
+  /** Called when the player closes it (not when it closes itself or is taken down): to remember that it was read. */
+  onClose?: () => void;
 }
 
 export interface Toast extends ToastOptions {
