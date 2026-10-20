@@ -23,6 +23,8 @@
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
   import Avatar from './Avatar.svelte';
+  import { actionOf, typing } from '../lib/keybinds.svelte';
+  import { optionIndex } from '../lib/keys';
 
   let {
     drawn = null,
@@ -633,7 +635,22 @@
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
   }
+
+  /** An option's key (settings page) picks its card, or votes for it, as a click would. */
+  function onKey(e: KeyboardEvent) {
+    if (typing(e)) return;
+    // An item's window (ItemWindow) has its own keys, as on a question.
+    if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
+    const n = optionIndex(actionOf(e));
+    const cat = n === null ? undefined : s.offered[n];
+    if (cat === undefined || !mine) return;
+    e.preventDefault();
+    pick(cat);
+  }
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 <div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
   <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->

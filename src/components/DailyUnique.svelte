@@ -13,6 +13,9 @@
   import { engine, session } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
   import { codexRoute } from '../lib/codexRoute.svelte';
+  import { settingsRoute } from '../lib/settingsRoute.svelte';
+  import { actionOf, optionCap, typing } from '../lib/keybinds.svelte';
+  import { optionIndex } from '../lib/keys';
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { countEvent } from '../lib/count';
@@ -285,12 +288,11 @@
 
   /** 1 to 4 answer, as in the game; not while typing, in a dialog, or once a game or the codex has the screen. */
   function keys(e: KeyboardEvent) {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (typing(e)) return;
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
-    if (session.state || codexRoute.open || answered) return;
-    const n = Number(e.key);
-    if (n >= 1 && n <= q.options.length) pick(n - 1);
+    if (session.state || codexRoute.open || settingsRoute.open || answered) return;
+    const n = optionIndex(actionOf(e));
+    if (n !== null && n < q.options.length) pick(n);
   }
 
   const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -357,7 +359,7 @@
         in:fly={{ x: 24, duration: 380, delay: 80 + i * 60 }}
       >
         <span class="sheen"></span>
-        <span class="key" aria-hidden="true">{i + 1}</span>
+        <span class="key" class:wide={[...(optionCap(i) ?? '')].length > 1} aria-hidden="true">{optionCap(i) ?? ''}</span>
         <span class="text">
           <span class="name" use:fit={label}>{label}</span>
           <!-- It opens out under the name, so the name glides up rather than jumping. -->
@@ -669,6 +671,18 @@
       color 0.25s,
       border-color 0.25s,
       box-shadow 0.25s;
+  }
+  /* A key whose name is a word (Num 1): the seal drawn out to hold it. */
+  .key.wide {
+    width: auto;
+    min-width: 28px;
+    padding-inline: 0.55em;
+    border-radius: 14px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .key.wide::before {
+    border-radius: 14px;
   }
   .key::before {
     content: '';

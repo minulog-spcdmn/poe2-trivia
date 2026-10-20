@@ -77,7 +77,7 @@
   const HEADER = ['Codex', 'Sound', 'Fullscreen', 'Help', 'Leave'];
   const CARDS = ['Helmets', 'Off-Hands', 'Two-Handed Weapons'];
   const ANSWERS = ["Alpha's Howl", "Valako's Roar", 'The Empty Roar', "Hrimnor's Dirge"];
-  const MENU = ['Create a room', 'Join a room', 'Play hot-seat', 'Delve', "Today's unique", 'Codex', 'Settings', 'Credits'];
+  const MENU = ['New game', 'Join a room', 'Delve', "Today's unique", 'Codex', 'Settings', 'Credits'];
   const CHIPS = Array.from({ length: 16 }, (_, i) => `Depth ${10 * i + 1}`);
 </script>
 

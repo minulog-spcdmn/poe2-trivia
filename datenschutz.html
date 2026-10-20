@@ -87,9 +87,10 @@
       <p>
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels) bzw.
         lit. f DSGVO (berechtigtes Interesse an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten
-        kann eine Verarbeitung außerhalb der EU, insbesondere in den USA, stattfinden. Im Modus „Hot-Seat“ auf einem
-        Gerät findet kein Verbindungsaufbau statt; die Suche nach offenen Räumen läuft aber, solange die Startseite
-        geöffnet ist.
+        kann eine Verarbeitung außerhalb der EU, insbesondere in den USA, stattfinden. Auch wenn alle an einem Gerät
+        spielen, öffnet die Gastgeberin oder der Gastgeber dafür einen Raum, der den Vermittlungsserver kontaktiert. Nur
+        ein Spiel ohne Raum (etwa wenn sich keiner öffnen lässt) baut keine Verbindung auf; die Suche nach offenen Räumen
+        läuft aber, solange die Startseite geöffnet ist.
       </p>
 
       <h2>5. Daten im Spiel</h2>
@@ -124,7 +125,7 @@
         aufgerufenen Seite (ohne Raumcode oder andere Angaben aus der Adresse), dem Seitentitel und der Website, von der
         Sie kommen (Referrer; nur ihr Name, etwa „reddit.com“, ohne den Rest ihrer Adresse). Außerdem werden einige
         Spielereignisse gezählt: Start und Ende eines Spiels (auf jedem beteiligten Gerät, dass es dabei war; Spielmodus,
-        Hot-Seat oder online, Zahl der Mitspielenden), bei Delve der Tiefenbereich, in dem ein Lauf endete
+        an einem Gerät oder online, Zahl der Mitspielenden), bei Delve der Tiefenbereich, in dem ein Lauf endete
         (etwa „20 bis 29“), ob die tägliche Frage richtig oder falsch beantwortet wurde, das Öffnen eines Einladungs-
         oder Delve-Links, der Weg, auf dem Sie einem Raum beitreten (Code, Einladungslink oder Liste offener Räume),
         und ob das gelingt, sowie Verbindungsfehler (etwa „Raum nicht erreichbar“).
@@ -208,7 +209,8 @@
             the host's, unless the connection runs through a relay. <strong>The start page does this on its own:</strong>
             to show the open rooms list, it briefly connects to every listed host as soon as it opens, and again every so
             often while it stays open, without you clicking anything; so does opening an invite link, to that room's
-            host. Hot-seat mode on one device connects to nobody, but the start page's search runs while it is open.
+            host. Players at one screen still play in a room the host opens, which reaches the matchmaking server; only a
+            game without a room (when none can be opened) connects to nobody, though the start page's search runs while it is open.
           </li>
           <li>
             <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
@@ -224,7 +226,7 @@
           <li>
             <strong>Visitor counts:</strong> GoatCounter (Martin Tournoij, Ireland; servers in Germany and Finland) counts
             visits to the start page (the page, its title and the name of the referring site, without the rest of its address) and a few game events: a game starting and
-            ending (on each device in it, that it took part; its mode, hot-seat or online, how many play), the depth range a Delve run ended in, whether
+            ending (on each device in it, that it took part; its mode, on one device or online, how many play), the depth range a Delve run ended in, whether
             the daily unique was answered right, an invite or Delve link opened, how you join a room (code, invite link
             or open rooms list) and whether it works, and connection failures. No names, answers, room codes or device tokens are sent. It works out your country, browser and system
             from your IP address and browser but stores neither, sets no cookies and stores nothing on your

@@ -57,7 +57,7 @@ Run it only when really necessary. Several sessions often share the machine, and
 - `npm run qa -- --change` checks only the scenes this branch touches; `--only lobby` the scenes whose key matches; `--sizes full` every size, or `--sizes phone,uhd`.
 - `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
 - `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.
-- `--map` runs every scene once with the browser's coverage on and writes `src/data/sceneFiles.json`, which files each scene runs: what This change goes by. Run it when scenes or screens have changed much.
+- `--map` runs every scene once with the browser's coverage on and writes `src/data/sceneFiles.json`, which files each scene runs: what This change goes by. Run it when scenes or screens have changed much; with `--only <scenes>` it maps just those (new scenes, say) and merges them into the map as it was.
 
 ## Keeping it easy
 

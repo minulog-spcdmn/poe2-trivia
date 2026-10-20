@@ -605,6 +605,11 @@ export interface Player {
    * from older hosts). Turns: their own questions; race: questions they won.
    */
   streak?: number;
+  /**
+   * Plays at the host's screen: a guest the host added on its own device,
+   * answering there on their turns. Turns only (see GameState.aside).
+   */
+  local?: true;
 }
 
 /**
@@ -999,6 +1004,12 @@ export interface GameState {
   /** Watching this game; they get a seat when the host starts the next one unless they `stay` (missing in older saves). */
   spectators?: Spectator[];
   /**
+   * The players at the host's screen (Player.local) while the mode isn't
+   * Turns, which they can't play at one screen: back in their seats as soon
+   * as it is again (missing: none).
+   */
+  aside?: Player[];
+  /**
    * Online: who plays under the held name (names.ts), as the host says: it
    * let them in only with the owner key's signature over its own challenge
    * (ownerKey.ts), or is the owner itself. Guests take its word.
@@ -1050,7 +1061,8 @@ export type Action =
    * `watch`: they'd rather watch than play (a spectator who stays one, see 'watch').
    */
   /** `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true }
+  /** `local`: the host adds a player at its own screen (Player.local), in a Turns lobby. */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; local?: true }
   /** Host: its own player plays under the held name (the host holds the owner key). */
   | { type: 'owner'; playerId: string }
   | { type: 'rename'; playerId: string; name: string }
@@ -1153,6 +1165,32 @@ function fillSeats(s: GameState) {
 }
 
 /**
+ * The players at the host's screen go with the mode, between games: aside
+ * while it isn't Turns, back in the seats left (after anyone already seated)
+ * once it is. Nothing is lost by looking at another mode.
+ */
+function placeLocals(s: GameState) {
+  if (s.settings.mode === 'turns') {
+    const back = s.aside ?? [];
+    const room = Math.max(0, MAX_PLAYERS - s.players.length);
+    for (const p of back.slice(0, room)) {
+      p.hue = freeHue(s);
+      s.players.push(p);
+      settleHue(s, p);
+    }
+    s.aside = back.slice(room);
+  } else {
+    s.aside = [...(s.aside ?? []), ...s.players.filter((p) => p.local)];
+    s.players = s.players.filter((p) => !p.local);
+  }
+  if (!s.aside.length) delete s.aside;
+}
+
+/** Every name in the room, seated, watching or set aside (`except` one). */
+const namesIn = (s: GameState, except?: string) =>
+  [...s.players, ...(s.spectators ?? []), ...(s.aside ?? [])].filter((o) => o.id !== except).map((o) => o.name);
+
+/**
  * Avatar colours that always go to one player, even if someone else had them.
  * Keyed by name skeleton, so every spelling the name check treats as the same
  * person ("Zoe Arcana", "zoe-arcana") counts.
@@ -1188,8 +1226,8 @@ function settleHue(s: GameState, p: Player) {
 }
 
 /** Adds a player with the first free avatar colour (or their reserved one). */
-function seat(s: GameState, id: string, name: string) {
-  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1 };
+function seat(s: GameState, id: string, name: string, local = false) {
+  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1, ...(local ? { local: true as const } : {}) };
   p.hue = freeHue(s);
   s.players.push(p);
   settleHue(s, p);
@@ -1359,6 +1397,23 @@ export class Engine {
   }
 
   /**
+   * The host seats a player at its own screen (Player.local): in a room's
+   * Turns lobby only, since the others can't be played at one screen, and
+   * never on a guest's word. On one device (hot-seat), every player is.
+   */
+  private joinLocal(s: GameState, id: string, raw: string, from: string | null) {
+    if (s.hostId === null || (from !== null && from !== s.hostId)) throw new ActionError('Not allowed.');
+    if (s.phase !== 'lobby') throw new ActionError('Players at your screen join between games.');
+    if (s.settings.mode !== 'turns') throw new ActionError('Players at your screen play Turns.');
+    if ([...s.players, ...(s.spectators ?? []), ...(s.aside ?? [])].some((o) => o.id === id)) throw new ActionError('Not allowed.');
+    const name = cleanName(raw);
+    const problem = nameProblem(name, namesIn(s));
+    if (problem) throw new ActionError(problem);
+    if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
+    seat(s, id, name, true);
+  }
+
+  /**
    * Applies an action. `from` is the player sending it, or null for a trusted
    * local caller (hot-seat mode, host timers). Returns a new state object.
    */
@@ -1372,6 +1427,10 @@ export class Engine {
 
     switch (action.type) {
       case 'join': {
+        if (action.local) {
+          this.joinLocal(s, action.playerId, action.name, from);
+          break;
+        }
         if (from !== null && from !== action.playerId) throw new ActionError('Not allowed.');
         // The owner key's signature names whoever joins under the held name (a seat coming back keeps its own name, so it must be that).
         const own = (name: string) => {
@@ -1396,7 +1455,7 @@ export class Engine {
         // Someone the host already knows may come back through the lock (a lobby
         // drops people who disconnect, so a refresh would otherwise shut them out).
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
-        const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
+        const problem = nameProblem(name, namesIn(s));
         if (problem) throw new ActionError(problem);
         // (A join turned down below leaves the state as it was, this with it.)
         own(name);
@@ -1434,10 +1493,7 @@ export class Engine {
         if (!isHost && from !== action.playerId) throw new ActionError('Not allowed.');
         const p = s.players.find((p) => p.id === action.playerId);
         const name = cleanName(action.name);
-        const problem = nameProblem(
-          name,
-          [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name),
-        );
+        const problem = nameProblem(name, namesIn(s, action.playerId));
         if (problem) throw new ActionError(problem);
         if (p) {
           p.name = name;
@@ -1449,17 +1505,26 @@ export class Engine {
         if (!isHost && from !== action.playerId) throw new ActionError('Only the host can remove players.');
         if (action.playerId === s.hostId) throw new ActionError('The host cannot leave their own game.');
         s.spectators = s.spectators.filter((o) => o.id !== action.playerId);
+        if (s.aside) {
+          s.aside = s.aside.filter((p) => p.id !== action.playerId);
+          if (!s.aside.length) delete s.aside;
+        }
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
         // Delve: whether they leave the run on their feet, or else where they fell (read while they still have a seat).
         const standing = !!s.delve && livesOf(s, action.playerId) > 0;
         const fell = s.delve ? fellAt(s, action.playerId) : null;
         s.players.splice(idx, 1);
-        if (s.phase === 'lobby') fillSeats(s);
+        if (s.phase === 'lobby') {
+          fillSeats(s);
+          // Someone at the host's screen still waiting for a seat (a full room) takes one freed.
+          placeLocals(s);
+        }
         if (s.phase === 'lobby' || s.phase === 'over') break;
         if (s.players.length === 0) {
-          const fresh = { ...createGame(s.hostId, s.settings), spectators: s.spectators, lastAskedAt: s.lastAskedAt, version: s.version + 1 };
+          const fresh = { ...createGame(s.hostId, s.settings), spectators: s.spectators, lastAskedAt: s.lastAskedAt, version: s.version + 1, ...(s.aside ? { aside: s.aside } : {}) };
           fillSeats(fresh);
+          placeLocals(fresh);
           return fresh;
         }
         if (race) {
@@ -1530,6 +1595,8 @@ export class Engine {
         if (typeof custom === 'object' && custom !== null) s.settings.custom = cleanKnobs(custom, cleanKnobs(s.settings.custom));
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (typeof timer === 'number' && Number.isFinite(timer)) s.settings.timer = snapTimer(timer);
+        // The end screen keeps the game as it was played; the restart places them.
+        if (s.phase === 'lobby') placeLocals(s);
         break;
       }
       case 'start': {
@@ -1539,6 +1606,7 @@ export class Engine {
         // go to whoever is waiting.
         s.players = s.players.filter((p) => p.connected);
         fillSeats(s);
+        placeLocals(s);
         if (s.players.length === 0) throw new ActionError('Add at least one player.');
         // Delve together is co-op, played online: on one device it's a run alone (the lobby says so too).
         if (s.settings.mode === 'delve' && s.hostId === null && s.players.length > 1)
@@ -1806,12 +1874,15 @@ export class Engine {
         for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
         fresh.spectators = s.spectators;
         fillSeats(fresh);
+        if (s.aside) fresh.aside = s.aside;
+        placeLocals(fresh);
         fresh.version = s.version;
         fresh.lastAskedAt = s.lastAskedAt;
         fresh.used = s.used;
         Object.assign(s, fresh);
         delete s.startedAt;
         delete s.recap;
+        if (!fresh.aside) delete s.aside;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
@@ -1832,6 +1903,7 @@ export class Engine {
         s.spectators.push({ id: p.id, name: p.name, stay: true });
         // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
+        placeLocals(s);
         if (s.spectators.length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
         break;
       }

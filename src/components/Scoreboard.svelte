@@ -737,7 +737,7 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
     if (asking) (e.preventDefault(), closeAsk());
-    else kicker.disarm();
+    else if (kicker.disarm()) e.preventDefault();
   }}
   onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
 />

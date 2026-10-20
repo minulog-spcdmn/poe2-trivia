@@ -142,6 +142,14 @@ export function gameScenes(): Scene[] {
     }),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
+    // Rog plays at Kalguur's screen: on his turn the host's screen answers, under his name.
+    scene('at-screen', 'Take turns', "A turn at the host's screen", [host('Kalguur'), guest('Doryani')], () =>
+      table(['Kalguur', 'Doryani'])
+        .act({ type: 'join', playerId: pid('Rog'), name: 'Rog', local: true })
+        .start()
+        .playTo((s) => s.phase === 'choosing' && s.players[s.turn].id === pid('Rog'))
+        .pick(),
+    ),
     scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani'), WATCHER], race, crowdAsked),
     scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Doryani', false, 1800), crowdAsked),
     scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Una of the Vaal', true, 1500), crowdAsked),

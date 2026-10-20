@@ -117,6 +117,12 @@ export async function boot(asked: URLSearchParams) {
     const { daysAgo, ...rec } = built.daily;
     storage.writeStored('daily', JSON.stringify({ ...rec, day: daily.utcDay(Date.now()) - daysAgo }));
   }
+  // The sound as it's set, and what else it keeps (its keys).
+  if (built.sound?.muted !== undefined) sound.setMuted(built.sound.muted);
+  if (built.sound?.volume !== undefined) sound.setVolume(built.sound.volume);
+  if (built.sound?.ambience !== undefined) sound.setAmbience(built.sound.ambience);
+  for (const [name, value] of Object.entries(built.stored ?? {})) storage.writeStored(name, value);
+  if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of
@@ -127,7 +133,8 @@ export async function boot(asked: URLSearchParams) {
   session.mode = seat.mode === 'none' ? null : seat.mode;
   session.myPlayerId = seat.me;
   session.status = built.status ?? (state ? 'ready' : 'idle');
-  session.code = 'KXR4QT';
+  session.code = built.hereOnly ? '' : 'KXR4QT';
+  session.hereOnly = !!built.hereOnly;
   session.hideCode = false;
   session.delveResult = built.delveResult ?? null;
   session.bestAtStart = built.bestAtStart ?? null;

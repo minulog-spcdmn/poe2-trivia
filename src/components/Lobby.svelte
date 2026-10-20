@@ -44,10 +44,12 @@
   const s = $derived(session.state!);
   const isHost = $derived(session.isHost);
   const local = $derived(session.mode === 'local');
+  /** A room that couldn't go online: on this device only, nobody can join (session.hereOnly). */
+  const hereOnly = $derived(session.hereOnly);
+  /** A room's host adds players at their own screen, in Turns (the other modes need a device each, or are for one). */
+  const atScreen = $derived(session.mode === 'host' && s.settings.mode === 'turns');
 
-  // A name the start page couldn't seat waits here, to be fixed up.
-  let newName = $state(session.lobbyDraft);
-  session.lobbyDraft = '';
+  let newName = $state('');
   let nameError = $state(false);
   let copied = $state(false);
 
@@ -103,6 +105,10 @@
     if (local) {
       removed.add(id);
       session.dispatch({ type: 'remove', playerId: id });
+    } else if (s.players.find((p) => p.id === id)?.local || s.aside?.some((p) => p.id === id)) {
+      // One at the host's screen has no device to bar: one click, as on one device.
+      removed.add(id);
+      session.kick(id);
     } else if (kicker.click(id)) {
       removed.add(id);
       session.kick(id);
@@ -122,7 +128,8 @@
   });
   /** Escape takes an armed kick back. */
   function disarm(e: KeyboardEvent) {
-    if (e.key === 'Escape') kicker.disarm();
+    // (Taken: the key doesn't open the settings too.)
+    if (e.key === 'Escape' && kicker.disarm()) e.preventDefault();
   }
   /** A press anywhere but the armed Kick takes it back too. */
   function disarmOutside(e: PointerEvent) {
@@ -230,13 +237,13 @@
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
   const lockout = $derived(rulesFor(s.settings).lockout);
-  /** Online: each player's mark, when not simply ready (lib/presence.ts: away, idle, lagging or offline). */
-  const marks = $derived(new Map<string, Mark | null>(s.players.map((p) => [p.id, local ? null : markOf(p.connected, session.standing[p.id])])));
+  /** Online: each player's mark, when not simply ready (lib/presence.ts: away, idle, lagging or offline); those at the host's screen share the host's. */
+  const marks = $derived(new Map<string, Mark | null>(s.players.map((p) => [p.id, local ? null : markOf(p.connected, session.standing[p.local ? (s.hostId ?? p.id) : p.id])])));
   /** Online: the players the game would begin without, and why (the host never counts themselves: they're the one reading it). */
   const unready = $derived(
     s.players.flatMap((p): { name: string; why: Missing }[] => {
       const m = marks.get(p.id);
-      return notReady(m) && !(isHost && p.id === session.myPlayerId) ? [{ name: p.name, why: m }] : [];
+      return notReady(m) && !(isHost && (p.id === session.myPlayerId || p.local)) ? [{ name: p.name, why: m }] : [];
     }),
   );
   /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
@@ -251,6 +258,8 @@
       <p class="go-note warn">Delve on one device is for one player. Remove the others, or host a room.</p>
     {:else if local && !s.players.length}
       <p class="go-note">Add the first exile to begin.</p>
+    {:else if hereOnly && s.players.length < 2}
+      <p class="go-note">{atScreen ? 'Begin alone, or add the players at your screen.' : 'You can begin alone.'}</p>
     {:else if !local && s.players.length < 2}
       <p class="go-note">You can begin alone, or wait for your party.</p>
     {:else if s.players.length > 1}
@@ -278,6 +287,14 @@
   {/if}
 {/snippet}
 
+<!-- The field a player at this screen is added by (on one device, or at a room host's screen). -->
+{#snippet adder(placeholder: string)}
+  <form class="add" onsubmit={addLocal}>
+    <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" {placeholder} aria-label={placeholder} />
+    <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
+  </form>
+{/snippet}
+
 <!-- A rule's heading, the rule under it, as the Delve finds below are set (DelveRules): the rules read at a
      glance as a list without a sign that means nothing (never the diamond: "you are here"). -->
 {#snippet key(word: string, n?: number)}
@@ -294,7 +311,7 @@
 <div class="lobby" class:online={!local} data-cursor="game">
   <div class="cols">
     <div class="col side">
-      {#if !local}
+      {#if !local && !hereOnly}
         <!-- The room code and link are how the party grows, so they come first. -->
         <section class="block room" data-cursor="room" in:fly={{ x: -30, duration: 500, delay: 50 }}>
           <header>
@@ -378,28 +395,22 @@
         </section>
       {/if}
 
-      {#if local}
+      {#if local || hereOnly}
         <!-- On one device the party grows by name: its own block over the party, where the room code stands online, so the field never sits among the chips. -->
         <section class="block room adder" in:fly={{ x: -30, duration: 500, delay: 50 }}>
           <header>
-            <h2>Add exiles</h2>
+            <h2>{local || atScreen ? 'Add exiles' : 'On this device'}</h2>
           </header>
-          {#if s.players.length < MAX_PLAYERS}
-            <form class="add" onsubmit={addLocal}>
-              <input
-                class="field"
-                class:shake={nameError}
-                bind:value={newName}
-                maxlength={MAX_NAME}
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="Exile's name"
-                aria-label="Exile's name"
-              />
-              <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
-            </form>
+          {#if (local || atScreen) && s.players.length < MAX_PLAYERS}
+            {@render adder("Exile's name")}
           {/if}
-          <p class="vis-hint">Pass the device around; each player answers on their own turn.</p>
+          <p class="vis-hint">
+            {#if local || atScreen}
+              Pass the device around; each player answers on their own turn.
+            {:else}
+              Nobody else can join this room. Players at your screen play Turns.
+            {/if}
+          </p>
         </section>
       {/if}
 
@@ -448,7 +459,7 @@
                   <OnlookerMark name={o.name} size={24} />
                   <span class="name" title={o.name}><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
                   {#if isHost}
-                    <KickButton name={o.name} armed={confirming === o.id} onclick={() => kicker.click(o.id) && (removed.add(o.id), session.kick(o.id))} />
+                    <KickButton name={o.name} armed={confirming === o.id} onclick={() => (s.aside?.some((p) => p.id === o.id) ? removePlayer(o.id) : kicker.click(o.id) && (removed.add(o.id), session.kick(o.id)))} />
                   {/if}
                 </li>
               {/each}
@@ -456,15 +467,21 @@
           </div>
         {/snippet}
         {#if waiting.length}{@render gallery('Waiting for a seat', waiting)}{/if}
+        <!-- Turns in a full room: those at the host's screen who didn't fit back wait here for a seat (or to be removed). -->
+        {#if atScreen && s.aside?.length}{@render gallery('At your screen, waiting for a seat', s.aside)}{/if}
         {#if watching.length}{@render gallery('Watching', watching)}{/if}
+        {#if atScreen && !hereOnly && !full}
+          <!-- Online, Turns: someone beside the host plays too, on the host's screen (Race and Delve set them aside). -->
+          <div class="here" transition:slide={{ duration: 250 }}>{@render adder('Add a player at your screen')}</div>
+        {/if}
         {#if !local && !isHost && session.myPlayerId}
           <!-- A guest can sit the games out and watch, and take a seat again. -->
           <p class="watch-choice" data-cursor="watch"><WatchToggle /></p>
         {/if}
-        {#if !local && s.players.length < 2}
+        {#if !local && !hereOnly && s.players.length < 2}
           <p class="hint waiting"><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
         {/if}
-        {#if delve && !local}
+        {#if delve && !local && !hereOnly}
           <!-- Co-op is about the party, so it is told under it: in a team room, or one a second player can still join (on one device, Delve is for one). -->
           <div class="setting together" data-cursor="coop">
             <span class="label">Play co-op together</span>
@@ -1038,6 +1055,10 @@
   .add .field {
     flex: 1;
     min-width: 0;
+  }
+  /* A room's: under the party, as its waiting and watching are. */
+  .here {
+    margin-top: 0.8rem;
   }
   .shake {
     animation: shake 0.45s;

@@ -9,6 +9,7 @@ import { homeScenes } from './home.ts';
 import { lobbyScenes } from './lobby.ts';
 import { gameScenes } from './game.ts';
 import { codexScenes } from './codex.ts';
+import { settingsScenes } from './settings.ts';
 import { overlayScenes } from './overlays.ts';
 import { capturedScenes } from './captured.ts';
 
@@ -17,7 +18,7 @@ let built: Scene[] | null = null;
 /** Every scene, built once. */
 export function catalog(): Scene[] {
   if (built) return built;
-  const all = [...homeScenes(), ...lobbyScenes(), ...gameScenes(), ...overScenes(), ...codexScenes(), ...overlayScenes(), ...capturedScenes()];
+  const all = [...homeScenes(), ...lobbyScenes(), ...gameScenes(), ...overScenes(), ...codexScenes(), ...settingsScenes(), ...overlayScenes(), ...capturedScenes()];
   const order = new Map(SCREENS.map((s, i) => [s.key, i]));
   built = all.map((s, i) => [s, i] as const).sort(([a, i], [b, j]) => order.get(a.screen)! - order.get(b.screen)! || i - j).map(([s]) => s);
   return built;

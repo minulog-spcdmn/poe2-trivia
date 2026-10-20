@@ -104,6 +104,16 @@ export function setMuted(value: boolean) {
   muted = value;
   writeStored('muted', value ? '1' : '0');
   updateAmbience();
+  changed();
+}
+
+/** Whoever shows the sound's settings (the settings page, which reads back what it sets), told when one changes. */
+const listeners = new Set<() => void>();
+const changed = () => listeners.forEach((fn) => fn());
+/** Calls `fn` whenever muting, the volume or the ambience's changes; returns the way to stop. */
+export function onSoundChange(fn: () => void) {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
 }
 
 /** The player's volume, 0 to 1, on top of the mix level (desktop slider). */
@@ -120,10 +130,36 @@ export function setVolume(value: number) {
   volume = Math.min(1, Math.max(0, value));
   writeStored('volume', String(volume));
   if (bus) bus.user.gain.setTargetAtTime(userGain(), bus.ac.currentTime, 0.03);
+  changed();
 }
 
 /** Squared, so the slider feels even to the ear rather than bunching up at the top. */
 const userGain = () => volume * volume;
+
+/**
+ * The ambience's own level, 0 to 1, under the volume (the settings page): every
+ * loop (the hall, the fire, Delve's rumble, beds and tunnel) and nothing else.
+ */
+let ambience = (() => {
+  const v = parseFloat(readStored('ambience') ?? '');
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+})();
+
+export function getAmbience() {
+  return ambience;
+}
+
+export function setAmbience(value: number) {
+  ambience = Math.min(1, Math.max(0, value));
+  writeStored('ambience', String(ambience));
+  if (bus) for (const [l, p] of playing) shape(l, p, bus.ac.currentTime, 0.03);
+  // Turned down to nothing the loops stop (and the context can sleep); up from it they start.
+  updateAmbience();
+  changed();
+}
+
+/** Squared, as the volume is. */
+const ambienceGain = () => ambience * ambience;
 
 /** The whole mix's lift (dB, MIX.lift): another only on the levels page (levels.html), to hear it against. */
 let liftDb = MIX.lift;
@@ -927,10 +963,16 @@ const audible = () => !muted && document.visibilityState === 'visible';
  * only in a vein).
  */
 const wanted = (l: Loop) =>
-  audible() && (l !== FIRE || fire) && (l !== RUMBLE || rumbles()) && (FADES.has(l) || beds.has(l) || (VEIN_LAYERS.has(l) && inTunnel()));
+  audible() && ambience > 0 && (l !== FIRE || fire) && (l !== RUMBLE || rumbles()) && (FADES.has(l) || beds.has(l) || (VEIN_LAYERS.has(l) && inTunnel()));
 
-/** A loop's level, cutoff, speed and reverb send at the current depth. */
+/** A loop's level, cutoff, speed and reverb send at the current depth, at the ambience's level. */
 function target(l: Loop) {
+  const t = mixTarget(l);
+  return { ...t, gain: t.gain * ambienceGain() };
+}
+
+/** The same as the mix has it, before the player's ambience level. */
+function mixTarget(l: Loop) {
   if (l === AMBIENCE) {
     const { deep } = descent(depth);
     return {

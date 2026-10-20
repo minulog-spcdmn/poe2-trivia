@@ -31,6 +31,7 @@ import {
   type GameState,
   type Grayscale,
   type Item,
+  type Player,
 } from './game';
 import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow, type PeerJs } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
@@ -164,7 +165,7 @@ const DEAD_AFTER_MS = 15000;
  * and a host couldn't seal them, so neither gets in.
  */
 const NO_SEAL_JOIN = "This page can't open the room's pictures: that needs a secure page. Open the game at its https:// address to join.";
-const NO_SEAL_HOST = "This page can't seal the room's pictures: that needs a secure page. Open the game at its https:// address to host, or play hot-seat on one device.";
+const NO_SEAL_HOST = "This page can't seal the room's pictures for guests: that needs a secure page. Open the game at its https:// address to host.";
 /** What the host tells a guest whose hello doesn't say it can open sealed pictures. */
 const NO_SEAL_GUEST = "Your game can't open this room's pictures: it needs a secure page. Open the game at its https:// address to join.";
 /** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
@@ -481,6 +482,16 @@ class Session {
   private reaskFails = { turn: '', n: 0 };
   /** Lab only: a co-op run played as its host would, without a room (see labCoop). */
   private labRoomless = false;
+  /**
+   * Host: the room couldn't go online (no connection, or a page that can't
+   * seal its pictures), so its game is on this device only: nobody can join,
+   * and the party is whoever the host adds at its screen (hostHere).
+   */
+  hereOnly = $state(false);
+  /** Hosting without a room: no peer, no guests (the lab's co-op run, or a room that couldn't go online). */
+  private get roomless() {
+    return this.labRoomless || this.hereOnly;
+  }
   private expireTimer: ReturnType<typeof setTimeout> | null = null;
   private expireKey = '';
   private flareTimer: ReturnType<typeof setTimeout> | null = null;
@@ -533,7 +544,14 @@ class Session {
     if (s.settings.mode === 'race') {
       return s.players.some((p) => p.id === me) && !s.question?.misses.some((m) => m.playerId === me);
     }
-    return !!me && s.players[s.turn]?.id === me;
+    return (!!me && s.players[s.turn]?.id === me) || !!this.atMyScreen;
+  }
+
+  /** Host: the player whose turn it is plays at this screen (Player.local), so this device acts for them. */
+  get atMyScreen(): Player | null {
+    const s = this.state;
+    const p = this.mode === 'host' && s && !s.delve && s.settings.mode === 'turns' ? s.players[s.turn] : null;
+    return p?.local ? p : null;
   }
 
   /** Host: the open question has no art to show (it failed to load), so it should be asked again. */
@@ -575,31 +593,17 @@ class Session {
     this.reset();
     this.mode = 'local';
     this.status = 'ready';
-    this.lobbyDraft = '';
     this.setState(resume ?? createGame(null, delve ? { ...DEFAULT_SETTINGS, mode: 'delve' } : undefined));
   }
 
-  /** What the hot-seat lobby's add field starts with: the name a new game couldn't seat. The lobby takes it. */
-  lobbyDraft = '';
-
   /**
-   * A fresh hot-seat game with `name` seated first. A name this device can't
-   * play under (too short, reserved, held) doesn't hold the game up: it waits
-   * in the lobby's add field, where adding it says why.
-   */
-  startLocalAs(name: string) {
-    this.startLocal();
-    if (!nameUsable(name) || !this.seatLocal(name)) this.lobbyDraft = name;
-  }
-
-  /**
-   * Seats a player on this device (hot-seat); false when the game turned
-   * them down (and said why). The id comes from getRandomValues, which,
-   * unlike randomUUID, also works on plain http.
+   * Seats a player on this device (hot-seat, or at a room host's screen); false
+   * when the game turned them down (and said why). The id comes from
+   * getRandomValues, which, unlike randomUUID, also works on plain http.
    */
   seatLocal(name: string): boolean {
     const playerId = newPlayerId();
-    this.dispatch({ type: 'join', playerId, name });
+    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}) });
     return !!this.state?.players.some((p) => p.id === playerId);
   }
 
@@ -629,7 +633,13 @@ class Session {
           toasts.show('Delve together is now played online in a room. On one device, Delve is for one player.', 'info', { title: 'Run not resumed' }),
         ),
       );
-    else if (saved.mode === 'host') {
+    else if (saved.mode === 'host' && !saved.code) {
+      // A room that never went online carries on here, as it was.
+      this.reset();
+      this.mode = 'host';
+      this.loadPrivate(saved.priv);
+      this.hostHere(null, null, underRuleset(renameCategories(saved.state)));
+    } else if (saved.mode === 'host') {
       // The host's last moment before the reload, which reset() lets go of with the save ('resumed' reads it).
       const alive = readStored(ALIVE, 'session');
       this.reset();
@@ -661,10 +671,10 @@ class Session {
   }
 
   private openRoom(code: string, attempt: number, resumeState?: GameState) {
-    // Guests are only ever sent the art sealed: a page that can't seal it can't host.
+    // Guests are only ever sent the art sealed: a page that can't seal it can't host (but can play here).
     if (!sealAvailable()) {
       if (resumeState) this.fail(NO_SEAL_HOST, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-      else this.fail(NO_SEAL_HOST, 'Room not opened', { failure: 'host-room-not-opened' });
+      else this.hostHere(NO_SEAL_HOST, 'host-room-not-opened');
       return;
     }
     const Peer = this.peerClass(
@@ -698,7 +708,7 @@ class Session {
         if (s.delve) s = markAway(s, me);
         else
           for (const p of s.players)
-            if (p.id !== me) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
+            if (p.id !== me && !p.local) s = engine.apply(s, { type: 'connection', playerId: p.id, connected: false }, null);
         // A reveal counts down afresh, so the others can reconnect before it
         // moves on (moving on skips the seats still offline).
         if (s.reveal) s = { ...s, reveal: { ...s.reveal, at: Date.now() } };
@@ -708,14 +718,8 @@ class Session {
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
         this.setState(s);
       } else {
-        let s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
-        this.delveLink = false;
-        try {
-          s = engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
-        } catch (err) {
-          this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', { failure: 'host-room-not-opened' });
-          return;
-        }
+        const s = this.newRoomGame('host-room-not-opened');
+        if (!s) return;
         this.setState(s);
       }
       this.signOwnRoom(code);
@@ -763,7 +767,46 @@ class Session {
   /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
   private roomNotOpened(code: string, type: string, reopening: boolean) {
     if (reopening) this.fail(`${this.networkHint(type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-    else this.fail(this.networkHint(type), 'No connection', { failure: 'host-no-connection' });
+    else this.hostHere(`Couldn't connect to the matchmaking server (${type}), so nobody can join.`, 'host-no-connection');
+  }
+
+  /**
+   * A new room's game: the room's settings (Delve, from a shared link), the
+   * host seated. Null once it has said why it couldn't be (`failure` counted).
+   */
+  private newRoomGame(failure?: Failure): GameState | null {
+    const me = this.priv.myPlayerId;
+    const s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
+    this.delveLink = false;
+    try {
+      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName }, me);
+    } catch (err) {
+      this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', failure ? { failure } : {});
+      return null;
+    }
+  }
+
+  /**
+   * Host: the new room couldn't go online (`why`, counted as `failure`), so it
+   * opens on this device instead (hereOnly), the host seated, as a room's
+   * lobby: players at this screen are added there. `resume`: such a game
+   * picked up after a reload, without trying the server again.
+   */
+  private hostHere(why: string | null, failure: Failure | null, resume?: GameState) {
+    if (failure) countFailure(failure);
+    // Whatever was still trying to open the room lets go.
+    this.peerEpoch++;
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
+    this.peer?.destroy();
+    this.peer = null;
+    this.hereOnly = true;
+    this.code = '';
+    this.status = 'ready';
+    const s = resume ?? this.newRoomGame();
+    if (!s) return;
+    this.setState(s);
+    if (why) this.flash(`${why} You can still play here, on this device.`, 'info', { title: 'Playing on this device' });
   }
 
   private acceptConnection(conn: DataConnection) {
@@ -1252,7 +1295,7 @@ class Session {
     if (at) noteInput();
     if (this.mode === 'client') {
       if (this.hostConn?.open) this.hostConn.send({ t: 'cursor', at });
-    } else if (this.mode === 'host' && !this.labRoomless) this.relayCursor(me, at);
+    } else if (this.mode === 'host' && !this.roomless) this.relayCursor(me, at);
   }
 
   private send(conn: DataConnection, msg: HostMsg) {
@@ -1369,7 +1412,7 @@ class Session {
    */
   private drawAhead(s: GameState, after: Promise<void>) {
     this.dropAhead();
-    if (this.mode !== 'host' || this.labRoomless) return;
+    if (this.mode !== 'host' || this.roomless) return;
     const drawn = drawAhead(s, (st) => engine.apply(st, { type: 'next' }, null));
     if (!drawn) return;
     const stop = new AbortController();
@@ -1444,7 +1487,7 @@ class Session {
    * the lab send nobody anything: nothing to seal.
    */
   private async sealMedia(qid: number, plain: MediaMsg[]): Promise<Sealing> {
-    if (this.mode !== 'host' || this.labRoomless) return { qid, key: null, sealed: [], open: false };
+    if (this.mode !== 'host' || this.roomless) return { qid, key: null, sealed: [], open: false };
     const key = await makeSealKey(`${qid}-${newKid()}`);
     return { qid, key, sealed: await Promise.all(plain.map((m) => sealMsg(m, key))), open: false };
   }
@@ -2134,7 +2177,9 @@ class Session {
       this.hostConn?.send({ t: 'action', action });
       return;
     }
-    const from = this.mode === 'local' ? null : this.myPlayerId;
+    // A turn played at the host's screen is that player's own (a pick, an answer); the room is still the host's to run.
+    const at = action.type === 'pick' || action.type === 'answer' ? this.atMyScreen : null;
+    const from = this.mode === 'local' ? null : (at?.id ?? this.myPlayerId);
     const run = () => {
       if (!this.state) return;
       try {
@@ -2149,7 +2194,7 @@ class Session {
     const racing = this.race || (!!this.state.delve && isGroupRun(this.state));
     // Never past the moment that judges it (delveSession.ts hostAnswerHold): held over 0, it would cost a flare.
     const handicap =
-      this.mode === 'host' && !this.labRoomless && racing && (action.type === 'answer' || action.type === 'blast')
+      this.mode === 'host' && !this.roomless && racing && (action.type === 'answer' || action.type === 'blast')
         ? hostAnswerHold(this.state, Date.now(), this.hostHandicap())
         : 0;
     if (handicap > 0) setTimeout(run, handicap);
@@ -2161,6 +2206,11 @@ class Session {
     if (this.mode !== 'host' || playerId === this.priv.myPlayerId) return;
     const s = this.state;
     const player = s?.players.find((o) => o.id === playerId);
+    // One at this screen (seated, or waiting aside) just goes: there's no device to bar.
+    if (player?.local || s?.aside?.some((o) => o.id === playerId)) {
+      this.dispatch({ type: 'remove', playerId });
+      return;
+    }
     const name = (player ?? s?.spectators?.find((o) => o.id === playerId))?.name;
     const p = this.priv;
     for (const [secret, id] of this.secretToPlayer)
@@ -2346,6 +2396,8 @@ class Session {
     const s = this.state;
     if (!s) return;
     if (this.mode === 'local' || this.labRoomless) writeSaved({ mode: 'local', state: s });
+    // No code: a reload picks it up on this device again, without reaching for the server (resume).
+    else if (this.hereOnly) writeSaved({ mode: 'host', code: '', state: s, priv: this.priv });
     else if (this.mode === 'host') {
       writeSaved({ mode: 'host', code: this.code, state: s, priv: this.priv });
       // Beside it, so a crash (no pagehide) never stops a held clock before what the save holds.
@@ -2355,7 +2407,7 @@ class Session {
 
   /** Lists the room publicly while the host has it set to public. */
   private syncBeacon(s: GameState) {
-    const want = this.mode === 'host' && !this.labRoomless && !!s.settings.public;
+    const want = this.mode === 'host' && !this.roomless && !!s.settings.public;
     if (want && !this.beacon) {
       this.beacon = new Beacon((challenge) => this.listing(challenge));
       this.beacon.start();
@@ -2416,7 +2468,8 @@ class Session {
     if (!counting) return;
     for (const e of reachEvents(prev, next)) countReach(e);
     if (this.mode !== 'local' && this.mode !== 'host') return;
-    for (const e of this.gameCounts.events(prev, next, this.mode === 'local')) countEvent(e);
+    // Counted as on one device: hot-seat, or a room that never went online.
+    for (const e of this.gameCounts.events(prev, next, this.mode === 'local' || this.hereOnly)) countEvent(e);
   }
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
@@ -2697,9 +2750,10 @@ class Session {
       return;
     }
     if (next.phase === 'over' && prev.phase !== 'over') {
-      // Hot-seat and spectators celebrate whoever won; a player who lost hears a toll instead.
-      // A Delve run ends with the last life, never a victory: it dies down.
-      const lost = this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.includes(me);
+      // Hot-seat and spectators celebrate whoever won; a player who lost hears a toll instead
+      // (unless someone at their screen won). A Delve run ends with the last life, never a victory: it dies down.
+      const here = (id: string) => id === me || !!next.players.find((p) => p.id === id)?.local;
+      const lost = this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.some(here);
       sfx(next.delve ? 'fallen' : lost ? 'defeat' : 'victory');
       return;
     }
@@ -2735,7 +2789,10 @@ class Session {
       }
     } else if (prev.phase !== next.phase && next.phase === 'choosing') {
       // Delve: a new depth's deal is heard as the descent (App.svelte plays 'plunge').
-      if (!next.delve) sfx(next.players[next.turn]?.id === me || this.mode === 'local' ? 'yourTurn' : 'turn');
+      if (!next.delve) {
+        const up = next.players[next.turn];
+        sfx(up?.id === me || this.mode === 'local' || (this.mode === 'host' && up?.local) ? 'yourTurn' : 'turn');
+      }
     } else if (prev.phase === 'choosing' && next.phase === 'question') {
       sfx('reveal');
     } else if (prev.phase === 'lobby' && next.phase === 'lobby' && next.players.length > prev.players.length) {
@@ -2873,10 +2930,11 @@ class Session {
   /**
    * Online: the reveal moves on by itself after a few seconds. Counted from the
    * reveal itself, so people joining or leaving meanwhile (or the host
-   * reloading) can't hold it up.
+   * reloading) can't hold it up. Not in a room on this device only, passed
+   * around as hot-seat is: Next moves it on there.
    */
   private scheduleAutoNext(s: GameState) {
-    const key = s.phase === 'reveal' && this.mode === 'host' && s.question ? s.question.askedAt : 0;
+    const key = s.phase === 'reveal' && this.mode === 'host' && !this.hereOnly && s.question ? s.question.askedAt : 0;
     if (key === this.autoNextFor) return;
     if (this.autoNext) clearTimeout(this.autoNext);
     this.autoNext = null;
@@ -2939,6 +2997,8 @@ class Session {
       !s.delve &&
       !!active?.connected &&
       active.id !== this.priv.myPlayerId &&
+      // One at the host's screen holds up nobody but that screen.
+      !active.local &&
       (s.phase === 'choosing' || (s.phase === 'question' && clockRuns(s.question) && !s.question?.deadline));
     const key = waiting ? `${s.turnCount}:${s.phase}:${s.question?.askedAt ?? 0}` : '';
     if (key === this.idleKey) return;
@@ -2965,7 +3025,7 @@ class Session {
   }
 
   private networkHint(type: string) {
-    return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
+    return `Couldn't connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
   }
 
   /**
@@ -3065,6 +3125,7 @@ class Session {
     this.strikes.clear();
     this.sealedArt.clear();
     this.labRoomless = false;
+    this.hereOnly = false;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.standing = {};

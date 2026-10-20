@@ -40,7 +40,7 @@ import { clearAside, makeRoom, newerThan } from './keepAside.ts';
 import type { Tier } from './metals.ts';
 import { isHeldName } from './names.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
-import { TARGET_MIN, clearLeft, settleLeft, versusGame } from './versus.ts';
+import { TARGET_MIN, clearLeft, rivalsOf, settleLeft, versusGame } from './versus.ts';
 
 export type { Tier } from './metals.ts';
 export { TARGET_MIN } from './versus.ts';
@@ -768,7 +768,7 @@ export function trackVersus(
 /** How a game against others went, won or lost, from the state it ended on; null for a game that doesn't count (see versusGame) or isn't over. */
 export function versusOutcome(s: GameState, me: string | null, hotSeat: boolean): Outcome | null {
   if (s.phase !== 'over' || !versusGame(s, me, hotSeat)) return null;
-  if (s.settings.targetScore < TARGET_MIN || !s.players.some((p) => p.id !== me && p.connected)) return null;
+  if (s.settings.targetScore < TARGET_MIN || !rivalsOf(s, me).length) return null;
   return s.winners.includes(me!) ? 'won' : 'lost';
 }
 
@@ -785,7 +785,7 @@ export function versusEnd(s: GameState, me: string | null, hotSeat: boolean, tra
   const t = track?.game === s.startedAt ? track : null;
   // Lost after leading the winner.
   if (outcome === 'lost') return { outcome, earned: t && s.winners.some((id) => (t.ahead[id] ?? 0) >= COMEBACK) ? ['hubris'] : [] };
-  const there = s.players.filter((p) => p.id !== me && p.connected);
+  const there = rivalsOf(s, me);
   const race = s.settings.mode === 'race';
   const flawless = !!t && t.whole && t.answered > 0 && !t.wrong;
   const out: string[] = ['first-victory'];

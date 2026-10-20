@@ -1,6 +1,7 @@
 // The lobby: a room of any size, game and settings, from the host's seat, a
-// guest's and a spectator's; hot-seat; and the descent a Delve lobby draws
-// from this device's records.
+// guest's and a spectator's; players at the host's screen, and a room that
+// couldn't go online; hot-seat; and the descent a Delve lobby draws from this
+// device's records.
 
 import { MAX_PLAYERS, TIMER_STEPS, type Settings } from '../../lib/game.ts';
 import { DELVE_RULESET, FINDS_IN_ORDER } from '../../lib/delve.ts';
@@ -47,6 +48,18 @@ const ROOM: Control[] = [
   { kind: 'toggle', key: 'public', label: 'Public', default: false },
   { kind: 'toggle', key: 'locked', label: 'Locked', default: false },
 ];
+
+/** Players at the host's screen, and the game the host has picked (Race and Delve set them aside). */
+const HERE: Control = { kind: 'range', key: 'here', label: "At the host's screen", min: 0, max: MAX_PLAYERS - 1, default: 2 };
+const MODE: Control = ROOM[1];
+
+function atScreen(names: string[], v: Values): Built {
+  const t = new Table(names);
+  const here = TWELVE.filter((n) => !names.includes(n)).slice(0, Number(v.here ?? 2));
+  for (const name of here) t.act({ type: 'join', playerId: pid(name), name, local: true });
+  if (v.mode && v.mode !== 'turns') t.act({ type: 'settings', settings: { mode: v.mode as Settings['mode'] } });
+  return { state: t.s, act: t.room };
+}
 
 function room(v: Values = {}): Built {
   const names = TWELVE.slice(0, Number(v.players ?? 3));
@@ -124,6 +137,34 @@ export function lobbyScenes(): Scene[] {
         { label: 'Delve together, twelve', values: { mode: 'delve', players: 12 }, group: 'Delve' },
       ],
       build: room,
+    },
+    {
+      key: 'lobby/at-screen',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: "Players at the host's screen",
+      seats: [host('Kalguur'), guest('Doryani')],
+      controls: [HERE, MODE],
+      states: [
+        { label: 'Two at the host’s screen, in Turns', values: {} },
+        { label: 'Race: they are set aside', values: { mode: 'race' } },
+        { label: 'A full room', values: { here: 10 } },
+      ],
+      build: (v = {}) => atScreen(['Kalguur', 'Doryani'], v),
+    },
+    {
+      key: 'lobby/here-only',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: "A room that couldn't go online: on this device",
+      seats: [host('Kalguur')],
+      controls: [HERE, MODE],
+      states: [
+        { label: 'Alone', values: { here: 0 } },
+        { label: 'Two at the screen', values: {} },
+        { label: 'Delve', values: { mode: 'delve' } },
+      ],
+      build: (v = {}) => ({ ...atScreen(['Kalguur'], v), hereOnly: true }),
     },
     {
       key: 'lobby/hot-seat',

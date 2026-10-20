@@ -14,6 +14,7 @@ export const SCREEN_FILES: Record<string, () => Promise<Scene[]>> = {
   game: () => import('./game.ts').then((m) => m.gameScenes()),
   over: () => import('./over.ts').then((m) => m.overScenes()),
   codex: () => import('./codex.ts').then((m) => m.codexScenes()),
+  settings: () => import('./settings.ts').then((m) => m.settingsScenes()),
   overlay: () => import('./overlays.ts').then((m) => m.overlayScenes()),
 };
 

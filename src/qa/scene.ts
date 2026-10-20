@@ -13,13 +13,14 @@ import type { SizeKey } from './sizes.ts';
 import type { Control, State, Values } from './bench.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
-export type Screen = 'home' | 'lobby' | 'game' | 'over' | 'codex' | 'overlay';
+export type Screen = 'home' | 'lobby' | 'game' | 'over' | 'codex' | 'settings' | 'overlay';
 export const SCREENS: { key: Screen; label: string }[] = [
   { key: 'home', label: 'Start page' },
   { key: 'lobby', label: 'Lobby' },
   { key: 'game', label: 'In a game' },
   { key: 'over', label: 'End screen' },
   { key: 'codex', label: 'Codex' },
+  { key: 'settings', label: 'Settings' },
   { key: 'overlay', label: 'Over the game' },
 ];
 
@@ -72,6 +73,8 @@ export interface Built {
   name?: string;
   /** Today's unique as this device has it: its record, last answered `daysAgo` days before today (the frame's real today). */
   daily?: Omit<DailyRecord, 'day'> & { daysAgo: number };
+  /** Host: the room never went online (the session's hereOnly), so it is on this device only. */
+  hereOnly?: boolean;
   /** The session's status ('connecting': joining a room). */
   status?: 'idle' | 'connecting' | 'ready' | 'lost';
   /** What follows the page's address: a query to add ('room=KXR4QT&first') and a hash ('#codex'). */
@@ -82,6 +85,10 @@ export interface Built {
   invite?: RoomInfo | 'gone' | null;
   /** Done once the scene shows. */
   steps?: Step[];
+  /** The sound as this device has it set (the settings page); missing: as it comes. */
+  sound?: { muted?: boolean; volume?: number; ambience?: number };
+  /** Other things this device keeps, by their storage names ('keys': the player's keys, lib/keybinds.svelte.ts). */
+  stored?: Record<string, string>;
   /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
   circle?: PlateName | null;
 }

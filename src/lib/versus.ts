@@ -19,10 +19,17 @@ import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 /** Wins count to this target or more. */
 export const TARGET_MIN = 5;
 
-/** A game against others: online, this player seated, someone else seated, not Delve. */
+/**
+ * A game against others: online, this player seated, someone else seated on
+ * a device of their own (not at the host's screen, whose turns the host could
+ * play), not Delve.
+ */
 export function versusGame(s: GameState, me: string | null, hotSeat: boolean): s is GameState & { startedAt: number } {
-  return !hotSeat && !!me && !s.delve && !!s.startedAt && s.players.length >= 2 && s.players.some((p) => p.id === me);
+  return !hotSeat && !!me && !s.delve && !!s.startedAt && s.players.some((p) => p.id === me) && s.players.some((p) => p.id !== me && !p.local);
 }
+
+/** The rivals a counted game is played against: still there, each on a device of their own. */
+export const rivalsOf = (s: GameState, me: string | null) => s.players.filter((p) => p.id !== me && p.connected && !p.local);
 
 /**
  * Losing a counted game still in play: to TARGET_MIN or more, behind a rival
@@ -30,7 +37,7 @@ export function versusGame(s: GameState, me: string | null, hotSeat: boolean): s
  */
 export function losing(s: GameState, me: string | null, hotSeat: boolean): boolean {
   if (!versusGame(s, me, hotSeat) || s.phase === 'lobby' || s.phase === 'over' || s.settings.targetScore < TARGET_MIN) return false;
-  const rivals = s.players.filter((p) => p.id !== me && p.connected);
+  const rivals = rivalsOf(s, me);
   if (!rivals.length) return false;
   if (s.deathmatch?.entrants.includes(me!) && !s.deathmatch.alive.includes(me!)) return true;
   const mine = s.players.find((p) => p.id === me)?.score ?? 0;

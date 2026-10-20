@@ -162,8 +162,9 @@ const LIST_SIZE = 16;
  */
 const FIRST = ['game', 'art', 'next'];
 const MORE = [
-  // The header over every screen.
-  'header', 'brand', 'meta', 'mute', 'fx', 'leave',
+  // The header over every screen. ('fx' was the effects button's, which the
+  // settings took: kept, so the codes after it stay as they are.)
+  'header', 'brand', 'meta', 'gear', 'fx', 'leave',
   // The lobby: the room, the party, the game's settings, the start (Begin, or a guest's wait for it).
   'room', 'code', 'invite', 'hide', 'access', 'public', 'lock', 'party', 'watch', 'coop',
   'settings', 'modes', 'about', 'target', 'difficulty', 'time', 'rules', 'descent', 'start', 'begin',
