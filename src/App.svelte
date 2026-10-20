@@ -278,6 +278,16 @@
     };
   });
   let headerOn = $state(untrack(() => screen !== 'home'));
+  /**
+   * The screen the header is for: the start page has none, and the header
+   * stays a moment as it comes in (headerOn), so it keeps the one it had,
+   * or a page closing would show a room's gear and leave until it goes.
+   */
+  let headerFor = $state(untrack(() => screen));
+  $effect.pre(() => {
+    if (screen !== 'home') headerFor = screen;
+  });
+  const headerPage = $derived(headerFor === 'codex' || headerFor === 'settings');
   const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
     if (screen !== 'home' === untrack(() => headerOn)) return;
@@ -465,7 +475,7 @@
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
     <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
-      <button class="brand" data-cursor="brand" onclick={() => (page ? closePage() : askLeave())} title={page ? 'Back to the start' : 'Leave game'}>
+      <button class="brand" data-cursor="brand" onclick={() => (page ? closePage() : askLeave())} title={headerPage ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -527,8 +537,8 @@
         {/if}
       </div>
       <div class="tools">
-        {#if page}
-          <button class="icon-btn" onclick={closePage} title={codex ? 'Close the codex' : 'Close the settings'} aria-label={codex ? 'Close the codex' : 'Close the settings'}>
+        {#if headerPage}
+          <button class="icon-btn" onclick={closePage} title={headerFor === 'codex' ? 'Close the codex' : 'Close the settings'} aria-label={headerFor === 'codex' ? 'Close the codex' : 'Close the settings'}>
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         {:else}

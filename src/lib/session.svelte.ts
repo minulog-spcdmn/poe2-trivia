@@ -82,7 +82,7 @@ import {
   underRuleset,
   type DelveNotice,
 } from './delveSession';
-import { readLegacy, readStored, removeLegacy, removeStored, writeStored } from './storage';
+import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
@@ -219,6 +219,8 @@ function stored(name: string, fallback: () => string): string {
 }
 
 export const savedName = () => readStored('name') ?? '';
+/** The whole key of the saved name, as storage events name it. */
+export const NAME_KEY = storeKey('name');
 
 /** What a guest is told when the host turns it out of the room, by the host's word for it: the message, and its title. */
 const TURNED_OUT = {

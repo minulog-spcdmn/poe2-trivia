@@ -1,5 +1,5 @@
 import { engine } from './session.svelte';
-import { itemImage, itemSrcset, itemThumb } from './ui-paths';
+import { absoluteUrl as abs, itemImage, itemSrcset, itemThumb } from './ui-paths';
 import { cardPictures, categoryArt, type Tweak } from './categoryArt';
 import { PALETTE } from './palette';
 
@@ -11,8 +11,6 @@ export { itemImage, itemSrcset, itemThumb };
 
 // Which art each category card shows (lib/categoryArt), as URLs.
 const ART = categoryArt(engine.byCategory);
-/** A path from the site's base as an absolute URL, safe to use inside CSS custom properties. */
-const abs = (path: string) => new URL(`${import.meta.env.BASE_URL}${path}`, document.baseURI).href;
 const icons = new Map([...ART].map(([cat, a]) => [cat, abs(a.icon)]));
 const glyphs = new Map([...ART].map(([cat, a]) => [cat, abs(a.glyph)]));
 const companions = new Map([...ART].flatMap(([cat, a]) => (a.companions.length ? [[cat, a.companions.map((c) => ({ kind: c.kind, url: abs(c.icon) }))]] : [])));
