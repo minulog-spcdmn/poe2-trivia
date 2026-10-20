@@ -76,7 +76,9 @@ pick) and B (Unidentified, a deckbuilder). The owner took neither and named
 the root issues instead (`decisions.md`, newest row): the item screen is
 fiddly, the map has no journey, difficulty is a joke, corruption is
 meaningless, the systems don't mesh, the items are uncreative. Design v11
-fixes those in the v5 game rather than inventing a new loop. v5 stays on its branch,
+(`design-v11.md`) fixes those in the v5 game: a typed name, fogged act
+webs, a red that blinds zones, supplies earned by naming bare; gold, shop
+and boons cut. Waiting on the owner. v5 stays on its branch,
 not served.
 
 Sessions: an orchestrator opened from the owner's phone (Remote Control)
