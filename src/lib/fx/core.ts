@@ -27,7 +27,8 @@ import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
 import { switchedOff, type Switch } from '../switchedOff';
 import { frameEvent, timed } from '../fpsMeter';
-import { QualityAdapt } from './adapt';
+import { GpuBudget, type Layer, type Saved } from './gpuBudget';
+import type { GpuDraw } from './gpuTimer';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -190,13 +191,13 @@ const listeners = new Set<(on: boolean) => void>();
 const awayListeners = new Set<(away: boolean) => void>();
 
 /**
- * Quality: 0 full resolution, 1 lower, 2 lowest. Bloom stays on at every
- * level: switching it off mid-effect would dim everything at once.
+ * Quality: 0 full resolution, 1 lower, 2 lowest, as the GPU keeps up
+ * (lib/fx/gpuBudget.ts weighs it; touch screens start, and stay, at 1). The
+ * backdrop follows it (fxScaledDown). Bloom stays on at every level:
+ * switching it off mid-effect would dim everything at once.
  */
-let quality = 0;
-/** Whether a drop in quality would make frames quicker, and when to undo one that didn't (lib/fx/adapt.ts). */
-let adapt = new QualityAdapt(0, lowerQuality);
-/** The quality changed: the targets are made at its size once nothing is drawn (see frame()). */
+let quality = coarse?.matches ? 1 : 0;
+/** Another quality is wanted: it's moved to once nothing is drawn (see frame()). */
 let resizeDue = false;
 let resizeDueAt = 0;
 
@@ -752,24 +753,22 @@ function frameUntimed(nowMs: number) {
   const rawDt = Math.max(0, nowMs - last) / 1000;
   last = nowMs;
 
-  // Adapt quality: if frames keep taking far longer than a display refresh
-  // while effects run, and the effects' own GPU work is a good part of them,
-  // drop resolution; undo a drop that didn't make frames quicker (see
-  // lib/fx/adapt.ts for how it tells). (Gaps over 300ms are a background tab
-  // or a stall, not the effects.) The resolution itself changes only once
-  // nothing is drawn (resizeDue): making the targets anew stalls the GPU,
-  // which in the middle of a moment (a right answer's reveal) held several
-  // frames up at once. The moment plays out as it began; the next one is
-  // drawn at the new size, and only then are frames timed to see whether the
-  // drop helped.
-  // (Not on touch screens: a phone's GPU draws in tiles, later than its
-  // timer sees, and some report next to nothing. There the drop is weighed
-  // by the frames alone.)
-  const gpu = coarse?.matches ? null : renderer.gpuTime();
-  if (rawDt > 0 && rawDt < 0.3 && !resizeDue && adapt.frame(rawDt * 1000, gpu)) {
-    quality = adapt.quality;
-    resizeDue = true;
-    resizeDueAt = nowMs;
+  // What the effects' draws cost the GPU, for the quality (lib/fx/gpuBudget.ts:
+  // weighed by these, the backdrop's, and its frames, see backdropFrame).
+  // The resolution itself changes only once nothing is drawn (resizeDue):
+  // making the targets anew stalls the GPU, which in the middle of a moment
+  // (a right answer's reveal) held several frames up at once. The moment
+  // plays out as it began; the next one is drawn at the new size, and only
+  // then is it weighed again.
+  // (Not timed on touch screens: a phone's GPU draws in tiles, later than its
+  // timer sees, and some report next to nothing. There frames alone tell.)
+  const draws = coarse?.matches ? null : renderer.gpuDraws();
+  if (draws) for (const d of draws) gpuBudget.gpu('fx', d.ms, d.px);
+  // (No backdrop to tell the frames, its context lost for good, or none
+  // beside the effects at all: the effects' own frames tell instead.)
+  if (!backdropPixels) {
+    if (rawDt > 0 && rawDt < 0.3) gpuBudget.frame(rawDt * 1000, nowMs);
+    steer(nowMs);
   }
 
   // (25ms rather than 33: a frame that comes a little early isn't skipped too.)
@@ -781,11 +780,13 @@ function frameUntimed(nowMs: number) {
   } finally {
     raf = busy ? requestAnimationFrame(frame) : 0;
   }
-  // (Something endless, a streak's fire, may never let go: then once it's
-  // calm, a few seconds on, and after a while even if it never is, or a slow
-  // machine would wait at the old size, its quality never adapting, for as
-  // long as it lasts.)
-  if (resizeDue && (!busy || (calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)) resize();
+  // (Something endless, a streak's fire, may never let go: then a drop is
+  // made once it's calm, a few seconds on, and after a while even if it
+  // never is, or a slow machine would wait at the old size, its quality
+  // never adapting, for as long as it lasts. A climb can wait for a moment
+  // with nothing drawn: making the targets anew mid-moment holds frames up.)
+  const dropping = resizeDue && gpuBudget.next(nowMs) > quality;
+  if (resizeDue && (!busy || (dropping && ((calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)))) moveTo(nowMs);
   if (!busy) show(false);
 }
 
@@ -1087,11 +1088,136 @@ export function fxRealtime() {
 
 // ---------- setup ----------
 
-/** The most pixels the overlay draws at (see resize): a 1440p screen's. */
+/** The most pixels the overlay draws at below quality 0 (see sizeAt): a 1440p screen's. */
 const MAX_PIXELS = 2560 * 1440;
 
 let ro: ResizeObserver | null = null;
 let deviceBox: { w: number; h: number } | null = null;
+
+const scaleListeners = new Set<() => void>();
+
+/**
+ * Whether the quality is down from full resolution: on a touch screen from
+ * the start, elsewhere once the GPU was found too slow for every pixel (see
+ * gpuBudget.ts). The backdrop then keeps to a 1440p screen's worth too
+ * (lib/backdrop.ts).
+ */
+export function fxScaledDown() {
+  return quality > 0;
+}
+
+/** Calls `fn` when fxScaledDown() changes. */
+export function onFxScale(fn: () => void) {
+  scaleListeners.add(fn);
+  return () => scaleListeners.delete(fn);
+}
+
+/** The backdrop's device pixels at each quality (lib/backdrop.ts says, as it starts), or null while there's none. */
+let backdropPixels: ((q: number) => number) | null = null;
+
+/** The device pixels `layer` draws at quality `q` (none for the effects while they aren't drawn). */
+function layerPixels(q: number, layer: Layer) {
+  if (layer === 'backdrop') return backdropPixels?.(q) ?? 0;
+  if (!renderer || !fxActive()) return 0;
+  const [w, h] = sizeAt(q);
+  return w * h;
+}
+
+/** What the GPU was found to cost on a past visit (see save()), or null. */
+function savedCost(): Saved | null {
+  try {
+    const v = readStored('gpuCost');
+    const saved = v ? JSON.parse(v) : null;
+    return saved && typeof saved === 'object' ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Which quality the GPU keeps up with (lib/fx/gpuBudget.ts). */
+const gpuBudget = new GpuBudget(layerPixels, quality, savedCost());
+let savedAt = -Infinity;
+let written = '';
+let writtenAt = -Infinity;
+
+/**
+ * Keeps what the GPU costs for the next visit: looked at once a minute
+ * (unless `now`), written when it changed, or hourly so a level held stays
+ * fresh (gpuBudget.ts, SAVED_FOR_S).
+ */
+function save(nowMs: number, now = false) {
+  if (!now && nowMs - savedAt < 60_000) return;
+  savedAt = nowMs;
+  const s = gpuBudget.saved();
+  if (!s) return;
+  const same = JSON.stringify({ ...s, at: 0 });
+  if (same === written && nowMs - writtenAt < 3600_000) return;
+  written = same;
+  writtenAt = nowMs;
+  writeStored('gpuCost', JSON.stringify(s));
+}
+
+/**
+ * The backdrop starts (with how many device pixels it draws at each
+ * quality, and whether its GPU can be timed), or stops (null). As it
+ * starts, the level a past visit held may set the quality before its first
+ * frame (or, where the GPU can't be timed, a big screen starts a level down).
+ */
+export function setBackdropPixels(fn: ((q: number) => number) | null, timable = false) {
+  backdropPixels = fn;
+  if (!fn) return;
+  gpuBudget.timable(timable);
+  steer(performance.now());
+}
+
+let lastFrame = 0;
+
+/**
+ * One of the backdrop's frames (it has one every display frame): its draws
+ * timed on the GPU since the last (see gpuTimer.ts), if any, and how long the
+ * frame was, for the quality (gpuBudget.ts), with whether effects play and
+ * whether they're off. (Gaps over 300ms are a background tab or a stall.)
+ */
+export function backdropFrame(nowMs: number, draws: GpuDraw[] | null) {
+  if (draws) for (const d of draws) gpuBudget.gpu('backdrop', d.ms, d.px);
+  const ms = nowMs - lastFrame;
+  lastFrame = nowMs;
+  if (ms > 0 && ms < 300) gpuBudget.frame(ms, nowMs, raf !== 0, !fxActive());
+  steer(nowMs);
+}
+
+/**
+ * Weighs the quality (gpuBudget.ts). Another is moved to at once while no
+ * effect is drawn, else marked due for a calm moment (see frame()).
+ */
+function steer(nowMs: number) {
+  save(nowMs);
+  if (gpuBudget.next(nowMs) === quality) {
+    resizeDue = false;
+    return;
+  }
+  if (!resizeDue) resizeDueAt = nowMs;
+  resizeDue = true;
+  if (!raf) moveTo(nowMs);
+}
+
+/**
+ * Moves to the quality weighed: the overlay's targets made anew at its size,
+ * the backdrop told (onFxScale). Returns whether it changed.
+ */
+function moveTo(nowMs: number) {
+  resizeDue = false;
+  const q = gpuBudget.next(nowMs);
+  if (q === quality) return false;
+  const scaled = quality > 0;
+  quality = q;
+  gpuBudget.applied(q, nowMs);
+  frameEvent(`quality ${q}`);
+  save(nowMs, true);
+  resize();
+  if (scaled !== q > 0) for (const l of scaleListeners) l();
+  return true;
+}
 
 /** The size (device px) the overlay draws at at quality `q`, for the canvas's size now. */
 function sizeAt(q: number): [number, number] {
@@ -1099,36 +1225,24 @@ function sizeAt(q: number): [number, number] {
   // crisp), less as quality drops. Shapes, which are all soft, get about one
   // texel per CSS px.
   const cap = q === 0 ? 1.5 : q === 1 ? 1 : 0.75;
-  // And never more than MAX_PIXELS in all: on a 4K screen 1.5 per CSS px
-  // came to 8 million, in half-float targets and their bloom, under a
-  // backdrop as big: a reveal's frames waited on the GPU for a tenth of a
-  // second and more.
+  // Below quality 0, never more than MAX_PIXELS in all either: on a 4K
+  // screen 1.5 per CSS px came to 8 million, in half-float targets and their
+  // bloom, under a backdrop as big, and on a GPU too weak for that a reveal's
+  // frames waited for a tenth of a second and more. A GPU that keeps up
+  // draws a big screen whole; one that doesn't is found out
+  // (gpuBudget.ts) and comes down to this, the backdrop with it.
   const dprNow = devicePixelRatio || 1;
-  const fit = Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
-  const k = Math.min(dprNow, cap, fit) / dprNow;
+  const fit = q === 0 ? Infinity : Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
+  // (Nor wider or taller than the GPU's targets can be: a window across several screens.)
+  const most = renderer?.maxSize ?? Infinity;
+  const k = Math.min(dprNow, cap, fit, most / Math.max(1, viewW), most / Math.max(1, viewH)) / dprNow;
   const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * dprNow * k);
   const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * dprNow * k);
   return [w, h];
 }
 
-/**
- * The next quality down from `q` that draws fewer pixels, or null. (On a
- * screen of one device px per CSS px, quality 1 draws as many as 0: only
- * fewer particles. A GPU too weak for the effects is helped by the next
- * level, and trying 1 first would find no help and stop there.)
- */
-function lowerQuality(q: number): number | null {
-  const [w, h] = sizeAt(q);
-  for (let next = q + 1; next <= 2; next++) {
-    const [w2, h2] = sizeAt(next);
-    if (w2 * h2 < w * h) return next;
-  }
-  return null;
-}
-
+/** Makes the overlay's targets at the quality now, for the canvas's size. */
 function resize() {
-  // (Made at the quality now, any resize waiting for a calm moment is done too.)
-  resizeDue = false;
   if (!canvas || !renderer) return;
   viewW = Math.max(1, canvas.clientWidth);
   viewH = Math.max(1, canvas.clientHeight);
@@ -1178,9 +1292,6 @@ const wanted = () => userOn && !reduce?.matches;
  */
 function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
-  quality = coarse?.matches ? 1 : 0;
-  adapt = new QualityAdapt(quality, lowerQuality);
-  resizeDue = false;
   waiting?.();
   waiting = null;
   if (typeof WebGL2RenderingContext === 'undefined' || webgl2Refused()) return;
@@ -1251,7 +1362,8 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
     const estW = entry.contentRect.width * devicePixelRatio;
     const exact = box && Math.abs(box.inlineSize - estW) <= 2;
     deviceBox = exact ? { w: box.inlineSize, h: box.blockSize } : null;
-    resize();
+    // (A quality waiting for a calm moment is moved to now: the targets are made anew anyway.)
+    if (!resizeDue || !moveTo(performance.now())) resize();
   });
   try {
     ro.observe(c, { box: 'device-pixel-content-box' });

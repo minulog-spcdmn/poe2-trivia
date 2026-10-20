@@ -9,7 +9,8 @@
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
 import { INSTANCE_FLOATS } from './particles';
-import { NOISE, buildPrograms, dropTarget, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
+import { GpuTimer, type GpuDraw } from './gpuTimer';
+import { NOISE, buildPrograms, dropTarget, maxDrawSize, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
 import { frameEvent } from '../fpsMeter';
 
@@ -1146,6 +1147,12 @@ export class FxRenderer {
     gl.bindVertexArray(null);
   }
 
+  /** The widest or tallest the targets can be (device px). */
+  get maxSize(): number {
+    return (this.maxSize_ ??= maxDrawSize(this.gl));
+  }
+  private maxSize_: number | undefined;
+
   get isLost() {
     return this.gl.isContextLost();
   }
@@ -1193,61 +1200,25 @@ export class FxRenderer {
     this.cleared = true;
   }
 
-  /**
-   * How long the GPU took over the frames drawn (EXT_disjoint_timer_query_webgl2,
-   * where the browser has it: desktop Chrome does, Firefox and Safari don't).
-   * Each draw is timed in a query of its own, read a few frames on once the
-   * GPU is done with it; never waited for.
-   */
-  private timer: { ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null; free: WebGLQuery[]; pending: WebGLQuery[]; ms: number; frames: number; drawn: number } | null = null;
+  /** Times the frames drawn, once gpuDraws() has been asked for (see gpuTimer.ts). */
+  private timer: GpuTimer | null = null;
 
   /**
-   * The GPU's time (ms) over the frames timed since the last call, how many
-   * they were, and how many frames were drawn since (timed or not); null
-   * where it can't be timed. (A frame whose timing was
-   * spoiled, the GPU's clock disturbed by a power state, say, is left out.)
+   * The frames whose GPU times have come in since the last call (ms, and the
+   * device pixels drawn); null where they can't be timed.
    */
-  gpuTime(): { ms: number; frames: number; drawn: number } | null {
-    const gl = this.gl;
-    const t = (this.timer ??= { ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), free: [] as WebGLQuery[], pending: [] as WebGLQuery[], ms: 0, frames: 0, drawn: 0 });
-    if (!t.ext) return null;
-    // (The GPU's clock disturbed: every query still out may have run through
-    // it, so none of them is read. The flag is cleared as it's read.)
-    if (gl.getParameter(t.ext.GPU_DISJOINT_EXT)) {
-      for (const q of t.pending) gl.deleteQuery(q);
-      t.pending = [];
-    }
-    while (t.pending.length && gl.getQueryParameter(t.pending[0], gl.QUERY_RESULT_AVAILABLE)) {
-      const q = t.pending.shift()!;
-      t.ms += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
-      t.frames++;
-      t.free.push(q);
-    }
-    const out = { ms: t.ms, frames: t.frames, drawn: t.drawn };
-    t.ms = 0;
-    t.frames = 0;
-    t.drawn = 0;
-    return out;
+  gpuDraws(): GpuDraw[] | null {
+    const t = (this.timer ??= new GpuTimer(this.gl));
+    return t.available ? t.read() : null;
   }
 
   /**
    * Draws one frame (see drawFrame), timed on the GPU where it can be. (Not
-   * before gpuTime() has been asked for once: until then nobody reads it.)
+   * before gpuDraws() has been asked for once: until then nobody reads it.)
    */
   draw(...args: Parameters<FxRenderer['drawFrame']>) {
-    const t = this.timer?.ext ? this.timer : null;
-    if (t) t.drawn++;
-    // (A few frames' queries waiting at most: if the GPU falls further behind, the frames past them go untimed.)
-    const q = t && t.pending.length < 6 ? (t.free.pop() ?? this.gl.createQuery()) : null;
-    if (q) this.gl.beginQuery(t!.ext!.TIME_ELAPSED_EXT, q);
-    try {
-      this.drawFrame(...args);
-    } finally {
-      if (q) {
-        this.gl.endQuery(t!.ext!.TIME_ELAPSED_EXT);
-        t!.pending.push(q);
-      }
-    }
+    if (this.timer) this.timer.time(this.width * this.height, () => this.drawFrame(...args));
+    else this.drawFrame(...args);
   }
 
   /**
@@ -1670,7 +1641,7 @@ export class FxRenderer {
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
-    for (const q of [...(this.timer?.free ?? []), ...(this.timer?.pending ?? [])]) gl.deleteQuery(q);
+    this.timer?.dispose();
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }
