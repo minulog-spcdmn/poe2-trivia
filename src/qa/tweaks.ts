@@ -91,12 +91,21 @@ export function applyTweaks(built: Built, v: Values, seen: string[]): Built {
   const as = valuesOf(tweaksFor(built), {});
   if (TWEAK_KEYS.every((k) => v[k] === undefined || v[k] === as[k])) return built;
   // (A scene may hand out the same state each time it's built: never change it in place.)
-  const s: GameState = structuredClone(s0);
+  let s: GameState = structuredClone(s0);
   const kept = new Set(seen);
 
+  // Who drops or comes back goes through the engine where the game was played
+  // on one (a race ends when only one is left, Delve together moves on
+  // without them), so it shows only what the game would; a game built by hand
+  // just has its flags set.
   const off = v.offline;
   if (typeof off === 'string' && off !== '' && s.hostId !== null) {
-    for (const p of s.players) p.connected = kept.has(p.id) || (off === '-' ? true : off === '*' ? false : p.name === off ? false : p.connected);
+    for (const p of s0.players) {
+      const connected = kept.has(p.id) || (off === '-' ? true : off === '*' ? false : p.name === off ? false : p.connected);
+      if (connected === p.connected) continue;
+      if (built.act) s = built.act(s, { type: 'connection', playerId: p.id, connected });
+      else s.players.find((q) => q.id === p.id)!.connected = connected;
+    }
   }
 
   if (s.hostId !== null && (v.joining !== as.joining || v.watching !== as.watching)) {

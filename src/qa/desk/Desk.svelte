@@ -182,7 +182,11 @@
   }
   function setValue(key: string, value: Value) {
     if (piece) values[piece.key] = { ...v, [key]: value };
-    else if (scene) sceneSet[scene.key] = { ...sceneSet[scene.key], [key]: value };
+    else if (scene) {
+      // (The watchers as shown, not as last asked for: one the other's share held back stays so, not coming back later.)
+      const shown: Record<string, Value> = set && (key === 'joining' || key === 'watching') && 'joining' in set.values ? { joining: set.values.joining, watching: set.values.watching } : {};
+      sceneSet[scene.key] = { ...sceneSet[scene.key], ...shown, [key]: value };
+    }
   }
   /** The state last gone to, by bench: what "As it was" goes back to once a control has moved it off. */
   let picked = $state<Record<string, number>>({});

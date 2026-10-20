@@ -1,6 +1,8 @@
 import type { PeerOptions } from 'peerjs';
+import type * as PeerJsModule from 'peerjs';
 import { CHANNEL, LOCAL, roomPrefix } from './channel';
 import { QA_ROOM } from './storage';
+import { whenIdle } from './idle';
 import { QA_PEER_PATH, QA_PEER_PORT } from '../qa/live/signal';
 
 // Bump when the protocol or item data changes so old tabs can't join new rooms.
@@ -26,3 +28,30 @@ export const PEER_OPTIONS: PeerOptions =
           secure: (env.VITE_PEER_SECURE ?? 'true') === 'true',
         }
       : {};
+
+export type PeerJs = typeof PeerJsModule;
+let peerJs: PeerJs | null = null;
+let loading: Promise<PeerJs> | null = null;
+
+/**
+ * PeerJS, loaded the first time a peer is made (or in idle time after the
+ * start page shows, preloadPeerJs): the start page doesn't wait for it. A
+ * load that fails (offline) is tried again on the next call.
+ */
+export function loadPeerJs(): Promise<PeerJs> {
+  return (loading ??= import('peerjs').then(
+    (m) => (peerJs = m),
+    (err) => {
+      loading = null;
+      throw err;
+    },
+  ));
+}
+
+/** PeerJS when it is loaded already, so a peer can be made right away. */
+export const peerJsNow = (): PeerJs | null => peerJs;
+
+/** Loads PeerJS once the page is idle, so hosting or joining doesn't wait for it. */
+export function preloadPeerJs() {
+  whenIdle(() => void loadPeerJs().catch(() => {}), { timeout: 3000, fallback: 1000 });
+}

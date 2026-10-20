@@ -235,6 +235,12 @@ const threeWay = () =>
     }),
     extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani'), una()], round: 2, results: {}, eliminated: [una()], out: { [pid('Doryani')]: 1, [una()]: 2 }, startedAt: 0 } },
   });
+/** n-won, everyone gone but you. */
+function allGone() {
+  const s = won();
+  for (const p of s.players.slice(1)) p.connected = false;
+  return s;
+}
 /** A ranking of `n` players, scores falling. */
 const crowd = (n: number) =>
   game(
@@ -271,7 +277,6 @@ export function endScenes(): EndScene[] {
       earned: ['first-victory', 'untarnished'],
       states: [
         { label: 'Take turns: you won (host)', values: {} },
-        { label: 'Only you still here (1 of 5)', values: { offline: '*' }, group: NG },
         { label: 'Eight watching: five join next, three just watch', values: { joining: 5, watching: 3 }, group: NG },
       ],
     },
@@ -354,11 +359,13 @@ export function endScenes(): EndScene[] {
       me: K,
       state: teamRun(TEAM6),
       ...host6(),
+      controls: [{ kind: 'range', key: 'streak', label: 'Best streak together', min: 0, max: 12, default: 0 }],
       states: [
         { label: 'Together: six delvers (host)', values: {} },
-        { label: 'Together: Rog went offline', values: { offline: 'Rog' }, group: DG },
+        { label: 'Together: Rog went offline, a best streak of 5', values: { offline: 'Rog', streak: 5 }, group: DG },
         { label: 'Together: three join the next run', values: { joining: 3 }, group: DG },
       ],
+      vary: (v) => teamRun(TEAM6, { streak: Number(v.streak ?? 0) }),
     },
     { key: 'd-team12', group: 'Delve', label: 'Together: twelve delvers (host)', boards: { desktop: 'd-team12', air13: 'd-team12-air13' }, view: D, mode: 'host', me: K, state: teamRun(TEAM12), ...host6() },
     {
@@ -693,6 +700,8 @@ export function endScenes(): EndScene[] {
     },
     { key: 'e-unmeasured', group: DG, label: 'Together: a run this device never recorded', view: D, mode: 'client', me: doryani, state: teamRun(TEAM6), delveResult: null, log: guestLog() },
     // Further round the edges.
+    // n-won with everyone else gone, but earning only first-victory (no untarnished), so a scene of its own.
+    { key: 'e-one-left', group: NG, label: 'Only you still here (1 of 5)', view: D, mode: 'host', me: K, state: allGone(), earned: ['first-victory'] },
     {
       key: 'e-winner-gone',
       group: NG,

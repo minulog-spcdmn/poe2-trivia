@@ -36,6 +36,8 @@ export class Table {
     this.s = this.engine.apply(this.s, a, from);
     return this;
   }
+  /** A move by the room itself on any state of this game (a scene's Built.act). */
+  readonly room = (s: GameState, a: Action) => this.engine.apply(s, a, null);
   /** The clock moves on. */
   wait(ms: number): this {
     this.clock.now += ms;
