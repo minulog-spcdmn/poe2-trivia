@@ -21,7 +21,7 @@
 // (such as the title's thin decorative lines) cast no shadow here. Their CSS
 // shadow is faint enough not to matter.
 
-import { paintsBackground } from './backdropShadow';
+import { backgroundPainter } from './backdropShadow';
 import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
@@ -381,12 +381,7 @@ export function measureDrops(
   // the filter), so they hold for the whole pass.
   const linears = new Map<Element, Lin | null>();
   const opacities = new Map<Element, number>();
-  const paints = new Map<Element, boolean>();
-  const paintsAt = (el: Element) => {
-    let p = paints.get(el);
-    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
-    return p;
-  };
+  const paintsAt = backgroundPainter();
   for (const node of tagged) {
     let ok = node.isConnected && active.length < MAX_MASKS;
     const cs = ok ? getComputedStyle(node) : null;

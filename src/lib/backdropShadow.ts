@@ -178,8 +178,21 @@ function nameOf(el: Element) {
   return `${el.tagName.toLowerCase()}${el.classList[0] ? '.' + el.classList[0] : ''}`;
 }
 
-/** Whether an element paints a background of its own (CSS would lay it over anything the backdrop draws under it). */
-export function paintsBackground(cs: CSSStyleDeclaration) {
+/**
+ * Whether an element paints a background of its own (CSS would lay it over
+ * anything the backdrop draws under it), each element's answer kept: for one
+ * frame's measuring, where elements share most of their ancestors.
+ */
+export function backgroundPainter(): (el: Element) => boolean {
+  const paints = new Map<Element, boolean>();
+  return (el) => {
+    let p = paints.get(el);
+    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
+    return p;
+  };
+}
+
+function paintsBackground(cs: CSSStyleDeclaration) {
   if (cs.backgroundImage !== 'none') return true;
   const c = parseColor(cs.backgroundColor);
   return !!c && c[3] > 0;
@@ -327,12 +340,7 @@ export function measureShadows(
   // Ancestors' backgrounds, read once a frame: elements share most of their
   // ancestors. (Read before this frame's data-bs-fill is written, so a
   // tagged ancestor's own fill is judged by `filled` instead, below.)
-  const paints = new Map<Element, boolean>();
-  const paintsAt = (el: Element) => {
-    let p = paints.get(el);
-    if (p === undefined) paints.set(el, (p = paintsBackground(getComputedStyle(el))));
-    return p;
-  };
+  const paintsAt = backgroundPainter();
   // Opacities and transforms likewise (nothing below changes one).
   const opacities = new Map<Element, number>();
   const linears = new Map<Element, Lin | null>();

@@ -1164,7 +1164,10 @@
     animation-duration: 0.2s;
   }
   /* Chosen, the gold is there at once over the dark it had, which fades from
-     under it: as one colour, the gold over that dark, easing to the gold. */
+     under it: as one colour, the gold over that dark, easing to the gold.
+     (.mode.on's fill, alpha 0.55, over .mode's black at 0.35: alpha
+     0.55 + 0.35 x 0.45 = 0.7075, colour the gold's x 0.55 / 0.7075. Retune
+     those and these follow.) */
   @keyframes mode-on {
     from {
       --bs-fill-a: rgba(94.84, 61.41, 22.54, 0.7075);
