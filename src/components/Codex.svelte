@@ -88,12 +88,13 @@
   // And the sections are laid out a few at a time. All five hundred tiles at
   // once took some 60 ms of style and layout in the codex's first frame, and
   // all their pictures set loading at once another 45 ms. So each section
-  // after the first is held out of layout (content-visibility) until its
-  // turn, one a frame once the codex is in (or sooner, as the browser does,
-  // when it nears the screen), standing meanwhile at the height its
-  // rows take at the first section's pitch. Its turn lays it out as any page
-  // is, so every height is exact a moment after opening, and starts its
-  // pictures loading.
+  // after the first holds its tiles out of layout (content-visibility) until
+  // its turn, one a frame once the codex is in (or sooner, as the browser
+  // does, when it nears the screen), its header laid out as ever and its
+  // grid standing meanwhile at the height its rows take at the first grid's
+  // pitch (every row takes the same: within a pixel, measured at 1707 and
+  // 375 wide). Its turn lays it out as any page is, and starts its pictures
+  // loading.
   const saveData = !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
   /** How many sections have had their turn. */
   let staged = $state(0);
@@ -113,21 +114,18 @@
       cancelAnimationFrame(raf);
     };
   });
-  /** The sections as shown (bound), the first measured for the others' height while they're held. */
-  let sectionEls = $state<HTMLElement[]>([]);
-  let pitch = $state<{ head: number; row: number; gap: number; cols: number } | null>(null);
+  /** The sections' grids as shown (bound), the first measured for the others' height while they're held. */
+  let gridEls = $state<HTMLElement[]>([]);
+  let pitch = $state<{ row: number; gap: number; cols: number } | null>(null);
   $effect(() => {
-    const first = sectionEls[0];
-    const grid = first?.querySelector<HTMLElement>('.grid');
-    if (pitch || !first || !grid?.children.length) return;
+    const grid = gridEls[0];
+    if (pitch || !grid?.children.length) return;
     const cs = getComputedStyle(grid);
     const cols = cs.gridTemplateColumns.split(' ').length;
     const gap = parseFloat(cs.rowGap) || 0;
-    const h = ownRect(grid).height;
-    // (Its grid's margin under it collapses out of a section laid out, and stays inside one held.)
-    pitch = { head: ownRect(first).height - h + (parseFloat(cs.marginBottom) || 0), row: (h + gap) / Math.ceil(grid.children.length / cols), gap, cols };
+    pitch = { row: (ownRect(grid).height + gap) / Math.ceil(grid.children.length / cols), gap, cols };
   });
-  const heldHeight = (n: number) => (pitch ? `auto ${(pitch.head + Math.ceil(n / pitch.cols) * pitch.row - pitch.gap).toFixed(1)}px` : 'auto 800px');
+  const heldHeight = (n: number) => (pitch ? `auto ${(Math.ceil(n / pitch.cols) * pitch.row - pitch.gap).toFixed(1)}px` : 'auto 600px');
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
   const sections = $derived(
@@ -518,7 +516,7 @@
       {#if view === 'grid'}
         {#each sections as sec, i (sec.stats.category)}
           {@const loading = !saveData && i < staged ? 'eager' : 'lazy'}
-          <section class="cat-section" class:held={held(i)} style:contain-intrinsic-height={held(i) ? heldHeight(sec.items.length) : null} bind:this={sectionEls[i]}>
+          <section class="cat-section">
             <header>
               {@render glyph(sec.stats.category)}
               <h3>{sec.stats.category}</h3>
@@ -533,7 +531,7 @@
                 {/each}
               </ul>
             {/if}
-            <ul class="grid">
+            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? heldHeight(sec.items.length) : null} bind:this={gridEls[i]}>
               {#each sec.items as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>
@@ -1179,7 +1177,7 @@
   }
 
   /* Out of layout until its turn (see staged). */
-  .cat-section.held {
+  .grid.held {
     content-visibility: auto;
   }
   .cat-section header {

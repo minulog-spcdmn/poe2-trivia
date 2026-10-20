@@ -382,7 +382,7 @@
   function heightVar(node: HTMLElement, name: string) {
     const set = () => {
       const v = `${ownRect(node).height.toFixed(2)}px`;
-      if (untrack(() => codex)) heldVars.set(name, v);
+      if (codex) heldVars.set(name, v);
       else document.documentElement.style.setProperty(`--${name}`, v);
     };
     const ro = new ResizeObserver(set);
