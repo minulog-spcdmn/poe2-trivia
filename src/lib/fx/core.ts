@@ -25,6 +25,7 @@ import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
 import { switchedOff, type Switch } from '../switchedOff';
 import { frameEvent, timed } from '../fpsMeter';
+import { QualityAdapt } from './adapt';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -189,12 +190,8 @@ const awayListeners = new Set<(away: boolean) => void>();
  * level: switching it off mid-effect would dim everything at once.
  */
 let quality = 0;
-let slowFor = 0;
-let frameAvg = 16;
-/** Frames (ms) slower than this count as load. Rises on displays capped below 60fps. */
-let slowMs = 22;
-/** After a drop in quality: whether it made frames quicker (see frame()). */
-let probe: { from: number; before: number; time: number; frames: number } | null = null;
+/** Whether a drop in quality would make frames quicker, and when to undo one that didn't (lib/fx/adapt.ts). */
+let adapt = new QualityAdapt(0, lowerQuality);
 /** The quality changed: the targets are made at its size once nothing is drawn (see frame()). */
 let resizeDue = false;
 let resizeDueAt = 0;
@@ -745,46 +742,20 @@ function frameUntimed(nowMs: number) {
   last = nowMs;
 
   // Adapt quality: if frames keep taking far longer than a display refresh
-  // while effects run, drop resolution. If a drop doesn't make frames any
-  // quicker, they weren't slow because of the effects: the display or the
-  // browser runs at a lower rate (30fps in a power-saving mode, say). Then
-  // the drop is undone and frames that slow count as normal from then on.
-  // (Gaps over 300ms are a background tab or a stall, not the effects.)
-  // The resolution itself changes only once nothing is drawn (resizeDue):
-  // making the targets anew stalls the GPU, which in the middle of a moment
-  // (a right answer's reveal) held several frames up at once. The moment
-  // plays out as it began; the next one is drawn at the new size, and only
-  // then are frames timed to see whether the drop helped.
-  if (rawDt > 0 && rawDt < 0.3) {
-    const ms = Math.min(rawDt, 0.1) * 1000;
-    frameAvg += (ms - frameAvg) * 0.12;
-    if (resizeDue) {
-      // (Waiting for the drop to take effect.)
-    } else if (probe) {
-      probe.time += rawDt;
-      probe.frames++;
-      if (probe.time > 1) {
-        const avg = (probe.time * 1000) / probe.frames;
-        if (avg > probe.before * 0.85) {
-          quality = probe.from;
-          slowMs = Math.max(slowMs, avg * 1.3);
-          resizeDue = true;
-          resizeDueAt = nowMs;
-        }
-        probe = null;
-        slowFor = 0;
-        frameAvg = avg;
-      }
-    } else if (frameAvg > slowMs && quality < 2) {
-      slowFor += rawDt;
-      if (slowFor > 0.6) {
-        probe = { from: quality, before: frameAvg, time: 0, frames: 0 };
-        quality++;
-        slowFor = 0;
-        resizeDue = true;
-        resizeDueAt = nowMs;
-      }
-    } else slowFor = Math.max(0, slowFor - rawDt * 0.5);
+  // while effects run, and the effects' own GPU work is a good part of them,
+  // drop resolution; undo a drop that didn't make frames quicker (see
+  // lib/fx/adapt.ts for how it tells). (Gaps over 300ms are a background tab
+  // or a stall, not the effects.) The resolution itself changes only once
+  // nothing is drawn (resizeDue): making the targets anew stalls the GPU,
+  // which in the middle of a moment (a right answer's reveal) held several
+  // frames up at once. The moment plays out as it began; the next one is
+  // drawn at the new size, and only then are frames timed to see whether the
+  // drop helped.
+  const gpu = renderer.gpuTime();
+  if (rawDt > 0 && rawDt < 0.3 && !resizeDue && adapt.frame(rawDt * 1000, gpu && gpu.ms)) {
+    quality = adapt.quality;
+    resizeDue = true;
+    resizeDueAt = nowMs;
   }
 
   // (25ms rather than 33: a frame that comes a little early isn't skipped too.)
@@ -1030,16 +1001,12 @@ const MAX_PIXELS = 2560 * 1440;
 let ro: ResizeObserver | null = null;
 let deviceBox: { w: number; h: number } | null = null;
 
-function resize() {
-  // (Made at the quality now, any resize waiting for a calm moment is done too.)
-  resizeDue = false;
-  if (!canvas || !renderer) return;
-  viewW = Math.max(1, canvas.clientWidth);
-  viewH = Math.max(1, canvas.clientHeight);
+/** The size (device px) the overlay draws at at quality `q`, for the canvas's size now. */
+function sizeAt(q: number): [number, number] {
   // Glows don't need every device pixel: 1.5 per CSS px at most (sparks stay
   // crisp), less as quality drops. Shapes, which are all soft, get about one
   // texel per CSS px.
-  const cap = quality === 0 ? 1.5 : quality === 1 ? 1 : 0.75;
+  const cap = q === 0 ? 1.5 : q === 1 ? 1 : 0.75;
   // And never more than MAX_PIXELS in all: on a 4K screen 1.5 per CSS px
   // came to 8 million, in half-float targets and their bloom, under a
   // backdrop as big: a reveal's frames waited on the GPU for a tenth of a
@@ -1047,8 +1014,33 @@ function resize() {
   const dprNow = devicePixelRatio || 1;
   const fit = Math.sqrt(MAX_PIXELS / Math.max(1, viewW * viewH));
   const k = Math.min(dprNow, cap, fit) / dprNow;
-  const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * (devicePixelRatio || 1) * k);
-  const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * (devicePixelRatio || 1) * k);
+  const w = deviceBox && k === 1 ? deviceBox.w : Math.round(viewW * dprNow * k);
+  const h = deviceBox && k === 1 ? deviceBox.h : Math.round(viewH * dprNow * k);
+  return [w, h];
+}
+
+/**
+ * The next quality down from `q` that draws fewer pixels, or null. (On a
+ * screen of one device px per CSS px, quality 1 draws as many as 0: only
+ * fewer particles. A GPU too weak for the effects is helped by the next
+ * level, and trying 1 first would find no help and stop there.)
+ */
+function lowerQuality(q: number): number | null {
+  const [w, h] = sizeAt(q);
+  for (let next = q + 1; next <= 2; next++) {
+    const [w2, h2] = sizeAt(next);
+    if (w2 * h2 < w * h) return next;
+  }
+  return null;
+}
+
+function resize() {
+  // (Made at the quality now, any resize waiting for a calm moment is done too.)
+  resizeDue = false;
+  if (!canvas || !renderer) return;
+  viewW = Math.max(1, canvas.clientWidth);
+  viewH = Math.max(1, canvas.clientHeight);
+  const [w, h] = sizeAt(quality);
   dpr = w / viewW;
   frameEvent(`effects at ${w}x${h} (quality ${quality})`);
   renderer.resize(w, h, Math.min(1, 1 / dpr));
@@ -1095,7 +1087,7 @@ const wanted = () => userOn && !reduce?.matches;
 function prepare(c: HTMLCanvasElement) {
   pool = new ParticlePool(coarse?.matches ? 2000 : 5000);
   quality = coarse?.matches ? 1 : 0;
-  probe = null;
+  adapt = new QualityAdapt(quality, lowerQuality);
   resizeDue = false;
   waiting?.();
   waiting = null;
