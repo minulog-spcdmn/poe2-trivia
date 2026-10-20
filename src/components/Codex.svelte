@@ -105,6 +105,13 @@
   // more show (a search cleared).
   let staging = $state(false);
   onMount(() => whenIdle(() => (staging = true), { timeout: 500 }));
+  // A new search or pick shows its sections afresh (their tiles made anew):
+  // they take their turns again, set before the page updates.
+  $effect.pre(() => {
+    void query;
+    void only;
+    staged = 0;
+  });
   $effect(() => {
     if (!staging || staged >= sections.length) return;
     const raf = requestAnimationFrame(() => staged++);
@@ -126,9 +133,10 @@
     ro.observe(grid);
     return () => ro.disconnect();
   });
-  /** One canvas for measuring names, and the lines found, by font, width and name. */
+  /** One canvas for measuring names, and the lines found at the current font and width, by name. */
   let measurer: CanvasRenderingContext2D | null | undefined;
   const lineCounts = new Map<string, number>();
+  let lineCountsAt = '';
   function measurePitch(grid: HTMLElement): Pitch | null {
     const tile = grid.querySelector<HTMLElement>('.tile');
     const name = tile?.querySelector<HTMLElement>('.name');
@@ -144,10 +152,15 @@
     // Read now, not as names are measured: the element may be gone by then.
     const fonts = ['normal', 'italic'].map((style) => `${style} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`);
     const spacing = ns.letterSpacing === 'normal' ? '0px' : ns.letterSpacing;
+    const at = `${fonts[0]}|${spacing}|${width}`;
+    if (at !== lineCountsAt) {
+      lineCounts.clear();
+      lineCountsAt = at;
+    }
     // Two lines where it's wider than the line and can break, else one.
     const lines = (text: string, unknown: boolean) => {
       const font = fonts[+unknown];
-      const key = `${font}|${spacing}|${width}|${text}`;
+      const key = `${+unknown}${text}`;
       let n = lineCounts.get(key);
       if (n === undefined) {
         ctx.font = font;

@@ -12,13 +12,16 @@ test('every component reading the shell heights says so', () => {
     for (const f of readdirSync(dir)) {
       const p = join(dir, f);
       if (statSync(p).isDirectory()) walk(p);
-      else if (f.endsWith('.svelte')) files.push(p);
+      else if (/\.(svelte|css|ts|js)$/.test(f)) files.push(p);
     }
   };
   walk('src');
-  const silent = files.filter((f) => {
-    const s = readFileSync(f, 'utf8');
-    return /var\(--(header|legal)-h\b/.test(s) && !s.includes('readsShellHeights()');
-  });
+  const reads = (f: string) => /var\(--(header|legal)-h\b|getPropertyValue\(['"]--(header|legal)-h/.test(readFileSync(f, 'utf8'));
+  const silent = files.filter((f) => f.endsWith('.svelte') && reads(f) && !readFileSync(f, 'utf8').includes('readsShellHeights()'));
   assert.deepEqual(silent, []);
+  // A stylesheet or a module can't say so: they're read only in a component.
+  assert.deepEqual(
+    files.filter((f) => !f.endsWith('.svelte') && reads(f)),
+    [],
+  );
 });

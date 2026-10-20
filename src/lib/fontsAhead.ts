@@ -24,17 +24,13 @@ let loading: Promise<void> | null = null;
 
 /** Loads the faces now (once), resolving when they're in or have failed. */
 export function loadFonts(): Promise<void> {
-  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
-  return (loading ??= (() => {
-    const root = getComputedStyle(document.documentElement);
-    return Promise.all(
-      LATER.map(([face, family]) => {
-        // Its first family only: the fallbacks after it would load faces of their own.
-        const first = root.getPropertyValue(family).split(',')[0].trim();
-        return first ? document.fonts.load(`${face} 16px ${first}`).catch(() => {}) : undefined;
-      }),
-    ).then(() => {});
-  })());
+  if (loading || typeof document === 'undefined' || !document.fonts) return loading ?? Promise.resolve();
+  const root = getComputedStyle(document.documentElement);
+  // Each one's first family only: the fallbacks after it would load faces of their own.
+  const fonts = LATER.map(([face, family]) => [face, root.getPropertyValue(family).split(',')[0].trim()] as const).filter(([, first]) => first);
+  // (None found: the stylesheet isn't in yet, so not this time.)
+  if (!fonts.length) return Promise.resolve();
+  return (loading = Promise.all(fonts.map(([face, first]) => document.fonts.load(`${face} 16px ${first}`).catch(() => {}))).then(() => {}));
 }
 
 /** Loads the faces other screens use once the page is idle (a face the page already has costs nothing); not with Save-Data on. */
