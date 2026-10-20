@@ -1,3 +1,8 @@
+<script module lang="ts">
+  /** Made once: toLocaleDateString makes a formatter of its own each time, some ms as an item opens. */
+  let dateFormat: Intl.DateTimeFormat | undefined;
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
@@ -70,7 +75,7 @@
     return () => cancelAnimationFrame(raf);
   });
 
-  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const date = (t: number) => (dateFormat ??= new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' })).format(t);
   const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`);
   const score = (t: Tally) => `${t.ok} of ${t.n} (${Math.round((accuracy(t) ?? 0) * 100)}%)`;
 
