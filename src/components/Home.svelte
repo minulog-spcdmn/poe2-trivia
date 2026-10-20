@@ -532,7 +532,7 @@
     create: 'Host your party online or at one screen, or play alone.',
     join: 'With the code a friend sent you.',
     codex: codexLine(discovered, total, deepest),
-    settings: 'Sound, keys and your name.',
+    settings: 'Sound, keys, your name and class sigil.',
   });
   const PAIR = [
     { e: 'codex', name: 'Codex' },
@@ -541,7 +541,7 @@
   /** The pair's lines in one column, short enough for half a phone's width. */
   const pairLines = $derived<Record<'codex' | 'settings', string[]>>({
     codex: codexLines(discovered, total, deepest),
-    settings: ['Sound, keys, name.'],
+    settings: ['Sound, keys, sigil.'],
   });
 </script>
 

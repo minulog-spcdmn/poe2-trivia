@@ -86,8 +86,14 @@
   let earned = $state(achievementsIn(loadAchievements()));
   onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
   let unlocked = $state(0);
-  /** Wide enough for the twelve in a row, beside the avatar. */
-  const roomy = new MediaQuery('(min-width: 761px)');
+  /**
+   * Wide enough for the twelve in a row beside the avatar, each still its
+   * full size: the desktop's columns, or the sheet at its full width.
+   * Narrower, they take the picker's own grid (and the page may scroll).
+   */
+  const wideSheet = new MediaQuery('(min-width: 1000px)');
+  const widePage = new MediaQuery('(min-width: 1100px)');
+  const roomy = $derived(over ? wideSheet.current : widePage.current);
 
   // ---- keys ----
 
@@ -244,7 +250,7 @@
         <h2>Class sigils</h2>
         <span class="count">{unlocked} / {CLASSES.length}</span>
       </header>
-      <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} />
+      <SigilPicker achievements={earned} bind:unlocked strip={roomy} />
     </section>
   </div>
 </div>
@@ -547,7 +553,7 @@
   /* The sigils under both columns, past a hairline. */
   .sigil-row {
     grid-column: 1 / -1;
-    margin-top: 0.8rem;
+    margin-top: 1.35rem;
     padding-top: 0.6rem;
     border-top: 1px solid var(--line);
   }
