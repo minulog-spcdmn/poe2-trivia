@@ -60,7 +60,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the game's big beats (a pick, a reveal with its point flowing into the
   scorer's progress bar, a deathmatch, a victory), and `ui.ts` the feedback
   every control gets. Soft shapes render at about one texel per CSS pixel and
-  the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
+  the whole layer at most 1.5 per CSS pixel, and (like the backdrop) never
+  more than a 1440p screen's worth in all; the canvas hides itself while
   nothing is alive.
 - **Loading**: the first paint waits on as few shaders as possible, since on
   a first visit (a cold shader cache) compiling them held it up by seconds.
@@ -74,8 +75,11 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   dither: the UI pass reads nothing of the scene, and holds nothing but the
   boxes. The first frame's shaders take about half the time they did as one
   program, and the picture is the same (the half float rounds a pixel by
-  one 8-bit level now and then). The extra pass costs a few hundredths of a
-  ms a frame on a desktop GPU. The shader compiler (Direct3D's, on Windows)
+  one 8-bit level now and then). That's for the first paint only: once the
+  page is idle, the main pass with all the UI's parts is built in the
+  background and takes over, and the UI pass and its layer are let go (an
+  extra full-screen pass and a half-float layer cost every frame drawn;
+  Delve's programs are built as one pass too). The shader compiler (Direct3D's, on Windows)
   takes longer over code the deeper it sits in loops and branches, and a
   second copy of a loop costs as much as the first: the drop shadows are one
   loop, in two layers (under the boxes and over them), not one under and

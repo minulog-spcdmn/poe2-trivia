@@ -23,6 +23,7 @@ import { onVein, veinLevel } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, maxDrawSize, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
+import { whenIdle } from './idle';
 import { switchedOff } from './switchedOff';
 
 const CITY = ENVIRONMENTS.indexOf('city');
@@ -1291,12 +1292,17 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // to draw the scene into they're a pass of their own (uiFrag), built side
   // by side with it and the soft light (with KHR_parallel_shader_compile
   // the driver does that off the page's thread): the first paint waits for
-  // the slowest, not for all of it in one. Where the backdrop draws none of
-  // them (cssShadows) the main pass has none, and there's no UI pass.
+  // the slowest, not for all of it in one. That's for the first paint
+  // only: two full-screen passes and a half-float layer between them cost
+  // the GPU more every frame than one, enough to show in a reveal's
+  // frames, so once the page is idle the main pass with them all is built
+  // in the background and takes over (see merge). Where the backdrop draws
+  // none of them (cssShadows) the main pass has none, and there's no UI
+  // pass.
   const offered = !!gl.getSupportedExtensions()?.includes('EXT_color_buffer_float');
   let split = offered;
-  /** Which of the UI's parts the main pass draws (see UiParts), as things stand. */
-  const uiParts = (): UiParts => (!mayDrawUi() ? 'none' : split ? 'drops' : 'all');
+  /** Which of the UI's parts a main pass built now draws (see UiParts): the first frame's leaves the boxes to the UI pass, where it can (see begin). */
+  const uiParts = (): UiParts => (!mayDrawUi() ? 'none' : 'all');
   const mainSource = (ui: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, split, false, ui), label: "The backdrop's program" });
   const smoothSources = (): ProgramSource[] => (split ? [{ vs: VERT, fs: smoothFrag(false), label: "The backdrop's soft light program" }] : []);
   const uiSources = (ui: UiParts): ProgramSource[] => (ui === 'drops' ? [{ vs: VERT, fs: uiFrag(maxElements), label: "The backdrop's UI program" }] : []);
@@ -1304,7 +1310,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   /** Which of the UI's parts the first frame's main pass draws. */
   let firstUi = 'all' as UiParts;
   const begin = () => {
-    firstUi = uiParts();
+    firstUi = split && uiParts() === 'all' ? 'drops' : uiParts();
     first = startPrograms(gl, [mainSource(firstUi), ...smoothSources(), ...uiSources(firstUi)]);
   };
   begin();
@@ -1529,8 +1535,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let lean: Variant = variant(firstProgs[0], split ? firstProgs[1] : null, firstUi);
   let ui = firstUi === 'drops' ? uiVariant(firstProgs[2]) : null;
   // Where the backdrop drew none of the UI's parts but has come to (the
-  // pointer changed): a main pass with them, and the UI pass, built in the
-  // background; CSS paints them meanwhile. Failing, it leaves them to CSS.
+  // pointer changed): a main pass with them, built in the background; CSS
+  // paints them meanwhile. Failing, it leaves them to CSS.
   let upgrade: Build | null = null;
   let upgradeFailed = false;
   function startUpgrade() {
@@ -1546,8 +1552,38 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       const was = lean;
       lean = variant(progs[0], was.smoothProg, parts);
       gl!.deleteProgram(was.prog);
-      if (parts === 'drops') ui = uiVariant(progs[1]);
     });
+  }
+  // The first frame's main pass and UI pass (see begin), once the page is
+  // idle: the main pass with all the UI's parts built in the background, to
+  // take over in the next frame drawn (see draw). Failing, the two keep on.
+  let merge: Build | null = null;
+  let merged: Variant | null = null;
+  let stopMergeIdle: (() => void) | null = null;
+  function startMerge() {
+    stopMergeIdle = null;
+    if (lean.ui !== 'drops' || gl!.isContextLost()) return;
+    merge = buildPrograms(gl!, [mainSource('all')], (progs) => {
+      merge = null;
+      if (!progs) return;
+      merged = variant(progs[0], lean.smoothProg, 'all');
+      dirty = true;
+    });
+  }
+  /** The merged main pass taking over from the first frame's two (see startMerge), its UI pass and layer let go. */
+  function mergeIn(m: Variant) {
+    const g = gl!;
+    g.deleteProgram(lean.prog);
+    lean = m;
+    merged = null;
+    if (ui) g.deleteProgram(ui.prog);
+    ui = null;
+    g.deleteFramebuffer(boxFbo);
+    g.deleteTexture(boxTex);
+    boxFbo = null;
+    boxTex = null;
+    boxW = boxH = 1;
+    frameEvent('backdrop: one pass');
   }
   /**
    * Which of the UI's parts the backdrop can draw, whichever of its programs
@@ -1576,8 +1612,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   function buildDelve() {
     if (building || warming || delve || delveFailed || gl!.isContextLost()) return;
     // (Where the backdrop draws none of the UI's parts, Delve's has none
-    // either, see uiNow; nor while the UI pass it would need is still to come.)
-    const parts: UiParts = uiParts() === 'drops' && !ui ? 'none' : uiParts();
+    // either, see uiNow.)
+    const parts = uiParts();
     const sources: ProgramSource[] = [{ vs: VERT, fs: frag(maxElements, !!smoothTex, true, parts), label: "Delve's backdrop program" }];
     if (smoothTex) sources.unshift({ vs: VERT, fs: smoothFrag(true), label: "Delve's backdrop soft light program" });
     building = buildPrograms(gl!, sources, (progs) => {
@@ -1691,6 +1727,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (deep && delveFailed) return lost();
     if (deep) wantDelveBackdrop();
     if (warming) warm(warming);
+    if (merged) mergeIn(merged);
     const v = deep && delve ? delve : lean;
     if (v === lean) standIn = deep;
     else if (standIn) {
@@ -2183,6 +2220,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     building = null;
     upgrade?.cancel();
     upgrade = null;
+    stopMergeIdle?.();
+    merge?.cancel();
+    merge = null;
+    if (merged) gl!.deleteProgram(merged.prog);
+    merged = null;
     for (const v of [warming, delve]) {
       if (!v) continue;
       gl!.deleteProgram(v.prog);
@@ -2241,6 +2283,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
   raf = requestAnimationFrame(frame);
+  if (lean.ui === 'drops') stopMergeIdle = whenIdle(startMerge, { timeout: 3000, fallback: 1000 });
   onWebgl++;
   counted = true;
 
