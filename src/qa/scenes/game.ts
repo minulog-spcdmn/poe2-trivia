@@ -88,7 +88,7 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
         delete q.variant;
       }
       const at = t.s.phase === 'question' ? t.clock.now + INTO : t.clock.now;
-      return { state: t.s, at } satisfies Built;
+      return { state: t.s, act: t.room, at } satisfies Built;
     },
     ...more,
   };

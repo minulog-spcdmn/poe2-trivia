@@ -17,8 +17,8 @@
 // hall it is drawn over to dim (1 is not at all).
 //
 // They rely on SMOOTH's own nhash() and vnoise() (value noise, Dave
-// Hoskins's hash), and on FX_NOISE_GLSL below, which must come after
-// those and before either effect. Every falloff is a smoothstep or a
+// Hoskins's hash) and its uniform uRolled, and on FX_NOISE_GLSL below,
+// which must come after those and before either effect. Every falloff is a smoothstep or a
 // Gaussian with no hard end, every motion takes tens of seconds or
 // minutes, and nothing is drawn in the middle of the screen behind the UI.
 
@@ -136,6 +136,12 @@ vec3 fx_sporeLayer(vec2 p, vec2 pp, vec2 turn, float cell, float seed, vec2 size
   return sum;
 }
 
+// One of the three focal depths' numbers: i is 0 for the far, 1 for the
+// middle, 2 for the near.
+vec4 fx_sporeDepth(int i, vec4 far, vec4 middle, vec4 near) {
+  return i == 0 ? far : i == 1 ? middle : near;
+}
+
 vec3 fx_spores(vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float sink, float strength,
                vec3 c0, vec3 c1, vec3 c2, float vary, out float dim) {
   dim = 1.0;
@@ -152,29 +158,28 @@ vec3 fx_spores(vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, flo
   vec2 air = vec2(vnoise(q * 0.9 + vec2(tm * 0.011, 3.7)), vnoise(q * 0.9 + vec2(5.2, -tm * 0.009))) - 0.5;
   vec2 sway = 0.07 * S * air;
   vec3 light = vec3(0.0);
-  // Far: fine points, densest and slowest, a little toward c0.
-  float cf = 0.06 * S;
-  if (calm < 0.68 * cf) {
-    vec2 pp = p + vec2(0.0, 0.35 * sinkPx) + 0.35 * sway - vec2(0.0006, -0.0025) * S * tm;
-    light += 0.24 * fx_sporeLayer(p, pp, vec2(-0.323, 0.946), cf, 91.0, vec2(0.07, 0.13), FX_POINT_PX, vec4(0.0, 0.0, 0.0, 0.22), 0.0,
-                                  0.12, clamp(strength / 0.6, 0.0, 1.0), tm, W, H, c0, c1, c2, 0.75 * vary);
-  }
-  // Middle: smaller, softer discs.
-  // A depth not yet kindled (arrive 0) adds nothing: it is skipped.
-  float cm = 0.13 * S;
-  float am = clamp((strength - 0.2) / 0.6, 0.0, 1.0);
-  if (calm < 0.68 * cm && am > 0.0) {
-    vec2 pp = p + vec2(0.0, 0.6 * sinkPx) + 0.6 * sway - vec2(0.0013, -0.004) * S * tm;
-    light += 0.085 * fx_sporeLayer(p, pp, vec2(0.66, -0.751), cm, 53.0, vec2(0.12, 0.22), 5.0, vec4(0.4, 0.72, 0.16, 0.14), 0.12,
-                                   0.14, am, tm, W, H, c0, c1, c2, vary);
-  }
-  // Near: large, faint, out of focus, the rim brighter.
-  float cn = 0.3 * S;
-  float an = clamp((strength - 0.4) / 0.6, 0.0, 1.0);
-  if (calm < 0.68 * cn && an > 0.0) {
-    vec2 pp = p + vec2(0.0, sinkPx) + sway - vec2(0.0027, -0.0059) * S * tm;
-    light += 0.055 * fx_sporeLayer(p, pp, vec2(0.852, 0.523), cn, 17.0, vec2(0.17, 0.27), 12.0, vec4(0.66, 0.8, 0.35, 0.1), 0.3,
-                                   0.14, an, tm, W, H, c0, c1, c2, vary);
+  // The three focal depths, far to near (far: fine points, densest and
+  // slowest, a little toward c0; middle: smaller, softer discs; near:
+  // large, faint, out of focus, the rim brighter), drawn in a loop rather
+  // than called three times, so the layer is compiled once (see uRolled in
+  // lib/backdrop.ts). One whose spores can't reach this far in, or not yet
+  // kindled (arrive 0: it would add nothing), is skipped.
+  for (int i = 0; i < 3 + uRolled; i++) {
+    // Its cells' size (S units), the strength it starts to kindle at, its parallax and its weight.
+    vec4 at = fx_sporeDepth(i, vec4(0.06, 0.0, 0.35, 0.24), vec4(0.13, 0.2, 0.6, 0.085), vec4(0.3, 0.4, 1.0, 0.055));
+    float cell = at.x * S;
+    float arrive = clamp((strength - at.y) / 0.6, 0.0, 1.0);
+    if (calm >= 0.68 * cell || arrive <= 0.0) continue;
+    // Its lattice's turn, and its drift down and aside (S a second).
+    vec4 drift = fx_sporeDepth(i, vec4(-0.323, 0.946, 0.0006, -0.0025), vec4(0.66, -0.751, 0.0013, -0.004), vec4(0.852, 0.523, 0.0027, -0.0059));
+    // Its seed, its size and its smallest radius.
+    vec4 look = fx_sporeDepth(i, vec4(91.0, 0.07, 0.13, FX_POINT_PX), vec4(53.0, 0.12, 0.22, 5.0), vec4(17.0, 0.17, 0.27, 12.0));
+    vec4 prof = fx_sporeDepth(i, vec4(0.0, 0.0, 0.0, 0.22), vec4(0.4, 0.72, 0.16, 0.14), vec4(0.66, 0.8, 0.35, 0.1));
+    // Its fringe, its wander, and its share of vary.
+    vec3 more = fx_sporeDepth(i, vec4(0.0, 0.12, 0.75, 0.0), vec4(0.12, 0.14, 1.0, 0.0), vec4(0.3, 0.14, 1.0, 0.0)).xyz;
+    vec2 pp = p + vec2(0.0, at.z * sinkPx) + at.z * sway - drift.zw * S * tm;
+    light += at.w * fx_sporeLayer(p, pp, drift.xy, cell, look.x, look.yz, look.w, prof, more.x,
+                                  more.y, arrive, tm, W, H, c0, c1, c2, more.z * vary);
   }
   // The glow of the unseen spores, low and along the walls, thickening and
   // thinning as the air moves.

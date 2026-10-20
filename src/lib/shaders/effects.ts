@@ -44,7 +44,12 @@ vec3 envTone(vec3 c0, vec3 c1, vec3 c2, float t) {
 // Times vary, it moves the colour along the stops.
 float envDrift(vec2 q, float tm, float seed) {
   vec2 u = q * 1.1 + vec2(seed * 7.31, seed * 3.17) + vec2(tm * 0.009, -tm * 0.006);
-  return 2.0 * (0.62 * vnoise(u) + 0.38 * vnoise(u * 2.3 + 5.1) - 0.5);
+  float n = 0.0;
+  for (int i = 0; i < 2 + uRolled; i++) {
+    vec3 o = i == 0 ? vec3(1.0, 0.0, 0.62) : vec3(2.3, 5.1, 0.38);
+    n += o.z * vnoise(u * o.x + o.y);
+  }
+  return 2.0 * (n - 0.5);
 }
 
 // Frozen Hollow's frost in one frame: u = (along the edge, in from it), in
@@ -246,11 +251,11 @@ vec3 env_frost(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, flo
       float n = fe * S / D;
       // Each side's frame, weighed (smoothly to nothing) by how near it is.
       vec4 wt = max(exp(-(d - dm) / 0.05) - 0.02, 0.0);
+      // (One call to rime() in a loop rather than one for each side: see uRolled.)
+      vec4 along = vec4(vec2((p.y + sinkPx) / D), vec2(p.x / D)) + vec4(0.0, 31.0, 57.0, 83.0);
       vec4 c = vec4(0.0);
-      if (wt.x > 0.0) c += wt.x * rime(vec2((p.y + sinkPx) / D, n));
-      if (wt.y > 0.0) c += wt.y * rime(vec2((p.y + sinkPx) / D + 31.0, n));
-      if (wt.z > 0.0) c += wt.z * rime(vec2(p.x / D + 57.0, n));
-      if (wt.w > 0.0) c += wt.w * rime(vec2(p.x / D + 83.0, n));
+      for (int k = 0; k < 4 + uRolled; k++)
+        if (wt[k] > 0.0) c += wt[k] * rime(vec2(along[k], n));
       c /= wt.x + wt.y + wt.z + wt.w;
       // Lobes where it has reached further, and fingers along the stems and their barbs.
       float front = grow * (0.05 + 0.07 * c.z + 0.05 * (c.x * c.x * c.x) + 0.03 * c.y);
@@ -331,7 +336,7 @@ vec3 env_void(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, floa
 vec3 env_mist(vec3 col, vec2 p, vec2 q, vec2 xy, float S, float W, float H, float tm, float sink, float e,
               vec3 c0, vec3 c1, vec3 c2, float vary) {
   float mist[3];
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 3 + uRolled; i++) {
     float fi = float(i);
     float k = 1.5 + 0.9 * fi;
     float layer = fbm(vec2(q.x * k - tm * (0.012 + 0.016 * fi) * k, q.y * k * 2.6 + fi * 5.0));
