@@ -76,7 +76,8 @@ uniform vec4 uEddy;
 uniform vec2 uDark;
 // How far an Azurite Vein's scene has come in (lib/vein.ts), 0 to 1.
 uniform float uVein;
-// 0, always: it is never set, and a uniform starts at 0. A loop that runs
+// 0, always: it is never set, and a uniform starts at 0 (were it not, the
+// loops below would run past the ends of what they read). A loop that runs
 // to its count plus this stays a loop. Direct3D's shader compiler, which
 // Windows browsers build WebGL with, inlines every call and unrolls every
 // loop whose count it knows, so a loop over fbm()'s octaves or the frost's
@@ -93,7 +94,8 @@ const DELVE_SMOOTH_FUNCTIONS = `// The dark of the clock run out (uDark.y; CLOCK
 const float CLOCK_PEAK = ${CLOCK_PEAK.toFixed(2)};
 
 // Value noise for Delve's smoke and dark: smooth, with no direction or
-// shape of its own. (Hash without sine, Dave Hoskins.)
+// shape of its own. (Hash without sine, Dave Hoskins; vnoise() works out
+// the same at its four corners, so a change to one is a change to both.)
 float nhash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);

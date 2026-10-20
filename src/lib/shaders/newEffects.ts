@@ -17,8 +17,8 @@
 // hall it is drawn over to dim (1 is not at all).
 //
 // They rely on SMOOTH's own nhash() and vnoise() (value noise, Dave
-// Hoskins's hash), and on FX_NOISE_GLSL below, which must come after
-// those and before either effect. Every falloff is a smoothstep or a
+// Hoskins's hash) and its uniform uRolled, and on FX_NOISE_GLSL below,
+// which must come after those and before either effect. Every falloff is a smoothstep or a
 // Gaussian with no hard end, every motion takes tens of seconds or
 // minutes, and nothing is drawn in the middle of the screen behind the UI.
 
