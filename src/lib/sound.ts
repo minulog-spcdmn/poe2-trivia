@@ -230,6 +230,18 @@ function allowed() {
 
 function audio(): Bus | null {
   if (typeof AudioContext === 'undefined' || !allowed()) return null;
+  const b = build();
+  // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
+  if (b.ac.state !== 'running') void b.ac.resume().catch(() => {});
+  return b;
+}
+
+/**
+ * The bus, made if it isn't yet. Making it needs no gesture: made before one,
+ * its context waits, suspended, until audio() wakes it. (Making the context is
+ * the slow part, some 25 ms: see installUiSounds.)
+ */
+function build(): Bus {
   if (!bus) {
     const ac = new AudioContext();
     const comp = ac.createDynamicsCompressor();
@@ -284,8 +296,6 @@ function audio(): Bus | null {
     // Already in a Delve: work out its sounds now (see depthAmbience).
     if (depth > 0) prepareDelve(bus);
   }
-  // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
-  if (bus.ac.state !== 'running') void bus.ac.resume().catch(() => {});
   return bus;
 }
 
@@ -1153,8 +1163,29 @@ export function installUiSounds() {
   // the context again whenever the phone has suspended it. A touch pointerdown
   // doesn't count as a user gesture yet (pointerup and touchend do), so listen
   // for all of them rather than only the first.
-  const warm = () => {
+  // The first press doesn't make the context in its own handler, though: that
+  // takes some 25 ms, which the press would show late by. It's made in the
+  // idle moment after, while the button or finger is still down (a quick
+  // tap's pointerup makes it there and then if that moment hasn't come).
+  let building = false;
+  const warm = (e: Event) => {
     if (muted) return;
+    if (!bus && e.type === 'pointerdown') {
+      if (typeof AudioContext === 'undefined' || building) return;
+      building = true;
+      whenIdle(
+        () => {
+          if (muted) return;
+          build();
+          if (allowed()) {
+            audio();
+            updateAmbience();
+          }
+        },
+        { timeout: 200 },
+      );
+      return;
+    }
     audio();
     updateAmbience();
   };
