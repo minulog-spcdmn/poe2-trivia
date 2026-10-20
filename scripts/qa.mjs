@@ -391,7 +391,8 @@ const bad = shots.filter((s) => s.failed || s.problems.length);
 console.log(`${shots.length} shots in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${bad.length} with something to look at; screens/${dirName}/`);
 for (const s of bad) {
   const what = s.failed ? `failed: ${s.failed}` : s.problems.map((p) => `${p.kind}${p.count > 1 ? ` x${p.count}` : ''}: ${p.examples[0]}`).join('; ');
-  console.log(`  ${s.scene} (seat ${s.seat}, ${s.size}): ${what}`);
+  // (A state past a scene's first by its label: two of one scene's states otherwise read the same.)
+  console.log(`  ${s.scene}${s.n ? ` “${s.label}”` : ''} (seat ${s.seat}, ${s.size}): ${what}`);
 }
 const unsettled = shots.filter((s) => s.settled === false).length;
 if (unsettled) console.log(`${unsettled} never came to rest within 8 s (checked as they were).`);

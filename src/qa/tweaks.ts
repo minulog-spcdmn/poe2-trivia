@@ -29,15 +29,19 @@ const LONG = [
   'Kalguur Mountainborn',
   'Renly the Ironwrought',
 ];
-const SCRIPTS = ['æ¡œå­', 'Ð¯Ñ€Ð¾ÑÐ»Ð°Ð²Ð°', 'Exile42', 'á¼ˆÎ¸Î·Î½á¾¶', 'ZoÃ«', 'ê¹€ë¯¼ì¤€', 'Ngá»c Ãnh', 'SÃ¸ren', 'Åucja', 'ÃžÃ³ra', 'Ãœnal', '1337'];
+const SCRIPTS = ['桜子', 'Ярослава', 'Exile42', 'Ἀθηνᾶ', 'Zoë', '김민준', 'Ngọc Ánh', 'Søren', 'Łucja', 'Þóra', 'Ünal', '1337'];
 /** Who comes to watch, in order: those of them already in the room are passed over. */
 const WATCHERS = ['Finn', 'Renly', 'Oswin', 'Zelina', 'Dannig', 'Hooded One', 'Tujen', 'Gwennen', 'Navali', 'Einhar', 'Niko', 'Helena', 'Zana', 'Kirac'];
 
 /** The keys these take in a scene's values: a scene's own controls keep clear of them. */
 export const TWEAK_KEYS = ['names', 'joining', 'watching', 'offline'];
 
-/** What can be set in the game `built` holds, each as the scene has it. Nothing out of a game. */
-export function tweaksFor(built: Built): Control[] {
+/**
+ * What can be set in the game `built` holds, each as the scene has it.
+ * Nothing out of a game. `seen` (those seen from) stay online whatever is
+ * set, so they aren't offered as the one offline.
+ */
+export function tweaksFor(built: Built, seen: string[] = []): Control[] {
   const s = built.state;
   if (!s) return [];
   const out: Control[] = [
@@ -68,7 +72,7 @@ export function tweaksFor(built: Built): Control[] {
       options: [
         { value: '', label: 'As it is' },
         { value: '-', label: 'No one' },
-        ...s.players.map((p) => ({ value: p.name, label: p.name })),
+        ...s.players.filter((p) => !seen.includes(p.id)).map((p) => ({ value: p.name, label: p.name })),
         { value: '*', label: 'Everyone but you' },
       ],
     },
@@ -127,7 +131,8 @@ export const seenFrom = (scene: Scene) => scene.seats.map((seat) => seat.me).fil
 export function buildScene(scene: Scene, given: Record<string, Value | string | null | undefined> = {}): { built: Built; controls: Control[]; values: Values } {
   const own = valuesOf(scene.controls ?? [], given);
   const base = scene.build(own);
-  const tweaks = tweaksFor(base);
+  const seen = seenFrom(scene);
+  const tweaks = tweaksFor(base, seen);
   const set = valuesOf(tweaks, given);
-  return { built: applyTweaks(base, set, seenFrom(scene)), controls: [...(scene.controls ?? []), ...tweaks], values: { ...own, ...set } };
+  return { built: applyTweaks(base, set, seen), controls: [...(scene.controls ?? []), ...tweaks], values: { ...own, ...set } };
 }

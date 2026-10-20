@@ -65,7 +65,7 @@
     return { destroy: () => io.disconnect() };
   }
   const src = (s: SceneState, i: number) => {
-    // (The seat as picked, where the scene has one by that number: a seat's index is among those its room has as built, the first ones.)
+    // (The seat as picked, where the scene has one by that number: the frame takes the last its room has as built when it has fewer.)
     const p = new URLSearchParams({ frame: `g${i}`, s: s.scene.key, seat: String(Math.min(seat, s.scene.seats.length - 1)), size, off: 'webgl' });
     // (As a frame is made: O later reaches those up by a message, not by making them again.)
     if (!untrack(() => outlines)) p.set('o', '0');

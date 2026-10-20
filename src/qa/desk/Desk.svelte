@@ -288,7 +288,8 @@
     ];
   });
   // Shot and compared a moment after what's shown stops changing: the view, a piece's controls, the frames' size.
-  const shotKey = $derived(comparing && beforeOrigin && box && own[0] ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${own[0].src}` : '');
+  // (The frame's address as shot, without its outlines: O doesn't call for new shots.)
+  const shotKey = $derived(comparing && beforeOrigin && box && own[0] ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${shotSrc(own[0].src)}` : '');
   $effect(() => {
     const key = shotKey;
     closeup = -1;
@@ -305,6 +306,7 @@
       try {
         const got = await compareShots(shotSrc(nowSrc, origin), shotSrc(nowSrc), w, h, stop.signal);
         if (!stop.signal.aborted) compared = { key, state: 'done', got };
+        else release(got);
       } catch (e) {
         if (!stop.signal.aborted) compared = { key, state: 'failed', error: (e as Error).message };
       }
@@ -314,11 +316,17 @@
       stop.abort();
     };
   });
-  // A difference's picture goes once another takes its place.
+  /** Lets go of a comparison's pictures: the shots and the difference laid over now. */
+  function release(got: Compared) {
+    URL.revokeObjectURL(got.layer);
+    got.before.close();
+    got.now.close();
+  }
+  // A comparison's pictures go once another takes its place (or the comparison came too late to be shown).
   $effect(() => {
-    const layer = compared?.got?.layer;
+    const got = compared?.got;
     return () => {
-      if (layer) URL.revokeObjectURL(layer);
+      if (got) release(got);
     };
   });
   function showAll(on: boolean) {

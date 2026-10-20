@@ -247,6 +247,10 @@ export function qaShots(server: ViteDevServer) {
       const b = await chromium.launch(process.env.CHROMIUM || process.env.BOT_CHROMIUM ? { executablePath: process.env.CHROMIUM || process.env.BOT_CHROMIUM } : { channel: 'chromium' });
       b.once('disconnected', () => (browser = null));
       return b;
+    }).catch((e: unknown) => {
+      // (Not kept: the next shot tries again, once Chromium is there.)
+      browser = null;
+      throw e;
     }));
   const shutdown = () => {
     const b = browser;

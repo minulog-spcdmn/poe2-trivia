@@ -69,7 +69,9 @@ export async function boot(asked: URLSearchParams) {
   const scene = scenes.sceneByKey(key);
   const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
   const built = scene && buildScene(scene, given).built;
-  const seat = scene && built ? seatsIn(scene, built)[Number(asked.get('seat') ?? 0)] : undefined;
+  // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
+  const seats = scene && built ? seatsIn(scene, built) : [];
+  const seat = seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];
   if (!scene || !built || !seat) {
     document.body.textContent = `No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`;
     return;
