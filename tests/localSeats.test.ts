@@ -107,3 +107,15 @@ test('a game against players at your own screen only is no game against others',
   t.s = t.engine.apply(t.s, { type: 'start' }, 'p0');
   assert.equal(versusGame(t.s, 'p0', false), true);
 });
+
+test('set aside and back, a player at the screen keeps their colour', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  s = engine.apply(s, addHere('here', 'Cora'), 'p0');
+  s = engine.apply(s, addHere('there', 'Dara'), 'p0');
+  const hue = s.players.find((p) => p.id === 'there')!.hue;
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
+  // Cora goes while they're aside: Dara's colour stays Dara's, not the first one free.
+  s = engine.apply(s, { type: 'remove', playerId: 'here' }, 'p0');
+  s = engine.apply(s, { type: 'settings', settings: { mode: 'turns' } }, 'p0');
+  assert.equal(s.players.find((p) => p.id === 'there')!.hue, hue);
+});

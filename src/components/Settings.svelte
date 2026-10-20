@@ -85,14 +85,20 @@
   /** Achievements earned, each worth a sigil (SigilPicker), read again when another tab earns one. */
   let earned = $state(achievementsIn(loadAchievements()));
   onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
+  // And as a game under the sheet moves on: one ending here earns them in this tab, which no storage event tells.
+  $effect(() => {
+    void session.state?.phase;
+    earned = achievementsIn(loadAchievements());
+  });
   let unlocked = $state(0);
   /**
    * Wide enough for the twelve in a row beside the avatar, each still its
-   * full size: the desktop's columns, or the sheet at its full width.
-   * Narrower, they take the picker's own grid (and the page may scroll).
+   * full size: the desktop's columns, or the sheet at its full width; and
+   * only with a pointer that hovers, which is what names each one there.
+   * Otherwise they take the picker's own grid (and the page may scroll).
    */
-  const wideSheet = new MediaQuery('(min-width: 1000px)');
-  const widePage = new MediaQuery('(min-width: 1100px)');
+  const wideSheet = new MediaQuery('(min-width: 1000px) and (hover: hover)');
+  const widePage = new MediaQuery('(min-width: 1100px) and (hover: hover)');
   const roomy = $derived(over ? wideSheet.current : widePage.current);
 
   // ---- keys ----

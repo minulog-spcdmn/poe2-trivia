@@ -1183,7 +1183,8 @@ function placeLocals(s: GameState) {
     const back = s.aside ?? [];
     const room = Math.max(0, MAX_PLAYERS - s.players.length);
     for (const p of back.slice(0, room)) {
-      p.hue = freeHue(s);
+      // Their colour is theirs from joining: kept, unless someone seated has it now.
+      if (p.hue < 0 || s.players.some((o) => o.hue === p.hue)) p.hue = freeHue(s);
       s.players.push(p);
       settleHue(s, p);
     }
@@ -1195,9 +1196,14 @@ function placeLocals(s: GameState) {
   if (!s.aside.length) delete s.aside;
 }
 
-/** Every name in the room, seated, watching or set aside (`except` one). */
+/** Everyone in the room: seated, watching or set aside. */
+const everyoneIn = (s: GameState): { id: string; name: string }[] => [...s.players, ...(s.spectators ?? []), ...(s.aside ?? [])];
+
+/** Every name in the room (`except` one's). */
 const namesIn = (s: GameState, except?: string) =>
-  [...s.players, ...(s.spectators ?? []), ...(s.aside ?? [])].filter((o) => o.id !== except).map((o) => o.name);
+  everyoneIn(s)
+    .filter((o) => o.id !== except)
+    .map((o) => o.name);
 
 /**
  * Avatar colours that always go to one player, even if someone else had them.
@@ -1414,7 +1420,7 @@ export class Engine {
     if (s.hostId === null || (from !== null && from !== s.hostId)) throw new ActionError('Not allowed.');
     if (s.phase !== 'lobby') throw new ActionError('Players at your screen join between games.');
     if (s.settings.mode !== 'turns') throw new ActionError('Players at your screen play Turns.');
-    if ([...s.players, ...(s.spectators ?? []), ...(s.aside ?? [])].some((o) => o.id === id)) throw new ActionError('Not allowed.');
+    if (everyoneIn(s).some((o) => o.id === id)) throw new ActionError('Not allowed.');
     const name = cleanName(raw);
     const problem = nameProblem(name, namesIn(s));
     if (problem) throw new ActionError(problem);
