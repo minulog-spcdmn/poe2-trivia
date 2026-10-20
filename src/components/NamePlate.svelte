@@ -166,9 +166,13 @@
   // and 2π - SKEW; it goes under at every second one. Its mirror goes under
   // at the others.
   const UNDER = { rise: [SKEW, Math.PI, 2 * Math.PI - SKEW], fall: [0, Math.PI - SKEW, Math.PI + SKEW, 2 * Math.PI] };
+  /** How many steps a wave is drawn in, across the bay (its points evenly spaced across). */
+  const STEPS = 240;
   const wave = (c: number, sign: number): Pt[] =>
-    Array.from({ length: 241 }, (_, k) => [(k / 240) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / 240)] as Pt);
+    Array.from({ length: STEPS + 1 }, (_, k) => [(k / STEPS) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / STEPS)] as Pt);
   const STRANDS = ROWS.flatMap((r) => [1, -1].map((sign) => ({ sign, mid: wave(r * ROW, sign) })));
+  /** How near (squared) another strap's middle comes where this one passes under it. */
+  const REACH2 = (W + GAP) ** 2;
   /** One edge of a strap, `side` (±1) of its wave, cut where it passes under another. */
   const strapEdge = (s: (typeof STRANDS)[number], side: number) => {
     const others = STRANDS.filter((o) => o.sign !== s.sign);
@@ -180,7 +184,21 @@
       const e: Pt = [p[0] - ((r[1] - q[1]) / len) * W * side, p[1] + ((r[0] - q[0]) / len) * W * side];
       const theta = (2 * Math.PI * p[0]) / BAY;
       const crossing = under.some((a) => Math.abs(theta - a) < 0.5);
-      const near = crossing && others.some((o) => o.mid.some((m) => Math.abs(m[0] - e[0]) < 3 && dist(m, e) < W + GAP));
+      // Only the points within 3 px across can count, and a wave's points
+      // are evenly spaced across (wave): just those are asked, a step more
+      // either side for the rounding, not every point of every other wave. (The
+      // distance squared: Math.hypot is slow, and this runs as a plate opens.)
+      const lo = Math.max(0, Math.floor(((e[0] - 3) * STEPS) / BAY) - 1);
+      const hi = Math.min(STEPS, Math.ceil(((e[0] + 3) * STEPS) / BAY) + 1);
+      const close = (o: (typeof STRANDS)[number]) => {
+        for (let k = lo; k <= hi; k++) {
+          const dx = o.mid[k][0] - e[0];
+          const dy = o.mid[k][1] - e[1];
+          if (Math.abs(dx) < 3 && dx * dx + dy * dy < REACH2) return true;
+        }
+        return false;
+      };
+      const near = crossing && others.some(close);
       if (near) {
         if (pieces.at(-1)!.length) pieces.push([]);
       } else pieces.at(-1)!.push(e);
@@ -192,8 +210,7 @@
    * One tile of the weave, as a CSS background: it repeats over the whole
    * plate whatever its height, in every browser (an SVG pattern fill fell
    * short of the plate's top and bottom on some phones). Worked out when a
-   * plate first shows, not as the page loads: it takes a while (tens of ms),
-   * and the start page has no plate.
+   * plate first shows, not as the page loads: the start page has no plate.
    */
   const weave = () => {
     if (weaveTile) return weaveTile;

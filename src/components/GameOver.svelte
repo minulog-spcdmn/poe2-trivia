@@ -54,6 +54,10 @@
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
   import { achievementById, type Achievement } from '../lib/achievements';
+  import { readsShellHeights } from '../lib/shellHeights.svelte';
+
+  // Its styles read the shell's --header-h and --legal-h (App.svelte).
+  readsShellHeights();
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the eye or the monad, or after a Delve the moth (the
