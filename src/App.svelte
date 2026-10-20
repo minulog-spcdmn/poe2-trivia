@@ -1008,6 +1008,18 @@
     grid-column: 3;
     justify-self: end;
   }
+  /* A phone on its side: closer in, so the settings fit without a scroll. */
+  @media (max-height: 500px) {
+    .settings-over {
+      padding-block: 0.5rem;
+    }
+    .sheet {
+      padding: 0.6rem 1.4rem 0.9rem;
+    }
+    .sheet-head {
+      padding-bottom: 0.45rem;
+    }
+  }
   .modal {
     width: min(420px, 100%);
     padding: 1.6rem;

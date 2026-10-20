@@ -368,6 +368,25 @@
     grid-template-columns: minmax(0, 480px);
     justify-content: center;
   }
+  /* In the sheet with no keys to show (a touch screen), where there's the
+     width: the sound and the screen side by side, so a phone on its side
+     sees them whole. */
+  @media (min-width: 640px) {
+    .cols.over.one {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .cols.over.one .col.side {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0 2.5rem;
+      align-items: start;
+    }
+  }
+  @media (max-height: 500px) {
+    .settings.over {
+      padding-top: 0.5rem;
+    }
+  }
   .col.side {
     display: flex;
     flex-direction: column;
@@ -540,21 +559,6 @@
     justify-content: flex-end;
     gap: 0.7rem;
   }
-  /* For a finger: larger, on a line of their own under the heading, six and five spread across it. */
-  @media (pointer: coarse) {
-    .swatches {
-      flex-basis: 100%;
-      display: grid;
-      grid-template-columns: repeat(6, 34px);
-      justify-content: space-between;
-      gap: 0.9rem 0;
-      margin: 0.35rem 0 0.4rem;
-    }
-    .swatch {
-      width: 34px;
-      height: 34px;
-    }
-  }
   .swatch {
     width: 22px;
     height: 22px;
@@ -581,6 +585,21 @@
   .swatch:focus-visible {
     outline: 2px solid var(--gold);
     outline-offset: 4px;
+  }
+  /* For a finger: larger, on a line of their own under the heading, six and five, as far apart across as down. */
+  @media (pointer: coarse) {
+    .swatches {
+      flex-basis: 100%;
+      display: grid;
+      grid-template-columns: repeat(6, 34px);
+      justify-content: start;
+      gap: 14px;
+      margin: 0.35rem 0 0.4rem;
+    }
+    .swatch {
+      width: 34px;
+      height: 34px;
+    }
   }
   .shake {
     animation: shake 0.4s;
