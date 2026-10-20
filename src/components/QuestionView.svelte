@@ -3193,7 +3193,7 @@
     .question {
       /* The height the art and answers share: the window's, less what stands above and below them
          (the header, the scoreboard in its row; the banner, the task line, the row under them, the home indicator's strip). */
-      --room: max(100px, 100dvh / var(--stage-zoom, 1) - var(--header-h, 53px) - 113px - env(safe-area-inset-bottom, 0px));
+      --room: max(100px, 100dvh / var(--stage-zoom, 1) - var(--header-h, 47px) - 118px - env(safe-area-inset-bottom, 0px));
     }
     .task {
       margin-bottom: 0.4rem;

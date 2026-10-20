@@ -1940,6 +1940,19 @@
     .choose.delve .find-notes ~ .note {
       display: none;
     }
+    /* The team's vote: its line clear of the seals that hang off the cards'
+       feet, on one line however many it waits for. */
+    .choose.coop .vote-status {
+      margin-top: 0.55rem;
+      max-width: 100%;
+      flex-wrap: nowrap;
+      white-space: nowrap;
+    }
+    .choose.coop .vote-status .live > span:not(.sr) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
   /* Room enough across (`beside`: two notes at most; the room the game has
      left, the notch's side taken off, so the slot is the container: Game's
@@ -1956,7 +1969,10 @@
         'prompt prompt prompt'
         'left cards right';
       align-items: center;
-      column-gap: 1.4rem;
+    }
+    /* (.delve too, to outweigh the short screens' gaps after this.) */
+    .choose.delve.beside {
+      column-gap: 2.6rem;
     }
     .choose.beside .prompt {
       grid-area: prompt;
@@ -2033,6 +2049,10 @@
     .choose.delve {
       --z: 0.71;
     }
+    /* The team's vote, clear of the seals under the cards. */
+    .choose.coop {
+      --z: 0.66;
+    }
   }
   @media (orientation: landscape) and (max-height: 370px) {
     .choose,
@@ -2048,9 +2068,9 @@
       --z: 0.66;
       gap: 0.25rem;
     }
-    /* The team's vote has a line more to fit. */
+    /* The team's vote has a line more to fit, clear of the seals under the cards. */
     .choose.coop {
-      --z: 0.63;
+      --z: 0.6;
     }
     .choose.delve {
       gap: 0.2rem;

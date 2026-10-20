@@ -859,7 +859,7 @@
     }
     .banner {
       gap: 0.8rem;
-      margin: 0 0 0.3rem;
+      margin: 0.3rem 0 0.3rem;
     }
     .banner h2 {
       font-size: 1.3rem;
@@ -892,6 +892,12 @@
     /* The cards ask how much room they have across (ChooseCategory's @container slot). */
     .cards-slot {
       container: slot / inline-size;
+    }
+  }
+  /* A phone's browser on its side, the address bar up: the banner closer. */
+  @media (orientation: landscape) and (max-height: 350px) {
+    .banner {
+      margin: 0.15rem 0 0.2rem;
     }
   }
 </style>

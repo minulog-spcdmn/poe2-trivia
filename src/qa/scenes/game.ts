@@ -4,7 +4,7 @@
 // Delve alone and together, deeper down too, with finds among the cards and a
 // vein's dig.
 
-import { MAX_PLAYERS, type Settings } from '../../lib/game.ts';
+import { MAX_PLAYERS, PRESETS, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
 import type { Control, Values } from '../bench.ts';
 import { pid } from '../build/people.ts';
@@ -21,6 +21,39 @@ const ALONE: Seat = { mode: 'local', me: null };
 /** How many play: from `min` (those the scene's moves name are among them) to a full room. */
 const players = (min: number, by: number): Control => ({ kind: 'range', key: 'players', label: 'Players', min, max: MAX_PLAYERS, default: by });
 const seated = (v: Values, by: number) => SEATED.slice(0, Number(v.players ?? by));
+
+/**
+ * A question's answers: how many (the game's default, six, as dealt), and
+ * whether they are names or pictures. Set either and the game plays its
+ * default difficulty as custom, with that many and asked that way.
+ */
+const ANSWERS: Control[] = [
+  {
+    kind: 'choice',
+    key: 'answers',
+    label: 'Answers',
+    default: '6',
+    options: ['4', '6', '8', '10'].map((n) => ({ value: n, label: n })),
+  },
+  {
+    kind: 'choice',
+    key: 'asked',
+    label: 'Asked as',
+    default: 'as',
+    options: [
+      { value: 'as', label: 'As dealt' },
+      { value: 'names', label: 'Names' },
+      { value: 'art', label: 'Pictures' },
+    ],
+  },
+];
+const asked = (v: Values): Partial<Settings> => {
+  const options = Number(v.answers ?? 6);
+  const as = v.asked ?? 'as';
+  if (options === 6 && as === 'as') return {};
+  const base = PRESETS.merciless;
+  return { difficulty: 'custom', custom: { ...base, options, artChance: as === 'names' ? 0 : as === 'art' ? 1 : base.artChance } };
+};
 
 /** How far into a question its scene stands (ms). */
 const INTO = 3000;
@@ -44,22 +77,19 @@ const table = (names: string[], settings: Partial<Settings> = {}, o: { host?: nu
 
 export function gameScenes(): Scene[] {
   // Take turns: Doryani's turn first (the seed's, with three), Kalguur hosting.
-  const turns = (v: Values) => table(seated(v, 3)).start();
-  const race = (v: Values) => table(seated(v, 5), { mode: 'race' }).start();
+  const turns = (v: Values) => table(seated(v, 3), asked(v)).start();
+  const race = (v: Values) => table(seated(v, 5), { mode: 'race', ...asked(v) }).start();
   const delveAlone = () => table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
   const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
   const turnsSeats = [guest('Doryani'), host('Kalguur')];
-  // The most options a question has (Delve's from depth 70, or custom): names or art.
-  const tenOptions = (artChance: number) =>
-    table(THREE, { difficulty: 'custom', custom: { options: 10, similarNames: 0, fakes: 0, artChance, veil: 'off', grayscale: 'off', mirror: 0, lockout: 3 } }, { host: null })
-      .start()
-      .pick();
   // Una of the Vaal is in every take-turns scene's moves; the race's answer Doryani's and hers.
   const many = { controls: [players(3, 3)] };
-  const crowd = { controls: [players(3, 5)] };
+  // A question's scenes: its answers too.
+  const manyAsked = { controls: [players(3, 3), ...ANSWERS] };
+  const crowdAsked = { controls: [players(3, 5), ...ANSWERS] };
   return [
     scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, many),
-    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), many),
+    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), manyAsked),
     scene(
       'turns-right',
       'Take turns',
@@ -69,7 +99,7 @@ export function gameScenes(): Scene[] {
         const t = turns(v).pick();
         return t.answer(t.turn, true);
       },
-      many,
+      manyAsked,
     ),
     scene(
       'turns-wrong',
@@ -80,7 +110,7 @@ export function gameScenes(): Scene[] {
         const t = turns(v).pick();
         return t.answer(t.turn, false);
       },
-      many,
+      manyAsked,
     ),
     scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, (v) => turns(v).playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0), many),
     scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, (v) => turns(v).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null), many),
@@ -92,11 +122,9 @@ export function gameScenes(): Scene[] {
     }),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
-    scene('ten-names', 'Take turns', 'Ten options, as names', [ALONE], () => tenOptions(0)),
-    scene('ten-art', 'Take turns', 'Ten options, as art', [ALONE], () => tenOptions(1)),
-    scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani')], race, crowd),
-    scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Doryani', false, 1800), crowd),
-    scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Una of the Vaal', true, 1500), crowd),
+    scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani')], race, crowdAsked),
+    scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Doryani', false, 1800), crowdAsked),
+    scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Una of the Vaal', true, 1500), crowdAsked),
     scene('deathmatch', 'Deathmatch', 'A tie at the target: the deathmatch', [host('Kalguur'), guest('Doryani')], () =>
       table(['Kalguur', 'Doryani'], { targetScore: 1 })
         .start()

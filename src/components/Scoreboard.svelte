@@ -35,7 +35,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
-  import { handheld } from '../lib/layout';
+  import { flat, handheld } from '../lib/layout';
   import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
@@ -52,6 +52,20 @@
   let { aside }: { aside?: Snippet } = $props();
 
   const s = $derived(session.state!);
+  /**
+   * A full room in the header's row (a phone on its side): every entry its
+   * avatar alone, whoever's turn it is too (the banner names them), in one
+   * row that scrolls sideways if it must, the one whose turn it is (or you,
+   * together) kept in view.
+   */
+  const tight = $derived(flat.current && s.players.length > 6);
+  let boardEl = $state<HTMLElement>();
+  $effect(() => {
+    if (!tight || !boardEl) return;
+    void s.turn;
+    void s.phase;
+    boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
   const target = $derived(s.settings.targetScore);
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
@@ -682,10 +696,10 @@
      background of its own over the content scrolling under it. -->
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
 <div class="strip" data-cursor="board" class:stuck bind:this={strip}>
-  <ol class="board" class:crowded={s.players.length > 6}>
+  <ol class="board" class:crowded={s.players.length > 6} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
-      {@const wide = coop ? p.id === me : active}
+      {@const wide = !tight && (coop ? p.id === me : active)}
       {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
@@ -708,7 +722,7 @@
         style:--heat={fire}
         style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
-        class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name-row">
@@ -1534,14 +1548,44 @@
      gets the height of a row of its own. */
   @media (orientation: landscape) and (max-height: 500px) {
     .strip {
-      height: var(--header-h, 53px);
-      margin: calc(-1 * var(--header-h, 53px)) calc(var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))) 0
+      height: var(--header-h, 47px);
+      margin: calc(-1 * var(--header-h, 47px)) calc(var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))) 0
         calc(-1 * max(1rem, env(safe-area-inset-left)));
       padding-block: 0;
       padding-right: 0;
     }
     .board {
       padding: 2px 0;
+    }
+    /* A full room: one row, every entry its avatar, closer together; it
+       scrolls sideways if it must (room kept over and under it for the
+       score badges and the kick on the avatars' corners). */
+    .board.tight {
+      flex-wrap: nowrap;
+      gap: 0.3rem;
+      align-self: stretch;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      padding: 8px 6px 6px 10px;
+      margin-left: -10px;
+    }
+    .board.tight::-webkit-scrollbar {
+      display: none;
+    }
+    /* Who's watching: under the header's row at its left, beside the banner's
+       title rather than over it. */
+    .strip :global(.gallery.hang) {
+      top: calc(100% + 4px);
+      right: auto;
+      left: max(1rem, env(safe-area-inset-left));
+      padding-right: 0;
+      justify-content: flex-start;
+    }
+    .strip :global(.hang .list) {
+      right: auto;
+      left: 0;
     }
   }
 </style>

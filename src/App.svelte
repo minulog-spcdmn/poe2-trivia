@@ -791,6 +791,18 @@
       box-shadow 0.25s,
       transform 0.2s var(--ease-out);
   }
+  /* On a touch screen a thumb's size to tap (44pt, Apple's least), the button drawn as it is. */
+  @media (pointer: coarse) {
+    .icon-btn {
+      position: relative;
+    }
+    .icon-btn::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+    }
+  }
   .icon-btn:hover {
     color: var(--gold-hi);
     border-color: var(--gold-lo);
@@ -1041,11 +1053,6 @@
     header {
       padding: 0.25rem max(1rem, env(safe-area-inset-right)) 0.25rem max(1rem, env(safe-area-inset-left));
     }
-    /* A thumb's size, as on any phone screen (44pt, Apple's least). */
-    .icon-btn {
-      width: 44px;
-      height: 44px;
-    }
     /* In a game (`folded`): the round and the buttons at the row's right end,
        the scoreboard laid over the rest of it (Scoreboard.svelte). */
     header.folded {
@@ -1056,9 +1063,8 @@
       visibility: hidden;
     }
     header.folded .meta {
-      gap: 0.4rem;
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
+      gap: 0.45rem;
+      letter-spacing: 0.12em;
     }
     .brand {
       white-space: nowrap;
