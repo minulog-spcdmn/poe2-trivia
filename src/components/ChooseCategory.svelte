@@ -751,7 +751,7 @@
           <span class="votes" aria-hidden="true">
             {#each faces as p (p.id)}
               <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }} out:scale={{ start: 0.3, duration: motion.still ? 0 : 200 }}
-                ><Avatar name={p.name} hue={p.hue} size={22} /></span
+                ><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span
               >
             {/each}
             {#if voters.length > faces.length}<span class="more">+{voters.length - faces.length}</span>{/if}

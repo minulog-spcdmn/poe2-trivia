@@ -5,14 +5,20 @@
 // Whatever is earned within one moment (a reveal can earn from the codex, the
 // records and the moment itself, each checked on its own) is gathered and
 // announced together a little after it, so a burst never fills the stack.
+//
+// Each one earned unlocks a class sigil (lib/sigils.ts): while there is one
+// to unlock, a notice a few seconds after them says so, and where.
 
-import type { Achievement, Check } from './achievements.ts';
+import { loadAchievements, type Achievement, type Check } from './achievements.ts';
+import { achievementsIn, loadSigils, sigilsToUnlock } from './sigils.ts';
 import { toasts } from './toasts.svelte';
 
 /** More than this at once come as one notice naming them all. */
 const ONE_BY_ONE = 2;
 /** How long after the moment that earned it an achievement is announced: a notice arriving with a reveal's flare would be lost in it. */
 const DELAY_MS = 1400;
+/** How long after the achievements' notice the one about class sigils to unlock comes, so they don't arrive as one. */
+const SIGIL_DELAY_MS = 3500;
 
 let pending: Achievement[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -48,6 +54,24 @@ export function payOwed() {
 
 function past(list: Achievement[]) {
   toasts.show(`${list.length} earned in your past games. See them in the Codex.`, 'info', { title: 'Achievements', seal: sealOf(best(list)) });
+  sigilNotice();
+}
+
+let sigilTimer: ReturnType<typeof setTimeout> | null = null;
+/** A little later, says how many class sigils are there to unlock, if any (counted then). */
+function sigilNotice() {
+  sigilTimer ??= setTimeout(() => {
+    sigilTimer = null;
+    sigilsLeft();
+  }, SIGIL_DELAY_MS);
+}
+
+function sigilsLeft() {
+  const n = sigilsToUnlock(loadSigils(), achievementsIn(loadAchievements()));
+  if (!n) return;
+  toasts.show('Pick a class to wear on your avatar, in the Codex under Achievements.', 'info', {
+    title: n === 1 ? 'A class sigil to unlock' : `${n} class sigils to unlock`,
+  });
 }
 
 function flush() {
@@ -56,9 +80,8 @@ function flush() {
   pending = [];
   if (list.length <= ONE_BY_ONE) {
     for (const a of list) toasts.show(a.title, 'info', { title: 'Achievement earned', seal: sealOf(a) });
-    return;
-  }
-  toasts.show(list.map((a) => a.title).join(' • '), 'info', { title: `${list.length} achievements earned`, seal: sealOf(best(list)) });
+  } else toasts.show(list.map((a) => a.title).join(' • '), 'info', { title: `${list.length} achievements earned`, seal: sealOf(best(list)) });
+  sigilNotice();
 }
 
 /** The hardest of them, for the notice's seal. */

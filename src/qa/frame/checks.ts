@@ -12,7 +12,7 @@
 import { CRASH_MESSAGE } from './crashCue.svelte.ts';
 import { FLAT, UPRIGHT } from '../../lib/layout.ts';
 
-/** What a frame finds wrong; and banding, which only the sweep can see (scripts/qa.mjs, in a screenshot). */
+/** What a frame finds wrong; and banding, which only the sweep can see (scripts/sweep.mjs, in a screenshot). */
 export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'scrolls' | 'banding';
 export const KIND_LABEL: Record<Kind, string> = {
   offscreen: 'Off the side of the screen',

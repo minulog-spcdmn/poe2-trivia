@@ -4,8 +4,8 @@
 
 ## Using it
 
-- **Open it:** `npm run dev`, then `http://localhost:5173/qa.html`; on the beta, **poe2.quest/beta/qa.html**. The dev hub links it first.
-- **On the left, the benches.** **This change** comes first: the benches the branch's files touch, each with a dot (hover one for why). Then the **pieces** (a component on its own: the avatar, the daily streak, the descent, the rune circles) and the **screens**, a bench for each of the game's (the start page, the lobby, the game, the end screen...), its states in its panel. Under them, any changed file no bench shows. **/** finds a bench by its name or a state inside one by any words of its name ("race twelve"); Enter opens the first found.
+- **Open it:** `npm run qa` (the dev server, the desk opened in Chrome by itself; another browser with `BROWSER` set), or `npm run dev`, then `http://localhost:5173/qa.html`; on the beta, **poe2.quest/beta/qa.html**. The dev hub links it first.
+- **On the left, the benches.** **This change** comes first: the benches the branch's files touch, each with a dot (hover one for why). Then the **pieces** (a component on its own: the avatar, the class sigils' picker, the daily streak, the descent, the rune circles) and the **screens**, a bench for each of the game's (the start page, the lobby, the game, the end screen...), its states in its panel. Under them, any changed file no bench shows. **/** finds a bench by its name or a state inside one by any words of its name ("race twelve"); Enter opens the first found.
 - **In the middle, the thing itself**, the real component or the real game, live: it can be clicked, played and hovered.
 - **On the right, its panel:** its **states** (a click, **1** to **9**, or **↑ ↓** go from one to the next; a long list's headings fold, the one on show open), its **controls**, **what happens** (a piece's buttons: Answer right, Turn over) and its **seats** (a scene with more than one: one at a time, or side by side).
 - **The controls set the state on the fly.** A piece's are its sliders, choices and switches; a screen's are the state's own (the lobby's mode and players, the end screen's crowd) and, under **In any game**, what any game can have: long names or other scripts, players joining or watching, players gone offline. A state is only a preset of them: move one and the top line says **as set**, and **As it was** goes back to the state last picked.
@@ -50,11 +50,11 @@ On the dev server the seats meet on a local signalling server (PeerJS's own, sta
 
 ## The sweep
 
-`npm run qa` checks every scene from every seat at the usual sizes without anyone watching, and prints what it finds: it builds the beta into `screens/qa-build/`, opens each frame as a page of its own in a browser that really is that device (its pixel ratio, touch, a phone's user agent) and runs the same checks. It's for the machine, so nobody has to look at its shots.
+`npm run sweep` checks every scene from every seat at the usual sizes without anyone watching, and prints what it finds: it builds the beta into `screens/qa-build/`, opens each frame as a page of its own in a browser that really is that device (its pixel ratio, touch, a phone's user agent) and runs the same checks. It's for the machine, so nobody has to look at its shots.
 
 Run it only when really necessary. Several sessions often share the machine, and a sweep's browsers slow every one of them, so it's not a routine step after a change: the tests, `npm run check` and the benches come first, and a sweep is for what they can't settle. Even then keep it narrow (`--only <scene>` and one size with `--sizes`), and run it once.
 
-- `npm run qa -- --change` checks only the scenes this branch touches; `--only lobby` the scenes whose key matches; `--sizes full` every size, or `--sizes phone,uhd`.
+- `npm run sweep -- --change` checks only the scenes this branch touches; `--only lobby` the scenes whose key matches; `--sizes full` every size, or `--sizes phone,uhd`.
 - `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
 - `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.
 - `--map` runs every scene once with the browser's coverage on and writes `src/data/sceneFiles.json`, which files each scene runs: what This change goes by. Run it when scenes or screens have changed much.

@@ -1,5 +1,5 @@
 // The scenes' walk sizes (the sizes a scene is checked at by the sweep,
-// scripts/qa.mjs) and the shelf's search.
+// scripts/sweep.mjs) and the shelf's search.
 
 import { SCREENS, type Scene } from '../scene.ts';
 import { SIZES, WALK_SIZES, type SizeKey } from '../sizes.ts';

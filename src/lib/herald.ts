@@ -6,6 +6,7 @@
 // notice shows.
 
 import type { GameState } from './game.ts';
+import type { PlayerClass } from './classSigils.ts';
 import { isHeldName } from './names.ts';
 
 /** The creator coming into a room. */
@@ -14,6 +15,8 @@ export interface Arrival {
   name: string;
   /** Her avatar colour; none while she only watches. */
   hue?: number;
+  /** The class sigil she wears. */
+  sigil?: PlayerClass;
   /** She joined a game under way, as a spectator. */
   watching: boolean;
 }
@@ -33,7 +36,7 @@ export function creatorArrival(prev: GameState | null, next: GameState, seen: Se
   for (const p of next.players) {
     if (seen.has(p.id)) continue;
     seen.add(p.id);
-    if (prev && isHeldName(p.name) && next.owner?.id === p.id) found = { id: p.id, name: p.name, hue: p.hue, watching: false };
+    if (prev && isHeldName(p.name) && next.owner?.id === p.id) found = { id: p.id, name: p.name, hue: p.hue, ...(p.sigil ? { sigil: p.sigil } : {}), watching: false };
   }
   for (const o of next.spectators ?? []) {
     if (seen.has(o.id)) continue;
