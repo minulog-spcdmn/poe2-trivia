@@ -20,6 +20,7 @@ const SOUND: Control = {
 };
 const KEYS: Control = { kind: 'toggle', key: 'keys', label: 'Keys changed', default: false };
 const COLOUR: Control = { kind: 'toggle', key: 'colour', label: 'A colour picked', default: false };
+const KEPT: Control = { kind: 'toggle', key: 'kept', label: 'Named zoe_arcana (ruby kept)', default: false };
 
 /** Option 1 on Q, and Q's old place freed: what a player who moved the answers to the left hand has. */
 const CHANGED = rebind(rebind(DEFAULT_BINDINGS, 'option1', 0, 'KeyQ'), 'detonate', 1, 'KeyX');
@@ -32,18 +33,19 @@ export function settingsScenes(): Scene[] {
       group: 'Settings',
       label: 'The settings page',
       seats: [{ mode: 'none', me: null }],
-      controls: [SOUND, KEYS, COLOUR],
+      controls: [SOUND, KEYS, COLOUR, KEPT],
       states: [
         { label: 'As it comes', values: {} },
         { label: 'Sound down, keys changed', values: { sound: 'quiet', keys: true } },
         { label: 'Sound off', values: { sound: 'off' } },
         { label: 'Sapphire picked', values: { colour: true } },
+        { label: "zoe_arcana's ruby, kept", values: { kept: true } },
       ],
       build: (v = {}): Built => ({
         state: null,
         hash: '#settings',
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
-        stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}) },
+        stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}) },
       }),
     },
     {

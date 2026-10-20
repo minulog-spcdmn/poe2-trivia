@@ -13,7 +13,7 @@
   import { fly } from 'svelte/transition';
   import { getAmbience, getVolume, isMuted, onSoundChange, setAmbience, setMuted, setVolume, sfx } from '../lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
-  import { session, savedName, saveName } from '../lib/session.svelte';
+  import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
   import { MAX_NAME, nameRefusal } from '../lib/names';
   import { refuseName } from '../lib/nameField';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -92,6 +92,16 @@
   const choosable = PALETTE.slice(0, RUBY).map((c, h) => ({ h, c }));
   /** A colour kept for this name (zoe_arcana's ruby): theirs in every room, so there's none to pick. */
   const kept = $derived(reservedHueOf(name));
+  // A name saved in another tab (which may or may not have one), in the field too unless it's being edited.
+  onMount(() =>
+    onStoredElsewhere({
+      [NAME_KEY]: () => {
+        const n = savedName().trim();
+        if (draft === name) draft = n;
+        name = n;
+      },
+    }),
+  );
   function pickColour(h: number | null) {
     if (h === colour || !saveColour(h)) return;
     colour = h;

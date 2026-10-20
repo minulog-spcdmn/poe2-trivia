@@ -24,6 +24,17 @@ export function itemFile(id: string, size?: (typeof ITEM_THUMBS)[number]) {
 /** Read when asked, not on import, so tests can import this module outside Vite. */
 const base = () => import.meta.env.BASE_URL;
 
+/**
+ * A path from the site's base as a whole URL, as a url() in a CSS custom
+ * property needs: one there is read where the var() is used, so in the
+ * build's stylesheet (in assets/) a relative one would point into assets/.
+ * (Outside a page, the path as it is.)
+ */
+export function absoluteUrl(path: string) {
+  const p = `${base()}${path}`;
+  return typeof document === 'undefined' ? p : new URL(p, document.baseURI).href;
+}
+
 /** An item's picture, full size (artScale): for the question and the codex's item page. */
 export function itemImage(id: string) {
   return `${base()}${itemFile(id)}`;

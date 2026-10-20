@@ -18,6 +18,7 @@
 // filters on HTML as a box round the element.)
 
 import baked from '../data/iconFits.json' with { type: 'json' };
+import { absoluteUrl } from './ui-paths';
 
 /** An icon's fit, in pixels at a tall card's size: the image's drawn size, and the visible part's offset and size in it (with room for its soft edges). */
 export type Fit = { iw: number; ih: number; x: number; y: number; w: number; h: number };
@@ -86,7 +87,7 @@ export function cleanMask({ c, g, iw, ih, rgba }: NonNullable<Awaited<ReturnType
 /** A baked icon (src/data/iconFits.json, by its path from the site's base): its fit, and its clean mask's path. */
 type Baked = Fit & { mask?: string };
 /** Where the baked icons' paths are from (the site's base). */
-const BASE = new URL(import.meta.env.BASE_URL, document.baseURI).href;
+const BASE = absoluteUrl('');
 const BAKED = Object.entries(baked as Record<string, Baked>).map(([path, f]) => [new URL(path, BASE).href, f] as const);
 /** Each icon's fit, by its absolute URL: baked, or measured here. */
 export const fits = $state<Record<string, Fit>>(Object.fromEntries(BAKED));
