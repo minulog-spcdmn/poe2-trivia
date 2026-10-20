@@ -154,10 +154,10 @@ function keyframesMove(effect: KeyframeEffect): boolean {
  * asked at once, with nothing written in between: an ask between the
  * measuring's writes (data-bs-fill) brought the styles up to date again
  * each time, which in a reveal, with its many animations, took tens of ms.
+ * `asked` and `moved` carry over between calls in one frame, so each
+ * element is asked once however many fills share it.
  */
-function movedAmong(nodes: Iterable<Element>): Set<Element> {
-  const asked = new Set<Element>();
-  const moved = new Set<Element>();
+function movedAmong(nodes: Iterable<Element>, asked = new Set<Element>(), moved = new Set<Element>()): Set<Element> {
   for (const node of nodes)
     for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
       asked.add(el);
@@ -312,20 +312,20 @@ export function measureShadows(
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
   const shook = shaking();
-  // What moves, found once a frame for all the fills, and only if one asks:
-  // `node` or the ancestor of it that moves, if any.
-  let moved: Set<Element> | null = null;
+  // What moves: `node` or the ancestor of it that moves, if any. Asked
+  // only for the fills that get this far (on screen, flat), each element once.
+  const asked = new Set<Element>();
+  const moved = new Set<Element>();
   const movingOf = (node: HTMLElement): Element | null => {
-    moved ??= movedAmong(withFill);
-    if (!moved.size) return null;
+    movedAmong([node], asked, moved);
     for (let el: Element | null = node; el; el = el.parentElement) if (moved.has(el)) return el;
     return null;
   };
   /** How the frame meter names what moves `node` (`el`, it or an ancestor). */
   const movingName = (node: Element, el: Element) => nameOf(el) + (el === node ? '' : ` (round ${nameOf(node)})`);
   // Ancestors' backgrounds, read once a frame: elements share most of their
-  // ancestors. (An ancestor comes first in document order, so its own
-  // data-bs-fill is settled before any descendant reads it.)
+  // ancestors. (Read before this frame's data-bs-fill is written, so a
+  // tagged ancestor's own fill is judged by `filled` instead, below.)
   const paints = new Map<Element, boolean>();
   const paintsAt = (el: Element) => {
     let p = paints.get(el);
@@ -342,19 +342,26 @@ export function measureShadows(
   const fillNodes = new Set<Element>(withFill);
   for (const n of shadowed.keys()) if (!n.isConnected || shadowed.get(n)?.off) release(n);
 
-  // Every element measured, in document order: what it would draw.
+  // Every element measured, in document order: what it would draw. (What
+  // goes back to CSS is released after, with nothing written meanwhile.)
+  const handBack: HTMLElement[] = [];
   const filled = new Set<Element>();
   const measured: Measured[] = [];
   for (const node of nodes) {
     const cs = getComputedStyle(node);
     const soft = [readShadow(cs, 2), readShadow(cs, 1)].filter((x): x is Shadow => !!x);
     const fillKind = shadowed.get(node)?.fill;
+    // Nothing to draw now (a shadow transitioned away): back to CSS, no budget.
+    if (!soft.length && !fillKind) {
+      handBack.push(node);
+      continue;
+    }
 
     const w = node.offsetWidth;
     const h = node.offsetHeight;
     const rect = node.getBoundingClientRect();
     let scale = w ? rect.width / w : 0;
-    let ok = w > 0 && h > 0 && scale > 0 && (soft.length > 0 || !!fillKind);
+    let ok = w > 0 && h > 0 && scale > 0;
     // A box that only moves and scales maps onto the screen by an offset and
     // a scale. Any rotation or 3D turn, even a slight one (as a card tilting
     // toward the pointer), needs the full map, or its shadows wouldn't follow
@@ -410,18 +417,23 @@ export function measureShadows(
 
     if (!ok || !clear || (!soft.length && !fill)) {
       if (node.hasAttribute('data-bs-on')) frameEvent(`backdrop: ${nameOf(node)}'s shadows to CSS (${!ok ? (opacity > 0 ? 'off screen or unmeasurable' : 'hidden') : 'covered'})`);
-      release(node);
+      handBack.push(node);
       continue;
     }
     measured.push({ node, soft, fill, toLocal, shadowReach, w, h, radius: cornerPx(cs.borderTopLeftRadius, w, h), opacity, over });
   }
 
+  for (const node of handBack) release(node);
+
   // The budget: fills first, then document order. An element over a fill
   // that didn't make it goes to CSS with it.
   const byPriority = [...measured.filter((m) => m.fill), ...measured.filter((m) => !m.fill)];
-  const chosen = new Set<Element>(byPriority.slice(0, max).map((m) => m.node));
-  // (In document order, so one over an element dropped here goes too.)
-  for (const m of measured) if (m.over && !chosen.has(m.over)) chosen.delete(m.node);
+  // (A fill comes before what's over it, so that is known as each is taken.)
+  const chosen = new Set<Element>();
+  for (const m of byPriority) {
+    if (chosen.size >= max) break;
+    if (!m.over || chosen.has(m.over)) chosen.add(m.node);
+  }
 
   let n = 0;
   for (const m of measured) {

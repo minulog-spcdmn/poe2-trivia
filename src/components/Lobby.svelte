@@ -1140,7 +1140,7 @@
     --bs1: 0px 18px;
     box-shadow:
       inset 0 1px 0 var(--top-light, transparent),
-      inset 0 0 18px var(--inner-glow, transparent),
+      inset 0 0 18px var(--mode-glow-in, transparent),
       var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     cursor: pointer;
     transition: all 0.2s;
@@ -1163,7 +1163,7 @@
     --bs-fill-b: rgba(69, 42, 14, 0.55);
     border-color: var(--gold);
     --top-light: rgba(255, 230, 170, 0.2);
-    --inner-glow: rgba(255, 150, 60, 0.12);
+    --mode-glow-in: rgba(255, 150, 60, 0.12);
     --bs1-color: rgba(201, 164, 92, 0.25);
   }
   .mode.on b {
