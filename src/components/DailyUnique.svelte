@@ -415,8 +415,8 @@
 
   /* ---- the circle, its art, and the legend under it ---- */
   /* Every size's numbers are custom properties: their fallbacks here are the
-     wide column's (1440 x 900, and 641 to 1080 wide); the start page sets
-     short windows' (Home.svelte), the phone query below phones'. The stage,
+     wide column's (1440 x 980 and taller, and 641 to 1080 wide); the start
+     page sets shorter windows' (Home.svelte), the phone query below phones'. The stage,
      the gap and the rows under it always add up to the block's height, so
      the page round it never moves. */
   .stage {

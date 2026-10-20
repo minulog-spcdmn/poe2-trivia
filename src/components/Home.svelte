@@ -795,7 +795,15 @@
      (down to 32 px) before anything else, then stack in one column.
      Columns and rooms sit in the middle of the window's height, the footer at
      its bottom. On large windows the whole app is scaled up (lib/stage.ts,
-     App.svelte's shell). */
+     App.svelte's shell).
+     The rooms' list has a frame of its own, as tall whether the list is
+     searching, empty or long, and a longer list scrolls inside it. Fixed,
+     not grown into a taller window: the shell sizes the page by its
+     content, under which a growing row always takes its most.
+     On a wide window everything fits, the footer too: three rhythms by the
+     window's height, each adding up to it (980, which big screens zoom to;
+     the laptop's from 979 down to 845, 900 say; and below that a smaller
+     one, for the 13-inch laptop's 725). */
   .home {
     --slot: 108px;
     width: 100%;
@@ -836,6 +844,34 @@
   .foot {
     grid-area: foot;
     margin-top: 32px;
+  }
+  /* Wide windows, 980 tall and up: 26 + 650 (the columns) + 44 + 153 (the
+     rooms) + 32 + 49 (the footer) + 22 = 976. */
+  @media (min-width: 1081px) {
+    .home {
+      /* The rooms' block below its margin: the list's header (48) and its frame, a row of rooms (72), the gap and 21 of the next row. */
+      --rooms-h: calc(48px + 105px);
+    }
+    /* A height of its own (none on an invite, which has no rooms): the list's frame takes what its header leaves and scrolls a long list. */
+    .rooms {
+      height: var(--rooms-h);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .rooms > :global(section) {
+      flex: 1 1 0;
+    }
+    .rooms :global(.frame) {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-y: auto;
+      /* Room for the rooms' shadows and hover glow, which the frame would clip at its edges. */
+      margin: -14px -24px 0;
+      padding: 14px 24px 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--gold-lo) transparent;
+    }
   }
 
   /* ---- the title ---- */
@@ -1301,12 +1337,14 @@
     color: #ab9d88;
   }
 
-  /* Short windows (laptops): a tighter rhythm, so the first row of open
-     rooms is in view on a 1440 x 725 window and the next one peeks out. */
-  @media (max-height: 859px) and (min-width: 1081px) {
+  /* Under 980 tall (900, say): a tighter rhythm. 16 + 574 + 8 + 144 + 32 +
+     49 + 22 = 845. */
+  @media (max-height: 979px) and (min-width: 1081px) {
     .home {
       --slot: 92px;
-      /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
+      /* Header 40, a row of rooms (72), the gap and 20 of the next row. */
+      --rooms-h: calc(40px + 104px);
+      /* Today's unique at this height (DailyUnique's defaults are the 980 tall window's). */
       --daily-stage-h: 401px;
       --daily-circle: 456px;
       --daily-circle-y: 230px;
@@ -1335,6 +1373,37 @@
     }
     .rooms {
       margin-top: 8px;
+    }
+  }
+  /* Under 845 tall (a 13-inch laptop's 725): tighter still, and a smaller
+     title and Today's unique. 10 + 527 + 6 + 120 + 10 + 39 + 10 = 722. */
+  @media (max-height: 844px) and (min-width: 1081px) {
+    .home {
+      /* Header 40, a row of rooms (72) and 8 of the gap. */
+      --rooms-h: calc(40px + 80px);
+      --daily-stage-h: 363px;
+      --daily-circle: 413px;
+      --daily-circle-y: 208px;
+      --daily-legend-gap: 8px;
+      --daily-after-h: 32px;
+      --daily-after-gap: 2px;
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+    .intro {
+      --title-size: 64px;
+    }
+    .greeting {
+      margin: 3px 0 1px;
+    }
+    .rooms {
+      margin-top: 6px;
+    }
+    .foot {
+      margin-top: 10px;
+    }
+    .foot :global(.band) {
+      margin-top: 12px;
     }
   }
 
