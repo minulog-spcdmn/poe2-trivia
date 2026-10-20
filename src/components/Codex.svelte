@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
@@ -95,6 +96,11 @@
   // does, when it nears the screen), its header laid out as ever and its
   // grid standing meanwhile at the height its rows will take (heldHeights).
   // Its turn lays it out as any page is, and starts its pictures loading.
+  // Its tiles aren't even made before then (some 27 ms of mounting, all of
+  // them in that first frame): till its first turn a grid stands empty at
+  // that height. One that nears the screen before its turn has its tiles
+  // made then (near), as the browser lays out a held one; once made, a
+  // section's tiles stay, its later turns (after a search) only lay it out.
   const saveData = savingData();
   /** How many sections have had their turn (of those shown: a search or a pick shows fewer). */
   let staged = $state(0);
@@ -117,8 +123,25 @@
     const raf = requestAnimationFrame(() => staged++);
     return () => cancelAnimationFrame(raf);
   });
+  /** The sections (by category) whose tiles have been made. */
+  const made = new SvelteSet<string>();
+  const madeAt = (i: number) => !held(i) || made.has(sections[i].stats.category);
+  $effect(() => {
+    for (let i = 0; i < sections.length && !held(i); i++) made.add(sections[i].stats.category);
+  });
   /** The sections' grids as shown (bound), the first measured for the others' height while they're held. */
   let gridEls = $state<HTMLElement[]>([]);
+  /** A screen ahead of the view, an empty grid has its tiles made. */
+  $effect(() => {
+    const io = new IntersectionObserver(
+      (seen) => {
+        for (const e of seen) if (e.isIntersecting) made.add((e.target as HTMLElement).dataset.category!);
+      },
+      { rootMargin: '100% 0px' },
+    );
+    gridEls.forEach((g, i) => g && i < sections.length && !madeAt(i) && io.observe(g));
+    return () => io.disconnect();
+  });
   // A held grid's height is worked out from its names (lib/heldGrid.ts). The
   // first grid gives a tile's fixed parts, a line's height, the columns and
   // a name's width and font, each time it lays out at a new size (a
@@ -171,11 +194,11 @@
     };
     return { cols: gs.gridTemplateColumns.split(' ').length, gap: parseFloat(gs.rowGap) || 0, base, line, lines };
   }
-  /** Each section's grid's height while held, as `contain-intrinsic-height` takes it. */
+  /** Each section's grid's height (px) while held. */
   const heldHeights = $derived.by(() => {
     const p = pitch;
     if (!p) return null;
-    return sections.map(({ items }) => `auto ${gridHeight(items.map((it) => (codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true))), p).toFixed(2)}px`);
+    return sections.map(({ items }) => gridHeight(items.map((it) => (codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true))), p).toFixed(2));
   });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
@@ -567,6 +590,8 @@
       {#if view === 'grid'}
         {#each sections as sec, i (sec.stats.category)}
           {@const loading = !saveData && i < staged ? 'eager' : 'lazy'}
+          {@const tiles = madeAt(i)}
+          {@const h = heldHeights?.[i] ?? 600}
           <section class="cat-section">
             <header>
               {@render glyph(sec.stats.category)}
@@ -582,7 +607,8 @@
                 {/each}
               </ul>
             {/if}
-            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? (heldHeights?.[i] ?? 'auto 600px') : null} bind:this={gridEls[i]}>
+            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? `auto ${h}px` : null} style:height={tiles ? null : `${h}px`} data-category={sec.stats.category} bind:this={gridEls[i]}>
+              {#if tiles}
               {#each sec.items as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>
@@ -608,6 +634,7 @@
                   {/if}
                 </li>
               {/each}
+              {/if}
             </ul>
           </section>
         {:else}
