@@ -8,7 +8,8 @@
 // token that only this room's host ever sees (a different one per room), and
 // everything they send is checked and rate limited, down to the raw frames.
 
-import Peer, { type DataConnection } from 'peerjs';
+import type Peer from 'peerjs';
+import type { DataConnection } from 'peerjs';
 import itemData from '../data/items.json';
 import fakeNames from '../data/fakes.json';
 import {
@@ -31,7 +32,7 @@ import {
   type Grayscale,
   type Item,
 } from './game';
-import { PEER_OPTIONS, PEER_PREFIX } from './peer';
+import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow, type PeerJs } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
@@ -382,6 +383,8 @@ class Session {
   });
 
   private peer: Peer | null = null;
+  /** Counts resets, so a peer waiting for PeerJS to load isn't made for a room let go of meanwhile (peerClass). */
+  private peerEpoch = 0;
   private hostConn: DataConnection | null = null;
   /** Guest: the link the host welcomed this device on, so it knows this version's messages (presence). */
   private welcomedOn: DataConnection | null = null;
@@ -664,6 +667,11 @@ class Session {
       else this.fail(NO_SEAL_HOST, 'Room not opened', { failure: 'host-room-not-opened' });
       return;
     }
+    const Peer = this.peerClass(
+      () => this.openRoom(code, attempt, resumeState),
+      () => this.roomNotOpened(code, 'peerjs-load', !!resumeState),
+    );
+    if (!Peer) return;
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
     this.peer = peer;
     // An invite link's screen asking whose room this is: told, apart from the
@@ -748,9 +756,14 @@ class Session {
           'Room not reopened',
           { reopening: code, failure: 'host-room-not-reopened' },
         );
-      else if (resumeState) this.fail(`${this.networkHint(err.type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-      else this.fail(this.networkHint(err.type), 'No connection', { failure: 'host-no-connection' });
+      else this.roomNotOpened(code, err.type, !!resumeState);
     });
+  }
+
+  /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
+  private roomNotOpened(code: string, type: string, reopening: boolean) {
+    if (reopening) this.fail(`${this.networkHint(type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
+    else this.fail(this.networkHint(type), 'No connection', { failure: 'host-no-connection' });
   }
 
   private acceptConnection(conn: DataConnection) {
@@ -1734,6 +1747,11 @@ class Session {
    * there at all is replaced after a moment, until joining gives up.
    */
   private startClientPeer() {
+    const Peer = this.peerClass(
+      () => this.startClientPeer(),
+      () => this.fail(this.networkHint('peerjs-load'), 'No connection', { failure: this.joinFailure('join-no-connection') }),
+    );
+    if (!Peer) return;
     this.peer?.destroy();
     this.cancelAttempts();
     const peer = new Peer(PEER_OPTIONS);
@@ -2930,6 +2948,22 @@ class Session {
     this.idleTimer = key ? setTimeout(() => this.idleKey === key && (this.idle = true), IDLE_SKIP_MS) : null;
   }
 
+  /**
+   * PeerJS's Peer, loaded (lib/peer.ts loadPeerJs). Null while it loads: then
+   * `retry` runs once it has (or `failed`, when it can't), unless this
+   * session was reset meanwhile.
+   */
+  private peerClass(retry: () => void, failed: () => void): PeerJs['default'] | null {
+    const loaded = peerJsNow();
+    if (loaded) return loaded.default;
+    const epoch = this.peerEpoch;
+    loadPeerJs().then(
+      () => epoch === this.peerEpoch && retry(),
+      () => epoch === this.peerEpoch && this.status === 'connecting' && failed(),
+    );
+    return null;
+  }
+
   private networkHint(type: string) {
     return `Couldn't connect to the matchmaking server (${type}). Check your connection, or play hot-seat on one device.`;
   }
@@ -2990,6 +3024,7 @@ class Session {
   }
 
   private reset() {
+    this.peerEpoch++;
     this.recordLeaving();
     // A new attempt (or leaving) makes the last one's errors moot.
     toasts.clearErrors();
