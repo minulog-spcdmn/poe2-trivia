@@ -14,6 +14,7 @@
   import { calm } from '../lib/motion.svelte';
   import { whenIdle } from '../lib/idle';
   import { savingData } from '../lib/saveData';
+  import { canWrap, gridHeight, type GridMeasure } from '../lib/heldGrid';
   import { ownRect } from '../lib/stage';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
@@ -95,33 +96,28 @@
   // grid standing meanwhile at the height its rows will take (heldHeights).
   // Its turn lays it out as any page is, and starts its pictures loading.
   const saveData = savingData();
-  /** How many sections have had their turn. */
+  /** How many sections have had their turn (of those shown: a search or a pick shows fewer). */
   let staged = $state(0);
   const held = (i: number) => i >= Math.max(1, staged);
-  const thumbsLoading = $derived<'lazy' | 'eager'>(!saveData && staged >= engine.categories.length ? 'eager' : 'lazy');
-  onMount(() => {
-    // A section a frame, from the first idle moment after the codex comes in
-    // (idle moments are few while it does: one each took seconds).
-    let raf = 0;
-    const next = () => {
-      staged++;
-      if (staged < engine.categories.length) raf = requestAnimationFrame(next);
-    };
-    const cancel = whenIdle(() => (raf = requestAnimationFrame(next)), { timeout: 500 });
-    return () => {
-      cancel();
-      cancelAnimationFrame(raf);
-    };
+  const thumbsLoading = $derived.by<'lazy' | 'eager'>(() => (!saveData && staged >= sections.length ? 'eager' : 'lazy'));
+  // A section a frame, from the first idle moment after the codex comes in
+  // (idle moments are few while it does: one each took seconds), and on as
+  // more show (a search cleared).
+  let staging = $state(false);
+  onMount(() => whenIdle(() => (staging = true), { timeout: 500 }));
+  $effect(() => {
+    if (!staging || staged >= sections.length) return;
+    const raf = requestAnimationFrame(() => staged++);
+    return () => cancelAnimationFrame(raf);
   });
   /** The sections' grids as shown (bound), the first measured for the others' height while they're held. */
   let gridEls = $state<HTMLElement[]>([]);
-  // A tile is as tall as its fixed parts (picture, status, padding) and its
-  // name's lines, one or two (clamped), and a row as its tallest tile. So
-  // the first grid gives the fixed parts, a line's height, the columns and
-  // a name's width, each time it lays out at a new size (a ResizeObserver
-  // runs after layout, so this reads no layout of its own), and a held
-  // grid's rows are worked out from its names, set in the tiles' font.
-  type Pitch = { cols: number; gap: number; base: number; line: number; lines: (text: string, unknown: boolean) => number };
+  // A held grid's height is worked out from its names (lib/heldGrid.ts). The
+  // first grid gives a tile's fixed parts, a line's height, the columns and
+  // a name's width and font, each time it lays out at a new size (a
+  // ResizeObserver runs after layout, so this reads no layout of its own),
+  // and a name's lines come from its width in that font.
+  type Pitch = GridMeasure & { lines: (text: string, unknown: boolean) => number };
   let pitch = $state.raw<Pitch | null>(null);
   $effect(() => {
     const grid = gridEls[0];
@@ -130,10 +126,13 @@
     ro.observe(grid);
     return () => ro.disconnect();
   });
+  /** One canvas for measuring names, and the lines found, by font, width and name. */
+  let measurer: CanvasRenderingContext2D | null | undefined;
+  const lineCounts = new Map<string, number>();
   function measurePitch(grid: HTMLElement): Pitch | null {
     const tile = grid.querySelector<HTMLElement>('.tile');
     const name = tile?.querySelector<HTMLElement>('.name');
-    const ctx = document.createElement('canvas').getContext('2d');
+    const ctx = (measurer ??= document.createElement('canvas').getContext('2d'));
     if (!tile || !name || !ctx) return null;
     const gs = getComputedStyle(grid);
     const ns = getComputedStyle(name);
@@ -142,16 +141,18 @@
     // (The name stretches to fill its tile, so the rest of the tile is the fixed parts.)
     const base = ownRect(tile).height - ownRect(name).height;
     if (!(line > 0) || !(width > 0)) return null;
-    const font = (italic: boolean) => `${italic ? 'italic' : 'normal'} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`;
-    if (ns.letterSpacing !== 'normal') (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = ns.letterSpacing;
-    const known = new Map<string, number>();
-    // Two lines where it's wider than the line and can break (after a space or a hyphen), else one.
+    // Read now, not as names are measured: the element may be gone by then.
+    const fonts = ['normal', 'italic'].map((style) => `${style} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`);
+    const spacing = ns.letterSpacing === 'normal' ? '0px' : ns.letterSpacing;
+    // Two lines where it's wider than the line and can break, else one.
     const lines = (text: string, unknown: boolean) => {
-      const key = `${+unknown}${text}`;
-      let n = known.get(key);
+      const font = fonts[+unknown];
+      const key = `${font}|${spacing}|${width}|${text}`;
+      let n = lineCounts.get(key);
       if (n === undefined) {
-        ctx.font = font(unknown);
-        known.set(key, (n = ctx.measureText(text).width > width && /[\s-]./.test(text.trim()) ? 2 : 1));
+        ctx.font = font;
+        (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = spacing;
+        lineCounts.set(key, (n = canWrap(text) && ctx.measureText(text).width > width ? 2 : 1));
       }
       return n;
     };
@@ -161,15 +162,7 @@
   const heldHeights = $derived.by(() => {
     const p = pitch;
     if (!p) return null;
-    return sections.map(({ items }) => {
-      let h = 0;
-      for (let r = 0; r < items.length; r += p.cols) {
-        let most = 1;
-        for (const it of items.slice(r, r + p.cols)) most = Math.max(most, codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true));
-        h += p.base + most * p.line + (r ? p.gap : 0);
-      }
-      return `auto ${h.toFixed(2)}px`;
-    });
+    return sections.map(({ items }) => `auto ${gridHeight(items.map((it) => (codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true))), p).toFixed(2)}px`);
   });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */

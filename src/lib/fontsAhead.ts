@@ -6,7 +6,8 @@
 // hundred tiles, it was a 25 ms frame in the middle of an item opening (the
 // tooltip's Fontin, the record's EB Garamond 500) or of the codex coming in
 // (its title's Cinzel Black). Loaded while the start page shows, they are
-// there before any of those screens.
+// there before any of those screens (and the codex, opened sooner, waits a
+// moment for them: App.svelte).
 
 import { whenIdle } from './idle';
 import { savingData } from './saveData';
@@ -19,18 +20,25 @@ const LATER = [
   ['500', '--font-body'],
 ] as const;
 
-/** Loads the faces other screens use once the page is idle (a face the page already has costs nothing); not with Save-Data on. */
-export function loadFontsAhead() {
-  if (typeof document === 'undefined' || !document.fonts || savingData()) return;
-  whenIdle(
-    () => {
-      const root = getComputedStyle(document.documentElement);
-      for (const [face, family] of LATER) {
+let loading: Promise<void> | null = null;
+
+/** Loads the faces now (once), resolving when they're in or have failed. */
+export function loadFonts(): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  return (loading ??= (() => {
+    const root = getComputedStyle(document.documentElement);
+    return Promise.all(
+      LATER.map(([face, family]) => {
         // Its first family only: the fallbacks after it would load faces of their own.
         const first = root.getPropertyValue(family).split(',')[0].trim();
-        if (first) void document.fonts.load(`${face} 16px ${first}`).catch(() => {});
-      }
-    },
-    { timeout: 3000, fallback: 1000 },
-  );
+        return first ? document.fonts.load(`${face} 16px ${first}`).catch(() => {}) : undefined;
+      }),
+    ).then(() => {});
+  })());
+}
+
+/** Loads the faces other screens use once the page is idle (a face the page already has costs nothing); not with Save-Data on. */
+export function loadFontsAhead() {
+  if (savingData()) return;
+  whenIdle(() => void loadFonts(), { timeout: 3000, fallback: 1000 });
 }

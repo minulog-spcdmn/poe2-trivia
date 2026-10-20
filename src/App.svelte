@@ -25,7 +25,8 @@
   import Lobby from './components/Lobby.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { whenIdle } from './lib/idle';
-  import { loadFontsAhead } from './lib/fontsAhead';
+  import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
+  import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
@@ -275,14 +276,17 @@
   });
 
   // The codex page is its own chunk: fetch it ahead, so opening it doesn't wait.
-  // Its fonts and the tooltips' too (lib/fontsAhead.ts), so they don't lay the codex out again as it opens.
+  // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
+  // moment, so they don't lay the codex out again as it opens; opened before
+  // they're in, it waits for them a moment (at most a quarter of a second).
+  let codexChunk: Promise<typeof import('./components/Codex.svelte')> | null = null;
+  const fetchCodexPage = () => (codexChunk ??= import('./components/Codex.svelte'));
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
-  const loadCodexPage = () => (codexPage ??= import('./components/Codex.svelte'));
+  const loadCodexPage = () =>
+    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(([page]) => page));
+  onMount(loadFontsAhead);
   onMount(() => {
-    const t = setTimeout(() => {
-      loadCodexPage();
-      loadFontsAhead();
-    }, 2000);
+    const t = setTimeout(fetchCodexPage, 2000);
     return () => clearTimeout(t);
   });
 
@@ -374,17 +378,14 @@
    * the root (`--<name>`), kept as it changes and kept after it goes: the end
    * of a game lines its panel up with the lobby's from the header's and the
    * lobby's legal links' (GameOver.svelte), the links not showing there.
-   * Only the game and its end read them (QuestionView, Scoreboard,
-   * GameOver), so on every other screen they're held, and written as one of
-   * those comes in: a new value restyles the whole page, on the codex's five
-   * hundred tiles some 20 ms each, as the codex came in.
+   * Written only while a component that reads them shows, held meanwhile
+   * (lib/shellHeights.svelte.ts says why).
    */
-  const readsHeights = $derived(screen === 'game' || screen === 'over');
   const heldVars = new Map<string, string>();
   function heightVar(node: HTMLElement, name: string) {
     const set = () => {
       const v = `${ownRect(node).height.toFixed(2)}px`;
-      if (!readsHeights) heldVars.set(name, v);
+      if (!shellHeightsRead()) heldVars.set(name, v);
       else document.documentElement.style.setProperty(`--${name}`, v);
     };
     const ro = new ResizeObserver(set);
@@ -392,7 +393,7 @@
     return { destroy: () => ro.disconnect() };
   }
   $effect(() => {
-    if (!readsHeights) return;
+    if (!shellHeightsRead()) return;
     for (const [name, v] of heldVars) document.documentElement.style.setProperty(`--${name}`, v);
     heldVars.clear();
   });

@@ -391,9 +391,12 @@ const HALL_PARTS = 4;
 
 /**
  * A dark stone-hall impulse response: stereo noise that decays and loses its
- * highs as it goes. Worked out a quarter of a channel per step.
+ * highs as it goes. Worked out a quarter of a channel per step, from the
+ * first idle moment on.
  */
 function* hallSteps(ac: AudioContext, seconds: number): Generator<void, AudioBuffer> {
+  // Nothing before the first idle moment (inIdleSteps runs a first step at once).
+  yield;
   const len = Math.floor(ac.sampleRate * seconds);
   const buf = ac.createBuffer(2, len, ac.sampleRate);
   for (let ch = 0; ch < buf.numberOfChannels; ch++) {
