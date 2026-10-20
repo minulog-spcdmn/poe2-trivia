@@ -17,7 +17,9 @@
 # are drawn the most enlarged, so they take more of the model (MIX): for
 # one-cell items, 75% beat 50% 21 to 3 in a blind test on 24 of them, but
 # the precursor tablets' stone came out too smooth at 75% (MIX_GROUP); items
-# up to 2 x 2 take 50%. AVIF at
+# up to 2 x 2 take 50%, but those one cell high (2 x 1: belts) take the
+# one-cell share: wide, they fill a box's width and are drawn as enlarged as
+# a ring, and at 50% the original's blocky, lossy smudges showed. AVIF at
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
@@ -51,10 +53,11 @@ MODEL = os.environ.get('ART_MODEL', os.path.join(ROOT, '.venv-art', 'RealESRGAN_
 # Pixels per art pixel, by the item's size in inventory cells (CELL px each,
 # about): one cell, up to 2 x 2, larger (keep in step with artScale in
 # src/lib/ui-paths.ts).
-SCALE = {'small': 4, 'medium': 4, 'large': 2}
+SCALE = {'small': 4, 'wide': 4, 'medium': 4, 'large': 2}
 # How much of the model's picture goes into the mix, the rest being the
-# original, by size as SCALE.
-MIX = {'small': 0.75, 'medium': 0.5, 'large': 0.3}
+# original, by size as SCALE ('wide': one cell high and up to 2 x 2, as
+# drawn as enlarged as one cell).
+MIX = {'small': 0.75, 'wide': 0.75, 'medium': 0.5, 'large': 0.3}
 # Groups (src/data/items.json) that take their own share whatever their size.
 MIX_GROUP = {'Tablets': 0.5}
 CELL = 104
@@ -169,14 +172,14 @@ def group_of(iid):
 
 
 def size_of(w, h):
-    """An item's size class by its art (px): 'small' (one cell), 'medium' (up to 2 x 2: 1 x 2, 2 x 1, 2 x 2) or 'large'.
+    """An item's size class by its art (px): 'small' (one cell), 'wide' (2 x 1), 'medium' (1 x 2, 2 x 2) or 'large'.
 
     Halves round up, as Math.round in artScale does (Python's round would
     send them to the even side).
     """
     cells = lambda px: max(1, int(px / CELL + 0.5))
     cw, ch = cells(w), cells(h)
-    return 'small' if cw == ch == 1 else 'medium' if cw <= 2 and ch <= 2 else 'large'
+    return 'small' if cw == ch == 1 else 'wide' if cw == 2 and ch == 1 else 'medium' if cw <= 2 and ch <= 2 else 'large'
 
 
 def scale_of(w, h):
