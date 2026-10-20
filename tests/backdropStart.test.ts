@@ -6,10 +6,14 @@
 // with all the UI's parts is built in the background, drawn once off the
 // frame in an idle moment (so the driver finishes it there, not in a frame
 // that shows), and takes over from the two, the UI pass and its layer let
-// go. Delve's programs are warmed off the frame the same way. Where the
-// backdrop draws none of the UI's parts (a touch screen), there's no UI
-// pass, and its main pass has none of them. And the canvas has an alpha
-// channel only where an opaque one stalls the page (opaqueCanvasStalls).
+// go. Delve's programs go the same way: built to leave the boxes to the UI
+// pass while it's there, warmed off the frame (in the frame, a step at a
+// time, while a Delve scene shows without them), then replaced by ones
+// that draw the boxes too. Where the backdrop draws none of the UI's parts
+// (a touch screen), there's no UI pass, and its main pass has none of
+// them; should the pointer change, one with them is built and takes over.
+// And the canvas has an alpha channel only where an opaque one stalls the
+// page (opaqueCanvasStalls).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
@@ -95,17 +99,21 @@ function idle() {
 
 const { startBackdrop, opaqueCanvasStalls, wantDelveBackdrop, delveBackdropReady } = await import('../src/lib/backdrop.ts');
 const { backdropShadow } = await import('../src/lib/backdropShadow.ts');
+const { setDescent, snapDescent } = await import('../src/lib/descent.ts');
 
 /** Which pass a fragment shader is: the UI pass; the main one with all the UI's parts, only its drop shadows (the UI pass after it), or none; or the soft light. Delve's say so. */
 const kindOf = (fs: string) =>
   (fs.includes('uniform vec4 uCityA') || fs.includes('uniform vec4 uFxK') ? 'delve ' : '') +
   (fs.includes('fragColor = ui;') ? 'ui' : fs.includes('uElX') ? 'full' : fs.includes('uMkA') ? 'main' : fs.includes('uniform sampler2D uSmooth') ? 'bare' : 'smooth');
 
+/** The backdrop's targets, by the texture unit their texture is on (or a renderbuffer's: the texel a main pass is warmed into). */
+const TARGETS: Record<number, string> = { 3: 'soft light', 4: 'UI layer' };
+
 /** A WebGL2 context that logs what's linked and read, by pass; what's drawn, where and when; and what's let go. */
 function fakeGl(parallel = true, floats = true) {
   const log: string[] = [];
-  /** Each draw: the program's kind, where it drew (the canvas, or a target by the order it was made in) and when (a frame, or an idle moment). */
-  const draws: { kind: string; into: string; idle: boolean }[] = [];
+  /** Each draw: the program's kind, where it drew (the canvas, or a target by what it holds, see TARGETS), whether it was a texel's worth (a warming) and when (a frame, or an idle moment). */
+  const draws: { kind: string; into: string; texel: boolean; idle: boolean }[] = [];
   /** What was let go: programs by kind, targets by name. */
   const deleted: string[] = [];
   const state = { done: false, fails: new Set<string>() };
@@ -116,8 +124,10 @@ function fakeGl(parallel = true, floats = true) {
   };
   type Prog = { kind?: string };
   let current: Prog | null = null;
-  let into = 'canvas';
-  let targets = 0;
+  type Target = { name: string };
+  let bound: Target | null = null;
+  let unit = 0;
+  let texel = false;
   const methods: Record<string, unknown> = {
     isContextLost: () => false,
     getShaderPrecisionFormat: () => ({ precision: 23 }),
@@ -144,11 +154,17 @@ function fakeGl(parallel = true, floats = true) {
     getShaderInfoLog: () => '',
     getProgramInfoLog: () => '',
     useProgram: (p: Prog) => (current = p),
-    createFramebuffer: () => ({ name: `target ${++targets}` }),
-    bindFramebuffer: (_: number, fb: { name: string } | null) => (into = fb?.name ?? 'canvas'),
-    deleteFramebuffer: (fb: { name: string } | null) => fb && deleted.push(fb.name),
+    createFramebuffer: (): Target => ({ name: '?' }),
+    bindFramebuffer: (_: number, fb: Target | null) => (bound = fb),
+    deleteFramebuffer: (fb: Target | null) => fb && deleted.push(fb.name),
+    activeTexture: (u: number) => (unit = u - K('TEXTURE0')),
+    createTexture: () => ({ unit: -1 }),
+    bindTexture: (_: number, t: { unit: number } | null) => t && (t.unit = unit),
+    framebufferTexture2D: (_a: number, _b: number, _c: number, t: { unit: number }) => (bound!.name = TARGETS[t.unit] ?? `unit ${t.unit}`),
+    framebufferRenderbuffer: () => (bound!.name = 'texel'),
     deleteProgram: (p: Prog) => deleted.push(p.kind ?? '?'),
-    drawArrays: () => draws.push({ kind: current?.kind ?? '?', into, idle: inIdle }),
+    viewport: (_x: number, _y: number, w: number, h: number) => (texel = w === 1 && h === 1),
+    drawArrays: () => draws.push({ kind: current?.kind ?? '?', into: bound?.name ?? 'canvas', texel, idle: inIdle }),
   };
   const gl = new Proxy(
     {},
@@ -224,13 +240,13 @@ test('once the page is idle, one main pass with all the UI parts is built, warme
   assert.deepEqual(b.log.slice(6), ['link full', 'read full']);
   const shown = b.draws.findIndex((d) => d.kind === 'full' && d.into === 'canvas');
   assert.ok(shown > 0, 'the merged pass draws the frame in the end');
-  // Its first draw: in an idle moment, into a texel of its own (made after the soft light's and the UI layer's targets).
+  // Its first draw: in an idle moment, into a texel of its own.
   assert.deepEqual(
     b.draws.filter((d, i) => i < shown && d.kind === 'full'),
-    [{ kind: 'full', into: 'target 3', idle: true }],
+    [{ kind: 'full', into: 'texel', texel: true, idle: true }],
   );
   // Then the two passes are let go (the first main pass, the UI pass and its layer) and not drawn again.
-  for (const k of ['main', 'ui', 'target 2']) assert.ok(b.deleted.includes(k), `${k} let go: ${b.deleted.join()}`);
+  for (const k of ['main', 'ui', 'UI layer']) assert.ok(b.deleted.includes(k), `${k} let go: ${b.deleted.join()}`);
   assert.ok(
     b.draws.slice(shown).every((d) => d.kind === 'full' || d.kind === 'smooth'),
     'only the merged pass and the soft light after',
@@ -326,7 +342,7 @@ test('the pointer turned to touch before the page was idle: the two passes give 
     coarse = false;
   }
   assert.deepEqual(b.log.slice(6), ['link bare', 'read bare']);
-  for (const k of ['main', 'ui', 'target 2']) assert.ok(b.deleted.includes(k), `${k} let go: ${b.deleted.join()}`);
+  for (const k of ['main', 'ui', 'UI layer']) assert.ok(b.deleted.includes(k), `${k} let go: ${b.deleted.join()}`);
   assert.equal(b.draws.filter((d) => d.into === 'canvas').at(-1)?.kind, 'bare');
   b.stop!();
 });
@@ -348,27 +364,100 @@ test('the canvas has an alpha channel only where an opaque one stalls the page: 
   b.stop!();
 });
 
-// (Last: once Delve is on its way it stays so, and every backdrop after builds Delve's programs.)
-test("Delve's programs are warmed off the frame, each in an idle moment into the target it draws to, before they're ready", () => {
+test('the pointer turned from touch: a main pass with all the UI parts is built, warmed off the frame, and takes over', () => {
+  coarse = true;
   const b = start();
   b.state.done = true;
+  frames();
+  coarse = false;
   settle();
+  assert.deepEqual(b.log.slice(4), ['link full', 'read full']);
+  const shown = b.draws.findIndex((d) => d.kind === 'full' && d.into === 'canvas');
+  assert.ok(shown > 0, 'it draws the frame in the end');
+  assert.deepEqual(
+    b.draws.filter((d, i) => i < shown && d.kind === 'full'),
+    [{ kind: 'full', into: 'texel', texel: true, idle: true }],
+  );
+  assert.ok(b.deleted.includes('bare'), b.deleted.join());
+  const count = b.log.length;
+  settle();
+  assert.equal(b.log.length, count, 'nothing more is built');
+  b.stop!();
+});
+
+test('the pointer turned from touch and the main pass with the UI parts failing to build: they are left to CSS, and it is not tried again', () => {
+  const warn = console.warn;
+  const warned: string[] = [];
+  console.warn = (m: string) => void warned.push(m);
+  coarse = true;
+  try {
+    const b = start();
+    b.state.done = true;
+    b.state.fails.add('full');
+    frames();
+    coarse = false;
+    settle();
+    settle();
+    assert.deepEqual(b.log.slice(4), ['link full', 'read full'], 'tried once');
+    assert.equal(warned.filter((m) => /left|leaves/.test(String(m))).length, 1, warned.join(' | '));
+    assert.equal(b.draws.filter((d) => d.into === 'canvas').at(-1)?.kind, 'bare', 'the bare pass still draws');
+    b.stop!();
+  } finally {
+    coarse = false;
+    console.warn = warn;
+  }
+});
+
+// (Last: once Delve is on its way it stays so, and every backdrop after builds Delve's programs as it starts.)
+test("Delve wanted as the page starts: its programs leave the boxes to the UI pass at first, warmed off the frame, then give way to ones with them, the UI pass kept until then", () => {
+  const b = start();
+  b.state.done = true;
   wantDelveBackdrop();
   assert.equal(delveBackdropReady(), false);
   let readyAt = -1;
-  for (let i = 0; i < 20 && readyAt < 0; i++) {
+  for (let i = 0; i < 40; i++) {
     frame();
     idle();
-    if (delveBackdropReady()) readyAt = b.draws.length;
+    if (readyAt < 0 && delveBackdropReady()) readyAt = b.draws.length;
+    // (The UI pass let go only once neither the lean main pass nor Delve's leaves the boxes to it.)
+    if (b.deleted.includes('ui')) assert.ok(b.deleted.includes('main') && b.deleted.includes('delve main'), b.deleted.join());
   }
   assert.ok(readyAt > 0, 'ready');
-  assert.ok(b.log.includes('link delve full') && b.log.includes('link delve smooth'), b.log.join());
-  assert.deepEqual(
-    b.draws.slice(0, readyAt).filter((d) => d.kind.startsWith('delve')),
-    [
-      { kind: 'delve smooth', into: 'target 1', idle: true },
-      { kind: 'delve full', into: 'target 3', idle: true },
-    ],
-  );
+  const built = b.log.filter((l) => l.startsWith('link delve'));
+  assert.deepEqual(built, ['link delve smooth', 'link delve main', 'link delve full']);
+  // Each first drawn in an idle moment, into the target it draws to (or a texel of the same kind).
+  const firsts = ['delve smooth', 'delve main', 'delve full'].map((k) => b.draws.find((d) => d.kind === k));
+  assert.deepEqual(firsts, [
+    { kind: 'delve smooth', into: 'soft light', texel: true, idle: true },
+    { kind: 'delve main', into: 'texel', texel: true, idle: true },
+    { kind: 'delve full', into: 'texel', texel: true, idle: true },
+  ]);
+  // Delve's own soft light kept through the merge; its first main pass, the lean main pass and the UI pass let go.
+  for (const k of ['delve main', 'main', 'ui', 'UI layer']) assert.ok(b.deleted.includes(k), `${k} let go: ${b.deleted.join()}`);
+  assert.ok(!b.deleted.includes('delve smooth'), 'the soft light kept');
   b.stop!();
+});
+
+test("a Delve scene showing before Delve's programs are warmed: they're warmed in the frames, a step a frame, without waiting for an idle moment", () => {
+  setDescent(40);
+  snapDescent();
+  try {
+    const b = start();
+    b.state.done = true;
+    // (No idle moment comes.)
+    for (let i = 0; i < 30 && !delveBackdropReady(); i++) frame();
+    assert.ok(delveBackdropReady(), 'ready without an idle moment');
+    const warmed = b.draws.filter((d) => d.kind.startsWith('delve') && d.texel);
+    assert.deepEqual(warmed, [
+      { kind: 'delve smooth', into: 'soft light', texel: true, idle: false },
+      { kind: 'delve main', into: 'texel', texel: true, idle: false },
+    ]);
+    frame();
+    frame();
+    assert.equal(b.draws.filter((d) => d.into === 'canvas').at(-1)?.kind, 'delve main', "Delve's programs draw the scene");
+    b.stop!();
+  } finally {
+    setDescent(0);
+    snapDescent();
+  }
 });
