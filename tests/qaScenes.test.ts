@@ -113,9 +113,10 @@ test('the controls every game has change only what they say, and leave who is se
 test("Offline on a game played through the engine goes the engine's way: a race's state is the one the room reaches", () => {
   const race = catalog().find((s) => s.key === 'game/race-answered')!;
   const shown = buildScene(race, { offline: '*' }).built.state!;
-  // The same race played again, everyone but those seen from dropping as the room reports it.
-  const seen = race.seats.map((s) => s.me);
+  // The same race played again, everyone but those seen from dropping as the room reports it
+  // (the players among them: the seat watching has no one at the table).
   const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
+  const seen = race.seats.map((s) => s.me).filter((id) => t.s.players.some((p) => p.id === id));
   for (const p of t.s.players) if (!seen.includes(p.id)) t.act({ type: 'connection', playerId: p.id, connected: false }, null);
   assert.deepEqual(shown, t.s);
   assert.deepEqual(
