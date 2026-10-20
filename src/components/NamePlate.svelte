@@ -166,8 +166,10 @@
   // and 2π - SKEW; it goes under at every second one. Its mirror goes under
   // at the others.
   const UNDER = { rise: [SKEW, Math.PI, 2 * Math.PI - SKEW], fall: [0, Math.PI - SKEW, Math.PI + SKEW, 2 * Math.PI] };
+  /** How many steps a wave is drawn in, across the bay (its points evenly spaced across). */
+  const STEPS = 240;
   const wave = (c: number, sign: number): Pt[] =>
-    Array.from({ length: 241 }, (_, k) => [(k / 240) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / 240)] as Pt);
+    Array.from({ length: STEPS + 1 }, (_, k) => [(k / STEPS) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / STEPS)] as Pt);
   const STRANDS = ROWS.flatMap((r) => [1, -1].map((sign) => ({ sign, mid: wave(r * ROW, sign) })));
   /** How near (squared) another strap's middle comes where this one passes under it. */
   const REACH2 = (W + GAP) ** 2;
@@ -184,10 +186,10 @@
       const crossing = under.some((a) => Math.abs(theta - a) < 0.5);
       // Only the points within 3 px across can count, and a wave's points
       // are evenly spaced across (wave): just those are asked, a step more
-      // either side for the rounding, not all 241 of every other wave. (The
+      // either side for the rounding, not every point of every other wave. (The
       // distance squared: Math.hypot is slow, and this runs as a plate opens.)
-      const lo = Math.max(0, Math.floor(((e[0] - 3) * 240) / BAY) - 1);
-      const hi = Math.min(240, Math.ceil(((e[0] + 3) * 240) / BAY) + 1);
+      const lo = Math.max(0, Math.floor(((e[0] - 3) * STEPS) / BAY) - 1);
+      const hi = Math.min(STEPS, Math.ceil(((e[0] + 3) * STEPS) / BAY) + 1);
       const close = (o: (typeof STRANDS)[number]) => {
         for (let k = lo; k <= hi; k++) {
           const dx = o.mid[k][0] - e[0];

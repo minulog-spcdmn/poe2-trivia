@@ -9,16 +9,27 @@
 // there before any of those screens.
 
 import { whenIdle } from './idle';
+import { savingData } from './saveData';
 
-/** As `document.fonts.load` takes them: the faces the codex, the tooltips (ItemDetails) and the record use. */
-const LATER = ['400 16px "Fontin SmallCaps"', 'italic 400 16px Fontin', '900 16px Cinzel', '500 16px "EB Garamond"'];
+/** The faces, as `document.fonts.load` takes them: a weight and style, and the app.css variable naming the family (the codex's title, the tooltips (ItemDetails) and the record). */
+const LATER = [
+  ['900', '--font-cinzel'],
+  ['400', '--font-tooltip'],
+  ['italic 400', '--font-tooltip-italic'],
+  ['500', '--font-body'],
+] as const;
 
-/** Loads the faces other screens use once the page is idle (a face the page already has costs nothing). */
+/** Loads the faces other screens use once the page is idle (a face the page already has costs nothing); not with Save-Data on. */
 export function loadFontsAhead() {
-  if (typeof document === 'undefined' || !document.fonts) return;
+  if (typeof document === 'undefined' || !document.fonts || savingData()) return;
   whenIdle(
     () => {
-      for (const font of LATER) void document.fonts.load(font).catch(() => {});
+      const root = getComputedStyle(document.documentElement);
+      for (const [face, family] of LATER) {
+        // Its first family only: the fallbacks after it would load faces of their own.
+        const first = root.getPropertyValue(family).split(',')[0].trim();
+        if (first) void document.fonts.load(`${face} 16px ${first}`).catch(() => {});
+      }
     },
     { timeout: 3000, fallback: 1000 },
   );

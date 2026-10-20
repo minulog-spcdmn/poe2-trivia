@@ -261,7 +261,8 @@ function audio(): Bus | null {
     // moment, as that tap's screen comes in (whole, it held up a frame by
     // some 50 ms in the codex's).
     const reverb = ac.createConvolver();
-    setTimeout(() => void inIdleSteps(hallSteps(ac, HALL_SECONDS)).then((b) => (reverb.buffer = b)), 300);
+    // (Should it fail, the context closed meanwhile, the sound stays dry.)
+    setTimeout(() => void inIdleSteps(hallSteps(ac, HALL_SECONDS)).then((b) => (reverb.buffer = b), () => {}), 300);
     const wet = ac.createGain();
     wet.gain.value = 0.5;
     wet.connect(reverb).connect(master);
@@ -362,14 +363,18 @@ const GENERATED: Record<string, (ac: AudioContext) => AudioBuffer | Promise<Audi
   [CAVE_IN.file]: (ac) => inIdleSteps(caveInSteps(ac)),
 };
 
-/** Runs `steps` a step per idle moment, so no one step holds up the page for long. */
+/**
+ * Runs `steps` a step per idle moment, so no one step holds up the page for
+ * long; a step waits at most half a second for one, on a page that never
+ * idles, so the whole still comes in time.
+ */
 function inIdleSteps<T>(steps: Generator<void, T>): Promise<T> {
   return new Promise((resolve, reject) => {
     const next = () => {
       try {
         const r = steps.next();
         if (r.done) resolve(r.value);
-        else idle(next);
+        else whenIdle(next, { timeout: 500, fallback: 200 });
       } catch (e) {
         reject(e);
       }
@@ -391,10 +396,11 @@ const HALL_PARTS = 4;
 function* hallSteps(ac: AudioContext, seconds: number): Generator<void, AudioBuffer> {
   const len = Math.floor(ac.sampleRate * seconds);
   const buf = ac.createBuffer(2, len, ac.sampleRate);
-  for (let ch = 0; ch < 2; ch++) {
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
     const d = buf.getChannelData(ch);
     let lp = 0;
     for (let part = 0; part < HALL_PARTS; part++) {
+      if (ch || part) yield;
       const end = Math.floor((len * (part + 1)) / HALL_PARTS);
       for (let i = Math.floor((len * part) / HALL_PARTS); i < end; i++) {
         const p = i / len;
@@ -403,7 +409,6 @@ function* hallSteps(ac: AudioContext, seconds: number): Generator<void, AudioBuf
         const onset = Math.min(1, i / (ac.sampleRate * 0.015));
         d[i] = lp * onset * Math.pow(1 - p, 3);
       }
-      if (ch < 1 || part < HALL_PARTS - 1) yield;
     }
   }
   return buf;

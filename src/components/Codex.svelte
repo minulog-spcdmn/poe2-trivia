@@ -13,6 +13,7 @@
   import { dialogBackdrop } from '../lib/behindDialog';
   import { calm } from '../lib/motion.svelte';
   import { whenIdle } from '../lib/idle';
+  import { savingData } from '../lib/saveData';
   import { ownRect } from '../lib/stage';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
@@ -91,11 +92,9 @@
   // after the first holds its tiles out of layout (content-visibility) until
   // its turn, one a frame once the codex is in (or sooner, as the browser
   // does, when it nears the screen), its header laid out as ever and its
-  // grid standing meanwhile at the height its rows take at the first grid's
-  // pitch (every row takes the same: within a pixel, measured at 1707 and
-  // 375 wide). Its turn lays it out as any page is, and starts its pictures
-  // loading.
-  const saveData = !!(navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+  // grid standing meanwhile at the height its rows will take (heldHeights).
+  // Its turn lays it out as any page is, and starts its pictures loading.
+  const saveData = savingData();
   /** How many sections have had their turn. */
   let staged = $state(0);
   const held = (i: number) => i >= Math.max(1, staged);
@@ -116,16 +115,62 @@
   });
   /** The sections' grids as shown (bound), the first measured for the others' height while they're held. */
   let gridEls = $state<HTMLElement[]>([]);
-  let pitch = $state<{ row: number; gap: number; cols: number } | null>(null);
+  // A tile is as tall as its fixed parts (picture, status, padding) and its
+  // name's lines, one or two (clamped), and a row as its tallest tile. So
+  // the first grid gives the fixed parts, a line's height, the columns and
+  // a name's width, each time it lays out at a new size (a ResizeObserver
+  // runs after layout, so this reads no layout of its own), and a held
+  // grid's rows are worked out from its names, set in the tiles' font.
+  type Pitch = { cols: number; gap: number; base: number; line: number; lines: (text: string, unknown: boolean) => number };
+  let pitch = $state.raw<Pitch | null>(null);
   $effect(() => {
     const grid = gridEls[0];
-    if (pitch || !grid?.children.length) return;
-    const cs = getComputedStyle(grid);
-    const cols = cs.gridTemplateColumns.split(' ').length;
-    const gap = parseFloat(cs.rowGap) || 0;
-    pitch = { row: (ownRect(grid).height + gap) / Math.ceil(grid.children.length / cols), gap, cols };
+    if (!grid) return;
+    const ro = new ResizeObserver(() => (pitch = measurePitch(grid) ?? pitch));
+    ro.observe(grid);
+    return () => ro.disconnect();
   });
-  const heldHeight = (n: number) => (pitch ? `auto ${(Math.ceil(n / pitch.cols) * pitch.row - pitch.gap).toFixed(1)}px` : 'auto 600px');
+  function measurePitch(grid: HTMLElement): Pitch | null {
+    const tile = grid.querySelector<HTMLElement>('.tile');
+    const name = tile?.querySelector<HTMLElement>('.name');
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!tile || !name || !ctx) return null;
+    const gs = getComputedStyle(grid);
+    const ns = getComputedStyle(name);
+    const line = parseFloat(ns.lineHeight);
+    const width = ownRect(name).width;
+    // (The name stretches to fill its tile, so the rest of the tile is the fixed parts.)
+    const base = ownRect(tile).height - ownRect(name).height;
+    if (!(line > 0) || !(width > 0)) return null;
+    const font = (italic: boolean) => `${italic ? 'italic' : 'normal'} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`;
+    if (ns.letterSpacing !== 'normal') (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = ns.letterSpacing;
+    const known = new Map<string, number>();
+    // Two lines where it's wider than the line and can break (after a space or a hyphen), else one.
+    const lines = (text: string, unknown: boolean) => {
+      const key = `${+unknown}${text}`;
+      let n = known.get(key);
+      if (n === undefined) {
+        ctx.font = font(unknown);
+        known.set(key, (n = ctx.measureText(text).width > width && /[\s-]./.test(text.trim()) ? 2 : 1));
+      }
+      return n;
+    };
+    return { cols: gs.gridTemplateColumns.split(' ').length, gap: parseFloat(gs.rowGap) || 0, base, line, lines };
+  }
+  /** Each section's grid's height while held, as `contain-intrinsic-height` takes it. */
+  const heldHeights = $derived.by(() => {
+    const p = pitch;
+    if (!p) return null;
+    return sections.map(({ items }) => {
+      let h = 0;
+      for (let r = 0; r < items.length; r += p.cols) {
+        let most = 1;
+        for (const it of items.slice(r, r + p.cols)) most = Math.max(most, codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true));
+        h += p.base + most * p.line + (r ? p.gap : 0);
+      }
+      return `auto ${h.toFixed(2)}px`;
+    });
+  });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
   const sections = $derived(
@@ -531,7 +576,7 @@
                 {/each}
               </ul>
             {/if}
-            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? heldHeight(sec.items.length) : null} bind:this={gridEls[i]}>
+            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? (heldHeights?.[i] ?? 'auto 600px') : null} bind:this={gridEls[i]}>
               {#each sec.items as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>

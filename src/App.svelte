@@ -374,15 +374,17 @@
    * the root (`--<name>`), kept as it changes and kept after it goes: the end
    * of a game lines its panel up with the lobby's from the header's and the
    * lobby's legal links' (GameOver.svelte), the links not showing there.
-   * Only the game's screens read them, so while the codex shows they're
-   * held until it closes: a new value restyles the whole page, on the
-   * codex's five hundred tiles some 20 ms each, as the codex came in.
+   * Only the game and its end read them (QuestionView, Scoreboard,
+   * GameOver), so on every other screen they're held, and written as one of
+   * those comes in: a new value restyles the whole page, on the codex's five
+   * hundred tiles some 20 ms each, as the codex came in.
    */
+  const readsHeights = $derived(screen === 'game' || screen === 'over');
   const heldVars = new Map<string, string>();
   function heightVar(node: HTMLElement, name: string) {
     const set = () => {
       const v = `${ownRect(node).height.toFixed(2)}px`;
-      if (codex) heldVars.set(name, v);
+      if (!readsHeights) heldVars.set(name, v);
       else document.documentElement.style.setProperty(`--${name}`, v);
     };
     const ro = new ResizeObserver(set);
@@ -390,7 +392,7 @@
     return { destroy: () => ro.disconnect() };
   }
   $effect(() => {
-    if (codex) return;
+    if (!readsHeights) return;
     for (const [name, v] of heldVars) document.documentElement.style.setProperty(`--${name}`, v);
     heldVars.clear();
   });
