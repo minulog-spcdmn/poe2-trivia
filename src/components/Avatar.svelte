@@ -34,7 +34,7 @@
   const initial = $derived(initialOf(name) || '?');
   // The worn letter's outline: 6 of the token's 100 units, as thick as it
   // gets on a 60px token, then no thicker on a larger one.
-  const outline = $derived(Math.min(6, 360 / size));
+  const outline = $derived(size > 60 ? 360 / size : 6);
   // A's thin apex and wide base make it look low when its cap height is
   // centered, so lift it slightly.
   const dy = $derived(initial === 'A' ? '0.31em' : '0.35em');

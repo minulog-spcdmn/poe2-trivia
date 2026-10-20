@@ -43,7 +43,7 @@ export function settingsScenes(): Scene[] {
         state: null,
         hash: '#settings',
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
-        stored: v.keys || v.colour ? { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}) } : undefined,
+        stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}) },
       }),
     },
     {

@@ -403,6 +403,8 @@ test('mid-game the sigil stays as the game began', () => {
   assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger');
   s = engine.apply(s, { type: 'sigil' }, 'p1');
   assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger', 'nor taken off');
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bram', returning: true, sigil: 'witch' }, 'p1');
+  assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger', 'nor by coming back');
 });
 
 test('a colour asked for is given when free, taken from one who never asked, and first come keeps it', () => {

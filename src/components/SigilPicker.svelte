@@ -10,7 +10,7 @@
   import { SIGILS_KEY, loadSigils, sigilsToUnlock, unlockSigil, wearSigil } from '../lib/sigils';
   import { onStoredElsewhere } from '../lib/storage';
   import { savedName, session } from '../lib/session.svelte';
-  import { loadColour } from '../lib/colour';
+  import { COLOUR_KEY, loadColour } from '../lib/colour';
   import Avatar from './Avatar.svelte';
 
   /** achievements: how many this player has earned, each worth a sigil. unlocked: how many they have unlocked, for a count beside it. hue: the avatar's colour. */
@@ -18,8 +18,11 @@
     achievements,
     unlocked = $bindable(0),
     strip = false,
-    hue = loadColour() ?? 0,
+    hue,
   }: { achievements: number; unlocked?: number; strip?: boolean; hue?: number } = $props();
+  // The colour picked (lib/colour.ts), unless the page that has it says (the settings, as it's picked there).
+  let picked = $state(loadColour() ?? 0);
+  onMount(() => onStoredElsewhere({ [COLOUR_KEY]: () => (picked = loadColour() ?? 0) }));
 
   let sigils = $state.raw(loadSigils());
   $effect.pre(() => {
@@ -53,7 +56,7 @@
 
 <div class="sigils" class:strip>
   <div class="you">
-    <Avatar {name} {hue} size={64} sigil={shown} />
+    <Avatar {name} hue={hue ?? picked} size={64} sigil={shown} />
     <p class="line">
       {#if ask}
         Unlock the {className(ask)}'s sigil? It stays yours.

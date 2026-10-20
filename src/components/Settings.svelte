@@ -383,6 +383,7 @@
   /* A section's name, as the lobby and the start page name theirs. */
   .block header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
@@ -537,7 +538,22 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.45rem;
+    gap: 0.7rem;
+  }
+  /* For a finger: larger, on a line of their own under the heading, six and five spread across it. */
+  @media (pointer: coarse) {
+    .swatches {
+      flex-basis: 100%;
+      display: grid;
+      grid-template-columns: repeat(6, 34px);
+      justify-content: space-between;
+      gap: 0.9rem 0;
+      margin: 0.35rem 0 0.4rem;
+    }
+    .swatch {
+      width: 34px;
+      height: 34px;
+    }
   }
   .swatch {
     width: 22px;
