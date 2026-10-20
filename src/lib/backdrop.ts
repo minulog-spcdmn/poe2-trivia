@@ -1234,12 +1234,19 @@ export const backdropOnWebgl = () => onWebgl > 0;
  * down, so the caller can fall back to CSS.
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
+  // With an alpha channel, though every pixel is drawn opaque (the main
+  // pass writes alpha 1): Chrome on Direct3D makes an opaque canvas's
+  // buffers in a format it has to emulate, and making each of those stalls
+  // its GPU thread, and every frame on the page with it, for 25-85 ms at
+  // 4K (a trace on an RTX 5070). It makes them often: whenever the backdrop
+  // draws faster for a while (a reveal), it needs more buffers in flight.
+  // With alpha they're made in a few hundredths of a ms.
   const gl = canvas.getContext('webgl2', {
-    alpha: false,
+    alpha: true,
     antialias: false,
     depth: false,
     stencil: false,
-    premultipliedAlpha: false,
+    premultipliedAlpha: true,
     powerPreference: 'low-power',
   });
   if (!gl) {
