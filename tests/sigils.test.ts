@@ -11,6 +11,8 @@ import {
   parseSigils,
   serializeSigils,
   sigilsToUnlock,
+  achievementsForSigil,
+  achievementsToNext,
   unlock,
   unlockSigil,
   wear,
@@ -29,13 +31,25 @@ function earned(n: number) {
   store.set(ACHIEVEMENTS_KEY, serializeStore(s));
 }
 
-test('each achievement unlocks one sigil, up to every class', () => {
+test('the first achievement unlocks a sigil, then every third another, up to every class', () => {
   const none = emptySigils();
-  assert.equal(sigilsToUnlock(none, 0), 0);
-  assert.equal(sigilsToUnlock(none, 1), 1);
+  assert.deepEqual([0, 1, 2, 3, 4, 6, 7, 10].map((n) => sigilsToUnlock(none, n)), [0, 1, 1, 1, 2, 2, 3, 4]);
   assert.equal(sigilsToUnlock(none, ACHIEVEMENTS.length), CLASSES.length);
-  assert.equal(sigilsToUnlock({ unlocked: ['witch', 'monk'], worn: null }, 1), 0);
-  assert.ok(ACHIEVEMENTS.length >= CLASSES.length, 'every class can be unlocked');
+  assert.equal(sigilsToUnlock({ unlocked: ['witch', 'monk'], worn: null }, 4), 0);
+  assert.equal(sigilsToUnlock({ unlocked: ['witch', 'monk'], worn: null }, 7), 1);
+  assert.ok(ACHIEVEMENTS.length >= achievementsForSigil(CLASSES.length), 'every class can be unlocked');
+});
+
+test('how many more achievements the next sigil takes', () => {
+  const none = emptySigils();
+  assert.equal(achievementsToNext(none, 0), 1);
+  assert.equal(achievementsToNext(none, 1), 0, 'one to unlock now');
+  const one = { unlocked: ['witch' as const], worn: null };
+  assert.equal(achievementsToNext(one, 1), 3);
+  assert.equal(achievementsToNext(one, 3), 1);
+  // After the codex is erased: the next is the one past those unlocked.
+  assert.equal(achievementsToNext({ unlocked: ['witch', 'monk', 'ranger'], worn: null }, 0), achievementsForSigil(4));
+  assert.equal(achievementsToNext({ unlocked: [...CLASSES], worn: null }, 0), null);
 });
 
 test('unlocking wears it; one unlocked already, or none left, changes nothing', () => {
@@ -43,7 +57,7 @@ test('unlocking wears it; one unlocked already, or none left, changes nothing', 
   assert.deepEqual(one, { unlocked: ['mercenary'], worn: 'mercenary' });
   assert.equal(unlock(one, 'monk', 1), one);
   assert.equal(unlock(one, 'mercenary', 5), one);
-  assert.deepEqual(unlock(one, 'assassin', 2), { unlocked: ['mercenary', 'assassin'], worn: 'assassin' });
+  assert.deepEqual(unlock(one, 'assassin', 4), { unlocked: ['mercenary', 'assassin'], worn: 'assassin' });
 });
 
 test('only an unlocked sigil can be worn, and none can', () => {
@@ -70,7 +84,7 @@ test('round-trips, and cleans up what it reads', () => {
 
 test('unlocks and wears in storage, with the achievements stored', () => {
   assert.deepEqual(unlockSigil('ranger'), emptySigils());
-  earned(2);
+  earned(4);
   unlockSigil('ranger');
   unlockSigil('gladiator');
   unlockSigil('witch');
@@ -82,15 +96,15 @@ test('unlocks and wears in storage, with the achievements stored', () => {
 });
 
 test('kept when the achievements are erased; unlocks more once there are more again', () => {
-  earned(2);
+  earned(4);
   unlockSigil('ranger');
   unlockSigil('monk');
   earned(0);
   assert.equal(loadSigils().unlocked.length, 2);
-  earned(2);
+  earned(4);
   unlockSigil('witch');
   assert.equal(loadSigils().unlocked.length, 2);
-  earned(3);
+  earned(7);
   unlockSigil('witch');
   assert.deepEqual(loadSigils().unlocked, ['ranger', 'monk', 'witch']);
 });
