@@ -134,7 +134,7 @@ g.ResizeObserver = class {
 const fx = await import('../src/lib/fx/core.ts');
 const { ShapeType } = await import('../src/lib/fx/renderer.ts');
 const lights = await import('../src/lib/lights.ts');
-const { buildPrograms, buildProgramsNow, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
+const { buildPrograms, startPrograms, setGpuCatchUp } = await import('../src/lib/fx/gl.ts');
 
 const doc = g.document as { hidden: boolean };
 /** The tab goes into the background (true) or comes back, as the page hears it. */
@@ -666,25 +666,33 @@ test('a program that failed to link ends the build: the rest are not read, all a
   }
 });
 
-test("built at once (the backdrop's first programs), every program starts before any is read, and only whether each linked is asked", () => {
+const two = ['a', 'b'].map((label) => ({ vs: 'v', fs: 'f', label }));
+
+test("started at once (the backdrop's first programs), every program starts before any is read, and only whether each linked is asked", () => {
   const { gl, log } = fakeGl(true);
-  const got = buildProgramsNow(gl, ['a', 'b'].map((label) => ({ vs: 'v', fs: 'f', label })));
+  const got = startPrograms(gl, two).read();
   assert.equal(got?.length, 2);
   assert.deepEqual(log, ['link 1', 'link 2', 'status 1', 'status 2']);
 });
 
-test('built at once, a failure gives null, with its logs, and deletes them all', () => {
+test('started at once, a failure gives null, with its logs, and deletes them all; cancelled, they are deleted too', () => {
   const { gl, log, state } = fakeGl(true);
   state.fails.add(1);
   const warn = console.warn;
   console.warn = () => {};
   try {
-    assert.equal(buildProgramsNow(gl, ['a', 'b'].map((label) => ({ vs: 'v', fs: 'f', label }))), null);
+    assert.equal(startPrograms(gl, two).read(), null);
   } finally {
     console.warn = warn;
   }
   assert.ok(log.includes('log'), 'why, read only now');
   assert.deepEqual(state.deleted, { programs: 2, shaders: 4 });
+  const p = startPrograms(gl, two);
+  p.cancel();
+  assert.deepEqual(state.deleted, { programs: 4, shaders: 8 });
+  assert.equal(p.read(), null);
+  p.cancel();
+  assert.deepEqual(state.deleted, { programs: 4, shaders: 8 }, 'once');
 });
 
 test("one at a time (the backdrop's large Delve programs), one starts in each idle moment, and none is read in the step that started one", () => {

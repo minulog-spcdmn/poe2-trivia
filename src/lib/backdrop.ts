@@ -20,7 +20,7 @@ import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { onVein, veinLevel } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
-import { buildPrograms, buildProgramsNow, refuseWebgl2, setGpuCatchUp, type Build, type ProgramSource } from './fx/gl';
+import { buildPrograms, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
 import { switchedOff } from './switchedOff';
 
@@ -460,6 +460,20 @@ const DELVE_MAIN = `  // The far lights and the embers dim where the dark has cl
 
 `;
 
+// GLSL the backdrop's passes share.
+const RGB = `vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
+`;
+const HASH = `// Hash without sine (Dave Hoskins); uniform in [0, 1).
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+`;
+/** Read by FINISH (and BOX_MAIN), so declared by the pass that ends with it. */
+const DIALOG_UNIFORM = `uniform float uDialog; // how far an open dialog dims the page, 0-1 (lib/behindDialog.ts)
+`;
+
 /**
  * The backdrop's soft light: the base gradient, its haze and glows, the
  * blobs, and the start page's rays and title glow. Nothing in it changes over
@@ -521,8 +535,7 @@ uniform vec4 uTitle;
 // frame).
 uniform vec3 uBeams[7];
 
-vec3 rgb(float r, float g, float b) { return vec3(r, g, b) / 255.0; }
-
+${RGB}
 float gauss(float d) { return exp(-d * d); }
 
 ${delve ? DELVE_SMOOTH_FUNCTIONS : ''}// The soft light at p (CSS px, top-left origin).
@@ -632,12 +645,25 @@ const FIXED_UNIFORMS = 172;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**
+ * Which of the UI's shadows and fills a main pass draws: all of them; only
+ * the drop shadows, with the boxes' drawn over it by the UI pass (uiFrag:
+ * the two are built side by side, so the page's first paint waits only for
+ * the slower, not both in one); or none (where the backdrop leaves them all
+ * to CSS). The UI pass needs a float target to draw over, as the soft light
+ * does its own: without one (see split), it's all in the main pass.
+ */
+type UiParts = 'all' | 'drops' | 'none';
+
+/**
  * The backdrop at every device pixel. With `split`, the soft light comes from
  * uSmooth (drawn by smoothFrag); without, it's worked out here (where the
  * spores' and motes' finest points are drawn at a device pixel's size, not
- * the soft light's texel's). With `delve`, Delve's parts too.
+ * the soft light's texel's). With `delve`, Delve's parts too. `ui` is which
+ * of the UI's shadows and fills it draws (see UiParts): CSS paints the rest.
+ * With 'drops' it draws into the scene's own target, for the UI pass to
+ * finish (the boxes, a dialog's dimming and the dither).
  */
-const frag = (MAX_ELEMENTS: number, split: boolean, delve: boolean) => `#version 300 es
+const frag = (MAX_ELEMENTS: number, split: boolean, delve: boolean, ui: UiParts = 'all') => `#version 300 es
 precision highp float;
 out vec4 fragColor;
 ${split ? '' : '#define FX_POINT_PX 2.0'}
@@ -646,17 +672,7 @@ uniform vec2 uRes;   // drawing buffer size, device pixels
 ${smooth(delve)}
 uniform sampler2D uSmooth;
 uniform vec2 uVignette; // breathing (reach, strength)
-
-// Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
-uniform vec4 uElX[${MAX_ELEMENTS}];
-uniform vec4 uElY[${MAX_ELEMENTS}];
-uniform vec4 uElA[${MAX_ELEMENTS}];
-uniform vec4 uElB[${MAX_ELEMENTS}];
-uniform vec4 uElC[${MAX_ELEMENTS}];
-uniform vec4 uElD[${MAX_ELEMENTS}];
-uniform vec4 uElE[${MAX_ELEMENTS}];
-uniform int uElCount;
-
+${ui === 'all' ? BOX_UNIFORMS(MAX_ELEMENTS) : ''}
 // Event lights (x, y, radius, strength) and colours; the mood tint (r, g,
 // b, strength). See lights.ts.
 uniform vec4 uLightA[${MAX_LIGHTS}];
@@ -676,78 +692,8 @@ uniform vec3 uEmberCore[${PALETTE}];
 uniform vec2 uEmberK;
 #define uEmberGain uEmberK.x
 #define uStreak uEmberK.y
-${delve ? DELVE_MAIN_UNIFORMS : ''}uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
-uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
-
-// Drop shadows of UI elements (see backdropDropShadow.ts for the layout).
-uniform vec4 uMkA[${MAX_MASKS}];
-uniform vec4 uMkB[${MAX_MASKS}];
-uniform vec4 uMkC[${MAX_MASKS}];
-uniform vec4 uMkD[${MAX_MASKS}];
-uniform vec4 uMkE[${MAX_MASKS}];
-uniform vec4 uMkOff[${MAX_MASKS}];
-uniform vec4 uMkCol[${MAX_MASKS * DROPS_PER_MASK}];
-uniform sampler2D uSharp; // content alpha
-uniform sampler2D uBlur;  // blurred alpha, 16-bit in R+G and B+A
-uniform vec2 uSharpSize;
-uniform vec2 uBlurSize;
-uniform float uDialog; // how far an open dialog dims the page, 0-1 (lib/behindDialog.ts)
-
-// Blurred rounded-rectangle shadow (Evan Wallace, "Fast Rounded Rectangle
-// Shadows"): exact Gaussian integral across x via erf, numerically integrated
-// along y. Returns coverage in [0, 1].
-vec2 erf2(vec2 x) {
-  vec2 s = sign(x);
-  vec2 a = abs(x);
-  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
-  x *= x;
-  return s - s / (x * x);
-}
-
-float shadowX(float x, float y, float sigma, float corner, vec2 halfSize) {
-  float delta = min(halfSize.y - corner - abs(y), 0.0);
-  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
-  vec2 integral = 0.5 + 0.5 * erf2((x + vec2(-curved, curved)) * (0.70710678 / sigma));
-  return integral.y - integral.x;
-}
-
-float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner) {
-  vec2 center = (lower + upper) * 0.5;
-  vec2 halfSize = (upper - lower) * 0.5;
-  corner = min(corner, min(halfSize.x, halfSize.y));
-  point -= center;
-  // Where the blur (to 3 sigma, as far as the sum below looks) can't reach a
-  // rounded corner, the box is a plain rectangle, whose blur is erf across
-  // times erf down: no sum needed. That's most of the shadow beside a large
-  // element.
-  vec2 clear = halfSize - corner - abs(point) - 3.0 * sigma;
-  if (max(clear.x, clear.y) >= 0.0) {
-    vec2 k = vec2(0.70710678 / sigma);
-    vec2 cover = 0.5 * (erf2((point + halfSize) * k) - erf2((point - halfSize) * k));
-    return cover.x * cover.y;
-  }
-  float low = point.y - halfSize.y;
-  float high = point.y + halfSize.y;
-  float y0 = clamp(-3.0 * sigma, low, high);
-  float y1 = clamp(3.0 * sigma, low, high);
-  float dy = (y1 - y0) / 8.0;
-  float y = y0 + dy * 0.5;
-  float value = 0.0;
-  for (int i = 0; i < 8; i++) {
-    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
-      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
-    y += dy;
-  }
-  return value * (0.39894228 / sigma);
-}
-
-// Hash without sine (Dave Hoskins); uniform in [0, 1).
-float hash(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
+${delve ? DELVE_MAIN_UNIFORMS : ''}${ui === 'all' ? BOX_SHADOW_UNIFORMS(MAX_ELEMENTS) : ''}${ui !== 'none' ? DROP_UNIFORMS : ''}${ui !== 'drops' ? DIALOG_UNIFORM : ''}${ui === 'all' ? BOX_FUNCTIONS : ''}
+${HASH}
 void main() {
   vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   vec2 p = dev / uRes * uSize; // CSS px, top-left origin
@@ -806,7 +752,107 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
   }
 
-  // UI drop shadows. The element paints over its own shadow, so where it is
+${ui !== 'none' ? DROP_MAIN : ''}${ui === 'drops' ? TO_UI_PASS : (ui === 'all' ? BOX_MAIN(MAX_ELEMENTS) : '') + FINISH}`;
+
+/** The end of the main pass, with the UI pass (uiFrag) to finish it: the scene into its target, as it is. */
+const TO_UI_PASS = `  fragColor = vec4(col, 1.0);
+}
+`;
+/** The end of the backdrop's last pass (frag's, or with the UI pass uiFrag's). */
+const FINISH = `  // A dialog dims it all here, before the dither; CSS darkening the
+  // dithered output would band.
+  col *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDialog;
+
+  // TPDF dither of +-1 LSB, per device pixel, ahead of the round-to-nearest
+  // 8-bit conversion. The same sample goes to all three channels, so the
+  // noise carries no colour of its own.
+  float n = hash(dev + 0.5) + hash(dev + 101.5) - 1.0;
+  fragColor = vec4(col + n / 255.0, 1.0);
+}
+`;
+
+// The main pass's UI parts (see frag): the UI's shadows and fills, drawn here
+// once the backdrop has taken them over from CSS. Its boxes' (backdropShadow.ts:
+// soft box shadows and fills) are most of what the main pass takes to build;
+// its drop shadows (backdropDropShadow.ts: text and image glows) a little.
+const BOX_UNIFORMS = (MAX_ELEMENTS: number) => `
+// Outer box-shadows and fills of UI elements (see backdropShadow.ts for the layout).
+uniform vec4 uElX[${MAX_ELEMENTS}];
+uniform vec4 uElY[${MAX_ELEMENTS}];
+uniform vec4 uElA[${MAX_ELEMENTS}];
+uniform vec4 uElB[${MAX_ELEMENTS}];
+uniform vec4 uElC[${MAX_ELEMENTS}];
+uniform vec4 uElD[${MAX_ELEMENTS}];
+uniform vec4 uElE[${MAX_ELEMENTS}];
+uniform int uElCount;
+`;
+const BOX_SHADOW_UNIFORMS = (MAX_ELEMENTS: number) => `uniform vec4 uShGeo[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+uniform vec4 uShCol[${MAX_ELEMENTS * SHADOWS_PER_ELEMENT}];
+
+`;
+const DROP_UNIFORMS = `// Drop shadows of UI elements (see backdropDropShadow.ts for the layout).
+uniform vec4 uMkA[${MAX_MASKS}];
+uniform vec4 uMkB[${MAX_MASKS}];
+uniform vec4 uMkC[${MAX_MASKS}];
+uniform vec4 uMkD[${MAX_MASKS}];
+uniform vec4 uMkE[${MAX_MASKS}];
+uniform vec4 uMkOff[${MAX_MASKS}];
+uniform vec4 uMkCol[${MAX_MASKS * DROPS_PER_MASK}];
+uniform sampler2D uSharp; // content alpha
+uniform sampler2D uBlur;  // blurred alpha, 16-bit in R+G and B+A
+uniform vec2 uSharpSize;
+uniform vec2 uBlurSize;
+`;
+const BOX_FUNCTIONS = `
+// Blurred rounded-rectangle shadow (Evan Wallace, "Fast Rounded Rectangle
+// Shadows"): exact Gaussian integral across x via erf, numerically integrated
+// along y. Returns coverage in [0, 1].
+vec2 erf2(vec2 x) {
+  vec2 s = sign(x);
+  vec2 a = abs(x);
+  x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
+  x *= x;
+  return s - s / (x * x);
+}
+
+float shadowX(float x, float y, float sigma, float corner, vec2 halfSize) {
+  float delta = min(halfSize.y - corner - abs(y), 0.0);
+  float curved = halfSize.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+  vec2 integral = 0.5 + 0.5 * erf2((x + vec2(-curved, curved)) * (0.70710678 / sigma));
+  return integral.y - integral.x;
+}
+
+float roundedBoxShadow(vec2 lower, vec2 upper, vec2 point, float sigma, float corner) {
+  vec2 center = (lower + upper) * 0.5;
+  vec2 halfSize = (upper - lower) * 0.5;
+  corner = min(corner, min(halfSize.x, halfSize.y));
+  point -= center;
+  // Where the blur (to 3 sigma, as far as the sum below looks) can't reach a
+  // rounded corner, the box is a plain rectangle, whose blur is erf across
+  // times erf down: no sum needed. That's most of the shadow beside a large
+  // element.
+  vec2 clear = halfSize - corner - abs(point) - 3.0 * sigma;
+  if (max(clear.x, clear.y) >= 0.0) {
+    vec2 k = vec2(0.70710678 / sigma);
+    vec2 cover = 0.5 * (erf2((point + halfSize) * k) - erf2((point - halfSize) * k));
+    return cover.x * cover.y;
+  }
+  float low = point.y - halfSize.y;
+  float high = point.y + halfSize.y;
+  float y0 = clamp(-3.0 * sigma, low, high);
+  float y1 = clamp(3.0 * sigma, low, high);
+  float dy = (y1 - y0) / 8.0;
+  float y = y0 + dy * 0.5;
+  float value = 0.0;
+  for (int i = 0; i < 8; i++) {
+    value += shadowX(point.x, point.y - y, sigma, corner, halfSize)
+      * exp(-y * y / (2.0 * sigma * sigma)) * dy;
+    y += dy;
+  }
+  return value * (0.39894228 / sigma);
+}
+`;
+const DROP_MAIN = `  // UI drop shadows. The element paints over its own shadow, so where it is
   // opaque the shadow is hidden anyway; drawing it only where the content is
   // transparent keeps a see-through element (like the faint showcase items)
   // from darkening what shows through it.
@@ -836,7 +882,8 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     col = mix(col, c1.rgb, c1.a * (t1.r + t1.g / 255.0) * (1.0 - content));
   }
 
-  // UI elements in two passes: every element's shadows outside its border
+`;
+const BOX_MAIN = (MAX_ELEMENTS: number) => `  // UI elements in two passes: every element's shadows outside its border
   // box, then every fill inside it, in document order. So a shadow only ever
   // lands on the backdrop, never on a neighbouring box: the same as while
   // the page scrolls, when CSS paints the fills over these shadows. (CSS on
@@ -922,17 +969,30 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     }
   }
 
-  // A dialog dims it all here, before the dither; CSS darkening the
-  // dithered output would band.
-  col *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDialog;
-
-  // TPDF dither of +-1 LSB, per device pixel, ahead of the round-to-nearest
-  // 8-bit conversion. The same sample goes to all three channels, so the
-  // noise carries no colour of its own.
-  float n = hash(dev + 0.5) + hash(dev + 101.5) - 1.0;
-  fragColor = vec4(col + n / 255.0, 1.0);
-}
 `;
+
+/**
+ * The UI pass: the UI's box shadows and fills (see BOX_MAIN), drawn over the
+ * scene as the main pass left it in its target (frag's 'drops'), then
+ * dimmed and dithered. Their code takes the shader compiler longer than the
+ * rest of the main pass, so as a program of its own it's built alongside.
+ */
+const uiFrag = (MAX_ELEMENTS: number) => `#version 300 es
+precision highp float;
+out vec4 fragColor;
+
+uniform vec2 uRes;  // drawing buffer size, device pixels
+uniform vec2 uSize; // canvas size, CSS pixels
+uniform sampler2D uBackdrop; // the main pass's colour, a texel per device pixel
+${BOX_UNIFORMS(MAX_ELEMENTS)}${BOX_SHADOW_UNIFORMS(MAX_ELEMENTS)}${DIALOG_UNIFORM}
+${RGB}${BOX_FUNCTIONS}
+${HASH}
+void main() {
+  vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec2 p = dev / uRes * uSize; // CSS px, top-left origin
+  vec3 col = texelFetch(uBackdrop, ivec2(gl_FragCoord.xy), 0).rgb;
+
+${BOX_MAIN(MAX_ELEMENTS)}${FINISH}`;
 
 // CSS `ease-in-out`: cubic-bezier(0.42, 0, 0.58, 1).
 function easeInOut(x: number): number {
@@ -1021,6 +1081,18 @@ const VEIN_EMBERS = [0.3, 0.62, 1];
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
 
+/** The QA desk's S (see leaveUiToCss). */
+let uiToCss = false;
+
+/**
+ * Leaves the UI's shadows and fills to CSS, or gives them back to the
+ * backdrop, live: the QA desk's S, to see the two side by side in time.
+ * Given back, they're taken over just as they are as the page starts.
+ */
+export function leaveUiToCss(on: boolean) {
+  uiToCss = on;
+}
+
 let delveWanted = false;
 let delveReadyNow = false;
 const delveWaiters = new Set<() => void>();
@@ -1070,11 +1142,11 @@ function letGo(gl: WebGL2RenderingContext): null {
 
 /**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
- * first frame drawn at once); Delve's follow in the background once Delve is
- * on its way (wantDelveBackdrop). Returns a cleanup function, or null when
- * WebGL2 (with highp fragment floats) is unavailable. `onLost` fires if the
- * context is lost later, after the renderer has shut itself down, so the
- * caller can fall back to CSS.
+ * first frame drawn at once: see begin); Delve's follow in the background
+ * once Delve is on its way (wantDelveBackdrop). Returns a cleanup function,
+ * or null when WebGL2 (with highp fragment floats) is unavailable. `onLost`
+ * fires if the context is lost later, after the renderer has shut itself
+ * down, so the caller can fall back to CSS.
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
   const gl = canvas.getContext('webgl2', {
@@ -1099,45 +1171,94 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // for 4 elements; most desktop GPUs offer 1024 or more, and get 16.
   const maxElements = Math.max(4, Math.min(16, Math.floor((gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) - FIXED_UNIFORMS) / ELEMENT_UNIFORMS)));
 
-  // The soft light (see smooth) gets a half-float target of its own wherever
-  // the GPU can draw to one, which is nearly everywhere; elsewhere the main
-  // pass works it out at every pixel. (An 8-bit target would band.)
-  let smoothTex: WebGLTexture | null = null;
-  let smoothFbo: WebGLFramebuffer | null = null;
-  if (gl.getExtension('EXT_color_buffer_float')) {
-    smoothTex = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE3);
-    gl.bindTexture(gl.TEXTURE_2D, smoothTex);
+  // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
+  // so there every element keeps its CSS shadow and the backdrop draws none.
+  const cssShadows = matchMedia('(pointer: coarse)');
+  // Beta, to find what makes frames slow (lib/switchedOff.ts): the UI's shadows and fills left to CSS;
+  // the backdrop drawn once a second (and its shadows and fills left to CSS with it).
+  const drawnSlowly = switchedOff('backdraw');
+  const fillsToCss = drawnSlowly || switchedOff('fills');
+  /** Whether the backdrop draws the UI's shadows and fills, or leaves them all to CSS; and whether it would but for the QA desk's S (programs are built as for that). */
+  const mayDrawUi = () => !cssShadows.matches && !fillsToCss;
+  const drawsUi = () => mayDrawUi() && !uiToCss;
+
+  // The lean programs, without Delve's parts (Delve's are built later, in
+  // the background: see buildDelve), started first of all, so they build
+  // while the rest is set up. The soft light (see smooth) gets a half-float
+  // target of its own wherever the GPU can draw to one, which is nearly
+  // everywhere; elsewhere the main pass works it out at every pixel. (An
+  // 8-bit target would band.) Turning the extension on to find out for sure
+  // takes the GPU process a while, so the programs for a target of its own
+  // start as soon as the extension is offered, and are started afresh
+  // without one should it fail after all.
+  //
+  // The UI's box shadows and fills take the shader compiler longer than all
+  // the rest of the main pass (see the UI parts in frag), so with a target
+  // to draw the scene into they're a pass of their own (uiFrag), built side
+  // by side with it and the soft light (with KHR_parallel_shader_compile
+  // the driver does that off the page's thread): the first paint waits for
+  // the slowest, not for all of it in one. Where the backdrop draws none of
+  // them (cssShadows) the main pass has none, and there's no UI pass.
+  const offered = !!gl.getSupportedExtensions()?.includes('EXT_color_buffer_float');
+  let split = offered;
+  /** Which of the UI's parts the main pass draws (see UiParts), as things stand. */
+  const uiParts = (): UiParts => (!mayDrawUi() ? 'none' : split ? 'drops' : 'all');
+  const mainSource = (ui: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, split, false, ui), label: "The backdrop's program" });
+  const smoothSources = (): ProgramSource[] => (split ? [{ vs: VERT, fs: smoothFrag(false), label: "The backdrop's soft light program" }] : []);
+  const uiSources = (ui: UiParts): ProgramSource[] => (ui === 'drops' ? [{ vs: VERT, fs: uiFrag(maxElements), label: "The backdrop's UI program" }] : []);
+  let first: Pending;
+  /** Which of the UI's parts the first frame's main pass draws. */
+  let firstUi = 'all' as UiParts;
+  const begin = () => {
+    firstUi = uiParts();
+    first = startPrograms(gl, [mainSource(firstUi), ...smoothSources(), ...uiSources(firstUi)]);
+  };
+  begin();
+  /** A float target (see split): the soft light's, or the scene's for the UI pass. */
+  const target = (unit: number, filter: number) => {
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 1, 1, 0, gl.RGBA, gl.HALF_FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    smoothFbo = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, smoothFbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, smoothTex, 0);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-      gl.deleteFramebuffer(smoothFbo);
-      gl.deleteTexture(smoothTex);
-      smoothTex = smoothFbo = null;
-    }
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (ok) return { tex, fbo };
+    gl.deleteFramebuffer(fbo);
+    gl.deleteTexture(tex);
+    return null;
+  };
+  let smoothTex: WebGLTexture | null = null;
+  let smoothFbo: WebGLFramebuffer | null = null;
+  // The scene as the main pass leaves it, for the UI pass (unit 4), a texel per device pixel.
+  let sceneTex: WebGLTexture | null = null;
+  let sceneFbo: WebGLFramebuffer | null = null;
+  if (offered && gl.getExtension('EXT_color_buffer_float')) {
+    const soft = target(3, gl.LINEAR);
+    const scene = soft && target(4, gl.NEAREST);
+    if (soft && scene) {
+      ({ tex: smoothTex, fbo: smoothFbo } = soft);
+      ({ tex: sceneTex, fbo: sceneFbo } = scene);
+    } else if (soft) {
+      gl.deleteFramebuffer(soft.fbo);
+      gl.deleteTexture(soft.tex);
+    }
+  }
+  if (offered && !smoothTex) {
+    first!.cancel();
+    split = false;
+    begin();
   }
   let smoothW = 1;
   let smoothH = 1;
-
-  // The lean programs, without Delve's parts: built here, at once, so the
-  // first frame is drawn now (both started before either is asked about:
-  // buildProgramsNow). Delve's are built later, in the background (see
-  // buildDelve).
-  const leanSources: ProgramSource[] = [{ vs: VERT, fs: frag(maxElements, !!smoothTex, false), label: "The backdrop's program" }];
-  if (smoothTex) leanSources.push({ vs: VERT, fs: smoothFrag(false), label: "The backdrop's soft light program" });
-  const leanProgs = buildProgramsNow(gl, leanSources);
-  if (!leanProgs) {
-    console.warn('The backdrop goes to the CSS one.');
-    return letGo(gl);
-  }
-  const [leanProg, leanSmooth = null] = leanProgs;
+  let sceneW = 1;
+  let sceneH = 1;
 
   // One triangle covering the viewport.
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -1193,7 +1314,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
    * lean or Delve's, with their uniforms' locations and what was last sent
    * to them (a uniform keeps its value in its program until set again).
    */
-  function variant(prog: WebGLProgram, smoothProg: WebGLProgram | null) {
+  function variant(prog: WebGLProgram, smoothProg: WebGLProgram | null, ui: UiParts = 'all') {
     const g = gl!;
     // The program that works out the soft light.
     const soft = smoothProg ?? prog;
@@ -1224,6 +1345,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       prog,
       smoothProg,
       soft,
+      /** Which of the UI's shadows and fills it draws (see UiParts). */
+      ui,
       sRes: S('uRes'),
       sSize: S('uSize'),
       sViewH: S('uViewH'),
@@ -1272,19 +1395,74 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       uDialog: U('uDialog'),
       uSharpSize: U('uSharpSize'),
       uBlurSize: U('uBlurSize'),
-      // What each shadow array was last sent to the GPU as, bit for bit:
-      // draw() sends only the arrays that changed. NaN bits to begin with,
-      // so the first draw sends all.
-      sent: [
-        ...Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr })),
-        ...Object.entries(mk).map(([k, arr]) => ({ loc: mkLoc[k], arr })),
-      ].map(({ loc, arr }) => ({ loc, arr, bits: new Uint32Array(arr.buffer, arr.byteOffset, arr.length), last: new Uint32Array(arr.length).fill(0x7fc00001) })),
+      // The shadow arrays this program draws (see sendList).
+      sent: sendList([...(ui === 'all' ? Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr })) : []), ...Object.entries(mk).map(([k, arr]) => ({ loc: mkLoc[k], arr }))]),
       sentCount: -1,
     };
   }
   type Variant = ReturnType<typeof variant>;
-  const lean = variant(leanProg, leanSmooth);
+  /**
+   * Shadow arrays and their uniforms, with what each was last sent to the
+   * GPU as, bit for bit: draw() sends only the arrays that changed. NaN bits
+   * to begin with, so the first draw sends all.
+   */
+  function sendList(list: { loc: WebGLUniformLocation | null; arr: Float32Array }[]) {
+    return list.map(({ loc, arr }) => ({ loc, arr, bits: new Uint32Array(arr.buffer, arr.byteOffset, arr.length), last: new Uint32Array(arr.length).fill(0x7fc00001) }));
+  }
+  /** The UI pass (uiFrag), with its uniforms' locations: the same one over the lean programs and Delve's. */
+  function uiVariant(prog: WebGLProgram) {
+    const g = gl!;
+    const U = (name: string) => g.getUniformLocation(prog, name);
+    g.useProgram(prog);
+    g.uniform1i(U('uBackdrop'), 4);
+    const elLoc = { x: U('uElX'), y: U('uElY'), a: U('uElA'), b: U('uElB'), c: U('uElC'), d: U('uElD'), e: U('uElE'), geo: U('uShGeo'), col: U('uShCol') };
+    return {
+      prog,
+      uRes: U('uRes'),
+      uSize: U('uSize'),
+      uDialog: U('uDialog'),
+      uElCount: U('uElCount'),
+      sent: sendList(Object.entries(el).map(([k, arr]) => ({ loc: elLoc[k as keyof typeof el], arr }))),
+      sentCount: -1,
+    };
+  }
 
+  // The lean programs, read: the first frame waits for them (see begin).
+  const firstProgs = first!.read();
+  if (!firstProgs) {
+    console.warn('The backdrop goes to the CSS one.');
+    return letGo(gl);
+  }
+  let lean: Variant = variant(firstProgs[0], split ? firstProgs[1] : null, firstUi);
+  let ui = firstUi === 'drops' ? uiVariant(firstProgs[2]) : null;
+  // Where the backdrop drew none of the UI's parts but has come to (the
+  // pointer changed): a main pass with them, and the UI pass, built in the
+  // background; CSS paints them meanwhile. Failing, it leaves them to CSS.
+  let upgrade: Build | null = null;
+  let upgradeFailed = false;
+  function startUpgrade() {
+    const parts = uiParts();
+    upgrade = buildPrograms(gl!, [mainSource(parts), ...uiSources(parts)], (progs) => {
+      upgrade = null;
+      if (!progs) {
+        // (A lost context goes to the CSS backdrop by itself: see lost.)
+        upgradeFailed = true;
+        if (!gl!.isContextLost()) console.warn("The backdrop leaves the UI's shadows and fills to CSS.");
+        return;
+      }
+      const was = lean;
+      lean = variant(progs[0], was.smoothProg, parts);
+      gl!.deleteProgram(was.prog);
+      if (parts === 'drops') ui = uiVariant(progs[1]);
+    });
+  }
+  /**
+   * Which of the UI's parts the backdrop can draw, whichever of its programs
+   * draw the next frame: all, unless the lean ones or Delve's (once built)
+   * have none. (Delve's are built with none where the backdrop draws none:
+   * should the pointer change after that, CSS keeps them all.)
+   */
+  const uiNow = (): UiParts => (lean.ui === 'none' || delve?.ui === 'none' ? 'none' : 'all');
   // Delve's programs: built in the background once Delve is on its way
   // (wantDelveBackdrop), each then drawn once, a frame apart, so the GPU
   // has made all it needs of them before they're used (warm); then ready.
@@ -1304,7 +1482,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let delveIn = 1;
   function buildDelve() {
     if (building || warming || delve || delveFailed || gl!.isContextLost()) return;
-    const sources: ProgramSource[] = [{ vs: VERT, fs: frag(maxElements, !!smoothTex, true), label: "Delve's backdrop program" }];
+    // (Where the backdrop draws none of the UI's parts, Delve's has none
+    // either, see uiNow; nor while the UI pass it would need is still to come.)
+    const parts: UiParts = uiParts() === 'drops' && !ui ? 'none' : uiParts();
+    const sources: ProgramSource[] = [{ vs: VERT, fs: frag(maxElements, !!smoothTex, true, parts), label: "Delve's backdrop program" }];
     if (smoothTex) sources.unshift({ vs: VERT, fs: smoothFrag(true), label: "Delve's backdrop soft light program" });
     building = buildPrograms(gl!, sources, (progs) => {
       building = null;
@@ -1315,7 +1496,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
         console.warn("Delve's backdrop goes to the CSS one once Delve shows.");
         return;
       }
-      warming = smoothTex ? variant(progs[1], progs[0]) : variant(progs[0], null);
+      warming = smoothTex ? variant(progs[1], progs[0], parts) : variant(progs[0], null, parts);
       warmed = 0;
     }, true);
   }
@@ -1337,8 +1518,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       return;
     }
     g.useProgram(w.prog);
+    if (w.ui === 'drops') g.bindFramebuffer(g.FRAMEBUFFER, sceneFbo);
     g.viewport(0, 0, 1, 1);
     g.drawArrays(g.TRIANGLES, 0, 3);
+    g.bindFramebuffer(g.FRAMEBUFFER, null);
     warming = null;
     delve = w;
     delveReadyNow = true;
@@ -1374,13 +1557,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // changes: the low-power mode, for phones that run hot. (Reduced motion
   // goes further and rests everything.)
   const calm = () => reduceMotion.matches || !fxUserOn();
-  // On phones and tablets the backdrop-drawn shadows look worse than CSS's,
-  // so there every element keeps its CSS shadow and the backdrop draws none.
-  const cssShadows = matchMedia('(pointer: coarse)');
-  // Beta, to find what makes frames slow (lib/switchedOff.ts): the UI's shadows and fills left to CSS;
-  // the backdrop drawn once a second (and its shadows and fills left to CSS with it).
-  const drawnSlowly = switchedOff('backdraw');
-  const fillsToCss = drawnSlowly || switchedOff('fills');
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
@@ -1432,7 +1608,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const k = v === lean ? 1 : delveIn;
     const dark = v === lean ? 0 : delveIn * look.dark;
     const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uVein, uGlowCol, uScene, uBlobColor } = v;
-    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mVein, mDark, mScene, mHome, uElCount, uDialog, uSharpSize, uBlurSize } = v;
+    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mVein, mDark, mScene, mHome, uDialog, uSharpSize, uBlurSize } = v;
 
     // The soft light: into its own target first, or along with the rest.
     gl!.useProgram(soft);
@@ -1507,26 +1683,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform2f(uVignette, 1 - 0.06 * vignette, (1 + 0.07 * vignette) * (1 - 0.6 * dark));
     gl!.uniform2f(uSharpSize, atlasSize[0], atlasSize[1]);
     gl!.uniform2f(uBlurSize, atlasSize[2], atlasSize[3]);
-    // The UI's shadows and fills: only the arrays whose bits changed since they were last sent.
-    for (const { loc, arr, bits, last } of v.sent) {
-      let same = true;
-      for (let i = 0; i < bits.length; i++) {
-        if (bits[i] !== last[i]) {
-          same = false;
-          break;
-        }
-      }
-      if (same) continue;
-      gl!.uniform4fv(loc, arr);
-      last.set(bits);
-    }
-    let count = 0;
-    for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
-    if (count !== v.sentCount) gl!.uniform1i(uElCount, (v.sentCount = count));
+    // The UI's shadows and fills (those this pass draws).
+    send(v);
     gl!.uniform4fv(uLightA, lightA);
     gl!.uniform4fv(uLightC, lightC);
     gl!.uniform4fv(uMood, mood);
-    gl!.uniform1f(uDialog, dialog);
+    if (uDialog) gl!.uniform1f(uDialog, dialog);
     gl!.uniform4fv(uEmberHalo, embers.halo);
     gl!.uniform3fv(uEmberCore, embers.core);
     gl!.uniform2f(uEmberK, calm() ? 0.6 : 1, embers.streak);
@@ -1549,7 +1711,45 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, SLOTS);
     gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, cols, TILES, gl!.RGBA, gl!.FLOAT, embers.data);
     gl!.pixelStorei(gl!.UNPACK_ROW_LENGTH, 0);
+    const over = v.ui === 'drops' ? ui : null;
+    if (!over) return gl!.drawArrays(gl!.TRIANGLES, 0, 3);
+    // Into the scene's target, and the UI pass over it onto the canvas.
+    gl!.activeTexture(gl!.TEXTURE4);
+    gl!.bindTexture(gl!.TEXTURE_2D, sceneTex);
+    if (canvas.width !== sceneW || canvas.height !== sceneH) {
+      sceneW = canvas.width;
+      sceneH = canvas.height;
+      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA16F, sceneW, sceneH, 0, gl!.RGBA, gl!.HALF_FLOAT, null);
+    }
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, sceneFbo);
     gl!.drawArrays(gl!.TRIANGLES, 0, 3);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+    gl!.useProgram(over.prog);
+    gl!.uniform2f(over.uRes, canvas.width, canvas.height);
+    gl!.uniform2f(over.uSize, cssW, cssH);
+    gl!.uniform1f(over.uDialog, dialog);
+    send(over);
+    gl!.drawArrays(gl!.TRIANGLES, 0, 3);
+  }
+
+  /** Sends a pass the shadow arrays whose bits changed since they were last sent to it, and how many elements there are. */
+  function send(pass: { sent: ReturnType<typeof sendList>; uElCount: WebGLUniformLocation | null; sentCount: number }) {
+    for (const { loc, arr, bits, last } of pass.sent) {
+      let same = true;
+      for (let i = 0; i < bits.length; i++) {
+        if (bits[i] !== last[i]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) continue;
+      gl!.uniform4fv(loc, arr);
+      last.set(bits);
+    }
+    if (!pass.uElCount) return;
+    let count = 0;
+    for (let i = 0; i < maxElements; i++) if (el.b[i * 4 + 3] > 0) count = i + 1;
+    if (count !== pass.sentCount) gl!.uniform1i(pass.uElCount, (pass.sentCount = count));
   }
 
   // Measures the shadowed elements and says what changed since last time:
@@ -1559,11 +1759,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // only colours changed (a fill or shadow easing to another colour), which
   // 30fps draws as well, or false. On phones and tablets there's nothing to
   // measure: everything is let go to CSS once, and nothing changes until the
-  // pointer does.
+  // pointer does. `parts` is which of the UI's parts the backdrop can draw
+  // (see uiNow): none, and they're let go to CSS too.
   let released = false;
-  function measure(): 'now' | 'paced' | false {
+  function measure(parts: UiParts): 'now' | 'paced' | false {
     let atlases: ReturnType<typeof measureDrops> = null;
-    if (cssShadows.matches || fillsToCss) {
+    if (!drawsUi() || parts === 'none') {
       if (released) return false;
       released = true;
       // (What was last drawn is now these zeros too: measured again later,
@@ -1660,6 +1861,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const frame = (now: number) => timed('backdrop', frameUntimed, now);
   function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
+    // (The backdrop come to draw the UI's parts after all: the pointer changed.)
+    if (lean.ui === 'none' && !upgrade && !upgradeFailed && mayDrawUi()) startUpgrade();
     if (catchingUp.size) {
       // (The backdrop's clock holds still meanwhile.)
       lastStep = now;
@@ -1750,7 +1953,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // answer's reveal (its light, its fills and glows easing to green and
     // gold) would otherwise redraw this pass every frame, along with the
     // effects overlay's own.
-    const measured = measure();
+    const measured = measure(uiNow());
     // A colour measured now isn't measured as changed again (measure() takes
     // it as drawn), and a light or mood easing may stop in a frame held back:
     // either is owed a frame, at the 30fps pace.
@@ -1844,6 +2047,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     delveWaiters.delete(buildDelve);
     building?.cancel();
     building = null;
+    upgrade?.cancel();
+    upgrade = null;
     for (const v of [warming, delve]) {
       if (!v) continue;
       gl!.deleteProgram(v.prog);
@@ -1889,7 +2094,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     canvas.height = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio * scale()));
     embers.step(0, canvas.clientWidth, canvas.clientHeight);
     measureView();
-    measure();
+    measure(uiNow());
     draw();
   } catch (e) {
     stop();
@@ -1904,7 +2109,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
 /**
  * The shaders' sources, for a compile and link check: the vertex shader, the
- * soft light's, and the main pass with it split off and without; the lean
- * ones, or with `delve` Delve's.
+ * soft light's, the main pass with it split off (split, with the UI pass,
+ * ui, after it) and without (whole, everything in one), and both with none
+ * of the UI's parts (bare); the lean ones, or with `delve` Delve's. (And the
+ * split main pass with everything in it, which isn't drawn, for checking
+ * the UI pass takes only its part.)
  */
-export const backdropShaders = (maxElements: number, delve = false) => ({ vert: VERT, smooth: smoothFrag(delve), split: frag(maxElements, true, delve), whole: frag(maxElements, false, delve) });
+export const backdropShaders = (maxElements: number, delve = false) => ({
+  vert: VERT,
+  smooth: smoothFrag(delve),
+  split: frag(maxElements, true, delve, 'drops'),
+  ui: uiFrag(maxElements),
+  whole: frag(maxElements, false, delve, 'all'),
+  bareSplit: frag(maxElements, true, delve, 'none'),
+  bareWhole: frag(maxElements, false, delve, 'none'),
+  splitAll: frag(maxElements, true, delve, 'all'),
+});

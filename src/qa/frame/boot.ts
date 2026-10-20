@@ -196,6 +196,10 @@ export async function boot(asked: URLSearchParams) {
     if (e.origin !== location.origin || !isDeskMessage(e.data)) return;
     if (e.data.qa === 'outlines') outline(e.data.on);
     else if (e.data.qa === 'freeze') freeze(e.data.on);
+    else if (e.data.qa === 'css') {
+      const on = e.data.on;
+      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
+    }
   });
   const run = async () => {
     const settled = await settle();
@@ -227,7 +231,7 @@ export async function boot(asked: URLSearchParams) {
  */
 export function handOnKeys(tell: (m: FrameMessage) => void, digits = false) {
   // (The digits only from a piece's frame: in the game they answer a question, and it doesn't stop them going on.)
-  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', '/', 'Alt', ...(digits ? '123456789' : '')]);
+  const DESK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'z', 'Z', 'h', 'H', 'o', 'O', 'r', 'R', 'f', 'F', 'a', 'A', 's', 'S', '/', 'Alt', ...(digits ? '123456789' : '')]);
   const HELD = new Set(['h', 'H', 'Alt']);
   const hand = (e: KeyboardEvent, up: boolean) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || (e.altKey && e.key !== 'Alt') || !DESK_KEYS.has(e.key)) return;

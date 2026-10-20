@@ -1,7 +1,8 @@
 <script lang="ts">
   // A bench's panel: its states (1 to 9, ↑ ↓; A: all of them side by side),
   // its controls (a piece's, or a scene's knobs), what can happen to it, its
-  // seats, and Replay and Freeze. Only what the bench has shows.
+  // seats, and Replay and Freeze (and, while S has them, CSS's shadows). Only
+  // what the bench has shows.
   import type { Bench, Value, Values } from '../bench.ts';
   import type { Scene } from '../scene.ts';
 
@@ -16,6 +17,7 @@
     seats,
     seat,
     frozen,
+    css,
     hasBoard,
     canPlay,
     reason,
@@ -27,6 +29,7 @@
     onact,
     onreplay,
     onfreeze,
+    oncss,
     onplay,
     onhold,
   }: {
@@ -40,6 +43,8 @@
     seats: string[];
     seat: number | 'all';
     frozen: boolean;
+    /** S: the UI's shadows and fills by CSS (shown only while they are). */
+    css: boolean;
     hasBoard: boolean;
     canPlay: boolean;
     /** Why this change touches it, if it does. */
@@ -52,6 +57,7 @@
     onact: (key: string) => void;
     onreplay: () => void;
     onfreeze: () => void;
+    oncss: () => void;
     onplay: () => void;
     onhold: (on: boolean) => void;
   } = $props();
@@ -167,6 +173,9 @@
   <section class="tools">
     <button onclick={onreplay} title="Draw it in again, as it first came">Replay <kbd>R</kbd></button>
     <button class:on={frozen} onclick={onfreeze} title="Hold every animation where it is">{frozen ? 'Frozen' : 'Freeze'} <kbd>F</kbd></button>
+    {#if css}
+      <button class="on" onclick={oncss} title="The UI's shadows and fills are CSS's; back to the backdrop's">CSS shadows <kbd>S</kbd></button>
+    {/if}
     {#if hasBoard}
       <button onpointerdown={() => onhold(true)} onpointerup={() => onhold(false)} onpointerleave={() => onhold(false)}>Hold for design <kbd>H</kbd></button>
     {/if}
