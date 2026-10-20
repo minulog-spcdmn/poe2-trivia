@@ -8,9 +8,7 @@ import '@fontsource-variable/inter';
 import '../app.css';
 import './analytics.css';
 import { installCursor } from '../lib/ownCursor';
-import { installDitheredGlows } from '../lib/ditheredGlow';
 import Analytics from './Analytics.svelte';
 
 installCursor();
-installDitheredGlows();
 mount(Analytics, { target: document.getElementById('app')! });

@@ -21,7 +21,6 @@
 // (such as the title's thin decorative lines) cast no shadow here. Their CSS
 // shadow is faint enough not to matter.
 
-import { drawGlyphs, glyphsOf, type Glyph } from './glyphMask';
 import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
@@ -120,6 +119,34 @@ function parseDrops(decl: string): Drop[] {
 
 // ---------- masks ----------
 
+type Glyph = { ch: string; cx: number; cy: number };
+
+/** Text glyphs with their centres in local px, from the browser's own layout. */
+function glyphsOf(node: HTMLElement, toLocal: (x: number, y: number) => [number, number]) {
+  const glyphs: Glyph[] = [];
+  const range = document.createRange();
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  for (let t = walker.nextNode() as Text | null; t; t = walker.nextNode() as Text | null) {
+    const text = t.data;
+    for (let i = 0; i < text.length; i++) {
+      if (/\s/.test(text[i])) continue;
+      range.setStart(t, i);
+      range.setEnd(t, i + 1);
+      const r = range.getBoundingClientRect();
+      if (!r.width) continue;
+      const [cx, cy] = toLocal(r.left + r.width / 2, r.top + r.height / 2);
+      glyphs.push({ ch: text[i], cx, cy });
+    }
+  }
+  return glyphs;
+}
+
+function textTransform(ch: string, tt: string) {
+  if (tt === 'uppercase') return ch.toUpperCase();
+  if (tt === 'lowercase') return ch.toLowerCase();
+  return ch;
+}
+
 /** Draws the element's content alpha in local px, offset by (-x, -y) and scaled by `s`. */
 function drawContent(
   ctx: CanvasRenderingContext2D,
@@ -153,7 +180,19 @@ function drawContent(
     ctx.drawImage(node, (w - dw) / 2, (h - dh) / 2, dw, dh);
     return;
   }
-  drawGlyphs(ctx, glyphs);
+  ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#000';
+  const ls = parseFloat(cs.letterSpacing) || 0;
+  for (const g of glyphs) {
+    const ch = textTransform(g.ch, cs.textTransform);
+    const m = ctx.measureText(ch);
+    // The glyph's layout box spans the font's ascent + descent (plus the
+    // letter-spacing the browser adds after it), centred on its rect.
+    const baseline = g.cy + (m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
+    ctx.fillText(ch, g.cx - ls / 2, baseline);
+  }
 }
 
 /** Separable Gaussian blur of `src` (w x h), in floating point. */

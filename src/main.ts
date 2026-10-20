@@ -11,7 +11,6 @@ import { session } from './lib/session.svelte';
 import { watchFullscreen } from './lib/fullscreen';
 import { installCursor } from './lib/ownCursor';
 import { installAutoscroll } from './lib/autoscroll';
-import { installDitheredGlows } from './lib/ditheredGlow';
 import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
 import { countVisit, onCountToggle, type Toggled } from './lib/count';
@@ -25,7 +24,6 @@ installUiFx();
 watchFullscreen();
 if (!switchedOff('cursor')) installCursor();
 installAutoscroll();
-installDitheredGlows();
 if (fpsMeterOn()) installFpsMeter();
 countVisit();
 const TOGGLED: Record<Toggled, string> = {

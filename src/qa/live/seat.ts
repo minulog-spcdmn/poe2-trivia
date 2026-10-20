@@ -54,7 +54,6 @@ export async function seat() {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
-  (await import('../../lib/ditheredGlow.ts')).installDitheredGlows();
   mount(Root, { target: document.getElementById('app')! });
   // Development only, as the game's own page has it (src/main.ts): the session, for scripts that drive a seat.
   if (import.meta.env.DEV) Object.assign(window, { __s: session });
