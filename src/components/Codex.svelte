@@ -13,6 +13,9 @@
   import { dialogBackdrop } from '../lib/behindDialog';
   import { calm } from '../lib/motion.svelte';
   import { whenIdle } from '../lib/idle';
+  import { savingData } from '../lib/saveData';
+  import { canWrap, gridHeight, type GridMeasure } from '../lib/heldGrid';
+  import { ownRect } from '../lib/stage';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import { circleOf } from './circles';
@@ -83,10 +86,96 @@
   // loading, which only looks ahead a little and only on a main-thread frame,
   // so the pictures were still missing, and arrived all at once mid-scroll.
   // Not with Save-Data on: the rest are some megabytes.
-  let thumbsLoading = $state<'lazy' | 'eager'>('lazy');
-  onMount(() => {
-    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
-    return whenIdle(() => (thumbsLoading = 'eager'), { timeout: 2000 });
+  //
+  // And the sections are laid out a few at a time. All five hundred tiles at
+  // once took some 60 ms of style and layout in the codex's first frame, and
+  // all their pictures set loading at once another 45 ms. So each section
+  // after the first holds its tiles out of layout (content-visibility) until
+  // its turn, one a frame once the codex is in (or sooner, as the browser
+  // does, when it nears the screen), its header laid out as ever and its
+  // grid standing meanwhile at the height its rows will take (heldHeights).
+  // Its turn lays it out as any page is, and starts its pictures loading.
+  const saveData = savingData();
+  /** How many sections have had their turn (of those shown: a search or a pick shows fewer). */
+  let staged = $state(0);
+  const held = (i: number) => i >= Math.max(1, staged);
+  const thumbsLoading = $derived.by<'lazy' | 'eager'>(() => (!saveData && staged >= sections.length ? 'eager' : 'lazy'));
+  // A section a frame, from the first idle moment after the codex comes in
+  // (idle moments are few while it does: one each took seconds), and on as
+  // more show (a search cleared).
+  let staging = $state(false);
+  onMount(() => whenIdle(() => (staging = true), { timeout: 500 }));
+  // A new search or pick shows its sections afresh (their tiles made anew):
+  // they take their turns again, set before the page updates.
+  $effect.pre(() => {
+    void query;
+    void only;
+    staged = 0;
+  });
+  $effect(() => {
+    if (!staging || staged >= sections.length) return;
+    const raf = requestAnimationFrame(() => staged++);
+    return () => cancelAnimationFrame(raf);
+  });
+  /** The sections' grids as shown (bound), the first measured for the others' height while they're held. */
+  let gridEls = $state<HTMLElement[]>([]);
+  // A held grid's height is worked out from its names (lib/heldGrid.ts). The
+  // first grid gives a tile's fixed parts, a line's height, the columns and
+  // a name's width and font, each time it lays out at a new size (a
+  // ResizeObserver runs after layout, so this reads no layout of its own),
+  // and a name's lines come from its width in that font.
+  type Pitch = GridMeasure & { lines: (text: string, unknown: boolean) => number };
+  let pitch = $state.raw<Pitch | null>(null);
+  $effect(() => {
+    const grid = gridEls[0];
+    if (!grid) return;
+    const ro = new ResizeObserver(() => (pitch = measurePitch(grid) ?? pitch));
+    ro.observe(grid);
+    return () => ro.disconnect();
+  });
+  /** One canvas for measuring names, and the lines found at the current font and width, by name. */
+  let measurer: CanvasRenderingContext2D | null | undefined;
+  const lineCounts = new Map<string, number>();
+  let lineCountsAt = '';
+  function measurePitch(grid: HTMLElement): Pitch | null {
+    const tile = grid.querySelector<HTMLElement>('.tile');
+    const name = tile?.querySelector<HTMLElement>('.name');
+    const ctx = (measurer ??= document.createElement('canvas').getContext('2d'));
+    if (!tile || !name || !ctx) return null;
+    const gs = getComputedStyle(grid);
+    const ns = getComputedStyle(name);
+    const line = parseFloat(ns.lineHeight);
+    const width = ownRect(name).width;
+    // (The name stretches to fill its tile, so the rest of the tile is the fixed parts.)
+    const base = ownRect(tile).height - ownRect(name).height;
+    if (!(line > 0) || !(width > 0)) return null;
+    // Read now, not as names are measured: the element may be gone by then.
+    const fonts = ['normal', 'italic'].map((style) => `${style} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`);
+    const spacing = ns.letterSpacing === 'normal' ? '0px' : ns.letterSpacing;
+    const at = `${fonts[0]}|${spacing}|${width}`;
+    if (at !== lineCountsAt) {
+      lineCounts.clear();
+      lineCountsAt = at;
+    }
+    // Two lines where it's wider than the line and can break, else one.
+    const lines = (text: string, unknown: boolean) => {
+      const font = fonts[+unknown];
+      const key = `${+unknown}${text}`;
+      let n = lineCounts.get(key);
+      if (n === undefined) {
+        ctx.font = font;
+        (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = spacing;
+        lineCounts.set(key, (n = canWrap(text) && ctx.measureText(text).width > width ? 2 : 1));
+      }
+      return n;
+    };
+    return { cols: gs.gridTemplateColumns.split(' ').length, gap: parseFloat(gs.rowGap) || 0, base, line, lines };
+  }
+  /** Each section's grid's height while held, as `contain-intrinsic-height` takes it. */
+  const heldHeights = $derived.by(() => {
+    const p = pitch;
+    if (!p) return null;
+    return sections.map(({ items }) => `auto ${gridHeight(items.map((it) => (codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true))), p).toFixed(2)}px`);
   });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
@@ -476,7 +565,8 @@
       </div>
 
       {#if view === 'grid'}
-        {#each sections as sec (sec.stats.category)}
+        {#each sections as sec, i (sec.stats.category)}
+          {@const loading = !saveData && i < staged ? 'eager' : 'lazy'}
           <section class="cat-section">
             <header>
               {@render glyph(sec.stats.category)}
@@ -492,14 +582,14 @@
                 {/each}
               </ul>
             {/if}
-            <ul class="grid">
+            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? (heldHeights?.[i] ?? 'auto 600px') : null} bind:this={gridEls[i]}>
               {#each sec.items as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>
                   {#if e}
                     {@const t = tallyOf(e)}
                     <button class="tile" onclick={() => (open = it)} aria-label="{it.name}{t.n ? `, ${t.ok} of ${answers(t.n)} right` : ', seen'}">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" {loading} /></span>
                       <span class="name">{it.name}</span>
                       <span class="status">
                         {#if t.n}
@@ -511,7 +601,7 @@
                     </button>
                   {:else}
                     <span class="tile unknown" title="Not discovered yet">
-                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" loading={thumbsLoading} /></span>
+                      <span class="art"><img src={itemThumb(it.id, 128)} srcset={itemSrcset(it.id)} alt="" {loading} /></span>
                       <span class="name">Undiscovered</span>
                       <span class="status"></span>
                     </span>
@@ -1137,6 +1227,10 @@
       0 0 14px rgba(201, 164, 92, 0.3);
   }
 
+  /* Out of layout until its turn (see staged). */
+  .grid.held {
+    content-visibility: auto;
+  }
   .cat-section header {
     display: flex;
     flex-wrap: wrap;

@@ -41,6 +41,10 @@
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
+  import { readsShellHeights } from '../lib/shellHeights.svelte';
+
+  // Its styles read the shell's --header-h (App.svelte).
+  readsShellHeights();
 
   /** Beta: no arcane circle behind the art (lib/switchedOff.ts), to see what it costs as a question appears. */
   const circleOff = switchedOff('circle');

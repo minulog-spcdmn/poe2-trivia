@@ -49,6 +49,10 @@
   import { zoomOf } from '../lib/stage';
   import HeartOfLight from './HeartOfLight.svelte';
   import StandingMark from './StandingMark.svelte';
+  import { readsShellHeights } from '../lib/shellHeights.svelte';
+
+  // Its styles read the shell's --header-h (App.svelte).
+  readsShellHeights();
 
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
