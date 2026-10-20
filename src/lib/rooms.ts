@@ -17,7 +17,8 @@
 
 import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
-import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow } from './peer';
+import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs } from './peer';
+import { randomToken } from './roomCode';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
 import { checkRoom, newChallenge } from './ownerKey';
@@ -173,8 +174,7 @@ class Prober {
       let conn: DataConnection | null = null;
       let settled = false;
       let clear = () => {};
-      // (PeerJS is loaded: this peer was made with it.)
-      const connectionId = `dc_${peerJsNow()!.util.randomToken()}`;
+      const connectionId = `dc_${randomToken(11)}`;
       // Every probe settles once, on its own; it takes itself off the
       // waiting list only if it's still the one there (a later probe of the
       // same id may have taken its place, and stays waiting).
@@ -350,7 +350,11 @@ export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () 
 export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null> {
   if (madeUp) return madeUp.invite === undefined ? new Promise(() => {}) : madeUp.invite;
   // A signalling server that never answers (blocked, offline) gives no error
-  // for a long while: past this, the room is taken as not answering.
+  // for a long while: past this, the room is taken as not answering. The wait
+  // starts once PeerJS is loaded, so a slow first download doesn't use it up
+  // (one that fails makes openPeer fail at once). A download that stalls is
+  // given as long again, so the invite's screen isn't left asking for good.
+  await Promise.race([loadPeerJs().catch(() => {}), sleep(PROBE_OPEN_TIMEOUT_MS)]);
   const opening = openPeer();
   const peer = await Promise.race([opening.catch(() => null), sleep(PROBE_OPEN_TIMEOUT_MS).then(() => null)]);
   if (!peer) {

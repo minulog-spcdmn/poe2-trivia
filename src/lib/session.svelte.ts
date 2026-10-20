@@ -669,10 +669,7 @@ class Session {
     }
     const Peer = this.peerClass(
       () => this.openRoom(code, attempt, resumeState),
-      () =>
-        resumeState
-          ? this.fail(`${this.networkHint('peerjs-load')} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' })
-          : this.fail(this.networkHint('peerjs-load'), 'No connection', { failure: 'host-no-connection' }),
+      () => this.roomNotOpened(code, 'peerjs-load', !!resumeState),
     );
     if (!Peer) return;
     const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
@@ -759,9 +756,14 @@ class Session {
           'Room not reopened',
           { reopening: code, failure: 'host-room-not-reopened' },
         );
-      else if (resumeState) this.fail(`${this.networkHint(err.type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-      else this.fail(this.networkHint(err.type), 'No connection', { failure: 'host-no-connection' });
+      else this.roomNotOpened(code, err.type, !!resumeState);
     });
+  }
+
+  /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
+  private roomNotOpened(code: string, type: string, reopening: boolean) {
+    if (reopening) this.fail(`${this.networkHint(type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
+    else this.fail(this.networkHint(type), 'No connection', { failure: 'host-no-connection' });
   }
 
   private acceptConnection(conn: DataConnection) {
