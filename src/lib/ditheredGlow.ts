@@ -59,12 +59,7 @@ function colorOf(text: string): [number, number, number, number] {
   const nums = (text.match(/-?[\d.]+(?:e-?\d+)?/g) ?? []).map(parseFloat);
   if (text.startsWith('rgb')) return [nums[0] / 255, nums[1] / 255, nums[2] / 255, nums[3] ?? 1];
   if (text.startsWith('color(srgb')) return [nums[0], nums[1], nums[2], nums[3] ?? 1];
-  // Any other form (oklab(), …): the canvas resolves it, to 8 bits.
-  const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
-  ctx.fillStyle = text;
-  ctx.fillRect(0, 0, 1, 1);
-  const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
-  return a ? [r / 255, g / 255, b / 255, a / 255] : [0, 0, 0, 0];
+  return [0, 0, 0, 0];
 }
 
 /** A shadow list, resolved through the browser's own parser. */
@@ -317,8 +312,8 @@ function stateOf(el: HTMLElement): { state: State; key: string } | null {
   return { state: { el, cs, w, h, rect, s, kinds, text, inset, outer }, key };
 }
 
-/** The glows of `st` drawn dithered into a new canvas; null when there's nothing to draw, 'css' when it's too big to. */
-function render(st: State): HTMLCanvasElement | null | 'css' {
+/** The glows of `st` drawn dithered into a new canvas, or null when there's nothing to draw. */
+function render(st: State): HTMLCanvasElement | null {
   const { el, cs, w, h, rect, s, text, inset, outer } = st;
   if (!text.length && !inset.length && !outer.length) return null;
   const reach = (list: Shadow[]) => Math.max(0, ...list.map((sh) => 1.5 * sh.blur + Math.abs(sh.spread) + Math.max(Math.abs(sh.x), Math.abs(sh.y))));
@@ -367,7 +362,7 @@ function render(st: State): HTMLCanvasElement | null | 'css' {
   y0 = (Math.floor(oy + y0 * s) - oy) / s;
   const cw = Math.ceil((x1 - x0) * s);
   const ch = Math.ceil((y1 - y0) * s);
-  if (cw * ch > 1 << 21) return 'css';
+  if (cw * ch > 1 << 21) return null;
   // Local px to canvas px, at `k` of full size.
   const local = (ctx: CanvasRenderingContext2D, dx = 0, dy = 0, k = 1) => ctx.setTransform(s * k, 0, 0, s * k, (dx - x0) * s * k, (dy - y0) * s * k);
   // A shape blurred by `blurPx` (CSS blur, local px), full size. Blurred at a
@@ -536,9 +531,7 @@ function pass() {
     drawn++;
     const first = host.key === '';
     host.key = got.key;
-    const canvas = render(got.state);
-    if (canvas === 'css') show(el, host, null, [], false);
-    else show(el, host, canvas, got.state.kinds, !first);
+    show(el, host, render(got.state), got.state.kinds, !first);
   }
   for (const el of hosts.keys()) if (!el.isConnected) drop(el);
   if (dirty.size || toScan.size || pending.length) schedule();
@@ -581,8 +574,8 @@ export function installDitheredGlows() {
     }
     schedule();
   }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-  // Hover and focus restyle without a mutation: what's hovered, what holds
-  // it, and what those hold (`.card:hover .name`).
+  // Hover and focus restyle without a mutation.
+  // A hover lights what's hovered, what holds it, and what those hold (`.card:hover .name`).
   const restyle = (e: Event) => {
     allDirty = true;
     const t = e.target instanceof Element ? e.target : null;
@@ -591,11 +584,7 @@ export function installDitheredGlows() {
     schedule();
   };
   for (const type of ['pointerover', 'pointerout', 'focusin', 'focusout']) addEventListener(type, restyle, { capture: true, passive: true });
-  // An entrance or a scale transition ends at a size the glow was last
-  // drawn before; a resize or a move to another screen changes the scale.
-  const settled = () => ((allDirty = true), schedule());
-  for (const type of ['animationend', 'transitionend']) addEventListener(type, settled, { capture: true, passive: true });
-  addEventListener('resize', settled);
+  addEventListener('resize', () => ((allDirty = true), schedule()));
   document.fonts?.addEventListener('loadingdone', () => {
     fontsGeneration++;
     allDirty = true;
