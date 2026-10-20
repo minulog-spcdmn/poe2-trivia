@@ -7,6 +7,7 @@
 import { MAX_PLAYERS, PRESETS, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
 import type { Control, Values } from '../bench.ts';
+import { longestNamed } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
@@ -17,6 +18,8 @@ const THREE = SEATED.slice(0, 3);
 const host = (name: string): Seat => ({ mode: 'host', me: pid(name) });
 const guest = (name: string): Seat => ({ mode: 'client', me: pid(name) });
 const ALONE: Seat = { mode: 'local', me: null };
+/** A seat watching the game, once someone does (Finn, the first to come: tweaks.ts). */
+const WATCHER = guest('Finn');
 
 /** How many play: from `min` (those the scene's moves name are among them) to a full room. */
 const players = (min: number, by: number): Control => ({ kind: 'range', key: 'players', label: 'Players', min, max: MAX_PLAYERS, default: by });
@@ -24,8 +27,9 @@ const seated = (v: Values, by: number) => SEATED.slice(0, Number(v.players ?? by
 
 /**
  * A question's answers: how many (the game's default, six, as dealt), and
- * whether they are names or pictures. Set either and the game plays its
- * default difficulty as custom, with that many and asked that way.
+ * whether they are names or pictures, or the longest names there are (the
+ * most a row has to fit). Set either and the game plays its default
+ * difficulty as custom, with that many and asked that way.
  */
 const ANSWERS: Control[] = [
   {
@@ -44,6 +48,7 @@ const ANSWERS: Control[] = [
       { value: 'as', label: 'As dealt' },
       { value: 'names', label: 'Names' },
       { value: 'art', label: 'Pictures' },
+      { value: 'longest', label: 'Longest names' },
     ],
   },
 ];
@@ -52,7 +57,7 @@ const asked = (v: Values): Partial<Settings> => {
   const as = v.asked ?? 'as';
   if (options === 6 && as === 'as') return {};
   const base = PRESETS.merciless;
-  return { difficulty: 'custom', custom: { ...base, options, artChance: as === 'names' ? 0 : as === 'art' ? 1 : base.artChance } };
+  return { difficulty: 'custom', custom: { ...base, options, artChance: as === 'names' || as === 'longest' ? 0 : as === 'art' ? 1 : base.artChance } };
 };
 
 /** How far into a question its scene stands (ms). */
@@ -67,6 +72,16 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
     seats,
     build: (v = {}) => {
       const t = play(v);
+      const q = t.s.question;
+      if (v.asked === 'longest' && q?.mode === 'name') {
+        // The answer stays where it was dealt, the longest name of all.
+        const at = q.options.indexOf(q.itemId);
+        const longest = longestNamed(q.options.length);
+        [longest[0], longest[at]] = [longest[at], longest[0]];
+        q.options = longest.map((it) => it.id);
+        q.labels = longest.map((it) => it.name);
+        q.itemId = q.options[at];
+      }
       const at = t.s.phase === 'question' ? t.clock.now + INTO : t.clock.now;
       return { state: t.s, at } satisfies Built;
     },
@@ -81,7 +96,7 @@ export function gameScenes(): Scene[] {
   const race = (v: Values) => table(seated(v, 5), { mode: 'race', ...asked(v) }).start();
   const delveAlone = () => table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
   const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
-  const turnsSeats = [guest('Doryani'), host('Kalguur')];
+  const turnsSeats = [guest('Doryani'), host('Kalguur'), WATCHER];
   // Una of the Vaal is in every take-turns scene's moves; the race's answer Doryani's and hers.
   const many = { controls: [players(3, 3)] };
   // A question's scenes: its answers too.
@@ -122,10 +137,10 @@ export function gameScenes(): Scene[] {
     }),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
-    scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani')], race, crowdAsked),
-    scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Doryani', false, 1800), crowdAsked),
-    scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani')], (v) => race(v).answer('Una of the Vaal', true, 1500), crowdAsked),
-    scene('deathmatch', 'Deathmatch', 'A tie at the target: the deathmatch', [host('Kalguur'), guest('Doryani')], () =>
+    scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani'), WATCHER], race, crowdAsked),
+    scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Doryani', false, 1800), crowdAsked),
+    scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Una of the Vaal', true, 1500), crowdAsked),
+    scene('deathmatch', 'Deathmatch', 'A tie at the target: the deathmatch', [host('Kalguur'), guest('Doryani'), WATCHER], () =>
       table(['Kalguur', 'Doryani'], { targetScore: 1 })
         .start()
         .playTo((s) => !!s.deathmatch),
@@ -160,7 +175,7 @@ export function gameScenes(): Scene[] {
       'delve-together-cards',
       'Delve together',
       'The cards dealt, Doryani has voted',
-      [host('Kalguur'), guest('Doryani')],
+      [host('Kalguur'), guest('Doryani'), WATCHER],
       (v) => {
         const t = delveTogether(v);
         return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
@@ -171,7 +186,7 @@ export function gameScenes(): Scene[] {
       'delve-together-question',
       'Delve together',
       'A question, after the vote',
-      [host('Kalguur'), guest('Doryani')],
+      [host('Kalguur'), guest('Doryani'), WATCHER],
       (v) => {
         const t = delveTogether(v);
         for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);

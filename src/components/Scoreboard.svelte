@@ -36,6 +36,8 @@
   import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
   import { flat, handheld } from '../lib/layout';
+  import { arrival } from '../lib/zoneArrival.svelte';
+  import { dealing } from '../lib/dealing.svelte';
   import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
@@ -59,6 +61,12 @@
    * together) kept in view.
    */
   const tight = $derived(flat.current && s.players.length > 6);
+  /**
+   * A zone's card is up: on a phone on its side its bar covers the header's
+   * row and the scoreboard in it, so the streaks' fire (drawn over the page,
+   * lib/fx) goes out until the card has gone, and is lit again quietly.
+   */
+  const underBar = $derived(flat.current && !!arrival.card && dealing.held);
   let boardEl = $state<HTMLElement>();
   $effect(() => {
     if (!tight || !boardEl) return;
@@ -606,19 +614,27 @@
   /**
    * Svelte action: sets a row burning for a streak of `n`, re-lit as its heat
    * or colour changes. `delve`: the long scale and the colours past blue
-   * (lib/fx/streaks). Reaching a new colour, it bursts in it.
+   * (lib/fx/streaks). Reaching a new colour, it bursts in it. `hidden`: out
+   * for now, put out and lit again without a word (no douse, no burst).
    */
-  function burn(node: HTMLElement, o: { n: number; delve: boolean }) {
+  function burn(node: HTMLElement, o: { n: number; delve: boolean; hidden?: boolean }) {
     let fire: Handle | null = null;
     let lit = { heat: 0, flame: flameOf(0) };
-    const light = () => (fire = lit.heat > 0 ? ablaze(node, lit.heat, lit.flame.blue, lit.flame.tint) : null);
-    const set = ({ n, delve }: { n: number; delve: boolean }) => {
+    let hid = false;
+    const light = () => (fire = lit.heat > 0 && !hid ? ablaze(node, lit.heat, lit.flame.blue, lit.flame.tint) : null);
+    const set = ({ n, delve, hidden = false }: { n: number; delve: boolean; hidden?: boolean }) => {
+      if (hidden !== hid) {
+        hid = hidden;
+        fire?.stop(hidden ? 0.2 : 0);
+        light();
+      }
       const next = { heat: heatOf(n, delve), flame: flameOf(n, delve) };
       if (next.heat === lit.heat && (next.heat === 0 || next.flame === lit.flame)) return;
       const was = lit;
       lit = next;
       fire?.stop(0.5);
       light();
+      if (hid) return;
       if (was.heat > 0 && next.heat === 0) doused(node);
       if (was.heat > 0 && next.heat > 0 && next.flame !== was.flame) {
         if (next.flame.blue) turnsBlue(node);
@@ -717,7 +733,7 @@
         data-cursor="row:{i}"
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
-        use:burn={{ n: streakShown, delve: !!run }}
+        use:burn={{ n: streakShown, delve: !!run, hidden: underBar }}
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--flame-rgb={flameOf(streakShown, !!run).css}
@@ -788,7 +804,7 @@
   </ol>
   {@render aside?.()}
   <!-- Who's watching hangs under the strip, so nothing moves when someone comes in to watch. Not while the offer to give a life hangs there. -->
-  {#if !asking && !session.spectating}<Gallery hang />{/if}
+  {#if !asking && (!session.spectating || flat.current)}<Gallery hang />{/if}
   {#if asking && askingName && me}
     <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
@@ -807,8 +823,9 @@
     </div>
   {/if}
 </div>
-<!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
-{#if session.spectating}<Gallery />{/if}
+<!-- A spectator's own view: the gallery in the flow, with their choice to play next game
+     (on a phone on its side, where the page has no height to spare, it hangs under the header's row as the players' does). -->
+{#if session.spectating && !flat.current}<Gallery />{/if}
 
 <!-- Gone: the lobby's offline mark (StandingMark), a phone's signal with no bar lit, struck through. -->
 {#snippet offline()}
@@ -1575,13 +1592,15 @@
       display: none;
     }
     /* Who's watching: under the header's row at its left, beside the banner's
-       title rather than over it. */
+       title rather than over it; a spectator's choice to play next game at
+       its right, under the header's buttons (the strip's right margin undone),
+       clear of the banner's lines either side. */
     .strip :global(.gallery.hang) {
       top: calc(100% + 4px);
-      right: auto;
+      right: calc(-1 * (var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))));
       left: max(1rem, env(safe-area-inset-left));
       padding-right: 0;
-      justify-content: flex-start;
+      justify-content: space-between;
     }
     .strip :global(.hang .list) {
       right: auto;

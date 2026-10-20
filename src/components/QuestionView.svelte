@@ -1256,7 +1256,7 @@
       </div>
     </div>
   {:else}
-    <div class="stage" class:snug class:ten={count === 10} class:long class:armed={blastSlot}>
+    <div class="stage" class:snug class:crowded={count > 6} class:ten={count === 10} class:long class:armed={blastSlot}>
       <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified. -->
@@ -3214,12 +3214,17 @@
       height: auto;
       min-height: 0;
     }
+    /* The plate as tall as its lines, at least 52px: a long name, revealed
+       beside a narrow column of art, wraps and makes it (and its ends)
+       larger, the art giving up the height, as on phones. */
     .head {
-      height: 52px;
-      padding: 0 3rem;
+      height: auto;
+      min-height: 52px;
+      padding: 0.2rem max(2.9rem, min(3.6rem, calc(var(--plate-scale, 0) * 3.45rem)));
     }
     .iname {
       font-size: 1.05rem;
+      line-height: 1.15;
     }
     .iname.unknown {
       font-size: 0.95rem;
@@ -3236,7 +3241,9 @@
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
     .option,
-    .long .option {
+    .long .option,
+    .compact .option,
+    .dense .option {
       min-height: 0;
       gap: 0.55rem;
       padding: 0.25rem 1.9rem 0.25rem 0.6rem;
@@ -3246,48 +3253,37 @@
       line-height: 1.15;
       overflow-wrap: anywhere;
     }
+    /* The number's seal, smaller, clear of the row's border above and below. */
+    .option .key {
+      width: 22px;
+      height: 22px;
+      padding-top: 1px;
+      font-size: 0.68rem;
+    }
     .option .mark,
     .long .option .mark {
       right: 0.6rem;
     }
-    /* A touch screen has no keys to press: the answers go without their key badges. */
-    @media (pointer: coarse) {
-      .option .key {
-        display: none;
-      }
-      .option,
-      .long .option {
-        padding-left: 0.75rem;
-      }
+    /* Seven or eight: four rows, a little closer together. */
+    .options.compact {
+      gap: 0.3rem 0.4rem;
     }
-    /* Ten names: three across, four rows, so each keeps a thumb's height
-       (two lines where a name needs them); the art gives them width. */
-    .stage.ten {
-      grid-template-columns: minmax(0, 1.3fr) minmax(0, 3fr);
-    }
+    /* Ten: two columns of five, slimmer rows. */
     .options.ten {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0.3rem;
+      gap: 0.25rem 0.4rem;
     }
     .options.ten .option {
       padding-block: 0;
-      padding-left: 0.6rem;
-      padding-right: 1.4rem;
+      gap: 0.45rem;
     }
     .options.ten .option .key {
-      display: none;
+      width: 20px;
+      height: 20px;
+      font-size: 0.64rem;
     }
     .options.ten .text {
-      font-size: 0.88rem;
+      font-size: 0.92rem;
       line-height: 1.1;
-      overflow-wrap: normal;
-    }
-    .options.ten .option .mark {
-      right: 0.4rem;
-    }
-    /* The tenth alone in its row, in the middle of it. */
-    .options.ten .option:last-child {
-      grid-column: 2;
     }
     /* The pictures: one row of them, as tall as the room under the plate (ten in two rows). */
     .tooltip.wide .head {
@@ -3326,6 +3322,15 @@
     .result p {
       font-size: 1rem;
       line-height: 1.25;
+    }
+  }
+
+  /* Seven names or more on a wide enough screen: the art gives them some of
+     its width, so even the longest stay on one line (narrower, they wrap
+     whatever it gives, and the plate keeps its width for the revealed name). */
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 760px) {
+    .stage.crowded {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
     }
   }
 </style>
