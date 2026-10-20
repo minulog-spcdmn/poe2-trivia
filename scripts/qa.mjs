@@ -146,17 +146,18 @@ const PER_BROWSER = 4;
 const browsers = await Promise.all(Array.from({ length: Math.ceil(concurrency / PER_BROWSER) }, launch));
 const browser = browsers[0];
 
-/** Every scene the desk at `base` has: key, label, seats, the sizes it is walked at. */
+/** Every state of every scene the desk at `base` has: its scene's key, its number there and controls, label, seats, the sizes it is walked at. */
 async function listScenes(base) {
   const desk = await browser.newPage();
-  await desk.goto(`${base}qa.html`);
+  // (A dev server just started builds the desk's modules as it first asks for them: that can take a while.)
+  await desk.goto(`${base}qa.html`, { timeout: 120000 });
   await desk.waitForFunction(() => window.__qaDesk, null, { timeout: 60000 });
   const scenes = await desk.evaluate(() => window.__qaDesk.scenes());
   await desk.close();
   return scenes;
 }
 
-const fileOf = (j) => `${j.scene.replace(/\//g, '--')}__${j.seat}__${j.size}.png`;
+const fileOf = (j) => `${j.scene.replace(/\//g, '--')}${j.n ? `-${j.n}` : ''}__${j.seat}__${j.size}.png`;
 
 /**
  * The game's files of `entries` (the dev server's, one module a file) that
@@ -227,6 +228,7 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
       try {
         if (coverage) await page.coverage.startJSCoverage({ resetOnNavigation: false });
         const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
+        for (const [k, v] of j.values ?? []) q.set(`k.${k}`, v);
         await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
         const loaded = Date.now();
         await page.waitForFunction(() => window.__qa, null, { timeout: 60000 });
@@ -236,6 +238,8 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
           continue;
         }
         const r = await page.evaluate(() => window.__qa);
+        // (A frame that couldn't start says why, src/qa/main.ts.)
+        if (r.failed) throw new Error(r.failed);
         const file = fileOf(j);
         // At CSS pixels (a quarter of a 4K-at-200% shot's), unless banding is looked for, which shows only in the device's own.
         // (A 4K page under a full sweep's load can take a while to give up its pixels: once more, with longer, before calling it failed.)
@@ -267,7 +271,7 @@ function jobsFor(scenes) {
       process.exit(1);
     }
   }
-  return scenes.flatMap((s) => pick(s).flatMap((size) => Array.from({ length: s.seats }, (_, seat) => ({ scene: s.key, label: s.label, seat, size }))));
+  return scenes.flatMap((s) => pick(s).flatMap((size) => Array.from({ length: s.seats }, (_, seat) => ({ scene: s.key, n: s.n, values: s.values, label: s.label, seat, size }))));
 }
 
 // ---- --map --------------------------------------------------------------------
@@ -390,7 +394,8 @@ const bad = shots.filter((s) => s.failed || s.problems.length);
 console.log(`${shots.length} shots in ${((Date.now() - t0) / 1000).toFixed(0)} s, ${bad.length} with something to look at; screens/${dirName}/`);
 for (const s of bad) {
   const what = s.failed ? `failed: ${s.failed}` : s.problems.map((p) => `${p.kind}${p.count > 1 ? ` x${p.count}` : ''}: ${p.examples[0]}`).join('; ');
-  console.log(`  ${s.scene} (seat ${s.seat}, ${s.size}): ${what}`);
+  // (A state past a scene's first by its label: two of one scene's states otherwise read the same.)
+  console.log(`  ${s.scene}${s.n ? ` “${s.label}”` : ''} (seat ${s.seat}, ${s.size}): ${what}`);
 }
 const unsettled = shots.filter((s) => s.settled === false).length;
 if (unsettled) console.log(`${unsettled} never came to rest within 8 s (checked as they were).`);

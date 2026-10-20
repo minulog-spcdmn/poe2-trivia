@@ -12,16 +12,31 @@ import { useItems } from '../build/engine.ts';
 import { catalog } from '../scenes/index.ts';
 import { useCaptured } from '../scenes/captured.ts';
 import { sizesFor } from './walk.ts';
+import { statesOf } from '../benches/index.ts';
+import { asQuery } from '../bench.ts';
+import { seatsIn } from '../scene.ts';
+import { buildScene } from '../tweaks.ts';
 import Desk from './Desk.svelte';
 
 useItems(itemData as Item[], fakeNames);
 useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
 mount(Desk, { target: document.getElementById('app')! });
 
-// For the sweep (scripts/qa.mjs), which opens each scene's frames by itself:
-// every scene with its seats and the sizes it is walked at.
+// For the sweep (scripts/qa.mjs), which opens each state's frames by itself:
+// every scene's every state (`n`, its controls as `values` sets them), with
+// its seats and the sizes it is walked at.
 Object.assign(window, {
   __qaDesk: {
-    scenes: () => catalog().map((s) => ({ key: s.key, label: s.label, seats: s.seats.length, sizes: sizesFor(s) })),
+    scenes: () =>
+      catalog().flatMap((s) =>
+        statesOf(s).map((st, n) => ({
+          key: s.key,
+          n,
+          label: st.label,
+          values: asQuery(st.values),
+          seats: seatsIn(s, buildScene(s, st.values).built).length,
+          sizes: sizesFor(s),
+        })),
+      ),
   },
 });

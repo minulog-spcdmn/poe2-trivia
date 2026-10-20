@@ -16,7 +16,8 @@ export interface SceneFiles {
 }
 
 /** Files that change how everything looks or runs, whatever the map says. */
-const EVERYWHERE = [/^src\/app\.css$/, /^src\/main\.ts$/, /^src\/(App|Root)\.svelte$/, /^vite\.config\.ts$/, /^package(-lock)?\.json$/, /^src\/assets\/fonts\//, /^index\.html$/];
+// (src/qa/tweaks.ts too: what any game can have, it builds every screen's scenes.)
+const EVERYWHERE = [/^src\/app\.css$/, /^src\/main\.ts$/, /^src\/(App|Root)\.svelte$/, /^vite\.config\.ts$/, /^package(-lock)?\.json$/, /^src\/assets\/fonts\//, /^index\.html$/, /^src\/qa\/tweaks\.ts$/];
 /** Scene files, by the screen whose scenes they hold. */
 const SCENE_FILE = /^src\/qa\/scenes\/(\w+)\.ts$/;
 const FILE_SCREEN: Record<string, Screen> = { home: 'home', lobby: 'lobby', game: 'game', over: 'over', codex: 'codex', overlays: 'overlay' };

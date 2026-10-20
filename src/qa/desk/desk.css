@@ -178,6 +178,12 @@ html[data-qa='desk'] #app {
   margin: 0 0.45em;
   color: var(--gold-lo);
 }
+/* The state's controls moved off any named state. */
+.where .adjusted {
+  margin-left: 0.45em;
+  color: var(--gold);
+  font-size: 0.85em;
+}
 .sizes {
   display: flex;
   gap: 0;
@@ -253,6 +259,59 @@ html[data-qa='desk'] #app {
   width: 0.8em;
   font-family: var(--font-cinzel);
   color: var(--gold-lo);
+}
+/* A state this change touches: a dot at its end, as the benches have one. */
+.bench-panel .states button.changed::after {
+  content: '•';
+  margin-left: auto;
+  color: var(--gold);
+}
+/* A heading among the states, or among the controls (In any game). */
+.desk .heading {
+  margin: 0.7rem 0 0.1rem;
+  padding: 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: normal;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--gold-lo);
+}
+/* A long list's heading: a click folds its states away or opens them. */
+.desk .heading .fold {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  text-align: left;
+}
+.desk .heading .fold::before {
+  content: '▸';
+  width: 0.8em;
+  font-size: 0.8em;
+}
+.desk .heading .fold.open::before {
+  content: '▾';
+}
+.desk .heading .fold .num {
+  margin-left: auto;
+  font-size: 0.9em;
+}
+.bench-panel .controls .heading {
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+.grid .heading {
+  grid-column: 1 / -1;
+  margin: 0.6rem 0 -0.3rem;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.grid .heading:first-child {
+  margin-top: 0;
 }
 .bench-panel .controls {
   display: grid;
@@ -344,6 +403,45 @@ html[data-qa='desk'] #app {
   font-size: 0.9em;
 }
 
+/* Before and after: how the two compare, and the way back. */
+.compare {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0;
+  margin: 0;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: #0d0b09;
+  color: var(--muted);
+}
+.compare .same {
+  color: #9fd08a;
+}
+.compare .differs {
+  color: #ff7ad9;
+}
+.compare .sep {
+  margin: 0 0.6em;
+  color: var(--gold-lo);
+}
+.compare .example {
+  margin-left: 0.4em;
+  font-size: 0.9em;
+}
+.compare .hint {
+  margin-left: 1rem;
+  font-size: 0.9em;
+}
+.compare .off {
+  margin-left: auto;
+  font-size: 0.85rem;
+  padding: 0.05rem 0.45rem;
+}
+.middle {
+  position: relative;
+}
+
 .stage-box {
   position: relative;
   display: grid;
@@ -401,6 +499,109 @@ html[data-qa='desk'] #app {
   color: var(--muted);
   white-space: nowrap;
 }
+/* What differs from the other side, laid over now (D), and each place it does, numbered: a click looks at it close up. */
+.screen .layer {
+  position: absolute;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+.screen .mark {
+  position: absolute;
+  min-width: 10px;
+  min-height: 10px;
+  margin: -3px 0 0 -3px;
+  padding: 0;
+  box-sizing: content-box;
+  border: 2px solid #ff4ad2;
+  border-radius: 3px;
+  outline: 1px solid #000a;
+  background: none;
+}
+.desk .screen .mark:hover:not(:disabled),
+.screen .mark.picked {
+  border-color: #fff;
+  background: #ff4ad222;
+}
+.screen .mark .num {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  transform: translateY(-100%);
+  padding: 0 0.3em;
+  border-radius: 3px 3px 0 0;
+  background: #ff4ad2;
+  color: #000;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+.screen .mark.picked .num {
+  background: #fff;
+}
+
+/* One place that differs, close up: before, now, and the two in turn. */
+.closeup {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 2;
+  max-height: 60%;
+  overflow: auto;
+  padding: 0.5rem 0.8rem 0.7rem;
+  border: 1px solid var(--gold-lo);
+  border-radius: 6px;
+  background: #0d0b09;
+}
+.closeup header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+.closeup header .what {
+  color: var(--gold-hi);
+}
+.closeup header .sep {
+  margin: 0 0.3em;
+  color: var(--gold-lo);
+}
+.closeup header .about {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.closeup header button {
+  flex: none;
+}
+.closeup .pictures {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+.closeup figure {
+  margin: 0;
+  text-align: center;
+}
+.closeup canvas {
+  display: block;
+  outline: 1px solid var(--line);
+  image-rendering: pixelated;
+}
+.closeup figcaption {
+  padding-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.closeup figcaption .on {
+  color: var(--gold-hi);
+}
+
 /* The size and how far it's shrunk, in the corner. */
 .stage-box .scale {
   position: absolute;
