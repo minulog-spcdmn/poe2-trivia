@@ -16,7 +16,8 @@
 // lockfile is the same, or installed for it with npm ci when not.
 
 import { spawn } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -83,6 +84,33 @@ const isLink = (path: string) => {
     return false;
   }
 };
+
+/**
+ * The trees of bases gone by (main has moved on since), deleted once this
+ * one's is up: each its packages' link undone first, and the tree left alone
+ * if it won't go, so a delete never reaches through it into this checkout's
+ * node_modules. In the background, so the dev server doesn't wait on it.
+ */
+async function prune(cacheRoot: string, keep: string) {
+  let names: string[];
+  try {
+    names = readdirSync(cacheRoot);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const dir = join(cacheRoot, name);
+    if (dir === keep) continue;
+    const modules = join(dir, 'node_modules');
+    try {
+      if (isLink(modules)) unlinkSync(modules);
+      if (isLink(modules)) continue;
+      await rm(dir, { recursive: true, force: true });
+    } catch {
+      // (In use, or half gone: tried again when the next base comes.)
+    }
+  }
+}
 
 /** A free port on localhost, for the before server (it then listens with strictPort, so a race shows as a failure, not a wrong port). */
 const freePort = () =>
@@ -170,6 +198,7 @@ export function qaBefore(root: string, server: ViteDevServer, mergeBase: () => s
       await before.listen();
       if (job !== j) throw new Error('superseded');
       j.status = { state: 'ready', base: j.base, origin: `http://localhost:${port}` };
+      void prune(cacheRoot, j.dir);
     } catch (e) {
       if (job !== j) return close(j);
       close(j);
@@ -239,6 +268,9 @@ export function qaBefore(root: string, server: ViteDevServer, mergeBase: () => s
   };
 }
 
+/** A frame that couldn't start, and why: answered 422, so the desk can tell it from a shot that failed. */
+class CantShow extends Error {}
+
 /** Shots of frames, from one headless Chromium launched the first time and kept until the server closes; four at once, the rest queued. */
 export function qaShots(server: ViteDevServer) {
   let browser: Promise<Browser> | null = null;
@@ -278,6 +310,9 @@ export function qaShots(server: ViteDevServer) {
         await page.goto(url, { timeout: 30000 });
         // The frame sets window.__qa once it has come to rest and been checked.
         await page.waitForFunction('!!window.__qa', undefined, { timeout: 30000, polling: 100 });
+        // Or it couldn't start (src/qa/main.ts): no shot, but why.
+        const failed = (await page.evaluate('window.__qa.failed ?? null')) as string | null;
+        if (failed) throw new CantShow(failed);
         await page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
         return await page.screenshot({ type: 'png' });
       } finally {
@@ -309,7 +344,7 @@ export function qaShots(server: ViteDevServer) {
         res.setHeader('Cache-Control', 'no-store');
         res.end(png);
       },
-      (e: Error) => json(res, 500, { error: e.message.split('\n')[0] }),
+      (e: Error) => json(res, e instanceof CantShow ? 422 : 500, { error: e.message.split('\n')[0] }),
     );
   };
 }

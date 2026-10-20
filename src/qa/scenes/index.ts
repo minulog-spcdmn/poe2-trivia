@@ -4,62 +4,13 @@
 // scenes saved from live rooms, before catalog().
 
 import { SCREENS, type Scene } from '../scene.ts';
-import type { Control } from '../bench.ts';
-import type { PlateName } from '../../lib/plates/index.ts';
-import type { SizeKey } from '../sizes.ts';
-import { endScenes, type EndView } from './over.ts';
+import { overScenes } from './over.ts';
 import { homeScenes } from './home.ts';
 import { lobbyScenes } from './lobby.ts';
 import { gameScenes } from './game.ts';
 import { codexScenes } from './codex.ts';
 import { overlayScenes } from './overlays.ts';
 import { capturedScenes } from './captured.ts';
-
-/** The end screen page's windows, as the desk's sizes. */
-const END_SIZE: Record<EndView, SizeKey> = {
-  desktop: 'desktop',
-  air13: 'laptop',
-  tablet: 'tablet',
-  phone: 'phone390',
-  phone375: 'phone',
-  narrow: 'narrow',
-  big: 'uhd150',
-  landscape: 'landscape',
-};
-
-/** The circle behind the end screen: the one the game falls to, or any of the five. */
-const CIRCLE: Control = {
-  kind: 'choice',
-  key: 'circle',
-  label: 'Circle',
-  default: 'auto',
-  options: [
-    { value: 'auto', label: 'As the game picks' },
-    { value: 'eye', label: 'Eye' },
-    { value: 'moth', label: 'Moth' },
-    { value: 'monad', label: 'Monad' },
-    { value: 'rose', label: 'Rose' },
-    { value: 'blackSun', label: 'Black sun' },
-  ],
-};
-
-function overScenes(): Scene[] {
-  return endScenes().map((e) => {
-    const { key, group, label, boards, view, mode, me, controls, states, vary, ...built } = e;
-    return {
-      key: `over/${key}`,
-      screen: 'over',
-      group,
-      label,
-      seats: [{ mode, me }],
-      sizes: [END_SIZE[view]],
-      boards: boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board])),
-      controls: [...(controls ?? []), CIRCLE],
-      states,
-      build: (v = {}) => ({ ...built, ...(vary ? { state: vary(v) } : {}), circle: v.circle && v.circle !== 'auto' ? (v.circle as PlateName) : null }),
-    };
-  });
-}
 
 let built: Scene[] | null = null;
 

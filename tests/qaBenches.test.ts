@@ -95,3 +95,14 @@ test('a change touches the pieces showing its files and the screens running them
   assert.deepEqual(benchesTouched(['src/qa/benches/streakXts'], none, all).benches, []);
   assert.deepEqual(benchesTouched(['src/qa/frame/PieceHost.svelte'], none, all).benches.map((b) => b.key), PIECES.map((p) => p.key));
 });
+
+// A piece's frame loads only its own file (benches/<key>.ts, frame/piece.ts),
+// so the code before a change that adds or alters one piece still shows the rest.
+test('every piece is in a file named after it', async () => {
+  for (const p of PIECES) {
+    const file = new URL(`../src/qa/benches/${p.key}.ts`, import.meta.url);
+    assert.ok(existsSync(file), `the piece ${p.key} isn't in src/qa/benches/${p.key}.ts`);
+    const mod: Record<string, unknown> = await import(file.href);
+    assert.ok(Object.values(mod).includes(p), `src/qa/benches/${p.key}.ts doesn't export the piece ${p.key}`);
+  }
+});

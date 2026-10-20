@@ -55,10 +55,11 @@ export async function boot(asked: URLSearchParams) {
 
   // The scene first: what it puts in the address has to be there before the
   // app's modules read it (the codex's #codex, an invite's ?room=).
-  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }, { useCaptured }, { buildScene }] = await Promise.all([
+  // (Its screen's scenes only, scenes/one.ts: the code before this change may lack what another screen's use.)
+  const [{ session, engine, picturesOf, veilClock }, { useItems }, { sceneOf }, { default: fakeNames }, { useCaptured }, { buildScene }] = await Promise.all([
     import('../../lib/session.svelte.ts'),
     import('../build/engine.ts'),
-    import('../scenes/index.ts'),
+    import('../scenes/one.ts'),
     import('../../data/fakes.json'),
     import('../scenes/captured.ts'),
     import('../tweaks.ts'),
@@ -66,16 +67,13 @@ export async function boot(asked: URLSearchParams) {
   useItems(engine.items, fakeNames);
   useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
   const key = asked.get('s');
-  const scene = scenes.sceneByKey(key);
+  const scene = await sceneOf(key);
   const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
   const built = scene && buildScene(scene, given).built;
   // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
   const seats = scene && built ? seatsIn(scene, built) : [];
   const seat = seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];
-  if (!scene || !built || !seat) {
-    document.body.textContent = `No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`;
-    return;
-  }
+  if (!scene || !built || !seat) throw new Error(`No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`);
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
   await import('../../app.css');

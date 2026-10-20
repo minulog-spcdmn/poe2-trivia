@@ -237,6 +237,8 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
           continue;
         }
         const r = await page.evaluate(() => window.__qa);
+        // (A frame that couldn't start says why, src/qa/main.ts.)
+        if (r.failed) throw new Error(r.failed);
         const file = fileOf(j);
         // At CSS pixels (a quarter of a 4K-at-200% shot's), unless banding is looked for, which shows only in the device's own.
         // (A 4K page under a full sweep's load can take a while to give up its pixels: once more, with longer, before calling it failed.)

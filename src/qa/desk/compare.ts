@@ -66,10 +66,23 @@ export interface Compared {
   layer: string;
 }
 
-async function shot(url: string, w: number, h: number, signal: AbortSignal): Promise<ImageBitmap> {
+/** One side couldn't show the view at all (on the code before: it's new, or uses something that is), and why. */
+export class CantShow extends Error {
+  constructor(
+    readonly side: 'before' | 'now',
+    why: string,
+  ) {
+    super(why);
+  }
+}
+
+async function shot(url: string, w: number, h: number, signal: AbortSignal, side: 'before' | 'now'): Promise<ImageBitmap> {
   const q = new URLSearchParams({ url, w: String(Math.round(w)), h: String(Math.round(h)) });
   const r = await fetch(`./__qa/shot?${q}`, { signal, cache: 'no-store' });
-  if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? `the shot failed (${r.status})`);
+  if (!r.ok) {
+    const why = (await r.json().catch(() => null))?.error ?? `the shot failed (${r.status})`;
+    throw r.status === 422 ? new CantShow(side, why) : new Error(why);
+  }
   return createImageBitmap(await r.blob());
 }
 
@@ -95,7 +108,7 @@ async function layerOf(mask: Uint8Array, w: number, h: number): Promise<string> 
  * differs between those moves on its own) at `w` by `h`, and compares them.
  */
 export async function compareShots(beforeUrl: string, nowUrl: string, w: number, h: number, signal: AbortSignal): Promise<Compared> {
-  const [before, now, again] = await Promise.all([shot(beforeUrl, w, h, signal), shot(nowUrl, w, h, signal), shot(nowUrl, w, h, signal)]);
+  const [before, now, again] = await Promise.all([shot(beforeUrl, w, h, signal, 'before'), shot(nowUrl, w, h, signal, 'now'), shot(nowUrl, w, h, signal, 'now')]);
   const { mask, ...diff } = compare(pixels(before), pixels(now), pixels(again));
   again.close();
   return { diff, before, now, layer: await layerOf(mask, now.width, now.height) };

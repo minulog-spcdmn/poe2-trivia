@@ -22,7 +22,7 @@
   import Grid from './Grid.svelte';
   import Live from './Live.svelte';
   import Closeup from './Closeup.svelte';
-  import { askBefore, beforeSrc, compareShots, shotSrc, type Before, type Compared, type Shown } from './compare.ts';
+  import { CantShow, askBefore, beforeSrc, compareShots, shotSrc, type Before, type Compared, type Shown } from './compare.ts';
   import { liveRoom, type LiveRoom } from '../live/room.ts';
   import { BETA, LOCAL } from '../../lib/channel.ts';
 
@@ -271,7 +271,7 @@
   /** Each frame's size as the stage lays it out (CSS px): what a shot of it is taken at. */
   let box = $state<{ w: number; h: number } | null>(null);
   /** Where the view before and now differ, once compared (for `key`: what was shot). */
-  let compared = $state.raw<{ key: string; state: 'checking' | 'done' | 'failed'; got?: Compared; error?: string } | null>(null);
+  let compared = $state.raw<{ key: string; state: 'checking' | 'done' | 'failed'; got?: Compared; error?: string; cantShow?: 'before' | 'now' } | null>(null);
   /** The area looked at close up, and whether what differs is laid over the frame now (D). */
   let closeup = $state(-1);
   let layered = $state(false);
@@ -308,7 +308,7 @@
         if (!stop.signal.aborted) compared = { key, state: 'done', got };
         else release(got);
       } catch (e) {
-        if (!stop.signal.aborted) compared = { key, state: 'failed', error: (e as Error).message };
+        if (!stop.signal.aborted) compared = { key, state: 'failed', error: (e as Error).message, cantShow: e instanceof CantShow ? e.side : undefined };
       }
     }, 700);
     return () => {
@@ -522,6 +522,8 @@
           {#if !before || before.state === 'preparing'}Getting the code before this change ready…
           {:else if before.state !== 'ready'}No code from before this change here{#if before.state === 'failed'}: <span class="example">{before.error}</span>{/if}
           {:else if !compared || compared.state === 'checking'}Comparing…
+          {:else if compared.cantShow === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{compared.error}</span>
+          {:else if compared.cantShow === 'now'}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{compared.error}</span>
           {:else if compared.state === 'failed'}Couldn't compare: <span class="example">{compared.error}</span>
           {:else if !compared.got!.diff.areas.length}<span class="same">Looks the same</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}
           {:else}<span class="differs">Differs in {compared.got!.diff.areas.length} {compared.got!.diff.areas.length === 1 ? 'place' : 'places'}</span><span class="sep">•</span><span><span class="num">{(compared.got!.diff.share * 100).toFixed(compared.got!.diff.share < 0.01 ? 2 : 1)}%</span> of it</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}<span class="hint">click a mark to see it close up • <kbd>D</kbd> {layered ? 'hides' : 'lays'} what differs over now</span>{/if}

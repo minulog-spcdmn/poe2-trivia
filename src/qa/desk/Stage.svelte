@@ -76,7 +76,8 @@
       if ((e.origin !== location.origin && !origins.includes(e.origin)) || !isFrameMessage(e.data)) return;
       const i = els.findIndex((f) => f?.contentWindow === e.source);
       if (i < 0) return;
-      if (e.data.qa === 'ready') ready = new Set([...ready, i]);
+      // (One that couldn't start says why itself.)
+      if (e.data.qa === 'ready' || e.data.qa === 'failed') ready = new Set([...ready, i]);
       onframe(e.data, i);
     };
     addEventListener('message', heard);

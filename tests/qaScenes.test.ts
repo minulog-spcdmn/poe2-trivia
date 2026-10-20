@@ -170,3 +170,14 @@ test("a frame answers media queries as its device would, and leaves width to the
   assert.equal(answered('(max-width: 700px) and (hover:hover)', phone), `(max-width: 700px) and ${no}`);
   assert.equal(answered('(prefers-reduced-motion: reduce)', phone), '(prefers-reduced-motion: reduce)');
 });
+
+// A frame loads only its own screen's scenes (scenes/one.ts), so the code
+// before a change that adds what one screen uses still shows the others.
+test('a frame finds every scene from its own screen file alone', async () => {
+  const { sceneOf } = await import('../src/qa/scenes/one.ts');
+  for (const s of catalog()) {
+    const found = await sceneOf(s.key);
+    assert.equal(found?.key, s.key, `${s.key} isn't found from its screen's file (scenes/one.ts)`);
+    assert.equal(found.label, s.label);
+  }
+});

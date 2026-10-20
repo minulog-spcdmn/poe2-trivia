@@ -9,6 +9,8 @@ import type { Values } from './bench.ts';
 export type FrameMessage =
   /** The scene shows (its slot: which frame of the stop). */
   | { qa: 'ready'; slot: string }
+  /** It couldn't start, and why (on the code before this change: something only the change has). */
+  | { qa: 'failed'; slot: string; error: string }
   /** The scene came to rest (or didn't, `settled` false) and was checked: what's wrong with it, if anything. */
   | { qa: 'checked'; slot: string; settled: boolean; problems: Problem[] }
   /** One of the desk's keys, pressed (or let go: `up`) while the frame had the focus. */
@@ -66,5 +68,5 @@ export function deskOrigin(asked: URLSearchParams): string {
 }
 
 const isQa = (m: unknown): m is { qa: string } => typeof m === 'object' && m !== null && 'qa' in m && typeof (m as { qa: unknown }).qa === 'string';
-export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'checked', 'key', 'set', 'pick'].includes(m.qa);
+export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'failed', 'checked', 'key', 'set', 'pick'].includes(m.qa);
 export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && ['outlines', 'freeze', 'values', 'action', 'replay'].includes(m.qa);

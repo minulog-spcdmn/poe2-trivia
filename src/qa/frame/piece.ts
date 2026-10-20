@@ -11,7 +11,23 @@ import { settle } from './settle.ts';
 import { handOnKeys, trackWebgl } from './boot.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
-import { valuesOf, type Values } from '../bench.ts';
+import { valuesOf, type PieceBench, type Values } from '../bench.ts';
+
+/** Each piece's own file (benches/<key>.ts), so a piece loads none but its own. */
+const PIECE_FILES = import.meta.glob<Record<string, unknown>>('../benches/*.ts');
+
+/**
+ * A piece by its key, from its own file when it has one named after it, else
+ * from the list of them all: on the code before this change (the desk's
+ * before and after) a piece that's new, or uses what only this change has,
+ * then fails on its own.
+ */
+async function pieceOf(key: string | null): Promise<PieceBench | undefined> {
+  if (!key) return undefined;
+  const own = PIECE_FILES[`../benches/${key}.ts`];
+  const found = own && Object.values(await own()).find((x): x is PieceBench => typeof x === 'object' && x !== null && (x as PieceBench).kind === 'piece' && (x as PieceBench).key === key);
+  return found ?? (await import('../benches/pieces.ts')).pieceByKey(key);
+}
 
 /** How long it stays still after a change before it's checked again (ms). */
 const RECHECK_MS = 600;
@@ -33,12 +49,8 @@ export async function bootPiece(asked: URLSearchParams) {
     storage.removeStoredStarting('', 'session');
   };
   clear();
-  const { pieceByKey } = await import('../benches/pieces.ts');
-  const bench = pieceByKey(asked.get('b'));
-  if (!bench) {
-    document.body.textContent = `No bench called ${asked.get('b')}.`;
-    return;
-  }
+  const bench = await pieceOf(asked.get('b'));
+  if (!bench) throw new Error(`No bench called ${asked.get('b')}.`);
   await import('../../app.css');
   const [{ mount }, { default: Host }, { piece, fire }, { default: View }, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }] = await Promise.all([
     import('svelte'),

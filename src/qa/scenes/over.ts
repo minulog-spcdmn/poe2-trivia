@@ -10,6 +10,9 @@ import type { Answer } from '../../lib/codex.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
 import { id, pid, player, spectator } from '../build/people.ts';
 import type { Control, State, Values } from '../bench.ts';
+import type { Scene } from '../scene.ts';
+import type { PlateName } from '../../lib/plates/index.ts';
+import type { SizeKey } from '../sizes.ts';
 
 export { pid };
 export type Mode = 'host' | 'client' | 'local';
@@ -820,4 +823,51 @@ export function endScenes(): EndScene[] {
       runs: runs([17, 32, 15], 27, true, doryani),
     },
   ];
+}
+
+/** The end screen page's windows, as the desk's sizes. */
+const END_SIZE: Record<EndView, SizeKey> = {
+  desktop: 'desktop',
+  air13: 'laptop',
+  tablet: 'tablet',
+  phone: 'phone390',
+  phone375: 'phone',
+  narrow: 'narrow',
+  big: 'uhd150',
+  landscape: 'landscape',
+};
+
+/** The circle behind the end screen: the one the game falls to, or any of the five. */
+const CIRCLE: Control = {
+  kind: 'choice',
+  key: 'circle',
+  label: 'Circle',
+  default: 'auto',
+  options: [
+    { value: 'auto', label: 'As the game picks' },
+    { value: 'eye', label: 'Eye' },
+    { value: 'moth', label: 'Moth' },
+    { value: 'monad', label: 'Monad' },
+    { value: 'rose', label: 'Rose' },
+    { value: 'blackSun', label: 'Black sun' },
+  ],
+};
+
+/** The end screen's scenes, as the desk has every screen's. */
+export function overScenes(): Scene[] {
+  return endScenes().map((e) => {
+    const { key, group, label, boards, view, mode, me, controls, states, vary, ...built } = e;
+    return {
+      key: `over/${key}`,
+      screen: 'over',
+      group,
+      label,
+      seats: [{ mode, me }],
+      sizes: [END_SIZE[view]],
+      boards: boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board])),
+      controls: [...(controls ?? []), CIRCLE],
+      states,
+      build: (v = {}) => ({ ...built, ...(vary ? { state: vary(v) } : {}), circle: v.circle && v.circle !== 'auto' ? (v.circle as PlateName) : null }),
+    };
+  });
 }
