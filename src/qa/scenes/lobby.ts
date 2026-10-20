@@ -59,7 +59,8 @@ function room(v: Values = {}): Built {
     public: !!v.public,
     locked: !!v.locked,
   };
-  return { state: new Table(names, settings).s };
+  const t = new Table(names, settings);
+  return { state: t.s, act: t.room };
 }
 
 /**
@@ -95,7 +96,7 @@ function descent(v: Values = {}): Built {
   const runs = [best ? run(0, best) : null, last ? run(1, last) : null].filter((r): r is DelveRun => !!r);
   const log: Answer[] = v.finds === false ? [] : FINDS_IN_ORDER.map((f, i) => ({ t: 3000 + i, id: id('Headhunter'), mode: 'name', ok: true, difficulty: 'cruel', race: false, depth: f.from, run: 3000, find: f.kind }));
   const t = new Table(together ? ['Kalguur', 'Doryani', 'Una of the Vaal'] : ['Kalguur'], { mode: 'delve' });
-  return { state: t.s, runs, log };
+  return { state: t.s, act: t.room, runs, log };
 }
 
 export function lobbyScenes(): Scene[] {
@@ -130,7 +131,10 @@ export function lobbyScenes(): Scene[] {
       group: 'Lobby',
       label: 'Hot-seat: three on one device',
       seats: [{ mode: 'local', me: null }],
-      build: () => ({ state: new Table(TWELVE.slice(0, 3), {}, { host: null }).s }),
+      build: () => {
+        const t = new Table(TWELVE.slice(0, 3), {}, { host: null });
+        return { state: t.s, act: t.room };
+      },
     },
     { key: 'lobby/delve-descent', screen: 'lobby', group: 'Delve', label: 'Delve: the descent, by your records', seats: [host('Kalguur')], controls: [RECORDS, TOGETHER, FOUND], build: descent },
   ];
