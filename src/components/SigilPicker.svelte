@@ -1,13 +1,13 @@
 <script lang="ts">
-  // The class sigils (lib/sigils.ts): each achievement earned unlocks one,
-  // of the class picked here, and one unlocked is worn with a click. On the
+  // The class sigils (lib/sigils.ts): the first achievement earned unlocks
+  // one, and every third after it another, of the class picked here, and one unlocked is worn with a click. On the
   // Codex's achievements page (CodexAchievements) and in the settings.
   // Unlocking is for good, so a locked class picked asks once more first.
   // `strip`: the twelve in one row beside the avatar, named on hover (the
   // settings page, which has the width but not the height).
   import { onMount } from 'svelte';
   import { CLASSES, className, sigilUrl, type PlayerClass } from '../lib/classSigils';
-  import { SIGILS_KEY, loadSigils, sigilsToUnlock, unlockSigil, wearSigil } from '../lib/sigils';
+  import { SIGILS_KEY, achievementsToNext, loadSigils, sigilsToUnlock, unlockSigil, wearSigil } from '../lib/sigils';
   import { onStoredElsewhere } from '../lib/storage';
   import { savedName, session } from '../lib/session.svelte';
   import { COLOUR_KEY, loadColour } from '../lib/colour';
@@ -39,6 +39,9 @@
   onMount(() => onStoredElsewhere({ [SIGILS_KEY]: () => (sigils = loadSigils()) }));
 
   const left = $derived(sigilsToUnlock(sigils, achievements));
+  /** Achievements still to earn for the next one, when there's none to unlock now. */
+  const toNext = $derived(achievementsToNext(sigils, achievements));
+  const COUNT = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
   /** A locked class picked, waiting to be unlocked. */
   let asking = $state<PlayerClass | null>(null);
   // (One no longer there to unlock, after a change in another tab, isn't asked about.)
@@ -61,18 +64,24 @@
   }
 </script>
 
-<div class="sigils" class:strip>
+<div class="sigils" class:strip class:asking={!!ask}>
   <div class="you">
     <Avatar {name} hue={hue ?? picked} size={64} sigil={shown} />
     <p class="line">
-      {#if ask}
+      {#if ask && strip}
+        Unlock the {className(ask)}'s sigil for good?
+      {:else if ask}
         Unlock the {className(ask)}'s sigil? It stays yours.
       {:else if left}
         {left === 1 ? 'One sigil' : `${left} sigils`} to unlock: pick a class.
-      {:else if sigils.unlocked.length === CLASSES.length}
+      {:else if toNext === null}
         Every class unlocked.
+      {:else if !achievements}
+        Your first achievement unlocks one, of the class you pick.
+      {:else if toNext === 1}
+        Your next achievement unlocks another.
       {:else}
-        Each achievement you earn unlocks one, of the class you pick.
+        {COUNT[toNext] ?? toNext} more achievements unlock another.
       {/if}
     </p>
     <!-- Kept in place while hidden, so the line never moves when it shows. -->
@@ -204,27 +213,29 @@
     align-items: center;
     gap: 1.4rem;
   }
-  /* The avatar beside its line, the step it asks for under the line. */
+  /* The avatar beside its line, the line centred on it. Asked to unlock,
+     the question at the avatar's top and the step it asks for at its foot,
+     in the same height, so the row never changes. */
   .strip .you {
     flex: 0 0 330px;
     display: grid;
     grid-template-columns: auto 1fr;
+    align-items: center;
     column-gap: 1rem;
-    row-gap: 0.25rem;
     min-height: 0;
   }
-  .strip .you > :global(:first-child) {
-    grid-row: span 2;
+  .strip :is(.line, .acts) {
+    grid-area: 1 / 2;
   }
-  /* Two lines kept, whichever it says, so the row never changes height. */
   .strip .line {
-    align-self: end;
-    min-height: 2.7em;
     line-height: 1.35;
     font-size: 0.9rem;
   }
-  .strip .acts {
+  .strip.asking .line {
     align-self: start;
+  }
+  .strip .acts {
+    align-self: end;
   }
   .strip .classes {
     flex: 1;

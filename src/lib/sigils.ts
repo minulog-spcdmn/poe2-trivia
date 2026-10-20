@@ -2,13 +2,14 @@
 // (lib/classSigils.ts), kept in localStorage beside the achievements and
 // never sent anywhere but as the one worn.
 //
-// Each achievement earned (lib/achievements.ts) unlocks one sigil, of the
-// class the player picks, so the first can be their main and every class
-// is as easy to come by as the next, ones not in the game yet included. One
-// unlocked stays unlocked, also when the achievements are erased with the
-// codex: those earned afresh then unlock more only once there are more of
-// them than sigils already unlocked. Like the achievements, it's on the
-// player's own device, so nothing stops them fooling themselves.
+// The first achievement earned (lib/achievements.ts) unlocks a sigil, and
+// then every third one another (SIGIL_EVERY), of the class the player picks,
+// so the first can be their main and every class is as easy to come by as
+// the next, ones not in the game yet included. One unlocked stays unlocked,
+// also when the achievements are erased with the codex: those earned afresh
+// then unlock more only once they're worth more sigils than are unlocked
+// already. Like the achievements, it's on the player's own device, so
+// nothing stops them fooling themselves.
 
 import { achievementById, loadAchievements, type AchievementStore } from './achievements.ts';
 import { CLASSES, isPlayerClass, type PlayerClass } from './classSigils.ts';
@@ -51,8 +52,24 @@ export const serializeSigils = (s: SigilStore) => JSON.stringify({ v: SIGILS_VER
 /** How many achievements in `store` this build knows, each worth a sigil. */
 export const achievementsIn = (store: AchievementStore) => Object.keys(store.earned).filter((id) => achievementById.has(id)).length;
 
+/** Achievements from one sigil to the next, after the first (which the first achievement unlocks). */
+export const SIGIL_EVERY = 3;
+
+/** The achievements it takes for the `n`th sigil (1: the first). */
+export const achievementsForSigil = (n: number) => 1 + (n - 1) * SIGIL_EVERY;
+
+/** How many sigils `achievements` earned are worth, at most every class's. */
+export const sigilsFor = (achievements: number) => (achievements < 1 ? 0 : Math.min(CLASSES.length, 1 + Math.floor((achievements - 1) / SIGIL_EVERY)));
+
 /** How many more sigils can be unlocked with `achievements` earned. */
-export const sigilsToUnlock = (s: SigilStore, achievements: number) => Math.max(0, Math.min(achievements, CLASSES.length) - s.unlocked.length);
+export const sigilsToUnlock = (s: SigilStore, achievements: number) => Math.max(0, sigilsFor(achievements) - s.unlocked.length);
+
+/** How many more achievements until another sigil can be unlocked: 0 when one can now, null once every class is. */
+export function achievementsToNext(s: SigilStore, achievements: number): number | null {
+  if (s.unlocked.length >= CLASSES.length) return null;
+  if (sigilsToUnlock(s, achievements)) return 0;
+  return achievementsForSigil(Math.max(s.unlocked.length, sigilsFor(achievements)) + 1) - achievements;
+}
 
 /** `s` with `c` unlocked and worn; `s` itself when it's unlocked already or there's none to unlock. */
 export function unlock(s: SigilStore, c: PlayerClass, achievements: number): SigilStore {

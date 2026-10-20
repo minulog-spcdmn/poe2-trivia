@@ -6,8 +6,9 @@
 // records and the moment itself, each checked on its own) is gathered and
 // announced together a little after it, so a burst never fills the stack.
 //
-// Each one earned unlocks a class sigil (lib/sigils.ts): while there is one
-// to unlock, a notice a few seconds after them says so, and where.
+// They unlock class sigils (lib/sigils.ts), the first and then every third:
+// while there is one to unlock, a notice a few seconds after them says so,
+// and where.
 
 import { loadAchievements, type Achievement, type Check } from './achievements.ts';
 import { achievementsIn, loadSigils, sigilsToUnlock } from './sigils.ts';

@@ -77,7 +77,7 @@
       <h2 id="feats-sigils">Class sigils</h2>
       <span class="col-label">{unlocked} / {CLASSES.length}</span>
     </header>
-    <p class="hint">Each achievement unlocks a class's sigil, to wear on your avatar behind your initial.</p>
+    <p class="hint">Your first achievement unlocks a class's sigil, and every third after it another, to wear on your avatar behind your initial.</p>
     <SigilPicker achievements={sigilsEarned} bind:unlocked />
   </section>
   {#each groups as g (g.key)}
