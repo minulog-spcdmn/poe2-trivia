@@ -1354,7 +1354,7 @@
       --slot: 92px;
       /* Header 40, a row of rooms (72), the gap and 20 of the next row. */
       --rooms-h: calc(40px + 104px);
-      /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
+      /* Today's unique at this height (DailyUnique's defaults are the 980 tall window's). */
       --daily-stage-h: 401px;
       --daily-circle: 456px;
       --daily-circle-y: 230px;
