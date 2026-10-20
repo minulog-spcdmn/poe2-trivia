@@ -64,7 +64,8 @@
     .kick::before {
       content: '';
       position: absolute;
-      inset: min(0px, (var(--size) - 44px) / 2);
+      /* (44px on screen however small a full room's row draws it: Scoreboard's --board-zoom.) */
+      inset: min(0px, (var(--size) - 44px / var(--board-zoom, 1)) / 2);
       border-radius: 999px;
     }
   }

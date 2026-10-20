@@ -33,7 +33,7 @@
   import Recorder from './components/Recorder.svelte';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
-  import { flat } from './lib/layout';
+  import { flat, fullRoom } from './lib/layout';
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
@@ -396,7 +396,7 @@
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
-    <header data-cursor="header" class:folded in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
+    <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
       <button class="brand" data-cursor="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -448,8 +448,8 @@
             <span>Round {gs.deathmatch.round}</span>
           {:else}
             <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
-            <span class="dot">•</span>
-            <span>First to <b>{gs.settings.targetScore}</b></span>
+            <span class="dot target">•</span>
+            <span class="target">First to <b>{gs.settings.targetScore}</b></span>
           {/if}
         {:else if session.mode === 'local'}
           <span>Hot-seat</span>
@@ -1065,6 +1065,12 @@
     header.folded .meta {
       gap: 0.45rem;
       letter-spacing: 0.12em;
+    }
+    /* A full room on a narrower phone: the round alone, the players its room. */
+    @media (max-width: 759px) {
+      header.full .target {
+        display: none;
+      }
     }
     .brand {
       white-space: nowrap;

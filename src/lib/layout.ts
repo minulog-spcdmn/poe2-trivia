@@ -16,7 +16,7 @@ export const short = new MediaQuery('(min-width: 761px) and (max-height: 820px)'
 /**
  * Phones on their side: wide but too short for the game's stack of header,
  * scoreboard, banner and question. The game takes the phone's slim scoreboard
- * (the timer in it), the art and answers stand side by side at any width, and
+ * (in the header's row), the art and answers stand side by side at any width, and
  * the question is as tall as the screen leaves it, so nothing scrolls (the QA
  * desk's frames check it, src/qa/frame/checks.ts). The components' CSS writes
  * the query out.
@@ -24,7 +24,10 @@ export const short = new MediaQuery('(min-width: 761px) and (max-height: 820px)'
 export const FLAT = '(orientation: landscape) and (max-height: 500px)';
 export const flat = new MediaQuery(FLAT);
 
-/** A phone either way up (`phone` or `flat`): the game's slim scoreboard, the timer in it. */
+/** A full room: more players than the scoreboard's row (and, on a phone on its side, the header's) has room for at full size. */
+export const fullRoom = (players: number) => players > 6;
+
+/** A phone either way up (`phone` or `flat`): the game's slim scoreboard. */
 export const handheld = new MediaQuery(`(max-width: 640px), ${FLAT}`);
 
 const docked = new Set<HTMLElement>();

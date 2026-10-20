@@ -35,7 +35,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
-  import { flat, handheld } from '../lib/layout';
+  import { flat, fullRoom, handheld } from '../lib/layout';
   import { arrival } from '../lib/zoneArrival.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { kickConfirm } from '../lib/kick';
@@ -60,7 +60,7 @@
    * row that scrolls sideways if it must, the one whose turn it is (or you,
    * together) kept in view.
    */
-  const tight = $derived(flat.current && s.players.length > 6);
+  const tight = $derived(flat.current && fullRoom(s.players.length));
   /**
    * A zone's card is up: on a phone on its side its bar covers the header's
    * row and the scoreboard in it, so the streaks' fire (drawn over the page,
@@ -73,6 +73,38 @@
     void s.turn;
     void s.phase;
     boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+  // And smaller, as far as it must (down to 70%) for every entry to fit the
+  // row: it scrolls only past that. Again whenever the row's width or an
+  // entry changes (someone joins or leaves, a score gains a digit, a streak
+  // lights) and once the fonts are in. --board-zoom lets the kick buttons
+  // keep their touch size (KickButton.svelte).
+  $effect(() => {
+    const board = boardEl;
+    if (!tight || !board) return;
+    const fit = () => {
+      board.style.zoom = '';
+      board.style.removeProperty('--board-zoom');
+      const need = board.scrollWidth;
+      const room = board.clientWidth;
+      if (need <= room) return;
+      const zoom = String(Math.max(0.7, room / need));
+      board.style.zoom = zoom;
+      board.style.setProperty('--board-zoom', zoom);
+    };
+    fit();
+    void document.fonts?.ready.then(fit);
+    const ro = new ResizeObserver(fit);
+    ro.observe(board.parentElement!);
+    // (Its entries' own changes, not its style: fitting never sets this off again.)
+    const mo = new MutationObserver(fit);
+    mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      board.style.zoom = '';
+      board.style.removeProperty('--board-zoom');
+    };
   });
   const target = $derived(s.settings.targetScore);
   const race = $derived(s.settings.mode === 'race');
@@ -712,7 +744,7 @@
      background of its own over the content scrolling under it. -->
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
 <div class="strip" data-cursor="board" class:stuck bind:this={strip}>
-  <ol class="board" class:crowded={s.players.length > 6} class:tight bind:this={boardEl}>
+  <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
       {@const wide = !tight && (coop ? p.id === me : active)}

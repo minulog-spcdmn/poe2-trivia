@@ -33,7 +33,7 @@
   import { flameOf, heatOf, streakOf, type Flame } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
-  import { dock, phone, short, sideBySide } from '../lib/layout';
+  import { dock, flat, phone, short, sideBySide } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
@@ -80,11 +80,15 @@
   /**
    * Svelte action: a name that is the question (the picture question's plate)
    * shrinks, down to three quarters of its size, to stay on one line, so the
-   * plate keeps its height; only a name too long even then wraps.
+   * plate keeps its height; only a name too long even then wraps. `on`
+   * false leaves it as it comes (the revealed name, but on a phone on its
+   * side, where the plate has no height to spare).
    */
-  function oneLine(node: HTMLElement) {
+  function oneLine(node: HTMLElement, on = true) {
     const run = () => {
       node.style.fontSize = '';
+      node.style.whiteSpace = '';
+      if (!on) return;
       node.style.whiteSpace = 'nowrap';
       const full = parseFloat(getComputedStyle(node).fontSize);
       // The plate's room inside its padding (the text block itself grows with an unwrapped name).
@@ -113,11 +117,23 @@
     void document.fonts?.ready.then(run);
     const ro = new ResizeObserver(run);
     const head = node.closest('.head');
-    if (head) ro.observe(head);
     // And when the name changes: once its new words are in (before the next paint).
     const mo = new MutationObserver(run);
-    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    // (Watching only while it is on.)
+    const watch = () => {
+      ro.disconnect();
+      mo.disconnect();
+      if (!on) return;
+      if (head) ro.observe(head);
+      mo.observe(node, { characterData: true, childList: true, subtree: true });
+    };
+    watch();
     return {
+      update: (now: boolean) => {
+        on = now;
+        watch();
+        run();
+      },
       destroy: () => {
         ro.disconnect();
         mo.disconnect();
@@ -1263,7 +1279,7 @@
           <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
-              <span class="iname">{item.name}</span>
+              <span class="iname" use:oneLine={flat.current}>{item.name}</span>
               <span class="ibase">{drawn?.base}</span>
               {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
@@ -3186,8 +3202,8 @@
   }
   /* A phone on its side (lib/layout.ts `flat`): the art and answers side by
      side at any width, as tall together as the screen leaves them under the
-     header, the slim scoreboard (the timer is in it), the banner and the task
-     line, with the row under them, so the whole question is in view at once.
+     header (the slim scoreboard in its row), the banner and the task line
+     (the timer at its right end), with the row under them, so the whole question is in view at once.
      (After the 760px and short-window blocks, which it overrides.) */
   @media (orientation: landscape) and (max-height: 500px) {
     .question {
@@ -3201,6 +3217,21 @@
     .task-text {
       font-size: 1.05rem;
       line-height: 1.3;
+    }
+    /* The timer smaller, and lifted toward the banner's row (clear of its
+       line, which ends short of the edge), to keep its distance from the answers. */
+    .task.timed .task-text {
+      padding-inline: 44px;
+    }
+    .clock {
+      translate: 0 calc(-50% - 7px);
+    }
+    .task .clock :global(.timer) {
+      width: 34px;
+      height: 34px;
+    }
+    .task .clock :global(.timer span) {
+      font-size: 0.85rem;
     }
     .stage {
       grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);

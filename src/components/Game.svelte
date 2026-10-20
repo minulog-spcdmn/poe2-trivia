@@ -14,7 +14,7 @@
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
-  import { handheld } from '../lib/layout';
+  import { flat, phone } from '../lib/layout';
   import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
   import { revivedText } from '../lib/difficultyText';
@@ -46,11 +46,11 @@
   const depth = $derived(delveDepth(s));
   const group = $derived(isGroupRun(s));
   // The question's timer: in the scoreboard pinned to the top on phones, in
-  // view while they scroll down to the answers (and at its end on a phone on
-  // its side, where the task line has no height to spare for it), and at the
-  // right end of the question's task line otherwise. Only ever one, so its
+  // view while they scroll down to the answers, and at the right end of the
+  // question's task line otherwise (a phone on its side too, however narrow:
+  // its header row keeps its room for the players). Only ever one, so its
   // ticks never double.
-  const slim = $derived(handheld.current);
+  const slim = $derived(phone.current && !flat.current);
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.

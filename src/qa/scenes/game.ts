@@ -74,13 +74,18 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
       const t = play(v);
       const q = t.s.question;
       if (v.asked === 'longest' && q?.mode === 'name') {
-        // The answer stays where it was dealt, the longest name of all.
-        const at = q.options.indexOf(q.itemId);
+        // The answer stays where it was dealt (the first, if none was), the
+        // longest name of all; what the plate says of the options and the
+        // picture are the new ones' (the item's own art).
+        const at = Math.max(0, q.options.indexOf(q.itemId));
         const longest = longestNamed(q.options.length);
         [longest[0], longest[at]] = [longest[at], longest[0]];
         q.options = longest.map((it) => it.id);
         q.labels = longest.map((it) => it.name);
         q.itemId = q.options[at];
+        q.category = longest[at].category;
+        q.groups = [...new Set(longest.map((it) => it.group))].sort();
+        delete q.variant;
       }
       const at = t.s.phase === 'question' ? t.clock.now + INTO : t.clock.now;
       return { state: t.s, at } satisfies Built;
