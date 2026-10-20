@@ -804,9 +804,17 @@
      (down to 32 px) before anything else, then stack in one column.
      Columns and rooms sit in the middle of the window's height, the footer at
      its bottom. On large windows the whole app is scaled up (lib/stage.ts,
-     App.svelte's shell). */
+     App.svelte's shell).
+     The rooms' list has a frame of its own, as tall whether the list is
+     searching, empty or long: a row of rooms and a peek of the next, and a
+     longer list scrolls inside it. Fixed, not grown into a taller window:
+     the shell sizes the page by its content, under which a growing row
+     always takes its most (and big windows zoom the stage anyway). */
   .home {
     --slot: 108px;
+    /* The rooms' row: their margin, the list's header (48) and its frame, a row
+       of rooms (72) and 37 more, the gap and the next row's top: down to 900. */
+    --rooms-h: calc(44px + 48px + 109px);
     width: 100%;
     max-width: 1440px;
     margin-inline: auto;
@@ -815,7 +823,7 @@
     display: grid;
     grid-template-columns: minmax(0, 452px) minmax(0, 510px);
     /* The free height splits above and below the block; the footer stays last. */
-    grid-template-rows: 1fr auto auto 1fr auto;
+    grid-template-rows: 1fr auto var(--rooms-h) 1fr auto;
     grid-template-areas:
       '. .'
       'intro today'
@@ -841,6 +849,28 @@
     grid-area: rooms;
     margin-top: 44px;
     transition: opacity 0.3s;
+  }
+  @media (min-width: 1081px) {
+    /* Its height is the row's: the list's frame takes what its header leaves and scrolls a long list. */
+    .rooms {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .rooms > :global(section) {
+      flex: 1 1 0;
+    }
+    .rooms :global(.frame) {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      /* Room for the rooms' shadows and hover glow, which the frame would clip at its edges. */
+      margin: -14px -24px 0;
+      padding: 14px 24px 0;
+      scrollbar-width: thin;
+      scrollbar-color: var(--gold-lo) transparent;
+    }
   }
   .foot {
     grid-area: foot;
@@ -1312,10 +1342,12 @@
   }
 
   /* Short windows (laptops): a tighter rhythm, so the first row of open
-     rooms is in view on a 1440 x 725 window and the next one peeks out. */
+     rooms is in view on a 1440 x 725 window, in a frame of its own. */
   @media (max-height: 859px) and (min-width: 1081px) {
     .home {
       --slot: 92px;
+      /* Margin 8, header 40, a row of rooms (72) and its gap: down to 725. */
+      --rooms-h: calc(8px + 40px + 84px);
       /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
       --daily-stage-h: 401px;
       --daily-circle: 456px;

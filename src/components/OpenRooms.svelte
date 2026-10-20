@@ -214,45 +214,55 @@
     {#if enterable}<p class="note">{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/if}
   </header>
 
-  {#if shown.length}
-    <ul>
-      {#each shown as { room: r, door: d } (r.code)}
-        <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
-          {#if r.code === joining}
-            <!-- Joining it: the connection, with its Cancel, where the room was tapped. -->
-            <Connecting />
-          {:else}
-            <div class="info">
-              <span class="host">{r.host}’s room</span>
-              <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
-            </div>
-            {#if d === 'join'}
-              <button class="btn small" {disabled} onclick={() => tap(r, 'join')}>Join</button>
-            {:else if d === 'watch'}
-              <button class="btn small ghost" {disabled} onclick={() => tap(r, 'watch')} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
+  <!-- The list's own frame: the start page gives it a fixed height on a wide window, and a long list scrolls inside it. -->
+  <div class="frame">
+    {#if shown.length}
+      <ul>
+        {#each shown as { room: r, door: d } (r.code)}
+          <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
+            {#if r.code === joining}
+              <!-- Joining it: the connection, with its Cancel, where the room was tapped. -->
+              <Connecting />
             {:else}
-              <!-- Reloaded with the room's code in the address, so the newer version goes straight on into it. -->
-              {@const then = offer({ ...r, v: PROTOCOL_VERSION }) === 'join' ? 'join' : 'watch'}
-              <button class="btn small ghost" {disabled} onclick={() => reloadInto(r.code)} title="This room is on a newer version of the game">Reload to {then}</button>
+              <div class="info">
+                <span class="host">{r.host}’s room</span>
+                <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
+              </div>
+              {#if d === 'join'}
+                <button class="btn small" {disabled} onclick={() => tap(r, 'join')}>Join</button>
+              {:else if d === 'watch'}
+                <button class="btn small ghost" {disabled} onclick={() => tap(r, 'watch')} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
+              {:else}
+                <!-- Reloaded with the room's code in the address, so the newer version goes straight on into it. -->
+                {@const then = offer({ ...r, v: PROTOCOL_VERSION }) === 'join' ? 'join' : 'watch'}
+                <button class="btn small ghost" {disabled} onclick={() => reloadInto(r.code)} title="This room is on a newer version of the game">Reload to {then}</button>
+              {/if}
             {/if}
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {:else if scanned && rooms.length && !failed}
-    <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
-    <p class="empty">No room can be joined from here right now.</p>
-  {:else if scanning || !scanned}
-    <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
-  {:else if failed}
-    <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
-  {:else}
-    <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
-  {/if}
+          </li>
+        {/each}
+      </ul>
+    {:else if scanned && rooms.length && !failed}
+      <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
+      <p class="empty">No room can be joined from here right now.</p>
+    {:else if scanning || !scanned}
+      <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
+    {:else if failed}
+      <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
+    {:else}
+      <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
+    {/if}
+  </div>
 </section>
 
 <style>
+  /* A column, so a height set from outside (Home.svelte, on a wide window) leaves the frame what the header doesn't take. */
+  .rooms {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   header {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 16px;

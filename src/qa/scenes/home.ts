@@ -4,6 +4,7 @@
 
 import type { RoomInfo } from '../../lib/roomInfo.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
+import { PROTOCOL_VERSION } from '../../lib/protocol.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
 import type { Control, Values } from '../bench.ts';
 import type { Built, Scene } from '../scene.ts';
@@ -12,10 +13,10 @@ const ME = { mode: 'none' as const, me: null };
 
 const HOSTS = ['Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
 const CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-/** A made-up open room; `n` makes its code and host differ from the others'. */
+/** A made-up open room on this version (an older host's the list leaves out); `n` makes its code and host differ from the others'. */
 function room(n: number, o: Partial<RoomInfo> = {}): RoomInfo {
   const code = Array.from({ length: 6 }, (_, i) => CODES[(n * 7 + i * 11) % CODES.length]).join('');
-  return { code, host: HOSTS[n % HOSTS.length], players: 1 + (n % 5), maxPlayers: 12, spectators: n % 3 === 0 ? 1 : 0, maxSpectators: 8, mode: (['turns', 'race', 'delve'] as const)[n % 3], difficulty: 'merciless', target: 10, phase: 'lobby', ...o };
+  return { code, host: HOSTS[n % HOSTS.length], players: 1 + (n % 5), maxPlayers: 12, spectators: n % 3 === 0 ? 1 : 0, maxSpectators: 8, mode: (['turns', 'race', 'delve'] as const)[n % 3], difficulty: 'merciless', target: 10, phase: 'lobby', v: PROTOCOL_VERSION, ...o };
 }
 /** `n` open rooms: the first three a lobby, a game under way and a Delve run, then all sorts. */
 function rooms(n: number): RoomInfo[] {
