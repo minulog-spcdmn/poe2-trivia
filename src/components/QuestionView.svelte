@@ -33,7 +33,7 @@
   import { flameOf, heatOf, streakOf, type Flame } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
   import { fxActive, type Handle } from '../lib/fx/core';
-  import { dock, flat, phone, short, sideBySide } from '../lib/layout';
+  import { dock, flat, phone, short, sideBySide, upright } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
@@ -913,133 +913,139 @@
   {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
 {/snippet}
 
+<!-- What the reveal says happened: the sentence beside the verdict, or on a phone upright over the art (the task line). -->
+{#snippet outcome()}
+  {#if reveal}
+    {#if race}
+      {#if winner}
+        <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
+        {@render streakWords()}
+      {:else if reveal.timedOut}
+        Time's up; nobody got it.
+      {:else}
+        Nobody got it.
+      {/if}
+      {#if q.misses.length}
+        <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
+      {/if}
+    {:else if coop}
+      <!-- The team's result: who cleared it (and what a find gave them), then what it cost whom. -->
+      {@const lines = coopRevealText({
+        depth: s.round,
+        winner: reveal.winnerId,
+        timedOut: reveal.timedOut,
+        caveIn: !!reveal.caveIn,
+        hits: reveal.hits ?? [],
+        // Null for one who has left since (their wrong pick still struck): nothing is said of them.
+        left: (id) => (s.players.some((p) => p.id === id) ? livesOf(s, id) : null),
+        nameOf,
+        me,
+        gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
+        buried: reveal.buried,
+        inHand: reveal.dug ? (digOf(s)?.haul.length ?? 1) : undefined,
+        banked: reveal.banked,
+      })}
+      {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
+      {#if gainLine}
+        <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>
+      {:else if hits.some((h) => h.lives > 0)}
+        <span class="lost-vial" class:last={hits.some((h) => h.lives > 0 && livesOf(s, h.playerId) <= 1)} aria-hidden="true"
+          ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+            ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+          ></span
+        >
+      {:else if hits.some((h) => h.wards > 0)}
+        <span class="lost-ward" aria-hidden="true"
+          ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+        >
+      {/if}
+      <!-- Who cleared it, and what a find gave, in one sentence. -->
+      {lines[0]}
+      {@render streakWords()}
+      {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
+    {:else if s.delve}
+      {@const you = delveYou}
+      {@const who = you ? 'You' : active.name}
+      {@const whom = you ? 'you' : active.name}
+      {@const left = livesOf(s, active.id)}
+      {#if reveal.correct}
+        {#if gainLine}
+          <!-- What the find earned, beside its engraving. -->
+          <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>{gainLine.text}
+        {:else}
+          {who} {you ? 'delve' : 'delves'} on.
+        {/if}
+        {@render streakWords()}
+      {:else if reveal.caveIn && reveal.lost && !fallsNow}
+        <!-- An Azurite Vein caved in for two losses: the wards that broke, and the lives that went. -->
+        {#if reveal.lost.wards}
+          <span class="lost-ward" aria-hidden="true"
+            ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+          >
+        {/if}
+        {#if reveal.lost.lives}
+          <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
+            ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+              ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+            ></span
+          >
+        {/if}
+        {#if reveal.timedOut}The darkness took {whom}.{/if}
+        The vein caves in{you ? '' : ` on ${active.name}`}.
+        {#if reveal.lost.wards >= 2}
+          <span class="held">{wardText(you ? 'your' : `${active.name}'s`, 2)}</span>
+        {:else if reveal.lost.wards === 1}
+          {who} {you ? 'lose' : 'loses'} a ward and a life.
+        {:else}
+          {who} {you ? 'lose' : 'loses'} two lives.
+        {/if}
+        {#if reveal.buried}{buriedText(reveal.buried, you ? 'you' : active.name)}{/if}
+      {:else if reveal.warded}
+        <!-- The ward that took the loss: a crystal splitting along its crack. -->
+        <span class="lost-ward" aria-hidden="true"
+          ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
+        >
+        {#if reveal.timedOut}The darkness took {whom}.{/if}
+        <span class="held">{wardText(you ? 'your' : `${active.name}'s`)}</span>
+      {:else}
+        <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
+        <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
+          ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
+            ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
+          ></span
+        >
+        {#if fallsNow && reveal.timedOut}
+          The darkness took {whom} for good.
+        {:else if fallsNow}
+          {who} {you ? 'perish' : 'perishes'}.
+        {:else if reveal.timedOut}
+          The darkness took {whom}.
+        {:else}
+          {who} {you ? 'lose' : 'loses'} a life.
+        {/if}
+      {/if}
+      <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
+      {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
+    {:else if reveal.correct}
+      <b class="good">+1</b> for {active.name}!
+      {@render streakWords()}
+    {:else if reveal.timedOut}
+      {active.name} ran out of time.
+    {:else}
+      No point for {active.name}{fellFor ? ';' : '.'}
+    {/if}
+    {#if fellFor}{fellFor} isn't a real item.{/if}
+  {/if}
+{/snippet}
+
 {#snippet footer()}
   {#if reveal}
     <!-- The verdict lands at once (its own entrance, and the glint the reveal
          aims at it); the sentence and Next follow. -->
     <div class="result" data-cursor="result">
       {@render verdictBadge()}
-      <p data-cursor="outcome" in:fly={{ y: 16, duration: 400, delay: 250 }}>
-        {#if race}
-          {#if winner}
-            <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
-            {@render streakWords()}
-          {:else if reveal.timedOut}
-            Time's up; nobody got it.
-          {:else}
-            Nobody got it.
-          {/if}
-          {#if q.misses.length}
-            <span class="minus" title={losers.join(', ')}>−1 {losersShort}</span>
-          {/if}
-        {:else if coop}
-          <!-- The team's result: who cleared it (and what a find gave them), then what it cost whom. -->
-          {@const lines = coopRevealText({
-            depth: s.round,
-            winner: reveal.winnerId,
-            timedOut: reveal.timedOut,
-            caveIn: !!reveal.caveIn,
-            hits: reveal.hits ?? [],
-            // Null for one who has left since (their wrong pick still struck): nothing is said of them.
-            left: (id) => (s.players.some((p) => p.id === id) ? livesOf(s, id) : null),
-            nameOf,
-            me,
-            gain: reveal.correct && reveal.gained && gainerId ? { kind: reveal.gained, by: gainerId } : undefined,
-            buried: reveal.buried,
-            inHand: reveal.dug ? (digOf(s)?.haul.length ?? 1) : undefined,
-            banked: reveal.banked,
-          })}
-          {@const hits = (reveal.hits ?? []).filter((h) => s.players.some((p) => p.id === h.playerId))}
-          {#if gainLine}
-            <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>
-          {:else if hits.some((h) => h.lives > 0)}
-            <span class="lost-vial" class:last={hits.some((h) => h.lives > 0 && livesOf(s, h.playerId) <= 1)} aria-hidden="true"
-              ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
-                ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
-              ></span
-            >
-          {:else if hits.some((h) => h.wards > 0)}
-            <span class="lost-ward" aria-hidden="true"
-              ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
-            >
-          {/if}
-          <!-- Who cleared it, and what a find gave, in one sentence. -->
-          {lines[0]}
-          {@render streakWords()}
-          {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
-        {:else if s.delve}
-          {@const you = delveYou}
-          {@const who = you ? 'You' : active.name}
-          {@const whom = you ? 'you' : active.name}
-          {@const left = livesOf(s, active.id)}
-          {#if reveal.correct}
-            {#if gainLine}
-              <!-- What the find earned, beside its engraving. -->
-              <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>{gainLine.text}
-            {:else}
-              {who} {you ? 'delve' : 'delves'} on.
-            {/if}
-            {@render streakWords()}
-          {:else if reveal.caveIn && reveal.lost && !fallsNow}
-            <!-- An Azurite Vein caved in for two losses: the wards that broke, and the lives that went. -->
-            {#if reveal.lost.wards}
-              <span class="lost-ward" aria-hidden="true"
-                ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
-              >
-            {/if}
-            {#if reveal.lost.lives}
-              <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
-                ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
-                  ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
-                ></span
-              >
-            {/if}
-            {#if reveal.timedOut}The darkness took {whom}.{/if}
-            The vein caves in{you ? '' : ` on ${active.name}`}.
-            {#if reveal.lost.wards >= 2}
-              <span class="held">{wardText(you ? 'your' : `${active.name}'s`, 2)}</span>
-            {:else if reveal.lost.wards === 1}
-              {who} {you ? 'lose' : 'loses'} a ward and a life.
-            {:else}
-              {who} {you ? 'lose' : 'loses'} two lives.
-            {/if}
-            {#if reveal.buried}{buriedText(reveal.buried, you ? 'you' : active.name)}{/if}
-          {:else if reveal.warded}
-            <!-- The ward that took the loss: a crystal splitting along its crack. -->
-            <span class="lost-ward" aria-hidden="true"
-              ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
-            >
-            {#if reveal.timedOut}The darkness took {whom}.{/if}
-            <span class="held">{wardText(you ? 'your' : `${active.name}'s`)}</span>
-          {:else}
-            <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
-            <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
-              ><span class="glass"><span class="essence"></span></span><svg viewBox="0 0 24 10"
-                ><path class="rim" d="M0.6 0.6H18.6L23.3 5 18.6 9.4H0.6Z" /><path class="hair" d="M2.2 2H17.9L21.4 5 17.9 8H2.2Z" /></svg
-              ></span
-            >
-            {#if fallsNow && reveal.timedOut}
-              The darkness took {whom} for good.
-            {:else if fallsNow}
-              {who} {you ? 'perish' : 'perishes'}.
-            {:else if reveal.timedOut}
-              The darkness took {whom}.
-            {:else}
-              {who} {you ? 'lose' : 'loses'} a life.
-            {/if}
-          {/if}
-          <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
-          {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
-        {:else if reveal.correct}
-          <b class="good">+1</b> for {active.name}!
-          {@render streakWords()}
-        {:else if reveal.timedOut}
-          {active.name} ran out of time.
-        {:else}
-          No point for {active.name}{fellFor ? ';' : '.'}
-        {/if}
-        {#if fellFor}{fellFor} isn't a real item.{/if}
-      </p>
+      <!-- (A phone upright says it where the task was, over the art, and this one stays empty and unnamed: one 'outcome' anchor.) -->
+      <p data-cursor={upright.current ? undefined : 'outcome'} in:fly={{ y: 16, duration: 400, delay: 250 }}>{#if !upright.current}{@render outcome()}{/if}</p>
       <button
         in:fly={{ y: 16, duration: 400, delay: 250 }}
         class="btn"
@@ -1139,20 +1145,29 @@
        for a category (ChooseCategory's prompt): what to do now, and at its
        right end the timer, read with the question at a glance before the
        eyes go down to the answers. The category is the tooltip's base line;
-       at the reveal the verdict is in the row under the answers. -->
+       at the reveal the verdict is in the row under the answers. On a phone
+       upright, what happened takes this line's place at the reveal ("Name
+       this item" is done with by then) rather than standing beside the
+       verdict, where a long sentence (a team's, say) would make the row
+       under the answers taller and push Next up: that row keeps the verdict
+       and Next alone, and the art gives up what the sentence needs. -->
   <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
-    <p class="task-text">
-      <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
-      {#if !race && !coop && !session.myTurn}
-        {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
-      {:else if coop && !canAnswer}
-        <span class="muted">{session.spectating ? 'The team' : 'Your team'} {q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
-      {:else if race && session.spectating}
-        <span class="muted">The racers {q.mode === 'art' ? 'pick the art that matches the name' : 'name this item'}</span>
-      {:else}
-        {q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}
-      {/if}
-    </p>
+    {#if reveal && upright.current}
+      <p class="task-text outcome" data-cursor="outcome" in:fly={{ y: 10, duration: 400, delay: 250 }}>{@render outcome()}</p>
+    {:else}
+      <p class="task-text">
+        <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
+        {#if !race && !coop && !session.myTurn}
+          {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
+        {:else if coop && !canAnswer}
+          <span class="muted">{session.spectating ? 'The team' : 'Your team'} {q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
+        {:else if race && session.spectating}
+          <span class="muted">The racers {q.mode === 'art' ? 'pick the art that matches the name' : 'name this item'}</span>
+        {:else}
+          {q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}
+        {/if}
+      </p>
+    {/if}
     <!-- Mounted once for the whole question, so a branch changing never
          restarts it; at the reveal it stays, stopped and dimmed, saying how
          much time was left. -->
@@ -1279,7 +1294,7 @@
           <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
-              <span class="iname" use:oneLine={flat.current}>{item.name}</span>
+              <span class="iname" use:oneLine={flat.current || upright.current}>{item.name}</span>
               <span class="ibase">{drawn?.base}</span>
               {#if mirrored(0)}{@render mirrorLine()}{/if}
             </div>
@@ -1377,9 +1392,11 @@
   {/if}
 
   <div class="footer" data-cursor="footer">
-    {#if (reveal || blastSlot) && phone.current}
-      <!-- Phones: the result and Next button stay at the bottom of the screen, in
-           reach of a thumb, however far down the answers have been scrolled; so
+    {#if (reveal || blastSlot) && phone.current && !upright.current}
+      <!-- Narrow screens that scroll (not a phone upright, where the question
+           fits the screen and this row stands under the answers, in reach of
+           a thumb all the same): the result and Next button stay at the
+           bottom of the screen, however far down the answers have been scrolled; so
            does Detonate (and its fuse) from when dynamite is at hand, where
            Next will stand; it keeps its place to the question's end, as the
            row does on wider screens (struck out, or the stick used, the
@@ -2600,7 +2617,8 @@
     font-size: 1.15rem;
   }
   /* The +1 (b.good: the verdict badge beside it has a .good of its own). */
-  .result b.good {
+  .result b.good,
+  .outcome b.good {
     font-family: var(--font-display);
     color: #a9cf8f;
     font-size: 1.4rem;
@@ -3362,6 +3380,261 @@
   @media (orientation: landscape) and (max-height: 500px) and (min-width: 760px) {
     .stage.crowded {
       grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
+    }
+  }
+  /* A phone upright (lib/layout.ts `upright`): the question fills the room
+     Game.svelte leaves it under the banner, and no more. The answers keep a
+     thumb's height and the row under them (the result and Next, in the flow:
+     no bar docked over the page) keeps its own; the item's art, or the
+     pictures, take what's left and give way first. Names go two to a row
+     unless the screen has the height for one column (below), the longest in
+     two lines. (After the 640px and 760px blocks, which it overrides.) */
+  @media (orientation: portrait) and (max-width: 640px) {
+    .question {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .task {
+      margin-bottom: 0.45rem;
+    }
+    .task-text {
+      font-size: 1.1rem;
+      line-height: 1.3;
+    }
+    /* The reveal's sentence in the task's place, the size it has beside the verdict. */
+    .task-text.outcome {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+    .stage {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .tooltip {
+      flex: 1 1 0;
+    }
+    .art {
+      flex: 1 1 0;
+      min-height: 96px;
+    }
+    .options {
+      flex: none;
+      grid-auto-rows: auto;
+    }
+    .options,
+    .options.compact,
+    .options.dense,
+    .options.snug {
+      gap: 0.4rem;
+    }
+    .options:has(> :nth-child(4)) {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .option,
+    .compact .option,
+    .dense .option,
+    .snug .option,
+    .snug.ten .option {
+      min-height: 46px;
+      gap: 0.45rem;
+      padding: 0.3rem 1.5rem 0.3rem 0.5rem;
+    }
+    .text,
+    .snug .text,
+    .snug.ten .text {
+      font-size: 0.98rem;
+      line-height: 1.15;
+      letter-spacing: 0.01em;
+      overflow-wrap: anywhere;
+    }
+    /* The number's seal, smaller, clear of the row's border above and below. */
+    .option .key,
+    .snug .key {
+      width: 22px;
+      height: 22px;
+      padding-top: 1px;
+      font-size: 0.68rem;
+    }
+    .option .mark,
+    .snug .option .mark {
+      right: 0.55rem;
+      font-size: 1.1rem;
+    }
+    .cue,
+    .snug .cue {
+      right: 0.65rem;
+    }
+    /* Who picked it (a race, together): their seals hang on the row's top
+       edge at its right end, so the name keeps the row's width. */
+    .option .who-picked {
+      position: absolute;
+      top: -7px;
+      right: 0.35rem;
+      margin: 0;
+    }
+    /* Seven or more: the names a little smaller, so the longest take two lines at most. */
+    .compact .text,
+    .snug.ten .text {
+      font-size: 0.92rem;
+      line-height: 1.12;
+    }
+    /* Ten: two columns of five, a little slimmer; the art gives way further. */
+    .stage.ten .art {
+      min-height: 56px;
+    }
+    /* At the reveal, a long sentence in the task's place (a big team's losses
+       deep down) takes what it needs of the art, all of it if it must: the
+       name plate over it says what the item was. */
+    .question:has(.task-text.outcome) .art {
+      min-height: 0;
+    }
+    .options.ten,
+    .options.snug.ten {
+      gap: 0.3rem 0.4rem;
+    }
+    .options.ten .option,
+    .snug.ten .option {
+      min-height: 44px;
+    }
+    .options.ten .option .key {
+      width: 20px;
+      height: 20px;
+      font-size: 0.64rem;
+    }
+    /* The pictures in two rows, as tall as the room under the plate: a
+       picture is more often tall than wide, so more across rather than more
+       down (two, three, four or five to a row). */
+    .tiles {
+      flex: 1 1 0;
+      min-height: 150px;
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+    }
+    .tiles,
+    .tiles.snug {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .tiles.six {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .tiles.many:not(.six):not(.ten) {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .tiles.ten,
+    .tiles.snug.ten {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .tile,
+    .tiles.many .tile,
+    .tiles.many.six .tile,
+    .tiles.many.six.armed .tile,
+    .tiles.many.snug .tile,
+    .tiles.many.snug.armed .tile,
+    .tiles.many.snug.ten .tile,
+    .tiles.many.snug.ten.armed .tile {
+      height: auto;
+      min-height: 0;
+      padding: 1.5rem 0.3rem 0.35rem;
+    }
+    .tiles .tile .key,
+    .tiles.snug .tile .key {
+      top: 4px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+      padding-top: 1px;
+      font-size: 0.68rem;
+    }
+    .tiles .tile .mark,
+    .tiles.snug .tile .mark {
+      top: 3px;
+      right: 6px;
+      font-size: 1.05rem;
+    }
+    .caption {
+      padding: 1rem 0.2rem 0.35rem;
+      font-size: 0.72rem;
+      overflow-wrap: anywhere;
+    }
+    /* The row under the answers: as tall as a result and Next from the
+       start, so nothing moves when they come. The verdict is its disc alone
+       (its word read out), the sentence beside it says the rest; a streak
+       keeps its chip, the sentence under it and Next. */
+    .footer {
+      flex: none;
+      min-height: 48px;
+      margin-top: 0.6rem;
+    }
+    .result p {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+    .footer .verdict {
+      padding: 0;
+      border: 0;
+      background: none;
+      font-size: 0.95rem;
+    }
+    .footer .verdict::after {
+      display: none;
+    }
+    .footer .verdict .word:not(.count) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .footer .result:has(.count) {
+      flex-wrap: wrap;
+      row-gap: 0.4rem;
+    }
+    .footer .result:has(.count) p {
+      flex: 1 1 100%;
+      order: 3;
+    }
+    .footer .verdict:has(.count) {
+      padding: 0.4em calc(1.1em - 0.16em) 0.4em 0.4em;
+      border: 1px solid var(--gold-lo);
+      background: rgba(0, 0, 0, 0.4);
+      font-size: 0.8rem;
+    }
+    /* Out of this question (struck out, together), the row keeps its place but not Detonate's. */
+    .footer .btn.blast.out {
+      display: none;
+    }
+  }
+  /* A browser's bars up (at most 700px): the lines round the answers a little closer. */
+  @media (orientation: portrait) and (max-width: 640px) and (max-height: 700px) {
+    .task {
+      margin-bottom: 0.3rem;
+    }
+    .stage {
+      gap: 0.45rem;
+    }
+    .footer {
+      margin-top: 0.45rem;
+    }
+    .spectate,
+    .blasting .hint .spectate {
+      font-size: 0.92rem;
+      line-height: 1.25;
+    }
+  }
+  /* Tall enough for one column of names (four or five from 740px, six from
+     840px): each on one line, the art still as large as two columns give it
+     on a shorter screen. */
+  @media (orientation: portrait) and (max-width: 640px) and (min-height: 740px) {
+    .options:not(:has(> :nth-child(6))) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (orientation: portrait) and (max-width: 640px) and (min-height: 840px) {
+    .options:not(:has(> :nth-child(7))) {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>
