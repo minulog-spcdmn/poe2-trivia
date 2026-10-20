@@ -116,3 +116,15 @@ test("a guest's sigil action is only ever its own, and one this build doesn't kn
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'sigil', sigil: 'monk', playerId: 'someone' } }), { t: 'action', action: { type: 'sigil', sigil: 'monk' } });
   assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'sigil', sigil: 'duelist' } }), { t: 'action', action: { type: 'sigil' } });
 });
+
+test("the colour a guest asks for is only ever its own, and ruby or one out of range is none", async () => {
+  const { parseClientMsg } = await import('../src/lib/protocol.ts');
+  const hello = { t: 'hello', secret: 'a'.repeat(24), name: 'Wren', v: 1 };
+  assert.equal((parseClientMsg({ ...hello, colour: 3 }) as { colour?: number }).colour, 3);
+  for (const colour of [11, -1, 2.5, '3']) {
+    const m = parseClientMsg({ ...hello, colour });
+    assert.ok(m && !('colour' in m), String(colour));
+  }
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'colour', colour: 4, playerId: 'someone' } }), { t: 'action', action: { type: 'colour', colour: 4 } });
+  assert.deepEqual(parseClientMsg({ t: 'action', action: { type: 'colour', colour: 11 } }), { t: 'action', action: { type: 'colour' } });
+});

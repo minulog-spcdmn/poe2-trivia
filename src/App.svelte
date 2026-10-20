@@ -10,7 +10,9 @@
   import { fade, fly } from 'svelte/transition';
   import { session } from './lib/session.svelte';
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
-  import { fxAvailable, fxUserOn, onFxChange, setFxOn, shakeTarget } from './lib/fx/core';
+  import { actionOf, keybinds, readLayout, typing } from './lib/keybinds.svelte';
+  import { keyName } from './lib/keys';
+  import { fxUserOn, onFxChange, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { openPrivacy } from './lib/legalSheet.svelte';
   import LegalSheet from './components/LegalSheet.svelte';
@@ -24,6 +26,7 @@
   import Home from './components/Home.svelte';
   import Lobby from './components/Lobby.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
+  import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenIdle } from './lib/idle';
   import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
@@ -43,9 +46,6 @@
 
   // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
   let recording = $state(wantsRecording());
-  let muted = $state(isMuted());
-  let volume = $state(getVolume());
-  const silent = $derived(muted || volume === 0);
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
   // With a seat in an online room, lobby included, this device's own pointer takes its
@@ -56,7 +56,6 @@
   $effect(() => {
     document.documentElement.toggleAttribute('data-still', !fxOn);
   });
-  let fxCan = $state(fxAvailable());
   let headerHeight = $state(0);
   let shell: HTMLElement;
 
@@ -90,11 +89,9 @@
     // overlays sit after it, and the screens' go to <body> with use:portal.
     const undo = shakeTarget(shell, 1);
     const unwatch = import.meta.env.DEV ? warnFixedInShell(shell) : () => {};
-    const off = onFxChange((on) => {
-      fxOn = on;
-      fxCan = fxAvailable();
-    });
-    fxCan = fxAvailable();
+    const off = onFxChange((on) => (fxOn = on));
+    // The keyboard's own names for its keys, for the answers' seals (lib/keys.ts keyName).
+    readLayout();
     return () => {
       undo();
       unwatch();
@@ -102,17 +99,17 @@
     };
   });
 
-  function toggleFx() {
-    setFxOn(!fxOn);
-  }
-
   const gs = $derived(session.state);
   // The codex opens from the start page only: in a room it would be a cheat sheet.
+  // The settings are a page there too; in a room, the header's gear opens
+  // them over the game instead, which runs on beneath (settingsOver).
   const codexAllowed = $derived(!session.mode || !gs);
   const screen = $derived(
     codexRoute.open && codexAllowed
       ? 'codex'
-      : !session.mode || !gs
+      : settingsRoute.open && codexAllowed
+        ? 'settings'
+        : !session.mode || !gs
         ? 'home'
         : gs.phase === 'lobby'
           ? 'lobby'
@@ -124,7 +121,20 @@
   $effect(() => {
     if (codexRoute.open && !codexAllowed) closeCodex();
   });
+  const settingsOver = $derived(settingsRoute.open && !codexAllowed);
+  // The room ended (left, closed, kicked) with the settings open over it: they
+  // go with it, to the start page, not on as the settings page. (Dropped, not
+  // gone back from: the entry before is the room's address.)
+  let wasInRoom = untrack(() => !codexAllowed);
+  $effect(() => {
+    const inRoom = !codexAllowed;
+    if (wasInRoom && !inRoom) untrack(() => settingsRoute.drop());
+    wasInRoom = inRoom;
+  });
   const codex = $derived(screen === 'codex');
+  /** A page over the start page (the codex, the settings), which the header closes. */
+  const page = $derived(screen === 'codex' || screen === 'settings');
+  const closePage = () => (codex ? closeCodex() : closeSettings());
 
   // Desktop players not yet fullscreen get a tip to go fullscreen, a few
   // seconds into any screen but a question's (see lib/fullscreenTip.ts).
@@ -303,7 +313,7 @@
   let gamePagesLost = $state(false);
   let gamePages: Promise<unknown> | null = null;
   let gamePagesFailed = 0;
-  const inRoom = () => screen !== 'home' && screen !== 'codex';
+  const inRoom = () => screen !== 'home' && screen !== 'codex' && screen !== 'settings';
   const loadGamePages = () =>
     (gamePages ??= Promise.all([
       import('./components/Game.svelte').then((m) => (Game = m.default)),
@@ -329,20 +339,51 @@
     window.scrollTo({ top: 0 });
   });
 
-  function toggleMute() {
-    if (silent) {
-      // Unmuting with the slider all the way down would still be silent.
-      if (volume === 0) setVolume((volume = 0.5));
-      setMuted((muted = false));
-      sfx('click');
-    } else {
-      setMuted((muted = true));
+  /** The player's mute and settings keys (lib/keys.ts), anywhere but in a field. */
+  function anywhereKeys(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || typing(e)) return;
+    const action = actionOf(e);
+    // Open, the settings close on their key or Escape (whatever else Escape
+    // is bound to), if nothing in them had it.
+    if (settingsRoute.open && (action === 'settings' || e.key === 'Escape')) {
+      if (!e.defaultPrevented) {
+        e.preventDefault();
+        closeSettings();
+      }
+      return;
     }
+    if (action === 'mute') {
+      e.preventDefault();
+      toggleMute();
+      return;
+    }
+    if (settingsRoute.open) return;
+    if (action !== 'settings' || codexRoute.open) return;
+    // Escape closes whatever is open first: a dialog or an item's window now,
+    // or (heard once every handler has had the key) a row of the start page
+    // or an armed kick, whose handlers take it.
+    if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+    setTimeout(() => {
+      if (!e.defaultPrevented && !settingsRoute.open) openSettings();
+    });
   }
 
-  function slide(e: Event) {
-    setVolume((volume = (e.currentTarget as HTMLInputElement).valueAsNumber));
-    if (muted && volume > 0) setMuted((muted = false));
+  let soundToast: number | null = null;
+  /** The last press on the settings' backdrop began there, beside the sheet. */
+  let pressedBeside = false;
+  /** The mute key: the sound off, or back on (at half, were it all the way down), said in a notice since nothing else on screen shows it. */
+  function toggleMute() {
+    const off = !(isMuted() || getVolume() === 0);
+    if (off) setMuted(true);
+    else {
+      if (getVolume() === 0) setVolume(0.5);
+      setMuted(false);
+      sfx('click');
+    }
+    const key = keybinds.map.mute[0];
+    // One notice for the sound: the last one's taken down for the new.
+    if (soundToast !== null) toasts.dismiss(soundToast);
+    soundToast = toasts.show(off ? `Press ${key ? keyName(key, keybinds.layout) : 'the mute key'} to turn it back on.` : 'The sound is back on.', 'info', { title: off ? 'Sound off' : 'Sound on' });
   }
 
   function leave() {
@@ -350,14 +391,12 @@
     session.leave();
   }
 
-  // A host with nobody else in the room (connected players or spectators)
-  // closes it for no one, so there's nothing to confirm in the lobby.
-  const alone = $derived(
-    session.mode === 'host' &&
-      !!gs &&
-      !gs.players.some((p) => p.id !== session.myPlayerId && p.connected) &&
-      !gs.spectators?.length,
-  );
+  /** A host's: whoever else is in the room (connected players, then spectators). */
+  const company = $derived(session.mode === 'host' && gs ? [...gs.players.filter((p) => p.id !== session.myPlayerId && p.connected), ...(gs.spectators ?? [])] : null);
+  // A host with nobody else in the room closes it for no one, so there's nothing to confirm in the lobby.
+  const alone = $derived(!!company && !company.length);
+  /** A host with someone in the room on another device, whom leaving would turn out (those at its own screen leave with it). */
+  const othersHere = $derived(!!company?.some((o) => !('local' in o && o.local)));
 
   function askLeave() {
     if (alone && screen === 'lobby') leave();
@@ -419,14 +458,14 @@
 <!-- Delve: the light shrinking at the screen's edges as a question's clock runs down. -->
 <Darkness active={!!gs?.delve && screen === 'game'} />
 
-<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} onkeydown={anywhereKeys} />
 
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
     <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
-      <button class="brand" data-cursor="brand" onclick={() => (codex ? closeCodex() : askLeave())} title={codex ? 'Back to the start' : 'Leave game'}>
+      <button class="brand" data-cursor="brand" onclick={() => (page ? closePage() : askLeave())} title={page ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
             <svg class={cls} viewBox="20 0 400 391"><path d="M224 390Q255 331 301.0 283.5Q347 236 377 218L407 200L220 -1Q164 31 116.5 82.5Q69 134 50 169L31 204Z" fill="currentColor" /></svg>
@@ -480,63 +519,27 @@
             <span class="dot target">•</span>
             <span class="target">First to <b>{gs.settings.targetScore}</b></span>
           {/if}
-        {:else if session.mode === 'local'}
-          <span>Hot-seat</span>
+        {:else if session.mode === 'local' || session.hereOnly}
+          <span>On this device</span>
         {:else if session.code && screen !== 'lobby'}
           <!-- The lobby shows the code in big letters. -->
           <span>Room <b class:code={!session.hideCode}>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
       </div>
       <div class="tools">
-        <div class="volume">
-          <button class="icon-btn" data-cursor="mute" data-sfx="none" onclick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label="Toggle sound">
-            {#if silent}
-              <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
-            {:else}
-              <svg viewBox="0 0 24 24"
-                ><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7" />{#if volume > 0.5}<path
-                    d="M19 6a8.5 8.5 0 0 1 0 12"
-                  />{/if}</svg
-              >
-            {/if}
-          </button>
-          <!-- Desktop only: shows while the pointer is over the button. Phones keep the plain mute toggle. -->
-          <div class="volume-pop">
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={muted ? 0 : volume}
-              oninput={slide}
-              onchange={() => sfx('click')}
-              aria-label="Volume"
-              style:--level={muted ? 0 : volume}
-            />
-          </div>
-        </div>
-        {#if fxCan}
-          <button
-            class="icon-btn"
-            data-cursor="fx"
-            class:off={!fxOn}
-            onclick={toggleFx}
-            title={fxOn ? 'Turn visual effects off (saves power)' : 'Turn visual effects on'}
-            aria-label="Toggle visual effects"
-            aria-pressed={fxOn}
-          >
-            <svg viewBox="0 0 24 24"
-              ><path d="M10.5 3.25c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6z" /><path
-                d="M17 15.75c.3 1.6.9 2.2 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.3 2.2-.9 2.5-2.5z"
-              />{#if !fxOn}<path d="M4 20 20 4" />{/if}</svg
-            >
-          </button>
-        {/if}
-        {#if codex}
-          <button class="icon-btn" onclick={closeCodex} title="Close the codex" aria-label="Close the codex">
+        {#if page}
+          <button class="icon-btn" onclick={closePage} title={codex ? 'Close the codex' : 'Close the settings'} aria-label={codex ? 'Close the codex' : 'Close the settings'}>
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         {:else}
+          <!-- The sound, the effects and the keys, over the game (settingsOver). -->
+          <button class="icon-btn" data-cursor="gear" onclick={openSettings} title="Settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24"
+              ><circle cx="12" cy="12" r="3" /><path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+              /></svg
+            >
+          </button>
           <button class="icon-btn" data-cursor="leave" onclick={askLeave} title="Leave" aria-label="Leave game">
             <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" /></svg>
           </button>
@@ -570,6 +573,11 @@
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
+          {/await}
+        {:else if screen === 'settings'}
+          <!-- Loaded when first opened, as the codex is. -->
+          {#await import('./components/Settings.svelte') then { default: Settings }}
+            <Settings />
           {/await}
         {:else if GameOver}
           <GameOver />
@@ -616,6 +624,32 @@
 
 <FxLayer />
 
+<!-- In a room: the settings over the game, which runs on beneath (the page's keys wait while a dialog is open). -->
+{#if settingsOver}
+  <!-- Closed by a press that both begins and ends beside the sheet: not a slider's drag let go out there. -->
+  <div
+    class="modal-backdrop settings-over"
+    use:dialogBackdrop
+    transition:fade={{ duration: 150 }}
+    onpointerdown={(e) => (pressedBeside = e.target === e.currentTarget)}
+    onclick={(e) => pressedBeside && e.target === e.currentTarget && closeSettings()}
+    role="presentation"
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="sheet panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Settings" tabindex="-1">
+      <div class="sheet-head">
+        <h3>Settings</h3>
+        <button class="icon-btn" onclick={closeSettings} title="Close the settings" aria-label="Close the settings">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      {#await import('./components/Settings.svelte') then { default: Settings }}
+        <Settings over />
+      {/await}
+    </div>
+  </div>
+{/if}
+
 {#if confirmLeave}
   <div class="modal-backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
     onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
@@ -639,7 +673,7 @@
     >
       <h3>Leave the game?</h3>
       <p class="muted">
-        {#if session.mode === 'host' && !alone}
+        {#if othersHere}
           You are the host. Leaving closes the room for everyone.
         {:else if session.mode === 'local' || session.mode === 'host'}
           The current game will be lost.
@@ -843,96 +877,6 @@
   .icon-btn:active {
     transform: scale(0.94);
   }
-  .volume {
-    position: relative;
-  }
-  .volume-pop {
-    display: none;
-  }
-  @media (hover: hover) and (pointer: fine) {
-    .volume-pop {
-      display: block;
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      z-index: 20;
-      /* The padding bridges the gap to the button, so the pointer can travel down without it closing. */
-      padding-top: 0.4rem;
-      translate: -50% -4px;
-      opacity: 0;
-      visibility: hidden;
-      transition:
-        opacity 0.2s,
-        translate 0.2s var(--ease-out),
-        visibility 0s 0.2s;
-    }
-    .volume:hover .volume-pop,
-    .volume:focus-within .volume-pop {
-      opacity: 1;
-      visibility: visible;
-      translate: -50% 0;
-      transition:
-        opacity 0.2s,
-        translate 0.2s var(--ease-out);
-    }
-  }
-  .volume-pop input {
-    --thumb: 12px;
-    display: block;
-    writing-mode: vertical-lr;
-    direction: rtl;
-    width: 38px;
-    height: 120px;
-    margin: 0;
-    padding: 0.8rem 0;
-    appearance: none;
-    background: rgba(10, 9, 8, 0.9);
-    backdrop-filter: blur(4px);
-    border: 1px solid var(--gold-lo);
-    border-radius: 19px;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 220, 150, 0.08),
-      0 0 16px rgba(201, 164, 92, 0.2);
-    cursor: pointer;
-  }
-  .volume-pop input::-webkit-slider-runnable-track {
-    width: 4px;
-    border-radius: 2px;
-    /* Gold up to the thumb's middle, which runs from half a thumb in at either end. */
-    --fill: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--level, 0));
-    background: linear-gradient(0deg, var(--gold) var(--fill), var(--line) var(--fill));
-  }
-  .volume-pop input::-moz-range-track {
-    width: 4px;
-    border-radius: 2px;
-    background: var(--line);
-  }
-  .volume-pop input::-moz-range-progress {
-    width: 4px;
-    border-radius: 2px;
-    background: var(--gold);
-  }
-  .volume-pop input::-webkit-slider-thumb {
-    appearance: none;
-    width: var(--thumb);
-    height: var(--thumb);
-    /* Centred on the 4px track. */
-    margin-left: calc((4px - var(--thumb)) / 2);
-    border-radius: 50%;
-    background: var(--gold-hi);
-    box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
-  }
-  .volume-pop input::-moz-range-thumb {
-    width: var(--thumb);
-    height: var(--thumb);
-    border: 0;
-    border-radius: 50%;
-    background: var(--gold-hi);
-    box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
-  }
-  .icon-btn.off {
-    opacity: 0.6;
-  }
   .icon-btn svg {
     width: 18px;
     height: 18px;
@@ -1031,6 +975,50 @@
     display: grid;
     place-items: center;
     padding: 1rem;
+  }
+  /* The settings over a game: as wide as the page's columns, scrolled within when the window is short. */
+  .settings-over {
+    overflow-y: auto;
+    place-items: start center;
+  }
+  .sheet {
+    width: min(960px, 100%);
+    /* Centred while it fits; taller than the window, from its top. */
+    margin-block: auto;
+    padding: 1.1rem 2rem 1.8rem;
+    /* Solid, one flat colour (the panel's darker end): the question beneath
+       doesn't show through, and a flat fill has no levels to band. */
+    background: rgb(20, 16, 12);
+  }
+  /* The sheet's name, centred over a hairline as a dialog's is; the close at the right. */
+  .sheet-head {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet-head h3 {
+    grid-column: 2;
+    margin: 0;
+    font-size: 1.45rem;
+    color: var(--gold-hi);
+  }
+  .sheet-head .icon-btn {
+    grid-column: 3;
+    justify-self: end;
+  }
+  /* A phone on its side: closer in, so the settings fit without a scroll. */
+  @media (max-height: 500px) {
+    .settings-over {
+      padding-block: 0.5rem;
+    }
+    .sheet {
+      padding: 0.6rem 1.4rem 0.9rem;
+    }
+    .sheet-head {
+      padding-bottom: 0.45rem;
+    }
   }
   .modal {
     width: min(420px, 100%);

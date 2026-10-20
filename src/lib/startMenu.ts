@@ -3,8 +3,8 @@
 
 import { readStored, writeStored } from './storage.ts';
 
-export type Entry = 'create' | 'join' | 'hotseat' | 'codex';
-export const ENTRIES: readonly Entry[] = ['create', 'join', 'hotseat', 'codex'];
+export type Entry = 'create' | 'join' | 'codex' | 'settings';
+export const ENTRIES: readonly Entry[] = ['create', 'join', 'codex', 'settings'];
 
 /** The cursor's spring (lib/spring, MenuCursor.svelte): settles in about a quarter second, a hair past its mark. */
 export const CURSOR_SPRING = { freq: 24, damping: 0.8 } as const;
@@ -22,7 +22,7 @@ export function cursorKey(key: string, at: number): number | null {
 }
 
 const LAST = 'startEntry';
-/** The cursor starts on the entry chosen last time (Create a room the first time). */
+/** The cursor starts on the entry chosen last time (New game the first time). */
 export function lastEntry(): number {
   const i = ENTRIES.indexOf(readStored(LAST) as Entry);
   return i < 0 ? 0 : i;

@@ -32,6 +32,9 @@
   const fit = $derived(worn ? SIGIL_FITS[worn] : undefined);
   const small = $derived(size < SMALL_INK);
   const initial = $derived(initialOf(name) || '?');
+  // The worn letter's outline: 6 of the token's 100 units, as thick as it
+  // gets on a 60px token, then no thicker on a larger one.
+  const outline = $derived(size > 60 ? 360 / size : 6);
   // A's thin apex and wide base make it look low when its cap height is
   // centered, so lift it slightly.
   const dy = $derived(initial === 'A' ? '0.31em' : '0.35em');
@@ -95,6 +98,7 @@
   class:small
   style:--c={playerColor(hue)}
   style:--s="{size}px"
+  style:--outline="{outline}px"
   style:--turn="{TURN_MS}ms"
   role={crowned ? 'img' : undefined}
   aria-label={crowned ? CREATOR_TITLE : undefined}
@@ -203,7 +207,7 @@
   .worn text {
     fill: color-mix(in srgb, var(--c), white 72%);
     stroke: color-mix(in srgb, var(--c), black 55%);
-    stroke-width: 6px;
+    stroke-width: var(--outline);
     stroke-linejoin: round;
     paint-order: stroke;
   }

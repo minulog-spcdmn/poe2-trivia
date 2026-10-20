@@ -132,7 +132,7 @@
         ? startsRun
           ? startLine(run.startedAt)
           : `Depth ${shownDepth(depth)}`
-        : mine && !local
+        : !local && active.id === session.myPlayerId
           ? 'Your turn'
           : `${active.name}'s turn`,
   );

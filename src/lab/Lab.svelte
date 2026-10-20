@@ -125,10 +125,7 @@
   });
   let muted = $state(isMuted());
   function toggleSound() {
-    // The header's own button, so its icon follows.
-    const btn = document.querySelector<HTMLButtonElement>('header [aria-label="Toggle sound"]');
-    if (btn) btn.click();
-    else setMuted(!isMuted());
+    setMuted(!isMuted());
     muted = isMuted();
   }
 

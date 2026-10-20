@@ -292,9 +292,19 @@ if (values.map) {
   for (const [j, files] of ran) byScene.set(j.scene, new Set([...(byScene.get(j.scene) ?? []), ...files]));
   const counts = new Map();
   for (const files of byScene.values()) for (const f of files) counts.set(f, (counts.get(f) ?? 0) + 1);
-  const global = [...counts].filter(([, n]) => n >= byScene.size * 0.6).map(([f]) => f).sort();
-  const files = {};
+  let global = [...counts].filter(([, n]) => n >= byScene.size * 0.6).map(([f]) => f).sort();
+  let files = {};
   for (const f of [...counts.keys()].filter((f) => !global.includes(f)).sort()) files[f] = [...byScene].filter(([, fs]) => fs.has(f)).map(([k]) => k);
+  // With --only, a few scenes mapped again (new ones, say): merged into the
+  // map as it was, every other scene's files kept, its global files too.
+  if (only) {
+    const was = JSON.parse(readFileSync(path.join(ROOT, 'src', 'data', 'sceneFiles.json'), 'utf8'));
+    global = was.global;
+    const merged = {};
+    for (const [f, ks] of Object.entries(was.files)) merged[f] = ks.filter((k) => !byScene.has(k));
+    for (const [k, fs] of byScene) for (const f of fs) if (!global.includes(f)) (merged[f] ??= []).push(k);
+    files = Object.fromEntries(Object.entries(merged).filter(([, ks]) => ks.length).sort(([a], [b]) => (a < b ? -1 : 1)));
+  }
   // One entry a line, so a merge conflict is easy to see (and to settle by running --map again).
   const lines = Object.entries(files).map(([f, ks]) => `    ${JSON.stringify(f)}: ${JSON.stringify(ks)}`);
   const out = `{\n  "global": ${JSON.stringify(global)},\n  "files": {\n${lines.join(',\n')}\n  }\n}\n`;

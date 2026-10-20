@@ -20,7 +20,7 @@ export interface SceneFiles {
 const EVERYWHERE = [/^src\/app\.css$/, /^src\/main\.ts$/, /^src\/(App|Root)\.svelte$/, /^vite\.config\.ts$/, /^package(-lock)?\.json$/, /^src\/assets\/fonts\//, /^index\.html$/, /^src\/qa\/(tweaks\.ts$|build\/)/];
 /** Scene files, by the screen whose scenes they hold. */
 const SCENE_FILE = /^src\/qa\/scenes\/(\w+)\.ts$/;
-const FILE_SCREEN: Record<string, Screen> = { home: 'home', lobby: 'lobby', game: 'game', over: 'over', codex: 'codex', overlays: 'overlay' };
+const FILE_SCREEN: Record<string, Screen> = { home: 'home', lobby: 'lobby', game: 'game', over: 'over', codex: 'codex', settings: 'settings', overlays: 'overlay' };
 
 export interface Touched {
   /** The scenes to walk, in the catalog's order, each with why. */

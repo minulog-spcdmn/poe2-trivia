@@ -55,8 +55,9 @@ the same thing for everyone.
 - Everyone has **three lives**. A wrong answer or running out of time costs
   one (a miss on an Azurite Vein two, and one on a Dynamite Cache blows up
   something you carry too, see Finds).
-- **Alone** is a run of your own, online (a room with one player) or in
-  hot-seat. Hot-seat Delve is only ever alone.
+- **Alone** is a run of your own, in a room with one player (players at
+  the host's screen are set aside in Delve). Old hot-seat Delve is only
+  ever alone.
 - **Together** (a room of two or more) is co-op: one team, one question at
   a time.
   - The team votes for a card. Each vote is a ticket in a raffle (two
@@ -159,7 +160,7 @@ the same thing for everyone.
   the art" look like the answer's, and the wrong names of "name the item"
   belong to items drawn like it. The answer still sits anywhere in the
   cluster, so the picture that fits the others best doesn't give it away.
-  Only the host (or the device, in hot-seat) fetches the look-alike table
+  Only the host (or the device, in an old hot-seat game) fetches the look-alike table
   (`src/data/looks.json`, its own chunk of about 27 KiB gzipped), once a run
   reaches depth 19 (finds ask from up to 20 depths deeper); until it
   arrives, look-alikes go by name.
@@ -309,7 +310,7 @@ the same thing for everyone.
   clock still: once they're back (or after 20 s at most), it carries on with
   the time it had left (at least 5 s), and what was answered on it before
   the reload stands.
-- A run starts from the lobby: alone in hot-seat or a room with one player,
+- A run starts from the lobby: alone in a room with one player,
   together in a room of two or more. Choosing Delve there shows its
   milestones, its rules in a few short lines (a run together's too, in a
   room online) and your deepest.
@@ -545,8 +546,10 @@ item, category, item group, question type and difficulty, your nemeses (lowest
 accuracy, at least 2 answers), mix-ups (what you picked for what), made-up
 names you fell for, streaks and answer times. Every question revealed on your
 screen counts as seen; only your own answers count toward accuracy (your turn,
-or your guess in a race; a turn that runs out of time is wrong). In hot-seat,
-answers only count when one person plays alone. Today's unique on the start
+or your guess in a race; a turn that runs out of time is wrong). The turns
+of players at the host's screen are theirs, not the host's: they count for
+nobody. In an old hot-seat game, answers only count when one person plays
+alone. Today's unique on the start
 page counts as seen, but its answer doesn't count toward accuracy; its practice
 questions find nothing and count only toward a Practice accuracy of their own
 (endless as they are, they'd otherwise fill the codex without a game).
@@ -661,6 +664,22 @@ unlock more. Kept in this browser (`src/lib/sigils.ts`).
     as the room list does (see `docs/fair-play.md`, Privacy).
     Anyone with a saved name joins straight away; if the room is gone or
     full they stay on the start page with the code in Join a room.
+  - **Players at the host's screen:** in a Turns lobby the host can add
+    players by name under the party (Add a player at your screen). They
+    play at the host's screen, on their own turns (the host's screen acts
+    for them then, under their name), so two or more at one device can play
+    with others online, or alone together without anyone joining. They're
+    guests: no codex, records or achievements of their own, and their turns
+    count for nobody. Race and Delve set them aside (they need a device
+    each, or are played alone or as a team online), and Turns brings them
+    back, so looking at another mode loses nobody. Removing one takes one
+    click (there's no device to bar). See `Player.local` and `aside` in
+    `src/lib/game.ts`.
+  - **No connection:** a room that can't go online (no connection to the
+    matchmaking server, or a page that can't seal pictures) opens anyway, on
+    this device only: nobody can join, players at the screen are added in
+    its lobby, and a reload picks it up there (`hostHere` in
+    `src/lib/session.svelte.ts`).
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.
@@ -739,7 +758,7 @@ unlock more. Kept in this browser (`src/lib/sigils.ts`).
   - After a game, the host can **Play again** (same settings, starts right
     away, spectators included) or **Change settings** (back to the lobby).
   - Very strict networks (some corporate or mobile networks) can block
-    WebRTC. In that case, use hot-seat.
+    WebRTC. Then everyone can still play at the host's screen.
 - **Open rooms:** a host can set their room to **Public**, which lists it
   under "Open rooms" on the start page. A first-time host's room starts
   public (and in Delve); after that the room starts the way the host left
@@ -751,7 +770,9 @@ unlock more. Kept in this browser (`src/lib/sigils.ts`).
   30 are spaced out to avoid throttling, and rooms above number 10
   periodically move down into freed-up numbers so gaps can't hide them.
   See `src/lib/rooms.ts`.
-- **Hot-seat:** everyone plays on one device and passes it around.
+- **Hot-seat** has no entry of its own any more: a room's host adds the
+  players at their screen. A hot-seat game saved before that, or a Delve run
+  started from a shared link, still plays on one device as before.
 
 The host picks the mode (take turns, race or Delve: three buttons, each
 with an engraved emblem, and only the chosen mode's description below

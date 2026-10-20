@@ -67,9 +67,11 @@ export function kickConfirm(onArmed: (id: string | null) => void, clock: KickClo
       }, KICK_LEAVE_MS);
       return true;
     },
-    /** Takes an armed kick back (Escape, or a press anywhere else). */
+    /** Takes an armed kick back (Escape, or a press anywhere else); whether one was. */
     disarm() {
-      if (armed !== null) disarm();
+      if (armed === null) return false;
+      disarm();
+      return true;
     },
     /** Lets go of the pending timer (when the component goes away). */
     dispose() {

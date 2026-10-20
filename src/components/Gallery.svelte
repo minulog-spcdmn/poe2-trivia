@@ -42,8 +42,8 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
-    if (confirming) kicker.disarm();
-    else if (open) (open = false, toggle?.focus());
+    if (confirming) (e.preventDefault(), kicker.disarm());
+    else if (open) (e.preventDefault(), (open = false), toggle?.focus());
   }}
   onpointerdown={(e) => {
     const t = e.target as Element;

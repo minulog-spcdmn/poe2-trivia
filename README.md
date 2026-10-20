@@ -22,6 +22,13 @@ GitHub Pages. No server needed.
   or Custom, where the host sets each knob.
 - **Codex and achievements:** every item you have seen, your accuracy, your
   Delve runs and 36 achievements, kept in this browser.
+- **Settings:** volume and ambience, effects, the room code hidden for
+  streaming, your name, your avatar's colour and class sigil, and the keys: 1 to 0 answer, Enter or Space goes on,
+  D detonates, M mutes, Esc opens the settings, each one rebindable. Keys are
+  read by their place on the keyboard, so the number row answers on any
+  layout. In a room the header's gear (or Esc) opens them over the game,
+  all but the name, colour and sigil, which stay as the game began (a colour
+  picked meanwhile comes with the next one).
 
 The full rules are in [docs/gameplay.md](docs/gameplay.md).
 
@@ -32,8 +39,10 @@ The full rules are in [docs/gameplay.md](docs/gameplay.md).
   ([PeerJS](https://peerjs.com/)); the host's browser runs the game, and the
   free PeerJS cloud only introduces the players to each other. Rooms can be
   listed publicly under "Open rooms". Very strict networks can block WebRTC;
-  use hot-seat there.
-- **Hot-seat:** everyone plays on one device and passes it around.
+  a room that can't go online opens on the host's device only.
+- **At one screen:** in a Turns lobby the host adds players by name, who
+  play their turns at the host's screen, with others online or alone
+  together. Race and Delve set them aside until Turns is picked again.
 
 ## Fair play and privacy
 

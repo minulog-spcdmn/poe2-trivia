@@ -68,7 +68,13 @@ export async function liveRoom(built: Built): Promise<LiveRoom | null> {
     const name = state.players[0]?.name ?? 'Kalguur';
     return { nonce, code, offline: [], seats: [{ key: 'local', name, playerId: null, role: 'local', seed: { local: { ...common, name }, session: { 'session.v4': JSON.stringify({ mode: 'local', state }) } } }] };
   }
-  const guests = state.players.filter((p) => p.id !== host.id).slice(0, MAX_SEATS - 1);
+  // Those at the host's screen play there: no seat of their own. A room that never went online has no code.
+  if (built.hereOnly) {
+    const priv = { myPlayerId: host.id, secrets: [], bannedSecrets: [], bannedPeers: [], bannedNames: [], blockedPeers: [] };
+    const saved = JSON.stringify({ mode: 'host', code: '', state, priv });
+    return { nonce, code, offline: [], seats: [{ key: 'host', name: host.name, playerId: host.id, role: 'host', seed: { local: { ...common, name: host.name }, session: { 'session.v4': saved } } }] };
+  }
+  const guests = state.players.filter((p) => p.id !== host.id && !p.local).slice(0, MAX_SEATS - 1);
   const seats: LiveSeat[] = [];
   const secrets: [string, string][] = [];
   for (const [i, g] of guests.entries()) {
@@ -103,7 +109,7 @@ export async function liveRoom(built: Built): Promise<LiveRoom | null> {
     });
   }
   const seated = new Set(seats.map((x) => x.playerId));
-  return { nonce, code, seats, offline: state.players.filter((p) => !seated.has(p.id)).map((p) => p.name) };
+  return { nonce, code, seats, offline: state.players.filter((p) => !seated.has(p.id) && !p.local).map((p) => p.name) };
 }
 
 /** A seat's storage, for its address (#seed=, read by ./seat.ts): JSON in base64url. */

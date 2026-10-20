@@ -1807,7 +1807,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const paths = BLOBS.map(blobPath);
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  // With the visual effects switched off (the ✦ in the header) the backdrop
+  // With the visual effects switched off (in the settings) the backdrop
   // holds still too, where it stands, and is only drawn when something
   // changes: the low-power mode, for phones that run hot. (Reduced motion
   // goes further and rests everything.)

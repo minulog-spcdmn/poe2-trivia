@@ -2,13 +2,15 @@
   import { flushSync, onDestroy, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
-  import { MAX_NAME, cleanName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
+  import { MAX_NAME, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { refuseName } from '../lib/nameField';
   import { motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
   import { refuse } from '../lib/fx/moments';
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
+  import { openSettings, settingsRoute } from '../lib/settingsRoute.svelte';
+  import { typing } from '../lib/keybinds.svelte';
   import { DELVE_LINK_PARAM } from '../lib/delveShare';
   import { wantDelveBackdrop } from '../lib/backdrop';
   import { BETA, LOCAL } from '../lib/channel';
@@ -111,9 +113,9 @@
 
   /**
    * Phones (either way up), touch tablets in one column, and any window as
-   * narrow as a phone get the menu as actions rather than a list: Create a
-   * room as the page's one big button, Join's code field always out, Hot-seat
-   * and the Codex as a pair under them. A mouse keeps the list, its cursor
+   * narrow as a phone get the menu as actions rather than a list: New
+   * game as the page's one big button, Join's code field always out, the
+   * Codex and Settings as a pair under them. A mouse keeps the list, its cursor
    * and its arrow keys wherever there's room for them.
    */
   const compact = new MediaQuery('(max-width: 640px), (pointer: coarse) and (max-width: 1080px)');
@@ -192,17 +194,6 @@
   let nameField = $state<HTMLInputElement>();
   let codeField = $state<HTMLInputElement>();
 
-  /**
-   * Hot-seat starts with the saved name already in. It needs no name, so
-   * nothing here is refused: with none it opens with nobody in, and a name
-   * that can't be used waits in the lobby's add field.
-   */
-  function local() {
-    const n = cleanName(known);
-    if (n) session.startLocalAs(n);
-    else session.startLocal();
-  }
-
   /** The entry that set off the connection, whose row shows it ('rooms': a room tapped in the Open rooms list, which shows it in that room's place). */
   let busy = $state<Entry | 'rooms' | null>(null);
   /** The entry whose row shows the connection under way (the one that set it off, or the one a resumed connection belongs to). */
@@ -213,8 +204,8 @@
     cursor = ENTRIES.indexOf(e);
     rememberEntry(e);
     renaming = false;
-    if (e === 'hotseat') return local();
     if (e === 'codex') return openCodex();
+    if (e === 'settings') return openSettings();
     if (e === 'create' && knownName()) return host();
     open = e;
     // Within the tap itself, so a phone's keyboard comes up with the focus.
@@ -241,7 +232,7 @@
     rowFocus = false;
     clearTimeout(idleTimer);
     if (refocus === 'always' || (refocus === 'if-focused' && hadFocus)) {
-      // In one column the entry comes back in the row's place (Create a room's
+      // In one column the entry comes back in the row's place (New game's
       // button), or has none but its code field (Join): render it first.
       flushSync();
       (entryEls[i] ?? (ENTRIES[i] === 'join' ? codeField : null))?.focus({ preventScroll: true });
@@ -264,7 +255,7 @@
   /**
    * ...a finger only with a tap (a click), never as it starts a scroll. Heard
    * as the click comes down (capture), before what was tapped acts: a row the
-   * tap itself opens (Create a room's button, an open room's Join) stays open.
+   * tap itself opens (New game's button, an open room's Join) stays open.
    * A click from the keyboard (detail 0) leaves the row be, as a mouse's press does.
    */
   const outsideTap = (e: MouseEvent) => e.detail > 0 && pressedWith !== 'mouse' && outside(e);
@@ -432,18 +423,18 @@
 
   /** Arrows, Enter and Escape on the menu; not while typing (but Escape), in a dialog, or once something else has the screen. */
   function keys(e: KeyboardEvent) {
-    if (invite || session.state || codexRoute.open || document.querySelector('[aria-modal="true"]')) return;
+    if (invite || session.state || codexRoute.open || settingsRoute.open || document.querySelector('[aria-modal="true"]')) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
-    const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
     if (e.key === 'Escape') {
-      if (open && !connecting) {
+      // Claimed while a row is open, joining or not: it doesn't open the settings over a join.
+      if (open) {
         e.preventDefault();
-        closeRow();
+        if (!connecting) closeRow();
       }
       return;
     }
-    if (typing || connecting || renaming || compact.current) return;
+    if (typing(e) || connecting || renaming || compact.current) return;
     const next = cursorKey(e.key, cursor);
     if (next !== null) {
       e.preventDefault();
@@ -532,25 +523,25 @@
   }
 
   const MENU: Record<Entry, string> = {
-    create: 'Create a room',
+    create: 'New game',
     join: 'Join a room',
-    hotseat: 'Play hot-seat',
     codex: 'Codex',
+    settings: 'Settings',
   };
   const about = $derived<Record<Entry, string>>({
-    create: 'Host your party, or play on your own.',
+    create: 'Host your party online or at one screen, or play alone.',
     join: 'With the code a friend sent you.',
-    hotseat: 'Everyone at one screen, passing it around.',
     codex: codexLine(discovered, total, deepest),
+    settings: 'Sound, keys, your name, colour and class sigil.',
   });
   const PAIR = [
-    { e: 'hotseat', name: 'Hot-seat' },
     { e: 'codex', name: 'Codex' },
+    { e: 'settings', name: 'Settings' },
   ] as const;
   /** The pair's lines in one column, short enough for half a phone's width. */
-  const pairLines = $derived<Record<'hotseat' | 'codex', string[]>>({
-    hotseat: ['Pass one screen around.'],
+  const pairLines = $derived<Record<'codex' | 'settings', string[]>>({
     codex: codexLines(discovered, total, deepest),
+    settings: ['Sound, keys, sigil.'],
   });
 </script>
 
@@ -655,10 +646,10 @@
           </div>
           {@render inviteJoin(true)}
         </div>
-        <div class="pair single" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 520 }}>
+        <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 520 }}>
           <button class="pair-pick" onclick={leaveInvite}>
             <span class="pair-name">Something else<span class="go"><DrawnMark shape="chevron" /></span></span>
-            <span class="pair-line">Create your own room, play hot-seat, or open the Codex.</span>
+            <span class="pair-line">Start a new game, or open the Codex or the settings.</span>
           </button>
         </div>
       {:else if invite}
@@ -670,10 +661,10 @@
         </div>
         <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly={{ y: 12, duration: 500, delay: 520 }}>
           <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
-          <div class="under"><p class="about">Create your own room, play hot-seat, or open the Codex.</p></div>
+          <div class="under"><p class="about">Start a new game, or open the Codex or the settings.</p></div>
         </div>
       {:else if compact.current}
-        <!-- Create a room: the page's one big button, and its gold one until Join's code is whole
+        <!-- New game: the page's one big button, and its gold one until Join's code is whole
              (then Join holds the gold and this goes plain), unless Create's own row is the one open.
              On a first visit its row asks the name. -->
         <div class="act" bind:this={boxes[0]} class:dimmed={connecting && busyEntry !== 'create'} inert={connecting && busyEntry !== 'create'} in:fly={{ y: 12, duration: 500, delay: 450 }}>
@@ -682,10 +673,10 @@
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
-                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Create</button>
+                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Start</button>
               </form>
             {:else}
-              <button class="btn big" class:primary={!joinReady || open === 'create'} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>Create a room</button>
+              <button class="btn big" class:primary={!joinReady || open === 'create'} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>New game</button>
             {/if}
           </div>
           <div class="under">
@@ -720,14 +711,14 @@
                 {:else}
                   {@render codeInput(false)}
                 {/if}
-                <!-- Lit once a join can go, and Create a room gives up its gold: one lit button at a time. -->
+                <!-- Lit once a join can go, and New game gives up its gold: one lit button at a time. -->
                 <button class="btn" class:primary={joinReady && open !== 'create'} type="submit">Join</button>
               </form>
             {/if}
           </div>
         </div>
-        <!-- Hot-seat and the Codex: set as the list's entries are, side by side. -->
-        <div class="pair" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
+        <!-- The Codex and Settings: set as the list's entries are, side by side. -->
+        <div class="pair two" class:dimmed={connecting} inert={connecting} in:fly={{ y: 12, duration: 500, delay: 590 }}>
           {#each PAIR as { e, name } (e)}
             <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => warmCodex(e)} onfocus={() => warmCodex(e)}>
               <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
@@ -760,7 +751,7 @@
               {:else if isOpen && e === 'create'}
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
-                  <button class="btn primary" type="submit">Create room</button>
+                  <button class="btn primary" type="submit">Start</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
@@ -1217,8 +1208,8 @@
     text-transform: uppercase;
     color: #a99c86;
   }
-  /* Hot-seat and the Codex as the list's entries are set, a size down, each
-     with a chevron that says it goes somewhere. */
+  /* The Codex and Settings (or an invite's way to everything else) as the
+     list's entries are set, a size down, each with a chevron that says it goes somewhere. */
   .pair-name {
     display: inline-flex;
     align-items: center;
@@ -1304,11 +1295,10 @@
   }
   .pair {
     display: grid;
-    grid-template-columns: 1fr 1fr;
     transition: opacity 0.3s;
   }
-  .pair.single {
-    grid-template-columns: 1fr;
+  .pair.two {
+    grid-template-columns: 1fr 1fr;
   }
   .pair-pick {
     display: flex;

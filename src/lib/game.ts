@@ -2,7 +2,7 @@
 // place this runs; everyone else just renders the state it broadcasts.
 
 import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
-import { RUBY } from './palette.ts';
+import { RUBY, isChoosableHue } from './palette.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import type { Looks } from './looks.ts';
 import {
@@ -606,8 +606,15 @@ export interface Player {
    * from older hosts). Turns: their own questions; race: questions they won.
    */
   streak?: number;
+  /**
+   * Plays at the host's screen: a guest the host added on its own device,
+   * answering there on their turns. Turns only (see GameState.aside).
+   */
+  local?: true;
   /** The class sigil they wear on their avatar (lib/sigils.ts), if any. */
   sigil?: PlayerClass;
+  /** The colour they'd like (lib/colour.ts), if any: their `hue` once it's theirs to have (settleHue). */
+  colour?: number;
 }
 
 /**
@@ -995,6 +1002,8 @@ export interface Spectator {
   stay?: true;
   /** The class sigil they wear, kept for when they take a seat. */
   sigil?: PlayerClass;
+  /** The colour they'd like, kept for when they take a seat. */
+  colour?: number;
 }
 
 export interface GameState {
@@ -1003,6 +1012,12 @@ export interface GameState {
   players: Player[];
   /** Watching this game; they get a seat when the host starts the next one unless they `stay` (missing in older saves). */
   spectators?: Spectator[];
+  /**
+   * The players at the host's screen (Player.local) while the mode isn't
+   * Turns, which they can't play at one screen: back in their seats as soon
+   * as it is again (missing: none).
+   */
+  aside?: Player[];
   /**
    * Online: who plays under the held name (names.ts), as the host says: it
    * let them in only with the owner key's signature over its own challenge
@@ -1054,8 +1069,11 @@ export type Action =
    * `returning`: set by the host for someone who was already in this room (may pass the lock).
    * `watch`: they'd rather watch than play (a spectator who stays one, see 'watch').
    */
-  /** `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). `sigil`: the class sigil they wear. */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass }
+  /**
+   * `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). `sigil`: the class sigil they wear.
+   * `local`: the host adds a player at its own screen (Player.local), in a Turns lobby.
+   */
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; colour?: number; local?: true }
   /** Host: its own player plays under the held name (the host holds the owner key). */
   | { type: 'owner'; playerId: string }
   | { type: 'rename'; playerId: string; name: string }
@@ -1081,6 +1099,8 @@ export type Action =
   | { type: 'watch'; watch: boolean }
   /** The class sigil the sender wears now (none: taken off); on this device (from null), `playerId`'s. */
   | { type: 'sigil'; sigil?: PlayerClass; playerId?: string }
+  /** The colour the sender would like now (none: any); on this device (from null), `playerId`'s. */
+  | { type: 'colour'; colour?: number; playerId?: string }
   /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
   | { type: 'clock'; askedAt: number; at?: number }
   /** Host only (Delve co-op): the vote's window ran out (or every vote it waits for is in): a card is drawn from the votes. */
@@ -1153,11 +1173,43 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
 function fillSeats(s: GameState) {
   const watching: Spectator[] = [];
   for (const o of s.spectators ?? []) {
-    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, o.sigil);
+    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil, colour: o.colour });
     else watching.push(o);
   }
   s.spectators = watching;
 }
+
+/**
+ * The players at the host's screen go with the mode, between games: aside
+ * while it isn't Turns, back in the seats left (after anyone already seated)
+ * once it is. Nothing is lost by looking at another mode.
+ */
+function placeLocals(s: GameState) {
+  if (s.settings.mode === 'turns') {
+    const back = s.aside ?? [];
+    const room = Math.max(0, MAX_PLAYERS - s.players.length);
+    for (const p of back.slice(0, room)) {
+      // Their colour is theirs from joining: kept, unless someone seated has it now.
+      if (p.hue < 0 || s.players.some((o) => o.hue === p.hue)) p.hue = freeHue(s);
+      s.players.push(p);
+      settleHue(s, p);
+    }
+    s.aside = back.slice(room);
+  } else {
+    s.aside = [...(s.aside ?? []), ...s.players.filter((p) => p.local)];
+    s.players = s.players.filter((p) => !p.local);
+  }
+  if (!s.aside.length) delete s.aside;
+}
+
+/** Everyone in the room: seated, watching or set aside. */
+const everyoneIn = (s: GameState): { id: string; name: string }[] => [...s.players, ...(s.spectators ?? []), ...(s.aside ?? [])];
+
+/** Every name in the room (`except` one's). */
+const namesIn = (s: GameState, except?: string) =>
+  everyoneIn(s)
+    .filter((o) => o.id !== except)
+    .map((o) => o.name);
 
 /**
  * Avatar colours that always go to one player, even if someone else had them.
@@ -1180,23 +1232,42 @@ function freeHue(s: GameState, except?: Player): number {
 /**
  * Gives a player their reserved colour if their name has one, moving whoever
  * had it to a free one; a player without one gives up a reserved colour while
- * others are free. Only between games, so nobody changes colour mid-match.
+ * others are free. Then the colour they'd like (lib/colour.ts): theirs when
+ * nobody has it, and between games from whoever has it without having asked
+ * for it, who takes theirs in exchange; first come keeps it. Nobody else
+ * changes colour mid-match.
  */
 function settleHue(s: GameState, p: Player) {
   const hue = reservedHue(p);
-  if (hue === undefined) {
-    if (RESERVED.has(p.hue)) p.hue = freeHue(s, p);
+  if (hue !== undefined) {
+    if (p.hue === hue) return;
+    const holder = s.players.find((o) => o !== p && o.hue === hue);
+    p.hue = hue;
+    if (holder) holder.hue = freeHue(s, holder);
     return;
   }
-  if (p.hue === hue) return;
-  const holder = s.players.find((o) => o !== p && o.hue === hue);
-  p.hue = hue;
-  if (holder) holder.hue = freeHue(s, holder);
+  if (RESERVED.has(p.hue)) p.hue = freeHue(s, p);
+  const want = p.colour;
+  if (want === undefined || p.hue === want) return;
+  const holder = s.players.find((o) => o !== p && o.hue === want);
+  if (holder && (holder.colour === want || s.phase !== 'lobby')) return;
+  if (holder) holder.hue = p.hue;
+  p.hue = want;
 }
 
 /** Adds a player with the first free avatar colour (or their reserved one). */
-function seat(s: GameState, id: string, name: string, sigil?: PlayerClass) {
-  const p: Player = { id, name, score: 0, recent: [], connected: true, hue: -1, ...(sigil ? { sigil } : {}) };
+function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; colour?: number } = {}) {
+  const p: Player = {
+    id,
+    name,
+    score: 0,
+    recent: [],
+    connected: true,
+    hue: -1,
+    ...(o.local ? { local: true as const } : {}),
+    ...(o.sigil ? { sigil: o.sigil } : {}),
+    ...(o.colour !== undefined ? { colour: o.colour } : {}),
+  };
   p.hue = freeHue(s);
   s.players.push(p);
   settleHue(s, p);
@@ -1366,6 +1437,23 @@ export class Engine {
   }
 
   /**
+   * The host seats a player at its own screen (Player.local): in a room's
+   * Turns lobby only, since the others can't be played at one screen, and
+   * never on a guest's word. On one device (hot-seat), every player is.
+   */
+  private joinLocal(s: GameState, id: string, raw: string, from: string | null) {
+    if (s.hostId === null || (from !== null && from !== s.hostId)) throw new ActionError('Not allowed.');
+    if (s.phase !== 'lobby') throw new ActionError('Players at your screen join between games.');
+    if (s.settings.mode !== 'turns') throw new ActionError('Players at your screen play Turns.');
+    if (everyoneIn(s).some((o) => o.id === id)) throw new ActionError('Not allowed.');
+    const name = cleanName(raw);
+    const problem = nameProblem(name, namesIn(s));
+    if (problem) throw new ActionError(problem);
+    if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
+    seat(s, id, name, { local: true });
+  }
+
+  /**
    * Applies an action. `from` is the player sending it, or null for a trusted
    * local caller (hot-seat mode, host timers). Returns a new state object.
    */
@@ -1379,21 +1467,37 @@ export class Engine {
 
     switch (action.type) {
       case 'join': {
+        if (action.local) {
+          this.joinLocal(s, action.playerId, action.name, from);
+          break;
+        }
         if (from !== null && from !== action.playerId) throw new ActionError('Not allowed.');
         // The owner key's signature names whoever joins under the held name (a seat coming back keeps its own name, so it must be that).
         const own = (name: string) => {
           if (action.owner && isHeldName(name)) s.owner = { id: action.playerId };
         };
         const sigil = isPlayerClass(action.sigil) ? action.sigil : undefined;
-        /** The one they wear now, coming back too: it may have changed meanwhile. */
-        const wear = (o: { sigil?: PlayerClass }) => {
-          if (sigil) o.sigil = sigil;
-          else delete o.sigil;
+        const colour = isChoosableHue(action.colour) ? action.colour : undefined;
+        const looks = { ...(sigil ? { sigil } : {}), ...(colour !== undefined ? { colour } : {}) };
+        /**
+         * The one they wear now and the colour they'd like, coming back too:
+         * they may have changed meanwhile. Mid-game the sigil stays as the
+         * game began (as the 'sigil' action's does; the session sends it again
+         * back in the lobby); the colour waits for the next.
+         */
+        const wear = (o: { sigil?: PlayerClass; colour?: number }) => {
+          if (s.phase === 'lobby') {
+            if (sigil) o.sigil = sigil;
+            else delete o.sigil;
+          }
+          if (colour !== undefined) o.colour = colour;
+          else delete o.colour;
         };
         const existing = s.players.find((p) => p.id === action.playerId);
         if (existing) {
           own(existing.name);
           wear(existing);
+          if (s.phase === 'lobby') settleHue(s, existing);
           // Rejoining keeps the original name, so a seat can't be renamed on the way back.
           existing.connected = true;
           // A guest coming back arrives here (the session only ever reports a drop as 'connection'); their excuse ends.
@@ -1411,19 +1515,19 @@ export class Engine {
         // Someone the host already knows may come back through the lock (a lobby
         // drops people who disconnect, so a refresh would otherwise shut them out).
         if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
-        const problem = nameProblem(name, [...s.players, ...s.spectators].map((o) => o.name));
+        const problem = nameProblem(name, namesIn(s));
         if (problem) throw new ActionError(problem);
         // (A join turned down below leaves the state as it was, this with it.)
         own(name);
         // Someone who'd rather watch does, while there's room (in the lobby, they take a seat otherwise).
         if (action.watch && s.spectators.length < MAX_SPECTATORS) {
-          s.spectators.push({ id: action.playerId, name, stay: true, ...(sigil ? { sigil } : {}) });
+          s.spectators.push({ id: action.playerId, name, stay: true, ...looks });
           break;
         }
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
           if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
-          s.spectators.push({ id: action.playerId, name, ...(sigil ? { sigil } : {}) });
+          s.spectators.push({ id: action.playerId, name, ...looks });
           break;
         }
         if (s.players.length >= MAX_PLAYERS) {
@@ -1432,12 +1536,12 @@ export class Engine {
           // Not on one screen (hot-seat, from null): nobody there watches, and
           // the one being added is turned down instead.
           if (from !== null && s.spectators.length < MAX_SPECTATORS) {
-            s.spectators.push({ id: action.playerId, name, ...(sigil ? { sigil } : {}) });
+            s.spectators.push({ id: action.playerId, name, ...looks });
             break;
           }
           throw new ActionError('The lobby is full.');
         }
-        seat(s, action.playerId, name, sigil);
+        seat(s, action.playerId, name, looks);
         break;
       }
       case 'owner': {
@@ -1449,10 +1553,7 @@ export class Engine {
         if (!isHost && from !== action.playerId) throw new ActionError('Not allowed.');
         const p = s.players.find((p) => p.id === action.playerId);
         const name = cleanName(action.name);
-        const problem = nameProblem(
-          name,
-          [...s.players, ...s.spectators].filter((o) => o.id !== action.playerId).map((o) => o.name),
-        );
+        const problem = nameProblem(name, namesIn(s, action.playerId));
         if (problem) throw new ActionError(problem);
         if (p) {
           p.name = name;
@@ -1464,17 +1565,26 @@ export class Engine {
         if (!isHost && from !== action.playerId) throw new ActionError('Only the host can remove players.');
         if (action.playerId === s.hostId) throw new ActionError('The host cannot leave their own game.');
         s.spectators = s.spectators.filter((o) => o.id !== action.playerId);
+        if (s.aside) {
+          s.aside = s.aside.filter((p) => p.id !== action.playerId);
+          if (!s.aside.length) delete s.aside;
+        }
         const idx = s.players.findIndex((p) => p.id === action.playerId);
         if (idx < 0) break;
         // Delve: whether they leave the run on their feet, or else where they fell (read while they still have a seat).
         const standing = !!s.delve && livesOf(s, action.playerId) > 0;
         const fell = s.delve ? fellAt(s, action.playerId) : null;
         s.players.splice(idx, 1);
-        if (s.phase === 'lobby') fillSeats(s);
+        if (s.phase === 'lobby') {
+          fillSeats(s);
+          // Someone at the host's screen still waiting for a seat (a full room) takes one freed.
+          placeLocals(s);
+        }
         if (s.phase === 'lobby' || s.phase === 'over') break;
         if (s.players.length === 0) {
-          const fresh = { ...createGame(s.hostId, s.settings), spectators: s.spectators, lastAskedAt: s.lastAskedAt, version: s.version + 1 };
+          const fresh = { ...createGame(s.hostId, s.settings), spectators: s.spectators, lastAskedAt: s.lastAskedAt, version: s.version + 1, ...(s.aside ? { aside: s.aside } : {}) };
           fillSeats(fresh);
+          placeLocals(fresh);
           return fresh;
         }
         if (race) {
@@ -1545,6 +1655,8 @@ export class Engine {
         if (typeof custom === 'object' && custom !== null) s.settings.custom = cleanKnobs(custom, cleanKnobs(s.settings.custom));
         if (targetScore !== undefined) s.settings.targetScore = Math.max(1, Math.min(50, Math.round(targetScore)));
         if (typeof timer === 'number' && Number.isFinite(timer)) s.settings.timer = snapTimer(timer);
+        // The end screen keeps the game as it was played; the restart places them.
+        if (s.phase === 'lobby') placeLocals(s);
         break;
       }
       case 'start': {
@@ -1554,6 +1666,7 @@ export class Engine {
         // go to whoever is waiting.
         s.players = s.players.filter((p) => p.connected);
         fillSeats(s);
+        placeLocals(s);
         if (s.players.length === 0) throw new ActionError('Add at least one player.');
         // Delve together is co-op, played online: on one device it's a run alone (the lobby says so too).
         if (s.settings.mode === 'delve' && s.hostId === null && s.players.length > 1)
@@ -1816,17 +1929,20 @@ export class Engine {
         const fresh = createGame(s.hostId, s.settings);
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [], streak: 0 }));
-        // Renames during the game take effect on colours now.
-        const claims = fresh.players.filter((p) => reservedHue(p) !== undefined);
-        for (const p of [...claims, ...fresh.players.filter((p) => !claims.includes(p))]) settleHue(fresh, p);
+        // Renames during the game take effect on colours now, and so do the colours asked for: reserved ones first.
+        const rank = new Map(fresh.players.map((p) => [p, reservedHue(p) !== undefined ? 0 : p.colour !== undefined ? 1 : 2]));
+        for (const p of [...fresh.players].sort((a, b) => rank.get(a)! - rank.get(b)!)) settleHue(fresh, p);
         fresh.spectators = s.spectators;
         fillSeats(fresh);
+        if (s.aside) fresh.aside = s.aside;
+        placeLocals(fresh);
         fresh.version = s.version;
         fresh.lastAskedAt = s.lastAskedAt;
         fresh.used = s.used;
         Object.assign(s, fresh);
         delete s.startedAt;
         delete s.recap;
+        if (!fresh.aside) delete s.aside;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
       }
@@ -1847,15 +1963,29 @@ export class Engine {
         s.spectators.push({ id: p.id, name: p.name, stay: true, ...(p.sigil ? { sigil: p.sigil } : {}) });
         // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
+        placeLocals(s);
         if (s.spectators.length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
         break;
       }
       case 'sigil': {
+        // Worn as the game began until it is back in the lobby.
+        if (s.phase !== 'lobby') break;
         const id = from ?? action.playerId;
         const o = s.players.find((p) => p.id === id) ?? s.spectators.find((w) => w.id === id);
         if (!o) break;
         if (isPlayerClass(action.sigil)) o.sigil = action.sigil;
         else delete o.sigil;
+        break;
+      }
+      case 'colour': {
+        // Mid-game it waits for the next one: nobody changes colour while it's played.
+        const id = from ?? action.playerId;
+        const p = s.players.find((p) => p.id === id);
+        const o = p ?? s.spectators.find((w) => w.id === id);
+        if (!o) break;
+        if (isChoosableHue(action.colour)) o.colour = action.colour;
+        else delete o.colour;
+        if (p && s.phase === 'lobby') settleHue(s, p);
         break;
       }
       case 'clock': {

@@ -41,6 +41,8 @@
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
+  import { actionOf, optionCap, optionKeys, typing } from '../lib/keybinds.svelte';
+  import { optionIndex } from '../lib/keys';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
 
   // Its styles read the shell's --header-h (App.svelte).
@@ -250,7 +252,7 @@
   let autoLeft = $state(1);
   $effect(() => {
     const at = revealAt;
-    if (!at || session.mode === 'local') return;
+    if (!at || session.mode === 'local' || session.hereOnly) return;
     let frame = 0;
     const tick = () => {
       autoLeft = autoNextLeft(at, session.hostNow()) / AUTO_NEXT_MS;
@@ -844,17 +846,22 @@
     // and must not read its deriveds, which have gone inert.
     const now = session.state;
     if (!now || (now.phase !== 'question' && now.phase !== 'reveal') || now.question?.askedAt !== shownAt) return;
-    if (e.target instanceof HTMLInputElement) return;
+    if (typing(e)) return;
     // An item's window (ItemWindow) has buttons of its own: Enter there isn't Next.
     if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
-    // 0 is the tenth option, the key after 9.
-    const n = e.key === '0' ? 10 : Number(e.key);
-    if (!reveal && !waiting && n >= 1 && n <= count) answer(n - 1);
-    else if (reveal && canNext && (e.key === 'Enter' || e.key === ' ')) {
+    // The player's keys (settings page): an option's, Next's, Detonate's.
+    const action = actionOf(e);
+    const n = optionIndex(action);
+    if (n !== null) {
+      if (!reveal && !waiting && n < count) answer(n);
+    } else if (action === 'next' && reveal && canNext) {
       e.preventDefault();
       next();
+    } else if (action === 'detonate' && blastSlot && canBlast) {
+      e.preventDefault();
+      blastThrough();
     }
   }
 
@@ -1062,7 +1069,7 @@
         onclick={next}
       >
         {nextLabel}
-        {#if session.mode !== 'local'}
+        {#if session.mode !== 'local' && !session.hereOnly}
           <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}
       </button>
@@ -1129,16 +1136,16 @@
       <p class="spectate muted">Your team is answering…</p>
     {:else if coop}
       <p class="spectate muted">
-        The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span>
+        The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press {optionKeys(count)}.</span>
       </p>
     {:else if race && myMiss}
       <p class="spectate out">Wrong: −1. You're out until the next question.</p>
     {:else if race}
-      <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press 1–{count === 10 ? '9 and 0' : count}.</span></p>
+      <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press {optionKeys(count)}.</span></p>
     {:else if !mine}
       <!-- Who is answering is said under the banner. -->
     {:else}
-      <p class="spectate muted keys">Tip: press 1–{count === 10 ? '9 and 0' : count} to answer.</p>
+      <p class="spectate muted keys">Tip: press {optionKeys(count)} to answer.</p>
     {/if}
   </div>
 {/snippet}
@@ -1239,7 +1246,7 @@
           >
             <span class="sheen"></span>
             <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
-            <span class="key" class:lens-key={!!shownItem}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{(i + 1) % 10}{/if}</span>
+            <span class="key" class:lens-key={!!shownItem} class:wide={!shownItem && [...(optionCap(i) ?? '')].length > 1}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{optionCap(i) ?? ''}{/if}</span>
             <span class="cue" aria-hidden="true"></span>
             {#if pic || tv}
               <span class="pic">
@@ -1384,7 +1391,7 @@
             in:fly={{ x: 40, duration: 450, delay: 300 + i * 90 }}
           >
             <span class="sheen"></span>
-            <span class="key">{(i + 1) % 10}</span>
+            <span class="key" class:wide={[...(optionCap(i) ?? '')].length > 1}>{optionCap(i) ?? ''}</span>
             <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
@@ -2264,6 +2271,19 @@
       color 0.25s,
       border-color 0.25s,
       box-shadow 0.25s;
+  }
+  /* A key whose name is a word (Num 1, Space): the seal drawn out to hold it. */
+  .key.wide {
+    width: auto;
+    min-width: 28px;
+    padding-inline: 0.55em;
+    border-radius: 14px;
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+  .key.wide::before,
+  .key.wide::after {
+    border-radius: 14px;
   }
   /* Lit like a seal held to the light, and a ring of it running out once. */
   .key::before,
