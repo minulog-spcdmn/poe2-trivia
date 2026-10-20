@@ -1,22 +1,66 @@
-// The lobby, from the host's seat, a guest's and a spectator's: alone, a
-// few, a full room, long names, each game and difficulty, locked, hot-seat.
+// The lobby: a room of any size, game and settings, from the host's seat, a
+// guest's and a spectator's; hot-seat; and the descent a Delve lobby draws
+// from this device's records.
 
-import type { Settings } from '../../lib/game.ts';
+import { MAX_PLAYERS, TIMER_STEPS, type Settings } from '../../lib/game.ts';
 import { DELVE_RULESET, FINDS_IN_ORDER } from '../../lib/delve.ts';
 import type { Answer } from '../../lib/codex.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import type { Control, Values } from '../bench.ts';
 import { id, pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
-import type { Built, Knob, Scene, Seat } from '../scene.ts';
+import type { Built, Scene, Seat } from '../scene.ts';
 
 const TWELVE = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Hooded One', 'Rog', 'Zelina', 'Alva', 'Oswin', 'Dannig', 'Finn', 'Sekhema Asala', 'Renly'];
-const LONG = ['Sekhema Asala Kahari', 'Doryani of the Vaal', 'Hooded Wanderer Kai', 'Zelina Whitebranch', 'Rog the Lucky Smith'];
 const host = (name: string): Seat => ({ mode: 'host', me: pid(name) });
 const guest = (name: string): Seat => ({ mode: 'client', me: pid(name) });
+const CUSTOM: Settings['custom'] = { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 3 };
 
-function lobby(key: string, label: string, seats: Seat[], names: string[], settings: Partial<Settings> = {}, o: { watching?: string[]; local?: boolean; group?: string } = {}): Scene {
-  const build = (): Built => ({ state: new Table(names, settings, { watching: o.watching, ...(o.local ? { host: null } : {}) }).s });
-  return { key: `lobby/${key}`, screen: 'lobby', group: o.group ?? 'Lobby', label, seats, build };
+/** A room's controls: who's in it and how the host has set it. */
+const ROOM: Control[] = [
+  { kind: 'range', key: 'players', label: 'Players', min: 1, max: MAX_PLAYERS, default: 3 },
+  {
+    kind: 'choice',
+    key: 'mode',
+    label: 'Game',
+    default: 'turns',
+    options: [
+      { value: 'turns', label: 'Take turns' },
+      { value: 'race', label: 'Race' },
+      { value: 'delve', label: 'Delve' },
+    ],
+  },
+  {
+    kind: 'choice',
+    key: 'difficulty',
+    label: 'Difficulty',
+    default: 'merciless',
+    options: [
+      { value: 'cruel', label: 'Cruel' },
+      { value: 'merciless', label: 'Merciless' },
+      { value: 'eternal', label: 'Eternal' },
+      { value: 'custom', label: 'Custom' },
+    ],
+  },
+  { kind: 'range', key: 'target', label: 'Points to win', min: 1, max: 50, default: 10 },
+  { kind: 'choice', key: 'timer', label: 'Timer', default: '16', options: TIMER_STEPS.map((t) => ({ value: String(t), label: t ? `${t} s` : 'None' })) },
+  { kind: 'toggle', key: 'public', label: 'Public', default: false },
+  { kind: 'toggle', key: 'locked', label: 'Locked', default: false },
+];
+
+function room(v: Values = {}): Built {
+  const names = TWELVE.slice(0, Number(v.players ?? 3));
+  const settings: Partial<Settings> = {
+    mode: (v.mode ?? 'turns') as Settings['mode'],
+    difficulty: (v.difficulty ?? 'merciless') as Settings['difficulty'],
+    ...(v.difficulty === 'custom' ? { custom: CUSTOM } : {}),
+    targetScore: Number(v.target ?? 10),
+    timer: Number(v.timer ?? 16),
+    public: !!v.public,
+    locked: !!v.locked,
+  };
+  const t = new Table(names, settings);
+  return { state: t.s, act: t.room };
 }
 
 /**
@@ -25,7 +69,8 @@ function lobby(key: string, label: string, seats: Seat[], names: string[], setti
  * zone, past 100 (depths as the records keep them, shown one less), and the
  * finds met or not. The descent's own bench (src/qa/benches/descent.ts) walks it down.
  */
-const RECORDS: Knob = {
+const RECORDS: Control = {
+  kind: 'choice',
   key: 'records',
   label: 'Records',
   default: 'best-last',
@@ -40,42 +85,57 @@ const RECORDS: Knob = {
   ],
 };
 const DEPTHS: Record<string, [number, number]> = { none: [0, 0], best: [38, 0], 'best-last': [46, 21], 'last-at-best': [46, 46], 'all-zones': [96, 62], 'past-100': [216, 0], 'both-past-100': [216, 150] };
-const COMPANY: Knob = { key: 'company', label: 'Delving', default: 'alone', options: [{ value: 'alone', label: 'Alone' }, { value: 'together', label: 'Together' }] };
-const FOUND: Knob = { key: 'finds', label: 'Finds', default: 'all', options: [{ value: 'all', label: 'All met' }, { value: 'none', label: 'None met' }] };
+const TOGETHER: Control = { kind: 'toggle', key: 'together', label: 'Delving together', default: false };
+const FOUND: Control = { kind: 'toggle', key: 'finds', label: 'Every find met', default: true };
 
-function descent(k: Record<string, string> = {}): Built {
-  const together = k.company === 'together';
-  const [best, last] = DEPTHS[k.records] ?? DEPTHS['best-last'];
+function descent(v: Values = {}): Built {
+  const together = !!v.together;
+  const [best, last] = DEPTHS[String(v.records)] ?? DEPTHS['best-last'];
   const players = together ? 3 : 1;
   const run = (n: number, depth: number): DelveRun => ({ id: 3000 + n, at: 3000 + n, depth, players, ruleset: DELVE_RULESET, mixed: false, ...(together ? { perished: [depth] } : {}) });
   const runs = [best ? run(0, best) : null, last ? run(1, last) : null].filter((r): r is DelveRun => !!r);
-  const log: Answer[] = k.finds === 'none' ? [] : FINDS_IN_ORDER.map((f, i) => ({ t: 3000 + i, id: id('Headhunter'), mode: 'name', ok: true, difficulty: 'cruel', race: false, depth: f.from, run: 3000, find: f.kind }));
+  const log: Answer[] = v.finds === false ? [] : FINDS_IN_ORDER.map((f, i) => ({ t: 3000 + i, id: id('Headhunter'), mode: 'name', ok: true, difficulty: 'cruel', race: false, depth: f.from, run: 3000, find: f.kind }));
   const t = new Table(together ? ['Kalguur', 'Doryani', 'Una of the Vaal'] : ['Kalguur'], { mode: 'delve' });
-  return { state: t.s, runs, log };
+  return { state: t.s, act: t.room, runs, log };
 }
 
 export function lobbyScenes(): Scene[] {
-  const three = ['Kalguur', 'Doryani', 'Una of the Vaal'];
   return [
-    lobby('alone', 'The host, waiting alone', [host('Kalguur')], ['Kalguur']),
-    lobby('three', 'Three players and someone watching', [host('Kalguur'), guest('Doryani'), guest('Finn')], three, {}, { watching: ['Finn'] }),
-    lobby('twelve', 'A full room: twelve', [host('Kalguur'), guest('Renly')], TWELVE),
     {
-      key: 'lobby/offline',
+      key: 'lobby/room',
       screen: 'lobby',
       group: 'Lobby',
-      label: 'Una of the Vaal went offline',
-      seats: [host('Kalguur'), guest('Doryani')],
-      build: () => ({ state: new Table(three, {}).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null).s }),
+      label: 'A room',
+      // A spectator's seat once someone watches (Finn, the first to come).
+      seats: [host('Kalguur'), guest('Doryani'), guest('Finn')],
+      controls: ROOM,
+      states: [
+        { label: 'Three players', values: {} },
+        { label: 'The host, waiting alone', values: { players: 1 } },
+        { label: 'Three players and someone watching', values: { watching: 1 } },
+        { label: 'A full room: twelve', values: { players: 12 } },
+        { label: 'Una of the Vaal went offline', values: { offline: 'Una of the Vaal' } },
+        { label: 'Long names', values: { players: 5, names: 'long' } },
+        { label: 'Race, public', values: { mode: 'race', public: true } },
+        { label: 'Locked, public, Eternal, to 20', values: { locked: true, public: true, difficulty: 'eternal', target: 20 } },
+        { label: 'Cruel, no timer', values: { difficulty: 'cruel', timer: '0' } },
+        { label: 'Custom difficulty', values: { difficulty: 'custom' } },
+        { label: 'Delve together', values: { mode: 'delve' }, group: 'Delve' },
+        { label: 'Delve together, twelve', values: { mode: 'delve', players: 12 }, group: 'Delve' },
+      ],
+      build: room,
     },
-    lobby('long-names', 'Long names', [host(LONG[0]), guest(LONG[3])], LONG),
-    lobby('race', 'Race, public', [host('Kalguur'), guest('Doryani')], three, { mode: 'race', public: true }),
-    lobby('locked', 'Locked, public, Eternal, to 20', [host('Kalguur'), guest('Doryani')], three, { locked: true, public: true, difficulty: 'eternal', targetScore: 20 }),
-    lobby('cruel-untimed', 'Cruel, no timer', [host('Kalguur'), guest('Doryani')], three, { difficulty: 'cruel', timer: 0 }),
-    lobby('custom', 'Custom difficulty', [host('Kalguur'), guest('Doryani')], three, { difficulty: 'custom', custom: { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 3 } }),
-    lobby('delve', 'Delve together', [host('Kalguur'), guest('Doryani')], three, { mode: 'delve' }, { group: 'Delve' }),
-    lobby('delve-twelve', 'Delve together, twelve', [host('Kalguur'), guest('Renly')], TWELVE, { mode: 'delve' }, { group: 'Delve' }),
-    lobby('hot-seat', 'Hot-seat: three on one device', [{ mode: 'local', me: null }], three, {}, { local: true }),
-    { key: 'lobby/delve-descent', screen: 'lobby', group: 'Delve', label: 'Delve: the descent, by your records', seats: [host('Kalguur')], knobs: [RECORDS, COMPANY, FOUND], build: descent },
+    {
+      key: 'lobby/hot-seat',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: 'Hot-seat: three on one device',
+      seats: [{ mode: 'local', me: null }],
+      build: () => {
+        const t = new Table(TWELVE.slice(0, 3), {}, { host: null });
+        return { state: t.s, act: t.room };
+      },
+    },
+    { key: 'lobby/delve-descent', screen: 'lobby', group: 'Delve', label: 'Delve: the descent, by your records', seats: [host('Kalguur')], controls: [RECORDS, TOGETHER, FOUND], build: descent },
   ];
 }

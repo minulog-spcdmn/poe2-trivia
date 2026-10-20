@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import type { Item } from '../src/lib/game.ts';
 import { useItems } from '../src/qa/build/engine.ts';
+import { Table } from '../src/qa/build/play.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
-import { SCREENS, knobValues, seatLabel } from '../src/qa/scene.ts';
+import { SCREENS, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
+import { sceneStateAt, valuesOf, type Values } from '../src/qa/bench.ts';
+import { TWEAK_KEYS, applyTweaks, buildScene } from '../src/qa/tweaks.ts';
 import { matches, sizesFor } from '../src/qa/desk/walk.ts';
 import { answered } from '../src/qa/frame/emulate.ts';
 import { fakes, items } from './helpers.ts';
@@ -15,42 +18,118 @@ useItems(items, fakes);
 const capturedDir = new URL('../src/qa/captured/', import.meta.url);
 useCaptured(Object.fromEntries((existsSync(capturedDir) ? readdirSync(capturedDir) : []).filter((f) => f.endsWith('.json')).map((f) => [f, JSON.parse(readFileSync(new URL(f, capturedDir), 'utf8'))])));
 const { catalog } = await import('../src/qa/scenes/index.ts');
+const { benches } = await import('../src/qa/benches/index.ts');
 
 // The QA desk (qa.html) walks every scene from every seat at every size; a
 // scene that can't be built, or names a seat or a size that isn't there,
 // would only show up as a blank frame.
-test('every scene builds, and every seat is someone in it', () => {
+/** `s` built with `given`, its seats each someone in it (out of a game: nobody in particular). */
+function builds(s: Scene, given: Values, what: string) {
+  let built;
+  try {
+    built = buildScene(s, given).built;
+  } catch (e) {
+    assert.fail(`${s.key} (${what}) doesn't build: ${(e as Error).message}`);
+  }
+  const seats = seatsIn(s, built);
+  assert.ok(seats.length > 0, `${s.key} (${what}) has no seat`);
+  for (const seat of seats) {
+    if (!built.state) {
+      assert.equal(seat.me, null, `${s.key} has no room, but a seat is someone`);
+      continue;
+    }
+    assert.notEqual(seat.mode, 'none', `${s.key} has a room, but a seat is in none`);
+    if (seat.mode === 'local') continue;
+    const ids = [...built.state.players, ...(built.state.spectators ?? [])].map((p) => p.id);
+    assert.ok(ids.includes(seat.me!), `${s.key} (${what}): seat ${seat.me} isn't in the room`);
+    assert.ok(seatLabel(seat, built.state));
+  }
+  return built;
+}
+
+test('every scene builds in every named state, and every seat is someone in it', () => {
   const all = catalog();
   assert.ok(all.length > 0);
   for (const s of all) {
-    let built;
-    try {
-      built = s.build();
-    } catch (e) {
-      assert.fail(`${s.key} doesn't build: ${(e as Error).message}`);
-    }
     assert.ok(s.seats.length > 0, `${s.key} has no seat`);
-    for (const seat of s.seats) {
-      // Out of a game (the start page, the codex): nobody in particular.
-      if (!built.state) {
-        assert.equal(seat.me, null, `${s.key} has no room, but a seat is someone`);
-        continue;
-      }
-      assert.notEqual(seat.mode, 'none', `${s.key} has a room, but a seat is in none`);
-      if (seat.mode === 'local') continue;
-      const ids = [...built.state.players, ...(built.state.spectators ?? [])].map((p) => p.id);
-      assert.ok(ids.includes(seat.me!), `${s.key}: seat ${seat.me} isn't in the room`);
-      assert.ok(seatLabel(seat, built.state));
+    builds(s, {}, 'as it comes');
+    for (const st of s.states ?? []) builds(s, st.values, st.label);
+  }
+});
+
+test("every control's ends and choices build, its own and any game's, and its default is one it can be", () => {
+  for (const s of catalog()) {
+    const { controls } = buildScene(s);
+    const own = (s.controls ?? []).map((c) => c.key);
+    assert.equal(new Set(own).size, own.length, `${s.key} has two controls of one name`);
+    for (const k of own) assert.ok(!TWEAK_KEYS.includes(k), `${s.key}'s control ${k} is one every game has`);
+    for (const c of controls) {
+      assert.deepEqual(valuesOf([c], { [c.key]: c.default }), { [c.key]: c.default }, `${s.key}: ${c.key} starts at ${c.default}, which it can't be`);
+      const tried = c.kind === 'range' ? [c.min, c.max] : c.kind === 'toggle' ? [true, false] : c.options.map((o) => o.value);
+      for (const x of tried) builds(s, { [c.key]: x }, `${c.key}=${x}`);
     }
   }
 });
 
-test("every knob's every choice builds, and its default is one of them", () => {
-  for (const s of catalog())
-    for (const k of s.knobs ?? []) {
-      assert.ok(k.options.some((o) => o.value === k.default), `${s.key}: knob ${k.key}'s default isn't a choice`);
-      for (const o of k.options) assert.doesNotThrow(() => s.build(knobValues(s.knobs, { [k.key]: o.value })), `${s.key}: ${k.key}=${o.value}`);
+test('a named state sets only controls its scene has, to values they can be, and the desk finds it again', () => {
+  for (const b of benches()) {
+    if (b.kind !== 'scenes') continue;
+    for (const [i, st] of b.states.entries()) {
+      const { controls, values } = buildScene(st.scene, st.values);
+      for (const [k, x] of Object.entries(st.values)) {
+        const c = controls.find((c) => c.key === k);
+        assert.ok(c, `${st.scene.key}'s “${st.label}” sets ${k}, which it hasn't`);
+        assert.equal(valuesOf([c], { [k]: x })[k], x, `${st.scene.key}'s “${st.label}” sets ${k} to ${x}, which it can't be`);
+      }
+      assert.equal(sceneStateAt(b, st.scene, controls, values), i, `${st.scene.key}'s “${st.label}” is the same as another, or isn't found`);
     }
+  }
+});
+
+test('the controls every game has change only what they say, and leave who is seen from be', () => {
+  const won = catalog().find((s) => s.key === 'over/n-won')!;
+  const as = buildScene(won).built.state!;
+  const gone = buildScene(won, { offline: '*' }).built.state!;
+  assert.deepEqual(
+    gone.players.filter((p) => p.connected).map((p) => p.name),
+    ['Kalguur'],
+  );
+  // (The scene's own state isn't changed in place: built again, it's as it was.)
+  assert.ok(buildScene(won).built.state!.players.every((p) => p.connected));
+  const watched = buildScene(won, { joining: 5, watching: 3 }).built.state!;
+  assert.equal(watched.spectators!.filter((o) => !o.stay).length, 5);
+  assert.equal(watched.spectators!.filter((o) => o.stay).length, 3);
+  const long = buildScene(won, { names: 'long' }).built.state!;
+  assert.deepEqual(
+    long.players.map((p) => p.id),
+    as.players.map((p) => p.id),
+  );
+  assert.ok(long.players.every((p, i) => p.name !== as.players[i].name));
+  // A spectator seen from stays, however few watch.
+  const spec = catalog().find((s) => s.key === 'over/n-spec')!;
+  assert.ok(buildScene(spec, { joining: 0 }).built.state!.spectators!.some((o) => o.id === spec.seats[0].me));
+});
+
+test("Offline on a game played through the engine goes the engine's way: a race's state is the one the room reaches", () => {
+  const race = catalog().find((s) => s.key === 'game/race-answered')!;
+  const shown = buildScene(race, { offline: '*' }).built.state!;
+  // The same race played again, everyone but those seen from dropping as the room reports it
+  // (the players among them: the seat watching has no one at the table).
+  const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
+  const seen = race.seats.map((s) => s.me).filter((id) => t.s.players.some((p) => p.id === id));
+  for (const p of t.s.players) if (!seen.includes(p.id)) t.act({ type: 'connection', playerId: p.id, connected: false }, null);
+  assert.deepEqual(shown, t.s);
+  assert.deepEqual(
+    shown.players.filter((p) => p.connected).map((p) => p.id).sort(),
+    [...seen].sort(),
+  );
+  // Seen from Doryani alone, who has answered: with everyone else gone no one is left to wait on, and the answer shows.
+  const doryani = t.s.players.find((p) => p.name === 'Doryani')!.id;
+  const alone = applyTweaks(race.build({}), { offline: '*' }, [doryani]).state!;
+  const u = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
+  for (const p of u.s.players) if (p.id !== doryani) u.act({ type: 'connection', playerId: p.id, connected: false }, null);
+  assert.equal(alone.phase, 'reveal');
+  assert.deepEqual(alone, u.s);
 });
 
 test('scene keys are unique and well formed, and scenes come in the order of the screens', () => {
@@ -113,4 +192,15 @@ test("a frame answers media queries as its device would, and leaves width to the
   assert.equal(answered('(min-resolution: 192dpi)', phone), yes);
   assert.equal(answered('(max-width: 700px) and (hover:hover)', phone), `(max-width: 700px) and ${no}`);
   assert.equal(answered('(prefers-reduced-motion: reduce)', phone), '(prefers-reduced-motion: reduce)');
+});
+
+// A frame loads only its own screen's scenes (scenes/one.ts), so the code
+// before a change that adds what one screen uses still shows the others.
+test('a frame finds every scene from its own screen file alone', async () => {
+  const { sceneOf } = await import('../src/qa/scenes/one.ts');
+  for (const s of catalog()) {
+    const found = await sceneOf(s.key);
+    assert.equal(found?.key, s.key, `${s.key} isn't found from its screen's file (scenes/one.ts)`);
+    assert.equal(found.label, s.label);
+  }
 });

@@ -3,13 +3,14 @@
 // Scenes are plain data built from the game's own types; they never load the
 // session (src/lib/session.svelte.ts), so the tests can build every one.
 
-import type { GameState } from '../lib/game.ts';
+import type { Action, GameState } from '../lib/game.ts';
 import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
 import type { DailyRecord } from '../lib/daily.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { PlateName } from '../lib/plates/index.ts';
 import type { SizeKey } from './sizes.ts';
+import type { Control, State, Values } from './bench.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
 export type Screen = 'home' | 'lobby' | 'game' | 'over' | 'codex' | 'overlay';
@@ -47,6 +48,13 @@ export type Step =
 export interface Built {
   /** The room's state; null out of a game. */
   state: GameState | null;
+  /**
+   * A move by the room itself on a state of this game, through the engine
+   * that played it (build/play.ts, Table.room), so what's set over it (who's
+   * offline) goes the way the game would take it. Missing: a game built by
+   * hand, set as it is.
+   */
+  act?: (s: GameState, a: Action) => GameState;
   /** The moment the scene is at (host clock, ms): its clocks stand still there. Missing: the state's own start. */
   at?: number;
   /** How the run measured up against this device's records (the session's delveResult). */
@@ -78,35 +86,34 @@ export interface Built {
   circle?: PlateName | null;
 }
 
-/** A setting of a scene's, turned in the desk (a menu shown only for that scene): its choices, and the one walked. */
-export interface Knob {
-  key: string;
-  label: string;
-  options: { value: string; label: string }[];
-  default: string;
-}
-
-/** A scene's knob settings: `given` where it names a choice there is, the default otherwise. */
-export function knobValues(knobs: Knob[] | undefined, given: Record<string, string | null | undefined> = {}): Record<string, string> {
-  return Object.fromEntries((knobs ?? []).map((k) => [k.key, k.options.some((o) => o.value === given[k.key]) ? given[k.key]! : k.default]));
-}
-
 export interface Scene {
   /** `screen/slug`, stable: links and saved results name scenes by it. */
   key: string;
   screen: Screen;
-  /** A finer grouping within the screen, for search ("Edge cases: Delve"). */
+  /** The heading it's listed under within its screen ("Edge cases: Delve"). */
   group: string;
   label: string;
+  /** Who it can be seen as. One whose player isn't in the room as built (a smaller room) isn't offered (seatsIn). */
   seats: Seat[];
   /** Sizes it is walked at besides the desk's own (sizes.ts' WALK_SIZES). */
   sizes?: SizeKey[];
-  /** The design's boards for it (docs/handoff/end-screen/screens/<board>.webp), by the size each was drawn at. */
+  /** The design's boards for it (docs/handoff/end-screen/screens/<board>.webp), by the size each was drawn at: at its controls' defaults. */
   boards?: Partial<Record<SizeKey, string>>;
-  /** Settings to turn in the desk (the walk and the sweep use their defaults). */
-  knobs?: Knob[];
-  /** Built afresh for each seat that asks, with the knobs' settings (knobValues). */
-  build(knobs?: Record<string, string>): Built;
+  /** What can be set in it, a slider, a menu or a switch each, as a piece's (../bench.ts). Every game has more besides (./tweaks.ts). */
+  controls?: Control[];
+  /** Its states worth seeing, by name: controls they set (its own, or those every game has). Missing: one, the scene as it comes. */
+  states?: State[];
+  /** Built afresh for each seat that asks, with its controls as set (all of them: valuesOf). */
+  build(v?: Values): Built;
+}
+
+/** The seats of `scene` whose player is in the room as built (all of them out of a room, or in hot-seat). */
+export function seatsIn(scene: Scene, built: Built): Seat[] {
+  const s = built.state;
+  if (!s) return scene.seats;
+  const here = new Set([...s.players, ...(s.spectators ?? [])].map((p) => p.id));
+  const seats = scene.seats.filter((seat) => seat.mode === 'local' || seat.mode === 'none' || here.has(seat.me!));
+  return seats.length ? seats : scene.seats.slice(0, 1);
 }
 
 /** A seat in words: whose eyes, and in what part ("Kalguur (host)", "Hot-seat"). */

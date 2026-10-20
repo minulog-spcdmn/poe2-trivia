@@ -14,7 +14,7 @@
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { portal } from '../lib/portal';
-  import { phone } from '../lib/layout';
+  import { flat, phone } from '../lib/layout';
   import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
   import { revivedText } from '../lib/difficultyText';
@@ -47,7 +47,10 @@
   const group = $derived(isGroupRun(s));
   // The question's timer: in the scoreboard pinned to the top on phones, in
   // view while they scroll down to the answers, and at the right end of the
-  // question's task line otherwise. Only ever one, so its ticks never double.
+  // question's task line otherwise (a phone on its side too, however narrow:
+  // its header row keeps its room for the players). Only ever one, so its
+  // ticks never double.
+  const slim = $derived(phone.current && !flat.current);
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
 
   // Countdown to the automatic skip of a disconnected player's turn.
@@ -342,7 +345,7 @@
      its parts and what's in them have anchors of their own (Scoreboard, ChooseCategory, QuestionView). -->
 <div class="game" class:kicking={!!run && !!pastBest && pastBest.turn === s.turnCount} data-cursor="game">
   <p class="sr" aria-live="polite">{run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : ''}</p>
-  <Scoreboard aside={phone.current ? timer : undefined} />
+  <Scoreboard aside={slim ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
        instead of stacking (which briefly doubled the page height). -->
@@ -404,7 +407,7 @@
               <div class="questions">
                 {#key s.question?.askedAt}
                   <div class="q-slot" in:swingIn out:swingOut>
-                    <QuestionView timer={phone.current ? undefined : timer} />
+                    <QuestionView timer={slim ? undefined : timer} />
                   </div>
                 {/key}
               </div>
@@ -842,6 +845,59 @@
   @media (min-width: 641px) and (max-height: 820px) {
     .game {
       padding-top: clamp(4px, 1vh, 16px);
+    }
+  }
+
+  /* A phone on its side (lib/layout.ts `flat`): the phone's slim scoreboard
+     (in the header's row: App.svelte's `folded`) and banner, clear of the notch, so the question below them fits the
+     screen's height (QuestionView sizes it to what's left). */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .game {
+      gap: 0.2rem;
+      /* (At the foot, clear of the home indicator's strip where there is one.) */
+      padding: 0 max(1rem, env(safe-area-inset-right)) max(0.25rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    }
+    .banner {
+      gap: 0.8rem;
+      margin: 0.3rem 0 0.3rem;
+    }
+    .banner h2 {
+      font-size: 1.3rem;
+    }
+    .past {
+      --track: 0.22em;
+    }
+    .kicker {
+      bottom: 100%;
+      font-size: 0.64rem;
+      line-height: 1.2;
+    }
+    /* The duel's strip on one line: its title is the header's already. */
+    .dm-title {
+      display: none;
+    }
+    .dm-strip {
+      gap: 0.1rem 0.8rem;
+      margin-bottom: 0.2rem;
+      padding: 0.2rem 0.8rem;
+      max-width: none;
+    }
+    .dm-rule {
+      flex-basis: auto;
+      font-size: 0.8rem;
+    }
+    .skip {
+      margin-top: 0.6rem;
+    }
+    /* The cards ask how much room they have across (ChooseCategory's @container slot). */
+    .cards-slot {
+      container: slot / inline-size;
+    }
+  }
+  /* A phone's browser on its side, the address bar up: the banner closer. */
+  @media (orientation: landscape) and (max-height: 350px) {
+    .banner {
+      margin: 0.15rem 0 0.2rem;
     }
   }
 </style>

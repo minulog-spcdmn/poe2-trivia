@@ -8,8 +8,11 @@ import { DEFAULT_SETTINGS, createGame, type GameState, type Recap } from '../../
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { Answer } from '../../lib/codex.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
-import { CREATOR } from '../../lib/site.ts';
 import { id, pid, player, spectator } from '../build/people.ts';
+import type { Control, State, Values } from '../bench.ts';
+import type { Scene } from '../scene.ts';
+import type { PlateName } from '../../lib/plates/index.ts';
+import type { SizeKey } from '../sizes.ts';
 
 export { pid };
 export type Mode = 'host' | 'client' | 'local';
@@ -34,6 +37,10 @@ export interface EndScene {
   /** This device's codex log (its own answers), and its Delve runs, oldest first. */
   log?: Answer[];
   runs?: DelveRun[];
+  /** What can be set in it (../bench.ts' Control), its named states, and the state as they set it. */
+  controls?: Control[];
+  states?: State[];
+  vary?: (v: Values) => GameState;
 }
 
 const K = pid('Kalguur');
@@ -228,6 +235,12 @@ const threeWay = () =>
     }),
     extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani'), una()], round: 2, results: {}, eliminated: [una()], out: { [pid('Doryani')]: 1, [una()]: 2 }, startedAt: 0 } },
   });
+/** n-won, everyone gone but you. */
+function allGone() {
+  const s = won();
+  for (const p of s.players.slice(1)) p.connected = false;
+  return s;
+}
 /** A ranking of `n` players, scores falling. */
 const crowd = (n: number) =>
   game(
@@ -237,19 +250,11 @@ const crowd = (n: number) =>
 const MANY = ['Headhunter', 'Ingenuity', 'Briarpatch', 'Death Rush', "Kaom's Heart", "Atziri's Rule", 'Chainsting', 'The Burden of Shadows', 'Guiding Palm of the Heart', "Atziri's Disdain", 'Mageblood'];
 /** Delve together: the first `n` of the twelve, the run as teamRun has it. */
 const teamOf = (n: number) => teamRun(TEAM12.slice(0, n));
-/** The winner's game with everyone else gone. */
-function allGone() {
-  const s = won();
-  for (const p of s.players.slice(1)) p.connected = false;
-  return s;
-}
 
 // ---- the list --------------------------------------------------------------------
 
 const D = 'desktop';
-const A = 'air13';
 const P = 'phone';
-const LONG = ['Sekhema Asala Kahari', 'Doryani of the Vaal', 'Hooded Wanderer Kai', 'Zelina Whitebranch', 'Rog the Lucky Smith'];
 const NG = 'Edge cases: normal games';
 const DG = 'Edge cases: Delve';
 
@@ -260,9 +265,51 @@ export function endScenes(): EndScene[] {
   const host6 = () => ({ delveResult: measured(27, 19, true), log: teamLog(), runs: teamRuns() });
   return [
     // The handoff's boards, each state once: its boards at the other sizes come with it.
-    { key: 'n-won', group: 'Normal games', label: 'Take turns: you won (host)', boards: { desktop: 'n-won', air13: 'n-air13', phone: 'n-phone' }, view: D, mode: 'host', me: K, state: won(), earned: ['first-victory', 'untarnished'] },
-    { key: 'n-lost', group: 'Normal games', label: 'Take turns: you came third (guest)', boards: { desktop: 'n-lost', air13: 'n-air13-lost', phone: 'n-phone-full' }, view: D, mode: 'client', me: una(), state: lost() },
-    { key: 'n-race', group: 'Normal games', label: 'Race: you joint second, two join next', boards: { desktop: 'n-race' }, view: D, mode: 'host', me: K, state: race() },
+    {
+      key: 'n-won',
+      group: 'Normal games',
+      label: 'Take turns: you won (host)',
+      boards: { desktop: 'n-won', air13: 'n-air13', phone: 'n-phone' },
+      view: D,
+      mode: 'host',
+      me: K,
+      state: won(),
+      earned: ['first-victory', 'untarnished'],
+      states: [
+        { label: 'Take turns: you won (host)', values: {} },
+        { label: 'Eight watching: five join next, three just watch', values: { joining: 5, watching: 3 }, group: NG },
+      ],
+    },
+    {
+      key: 'n-lost',
+      group: 'Normal games',
+      label: 'Take turns: you came third (guest)',
+      boards: { desktop: 'n-lost', air13: 'n-air13-lost', phone: 'n-phone-full' },
+      view: D,
+      mode: 'client',
+      me: una(),
+      state: lost(),
+      states: [
+        { label: 'Take turns: you came third (guest)', values: {} },
+        { label: 'Very long names', values: { names: 'long' }, group: NG },
+        { label: 'Names in other scripts and with digits', values: { names: 'scripts' }, group: NG },
+        { label: "The creator wins (the creator's foil)", values: { names: 'creator' }, group: NG },
+      ],
+    },
+    {
+      key: 'n-race',
+      group: 'Normal games',
+      label: 'Race: you joint second, two join next',
+      boards: { desktop: 'n-race' },
+      view: D,
+      mode: 'host',
+      me: K,
+      state: race(),
+      states: [
+        { label: 'Race: you joint second, two join next', values: {} },
+        { label: 'Race: four spectators join next', values: { joining: 4 }, group: NG },
+      ],
+    },
     { key: 'n-dm', group: 'Normal games', label: 'Lost a deathmatch', boards: { desktop: 'n-dm' }, view: D, mode: 'client', me: doryani, state: deathmatch() },
     { key: 'n-left', group: 'Normal games', label: 'Alva went offline; two join next', boards: { desktop: 'n-left' }, view: D, mode: 'host', me: K, state: left(), earned: ['first-victory', 'untarnished'] },
     { key: 'n-twelve', group: 'Normal games', label: '12 players (you are Dannig)', boards: { desktop: 'n-twelve', air13: 'n-air13-twelve' }, view: D, mode: 'client', me: dannig, state: twelve() },
@@ -302,7 +349,24 @@ export function endScenes(): EndScene[] {
       runs: runs([16, 24, 11, 18, 22, 13, 20, 21, 30], 45, false),
     },
     { key: 'd-team', group: 'Delve', label: 'Together: three delvers (host)', boards: { desktop: 'd-team' }, view: D, mode: 'host', me: K, state: teamRun(TEAM3), ...host6() },
-    { key: 'd-team6', group: 'Delve', label: 'Together: six delvers (host)', boards: { desktop: 'd-team6', air13: 'd-team6-air13', phone: 'd-phone-team6' }, view: D, mode: 'host', me: K, state: teamRun(TEAM6), ...host6() },
+    {
+      key: 'd-team6',
+      group: 'Delve',
+      label: 'Together: six delvers (host)',
+      boards: { desktop: 'd-team6', air13: 'd-team6-air13', phone: 'd-phone-team6' },
+      view: D,
+      mode: 'host',
+      me: K,
+      state: teamRun(TEAM6),
+      ...host6(),
+      controls: [{ kind: 'range', key: 'streak', label: 'Best streak together', min: 0, max: 12, default: 0 }],
+      states: [
+        { label: 'Together: six delvers (host)', values: {} },
+        { label: 'Together: Rog went offline, a best streak of 5', values: { offline: 'Rog', streak: 5 }, group: DG },
+        { label: 'Together: three join the next run', values: { joining: 3 }, group: DG },
+      ],
+      vary: (v) => teamRun(TEAM6, { streak: Number(v.streak ?? 0) }),
+    },
     { key: 'd-team12', group: 'Delve', label: 'Together: twelve delvers (host)', boards: { desktop: 'd-team12', air13: 'd-team12-air13' }, view: D, mode: 'host', me: K, state: teamRun(TEAM12), ...host6() },
     {
       key: 'd-team6-guest',
@@ -316,31 +380,14 @@ export function endScenes(): EndScene[] {
       delveResult: measured(27, 32, false),
       log: guestLog(),
       runs: runs([17, 32, 15], 27, true, doryani),
+      states: [
+        { label: 'Together: a guest brought back once', values: {} },
+        { label: 'Together: long names', values: { names: 'long' }, group: DG },
+      ],
     },
     { key: 'd-team6-spec', group: 'Delve', label: 'Together: watched by one who joins next', boards: { desktop: 'd-team6-spec' }, view: D, mode: 'client', me: pid('Watcher'), state: watched(teamRun(TEAM6)) },
 
     // Normal games, around the edges.
-    {
-      key: 'e-long',
-      group: NG,
-      label: 'Very long names, a long winner',
-      view: D,
-      mode: 'client',
-      me: pid(LONG[1]),
-      state: game(
-        LONG.map((n, i) => [n, 10 - i * 2] as [string, number]),
-        { host: pid(LONG[0]), recap: { fastest: { by: pid(LONG[2]), id: id('The Burden of Shadows'), ms: 2100 }, answers: { [pid(LONG[1])]: { n: 10, ok: 8, ms: 3000 } }, misses: misses(LONG[1], ['The Burden of Shadows', 'Guiding Palm of the Heart']) } },
-      ),
-    },
-    {
-      key: 'e-creator',
-      group: NG,
-      label: `${CREATOR} wins (the creator's foil)`,
-      view: D,
-      mode: 'client',
-      me: K,
-      state: game([[CREATOR, 10], ['Kalguur', 9], ['Doryani', 4]], { recap: turnsRecap(CREATOR, 'Headhunter', { answers: { [K]: { n: 10, ok: 9, ms: 2600 } }, misses: misses('Kalguur', ['Ingenuity']) }) }),
-    },
     { key: 'e-one-point', group: NG, label: 'A game to 1 point: one round', view: D, mode: 'host', me: K, state: onePoint(), earned: ['first-victory'] },
     { key: 'e-negative', group: NG, label: 'Race: scores below nothing (you on -1)', view: D, mode: 'client', me: pid('Alva'), state: negative() },
     {
@@ -383,11 +430,22 @@ export function endScenes(): EndScene[] {
         }),
       }),
     },
-    { key: 'e-seven', group: NG, label: 'Seven players: two columns, one short', view: D, mode: 'client', me: doryani, state: crowd(7) },
-    { key: 'e-eight-short', group: NG, label: 'Eight on a 13-inch window: two columns', view: A, mode: 'client', me: doryani, state: crowd(8) },
-    { key: 'e-nine', group: NG, label: 'Nine players: two columns, one short', view: D, mode: 'client', me: doryani, state: crowd(9) },
-    { key: 'e-eleven', group: NG, label: 'Eleven players', view: D, mode: 'client', me: doryani, state: crowd(11) },
-    { key: 'e-one-left', group: NG, label: 'Only you still here (1 of 5)', view: D, mode: 'host', me: K, state: allGone(), earned: ['first-victory'] },
+    {
+      key: 'e-crowd',
+      group: NG,
+      label: 'A crowd: the ranking in two columns',
+      view: D,
+      mode: 'client',
+      me: doryani,
+      state: crowd(7),
+      controls: [{ kind: 'range', key: 'players', label: 'Players', min: 4, max: 12, default: 7 }],
+      states: [
+        { label: 'Seven players: two columns, one short', values: {} },
+        { label: 'Eight on a 13-inch window: two columns', values: { players: 8 } },
+        { label: 'Nine players: two columns, one short', values: { players: 9 } },
+      ],
+      vary: (v) => crowd(Number(v.players ?? 7)),
+    },
     {
       key: 'e-alone-online',
       group: NG,
@@ -412,9 +470,7 @@ export function endScenes(): EndScene[] {
       ),
     },
     { key: 'e-no-answers', group: NG, label: 'A player who never answered', view: D, mode: 'client', me: pid('Alva'), state: game([['Kalguur', 10], ['Doryani', 8], ['Alva', 0]], { recap: turnsRecap('Kalguur', 'Headhunter') }) },
-    { key: 'e-joiners', group: NG, label: 'Four spectators join next', view: D, mode: 'host', me: K, state: race({ spectators: ['Finn', 'Renly', 'Oswin', 'Zelina'].map((n) => spectator(n)) }) },
     { key: 'e-just-watching', group: NG, label: 'A spectator who just watches', view: D, mode: 'client', me: pid('Watcher'), state: watched(won(), true) },
-    { key: 'e-phone-spec', group: NG, label: 'Phone: a spectator', view: 'phone375', mode: 'client', me: pid('Watcher'), state: watched(won()) },
 
     // Delve, around the edges.
     { key: 'e-level', group: DG, label: 'Alone: level with your best', view: D, mode: 'local', me: null, state: solo(), delveResult: measured(23, 23, false), log: soloLog(), runs: runs([16, 23, 12, 20], 23, false) },
@@ -542,9 +598,23 @@ export function endScenes(): EndScene[] {
       log: [miss(10, 'Headhunter', 11, team('Doryani')), miss(20, 'Ingenuity', 13, team('Doryani')), miss(30, 'Briarpatch', 14, team('Doryani'))],
       runs: runs([], 15, true, doryani),
     },
-    { key: 'e-team4', group: DG, label: 'Together: four delvers', view: D, mode: 'host', me: K, state: teamOf(4), ...host6() },
-    { key: 'e-team5', group: DG, label: 'Together: five delvers', view: D, mode: 'host', me: K, state: teamOf(5), ...host6() },
-    { key: 'e-team7', group: DG, label: 'Together: seven delvers', view: D, mode: 'host', me: K, state: teamOf(7), ...host6() },
+    {
+      key: 'e-team-n',
+      group: DG,
+      label: 'Together: any number of delvers',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: teamOf(4),
+      ...host6(),
+      controls: [{ kind: 'range', key: 'delvers', label: 'Delvers', min: 2, max: 12, default: 4 }],
+      states: [
+        { label: 'Together: four delvers', values: {} },
+        { label: 'Together: five delvers', values: { delvers: 5 } },
+        { label: 'Together: seven delvers', values: { delvers: 7 } },
+      ],
+      vary: (v) => teamOf(Number(v.delvers ?? 4)),
+    },
     {
       key: 'e-many-lives',
       group: DG,
@@ -629,9 +699,9 @@ export function endScenes(): EndScene[] {
       runs: runs([19, 9], 12, true, K),
     },
     { key: 'e-unmeasured', group: DG, label: 'Together: a run this device never recorded', view: D, mode: 'client', me: doryani, state: teamRun(TEAM6), delveResult: null, log: guestLog() },
-    { key: 'e-team-left', group: DG, label: 'Together: Rog went offline', view: D, mode: 'host', me: K, state: teamRun(TEAM6, { left: 'Rog', streak: 5 }), ...host6() },
-    { key: 'e-phone-delve-guest', group: DG, label: 'Phone: a guest of six, waiting', view: P, mode: 'client', me: doryani, state: teamRun(TEAM6), delveResult: measured(27, 32, false), log: guestLog(), runs: runs([17, 32, 15], 27, true, doryani) },
     // Further round the edges.
+    // n-won with everyone else gone, but earning only first-victory (no untarnished), so a scene of its own.
+    { key: 'e-one-left', group: NG, label: 'Only you still here (1 of 5)', view: D, mode: 'host', me: K, state: allGone(), earned: ['first-victory'] },
     {
       key: 'e-winner-gone',
       group: NG,
@@ -674,36 +744,6 @@ export function endScenes(): EndScene[] {
       }),
     },
     {
-      key: 'e-scripts',
-      group: NG,
-      label: 'Names in other scripts and with digits',
-      view: D,
-      mode: 'client',
-      me: pid('Exile42'),
-      state: (() => {
-        const names = ['桜子', 'Ярослава', 'Exile42', 'Ἀθηνᾶ', 'Zoë'];
-        const s = game(
-          names.map((n, i) => [n, 10 - i * 2] as [string, number]),
-          { host: pid('Exile42'), recap: { fastest: { by: pid('Ярослава'), id: id('Headhunter'), ms: 1900 }, answers: { [pid('Exile42')]: { n: 10, ok: 6, ms: 3300 } }, misses: misses('Exile42', ['Ingenuity']) } },
-        );
-        // pid keeps Latin letters only: the others get ids of their own.
-        s.players.forEach((p, i) => (p.id = p.name === 'Exile42' ? pid('Exile42') : `id-name-${i}`));
-        s.winners = [s.players[0].id];
-        s.hostId = s.players[0].id;
-        s.recap!.fastest = { by: s.players[1].id, id: id('Headhunter'), ms: 1900 };
-        return s;
-      })(),
-    },
-    {
-      key: 'e-gallery',
-      group: NG,
-      label: 'Eight watching: five join next, three just watch',
-      view: D,
-      mode: 'host',
-      me: K,
-      state: { ...won(), spectators: [...['Finn', 'Renly', 'Oswin', 'Zelina', 'Dannig'].map((n) => spectator(n)), ...['Hooded One', 'Sekhema Asala', 'Watcher'].map((n) => spectator(n, true))] },
-    },
-    {
       key: 'e-team-dropped',
       group: DG,
       label: 'Together: one of three left the run',
@@ -719,28 +759,6 @@ export function endScenes(): EndScene[] {
       delveResult: measured(26, 30, false),
       log: [miss(10, 'Headhunter', 20, team('Kalguur')), miss(20, 'Ingenuity', 24, team('Kalguur')), miss(30, 'Briarpatch', 26, team('Kalguur'))],
       runs: runs([30, 21], 26, true, K),
-    },
-    { key: 'e-phone-twelve-delve', group: DG, label: 'Phone: twelve delvers', view: P, mode: 'host', me: K, state: teamRun(TEAM12), ...host6() },
-    {
-      key: 'e-long-team',
-      group: DG,
-      label: 'Together: long names, a life given and one brought back',
-      view: D,
-      mode: 'client',
-      me: pid(LONG[1]),
-      state: delve(LONG.slice(0, 3), {
-        depth: 21,
-        host: pid(LONG[0]),
-        losses: { [pid(LONG[0])]: [12, 17, 21], [pid(LONG[1])]: [8, 11, 14, 20], [pid(LONG[2])]: [10, 15, 19] },
-        revives: [
-          { by: pid(LONG[0]), to: pid(LONG[1]), depth: 14, fell: 14, at: RUN + 35 },
-          { by: pid(LONG[1]), to: pid(LONG[2]), depth: 19, fell: 19, at: RUN + 55 },
-        ],
-        recap: { fastest: { by: pid(LONG[2]), id: id('Guiding Palm of the Heart'), ms: 2300 } },
-      }),
-      delveResult: measured(21, 25, false),
-      log: [miss(10, 'Headhunter', 8, team(LONG[1])), miss(20, 'Ingenuity', 11, team(LONG[1])), miss(30, 'Guiding Palm of the Heart', 14, team(LONG[1])), miss(60, 'Briarpatch', 20, team(LONG[1]))],
-      runs: runs([25, 16], 21, true, pid(LONG[1])),
     },
     {
       key: 'e-wards-saved',
@@ -798,16 +816,6 @@ export function endScenes(): EndScene[] {
       earned: ['depth-10'],
     },
     {
-      key: 'e-delve-joiners',
-      group: DG,
-      label: 'Together: three join the next run',
-      view: D,
-      mode: 'host',
-      me: K,
-      state: { ...teamRun(TEAM6), spectators: ['Finn', 'Renly', 'Oswin'].map((n) => spectator(n)) },
-      ...host6(),
-    },
-    {
       key: 'e-team-norecap',
       group: DG,
       label: 'Together: no summary from the host (an older host)',
@@ -824,4 +832,51 @@ export function endScenes(): EndScene[] {
       runs: runs([17, 32, 15], 27, true, doryani),
     },
   ];
+}
+
+/** The end screen page's windows, as the desk's sizes. */
+const END_SIZE: Record<EndView, SizeKey> = {
+  desktop: 'desktop',
+  air13: 'laptop',
+  tablet: 'tablet',
+  phone: 'phone390',
+  phone375: 'phone',
+  narrow: 'narrow',
+  big: 'uhd150',
+  landscape: 'landscape',
+};
+
+/** The circle behind the end screen: the one the game falls to, or any of the five. */
+const CIRCLE: Control = {
+  kind: 'choice',
+  key: 'circle',
+  label: 'Circle',
+  default: 'auto',
+  options: [
+    { value: 'auto', label: 'As the game picks' },
+    { value: 'eye', label: 'Eye' },
+    { value: 'moth', label: 'Moth' },
+    { value: 'monad', label: 'Monad' },
+    { value: 'rose', label: 'Rose' },
+    { value: 'blackSun', label: 'Black sun' },
+  ],
+};
+
+/** The end screen's scenes, as the desk has every screen's. */
+export function overScenes(): Scene[] {
+  return endScenes().map((e) => {
+    const { key, group, label, boards, view, mode, me, controls, states, vary, ...built } = e;
+    return {
+      key: `over/${key}`,
+      screen: 'over',
+      group,
+      label,
+      seats: [{ mode, me }],
+      sizes: [END_SIZE[view]],
+      boards: boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board])),
+      controls: [...(controls ?? []), CIRCLE],
+      states,
+      build: (v = {}) => ({ ...built, ...(vary ? { state: vary(v) } : {}), circle: v.circle && v.circle !== 'auto' ? (v.circle as PlateName) : null }),
+    };
+  });
 }

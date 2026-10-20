@@ -25,6 +25,8 @@ export interface ToastOptions {
   herald?: boolean;
   /** An achievement earned (lib/achievementToasts.ts): its seal in place of the gem, in its metal. */
   seal?: { sign: Sign; tier: Tier };
+  /** Called when the player closes it (not when it closes itself or is taken down): to remember that it was read. */
+  onClose?: () => void;
 }
 
 export interface Toast extends ToastOptions {
@@ -103,9 +105,19 @@ class Toasts {
     this.run(id, t.left);
   }
 
+  /**
+   * The oldest give way beyond max: the oldest that isn't sticky first (a
+   * sticky one waits to be read and closed). The newest never does: with
+   * only sticky ones before it, the oldest of those goes.
+   */
   private trim() {
     if (this.list.length <= this.max) return;
-    this.list = this.list.slice(-this.max);
+    let list = this.list;
+    while (list.length > this.max) {
+      const i = list.slice(0, -1).findIndex((t) => !t.sticky);
+      list = list.filter((_, j) => j !== (i < 0 ? 0 : i));
+    }
+    this.list = list;
     for (const id of this.timers.keys()) if (!this.list.some((t) => t.id === id)) this.clear(id);
   }
 

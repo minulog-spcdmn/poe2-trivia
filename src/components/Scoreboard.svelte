@@ -35,7 +35,9 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
-  import { phone } from '../lib/layout';
+  import { flat, fullRoom, handheld } from '../lib/layout';
+  import { arrival } from '../lib/zoneArrival.svelte';
+  import { dealing } from '../lib/dealing.svelte';
   import { kickConfirm } from '../lib/kick';
   import { cavesIn, fellAt, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, type FindKind, type Inventory as Carried, type ItemKind } from '../lib/delve';
   import { inventoryChanges, itemsBlown } from '../lib/delveSession';
@@ -52,6 +54,58 @@
   let { aside }: { aside?: Snippet } = $props();
 
   const s = $derived(session.state!);
+  /**
+   * A full room in the header's row (a phone on its side): every entry its
+   * avatar alone, whoever's turn it is too (the banner names them), in one
+   * row that scrolls sideways if it must, the one whose turn it is (or you,
+   * together) kept in view.
+   */
+  const tight = $derived(flat.current && fullRoom(s.players.length));
+  /**
+   * A zone's card is up: on a phone on its side its bar covers the header's
+   * row and the scoreboard in it, so the streaks' fire (drawn over the page,
+   * lib/fx) goes out until the card has gone, and is lit again quietly.
+   */
+  const underBar = $derived(flat.current && !!arrival.card && dealing.held);
+  let boardEl = $state<HTMLElement>();
+  $effect(() => {
+    if (!tight || !boardEl) return;
+    void s.turn;
+    void s.phase;
+    boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+  // And smaller, as far as it must (down to 70%) for every entry to fit the
+  // row: it scrolls only past that. Again whenever the row's width or an
+  // entry changes (someone joins or leaves, a score gains a digit, a streak
+  // lights) and once the fonts are in. --board-zoom lets the kick buttons
+  // keep their touch size (KickButton.svelte).
+  $effect(() => {
+    const board = boardEl;
+    if (!tight || !board) return;
+    const fit = () => {
+      board.style.zoom = '';
+      board.style.removeProperty('--board-zoom');
+      const need = board.scrollWidth;
+      const room = board.clientWidth;
+      if (need <= room) return;
+      const zoom = String(Math.max(0.7, room / need));
+      board.style.zoom = zoom;
+      board.style.setProperty('--board-zoom', zoom);
+    };
+    fit();
+    void document.fonts?.ready.then(fit);
+    const ro = new ResizeObserver(fit);
+    ro.observe(board.parentElement!);
+    // (Its entries' own changes, not its style: fitting never sets this off again.)
+    const mo = new MutationObserver(fit);
+    mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      board.style.zoom = '';
+      board.style.removeProperty('--board-zoom');
+    };
+  });
   const target = $derived(s.settings.targetScore);
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
@@ -592,19 +646,27 @@
   /**
    * Svelte action: sets a row burning for a streak of `n`, re-lit as its heat
    * or colour changes. `delve`: the long scale and the colours past blue
-   * (lib/fx/streaks). Reaching a new colour, it bursts in it.
+   * (lib/fx/streaks). Reaching a new colour, it bursts in it. `hidden`: out
+   * for now, put out and lit again without a word (no douse, no burst).
    */
-  function burn(node: HTMLElement, o: { n: number; delve: boolean }) {
+  function burn(node: HTMLElement, o: { n: number; delve: boolean; hidden?: boolean }) {
     let fire: Handle | null = null;
     let lit = { heat: 0, flame: flameOf(0) };
-    const light = () => (fire = lit.heat > 0 ? ablaze(node, lit.heat, lit.flame.blue, lit.flame.tint) : null);
-    const set = ({ n, delve }: { n: number; delve: boolean }) => {
+    let hid = false;
+    const light = () => (fire = lit.heat > 0 && !hid ? ablaze(node, lit.heat, lit.flame.blue, lit.flame.tint) : null);
+    const set = ({ n, delve, hidden = false }: { n: number; delve: boolean; hidden?: boolean }) => {
+      if (hidden !== hid) {
+        hid = hidden;
+        fire?.stop(hidden ? 0.2 : 0);
+        light();
+      }
       const next = { heat: heatOf(n, delve), flame: flameOf(n, delve) };
       if (next.heat === lit.heat && (next.heat === 0 || next.flame === lit.flame)) return;
       const was = lit;
       lit = next;
       fire?.stop(0.5);
       light();
+      if (hid) return;
       if (was.heat > 0 && next.heat === 0) doused(node);
       if (was.heat > 0 && next.heat > 0 && next.flame !== was.flame) {
         if (next.flame.blue) turnsBlue(node);
@@ -650,14 +712,14 @@
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
-  // Stuck (phones only): the strip sticks 1px above the top of the screen, so
+  // Stuck (phones only, either way up): the strip sticks 1px above the top of the screen, so
   // once it has, it no longer fits in the view. Its background then covers
   // what the backdrop draws under the entries, so CSS paints their shadows.
   let strip = $state<HTMLElement>();
   let stuck = $state(false);
   $effect(() => {
     stuck = false;
-    if (!phone.current || !strip) return;
+    if (!handheld.current || !strip) return;
     const io = new IntersectionObserver(([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.top < 0), {
       threshold: 1,
     });
@@ -682,10 +744,10 @@
      background of its own over the content scrolling under it. -->
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
 <div class="strip" data-cursor="board" class:stuck bind:this={strip}>
-  <ol class="board" class:crowded={s.players.length > 6}>
+  <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
-      {@const wide = coop ? p.id === me : active}
+      {@const wide = !tight && (coop ? p.id === me : active)}
       {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
@@ -703,12 +765,12 @@
         data-cursor="row:{i}"
         use:backdropShadow={{ off: stuck }}
         use:scoreRow={p.id}
-        use:burn={{ n: streakShown, delve: !!run }}
+        use:burn={{ n: streakShown, delve: !!run, hidden: underBar }}
         class:ablaze={fire > 0}
         style:--heat={fire}
         style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
-        class:active class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
         <Avatar name={p.name} hue={p.hue} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name-row">
@@ -774,7 +836,7 @@
   </ol>
   {@render aside?.()}
   <!-- Who's watching hangs under the strip, so nothing moves when someone comes in to watch. Not while the offer to give a life hangs there. -->
-  {#if !asking && !session.spectating}<Gallery hang />{/if}
+  {#if !asking && (!session.spectating || flat.current)}<Gallery hang />{/if}
   {#if asking && askingName && me}
     <!-- Focus moves in as it opens; Escape or Not now hands it back to the heart. -->
     <div
@@ -793,8 +855,9 @@
     </div>
   {/if}
 </div>
-<!-- A spectator's own view: the gallery in the flow, with their choice to play next game. -->
-{#if session.spectating}<Gallery />{/if}
+<!-- A spectator's own view: the gallery in the flow, with their choice to play next game
+     (on a phone on its side, where the page has no height to spare, it hangs under the header's row as the players' does). -->
+{#if session.spectating && !flat.current}<Gallery />{/if}
 
 <!-- Gone: the lobby's offline mark (StandingMark), a phone's signal with no bar lit, struck through. -->
 {#snippet offline()}
@@ -1334,7 +1397,8 @@
     filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1px #000);
   }
 
-  @media (max-width: 640px) {
+  /* (And on a phone on its side, lib/layout.ts `flat`, where the screen is too short for the full entries.) */
+  @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
     /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
        row of avatars and scores, with the name and progress of whoever's turn
        it is, and the timer at the end. Sticky rather than fixed, so it shakes
@@ -1525,6 +1589,54 @@
     }
     li:not(.wide) .off-corner .off {
       --standing-size: 15px;
+    }
+  }
+  /* A phone on its side (lib/layout.ts `flat`): the strip rides in the
+     header's row (App.svelte's `folded`), from the screen's left edge to the
+     round and the buttons at its right end (--header-right), so the game
+     gets the height of a row of its own. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .strip {
+      height: var(--header-h, 47px);
+      margin: calc(-1 * var(--header-h, 47px)) calc(var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))) 0
+        calc(-1 * max(1rem, env(safe-area-inset-left)));
+      padding-block: 0;
+      padding-right: 0;
+    }
+    .board {
+      padding: 2px 0;
+    }
+    /* A full room: one row, every entry its avatar, closer together; it
+       scrolls sideways if it must (room kept over and under it for the
+       score badges and the kick on the avatars' corners). */
+    .board.tight {
+      flex-wrap: nowrap;
+      gap: 0.3rem;
+      align-self: stretch;
+      overflow-x: auto;
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      padding: 8px 6px 6px 10px;
+      margin-left: -10px;
+    }
+    .board.tight::-webkit-scrollbar {
+      display: none;
+    }
+    /* Who's watching: under the header's row at its left, beside the banner's
+       title rather than over it; a spectator's choice to play next game at
+       its right, under the header's buttons (the strip's right margin undone),
+       clear of the banner's lines either side. */
+    .strip :global(.gallery.hang) {
+      top: calc(100% + 4px);
+      right: calc(-1 * (var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))));
+      left: max(1rem, env(safe-area-inset-left));
+      padding-right: 0;
+      justify-content: space-between;
+    }
+    .strip :global(.hang .list) {
+      right: auto;
+      left: 0;
     }
   }
 </style>
