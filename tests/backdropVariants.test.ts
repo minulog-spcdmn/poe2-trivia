@@ -31,7 +31,7 @@ const { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } = await import('../src/lib/sha
 const { ENVIRONMENTS, SURFACE, descent } = await import('../src/lib/descent.ts');
 
 /** Names only Delve's parts of the shaders use. */
-const DELVE_ONLY = /\b(env_\w+|fx_spores|fx_shafts|environments|closing|tendrils|fxSlot|vnoise|fbm|ridge|smin3|gFrost|gDark|gLit|uDark|uFx|uFxK|uEddy|uCityA|uCityB|uCityC|uIce|frost|near)\b/;
+const DELVE_ONLY = /\b(env_\w+|fx_spores|fx_shafts|environments|closing|tendrils|fxSlot|vnoise|fbm|ridge|smin3|gFrost|gDark|gLit|uDark|uFx|uFxK|uEddy|uRolled|uCityA|uCityB|uCityC|uIce|frost|near)\b/;
 
 for (const n of [4, 16]) {
   const lean = backdropShaders(n);

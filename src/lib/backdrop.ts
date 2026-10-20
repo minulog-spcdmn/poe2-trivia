@@ -76,6 +76,15 @@ uniform vec4 uEddy;
 uniform vec2 uDark;
 // How far an Azurite Vein's scene has come in (lib/vein.ts), 0 to 1.
 uniform float uVein;
+// 0, always: it is never set, and a uniform starts at 0 (were it not, the
+// loops below would run past the ends of what they read). A loop that runs
+// to its count plus this stays a loop. Direct3D's shader compiler, which
+// Windows browsers build WebGL with, inlines every call and unrolls every
+// loop whose count it knows, so a loop over fbm()'s octaves or the frost's
+// four sides would be compiled as that many copies of its body, wherever
+// it is called; across Delve's environments that made this program take
+// seconds longer to build. It can't know a uniform, so it leaves the loop.
+uniform int uRolled;
 `;
 
 /** Delve's noise, its environments, and the dark closing in. */
@@ -85,7 +94,8 @@ const DELVE_SMOOTH_FUNCTIONS = `// The dark of the clock run out (uDark.y; CLOCK
 const float CLOCK_PEAK = ${CLOCK_PEAK.toFixed(2)};
 
 // Value noise for Delve's smoke and dark: smooth, with no direction or
-// shape of its own. (Hash without sine, Dave Hoskins.)
+// shape of its own. (Hash without sine, Dave Hoskins; vnoise() works out
+// the same at its four corners, so a change to one is a change to both.)
 float nhash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -95,10 +105,30 @@ float vnoise(vec2 x) {
   vec2 i = floor(x);
   vec2 f = fract(x);
   f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(nhash(i), nhash(i + vec2(1.0, 0.0)), f.x), mix(nhash(i + vec2(0.0, 1.0)), nhash(i + 1.0), f.x), f.y);
+  // nhash() at the four corners, side by side: the same sums, in fewer of
+  // the shader compiler's instructions.
+  vec4 hx = fract(vec4(i.x, i.x + 1.0, i.x, i.x + 1.0) * 0.1031);
+  vec4 hy = fract(vec4(i.y, i.y, i.y + 1.0, i.y + 1.0) * 0.1031);
+  vec3 a = vec3(hx.x, hy.x, hx.x);
+  vec3 b = vec3(hx.y, hy.y, hx.y);
+  vec3 c = vec3(hx.z, hy.z, hx.z);
+  vec3 e = vec3(hx.w, hy.w, hx.w);
+  vec4 d = vec4(dot(a, a.yzx + 33.33), dot(b, b.yzx + 33.33), dot(c, c.yzx + 33.33), dot(e, e.yzx + 33.33));
+  hx += d;
+  hy += d;
+  vec4 h = fract((hx + hy) * hx);
+  return mix(mix(h.x, h.y, f.x), mix(h.z, h.w, f.x), f.y);
 }
 
-float fbm(vec2 x) { return 0.5 * vnoise(x) + 0.3 * vnoise(x * 2.03 + 11.7) + 0.2 * vnoise(x * 4.1 - 5.3); }
+// Three octaves of it: their scale, offset and weight.
+float fbm(vec2 x) {
+  float n = 0.0;
+  for (int i = 0; i < 3 + uRolled; i++) {
+    vec3 o = i == 0 ? vec3(1.0, 0.0, 0.5) : i == 1 ? vec3(2.03, 11.7, 0.3) : vec3(4.1, -5.3, 0.2);
+    n += o.z * vnoise(x * o.x + o.y);
+  }
+  return n;
+}
 // Ridged noise: 1 along the winding seams where the noise crosses its middle.
 float ridge(vec2 x) { return 1.0 - abs(2.0 * vnoise(x) - 1.0); }
 // The smallest of three or four distances, smoothly, so no crease runs in
@@ -622,13 +652,13 @@ void main() {
 
 /**
  * Fragment uniform vectors the main pass uses apart from the UI elements'
- * (counted unpacked, samplers apart, with one to spare: 171 as linked with
+ * (counted unpacked, samplers apart, with one to spare: 172 as linked with
  * the soft light worked out here, the effects' slots, 3 * FX_SLOTS, among
  * them), and each element's: its seven rows and its shadows' two each.
  * Recount when adding a uniform (the active uniforms of the program
  * frag(4, false, true) links to, less 4 elements' worth).
  */
-const FIXED_UNIFORMS = 172;
+const FIXED_UNIFORMS = 173;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**

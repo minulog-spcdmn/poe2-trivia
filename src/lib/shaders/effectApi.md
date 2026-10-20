@@ -64,6 +64,14 @@ steadily with `strength`, never mostly at the end.
 - The middle of the screen, behind the UI, stays calm: return early there.
 - Phone friendly: no loops longer than a few steps, three or four noise
   octaves at most, and an early out wherever nothing is drawn.
+- Quick to build: Windows builds WebGL with Direct3D's shader compiler,
+  which unrolls every loop whose count it knows and inlines every call, so
+  each call to a big function (`fbm`, `vnoise`, a layer of its own) is
+  compiled again wherever it is made. Where the same function is called
+  a few times over, call it once in a loop that runs to `n + uRolled`
+  (always 0, see `uRolled` in `backdrop.ts`), which it can't unroll. It
+  leaves some loops with a branch in them (an `if`, a `continue`) a loop by
+  itself, but not all of them, so don't count on it.
 - The light it adds counts toward the scene's brightness: the estimate in
   `descent.ts` (`ENV_ADD`, `ENV_HALL`, scaled by the luma of the stops) keeps
   the scene's average falling with depth. A rebuilt effect is measured again
