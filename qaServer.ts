@@ -1,6 +1,8 @@
 // The dev server's side of the QA desk (qa.html, docs/qa.md): the files this
 // branch changes, for its "This change"; the signalling server its live
-// rooms meet on; and saving a live room's moment as a scene. Dev server only
+// rooms meet on; saving a live room's moment as a scene; and its "before and
+// after", the game before this branch served beside it and shots of frames
+// for the pixel diff (qaBefore.ts). Dev server only
 // (the beta's change list is written as it is built, see
 // .github/workflows/deploy.yml; its live rooms meet on the PeerJS cloud).
 
@@ -8,8 +10,20 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
-import type { Connect, Plugin } from 'vite';
+import type { Plugin } from 'vite';
+import { json, qaBefore, qaShots } from './qaBefore.ts';
 import { QA_PEER_PATH, QA_PEER_PORT } from './src/qa/live/signal.ts';
+
+const gitIn = (root: string) => (...args: string[]) => {
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : null;
+};
+
+/** Where this checkout left main: the merge base with origin/main, or main. */
+export function mergeBase(root: string): string | null {
+  const git = gitIn(root);
+  return git('merge-base', 'origin/main', 'HEAD') ?? git('merge-base', 'main', 'HEAD');
+}
 
 /**
  * The files this checkout changes since it left main (the merge base with
@@ -17,11 +31,8 @@ import { QA_PEER_PATH, QA_PEER_PORT } from './src/qa/live/signal.ts';
  * from the root, forward slashes.
  */
 export function changedFiles(root: string): { base: string; files: string[] } | null {
-  const git = (...args: string[]) => {
-    const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
-    return r.status === 0 ? r.stdout.trim() : null;
-  };
-  const base = git('merge-base', 'origin/main', 'HEAD') ?? git('merge-base', 'main', 'HEAD');
+  const git = gitIn(root);
+  const base = mergeBase(root);
   if (!base) return null;
   const lines = (out: string | null) => (out ?? '').split('\n').filter(Boolean);
   const files = new Set([...lines(git('diff', '--name-only', base)), ...lines(git('ls-files', '--others', '--exclude-standard'))]);
@@ -52,19 +63,14 @@ function startSignalling(): Promise<void> {
   })());
 }
 
-const json = (res: Parameters<Connect.NextHandleFunction>[1], status: number, body: unknown) => {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify(body));
-};
-
 export function qaServer(root: string): Plugin {
   return {
     name: 'qa-server',
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use('/__qa/change', (_req, res) => json(res, 200, changedFiles(root)));
+      server.middlewares.use('/__qa/before', qaBefore(root, server, () => mergeBase(root)));
+      server.middlewares.use('/__qa/shot', qaShots(server));
       server.middlewares.use('/__qa/peer', (_req, res) => {
         startSignalling().then(
           () => json(res, 200, { port: QA_PEER_PORT, path: QA_PEER_PATH }),

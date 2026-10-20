@@ -1,10 +1,9 @@
 <script lang="ts">
   // The desk's list of benches: those this change touches first, then the
-  // pieces, then the scenes a screen at a time. The search (/) finds a bench
-  // by its name or its screen, or a scene inside one by any words of its
-  // name ("race twelve"); Enter opens the first found.
+  // pieces, then the game's screens. The search (/) finds a bench by its
+  // name, or a state of a screen by any words of its name ("race twelve");
+  // Enter opens the first found, at that state.
   import type { Bench } from '../bench.ts';
-  import type { Scene } from '../scene.ts';
   import { matches } from './walk.ts';
 
   let {
@@ -23,21 +22,21 @@
     /** The benches as listed, in order (for ← and →). */
     listed: Bench[];
     shelfOf: (b: Bench) => string;
-    onopen: (b: Bench, at?: Scene) => void;
+    onopen: (b: Bench, at?: number) => void;
   } = $props();
 
   let input = $state<HTMLInputElement>();
   export const focus = () => input?.focus();
 
   const words = (q: string) => q.toLowerCase().split(/\s+/).filter(Boolean);
-  /** A bench the search finds, and (a screen of scenes) the first of its scenes it finds, if not by its own name. */
-  function found(b: Bench, q: string): { ok: boolean; scene?: Scene } {
+  /** A bench the search finds, and (a screen) the first of its states it finds, if not by its own name. */
+  function found(b: Bench, q: string): { ok: boolean; at?: number } {
     const w = words(q);
     if (!w.length) return { ok: true };
     const own = `${b.label} ${shelfOf(b)} ${b.key} ${b.kind === 'piece' ? b.about : ''}`.toLowerCase();
     if (w.every((x) => own.includes(x))) return { ok: true };
-    const s = b.kind === 'scenes' ? b.scenes.find((s) => matches(s, q)) : undefined;
-    return { ok: !!s, scene: s };
+    const at = b.kind === 'scenes' ? b.states.findIndex((s) => matches(s.scene, q, `${s.label} ${s.group}`)) : -1;
+    return { ok: at >= 0, at: at >= 0 ? at : undefined };
   }
   const hits = $derived(new Map(benches.map((b) => [b, found(b, query)])));
   const why = $derived(new Map((touched?.benches ?? []).map((t) => [t.key, t.why])));
@@ -57,12 +56,12 @@
     const seen = new Set<Bench>();
     listed = shelves.flatMap((s) => s.benches).filter((b) => !seen.has(b) && (seen.add(b), true));
   });
-  const count = (b: Bench) => (b.kind === 'piece' ? b.states.length : b.scenes.length);
+  const count = (b: Bench) => b.states.length;
 
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Enter') return;
     const b = listed[0];
-    if (b) onopen(b, hits.get(b)?.scene);
+    if (b) onopen(b, hits.get(b)?.at);
     input?.blur();
   }
 </script>
@@ -74,7 +73,7 @@
       <section>
         <h2 class:change={s.name === 'This change'}>{s.name}</h2>
         {#each s.benches as b (b.key)}
-          <button class="bench" class:on={b === current} class:changed={why.has(b.key)} title={why.get(b.key) ?? (b.kind === 'piece' ? b.about : `${b.screen}: ${b.label}`)} onclick={() => onopen(b, hits.get(b)?.scene)}>
+          <button class="bench" class:on={b === current} class:changed={why.has(b.key)} title={why.get(b.key) ?? (b.kind === 'piece' ? b.about : `${b.label}: the real game, ${b.states.length} states`)} onclick={() => onopen(b, hits.get(b)?.at)}>
             <span class="name">{b.label}</span>
             <span class="num">{count(b)}</span>
           </button>
