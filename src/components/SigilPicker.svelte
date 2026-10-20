@@ -11,6 +11,7 @@
   import { onStoredElsewhere } from '../lib/storage';
   import { savedName, session } from '../lib/session.svelte';
   import { COLOUR_KEY, loadColour } from '../lib/colour';
+  import { reservedHueOf } from '../lib/game';
   import Avatar from './Avatar.svelte';
 
   /** achievements: how many this player has earned, each worth a sigil. unlocked: how many they have unlocked, for a count beside it. hue: the avatar's colour. */
@@ -20,12 +21,15 @@
     strip = false,
     hue,
   }: { achievements: number; unlocked?: number; strip?: boolean; hue?: number } = $props();
-  // The colour picked (lib/colour.ts), unless the page that has it says (the settings, as it's picked there).
+  const name = savedName() || 'Exile';
+  // The colour picked (lib/colour.ts), or the one kept for the name, unless
+  // the page that has it says (the settings, as it's picked there).
+  const own = () => reservedHueOf(name) ?? loadColour() ?? 0;
   let picked = $state(0);
   onMount(() => {
     if (hue !== undefined) return;
-    picked = loadColour() ?? 0;
-    return onStoredElsewhere({ [COLOUR_KEY]: () => (picked = loadColour() ?? 0) });
+    picked = own();
+    return onStoredElsewhere({ [COLOUR_KEY]: () => (picked = own()) });
   });
 
   let sigils = $state.raw(loadSigils());
@@ -41,7 +45,6 @@
   const ask = $derived(left ? asking : null);
   /** On the avatar: the one asked about, else the one worn. */
   const shown = $derived(ask ?? sigils.worn ?? undefined);
-  const name = savedName() || 'Exile';
 
   function pick(c: PlayerClass) {
     if (sigils.unlocked.includes(c)) {

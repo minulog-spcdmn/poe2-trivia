@@ -25,6 +25,7 @@
   import { onStoredElsewhere } from '../lib/storage';
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
+  import { reservedHueOf } from '../lib/game';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -89,6 +90,8 @@
   let colour = $state(loadColour());
   onMount(() => onStoredElsewhere({ [COLOUR_KEY]: () => (colour = loadColour()) }));
   const choosable = PALETTE.slice(0, RUBY).map((c, h) => ({ h, c }));
+  /** A colour kept for this name (zoe_arcana's ruby): theirs in every room, so there's none to pick. */
+  const kept = $derived(reservedHueOf(name));
   function pickColour(h: number | null) {
     if (h === colour || !saveColour(h)) return;
     colour = h;
@@ -235,6 +238,11 @@
         <!-- The colour beside the heading, which takes no room the page hasn't got: picked again, it's let go. -->
         <header>
           <h2>You</h2>
+          {#if kept !== undefined}
+            <div class="swatches">
+              <span class="swatch on" style:--c={PALETTE[kept]} role="img" aria-label="Your colour: {STONES[kept]}, kept for you" title="{STONES[kept]}, kept for you"></span>
+            </div>
+          {:else}
           <div class="swatches" role="radiogroup" aria-label="Your colour">
             {#each choosable as { h, c } (h)}
               <button
@@ -249,6 +257,7 @@
               ></button>
             {/each}
           </div>
+          {/if}
         </header>
         <form class="name-row" onsubmit={saveDraft}>
           <input
@@ -283,7 +292,7 @@
           <h2>Class sigils</h2>
           <span class="count">{unlocked} / {CLASSES.length}</span>
         </header>
-        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={colour ?? 0} />
+        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} />
       </section>
     {/if}
   </div>
@@ -581,6 +590,13 @@
     box-shadow:
       0 0 0 2px #0c0a08,
       0 0 0 3.5px var(--gold);
+  }
+  /* The one kept for the name: shown, not picked. */
+  span.swatch {
+    cursor: default;
+  }
+  span.swatch:hover {
+    transform: none;
   }
   .swatch:focus-visible {
     outline: 2px solid var(--gold);

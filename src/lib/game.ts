@@ -1219,8 +1219,9 @@ const namesIn = (s: GameState, except?: string) =>
 const RESERVED_HUES = new Map([[nameSkeleton('zoe_arcana'), RUBY]]);
 const RESERVED = new Set(RESERVED_HUES.values());
 
-/** The colour reserved for this player's name, if any. */
-const reservedHue = (p: Player) => RESERVED_HUES.get(nameSkeleton(p.name));
+/** The colour reserved for a name, if any: theirs in every room, whatever colour they pick. */
+export const reservedHueOf = (name: string) => RESERVED_HUES.get(nameSkeleton(name));
+const reservedHue = (p: Player) => reservedHueOf(p.name);
 
 /** The first avatar colour nobody else is using, skipping the reserved ones while others are free. */
 function freeHue(s: GameState, except?: Player): number {
