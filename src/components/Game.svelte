@@ -45,9 +45,9 @@
   const run = $derived(s.delve ?? null);
   const depth = $derived(delveDepth(s));
   const group = $derived(isGroupRun(s));
-  // The question's timer: in the scoreboard pinned to the top on phones, in
-  // view while they scroll down to the answers, and at the right end of the
-  // question's task line otherwise (a phone on its side too, however narrow:
+  // The question's timer: at the end of the scoreboard's row on phones
+  // upright (pinned to the top with it, where a page scrolls), and at the
+  // right end of the question's task line otherwise (a phone on its side too, however narrow:
   // its header row keeps its room for the players). Only ever one, so its
   // ticks never double.
   const slim = $derived(phone.current && !flat.current);
@@ -898,6 +898,42 @@
   @media (orientation: landscape) and (max-height: 350px) {
     .banner {
       margin: 0.15rem 0 0.2rem;
+    }
+  }
+  /* A phone upright (lib/layout.ts `upright`): the game as tall as the room
+     under the header (App.svelte), the turn's stage taking what the
+     scoreboard, the banner and the lines under it leave, the question
+     filling it (QuestionView gives the art what its answers leave). Clear
+     of the home indicator's strip at the foot. */
+  @media (orientation: portrait) and (max-width: 640px) {
+    .game {
+      flex: 1;
+      padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+    }
+    .turns,
+    .turn-body {
+      flex: 1;
+    }
+    .q-slot {
+      display: flex;
+      flex-direction: column;
+    }
+    .delve-line {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+    .skip {
+      margin-top: 0.5rem;
+    }
+  }
+  /* A browser's bars up (at most 700px): the banner closer to what's under it. */
+  @media (orientation: portrait) and (max-width: 640px) and (max-height: 700px) {
+    .game {
+      gap: 0.4rem;
+    }
+    .banner {
+      margin-bottom: 0.3rem;
     }
   }
 </style>

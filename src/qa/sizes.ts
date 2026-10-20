@@ -20,7 +20,11 @@ export interface Size {
 }
 
 export const SIZES = [
+  // Upright in a browser, its bars up (Safari's toolbars both showing: a game never scrolls them away), so 635 of the screen's 812.
+  { key: 'phoneBrowser', label: 'Small phone, in its browser', w: 375, h: 635, dpr: 3, touch: true, walk: true },
+  { key: 'phoneSE', label: 'Phone SE', w: 375, h: 667, dpr: 2, touch: true },
   { key: 'phone', label: 'Small phone', w: 375, h: 812, dpr: 3, touch: true, walk: true },
+  { key: 'phone390Browser', label: 'Phone, in its browser', w: 390, h: 664, dpr: 3, touch: true },
   { key: 'phone390', label: 'Phone', w: 390, h: 844, dpr: 3, touch: true },
   // On its side in a browser: the address bar stays up (a game never scrolls it away), so 340 of the screen's 390.
   { key: 'landscape', label: 'Phone on its side', w: 844, h: 340, dpr: 3, touch: true, walk: true },

@@ -1,9 +1,11 @@
 import { MediaQuery } from 'svelte/reactivity';
 
 /**
- * Phones: the game pins the scoreboard (with the timer) to the top of the
- * screen, and the reveal's Next button to the bottom, so neither scrolls away
- * while the answers do. Matches the 640px breakpoint in the components' CSS.
+ * Phones: the game's slim scoreboard, with the timer at its end. Upright
+ * (`upright`) the game fits the screen; a narrow window that still scrolls
+ * pins the scoreboard to the top and docks the reveal's Next button at the
+ * bottom (`dock`), so neither scrolls away. Matches the 640px breakpoint in
+ * the components' CSS.
  */
 export const phone = new MediaQuery('(max-width: 640px)');
 
@@ -23,6 +25,18 @@ export const short = new MediaQuery('(min-width: 761px) and (max-height: 820px)'
  */
 export const FLAT = '(orientation: landscape) and (max-height: 500px)';
 export const flat = new MediaQuery(FLAT);
+
+/**
+ * Phones upright: narrow but tall. The game fills the screen's height and
+ * no more (App.svelte, Game.svelte): the item's art, or the grid of
+ * pictures, takes what the rest leaves and gives way first, the answers keep
+ * a thumb's height, and Next stands in its row under them rather than in a
+ * bar docked over the page, so nothing scrolls (the QA desk's frames check
+ * it, src/qa/frame/checks.ts). Never the same screen as `flat`, which is on
+ * its side. The components' CSS writes the query out.
+ */
+export const UPRIGHT = '(orientation: portrait) and (max-width: 640px)';
+export const upright = new MediaQuery(UPRIGHT);
 
 /** A full room: more players than the scoreboard's row (and, on a phone on its side, the header's) has room for at full size. */
 export const fullRoom = (players: number) => players > 6;

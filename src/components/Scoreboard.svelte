@@ -35,7 +35,7 @@
   import { scoreRow, scoreRowOf } from '../lib/scoreRows';
   import { FLARE_IGNITE_MS, flareStrike } from '../lib/flareBurn';
   import { flameOf, heatOf, streakOf } from '../lib/fx/streaks';
-  import { flat, fullRoom, handheld } from '../lib/layout';
+  import { flat, fullRoom, handheld, upright } from '../lib/layout';
   import { arrival } from '../lib/zoneArrival.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { kickConfirm } from '../lib/kick';
@@ -61,6 +61,8 @@
    * together) kept in view.
    */
   const tight = $derived(flat.current && fullRoom(s.players.length));
+  /** A full room on a phone, on its side (`tight`) or upright (in two rows at most, under the header): every entry its avatar alone. */
+  const bare = $derived((flat.current || upright.current) && fullRoom(s.players.length));
   /**
    * A zone's card is up: on a phone on its side its bar covers the header's
    * row and the scoreboard in it, so the streaks' fire (drawn over the page,
@@ -747,7 +749,7 @@
   <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
-      {@const wide = !tight && (coop ? p.id === me : active)}
+      {@const wide = !bare && (coop ? p.id === me : active)}
       {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
@@ -1637,6 +1639,16 @@
     .strip :global(.hang .list) {
       right: auto;
       left: 0;
+    }
+  }
+  /* A full room on a phone upright, its browser's bars up: the two rows of
+     avatars a little smaller (--board-zoom keeps the kick buttons' touch
+     size, KickButton.svelte), so the game under them keeps its height. */
+  @media (orientation: portrait) and (max-width: 640px) and (max-height: 700px) {
+    .board.crowded {
+      zoom: 0.85;
+      --board-zoom: 0.85;
+      padding-block: 2px;
     }
   }
 </style>
