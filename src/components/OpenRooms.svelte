@@ -261,6 +261,10 @@
     flex-direction: column;
     min-height: 0;
   }
+  /* Positioned, so a room leaving the list (pinned absolute while it fades) stays inside it, clipped and scrolled with it. */
+  .frame {
+    position: relative;
+  }
   header {
     flex: none;
     display: flex;

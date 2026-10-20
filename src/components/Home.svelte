@@ -812,9 +812,9 @@
      always takes its most (and big windows zoom the stage anyway). */
   .home {
     --slot: 108px;
-    /* The rooms' row: their margin, the list's header (48) and its frame, a row
-       of rooms (72) and 37 more, the gap and the next row's top: down to 900. */
-    --rooms-h: calc(44px + 48px + 109px);
+    /* The rooms' block below its margin (44): the list's header (48) and its frame, a
+       row of rooms (72) and 37 more, the gap and the next row's top: down to 900. */
+    --rooms-h: calc(48px + 109px);
     width: 100%;
     max-width: 1440px;
     margin-inline: auto;
@@ -823,7 +823,7 @@
     display: grid;
     grid-template-columns: minmax(0, 452px) minmax(0, 510px);
     /* The free height splits above and below the block; the footer stays last. */
-    grid-template-rows: 1fr auto var(--rooms-h) 1fr auto;
+    grid-template-rows: 1fr auto auto 1fr auto;
     grid-template-areas:
       '. .'
       'intro today'
@@ -851,8 +851,9 @@
     transition: opacity 0.3s;
   }
   @media (min-width: 1081px) {
-    /* Its height is the row's: the list's frame takes what its header leaves and scrolls a long list. */
+    /* A height of its own (none on an invite, which has no rooms): the list's frame takes what its header leaves and scrolls a long list. */
     .rooms {
+      height: var(--rooms-h);
       display: flex;
       flex-direction: column;
       min-height: 0;
@@ -864,7 +865,6 @@
       flex: 1 1 0;
       min-height: 0;
       overflow-y: auto;
-      overscroll-behavior: contain;
       /* Room for the rooms' shadows and hover glow, which the frame would clip at its edges. */
       margin: -14px -24px 0;
       padding: 14px 24px 0;
@@ -1346,8 +1346,8 @@
   @media (max-height: 859px) and (min-width: 1081px) {
     .home {
       --slot: 92px;
-      /* Margin 8, header 40, a row of rooms (72) and its gap: down to 725. */
-      --rooms-h: calc(8px + 40px + 84px);
+      /* Header 40, a row of rooms (72) and its gap: down to 725 (below the margin, 8). */
+      --rooms-h: calc(40px + 84px);
       /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
       --daily-stage-h: 401px;
       --daily-circle: 456px;
