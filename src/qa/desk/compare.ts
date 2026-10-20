@@ -118,12 +118,10 @@ async function layerOf(mask: Uint8Array, w: number, h: number): Promise<string> 
 export async function compareShots(beforeUrl: string, nowUrl: string, w: number, h: number, signal: AbortSignal): Promise<Compared> {
   // (The first shot to fail stops the others, so the desk says why at once instead of waiting on them.)
   const stop = new AbortController();
-  const off = () => stop.abort();
-  if (signal.aborted) stop.abort();
-  else signal.addEventListener('abort', off, { once: true });
+  const either = AbortSignal.any([signal, stop.signal]);
   let failed: { why: unknown } | null = null;
   const one = (url: string, side: 'before' | 'now') =>
-    shot(url, w, h, stop.signal, side).catch((e: unknown) => {
+    shot(url, w, h, either, side).catch((e: unknown) => {
       if (!failed) {
         failed = { why: e };
         stop.abort();
@@ -131,14 +129,21 @@ export async function compareShots(beforeUrl: string, nowUrl: string, w: number,
       throw e;
     });
   const got = await Promise.allSettled([one(beforeUrl, 'before'), one(nowUrl, 'now'), one(nowUrl, 'now')]);
-  signal.removeEventListener('abort', off);
   if (failed) {
     // (The shots that came are let go of: only the one that failed first says why.)
     for (const r of got) if (r.status === 'fulfilled') r.value.close();
     throw (failed as { why: unknown }).why;
   }
   const [before, now, again] = got.map((r) => (r as PromiseFulfilledResult<ImageBitmap>).value);
-  const { mask, ...diff } = compare(pixels(before), pixels(now), pixels(again));
-  again.close();
-  return { diff, before, now, layer: await layerOf(mask, now.width, now.height) };
+  try {
+    const { mask, ...diff } = compare(pixels(before), pixels(now), pixels(again));
+    return { diff, before, now, layer: await layerOf(mask, now.width, now.height) };
+  } catch (e) {
+    // (Not handed on, so let go of here.)
+    before.close();
+    now.close();
+    throw e;
+  } finally {
+    again.close();
+  }
 }
