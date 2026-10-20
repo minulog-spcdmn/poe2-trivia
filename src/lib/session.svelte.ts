@@ -641,12 +641,15 @@ class Session {
    * another tab): the game under way shows it on this player at once.
    */
   wearSigil() {
-    // (Not mid-game: the game keeps the one each player came in with.)
-    if (this.state?.phase !== 'lobby') return;
+    // (Not mid-game: the game keeps the one each player came in with, and
+    // this is called again once it's back in the lobby, onNewState.)
+    const s = this.state;
+    if (s?.phase !== 'lobby') return;
     const { sigil } = wornSigil();
-    if (this.mode === 'local') {
-      if (this.localSelf) this.dispatch({ type: 'sigil', playerId: this.localSelf, ...(sigil ? { sigil } : {}) });
-    } else if (this.myPlayerId) this.dispatch({ type: 'sigil', ...(sigil ? { sigil } : {}) });
+    const id = this.mode === 'local' ? this.localSelf : this.myPlayerId;
+    const me = id && [...s.players, ...(s.spectators ?? [])].find((o) => o.id === id);
+    if (!me || me.sigil === sigil) return;
+    this.dispatch({ type: 'sigil', ...(this.mode === 'local' ? { playerId: me.id } : {}), ...(sigil ? { sigil } : {}) });
   }
 
   /** Likewise the colour this browser would like (lib/colour.ts): at once in the lobby, mid-game from the next one. */
@@ -2798,6 +2801,8 @@ class Session {
     // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
     this.hissFuse(next);
     if (!prev) return;
+    // Back in the lobby: the sigil worn now, if another was picked while the game went on.
+    if (prev.phase !== 'lobby' && next.phase === 'lobby') queueMicrotask(() => this.wearSigil());
     const me = this.myPlayerId;
     for (const n of delveNotices(prev, next)) this.delveNotice(n, next);
     // Delve: dynamite blasted the question away for a new one, heard on every screen.

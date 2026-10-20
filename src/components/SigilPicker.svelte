@@ -21,8 +21,12 @@
     hue,
   }: { achievements: number; unlocked?: number; strip?: boolean; hue?: number } = $props();
   // The colour picked (lib/colour.ts), unless the page that has it says (the settings, as it's picked there).
-  let picked = $state(loadColour() ?? 0);
-  onMount(() => onStoredElsewhere({ [COLOUR_KEY]: () => (picked = loadColour() ?? 0) }));
+  let picked = $state(0);
+  onMount(() => {
+    if (hue !== undefined) return;
+    picked = loadColour() ?? 0;
+    return onStoredElsewhere({ [COLOUR_KEY]: () => (picked = loadColour() ?? 0) });
+  });
 
   let sigils = $state.raw(loadSigils());
   $effect.pre(() => {

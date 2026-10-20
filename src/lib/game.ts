@@ -1482,7 +1482,8 @@ export class Engine {
         /**
          * The one they wear now and the colour they'd like, coming back too:
          * they may have changed meanwhile. Mid-game the sigil stays as the
-         * game began (as the 'sigil' action's does); the colour waits for the next.
+         * game began (as the 'sigil' action's does; the session sends it again
+         * back in the lobby); the colour waits for the next.
          */
         const wear = (o: { sigil?: PlayerClass; colour?: number }) => {
           if (s.phase === 'lobby') {
@@ -1929,8 +1930,8 @@ export class Engine {
         // Players who left during the game don't come back as ghosts in the lobby.
         fresh.players = s.players.filter((p) => p.connected).map((p) => ({ ...p, score: 0, recent: [], streak: 0 }));
         // Renames during the game take effect on colours now, and so do the colours asked for: reserved ones first.
-        const rank = (p: Player) => (reservedHue(p) !== undefined ? 0 : p.colour !== undefined ? 1 : 2);
-        for (const p of [...fresh.players].sort((a, b) => rank(a) - rank(b))) settleHue(fresh, p);
+        const rank = new Map(fresh.players.map((p) => [p, reservedHue(p) !== undefined ? 0 : p.colour !== undefined ? 1 : 2]));
+        for (const p of [...fresh.players].sort((a, b) => rank.get(a)! - rank.get(b)!)) settleHue(fresh, p);
         fresh.spectators = s.spectators;
         fillSeats(fresh);
         if (s.aside) fresh.aside = s.aside;

@@ -407,6 +407,18 @@ test('mid-game the sigil stays as the game began', () => {
   assert.equal(s.players.find((p) => p.id === 'p1')?.sigil, 'ranger', 'nor by coming back');
 });
 
+test('coming back mid-game with a colour asked for keeps the colour had, and the ask is answered at the next game', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  s = { ...s, phase: 'choosing' };
+  s = engine.apply(s, { type: 'join', playerId: 'p1', name: 'Bram', returning: true, colour: 4 }, 'p1');
+  const bram = () => s.players.find((p) => p.id === 'p1')!;
+  assert.equal(bram().hue, 1);
+  assert.equal(bram().colour, 4);
+  s = { ...s, phase: 'over' };
+  s = engine.apply(s, { type: 'restart' }, 'p0');
+  assert.equal(bram().hue, 4);
+});
+
 test('a colour asked for is given when free, taken from one who never asked, and first come keeps it', () => {
   let { engine, s } = lobby(['Ash', 'Bram']);
   const hue = (id: string) => s.players.find((p) => p.id === id)?.hue;
