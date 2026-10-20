@@ -70,8 +70,9 @@ Design v9 (`design-v9-loop.md`, a Workflow: research, six pitches, two
 owner-proxy judges) offers three new loops (Identify, Pick Your Fights,
 Swarm); the owner took none: "an actually good game and not mobile slop",
 something must grow, art alone must not win, long but never tedious. Design
-v10 (a Workflow) writes two full designs, each critiqued by a calibrated
-owner proxy and revised, before the owner sees them. v5 stays on its branch,
+v10 (`design-v10.md`) has two full designs, each critiqued by a calibrated
+owner proxy and revised: A (name it, wear it, break the wall; design's
+pick) and B (Unidentified, a deckbuilder). Waiting on the owner. v5 stays on its branch,
 not served.
 
 Sessions: an orchestrator opened from the owner's phone (Remote Control)
