@@ -806,15 +806,14 @@
      its bottom. On large windows the whole app is scaled up (lib/stage.ts,
      App.svelte's shell).
      The rooms' list has a frame of its own, as tall whether the list is
-     searching, empty or long: a row of rooms and a peek of the next, and a
-     longer list scrolls inside it. Fixed, not grown into a taller window:
-     the shell sizes the page by its content, under which a growing row
-     always takes its most (and big windows zoom the stage anyway). */
+     searching, empty or long, and a longer list scrolls inside it. Fixed,
+     not grown into a taller window: the shell sizes the page by its
+     content, under which a growing row always takes its most.
+     On a wide window everything fits, the footer too: three rhythms by the
+     window's height, each adding up to it (980, which big screens zoom to;
+     900, from 860; 725, the 13-inch laptop, below that). */
   .home {
     --slot: 108px;
-    /* The rooms' block below its margin (44): the list's header (48) and its frame, a
-       row of rooms (72) and 37 more, the gap and the next row's top: down to 900. */
-    --rooms-h: calc(48px + 109px);
     width: 100%;
     max-width: 1440px;
     margin-inline: auto;
@@ -850,7 +849,25 @@
     margin-top: 44px;
     transition: opacity 0.3s;
   }
+  .foot {
+    grid-area: foot;
+    margin-top: 32px;
+  }
+  /* Wide windows, 980 tall and up: 20 + 673 (the columns) + 28 + 144 (the
+     rooms) + 20 + 80 (the footer) + 14 = 979. */
   @media (min-width: 1081px) {
+    .home {
+      /* The rooms' block below its margin: the list's header (48) and its frame, a row of rooms (72), the gap and the next row's top. */
+      --rooms-h: calc(48px + 96px);
+      padding-top: 20px;
+      padding-bottom: 14px;
+    }
+    .rooms {
+      margin-top: 28px;
+    }
+    .foot {
+      margin-top: 20px;
+    }
     /* A height of its own (none on an invite, which has no rooms): the list's frame takes what its header leaves and scrolls a long list. */
     .rooms {
       height: var(--rooms-h);
@@ -871,10 +888,6 @@
       scrollbar-width: thin;
       scrollbar-color: var(--gold-lo) transparent;
     }
-  }
-  .foot {
-    grid-area: foot;
-    margin-top: 32px;
   }
 
   /* ---- the title ---- */
@@ -1341,13 +1354,13 @@
     color: #ab9d88;
   }
 
-  /* Short windows (laptops): a tighter rhythm, so the first row of open
-     rooms is in view on a 1440 x 725 window, in a frame of its own. */
-  @media (max-height: 859px) and (min-width: 1081px) {
+  /* Under 980 tall (900, say): a tighter rhythm. 16 + 577 + 8 + 144 + 20 +
+     80 + 14 = 859. */
+  @media (max-height: 979px) and (min-width: 1081px) {
     .home {
       --slot: 92px;
-      /* Header 40, a row of rooms (72) and its gap: down to 725 (below the margin, 8). */
-      --rooms-h: calc(40px + 84px);
+      /* Header 40, a row of rooms (72), the gap and 20 of the next row. */
+      --rooms-h: calc(40px + 104px);
       /* Today's unique at this height (DailyUnique's defaults are the 900 tall window's). */
       --daily-stage-h: 401px;
       --daily-circle: 456px;
@@ -1377,6 +1390,42 @@
     }
     .rooms {
       margin-top: 8px;
+    }
+  }
+  /* Under 860 tall (a 13-inch laptop's 725): tighter still, and smaller.
+     10 + 494 + 6 + 120 + 10 + 70 + 10 = 720. The menu's rows keep room for
+     an open one's field (36 + 10 + 40); the blurb goes on one line, in a
+     wider column (the two have 238 px between them at 1440). */
+  @media (max-height: 859px) and (min-width: 1081px) {
+    .home {
+      --slot: 86px;
+      /* Header 40, a row of rooms (72) and 8 of the gap. */
+      --rooms-h: calc(40px + 80px);
+      --daily-stage-h: 330px;
+      --daily-circle: 375px;
+      --daily-circle-y: 189px;
+      --daily-legend-gap: 8px;
+      --daily-after-h: 32px;
+      --daily-after-gap: 2px;
+      grid-template-columns: minmax(0, 520px) minmax(0, 510px);
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+    .intro {
+      --title-size: 60px;
+    }
+    .greeting {
+      min-height: 40px;
+      margin: 3px 0 1px;
+    }
+    .rooms {
+      margin-top: 6px;
+    }
+    .foot {
+      margin-top: 10px;
+    }
+    .foot :global(.band) {
+      margin-top: 12px;
     }
   }
 
