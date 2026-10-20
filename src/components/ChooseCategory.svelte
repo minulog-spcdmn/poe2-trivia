@@ -2076,4 +2076,61 @@
       gap: 0.2rem;
     }
   }
+  /* A phone upright (lib/layout.ts `upright`): the game fits the screen
+     (Game.svelte), the rows at their full size, so what stands round them
+     comes a little closer: a find's notes in a smaller, tighter line, and
+     the standing lock rule makes way for them (every other depth shows it),
+     as on a phone on its side. */
+  @media (orientation: portrait) and (max-width: 640px) {
+    .choose,
+    .choose.coop,
+    .choose.delve {
+      gap: 1rem;
+    }
+    /* The question's task line's size (QuestionView), as everywhere. */
+    .prompt {
+      font-size: 1.1rem;
+      line-height: 1.3;
+    }
+    /* (Together, the rows keep room between them for the seals that hang off their feet.) */
+    .choose.delve:not(.coop):has(.find-notes) .cards {
+      gap: 0.6rem;
+    }
+    .choose.delve .find-notes .find-note {
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+    .choose.delve .find-notes ~ .note {
+      display: none;
+    }
+    .choose.delve:has(.find-notes) {
+      gap: 0.55rem;
+    }
+    .find-notes {
+      gap: 0.25rem;
+    }
+    /* The team's vote: its line on one line however many it waits for
+       (the clock, then whom), and the lock rule under it read as one block
+       of small print, as on a phone on its side. */
+    .choose.coop {
+      gap: 0.6rem;
+    }
+    .choose.coop .cards {
+      gap: 0.95rem;
+    }
+    .choose.coop .vote-status {
+      max-width: 100%;
+      flex-wrap: nowrap;
+      white-space: nowrap;
+      margin-top: 0;
+    }
+    .choose.coop .vote-status .live > span:not(.sr) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .vote-status + .note {
+      margin-top: -0.3rem;
+    }
+  }
 </style>

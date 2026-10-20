@@ -1098,6 +1098,21 @@
       display: none;
     }
   }
+  /* A phone upright (lib/layout.ts `upright`): a game is as tall as the room
+     under the header and no taller (Game.svelte fills it), and its links,
+     hidden, take no height under it. */
+  @media (orientation: portrait) and (max-width: 640px) {
+    .screen:has(> :global(.game)) {
+      display: flex;
+      flex-direction: column;
+    }
+    .legal.hidden {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+  }
 
   @keyframes pulse {
     50% {

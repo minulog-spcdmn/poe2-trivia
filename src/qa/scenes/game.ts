@@ -200,5 +200,18 @@ export function gameScenes(): Scene[] {
       },
       { controls: [players(2, 3)] },
     ),
+    scene(
+      'delve-together-cleared',
+      'Delve together',
+      'Cleared: Doryani named it first',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      (v) => {
+        const t = delveTogether(v);
+        for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+        if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+        return t.answer('Doryani', true);
+      },
+      { controls: [players(2, 3)] },
+    ),
   ];
 }
