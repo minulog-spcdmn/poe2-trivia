@@ -60,8 +60,7 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the game's big beats (a pick, a reveal with its point flowing into the
   scorer's progress bar, a deathmatch, a victory), and `ui.ts` the feedback
   every control gets. Soft shapes render at about one texel per CSS pixel and
-  the whole layer at most 1.5 per CSS pixel, and (like the backdrop) never
-  more than a 1440p screen's worth in all; the canvas hides itself while
+  the whole layer at most 1.5 per CSS pixel; the canvas hides itself while
   nothing is alive.
 - **Loading**: the first paint waits on as few shaders as possible, since on
   a first visit (a cold shader cache) compiling them held it up by seconds.
