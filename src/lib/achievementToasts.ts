@@ -69,7 +69,7 @@ function sigilNotice() {
 function sigilsLeft() {
   const n = sigilsToUnlock(loadSigils(), achievementsIn(loadAchievements()));
   if (!n) return;
-  toasts.show('Pick a class to wear on your avatar, in the Codex under Achievements.', 'info', {
+  toasts.show('Pick a class to wear on your avatar, in the settings or in the Codex under Achievements.', 'info', {
     title: n === 1 ? 'A class sigil to unlock' : `${n} class sigils to unlock`,
   });
 }

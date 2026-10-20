@@ -18,6 +18,11 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { ACTIONS, OPTIONS, SLOTS, actionDoes, actionName, bindable, keyName, type Action } from '../lib/keys';
   import { clearKey, keybinds, readLayout, resetKeys, setKey } from '../lib/keybinds.svelte';
+  import { ACHIEVEMENTS_KEY, loadAchievements } from '../lib/achievements';
+  import { achievementsIn } from '../lib/sigils';
+  import { CLASSES } from '../lib/classSigils';
+  import { onStoredElsewhere } from '../lib/storage';
+  import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
 
@@ -74,6 +79,15 @@
     name = draft = n;
     nameField?.blur();
   }
+
+  // ---- class sigils ----
+
+  /** Achievements earned, each worth a sigil (SigilPicker), read again when another tab earns one. */
+  let earned = $state(achievementsIn(loadAchievements()));
+  onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
+  let unlocked = $state(0);
+  /** Wide enough for the twelve in a row, beside the avatar. */
+  const roomy = new MediaQuery('(min-width: 761px)');
 
   // ---- keys ----
 
@@ -223,6 +237,15 @@
     {:else if keyboard.current}
       <section class="col block keys panel" use:backdropShadow={{ fill: 'linear' }} in:fly={enter(30, 200)}>{@render keys()}</section>
     {/if}
+
+    <!-- Under both columns, the width of the page: the twelve in a row. -->
+    <section class="block sigil-row" in:fly={over ? { duration: 0 } : { y: 20, duration: 500, delay: 260 }}>
+      <header>
+        <h2>Class sigils</h2>
+        <span class="count">{unlocked} / {CLASSES.length}</span>
+      </header>
+      <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} />
+    </section>
   </div>
 </div>
 
@@ -519,7 +542,23 @@
   .key-grid {
     display: grid;
     gap: 0 1.6rem;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.7rem;
+  }
+  /* The sigils under both columns, past a hairline. */
+  .sigil-row {
+    grid-column: 1 / -1;
+    margin-top: 0.8rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+  }
+  .sigil-row header {
+    margin-bottom: 0.25rem;
+  }
+  .count {
+    font-family: var(--font-cinzel);
+    font-size: 0.85rem;
+    font-style: normal;
+    color: var(--muted);
   }
   .groups {
     display: grid;
@@ -540,7 +579,7 @@
     justify-items: center;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.32rem 0;
+    padding: 0.24rem 0;
     border-top: 1px solid rgba(59, 48, 36, 0.45);
   }
   .key-name {
