@@ -1160,6 +1160,8 @@ const VEIN_EMBERS = [0.3, 0.62, 1];
 
 /** Seconds Delve's parts take to come in, should its programs be ready only once its scene shows. */
 const DELVE_IN_S = 1.2;
+/** The idle moments a program is warmed in (see warmUp): one comes within a second even on a busy page; a timer's delay where there's no requestIdleCallback (Safari). */
+const WARM_IDLE = { timeout: 1000, fallback: 50 };
 
 /** The QA desk's S (see leaveUiToCss). */
 let uiToCss = false;
@@ -1220,6 +1222,21 @@ function letGo(gl: WebGL2RenderingContext): null {
   return null;
 }
 
+/**
+ * Whether an opaque WebGL canvas (alpha: false) stalls the page in this
+ * browser: Chrome and the browsers built on it (Edge, Opera, Brave) on
+ * Windows, which draw WebGL through Direct3D 11. There an opaque canvas's
+ * buffers are made in a format Direct3D has to emulate, and making one holds
+ * up the GPU process, and every frame on the page with it, for 25-85 ms at
+ * 4K (a Chrome trace on an RTX 5070: SharedImageStub::OnCreateSharedImage on
+ * the GPU process's main thread). The canvas makes them often: whenever the
+ * backdrop draws faster for a while (a reveal), it needs more of them in
+ * flight. With an alpha channel each is made in a few hundredths of a ms.
+ * Elsewhere (Firefox, Safari, phones, Chrome on macOS and Linux) the canvas
+ * stays opaque, which spares the compositor blending it with the page.
+ */
+export const opaqueCanvasStalls = (userAgent: string) => /Windows NT/.test(userAgent) && /Chrome\//.test(userAgent);
+
 /** How many backdrops draw with WebGL now (one, but an old one's stop can come after a new one's start). */
 let onWebgl = 0;
 /** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
@@ -1234,15 +1251,11 @@ export const backdropOnWebgl = () => onWebgl > 0;
  * down, so the caller can fall back to CSS.
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
-  // With an alpha channel, though every pixel is drawn opaque (the main
-  // pass writes alpha 1): Chrome on Direct3D makes an opaque canvas's
-  // buffers in a format it has to emulate, and making each of those stalls
-  // its GPU thread, and every frame on the page with it, for 25-85 ms at
-  // 4K (a trace on an RTX 5070). It makes them often: whenever the backdrop
-  // draws faster for a while (a reveal), it needs more buffers in flight.
-  // With alpha they're made in a few hundredths of a ms.
+  // (With an alpha channel where an opaque canvas stalls the page: see
+  // opaqueCanvasStalls. Every pixel is drawn opaque all the same, the main
+  // pass writing alpha 1.)
   const gl = canvas.getContext('webgl2', {
-    alpha: true,
+    alpha: opaqueCanvasStalls(globalThis.navigator?.userAgent ?? ''),
     antialias: false,
     depth: false,
     stencil: false,
@@ -1303,7 +1316,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // only: two full-screen passes and a half-float layer between them cost
   // the GPU more every frame than one, enough to show in a reveal's
   // frames, so once the page is idle the main pass with them all is built
-  // in the background and takes over (see merge). Where the backdrop draws
+  // in the background and takes over (see replaceLean). Where the backdrop draws
   // none of them (cssShadows) the main pass has none, and there's no UI
   // pass.
   const offered = !!gl.getSupportedExtensions()?.includes('EXT_color_buffer_float');
@@ -1541,49 +1554,56 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   let lean: Variant = variant(firstProgs[0], split ? firstProgs[1] : null, firstUi);
   let ui = firstUi === 'drops' ? uiVariant(firstProgs[2]) : null;
-  // Where the backdrop drew none of the UI's parts but has come to (the
-  // pointer changed): a main pass with them, built in the background; CSS
-  // paints them meanwhile. Failing, it leaves them to CSS.
-  let upgrade: Build | null = null;
+  // The lean main pass replaced by one built in the background, which is
+  // warmed (see warmUp) and then takes over in the next frame drawn (see
+  // draw). Once the page is idle after the first paint, the first frame's
+  // two passes (see begin) give way to one that draws the UI's parts
+  // itself, the UI pass and its layer let go: two full-screen passes and a
+  // half-float layer between them cost the GPU more every frame than one,
+  // enough to show in a reveal's frames. And where the backdrop drew none
+  // of the UI's parts but has come to (the pointer changed), one with them
+  // takes over; CSS paints them meanwhile. Failing, the first keeps its
+  // two passes, the second leaves the UI's parts to CSS.
+  let replacing: Build | null = null;
+  /** The main pass to take over, once built; ready once it's warmed. */
+  let successor: Variant | null = null;
+  let successorReady = false;
+  /** Cancels what the replacing waits on: the idle moment it starts in, or those its program is warmed in. */
+  let stopReplaceIdle: (() => void) | null = null;
   let upgradeFailed = false;
-  function startUpgrade() {
+  function replaceLean() {
+    stopReplaceIdle = null;
+    if (gl!.isContextLost()) return;
+    // (With whichever of the UI's parts the backdrop draws by now.)
     const parts = uiParts();
-    upgrade = buildPrograms(gl!, [mainSource(parts), ...uiSources(parts)], (progs) => {
-      upgrade = null;
+    const upgrading = lean.ui === 'none';
+    replacing = buildPrograms(gl!, [mainSource(parts)], (progs) => {
+      replacing = null;
       if (!progs) {
         // (A lost context goes to the CSS backdrop by itself: see lost.)
+        if (gl!.isContextLost() || !upgrading) return;
         upgradeFailed = true;
-        if (!gl!.isContextLost()) console.warn("The backdrop leaves the UI's shadows and fills to CSS.");
+        console.warn("The backdrop leaves the UI's shadows and fills to CSS.");
         return;
       }
-      const was = lean;
-      lean = variant(progs[0], was.smoothProg, parts);
-      gl!.deleteProgram(was.prog);
+      const v = variant(progs[0], lean.smoothProg, parts);
+      successor = v;
+      stopReplaceIdle = warmUp([{ prog: v.prog, fbo: warmTarget() }], () => {
+        stopReplaceIdle = null;
+        successorReady = true;
+        dirty = true;
+      });
     });
   }
-  // The first frame's main pass and UI pass (see begin), once the page is
-  // idle: the main pass with all the UI's parts built in the background, to
-  // take over in the next frame drawn (see draw). Failing, the two keep on.
-  let merge: Build | null = null;
-  let merged: Variant | null = null;
-  let stopMergeIdle: (() => void) | null = null;
-  function startMerge() {
-    stopMergeIdle = null;
-    if (lean.ui !== 'drops' || gl!.isContextLost()) return;
-    merge = buildPrograms(gl!, [mainSource('all')], (progs) => {
-      merge = null;
-      if (!progs) return;
-      merged = variant(progs[0], lean.smoothProg, 'all');
-      dirty = true;
-    });
-  }
-  /** The merged main pass taking over from the first frame's two (see startMerge), its UI pass and layer let go. */
-  function mergeIn(m: Variant) {
+  /** The successor taking over (see replaceLean); the UI pass and its layer let go if there was one. */
+  function takeOver(v: Variant) {
     const g = gl!;
     g.deleteProgram(lean.prog);
-    lean = m;
-    merged = null;
-    if (ui) g.deleteProgram(ui.prog);
+    lean = v;
+    successor = null;
+    successorReady = false;
+    if (!ui) return;
+    g.deleteProgram(ui.prog);
     ui = null;
     g.deleteFramebuffer(boxFbo);
     g.deleteTexture(boxTex);
@@ -1600,16 +1620,20 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
    */
   const uiNow = (): UiParts => (lean.ui === 'none' || delve?.ui === 'none' ? 'none' : 'all');
   // Delve's programs: built in the background once Delve is on its way
-  // (wantDelveBackdrop), each then drawn once, a frame apart, so the GPU
-  // has made all it needs of them before they're used (warm); then ready.
-  // Until then, a Delve scene is drawn by the lean programs without
-  // Delve's parts, which come in over a moment once they're ready
-  // (delveIn). If they fail to build, the CSS backdrop takes over, as on a
+  // (wantDelveBackdrop), then warmed (see warmUp); then ready. Until then,
+  // a Delve scene is drawn by the lean programs without Delve's parts,
+  // which come in over a moment once they're ready (delveIn). Their main
+  // pass draws the UI's parts itself, as the lean one does once the first
+  // frame's two passes have given way (see replaceLean), so Delve's frames
+  // are one pass too: that takes the driver longer to build, but it's
+  // built in the background and warmed off the frame, where it holds up
+  // nothing. If they fail to build, the CSS backdrop takes over, as on a
   // lost context, once a Delve scene shows (the lean ones can't draw its
   // dark): the start page keeps this one.
   let building: Build | null = null;
+  /** Delve's programs, built and being warmed. */
   let warming: Variant | null = null;
-  let warmed = 0;
+  let stopDelveWarm: (() => void) | null = null;
   let delve: Variant | null = null;
   let delveFailed = false;
   /** Whether the last frame was drawn by the lean programs in Delve's place. */
@@ -1632,33 +1656,70 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
         console.warn("Delve's backdrop goes to the CSS one once Delve shows.");
         return;
       }
-      warming = smoothTex ? variant(progs[1], progs[0], parts) : variant(progs[0], null, parts);
-      warmed = 0;
+      const w = smoothTex ? variant(progs[1], progs[0], parts) : variant(progs[0], null, parts);
+      warming = w;
+      const steps = [{ prog: w.prog, fbo: warmTarget() }];
+      if (w.smoothProg) steps.unshift({ prog: w.smoothProg, fbo: smoothFbo! });
+      stopDelveWarm = warmUp(steps, () => {
+        stopDelveWarm = null;
+        warming = null;
+        delve = w;
+        delveReadyNow = true;
+        dirty = true;
+      });
     }, true);
   }
-  /**
-   * One of Delve's programs drawn once, small, into the target it draws to
-   * (the soft light's first, then the main pass), so the GPU builds what it
-   * needs for it now rather than in the frame that first needs it. Called
-   * first thing in draw(), which then draws the whole frame over it.
-   */
-  function warm(w: Variant) {
+
+  // A texel of the drawing buffer's own kind (8-bit RGBA), off the page,
+  // for a main pass to be warmed into (see warmUp): a renderbuffer, so no
+  // texture unit's binding changes.
+  let warmFbo: WebGLFramebuffer | null = null;
+  function warmTarget() {
+    if (warmFbo) return warmFbo;
     const g = gl!;
-    if (warmed === 0 && w.smoothProg) {
-      g.useProgram(w.smoothProg);
-      g.bindFramebuffer(g.FRAMEBUFFER, smoothFbo);
+    const rb = g.createRenderbuffer();
+    g.bindRenderbuffer(g.RENDERBUFFER, rb);
+    g.renderbufferStorage(g.RENDERBUFFER, g.RGBA8, 1, 1);
+    g.bindRenderbuffer(g.RENDERBUFFER, null);
+    warmFbo = g.createFramebuffer();
+    g.bindFramebuffer(g.FRAMEBUFFER, warmFbo);
+    g.framebufferRenderbuffer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.RENDERBUFFER, rb);
+    g.bindFramebuffer(g.FRAMEBUFFER, null);
+    return warmFbo;
+  }
+  /**
+   * Programs drawn once each, a texel's worth, before any frame uses them,
+   * each in an idle moment of its own; then `done` (in one more). A
+   * program's first draw is when the browser has the GPU's driver finish
+   * it (on Windows, Direct3D builds the shader it really runs then), and
+   * that holds up the GPU process, and every frame on the page with it:
+   * the bigger the program, the longer (the main pass with all the UI's
+   * parts in it, tens of ms). Here it holds up only a moment when nothing
+   * moves but the backdrop's slow breathing. Each is drawn into the target
+   * it draws to, or one of the same kind (warmTarget), so that what's
+   * built is what the frame will use; and none of it shows, the drawing
+   * buffer untouched (the next frame draws the soft light afresh). Returns
+   * a function that cancels it.
+   */
+  function warmUp(steps: { prog: WebGLProgram; fbo: WebGLFramebuffer }[], done: () => void): () => void {
+    let i = 0;
+    let cancel: () => void;
+    const next = () => {
+      if (gl!.isContextLost()) return;
+      if (i === steps.length) return done();
+      const g = gl!;
+      const { prog, fbo } = steps[i++];
+      g.useProgram(prog);
+      g.bindFramebuffer(g.FRAMEBUFFER, fbo);
       g.viewport(0, 0, 1, 1);
       g.drawArrays(g.TRIANGLES, 0, 3);
       g.bindFramebuffer(g.FRAMEBUFFER, null);
-      warmed = 1;
-      return;
-    }
-    g.useProgram(w.prog);
-    g.viewport(0, 0, 1, 1);
-    g.drawArrays(g.TRIANGLES, 0, 3);
-    warming = null;
-    delve = w;
-    delveReadyNow = true;
+      // (Sent at once, so it's built in this moment, not with the next frame.)
+      g.flush();
+      cancel = whenIdle(next, WARM_IDLE);
+    };
+    cancel = whenIdle(next, WARM_IDLE);
+    return () => cancel();
   }
 
   // Drop-shadow atlases: unit 0 holds content alpha, unit 1 the blurred alpha.
@@ -1733,8 +1794,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const deep = delveScene(look, close, pressure, city, vein);
     if (deep && delveFailed) return lost();
     if (deep) wantDelveBackdrop();
-    if (warming) warm(warming);
-    if (merged) mergeIn(merged);
+    if (successorReady) takeOver(successor!);
     const v = deep && delve ? delve : lean;
     if (v === lean) standIn = deep;
     else if (standIn) {
@@ -2007,7 +2067,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     raf = requestAnimationFrame(frame);
     backdropFrame(now, timer?.read() ?? null);
     // (The backdrop come to draw the UI's parts after all: the pointer changed.)
-    if (lean.ui === 'none' && !upgrade && !upgradeFailed && mayDrawUi()) startUpgrade();
+    if (lean.ui === 'none' && !replacing && !successor && !upgradeFailed && mayDrawUi()) replaceLean();
     if (catchingUp.size) {
       // (The backdrop's clock holds still meanwhile.)
       lastStep = now;
@@ -2085,8 +2145,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const d = openDialog().amount;
     const fading = d !== dialog;
     dialog = d;
-    // Delve's parts coming in once its programs are ready (see delveIn); and
-    // those programs being warmed, one a frame.
+    // Delve's parts coming in once its programs are ready (see delveIn).
     if (delveIn < 1) {
       delveIn = Math.min(1, delveIn + dt / DELVE_IN_S);
       dirty = true;
@@ -2104,7 +2163,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // either is owed a frame, at the 30fps pace.
     if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
-    const urgent = measured === 'now' || dirty || homeMoving || fading || !!warming;
+    const urgent = measured === 'now' || dirty || homeMoving || fading;
     if (!urgent && ((still && !owed) || now - last < 33)) return;
     last = now;
     dirty = false;
@@ -2228,13 +2287,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     delveWaiters.delete(buildDelve);
     building?.cancel();
     building = null;
-    upgrade?.cancel();
-    upgrade = null;
-    stopMergeIdle?.();
-    merge?.cancel();
-    merge = null;
-    if (merged) gl!.deleteProgram(merged.prog);
-    merged = null;
+    replacing?.cancel();
+    replacing = null;
+    stopReplaceIdle?.();
+    stopReplaceIdle = null;
+    if (successor) gl!.deleteProgram(successor.prog);
+    successor = null;
+    successorReady = false;
+    stopDelveWarm?.();
+    stopDelveWarm = null;
     for (const v of [warming, delve]) {
       if (!v) continue;
       gl!.deleteProgram(v.prog);
@@ -2295,7 +2356,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   setGpuCatchUp(holdFor);
   offScale = onFxScale(fit);
   raf = requestAnimationFrame(frame);
-  if (lean.ui === 'drops') stopMergeIdle = whenIdle(startMerge, { timeout: 3000, fallback: 1000 });
+  if (lean.ui === 'drops') stopReplaceIdle = whenIdle(replaceLean, { timeout: 3000, fallback: 1000 });
   onWebgl++;
   counted = true;
 
