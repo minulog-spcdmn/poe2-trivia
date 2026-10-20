@@ -26,6 +26,14 @@ export type Build = { cancel(): void; now(): void };
 /** Whether the page was refused a WebGL2 context (the backdrop's, asked first): the effects then don't count on one either. */
 let refused = false;
 export const webgl2Refused = () => refused;
+/** The widest or tallest (device px) a canvas or target can be drawn at on `gl`'s GPU (Infinity where it doesn't say). */
+export function maxDrawSize(gl: WebGL2RenderingContext): number {
+  const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as ArrayLike<number> | null;
+  const all = [gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), dims?.[0], dims?.[1]];
+  const known = all.filter((n): n is number => typeof n === 'number' && n > 0);
+  return known.length ? Math.min(...known) : Infinity;
+}
+
 export function refuseWebgl2() {
   refused = true;
 }

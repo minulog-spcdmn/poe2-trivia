@@ -12,7 +12,8 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { fxActive, fxUserOn, onFxChange } from './fx/core';
+import { backdropFrame, fxActive, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels } from './fx/core';
+import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
 import { ENV_GLSL } from './shaders/effects';
@@ -20,7 +21,7 @@ import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
 import { onVein, veinLevel } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
-import { buildPrograms, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
+import { buildPrograms, maxDrawSize, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
 import { switchedOff } from './switchedOff';
 
@@ -1112,7 +1113,7 @@ export function delveScene(look: Pick<Look, 'dark' | 'mistK'>, close: number, pr
   return look.dark > 0 || look.mistK > 0 || close !== 0 || pressure !== 0 || city >= CITY_TRACE || vein > 0;
 }
 
-/** The most device pixels the backdrop draws (see scale() in startBackdrop): a 1440p screen's. */
+/** The most device pixels the backdrop draws on a GPU too slow for more (see scale() in startBackdrop): a 1440p screen's. */
 const MAX_PIXELS = 2560 * 1440;
 /** The embers' halo in an Azurite Vein: azurite blue. */
 const VEIN_EMBERS = [0.3, 0.62, 1];
@@ -1231,6 +1232,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   /** Whether the backdrop draws the UI's shadows and fills, or leaves them all to CSS; and whether it would but for the QA desk's S (programs are built as for that). */
   const mayDrawUi = () => !cssShadows.matches && !fillsToCss;
   const drawsUi = () => mayDrawUi() && !uiToCss;
+  // What each frame costs the GPU, for the quality the backdrop and the
+  // effects are drawn at (fx/gpuBudget.ts). (Not on phones and tablets: their
+  // GPUs draw in tiles, later than a timer sees.)
+  const timer = cssShadows.matches ? null : new GpuTimer(gl);
 
   // The lean programs, without Delve's parts (Delve's are built later, in
   // the background: see buildDelve), started first of all, so they build
@@ -1623,7 +1628,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let pressure = 0;
   /** How far an Azurite Vein's scene has come in (lib/vein.ts). */
   let vein = 0;
+  /** Draws a frame, timed on the GPU where it can be. */
   function draw() {
+    if (timer) timer.time(canvas.width * canvas.height, drawUntimed);
+    else drawUntimed();
+  }
+  function drawUntimed() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
     // freezes them all (and the blobs and embers) at rest; the effects
@@ -1919,6 +1929,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   const frame = (now: number) => timed('backdrop', frameUntimed, now);
   function frameUntimed(now: number) {
     raf = requestAnimationFrame(frame);
+    backdropFrame(now, timer?.read() ?? null);
     // (The backdrop come to draw the UI's parts after all: the pointer changed.)
     if (lean.ui === 'none' && !upgrade && !upgradeFailed && mayDrawUi()) startUpgrade();
     if (catchingUp.size) {
@@ -2041,16 +2052,29 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // per CSS px anyway, the embers are soft glows, and the dither still hides
   // every band.
   //
-  // And on any screen, never more than MAX_PIXELS: a 4K screen's 8 million
-  // device pixels (or more) made this full-screen pass, drawn under the
-  // effects overlay's own, too much for the GPU in a reveal, and frames came
-  // a tenth of a second late. Up to a 1440p screen's worth it is drawn
-  // exact; past that, about one pixel per CSS px or a little more, which the
-  // crisp fills and shadows (under the UI's own 1px borders) still hold to.
-  const scale = () => {
+  // And on a GPU too slow for a big screen, never more than MAX_PIXELS: on
+  // a weak one a 4K screen's 8 million device pixels (or more) made this
+  // full-screen pass, drawn under the effects overlay's own, too much in a
+  // reveal, and frames came a tenth of a second late. Which GPU is too slow
+  // is measured (fx/gpuBudget.ts: what this pass and the effects' cost it),
+  // and as the effects come down from full resolution so does this
+  // (fxScaledDown); a GPU that keeps up draws every pixel, exact. Past a
+  // 1440p screen's worth, scaled down, it's about one pixel per CSS px or a
+  // little more, which the crisp fills and shadows (under the UI's own 1px
+  // borders) still hold to.
+  // (Nor wider or taller than the GPU can draw: a window across several screens.)
+  const most = maxDrawSize(gl);
+  const scaleAt = (down: boolean) => {
     if (cssShadows.matches && devicePixelRatio > 1) return 1 / devicePixelRatio;
     const device = canvasW * canvasH * devicePixelRatio * devicePixelRatio;
-    return device > MAX_PIXELS ? Math.sqrt(MAX_PIXELS / device) : 1;
+    const k = device > MAX_PIXELS && down ? Math.sqrt(MAX_PIXELS / device) : 1;
+    return Math.min(k, most / Math.max(1, canvasW * devicePixelRatio), most / Math.max(1, canvasH * devicePixelRatio));
+  };
+  const scale = () => scaleAt(fxScaledDown());
+  /** The device pixels drawn at the effects' quality `q` (see fx/gpuBudget.ts). */
+  const pixelsAt = (q: number) => {
+    const k = scaleAt(q > 0);
+    return Math.round(canvasW * devicePixelRatio * k) * Math.round(canvasH * devicePixelRatio * k);
   };
 
   // The canvas is as tall as the viewport with a phone's toolbars hidden, but
@@ -2075,22 +2099,37 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   });
   viewRo.observe(viewProbe);
 
-  const ro = new ResizeObserver(([entry]) => {
-    canvasW = Math.round(entry.contentRect.width);
-    canvasH = Math.round(entry.contentRect.height);
-    const box = entry.devicePixelContentBoxSize?.[0];
+  // The canvas's CSS size as last seen, unrounded, and its device-pixel box
+  // where the browser gives one: the buffer is fitted to them anew when the
+  // canvas resizes, and when the effects come down from full resolution or
+  // go back up (scale()).
+  let cssW = canvasW;
+  let cssH = canvasH;
+  let box: ResizeObserverSize | undefined;
+  const fit = () => {
     const k = scale();
-    const estW = entry.contentRect.width * devicePixelRatio;
-    const estH = entry.contentRect.height * devicePixelRatio;
-    const exact = k === 1 && box && Math.abs(box.inlineSize - estW) <= 2 && Math.abs(box.blockSize - estH) <= 2;
-    const w = exact ? box.inlineSize : Math.round(estW * k);
-    const h = exact ? box.blockSize : Math.round(estH * k);
+    const estW = cssW * devicePixelRatio;
+    const estH = cssH * devicePixelRatio;
+    const b = box;
+    const exact = k === 1 && b && Math.abs(b.inlineSize - estW) <= 2 && Math.abs(b.blockSize - estH) <= 2;
+    const w = exact ? b.inlineSize : Math.round(estW * k);
+    const h = exact ? b.blockSize : Math.round(estH * k);
     if (w === canvas.width && h === canvas.height) return;
     canvas.width = w;
     canvas.height = h;
     measureView();
     draw();
+  };
+  const ro = new ResizeObserver(([entry]) => {
+    canvasW = Math.round(entry.contentRect.width);
+    canvasH = Math.round(entry.contentRect.height);
+    cssW = entry.contentRect.width;
+    cssH = entry.contentRect.height;
+    box = entry.devicePixelContentBoxSize?.[0];
+    fit();
   });
+  // (Followed once the first frame is drawn: see below.)
+  let offScale = () => {};
   try {
     ro.observe(canvas, { box: 'device-pixel-content-box' });
   } catch {
@@ -2127,6 +2166,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     setGpuCatchUp(null);
     caughtUp(true);
     ro.disconnect();
+    offScale();
+    setBackdropPixels(null);
+    timer?.dispose();
     viewRo.disconnect();
     viewProbe.remove();
     canvas.removeEventListener('webglcontextlost', lost);
@@ -2155,6 +2197,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // backdrop isn't there behind it: see Background.svelte). Should that
   // throw, everything set up so far is taken down again before the caller
   // hears of it and turns to the CSS backdrop.
+  // (What a past visit found the GPU to cost may set the quality first.)
+  setBackdropPixels(pixelsAt, !!timer?.available);
   try {
     canvas.width = Math.max(1, Math.round(canvasW * devicePixelRatio * scale()));
     canvas.height = Math.max(1, Math.round(canvasH * devicePixelRatio * scale()));
@@ -2168,6 +2212,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   }
   // Only now, with frames to come, does anything wait on them.
   setGpuCatchUp(holdFor);
+  offScale = onFxScale(fit);
   raf = requestAnimationFrame(frame);
   onWebgl++;
   counted = true;
