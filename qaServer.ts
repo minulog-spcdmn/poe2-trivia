@@ -10,8 +10,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
-import type { Connect, Plugin } from 'vite';
-import { qaBefore, qaShots } from './qaBefore.ts';
+import type { Plugin } from 'vite';
+import { json, qaBefore, qaShots } from './qaBefore.ts';
 import { QA_PEER_PATH, QA_PEER_PORT } from './src/qa/live/signal.ts';
 
 const gitIn = (root: string) => (...args: string[]) => {
@@ -62,13 +62,6 @@ function startSignalling(): Promise<void> {
     await new Promise<void>((resolve) => PeerServer({ host: 'localhost', port: QA_PEER_PORT, path: QA_PEER_PATH, expire_timeout: 500, alive_timeout: 60000 }, () => resolve()));
   })());
 }
-
-const json = (res: Parameters<Connect.NextHandleFunction>[1], status: number, body: unknown) => {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify(body));
-};
 
 export function qaServer(root: string): Plugin {
   return {

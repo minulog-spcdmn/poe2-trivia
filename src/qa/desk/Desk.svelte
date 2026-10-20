@@ -51,7 +51,8 @@
   function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
     const scene = sceneByKey(p.get('s')) ?? null;
-    const bench = scene ? benchOfScene(scene) : benchByKey(p.get('b'));
+    // (A scene's key gone since, folded into another's states: its screen.)
+    const bench = scene ? benchOfScene(scene) : benchByKey(p.get('b') ?? p.get('s'));
     if (!bench) return null;
     const size = p.get('size');
     const seat = p.get('seat');
@@ -389,8 +390,9 @@
     else if (up) return;
     // Held down, only the arrows go on: a switch held a moment too long would flip back and forth.
     else if (repeat && !key.startsWith('Arrow')) return;
-    else if (key === 'ArrowDown') goState(stateIndex + 1);
-    else if (key === 'ArrowUp') goState(Math.max(0, stateIndex - 1));
+    // (A control moved off every state: on from the state last gone to.)
+    else if (key === 'ArrowDown') goState((stateIndex >= 0 ? stateIndex : (picked[bench.key] ?? -1)) + 1);
+    else if (key === 'ArrowUp') goState(Math.max(0, (stateIndex >= 0 ? stateIndex : (picked[bench.key] ?? 1)) - 1));
     else if (key === 'ArrowRight') goBench(1);
     else if (key === 'ArrowLeft') goBench(-1);
     else if (/^[1-9]$/.test(key)) goState(Number(key) - 1);

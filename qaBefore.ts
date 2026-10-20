@@ -28,7 +28,7 @@ import type { Browser } from 'playwright-core';
 type Res = Parameters<Connect.NextHandleFunction>[1];
 type Status = { state: 'preparing'; base: string; step: string } | { state: 'ready'; base: string; origin: string } | { state: 'failed'; base?: string; error: string };
 
-const json = (res: Res, status: number, body: unknown) => {
+export const json = (res: Res, status: number, body: unknown) => {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store');
@@ -299,17 +299,22 @@ export function qaShots(server: ViteDevServer) {
     next ? next() : running--;
   };
 
-  async function shoot(url: string, width: number, height: number, deviceScaleFactor: number) {
+  async function shoot(url: string, width: number, height: number, deviceScaleFactor: number, gone: () => boolean) {
     await slot();
     try {
+      // (The desk gave up on it while it waited, having moved on: not shot.)
+      if (gone()) throw new Error('No longer wanted');
       const context = await (await launch()).newContext({ viewport: { width, height }, deviceScaleFactor, reducedMotion: 'reduce' });
       try {
         // WebGL hidden, so the effects stay off (CLAUDE.md: in software they make every step crawl).
         await context.addInitScript('delete window.WebGL2RenderingContext; delete window.WebGLRenderingContext;');
         const page = await context.newPage();
-        await page.goto(url, { timeout: 30000 });
+        // (The before server, just started, builds the frame's modules as it first asks for them: that can take a while.)
+        await page.goto(url, { timeout: 120000 });
+        // (Given up on while the page came: its slot goes to a shot still wanted.)
+        if (gone()) throw new Error('No longer wanted');
         // The frame sets window.__qa once it has come to rest and been checked.
-        await page.waitForFunction('!!window.__qa', undefined, { timeout: 30000, polling: 100 });
+        await page.waitForFunction('!!window.__qa', undefined, { timeout: 60000, polling: 100 });
         // Or it couldn't start (src/qa/main.ts): no shot, but why.
         const failed = (await page.evaluate('window.__qa.failed ?? null')) as string | null;
         if (failed) throw new CantShow(failed);
@@ -337,7 +342,9 @@ export function qaShots(server: ViteDevServer) {
     const dpr = Number(q.get('dpr') ?? 1);
     if (url.protocol !== 'http:' || !['localhost', '127.0.0.1'].includes(url.hostname)) return json(res, 400, { error: 'Only http://localhost or 127.0.0.1 frames' });
     if (!(Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 8000 && h <= 8000 && dpr > 0 && dpr <= 4)) return json(res, 400, { error: 'w and h are whole CSS pixels, dpr up to 4' });
-    shoot(url.href, w, h, dpr).then(
+    let gone = false;
+    res.once('close', () => (gone = !res.writableFinished));
+    shoot(url.href, w, h, dpr, () => gone).then(
       (png) => {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'image/png');

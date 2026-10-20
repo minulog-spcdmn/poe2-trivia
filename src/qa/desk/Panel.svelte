@@ -3,7 +3,7 @@
   // under their headings; its controls (a piece's, or the scene's own and
   // those of any game), what can happen to it, its seats, and Replay and
   // Freeze. Only what the bench has shows.
-  import type { Bench, Control, Value, Values } from '../bench.ts';
+  import { byHeading, type Bench, type Control, type Value, type Values } from '../bench.ts';
 
   let {
     bench,
@@ -70,15 +70,7 @@
 
   const piece = $derived(bench.kind === 'piece' ? bench : null);
   /** The states by heading, each with its index. */
-  const headed = $derived.by(() => {
-    const out: { group: string; items: { label: string; i: number }[] }[] = [];
-    states.forEach((s, i) => {
-      const last = out[out.length - 1];
-      if (last && last.group === s.group) last.items.push({ label: s.label, i });
-      else out.push({ group: s.group, items: [{ label: s.label, i }] });
-    });
-    return out;
-  });
+  const headed = $derived(byHeading(states));
   /** Whether a control is away from where the state on show (or its scene) has it. */
   const moved = $derived(stateIndex < 0 && !all);
 
@@ -160,10 +152,10 @@
         <h3 class="heading"><button class="fold" class:open={isOpen(h.group)} onclick={() => fold(h.group)} aria-expanded={isOpen(h.group)}>{h.group}<span class="num">{h.items.length}</span></button></h3>
       {:else if h.group}<h3 class="heading">{h.group}</h3>{/if}
       <ol class="states" hidden={!isOpen(h.group)}>
-        {#each h.items as s (s.i)}
+        {#each h.items as { s, i } (i)}
           <li>
-            <button class:on={s.i === stateIndex && !all} class:changed={changed?.(s.i)} onclick={() => onstate(s.i)} title={changed?.(s.i) ? 'This change touches it' : undefined}>
-              <span class="n">{s.i < 9 ? s.i + 1 : ''}</span>{s.label}
+            <button class:on={i === stateIndex && !all} class:changed={changed?.(i)} onclick={() => onstate(i)} title={changed?.(i) ? 'This change touches it' : undefined}>
+              <span class="n">{i < 9 ? i + 1 : ''}</span>{s.label}
             </button>
           </li>
         {/each}

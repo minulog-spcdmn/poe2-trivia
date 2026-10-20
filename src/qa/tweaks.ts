@@ -134,5 +134,12 @@ export function buildScene(scene: Scene, given: Record<string, Value | string | 
   const seen = seenFrom(scene);
   const tweaks = tweaksFor(base, seen);
   const set = valuesOf(tweaks, given);
-  return { built: applyTweaks(base, set, seen), controls: [...(scene.controls ?? []), ...tweaks], values: { ...own, ...set } };
+  const built = applyTweaks(base, set, seen);
+  // The watchers as they came out (joining and staying share MAX_SPECTATORS, and those seen from always stay): the controls say what's shown.
+  const watchers = built.state?.spectators;
+  if (built !== base && watchers && 'joining' in set) {
+    set.joining = watchers.filter((o) => !o.stay).length;
+    set.watching = watchers.filter((o) => o.stay).length;
+  }
+  return { built, controls: [...(scene.controls ?? []), ...tweaks], values: { ...own, ...set } };
 }

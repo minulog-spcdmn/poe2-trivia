@@ -7,7 +7,7 @@
   import { untrack } from 'svelte';
   import { isFrameMessage, type FrameMessage } from '../messages.ts';
   import { sizeOf, type SizeKey } from '../sizes.ts';
-  import { asQuery, type SceneBench, type SceneState } from '../bench.ts';
+  import { asQuery, byHeading, type SceneBench, type SceneState } from '../bench.ts';
 
   let {
     bench,
@@ -38,15 +38,7 @@
   const colW = $derived((cw - 32 - (cols - 1) * GAP) / cols);
   const scale = $derived(Math.min(1, colW / sz.w));
   /** The states by heading, each with its index. */
-  const headed = $derived.by(() => {
-    const out: { group: string; items: { s: SceneState; i: number }[] }[] = [];
-    bench.states.forEach((s, i) => {
-      const last = out[out.length - 1];
-      if (last && last.group === s.group) last.items.push({ s, i });
-      else out.push({ group: s.group, items: [{ s, i }] });
-    });
-    return out;
-  });
+  const headed = $derived(byHeading(bench.states));
 
   let near = $state<Set<number>>(new Set());
   /** Svelte action: marks a cell near the screen, or not. */

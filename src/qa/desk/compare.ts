@@ -98,7 +98,15 @@ async function layerOf(mask: Uint8Array, w: number, h: number): Promise<string> 
   const c = new OffscreenCanvas(w, h);
   const g = c.getContext('2d')!;
   const img = g.createImageData(w, h);
-  for (let p = 0; p < mask.length; p++) if (mask[p]) img.data.set([255, 70, 210, 235], p * 4);
+  // (Byte by byte: a 4K shot that differs all over is eight million pixels, no array made for each.)
+  const d = img.data;
+  for (let p = 0, i = 0; p < mask.length; p++, i += 4)
+    if (mask[p]) {
+      d[i] = 255;
+      d[i + 1] = 70;
+      d[i + 2] = 210;
+      d[i + 3] = 235;
+    }
   g.putImageData(img, 0, 0);
   return URL.createObjectURL(await c.convertToBlob());
 }
@@ -108,7 +116,28 @@ async function layerOf(mask: Uint8Array, w: number, h: number): Promise<string> 
  * differs between those moves on its own) at `w` by `h`, and compares them.
  */
 export async function compareShots(beforeUrl: string, nowUrl: string, w: number, h: number, signal: AbortSignal): Promise<Compared> {
-  const [before, now, again] = await Promise.all([shot(beforeUrl, w, h, signal, 'before'), shot(nowUrl, w, h, signal, 'now'), shot(nowUrl, w, h, signal, 'now')]);
+  // (The first shot to fail stops the others, so the desk says why at once instead of waiting on them.)
+  const stop = new AbortController();
+  const off = () => stop.abort();
+  if (signal.aborted) stop.abort();
+  else signal.addEventListener('abort', off, { once: true });
+  let failed: { why: unknown } | null = null;
+  const one = (url: string, side: 'before' | 'now') =>
+    shot(url, w, h, stop.signal, side).catch((e: unknown) => {
+      if (!failed) {
+        failed = { why: e };
+        stop.abort();
+      }
+      throw e;
+    });
+  const got = await Promise.allSettled([one(beforeUrl, 'before'), one(nowUrl, 'now'), one(nowUrl, 'now')]);
+  signal.removeEventListener('abort', off);
+  if (failed) {
+    // (The shots that came are let go of: only the one that failed first says why.)
+    for (const r of got) if (r.status === 'fulfilled') r.value.close();
+    throw (failed as { why: unknown }).why;
+  }
+  const [before, now, again] = got.map((r) => (r as PromiseFulfilledResult<ImageBitmap>).value);
   const { mask, ...diff } = compare(pixels(before), pixels(now), pixels(again));
   again.close();
   return { diff, before, now, layer: await layerOf(mask, now.width, now.height) };

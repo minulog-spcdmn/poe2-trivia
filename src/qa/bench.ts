@@ -131,6 +131,17 @@ export function sceneStateAt(bench: SceneBench, scene: Scene, controls: Control[
   return bench.states.findIndex((st) => st.scene === scene && controls.every((c) => (c.key in st.values ? valueOf(c, st.values[c.key]) : c.default) === v[c.key]));
 }
 
+/** `list` under its headings, in order: each run of one `group` together, every item with its index in `list`. */
+export function byHeading<T extends { group: string }>(list: T[]): { group: string; items: { s: T; i: number }[] }[] {
+  const out: { group: string; items: { s: T; i: number }[] }[] = [];
+  list.forEach((s, i) => {
+    const last = out[out.length - 1];
+    if (last && last.group === s.group) last.items.push({ s, i });
+    else out.push({ group: s.group, items: [{ s, i }] });
+  });
+  return out;
+}
+
 /** Values as an address writes them (`k.` before each key, a switch 1 or 0). */
 export function asQuery(values: Values): [string, string][] {
   return Object.entries(values).map(([k, x]) => [k, typeof x === 'boolean' ? (x ? '1' : '0') : String(x)]);
