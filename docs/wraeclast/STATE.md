@@ -15,7 +15,7 @@ The working rules are in memory, which loads on its own:
 - early prototype: no hardening;
 - `orchestration-token-efficiency`: build only what changes the feel.
 
-## Phase: rethinking the loop (design v10)
+## Phase: fixing v5's root issues (design v11)
 
 The owner paused playtests after playtest 5: "we have to fix the workflow
 for efficiency first and go back to the drawing board on many things".
@@ -72,7 +72,11 @@ Swarm); the owner took none: "an actually good game and not mobile slop",
 something must grow, art alone must not win, long but never tedious. Design
 v10 (`design-v10.md`) has two full designs, each critiqued by a calibrated
 owner proxy and revised: A (name it, wear it, break the wall; design's
-pick) and B (Unidentified, a deckbuilder). Waiting on the owner. v5 stays on its branch,
+pick) and B (Unidentified, a deckbuilder). The owner took neither and named
+the root issues instead (`decisions.md`, newest row): the item screen is
+fiddly, the map has no journey, difficulty is a joke, corruption is
+meaningless, the systems don't mesh, the items are uncreative. Design v11
+fixes those in the v5 game rather than inventing a new loop. v5 stays on its branch,
 not served.
 
 Sessions: an orchestrator opened from the owner's phone (Remote Control)
