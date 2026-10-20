@@ -25,8 +25,16 @@ export const isPlayerClass = (v: unknown): v is PlayerClass => typeof v === 'str
 /** Its name, as the game writes it. */
 export const className = (c: PlayerClass) => c[0].toUpperCase() + c.slice(1);
 
-/** Its sigil's picture, from the site's base. */
-export const sigilUrl = (c: PlayerClass) => `${import.meta.env.BASE_URL}classes/${c}.webp`;
+/**
+ * Its sigil's picture, from the site's base, as a whole URL: it's set in a
+ * custom property (--sigil), and a url() there is read where the var() is
+ * used, so in the build's stylesheet (in assets/) a relative one would point
+ * into assets/.
+ */
+export const sigilUrl = (c: PlayerClass) => {
+  const path = `${import.meta.env.BASE_URL}classes/${c}.webp`;
+  return typeof document === 'undefined' ? path : new URL(path, document.baseURI).href;
+};
 
 /**
  * Each sigil fitted to the token, as fractions of its size: the picture's
