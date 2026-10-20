@@ -6,8 +6,10 @@
 //   bench declares (sliders, choices, switches), named states to jump to and
 //   buttons for what happens to it (answer right, turn over). It's one small
 //   file in src/qa/benches/ and a view component; the desk gives it the rest.
-// - A screen of scenes: a group of the scenes (src/qa/scenes), the real game
-//   in a state, each scene one of its states and its knobs its controls.
+// - A screen: every scene of one of the game's screens (src/qa/scenes), the
+//   real game in a state. Its states are the scenes' (a scene's named
+//   states, or the scene itself), under the scenes' headings; its controls
+//   the shown scene's own and those any game has (./tweaks.ts).
 //
 // Plain data, so the tests can check every bench without a browser.
 
@@ -33,6 +35,8 @@ export type Values = Record<string, Value>;
 export interface State {
   label: string;
   values: Values;
+  /** A scene's: the heading it's listed under, if not its scene's. */
+  group?: string;
 }
 
 /** Something that happens to the piece, a button in its panel. */
@@ -70,14 +74,24 @@ export interface PieceBench {
   view: () => Promise<{ default: Component<PieceProps> }>;
 }
 
+/** One of a screen's states: a scene, and its controls as the state sets them. */
+export interface SceneState {
+  scene: Scene;
+  label: string;
+  /** The heading it's listed under. */
+  group: string;
+  values: Values;
+}
+
 export interface SceneBench {
   kind: 'scenes';
-  /** `screen/group` (`over/edge-cases-delve`). */
+  /** The screen's (`over`). */
   key: string;
-  label: string;
   /** The screen's name ("End screen"). */
-  screen: string;
+  label: string;
   scenes: Scene[];
+  /** Every scene's states, in order. */
+  states: SceneState[];
 }
 
 export type Bench = PieceBench | SceneBench;
@@ -106,6 +120,20 @@ export function stateValues(bench: PieceBench, state: State, now: Values = {}): 
 /** The state the controls are in, if they're in one (its index): the view's controls aside. */
 export function stateAt(bench: PieceBench, v: Values): number {
   return bench.states.findIndex((s) => bench.controls.every((c) => c.view || stateValues(bench, s)[c.key] === v[c.key]));
+}
+
+/**
+ * The screen's state `scene` is in with its controls as `v` has them (all of
+ * `controls`, its own and every game's), if it's in one: one of its named
+ * states, every control as that state sets it or at its default.
+ */
+export function sceneStateAt(bench: SceneBench, scene: Scene, controls: Control[], v: Values): number {
+  return bench.states.findIndex((st) => st.scene === scene && controls.every((c) => (c.key in st.values ? valueOf(c, st.values[c.key]) : c.default) === v[c.key]));
+}
+
+/** Values as an address writes them (`k.` before each key, a switch 1 or 0). */
+export function asQuery(values: Values): [string, string][] {
+  return Object.entries(values).map(([k, x]) => [k, typeof x === 'boolean' ? (x ? '1' : '0') : String(x)]);
 }
 
 /** The controls away from their defaults, as the address writes them (`k.size=56`). */

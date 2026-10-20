@@ -12,7 +12,7 @@ import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { isDeskMessage, type FrameMessage } from '../messages.ts';
-import { knobValues } from '../scene.ts';
+import { seatsIn } from '../scene.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
 const RECHECK_MS = 600;
@@ -55,24 +55,25 @@ export async function boot(asked: URLSearchParams) {
 
   // The scene first: what it puts in the address has to be there before the
   // app's modules read it (the codex's #codex, an invite's ?room=).
-  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }, { useCaptured }] = await Promise.all([
+  const [{ session, engine, picturesOf, veilClock }, { useItems }, scenes, { default: fakeNames }, { useCaptured }, { buildScene }] = await Promise.all([
     import('../../lib/session.svelte.ts'),
     import('../build/engine.ts'),
     import('../scenes/index.ts'),
     import('../../data/fakes.json'),
     import('../scenes/captured.ts'),
+    import('../tweaks.ts'),
   ]);
   useItems(engine.items, fakeNames);
   useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
   const key = asked.get('s');
   const scene = scenes.sceneByKey(key);
-  const seat = scene?.seats[Number(asked.get('seat') ?? 0)];
-  if (!scene || !seat) {
+  const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
+  const built = scene && buildScene(scene, given).built;
+  const seat = scene && built ? seatsIn(scene, built)[Number(asked.get('seat') ?? 0)] : undefined;
+  if (!scene || !built || !seat) {
     document.body.textContent = `No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`;
     return;
   }
-  const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
-  const built = scene.build(knobValues(scene.knobs, given));
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
   await import('../../app.css');

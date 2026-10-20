@@ -74,7 +74,10 @@ export async function bootPiece(asked: URLSearchParams) {
   let again: ReturnType<typeof setTimeout> | undefined;
   const run = async () => {
     const settled = await settle();
-    tell({ qa: 'checked', slot, settled, problems: check(heard) });
+    const problems = check(heard);
+    tell({ qa: 'checked', slot, settled, problems });
+    // (For a shot of it taken as a page of its own: it has come to rest.)
+    (window as Window & { __qa?: unknown }).__qa = { settled, problems };
   };
   const soon = () => {
     clearTimeout(again);

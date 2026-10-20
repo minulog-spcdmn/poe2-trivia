@@ -146,7 +146,7 @@ const PER_BROWSER = 4;
 const browsers = await Promise.all(Array.from({ length: Math.ceil(concurrency / PER_BROWSER) }, launch));
 const browser = browsers[0];
 
-/** Every scene the desk at `base` has: key, label, seats, the sizes it is walked at. */
+/** Every state of every scene the desk at `base` has: its scene's key, its number there and controls, label, seats, the sizes it is walked at. */
 async function listScenes(base) {
   const desk = await browser.newPage();
   await desk.goto(`${base}qa.html`);
@@ -156,7 +156,7 @@ async function listScenes(base) {
   return scenes;
 }
 
-const fileOf = (j) => `${j.scene.replace(/\//g, '--')}__${j.seat}__${j.size}.png`;
+const fileOf = (j) => `${j.scene.replace(/\//g, '--')}${j.n ? `-${j.n}` : ''}__${j.seat}__${j.size}.png`;
 
 /**
  * The game's files of `entries` (the dev server's, one module a file) that
@@ -227,6 +227,7 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
       try {
         if (coverage) await page.coverage.startJSCoverage({ resetOnNavigation: false });
         const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
+        for (const [k, v] of j.values ?? []) q.set(`k.${k}`, v);
         await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
         const loaded = Date.now();
         await page.waitForFunction(() => window.__qa, null, { timeout: 60000 });
@@ -267,7 +268,7 @@ function jobsFor(scenes) {
       process.exit(1);
     }
   }
-  return scenes.flatMap((s) => pick(s).flatMap((size) => Array.from({ length: s.seats }, (_, seat) => ({ scene: s.key, label: s.label, seat, size }))));
+  return scenes.flatMap((s) => pick(s).flatMap((size) => Array.from({ length: s.seats }, (_, seat) => ({ scene: s.key, n: s.n, values: s.values, label: s.label, seat, size }))));
 }
 
 // ---- --map --------------------------------------------------------------------

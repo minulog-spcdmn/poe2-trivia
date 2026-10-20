@@ -1,19 +1,21 @@
 <script lang="ts">
-  // The QA desk: a bench for each thing of the game's (src/qa/benches), its
-  // list on the left, the thing itself live in the middle at the size
-  // picked, and its panel on the right: its states, its controls, what can
-  // happen to it. Keys do the rest (docs/qa.md lists them). The bench, its
-  // state, its controls and the size are in the address, so a reload, the
-  // back button and a link sent to someone all show the same.
-  import { benches, benchOfScene, shelfOf } from '../benches/index.ts';
+  // The QA desk: a bench for each thing of the game's (src/qa/benches): the
+  // pieces, and a screen each of the game's. Its list on the left, the thing
+  // itself live in the middle at the size picked, and its panel on the
+  // right: its states, its controls, what can happen to it. Keys do the rest
+  // (docs/qa.md lists them). The bench, its state, its controls and the size
+  // are in the address, so a reload, the back button and a link sent to
+  // someone all show the same.
+  import { benchByKey, benchOfScene, benches, shelfOf } from '../benches/index.ts';
   import { sceneByKey } from '../scenes/index.ts';
   import sceneFiles from '../../data/sceneFiles.json';
   import { benchesTouched, touched } from '../change.ts';
-  import { knobValues, seatLabel, type Scene } from '../scene.ts';
+  import { seatLabel, seatsIn, type Scene } from '../scene.ts';
+  import { buildScene } from '../tweaks.ts';
   import { SIZES, isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
   import type { DeskMessage, FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
-  import { stateAt, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Values } from '../bench.ts';
+  import { sceneStateAt, stateAt, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Value, type Values } from '../bench.ts';
   import Shelf from './Shelf.svelte';
   import Panel from './Panel.svelte';
   import Stage from './Stage.svelte';
@@ -47,7 +49,7 @@
   function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
     const scene = sceneByKey(p.get('s')) ?? null;
-    const bench = scene ? benchOfScene(scene) : ALL.find((b) => b.key === p.get('b'));
+    const bench = scene ? benchOfScene(scene) : benchByKey(p.get('b'));
     if (!bench) return null;
     const size = p.get('size');
     const seat = p.get('seat');
@@ -80,29 +82,33 @@
 
   /** A piece's controls as set, by bench (each keeps its own while another is looked at). */
   let values = $state<Record<string, Values>>({});
-  /** A scene's knobs as set, by scene. */
-  let knobsSet = $state<Record<string, Record<string, string>>>({});
+  /** A scene's controls as set (only those set: the rest at their defaults), by scene. */
+  let sceneSet = $state<Record<string, Record<string, Value | string>>>({});
   if (first) {
     if (first.bench.kind === 'piece') values[first.bench.key] = valuesOf(first.bench.controls, first.given);
-    else if (first.scene) knobsSet[first.scene.key] = first.given;
+    else if (first.scene) sceneSet[first.scene.key] = first.given;
   }
 
   const piece = $derived<PieceBench | null>(bench.kind === 'piece' ? bench : null);
-  const scenes = $derived<SceneBench | null>(bench.kind === 'scenes' ? bench : null);
+  const screen = $derived<SceneBench | null>(bench.kind === 'scenes' ? bench : null);
   const v = $derived(piece ? (values[piece.key] ?? valuesOf(piece.controls)) : {});
-  const knobs = $derived(scene ? knobValues(scene.knobs, knobsSet[scene.key]) : {});
-  /** A scene's knobs set away from their defaults, as its frames' address gives them. */
-  const knobQueryOf = (s: Scene): [string, string][] => Object.entries(knobValues(s.knobs, knobsSet[s.key])).filter(([k, x]) => s.knobs?.find((o) => o.key === k)?.default !== x);
-  const knobQuery = $derived(scene ? knobQueryOf(scene) : []);
-  const built = $derived(scenes && scene ? scene.build(knobs) : undefined);
+  /** The scene as set: built, its controls (its own and every game's) and their values. */
+  const set = $derived(screen && scene ? buildScene(scene, sceneSet[scene.key]) : null);
+  const built = $derived(set?.built);
+  /** A scene's controls away from their defaults, as its frames' address gives them. */
+  const sceneQuery = $derived(set ? valuesQuery(set.controls, set.values) : []);
+  const ownControls = $derived(scene?.controls ?? []);
   const sz = $derived(size === 'fit' ? null : sizeOf(size));
+  /** Who the scene can be seen as, as set (a room without a seat's player has no seat for them). */
+  const seats = $derived(scene && built ? seatsIn(scene, built) : []);
   /** A scene's seats shown: all side by side on a touch screen (they fit), one at a time on a larger one, unless one was picked. */
   // (A seat picked on a scene with more stays the last one there is on one with fewer.)
-  const seatShown = $derived<number | 'all'>(!scene || scene.seats.length === 1 ? 0 : seatPicked === 'all' ? 'all' : seatPicked !== null ? Math.min(seatPicked, scene.seats.length - 1) : sz?.touch ? 'all' : 0);
-  const seatNames = $derived(scene && built ? scene.seats.map((s) => seatLabel(s, built.state)) : []);
-  const stateIndex = $derived(piece ? stateAt(piece, v) : scenes && scene ? scenes.scenes.indexOf(scene) : -1);
-  const states = $derived(piece ? piece.states.map((s) => s.label) : (scenes?.scenes.map((s) => s.label) ?? []));
-  const board = $derived(size !== 'fit' && scene?.boards?.[size] ? BOARDS[scene.boards[size]!] : undefined);
+  const seatShown = $derived<number | 'all'>(seats.length <= 1 ? 0 : seatPicked === 'all' ? 'all' : seatPicked !== null ? Math.min(seatPicked, seats.length - 1) : sz?.touch ? 'all' : 0);
+  const seatNames = $derived(built ? seats.map((s) => seatLabel(s, built.state)) : []);
+  const stateIndex = $derived(piece ? stateAt(piece, v) : screen && scene && set ? sceneStateAt(screen, scene, set.controls, set.values) : -1);
+  const states = $derived(piece ? piece.states.map((s) => ({ label: s.label, group: '' })) : (screen?.states.map((s) => ({ label: s.label, group: s.group })) ?? []));
+  /** The design's board, where the scene has one at this size and stands as it was drawn (its controls at their defaults). */
+  const board = $derived(size !== 'fit' && scene?.boards?.[size] && !sceneQuery.length ? BOARDS[scene.boards[size]!] : undefined);
 
   /**
    * Going to another bench or state by hand (not a slider moved, not a frame
@@ -115,20 +121,22 @@
    * from the dev server (its git) or, on the beta, the list written as it
    * was built. The desk opens on the first when the address names none.
    */
-  let change = $state<{ benches: { key: string; why: string }[]; uncovered: string[] } | null>(null);
+  let change = $state<{ benches: { key: string; why: string }[]; uncovered: string[]; scenes: Set<string> } | null>(null);
   void (async () => {
     for (const url of ['./__qa/change', './qa-change.json']) {
       const got = await fetch(url).then((r) => (r.ok ? r.json() : null), () => null);
       if (!got?.files) continue;
-      change = benchesTouched(got.files, touched(got.files, sceneFiles, SCENES), ALL);
+      const hit = touched(got.files, sceneFiles, SCENES);
+      change = { ...benchesTouched(got.files, hit, ALL), scenes: new Set(hit.scenes.map((s) => s.key)) };
       const opening = change.benches.map((t) => ALL.find((b) => b.key === t.key)).find(Boolean);
       // Not if the address named a bench, or one was picked meanwhile; and in place of the first, not a step after it.
-      if (!first && opening && moves === 0) open(opening, undefined, false);
+      if (!first && opening && moves === 0) open(opening, opening.kind === 'scenes' ? opening.states.findIndex((s) => change!.scenes.has(s.scene.key)) : undefined, false);
       return;
     }
   })();
 
-  function open(b: Bench, at?: Scene, step = true) {
+  /** Opens `b`, at its state `at` (a screen's first, by default). */
+  function open(b: Bench, at?: number, step = true) {
     if (step) moves++;
     if (live) live = null;
     if (b !== bench) {
@@ -136,18 +144,21 @@
       all = false;
     }
     bench = b;
-    scene = b.kind === 'scenes' ? (at ?? b.scenes[0]) : null;
+    scene = b.kind === 'scenes' ? b.scenes[0] : null;
+    if (at !== undefined && at >= 0) goState(at, false);
   }
-  function goState(i: number) {
-    moves++;
+  function goState(i: number, step = true) {
+    if (step) moves++;
     if (live) live = null;
     all = false;
     if (piece) {
       const s = piece.states[Math.max(0, Math.min(piece.states.length - 1, i))];
       if (s) values[piece.key] = stateValues(piece, s, v);
-    } else if (scenes) {
-      const s = scenes.scenes[Math.max(0, Math.min(scenes.scenes.length - 1, i))];
-      if (s) scene = s;
+    } else if (screen) {
+      const s = screen.states[Math.max(0, Math.min(screen.states.length - 1, i))];
+      if (!s) return;
+      scene = s.scene;
+      sceneSet[s.scene.key] = { ...s.values };
     }
   }
   /** The benches in the order the list shows them, as the search leaves them. */
@@ -157,17 +168,28 @@
     const next = listed[i < 0 ? 0 : Math.max(0, Math.min(listed.length - 1, i + dir))];
     if (next) open(next);
   }
-  function setValue(key: string, value: Values[string]) {
+  function setValue(key: string, value: Value) {
     if (piece) values[piece.key] = { ...v, [key]: value };
+    else if (scene) sceneSet[scene.key] = { ...sceneSet[scene.key], [key]: value };
   }
-  function setKnob(key: string, value: string) {
-    if (scene) knobsSet[scene.key] = { ...knobsSet[scene.key], [key]: value };
+  /** The state last gone to, by bench: what "As it was" goes back to once a control has moved it off. */
+  let picked = $state<Record<string, number>>({});
+  $effect(() => {
+    if (stateIndex >= 0) picked[bench.key] = stateIndex;
+  });
+  /** Back to the state last gone to (or, on another scene now, that scene as it comes). */
+  function resetControls() {
+    const i = picked[bench.key];
+    if (screen && scene && screen.states[i]?.scene !== scene) sceneSet[scene.key] = {};
+    else if (i !== undefined) goState(i, false);
+    else if (piece) values[piece.key] = valuesOf(piece.controls);
+    else if (scene) sceneSet[scene.key] = {};
   }
 
   /** What the frames shown found wrong, by frame, once checked: only those of the view up now. */
   let results = $state<Record<string, Problem[]>>({});
   /** What the frames show, as one string: a change makes them afresh. A piece's controls aren't in it: they reach its frame as they move. */
-  const showing = $derived(piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(knobQuery)}|${all}|${reloads}`);
+  const showing = $derived(piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(sceneQuery)}|${all}|${reloads}`);
   $effect(() => {
     void showing;
     results = {};
@@ -200,13 +222,13 @@
       return [{ src: `${location.pathname}?${p}`, title: piece.label, caption: all ? 'Every state' : '' }];
     }
     if (!scene) return [];
-    const seats = seatShown === 'all' ? scene.seats.map((_, i) => i) : [seatShown];
-    return seats.map((seat, i) => {
+    const shown = seatShown === 'all' ? seats.map((_, i) => i) : [seatShown];
+    return shown.map((seat, i) => {
       const p = base(`s${i}`);
       p.set('s', scene!.key);
       p.set('seat', String(seat));
-      for (const [k, x] of knobQuery) p.set(`k.${k}`, x);
-      return { src: `${location.pathname}?${p}`, title: seatNames[seat] ?? 'The game', caption: seats.length > 1 || scene!.seats.length > 1 ? (seatNames[seat] ?? '') : '' };
+      for (const [k, x] of sceneQuery) p.set(`k.${k}`, x);
+      return { src: `${location.pathname}?${p}`, title: seatNames[seat] ?? 'The game', caption: shown.length > 1 || seats.length > 1 ? (seatNames[seat] ?? '') : '' };
     });
   });
 
@@ -300,7 +322,7 @@
       for (const [k, x] of valuesQuery(piece.controls, v)) p.set(`k.${k}`, x);
     } else if (scene) {
       p.set('s', scene.key);
-      for (const [k, x] of knobQuery) p.set(`k.${k}`, x);
+      for (const [k, x] of sceneQuery) p.set(`k.${k}`, x);
       if (seatPicked !== null) p.set('seat', String(seatPicked));
     }
     p.set('size', size);
@@ -324,7 +346,7 @@
       bench = a.bench;
       scene = a.scene;
       if (a.bench.kind === 'piece') values[a.bench.key] = valuesOf(a.bench.controls, a.given);
-      else if (a.scene) knobsSet[a.scene.key] = a.given;
+      else if (a.scene) sceneSet[a.scene.key] = a.given;
       if (a.size) size = a.size;
       seatPicked = a.seat;
       all = a.all;
@@ -349,8 +371,11 @@
     <header class="top">
       <p class="where">
         <span class="scene">{bench.label}</span>
-        {#if stateIndex >= 0 && !all}<span class="sep">•</span><span class="state">{states[stateIndex]}</span>{:else if all}<span class="sep">•</span><span class="state">every state</span>{/if}
-        {#if scene && seatShown !== 'all' && scene.seats.length > 1}<span class="sep">•</span><span>{seatNames[seatShown]}</span>{/if}
+        {#if all}<span class="sep">•</span><span class="state">every state</span>
+        {:else if stateIndex >= 0}<span class="sep">•</span><span class="state">{states[stateIndex].label}</span>
+        {:else if scene}<span class="sep">•</span><span class="state">{scene.label}</span><span class="adjusted">as set</span>
+        {:else}<span class="sep">•</span><span class="adjusted">as set</span>{/if}
+        {#if scene && seatShown !== 'all' && seats.length > 1}<span class="sep">•</span><span>{seatNames[seatShown]}</span>{/if}
       </p>
       <div class="sizes" role="group" aria-label="Size">
         <button class:on={size === 'fit'} onclick={() => (size = 'fit')} title="As large as the room here, at 1:1">Window</button>
@@ -375,8 +400,8 @@
 
     {#if live}
       <Live room={live.room} scene={live.scene} size={live.size} onexit={() => (live = null)} />
-    {:else if all && scenes}
-      <Grid bench={scenes} size={size === 'fit' ? 'desktop' : size} seat={seatShown === 'all' ? 0 : seatShown} knobsOf={knobQueryOf} {outlines} current={scene} {onframe} onpick={(s) => ((scene = s), (all = false))} />
+    {:else if all && screen}
+      <Grid bench={screen} size={size === 'fit' ? 'desktop' : size} seat={seatShown === 'all' ? 0 : seatShown} {outlines} current={stateIndex} {onframe} onpick={(i) => goState(i)} />
     {:else}
       <Stage {frames} size={sz} {showing} {zoomed} {panning} board={holding ? board : undefined} {onframe} />
     {/if}
@@ -387,9 +412,10 @@
     {states}
     {stateIndex}
     {all}
-    {v}
-    {scene}
-    {knobs}
+    controls={piece ? piece.controls : ownControls}
+    tweaks={set ? set.controls.slice(ownControls.length) : []}
+    v={piece ? v : (set?.values ?? {})}
+    changed={piece ? undefined : (i) => !!change?.scenes.has(screen!.states[i].scene.key)}
     seats={seatNames}
     seat={seatShown}
     {frozen}
@@ -399,7 +425,7 @@
     onstate={goState}
     onall={() => (all = !all)}
     onvalue={setValue}
-    onknob={setKnob}
+    onreset={resetControls}
     onseat={(s) => (seatPicked = s)}
     onact={act}
     onreplay={replay}

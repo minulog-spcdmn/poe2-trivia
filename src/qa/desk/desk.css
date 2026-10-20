@@ -178,6 +178,12 @@ html[data-qa='desk'] #app {
   margin: 0 0.45em;
   color: var(--gold-lo);
 }
+/* The state's controls moved off any named state. */
+.where .adjusted {
+  margin-left: 0.45em;
+  color: var(--gold);
+  font-size: 0.85em;
+}
 .sizes {
   display: flex;
   gap: 0;
@@ -253,6 +259,59 @@ html[data-qa='desk'] #app {
   width: 0.8em;
   font-family: var(--font-cinzel);
   color: var(--gold-lo);
+}
+/* A state this change touches: a dot at its end, as the benches have one. */
+.bench-panel .states button.changed::after {
+  content: '•';
+  margin-left: auto;
+  color: var(--gold);
+}
+/* A heading among the states, or among the controls (In any game). */
+.desk .heading {
+  margin: 0.7rem 0 0.1rem;
+  padding: 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: normal;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--gold-lo);
+}
+/* A long list's heading: a click folds its states away or opens them. */
+.desk .heading .fold {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  text-align: left;
+}
+.desk .heading .fold::before {
+  content: '▸';
+  width: 0.8em;
+  font-size: 0.8em;
+}
+.desk .heading .fold.open::before {
+  content: '▾';
+}
+.desk .heading .fold .num {
+  margin-left: auto;
+  font-size: 0.9em;
+}
+.bench-panel .controls .heading {
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+.grid .heading {
+  grid-column: 1 / -1;
+  margin: 0.6rem 0 -0.3rem;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.grid .heading:first-child {
+  margin-top: 0;
 }
 .bench-panel .controls {
   display: grid;
