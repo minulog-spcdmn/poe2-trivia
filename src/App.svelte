@@ -40,6 +40,7 @@
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
+  import { landing } from './lib/sync/boot.svelte';
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
@@ -633,6 +634,13 @@
 <LegalSheet />
 
 <FxLayer />
+
+<!-- A pairing link another device's QR code brought here: synced only once the player says yes (lib/sync). -->
+{#if landing.code}
+  {#await import('./components/SyncDialog.svelte') then { default: SyncDialog }}
+    <SyncDialog offered={landing.code} onclose={() => (landing.code = null)} />
+  {/await}
+{/if}
 
 <!-- In a room: the settings over the game, which runs on beneath (the page's keys wait while a dialog is open). -->
 {#if settingsOver}

@@ -88,7 +88,10 @@ test('unlocks and wears in storage, with the achievements stored', () => {
   unlockSigil('ranger');
   unlockSigil('gladiator');
   unlockSigil('witch');
-  assert.deepEqual(loadSigils(), { unlocked: ['ranger', 'gladiator'], worn: 'gladiator' });
+  const { wornAt, ...stored } = loadSigils();
+  assert.deepEqual(stored, { unlocked: ['ranger', 'gladiator'], worn: 'gladiator' });
+  // When it was put on, for the player's other devices to wear the latest (lib/sync).
+  assert.ok(typeof wornAt === 'number' && wornAt > 0);
   wearSigil('ranger');
   assert.equal(loadSigils().worn, 'ranger');
   wearSigil('witch');

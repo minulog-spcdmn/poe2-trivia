@@ -1,6 +1,7 @@
 // The class sigils this browser's player has unlocked and the one they wear
 // (lib/classSigils.ts), kept in localStorage beside the achievements and
-// never sent anywhere but as the one worn.
+// never sent anywhere but as the one worn, and to the player's own devices,
+// paired to sync (lib/sync: absorbSigils).
 //
 // The first achievement earned (lib/achievements.ts) unlocks a sigil, and
 // then every third one another (SIGIL_EVERY), of the class the player picks,
@@ -21,6 +22,8 @@ export interface SigilStore {
   unlocked: PlayerClass[];
   /** The one worn, if any: one of `unlocked`. */
   worn: PlayerClass | null;
+  /** When the one worn was put on (or taken off), on this browser's clock: the latest of the player's devices' is worn on all (lib/sync). Missing before it was kept. */
+  wornAt?: number;
 }
 
 export const emptySigils = (): SigilStore => ({ unlocked: [], worn: null });
@@ -44,7 +47,8 @@ export function parseSigils(raw: string | null): SigilStore | null {
   }
   if (!isObj(v) || v.v !== SIGILS_VERSION || !Array.isArray(v.unlocked)) return null;
   const unlocked = [...new Set(v.unlocked.filter(isPlayerClass))];
-  return { unlocked, worn: isPlayerClass(v.worn) && unlocked.includes(v.worn) ? v.worn : null };
+  const wornAt = typeof v.wornAt === 'number' && Number.isSafeInteger(v.wornAt) && v.wornAt > 0 ? v.wornAt : undefined;
+  return { unlocked, worn: isPlayerClass(v.worn) && unlocked.includes(v.worn) ? v.worn : null, ...(wornAt ? { wornAt } : {}) };
 }
 
 export const serializeSigils = (s: SigilStore) => JSON.stringify({ v: SIGILS_VERSION, ...s });
@@ -98,8 +102,29 @@ function change(change: (s: SigilStore) => SigilStore): SigilStore | null {
   const o = openStored(NAME, SIGILS_VERSION, parseSigils);
   if (!o) return null;
   const was = o.was ?? emptySigils();
-  const next = change(was);
+  const changed = change(was);
+  const next = changed.worn === was.worn ? changed : { ...changed, wornAt: Date.now() };
   return next === was || writeStored(NAME, serializeSigils(next)) ? next : null;
+}
+
+/** This device's sigils as stored, for sync to pass on (lib/sync/shared.ts); null for none. */
+export const ownSigilsRaw = () => tryReadStored(NAME) ?? null;
+
+/**
+ * Takes in another of the player's devices' sigils: those it unlocked that
+ * this one hasn't, and the one it wears if it put that on later. Whether it
+ * changed anything.
+ */
+export function absorbSigils(raw: string): boolean {
+  const theirs = parseSigils(raw);
+  const o = theirs && openStored(NAME, SIGILS_VERSION, parseSigils);
+  if (!theirs || !o) return false;
+  const was = o.was ?? emptySigils();
+  const unlocked = [...new Set([...was.unlocked, ...theirs.unlocked])];
+  const later = (theirs.wornAt ?? 0) > (was.wornAt ?? 0);
+  const next: SigilStore = later ? { unlocked, worn: theirs.worn, wornAt: theirs.wornAt } : { ...was, unlocked };
+  if (unlocked.length === was.unlocked.length && next.worn === was.worn) return false;
+  return writeStored(NAME, serializeSigils(next));
 }
 
 /** Unlocks `c` with one of the `achievements` earned (those stored, unless given), and wears it. */

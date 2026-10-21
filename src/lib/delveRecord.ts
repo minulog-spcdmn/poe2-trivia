@@ -46,6 +46,7 @@ import { DELVE_LIVES, DELVE_RULESET, FINDS, delveStandings, fellAt, isGroupRun, 
 import type { GameState } from './game.ts';
 import { clearAside, makeRoom } from './keepAside.ts';
 import { readStored, removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
+import { copiesOf } from './sync/store.ts';
 
 /** Where the records live (the beta keeps its own); the whole key, as storage events name it. */
 const DELVE_RECORD_NAME = 'delve2';
@@ -603,9 +604,72 @@ export const serializeRecords = (r: DelveRecords) => JSON.stringify({ v: VERSION
 /** What is stored: the records, or while there are none yet, those under the old name (null for neither). */
 const storedRaw = (raw: string | null) => raw ?? readStored(LEGACY);
 
-/** The stored records (empty when there are none or they can't be read; never written over for that). Read fresh: another tab may have added to them. */
+/** This device's own records as stored, the ones sync passes on (null for none). */
+export const ownRecordsRaw = () => storedRaw(readStored(DELVE_RECORD_NAME));
+
+/** The other devices' records, as sync keeps them (lib/sync/store.ts). */
+const otherRecords = () => copiesOf('delve', parseRecords);
+
+/**
+ * The stored records (empty when there are none or they can't be read;
+ * never written over for that), with the player's other devices' (lib/sync/store.ts).
+ * Read fresh: another tab may have added to them.
+ */
 export function loadRecords(): DelveRecords {
-  return parseRecords(storedRaw(readStored(DELVE_RECORD_NAME))) ?? emptyRecords();
+  const own = parseRecords(ownRecordsRaw()) ?? emptyRecords();
+  const others = otherRecords();
+  return others.length ? combineRecords(own, others) : own;
+}
+
+function combineTally(a: DelveTally | undefined, b: DelveTally): DelveTally {
+  if (!a) return b;
+  const add = (x: Record<number, number> = {}, y: Record<number, number> = {}) => {
+    const out = { ...x };
+    for (const [d, n] of Object.entries(y)) out[Number(d)] = Math.min(MAX_COUNT, (out[Number(d)] ?? 0) + n);
+    return out;
+  };
+  const total = (x: number | undefined, y: number | undefined) => Math.min(MAX_COUNT, (x ?? 0) + (y ?? 0));
+  const left = add(a.left, b.left);
+  const perished = add(a.perished, b.perished);
+  const [given, revived, warded] = [total(a.given, b.given), total(a.revived, b.revived), total(a.warded, b.warded)];
+  return {
+    ends: add(a.ends, b.ends),
+    lost: add(a.lost, b.lost),
+    ...(Object.keys(left).length ? { left } : {}),
+    ...(Object.keys(perished).length ? { perished } : {}),
+    ...(given ? { given } : {}),
+    ...(revived ? { revived } : {}),
+    ...(warded ? { warded } : {}),
+  };
+}
+
+/**
+ * Records of one player's devices as one: the runs of all (each once), the
+ * deepest of each kind, the climbs and the frontier over all of them, and
+ * the tallies added up.
+ */
+export function combineRecords(own: DelveRecords, others: DelveRecords[]): DelveRecords {
+  let out = own;
+  for (const o of others) {
+    const byKey = new Map<string, DelveRun>();
+    // Each run is one device's own, so none should be on two; if one is, its end stands over its leaving.
+    for (const run of [...out.runs, ...o.runs]) {
+      const was = byKey.get(runKey(run));
+      if (!was || (was.left && !run.left)) byKey.set(runKey(run), run);
+    }
+    const runs = [...byKey.values()].sort((a, b) => a.at - b.at).slice(-RUN_LIMIT);
+    const bests = { ...out.bests };
+    for (const [k, b] of Object.entries(o.bests)) if (!bests[k] || b.depth > bests[k].depth) bests[k] = b;
+    const climbs: Record<string, Frontier[]> = {};
+    for (const k of new Set([...Object.keys(out.climbs), ...Object.keys(o.climbs)])) {
+      const climb = frontierOf([...(out.climbs[k] ?? []), ...(o.climbs[k] ?? [])]);
+      if (climb.length) climbs[k] = climb;
+    }
+    const tallies = { ...out.tallies };
+    for (const [k, t] of Object.entries(o.tallies)) tallies[k] = combineTally(tallies[k], t);
+    out = { runs, bests, climbs, tallies, frontier: frontierOf([...out.frontier, ...o.frontier]) };
+  }
+  return out;
 }
 
 /** Whether they could be stored. When storage is full, the oldest runs of the list go first (the bests, tallies and climbs stay). */
@@ -630,7 +694,11 @@ export function recordRun(run: DelveRun): Measure | null {
   const was = stored ?? emptyRecords();
   const { records, previousBest, best } = addRun(was, run);
   if (records !== was && !write(records)) return null;
-  return { previousBest, best };
+  // Measured against the player's other devices' runs too: a best is the deepest anywhere.
+  const others = otherRecords();
+  if (!others.length) return { previousBest, best };
+  const all = combineRecords(records, others);
+  return measure(all, recorded(all, runKey(run)) ?? run);
 }
 
 /**

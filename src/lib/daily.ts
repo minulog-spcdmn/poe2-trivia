@@ -1,12 +1,13 @@
 // Today's unique: one question a day, the same for every exile. No server:
 // the day (UTC) seeds the engine, so every browser on the same item data
 // deals the same item and the same four names in the same order. The
-// answer and the run of days answered right stay in this browser.
+// answer and the run of days answered right stay in this browser, and the
+// player's own devices paired to sync (lib/sync: absorbDaily).
 
 import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { DAILY_LAUNCH } from './dailyLaunch.ts';
 import { seededRandom } from './patches.ts';
-import { readStored, writeStored } from './storage.ts';
+import { readStored, storeKey, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 
 const DAY_MS = 86_400_000;
@@ -165,6 +166,8 @@ export function answerDaily(rec: DailyRecord | null, today: number, picked: numb
 }
 
 const KEY = 'daily';
+/** The whole key, as storage events name it. */
+export const DAILY_KEY = storeKey(KEY);
 const isInt = (v: unknown, min = 0): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min;
 
 /** A stored record, or null when it's missing or malformed. */
@@ -181,3 +184,20 @@ export function parseDaily(raw: string | null): DailyRecord | null {
 
 export const loadDaily = () => parseDaily(readStored(KEY));
 export const saveDaily = (rec: DailyRecord) => void writeStored(KEY, JSON.stringify(rec));
+
+/** This device's record as stored, for sync to pass on (lib/sync/shared.ts); null for none. */
+export const ownDailyRaw = () => readStored(KEY);
+
+/**
+ * Takes in another of the player's devices' record when it answered a later
+ * day (or the same day, further into a run): the player's answer, wherever
+ * it was given. Not one from more than a day ahead of this device's clock,
+ * which can't be yet. Whether it changed anything.
+ */
+export function absorbDaily(raw: string, today = utcDay(Date.now())): boolean {
+  const theirs = parseDaily(raw);
+  if (!theirs || theirs.day > today + 1) return false;
+  const mine = loadDaily();
+  if (mine && (mine.day > theirs.day || (mine.day === theirs.day && mine.streak >= theirs.streak))) return false;
+  return writeStored(KEY, JSON.stringify(theirs));
+}

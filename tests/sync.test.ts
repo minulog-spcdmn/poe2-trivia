@@ -1,0 +1,239 @@
+import { test, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import jsQR from 'jsqr';
+import { codeInHash, codeKey, codeLink, newCode, peerName, prove, proves, readCode, shownCode } from '../src/lib/sync/code.ts';
+import { qrShape } from '../src/lib/sync/qr.ts';
+import { clearCopies, copiesOf, deviceId, keepCopy, readCopies } from '../src/lib/sync/store.ts';
+import { ownNow, takeIn, takenNow } from '../src/lib/sync/shared.ts';
+import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEncounter, recordPractice, serializeCodex, type Codex } from '../src/lib/codex.ts';
+import { DELVE_RECORD_KEY, addRun, bestOf, combineRecords, emptyRecords, loadRecords, recordRun, serializeRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
+import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, absorbAchievements, absorbWins, loadAchievements, loadWins, serializeStore, serializeWins } from '../src/lib/achievements.ts';
+import { SIGILS_KEY, absorbSigils, loadSigils, serializeSigils } from '../src/lib/sigils.ts';
+import { DAILY_KEY, absorbDaily, loadDaily } from '../src/lib/daily.ts';
+import { DELVE_RULESET } from '../src/lib/delve.ts';
+import { storeKey } from '../src/lib/storage.ts';
+import { memoryStorage } from './helpers.ts';
+
+const store = new Map<string, string>();
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
+beforeEach(() => store.clear());
+
+const ITEM = 'aaaaaaaaaaaa';
+const OTHER = 'bbbbbbbbbbbb';
+const PHONE = 'phone0000001';
+const TABLET = 'tablet000001';
+
+// ---- the code ----------------------------------------------------------------------
+
+test('a code is sixteen of Crockford base32, read back however it is typed', () => {
+  const code = newCode();
+  assert.match(code, /^[0-9A-HJKMNP-TV-Z]{16}$/);
+  assert.notEqual(newCode(), code);
+  assert.equal(shownCode('K7QXM2PA9FHE3TDW'), 'K7QX-M2PA-9FHE-3TDW');
+  assert.equal(readCode(' k7qx-m2pa 9fhe-3tdw '), 'K7QXM2PA9FHE3TDW');
+  // O for 0, I and L for 1: none of them is in the code.
+  assert.equal(readCode('O0IL-0000-0000-0000'), '0011000000000000');
+  assert.equal(readCode('K7QX-M2PA-9FHE-3TD'), null);
+  assert.equal(readCode('K7QX-M2PA-9FHE-3TDU'), null);
+});
+
+test("a pairing link holds the code after its hash, the site's address before it", () => {
+  const link = codeLink('K7QXM2PA9FHE3TDW', 'https://poe2.quest/beta/?x=1#settings');
+  assert.equal(link, 'https://poe2.quest/beta/#sync=K7QX-M2PA-9FHE-3TDW');
+  assert.equal(codeInHash(new URL(link).hash), 'K7QXM2PA9FHE3TDW');
+  assert.equal(codeInHash('#settings'), null);
+  assert.equal(codeInHash('#sync=nope'), null);
+});
+
+test('the meeting name and the proof key come from the code, and give it away to nobody', async () => {
+  const a = 'K7QXM2PA9FHE3TDW';
+  const b = 'K7QXM2PA9FHE3TDX';
+  const name = await peerName(a);
+  assert.match(name, /^[0-9a-z]{20}$/);
+  assert.equal(await peerName(a), name);
+  assert.notEqual(await peerName(b), name);
+  assert.ok(!name.includes(a.toLowerCase().slice(0, 6)));
+  const proof = await prove(await codeKey(a), 'h|1|2');
+  assert.ok(await proves(await codeKey(a), 'h|1|2', proof));
+  assert.ok(!(await proves(await codeKey(a), 'g|1|2', proof)), 'not for another challenge');
+  assert.ok(!(await proves(await codeKey(b), 'h|1|2', proof)), 'not under another code');
+  assert.ok(!(await proves(await codeKey(a), 'h|1|2', 42)));
+});
+
+test('the QR code drawn reads back as the link, with the reader the camera uses where the browser has none', () => {
+  const link = codeLink(newCode(), 'https://poe2.quest/beta/');
+  const { size, path } = qrShape(link);
+  // The path drawn, module by module, as a camera would see it: 6 px each, dark on light.
+  const px = 6;
+  const w = size * px;
+  const rgba = new Uint8ClampedArray(w * w * 4).fill(255);
+  for (const [, x, y, run] of path.matchAll(/M(\d+) (\d+)h(\d+)v1h-\d+z/g))
+    for (let dy = 0; dy < px; dy++)
+      for (let dx = 0; dx < Number(run) * px; dx++) {
+        const i = ((Number(y) * px + dy) * w + Number(x) * px + dx) * 4;
+        rgba[i] = rgba[i + 1] = rgba[i + 2] = 0;
+      }
+  assert.equal(jsQR(rgba, w, w)?.data, link);
+});
+
+// ---- what is kept ------------------------------------------------------------------
+
+test('a device keeps one name, and one copy of each other device', () => {
+  const me = deviceId();
+  assert.match(me, /^[0-9a-z]{12}$/);
+  assert.equal(deviceId(), me);
+  assert.ok(keepCopy('practice', PHONE, { at: 5, raw: 'a' }));
+  assert.ok(keepCopy('practice', PHONE, { at: 9, raw: 'b' }));
+  assert.ok(keepCopy('practice', TABLET, { at: 3, raw: 'c' }));
+  assert.deepEqual(readCopies('practice'), { [PHONE]: { at: 9, raw: 'b' }, [TABLET]: { at: 3, raw: 'c' } });
+  clearCopies();
+  assert.deepEqual(readCopies('practice'), {});
+});
+
+test("a device's own progress is stamped with when it last changed, later every time it does", () => {
+  assert.equal(ownNow('practice'), null);
+  recordPractice(true);
+  const one = ownNow('practice')!;
+  assert.equal(ownNow('practice')!.at, one.at, 'unchanged, the same');
+  recordPractice(false);
+  const two = ownNow('practice')!;
+  assert.ok(two.at > one.at);
+  assert.equal(two.raw, store.get(storeKey('practice')));
+});
+
+// ---- the codex -----------------------------------------------------------------------
+
+const answered = (at: number, ok: boolean, itemId = ITEM) => ({ at, itemId, mode: 'name' as const, difficulty: 'custom' as const, race: false, answer: { ok, pickedId: null, pickedLabel: null, ms: ok ? at : undefined } });
+
+/** A codex of the answers given, as a device would have recorded them. */
+function codexOf(answers: ReturnType<typeof answered>[]): Codex {
+  store.clear();
+  for (const a of answers) recordEncounter(a);
+  return loadCodex();
+}
+
+test('codexes add up: what each counted, the best of each best, all the answers in one log', () => {
+  const pc = codexOf([answered(100, true), answered(200, true), answered(300, false, OTHER)]);
+  const phone = codexOf([answered(150, true), answered(250, true), answered(350, true), answered(400, true)]);
+  const both = combineCodex(pc, [phone]);
+  assert.equal(both.items[ITEM].seen, 6);
+  assert.deepEqual(both.items[ITEM].name, { n: 6, ok: 6 });
+  assert.equal(both.items[ITEM].first, 100);
+  assert.equal(both.items[ITEM].last, 400);
+  assert.deepEqual(both.items[OTHER].name, { n: 1, ok: 0 });
+  assert.deepEqual(both.byDifficulty.custom, { n: 7, ok: 6 });
+  assert.deepEqual(both.log.map((a) => a.t), [100, 150, 200, 250, 300, 350, 400]);
+  // The answers in a row now are the phone's, which answered last; the best is its four.
+  assert.equal(both.streak, 4);
+  assert.equal(both.best, 4);
+  assert.equal(both.fastest?.ms, 100);
+  // Neither is changed by it.
+  assert.equal(pc.items[ITEM].seen, 2);
+  assert.equal(phone.items[ITEM].seen, 4);
+});
+
+test('one answer logged on two devices (one question, both in the room) is in the log once', () => {
+  const a = codexOf([answered(100, true)]);
+  const both = combineCodex(a, [a]);
+  assert.equal(both.log.length, 1);
+});
+
+test("the codex is read with the other devices' copies; its own stays its own", () => {
+  const phone = serializeCodex(codexOf([answered(150, true), answered(250, false)]));
+  store.clear();
+  recordEncounter(answered(100, true));
+  keepCopy('codex', PHONE, { at: 1, raw: phone });
+  assert.equal(loadCodex().items[ITEM].seen, 3);
+  recordEncounter(answered(300, true));
+  assert.equal(loadCodex().items[ITEM].seen, 4);
+  // What this device stores is its own answers alone: that's what it passes on.
+  assert.equal(parseCodex(store.get(storeKey('codex2'))!)!.items[ITEM].seen, 2);
+  // A copy this build can't read is left out, not read as nothing.
+  keepCopy('codex', TABLET, { at: 1, raw: JSON.stringify({ v: 99 }) });
+  assert.equal(loadCodex().items[ITEM].seen, 4);
+});
+
+test("practice adds up the devices' tallies", () => {
+  recordPractice(true);
+  keepCopy('practice', PHONE, { at: 1, raw: JSON.stringify({ v: 1, n: 5, ok: 3 }) });
+  assert.deepEqual(loadPractice(), { n: 6, ok: 4 });
+});
+
+test('copies are parsed again only when they change', () => {
+  keepCopy('codex', PHONE, { at: 1, raw: serializeCodex(emptyCodex()) });
+  const first = copiesOf('codex', parseCodex);
+  assert.equal(copiesOf('codex', parseCodex), first);
+  keepCopy('codex', PHONE, { at: 2, raw: serializeCodex(emptyCodex()) });
+  assert.notEqual(copiesOf('codex', parseCodex), first);
+});
+
+// ---- the Delve records -------------------------------------------------------------
+
+const run = (o: Partial<DelveRun>): DelveRun => ({ id: 1, at: 1, depth: 10, players: 1, ruleset: DELVE_RULESET, mixed: false, losses: [3, 6, 10], ...o });
+
+test("records add up: every device's runs, the deepest of each kind, the tallies summed", () => {
+  const pc = [run({ id: 1, at: 10, depth: 12, losses: [4, 8, 12] }), run({ id: 2, at: 30, depth: 7, losses: [2, 5, 7] })].reduce((r, x) => addRun(r, x).records, emptyRecords());
+  const phone = addRun(emptyRecords(), run({ id: 3, at: 20, depth: 20, losses: [5, 9, 20] })).records;
+  const both = combineRecords(pc, [phone]);
+  assert.deepEqual(both.runs.map((x) => x.id), [1, 3, 2]);
+  assert.equal(bestOf(both, true)?.depth, 20);
+  assert.deepEqual(tallyOf(both, true).ends, { 7: 1, 12: 1, 20: 1 });
+  assert.deepEqual(both.climbs[`${DELVE_RULESET}:solo`].map((f) => f.depth), [12, 20]);
+  assert.deepEqual(both.frontier.map((f) => f.depth), [12, 20]);
+});
+
+test("a run measures up against the player's other devices too: a best is the deepest anywhere", () => {
+  keepCopy('delve', PHONE, { at: 1, raw: serializeRecords(addRun(emptyRecords(), run({ id: 3, at: 20, depth: 20, losses: [5, 9, 20] })).records) });
+  const first = recordRun(run({ id: 1, at: 30, depth: 12, losses: [4, 8, 12] }))!;
+  assert.deepEqual(first, { previousBest: 20, best: false });
+  const deeper = recordRun(run({ id: 2, at: 40, depth: 25, losses: [4, 8, 25] }))!;
+  assert.deepEqual(deeper, { previousBest: 20, best: true });
+  assert.equal(bestOf(loadRecords(), true)?.depth, 25);
+  // What this device stores is its own runs alone.
+  assert.equal(JSON.parse(store.get(DELVE_RECORD_KEY)!).runs.length, 2);
+});
+
+// ---- what is taken in -----------------------------------------------------------------
+
+test("achievements are taken in: what the other earned, at the earlier time of two", () => {
+  const [a, b, c] = ACHIEVEMENTS;
+  store.set(ACHIEVEMENTS_KEY, serializeStore({ earned: { [a.id]: 50, [b.id]: 10 } }));
+  assert.ok(absorbAchievements(serializeStore({ earned: { [a.id]: 20, [b.id]: 30, [c.id]: 40, 'from-a-newer-build': 5 } })));
+  assert.deepEqual(loadAchievements().earned, { [a.id]: 20, [b.id]: 10, [c.id]: 40, 'from-a-newer-build': 5 });
+  assert.ok(!absorbAchievements(serializeStore({ earned: { [a.id]: 20 } })), 'nothing new');
+  assert.ok(!absorbAchievements('nope'));
+});
+
+test("the longest run of wins is taken in; the run now stays this device's own", () => {
+  store.set(WINS_KEY, serializeWins({ now: 2, best: 3, last: 9 }));
+  assert.ok(absorbWins(serializeWins({ now: 0, best: 5, last: 4 })));
+  assert.deepEqual(loadWins(), { now: 2, best: 5, last: 9 });
+  assert.ok(!absorbWins(serializeWins({ now: 4, best: 4, last: 12 })));
+});
+
+test('sigils are taken in: every one unlocked, and the one put on last is worn', () => {
+  store.set(SIGILS_KEY, serializeSigils({ unlocked: ['witch'], worn: 'witch', wornAt: 100 }));
+  assert.ok(absorbSigils(serializeSigils({ unlocked: ['monk'], worn: 'monk', wornAt: 50 })));
+  assert.deepEqual(loadSigils(), { unlocked: ['witch', 'monk'], worn: 'witch', wornAt: 100 });
+  assert.ok(absorbSigils(serializeSigils({ unlocked: ['monk'], worn: 'monk', wornAt: 200 })));
+  assert.deepEqual(loadSigils(), { unlocked: ['witch', 'monk'], worn: 'monk', wornAt: 200 });
+  assert.ok(!absorbSigils(serializeSigils({ unlocked: ['witch'], worn: null, wornAt: 150 })), 'taken off earlier: still worn');
+});
+
+test("today's unique is taken in from a device that answered later; never from the future", () => {
+  const today = 20_000;
+  store.set(DAILY_KEY, JSON.stringify({ day: today - 1, picked: 0, ok: true, streak: 4, ended: 0 }));
+  assert.ok(!absorbDaily(JSON.stringify({ day: today - 2, picked: 1, ok: true, streak: 3, ended: 0 }), today));
+  assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
+  assert.equal(loadDaily()?.day, today);
+  assert.ok(!absorbDaily(JSON.stringify({ day: today + 5, picked: 2, ok: true, streak: 9, ended: 0 }), today));
+});
+
+test('what is sent to be taken in is what is stored; what comes in is checked', () => {
+  store.set(ACHIEVEMENTS_KEY, serializeStore({ earned: { [ACHIEVEMENTS[0].id]: 1 } }));
+  assert.deepEqual(Object.keys(takenNow()), ['achievements']);
+  store.clear();
+  assert.deepEqual(takeIn({ achievements: serializeStore({ earned: { [ACHIEVEMENTS[0].id]: 1 } }), nonsense: 'x', sigils: 42 }), ['achievements']);
+  assert.deepEqual(takeIn({ achievements: 'x'.repeat(200_000) }), []);
+  assert.deepEqual(takeIn(null), []);
+});

@@ -1,5 +1,6 @@
 // Achievements: feats this browser's player has earned, kept in localStorage
-// like the codex and never sent anywhere.
+// like the codex and never sent anywhere but to the player's own devices,
+// paired to sync (lib/sync: absorbAchievements).
 //
 // Few and chosen: each marks a moment worth telling or a goal worth chasing.
 // Four groups of nine (Knowledge, Versus, Delve, Together), so the Codex page
@@ -984,6 +985,49 @@ function earn(store: AchievementStore, first: boolean, ids: string[]): Check {
   if (!writeStored(NAME, raw)) return none();
   lastRead = { raw, store: next };
   return { earned: fresh.map((id) => achievementById.get(id)!), first };
+}
+
+// ---- sync ------------------------------------------------------------------------
+
+/** This device's list and wins in a row as stored, for sync to pass on (lib/sync/shared.ts); null for none. */
+export const ownAchievementsRaw = () => tryReadStored(NAME) ?? null;
+export const ownWinsRaw = () => tryReadStored(WINS) ?? null;
+
+/**
+ * Takes in another of the player's devices' list: what it earned that this
+ * one hasn't, as earned when it was there (and the earlier of two times for
+ * one earned on both). Ids this build doesn't know are kept, as they are in
+ * its own list. Whether it changed anything.
+ */
+export function absorbAchievements(raw: string): boolean {
+  const theirs = parseStore(raw);
+  const o = theirs && open();
+  if (!theirs || !o) return false;
+  const earned = { ...o.store.earned };
+  let changed = false;
+  for (const [id, at] of Object.entries(theirs.earned))
+    if (earned[id] === undefined || at < earned[id]) {
+      earned[id] = at;
+      changed = true;
+    }
+  if (!changed) return false;
+  const next = serializeStore({ ...o.store, earned });
+  if (!writeStored(NAME, next)) return false;
+  lastRead = null;
+  return true;
+}
+
+/** Takes in another device's best run of wins, if it's longer (the run now stays this device's own). Whether it changed anything. */
+export function absorbWins(raw: string): boolean {
+  if (newerThan(raw, WINS_VERSION)) return false;
+  const theirs = parseWins(raw);
+  let changed = false;
+  const wins = changeWins((w) => {
+    if (theirs.best <= w.best) return w;
+    changed = true;
+    return { ...w, best: theirs.best };
+  });
+  return changed && wins !== null;
 }
 
 /**

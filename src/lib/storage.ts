@@ -99,11 +99,43 @@ export const storeKey = (name: string) => STORE + name;
  */
 export function onStoredElsewhere(handlers: Record<string, () => void>): () => void {
   const on = (e: StorageEvent) => {
-    for (const [key, fn] of Object.entries(handlers)) if (e.key === key || e.key === null) fn();
+    for (const [key, fn] of Object.entries(handlers)) if (e.key === key || e.key === null || (e.key === ALSO[key.slice(STORE.length)] && key.startsWith(STORE))) fn();
   };
   addEventListener('storage', on);
   return () => removeEventListener('storage', on);
 }
+
+/**
+ * What else an entry's value is read with, by name: the copies sync keeps of
+ * the player's other devices (lib/sync/copies.ts) are read into the codex,
+ * the Delve records and the practice tally, so a change to them is a change
+ * to those too.
+ */
+const ALSO: Record<string, string> = {
+  codex2: storeKey('sync.copies.codex'),
+  delve2: storeKey('sync.copies.delve'),
+  practice: storeKey('sync.copies.practice'),
+};
+
+/**
+ * Tells this tab's onStoredElsewhere handlers that these entries changed, as
+ * a write in another tab would (other tabs hear of it from the browser): for
+ * changes that come from outside this tab's own code, as sync's do.
+ */
+export function announceStored(names: string[]) {
+  for (const name of names) dispatchEvent(new StorageEvent('storage', { key: storeKey(name) }));
+}
+
+const written = new Set<(name: string) => void>();
+/** Calls `fn` with the name of each entry this tab writes or removes in localStorage; returns what stops it. */
+export function onStoredHere(fn: (name: string) => void): () => void {
+  written.add(fn);
+  return () => written.delete(fn);
+}
+const wrote = (name: string, where: Area, ok: boolean) => {
+  if (ok && where === 'local') for (const fn of written) fn(name);
+  return ok;
+};
 
 const area = (where: Area) => (where === 'local' ? localStorage : sessionStorage);
 
@@ -141,8 +173,8 @@ export function removeKey(key: string, where: Area = 'local'): boolean {
 }
 
 export const readStored = (name: string, where: Area = 'local') => readKey(storeKey(name), where);
-export const writeStored = (name: string, value: string, where: Area = 'local') => writeKey(storeKey(name), value, where);
-export const removeStored = (name: string, where: Area = 'local') => removeKey(storeKey(name), where);
+export const writeStored = (name: string, value: string, where: Area = 'local') => wrote(name, where, writeKey(storeKey(name), value, where));
+export const removeStored = (name: string, where: Area = 'local') => wrote(name, where, removeKey(storeKey(name), where));
 /**
  * Removes every entry of this build's whose name starts with `start` (only
  * its own: the beta's and the lab's keys start differently).

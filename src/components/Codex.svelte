@@ -29,6 +29,7 @@
   import { onStoredElsewhere } from '../lib/storage';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
+  import { eraseSync, sync } from '../lib/sync/link.svelte';
   import CodexAchievements from './CodexAchievements.svelte';
 
   let codex = $state.raw(loadCodex());
@@ -284,6 +285,8 @@
   let open = $state<Item | null>(null);
   let confirmReset = $state(false);
   function reset() {
+    // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
+    eraseSync();
     resetCodex();
     resetRecords();
     resetAchievements();
@@ -460,7 +463,7 @@
       <!-- With practice answers kept, there is something to erase: not "blank". -->
       <p>{practice.n ? 'No item is written in your codex yet.' : 'Your codex is still blank.'}</p>
       <p class="muted">
-        Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser only.
+        Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ' only'}.
       </p>
       <!-- Practice finds nothing, so it can be all there is: its accuracy still shows. -->
       {#if practice.n}
@@ -688,7 +691,11 @@
 
   {#if kept}
     <footer class="end">
-      <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site's data erases them.</p>
+      {#if sync.code && sync.met}
+        <p>Your codex, your Delve runs and your achievements live in this browser and on the devices it syncs with; clearing the site's data erases them here.</p>
+      {:else}
+        <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site's data erases them.</p>
+      {/if}
       <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
   {/if}
@@ -707,6 +714,7 @@
     <div class="confirm panel" transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
       <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can't be undone.</p>
+      {#if sync.code && sync.met}<p class="muted">This browser stops syncing too; your other devices keep theirs.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
