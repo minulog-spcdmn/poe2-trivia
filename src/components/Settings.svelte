@@ -628,7 +628,10 @@
   .sync-row .reset {
     margin-left: 0.3rem;
   }
+  /* (Down to the middle of the small letters, as the pairing dialog's: Garamond sets a bullet at half a capital's height.) */
   .sync-row .sep {
+    position: relative;
+    top: 0.16em;
     margin-left: 0.4rem;
     color: var(--gold-lo);
     font-style: normal;

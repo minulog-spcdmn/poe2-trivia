@@ -560,7 +560,11 @@
   .route:hover {
     color: var(--gold-hi);
   }
+  /* At the links' size, and down to the middle of their small letters (Garamond sets a bullet at half a capital's height). */
   .sep {
+    position: relative;
+    top: 0.16em;
+    font-size: 0.95rem;
     color: var(--gold-lo);
   }
   .actions {
