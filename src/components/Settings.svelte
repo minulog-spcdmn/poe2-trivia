@@ -300,16 +300,18 @@
         <div class="row sync-row">
           <span class="label">Sync</span>
           <button class="btn small" onclick={() => (pairing = true)}>{paired ? 'Pair another' : 'Pair a device'}</button>
-          <p class="blurb" class:linked={paired && sync.status === 'linked'}>
+          <!-- What it does stays beneath whatever it says now, unseen: the longest of them, so the row keeps its height and nothing below it jumps as a pairing starts or ends. -->
+          <p class="blurb say" class:linked={paired && sync.status === 'linked'}>
+            <span class:unseen={waiting || paired} aria-hidden={waiting || paired}>Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.</span>
             {#if waiting}
-              {syncLine()} <button class="reset" onclick={unpair}>Cancel</button>
+              <span>{syncLine()} <button class="reset" onclick={unpair}>Cancel</button></span>
             {:else if paired && unpairing}
-              Stop syncing here? What came from your other devices stays.
-              <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button>
+              <span
+                >Stop syncing here? What came from your other devices stays.
+                <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
+              >
             {:else if paired}
-              {syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button>
-            {:else}
-              Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.
+              <span>{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span>
             {/if}
           </p>
         </div>
@@ -610,6 +612,15 @@
   .sync-row {
     margin-top: 0.7rem;
     padding-bottom: 0;
+  }
+  .sync-row .say {
+    display: grid;
+  }
+  .sync-row .say > span {
+    grid-area: 1 / 1;
+  }
+  .sync-row .unseen {
+    visibility: hidden;
   }
   .sync-row .blurb.linked {
     color: var(--verdict-good-icon);
