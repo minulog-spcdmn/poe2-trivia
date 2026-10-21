@@ -83,6 +83,16 @@
           <strong>Dadurch kann der Host Ihre IP-Adresse sehen und Sie die des Hosts</strong>, außer die Verbindung läuft
           über einen Relay-Server; dann sieht die Gegenseite nur dessen Adresse.
         </li>
+        <li>
+          <strong>Abgleich Ihrer Geräte (Sync):</strong> Wenn Sie in den Einstellungen Ihre Geräte koppeln (per QR-Code
+          oder Kopplungscode), verbinden sich die gekoppelten Geräte auf dieselbe Weise direkt miteinander, sobald zwei
+          von ihnen die Seite geöffnet haben, und gleichen Ihren Codex, Ihre Delve-Läufe, Ihre Erfolge, Ihre
+          Klassensiegel und Ihre Antwort auf die tägliche Frage ab. Der Vermittlungsserver sieht dabei nur eine aus dem
+          Kopplungscode errechnete Kennung, weder den Code noch diese Daten; da diese Kennung gleich bleibt, sieht er
+          aber, von welchen IP-Adressen und wann sich Ihre gekoppelten Geräte melden. Ein angezeigter Code, mit dem sich
+          binnen zehn Minuten kein Gerät koppelt, wird verworfen. Die Kopplung lässt sich in den Einstellungen jederzeit
+          aufheben.
+        </li>
       </ul>
       <p>
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels) bzw.
@@ -111,7 +121,9 @@
         Gerätekennung (zum Wiedereintritt in ein laufendes Spiel), die Einstellungen „Ton aus“ und „Raumcode verbergen“,
         falls Sie die Reichweitenmessung abgeschaltet haben, diese Einstellung (Abschnitt 7),
         Ihren Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig erkannt haben und wie
-        schnell; er wird nie übertragen und lässt sich auf der Codex-Seite löschen) sowie im Session Storage den laufenden
+        schnell; er wird nur an Ihre eigenen gekoppelten Geräte übertragen, falls Sie welche koppeln, siehe Abschnitt 4,
+        und lässt sich auf der Codex-Seite löschen), bei gekoppelten Geräten den Kopplungscode und den Stand der übrigen
+        Geräte, sowie im Session Storage den laufenden
         Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet. Diese
         Angaben sind für die von Ihnen gewünschten Funktionen unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG); es werden
         keine Cookies gesetzt. Sie können die Daten jederzeit über die Einstellungen Ihres Browsers löschen.
@@ -213,14 +225,22 @@
             game without a room (when none can be opened) connects to nobody, though the start page's search runs while it is open.
           </li>
           <li>
+            <strong>Syncing your devices:</strong> if you pair your devices in the settings (by QR code or pairing code), they
+            connect to each other the same way whenever two of them have the site open, and keep your codex, Delve runs,
+            achievements, class sigils and daily answer the same. The matchmaking server only sees a name worked out from the
+            code, never the code or that progress; as that name stays the same, it does see from which IP addresses and
+            when your paired devices come online. A code shown that no device pairs with within ten minutes is let go of.
+            You can unpair at any time in the settings.
+          </li>
+          <li>
             <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
             room. A random device token lets you rejoin after a disconnect, and only the host sees it. Public rooms show the
             host's name and settings in the room list.
           </li>
           <li>
             <strong>Your browser</strong> stores your name, the device token, your sound and hide-code settings, your choice not to be counted (if you made it), and your
-            codex (the items you have seen in games and how well you answered; it is never sent anywhere and can be erased on the
-            codex page), plus the running game in session storage. These are strictly necessary for the features you use, and you can clear
+            codex (the items you have seen in games and how well you answered; it is sent only to your own paired devices, if you
+            pair any, and can be erased on the codex page), plus the running game in session storage. These are strictly necessary for the features you use, and you can clear
             them at any time.
           </li>
           <li>

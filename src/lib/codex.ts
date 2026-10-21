@@ -1,5 +1,7 @@
 // The codex: which items this browser has met in games, and how well its
-// player knows them. Kept in localStorage only, never sent anywhere.
+// player knows them. Kept in localStorage, never sent anywhere but to the
+// player's own devices, paired to sync (lib/sync, which reads the others' in
+// with it: loadCodex).
 //
 // Every question this device sees revealed counts as an encounter with its
 // answer. Only this device's own answers count toward accuracy: its turn, its
@@ -48,6 +50,7 @@ import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type
 import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
 import { clearAside, openStored } from './keepAside.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
+import { copiesOf } from './sync/store.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -575,9 +578,101 @@ export const serializeCodex = (c: Codex) => JSON.stringify({ v: CODEX_VERSION, .
 /** What is stored: the codex, or while there is none yet, the one under the old name (null for neither). */
 const storedRaw = (raw: string | null) => raw ?? readStored(LEGACY);
 
-/** The stored codex (empty when there is none, or it can't be read; never written over for that). Always read fresh: another tab may have added to it. */
+/** This device's own codex as stored, the one sync passes on (null for none). */
+export const ownCodexRaw = () => storedRaw(readStored(CODEX));
+
+/**
+ * The stored codex (empty when there is none, or it can't be read; never
+ * written over for that), with what the player's other devices have added
+ * to theirs (lib/sync/store.ts). Always read fresh: another tab may have
+ * added to it.
+ */
 export function loadCodex(): Codex {
-  return parseCodex(storedRaw(readStored(CODEX))) ?? emptyCodex();
+  const raw = ownCodexRaw();
+  const others = copiesOf('codex', parseCodex);
+  if (!others.length) return parseCodex(raw) ?? emptyCodex();
+  // (Combined again only once its own or the copies change: the codex is read often. Nobody changes what it's given.)
+  if (combined?.raw === raw && combined.others === others) return combined.codex;
+  const codex = combineCodex(parseCodex(raw) ?? emptyCodex(), others);
+  combined = { raw, others, codex };
+  return codex;
+}
+let combined: { raw: string | null; others: Codex[]; codex: Codex } | null = null;
+
+const sum = (a: Tally, b: Tally): Tally => ({ n: a.n + b.n, ok: a.ok + b.ok });
+const sumCounts = (a: Record<string, number>, b: Record<string, number>) => {
+  const out = { ...a };
+  for (const [k, n] of Object.entries(b)) out[k] = (out[k] ?? 0) + n;
+  return out;
+};
+/** A count kept only where there is one, as the codex keeps its Delve counts. */
+const someOf = (n: number) => n || undefined;
+
+function combineDelveItem(a: DelveItem | undefined, b: DelveItem | undefined): DelveItem | undefined {
+  if (!a || !b) return a ?? b;
+  const finds = someOf((a.finds ?? 0) + (b.finds ?? 0));
+  const blasted = someOf((a.blasted ?? 0) + (b.blasted ?? 0));
+  const warded = someOf((a.warded ?? 0) + (b.warded ?? 0));
+  const out: DelveItem = {
+    ...sum(a, b),
+    deepest: Math.max(a.deepest, b.deepest),
+    lostAt: Math.max(a.lostAt, b.lostAt),
+    ...(finds ? { finds } : {}),
+    ...(blasted ? { blasted } : {}),
+    ...(warded ? { warded } : {}),
+  };
+  // As record keeps it: only where one life a wrong answer (but for a ward) doesn't add up.
+  const cost = livesCost(a) + livesCost(b);
+  if (cost !== livesCost(out)) out.lives = cost;
+  return out;
+}
+
+function combineItem(a: ItemEntry | undefined, b: ItemEntry): ItemEntry {
+  if (!a) return b;
+  const delve = combineDelveItem(a.delve, b.delve);
+  return {
+    seen: a.seen + b.seen,
+    first: Math.min(a.first, b.first),
+    last: Math.max(a.last, b.last),
+    name: sum(a.name, b.name),
+    art: sum(a.art, b.art),
+    mixed: sumCounts(a.mixed, b.mixed),
+    ...(delve ? { delve } : {}),
+  };
+}
+
+/** The same answer, logged by two devices (one question played on both, in one room): kept once. */
+const answerId = (a: Answer) => `${a.t}:${a.id}:${a.mode}:${a.who ?? ''}`;
+
+/**
+ * Codexes of one player's devices as one: what each counted added up, the
+ * best of what each holds a best of, and the answers of all in one log.
+ * The answers in a row now are those of the device that answered last.
+ */
+export function combineCodex(own: Codex, others: Codex[]): Codex {
+  let out = own;
+  for (const o of others) {
+    const items = { ...out.items };
+    for (const [id, e] of Object.entries(o.items)) items[id] = combineItem(items[id], e);
+    const byDifficulty = { ...out.byDifficulty };
+    for (const [d, t] of Object.entries(o.byDifficulty) as [Difficulty, Tally][]) byDifficulty[d] = sum(byDifficulty[d] ?? noTally(), t);
+    const byDepth = { ...out.byDepth };
+    for (const [d, t] of Object.entries(o.byDepth)) byDepth[Number(d)] = sum(byDepth[Number(d)] ?? noTally(), t);
+    const fooled = { ...out.fooled };
+    for (const [name, f] of Object.entries(o.fooled)) {
+      const was = fooled[name];
+      fooled[name] = was ? { of: was.last >= f.last ? was.of : f.of, n: was.n + f.n, last: Math.max(was.last, f.last) } : f;
+    }
+    const seen = new Set<string>();
+    const log = [...out.log, ...o.log]
+      .sort((a, b) => a.t - b.t)
+      .filter((a) => !seen.has(answerId(a)) && !!seen.add(answerId(a)))
+      .slice(-LOG_LIMIT);
+    const streak = (o.log.at(-1)?.t ?? 0) > (out.log.at(-1)?.t ?? 0) ? o.streak : out.streak;
+    const fastest = !o.fastest || (out.fastest && out.fastest.ms <= o.fastest.ms) ? out.fastest : o.fastest;
+    out = { items, log, byDifficulty, fooled, streak, best: Math.max(out.best, o.best, streak), fastest, byDepth };
+  }
+  return out;
 }
 
 /** Whether it could be stored. When storage is full, the older half of the log goes first. */
@@ -627,7 +722,7 @@ const PRACTICE_VERSION = 1;
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 
 /** A stored practice tally, or null when there is none or it can't be read (another build's, or damaged). */
-function parsePractice(raw: string | null): Tally | null {
+export function parsePractice(raw: string | null): Tally | null {
   if (!raw) return null;
   try {
     const v: unknown = JSON.parse(raw);
@@ -638,9 +733,12 @@ function parsePractice(raw: string | null): Tally | null {
   }
 }
 
-/** The stored practice tally (none when there is none, or it can't be read). */
+/** This device's own practice tally as stored, the one sync passes on (null for none). */
+export const ownPracticeRaw = () => readStored(PRACTICE);
+
+/** The stored practice tally (none when there is none, or it can't be read), with the player's other devices' added (lib/sync/store.ts). */
 export function loadPractice(): Tally {
-  return parsePractice(readStored(PRACTICE)) ?? noTally();
+  return copiesOf('practice', parsePractice).reduce(sum, parsePractice(ownPracticeRaw()) ?? noTally());
 }
 
 /**

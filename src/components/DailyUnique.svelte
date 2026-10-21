@@ -20,12 +20,13 @@
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { countEvent } from '../lib/count';
-  import { answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, untilNextMinute, utcDay } from '../lib/daily';
+  import { DAILY_KEY, answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, loadDaily, nextIn, saveDaily, streakOn, untilNextMinute, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
   import { whenIdle } from '../lib/idle';
+  import { onStoredElsewhere } from '../lib/storage';
   import { turnOf } from '../lib/turns';
   import { loadPlate } from '../lib/plateStore.svelte';
   import { PLACES } from '../lib/circlePlaces';
@@ -100,6 +101,8 @@
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 
   let rec = $state(loadDaily());
+  // Today's answered on another of the player's devices (lib/sync) or in another tab: it stands here too.
+  onMount(() => onStoredElsewhere({ [DAILY_KEY]: () => (rec = loadDaily() ?? rec) }));
   const todays = $derived(answeredOn(rec, today));
 
   // Practice: questions at random, asked as the daily is (twins may meet), kept apart from it.

@@ -21,6 +21,24 @@ const SOUND: Control = {
 const KEYS: Control = { kind: 'toggle', key: 'keys', label: 'Keys changed', default: false };
 const COLOUR: Control = { kind: 'toggle', key: 'colour', label: 'A colour picked', default: false };
 const KEPT: Control = { kind: 'toggle', key: 'kept', label: 'Named zoe_arcana (ruby kept)', default: false };
+const SYNC: Control = {
+  kind: 'choice',
+  key: 'sync',
+  label: 'Sync',
+  options: [
+    { value: 'off', label: 'Not paired' },
+    { value: 'waiting', label: 'A code waiting for the other device' },
+    { value: 'paired', label: 'Paired, the other not on the site' },
+    { value: 'linked', label: 'Synced with one' },
+    { value: 'three', label: 'Synced with three' },
+    { value: 'offline', label: 'Server out of reach' },
+  ],
+  default: 'paired',
+};
+const ASKED: Control = { kind: 'toggle', key: 'asked', label: 'Unpair asked for', default: false };
+
+/** A code to be paired with, the same every time (as the sync bench's). */
+const SYNC_CODE = 'K7QXM2PA9FHE3TDW';
 
 /** Option 1 on Q, and Q's old place freed: what a player who moved the answers to the left hand has. */
 const CHANGED = rebind(rebind(DEFAULT_BINDINGS, 'option1', 0, 'KeyQ'), 'detonate', 1, 'KeyX');
@@ -47,6 +65,43 @@ export function settingsScenes(): Scene[] {
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
         stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}) },
       }),
+    },
+    {
+      // Sync, under the name: what it does, or how it stands and the way to let go of it (the pairing dialog is the sync bench's).
+      key: 'settings/sync',
+      screen: 'settings',
+      group: 'Settings',
+      label: 'Sync, paired or not',
+      seats: [{ mode: 'none', me: null }],
+      controls: [SYNC, ASKED],
+      states: [
+        { label: 'Not paired', values: { sync: 'off' } },
+        { label: 'A code waiting', values: { sync: 'waiting' } },
+        { label: 'Paired, the other away', values: { sync: 'paired' } },
+        { label: 'Synced', values: { sync: 'linked' } },
+        { label: 'Synced with three', values: { sync: 'three' } },
+        { label: 'Server out of reach', values: { sync: 'offline' } },
+        { label: 'Unpair asked for', values: { sync: 'linked', asked: true } },
+      ],
+      build: (v = {}): Built => {
+        const s = String(v.sync ?? 'paired');
+        const met = s !== 'off' && s !== 'waiting';
+        return {
+          state: null,
+          hash: '#settings',
+          ...(s === 'off'
+            ? {}
+            : {
+                sync: {
+                  code: SYNC_CODE,
+                  met,
+                  status: s === 'linked' || s === 'three' ? 'linked' : s === 'offline' ? 'offline' : 'waiting',
+                  linked: s === 'three' ? 3 : s === 'linked' ? 1 : 0,
+                },
+              }),
+          ...(v.asked && met ? { steps: [{ click: '.sync-row .reset' }] } : {}),
+        };
+      },
     },
     {
       key: 'settings/key',

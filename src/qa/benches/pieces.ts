@@ -8,7 +8,8 @@ import { circle } from './circle.ts';
 import { descent } from './descent.ts';
 import { sigils } from './sigils.ts';
 import { streak } from './streak.ts';
+import { sync } from './sync.ts';
 
-export const PIECES: PieceBench[] = [avatar, sigils, streak, descent, circle];
+export const PIECES: PieceBench[] = [avatar, sigils, streak, descent, circle, sync];
 
 export const pieceByKey = (key: string | null) => PIECES.find((p) => p.key === key);

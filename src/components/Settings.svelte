@@ -26,6 +26,7 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
+  import { startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -107,6 +108,18 @@
     colour = h;
     session.likeColour();
   }
+
+  // ---- sync ----
+
+  /** The pairing dialog is open. */
+  let pairing = $state(false);
+  onMount(startSync);
+  /** Unpair asked for, waiting for a yes (as the codex's erase does). */
+  let unpairing = $state(false);
+  /** Paired: a code kept, and another device met under it. */
+  const paired = $derived(!!sync.code && sync.met);
+  /** A code kept that has met no device yet (let go of in a while if none comes). */
+  const waiting = $derived(!!sync.code && !sync.met);
 
   // ---- class sigils ----
 
@@ -284,7 +297,24 @@
           />
           <button class="btn" type="submit" disabled={draft.trim() === name}>Save</button>
         </form>
-
+        <div class="row sync-row">
+          <span class="label">Sync</span>
+          <button class="btn small" onclick={() => (pairing = true)}>{paired ? 'Pair another' : 'Pair a device'}</button>
+          <!-- What it does stays beneath whatever it says now, unseen: the longest of them, so the row keeps its height and nothing below it jumps as a pairing starts or ends. -->
+          <p class="blurb say" class:linked={paired && sync.status === 'linked'}>
+            <span class:unseen={waiting || paired}>Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.</span>
+            {#if waiting}
+              <span>{syncLine()} <button class="reset" onclick={unpair}>Cancel</button></span>
+            {:else if paired && unpairing}
+              <span
+                >Stop syncing here? What came from your other devices stays.
+                <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
+              >
+            {:else if paired}
+              <span>{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span>
+            {/if}
+          </p>
+        </div>
       </section>
       {/if}
     </div>
@@ -307,6 +337,13 @@
     {/if}
   </div>
 </div>
+
+{#if pairing}
+  <!-- (Loaded only as it opens: the QR code's drawing comes with it.) -->
+  {#await import('./SyncDialog.svelte') then { default: SyncDialog }}
+    <SyncDialog onclose={() => (pairing = false)} />
+  {/await}
+{/if}
 
 {#snippet keys()}
         <header>
@@ -570,6 +607,32 @@
   .name-row .field {
     flex: 1;
     min-width: 0;
+  }
+  /* Sync under the name, as the room code is set: the way to pair, and under it what it does or how it stands (Unpair there, as Reset is by the keys). */
+  .sync-row {
+    margin-top: 0.7rem;
+    padding-bottom: 0;
+  }
+  .sync-row .say {
+    display: grid;
+  }
+  .sync-row .say > span {
+    grid-area: 1 / 1;
+  }
+  /* (Hidden from screen readers too, as visibility: hidden is.) */
+  .sync-row .unseen {
+    visibility: hidden;
+  }
+  .sync-row .blurb.linked {
+    color: var(--verdict-good-icon);
+  }
+  .sync-row .reset {
+    margin-left: 0.3rem;
+  }
+  .sync-row .sep {
+    margin-left: 0.4rem;
+    color: var(--gold-lo);
+    font-style: normal;
   }
   /* The colours as the avatars wear them, a ring of gold round the one picked. */
   .swatches {

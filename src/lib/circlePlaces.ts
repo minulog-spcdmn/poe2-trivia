@@ -41,6 +41,7 @@ export const PLACES = {
   collection: { where: "The Codex's collection", circles: ['moth'], how: '' },
   achievements: { where: "The Codex's achievements", circles: ['monad'], how: '' },
   codexDelve: { where: "The Codex's Delve page", circles: ['blackSun'], how: '' },
+  sync: { where: 'Pairing devices to sync', circles: ['monad'], how: 'hollow round the QR code, the camera or the seal' },
 } as const satisfies Record<string, Place>;
 
 export type PlaceName = keyof typeof PLACES;

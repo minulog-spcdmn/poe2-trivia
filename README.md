@@ -22,6 +22,15 @@ GitHub Pages. No server needed.
   or Custom, where the host sets each knob.
 - **Codex and achievements:** every item you have seen, your accuracy, your
   Delve runs and 36 achievements, kept in this browser.
+- **Sync:** pair your devices in the settings (Sync, under You): a computer
+  shows a QR code, and a phone opens straight to its camera to scan it
+  (from the game itself, which an iPhone's home-screen game needs), or the
+  code is typed in. Whenever two of
+  them are on the site at once they keep the codex, Delve runs, achievements,
+  sigils and the daily answer the same. Progress only goes up: what each
+  device counted is kept apart on the others and added up, never counted
+  twice. A device already synced that scans a new one's code brings it into
+  the group (`src/lib/sync/`).
 - **Settings:** volume and ambience, effects, the room code hidden for
   streaming, your name, your avatar's colour and class sigil, and the keys: 1 to 0 answer, Enter or Space goes on,
   D detonates, M mutes, Esc opens the settings, each one rebindable. Keys are
@@ -52,6 +61,11 @@ the answer or an item's image file before the reveal, everything they send is
 validated and rate-limited, and answers faster than a human could react don't
 count. Players connect directly to the host, so the host and guests can see
 each other's IP address. Details in [docs/fair-play.md](docs/fair-play.md).
+
+Paired devices meet the same way, under a name made from their sync code
+(a hash: the matchmaking server never sees the code or the progress), and
+each proves it has the code before anything is sent. A pairing link is only
+taken once the player says yes to it, as a link can come from anyone.
 
 `impressum.html` (legal notice) and `datenschutz.html` (privacy policy) are
 plain static pages; update them whenever the site starts using a new

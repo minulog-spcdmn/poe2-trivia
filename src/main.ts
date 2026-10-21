@@ -17,7 +17,10 @@ import { countVisit, onCountToggle, type Toggled } from './lib/count';
 import { toasts } from './lib/toasts.svelte';
 import { preloadPeerJs } from './lib/peer';
 import { preloadEd25519 } from './lib/ownerKey';
+import { bootSync } from './lib/sync/boot.svelte';
 
+// First: a pairing link's code leaves the address before anything reads it (lib/sync/boot.svelte.ts).
+bootSync();
 installUiSounds();
 installSpatial();
 installUiFx();
