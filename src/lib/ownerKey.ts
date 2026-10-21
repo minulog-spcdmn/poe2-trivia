@@ -108,6 +108,28 @@ export async function unlockOwner(words: string, key = OWNER_PUBLIC_KEY): Promis
   }
 }
 
+/**
+ * The owner key as this device keeps it, to pass on to the player's own
+ * paired devices (lib/sync passOwnerKey, only when the owner asks it to,
+ * never with the rest); null unless it holds it.
+ */
+export const ownerKeyKept = (key = OWNER_PUBLIC_KEY) => (ownerUnlocked(key) ? readKey(STORED) : null);
+
+/** Keeps an owner key passed on by another of the player's devices, when it is the owner's (its seed makes the public half). */
+export async function keepOwnerKey(raw: unknown, key = OWNER_PUBLIC_KEY): Promise<boolean> {
+  if (!key || typeof raw !== 'string' || raw.length > 200) return false;
+  const [pub, seed] = raw.split('.');
+  const bytes = pub === key && seed ? fromBase64url(seed) : null;
+  if (bytes?.length !== 32) return false;
+  try {
+    if (base64url(await (await ed25519()).getPublicKeyAsync(bytes)) !== key) return false;
+  } catch {
+    return false;
+  }
+  read = null;
+  return writeKey(STORED, `${key}.${seed}`);
+}
+
 async function sign(what: What, code: string, about: string, key: string): Promise<OwnerProof | null> {
   const seed = storedSeed(key);
   if (!seed) return null;

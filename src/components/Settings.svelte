@@ -26,7 +26,8 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { passOwnerKey, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { ownerUnlocked } from '../lib/ownerKey';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -120,6 +121,10 @@
   const paired = $derived(!!sync.code && sync.met);
   /** A code kept that has met no device yet (let go of in a while if none comes). */
   const waiting = $derived(!!sync.code && !sync.met);
+  /** The owner's device, linked: it may pass the owner key on (never with the rest: only when asked). */
+  const owner = ownerUnlocked();
+  /** How many devices the owner key went to just now (null: not passed on). */
+  let passed = $state<number | null>(null);
 
   // ---- class sigils ----
 
@@ -311,7 +316,13 @@
                 <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
             {:else if paired}
-              <span>{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span>
+              <span
+                >{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button
+                >{#if owner && sync.status === 'linked'}<span class="sep bullet" aria-hidden="true">•</span>{#if passed}<span class="done">Owner key passed on</span>{:else}<button
+                      class="reset"
+                      onclick={() => (passed = passOwnerKey())}>Pass on the owner key</button
+                    >{/if}{/if}</span
+              >
             {/if}
           </p>
         </div>
@@ -627,6 +638,9 @@
     color: var(--verdict-good-icon);
   }
   .sync-row .reset {
+    margin-left: 0.3rem;
+  }
+  .sync-row .done {
     margin-left: 0.3rem;
   }
   .sync-row .sep {

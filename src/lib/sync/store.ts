@@ -14,7 +14,7 @@
 // device, and devices pass on the copies they hold, so a third device's
 // progress reaches the others by way of whichever it last met.
 
-import { BACKDROP_TOOL, BOT, COPIES_OF, LAB, QA, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
+import { BACKDROP_TOOL, BOT, COPIES_OF, LAB, QA, onStorageFull, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
 
 /** Only the game itself syncs: never the lab, the tools, the bot or the QA desk, whose progress is theirs alone. */
 export const SYNC_HERE = typeof document !== 'undefined' && !(LAB || BACKDROP_TOOL || BOT || QA);
@@ -186,6 +186,19 @@ export function keepCopy(kind: CopyKind, device: string, copy: Copy): boolean {
   }
   return false;
 }
+
+// The browser out of room for something of the device's own: the copies go first, the one heard from longest ago
+// first (they come again at the next meeting), before the device's own progress loses anything (the codex's oldest
+// answers, which it lets go of when it can't be stored).
+onStorageFull(() => {
+  let oldest: { kind: CopyKind; device: string; at: number } | null = null;
+  for (const kind of COPY_KINDS) for (const [device, c] of Object.entries(readCopies(kind))) if (!oldest || c.at < oldest.at) oldest = { kind, device, at: c.at };
+  if (!oldest) return false;
+  const rest = readCopies(oldest.kind);
+  delete rest[oldest.device];
+  const name = copiesName(oldest.kind);
+  return Object.keys(rest).length ? writeStored(name, JSON.stringify({ v: 1, devices: rest })) : removeStored(name);
+}, COPY_NAMES);
 
 /** Lets go of every copy (the codex erased: what the others had is theirs to keep). */
 export function clearCopies() {

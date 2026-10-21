@@ -27,7 +27,9 @@ import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, absorbAchievements, absorbWin
 import { SIGILS_KEY, absorbSigils, loadSigils, serializeSigils } from '../src/lib/sigils.ts';
 import { DAILY_KEY, absorbDaily, loadDaily } from '../src/lib/daily.ts';
 import { DELVE_RULESET } from '../src/lib/delve.ts';
-import { storeKey } from '../src/lib/storage.ts';
+import { readStored, storeKey, writeStored } from '../src/lib/storage.ts';
+import { chosenNow, stampChoices, takeChosen } from '../src/lib/sync/chosen.ts';
+import { RUBY } from '../src/lib/palette.ts';
 import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
@@ -369,4 +371,68 @@ test('what is sent to be taken in is what is stored; what comes in is checked', 
   assert.deepEqual(takeIn({ achievements: serializeStore({ earned: { [ACHIEVEMENTS[0].id]: 1 } }), nonsense: 'x', sigils: 42 }), ['achievements']);
   assert.deepEqual(takeIn({ achievements: 'x'.repeat(200_000) }), []);
   assert.deepEqual(takeIn(null), []);
+});
+
+// ---- what the player chose ---------------------------------------------------------
+
+const said = (v: string | null, at: number) => JSON.stringify({ v, at });
+
+test('the name and colour chosen last stand on every device; one chosen before is kept', () => {
+  const stop = stampChoices();
+  try {
+    writeStored('name', 'Phoney');
+    const mine = JSON.parse(chosenNow('name')!);
+    assert.equal(mine.v, 'Phoney');
+    assert.ok(mine.at > 0, 'stamped as it was chosen');
+    assert.equal(takeChosen('name', said('Desk', mine.at - 1)), false, 'chosen before this one: kept as it is');
+    assert.equal(readStored('name'), 'Phoney');
+    assert.equal(takeChosen('name', said('Desk', mine.at + 1)), true);
+    assert.equal(readStored('name'), 'Desk');
+    assert.equal(JSON.parse(chosenNow('name')!).at, mine.at + 1, "taken in at the other's time, not now");
+    // A colour taken off on the other device later comes off here too.
+    writeStored('colour', '2');
+    const at = JSON.parse(chosenNow('colour')!).at;
+    assert.equal(takeChosen('colour', said(null, at + 1)), true);
+    assert.equal(readStored('colour'), null);
+  } finally {
+    stop();
+  }
+});
+
+test("a new device takes the other's choice; one never chosen doesn't override", () => {
+  assert.equal(chosenNow('colour'), null, 'nothing to say');
+  assert.equal(takeChosen('colour', said('3', 0)), true, 'chosen before its time was kept: still more than none');
+  assert.equal(readStored('colour'), '3');
+  assert.equal(takeChosen('colour', said('4', 0)), false, 'two never stamped: each keeps its own');
+});
+
+test("what can't be played under, or isn't a colour, or can't be yet, isn't taken in", () => {
+  const later = Date.now() + 60_000;
+  assert.equal(takeChosen('name', said('zoe_arcana', later)), false, 'the held name, without the owner key');
+  assert.equal(takeChosen('name', said('x', later)), false, 'too short');
+  assert.equal(takeChosen('name', said('  spaced  ', later)), false, 'not as a name is kept');
+  assert.equal(takeChosen('colour', said(String(RUBY), later)), false, "ruby is nobody's to pick");
+  assert.equal(takeChosen('colour', said('', later)), false);
+  assert.equal(takeChosen('colour', said('2', Date.now() + 3 * 86_400_000)), false, 'days ahead of the clock');
+  assert.equal(takeChosen('name', 'not json'), false);
+  assert.equal(readStored('name'), null);
+  assert.equal(readStored('colour'), null);
+});
+
+test("with the browser out of room, the other devices' copies go before anything of its own", () => {
+  keepCopy('codex', PHONE, { at: 5, raw: 'x'.repeat(1000) });
+  keepCopy('delve', TABLET, { at: 9, raw: 'y'.repeat(1000) });
+  const size = (m: Map<string, string>) => [...m].reduce((n, [k, v]) => n + k.length + v.length, 0);
+  const room = size(store) + 600;
+  const full = memoryStorage(store, (k, v) => size(store) - (store.has(k) ? k.length + store.get(k)!.length : 0) + k.length + v.length <= room);
+  const was = globalThis.localStorage;
+  (globalThis as { localStorage?: unknown }).localStorage = full;
+  try {
+    assert.ok(writeStored('practice', 'z'.repeat(1200)), 'its own is stored');
+    assert.deepEqual(readCopies('codex'), {}, 'the copy heard from longest ago went');
+    assert.ok(readCopies('delve')[TABLET], 'only as many as it took');
+    assert.equal(writeStored('practice', 'z'.repeat(9000)), false, 'past that, not stored');
+  } finally {
+    (globalThis as { localStorage?: unknown }).localStorage = was;
+  }
 });
