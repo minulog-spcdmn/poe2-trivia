@@ -92,6 +92,8 @@ class SyncState {
   home = $state<string | null>(null);
   /** Unmet: its code was made on starting over (store.ts pairingAnew). */
   anew = $state(false);
+  /** Unmet: its code was taken from another device, with no group of its own (store.ts Pairing.took). */
+  took = $state(false);
   /** Not paired because the last code met nobody in time (here or in another tab), not because the player let go of it. */
   lapsed = $state(false);
 }
@@ -123,6 +125,7 @@ function readPairing() {
   sync.met = p?.met ?? false;
   sync.home = p?.home ?? null;
   sync.anew = !!p?.anew;
+  sync.took = !!p?.took;
   // (Started over: waits for good.)
   waitingSince = p && !p.met && !p.anew ? (p.at ?? 0) : null;
   if (lapseTimer) clearTimeout(lapseTimer);
@@ -529,6 +532,7 @@ class Run {
     // (Staying here: a code this device came from is no longer one to bring anybody home to.)
     sync.home = null;
     sync.anew = false;
+    sync.took = false;
     savePairing({ code: this.code, met: true });
   }
 

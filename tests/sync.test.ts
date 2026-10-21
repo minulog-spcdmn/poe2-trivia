@@ -189,7 +189,7 @@ test('a synced device that takes a new code brings that device home; a new one g
 
 test('taking a code keeps the one a synced device came from; its own home taken again is home, met', () => {
   const now = 42;
-  assert.deepEqual(pairingTaking(NEW, { code: null, met: false, home: null }, now), { code: NEW, met: false, at: now });
+  assert.deepEqual(pairingTaking(NEW, { code: null, met: false, home: null }, now), { code: NEW, met: false, at: now, took: true }, 'taken, not made');
   assert.deepEqual(pairingTaking(NEW, { code: HOME, met: true, home: null }, now), { code: NEW, met: false, at: now, home: HOME });
   // Took one, then another before meeting anybody: home is still the code it was synced under.
   assert.deepEqual(pairingTaking(OTHER_CODE, { code: NEW, met: false, home: HOME }, now), { code: OTHER_CODE, met: false, at: now, home: HOME });
@@ -217,7 +217,26 @@ test('a device started over is never taken home: one of the group it left that t
   // Met there, the code is like any other: a device taking it is no longer told it is new.
   assert.deepEqual(meeting({ code: NEW, met: true, home: null, anew: false }), {});
   // Taking another's code, it is new no more.
-  assert.deepEqual(pairingTaking(OTHER_CODE, left, now), { code: OTHER_CODE, met: false, at: now });
+  assert.deepEqual(pairingTaking(OTHER_CODE, left, now), { code: OTHER_CODE, met: false, at: now, took: true });
+});
+
+test('only the device that made a code is brought home: one that took it too stays, and its taker with it', () => {
+  const now = 42;
+  // A started over on NEW; tablet B of the old group took it, and so did the player's new phone D. B and D meet first.
+  const tablet = { code: NEW, met: false, home: HOME };
+  const took = pairingTaking(NEW, { code: null, met: false, home: null }, now)!;
+  savePairing(took);
+  assert.deepEqual(loadPairing(), took, 'kept as taken');
+  const phone = { code: NEW, met: false, home: null, took: true };
+  assert.deepEqual(meeting(phone), { fresh: true, took: true });
+  assert.equal(homeOnMeeting(tablet, meeting(phone)), null, 'the tablet stays on the new code');
+  assert.equal(homeOnMeeting(phone, meeting(tablet)), null, "the phone doesn't follow the tablet's home");
+  // The plain way: a new device shows its code, a synced one scans it, and both go home.
+  const shown = { code: NEW, met: false, home: null };
+  const scanned = pairingTaking(NEW, { code: HOME, met: true, home: null }, now)!;
+  const synced = { code: scanned.code, met: false, home: scanned.home ?? null };
+  assert.equal(homeOnMeeting(synced, meeting(shown)), HOME);
+  assert.equal(homeOnMeeting(shown, meeting(synced)), HOME);
 });
 
 test('unpairing a code taken but not met goes back home; otherwise it lets go', () => {
