@@ -22,6 +22,7 @@
   import { codeInHash, codeLink, readCode, shownCode } from '../lib/sync/code';
   import { offerCode, sync, syncLine, useCode } from '../lib/sync/link.svelte';
   import { qrShape } from '../lib/sync/qr';
+  import { SYNC_HERE } from '../lib/sync/store';
   import { canScan, scan } from '../lib/sync/scan';
   import SyncSeal from './SyncSeal.svelte';
 
@@ -56,9 +57,14 @@
     made = offerCode();
     view = 'show';
   }
-  // Left open past the code's ten minutes (or unpaired in another tab): a new code, not one nobody waits on.
+  // Left open past the code's ten minutes (or unpaired in another tab): a new code of its own, not one nobody waits on
+  // (a code taken from the other device lapsed with it too, so this one shows its own for that one to scan).
+  // (Not on the QA desk, which never syncs: the bench sets the code.)
   $effect(() => {
-    if (view === 'show' && !sync.code) made = offerCode();
+    if (SYNC_HERE && (view === 'show' || view === 'joined') && !sync.code) {
+      made = offerCode();
+      view = 'show';
+    }
   });
 
   /** Pairs with a code from elsewhere (scanned, typed, a link), and shows how the link stands. */

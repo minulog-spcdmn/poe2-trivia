@@ -567,8 +567,13 @@ export function useCode(code: string) {
 
 /** Stops syncing (or, a code taken but not met yet, goes back to the one before). What came from the other devices stays, as progress only goes up. */
 export function unpair() {
-  if (!sync.met && sync.home) savePairing({ code: sync.home, met: true });
-  else forgetPairing();
+  if (!sync.met && sync.home) moveTo(sync.home);
+  else forget();
+}
+
+/** Not paired any more. */
+function forget() {
+  forgetPairing();
   readPairing();
   restart();
 }
@@ -576,8 +581,6 @@ export function unpair() {
 /** The codex erased: unpaired, and the other devices' copies let go of (theirs is still theirs). */
 export function eraseSync() {
   // (Not unpair: one waiting to bring a device home would go back to the others, and their progress straight back in.)
-  forgetPairing();
-  readPairing();
-  restart();
+  forget();
   clearCopies();
 }
