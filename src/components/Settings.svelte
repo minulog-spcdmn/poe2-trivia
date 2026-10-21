@@ -125,6 +125,8 @@
   const owner = ownerUnlocked();
   /** How many devices the owner key went to just now (null: not passed on). */
   let passed = $state<number | null>(null);
+  /** Passing it on asked for, to be confirmed: whoever holds it can sign as the owner. */
+  let passing = $state(false);
 
   // ---- class sigils ----
 
@@ -315,12 +317,17 @@
                 >Stop syncing here? What came from your other devices stays.
                 <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
+            {:else if paired && passing && owner && sync.status === 'linked'}
+              <span
+                >Give the owner key to {sync.linked === 1 ? 'the device' : `the ${sync.linked} devices`} linked now? Only to your own.
+                <button class="reset" onclick={() => ((passing = false), (passed = passOwnerKey()))}>Pass it on</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (passing = false)}>Keep it</button></span
+              >
             {:else if paired}
               <span
                 >{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button
                 >{#if owner && sync.status === 'linked'}<span class="sep bullet" aria-hidden="true">•</span>{#if passed}<span class="done">Owner key passed on</span>{:else}<button
                       class="reset"
-                      onclick={() => (passed = passOwnerKey())}>Pass on the owner key</button
+                      onclick={() => (passing = true)}>Pass on the owner key</button
                     >{/if}{/if}</span
               >
             {/if}

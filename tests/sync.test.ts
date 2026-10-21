@@ -399,6 +399,23 @@ test('the name and colour chosen last stand on every device; one chosen before i
   }
 });
 
+test('the same name saved again (each room joined) keeps the time it was chosen; one from before stamping counts as none', async () => {
+  writeStored('name', 'Older');
+  const stop = stampChoices();
+  try {
+    assert.equal(JSON.parse(chosenNow('name')!).at, 0, 'chosen before it was kept');
+    writeStored('name', 'Older');
+    assert.equal(JSON.parse(chosenNow('name')!).at, 0, 'saved again: still none');
+    writeStored('name', 'Newer');
+    const at = JSON.parse(chosenNow('name')!).at;
+    await new Promise((r) => setTimeout(r, 5));
+    writeStored('name', 'Newer');
+    assert.equal(JSON.parse(chosenNow('name')!).at, at, 'saved again: the time it was chosen');
+  } finally {
+    stop();
+  }
+});
+
 test("a new device takes the other's choice; one never chosen doesn't override", () => {
   assert.equal(chosenNow('colour'), null, 'nothing to say');
   assert.equal(takeChosen('colour', said('3', 0)), true, 'chosen before its time was kept: still more than none');
