@@ -377,9 +377,13 @@
     aspect-ratio: 1;
     margin: 0.2rem auto 0;
   }
+  /* Clipped to its square: its layers wind and settle in from larger, and past the stage they'd make the backdrop
+     scroll, more as they turn (the mask hides them there anyway). */
   .circle {
     position: absolute;
     inset: 0;
+    overflow: hidden;
+    overflow: clip;
     mask-repeat: no-repeat;
     mask-size: 100% 100%;
   }
