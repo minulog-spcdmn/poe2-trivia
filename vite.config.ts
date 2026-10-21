@@ -1,6 +1,6 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
@@ -48,12 +48,27 @@ function csp(env: Record<string, string>): Plugin {
 
 /**
  * The beta build (VITE_CHANNEL=beta, served at poe2.quest/beta/): kept out of
- * search results, and its tabs and link previews say Beta and point to it.
+ * search results, and its tabs, link previews and home screen app say Beta and
+ * point to it. (The app's start_url and scope are relative, so they point to
+ * the beta by themselves, and it installs apart from the live one.)
  */
 function betaPages(env: Record<string, string>): Plugin {
+  let outDir = '';
   return {
     name: 'beta-pages',
     apply: 'build',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    // After the public folder is copied out.
+    closeBundle() {
+      if (env.VITE_CHANNEL !== 'beta') return;
+      const file = join(outDir, 'manifest.webmanifest');
+      const manifest = JSON.parse(readFileSync(file, 'utf8'));
+      manifest.name = `Beta • ${manifest.name}`;
+      manifest.short_name = 'PoE2 Beta';
+      writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
+    },
     transformIndexHtml(html) {
       if (env.VITE_CHANNEL !== 'beta') return html;
       // The legal pages carry noindex already.
