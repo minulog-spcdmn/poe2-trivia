@@ -25,6 +25,12 @@
 // UNMET_MS). A device already synced that takes a new device's code (scans
 // it) says so as they meet, and both go to its own code, so a third device
 // joins the other two rather than taking one of them away.
+//
+// A device can start over (a phone given away, or just to start clean): it
+// leaves its group, saying nothing to it, for a new code of its own, and the
+// player's other devices take that one by one. A device of the old group
+// taking it comes to it rather than bringing it home (store.ts
+// homeOnMeeting).
 
 import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
@@ -53,6 +59,7 @@ import {
   meeting,
   lapsed,
   pairingAfterUnpair,
+  pairingAnew,
   pairingNow,
   pairingTaking,
   readCopies,
@@ -84,6 +91,8 @@ class SyncState {
   linked = $state(0);
   /** Unmet: the code this device was synced under before, which it brings the new device home to. */
   home = $state<string | null>(null);
+  /** Unmet: its code was made on starting over (store.ts pairingAnew). */
+  anew = $state(false);
   /** Not paired because the last code met nobody in time (here or in another tab), not because the player let go of it. */
   lapsed = $state(false);
 }
@@ -114,7 +123,9 @@ function readPairing() {
   sync.code = p?.code ?? null;
   sync.met = p?.met ?? false;
   sync.home = p?.home ?? null;
-  waitingSince = p && !p.met ? (p.at ?? 0) : null;
+  sync.anew = !!p?.anew;
+  // (Started over: waits for good.)
+  waitingSince = p && !p.met && !p.anew ? (p.at ?? 0) : null;
   if (lapseTimer) clearTimeout(lapseTimer);
   lapseTimer = null;
   // (Never further off than UNMET_MS: pairingNow counts one stamped ahead of the clock from now.)
@@ -540,6 +551,7 @@ class Run {
     sync.met = true;
     // (Staying here: a code this device came from is no longer one to bring anybody home to.)
     sync.home = null;
+    sync.anew = false;
     savePairing({ code: this.code, met: true });
   }
 
@@ -630,6 +642,17 @@ export function unpair() {
   const p = pairingAfterUnpair(sync);
   if (p) moveTo(p.code);
   else forget();
+}
+
+/**
+ * Leaves the group, saying nothing to it, for a new code of its own, to show
+ * the player's other devices: each takes it and comes along, and a device
+ * that doesn't stays on the old code. What came from the others stays.
+ */
+export function startOver() {
+  savePairing(pairingAnew(newCode(), Date.now()));
+  readPairing();
+  restart();
 }
 
 /** Not paired any more. */
