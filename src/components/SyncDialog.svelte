@@ -56,6 +56,10 @@
     made = offerCode();
     view = 'show';
   }
+  // Left open past the code's ten minutes (or unpaired in another tab): a new code, not one nobody waits on.
+  $effect(() => {
+    if (view === 'show' && !sync.code) made = offerCode();
+  });
 
   /** Pairs with a code from elsewhere (scanned, typed, a link), and shows how the link stands. */
   function take(c: string) {

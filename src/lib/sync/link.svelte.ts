@@ -243,7 +243,8 @@ class Run {
     sync.status = 'connecting';
     const watched = new Set([...Object.values(OWN_NAMES).flat(), ...TAKEN_NAMES]);
     const keys = new Set([...watched].map(storeKey));
-    const onStorage = (e: StorageEvent) => e.key && keys.has(e.key) && this.schedulePush();
+    // (Only another tab's: those sync announces itself (announceStored) it has passed on already.)
+    const onStorage = (e: StorageEvent) => e.isTrusted && e.key && keys.has(e.key) && this.schedulePush();
     addEventListener('storage', onStorage);
     this.unhear.push(
       () => removeEventListener('storage', onStorage),
@@ -475,6 +476,8 @@ class Run {
   private met() {
     if (sync.met) return;
     sync.met = true;
+    // (Staying here: a code this device came from is no longer one to bring anybody home to.)
+    sync.home = null;
     savePairing({ code: this.code, met: true });
   }
 
@@ -551,6 +554,8 @@ export function offerCode(): string {
 
 /** Pairs with a code from another device (scanned, typed or linked); synced already, this device brings that one home to the others. */
 export function useCode(code: string) {
+  // Its own group's code, taken again: simply back home.
+  if (code === sync.home) return moveTo(code);
   if (code !== sync.code) {
     const home = sync.met ? sync.code : sync.home;
     savePairing({ code, met: false, at: Date.now(), ...(home && home !== code ? { home } : {}) });
@@ -570,6 +575,9 @@ export function unpair() {
 
 /** The codex erased: unpaired, and the other devices' copies let go of (theirs is still theirs). */
 export function eraseSync() {
-  unpair();
+  // (Not unpair: one waiting to bring a device home would go back to the others, and their progress straight back in.)
+  forgetPairing();
+  readPairing();
+  restart();
   clearCopies();
 }

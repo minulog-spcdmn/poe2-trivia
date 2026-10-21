@@ -993,15 +993,15 @@ function earn(store: AchievementStore, first: boolean, ids: string[]): Check {
 export const ownAchievementsRaw = () => tryReadStored(NAME) ?? null;
 export const ownWinsRaw = () => tryReadStored(WINS) ?? null;
 
+/** The most achievements a newer build has, unknown to this one, that are taken in from another device. */
+const MAX_UNKNOWN = 32;
+
 /**
  * Takes in another of the player's devices' list: what it earned that this
  * one hasn't, as earned when it was there (and the earlier of two times for
  * one earned on both). Ids this build doesn't know are kept, as they are in
- * its own list. Whether it changed anything.
+ * its own list, up to MAX_UNKNOWN of them. Whether it changed anything.
  */
-/** The most achievements a newer build has, unknown to this one, that are taken in from another device. */
-const MAX_UNKNOWN = 32;
-
 export function absorbAchievements(raw: string): boolean {
   const theirs = parseStore(raw);
   const o = theirs && open();
