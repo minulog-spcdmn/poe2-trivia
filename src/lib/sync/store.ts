@@ -50,6 +50,8 @@ export interface Pairing {
   at?: number;
   /** Unmet: the code this device was synced under before it took this one (a new device's), so it brings that device home to the others rather than leaving them. */
   home?: string;
+  /** Unmet: made on starting over, so a synced device that takes it comes to it rather than bringing this one home to the group it left (pairingAnew). */
+  anew?: boolean;
 }
 
 /** How long a pairing that has met no device is kept: the other device has long come by then, or isn't coming. */
@@ -63,7 +65,12 @@ export function loadPairing(): Pairing | null {
     const v: unknown = JSON.parse(readStored(PAIR) ?? 'null');
     if (!isObj(v) || v.v !== 1 || !isCode(v.code)) return null;
     if (v.met === true) return { code: v.code, met: true };
-    return { code: v.code, met: false, at: typeof v.at === 'number' ? v.at : 0, ...(isCode(v.home) && v.home !== v.code ? { home: v.home } : {}) };
+    return {
+      code: v.code,
+      met: false,
+      at: typeof v.at === 'number' ? v.at : 0,
+      ...(isCode(v.home) && v.home !== v.code ? { home: v.home } : v.anew === true ? { anew: true } : {}),
+    };
   } catch {
     return null;
   }
@@ -74,19 +81,23 @@ export interface Paired {
   code: string | null;
   met: boolean;
   home: string | null;
+  /** Its code was made on starting over (Pairing.anew). */
+  anew?: boolean;
 }
 
 /**
  * A pairing as it stands at `now`: one that met nobody in time goes back to
  * the code the device came from (or is let go of: null), and one stamped
- * ahead of the clock (set back since) counts from now. The same pairing when
- * nothing changed.
+ * ahead of the clock (set back since) counts from now. One started over
+ * waits for good: the player's other devices may come days later, and let
+ * go of it, the device would offer a plain new code, which a device of the
+ * group it left would take it home to. The same pairing when nothing changed.
  */
 export function pairingNow(p: Pairing | null, now: number): Pairing | null {
   if (!p || p.met) return p;
   const at = p.at ?? 0;
   if (at > now) return { ...p, at: now };
-  if (now - at > UNMET_MS) return p.home ? { code: p.home, met: true } : null;
+  if (now - at > UNMET_MS && !p.anew) return p.home ? { code: p.home, met: true } : null;
   return p;
 }
 
@@ -99,17 +110,24 @@ export function pairingNow(p: Pairing | null, now: number): Pairing | null {
 export const lapsed = (was: Pairing | null, now: Pairing | null, waitingSince: number | null, at: number): boolean =>
   !now && (!!was || (waitingSince !== null && at - waitingSince > UNMET_MS));
 
-/** What a device says of itself as it meets another: that it brings a new device home, or is new itself, with nowhere else to go. */
-export const meeting = (me: Paired): { home: string } | { fresh: true } | Record<string, never> => (me.home ? { home: me.home } : !me.met ? { fresh: true } : {});
+/**
+ * What a device says of itself as it meets another: that it brings a new
+ * device home, or is new itself, with nowhere else to go (and, started over,
+ * that it is new on purpose and goes nowhere else).
+ */
+export const meeting = (me: Paired): { home: string } | { fresh: true; anew?: true } | Record<string, never> =>
+  me.home ? { home: me.home } : !me.met ? { fresh: true, ...(me.anew ? { anew: true as const } : {}) } : {};
 
 /**
  * Where two devices go once they've met and given each other what they have
  * (each works it out alike): this one's home when it brings a new device, the
  * other's when it brings this new one; null to stay with the code they met by.
+ * A device that started over is never taken home: the one that took its code
+ * stays on it, and lets go of the group it came from.
  */
-export function homeOnMeeting(me: Paired, them: { home?: unknown; fresh?: unknown }): string | null {
-  if (me.home && them.fresh === true) return me.home;
-  return isCode(them.home) && !me.met && !me.home ? them.home : null;
+export function homeOnMeeting(me: Paired, them: { home?: unknown; fresh?: unknown; anew?: unknown }): string | null {
+  if (me.home && them.fresh === true) return them.anew === true ? null : me.home;
+  return isCode(them.home) && !me.met && !me.home && !me.anew ? them.home : null;
 }
 
 /**
@@ -124,24 +142,16 @@ export function pairingTaking(code: string, me: Paired, now: number): Pairing | 
   return { code, met: false, at: now, ...(home && home !== code ? { home } : {}) };
 }
 
+/**
+ * The pairing a device starts over with: out of its group (nothing said to
+ * it), on a new code of its own that every device it is to sync with again
+ * takes, one by one, and comes to (homeOnMeeting); let go of if none comes
+ * in time, as any code that meets nobody.
+ */
+export const pairingAnew = (code: string, now: number): Pairing => ({ code, met: false, at: now, anew: true });
+
 /** The pairing left on unpairing: a code taken but not met yet goes back to the one before; otherwise none. */
 export const pairingAfterUnpair = (me: Paired): Pairing | null => (!me.met && me.home ? { code: me.home, met: true } : null);
-
-/** Whether a device may change its group's code: paired, and settled there (not waiting for a device, nor bringing one home). */
-export const canChangeCode = (me: Paired): boolean => !!me.code && me.met && !me.home;
-
-/**
- * Where a device goes when a linked device asks it to move to a new code
- * (that device's player changed the code): there, when the one asking has
- * proved it has the code this device is settled on (`proved`: the code it
- * proved, null for none); null to stay.
- */
-export function moveAsked(me: Paired, proved: string | null, code: unknown): string | null {
-  return canChangeCode(me) && proved === me.code && isCode(code) && code !== me.code ? code : null;
-}
-
-/** Whether a pairing went from one code to another, settled on both: the code changed (changed on this device in another tab, or moved to there). */
-export const codeChanged = (was: Paired, now: Paired): boolean => canChangeCode(was) && canChangeCode(now) && was.code !== now.code;
 
 export const savePairing = (p: Pairing) => writeStored(PAIR, JSON.stringify({ v: 1, ...p }));
 export const forgetPairing = () => removeStored(PAIR);

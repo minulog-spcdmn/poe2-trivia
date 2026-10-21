@@ -42,7 +42,7 @@ const ASKED: Control = {
   options: [
     { value: 'none', label: 'Nothing' },
     { value: 'unpair', label: 'Unpair' },
-    { value: 'change', label: 'A new code' },
+    { value: 'anew', label: 'Starting over' },
   ],
   default: 'none',
 };
@@ -77,7 +77,7 @@ export function settingsScenes(): Scene[] {
       }),
     },
     {
-      // Sync, under the name: what it does, or how it stands and the ways to let go of it or change its code (the pairing dialog is the sync bench's).
+      // Sync, under the name: what it does, or how it stands and the ways to let go of it or start over (the pairing dialog is the sync bench's).
       key: 'settings/sync',
       screen: 'settings',
       group: 'Settings',
@@ -92,7 +92,7 @@ export function settingsScenes(): Scene[] {
         { label: 'Synced with three', values: { sync: 'three' } },
         { label: 'Server out of reach', values: { sync: 'offline' } },
         { label: 'Unpair asked for', values: { sync: 'linked', asked: 'unpair' } },
-        { label: 'A new code asked for', values: { sync: 'linked', asked: 'change' } },
+        { label: 'Starting over asked for', values: { sync: 'linked', asked: 'anew' } },
       ],
       build: (v = {}): Built => {
         const s = String(v.sync ?? 'paired');
@@ -110,7 +110,7 @@ export function settingsScenes(): Scene[] {
                   linked: s === 'three' ? 3 : s === 'linked' ? 1 : 0,
                 },
               }),
-          ...(met && (v.asked === 'unpair' || v.asked === 'change') ? { steps: [{ click: v.asked === 'change' ? '.sync-row .change' : '.sync-row .reset' }] } : {}),
+          ...(met && (v.asked === 'unpair' || v.asked === 'anew') ? { steps: [{ click: v.asked === 'anew' ? '.sync-row .anew' : '.sync-row .reset' }] } : {}),
         };
       },
     },
