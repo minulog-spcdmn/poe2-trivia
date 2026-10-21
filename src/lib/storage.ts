@@ -169,8 +169,26 @@ export function removeKey(key: string, where: Area = 'local'): boolean {
   }
 }
 
+/** What may be let go of when the browser has no room left (onStorageFull). */
+const spares: { fn: () => boolean; except: readonly string[] }[] = [];
+/**
+ * Registers what may be let go of when the browser has no room left for an
+ * entry of this build's (sync's copies of the player's other devices, which
+ * come again at the next meeting: lib/sync/store.ts): `fn` lets one thing
+ * go and says whether it did. Never for the entries named in `except`.
+ */
+export function onStorageFull(fn: () => boolean, except: readonly string[]) {
+  spares.push({ fn, except });
+}
+function writeRoomy(name: string, value: string, where: Area): boolean {
+  for (;;) {
+    if (writeKey(storeKey(name), value, where)) return true;
+    if (where !== 'local' || !spares.some((s) => !s.except.includes(name) && s.fn())) return false;
+  }
+}
+
 export const readStored = (name: string, where: Area = 'local') => readKey(storeKey(name), where);
-export const writeStored = (name: string, value: string, where: Area = 'local') => wrote(name, where, writeKey(storeKey(name), value, where));
+export const writeStored = (name: string, value: string, where: Area = 'local') => wrote(name, where, writeRoomy(name, value, where));
 export const removeStored = (name: string, where: Area = 'local') => wrote(name, where, removeKey(storeKey(name), where));
 /**
  * Removes every entry of this build's whose name starts with `start` (only

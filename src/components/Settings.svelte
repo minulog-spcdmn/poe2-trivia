@@ -26,7 +26,8 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { startOver, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { passOwnerKey, startOver, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { ownerUnlocked } from '../lib/ownerKey';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -125,6 +126,16 @@
   // (Let go of meanwhile, here or in another tab: neither asks again once paired again.)
   $effect(() => {
     if (!paired) unpairing = leaving = false;
+  });
+  /** The owner's device, linked: it may pass the owner key on (never with the rest: only when asked). */
+  const owner = ownerUnlocked();
+  /** How many devices the owner key went to just now (null: not passed on). */
+  let passed = $state<number | null>(null);
+  /** Passing it on asked for, to be confirmed: whoever holds it can sign as the owner. */
+  let passing = $state(false);
+  // (The link gone meanwhile: not asked again once it is back.)
+  $effect(() => {
+    if (sync.status !== 'linked') passing = false;
   });
 
   // ---- class sigils ----
@@ -324,12 +335,20 @@
                   onclick={() => (leaving = false)}>Keep it</button
                 ></span
               >
+            {:else if paired && passing && owner && sync.status === 'linked'}
+              <span
+                >Give the owner key to {sync.linked === 1 ? 'the device' : `the ${sync.linked} devices`} linked now? Only to your own.
+                <button class="reset" onclick={() => ((passing = false), (passed = passOwnerKey()))}>Pass it on</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (passing = false)}>Keep it</button></span
+              >
             {:else if paired}
               <span
                 >{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button
                   class="reset anew"
                   onclick={() => (leaving = true)}>Start over</button
-                ></span
+                >{#if owner && sync.status === 'linked'}<span class="sep bullet" aria-hidden="true">•</span>{#if passed}<span class="done">Owner key passed on</span>{:else}<button
+                      class="reset"
+                      onclick={() => (passing = true)}>Pass on the owner key</button
+                    >{/if}{/if}</span
               >
             {/if}
           </p>
@@ -646,6 +665,9 @@
     color: var(--verdict-good-icon);
   }
   .sync-row .reset {
+    margin-left: 0.3rem;
+  }
+  .sync-row .done {
     margin-left: 0.3rem;
   }
   .sync-row .sep {

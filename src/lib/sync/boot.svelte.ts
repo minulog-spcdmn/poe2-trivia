@@ -5,6 +5,7 @@
 import { whenIdle } from '../idle.ts';
 import { codeInHash } from './code.ts';
 import { SYNC_HERE, loadPairing } from './store.ts';
+import { stampChoices } from './chosen.ts';
 
 /** A code a link brought (another device's QR code), waiting for the player to say yes to it (App's SyncDialog). */
 export const landing = $state<{ code: string | null }>({ code: null });
@@ -16,6 +17,8 @@ export const landing = $state<{ code: string | null }>({ code: null });
  */
 export function bootSync() {
   if (!SYNC_HERE) return;
+  // (When the name or colour is chosen, paired or not: the first pairing then knows whose is newer.)
+  stampChoices();
   const code = codeInHash(location.hash);
   if (code) {
     history.replaceState(history.state, '', location.pathname + location.search);

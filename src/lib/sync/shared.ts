@@ -4,7 +4,8 @@
 //   apart and read with their own (the codex, the Delve records, practice);
 // - the rest, which is the same wherever it was made and is taken into this
 //   device's own: the achievements, the best run of wins, the class sigils
-//   and the one worn, and today's unique.
+//   and the one worn, today's unique, and the name and colour the player
+//   chose last (lib/sync/chosen.ts).
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
 import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
@@ -12,6 +13,9 @@ import { absorbDaily, ownDailyRaw } from '../daily.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { readStored, writeStored } from '../storage.ts';
+import { chosenNow, takeChosen } from './chosen.ts';
+import { COLOUR_NAME } from '../colour.ts';
+import { NAME_STORED } from '../names.ts';
 import type { CopyKind } from './store.ts';
 
 /** This device's own progress of each copied kind, as stored (null for none). */
@@ -34,6 +38,8 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   wins: { own: ownWinsRaw, take: absorbWins, name: 'achievements.wins' },
   sigils: { own: ownSigilsRaw, take: absorbSigils, name: 'sigils' },
   daily: { own: ownDailyRaw, take: (raw) => absorbDaily(raw), name: 'daily' },
+  name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
+  colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
 };
 
 /** The names of everything taken in, to hear when this device's own changes. */

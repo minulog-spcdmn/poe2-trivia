@@ -7,6 +7,8 @@ import { offensive } from './offensive.ts';
 import { OWNER_PUBLIC_KEY, ownerUnlocked, unlockOwner } from './ownerKey.ts';
 
 export const MAX_NAME = 20;
+/** The entry the name this browser plays under is stored under (lib/session.svelte.ts saveName; lib/sync/chosen.ts). */
+export const NAME_STORED = 'name';
 export const MIN_NAME = 2;
 
 const RESERVED = new Set(['host', 'admin', 'administrator', 'system', 'server', 'moderator', 'mod', 'you', 'ggg']);
