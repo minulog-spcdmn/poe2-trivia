@@ -716,7 +716,7 @@ const PRACTICE_VERSION = 1;
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 
 /** A stored practice tally, or null when there is none or it can't be read (another build's, or damaged). */
-function parsePractice(raw: string | null): Tally | null {
+export function parsePractice(raw: string | null): Tally | null {
   if (!raw) return null;
   try {
     const v: unknown = JSON.parse(raw);

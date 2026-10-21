@@ -29,7 +29,8 @@ GitHub Pages. No server needed.
   them are on the site at once they keep the codex, Delve runs, achievements,
   sigils and the daily answer the same. Progress only goes up: what each
   device counted is kept apart on the others and added up, never counted
-  twice (`src/lib/sync/`).
+  twice. A device already synced that scans a new one's code brings it into
+  the group (`src/lib/sync/`).
 - **Settings:** volume and ambience, effects, the room code hidden for
   streaming, your name, your avatar's colour and class sigil, and the keys: 1 to 0 answer, Enter or Space goes on,
   D detonates, M mutes, Esc opens the settings, each one rebindable. Keys are

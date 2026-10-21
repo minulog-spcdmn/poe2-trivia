@@ -20,11 +20,18 @@
 //
 // While a page is hidden for a minute, its device lets go (a phone in a
 // pocket keeps no link open); it comes back as the page does.
+//
+// A code that meets no device in ten minutes is let go of (store.ts
+// UNMET_MS). A device already synced that takes a new device's code (scans
+// it) says so as they meet, and both go to its own code, so a third device
+// joins the other two rather than taking one of them away.
 
 import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
 import { PEER_OPTIONS, loadPeerJs } from '../peer.ts';
 import { announceStored, onStoredHere, storeKey } from '../storage.ts';
+import { parseCodex, parsePractice } from '../codex.ts';
+import { parseRecords } from '../delveRecord.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
 import { OWN_NAMES, TAKEN_NAMES, ownNow, takeIn, takenNow } from './shared.ts';
 import {
@@ -34,7 +41,10 @@ import {
   SYNC_HERE,
   clearCopies,
   deviceId,
+  UNMET_MS,
+  VIEW,
   forgetPairing,
+  isCode,
   isDevice,
   isStamp,
   keepCopy,
@@ -65,16 +75,43 @@ class SyncState {
   status = $state<SyncStatus>('off');
   /** Other devices linked now. */
   linked = $state(0);
-  /** When progress last came in from another device, since the page opened. */
-  lastIn = $state<number | null>(null);
+  /** Unmet: the code this device was synced under before, which it brings the new device home to. */
+  home = $state<string | null>(null);
+}
+
+/** How the pairing stands, in a line (the settings and the pairing dialog). */
+export function syncLine(): string {
+  if (sync.status === 'linked') return sync.linked > 1 ? `Synced with ${sync.linked} other devices.` : 'Synced with your other device.';
+  if (sync.status === 'offline') return "Can't reach the matchmaking server. Trying again in a moment.";
+  if (!sync.met) return 'Waiting for your other device.';
+  return sync.status === 'waiting' ? 'Paired; it syncs whenever your other device is on the site too.' : 'Connecting.';
 }
 
 export const sync = new SyncState();
 
+let lapseTimer: ReturnType<typeof setTimeout> | null = null;
 function readPairing() {
-  const p = SYNC_HERE ? loadPairing() : null;
+  let p = SYNC_HERE ? loadPairing() : null;
+  // One that met nobody in time is let go of (back to the code this device came from, if any).
+  if (p && !p.met && Date.now() - (p.at ?? 0) > UNMET_MS) {
+    p = p.home ? { code: p.home, met: true } : null;
+    if (p) savePairing(p);
+    else forgetPairing();
+  }
   sync.code = p?.code ?? null;
   sync.met = p?.met ?? false;
+  sync.home = p?.home ?? null;
+  if (lapseTimer) clearTimeout(lapseTimer);
+  lapseTimer = null;
+  if (p && !p.met)
+    lapseTimer = setTimeout(
+      () => {
+        const was = sync.code;
+        readPairing();
+        if (sync.code !== was) restart();
+      },
+      (p.at ?? 0) + UNMET_MS - Date.now() + 1000,
+    );
 }
 readPairing();
 
@@ -150,8 +187,10 @@ function readGiven(v: unknown): Given | null {
   return { copies, taken: isObj(v.taken) ? (v.taken as Record<string, string>) : {} };
 }
 
-/** The view each kind of copy is read into, as storage events name it (storage.ts ALSO). */
-const VIEW: Record<CopyKind, string> = { codex: 'codex2', delve: 'delve2', practice: 'practice' };
+/** What reads each kind of copy: one it can't read isn't kept (the browser's room is the device's own progress first). */
+const READS: Record<CopyKind, (raw: string) => unknown> = { codex: parseCodex, delve: parseRecords, practice: parsePractice };
+/** How far ahead of this device's clock a copy may be stamped: past that it would never be replaced by a real one. */
+const AHEAD_MS = 24 * 3600_000;
 
 // ---- a run: this device, paired, on the site ----------------------------------------
 
@@ -351,7 +390,8 @@ class Run {
         if (!link.theirNonce || link.trusted) return link.conn.close();
         if (!(await proves(this.key!, `${link.hub ? 'g' : 'h'}|${link.nonce}|${link.theirNonce}`, d.proof))) return link.conn.close();
         link.trusted = true;
-        say({ t: 'have', device: this.me, has: this.held() });
+        // (`home`: this device took this code to bring the other home; `fresh`: this device has no other to go to.)
+        say({ t: 'have', device: this.me, has: this.held(), ...(sync.home ? { home: sync.home } : !sync.met ? { fresh: true } : {}) });
         return;
       }
       case 'have': {
@@ -360,9 +400,12 @@ class Run {
         link.has = readHave(d.has);
         // Another tab of this browser: the same progress, nothing to say.
         if (link.device === this.me) return;
-        this.met();
+        // Bringing a new device home: both go to this one's code once they've given each other what they have.
+        const home = sync.home && d.fresh === true ? sync.home : isCode(d.home) && !sync.met && !sync.home ? d.home : null;
+        if (!home) this.met();
         this.report();
         await this.give(link);
+        if (home) setTimeout(() => !this.stopped && moveTo(home), 800);
         return;
       }
       case 'give': {
@@ -409,13 +452,12 @@ class Run {
     for (const c of given.copies) {
       const key = `${c.device}:${c.kind}`;
       from.has[key] = Math.max(from.has[key] ?? 0, c.at);
-      if (c.device === this.me) continue;
+      if (c.device === this.me || c.at > Date.now() + AHEAD_MS || READS[c.kind](c.raw) == null) continue;
       const held = readCopies(c.kind)[c.device];
       if ((!held || c.at > held.at) && keepCopy(c.kind, c.device, { at: c.at, raw: c.raw })) changed.add(VIEW[c.kind]);
     }
     for (const name of takeIn(given.taken)) changed.add(name);
     if (!changed.size) return;
-    sync.lastIn = Date.now();
     announceStored([...changed]);
     for (const l of this.links) if (l !== from) await this.give(l);
   }
@@ -486,39 +528,42 @@ export function startSync() {
   if (!run) restart();
 }
 
+/** Paired with `code` and met there: where a device brought home goes, and the one that brought it. */
+function moveTo(code: string) {
+  savePairing({ code, met: true });
+  readPairing();
+  restart();
+}
+
 /**
  * The code to show another device: the one paired with, or (not paired)
  * a new one, paired with at once so this device waits for the other there.
- * Only offered until another device is met (withdrawOffer).
+ * Only kept if another device comes in time (readPairing).
  */
 export function offerCode(): string {
   if (sync.code) return sync.code;
   const code = newCode();
-  savePairing({ code, met: false });
+  savePairing({ code, met: false, at: Date.now() });
   readPairing();
   startSync();
   return code;
 }
 
-/** Lets go of an offered code that met no device (the dialog closed before one came). */
-export function withdrawOffer() {
-  if (!sync.code || sync.met) return;
-  forgetPairing();
-  readPairing();
-  restart();
-}
-
-/** Pairs with a code from another device (scanned, typed or linked). */
+/** Pairs with a code from another device (scanned, typed or linked); synced already, this device brings that one home to the others. */
 export function useCode(code: string) {
-  if (code !== sync.code) savePairing({ code, met: false });
+  if (code !== sync.code) {
+    const home = sync.met ? sync.code : sync.home;
+    savePairing({ code, met: false, at: Date.now(), ...(home && home !== code ? { home } : {}) });
+  }
   readPairing();
   startSync();
   if (run?.code !== sync.code) restart();
 }
 
-/** Stops syncing. What came from the other devices stays, as progress only goes up. */
+/** Stops syncing (or, a code taken but not met yet, goes back to the one before). What came from the other devices stays, as progress only goes up. */
 export function unpair() {
-  forgetPairing();
+  if (!sync.met && sync.home) savePairing({ code: sync.home, met: true });
+  else forgetPairing();
   readPairing();
   restart();
 }

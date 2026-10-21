@@ -1,4 +1,4 @@
-// The sync code: what pairs a player's devices (lib/sync/link.ts). A device
+// The sync code: what pairs a player's devices (lib/sync/link.svelte.ts). A device
 // makes it, and the others take it from its QR code (a link to the site,
 // the code after `#sync=`, which the browser never sends to the server) or
 // typed in. Sixteen characters of Crockford's base32 (no I, L, O or U, so

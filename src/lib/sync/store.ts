@@ -1,4 +1,4 @@
-// What sync keeps in this browser (lib/sync/link.ts runs it): the code it is
+// What sync keeps in this browser (lib/sync/link.svelte.ts runs it): the code it is
 // paired with, its own name among the player's devices, and its copies of
 // the others' progress.
 //
@@ -14,7 +14,7 @@
 // device, and devices pass on the copies they hold, so a third device's
 // progress reaches the others by way of whichever it last met.
 
-import { BACKDROP_TOOL, BOT, LAB, QA, readStored, removeStored, writeStored } from '../storage.ts';
+import { BACKDROP_TOOL, BOT, COPIES_OF, LAB, QA, readStored, removeStored, writeStored } from '../storage.ts';
 
 /** Only the game itself syncs: never the lab, the tools, the bot or the QA desk, whose progress is theirs alone. */
 export const SYNC_HERE = typeof document !== 'undefined' && !(LAB || BACKDROP_TOOL || BOT || QA);
@@ -44,16 +44,26 @@ export const PAIR_NAME = PAIR;
 
 export interface Pairing {
   code: string;
-  /** Another device has been met with this code: until then the pairing is only offered, and let go if nothing comes of it. */
+  /** Another device has been met with this code: until then the pairing is only offered, and let go if nothing comes of it (UNMET_MS). */
   met: boolean;
+  /** Unmet: when the code was made or taken. */
+  at?: number;
+  /** Unmet: the code this device was synced under before it took this one (a new device's), so it brings that device home to the others rather than leaving them. */
+  home?: string;
 }
+
+/** How long a pairing that has met no device is kept: the other device has long come by then, or isn't coming. */
+export const UNMET_MS = 10 * 60_000;
+
+export const isCode = (v: unknown): v is string => typeof v === 'string' && /^[0-9A-Z]{16}$/.test(v);
 
 /** The pairing stored, or null when this browser isn't paired. */
 export function loadPairing(): Pairing | null {
   try {
     const v: unknown = JSON.parse(readStored(PAIR) ?? 'null');
-    if (!isObj(v) || v.v !== 1 || typeof v.code !== 'string' || !/^[0-9A-Z]{16}$/.test(v.code)) return null;
-    return { code: v.code, met: v.met === true };
+    if (!isObj(v) || v.v !== 1 || !isCode(v.code)) return null;
+    if (v.met === true) return { code: v.code, met: true };
+    return { code: v.code, met: false, at: typeof v.at === 'number' ? v.at : 0, ...(isCode(v.home) && v.home !== v.code ? { home: v.home } : {}) };
   } catch {
     return null;
   }
@@ -75,8 +85,12 @@ export function deviceId(): string {
 
 // ---- the copies ----------------------------------------------------------------
 
-const copiesName = (kind: CopyKind) => `sync.copies.${kind}`;
+/** The entry each kind of copy is read into (the device's own): the codex, the Delve records, the practice tally. */
+export const VIEW: Record<CopyKind, keyof typeof COPIES_OF> = { codex: 'codex2', delve: 'delve2', practice: 'practice' };
+const copiesName = (kind: CopyKind) => COPIES_OF[VIEW[kind]];
 export const COPY_NAMES = COPY_KINDS.map(copiesName);
+/** The most devices whose copies are kept: past that, the one heard from longest ago goes (a browser whose site data was cleared comes back as a new device, and the old name would be kept for good). */
+export const KEEP_DEVICES = 8;
 
 /** The copies of one kind held, by device. */
 export function readCopies(kind: CopyKind): Record<string, Copy> {
@@ -96,10 +110,23 @@ function parseCopies(raw: string | null): Record<string, Copy> {
   return out;
 }
 
-/** Keeps `copy` as `device`'s of `kind` (newer than the one held: the caller checks); whether it could be stored. */
+/**
+ * Keeps `copy` as `device`'s of `kind` (newer than the one held: the caller
+ * checks); whether it could be stored. Past KEEP_DEVICES, or where the
+ * browser has no room left, the copies heard from longest ago go first, so
+ * the copies never crowd out the device's own progress for long.
+ */
 export function keepCopy(kind: CopyKind, device: string, copy: Copy): boolean {
-  const devices = { ...readCopies(kind), [device]: copy };
-  return writeStored(copiesName(kind), JSON.stringify({ v: 1, devices }));
+  const list = Object.entries({ ...readCopies(kind), [device]: copy })
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, KEEP_DEVICES);
+  while (list.some(([d]) => d === device)) {
+    if (writeStored(copiesName(kind), JSON.stringify({ v: 1, devices: Object.fromEntries(list) }))) return true;
+    // (No room: the oldest other goes, then this one if it's all that's left.)
+    const oldest = list.findLastIndex(([d]) => d !== device);
+    list.splice(oldest >= 0 ? oldest : 0, 1);
+  }
+  return false;
 }
 
 /** Lets go of every copy (the codex erased: what the others had is theirs to keep). */

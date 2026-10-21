@@ -190,14 +190,16 @@ export const ownDailyRaw = () => readStored(KEY);
 
 /**
  * Takes in another of the player's devices' record when it answered a later
- * day (or the same day, further into a run): the player's answer, wherever
- * it was given. Not one from more than a day ahead of this device's clock,
- * which can't be yet. Whether it changed anything.
+ * day: the player's answer, wherever it was given. The same day, only one
+ * further into a run with the same verdict (each device had its own run
+ * going), never a right answer over a wrong one: answered on two devices,
+ * the day isn't two guesses. Not one from more than a day ahead of this
+ * device's clock, which can't be yet. Whether it changed anything.
  */
 export function absorbDaily(raw: string, today = utcDay(Date.now())): boolean {
   const theirs = parseDaily(raw);
   if (!theirs || theirs.day > today + 1) return false;
   const mine = loadDaily();
-  if (mine && (mine.day > theirs.day || (mine.day === theirs.day && mine.streak >= theirs.streak))) return false;
+  if (mine && (mine.day > theirs.day || (mine.day === theirs.day && (mine.ok !== theirs.ok || mine.streak >= theirs.streak)))) return false;
   return writeStored(KEY, JSON.stringify(theirs));
 }

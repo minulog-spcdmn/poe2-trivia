@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import jsQR from 'jsqr';
 import { codeInHash, codeKey, codeLink, newCode, peerName, prove, proves, readCode, shownCode } from '../src/lib/sync/code.ts';
 import { ALIGN, DOT, EYE, qrMarks } from '../src/lib/sync/qr.ts';
-import { clearCopies, copiesOf, deviceId, keepCopy, readCopies } from '../src/lib/sync/store.ts';
+import { KEEP_DEVICES, clearCopies, copiesOf, deviceId, keepCopy, loadPairing, readCopies, savePairing } from '../src/lib/sync/store.ts';
 import { ownNow, takeIn, takenNow } from '../src/lib/sync/shared.ts';
 import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEncounter, recordPractice, serializeCodex, type Codex } from '../src/lib/codex.ts';
 import { DELVE_RECORD_KEY, addRun, bestOf, combineRecords, emptyRecords, loadRecords, recordRun, serializeRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
@@ -97,6 +97,21 @@ test('the QR code drawn reads back as the link, its seal and all, with the reade
 });
 
 // ---- what is kept ------------------------------------------------------------------
+
+test('copies are kept for the devices heard from last, a few at most', () => {
+  for (let i = 0; i < KEEP_DEVICES + 3; i++) keepCopy('practice', `dev${String(i).padStart(9, '0')}`, { at: 100 + i, raw: 'x' });
+  const kept = readCopies('practice');
+  assert.equal(Object.keys(kept).length, KEEP_DEVICES);
+  assert.ok(!kept['dev000000000'], 'the one heard from longest ago goes');
+  assert.ok(kept[`dev${String(KEEP_DEVICES + 2).padStart(9, '0')}`]);
+});
+
+test('a pairing that met nobody keeps when it was made, and the code it came from', () => {
+  savePairing({ code: 'K7QXM2PA9FHE3TDW', met: false, at: 5, home: 'AAAABBBBCCCCDDDD' });
+  assert.deepEqual(loadPairing(), { code: 'K7QXM2PA9FHE3TDW', met: false, at: 5, home: 'AAAABBBBCCCCDDDD' });
+  savePairing({ code: 'K7QXM2PA9FHE3TDW', met: true });
+  assert.deepEqual(loadPairing(), { code: 'K7QXM2PA9FHE3TDW', met: true });
+});
 
 test('a device keeps one name, and one copy of each other device', () => {
   const me = deviceId();
@@ -222,6 +237,10 @@ test("achievements are taken in: what the other earned, at the earlier time of t
   assert.deepEqual(loadAchievements().earned, { [a.id]: 20, [b.id]: 10, [c.id]: 40, 'from-a-newer-build': 5 });
   assert.ok(!absorbAchievements(serializeStore({ earned: { [a.id]: 20 } })), 'nothing new');
   assert.ok(!absorbAchievements('nope'));
+  // Names it doesn't know (a newer build's), only a few of them.
+  const junk = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`junk-${i}`, 1]));
+  absorbAchievements(serializeStore({ earned: junk }));
+  assert.equal(Object.keys(loadAchievements().earned).filter((id) => id.startsWith('junk-')).length, 31);
 });
 
 test("the longest run of wins is taken in; the run now stays this device's own", () => {
@@ -247,6 +266,11 @@ test("today's unique is taken in from a device that answered later; never from t
   assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
   assert.equal(loadDaily()?.day, today);
   assert.ok(!absorbDaily(JSON.stringify({ day: today + 5, picked: 2, ok: true, streak: 9, ended: 0 }), today));
+  // The same day answered on two devices: never a right answer over a wrong one.
+  store.set(DAILY_KEY, JSON.stringify({ day: today, picked: 1, ok: false, streak: 0, ended: 4 }));
+  assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
+  store.set(DAILY_KEY, JSON.stringify({ day: today, picked: 2, ok: true, streak: 1, ended: 0 }));
+  assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0 }), today), 'the longer run, the same verdict');
 });
 
 test('what is sent to be taken in is what is stored; what comes in is checked', () => {

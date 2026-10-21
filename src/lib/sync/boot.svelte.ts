@@ -6,7 +6,7 @@ import { whenIdle } from '../idle.ts';
 import { codeInHash } from './code.ts';
 import { SYNC_HERE, loadPairing } from './store.ts';
 
-/** A code a link brought (another device's QR code), waiting for the player to say yes to it (App's SyncPrompt). */
+/** A code a link brought (another device's QR code), waiting for the player to say yes to it (App's SyncDialog). */
 export const landing = $state<{ code: string | null }>({ code: null });
 
 /**

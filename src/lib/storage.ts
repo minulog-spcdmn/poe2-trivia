@@ -107,15 +107,12 @@ export function onStoredElsewhere(handlers: Record<string, () => void>): () => v
 
 /**
  * What else an entry's value is read with, by name: the copies sync keeps of
- * the player's other devices (lib/sync/copies.ts) are read into the codex,
- * the Delve records and the practice tally, so a change to them is a change
- * to those too.
+ * the player's other devices (lib/sync/store.ts, which names them from here)
+ * are read into the codex, the Delve records and the practice tally, so a
+ * change to them is a change to those too.
  */
-const ALSO: Record<string, string> = {
-  codex2: storeKey('sync.copies.codex'),
-  delve2: storeKey('sync.copies.delve'),
-  practice: storeKey('sync.copies.practice'),
-};
+export const COPIES_OF = { codex2: 'sync.copies.codex', delve2: 'sync.copies.delve', practice: 'sync.copies.practice' } as const;
+const ALSO: Record<string, string> = Object.fromEntries(Object.entries(COPIES_OF).map(([name, copies]) => [name, storeKey(copies)]));
 
 /**
  * Tells this tab's onStoredElsewhere handlers that these entries changed, as

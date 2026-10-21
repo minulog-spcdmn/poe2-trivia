@@ -120,6 +120,8 @@ export function absorbSigils(raw: string): boolean {
   const o = theirs && openStored(NAME, SIGILS_VERSION, parseSigils);
   if (!theirs || !o) return false;
   const was = o.was ?? emptySigils();
+  // (Both devices may have unlocked one with the same achievement, before they were paired: both are kept, as
+  // taking one away would be worse; the next sigil just takes the longer to come, sigilsToUnlock counting both.)
   const unlocked = [...new Set([...was.unlocked, ...theirs.unlocked])];
   const later = (theirs.wornAt ?? 0) > (was.wornAt ?? 0);
   const next: SigilStore = later ? { unlocked, worn: theirs.worn, wornAt: theirs.wornAt } : { ...was, unlocked };

@@ -999,14 +999,19 @@ export const ownWinsRaw = () => tryReadStored(WINS) ?? null;
  * one earned on both). Ids this build doesn't know are kept, as they are in
  * its own list. Whether it changed anything.
  */
+/** The most achievements a newer build has, unknown to this one, that are taken in from another device. */
+const MAX_UNKNOWN = 32;
+
 export function absorbAchievements(raw: string): boolean {
   const theirs = parseStore(raw);
   const o = theirs && open();
   if (!theirs || !o) return false;
   const earned = { ...o.store.earned };
   let changed = false;
+  // A newer build's are kept too, to pass on, but only a few: past that, names this build doesn't know would only fill the store.
+  let unknown = Object.keys(earned).filter((id) => !achievementById.has(id)).length;
   for (const [id, at] of Object.entries(theirs.earned))
-    if (earned[id] === undefined || at < earned[id]) {
+    if ((earned[id] === undefined || at < earned[id]) && (achievementById.has(id) || earned[id] !== undefined || unknown++ < MAX_UNKNOWN)) {
       earned[id] = at;
       changed = true;
     }

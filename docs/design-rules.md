@@ -19,6 +19,6 @@ These rules are here to help, and they may not be perfect. If a design would wor
 - Tried and dropped:
   - an attract mode (the title screen playing demo rounds by itself, like an arcade cabinet): motion beside the menu competes with it
   - a name gate before the start page
-  - a QR code
+  - a QR code (but for pairing devices to sync, `SyncDialog`, engraved on gold, as a phone's home-screen game has no other way to take a code without typing it)
   - a Continue entry (a reload resumes the game by itself)
   - mode icons on only some entries

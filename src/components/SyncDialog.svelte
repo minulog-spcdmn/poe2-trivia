@@ -6,7 +6,7 @@
   // size throughout so nothing jumps:
   // - show: this device's code, a QR code engraved on a gilded plate, and
   //   how the link stands; where it opens at a computer (a code made here is
-  //   only kept once another device comes: closed before then, it is let go);
+  //   only kept if another device comes in time: lib/sync/link.svelte.ts);
   // - scan: the camera, round in the heart, reading the other device's code;
   //   where it opens on a phone or a tablet not yet paired (an iPhone's home
   //   screen game has storage of its own, so it scans from here);
@@ -20,7 +20,7 @@
   import { circleOf, warmCircle } from './circles';
   import { calm } from '../lib/motion.svelte';
   import { codeInHash, codeLink, readCode, shownCode } from '../lib/sync/code';
-  import { offerCode, sync, useCode, withdrawOffer } from '../lib/sync/link.svelte';
+  import { offerCode, sync, syncLine, useCode } from '../lib/sync/link.svelte';
   import { qrShape } from '../lib/sync/qr';
   import { canScan, scan } from '../lib/sync/scan';
   import SyncSeal from './SyncSeal.svelte';
@@ -48,46 +48,31 @@
   // svelte-ignore state_referenced_locally
   const first: View = offered ? 'offered' : (start ?? (handheld && scans && !sync.code ? 'scan' : 'show'));
   let view = $state<View>(first);
-  /** The code shown: the one paired with, or one made for this dialog. */
-  let code = $state<string | null>(null);
-  /** The code shown was made here, and goes if no device comes before the dialog closes. */
-  let made = false;
+  /** The code shown: the one paired with, or one made for this dialog (and, once it moves to the others' code, theirs). */
+  let made = $state<string | null>(null);
+  const code = $derived(sync.code ?? made);
   function show() {
     endScan();
-    const was = sync.code;
-    code = offerCode();
-    made ||= was === null;
+    made = offerCode();
     view = 'show';
   }
 
   /** Pairs with a code from elsewhere (scanned, typed, a link), and shows how the link stands. */
   function take(c: string) {
     endScan();
-    made = false;
     useCode(c);
-    code = c;
+    made = c;
     view = 'joined';
   }
 
   const qr = $derived(code ? qrShape(codeLink(code, location.href)) : null);
 
   const linked = $derived(sync.status === 'linked');
-  const statusLine = $derived(
-    linked
-      ? sync.linked > 1
-        ? `Synced with ${sync.linked} other devices.`
-        : 'Synced with your other device.'
-      : sync.status === 'offline'
-        ? "Can't reach the matchmaking server. Trying again in a moment."
-        : sync.status === 'waiting'
-          ? view === 'joined'
-            ? 'Waiting for your other device to come online.'
-            : 'Waiting for your other device.'
-          : 'Connecting.',
-  );
+  const statusLine = $derived(syncLine());
+  // Words: pairing is the act, synced the state.
   const title = $derived(
     view === 'offered'
-      ? 'Sync this device?'
+      ? 'Pair this device?'
       : view === 'scan'
         ? 'Scan the code'
         : view === 'type'
@@ -96,8 +81,21 @@
             ? linked
               ? 'Synced'
               : 'Paired'
-            : 'Sync your devices',
+            : 'Pair a device',
   );
+
+  /** The circle cut round the plate or the camera, a little wider, so its lines stop short of them as an engraver's would (the seal sits in its own hollow). */
+  const cut = $derived(
+    view === 'show'
+      ? `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M0 0H100V100H0Z' + roundedHole(20, 60, 5.5) + '"/></svg>')}")`
+      : view === 'scan'
+        ? 'radial-gradient(closest-side, transparent calc(54% + 9px), #000 calc(54% + 10px))'
+        : 'none',
+  );
+  function roundedHole(at: number, s: number, r: number) {
+    const e = at + s;
+    return `M${at + r} ${at}H${e - r}A${r} ${r} 0 0 1 ${e} ${at + r}V${e - r}A${r} ${r} 0 0 1 ${e - r} ${e}H${at + r}A${r} ${r} 0 0 1 ${at} ${e - r}V${at + r}A${r} ${r} 0 0 1 ${at + r} ${at}Z`;
+  }
 
   // ---- scanning ----
 
@@ -106,37 +104,48 @@
   let scanError = $state('');
   /** The camera's picture has come: until then the heart shows the seal, faint. */
   let seeing = $state(false);
+  /** Which scan is the latest: one that comes back after the view moved on, or the dialog closed, is stopped at once. */
+  let scanGen = 0;
+  let alive = true;
   async function startScan() {
+    endScan();
+    const gen = ++scanGen;
+    const current = () => alive && gen === scanGen && view === 'scan';
     view = 'scan';
     scanError = '';
     seeing = false;
     await tick();
-    if (!video) return;
+    if (!video || !current()) return;
     try {
-      stopScan = await scan(video, (text) => {
+      // (The camera takes a while to come, jsQR too on an iPhone: the dialog may be gone by then.)
+      const stop = await scan(video, (text) => {
+        if (!current()) return true;
         const c = codeFrom(text);
-        if (!c) {
-          scanError = "That isn't a sync code.";
+        if (!c || c === 'elsewhere') {
+          scanError = c ? "That code is for another version of the site. Open it with your phone's camera app instead." : "That isn't a sync code.";
           return false;
         }
         stopScan = null;
         take(c);
         return true;
       });
-      if (view !== 'scan') endScan();
+      if (current()) stopScan = stop;
+      else stop();
     } catch {
-      scanError = "The camera couldn't be opened. Allow it for this site, or enter the code instead.";
+      if (current()) scanError = "The camera couldn't be opened. Allow it for this site, or enter the code instead.";
     }
   }
   function endScan() {
+    scanGen++;
     stopScan?.();
     stopScan = null;
   }
-  /** A sync code in what a QR code holds: a pairing link, or the code alone. */
-  function codeFrom(text: string): string | null {
+  /** A sync code in what a QR code holds (a pairing link, or the code alone); `elsewhere` for a link to another version of the site, whose devices this one never meets (the beta's rooms are its own). */
+  function codeFrom(text: string): string | null | 'elsewhere' {
     try {
-      const c = codeInHash(new URL(text).hash);
-      if (c) return c;
+      const url = new URL(text);
+      const c = codeInHash(url.hash);
+      if (c) return new URL('.', url).href === new URL('.', location.href).href ? c : 'elsewhere';
     } catch {
       /* not a link */
     }
@@ -175,10 +184,12 @@
 
   function close() {
     endScan();
-    if (made && !sync.met) withdrawOffer();
     onclose();
   }
-  onDestroy(endScan);
+  onDestroy(() => {
+    alive = false;
+    endScan();
+  });
 
   /** Escape closes the dialog alone, heard before the settings behind it would close too (App's keys leave a key that's been had). */
   function onKey(e: KeyboardEvent) {
@@ -198,14 +209,14 @@
 
 <svelte:window onkeydowncapture={onKey} />
 
-<div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={close} role="presentation">
+<div class="backdrop" use:dialogBackdrop transition:fade|global={{ duration: 150 }} onclick={close} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="sync panel" bind:this={panel} transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
+  <div class="sync panel" bind:this={panel} transition:fly|global={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
     <h3 id="sync-title">{title}</h3>
 
     <!-- The stage: the circle, and in its heart the code, the camera or the seal. -->
     <div class="stage">
-      <div class="circle">
+      <div class="circle" style:mask-image={cut} style:-webkit-mask-image={cut}>
         <Circle size="100%" hollow state={linked && (view === 'show' || view === 'joined') ? 'good' : 'idle'} strength={0.5} />
       </div>
       {#if view === 'show' && qr}
@@ -226,7 +237,7 @@
         </div>
       {:else}
         {#key view}
-          <div class="heart sigil" class:quiet={view === 'type'} class:good={linked && view === 'joined'}><SyncSeal /></div>
+          <div class="sigil" class:quiet={view === 'type'} class:good={linked && view === 'joined'}><SyncSeal /></div>
         {/key}
       {/if}
     </div>
@@ -258,42 +269,47 @@
     <!-- What to do, how the link stands, or what went wrong: two lines kept for it, so nothing below moves. -->
     <p class="line" class:good={linked && (view === 'show' || view === 'joined')} class:bad={(view === 'show' || view === 'joined') ? sync.status === 'offline' : !!(view === 'scan' ? scanError : view === 'type' ? typeError : '')} aria-live="polite">
       {#if view === 'offered'}
-        Your codex, Delve runs and achievements kept the same here and there. Only say yes to a code from a device of your own.
+        Your codex, Delve runs and achievements will match the device that showed this code. Only accept a code from your own device.
       {:else if view === 'scan'}
-        {scanError || 'To show it, open the settings there and choose Pair a device.'}
+        {scanError || 'On a computer, choose Pair a device in the settings; on a phone, Show my code.'}
       {:else if view === 'type'}
         {typeError || 'The code under the QR code on your other device.'}
       {:else if view === 'show' && !linked && sync.status !== 'offline'}
-        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone's camera. Playing from its home screen? Choose Pair a device in the settings there."}
+        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone's camera. Playing from its home screen? Pair a device in its settings."}
       {:else}
         {statusLine}
       {/if}
     </p>
 
+    <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. -->
+    <p class="routes">
+      {#if view === 'show'}
+        {#if handheld && scans}<button class="route" onclick={startScan}>Scan a code</button><span class="sep" aria-hidden="true">•</span>{/if}
+        <button class="route" onclick={startTyping}>Enter a code</button>
+      {:else if view === 'scan'}
+        <button class="route" onclick={show}>Show my code</button><span class="sep" aria-hidden="true">•</span><button class="route" onclick={startTyping}>Enter a code</button>
+      {/if}
+    </p>
+
+    <!-- The gold button is the next step here: none while the other device is still to come. -->
     <div class="actions">
       {#if view === 'offered'}
         <button class="btn ghost" onclick={close}>Not now</button>
-        <button class="btn primary" onclick={() => take(offered!)}>Sync</button>
+        <button class="btn primary" onclick={() => take(offered!)}>Pair</button>
       {:else if view === 'type'}
         <button class="btn ghost" type="button" onclick={back}>Back</button>
         <button class="btn primary" type="submit" form="sync-typed" disabled={!typed.trim()}>Pair</button>
-      {:else if view === 'scan'}
-        <button class="btn ghost" onclick={show}>Show my code</button>
-        <button class="btn ghost" onclick={startTyping}>Enter a code</button>
-        <button class="btn ghost" onclick={close}>Close</button>
-      {:else if view === 'joined'}
+      {:else if view === 'joined' || (view === 'show' && sync.met)}
         <button class="btn primary" onclick={close}>Done</button>
       {:else}
-        {#if handheld && scans}<button class="btn ghost" onclick={startScan}>Scan a code</button>{/if}
-        <button class="btn ghost" onclick={startTyping}>Enter a code</button>
-        <button class="btn primary" onclick={close}>Done</button>
+        <button class="btn ghost" onclick={close}>Close</button>
       {/if}
     </div>
   </div>
 </div>
 
 <style>
-  /* Taller than a short window (a phone on its side), the dialog scrolls with its backdrop, its ornaments whole. */
+  /* Taller than a short window, the dialog scrolls with its backdrop, its ornaments whole. */
   .backdrop {
     position: fixed;
     inset: 0;
@@ -303,11 +319,21 @@
     padding: 1rem;
     overflow-y: auto;
   }
+  /* One column: the title, the stage, and under it the words and the buttons. */
   .sync {
+    display: grid;
+    grid-template-areas: 'title' 'stage' 'under' 'line' 'routes' 'actions';
     width: min(440px, 100%);
     margin: auto;
     padding: 1.5rem 1.6rem 1.6rem;
     text-align: center;
+    --stage: min(330px, 46vh);
+  }
+  @supports (height: 1svh) {
+    /* (A phone's bars up: the small viewport, not the large.) */
+    .sync {
+      --stage: min(330px, 46svh);
+    }
   }
   /* (Focused as it opens, so keys reach it; the frame needs no ring.) */
   .sync:focus {
@@ -318,44 +344,70 @@
       padding: 1.3rem 1rem 1.4rem;
     }
   }
+  /* A phone on its side: the stage at the left, the full height, and the rest beside it. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .sync {
+      grid-template-areas: 'stage title' 'stage under' 'stage line' 'stage routes' 'stage actions';
+      grid-template-columns: auto minmax(0, 1fr);
+      align-content: center;
+      column-gap: 1.2rem;
+      width: min(640px, 100%);
+      padding: 1rem 1.2rem;
+      --stage: min(300px, calc(100vh - 5rem));
+    }
+    /* (Its own width here: a share of an auto column would be nothing.) */
+    .sync .stage {
+      align-self: center;
+      width: var(--stage);
+      margin: 0;
+    }
+  }
   .sync h3 {
+    grid-area: title;
     margin: 0;
     color: var(--gold-hi);
     font-size: 1.25rem;
   }
 
-  /* The stage, square: the circle reaches out to the panel's padding, its heart a little over half of it. */
+  /* The stage, square: the circle reaches out to the panel's padding; the code or the camera a little over half of it. */
   .stage {
+    grid-area: stage;
     position: relative;
-    width: min(330px, 100%, 46vh);
+    width: min(var(--stage), 100%);
     aspect-ratio: 1;
     margin: 0.2rem auto 0;
   }
   .circle {
     position: absolute;
     inset: 0;
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
   }
+  /* Its corners inside the circle's band. */
   .heart {
     position: absolute;
     inset: 0;
     margin: auto;
-    width: 60%;
-    height: 60%;
+    width: 54%;
+    height: 54%;
   }
 
   /* The code, engraved in ink on a gilded plate (dark on light, as every camera reads it), set in a fine gold frame. */
   .plate {
-    padding: 0;
+    --leaf-hi: #f0dca6;
+    --leaf: #dcbc78;
+    --leaf-lo: #c9a25a;
+    --ink: #2a1b0b;
     border-radius: 7%;
     background:
       radial-gradient(120% 90% at 30% 20%, rgba(255, 246, 214, 0.55), transparent 60%),
-      linear-gradient(145deg, #f0dca6, #dcbc78 50%, #c9a25a);
+      linear-gradient(145deg, var(--leaf-hi), var(--leaf) 50%, var(--leaf-lo));
     box-shadow:
       0 0 0 1px #3a2a14,
       0 0 0 4px #120d07,
       0 0 0 5px var(--gold-lo),
       0 6px 18px rgba(0, 0, 0, 0.55);
-    color: #2a1b0b;
+    color: var(--ink);
   }
   .qr {
     display: block;
@@ -364,7 +416,7 @@
     fill: currentColor;
   }
 
-  /* The camera, round in the heart, in the same frame as the plate. */
+  /* The camera, round, in the same frame as the plate. */
   .lens {
     border-radius: 50%;
     overflow: hidden;
@@ -387,12 +439,13 @@
   .lens video.seeing {
     opacity: 1;
   }
+  /* Until the camera's picture comes, the seal, breathing faintly. */
   .waiting {
     position: absolute;
-    inset: 22%;
+    inset: 18%;
     color: var(--gold);
-    opacity: 0.45;
-    animation: waiting 2.4s ease-in-out infinite alternate;
+    opacity: 0.5;
+    animation: waiting 6s ease-in-out infinite alternate;
     transition: opacity 0.4s;
   }
   .waiting.gone {
@@ -401,14 +454,17 @@
   }
   @keyframes waiting {
     to {
-      opacity: 0.2;
+      opacity: 0.25;
     }
   }
 
-  /* The seal, struck in gold in the hollow; faint while a code is typed, pale green once linked (the circle's own good). */
+  /* The seal, struck in gold inside the circle's hollow frame; faint while a code is typed, the circle's own pale green once linked. */
   .sigil {
-    width: 46%;
-    height: 46%;
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 32%;
+    height: 32%;
     color: var(--gold-hi);
     transition: color 0.9s;
   }
@@ -416,11 +472,12 @@
     color: var(--gold-lo);
   }
   .sigil.good {
-    color: #e3e8b4;
+    color: #d8dfa0;
   }
 
   /* Under the stage, one line's height in every view. */
   .under {
+    grid-area: under;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -445,6 +502,7 @@
     line-height: 1.35;
   }
   .line {
+    grid-area: line;
     min-height: 2.7em;
     margin: 0.2rem 0 0;
     font-style: italic;
@@ -468,11 +526,40 @@
     text-transform: none;
     letter-spacing: 0.1em;
   }
-  .actions {
+  /* The other ways, as quiet links (Settings' Reset), one line kept for them. */
+  .routes {
+    grid-area: routes;
     display: flex;
-    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-height: 1.6em;
+    margin: 0.5rem 0 0;
+  }
+  .route {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 0.95rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-decoration-color: var(--gold-lo);
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .route:hover {
+    color: var(--gold-hi);
+  }
+  .sep {
+    color: var(--gold-lo);
+  }
+  .actions {
+    grid-area: actions;
+    display: flex;
     gap: 0.6rem;
     justify-content: center;
-    margin-top: 1rem;
+    margin-top: 0.8rem;
   }
 </style>
