@@ -105,11 +105,23 @@ open it again to count it again. It works typed after the address of a page
 already open too, says which way it went, and keeps the choice in
 localStorage (`poe2trivia.skipCount`). GoatCounter's own count.js isn't
 used, so this is the game's version of its toggle.
-Game events count each time (`ns`, no session), visits once a person in
-eight hours. Two events count the way visits do, `reach/played` and
-`reach/finished`, sent by every device in a game as it starts and ends, so
-set against the visits they say what share of the people who came played
-or finished a game (the overview's "From visit to game").
+Game events count each time (`ns`, no session): `play/<mode>`,
+`size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
+`end/<mode>` from the device running the game (`-online`/`-hotseat` until
+October 2026), Delve's depth range, the Daily's answers, links opened,
+joins, failures (`error/script` among them) and `sync/paired`. Visits count
+once a person in eight hours, and so do the steps (`countReach`, each once a
+page load): `reach/page` on every counted load, what the others are set
+against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
+device (not one watching); `reach/games-2|5` and `reach/time-2m|10m|30m`
+(active time) within one page load; `reach/codex`, `reach/achievements`;
+and `new/lobby|played|finished` for a load whose visit had no save. With a
+visit, read from this device's own codex when the page is idle:
+`visit/new` or `visit/back-1d|7d|30d|later` (nothing within eight hours of
+the last play, GoatCounter's visit being still open), `cohort/<ISO week of
+first play>` and `visit/app`. A link's `?ref=` tag goes as the visit's
+campaign. Counts go out one at a time, 0.6 s apart after a random wait:
+GoatCounter turns away more than four a second from one address.
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser. Its
@@ -132,7 +144,17 @@ than usual and the site behind each, and the sites and countries that
 brought far more or fewer than the period before (`insights.ts`, only
 what's beyond chance). Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
-and systems the new visitors came from and on, lit on the overview. `#groups` (Groups) opens on what stands out between groups,
+and systems the new visitors came from and on, lit on the overview.
+Visitors (`#visitors`) also has how far a visit gets (a game entered,
+started, finished, two and five in one page load) and a first visit's
+own steps, how long it stays and what else it opens, who comes back to a
+save and how long after, by the week they first played too, the installed
+app's share, and the tagged links (`?ref=`) beside the referrers; each
+share is of page loads (`reach/page`) from the day those were first
+counted, against the period before only where that was a share of page
+loads too (`insights.ts`). Games once counted online and
+hot-seat apart (`play/race-online`) read as their mode (`model.ts`
+currentName). `#groups` (Groups) opens on what stands out between groups,
 each a sentence, and sets the visitors from a country, or on a system or
 a kind of device, against everyone: who played a game at all (guests
 too), the games they start, Today's unique, joins and failures. A mode

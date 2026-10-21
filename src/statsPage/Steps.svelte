@@ -1,13 +1,15 @@
 <script lang="ts">
   // From visit to game, as one of the overview's figures: the share of the
   // people who opened the game that played a game, then, each a bar as long
-  // as its share, those who finished one and those who answered Today's
-  // unique (insights.ts stepsOf), against the period before. Visits and steps
-  // are both counted once a person in eight hours, so these are shares of
-  // people, not of games.
+  // as its share, those who finished one, those who started two in one page
+  // load (once counted) and those who answered Today's unique (insights.ts
+  // stepsOf, journeyOf), against the period before. Steps are a share of
+  // page loads once those were counted (visits before), all counted once a
+  // person in eight hours, so these are shares of people, not of games. The
+  // whole journey is in Visitors.
   import { shortDay } from './chart';
   import Delta from './Delta.svelte';
-  import { stepsOf } from './insights';
+  import { journeyOf, reachedShare, stepsOf } from './insights';
   import type { Period, Read } from './read';
 
   let { read, period }: { read: Read; period: Period } = $props();
@@ -17,8 +19,11 @@
   const share = (part: number, whole: number) => (whole ? Math.min(100, (100 * part) / whole) : null);
   const played = $derived(share(now.played, now.visitors));
   const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
+  /** Two games in one page load: read over the same days as the rest (insights.ts reachedOf), so the date marked below is theirs too. */
+  const second = $derived(reachedShare(journeyOf(read.now), 'games-2'));
   const rows = $derived([
     { name: 'Finished a game', share: now.from ? share(now.finished, now.visitors) : null },
+    ...(second === null ? [] : [{ name: '2+ games in one page load', share: second }]),
     { name: "Answered Today's unique", share: share(now.answered, now.askedVisitors) },
   ]);
   /** Marked only from a day inside the period: the shares cover the days since. */
@@ -38,7 +43,8 @@
   {/each}
   <span class="change">
     {#if now.from}
-      <Delta now={played} before={was.from ? share(was.played, was.visitors) : null} rate period={period.before} />
+      <!-- Only against a period whose share is of the same (page loads, or visits before those were counted). -->
+      <Delta now={played} before={was.from && was.paged === now.paged ? share(was.played, was.visitors) : null} rate period={period.before} />
     {/if}
   </span>
 </div>

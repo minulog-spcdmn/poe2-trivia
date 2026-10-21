@@ -3,12 +3,15 @@
 // GoatCounter, so its layout can be looked at and tried. Each day's numbers
 // come from the day itself, so a day reads the same in every period, and
 // they're shaped like the real ones: more in the evening and at weekends,
-// slowly growing, Today's unique only from the day it began.
+// slowly growing, Today's unique only from the day it began, how far a visit
+// got and who came back only from the day the game began counting them, and
+// games under their older names (online and hot-seat apart) before hot seat
+// went, as the real account has them.
 
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
-import { spikesOf } from './insights.ts';
-import { DAILY_FROM, countsOf, daysBetween, modesOf, type PathCount } from './model.ts';
+import { sameSites, spikesOf } from './insights.ts';
+import { DAILY_FROM, RETURNS, countsOf, daysBetween, isoWeek, modesOf, type PathCount } from './model.ts';
 import type { Read } from './read.ts';
 import { GROUPS, type Group, type Slices } from './slices.ts';
 import { addDays, dayIn, midnight } from './zone.ts';
@@ -50,19 +53,28 @@ const ofThem = (n: number, p: number, rnd: () => number) => Array.from({ length:
 const HOURS = [3, 2, 1.4, 1, 0.8, 0.8, 1.2, 2, 2.8, 3.2, 3.6, 4, 4.6, 4.8, 4.6, 4.8, 5.4, 6.4, 7.6, 8.8, 9.4, 8.6, 6.6, 4.6];
 const HOUR_SUM = HOURS.reduce((n, v) => n + v, 0);
 
+/** Each mode's games for a visitor, how many play them, and (`hotseat`) the share once played on one device passed around. */
 const GAMES = [
-  { key: 'race-online', share: 0.15, sizes: [2, 3, 4, 5, 6, 8] },
-  { key: 'race-hotseat', share: 0.03, sizes: [2, 3, 4] },
-  { key: 'turns-online', share: 0.07, sizes: [2, 3, 4, 5] },
-  { key: 'turns-hotseat', share: 0.03, sizes: [2, 3] },
-  { key: 'delve-online', share: 0.06, sizes: [1, 2, 3, 4] },
-  { key: 'delve-hotseat', share: 0.04, sizes: [1, 2] },
+  { mode: 'race', share: 0.18, sizes: [2, 3, 4, 5, 6, 8], hotseat: 0.17 },
+  { mode: 'turns', share: 0.1, sizes: [2, 3, 4, 5], hotseat: 0.3 },
+  { mode: 'delve', share: 0.1, sizes: [1, 2, 3, 4], hotseat: 0.4 },
 ];
+/** Of Take turns' games since hot seat went, the share with players at the host's own screen. */
+const AT_ONE_SCREEN = 0.3;
 
 /** Now and then a post somewhere sends a day's visitors up: by how much (1 on an ordinary day). */
 const spikeOf = (day: string) => (stream(seedOf(`${day}/spike`))() < 0.06 ? 2.4 : 1);
-/** The day the made-up game began marking how far a visit got (count.ts countReach). */
-const REACH_FROM = '2026-10-04';
+/** The day the made-up game began marking how far a visit got, how long it stayed and who came back (count.ts countReach, "visit/…"). */
+const REACH_FROM = '2026-09-01';
+/** The day the made-up game dropped hot seat: its games were counted online and hot-seat apart before ("play/race-online"), by mode alone since. */
+const MODES_FROM = '2026-10-14';
+/** Of those coming back, how long since they last played: within a day, 2 to 7 days, 8 to 30, longer. */
+const BACK = [
+  ['back-1d', 0.42],
+  ['back-7d', 0.33],
+  ['back-30d', 0.16],
+  ['back-later', 0.09],
+] as const;
 
 /** One day's made-up counts, each path with its 24 hours (from the day's midnight in ZONE); `upTo`: the hours counted so far (today). */
 function dayCounts(day: string, upTo = 24): Map<string, number[]> {
@@ -85,29 +97,69 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
     const came = around(v, rnd);
     add('/', h, came);
     if (day >= REACH_FROM) {
-      const played = ofThem(came, 0.44, rnd);
+      // Loads of the page, reloads too: what the steps are a share of.
+      add('reach/page', h, came + ofThem(came, 0.15, rnd));
+      // Who came: with no save on the device, or back to one after so long
+      // (those who played less than 8 hours before say neither); and some
+      // from their home screen.
+      const fresh = ofThem(came, 0.55, rnd);
+      const back = ofThem(came - fresh, 0.78, rnd);
+      add('visit/new', h, fresh);
+      let left = back;
+      BACK.forEach(([key, share], i) => {
+        const n = i === BACK.length - 1 ? left : Math.min(left, ofThem(back, share, rnd));
+        add(`visit/${key}`, h, n);
+        left -= n;
+      });
+      add('visit/app', h, ofThem(came, 0.07, rnd));
+      // Those back to a save, by the week they first played: most of them lately.
+      for (let i = 0; i < back; i++) add(`cohort/${isoWeek(addDays(day, -7 * Math.floor(-Math.log(1 - rnd()) / 0.45)))}`, h, 1);
+      // How far a first visit got.
+      const firstIn = ofThem(fresh, 0.52, rnd);
+      const firstPlayed = ofThem(firstIn, 0.78, rnd);
+      add('new/lobby', h, firstIn);
+      add('new/played', h, firstPlayed);
+      add('new/finished', h, ofThem(firstPlayed, 0.74, rnd));
+      // How far they got.
+      const lobby = ofThem(came, 0.56, rnd);
+      const played = ofThem(lobby, 0.8, rnd);
+      const second = ofThem(played, 0.55, rnd);
+      add('reach/lobby', h, lobby);
       add('reach/played', h, played);
       add('reach/finished', h, ofThem(played, 0.8, rnd));
+      add('reach/games-2', h, second);
+      add('reach/games-5', h, ofThem(second, 0.28, rnd));
+      // How long they stayed, and what else they opened.
+      const two = ofThem(came, 0.64, rnd);
+      const ten = ofThem(two, 0.52, rnd);
+      add('reach/time-2m', h, two);
+      add('reach/time-10m', h, ten);
+      add('reach/time-30m', h, ofThem(ten, 0.42, rnd));
+      add('reach/codex', h, ofThem(came, 0.13, rnd));
+      add('reach/achievements', h, ofThem(came, 0.08, rnd));
+      add('sync/paired', h, around(v * 0.006, rnd));
+      if (rnd() < 0.02) add('error/script', h, 1);
     }
     for (const g of GAMES) {
       const started = around(v * g.share, rnd);
-      add(`play/${g.key}`, h, started);
       for (let i = 0; i < started; i++) {
+        const oneDevice = rnd() < g.hotseat;
+        const key = day >= MODES_FROM ? g.mode : `${g.mode}-${oneDevice ? 'hotseat' : 'online'}`;
+        add(`play/${key}`, h, 1);
+        if (day >= MODES_FROM && g.mode === 'turns' && rnd() < AT_ONE_SCREEN) add('screen/turns', h, 1);
         // Bigger parties are rarer.
         const size = g.sizes[Math.floor(rnd() ** 1.6 * g.sizes.length)];
-        add(`size/${g.key}-${size}p`, h, 1);
+        add(`size/${key}-${size}p`, h, 1);
         if (rnd() >= 0.78) continue;
-        add(`end/${g.key}`, h, 1);
+        add(`end/${key}`, h, 1);
         // Most runs end shallow, a few go far down.
         const depth = Math.floor(rnd() ** 2.2 * 6) * 10;
-        if (g.key.startsWith('delve')) add(`delve/depth-${depth}-${depth + 9}`, h, 1);
+        if (g.mode === 'delve') add(`delve/depth-${depth}-${depth + 9}`, h, 1);
       }
-      if (g.key.endsWith('online')) {
-        const invites = around(started * 0.9, rnd);
-        add('open/invite-link', h, invites);
-        add('join/invite-link', h, invites);
-        add('joined/invite-link', h, ofThem(invites, 0.9, rnd));
-      }
+      const invites = around(started * 0.75, rnd);
+      add('open/invite-link', h, invites);
+      add('join/invite-link', h, invites);
+      add('joined/invite-link', h, ofThem(invites, 0.9, rnd));
     }
     add('open/delve-link', h, around(v * 0.01, rnd));
     const codes = around(v * 0.03, rnd);
@@ -182,6 +234,15 @@ const REFS: [string, number][] = [
   ['https://discord.com', 0.05],
   ['https://www.twitch.tv', 0.03],
   ['https://poe2db.tw', 0.02],
+  // A tagged link's visit, its referrer as it came (insights.ts sameSites puts it with the rest).
+  ['www.reddit.com', 0.02],
+];
+/** The tags of links posted somewhere (poe2.quest/?ref=<tag>), and the share of visitors each brought. */
+const CAMPAIGNS: [string, number][] = [
+  ['discord', 0.045],
+  ['reddit-launch', 0.021],
+  ['forum-sig', 0.008],
+  ['newsletter', 0.003],
 ];
 /** A day's sites: the usual ones, and on a busy day the post behind it bringing the rest. */
 function dayRefs(day: string, visitors: number): Named[] {
@@ -203,7 +264,7 @@ export function demoRead(days: number, at = new Date()): Read {
   const now = countsOf(nowPaths, daysBetween(from, today), ZONE);
   const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE);
   return {
-    v: 5,
+    v: 6,
     span: days,
     from,
     to: today,
@@ -221,10 +282,12 @@ export function demoRead(days: number, at = new Date()): Read {
       ['Chrome OS', 0.01],
     ]),
     countries: split(visitors, COUNTRIES),
-    refs: split(visitors, REFS, false),
+    refs: sameSites(split(visitors, REFS, false)),
+    // A few links tagged with where they were posted.
+    campaigns: CAMPAIGNS.map(([name, share]) => ({ name, count: Math.round(visitors * share) })).filter((c) => c.count > 0),
     countriesBefore: split(before.visitors.total, COUNTRIES.map(([name, share]) => [name, name === 'Brazil' ? 0.015 : share])),
-    refsBefore: split(before.visitors.total, REFS.map(([name, share]) => [name, name === 'https://www.youtube.com' ? 0.14 : share]), false),
-    spikeRefs: Object.fromEntries(spikesOf(now.days, now.visitors.perDay).map((sp) => [sp.day, dayRefs(sp.day, sp.value)])),
+    refsBefore: sameSites(split(before.visitors.total, REFS.map(([name, share]) => [name, name === 'https://www.youtube.com' ? 0.14 : share]), false)),
+    spikeRefs: Object.fromEntries(spikesOf(now.days, now.visitors.perDay).map((sp) => [sp.day, sameSites(dayRefs(sp.day, sp.value))])),
     at: at.getTime(),
     complete: true,
   };
@@ -239,15 +302,16 @@ export function demoUpdate(days: number, at = new Date()): Read {
 /** How each country and system plays, against everyone: more of one mode, fewer answers, more joins that fail. */
 const TILTS: Record<string, Partial<Record<Group | 'success', number>>> = {
   'United States': { race: 1.3, turns: 0.8, daily: 0.9 },
-  Germany: { delve: 1.7, race: 0.8, daily: 1.25 },
+  Germany: { delve: 1.7, race: 0.8, daily: 1.25, back: 1.35, new: 0.8 },
   'United Kingdom': { turns: 1.3 },
   Poland: { delve: 1.4, join: 1.3 },
-  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2, played: 0.75 },
+  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2, played: 0.75, back: 0.6, new: 1.2 },
   France: { race: 0.6, daily: 1.4 },
   Russia: { race: 1.4, success: 0.85, failed: 1.6 },
   'Korea, Republic of': { race: 1.7, daily: 1.5, played: 1.3 },
-  Android: { daily: 1.5, race: 0.7, success: 0.9, failed: 1.3 },
-  iOS: { daily: 1.6, race: 0.6, delve: 1.2 },
+  Windows: { app: 0.3 },
+  Android: { daily: 1.5, race: 0.7, success: 0.9, failed: 1.3, app: 3.2, back: 1.25, new: 0.85 },
+  iOS: { daily: 1.6, race: 0.6, delve: 1.2, app: 2.6 },
   Linux: { delve: 1.4, join: 1.4 },
   macOS: { turns: 1.3 },
 };
@@ -256,16 +320,20 @@ const TILTS: Record<string, Partial<Record<Group | 'success', number>>> = {
 export function demoSlices(read: Read): Slices {
   const c = read.now;
   const played = new Map(modesOf(c.games.rows).map((m) => [m.mode, m.started]));
+  const sum = (vs: number[]) => vs.reduce((a, b) => a + b, 0);
   const total: Record<Group, number> = {
     visit: c.visitors.total,
-    played: c.reach.playedPerDay.reduce((a, b) => a + b, 0),
+    new: sum(c.visits.new),
+    back: RETURNS.reduce((n, r) => n + sum(c.visits[r]), 0),
+    app: sum(c.visits.app),
+    played: sum(c.reach.played),
     turns: played.get('turns') ?? 0,
     race: played.get('race') ?? 0,
     delve: played.get('delve') ?? 0,
     daily: c.daily.right + c.daily.wrong,
     join: c.joins.reduce((n, j) => n + j.tried, 0),
     joined: c.joins.reduce((n, j) => n + j.joined, 0),
-    failed: c.failures.reduce((n, f) => n + f.count, 0),
+    failed: c.failures.reduce((n, f) => n + (f.script ? 0 : f.count), 0),
   };
   const spread = (list: Named[]): Partial<Record<Group, Named[]>> => {
     const all = list.reduce((n, x) => n + x.count, 0) || 1;
@@ -284,5 +352,5 @@ export function demoSlices(read: Read): Slices {
     out.joined = (out.join ?? []).map((x) => ({ name: x.name, count: Math.round(x.count * Math.min(1, success * (TILTS[x.name]?.success ?? 1))) })).filter((x) => x.count > 0);
     return out;
   };
-  return { v: 2, span: read.span, from: read.from, at: read.at, locations: spread(read.countries), systems: spread(read.systems) };
+  return { v: 3, span: read.span, from: read.from, at: read.at, locations: spread(read.countries), systems: spread(read.systems) };
 }

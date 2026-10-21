@@ -17,11 +17,9 @@ export interface PathCount {
 }
 
 export type Mode = 'turns' | 'race' | 'delve';
-export type Where = 'online' | 'hotseat';
 export const MODES: readonly Mode[] = ['turns', 'race', 'delve'];
-export const WHERES: readonly Where[] = ['online', 'hotseat'];
 /**
- * How many played a game: exactly (`from` = `to`, "size/race-online-5p"), or,
+ * How many played a game: exactly (`from` = `to`, "size/race-5p"), or,
  * counted before sizes were exact, a range ("size/race-online-5-8p").
  */
 export interface PartySize {
@@ -41,8 +39,114 @@ export type Via = 'invite-link' | 'code' | 'open-rooms';
 export const VIAS: readonly Via[] = ['invite-link', 'code', 'open-rooms'];
 export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', code: 'Room code', 'open-rooms': 'Open rooms' };
 
-/** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room. */
-export const FAILURES: Record<string, { label: string; host?: true }> = {
+/**
+ * The steps a visit reached (count.ts countReach, "reach/…"), each counted
+ * once a visitor like visits, only on a device with a seat in the game (not
+ * a spectator's): loaded the page (every load that counts, reloads too: what
+ * the others are a share of), entered a game (a lobby, or straight into a
+ * Delve run), started one, saw one decided, started a second and a fifth in
+ * one page load, had the game on screen 2, 10 and 30 minutes in one page
+ * load, opened the codex, the achievements.
+ */
+export const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements'] as const;
+export type Reach = (typeof REACHES)[number];
+/** The first steps again, counted only in a page load whose visit found no save on the device ("new/…"): how far a first visit gets. */
+export const FIRSTS = ['lobby', 'played', 'finished'] as const;
+export type First = (typeof FIRSTS)[number];
+
+/**
+ * How long since a visitor coming back last played on that device
+ * ("visit/back-…"): 8 to 24 hours, 2 to 7 days, 8 to 30, longer. Played less
+ * than 8 hours ago, a visit says nothing (GoatCounter's visit is still open).
+ */
+export const RETURNS = ['back-1d', 'back-7d', 'back-30d', 'back-later'] as const;
+export type Return = (typeof RETURNS)[number];
+export const RETURN_NAMES: Record<Return, string> = {
+  'back-1d': 'Back after 8 to 24 hours',
+  'back-7d': 'Back after 2 to 7 days',
+  'back-30d': 'Back after 8 to 30 days',
+  'back-later': 'Back after longer',
+};
+/**
+ * What a visit came with ("visit/…"), once a visitor like visits: no save on
+ * the device ("new": a first visit, a private window, or a save the browser
+ * cleared, as Safari does after about a week away), back after so long, or
+ * opened as the installed app.
+ */
+export const VISIT_KINDS = ['new', ...RETURNS, 'app'] as const;
+export type VisitKind = (typeof VISIT_KINDS)[number];
+
+/** A day's ISO week ("2026-W43"). */
+export function isoWeek(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  const thursday = new Date(d.getTime() + (3 - ((d.getUTCDay() + 6) % 7)) * 86_400_000);
+  const year = thursday.getUTCFullYear();
+  const week = 1 + Math.round((thursday.getTime() - firstThursday(year)) / (7 * 86_400_000));
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+/** Noon of the year's first ISO Thursday (the one in the week of January 4th). */
+const firstThursday = (year: number) => {
+  const jan4 = Date.UTC(year, 0, 4, 12);
+  return jan4 + (3 - ((new Date(jan4).getUTCDay() + 6) % 7)) * 86_400_000;
+};
+/** The Monday an ISO week ("2026-W43") begins (YYYY-MM-DD), or null for a name that isn't one. */
+export function weekMonday(week: string): string | null {
+  const m = /^(\d{4})-W(\d{2})$/.exec(week);
+  if (!m || Number(m[2]) < 1 || Number(m[2]) > 53) return null;
+  return new Date(firstThursday(Number(m[1])) + ((Number(m[2]) - 1) * 7 - 3) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Those who first played in one week ("cohort/2026-W43", sent with a visit
+ * from a device whose save began that week): how many first played then
+ * (their "new/played", where the period holds that whole week), and their
+ * visits in each week since, the first week its own (index 0).
+ */
+export interface Cohort {
+  week: string;
+  monday: string;
+  started: number | null;
+  /** Each week from the first on, up to the period's last; null for a week before the period. */
+  weeks: (number | null)[];
+}
+
+/**
+ * A game's path under the name it has now: games were once counted online
+ * and hot-seat apart ("play/race-online", "size/delve-hotseat-2p",
+ * "end/turns-online"), and are now by mode alone ("play/race").
+ */
+export const currentName = (path: string) => path.replace(/^(play|end|size)\/(turns|race|delve)-(?:online|hotseat)(?=$|-)/, '$1/$2');
+
+/** Two paths' hours added up: only where both have them, or the one without has nothing to add. */
+function hoursTogether(a: PathCount, b: PathCount): Pick<PathCount, 'hours'> {
+  if (a.hours && b.hours) {
+    const hours: Record<string, number[]> = { ...a.hours };
+    for (const [day, hs] of Object.entries(b.hours)) hours[day] = hs.map((n, h) => n + (hours[day]?.[h] ?? 0));
+    return { hours };
+  }
+  const kept = !a.hours ? (a.count ? null : b) : b.count ? null : a;
+  return kept?.hours ? { hours: kept.hours } : {};
+}
+
+/** Paths counted under an older name (currentName) added to the one they have now, so a period across the change reads as one. */
+export function underNamesNow(paths: PathCount[]): PathCount[] {
+  const out = new Map<string, PathCount>();
+  for (const p of paths) {
+    const name = currentName(p.path);
+    const had = out.get(name);
+    if (!had) {
+      out.set(name, { ...p, path: name });
+      continue;
+    }
+    const days = { ...had.days };
+    for (const [d, n] of Object.entries(p.days)) days[d] = (days[d] ?? 0) + n;
+    out.set(name, { path: name, event: had.event, count: had.count + p.count, days, ...hoursTogether(had, p) });
+  }
+  return [...out.values()];
+}
+
+/** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts. */
+export const FAILURES: Record<string, { label: string; host?: true; script?: true }> = {
   'join-no-answer': { label: "The room didn't answer" },
   'join-no-such-room': { label: 'No room with that code' },
   'join-refused': { label: 'Turned down: full, locked or a name' },
@@ -52,14 +156,18 @@ export const FAILURES: Record<string, { label: string; host?: true }> = {
   'host-no-connection': { label: "Couldn't reach the matchmaking server", host: true },
   'host-room-not-opened': { label: "The room couldn't be opened", host: true },
   'host-room-not-reopened': { label: "The room couldn't be reopened after a reload", host: true },
+  script: { label: "An error in the game's own scripts", script: true },
 };
 
 export interface ModeRow {
   mode: Mode;
-  where: Where;
   started: number;
   finished: number;
+  /** Of those started, the games with players seated at the host's own screen ("screen/turns"), hot-seat games before that was counted with them. */
+  screen: number;
   sizes: (PartySize & { count: number })[];
+  /** The names its starts were counted under in the period, older ones too (currentName): what GoatCounter is asked for them by. */
+  paths: string[];
 }
 
 export interface Counts {
@@ -74,11 +182,19 @@ export interface Counts {
   joins: { via: Via; tried: number; joined: number }[];
   /** Tries to join, and those let in, a day, every way in together. */
   joinsPerDay: { tried: number[]; joined: number[] };
-  failures: { key: string; label: string; host: boolean; count: number }[];
-  /** Every failure a day, all causes together. */
+  failures: { key: string; label: string; host: boolean; script: boolean; count: number }[];
+  /** The failures joining a room or opening one a day, every cause together (not the scripts' errors). */
   failuresPerDay: number[];
-  /** The steps visits reached a day, counted once a visitor like visits (count.ts countReach): played a game, finished one. */
-  reach: { playedPerDay: number[]; finishedPerDay: number[] };
+  /** The steps visits reached, a day each, counted once a visitor like visits (count.ts countReach). */
+  reach: Record<Reach, number[]>;
+  /** What visits came with, a day each (new, back after so long, the installed app), counted once a visitor like visits. */
+  visits: Record<VisitKind, number[]>;
+  /** The first steps in a visit that found no save, a day each ("new/…"). */
+  firsts: Record<First, number[]>;
+  /** Those who first played in a week, and their visits each week since, oldest week first. */
+  cohorts: Cohort[];
+  /** Devices paired for sync. */
+  sync: { paired: number };
   /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours. */
   week: { visitors: number[][] | null; games: number[][] | null };
 }
@@ -139,7 +255,8 @@ export function utcPerDay(p: PathCount | undefined, days: string[], zone?: strin
 }
 
 /** `zone`: the account's time zone, which GoatCounter cuts its days in; Today's unique is counted by UTC days with it (utcPerDay). */
-export function countsOf(paths: PathCount[], days: string[], zone?: string): Counts {
+export function countsOf(counted: PathCount[], days: string[], zone?: string): Counts {
+  const paths = underNamesNow(counted);
   const byPath = new Map(paths.map((p) => [p.path, p]));
   const count = (path: string) => byPath.get(path)?.count ?? 0;
   const perDay = (match: (path: string) => boolean) => {
@@ -148,20 +265,25 @@ export function countsOf(paths: PathCount[], days: string[], zone?: string): Cou
     return out;
   };
 
-  const played = new Set(MODES.flatMap((mode) => WHERES.map((where) => `play/${mode}-${where}`)));
+  const played = new Set(MODES.map((mode) => `play/${mode}`));
+  // Games once played hot-seat (`play/<mode>-hotseat`) were all at one screen: counted as such on the days before "screen/…" was.
+  const screens = days.findIndex((d) => paths.some((p) => p.path.startsWith('screen/') && (p.days[d] ?? 0) > 0));
+  const hotSeat = (mode: Mode) => {
+    const old = counted.find((p) => p.path === `play/${mode}-hotseat`);
+    return old ? days.slice(0, screens < 0 ? days.length : screens).reduce((n, d) => n + (old.days[d] ?? 0), 0) : 0;
+  };
   const rows: ModeRow[] = [];
-  for (const mode of MODES)
-    for (const where of WHERES) {
-      const key = `${mode}-${where}`;
-      const sizes: ModeRow['sizes'] = [];
-      for (const p of paths) {
-        if (!p.path.startsWith(`size/${key}-`) || p.count <= 0) continue;
-        const m = /^(\d+)(?:-(\d+))?p$/.exec(p.path.slice(`size/${key}-`.length));
-        if (m) sizes.push({ from: Number(m[1]), to: Number(m[2] ?? m[1]), count: p.count });
-      }
-      const row = { mode, where, started: count(`play/${key}`), finished: count(`end/${key}`), sizes: sizes.sort(bySize) };
-      if (row.started || row.finished) rows.push(row);
+  for (const mode of MODES) {
+    const sizes: ModeRow['sizes'] = [];
+    for (const p of paths) {
+      if (!p.path.startsWith(`size/${mode}-`) || p.count <= 0) continue;
+      const m = /^(\d+)(?:-(\d+))?p$/.exec(p.path.slice(`size/${mode}-`.length));
+      if (m) sizes.push({ from: Number(m[1]), to: Number(m[2] ?? m[1]), count: p.count });
     }
+    const names = counted.filter((p) => p.count > 0 && currentName(p.path) === `play/${mode}`).map((p) => p.path);
+    const row = { mode, started: count(`play/${mode}`), finished: count(`end/${mode}`), screen: count(`screen/${mode}`) + hotSeat(mode), sizes: sizes.sort(bySize), paths: names };
+    if (row.started || row.finished) rows.push(row);
+  }
 
   const ranges = new Map<number, number>();
   for (const p of paths) {
@@ -176,7 +298,7 @@ export function countsOf(paths: PathCount[], days: string[], zone?: string): Cou
     .map((p) => {
       const key = p.path.slice('error/'.length);
       const known = FAILURES[key];
-      return { key, label: known?.label ?? key, host: !!known?.host || key.startsWith('host-'), count: p.count };
+      return { key, label: known?.label ?? key, host: !!known?.host || key.startsWith('host-'), script: !!known?.script, count: p.count };
     })
     .sort((a, b) => b.count - a.count);
 
@@ -186,7 +308,7 @@ export function countsOf(paths: PathCount[], days: string[], zone?: string): Cou
     games: {
       started: rows.reduce((n, r) => n + r.started, 0),
       finished: rows.reduce((n, r) => n + r.finished, 0),
-      // The modes and places it knows, as started and finished are: a path from elsewhere would make them disagree.
+      // The modes it knows, as started and finished are: a path from elsewhere would make them disagree.
       perDay: perDay((p) => played.has(p)),
       finishedPerDay: perDay((p) => p.startsWith('end/') && played.has(`play/${p.slice('end/'.length)}`)),
       rows,
@@ -205,13 +327,45 @@ export function countsOf(paths: PathCount[], days: string[], zone?: string): Cou
       joined: perDay((p) => VIAS.some((via) => p === `joined/${via}`)),
     },
     failures,
-    failuresPerDay: perDay((p) => p.startsWith('error/')),
-    reach: { playedPerDay: perDay((p) => p === 'reach/played'), finishedPerDay: perDay((p) => p === 'reach/finished') },
+    failuresPerDay: perDay((p) => p.startsWith('error/') && !FAILURES[p.slice('error/'.length)]?.script),
+    reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
+    visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,
+    firsts: Object.fromEntries(FIRSTS.map((s) => [s, perDay((p) => p === `new/${s}`)])) as Record<First, number[]>,
+    cohorts: cohortsOf(paths, days, perDay((p) => p === 'new/played'), perDay((p) => p === 'visit/new')),
+    sync: { paired: count('sync/paired') },
     week: {
       visitors: weekHours(paths.filter((p) => p.path === '/'), days),
       games: weekHours(paths.filter((p) => played.has(p.path)), days),
     },
   };
+}
+
+/**
+ * The weeks' cohorts counted over `days` ("cohort/…"), oldest first;
+ * `started`: those who first played each day ("new/played"), counted from
+ * the first day of `fresh` ("visit/new", which came with it).
+ */
+function cohortsOf(paths: PathCount[], days: string[], started: number[], fresh: number[]): Cohort[] {
+  const counting = fresh.findIndex((n) => n > 0);
+  const out: Cohort[] = [];
+  for (const p of paths) {
+    const week = p.path.startsWith('cohort/') ? p.path.slice('cohort/'.length) : '';
+    const monday = weekMonday(week);
+    if (!monday || p.count <= 0) continue;
+    const from = Date.parse(`${monday}T12:00:00Z`);
+    const weekOf = (d: string) => Math.floor((Date.parse(`${d}T12:00:00Z`) - from) / (7 * 86_400_000));
+    // Up to the period's last week; a week the period holds none of, null.
+    const weeks: (number | null)[] = Array.from({ length: Math.max(0, weekOf(days[days.length - 1]) + 1) }, () => null);
+    for (const d of days) {
+      const k = weekOf(d);
+      if (k >= 0) weeks[k] = (weeks[k] ?? 0) + (p.days[d] ?? 0);
+    }
+    // Only a week the period holds from its Monday, counted from then: one cut short would look small, its cells far over 100%.
+    const at = days.indexOf(monday);
+    const sum = at < 0 || counting < 0 || counting > at ? null : started.slice(at, at + 7).reduce((n, v) => n + v, 0);
+    out.push({ week, monday, started: sum, weeks });
+  }
+  return out.sort((a, b) => a.monday.localeCompare(b.monday));
 }
 
 /**
@@ -247,30 +401,22 @@ export function seatsOf(rows: ModeRow[]): { seats: number; games: number } {
   return { seats: Math.round(seats), games };
 }
 
-/** A mode over both places it's played: games started and finished, and where. */
+/** A mode's games: started, finished, and those with players at the host's own screen. Every mode, played or not. */
 export interface ModeSummary {
   mode: Mode;
   started: number;
   finished: number;
-  online: number;
-  hotseat: number;
+  screen: number;
 }
 
 export function modesOf(rows: ModeRow[]): ModeSummary[] {
   return MODES.map((mode) => {
-    const of = rows.filter((r) => r.mode === mode);
-    const sum = (f: (r: ModeRow) => number) => of.reduce((n, r) => n + f(r), 0);
-    return {
-      mode,
-      started: sum((r) => r.started),
-      finished: sum((r) => r.finished),
-      online: sum((r) => (r.where === 'online' ? r.started : 0)),
-      hotseat: sum((r) => (r.where === 'hotseat' ? r.started : 0)),
-    };
+    const r = rows.find((x) => x.mode === mode);
+    return { mode, started: r?.started ?? 0, finished: r?.finished ?? 0, screen: r?.screen ?? 0 };
   });
 }
 
-/** One size of party (or an older range of them) and how many games each mode had of it, played anywhere. */
+/** One size of party (or an older range of them) and how many games each mode had of it. */
 export interface SizeRow extends PartySize {
   modes: Record<Mode, number>;
   total: number;

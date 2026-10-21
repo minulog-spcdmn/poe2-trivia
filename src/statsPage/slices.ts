@@ -1,6 +1,6 @@
 // Player groups (stats.html#groups): how the visitors from a country, or on
-// a system or a kind of device, play, set against everyone, each mode's
-// games among them too. GoatCounter keeps no visit together with its events,
+// a system or a kind of device, play and come back, set against everyone,
+// each mode's games among them too. GoatCounter keeps no visit together with its events,
 // but it breaks any set of paths down by country and by system: so each thing
 // people do (a group of paths, GROUPS) is read once for each, and a
 // country's row across them is that country's visitors. It never breaks a
@@ -8,12 +8,15 @@
 // together. Pure, so the tests can feed it.
 
 import type { Named } from './api.ts';
-import { MODES, MODE_NAMES, deviceOf, type Counts, type Mode } from './model.ts';
+import { MODES, MODE_NAMES, RETURNS, deviceOf, type Counts, type Mode } from './model.ts';
 
 /** What people do, each a set of the paths count.ts sends. */
-export type Group = 'visit' | 'played' | Mode | 'daily' | 'join' | 'joined' | 'failed';
+export type Group = 'visit' | 'new' | 'back' | 'app' | 'played' | Mode | 'daily' | 'join' | 'joined' | 'failed';
 export const GROUPS: readonly { group: Group; name: string }[] = [
   { group: 'visit', name: 'Opened the game' },
+  { group: 'new', name: 'New to the game' },
+  { group: 'back', name: 'Came back' },
+  { group: 'app', name: 'Opened the installed app' },
   { group: 'played', name: 'Played a game' },
   { group: 'turns', name: 'Played Take turns' },
   { group: 'race', name: 'Played Race' },
@@ -28,17 +31,24 @@ export const groupName = (g: Group) => GROUPS.find((x) => x.group === g)?.name ?
 /** Each group's paths that were counted in the period (asking for one never counted would be turned down). */
 export function groupPaths(c: Counts): Record<Group, string[]> {
   const out = Object.fromEntries(GROUPS.map((g) => [g.group, [] as string[]])) as Record<Group, string[]>;
+  const any = (vs: number[]) => vs.some((n) => n > 0);
   if (c.visitors.total) out.visit.push('/');
+  // New or back, and the installed app: sent with a visit, once a visitor like it.
+  if (any(c.visits.new)) out.new.push('visit/new');
+  for (const r of RETURNS) if (any(c.visits[r])) out.back.push(`visit/${r}`);
+  if (any(c.visits.app)) out.app.push('visit/app');
   // Counted on every device in a game, guests' too, once a visit (count.ts countReach).
-  if (c.reach.playedPerDay.some((n) => n > 0)) out.played.push('reach/played');
-  for (const r of c.games.rows) if (r.started) out[r.mode].push(`play/${r.mode}-${r.where}`);
+  if (any(c.reach.played)) out.played.push('reach/played');
+  // Under every name its games were counted by in the period (model.ts currentName).
+  for (const r of c.games.rows) if (r.started) out[r.mode].push(...r.paths);
   if (c.daily.right) out.daily.push('daily/right');
   if (c.daily.wrong) out.daily.push('daily/wrong');
   for (const j of c.joins) {
     if (j.tried) out.join.push(`join/${j.via}`);
     if (j.joined) out.joined.push(`joined/${j.via}`);
   }
-  for (const f of c.failures) out.failed.push(`error/${f.key}`);
+  // Joining's and opening a room's: the scripts' errors aren't met for being somewhere.
+  for (const f of c.failures) if (!f.script) out.failed.push(`error/${f.key}`);
   return out;
 }
 
@@ -47,8 +57,8 @@ export type Dim = 'locations' | 'systems';
 
 /** A period's groups, each broken down by country and by system. */
 export interface Slices {
-  /** 2: with those who played a game. */
-  v: 2;
+  /** 3: with those new and back, and in the installed app. */
+  v: 3;
   span: number;
   /** The period's first day: slices of another (read the day before) are read again. */
   from: string;
@@ -142,11 +152,17 @@ export interface Profile {
   /** Failures they met (joining, or opening a room) for each 100 visitors. */
   failures: number | null;
   failed: number;
+  /** Of their visits that found a save on the device or none, the share that found one; of their visitors, the share who opened the installed app. Null where it wasn't counted. */
+  back: number | null;
+  app: number | null;
+  /** Their visits that found a save or none (a visit within 8 hours of the last play says neither). */
+  told: number;
 }
 
 /** `played`: whether those who played a game were counted (they weren't before count.ts counted them). */
 export function profileOf(n: Record<Group, number>, played = true): Profile {
   const games = MODES.reduce((t, m) => t + n[m], 0);
+  const told = n.new + n.back;
   return {
     visitors: n.visit,
     played: played && n.visit ? Math.min(100, (100 * n.played) / n.visit) : null,
@@ -159,6 +175,11 @@ export function profileOf(n: Record<Group, number>, played = true): Profile {
     tried: n.join,
     failures: n.visit ? (100 * n.failed) / n.visit : null,
     failed: n.failed,
+    // Of those told new or back, not of every visitor: the period may begin before visits were told apart.
+    back: told ? (100 * n.back) / told : null,
+    // (Sent with every visit from it: of every visitor in the period, so a share only where visits were told apart from its first day, insights.ts toldFromStart.)
+    app: told && n.visit ? Math.min(100, (100 * n.app) / n.visit) : null,
+    told,
   };
 }
 
@@ -246,7 +267,7 @@ export function lookedAt(s: Slices): SegmentRow[] {
 /** Something a group does unlike everyone, said in a line (GroupsView words it). */
 export interface Standout {
   who: Who;
-  what: 'mode' | 'played' | 'games' | 'daily' | 'joins' | 'failures';
+  what: 'mode' | 'played' | 'games' | 'daily' | 'back' | 'joins' | 'failures';
   mode?: Mode;
   /** The group's figure and everyone's: a mode's share of games, a percent of visitors, games for 100 visitors, a percent of joins, failures for 100 visitors. */
   mine: number;
@@ -260,7 +281,8 @@ export interface Standout {
 /**
  * What stands out among the groups, most first: a mode far more of their
  * games, more or fewer playing at all, many more or fewer games started,
- * Today's unique answered more or less, joins that fail more, far more
+ * Today's unique answered more or less, more or fewer coming back (of those
+ * told new or back), joins that fail more, far more
  * failures met. Only groups big enough that a handful of players can't make it up
  * (`min` visitors, and enough games or tries behind the figure).
  */
@@ -288,6 +310,10 @@ export function standouts(s: Slices, top = 6, min = 30): Standout[] {
     if (p.daily !== null && all.daily && p.daily > 0) {
       const r = p.daily / all.daily;
       if (r >= 1.25 || r <= 0.8) out.push({ who, what: 'daily', mine: p.daily, all: all.daily, tone: r > 1 ? 'up' : 'down', score: weigh(p.daily, all.daily, p.visitors) });
+    }
+    if (p.back !== null && all.back && p.back > 0 && p.told >= floor) {
+      const r = p.back / all.back;
+      if (r >= 1.2 || r <= 0.83) out.push({ who, what: 'back', mine: p.back, all: all.back, tone: r > 1 ? 'up' : 'down', score: weigh(p.back, all.back, p.told) });
     }
     if (p.joins !== null && all.joins !== null && p.tried >= 20 && Math.abs(p.joins - all.joins) >= 8)
       out.push({ who, what: 'joins', mine: p.joins, all: all.joins, tone: p.joins > all.joins ? 'up' : 'down', score: weigh(Math.max(1, 100 - p.joins), Math.max(1, 100 - all.joins), p.tried) });

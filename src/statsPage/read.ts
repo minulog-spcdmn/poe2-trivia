@@ -7,7 +7,7 @@ import type { Counts } from './model';
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 5;
+  v: 6;
   span: number;
   from: string;
   to: string;
@@ -20,6 +20,8 @@ export interface Read {
   systems: Named[];
   countries: Named[];
   refs: Named[];
+  /** Visitors by the tag of the link they came by (poe2.quest/?ref=<tag>, GoatCounter's campaigns); untagged visits aren't in it. */
+  campaigns: Named[];
   /** The period before's, to see who brought more or fewer (insights.ts moversOf). */
   countriesBefore: Named[];
   refsBefore: Named[];

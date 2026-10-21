@@ -20,7 +20,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
-  import { spikesOf } from './insights';
+  import { sameSites, spikesOf } from './insights';
   import { shortDay } from './chart';
   import { keptChanges } from './changes';
   import { DAY_REFS_KEY, dayRefsOf, dayRefsToKeep } from './dayRefs';
@@ -125,7 +125,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 5 || r.span !== days) return null;
+      if (r?.v !== 6 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -180,7 +180,7 @@
     loading = true;
     failed = '';
     progress = 0;
-    const steps = 8;
+    const steps = 9;
     let done = 0;
     const step = <T,>(p: Promise<T>) =>
       p.then((v) => {
@@ -202,12 +202,13 @@
       const toBefore = addDays(today, -days);
       const now: Span = { start: midnight(tz, from), end: at };
       const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + (at.getTime() - midnight(tz, today).getTime())) };
-      const [n, b, systems, countries, refs, countriesBefore, refsBefore] = await Promise.all([
+      const [n, b, systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
         step(pathCounts(k, now, signal)),
         step(pathCounts(k, before, signal)),
         step(visitorsBy(k, now, 'systems', signal)),
         step(visitorsBy(k, now, 'locations', signal)),
         step(visitorsBy(k, now, 'toprefs', signal)),
+        step(visitorsBy(k, now, 'campaigns', signal)),
         step(visitorsBy(k, before, 'locations', signal)),
         step(visitorsBy(k, before, 'toprefs', signal)),
       ]);
@@ -234,7 +235,7 @@
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
-        v: 5,
+        v: 6,
         span: days,
         from,
         to: today,
@@ -245,10 +246,12 @@
         before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz),
         systems,
         countries,
-        refs,
+        // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
+        refs: sameSites(refs),
+        campaigns,
         countriesBefore,
-        refsBefore,
-        spikeRefs,
+        refsBefore: sameSites(refsBefore),
+        spikeRefs: Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)])),
         at: at.getTime(),
         complete: n.complete && b.complete,
       };
@@ -284,7 +287,7 @@
   const keptSlices = (r: Read): Slices | null => {
     try {
       const s = JSON.parse(readStored(slicesKey(r.span), 'session') ?? 'null') as Slices | null;
-      return s?.v === 2 && s.span === r.span && s.from === r.from ? s : null;
+      return s?.v === 3 && s.span === r.span && s.from === r.from ? s : null;
     } catch {
       return null;
     }
@@ -308,7 +311,7 @@
     slicing = 0.02;
     slicesFailed = '';
     try {
-      const out: Slices = { v: 2, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
+      const out: Slices = { v: 3, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
       const within: Span = { start: midnight(r.zone, r.from), end: new Date() };
       await Promise.all(
         calls.map((c) =>

@@ -30,6 +30,7 @@ import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
 import { PEER_OPTIONS, loadPeerJs } from '../peer.ts';
 import { announceStored, onStoredHere, storeKey } from '../storage.ts';
+import { countEvent } from '../count.ts';
 import { parseCodex, parsePractice } from '../codex.ts';
 import { parseRecords } from '../delveRecord.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
@@ -97,6 +98,8 @@ export function syncLine(): string {
 
 export const sync = new SyncState();
 
+/** This page counted the device joining a group (sync/paired). */
+let pairCounted = false;
 let lapseTimer: ReturnType<typeof setTimeout> | null = null;
 /** When the unmet code held was made or taken (null: none held). */
 let waitingSince: number | null = null;
@@ -426,6 +429,11 @@ class Run {
         if (link.device === this.me) return;
         // Bringing a new device home: both go to this one's code once they've given each other what they have.
         const home = homeOnMeeting(sync, d);
+        // A device in no group yet joining one (two at a first pairing), counted once as it first meets another: not one already synced bringing another home.
+        if (!sync.met && !sync.home && !pairCounted) {
+          pairCounted = true;
+          countEvent('sync/paired');
+        }
         if (!home) this.met();
         this.report();
         await this.give(link);

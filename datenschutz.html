@@ -135,12 +135,22 @@
         den Dienst GoatCounter (betrieben von Martin Tournoij, Irland; Server der Hetzner Online GmbH in Deutschland und
         Finnland). Beim Aufruf der Startseite sendet Ihr Browser eine Anfrage an poe2quest.goatcounter.com mit der
         aufgerufenen Seite (ohne Raumcode oder andere Angaben aus der Adresse), dem Seitentitel und der Website, von der
-        Sie kommen (Referrer; nur ihr Name, etwa „reddit.com“, ohne den Rest ihrer Adresse). Außerdem werden einige
-        Spielereignisse gezählt: Start und Ende eines Spiels (auf jedem beteiligten Gerät, dass es dabei war; Spielmodus,
-        an einem Gerät oder online, Zahl der Mitspielenden), bei Delve der Tiefenbereich, in dem ein Lauf endete
-        (etwa „20 bis 29“), ob die tägliche Frage richtig oder falsch beantwortet wurde, das Öffnen eines Einladungs-
-        oder Delve-Links, der Weg, auf dem Sie einem Raum beitreten (Code, Einladungslink oder Liste offener Räume),
-        und ob das gelingt, sowie Verbindungsfehler (etwa „Raum nicht erreichbar“).
+        Sie kommen (Referrer; nur ihr Name, etwa „reddit.com“, ohne den Rest ihrer Adresse). Kommen Sie über einen
+        gekennzeichneten Link (etwa poe2.quest/?ref=reddit), wird dessen Kennzeichen als Kampagne mitgesendet und danach
+        aus der Adresse entfernt. Mit dem Besuch wird außerdem gezählt, ob das Spiel als App vom Startbildschirm geöffnet
+        wurde, ob auf diesem Gerät schon einmal gespielt wurde, wie lange das ungefähr her ist (etwa „vor 2 bis 7 Tagen“)
+        und in welcher Kalenderwoche hier zum ersten Mal gespielt wurde. Dafür liest das Spiel seinen eigenen Spielstand
+        in Ihrem Browser aus (den Codex; § 25 TDDDG), speichert dafür nichts zusätzlich und sendet nur diese groben
+        Angaben; ist die Zählung abgeschaltet oder sendet Ihr Browser das Signal „Global Privacy Control“, wird nichts
+        gelesen. Außerdem werden einige Schritte und Spielereignisse gezählt: ob ein Spiel betreten, begonnen und beendet
+        wurde (bei einem Besuch ohne bisherigen Spielstand diese drei noch einmal eigens), das zweite und fünfte Spiel
+        eines Besuchs, wie lange auf der Seite gespielt wurde (ab 2, 10 und 30 Minuten), das Öffnen des Codex und der
+        Errungenschaften, Start und Ende eines Spiels auf dem Gerät, das es leitet (Spielmodus, Zahl der Mitspielenden,
+        ob welche an einem Bildschirm sitzen), bei Delve der Tiefenbereich, in dem ein Lauf endete (etwa „20 bis 29“),
+        ob die tägliche Frage richtig oder falsch beantwortet wurde, das Öffnen eines Einladungs- oder Delve-Links, der
+        Weg, auf dem Sie einem Raum beitreten (Code, Einladungslink oder Liste offener Räume), und ob das gelingt, das
+        Koppeln eines Geräts, Verbindungsfehler (etwa „Raum nicht erreichbar“) und dass ein Programmfehler auftrat
+        (ohne Inhalt).
         Spielnamen, Antworten, Raumcodes und die Gerätekennung werden nicht übermittelt.
       </p>
       <p>
@@ -245,10 +255,16 @@
           </li>
           <li>
             <strong>Visitor counts:</strong> GoatCounter (Martin Tournoij, Ireland; servers in Germany and Finland) counts
-            visits to the start page (the page, its title and the name of the referring site, without the rest of its address) and a few game events: a game starting and
-            ending (on each device in it, that it took part; its mode, on one device or online, how many play), the depth range a Delve run ended in, whether
-            the daily unique was answered right, an invite or Delve link opened, how you join a room (code, invite link
-            or open rooms list) and whether it works, and connection failures. No names, answers, room codes or device tokens are sent. It works out your country, browser and system
+            visits to the start page (the page, its title and the name of the referring site, without the rest of its address; a tagged link's tag, such as
+            poe2.quest/?ref=reddit, as its campaign, then taken out of the address), with whether the game was opened as a home-screen app, whether it was
+            played on this device before, roughly how long ago (such as "2 to 7 days") and the calendar week it was first played here. For that the game reads
+            its own save in your browser (the codex; § 25 TDDDG), stores nothing more for it and sends only those rough answers; with counting switched off or
+            Global Privacy Control sent, nothing is read. It also counts a few steps and game events: entering, starting and finishing a game (for a visit
+            with no save yet, those three again apart), a visit's second and fifth game, how long the page was played on (from 2, 10 and 30 minutes),
+            opening the codex and the achievements, a game starting and ending on the device running it (its mode, how many play, whether some share one
+            screen), the depth range a Delve run ended in, whether the daily unique was answered right, an invite or Delve link opened, how you join a room
+            (code, invite link or open rooms list) and whether it works, pairing a device, connection failures, and that a script error happened (nothing
+            about it). No names, answers, room codes or device tokens are sent. It works out your country, browser and system
             from your IP address and browser but stores neither, sets no cookies and stores nothing on your
             device. Nothing is counted if your browser sends Global Privacy Control.
             <div class="count-toggle" data-count-toggle hidden>
