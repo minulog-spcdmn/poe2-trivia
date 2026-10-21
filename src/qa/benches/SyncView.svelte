@@ -14,6 +14,8 @@
   $effect.pre(() => {
     sync.code = CODE;
     sync.met = v.status === 'linked';
+    // (Started over: until another device comes, only its code is offered.)
+    sync.anew = v.anew === true && !sync.met;
     sync.status = v.status as SyncStatus;
     sync.linked = v.status === 'linked' ? Number(v.linked) : 0;
   });

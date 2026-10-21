@@ -122,6 +122,10 @@
   const paired = $derived(!!sync.code && sync.met);
   /** A code kept that has met no device yet (let go of in a while if none comes). */
   const waiting = $derived(!!sync.code && !sync.met);
+  // (Let go of meanwhile, here or in another tab: neither asks again once paired again.)
+  $effect(() => {
+    if (!paired) unpairing = leaving = false;
+  });
 
   // ---- class sigils ----
 

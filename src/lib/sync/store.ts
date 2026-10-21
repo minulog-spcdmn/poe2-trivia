@@ -145,8 +145,8 @@ export function pairingTaking(code: string, me: Paired, now: number): Pairing | 
 /**
  * The pairing a device starts over with: out of its group (nothing said to
  * it), on a new code of its own that every device it is to sync with again
- * takes, one by one, and comes to (homeOnMeeting); let go of if none comes
- * in time, as any code that meets nobody.
+ * takes, one by one, and comes to (homeOnMeeting). It waits for them however
+ * long they take (pairingNow).
  */
 export const pairingAnew = (code: string, now: number): Pairing => ({ code, met: false, at: now, anew: true });
 
