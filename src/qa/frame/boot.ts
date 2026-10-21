@@ -125,6 +125,11 @@ export async function boot(asked: URLSearchParams) {
   if (built.sound?.ambience !== undefined) sound.setAmbience(built.sound.ambience);
   for (const [name, value] of Object.entries(built.stored ?? {})) storage.writeStored(name, value);
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
+  // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
+  if (built.sync) {
+    const { sync } = await import('../../lib/sync/link.svelte.ts');
+    Object.assign(sync, { linked: 0, ...built.sync });
+  }
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of

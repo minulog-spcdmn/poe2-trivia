@@ -3,7 +3,22 @@ import assert from 'node:assert/strict';
 import jsQR from 'jsqr';
 import { codeInHash, codeKey, codeLink, newCode, peerName, prove, proves, readCode, shownCode } from '../src/lib/sync/code.ts';
 import { ALIGN, DOT, EYE, qrMarks } from '../src/lib/sync/qr.ts';
-import { KEEP_DEVICES, clearCopies, copiesOf, deviceId, keepCopy, loadPairing, readCopies, savePairing } from '../src/lib/sync/store.ts';
+import {
+  KEEP_DEVICES,
+  UNMET_MS,
+  clearCopies,
+  copiesOf,
+  deviceId,
+  homeOnMeeting,
+  keepCopy,
+  loadPairing,
+  meeting,
+  pairingAfterUnpair,
+  pairingNow,
+  pairingTaking,
+  readCopies,
+  savePairing,
+} from '../src/lib/sync/store.ts';
 import { ownNow, takeIn, takenNow } from '../src/lib/sync/shared.ts';
 import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEncounter, recordPractice, serializeCodex, type Codex } from '../src/lib/codex.ts';
 import { DELVE_RECORD_KEY, addRun, bestOf, combineRecords, emptyRecords, loadRecords, recordRun, serializeRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
@@ -16,7 +31,11 @@ import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
-beforeEach(() => store.clear());
+// (The copies' cache hears of them going as clearCopies lets go of them, not of the store emptied under it.)
+beforeEach(() => {
+  clearCopies();
+  store.clear();
+});
 
 const ITEM = 'aaaaaaaaaaaa';
 const OTHER = 'bbbbbbbbbbbb';
@@ -111,6 +130,61 @@ test('a pairing that met nobody keeps when it was made, and the code it came fro
   assert.deepEqual(loadPairing(), { code: 'K7QXM2PA9FHE3TDW', met: false, at: 5, home: 'AAAABBBBCCCCDDDD' });
   savePairing({ code: 'K7QXM2PA9FHE3TDW', met: true });
   assert.deepEqual(loadPairing(), { code: 'K7QXM2PA9FHE3TDW', met: true });
+});
+
+// ---- who goes where ----------------------------------------------------------------
+
+const HOME = 'AAAABBBBCCCCDDDD';
+const NEW = 'K7QXM2PA9FHE3TDW';
+const OTHER_CODE = 'ZZZZYYYYXXXXWWWW';
+
+test('a code that meets nobody in ten minutes is let go of, back home if it came from one', () => {
+  const at = 1_000_000;
+  const waiting = { code: NEW, met: false, at };
+  assert.equal(pairingNow(waiting, at + UNMET_MS), waiting, 'still waiting: the same pairing');
+  assert.equal(pairingNow(waiting, at + UNMET_MS + 1), null);
+  assert.deepEqual(pairingNow({ ...waiting, home: HOME }, at + UNMET_MS + 1), { code: HOME, met: true });
+  const met = { code: NEW, met: true };
+  assert.equal(pairingNow(met, at + 10 * UNMET_MS), met, 'a met one never lapses');
+  // Stamped ahead of the clock (set back since): counted from now, not kept for good.
+  assert.deepEqual(pairingNow({ ...waiting, at: at + 30 * 86_400_000 }, at), { ...waiting, at });
+});
+
+test('a synced device that takes a new code brings that device home; a new one goes where it is brought', () => {
+  // The synced phone took the computer's new code: it says where home is, and the computer, new, says so.
+  const phone = { code: NEW, met: false, home: HOME };
+  const computer = { code: NEW, met: false, home: null };
+  assert.deepEqual(meeting(phone), { home: HOME });
+  assert.deepEqual(meeting(computer), { fresh: true });
+  assert.equal(homeOnMeeting(phone, meeting(computer)), HOME);
+  assert.equal(homeOnMeeting(computer, meeting(phone)), HOME, 'both go to the same code');
+  // Met already, a device says nothing of itself, and neither moves.
+  const synced = { code: NEW, met: true, home: null };
+  assert.deepEqual(meeting(synced), {});
+  assert.equal(homeOnMeeting(phone, meeting(synced)), null);
+  assert.equal(homeOnMeeting(synced, meeting(phone)), null);
+  // Two devices each bringing one home: neither goes to the other's.
+  const tablet = { code: NEW, met: false, home: OTHER_CODE };
+  assert.equal(homeOnMeeting(phone, meeting(tablet)), null);
+  assert.equal(homeOnMeeting(tablet, meeting(phone)), null);
+  // Only a code is gone to.
+  assert.equal(homeOnMeeting(computer, { home: 'not a code' }), null);
+});
+
+test('taking a code keeps the one a synced device came from; its own home taken again is home, met', () => {
+  const now = 42;
+  assert.deepEqual(pairingTaking(NEW, { code: null, met: false, home: null }, now), { code: NEW, met: false, at: now });
+  assert.deepEqual(pairingTaking(NEW, { code: HOME, met: true, home: null }, now), { code: NEW, met: false, at: now, home: HOME });
+  // Took one, then another before meeting anybody: home is still the code it was synced under.
+  assert.deepEqual(pairingTaking(OTHER_CODE, { code: NEW, met: false, home: HOME }, now), { code: OTHER_CODE, met: false, at: now, home: HOME });
+  assert.deepEqual(pairingTaking(HOME, { code: NEW, met: false, home: HOME }, now), { code: HOME, met: true });
+  assert.equal(pairingTaking(NEW, { code: NEW, met: true, home: null }, now), null, 'the code it has: as it is');
+});
+
+test('unpairing a code taken but not met goes back home; otherwise it lets go', () => {
+  assert.deepEqual(pairingAfterUnpair({ code: NEW, met: false, home: HOME }), { code: HOME, met: true });
+  assert.equal(pairingAfterUnpair({ code: NEW, met: false, home: null }), null);
+  assert.equal(pairingAfterUnpair({ code: NEW, met: true, home: null }), null);
 });
 
 test('a device keeps one name, and one copy of each other device', () => {

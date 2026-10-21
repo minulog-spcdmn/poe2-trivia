@@ -302,13 +302,13 @@
           <button class="btn small" onclick={() => (pairing = true)}>{paired ? 'Pair another' : 'Pair a device'}</button>
           <!-- What it does stays beneath whatever it says now, unseen: the longest of them, so the row keeps its height and nothing below it jumps as a pairing starts or ends. -->
           <p class="blurb say" class:linked={paired && sync.status === 'linked'}>
-            <span class:unseen={waiting || paired} aria-hidden={waiting || paired}>Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.</span>
+            <span class:unseen={waiting || paired}>Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.</span>
             {#if waiting}
               <span>{syncLine()} <button class="reset" onclick={unpair}>Cancel</button></span>
             {:else if paired && unpairing}
               <span
                 >Stop syncing here? What came from your other devices stays.
-                <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
+                <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
             {:else if paired}
               <span>{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span>
@@ -619,6 +619,7 @@
   .sync-row .say > span {
     grid-area: 1 / 1;
   }
+  /* (Hidden from screen readers too, as visibility: hidden is.) */
   .sync-row .unseen {
     visibility: hidden;
   }
@@ -628,10 +629,7 @@
   .sync-row .reset {
     margin-left: 0.3rem;
   }
-  /* (Down to the middle of the small letters, as the pairing dialog's: Garamond sets a bullet at half a capital's height.) */
   .sync-row .sep {
-    position: relative;
-    top: 0.16em;
     margin-left: 0.4rem;
     color: var(--gold-lo);
     font-style: normal;

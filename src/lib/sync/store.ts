@@ -14,7 +14,7 @@
 // device, and devices pass on the copies they hold, so a third device's
 // progress reaches the others by way of whichever it last met.
 
-import { BACKDROP_TOOL, BOT, COPIES_OF, LAB, QA, readStored, removeStored, writeStored } from '../storage.ts';
+import { BACKDROP_TOOL, BOT, COPIES_OF, LAB, QA, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
 
 /** Only the game itself syncs: never the lab, the tools, the bot or the QA desk, whose progress is theirs alone. */
 export const SYNC_HERE = typeof document !== 'undefined' && !(LAB || BACKDROP_TOOL || BOT || QA);
@@ -68,6 +68,55 @@ export function loadPairing(): Pairing | null {
     return null;
   }
 }
+
+/** A device's pairing as the rules of meeting see it (lib/sync/link.svelte.ts keeps it as state). */
+export interface Paired {
+  code: string | null;
+  met: boolean;
+  home: string | null;
+}
+
+/**
+ * A pairing as it stands at `now`: one that met nobody in time goes back to
+ * the code the device came from (or is let go of: null), and one stamped
+ * ahead of the clock (set back since) counts from now. The same pairing when
+ * nothing changed.
+ */
+export function pairingNow(p: Pairing | null, now: number): Pairing | null {
+  if (!p || p.met) return p;
+  const at = p.at ?? 0;
+  if (at > now) return { ...p, at: now };
+  if (now - at > UNMET_MS) return p.home ? { code: p.home, met: true } : null;
+  return p;
+}
+
+/** What a device says of itself as it meets another: that it brings a new device home, or is new itself, with nowhere else to go. */
+export const meeting = (me: Paired): { home: string } | { fresh: true } | Record<string, never> => (me.home ? { home: me.home } : !me.met ? { fresh: true } : {});
+
+/**
+ * Where two devices go once they've met and given each other what they have
+ * (each works it out alike): this one's home when it brings a new device, the
+ * other's when it brings this new one; null to stay with the code they met by.
+ */
+export function homeOnMeeting(me: Paired, them: { home?: unknown; fresh?: unknown }): string | null {
+  if (me.home && them.fresh === true) return me.home;
+  return isCode(them.home) && !me.met && !me.home ? them.home : null;
+}
+
+/**
+ * The pairing a device takes with another device's code: its own group's
+ * again is simply home; synced already, it keeps its code as the home it
+ * brings the other to. Null for the code it has.
+ */
+export function pairingTaking(code: string, me: Paired, now: number): Pairing | null {
+  if (code === me.home) return { code, met: true };
+  if (code === me.code) return null;
+  const home = me.met ? me.code : me.home;
+  return { code, met: false, at: now, ...(home && home !== code ? { home } : {}) };
+}
+
+/** The pairing left on unpairing: a code taken but not met yet goes back to the one before; otherwise none. */
+export const pairingAfterUnpair = (me: Paired): Pairing | null => (!me.met && me.home ? { code: me.home, met: true } : null);
 
 export const savePairing = (p: Pairing) => writeStored(PAIR, JSON.stringify({ v: 1, ...p }));
 export const forgetPairing = () => removeStored(PAIR);
@@ -140,11 +189,20 @@ export function clearCopies() {
  * when the stored copies change, as the codex is read often.
  */
 export function copiesOf<T>(kind: CopyKind, parse: (raw: string) => T | null): T[] {
-  const raw = readStored(copiesName(kind));
   const was = cache.get(kind);
-  if (was && was.raw === raw && was.parse === parse) return was.list as T[];
+  if (was && was.parse === parse) return was.list as T[];
+  const raw = readStored(copiesName(kind));
   const list = raw ? Object.values(parseCopies(raw)).flatMap((c) => parse(c.raw) ?? []) : [];
-  cache.set(kind, { raw, parse, list });
+  cache.set(kind, { parse, list });
   return list;
 }
-const cache = new Map<CopyKind, { raw: string | null; parse: unknown; list: unknown[] }>();
+// Kept until the copies change, written in this tab or another (the copies run to megabytes: not read from
+// storage every time the codex is).
+const cache = new Map<CopyKind, { parse: unknown; list: unknown[] }>();
+onStoredHere((name) => {
+  for (const kind of COPY_KINDS) if (name === copiesName(kind)) cache.delete(kind);
+});
+if (typeof addEventListener === 'function')
+  addEventListener('storage', (e) => {
+    for (const kind of COPY_KINDS) if (e.key === null || e.key === storeKey(copiesName(kind))) cache.delete(kind);
+  });

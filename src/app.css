@@ -331,6 +331,13 @@ input {
   background: linear-gradient(90deg, transparent, rgba(241, 217, 155, 0.5), transparent);
 }
 
+/* A bullet between words in the body font, set down to the middle of their small letters: EB Garamond sets it at
+   half a capital's height, high beside lowercase words. */
+.bullet {
+  position: relative;
+  top: 0.16em;
+}
+
 .btn {
   --c: var(--gold);
   position: relative;

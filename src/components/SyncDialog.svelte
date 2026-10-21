@@ -14,7 +14,7 @@
   // - joined: a code taken from elsewhere, and how the link stands;
   // - offered: a pairing link's code, taken only once the player says yes
   //   (a link can come from anyone).
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { circleOf, warmCircle } from './circles';
@@ -57,14 +57,15 @@
     made = offerCode();
     view = 'show';
   }
-  // Left open past the code's ten minutes (or unpaired in another tab): a new code of its own, not one nobody waits on
-  // (a code taken from the other device lapsed with it too, so this one shows its own for that one to scan).
+  // The code let go of while it's open. Left past its ten minutes: a new code of its own, not one nobody waits on (a
+  // code taken from the other device lapsed with it too, so this one shows its own for that one to scan). Unpaired in
+  // another tab: the player let go of it, and the dialog goes too, rather than pair again behind their back.
   // (Not on the QA desk, which never syncs: the bench sets the code.)
   $effect(() => {
-    if (SYNC_HERE && (view === 'show' || view === 'joined') && !sync.code) {
-      made = offerCode();
-      view = 'show';
-    }
+    if (!SYNC_HERE || (view !== 'show' && view !== 'joined') || sync.code) return;
+    if (!sync.lapsed) return untrack(close);
+    made = offerCode();
+    view = 'show';
   });
 
   /** Pairs with a code from elsewhere (scanned, typed, a link), and shows how the link stands. */
@@ -294,10 +295,10 @@
     <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. -->
     <p class="routes">
       {#if view === 'show'}
-        {#if handheld && scans}<button class="route" onclick={startScan}>Scan a code</button><span class="sep" aria-hidden="true">•</span>{/if}
+        {#if handheld && scans}<button class="route" onclick={startScan}>Scan a code</button><span class="sep bullet" aria-hidden="true">•</span>{/if}
         <button class="route" onclick={startTyping}>Enter a code</button>
       {:else if view === 'scan'}
-        <button class="route" onclick={show}>Show my code</button><span class="sep" aria-hidden="true">•</span><button class="route" onclick={startTyping}>Enter a code</button>
+        <button class="route" onclick={show}>Show my code</button><span class="sep bullet" aria-hidden="true">•</span><button class="route" onclick={startTyping}>Enter a code</button>
       {/if}
     </p>
 
@@ -566,10 +567,8 @@
   .route:hover {
     color: var(--gold-hi);
   }
-  /* At the links' size, and down to the middle of their small letters (Garamond sets a bullet at half a capital's height). */
+  /* At the links' size (set down to their small letters: app.css .bullet). */
   .sep {
-    position: relative;
-    top: 0.16em;
     font-size: 0.95rem;
     color: var(--gold-lo);
   }
