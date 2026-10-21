@@ -6,7 +6,7 @@
   import { refuseName } from '../lib/nameField';
   import { motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
-  import { engine, session, savedName, saveName, CODE_LENGTH } from '../lib/session.svelte';
+  import { engine, session, savedName, saveName, NAME_KEY, CODE_LENGTH } from '../lib/session.svelte';
   import { refuse } from '../lib/fx/moments';
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { openSettings, settingsRoute } from '../lib/settingsRoute.svelte';
@@ -91,11 +91,15 @@
   const readDeepest = () => shownDepth(deepestShown(loadRecords()));
   let deepest = $state(readDeepest());
   // A game in another tab may add to both meanwhile (the codex by the name
-  // lib/codex.ts writes, read raw so it stays out of the first download).
+  // lib/codex.ts writes, read raw so it stays out of the first download),
+  // and the name may change there or come from another device (lib/sync).
   $effect(() =>
     onStoredElsewhere({
       [storeKey(CODEX_NAMES[0])]: () => void readDiscovered(),
       [DELVE_RECORD_KEY]: () => (deepest = readDeepest()),
+      [NAME_KEY]: () => {
+        if (!firstLook) known = savedName().trim();
+      },
     }),
   );
   // Achievements catch up with the codex here: the first time quietly (those

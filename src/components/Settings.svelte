@@ -127,6 +127,10 @@
   let passed = $state<number | null>(null);
   /** Passing it on asked for, to be confirmed: whoever holds it can sign as the owner. */
   let passing = $state(false);
+  // (The link gone meanwhile: not asked again once it is back.)
+  $effect(() => {
+    if (sync.status !== 'linked') passing = false;
+  });
 
   // ---- class sigils ----
 

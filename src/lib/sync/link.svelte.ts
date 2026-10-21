@@ -519,20 +519,20 @@ class Run {
     }, PUSH_MS);
   }
 
-  /** Passes the owner key on to every device linked now; how many. */
+  /** Passes the owner key on to every device linked now; how many devices. */
   passOwner(): number {
     const key = ownerKeyKept();
     if (!key) return 0;
-    let n = 0;
+    const to = new Set<string>();
     for (const l of this.links)
       if (l.trusted && l.device && l.device !== this.me && l.conn.open) {
         l.conn.send({ t: 'owner', key });
         // (The name as well, again: the held name, turned down there until now.)
         l.sentTaken = '';
         void this.give(l).catch((err) => console.warn('sync', err));
-        n++;
+        to.add(l.device);
       }
-    return n;
+    return to.size;
   }
 
   private met() {
