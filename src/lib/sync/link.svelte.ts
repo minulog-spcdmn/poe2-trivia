@@ -26,11 +26,11 @@
 // it) says so as they meet, and both go to its own code, so a third device
 // joins the other two rather than taking one of them away.
 //
-// A code can't be taken back from a device that has it (a QR code seen on a
-// stream, a phone lost), so a device can start over: it leaves its group,
-// saying nothing to it, for a new code of its own, and the player's other
-// devices take that one by one. A device of the old group taking it comes
-// to it rather than bringing it home (store.ts homeOnMeeting).
+// A device can start over (a phone given away, or just to start clean): it
+// leaves its group, saying nothing to it, for a new code of its own, and the
+// player's other devices take that one by one. A device of the old group
+// taking it comes to it rather than bringing it home (store.ts
+// homeOnMeeting).
 
 import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
@@ -92,8 +92,6 @@ class SyncState {
   home = $state<string | null>(null);
   /** Unmet: its code was made on starting over (store.ts pairingAnew). */
   anew = $state(false);
-  /** Unmet: its code was taken from another device, with no group of its own (store.ts Pairing.took). */
-  took = $state(false);
   /** Not paired because the last code met nobody in time (here or in another tab), not because the player let go of it. */
   lapsed = $state(false);
 }
@@ -125,7 +123,6 @@ function readPairing() {
   sync.met = p?.met ?? false;
   sync.home = p?.home ?? null;
   sync.anew = !!p?.anew;
-  sync.took = !!p?.took;
   // (Started over: waits for good.)
   waitingSince = p && !p.met && !p.anew ? (p.at ?? 0) : null;
   if (lapseTimer) clearTimeout(lapseTimer);
@@ -532,7 +529,6 @@ class Run {
     // (Staying here: a code this device came from is no longer one to bring anybody home to.)
     sync.home = null;
     sync.anew = false;
-    sync.took = false;
     savePairing({ code: this.code, met: true });
   }
 
@@ -627,8 +623,8 @@ export function unpair() {
 
 /**
  * Leaves the group, saying nothing to it, for a new code of its own, to show
- * the player's other devices: each takes it and comes along, and no device
- * that learned the old code follows. What came from the others stays.
+ * the player's other devices: each takes it and comes along, and a device
+ * that doesn't stays on the old code. What came from the others stays.
  */
 export function startOver() {
   savePairing(pairingAnew(newCode(), Date.now()));

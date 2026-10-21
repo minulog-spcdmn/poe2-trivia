@@ -318,7 +318,7 @@
               >
             {:else if paired && leaving}
               <span
-                >Start over on a new code? Pair your other devices again; nobody else gets in.
+                >Start over on a new code? Pair your other devices again.
                 <button class="reset" onclick={() => ((leaving = false), startOver(), (pairing = true))}>Start over</button><span class="sep bullet" aria-hidden="true">•</span><button
                   class="reset"
                   onclick={() => (leaving = false)}>Keep it</button
