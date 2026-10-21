@@ -32,6 +32,7 @@ import { PEER_OPTIONS, loadPeerJs } from '../peer.ts';
 import { announceStored, onStoredHere, storeKey } from '../storage.ts';
 import { parseCodex, parsePractice } from '../codex.ts';
 import { parseRecords } from '../delveRecord.ts';
+import { keepOwnerKey, ownerKeyKept } from '../ownerKey.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
 import { OWN_NAMES, TAKEN_NAMES, ownNow, takeIn, takenNow } from './shared.ts';
 import {
@@ -438,6 +439,12 @@ class Run {
         if (given) await this.take(given, link);
         return;
       }
+      case 'owner': {
+        // The owner key, passed on as the owner asked (passOwnerKey): kept only if it is the owner's.
+        if (!link.trusted || !link.device || link.device === this.me) return link.conn.close();
+        await keepOwnerKey(d.key);
+        return;
+      }
     }
   }
 
@@ -510,6 +517,22 @@ class Run {
       const h = this.holding();
       for (const l of this.links) void this.give(l, h).catch((err) => console.warn('sync', err));
     }, PUSH_MS);
+  }
+
+  /** Passes the owner key on to every device linked now; how many devices. */
+  passOwner(): number {
+    const key = ownerKeyKept();
+    if (!key) return 0;
+    const to = new Set<string>();
+    for (const l of this.links)
+      if (l.trusted && l.device && l.device !== this.me && l.conn.open) {
+        l.conn.send({ t: 'owner', key });
+        // (The name as well, again: the held name, turned down there until now.)
+        l.sentTaken = '';
+        void this.give(l).catch((err) => console.warn('sync', err));
+        to.add(l.device);
+      }
+    return to.size;
   }
 
   private met() {
@@ -615,6 +638,12 @@ function forget() {
   readPairing();
   restart();
 }
+
+/**
+ * Passes the owner key on to the player's devices linked now (only when the
+ * owner asks: the settings, on a device that holds it). How many it went to.
+ */
+export const passOwnerKey = () => run?.passOwner() ?? 0;
 
 /** The codex erased: unpaired, and the other devices' copies let go of (theirs is still theirs). */
 export function eraseSync() {

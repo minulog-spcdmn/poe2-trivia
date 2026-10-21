@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkJoin, checkRoom, isOwnerProof, joinProof, newChallenge, ownerPublicKey, ownerUnlocked, roomProof, unlockOwner } from '../src/lib/ownerKey.ts';
+import { checkJoin, checkRoom, isOwnerProof, joinProof, keepOwnerKey, newChallenge, ownerKeyKept, ownerPublicKey, ownerUnlocked, roomProof, unlockOwner } from '../src/lib/ownerKey.ts';
 import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
@@ -39,4 +39,26 @@ test("a listing is signed over each prober's own challenge, so an old one can't 
   assert.ok(await checkRoom('ABCD', challenge, listing, key));
   assert.equal(await checkRoom('ABCD', newChallenge(), listing, key), false, "another probe's");
   assert.equal(await checkRoom('WXYZ', challenge, listing, key), false);
+});
+
+test("an owner key passed on from another device is kept only when it is the owner's", async () => {
+  const key = await ownerPublicKey('passed words');
+  const other = await ownerPublicKey('other passed words');
+  store.clear();
+  assert.equal(ownerKeyKept(key), null, 'nothing to pass on without it');
+  assert.ok(await unlockOwner('passed words', key));
+  const kept = ownerKeyKept(key)!;
+  assert.ok(kept.startsWith(`${key}.`));
+  store.clear();
+  assert.equal(await keepOwnerKey(kept, other), false, "another key's");
+  const [, seed] = kept.split('.');
+  const wrong = (seed[0] === 'A' ? 'B' : 'A') + seed.slice(1);
+  assert.equal(await keepOwnerKey(`${key}.${wrong}`, key), false, "a seed that doesn't make the public half");
+  assert.equal(await keepOwnerKey(`${key}.short`, key), false);
+  assert.equal(await keepOwnerKey(42, key), false);
+  assert.equal(store.size, 0, 'none of those kept');
+  assert.ok(await keepOwnerKey(kept, key));
+  assert.equal([...store.values()][0], kept, 'kept as the words would have');
+  assert.ok(ownerUnlocked(key));
+  assert.ok(await joinProof('ABCD', newChallenge(), key), 'and signs');
 });
