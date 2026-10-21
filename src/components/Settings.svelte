@@ -26,7 +26,7 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { changeCode, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -116,6 +116,8 @@
   onMount(startSync);
   /** Unpair asked for, waiting for a yes (as the codex's erase does). */
   let unpairing = $state(false);
+  /** A new code asked for, waiting for a yes. */
+  let changing = $state(false);
   /** Paired: a code kept, and another device met under it. */
   const paired = $derived(!!sync.code && sync.met);
   /** A code kept that has met no device yet (let go of in a while if none comes). */
@@ -310,8 +312,18 @@
                 >Stop syncing here? What came from your other devices stays.
                 <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
+            {:else if paired && changing}
+              <span
+                >Change the code? Devices not on the site now will need pairing again.
+                <button class="reset" onclick={() => ((changing = false), changeCode())}>Change</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (changing = false)}>Keep it</button></span
+              >
             {:else if paired}
-              <span>{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span>
+              <span
+                >{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button
+                  class="reset change"
+                  onclick={() => (changing = true)}>Change code</button
+                ></span
+              >
             {/if}
           </p>
         </div>

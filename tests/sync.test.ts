@@ -6,6 +6,8 @@ import { ALIGN, DOT, EYE, qrMarks } from '../src/lib/sync/qr.ts';
 import {
   KEEP_DEVICES,
   UNMET_MS,
+  canChangeCode,
+  codeChanged,
   clearCopies,
   copiesOf,
   deviceId,
@@ -14,6 +16,7 @@ import {
   lapsed,
   loadPairing,
   meeting,
+  moveAsked,
   pairingAfterUnpair,
   pairingNow,
   pairingTaking,
@@ -200,6 +203,35 @@ test('unpairing a code taken but not met goes back home; otherwise it lets go', 
   assert.deepEqual(pairingAfterUnpair({ code: NEW, met: false, home: HOME }), { code: HOME, met: true });
   assert.equal(pairingAfterUnpair({ code: NEW, met: false, home: null }), null);
   assert.equal(pairingAfterUnpair({ code: NEW, met: true, home: null }), null);
+});
+
+test('a settled device can change its code; one waiting or bringing a device home cannot', () => {
+  assert.equal(canChangeCode({ code: HOME, met: true, home: null }), true);
+  assert.equal(canChangeCode({ code: null, met: false, home: null }), false);
+  assert.equal(canChangeCode({ code: NEW, met: false, home: null }), false, 'a code waiting for its device');
+  assert.equal(canChangeCode({ code: NEW, met: false, home: HOME }), false, 'bringing a device home');
+});
+
+test('a device moves to a changed code only when the one asking proved the code it is settled on', () => {
+  const settled = { code: HOME, met: true, home: null };
+  assert.equal(moveAsked(settled, HOME, NEW), NEW);
+  assert.equal(moveAsked(settled, null, NEW), null, 'nothing proved');
+  assert.equal(moveAsked(settled, OTHER_CODE, NEW), null, 'proved another code');
+  assert.equal(moveAsked(settled, HOME, 'not a code'), null);
+  assert.equal(moveAsked(settled, HOME, HOME), null, 'the code it has');
+  // Not settled: a code still waiting, or one taken to bring a device home, stays as it is.
+  assert.equal(moveAsked({ code: HOME, met: false, home: null }, HOME, NEW), null);
+  assert.equal(moveAsked({ code: OTHER_CODE, met: false, home: HOME }, OTHER_CODE, NEW), null);
+});
+
+test("a code changed in another tab is told from a pairing begun, let go of, or brought home", () => {
+  const settled = { code: HOME, met: true, home: null };
+  assert.equal(codeChanged(settled, { code: NEW, met: true, home: null }), true);
+  assert.equal(codeChanged(settled, settled), false);
+  assert.equal(codeChanged(settled, { code: null, met: false, home: null }), false, 'unpaired');
+  assert.equal(codeChanged(settled, { code: NEW, met: false, home: HOME }), false, 'a code taken from a new device');
+  assert.equal(codeChanged({ code: NEW, met: false, home: HOME }, settled), false, 'brought home');
+  assert.equal(codeChanged({ code: NEW, met: false, home: null }, { code: NEW, met: true, home: null }), false, 'met');
 });
 
 test('a device keeps one name, and one copy of each other device', () => {

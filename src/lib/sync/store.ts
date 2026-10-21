@@ -127,6 +127,22 @@ export function pairingTaking(code: string, me: Paired, now: number): Pairing | 
 /** The pairing left on unpairing: a code taken but not met yet goes back to the one before; otherwise none. */
 export const pairingAfterUnpair = (me: Paired): Pairing | null => (!me.met && me.home ? { code: me.home, met: true } : null);
 
+/** Whether a device may change its group's code: paired, and settled there (not waiting for a device, nor bringing one home). */
+export const canChangeCode = (me: Paired): boolean => !!me.code && me.met && !me.home;
+
+/**
+ * Where a device goes when a linked device asks it to move to a new code
+ * (that device's player changed the code): there, when the one asking has
+ * proved it has the code this device is settled on (`proved`: the code it
+ * proved, null for none); null to stay.
+ */
+export function moveAsked(me: Paired, proved: string | null, code: unknown): string | null {
+  return canChangeCode(me) && proved === me.code && isCode(code) && code !== me.code ? code : null;
+}
+
+/** Whether a pairing went from one code to another, settled on both: the code changed (changed on this device in another tab, or moved to there). */
+export const codeChanged = (was: Paired, now: Paired): boolean => canChangeCode(was) && canChangeCode(now) && was.code !== now.code;
+
 export const savePairing = (p: Pairing) => writeStored(PAIR, JSON.stringify({ v: 1, ...p }));
 export const forgetPairing = () => removeStored(PAIR);
 

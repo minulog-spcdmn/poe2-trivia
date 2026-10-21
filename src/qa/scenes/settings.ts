@@ -35,7 +35,17 @@ const SYNC: Control = {
   ],
   default: 'paired',
 };
-const ASKED: Control = { kind: 'toggle', key: 'asked', label: 'Unpair asked for', default: false };
+const ASKED: Control = {
+  kind: 'choice',
+  key: 'asked',
+  label: 'Asked for',
+  options: [
+    { value: 'none', label: 'Nothing' },
+    { value: 'unpair', label: 'Unpair' },
+    { value: 'change', label: 'A new code' },
+  ],
+  default: 'none',
+};
 
 /** A code to be paired with, the same every time (as the sync bench's). */
 const SYNC_CODE = 'K7QXM2PA9FHE3TDW';
@@ -67,7 +77,7 @@ export function settingsScenes(): Scene[] {
       }),
     },
     {
-      // Sync, under the name: what it does, or how it stands and the way to let go of it (the pairing dialog is the sync bench's).
+      // Sync, under the name: what it does, or how it stands and the ways to let go of it or change its code (the pairing dialog is the sync bench's).
       key: 'settings/sync',
       screen: 'settings',
       group: 'Settings',
@@ -81,7 +91,8 @@ export function settingsScenes(): Scene[] {
         { label: 'Synced', values: { sync: 'linked' } },
         { label: 'Synced with three', values: { sync: 'three' } },
         { label: 'Server out of reach', values: { sync: 'offline' } },
-        { label: 'Unpair asked for', values: { sync: 'linked', asked: true } },
+        { label: 'Unpair asked for', values: { sync: 'linked', asked: 'unpair' } },
+        { label: 'A new code asked for', values: { sync: 'linked', asked: 'change' } },
       ],
       build: (v = {}): Built => {
         const s = String(v.sync ?? 'paired');
@@ -99,7 +110,7 @@ export function settingsScenes(): Scene[] {
                   linked: s === 'three' ? 3 : s === 'linked' ? 1 : 0,
                 },
               }),
-          ...(v.asked && met ? { steps: [{ click: '.sync-row .reset' }] } : {}),
+          ...(met && (v.asked === 'unpair' || v.asked === 'change') ? { steps: [{ click: v.asked === 'change' ? '.sync-row .change' : '.sync-row .reset' }] } : {}),
         };
       },
     },

@@ -25,6 +25,12 @@
 // UNMET_MS). A device already synced that takes a new device's code (scans
 // it) says so as they meet, and both go to its own code, so a third device
 // joins the other two rather than taking one of them away.
+//
+// A code can't be taken back from a device that has it (a QR code seen on a
+// stream, a phone lost), so the player can change it: the device it is
+// changed on asks every device linked now to move to a new one with it, and
+// each passes the ask on to its own links, so all the devices on the site
+// go together. Those that aren't are left on the old code, cut out.
 
 import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
@@ -43,6 +49,8 @@ import {
   deviceId,
   UNMET_MS,
   VIEW,
+  canChangeCode,
+  codeChanged,
   forgetPairing,
   homeOnMeeting,
   isDevice,
@@ -50,6 +58,7 @@ import {
   keepCopy,
   loadPairing,
   meeting,
+  moveAsked,
   lapsed,
   pairingAfterUnpair,
   pairingNow,
@@ -243,6 +252,8 @@ const HIDDEN_MS = 60_000;
 const PUSH_MS = 2000;
 /** How long a link may take to open before it is given up and tried again. */
 const OPEN_MS = 15_000;
+/** The longest a device moving to a changed code waits for the devices it asked to say they're coming. */
+const MOVE_MS = 3000;
 
 const nonce = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 const isNonce = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{32}$/.test(v);
@@ -259,6 +270,11 @@ class Run {
   private name = '';
   private key: CryptoKey | null = null;
   private unhear: (() => void)[] = [];
+  /** The changed code this device is moving to, once it is (lib/sync/store.ts moveAsked). */
+  private moving: string | null = null;
+  /** The links asked to move that haven't said they're coming, nor gone. */
+  private unmoved = new Set<Link>();
+  private moved: (() => void) | null = null;
 
   constructor(readonly code: string) {}
 
@@ -385,6 +401,7 @@ class Run {
     });
     const gone = () => {
       if (!this.links.delete(link)) return;
+      this.settleMove(link);
       this.report();
       // The one waiting went: whichever device is first takes its place.
       if (!hub && !this.stopped) this.retry(500 + Math.random() * 1500);
@@ -430,6 +447,22 @@ class Run {
         this.report();
         await this.give(link);
         if (home) setTimeout(() => !this.stopped && moveTo(home), 800);
+        return;
+      }
+      case 'move': {
+        if (!link.device || link.device === this.me) return link.conn.close();
+        // (Only from a device that proved it has this one's code, and once.)
+        const to = moveAsked(sync, link.trusted ? this.code : null, d.code);
+        if (!to || this.moving) return;
+        say({ t: 'moving' });
+        // (Kept at once: the page may go before the others have said they're coming.)
+        savePairing({ code: to, met: true });
+        void this.askToMove(to, link).then(() => !this.stopped && moveTo(to));
+        return;
+      }
+      case 'moving': {
+        if (!link.device || link.device === this.me) return link.conn.close();
+        this.settleMove(link);
         return;
       }
       case 'give': {
@@ -512,6 +545,35 @@ class Run {
     }, PUSH_MS);
   }
 
+  /** Moves to a changed code with every device linked now: done once each has said it's coming, or gone, or in a few seconds at most. */
+  change(code: string): Promise<void> {
+    return this.moving ? Promise.resolve() : this.askToMove(code);
+  }
+
+  /** Asks every device linked now (but `from`, which asked this one) to move to `code`, and waits for them as `change` does. */
+  private askToMove(code: string, from?: Link): Promise<void> {
+    this.moving = code;
+    for (const l of this.links)
+      if (l !== from && l.device && l.device !== this.me && l.conn.open) {
+        l.conn.send({ t: 'move', code });
+        this.unmoved.add(l);
+      }
+    return new Promise((done) => {
+      const timer = setTimeout(() => this.moved?.(), MOVE_MS);
+      this.moved = () => {
+        clearTimeout(timer);
+        this.moved = null;
+        done();
+      };
+      if (!this.unmoved.size) this.moved();
+    });
+  }
+
+  /** A link asked to move said it's coming, or went. */
+  private settleMove(link: Link) {
+    if (this.unmoved.delete(link) && !this.unmoved.size) this.moved?.();
+  }
+
   private met() {
     if (sync.met) return;
     sync.met = true;
@@ -562,9 +624,13 @@ export function startSync() {
     // Paired or unpaired in another tab.
     addEventListener('storage', (e) => {
       if (e.key !== storeKey(PAIR_NAME) && e.key !== null) return;
-      const was = sync.code;
+      const was = { code: sync.code, met: sync.met, home: sync.home };
       readPairing();
-      if (sync.code !== was) restart();
+      if (sync.code === was.code) return;
+      // Its code changed in another tab (or moved there, asked by a device linked to it): the devices linked to this one go too.
+      const code = sync.code;
+      if (codeChanged(was, sync) && run) void run.change(code!).then(() => sync.code === code && restart());
+      else restart();
     });
   }
   if (!run) restart();
@@ -607,6 +673,22 @@ export function unpair() {
   const p = pairingAfterUnpair(sync);
   if (p) moveTo(p.code);
   else forget();
+}
+
+/**
+ * A new code, for this device and every device on the site now, which move
+ * to it with this one; the others, left on the old code, are cut out
+ * (lib/sync/store.ts canChangeCode says when it can be changed).
+ */
+export async function changeCode() {
+  if (!canChangeCode(sync)) return;
+  const was = sync.code;
+  const code = newCode();
+  // (Kept at once: the page may go before the others have said they're coming.)
+  savePairing({ code, met: true });
+  await run?.change(code);
+  // (Unless let go of meanwhile, in this tab or another.)
+  if (sync.code === was) moveTo(code);
 }
 
 /** Not paired any more. */
