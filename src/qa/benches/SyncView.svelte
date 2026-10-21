@@ -22,5 +22,5 @@
 </script>
 
 {#key `${view}:${opened}`}
-  <SyncDialog offered={view === 'offered' ? CODE : null} start={view === 'offered' ? 'show' : (view as 'show' | 'type' | 'scan')} onclose={() => opened++} />
+  <SyncDialog offered={view === 'offered' ? CODE : null} start={view === 'offered' ? undefined : (view as 'show' | 'type' | 'scan' | 'joined')} onclose={() => opened++} />
 {/key}

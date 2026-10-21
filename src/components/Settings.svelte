@@ -115,14 +115,15 @@
   /** The pairing dialog is open. */
   let pairing = $state(false);
   onMount(startSync);
-  const syncLabel = $derived(
-    !sync.code || !sync.met
-      ? 'Sync'
-      : sync.status === 'linked'
-        ? sync.linked > 1
-          ? `Synced with ${sync.linked} devices`
-          : 'Synced with your other device'
-        : 'Paired with your other device',
+  /** Paired: a code kept, and another device met under it. */
+  const paired = $derived(!!sync.code && sync.met);
+  /** How the pairing stands, under the row. */
+  const syncLine = $derived(
+    sync.status === 'linked'
+      ? sync.linked > 1
+        ? `Synced with ${sync.linked} other devices.`
+        : 'Synced with your other device.'
+      : 'Paired; it syncs whenever your other device is on the site too.',
   );
 
   // ---- class sigils ----
@@ -302,12 +303,15 @@
           <button class="btn" type="submit" disabled={draft.trim() === name}>Save</button>
         </form>
         <div class="row sync-row">
-          <span class="label">{syncLabel}</span>
-          <div class="sync-actions">
-            {#if sync.code && sync.met}<button class="reset" onclick={unpair}>Unpair</button>{/if}
-            <button class="btn small" onclick={() => (pairing = true)}>{sync.code && sync.met ? 'Pair another' : 'Pair a device'}</button>
-          </div>
-          <p class="blurb">Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.</p>
+          <span class="label">Sync</span>
+          <button class="btn small" onclick={() => (pairing = true)}>{paired ? 'Pair another' : 'Pair a device'}</button>
+          <p class="blurb" class:linked={paired && sync.status === 'linked'}>
+            {#if paired}
+              {syncLine} <button class="reset" onclick={unpair}>Unpair</button>
+            {:else}
+              Keeps your codex, Delve runs and achievements the same on your phone and computer while both are on the site.
+            {/if}
+          </p>
         </div>
       </section>
       {/if}
@@ -599,15 +603,16 @@
     flex: 1;
     min-width: 0;
   }
-  /* Sync under the name: its state, and the way to pair (Unpair beside it, as Reset is by the keys). */
+  /* Sync under the name, as the room code is set: the way to pair, and under it what it does or how it stands (Unpair there, as Reset is by the keys). */
   .sync-row {
     margin-top: 0.7rem;
     padding-bottom: 0;
   }
-  .sync-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+  .sync-row .blurb.linked {
+    color: var(--verdict-good-icon);
+  }
+  .sync-row .reset {
+    margin-left: 0.3rem;
   }
   /* The colours as the avatars wear them, a ring of gold round the one picked. */
   .swatches {

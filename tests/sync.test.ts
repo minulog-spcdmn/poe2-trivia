@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import jsQR from 'jsqr';
 import { codeInHash, codeKey, codeLink, newCode, peerName, prove, proves, readCode, shownCode } from '../src/lib/sync/code.ts';
-import { qrShape } from '../src/lib/sync/qr.ts';
+import { ALIGN, DOT, EYE, qrMarks } from '../src/lib/sync/qr.ts';
 import { clearCopies, copiesOf, deviceId, keepCopy, readCopies } from '../src/lib/sync/store.ts';
 import { ownNow, takeIn, takenNow } from '../src/lib/sync/shared.ts';
 import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEncounter, recordPractice, serializeCodex, type Codex } from '../src/lib/codex.ts';
@@ -60,20 +60,40 @@ test('the meeting name and the proof key come from the code, and give it away to
   assert.ok(!(await proves(await codeKey(a), 'h|1|2', 42)));
 });
 
-test('the QR code drawn reads back as the link, with the reader the camera uses where the browser has none', () => {
-  const link = codeLink(newCode(), 'https://poe2.quest/beta/');
-  const { size, path } = qrShape(link);
-  // The path drawn, module by module, as a camera would see it: 6 px each, dark on light.
-  const px = 6;
-  const w = size * px;
-  const rgba = new Uint8ClampedArray(w * w * 4).fill(255);
-  for (const [, x, y, run] of path.matchAll(/M(\d+) (\d+)h(\d+)v1h-\d+z/g))
-    for (let dy = 0; dy < px; dy++)
-      for (let dx = 0; dx < Number(run) * px; dx++) {
-        const i = ((Number(y) * px + dy) * w + Number(x) * px + dx) * 4;
-        rgba[i] = rgba[i + 1] = rgba[i + 2] = 0;
+test('the QR code drawn reads back as the link, its seal and all, with the reader the camera uses where the browser has none', () => {
+  for (const [site, px] of [['https://poe2.quest/', 3], ['https://poe2.quest/beta/', 6], ['http://localhost:5207/', 11]] as const) {
+    const link = codeLink(newCode(), site);
+    const { size, dots, eyes, aligns, heart } = qrMarks(link);
+    assert.ok(heart, `a seal at the heart of ${site}'s code`);
+    // As drawn, at 3, 6 and 11 px a module: ink dots and rounded eyes on the gilded field, the heart left bare for the seal.
+    const w = size * px;
+    const rgba = new Uint8ClampedArray(w * w * 4).fill(255);
+    const ink = (x: number, y: number) => {
+      const i = (y * w + x) * 4;
+      rgba[i] = 40;
+      rgba[i + 1] = 28;
+      rgba[i + 2] = 14;
+    };
+    /** Inside a rounded square at (x, y) (in modules), `s` across with corners of radius `r`. */
+    const inRound = (u: number, v: number, x: number, y: number, s: number, r: number) => {
+      const dx = Math.max(x + r - u, 0, u - (x + s - r));
+      const dy = Math.max(y + r - v, 0, v - (y + s - r));
+      return u >= x && u <= x + s && v >= y && v <= y + s && Math.hypot(dx, dy) <= r;
+    };
+    for (let y = 0; y < w; y++)
+      for (let x = 0; x < w; x++) {
+        const u = (x + 0.5) / px;
+        const v = (y + 0.5) / px;
+        for (const [eye, at] of [...eyes.map((e) => [EYE, e] as const), ...aligns.map((e) => [ALIGN, e] as const)]) {
+          const on = (e: readonly [number, number, number]) => inRound(u, v, at[0] + e[0], at[1] + e[0], e[1], e[2]);
+          if ((on(eye.out) && !on(eye.in)) || on(eye.pupil)) ink(x, y);
+        }
       }
-  assert.equal(jsQR(rgba, w, w)?.data, link);
+    for (const [mx, my] of dots)
+      for (let y = my * px; y < (my + 1) * px; y++)
+        for (let x = mx * px; x < (mx + 1) * px; x++) if (Math.hypot((x + 0.5) / px - mx - 0.5, (y + 0.5) / px - my - 0.5) <= DOT) ink(x, y);
+    assert.equal(jsQR(rgba, w, w)?.data, link, site);
+  }
 });
 
 // ---- what is kept ------------------------------------------------------------------

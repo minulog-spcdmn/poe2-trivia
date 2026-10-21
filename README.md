@@ -22,9 +22,10 @@ GitHub Pages. No server needed.
   or Custom, where the host sets each knob.
 - **Codex and achievements:** every item you have seen, your accuracy, your
   Delve runs and 36 achievements, kept in this browser.
-- **Sync:** pair your devices in the settings (Sync, under You): one shows a
-  QR code, the other scans it with its camera (or, added to an iPhone's home
-  screen, with Scan a code in the game) or types its code. Whenever two of
+- **Sync:** pair your devices in the settings (Sync, under You): a computer
+  shows a QR code, and a phone opens straight to its camera to scan it
+  (from the game itself, which an iPhone's home-screen game needs), or the
+  code is typed in. Whenever two of
   them are on the site at once they keep the codex, Delve runs, achievements,
   sigils and the daily answer the same. Progress only goes up: what each
   device counted is kept apart on the others and added up, never counted
