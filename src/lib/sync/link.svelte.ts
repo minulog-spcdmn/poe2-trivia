@@ -50,6 +50,7 @@ import {
   keepCopy,
   loadPairing,
   meeting,
+  lapsed,
   pairingAfterUnpair,
   pairingNow,
   pairingTaking,
@@ -108,7 +109,7 @@ function readPairing() {
     else forgetPairing();
   }
   // (Let go of in another tab as it lapsed there: lapsed here too.)
-  sync.lapsed = !p && (!!stored || (waitingSince !== null && Date.now() - waitingSince > UNMET_MS));
+  sync.lapsed = lapsed(stored, p, waitingSince, Date.now());
   sync.code = p?.code ?? null;
   sync.met = p?.met ?? false;
   sync.home = p?.home ?? null;
@@ -133,7 +134,7 @@ readPairing();
 /** Each device's copies of each kind held, and how new: `${device}:${kind}` to its time. */
 type Have = Record<string, number>;
 
-/** What this device holds at a moment (Run.now). */
+/** What this device holds at a moment (Run.holding). */
 interface Holding {
   own: Partial<Record<CopyKind, Copy>>;
   copies: Record<CopyKind, Record<string, Copy>>;
@@ -441,7 +442,7 @@ class Run {
   }
 
   /** What this device holds now, its own and its copies, and what is taken in: read once for all the links it goes to. */
-  private now(): Holding {
+  private holding(): Holding {
     const own: Holding['own'] = {};
     const copies = {} as Holding['copies'];
     for (const kind of COPY_KINDS) {
@@ -453,30 +454,32 @@ class Run {
   }
 
   /** What this device holds, its own and its copies, and how new each is. */
-  private held(now = this.now()): Have {
+  private held(h = this.holding()): Have {
     const out: Have = {};
     for (const kind of COPY_KINDS) {
-      const own = now.own[kind];
+      const own = h.own[kind];
       if (own) out[`${this.me}:${kind}`] = own.at;
-      for (const [device, c] of Object.entries(now.copies[kind])) out[`${device}:${kind}`] = c.at;
+      for (const [device, c] of Object.entries(h.copies[kind])) out[`${device}:${kind}`] = c.at;
     }
     return out;
   }
 
   /** Sends the other what it hasn't got (and what is taken in, if that changed since). */
-  private async give(link: Link, now = this.now()) {
+  private async give(link: Link, h?: Holding) {
     if (!link.trusted || !link.device || link.device === this.me || !link.conn.open) return;
+    // (Read only for a link that can take it.)
+    h ??= this.holding();
     const copies: Given['copies'] = [];
     for (const kind of COPY_KINDS) {
-      const own = now.own[kind];
+      const own = h.own[kind];
       if (own && own.at > (link.has[`${this.me}:${kind}`] ?? 0)) copies.push({ device: this.me, kind, ...own });
-      for (const [device, c] of Object.entries(now.copies[kind]))
+      for (const [device, c] of Object.entries(h.copies[kind]))
         if (device !== link.device && c.at > (link.has[`${device}:${kind}`] ?? 0)) copies.push({ device, kind, ...c });
     }
-    if (!copies.length && now.print === link.sentTaken) return;
+    if (!copies.length && h.print === link.sentTaken) return;
     for (const c of copies) link.has[`${c.device}:${c.kind}`] = c.at;
-    link.sentTaken = now.print;
-    link.conn.send({ t: 'give', z: await pack({ copies, taken: now.taken }, link.gzip) });
+    link.sentTaken = h.print;
+    link.conn.send({ t: 'give', z: await pack({ copies, taken: h.taken }, link.gzip) });
   }
 
   /** Keeps what came in that is newer, takes in the rest, and passes it on to the other links. */
@@ -494,8 +497,8 @@ class Run {
     announceStored([...changed]);
     const others = [...this.links].filter((l) => l !== from);
     if (!others.length) return;
-    const now = this.now();
-    for (const l of others) await this.give(l, now);
+    const h = this.holding();
+    for (const l of others) await this.give(l, h);
   }
 
   /** A change of this device's own: sent on to every link a moment later, with any more that follow. */
@@ -504,8 +507,8 @@ class Run {
     if (this.pushTimer) clearTimeout(this.pushTimer);
     this.pushTimer = setTimeout(() => {
       this.pushTimer = null;
-      const now = this.now();
-      for (const l of this.links) void this.give(l, now).catch((err) => console.warn('sync', err));
+      const h = this.holding();
+      for (const l of this.links) void this.give(l, h).catch((err) => console.warn('sync', err));
     }, PUSH_MS);
   }
 

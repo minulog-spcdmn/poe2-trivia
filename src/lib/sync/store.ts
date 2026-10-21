@@ -90,6 +90,15 @@ export function pairingNow(p: Pairing | null, now: number): Pairing | null {
   return p;
 }
 
+/**
+ * Whether a pairing let go of (`was` read from storage, `now` what is left
+ * of it) went because its code met nobody in time, rather than because the
+ * player let go of it: lapsed here, or gone in another tab once it was past
+ * its time there (`waitingSince`, when the code this tab held was made).
+ */
+export const lapsed = (was: Pairing | null, now: Pairing | null, waitingSince: number | null, at: number): boolean =>
+  !now && (!!was || (waitingSince !== null && at - waitingSince > UNMET_MS));
+
 /** What a device says of itself as it meets another: that it brings a new device home, or is new itself, with nowhere else to go. */
 export const meeting = (me: Paired): { home: string } | { fresh: true } | Record<string, never> => (me.home ? { home: me.home } : !me.met ? { fresh: true } : {});
 

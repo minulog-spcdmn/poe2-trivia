@@ -588,10 +588,16 @@ export const ownCodexRaw = () => storedRaw(readStored(CODEX));
  * added to it.
  */
 export function loadCodex(): Codex {
-  const own = parseCodex(ownCodexRaw()) ?? emptyCodex();
+  const raw = ownCodexRaw();
   const others = copiesOf('codex', parseCodex);
-  return others.length ? combineCodex(own, others) : own;
+  if (!others.length) return parseCodex(raw) ?? emptyCodex();
+  // (Combined again only once its own or the copies change: the codex is read often. Nobody changes what it's given.)
+  if (combined?.raw === raw && combined.others === others) return combined.codex;
+  const codex = combineCodex(parseCodex(raw) ?? emptyCodex(), others);
+  combined = { raw, others, codex };
+  return codex;
 }
+let combined: { raw: string | null; others: Codex[]; codex: Codex } | null = null;
 
 const sum = (a: Tally, b: Tally): Tally => ({ n: a.n + b.n, ok: a.ok + b.ok });
 const sumCounts = (a: Record<string, number>, b: Record<string, number>) => {

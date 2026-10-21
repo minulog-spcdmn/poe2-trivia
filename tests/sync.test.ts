@@ -11,6 +11,7 @@ import {
   deviceId,
   homeOnMeeting,
   keepCopy,
+  lapsed,
   loadPairing,
   meeting,
   pairingAfterUnpair,
@@ -148,6 +149,20 @@ test('a code that meets nobody in ten minutes is let go of, back home if it came
   assert.equal(pairingNow(met, at + 10 * UNMET_MS), met, 'a met one never lapses');
   // Stamped ahead of the clock (set back since): counted from now, not kept for good.
   assert.deepEqual(pairingNow({ ...waiting, at: at + 30 * 86_400_000 }, at), { ...waiting, at });
+});
+
+test('a pairing let go of lapsed when its code met nobody in time, here or in another tab; not when the player let go', () => {
+  const at = 1_000_000;
+  const waiting = { code: NEW, met: false, at };
+  // Here: read, and nothing left of it.
+  assert.equal(lapsed(waiting, null, at, at + UNMET_MS + 1), true);
+  // Gone in another tab: past its time, it lapsed there; before it, the player let go of it.
+  assert.equal(lapsed(null, null, at, at + UNMET_MS + 1), true);
+  assert.equal(lapsed(null, null, at, at + 60_000), false);
+  // Met, nothing was waiting: let go of by the player.
+  assert.equal(lapsed(null, null, null, at + 10 * UNMET_MS), false);
+  // Still paired (back home, say): not let go of at all.
+  assert.equal(lapsed(waiting, { code: HOME, met: true }, at, at + UNMET_MS + 1), false);
 });
 
 test('a synced device that takes a new code brings that device home; a new one goes where it is brought', () => {
