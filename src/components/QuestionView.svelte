@@ -147,6 +147,58 @@
     };
   }
   /**
+   * Svelte action: a picture's name at the reveal wraps between words only.
+   * A word wider than the caption (Strugglescream under one of ten pictures
+   * on a phone) shrinks the caption, the name and its Mirrored line together
+   * (sized from it), down to three quarters of its size; only a word too
+   * wide even then breaks. A name kept to one line, cut short with an
+   * ellipsis, is left as it comes.
+   */
+  function wholeWords(node: HTMLElement) {
+    const caption = node.parentElement ?? node;
+    // (No transition, which reduced motion gives every property: a size set
+    // here has to be measured at once, in the name too, which inherits it.)
+    caption.style.transitionProperty = 'none';
+    node.style.transitionProperty = 'none';
+    const run = () => {
+      caption.style.fontSize = '';
+      node.style.overflowWrap = '';
+      if (getComputedStyle(node).whiteSpace === 'nowrap') return;
+      node.style.overflowWrap = 'normal';
+      const full = parseFloat(getComputedStyle(caption).fontSize);
+      const least = full * 0.75;
+      const over = () => node.scrollWidth > node.clientWidth + 0.5;
+      let size = full;
+      // The widest word grows with the size: one step most of the way, then half pixels for what rounding leaves.
+      if (over()) {
+        size = Math.max(least, Math.floor((full * node.clientWidth * 2) / node.scrollWidth) / 2);
+        caption.style.fontSize = `${size}px`;
+      }
+      while (over() && size > least) {
+        size = Math.max(least, size - 0.5);
+        caption.style.fontSize = `${size}px`;
+      }
+      // (Broken anywhere outright: not every layout's caption does that for it, and a clipped name says less.)
+      if (over()) node.style.overflowWrap = 'anywhere';
+    };
+    // Once the tile is laid out (its first observation, before the first paint), again once the
+    // display font is in, and whenever the tile's width changes (a phone turned).
+    const ro = new ResizeObserver(run);
+    const tile = node.closest('.tile');
+    if (tile) ro.observe(tile);
+    else run();
+    void document.fonts?.ready.then(run);
+    // And when the name changes: once its new words are in (before the next paint).
+    const mo = new MutationObserver(run);
+    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    return {
+      destroy: () => {
+        ro.disconnect();
+        mo.disconnect();
+      },
+    };
+  }
+  /**
    * Delve together, while the question is open: teammates its wrong picks
    * left with no lives (their entries grey, easy to miss mid-question), and
    * a flare burning from someone's pack, said under the answers. A wrong
@@ -1287,7 +1339,7 @@
             {/if}
             {#if reveal && named(i)}
               <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>
-                {optionName(i)}
+                <span class="cname" use:wholeWords>{optionName(i)}</span>
                 {#if mirrored(i)}{@render mirrorLine()}{/if}
               </span>
             {/if}
@@ -1574,8 +1626,15 @@
     line-height: 1.1;
     color: #a9c3dc;
   }
+  /* Under a picture, a little smaller than the name above it (0.8rem under
+     0.85rem), at every size the caption takes, and never broken in two (ten
+     to a row on a phone leave a caption under 60px): it shrinks with its
+     caption instead. The word is about 5.75em wide in Cinzel, letter spacing
+     and all, so 16% of the caption's width for an em keeps it inside with
+     room to spare. */
   .caption .mirrored {
-    font-size: 0.8rem;
+    font-size: min(0.94em, 16cqi);
+    white-space: nowrap;
   }
 
   .art {
@@ -2598,9 +2657,14 @@
     text-align: center;
     color: #e9c8a2;
     line-height: 1.2;
+    /* For its Mirrored line's size (see .caption .mirrored). */
+    container-type: inline-size;
   }
   .tile.right .caption {
     color: #d6e8c0;
+  }
+  .cname {
+    display: block;
   }
   /* The row under the answers: what there is to say (a tip, Detonate, the
      result and Next). Same height with a tip, a result or nothing, so the
@@ -3388,6 +3452,45 @@
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
       padding-top: 0.45rem;
+    }
+    /* The name at the reveal over a tile barely taller than its picture: as
+       small as upright, on a shorter shade and two lines at most, so the
+       picture still shows above it (it can't move or shrink: nothing jumps).
+       A name cut short is whole a tap away, in the item's details. */
+    .caption {
+      padding: 0.8rem 0.25rem 0.3rem;
+      font-size: 0.72rem;
+      line-height: 1.12;
+    }
+    .cname {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+    }
+    /* Ten, two rows of tiles about 60px tall: one line, the name and
+       Mirrored side by side, the name giving way, down to about 5.5em; on a
+       narrower phone (667px across: tiles under 125px, but taller, about
+       80px) Mirrored goes under it rather than leave the name a stub. */
+    .tiles.ten .caption {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: baseline;
+      column-gap: 0.4em;
+      padding-top: 0.6rem;
+    }
+    .tiles.ten .cname {
+      display: block;
+      flex: 1 1 5.5em;
+      min-width: 0;
+      max-width: max-content;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .tiles.ten .caption .mirrored {
+      flex: none;
     }
     .footer {
       margin-top: 0.45rem;
