@@ -240,8 +240,18 @@ export function takeCampaign(): string | null {
   return tag;
 }
 
-/** Opened as the app on a home screen, not in a browser's tab. */
-const asApp = () => (typeof matchMedia !== 'undefined' && matchMedia('(display-mode: standalone)').matches) || (navigator as { standalone?: boolean }).standalone === true;
+/**
+ * Opened as the app on a home screen, not in a browser's tab: iOS says so,
+ * Android's opens fullscreen (the manifest's display). A desktop browser in
+ * F11 is fullscreen too, so that counts on a phone or tablet only.
+ */
+export function openedAsApp(e: { standalone?: boolean; userAgent: string; matches: (q: string) => boolean }): boolean {
+  if (e.standalone === true || e.matches('(display-mode: standalone)')) return true;
+  return e.matches('(display-mode: fullscreen)') && /Android|iPhone|iPad|iPod|Mobile/.test(e.userAgent);
+}
+const asApp = () =>
+  typeof matchMedia !== 'undefined' &&
+  openedAsApp({ standalone: (navigator as { standalone?: boolean }).standalone, userAgent: navigator.userAgent, matches: (q) => matchMedia(q).matches });
 
 /** The save as this page found it, read once (`save`, given with the visit), before anything played here writes to it. */
 let readPlayed: (() => Played | null) | null = null;

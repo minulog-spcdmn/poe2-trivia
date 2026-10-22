@@ -18,6 +18,7 @@ import {
   countStep,
   cohortEvent,
   failedImport,
+  openedAsApp,
   isoWeek,
   ownScript,
   takeCampaign,
@@ -291,4 +292,15 @@ test("a link's tag is its campaign only when it's a plain short word, so nothing
   assert.equal(campaignOf('?ref=a%20b'), null);
   assert.equal(campaignOf('?ref=https://evil.example/'), null);
   assert.equal(campaignOf(`?ref=${'x'.repeat(41)}`), null);
+});
+
+test("a visit opened from the home screen counts as the app's: iOS's, Android's fullscreen, not a desktop's F11", () => {
+  const env = (userAgent: string, modes: string[], standalone?: boolean) => ({ userAgent, standalone, matches: (q: string) => modes.some((m) => q === `(display-mode: ${m})`) });
+  const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36';
+  const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36';
+  assert.ok(openedAsApp(env(android, ['fullscreen'])));
+  assert.ok(openedAsApp(env('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', ['browser'], true)));
+  assert.ok(openedAsApp(env(windows, ['standalone'])));
+  assert.ok(!openedAsApp(env(windows, ['fullscreen'])));
+  assert.ok(!openedAsApp(env(android, ['browser'])));
 });
