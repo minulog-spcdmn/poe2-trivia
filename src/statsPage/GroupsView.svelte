@@ -4,10 +4,12 @@
   // country or a device can be picked, a mode, or one of each; never a
   // country and a device together, as GoatCounter counts the two apart.
   // Nothing picked: what stands out (slices.ts standouts), each a sentence
-  // with its two figures drawn. Something picked: its few figures, each
-  // against everyone; a mode, where it's played most for its visitors, a
+  // with its two figures drawn. Something picked: its few figures (who
+  // played, their games, who came back, the installed app), each against
+  // everyone; a mode, where it's played most for its visitors, a
   // bar each. GoatCounter breaks a whole period down, not its days.
   import { fmt } from './chart';
+  import { toldFromStart } from './insights';
   import { MODES, MODE_NAMES, deviceOf, modesOf, type Mode } from './model';
   import type { Period, Read } from './read';
   import { countsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
@@ -34,6 +36,8 @@
   const everyone = $derived(slices ? profileIn(slices, null, who ? dimOf(who.kind) : 'locations') : null);
   const picked = $derived(slices && who ? profileIn(slices, who) : null);
   const found = $derived(slices && !who && !mode ? standouts(slices) : []);
+  /** The installed app's share is of every visitor in the period: only shown where visits were told apart from its first day. */
+  const appKnown = $derived(toldFromStart(read.now));
 
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
   /** The chips of a kind: its biggest groups, and the picked one even where it isn't among them (opened from a list). */
@@ -69,6 +73,8 @@
       return { big: times(r), line: r > 1 ? `Visitors ${w} start ${times(r)} as many games each` : `Visitors ${w} start fewer games each`, mine: `${rate(f.mine)} games for 100 visitors`, all: rate(f.all) };
     if (f.what === 'daily')
       return { big: times(r), line: r > 1 ? `Visitors ${w} answer Today's unique ${times(r)} as often` : `Visitors ${w} answer Today's unique less often`, mine: `${pct(f.mine)} answered it`, all: pct(f.all) };
+    if (f.what === 'back')
+      return { big: times(r), line: r > 1 ? `Visitors ${w} come back ${times(r)} as often` : `Fewer of the visitors ${w} come back`, mine: `${pct(f.mine)} came back`, all: pct(f.all) };
     if (f.what === 'failures') return { big: times(r), line: `Visitors ${w} meet failures ${times(r)} as often`, mine: `${rate(f.mine)} for 100 visitors`, all: rate(f.all) };
     return { big: pct(f.mine), line: `Tries to join a room ${w} work ${f.mine < f.all ? 'less' : 'more'} often`, mine: `${pct(f.mine)} of tries worked`, all: pct(f.all) };
   }
@@ -216,6 +222,12 @@
       {/if}
       {@render tile('Games started', rate(mineGames), against(mineGames, allGames), mineGames, allGames, Math.max(mineGames, allGames), 'for every 100 visitors', `everyone: ${rate(allGames)}`)}
       {@render tile("Today's unique", picked.daily === null ? '–' : pct(picked.daily), against(picked.daily, everyone.daily), picked.daily ?? 0, everyone.daily ?? 0, 100, 'of visitors answered it', `everyone: ${pct(everyone.daily ?? 0)}`)}
+      {#if picked.back !== null && everyone.back !== null}
+        {@render tile('Came back', pct(picked.back), against(picked.back, everyone.back, true), picked.back, everyone.back, 100, 'came back to their save', `everyone: ${pct(everyone.back)}`)}
+      {/if}
+      {#if picked.app !== null && everyone.app !== null && appKnown}
+        {@render tile('Installed app', pct(picked.app), plain(against(picked.app, everyone.app, true)), picked.app, everyone.app, 100, 'opened it from a home screen', `everyone: ${pct(everyone.app)}`)}
+      {/if}
       {@render tile('Joins that work', picked.joins === null ? '–' : pct(picked.joins), against(picked.joins, everyone.joins, true), picked.joins ?? 0, everyone.joins ?? 0, 100, `of ${fmt(picked.tried)} tries`, `everyone: ${pct(everyone.joins ?? 0)}`)}
       {@render tile('Failures', rate(picked.failures ?? 0), against(picked.failures, everyone.failures, false, true), picked.failures ?? 0, everyone.failures ?? 0, Math.max(picked.failures ?? 0, everyone.failures ?? 0), 'for every 100 visitors', `everyone: ${rate(everyone.failures ?? 0)}`)}
     </div>
@@ -272,7 +284,7 @@
   {/if}
 
   <p class="aside">
-    How it's counted: a game counts on the device that runs it (the host's, or the one screen everyone plays on), so visitors who mostly join others' rooms start few games of their own{#if played}; "Played a game" counts guests too{/if}.
+    How it's counted: a game counts on the device that runs it (the host's), so visitors who mostly join others' rooms start few games of their own{#if played}; "Played a game" counts guests too{/if}.{#if everyone && everyone.back !== null} "Came back" is of the visits that found a save on their device or none, since the game began telling them apart; Safari on iPhone and iPad clears a save after about a week away, so iOS shows fewer coming back.{/if}
   </p>
 {/if}
 {#if slices && failed}

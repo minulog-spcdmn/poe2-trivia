@@ -79,6 +79,11 @@ poe2.quest/#toggle-goatcounter. An iPhone's home-screen app keeps storage
 apart from Safari's, so there, and only there, the privacy link in a room
 opens over the game (`src/lib/legalSheet.svelte.ts`).
 
+To see what a post or a stream brings in, tag the link you share:
+poe2.quest/?ref=reddit-oct (letters, digits, `-` and `_`, up to 40). The
+tag is counted as the visit's campaign and taken out of the address, and
+Analytics lists the tagged links with the sites people came from.
+
 ## Development
 
 ```sh

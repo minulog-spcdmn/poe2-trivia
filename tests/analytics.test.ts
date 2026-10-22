@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { moversOf, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { appShare, backShare, beforeShare, comersOf, firstStepsOf, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { countsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -54,10 +54,13 @@ test('the counts land where the page shows them', () => {
     { from: 2, to: 2, count: 2 },
     { from: 3, to: 4, count: 4 },
   ]);
-  // Modes nobody played aren't listed.
+  // Modes nobody played aren't listed; each knows the names its games were counted under.
   assert.deepEqual(
-    l.games.rows.map((r) => `${r.mode}-${r.where}`),
-    ['race-online', 'delve-hotseat'],
+    l.games.rows.map((r) => [r.mode, r.paths]),
+    [
+      ['race', ['play/race-online']],
+      ['delve', ['play/delve-hotseat']],
+    ],
   );
   assert.deepEqual([l.daily.right, l.daily.wrong], [4, 2]);
   assert.deepEqual(l.joins.find((j) => j.via === 'invite-link'), { via: 'invite-link', tried: 3, joined: 2 });
@@ -115,20 +118,52 @@ test('shares and changes', () => {
   assert.equal(change(10, 0), null);
 });
 
-test('a mode adds up both places it is played', () => {
+test('games counted online and hot-seat apart, under their older names, count as their mode with those counted since', () => {
+  assert.equal(currentName('play/delve-online'), 'play/delve');
+  assert.equal(currentName('size/race-hotseat-3p'), 'size/race-3p');
+  assert.equal(currentName('size/race-online-5-8p'), 'size/race-5-8p');
+  assert.equal(currentName('end/turns-hotseat'), 'end/turns');
+  assert.equal(currentName('play/race'), 'play/race');
+  // Only a mode's games: anything else keeps its name.
+  assert.equal(currentName('end/foo-online'), 'end/foo-online');
+  assert.equal(currentName('reach/played'), 'reach/played');
   const l = countsOf(
-    [path('play/delve-online', [2, 0, 0]), path('play/delve-hotseat', [5, 0, 0]), path('end/delve-hotseat', [4, 0, 0])],
+    [
+      path('play/delve-online', [2, 0, 0]),
+      path('play/delve-hotseat', [5, 0, 0]),
+      path('play/delve', [0, 1, 3]),
+      path('end/delve-hotseat', [4, 0, 0]),
+      path('end/delve', [0, 1, 2]),
+      path('size/delve-online-2p', [2, 0, 0]),
+      path('size/delve-2p', [0, 1, 1]),
+      path('size/delve-hotseat-1p', [5, 0, 0]),
+      path('screen/turns', [0, 0, 1]),
+      path('play/turns', [0, 0, 2]),
+    ],
     DAYS,
   );
   const delve = modesOf(l.games.rows).find((m) => m.mode === 'delve')!;
-  assert.deepEqual([delve.started, delve.finished, delve.online, delve.hotseat], [7, 4, 2, 5]);
+  // Its hot-seat games were all at one screen, before "screen/…" was counted (the third day).
+  assert.deepEqual([delve.started, delve.finished, delve.screen], [11, 7, 5]);
+  assert.deepEqual(l.games.perDay, [7, 1, 5]);
+  assert.deepEqual(l.games.finishedPerDay, [4, 1, 2]);
+  assert.deepEqual(l.games.rows.find((r) => r.mode === 'delve')!.sizes, [
+    { from: 1, to: 1, count: 5 },
+    { from: 2, to: 2, count: 4 },
+  ]);
+  // Asked for by every name it was counted under.
+  assert.deepEqual(groupPaths(l).delve, ['play/delve-online', 'play/delve-hotseat', 'play/delve']);
+  // Games with players at the host's own screen; hot-seat games only before that was counted.
+  assert.equal(modesOf(l.games.rows).find((m) => m.mode === 'turns')!.screen, 1);
+  const both = countsOf([path('play/turns-hotseat', [3, 0, 2]), path('screen/turns', [0, 1, 1]), path('play/turns', [0, 2, 2])], DAYS);
+  assert.equal(both.games.rows[0].screen, 5);
   // Every mode is there, played or not.
   assert.deepEqual(
     modesOf(l.games.rows).map((m) => [m.mode, m.started]),
     [
-      ['turns', 0],
+      ['turns', 2],
       ['race', 0],
-      ['delve', 7],
+      ['delve', 11],
     ],
   );
 });
@@ -474,7 +509,7 @@ test('each thing people do is read by the paths counted for it, and only those',
 });
 
 const SLICES: Slices = {
-  v: 2,
+  v: 3,
   span: 7,
   from: '2026-10-10',
   at: 0,
@@ -609,11 +644,276 @@ test('what stands out among the groups: big enough to tell, a mix, the largest f
   assert.ok(found.length > 0 && found.length <= 6);
   // The made-up Germans lean to Delve.
   assert.ok(found.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
-  for (const what of ['mode', 'played', 'games', 'daily', 'joins', 'failures']) assert.ok(found.filter((f) => f.what === what).length <= 2);
+  for (const what of ['mode', 'played', 'games', 'daily', 'back', 'joins', 'failures']) assert.ok(found.filter((f) => f.what === what).length <= 2);
   assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
   // Groups too small to tell apart say nothing.
   assert.deepEqual(standouts(SLICES, 6, 1000), []);
   // A problem is never left out for its group's other findings: the made-up Brazilians meet far more failures.
   const quarter = standouts(demoSlices(demoRead(90, new Date('2026-10-16T18:30:00Z'))));
   assert.ok(quarter.some((f) => f.who.name === 'Brazil' && f.what === 'failures' && f.tone === 'down'));
+});
+
+test("a game's hours under an older name and its name now are added up, so the week's hours read across the change", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  const old: PathCount = { path: 'play/race-online', event: true, count: 3, days: { '2026-10-14': 3 }, hours: { '2026-10-14': hours({ 20: 3 }) } };
+  const now: PathCount = { path: 'play/race', event: true, count: 2, days: { '2026-10-14': 1, '2026-10-16': 1 }, hours: { '2026-10-14': hours({ 20: 1 }), '2026-10-16': hours({ 9: 1 }) } };
+  const [race] = underNamesNow([old, now]);
+  assert.equal(race.path, 'play/race');
+  assert.equal(race.count, 5);
+  assert.deepEqual(race.days, { '2026-10-14': 4, '2026-10-16': 1 });
+  assert.equal(race.hours!['2026-10-14'][20], 4);
+  // The paths given are left as they were.
+  assert.equal(old.days['2026-10-14'], 3);
+  const l = countsOf([old, now], DAYS);
+  assert.equal(l.week.games?.[2][20], 4);
+  // One without hours that counted something: no hours rather than some missing.
+  assert.equal(underNamesNow([old, { ...now, hours: undefined }])[0].hours, undefined);
+  assert.deepEqual(underNamesNow([old, { ...now, count: 0, days: {}, hours: undefined }])[0].hours, old.hours);
+});
+
+test('how far a visit gets, from the day page loads were counted; before it, its first steps alone', () => {
+  const c = countsOf(
+    [
+      path('/', [10, 20, 30], false),
+      path('reach/page', [0, 25, 25]),
+      path('reach/played', [5, 8, 12]),
+      path('reach/finished', [4, 6, 9]),
+      path('reach/lobby', [0, 12, 15]),
+      path('reach/games-2', [0, 4, 6]),
+      path('reach/games-5', [0, 1, 1]),
+    ],
+    DAYS,
+  );
+  const j = journeyOf(c);
+  // Counted whole from the second day: the first's aren't counted against it.
+  assert.equal(j.from, DAYS[1]);
+  assert.equal(j.visitors, 50);
+  assert.deepEqual(j.counts, { lobby: 27, played: 20, finished: 15, 'games-2': 10, 'games-5': 2 });
+  assert.equal(reachedShare(j, 'lobby'), 54);
+  assert.equal(reachedShare(j, 'games-5'), 4);
+  // Before page loads were counted: the first two steps, against visits, the rest not counted at all.
+  assert.equal(journeyOf(countsOf([path('/', [10, 10, 10], false), path('reach/lobby', [4, 4, 4])], DAYS)).from, null);
+  const early = journeyOf(countsOf([path('/', [10, 10, 10], false), path('reach/played', [4, 5, 6]), path('reach/finished', [3, 3, 3])], DAYS));
+  assert.equal(early.from, DAYS[0]);
+  assert.equal(reachedShare(early, 'played'), 50);
+  assert.equal(reachedShare(early, 'lobby'), null);
+  // Nothing counted: nothing to say.
+  assert.equal(journeyOf(countsOf([path('/', [5, 5, 5], false)], DAYS)).from, null);
+  // A share never runs past every visitor.
+  const late = reachedOf(countsOf([path('reach/page', [2, 0, 0]), path('reach/time-2m', [3, 0, 0])], DAYS), ['time-2m']);
+  assert.equal(reachedShare(late, 'time-2m'), 100);
+  // A rare step is read from when page loads were counted, not from the day it first happened: one codex in 30 loads.
+  const rare = reachedOf(countsOf([path('reach/page', [10, 10, 10]), path('reach/codex', [0, 0, 1])], DAYS), ['codex']);
+  assert.deepEqual([rare.from, rare.visitors, Math.round(10 * reachedShare(rare, 'codex')!)], [DAYS[0], 30, 33]);
+});
+
+test('a share is set against the period before only where both are of the same, page loads or visits', () => {
+  const now = journeyOf(countsOf([path('reach/page', [10, 10, 10]), path('reach/played', [5, 5, 5])], DAYS));
+  const wasVisits = journeyOf(countsOf([path('/', [10, 10, 10], false), path('reach/played', [6, 6, 6])], DAYS));
+  const wasPages = journeyOf(countsOf([path('reach/page', [10, 10, 10]), path('reach/played', [6, 6, 6])], DAYS));
+  assert.equal(beforeShare(now, wasVisits, 'played'), null);
+  assert.equal(beforeShare(now, wasPages, 'played'), 60);
+  // The overview's figure knows which it is too.
+  assert.equal(stepsOf(countsOf([path('reach/page', [10, 10, 10]), path('reach/played', [5, 5, 5])], DAYS)).paged, true);
+  assert.equal(stepsOf(countsOf([path('/', [10, 10, 10], false), path('reach/played', [5, 5, 5])], DAYS)).paged, false);
+});
+
+test('who came: with no save on the device or back to one after so long, of those told apart; and the installed app, of every visitor', () => {
+  const c = countsOf(
+    [
+      path('/', [10, 20, 30], false),
+      path('visit/new', [0, 12, 18]),
+      path('visit/back-1d', [0, 4, 6]),
+      path('visit/back-7d', [0, 2, 3]),
+      path('visit/back-30d', [0, 1, 1]),
+      path('visit/back-later', [0, 1, 1]),
+      path('visit/app', [0, 2, 3]),
+    ],
+    DAYS,
+  );
+  const w = comersOf(c);
+  assert.equal(w.from, DAYS[1]);
+  assert.equal(w.visitors, 50);
+  assert.deepEqual([w.fresh, w.returned, w.app], [30, 19, 5]);
+  assert.deepEqual(w.back, { 'back-1d': 10, 'back-7d': 5, 'back-30d': 2, 'back-later': 2 });
+  // 19 of the 49 told apart came back to a save (the rest of the 50 played within 8 hours, and said neither); 5 of the 50 opened the installed app.
+  assert.equal(Math.round(backShare(w)!), 39);
+  assert.equal(Math.round(appShare(w)!), 10);
+  // Before they were told apart: nothing to say, not 0%.
+  const none = comersOf(countsOf([path('/', [10, 10, 10], false)], DAYS));
+  assert.deepEqual([none.from, backShare(none), appShare(none)], [null, null, null]);
+});
+
+test("the game's own script errors are listed with the failures, but aren't joining's", () => {
+  const c = countsOf(
+    [path('play/race', [100, 100, 100]), path('error/join-no-answer', [2, 2, 2]), path('error/script', [0, 0, 40]), path('sync/paired', [1, 0, 2])],
+    DAYS,
+  );
+  const script = c.failures.find((f) => f.key === 'script')!;
+  assert.deepEqual([script.script, script.host, script.count, script.label], [true, false, 40, "An error in the game's own scripts"]);
+  assert.deepEqual(c.failuresPerDay, [2, 2, 2]);
+  // Forty of them today don't make joining look worse.
+  assert.equal(troubleOf(c, c), null);
+  assert.deepEqual(groupPaths(c).failed, ['error/join-no-answer']);
+  assert.equal(c.sync.paired, 3);
+});
+
+test('visitors new, back and in the installed app are groups too, their shares of those told apart', () => {
+  const c = countsOf([path('/', [10, 0, 0], false), path('visit/new', [6, 0, 0]), path('visit/back-1d', [3, 0, 0]), path('visit/back-later', [1, 0, 0]), path('visit/app', [2, 0, 0])], DAYS);
+  const g = groupPaths(c);
+  assert.deepEqual([g.new, g.back, g.app], [['visit/new'], ['visit/back-1d', 'visit/back-later'], ['visit/app']]);
+  const s: Slices = {
+    ...SLICES,
+    locations: {
+      ...SLICES.locations,
+      new: [{ name: 'Germany', count: 10 }, { name: 'France', count: 30 }],
+      back: [{ name: 'Germany', count: 30 }, { name: 'France', count: 10 }],
+      app: [{ name: 'Germany', count: 4 }],
+    },
+  };
+  // The groups' installed app is of every visitor in the period: a share only where visits were told apart from its first day.
+  assert.equal(toldFromStart(c), true);
+  assert.equal(toldFromStart(countsOf([path('/', [10, 5, 0], false), path('visit/new', [0, 3, 0])], DAYS)), false);
+  const de = profileIn(s, { kind: 'place', name: 'Germany' });
+  assert.deepEqual([de.back, de.app, de.told], [75, 10, 40]);
+  assert.equal(profileIn(s, null).back, 50);
+  // Not counted in the groups read: no share made up.
+  assert.equal(profileIn(SLICES, null).back, null);
+  assert.equal(profileIn(SLICES, null).app, null);
+});
+
+test('the made-up numbers have every new count, and games under both their names', () => {
+  const at = new Date('2026-10-18T15:30:00Z');
+  const month = demoRead(30, at);
+  const l = month.now;
+  // The made-up game dropped hot seat on the 14th: both names, read as one.
+  const race = l.games.rows.find((r) => r.mode === 'race')!;
+  assert.ok(race.paths.includes('play/race') && race.paths.includes('play/race-online') && race.paths.includes('play/race-hotseat'));
+  assert.ok(l.games.rows.find((r) => r.mode === 'turns')!.screen > 0);
+  const j = journeyOf(l);
+  assert.equal(j.from, month.from);
+  for (const step of ['lobby', 'played', 'finished', 'games-2', 'games-5'] as const) assert.ok((j.counts[step] ?? 0) > 0, step);
+  // Each step no more than the one before it.
+  assert.ok(j.counts.lobby! >= j.counts.played! && j.counts.played! >= j.counts['games-2']! && j.counts['games-2']! >= j.counts['games-5']!);
+  const w = comersOf(l);
+  assert.ok(w.fresh > 0 && w.returned > 0 && w.app > 0);
+  assert.ok(backShare(w)! > 20 && backShare(w)! < 60);
+  assert.ok(month.campaigns.length > 0 && l.sync.paired > 0);
+  assert.ok(l.failures.some((f) => f.script));
+  const f = firstStepsOf(l);
+  assert.ok(f.visits > 0 && f.counts.lobby >= f.counts.played && f.counts.played >= f.counts.finished && f.counts.finished > 0);
+  // Every cohort of the last weeks knows how many started, and keeps fewer of them each week.
+  const recent = l.cohorts.filter((c) => c.started !== null);
+  assert.ok(recent.length >= 3);
+  const long = recent.filter((c) => c.weeks.length >= 3);
+  assert.ok(long.length >= 2);
+  for (const c of long) assert.ok(c.weeks[0]! > c.weeks[2]!, c.week);
+  // The groups have them too.
+  const s = demoSlices(month);
+  assert.ok((s.systems.app ?? []).length > 0 && (s.locations.back ?? []).length > 0);
+});
+
+test('steps are a share of page loads once those were counted, reloads included, over the days together', () => {
+  // Visits leave reloads out; the steps and page loads don't.
+  const c = countsOf(
+    [
+      path('/', [10, 10, 10], false),
+      path('reach/page', [0, 14, 16]),
+      path('reach/played', [4, 12, 12]),
+      path('reach/finished', [3, 8, 9]),
+      path('reach/lobby', [0, 13, 14]),
+    ],
+    DAYS,
+  );
+  const j = journeyOf(c);
+  // From the day page loads were counted, against them: 24 of 30 played, where visits would say 24 of 20.
+  assert.equal(j.from, DAYS[1]);
+  assert.equal(j.visitors, 30);
+  assert.equal(reachedShare(j, 'played'), 80);
+  const s = stepsOf(c);
+  assert.deepEqual([s.from, s.visitors, s.played, s.finished], [DAYS[1], 30, 24, 17]);
+  // Before page loads were counted: against visits, from the first step counted.
+  const old = stepsOf(countsOf([path('/', [10, 10, 10], false), path('reach/played', [4, 4, 4])], DAYS));
+  assert.deepEqual([old.from, old.visitors, old.played], [DAYS[0], 30, 12]);
+});
+
+test("a first visit's steps, of the visits that found no save", () => {
+  const c = countsOf(
+    [path('/', [10, 20, 30], false), path('visit/new', [5, 10, 15]), path('new/lobby', [0, 6, 8]), path('new/played', [0, 4, 6]), path('new/finished', [0, 3, 4])],
+    DAYS,
+  );
+  const f = firstStepsOf(c);
+  // From the first day visits with no save were counted, not the first day one got a step along.
+  assert.equal(f.from, DAYS[0]);
+  assert.equal(f.visits, 30);
+  assert.deepEqual(f.counts, { lobby: 14, played: 10, finished: 7 });
+  assert.equal(firstStepsOf(countsOf([path('new/played', [5, 5, 5])], DAYS)).from, null);
+});
+
+test('ISO weeks, and those who first played in one coming back the weeks after', () => {
+  assert.equal(isoWeek('2026-10-19'), '2026-W43');
+  assert.equal(isoWeek('2026-10-25'), '2026-W43');
+  // The first days of a year can belong to the last week of the one before, and the other way round.
+  assert.equal(isoWeek('2027-01-01'), '2026-W53');
+  assert.equal(isoWeek('2025-12-29'), '2026-W01');
+  assert.equal(weekMonday('2026-W43'), '2026-10-19');
+  assert.equal(weekMonday('2026-W01'), '2025-12-29');
+  assert.equal(weekMonday('nonsense'), null);
+  const days = daysBetween('2026-10-12', '2026-10-28');
+  const at = (vs: Record<string, number>): PathCount => ({ path: '', event: false, count: Object.values(vs).reduce((a, b) => a + b, 0), days: vs });
+  const c = countsOf(
+    [
+      { ...at({ '2026-10-12': 30, '2026-10-20': 20 }), path: 'visit/new' },
+      { ...at({ '2026-10-13': 10, '2026-10-20': 2 }), path: 'new/played' },
+      { ...at({ '2026-10-14': 4, '2026-10-21': 3, '2026-10-27': 1 }), path: 'cohort/2026-W42' },
+      { ...at({ '2026-10-22': 2 }), path: 'cohort/2026-W43' },
+      // A week begun long before the period: no count of who started, its first weeks not in it.
+      { ...at({ '2026-10-12': 1 }), path: 'cohort/2026-W40' },
+      { ...at({ '2026-10-12': 1 }), path: 'cohort/garbage' },
+    ],
+    days,
+  );
+  assert.deepEqual(
+    c.cohorts.map((x) => [x.week, x.started, x.weeks]),
+    [
+      ['2026-W40', null, [null, null, 1, 0, 0]],
+      ['2026-W42', 10, [4, 3, 1]],
+      ['2026-W43', 2, [2, 0]],
+    ],
+  );
+  // Counting began after a week's Monday: who started that week isn't known, rather than far too few.
+  const late = countsOf(
+    [
+      { ...at({ '2026-10-14': 30 }), path: 'visit/new' },
+      { ...at({ '2026-10-14': 10 }), path: 'new/played' },
+      { ...at({ '2026-10-15': 4 }), path: 'cohort/2026-W42' },
+    ],
+    days,
+  );
+  assert.equal(late.cohorts[0].started, null);
+  // The table's rows: the weeks its columns reach, none after the period (a clock years off).
+  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [] }];
+  assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43']);
+  assert.deepEqual(recentCohorts(odd, '2026-10-28').map((x) => x.week), ['2026-W40', '2026-W42', '2026-W43']);
+});
+
+test('a site listed twice, its referrer once cleaned and once not, is one', () => {
+  assert.deepEqual(
+    sameSites([
+      { name: 'https://www.reddit.com', count: 10 },
+      { name: '(unknown)', count: 30 },
+      { name: 'www.reddit.com', count: 4 },
+      { name: 'https://discord.com', count: 5 },
+      { name: '', count: 2 },
+    ]),
+    [
+      { name: '(unknown)', count: 30 },
+      { name: 'reddit.com', count: 14 },
+      { name: 'discord.com', count: 5 },
+      { name: '', count: 2 },
+    ],
+  );
+  // The made-up referrers have one too.
+  const refs = demoRead(30, new Date('2026-10-18T15:30:00Z')).refs;
+  assert.equal(refs.filter((r) => r.name === 'reddit.com').length, 1);
 });

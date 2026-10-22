@@ -53,7 +53,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
-import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
+import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -2525,17 +2525,28 @@ class Session {
   }
 
   private gameCounts = new GameCounts();
+  private steps = new Steps();
   /**
-   * A game starting or decided: on every device as a step its visitor
-   * reached (count.ts reachEvents), and once a game by the device that runs
-   * it (gameEvents). Nothing to work out where nothing counts.
+   * A lobby seen, a game starting or decided: as a step its visitor reached
+   * (count.ts Steps) on every device with a seat in it, not one watching,
+   * and once a game by the device that runs it (gameEvents). A game moving
+   * is a sign someone is there (markActive). Nothing to work out where
+   * nothing counts.
    */
   private notePlay(prev: GameState | null, next: GameState) {
     if (!counting) return;
-    for (const e of reachEvents(prev, next)) countReach(e);
+    markActive();
+    const seated = this.mode === 'local' || next.players.some((p) => p.id === this.myPlayerId);
+    if (seated)
+      for (const e of this.steps.events(prev, next)) {
+        // One device's game shows no lobby (a Delve link's run starts straight away): it's entered as it starts.
+        if (this.mode === 'local' && e === 'reach/lobby') continue;
+        // So is a game a guest watched the lobby of, seated only as it starts (each step counts once a page load).
+        if (e === 'reach/played') countStep('reach/lobby');
+        countStep(e);
+      }
     if (this.mode !== 'local' && this.mode !== 'host') return;
-    // Counted as on one device: hot-seat, or a room that never went online.
-    for (const e of this.gameCounts.events(prev, next, this.mode === 'local' || this.hereOnly)) countEvent(e);
+    for (const e of this.gameCounts.events(prev, next)) countEvent(e);
   }
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */

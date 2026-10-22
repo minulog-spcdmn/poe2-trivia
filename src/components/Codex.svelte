@@ -29,6 +29,7 @@
   import { onStoredElsewhere } from '../lib/storage';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
+  import { countReach } from '../lib/count';
   import { eraseSync, sync } from '../lib/sync/link.svelte';
   import CodexAchievements from './CodexAchievements.svelte';
 
@@ -308,6 +309,11 @@
   ];
   const earnedCount = $derived(ACHIEVEMENTS.filter((a) => achievements.earned[a.id] !== undefined).length);
   let tab = $state<Tab>('items');
+  // Steps a visit reached (lib/count.ts): the codex opened, its achievements looked at.
+  countReach('reach/codex');
+  $effect(() => {
+    if (tab === 'feats') countReach('reach/achievements');
+  });
   /** The tab's note, as players see depths (shownDepth): your deepest alone or together under the current rules, as the start page has it (none for 0). */
   const delveBestShown = $derived(shownDepth(deepestShown(delve)));
   const delved = $derived(delve.runs.length > 0 || delve.frontier.length > 0 || Object.keys(delve.bests).length > 0);
