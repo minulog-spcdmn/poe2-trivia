@@ -862,6 +862,8 @@
   /* Its lantern hangs in the engraving, gilded: the emblem's place is kept, so a row's name keeps clear of it. */
   .card.out .icon.none {
     visibility: hidden;
+    /* (Hidden, it needn't kindle: the kindle runs on the page's thread.) */
+    animation: none;
   }
   .find-tag.out-tag {
     color: var(--f-hi);
@@ -1139,13 +1141,9 @@
   .card.out .sheen {
     display: none;
   }
-  /* (Its shadow and glow as CardEngraving's .gilt has them, the kindle's
-     numbers read in, as .icon's are.) */
+  /* (CardEngraving's .gilt reads the kindle's numbers, as .icon does.) */
   .card.out .turn:global(.dealt) :global(.gilt) {
     animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
-    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75))
-      drop-shadow(0 0 var(--kindle-glow, 10px) var(--f-pulse, rgba(224, 138, 68, 0.45)));
-    opacity: var(--kindle-fade, 1);
   }
   /* (The swell on the engraving's still layers, beside the gilt rather
      than round it: a filter animated inside another runs out of step with

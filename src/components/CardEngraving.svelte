@@ -254,9 +254,12 @@
 
   /* A gilded motif: the item's gold (ChooseCategory's .glyph, or the card's
      --f-glyph colours), lifted off the card by its shadow and glowing warm
-     as an emblem does. */
+     as an emblem does. Its brightness, fade and glow's reach read the
+     kindle's numbers (ChooseCategory's kindle-gilt, app.css), whole at rest. */
   .gilt {
-    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75))
+      drop-shadow(0 0 var(--kindle-glow, 10px) var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    opacity: var(--kindle-fade, 1);
   }
   .gilt path.part {
     stroke: none;
