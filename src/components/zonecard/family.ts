@@ -79,6 +79,14 @@ export const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 export const IN = 'cubic-bezier(0.5, 0, 0.75, 0)';
 
 /**
+ * A letter's blur as it comes in, `px` soft, beside a brightness of 1 that
+ * changes nothing: iOS Safari left letters animated through a blur alone
+ * stuck blurry once they had settled, where a blur beside a brightness (as
+ * the ember and rime families have it) settles sharp.
+ */
+export const soft = (px: number) => `brightness(1) blur(${px}px)`;
+
+/**
  * The default entrance: each letter rises 0.32em into place out of a blur,
  * pulled in toward the middle at first so the name spreads as it comes (its
  * tracking widens without the text reflowing), overshooting a touch.
@@ -88,8 +96,8 @@ export function enterDefault(c: Ctx, blur = c.phone ? 4 : 6) {
     c.play(
       c.inner[i],
       [
-        { opacity: 0, transform: `translate(${(-0.22 * c.dx[i]).toFixed(1)}px, 0.32em) scale(0.94)`, filter: `blur(${blur}px)`, easing: OUT },
-        { offset: 0.62, opacity: 1, transform: 'translate(0, -0.02em) scale(1.012)', filter: 'blur(0.4px)', easing: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+        { opacity: 0, transform: `translate(${(-0.22 * c.dx[i]).toFixed(1)}px, 0.32em) scale(0.94)`, filter: soft(blur), easing: OUT },
+        { offset: 0.62, opacity: 1, transform: 'translate(0, -0.02em) scale(1.012)', filter: soft(0.4), easing: 'cubic-bezier(0.45, 0, 0.55, 1)' },
         { opacity: 1, transform: 'none', filter: 'none' },
       ],
       { at: c.tl.starts[i], ms: c.tl.letterMs },
