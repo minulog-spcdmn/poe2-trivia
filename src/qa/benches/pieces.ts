@@ -9,7 +9,8 @@ import { descent } from './descent.ts';
 import { sigils } from './sigils.ts';
 import { streak } from './streak.ts';
 import { sync } from './sync.ts';
+import { zone } from './zone.ts';
 
-export const PIECES: PieceBench[] = [avatar, sigils, streak, descent, circle, sync];
+export const PIECES: PieceBench[] = [avatar, sigils, streak, descent, zone, circle, sync];
 
 export const pieceByKey = (key: string | null) => PIECES.find((p) => p.key === key);
