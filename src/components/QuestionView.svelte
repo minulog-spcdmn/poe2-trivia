@@ -91,8 +91,6 @@
    * side, where the plate has no height to spare).
    */
   function oneLine(node: HTMLElement, on = true) {
-    // (No transition, which reduced motion gives every property: a size set here has to be measured at once.)
-    node.style.transitionProperty = 'none';
     const run = () => {
       node.style.fontSize = '';
       node.style.whiteSpace = '';
@@ -179,7 +177,15 @@
     const ro = new ResizeObserver(run);
     const tile = node.closest('.tile');
     if (tile) ro.observe(tile);
-    return { destroy: () => ro.disconnect() };
+    // And when the name changes: once its new words are in (before the next paint).
+    const mo = new MutationObserver(run);
+    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    return {
+      destroy: () => {
+        ro.disconnect();
+        mo.disconnect();
+      },
+    };
   }
   /**
    * Delve together, while the question is open: teammates its wrong picks

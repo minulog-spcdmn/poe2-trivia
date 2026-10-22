@@ -4,7 +4,7 @@
 // Delve alone and together, deeper down too, with finds among the cards and a
 // vein's dig.
 
-import { MAX_PLAYERS, PRESETS, type Knobs, type Settings } from '../../lib/game.ts';
+import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type Knobs, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed, longestWord } from '../build/engine.ts';
@@ -77,38 +77,27 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
     build: (v = {}) => {
       const t = play(v);
       const q = t.s.question;
-      if (v.asked === 'longest' && q?.mode === 'name') {
+      if (q && q.mode === (v.asked === 'longest' ? 'name' : v.asked === 'art-longest' ? 'art' : null)) {
         // The answer stays where it was dealt (the first, if none was), the
         // longest name of all; what the plate says of the options and the
-        // picture are the new ones' (the item's own art).
+        // pictures are the new ones' (each item's own art, mirrored as
+        // dealt), and an answer already given is kept to its place.
         const at = Math.max(0, q.options.indexOf(q.itemId));
         const longest = longestNamed(q.options.length);
         [longest[0], longest[at]] = [longest[at], longest[0]];
-        q.options = longest.map((it) => it.id);
-        q.labels = longest.map((it) => it.name);
-        q.itemId = q.options[at];
-        q.category = longest[at].category;
-        q.groups = [...new Set(longest.map((it) => it.group))].sort();
-        delete q.variant;
-      }
-      if (v.asked === 'art-longest' && q?.mode === 'art') {
-        // The same under pictures: the answer, where it was dealt, the
-        // longest name of all, each picture the new item's own art (mirrored
-        // as dealt), and an answer already given kept to its place.
-        const at = Math.max(0, q.options.indexOf(q.itemId));
-        const longest = longestNamed(q.options.length);
-        [longest[0], longest[at]] = [longest[at], longest[0]];
-        // A wrong pick's name the one with the longest word, which can't wrap.
         const r = t.s.reveal;
-        const wrong = r && r.chosenIndex !== null && r.chosenIndex !== at ? r.chosenIndex : -1;
-        if (wrong >= 0) longest[wrong] = longestWord();
+        // Under pictures, a wrong pick's name the one with the longest word, which can't wrap.
+        const wrong = q.mode === 'art' && r && r.chosenIndex !== null && r.chosenIndex !== at ? r.chosenIndex : -1;
+        if (wrong >= 0) longest[wrong] = longestWord(longest);
         q.options = longest.map((it) => it.id);
+        if (q.mode === 'name') q.labels = longest.map((it) => it.name);
+        else q.prompt = longest[at].name;
         q.itemId = q.options[at];
-        q.prompt = longest[at].name;
         q.category = longest[at].category;
         q.groups = [...new Set(longest.map((it) => it.group))].sort();
         delete q.variant;
-        delete q.tall;
+        if (q.mode === 'art' && longest.every((it) => TALL_ART_GROUPS.has(it.group))) q.tall = true;
+        else delete q.tall;
         if (r) {
           r.correctId = q.itemId;
           if (r.chosenIndex !== null) r.chosenId = q.options[r.chosenIndex];
