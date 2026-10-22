@@ -20,10 +20,13 @@ export const short = new MediaQuery('(min-width: 761px) and (max-height: 820px)'
  * scoreboard, banner and question. The game takes the phone's slim scoreboard
  * (in the header's row), the art and answers stand side by side at any width, and
  * the question is as tall as the screen leaves it, so nothing scrolls (the QA
- * desk's frames check it, src/qa/frame/checks.ts). The components' CSS writes
- * the query out.
+ * desk's frames check it, src/qa/frame/checks.ts). From 561 wide: no phone
+ * on its side is narrower (the smallest, 568), and a window that short and
+ * narrower is laid out as the narrow screen it is (the category cards as
+ * rows). The components' CSS writes the query out (tests/flatQuery.test.ts
+ * holds every copy to it).
  */
-export const FLAT = '(orientation: landscape) and (max-height: 500px)';
+export const FLAT = '(orientation: landscape) and (max-height: 500px) and (min-width: 561px)';
 export const flat = new MediaQuery(FLAT);
 
 /**

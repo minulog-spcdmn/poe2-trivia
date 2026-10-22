@@ -851,7 +851,7 @@
   /* A phone on its side (lib/layout.ts `flat`): the phone's slim scoreboard
      (in the header's row: App.svelte's `folded`) and banner, clear of the notch, so the question below them fits the
      screen's height (QuestionView sizes it to what's left). */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .game {
       gap: 0.2rem;
       /* (At the foot, clear of the home indicator's strip where there is one.) */
@@ -895,7 +895,7 @@
     }
   }
   /* A phone's browser on its side, the address bar up: the banner closer. */
-  @media (orientation: landscape) and (max-height: 350px) {
+  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
     .banner {
       margin: 0.15rem 0 0.2rem;
     }

@@ -3312,7 +3312,7 @@
      header (the slim scoreboard in its row), the banner and the task line
      (the timer at its right end), with the row under them, so the whole question is in view at once.
      (After the 760px and short-window blocks, which it overrides.) */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .question {
       /* The height the art and answers share: the window's, less what stands above and below them
          (the header, the scoreboard in its row; the banner, the task line, the row under them, the home indicator's strip). */

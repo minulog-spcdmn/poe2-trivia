@@ -1086,7 +1086,7 @@
   /* A phone on its side (lib/layout.ts `flat`): a slimmer header, clear of
      the notch, so the game below it fits the screen's height (its buttons
      keep their size: a thumb's to tap). */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     header {
       padding: calc(0.25rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.25rem max(1rem, env(safe-area-inset-left));
     }
@@ -1122,7 +1122,7 @@
     }
   }
   /* Narrower ones keep the header to one line: the name goes without its Beta, as on phones. */
-  @media (orientation: landscape) and (max-height: 500px) and (max-width: 760px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) and (max-width: 760px) {
     .beta {
       display: none;
     }
