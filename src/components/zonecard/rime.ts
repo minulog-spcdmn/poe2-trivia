@@ -23,7 +23,8 @@ export const rime: FamilyMotion = {
   enter(c) {
     const at = startsIn(c, fromMiddle(c));
     for (const i of c.glyphs) {
-      enter(c,
+      enter(
+        c,
         c.inner[i],
         [
           { opacity: 0, transform: 'translate(0, -0.18em) scale(1.08)', filter: `brightness(1.6) blur(${c.phone ? 3 : 5}px)`, easing: 'cubic-bezier(0.12, 0.9, 0.25, 1)' },

@@ -24,7 +24,8 @@ export const ember: FamilyMotion = {
     c.play(c.letters, [{ clipPath: 'inset(-1em -0.6em 0 -0.6em)' }, { clipPath: 'inset(-1em -0.6em 0 -0.6em)' }], { at: 0, ms: c.tl.lock, fill: 'backwards' });
     const at = startsIn(c, c.glyphs);
     for (const i of c.glyphs)
-      enter(c,
+      enter(
+        c,
         c.inner[i],
         [
           { opacity: 0, transform: 'translateY(0.45em)', filter: 'brightness(2.4) blur(3px)', easing: OUT },

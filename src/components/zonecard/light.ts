@@ -28,7 +28,8 @@ export const light: FamilyMotion = {
     const order = lit(c);
     const at = startsIn(c, order);
     for (const i of c.glyphs)
-      enter(c,
+      enter(
+        c,
         c.inner[i],
         [
           { opacity: 0, filter: 'brightness(1.8)' },

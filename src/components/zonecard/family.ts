@@ -97,7 +97,8 @@ export const enter = (c: Ctx, el: Element, frames: Keyframe[], o: Omit<PlayOpts,
  */
 export function enterDefault(c: Ctx, blur = c.phone ? 4 : 6) {
   for (const i of c.glyphs)
-    enter(c,
+    enter(
+      c,
       c.inner[i],
       [
         { opacity: 0, transform: `translate(${(-0.22 * c.dx[i]).toFixed(1)}px, 0.32em) scale(0.94)`, filter: `blur(${blur}px)`, easing: OUT },

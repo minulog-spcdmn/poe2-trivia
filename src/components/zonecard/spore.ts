@@ -37,7 +37,8 @@ export const spore: FamilyMotion = {
     const blur = c.phone ? 5 : 8;
     for (const i of c.glyphs) {
       const [x, y, r] = [(c.rnd() - 0.5) * 1, (c.rnd() - 0.5) * 1, (c.rnd() - 0.5) * 20];
-      enter(c,
+      enter(
+        c,
         c.inner[i],
         [
           { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${r.toFixed(1)}deg) scale(0.85)`, filter: `blur(${blur}px)`, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },

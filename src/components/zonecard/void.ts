@@ -25,7 +25,8 @@ export const voidFamily: FamilyMotion = {
       const r = 1.2 + c.rnd() * 0.8;
       const [x, y] = [Math.cos(ang) * r, Math.sin(ang) * r * 0.6];
       const turn = (c.rnd() - 0.5) * 60;
-      enter(c,
+      enter(
+        c,
         c.inner[i],
         [
           { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${turn.toFixed(0)}deg) scale(0.6)`, filter: 'blur(4px)', easing: 'cubic-bezier(0.7, 0, 0.2, 1)' },
