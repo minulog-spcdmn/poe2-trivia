@@ -29,13 +29,23 @@ const SYNC: Control = {
     { value: 'off', label: 'Not paired' },
     { value: 'waiting', label: 'A code waiting for the other device' },
     { value: 'paired', label: 'Paired, the other not on the site' },
+    { value: 'never', label: 'Paired, not synced since' },
     { value: 'linked', label: 'Synced with one' },
     { value: 'three', label: 'Synced with three' },
     { value: 'offline', label: 'Server out of reach' },
   ],
   default: 'paired',
 };
-const ASKED: Control = { kind: 'toggle', key: 'asked', label: 'Unpair asked for', default: false };
+const ASKED: Control = {
+  kind: 'choice',
+  key: 'asked',
+  label: 'Asked for',
+  options: [
+    { value: 'none', label: 'Nothing' },
+    { value: 'unpair', label: 'Unpair' },
+  ],
+  default: 'none',
+};
 
 /** A code to be paired with, the same every time (as the sync bench's). */
 const SYNC_CODE = 'K7QXM2PA9FHE3TDW';
@@ -67,7 +77,7 @@ export function settingsScenes(): Scene[] {
       }),
     },
     {
-      // Sync, under the name: what it does, or how it stands and the way to let go of it (the pairing dialog is the sync bench's).
+      // Sync, under the name: what it does, or how it stands (its light, when it last synced) and Unpair (the pairing dialog is the sync bench's).
       key: 'settings/sync',
       screen: 'settings',
       group: 'Settings',
@@ -78,10 +88,11 @@ export function settingsScenes(): Scene[] {
         { label: 'Not paired', values: { sync: 'off' } },
         { label: 'A code waiting', values: { sync: 'waiting' } },
         { label: 'Paired, the other away', values: { sync: 'paired' } },
+        { label: 'Paired, not synced since', values: { sync: 'never' } },
         { label: 'Synced', values: { sync: 'linked' } },
         { label: 'Synced with three', values: { sync: 'three' } },
         { label: 'Server out of reach', values: { sync: 'offline' } },
-        { label: 'Unpair asked for', values: { sync: 'linked', asked: true } },
+        { label: 'Unpair asked for', values: { sync: 'linked', asked: 'unpair' } },
       ],
       build: (v = {}): Built => {
         const s = String(v.sync ?? 'paired');
@@ -97,9 +108,11 @@ export function settingsScenes(): Scene[] {
                   met,
                   status: s === 'linked' || s === 'three' ? 'linked' : s === 'offline' ? 'offline' : 'waiting',
                   linked: s === 'three' ? 3 : s === 'linked' ? 1 : 0,
+                  // (Paired and away: last synced 25 minutes before.)
+                  lastAt: s === 'paired' ? Date.now() - 25 * 60_000 : 0,
                 },
               }),
-          ...(v.asked && met ? { steps: [{ click: '.sync-row .reset' }] } : {}),
+          ...(met && v.asked === 'unpair' ? { steps: [{ click: '.sync-row .reset' }] } : {}),
         };
       },
     },

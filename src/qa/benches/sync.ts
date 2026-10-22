@@ -1,9 +1,9 @@
 // Pairing devices to sync (components/SyncDialog.svelte): this device's
 // code as a QR code (where a computer opens it), waiting for the other or
-// linked to it, a code taken from another, the code typed in, the camera
-// reading another's (where a phone opens it), and a pairing link asking
-// first. The
-// frame never syncs (lib/sync/store.ts SYNC_HERE): the link's state is the
+// linked to it, a code
+// taken from another, the code typed in, the camera reading another's
+// (where a phone opens it), and a pairing link asking first. The frame
+// never syncs (lib/sync/store.ts SYNC_HERE): the link's state is the
 // controls', so nothing reaches the matchmaking server. The camera is the
 // frame's own, so Scan a code on a phone reads a real QR code.
 

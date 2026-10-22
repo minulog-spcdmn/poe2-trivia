@@ -40,7 +40,9 @@
     { label: 'Refused (error)', show: () => toast("It's not your turn.", 'error') },
     { label: 'Game ended (sticky)', show: () => toast('The host closed the room.', 'error', { title: 'Game over', sticky: true }) },
     { label: 'Clock paused', show: () => toast('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' }) },
-    { label: 'Fullscreen tip', show: showTip },
+    { label: 'Fullscreen tip', show: () => showTip('desktop') },
+    { label: 'Install tip (Android)', show: () => showTip('android') },
+    { label: 'Install tip (iOS)', show: () => showTip('ios') },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
       label: `Achievement (${METALS[t].name.toLowerCase()})`,

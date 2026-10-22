@@ -40,7 +40,7 @@ import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSI
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
-import { cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
+import { NAME_STORED, cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
@@ -218,9 +218,9 @@ function stored(name: string, fallback: () => string): string {
   return fresh;
 }
 
-export const savedName = () => readStored('name') ?? '';
+export const savedName = () => readStored(NAME_STORED) ?? '';
 /** The whole key of the saved name, as storage events name it. */
-export const NAME_KEY = storeKey('name');
+export const NAME_KEY = storeKey(NAME_STORED);
 
 /** What a guest is told when the host turns it out of the room, by the host's word for it: the message, and its title. */
 const TURNED_OUT = {
@@ -228,7 +228,7 @@ const TURNED_OUT = {
   closed: ['The host closed the room.', 'Room closed'],
   replaced: ['You joined this game from another tab or window, so it continues there.', 'Moved to another tab'],
 } as const satisfies Record<string, readonly [string, string]>;
-export const saveName = (name: string) => void writeStored('name', name);
+export const saveName = (name: string) => void writeStored(NAME_STORED, name);
 
 /**
  * This browser's secret. It proves "I'm the same player" when rejoining and

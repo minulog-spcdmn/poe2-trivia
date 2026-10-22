@@ -92,7 +92,7 @@ export interface Built {
   /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
   circle?: PlateName | null;
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
-  sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number };
+  sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
 }
 
 export interface Scene {

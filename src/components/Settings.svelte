@@ -120,6 +120,10 @@
   const paired = $derived(!!sync.code && sync.met);
   /** A code kept that has met no device yet (let go of in a while if none comes). */
   const waiting = $derived(!!sync.code && !sync.met);
+  // (Let go of meanwhile, here or in another tab: neither asks again once paired again.)
+  $effect(() => {
+    if (!paired) unpairing = false;
+  });
 
   // ---- class sigils ----
 
@@ -311,7 +315,10 @@
                 <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
             {:else if paired}
-              <span>{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span>
+              <span
+                ><span class="light" class:on={sync.status === 'linked'} aria-hidden="true"></span>{syncLine()}
+                <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span
+              >
             {/if}
           </p>
         </div>
@@ -628,6 +635,21 @@
   }
   .sync-row .reset {
     margin-left: 0.3rem;
+  }
+  /* Lit while another device is linked; an empty ring while it isn't. */
+  .sync-row .light {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-right: 0.45em;
+    border-radius: 50%;
+    border: 1px solid var(--gold-lo);
+    vertical-align: 0.08em;
+  }
+  .sync-row .light.on {
+    border-color: transparent;
+    background: currentColor;
+    box-shadow: 0 0 0.35em currentColor;
   }
   .sync-row .sep {
     margin-left: 0.4rem;

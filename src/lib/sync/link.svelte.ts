@@ -18,21 +18,28 @@
 // what comes in from one link goes on to the others, so three devices or
 // more keep the same as two.
 //
-// While a page is hidden for a minute, its device lets go (a phone in a
-// pocket keeps no link open); it comes back as the page does.
+// A phone or tablet whose page is hidden for a minute lets go (a phone in a
+// pocket keeps no link open) and comes back as the page does; a computer
+// keeps its link in a tab behind others, so a game played on the phone
+// still reaches it.
 //
 // A code that meets no device in ten minutes is let go of (store.ts
 // UNMET_MS). A device already synced that takes a new device's code (scans
 // it) says so as they meet, and both go to its own code, so a third device
 // joins the other two rather than taking one of them away.
+//
+// The owner key (lib/ownerKey.ts) goes along to every device met, from one
+// that holds it: the player's devices are all the owner's, and the held name
+// is taken in only where the key is.
 
 import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
 import { PEER_OPTIONS, loadPeerJs } from '../peer.ts';
-import { announceStored, onStoredHere, storeKey } from '../storage.ts';
+import { announceStored, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
 import { countEvent } from '../count.ts';
 import { parseCodex, parsePractice } from '../codex.ts';
 import { parseRecords } from '../delveRecord.ts';
+import { keepOwnerKey, ownerKeyKept, ownerUnlocked } from '../ownerKey.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
 import { OWN_NAMES, TAKEN_NAMES, ownNow, takeIn, takenNow } from './shared.ts';
 import {
@@ -84,22 +91,46 @@ class SyncState {
   linked = $state(0);
   /** Unmet: the code this device was synced under before, which it brings the new device home to. */
   home = $state<string | null>(null);
+  /** When this device was last linked to another (0: not since it paired), kept across visits. */
+  lastAt = $state(0);
+  /** The time now, half a minute at a time, for how long ago that was. */
+  clock = $state(Date.now());
   /** Not paired because the last code met nobody in time (here or in another tab), not because the player let go of it. */
   lapsed = $state(false);
 }
 
+/** How long ago `at` was, in words. */
+export function ago(at: number, now: number): string {
+  const min = Math.floor((now - at) / 60_000);
+  if (min < 1) return 'just now';
+  if (min < 60) return min === 1 ? 'a minute ago' : `${min} minutes ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return h === 1 ? 'an hour ago' : `${h} hours ago`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
 /** How the pairing stands, in a line (the settings and the pairing dialog). */
 export function syncLine(): string {
-  if (sync.status === 'linked') return sync.linked > 1 ? `Synced with ${sync.linked} other devices.` : 'Synced with your other device.';
-  if (sync.status === 'offline') return "Can't reach the matchmaking server. Trying again in a moment.";
+  if (sync.status === 'linked') return sync.linked > 1 ? `Syncing now with ${sync.linked} other devices.` : 'Syncing now with your other device.';
+  if (sync.status === 'offline') return "Can't reach the server. Trying again in a moment.";
   if (!sync.met) return 'Waiting for your other device.';
-  return sync.status === 'waiting' ? 'Paired; it syncs whenever your other device is on the site too.' : 'Connecting.';
+  if (sync.status !== 'waiting') return 'Connecting.';
+  const last = sync.lastAt ? `Last synced ${ago(sync.lastAt, sync.clock)}. ` : '';
+  return `${last}Syncs when your other device has the site open.`;
 }
 
 export const sync = new SyncState();
 
 /** This page counted the device joining a group (sync/paired). */
 let pairCounted = false;
+const LAST = 'sync.last';
+/** Linked just now: kept, so the settings can say when it last was. */
+function stampLinked() {
+  sync.lastAt = sync.clock = Date.now();
+  writeStored(LAST, String(sync.lastAt));
+}
+
 let lapseTimer: ReturnType<typeof setTimeout> | null = null;
 /** When the unmet code held was made or taken (null: none held). */
 let waitingSince: number | null = null;
@@ -116,6 +147,8 @@ function readPairing() {
   sync.code = p?.code ?? null;
   sync.met = p?.met ?? false;
   sync.home = p?.home ?? null;
+  const last = Number(readStored(LAST));
+  sync.lastAt = p?.met && Number.isSafeInteger(last) && last > 0 ? last : 0;
   waitingSince = p && !p.met ? (p.at ?? 0) : null;
   if (lapseTimer) clearTimeout(lapseTimer);
   lapseTimer = null;
@@ -246,6 +279,8 @@ const HIDDEN_MS = 60_000;
 const PUSH_MS = 2000;
 /** How long a link may take to open before it is given up and tried again. */
 const OPEN_MS = 15_000;
+/** A phone or tablet, which lets go while its page is hidden: a computer keeps its link in a background tab. */
+const handheld = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse) and (hover: none)').matches;
 
 const nonce = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 const isNonce = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{32}$/.test(v);
@@ -292,6 +327,7 @@ class Run {
   }
 
   stop() {
+    if (sync.linked) stampLinked();
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     if (this.pushTimer) clearTimeout(this.pushTimer);
@@ -436,6 +472,9 @@ class Run {
         }
         if (!home) this.met();
         this.report();
+        // The owner key first, so the held name that comes with the rest is taken in there.
+        const key = ownerKeyKept();
+        if (key) link.conn.send({ t: 'owner', key });
         await this.give(link);
         if (home) setTimeout(() => !this.stopped && moveTo(home), 800);
         return;
@@ -444,6 +483,12 @@ class Run {
         if (!link.trusted || !link.device || link.device === this.me) return link.conn.close();
         const given = readGiven(await unpack(d.z));
         if (given) await this.take(given, link);
+        return;
+      }
+      case 'owner': {
+        // The owner key, from a device that holds it: kept only if it is the owner's.
+        if (!link.trusted || !link.device || link.device === this.me) return link.conn.close();
+        if (!ownerUnlocked()) await keepOwnerKey(d.key);
         return;
       }
     }
@@ -532,6 +577,8 @@ class Run {
   private report() {
     if (this.stopped) return;
     const n = new Set([...this.links].filter((l) => l.device && l.device !== this.me).map((l) => l.device)).size;
+    // (Linked, or a link just gone: when it last was.)
+    if (n || sync.linked) stampLinked();
     sync.linked = n;
     sync.status = n ? 'linked' : this.peer?.open ? 'waiting' : 'connecting';
   }
@@ -544,7 +591,7 @@ function restart() {
   run = null;
   sync.linked = 0;
   sync.status = 'off';
-  if (!SYNC_HERE || !sync.code || document.hidden) return;
+  if (!SYNC_HERE || !sync.code || (document.hidden && handheld())) return;
   run = new Run(sync.code);
   void run.start();
 }
@@ -559,7 +606,7 @@ export function startSync() {
     document.addEventListener('visibilitychange', () => {
       if (hiddenTimer) clearTimeout(hiddenTimer);
       hiddenTimer = null;
-      if (document.hidden) hiddenTimer = setTimeout(restart, HIDDEN_MS);
+      if (document.hidden && handheld()) hiddenTimer = setTimeout(restart, HIDDEN_MS);
       else if (!run && sync.code) restart();
     });
     // Let go of the name at once on leaving, so the next device takes it without waiting.
@@ -567,6 +614,11 @@ export function startSync() {
       run?.stop();
       run = null;
     });
+    // How long ago it last synced, kept current; linked, now (so a page that dies without a pagehide keeps a fair time).
+    setInterval(() => {
+      if (sync.linked) stampLinked();
+      else if (sync.met) sync.clock = Date.now();
+    }, 30_000);
     // Paired or unpaired in another tab.
     addEventListener('storage', (e) => {
       if (e.key !== storeKey(PAIR_NAME) && e.key !== null) return;
@@ -620,6 +672,7 @@ export function unpair() {
 /** Not paired any more. */
 function forget() {
   forgetPairing();
+  removeStored(LAST);
   readPairing();
   restart();
 }

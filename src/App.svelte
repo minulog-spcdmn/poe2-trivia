@@ -137,8 +137,9 @@
   const page = $derived(screen === 'codex' || screen === 'settings');
   const closePage = () => (codex ? closeCodex() : closeSettings());
 
-  // Desktop players not yet fullscreen get a tip to go fullscreen, a few
-  // seconds into any screen but a question's (see lib/fullscreenTip.ts).
+  // Desktop players not yet fullscreen get a tip to go fullscreen, and phone
+  // and tablet players one to add the game to the home screen, a few seconds
+  // into any screen but a question's (see lib/fullscreenTip.ts).
   const fullscreenTip = watchFullscreenTip();
   $effect(() => fullscreenTip.stop);
   // Whoever's browser draws without the GPU is told how to switch it back
@@ -735,7 +736,8 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     position: relative;
-    padding: 0.8rem 1.25rem;
+    /* Clear of a camera cutout where the page runs under it: the installed app on Android, fullscreen (public/manifest.webmanifest). */
+    padding: calc(0.8rem + env(safe-area-inset-top)) 1.25rem 0.8rem;
     border-bottom: 1px solid rgba(125, 99, 51, 0.22);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
   }
@@ -1058,7 +1060,7 @@
     header {
       grid-template-columns: auto 1fr auto;
       gap: 0.5rem;
-      padding: 0.4rem 0.8rem;
+      padding: calc(0.4rem + env(safe-area-inset-top)) 0.8rem 0.4rem;
     }
     .brand span:last-child {
       display: none;
@@ -1086,7 +1088,7 @@
      keep their size: a thumb's to tap). */
   @media (orientation: landscape) and (max-height: 500px) {
     header {
-      padding: 0.25rem max(1rem, env(safe-area-inset-right)) 0.25rem max(1rem, env(safe-area-inset-left));
+      padding: calc(0.25rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.25rem max(1rem, env(safe-area-inset-left));
     }
     /* In a game (`folded`): the round and the buttons at the row's right end,
        the scoreboard laid over the rest of it (Scoreboard.svelte). */

@@ -6,7 +6,9 @@
 import { isChoosableHue } from './palette.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 
-const NAME = 'colour';
+/** The entry it is stored under (lib/sync/chosen.ts too). */
+export const COLOUR_NAME = 'colour';
+const NAME = COLOUR_NAME;
 /** The whole key, as storage events name it. */
 export const COLOUR_KEY = storeKey(NAME);
 

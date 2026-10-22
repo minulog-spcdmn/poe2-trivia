@@ -1,12 +1,15 @@
-// The tip to play fullscreen: shown on desktop to whoever isn't, a few
-// seconds into a calm moment (the start page, the lobby, the end screen;
-// never while a question runs, as going fullscreen moves everything about).
-// Once a session at most, and a few times in all. Someone fullscreen already
-// isn't due it; that's checked each time rather than remembered, since a
-// window that only looks fullscreen (lib/fullscreen.ts) mustn't silence it
-// for good.
+// The tip to play fullscreen: shown on desktop to whoever isn't (press F11),
+// and on a phone or tablet to whoever hasn't the game on its home screen yet
+// (add it there: it opens fullscreen from there), a few seconds into a calm
+// moment (the start page, the lobby, the end screen; never while a question
+// runs, as going fullscreen moves everything about). Once a session at most,
+// and a few times in all. Someone fullscreen already isn't due it; that's
+// checked each time rather than remembered, since a window that only looks
+// fullscreen (lib/fullscreen.ts) mustn't silence it for good. A browser tab
+// that has just put the game on the home screen stays a tab, so that's
+// remembered instead: the tip is taken as read.
 
-import { browserEnv, fullscreenKeys, fullscreenNow, onFullscreenChange } from './fullscreen.ts';
+import { browserEnv, fullscreenKeys, fullscreenNow, onFullscreenChange, type FullscreenState } from './fullscreen.ts';
 import { readStored, writeStored } from './storage.ts';
 import { toasts } from './toasts.svelte';
 
@@ -22,8 +25,20 @@ const THIS_SESSION = 'fullscreenTip.session';
 
 const TITLE = 'Pro tip';
 
-/** Puts the tip up (the lab shows it this way too, leaving the counts alone). */
-export const showTip = () => toasts.show(`Press ${fullscreenKeys(browserEnv())} to play in fullscreen.`, 'info', { title: TITLE });
+/** What the tip says: the keys on a desktop, the way to the home screen on a phone or tablet. */
+export type TipFor = 'desktop' | 'android' | 'ios';
+
+const MESSAGE: Record<TipFor, () => string> = {
+  desktop: () => `Press ${fullscreenKeys(browserEnv())} to play in fullscreen.`,
+  android: () => "Add PoE2.Quest to your home screen from the browser's menu to play in fullscreen.",
+  ios: () => 'Tap Share, then Add to Home Screen, to play in fullscreen.',
+};
+
+/** Puts the tip up (the lab shows each this way too, leaving the counts alone). */
+export const showTip = (tipFor: TipFor = fullscreenNow().install ?? 'desktop') => toasts.show(MESSAGE[tipFor](), 'info', { title: TITLE });
+
+/** Whether this window is due a tip at all, counts aside: a desktop not fullscreen, or a phone or tablet that could add the game to its home screen. */
+const wants = (s: FullscreenState) => (s.desktop ? !s.fullscreen : s.install !== null);
 
 /** Times seen so far; anything unreadable counts as none. */
 const shownCount = () => Number.parseInt(readStored(SHOWN) ?? '', 10) || 0;
@@ -39,8 +54,7 @@ const up = () => shownId !== null && toasts.list.some((t) => t.id === shownId);
 function due(): boolean {
   if (readStored(THIS_SESSION, 'session')) return false;
   if (shownCount() >= MAX_SHOWN) return false;
-  const s = fullscreenNow();
-  return s.desktop && !s.fullscreen;
+  return wants(fullscreenNow());
 }
 
 /** Starts the wait for the tip, if it's due and nothing's waiting or showing yet. */
@@ -81,11 +95,18 @@ function cancel() {
  */
 export function watchFullscreenTip(): { calm: (on: boolean) => void; stop: () => void } {
   const off = onFullscreenChange((s) => {
-    if (s.fullscreen) {
-      cancel();
-      hide();
-    } else arm();
+    if (wants(s)) return arm();
+    cancel();
+    hide();
   });
+  // (A desktop's tab keeps its own tip, F11: that one still applies there.)
+  const installed = () => {
+    if (fullscreenNow().desktop) return;
+    writeStored(SHOWN, String(MAX_SHOWN));
+    cancel();
+    hide();
+  };
+  window.addEventListener('appinstalled', installed);
   return {
     calm(on) {
       calm = on;
@@ -99,6 +120,7 @@ export function watchFullscreenTip(): { calm: (on: boolean) => void; stop: () =>
       cancel();
       hide();
       off();
+      window.removeEventListener('appinstalled', installed);
     },
   };
 }
