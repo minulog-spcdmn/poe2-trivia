@@ -169,6 +169,11 @@
       const least = full * 0.75;
       const over = () => node.scrollWidth > node.clientWidth + 0.5;
       let size = full;
+      // The widest word grows with the size: one step most of the way, then half pixels for what rounding leaves.
+      if (over()) {
+        size = Math.max(least, Math.floor((full * node.clientWidth * 2) / node.scrollWidth) / 2);
+        caption.style.fontSize = `${size}px`;
+      }
       while (over() && size > least) {
         size = Math.max(least, size - 0.5);
         caption.style.fontSize = `${size}px`;
@@ -176,12 +181,13 @@
       // (Broken anywhere outright: not every layout's caption does that for it, and a clipped name says less.)
       if (over()) node.style.overflowWrap = 'anywhere';
     };
-    run();
-    // Again once the display font is in, and whenever the tile's width changes (a phone turned).
-    void document.fonts?.ready.then(run);
+    // Once the tile is laid out (its first observation, before the first paint), again once the
+    // display font is in, and whenever the tile's width changes (a phone turned).
     const ro = new ResizeObserver(run);
     const tile = node.closest('.tile');
     if (tile) ro.observe(tile);
+    else run();
+    void document.fonts?.ready.then(run);
     // And when the name changes: once its new words are in (before the next paint).
     const mo = new MutationObserver(run);
     mo.observe(node, { characterData: true, childList: true, subtree: true });
@@ -1626,9 +1632,6 @@
      caption instead. The word is about 5.75em wide in Cinzel, letter spacing
      and all, so 16% of the caption's width for an em keeps it inside with
      room to spare. */
-  .caption {
-    container-type: inline-size;
-  }
   .caption .mirrored {
     font-size: min(0.94em, 16cqi);
     white-space: nowrap;
@@ -2654,6 +2657,8 @@
     text-align: center;
     color: #e9c8a2;
     line-height: 1.2;
+    /* For its Mirrored line's size (see .caption .mirrored). */
+    container-type: inline-size;
   }
   .tile.right .caption {
     color: #d6e8c0;
@@ -3465,9 +3470,12 @@
       overflow: hidden;
     }
     /* Ten, two rows of tiles about 60px tall: one line, the name and
-       Mirrored side by side, the name giving way. */
+       Mirrored side by side, the name giving way, down to about 5.5em; on a
+       narrower phone (667px across: tiles under 125px, but taller, about
+       80px) Mirrored goes under it rather than leave the name a stub. */
     .tiles.ten .caption {
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
       align-items: baseline;
       column-gap: 0.4em;
@@ -3475,7 +3483,9 @@
     }
     .tiles.ten .cname {
       display: block;
+      flex: 1 1 5.5em;
       min-width: 0;
+      max-width: max-content;
       white-space: nowrap;
       text-overflow: ellipsis;
     }

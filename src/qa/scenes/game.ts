@@ -89,7 +89,7 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
         // Under pictures, a named wrong pick's name (the turn's, a race's misses, a team's strikes) one with the longest word, which can't wrap.
         if (q.mode === 'art' && r) {
           const wrong = new Set([r.chosenIndex, ...q.misses.map((m) => m.index), ...(q.struck ?? []).map((x) => x.index)]);
-          for (const i of wrong) if (i !== null && i !== at && i < longest.length) longest[i] = longestWord(longest);
+          for (const i of wrong) if (i !== null && i !== at) longest[i] = longestWord(longest);
         }
         q.options = longest.map((it) => it.id);
         if (q.mode === 'name') q.labels = longest.map((it) => it.name);
