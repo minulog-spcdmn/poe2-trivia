@@ -356,7 +356,7 @@
     }
   }
   /* A phone on its side: the stage at the left, the full height, and the rest beside it. */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .sync {
       grid-template-areas: 'stage title' 'stage under' 'stage line' 'stage routes' 'stage actions';
       grid-template-columns: auto minmax(0, 1fr);

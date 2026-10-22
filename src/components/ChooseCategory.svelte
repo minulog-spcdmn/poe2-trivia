@@ -1,5 +1,7 @@
 <script module lang="ts">
   /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows; always a phone's width, though, too narrow for three tall cards) rather than sideways. The card bench turns them the same way. */
+  /** Whether this browser registers custom properties (@property, app.css): without, the kindle animates the emblem's filter and opacity themselves (see .plain below). */
+  const registered = typeof CSS !== 'undefined' && 'registerProperty' in CSS;
   export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
 </script>
 
@@ -531,8 +533,18 @@
   function deal(node: Element, { i, n }: { i: number; n: number }) {
     if (motion.still) return {};
     dealtAt ??= performance.now();
-    // The face's own entrance (see .dealt below) plays with the deal only.
-    node.classList.add('dealt');
+    // The face's own entrance (see .dealt below) plays with the deal only;
+    // the emblem reads the kindle's numbers while it kindles, and no longer.
+    node.classList.add('dealt', 'kindling');
+    if (!registered) node.classList.add('plain');
+    const kindled = (e: Event) => {
+      if (!(e.target as Element).matches('.icon, .gilt')) return;
+      node.classList.remove('kindling');
+      node.removeEventListener('animationend', kindled);
+      node.removeEventListener('animationcancel', kindled);
+    };
+    node.addEventListener('animationend', kindled);
+    node.addEventListener('animationcancel', kindled);
     // Face down until it turns halfway (see .down below).
     const card = node.parentElement;
     card?.classList.add('down');
@@ -1047,10 +1059,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* The emblem's warm glow, under its shadow (see .lit); its brightness
-       and fade the kindle's (see .dealt below), whole at rest. */
-    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
-    opacity: var(--kindle-fade, 1);
+    /* The emblem's warm glow, under its shadow (see .lit). */
+    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
   }
   /* The emblem's shadow, on a layer of its own so the engraving stays
      crisp: the original card's, tight, just below it, as if lifted off the
@@ -1133,6 +1143,16 @@
   .turn:global(.dealt) .icon {
     animation: kindle 0.9s ease-out var(--face, 0ms) backwards;
   }
+  /* (While it kindles only, so that at rest it is just its glow.) */
+  .turn:global(.kindling) .icon {
+    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    opacity: var(--kindle-fade, 1);
+  }
+  /* (A browser that can't register them would step the numbers, not ease
+     them: there, the filter and opacity themselves.) */
+  .turn:global(.kindling.plain) .icon {
+    animation-name: kindle-plain;
+  }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
   }
@@ -1141,9 +1161,16 @@
   .card.out .sheen {
     display: none;
   }
-  /* (CardEngraving's .gilt reads the kindle's numbers, as .icon does.) */
+  /* (CardEngraving's .gilt reads the kindle's numbers while it kindles, as .icon does.) */
   .card.out .turn:global(.dealt) :global(.gilt) {
     animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
+  }
+  .card.out .turn:global(.kindling) :global(.gilt) {
+    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 var(--kindle-glow, 10px) var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    opacity: var(--kindle-fade, 1);
+  }
+  .card.out .turn:global(.kindling.plain) :global(.gilt) {
+    animation-name: kindle-gilt-plain;
   }
   /* (The swell on the engraving's still layers, beside the gilt rather
      than round it: a filter animated inside another runs out of step with
@@ -1168,6 +1195,20 @@
       --kindle-glow: 10px;
     }
   }
+  @keyframes kindle-gilt-plain {
+    from {
+      opacity: 0.2;
+      filter: brightness(0.4) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    }
+    40% {
+      opacity: 1;
+      filter: brightness(1.5) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 18px var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    }
+    to {
+      opacity: 1;
+      filter: brightness(1) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    }
+  }
   @keyframes swell {
     from {
       filter: brightness(0.6);
@@ -1188,6 +1229,20 @@
     to {
       --kindle-fade: 1;
       --kindle-lum: 1;
+    }
+  }
+  @keyframes kindle-plain {
+    from {
+      opacity: 0.2;
+      filter: brightness(0.4) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    }
+    40% {
+      opacity: 1;
+      filter: brightness(1.45) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    }
+    to {
+      opacity: 1;
+      filter: brightness(1) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
   }
   .sheen {

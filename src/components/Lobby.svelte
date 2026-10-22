@@ -1734,7 +1734,7 @@
   }
   /* A phone on its side (lib/layout.ts `flat`): closer to the screen's
      edges (clear of the notch). */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .lobby {
       padding: 0.8rem max(1rem, env(safe-area-inset-right)) 1.5rem max(1rem, env(safe-area-inset-left));
     }
@@ -1744,7 +1744,7 @@
      stays at the foot of the screen while the panel, twice the screen's
      height, scrolls under it; a bar across the whole of so short a screen
      would take too much of it. */
-  @media (orientation: landscape) and (max-height: 500px) and (max-width: 1099px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) and (max-width: 1099px) {
     .cols {
       grid-template-columns: 1fr 1.33fr;
     }

@@ -1404,7 +1404,7 @@
   }
 
   /* (And on a phone on its side, lib/layout.ts `flat`, where the screen is too short for the full entries.) */
-  @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
        row of avatars and scores, with the name and progress of whoever's turn
        it is, and the timer at the end. Sticky rather than fixed, so it shakes
@@ -1601,7 +1601,7 @@
      header's row (App.svelte's `folded`), from the screen's left edge to the
      round and the buttons at its right end (--header-right), so the game
      gets the height of a row of its own. */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .strip {
       height: var(--header-h, 47px);
       margin: calc(-1 * var(--header-h, 47px)) calc(var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))) 0

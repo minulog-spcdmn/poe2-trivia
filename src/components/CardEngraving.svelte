@@ -28,8 +28,31 @@
   /** The plate's strokes, or in front, those that stand in front of the emblem. */
   const strokes = $derived(plate?.strokes.filter((s) => !!s.front === front) ?? []);
   const motif = $derived(strokes.filter((s) => s.motif));
+  /** Whether the glint's light travels across the card (the flare's and the dynamite's flare up in place). */
+  const travels = $derived(find !== 'flare' && find !== 'dynamite');
   const uid = $props.id();
 </script>
+
+<!-- A glint: the motif again in pale light, seen through a band that runs
+     across the card while the drawing inside it runs back, so the light
+     moves and the lines stay put (the flare's and the dynamite's flare up
+     in place instead). A travelling one is built anew when the card's width
+     changes (a phone turned): Safari keeps a running animation's distances
+     from when it started, and the band's and the drawing's fell out of
+     step, the light's copy of the lines off the lines. -->
+{#snippet glint()}
+  {#key travels ? Math.round(box?.width ?? w) : 0}
+    <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
+      <span class="through" style:--w="{box?.width ?? w}px">
+        <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+          <svg viewBox="0 0 {w} {h}">
+            {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+          </svg>
+        </span>
+      </span>
+    </span>
+  {/key}
+{/snippet}
 
 <span class="engraving" class:front data-find={find ?? undefined} bind:clientWidth={w} bind:clientHeight={h} bind:contentRect={box} aria-hidden="true">
   {#if plate && front}
@@ -46,17 +69,7 @@
       </svg>
     {/each}
     {#if motif.length}
-      {#key box?.width}
-        <span class="glint">
-          <span class="through" style:--w="{box?.width ?? w}px">
-            <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
-              <svg viewBox="0 0 {w} {h}">
-                {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
-              </svg>
-            </span>
-          </span>
-        </span>
-      {/key}
+      {@render glint()}
     {/if}
   {:else if plate}
     {#if plate.window && plate.fade}
@@ -145,23 +158,7 @@
         </g>
       </svg>
     {:else if motif.length}
-      <!-- A glint: the motif again in pale light, seen through a band that
-           runs across the card while the drawing inside it runs back, so the
-           light moves and the lines stay put. Built anew when the card's
-           width changes (a phone turned): Safari keeps a running animation's
-           distances from when it started, and the band's and the drawing's
-           fell out of step, the light's copy of the lines off the lines. -->
-      {#key box?.width}
-        <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
-          <span class="through" style:--w="{box?.width ?? w}px">
-            <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
-              <svg viewBox="0 0 {w} {h}">
-                {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
-              </svg>
-            </span>
-          </span>
-        </span>
-      {/key}
+      {@render glint()}
     {/if}
   {/if}
 </span>
@@ -261,12 +258,9 @@
 
   /* A gilded motif: the item's gold (ChooseCategory's .glyph, or the card's
      --f-glyph colours), lifted off the card by its shadow and glowing warm
-     as an emblem does. Its brightness, fade and glow's reach read the
-     kindle's numbers (ChooseCategory's kindle-gilt, app.css), whole at rest. */
+     as an emblem does (kindled as it is dealt: ChooseCategory's kindle-gilt). */
   .gilt {
-    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75))
-      drop-shadow(0 0 var(--kindle-glow, 10px) var(--f-pulse, rgba(224, 138, 68, 0.45)));
-    opacity: var(--kindle-fade, 1);
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
   }
   .gilt path.part {
     stroke: none;

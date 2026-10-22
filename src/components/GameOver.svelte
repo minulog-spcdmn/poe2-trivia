@@ -122,7 +122,7 @@
   // ---- sizes ---------------------------------------------------------------
   const short = new MediaQuery('(max-height: 859px) and (min-width: 1081px)');
   /** A phone on its side in its browser, the address bar taking its share of the height. */
-  const flatShort = new MediaQuery('(orientation: landscape) and (max-height: 370px)');
+  const flatShort = new MediaQuery('(orientation: landscape) and (max-height: 370px) and (min-width: 561px)');
   /** The rune circle's diameter (on a phone on its side, small enough that the headline and the start row under it show on the first screen). */
   const circle = $derived(phone.current ? 340 : flatShort.current ? 170 : flat.current ? 220 : short.current ? 380 : 470);
   /** How far up the circle the headline rides. */
@@ -1962,7 +1962,7 @@
   /* A phone on its side (lib/layout.ts `flat`): the circle (see `circle`),
      the headline and the room over them smaller, so the result, its line
      and the start row under them show on the first screen. */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .over {
       --h1: 44px;
       --sub: 16px;
