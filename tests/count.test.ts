@@ -19,7 +19,6 @@ import {
   cohortEvent,
   failedImport,
   openedAsApp,
-  isoWeek,
   ownScript,
   takeCampaign,
   countsOn,
@@ -34,6 +33,7 @@ import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, 
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 import { playedIn } from '../src/lib/lastPlayed.ts';
+import { isoWeek, isoWeekOfDay, weekMonday } from '../src/lib/isoWeek.ts';
 import { emptyCodex } from '../src/lib/codex.ts';
 
 const player = (id: string): Player => ({ ...createGame(null).players[0], id, name: id, score: 0, connected: true }) as Player;
@@ -270,6 +270,9 @@ test("the save's play is the first and last answers across this device's codex a
   const phone = { ...emptyCodex(), items: { dddddddddddd: entry(now - 2e8, now - 2e7) } };
   assert.deepEqual(playedIn([null, codex], now), { first: now - 5e8, last: now - 1e8 });
   assert.deepEqual(playedIn([phone, codex], now), { first: now - 5e8, last: now - 2e7 });
+  // One whose last answer came from a clock ahead (a copy's, combined with this device's) still counts its first.
+  const ahead = { ...emptyCodex(), items: { eeeeeeeeeeee: entry(now - 9e8, now + 5 * 3_600_000) } };
+  assert.deepEqual(playedIn([ahead], now), { first: now - 9e8, last: now - 9e8 });
 });
 
 test("only the game's own built scripts' errors count, and a module an update removed", () => {
@@ -303,4 +306,20 @@ test("a visit opened from the home screen counts as the app's: iOS's, Android's 
   assert.ok(openedAsApp(env(windows, ['standalone'])));
   assert.ok(!openedAsApp(env(windows, ['fullscreen'])));
   assert.ok(!openedAsApp(env(android, ['browser'])));
+});
+
+test('a week the game names is read back to its Monday, every day of five years, New Year included', () => {
+  for (let ms = Date.UTC(2025, 0, 1); ms < Date.UTC(2030, 0, 1); ms += 86_400_000) {
+    const week = isoWeek(ms);
+    const monday = weekMonday(week);
+    assert.ok(monday, week);
+    const offset = (Date.parse(`${monday}T00:00:00Z`) - ms) / 86_400_000;
+    // The day falls in the six days after its week's Monday, and the Monday is in that week.
+    assert.ok(offset <= 0 && offset > -7, `${new Date(ms).toISOString()} ${week} ${monday}`);
+    assert.equal(isoWeekOfDay(monday!), week);
+  }
+  // A week its year doesn't have: 2025 ends in week 52.
+  assert.equal(weekMonday('2025-W53'), null);
+  assert.equal(weekMonday('2026-W53'), '2026-12-28');
+  assert.equal(weekMonday('2026-W00'), null);
 });
