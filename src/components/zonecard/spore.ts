@@ -8,7 +8,7 @@
 import { C, embers, emitter } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
-import { shuffled, startsIn, times, type Ctx, type FamilyMotion } from './family';
+import { enter, shuffled, startsIn, times, type Ctx, type FamilyMotion } from './family';
 
 /** A mote drifting off `el`, slowly, turning on the air. */
 function mote(c: Ctx, el: Element, k = 0.6) {
@@ -37,14 +37,14 @@ export const spore: FamilyMotion = {
     const blur = c.phone ? 5 : 8;
     for (const i of c.glyphs) {
       const [x, y, r] = [(c.rnd() - 0.5) * 1, (c.rnd() - 0.5) * 1, (c.rnd() - 0.5) * 20];
-      c.play(
+      enter(c,
         c.inner[i],
         [
           { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${r.toFixed(1)}deg) scale(0.85)`, filter: `blur(${blur}px)`, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
           { offset: 0.6, opacity: 1, filter: 'blur(1px)' },
           { opacity: 1, transform: 'none', filter: 'none' },
         ],
-        { at: at.get(i)!, ms: c.tl.letterMs, fill: 'backwards' },
+        { at: at.get(i)!, ms: c.tl.letterMs },
       );
     }
     // Its glow breathes while it holds (to where the card's exit fades it from).

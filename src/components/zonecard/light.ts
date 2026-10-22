@@ -13,7 +13,7 @@ import { emitter, flash, glints, sparks } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
 import { ownRect } from '../../lib/stage';
-import { IN, shuffled, startsIn, times, type Ctx, type FamilyMotion } from './family';
+import { IN, enter, shuffled, startsIn, times, type Ctx, type FamilyMotion } from './family';
 
 /** The order the lamps are lit in (the same for a card's exit as for its entrance). */
 const orders = new WeakMap<Ctx, number[]>();
@@ -28,7 +28,7 @@ export const light: FamilyMotion = {
     const order = lit(c);
     const at = startsIn(c, order);
     for (const i of c.glyphs)
-      c.play(
+      enter(c,
         c.inner[i],
         [
           { opacity: 0, filter: 'brightness(1.8)' },
@@ -37,7 +37,7 @@ export const light: FamilyMotion = {
           { offset: 0.75, opacity: 1, filter: 'brightness(1.3)' },
           { opacity: 1, filter: 'none' },
         ],
-        { at: at.get(i)!, ms: c.tl.letterMs, fill: 'backwards' },
+        { at: at.get(i)!, ms: c.tl.letterMs },
       );
     // The shaft of light, crossing the name as it locks.
     const shaft = document.createElement('span');

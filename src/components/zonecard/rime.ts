@@ -9,7 +9,7 @@
 import { C, emitter, glints, ring, shards, sparks } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
-import { IN, fromMiddle, startsIn, type Ctx, type FamilyMotion } from './family';
+import { IN, enter, fromMiddle, startsIn, type Ctx, type FamilyMotion } from './family';
 
 const ICE = C.azuritePale;
 
@@ -23,14 +23,14 @@ export const rime: FamilyMotion = {
   enter(c) {
     const at = startsIn(c, fromMiddle(c));
     for (const i of c.glyphs) {
-      c.play(
+      enter(c,
         c.inner[i],
         [
           { opacity: 0, transform: 'translate(0, -0.18em) scale(1.08)', filter: `brightness(1.6) blur(${c.phone ? 3 : 5}px)`, easing: 'cubic-bezier(0.12, 0.9, 0.25, 1)' },
           { offset: 0.55, opacity: 1, filter: 'brightness(1.3) blur(0.6px)', easing: 'ease-out' },
           { opacity: 1, transform: 'none', filter: 'none' },
         ],
-        { at: at.get(i)!, ms: c.tl.letterMs, fill: 'backwards' },
+        { at: at.get(i)!, ms: c.tl.letterMs },
       );
       if (c.rich) c.at(at.get(i)! + c.tl.letterMs * 0.6, () => glints(c.inner[i], { count: 1, area: 'centre', size: [4, 7], color: ICE }));
     }

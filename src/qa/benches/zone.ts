@@ -7,10 +7,10 @@
 
 import type { PieceBench } from '../bench.ts';
 import { stratumName } from '../../lib/descent.ts';
-import { treatmentAt } from '../../lib/zoneTitle.ts';
+import { FAMILY_NAMES, treatmentAt } from '../../lib/zoneTitle.ts';
 
 /** Every zone a card opens, by its first depth (11 to 151), and the widest name a card has to fit. */
-const ZONES = [
+export const ZONES = [
   ...Array.from({ length: 15 }, (_, j) => {
     const depth = 10 * (j + 1) + 1;
     return { value: String(depth), label: `${depth} • ${stratumName(j + 1)} (${treatmentAt(depth).family})` };
@@ -26,6 +26,7 @@ export const zone: PieceBench = {
   files: [
     'src/components/zonecard/ZoneCard.svelte',
     'src/components/zonecard/family.ts',
+    'src/components/zonecard/families.ts',
     'src/components/zonecard/ember.ts',
     'src/components/zonecard/rime.ts',
     'src/components/zonecard/spore.ts',
@@ -45,7 +46,7 @@ export const zone: PieceBench = {
       default: '',
       options: [
         { value: '', label: 'Its own' },
-        ...['ember', 'rime', 'spore', 'void', 'light', 'fume'].map((f) => ({ value: f, label: `As ${f}` })),
+        ...FAMILY_NAMES.map((f) => ({ value: f, label: `As ${f}` })),
       ],
     },
     { kind: 'toggle', key: 'best', label: 'Past your best', default: false },
