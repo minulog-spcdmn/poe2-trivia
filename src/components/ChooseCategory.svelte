@@ -1,6 +1,6 @@
 <script module lang="ts">
-  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows) rather than sideways. The card bench turns them the same way. */
-  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
+  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows; always a phone's width, though, too narrow for three tall cards) rather than sideways. The card bench turns them the same way. */
+  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
 </script>
 
 <script lang="ts">
@@ -1238,7 +1238,7 @@
       text-shadow 0.3s;
   }
 
-  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .cards.single {
       grid-template-columns: minmax(0, 220px);
     }
@@ -1341,7 +1341,7 @@
      staying in its shade, and in the window (as far as heapOf finds they
      can); only the emblem grows and brightens, so it still leads. Only on
      the tall cards: the window it's worked out for isn't the rows'. */
-  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .card.mine:not(:global(.down)):hover .moon {
       --far: var(--spread, 1);
     }
@@ -1451,7 +1451,7 @@
     gap: 0.35rem;
   }
   /* Wide screens: the notes in the cards' columns, each under its card. */
-  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .find-notes {
       display: grid;
       /* The cards' own tracks (shrinking with them on a narrow tablet). */
@@ -1825,8 +1825,11 @@
 
   /* Narrow screens: the cards stacked as wide rows. Not on a phone on its
      side (lib/layout.ts `flat`), too short for three: there they stand in a
-     row as on wider screens, smaller (below). */
-  @media (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px) {
+     row as on wider screens, smaller (below). Always at a phone's width,
+     though (560 and under, short or not: no phone on its side is that
+     narrow, the smallest 568), where three tall cards would be squeezed
+     narrower than their emblems (the card bench's frame on a phone). */
+  @media (max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px) {
     .cards {
       grid-template-columns: 1fr;
       width: min(360px, 100%);
@@ -1966,7 +1969,8 @@
       gap: 1rem;
     }
   }
-  /* A phone on its side (lib/layout.ts `flat`): the tall cards in a row,
+  /* A phone on its side (lib/layout.ts `flat`, from 561 wide; see the rows
+     above): the tall cards in a row,
      scaled to the height left under the banner, step by step (zoom takes no
      length), one size for every turn at a height (a find, the team's vote
      or a duel never shrinks them) and never so small that their names stop
@@ -1976,7 +1980,7 @@
      every depth, what the finds give beside them where there's room (under
      them where not) and the vote's state under them. (.coop too, to
      outweigh the short windows' own size for it above.) */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .choose,
     .choose.coop {
       gap: 0.5rem;
@@ -2083,7 +2087,7 @@
       display: block;
     }
   }
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     /* A duel's one card: what is going on and its note beside it, as Delve's
        column is, so the duel's strip over the banner takes no size from it. */
     .choose.duel {
@@ -2110,13 +2114,13 @@
       text-align: left;
     }
   }
-  @media (orientation: landscape) and (max-height: 440px) {
+  @media (orientation: landscape) and (max-height: 440px) and (min-width: 561px) {
     .choose,
     .choose.coop {
       --z: 0.82;
     }
   }
-  @media (orientation: landscape) and (max-height: 400px) {
+  @media (orientation: landscape) and (max-height: 400px) and (min-width: 561px) {
     .choose,
     .choose.coop {
       --z: 0.74;
@@ -2130,14 +2134,14 @@
       --z: 0.66;
     }
   }
-  @media (orientation: landscape) and (max-height: 370px) {
+  @media (orientation: landscape) and (max-height: 370px) and (min-width: 561px) {
     .choose,
     .choose.coop,
     .choose.delve {
       --z: 0.7;
     }
   }
-  @media (orientation: landscape) and (max-height: 350px) {
+  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
     .choose,
     .choose.coop,
     .choose.delve {
