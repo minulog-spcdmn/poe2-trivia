@@ -169,7 +169,8 @@
         size = Math.max(least, size - 0.5);
         node.style.fontSize = `${size}px`;
       }
-      if (over()) node.style.overflowWrap = '';
+      // (Broken anywhere outright: not every layout's caption does that for it, and a clipped name says less.)
+      if (over()) node.style.overflowWrap = 'anywhere';
     };
     run();
     // Again once the display font is in, and whenever the tile's width changes (a phone turned).
