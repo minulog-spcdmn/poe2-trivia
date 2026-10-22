@@ -223,7 +223,7 @@
       {@render tile('Games started', rate(mineGames), against(mineGames, allGames), mineGames, allGames, Math.max(mineGames, allGames), 'for every 100 visitors', `everyone: ${rate(allGames)}`)}
       {@render tile("Today's unique", picked.daily === null ? '–' : pct(picked.daily), against(picked.daily, everyone.daily), picked.daily ?? 0, everyone.daily ?? 0, 100, 'of visitors answered it', `everyone: ${pct(everyone.daily ?? 0)}`)}
       {#if picked.back !== null && everyone.back !== null}
-        {@render tile('Came back', pct(picked.back), against(picked.back, everyone.back, true), picked.back, everyone.back, 100, 'came back to a save on their device', `everyone: ${pct(everyone.back)}`)}
+        {@render tile('Came back', pct(picked.back), against(picked.back, everyone.back, true), picked.back, everyone.back, 100, 'came back to their save', `everyone: ${pct(everyone.back)}`)}
       {/if}
       {#if picked.app !== null && everyone.app !== null && appKnown}
         {@render tile('Installed app', pct(picked.app), plain(against(picked.app, everyone.app, true)), picked.app, everyone.app, 100, 'opened it from a home screen', `everyone: ${pct(everyone.app)}`)}

@@ -180,7 +180,7 @@ export function referrerOf(referrer: string, here: string): string {
   }
 }
 
-/** What the game's own save on this device says, as a visit is counted with it (lib/lastPlayed.ts): when it first and last had a question answered, null for no save. */
+/** What the game's save says (this device's and its paired devices'), as a visit is counted with it (lib/lastPlayed.ts): when it first and last had a question answered, null for no save. */
 export interface Played {
   first: number;
   last: number;
@@ -190,7 +190,7 @@ export interface Played {
 const VISIT_MS = 8 * 3_600_000;
 
 /**
- * How long ago the game was last played on this device, as a visit is marked
+ * How long ago the player last played (this device or a paired one), as a visit is marked
  * ("visit/back-7d"); "visit/new" for no save. None (null) within VISIT_MS:
  * GoatCounter is still in the visit that played, which was marked then.
  */
@@ -249,7 +249,7 @@ let newcomer = false;
 /**
  * A visit to the start page; not one come back to (cameBack). Then, once a
  * visitor like the steps (countReach) and in an idle moment (`idle`):
- * whether and how long ago the game was played on this device and the week
+ * whether and how long ago the player played (this device or a paired one) and the week
  * it first was (`save`, the game's own save, read only if the visit counts),
  * and whether it was opened as the app. A tagged link's tag (takeCampaign)
  * goes as the visit's campaign.

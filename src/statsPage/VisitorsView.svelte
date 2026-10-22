@@ -70,7 +70,7 @@
       share: comers.from ? shareOf(n(comers), told(comers)) : null,
       before: comersWas.from ? shareOf(n(comersWas), told(comersWas)) : null,
     });
-    return [row('No save on this device', (w) => w.fresh), ...RETURNS.map((r) => row(RETURN_NAMES[r], (w) => w.back[r]))];
+    return [row('No save, here or paired', (w) => w.fresh), ...RETURNS.map((r) => row(RETURN_NAMES[r], (w) => w.back[r]))];
   });
 </script>
 
@@ -94,7 +94,7 @@
       {/if}
       {#if firsts.from}
         <h3>A first visit</h3>
-        <p class="hint">Of the visits that found no save on the device: mostly first visits, some a private window or a save the browser cleared.{since(firsts)}</p>
+        <p class="hint">Of the visits that found no save, on the device or synced to it from a paired one: mostly first visits, some a private window or a save the browser cleared.{since(firsts)}</p>
         <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
       {/if}
     </Section>
@@ -132,11 +132,11 @@
   </div>
 
   <div class="two">
-    <Section title="Who comes back" says="Whether a visit found a save on its device, and how long since that was last played. A visit within 8 hours of the last play says neither, so these are shares of the visits that did.{since(comers)}" area="back">
+    <Section title="Who comes back" says="Whether a visit found a save (its device's, with what paired devices synced to it), and how long since the player last played on any of them. A visit within 8 hours of the last play says neither, so these are shares of the visits that did.{since(comers)}" area="back">
       {#if comers.from}
         <div class="total left">
           <b>{percent(comers.returned, comers.fresh + comers.returned)}</b>
-          <span class="soft">came back to a save on their device</span>
+          <span class="soft">came back to their save</span>
           <Delta now={back} before={backShare(comersWas)} rate period={period.before} />
         </div>
         <Shares rows={comerRows} head="Who" label="Visits with no save, and back to one" />

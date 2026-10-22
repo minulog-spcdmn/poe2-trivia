@@ -33,7 +33,7 @@ import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, 
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 import { playedIn } from '../src/lib/lastPlayed.ts';
-import { serializeCodex, emptyCodex } from '../src/lib/codex.ts';
+import { emptyCodex } from '../src/lib/codex.ts';
 
 const player = (id: string): Player => ({ ...createGame(null).players[0], id, name: id, score: 0, connected: true }) as Player;
 const game = (mode: 'turns' | 'race' | 'delve', seats: number, phase: GameState['phase'] = 'lobby'): GameState => ({
@@ -258,13 +258,17 @@ test('a device is followed by the ISO week it first played in', () => {
   assert.equal(cohortEvent({ first: Date.UTC(2026, 9, 16), last: Date.UTC(2026, 9, 21) }), 'cohort/2026-W42');
 });
 
-test("the save's play is its own codex's first and last answers, leaving out a clock far ahead", () => {
+test("the save's play is the first and last answers across this device's codex and its paired devices', leaving out a clock far ahead", () => {
   const now = Date.UTC(2026, 9, 21, 12);
   const entry = (first: number, last: number) => ({ seen: 1, first, last, name: { n: 1, ok: 1 }, art: { n: 0, ok: 0 }, mixed: {} });
   const codex = { ...emptyCodex(), items: { aaaaaaaaaaaa: entry(now - 5e8, now - 4e8), bbbbbbbbbbbb: entry(now - 3e8, now - 1e8), cccccccccccc: entry(now + 5 * 3_600_000, now + 5 * 3_600_000) } };
-  assert.deepEqual(playedIn(serializeCodex(codex), now), { first: now - 5e8, last: now - 1e8 });
-  assert.equal(playedIn(null, now), null);
-  assert.equal(playedIn(serializeCodex(emptyCodex()), now), null);
+  assert.deepEqual(playedIn([codex], now), { first: now - 5e8, last: now - 1e8 });
+  assert.equal(playedIn([null], now), null);
+  assert.equal(playedIn([emptyCodex()], now), null);
+  // A phone that never played, paired with the computer that did: the player's, not new; their first week the computer's.
+  const phone = { ...emptyCodex(), items: { dddddddddddd: entry(now - 2e8, now - 2e7) } };
+  assert.deepEqual(playedIn([null, codex], now), { first: now - 5e8, last: now - 1e8 });
+  assert.deepEqual(playedIn([phone, codex], now), { first: now - 5e8, last: now - 2e7 });
 });
 
 test("only the game's own built scripts' errors count, and a module an update removed", () => {

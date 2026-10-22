@@ -116,7 +116,8 @@ against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
 device (not one watching); `reach/games-2|5` and `reach/time-2m|10m|30m`
 (active time) within one page load; `reach/codex`, `reach/achievements`;
 and `new/lobby|played|finished` for a load whose visit had no save. With a
-visit, read from this device's own codex when the page is idle:
+visit, read from the codex with its paired devices' copies when the page is idle
+(so it speaks for the player, not the device):
 `visit/new` or `visit/back-1d|7d|30d|later` (nothing within eight hours of
 the last play, GoatCounter's visit being still open), `cohort/<ISO week of
 first play>` and `visit/app`. A link's `?ref=` tag goes as the visit's
