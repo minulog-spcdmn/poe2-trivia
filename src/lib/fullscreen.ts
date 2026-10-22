@@ -9,6 +9,10 @@
 // hidden, a second monitor without one), so that alone is only a guess: good
 // enough to spare someone the tip, not to take their scrollbar away. For that
 // the browser's own toolbars have to be gone as well (surelyFullscreen).
+//
+// A phone or tablet has no keys for it; what makes it fullscreen there is the
+// game added to the home screen (public/manifest.webmanifest), so the tip
+// tells it how (installHow).
 
 /** The bits of window, screen and navigator the checks read. */
 export interface Env {
@@ -21,6 +25,8 @@ export interface Env {
   fullscreenElement: unknown;
   userAgent: string;
   maxTouchPoints: number;
+  /** iOS's own sign of a home screen app (navigator.standalone). */
+  standalone?: boolean;
 }
 
 /** Slack for a pixel or two of rounding on scaled screens. */
@@ -64,6 +70,32 @@ export function isDesktop(e: Env): boolean {
   return !e.matches('(display-mode: standalone)');
 }
 
+/** Opened from the home screen: in a display mode of its own (Android's, from the manifest), or as iOS says. */
+const installed = (e: Env) =>
+  e.standalone === true || ['fullscreen', 'standalone', 'minimal-ui'].some((m) => e.matches(`(display-mode: ${m})`));
+
+/**
+ * An app's own view of a page (Instagram's, Facebook's, Android's WebView, or
+ * any app's on an iPhone or iPad, whose WebView leaves Safari out of its name
+ * where every browser there keeps it): it has no home screen to add it to.
+ */
+const inAppBrowser = (e: Env) =>
+  /; wv\)|FBAN|FBAV|Instagram|Line\//.test(e.userAgent) || (/iPhone|iPad|iPod|Macintosh/.test(e.userAgent) && !/Safari\//.test(e.userAgent));
+
+/**
+ * How this phone or tablet adds the game to its home screen, to play it
+ * fullscreen: through the browser's menu on Android, through Share on an
+ * iPhone or iPad. Null where that doesn't apply: a desktop, a Chromebook, an
+ * app's own browser, or the game opened from the home screen already.
+ */
+export function installHow(e: Env): 'android' | 'ios' | null {
+  if (installed(e) || inAppBrowser(e)) return null;
+  if (/CrOS/.test(e.userAgent)) return null;
+  if (/Android/.test(e.userAgent)) return 'android';
+  if (/iPhone|iPad|iPod/.test(e.userAgent) || isIpad(e)) return 'ios';
+  return null;
+}
+
 /** The keys that make the browser fullscreen: F11 everywhere but the Mac, where F11 shows the desktop. */
 export const fullscreenKeys = (e: Env) => (isApple(e) ? '⌃⌘F' : 'F11');
 
@@ -77,6 +109,7 @@ export function browserEnv(): Env {
     fullscreenElement: document.fullscreenElement,
     userAgent: navigator.userAgent,
     maxTouchPoints: navigator.maxTouchPoints ?? 0,
+    standalone: (navigator as Navigator & { standalone?: boolean }).standalone,
   };
 }
 
@@ -87,10 +120,14 @@ export interface FullscreenState {
   fullscreen: boolean;
   /** Fullscreen beyond doubt (surelyFullscreen). */
   sure: boolean;
+  /** How a phone or tablet would add the game to its home screen (installHow). */
+  install: 'android' | 'ios' | null;
 }
 
 export function fullscreenStateOf(e: Env): FullscreenState {
-  return { desktop: isDesktop(e), fullscreen: isFullscreen(e), sure: surelyFullscreen(e) };
+  const desktop = isDesktop(e);
+  // (A desktop has no home screen tip: spared its media queries on every resize.)
+  return { desktop, fullscreen: isFullscreen(e), sure: surelyFullscreen(e), install: desktop ? null : installHow(e) };
 }
 
 let current: FullscreenState | null = null;
@@ -100,7 +137,7 @@ let frame = 0;
 /** The window as last seen (worked out now if nothing's watching it yet). */
 export const fullscreenNow = () => (current ??= fullscreenStateOf(browserEnv()));
 
-/** Calls back whenever the window goes in or out of fullscreen (watchFullscreen must be on). */
+/** Calls back whenever the window goes in or out of fullscreen, or onto the home screen (watchFullscreen must be on). */
 export function onFullscreenChange(cb: (s: FullscreenState) => void) {
   listeners.add(cb);
   return () => void listeners.delete(cb);
@@ -112,7 +149,7 @@ function update() {
   const was = current;
   current = next;
   document.documentElement.toggleAttribute('data-fullscreen', next.desktop && next.sure);
-  if (was && was.desktop === next.desktop && was.fullscreen === next.fullscreen && was.sure === next.sure) return;
+  if (was && was.desktop === next.desktop && was.fullscreen === next.fullscreen && was.sure === next.sure && was.install === next.install) return;
   for (const cb of listeners) cb(next);
 }
 
