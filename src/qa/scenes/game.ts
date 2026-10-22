@@ -4,7 +4,7 @@
 // Delve alone and together, deeper down too, with finds among the cards and a
 // vein's dig.
 
-import { MAX_PLAYERS, PRESETS, type Settings } from '../../lib/game.ts';
+import { MAX_PLAYERS, PRESETS, type Knobs, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed } from '../build/engine.ts';
@@ -52,12 +52,14 @@ const ANSWERS: Control[] = [
     ],
   },
 ];
-const asked = (v: Values): Partial<Settings> => {
-  const options = Number(v.answers ?? 6);
+/** A difficulty's knobs with the answers' controls set on them (as dealt, its own share of pictures). */
+const askedAs = (v: Values, base: Knobs): Knobs => {
   const as = v.asked ?? 'as';
-  if (options === 6 && as === 'as') return {};
-  const base = PRESETS.merciless;
-  return { difficulty: 'custom', custom: { ...base, options, artChance: as === 'names' || as === 'longest' ? 0 : as === 'art' ? 1 : base.artChance } };
+  return { ...base, options: Number(v.answers ?? 6), artChance: as === 'names' || as === 'longest' ? 0 : as === 'art' ? 1 : base.artChance };
+};
+const asked = (v: Values): Partial<Settings> => {
+  if (Number(v.answers ?? 6) === 6 && (v.asked ?? 'as') === 'as') return {};
+  return { difficulty: 'custom', custom: askedAs(v, PRESETS.merciless) };
 };
 
 /** How far into a question its scene stands (ms). */
@@ -141,9 +143,7 @@ export function gameScenes(): Scene[] {
       turnsSeats,
       (v) => {
         // Pictures as answers, ten of them, put the Mirrored line in the narrowest captions.
-        const as = v.asked ?? 'as';
-        const artChance = as === 'names' || as === 'longest' ? 0 : as === 'art' ? 1 : 0.5;
-        const t = table(THREE, { difficulty: 'custom', custom: { options: Number(v.answers ?? 6), similarNames: 1, fakes: 2, artChance, veil: 'slow', grayscale: 'art', mirror: 1, lockout: 3 } })
+        const t = table(THREE, { difficulty: 'custom', custom: askedAs(v, { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 1, lockout: 3 }) })
           .start()
           .pick();
         return t.answer(t.turn, true);
