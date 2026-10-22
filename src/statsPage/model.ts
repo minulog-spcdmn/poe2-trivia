@@ -4,6 +4,7 @@
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
 import { midnight } from './zone.ts';
+import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
 /** One path as GoatCounter's /stats/hits gives it: how often it was counted, all told and per day. */
 export interface PathCount {
@@ -77,7 +78,6 @@ export const VISIT_KINDS = ['new', ...RETURNS, 'app'] as const;
 export type VisitKind = (typeof VISIT_KINDS)[number];
 
 // The weeks' rules are the game's own (lib/isoWeek.ts), so a cohort it names is read back to the same Monday.
-import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 export { isoWeekOfDay as isoWeek, weekMonday };
 
 /**

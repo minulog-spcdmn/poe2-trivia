@@ -270,6 +270,9 @@ test("the save's play is the first and last answers across this device's codex a
   const phone = { ...emptyCodex(), items: { dddddddddddd: entry(now - 2e8, now - 2e7) } };
   assert.deepEqual(playedIn([null, codex], now), { first: now - 5e8, last: now - 1e8 });
   assert.deepEqual(playedIn([phone, codex], now), { first: now - 5e8, last: now - 2e7 });
+  // One whose last answer came from a clock ahead (a copy's, combined with this device's) still counts its first.
+  const ahead = { ...emptyCodex(), items: { eeeeeeeeeeee: entry(now - 9e8, now + 5 * 3_600_000) } };
+  assert.deepEqual(playedIn([ahead], now), { first: now - 9e8, last: now - 9e8 });
 });
 
 test("only the game's own built scripts' errors count, and a module an update removed", () => {

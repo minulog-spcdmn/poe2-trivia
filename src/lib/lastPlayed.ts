@@ -20,8 +20,10 @@ export function playedIn(codexes: (Codex | null)[], now: number): Played | null 
   let p: Played | null = null;
   for (const c of codexes)
     for (const e of Object.values(c?.items ?? {})) {
-      if (e.last > now + AHEAD_MS) continue;
-      p = p ? { first: Math.min(p.first, e.first), last: Math.max(p.last, e.last) } : { first: e.first, last: e.last };
+      // An entry whose last answer came from a clock ahead (its devices' combined, or a guest's) still holds its first.
+      const last = e.last <= now + AHEAD_MS ? e.last : e.first;
+      if (last > now + AHEAD_MS) continue;
+      p = p ? { first: Math.min(p.first, e.first), last: Math.max(p.last, last) } : { first: e.first, last };
     }
   return p;
 }
