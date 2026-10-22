@@ -10,7 +10,7 @@
 import { C, glints, puffs } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
-import { IN, soft, times, type FamilyMotion } from './family';
+import { IN, sharp, soft, times, type FamilyMotion } from './family';
 import dither from '../../assets/dither.png';
 
 // The fog's mask. Its fade is a Gaussian, the falloff a blur leaves (the
@@ -70,9 +70,9 @@ export const fume: FamilyMotion = {
       c.play(
         c.inner[i],
         [
-          { opacity: 0, transform: `translateY(${odd ? 0.8 : 0.6}em) scaleY(1.12)`, filter: soft(c.phone ? 5 : 8), easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-          { offset: 0.55, opacity: 1, filter: soft(1.5) },
-          { opacity: 1, transform: 'none', filter: 'none' },
+          { opacity: 0, transform: `translateY(${odd ? 0.8 : 0.6}em) scaleY(1.12)`, ...soft(c.phone ? 5 : 8, c.ink, c.shadows), easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+          { offset: 0.55, opacity: 1, ...soft(1.5, c.ink, c.shadows) },
+          ...sharp(c.ink, c.shadows, { opacity: 1, transform: 'none' }),
         ],
         { at: c.tl.starts[i] + (odd ? 60 : 0), ms: c.tl.letterMs - (odd ? 60 : 0) },
       );

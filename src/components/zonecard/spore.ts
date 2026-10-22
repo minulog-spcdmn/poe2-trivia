@@ -8,7 +8,7 @@
 import { C, embers, emitter } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
-import { shuffled, soft, startsIn, times, type Ctx, type FamilyMotion } from './family';
+import { sharp, shuffled, soft, startsIn, times, type Ctx, type FamilyMotion } from './family';
 
 /** A mote drifting off `el`, slowly, turning on the air. */
 function mote(c: Ctx, el: Element, k = 0.6) {
@@ -40,9 +40,9 @@ export const spore: FamilyMotion = {
       c.play(
         c.inner[i],
         [
-          { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${r.toFixed(1)}deg) scale(0.85)`, filter: soft(blur), easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
-          { offset: 0.6, opacity: 1, filter: soft(1) },
-          { opacity: 1, transform: 'none', filter: 'none' },
+          { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${r.toFixed(1)}deg) scale(0.85)`, ...soft(blur, c.ink, c.shadows), easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
+          { offset: 0.6, opacity: 1, ...soft(1, c.ink, c.shadows) },
+          ...sharp(c.ink, c.shadows, { opacity: 1, transform: 'none' }),
         ],
         { at: at.get(i)!, ms: c.tl.letterMs },
       );

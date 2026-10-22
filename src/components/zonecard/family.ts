@@ -39,6 +39,9 @@ export type Ctx = {
   /** The name (its letters and the copies under them), the letters' row, and the copies. */
   word: HTMLElement;
   letters: HTMLElement;
+  /** The letters' colour and shadows, computed (what an entrance not drawn through a filter comes to: `sharp`). */
+  ink: string;
+  shadows: string;
   glow: HTMLElement;
   flash: HTMLElement;
   /** The seal holding the sigil. */
@@ -78,13 +81,37 @@ export type FamilyMotion = {
 export const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 export const IN = 'cubic-bezier(0.5, 0, 0.75, 0)';
 
+/** A computed text-shadow list with each of its colours made transparent (its shapes kept, to come in from). */
+const unlit = (shadows: string) => shadows.replace(/\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^)]*\)/g, 'transparent');
+
 /**
- * A letter's blur as it comes in, `px` soft, beside a brightness of 1 that
- * changes nothing: iOS Safari left letters animated through a blur alone
- * stuck blurry once they had settled, where a blur beside a brightness (as
- * the ember and rime families have it) settles sharp.
+ * A glyph `px` soft as it comes in, as `filter: blur(px)` would draw it: the
+ * glyph itself unseen, only a shadow of it in `ink` (a shadow's blur radius
+ * is twice a filter's; first, so it lies over the others, just under the
+ * glyph), its own shadows (`shadows`, computed) not yet there.
+ * Not a filter: iOS Safari left some letters animated out of a filter blur
+ * stuck blurry once they had settled (Sulphur Vents' S, l and h, while the
+ * letters between them, blurred the same, came sharp); a shadow is only
+ * painted.
  */
-export const soft = (px: number) => `brightness(1) blur(${px}px)`;
+export const soft = (px: number, ink: string, shadows = ''): Keyframe => ({
+  color: 'transparent',
+  textShadow: `0 0 ${2 * px}px ${ink}${shadows ? `, ${unlit(shadows)}` : ''}`,
+});
+
+/**
+ * The keyframes a `soft` glyph comes sharp in, `last` (its end) among them:
+ * its shadow stays in its colour while it shrinks, so the glyph showing over
+ * it never thins it to grey, and once it lies under the glyph it is let go,
+ * leaving the glyph with only its own shadows.
+ */
+export const sharp = (ink: string, shadows = '', last: Keyframe = {}): Keyframe[] => {
+  const own = shadows ? `, ${shadows}` : '';
+  return [
+    { offset: 0.96, color: ink, textShadow: `0 0 0 ${ink}${own}` },
+    { ...last, color: ink, textShadow: `0 0 0 transparent${own}` },
+  ];
+};
 
 /**
  * The default entrance: each letter rises 0.32em into place out of a blur,
@@ -96,9 +123,9 @@ export function enterDefault(c: Ctx, blur = c.phone ? 4 : 6) {
     c.play(
       c.inner[i],
       [
-        { opacity: 0, transform: `translate(${(-0.22 * c.dx[i]).toFixed(1)}px, 0.32em) scale(0.94)`, filter: soft(blur), easing: OUT },
-        { offset: 0.62, opacity: 1, transform: 'translate(0, -0.02em) scale(1.012)', filter: soft(0.4), easing: 'cubic-bezier(0.45, 0, 0.55, 1)' },
-        { opacity: 1, transform: 'none', filter: 'none' },
+        { opacity: 0, transform: `translate(${(-0.22 * c.dx[i]).toFixed(1)}px, 0.32em) scale(0.94)`, ...soft(blur, c.ink, c.shadows), easing: OUT },
+        { offset: 0.62, opacity: 1, transform: 'translate(0, -0.02em) scale(1.012)', ...soft(0.4, c.ink, c.shadows), easing: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+        ...sharp(c.ink, c.shadows, { opacity: 1, transform: 'none' }),
       ],
       { at: c.tl.starts[i], ms: c.tl.letterMs },
     );
