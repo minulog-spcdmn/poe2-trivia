@@ -77,7 +77,7 @@
   .change {
     font-size: 1rem;
   }
-  /* Kept to the width it's given, a half of the page among them: there the change says only by how much, without the bar or where it stood. */
+  /* Kept to the width it's given, a half of the page among them: there the bar goes and the change says where it stood in words. */
   .shares {
     container-type: inline-size;
   }
@@ -86,7 +86,6 @@
     white-space: normal;
   }
   @container (max-width: 36rem) {
-    .change :global(.was),
     .bar {
       display: none;
     }

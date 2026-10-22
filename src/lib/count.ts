@@ -16,7 +16,7 @@ import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
-import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
+import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
@@ -49,15 +49,15 @@ export function flipSkip(store: SkipStore): Toggled {
 /** The page counts where it is: the live game's own page, no robot. Settled as it loads (its address changes only in its query and hash after). */
 const countsHere = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
 
-/** Whether this page counts: where it counts, in a browser that hasn't opted out. A toggle changes it. */
-export let counting = countsHere && !browserSkip.skipped();
+/** Whether this page counts: where it counts, in a browser that hasn't opted out or sent Global Privacy Control. A toggle changes it. */
+export let counting = countsHere && !browserSkip.skipped() && !privacySignal();
 
 /** Takes a toggle hash from the address, if there is one where it means something, and flips the opt-out. */
 function takeToggle(): Toggled | null {
   if (!countsHere || !isToggleHash(location.hash)) return null;
   history.replaceState(history.state, '', location.pathname + location.search);
   const out = flipSkip(browserSkip);
-  counting = !browserSkip.skipped();
+  counting = !browserSkip.skipped() && !privacySignal();
   return out;
 }
 
@@ -109,10 +109,12 @@ function drain() {
 }
 function release(url: string, now: boolean) {
   if (now && !queue.length && !drainTimer) return beacon(url);
-  queue.push(url);
+  if (now) queue.unshift(url);
+  else queue.push(url);
   drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
 }
-if (counting && typeof addEventListener !== 'undefined')
+// (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
+if (countsHere && typeof addEventListener !== 'undefined')
   addEventListener('pagehide', () => {
     if (drainTimer) clearTimeout(drainTimer);
     drainTimer = null;
@@ -122,12 +124,14 @@ if (counting && typeof addEventListener !== 'undefined')
 /** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
 let seen = typeof document === 'undefined' || document.visibilityState === 'visible';
 const waiting: { url: string; now: boolean }[] = [];
-if (counting && !seen) {
+if (countsHere && !seen) {
   const look = () => {
     if (document.visibilityState !== 'visible') return;
     document.removeEventListener('visibilitychange', look);
     seen = true;
-    for (const w of waiting.splice(0)) release(w.url, w.now);
+    const held = waiting.splice(0);
+    // Not if the privacy page was used to opt out while this page waited unseen.
+    if (!notCounted()) for (const w of held) release(w.url, w.now);
   };
   document.addEventListener('visibilitychange', look);
 }
@@ -243,8 +247,14 @@ const asApp = () => (typeof matchMedia !== 'undefined' && matchMedia('(display-m
 let readPlayed: (() => Played | null) | null = null;
 let played: Played | null | undefined;
 const playedHere = () => (played === undefined && readPlayed ? (played = readPlayed()) : played) ?? null;
-/** A visit whose device had no save: its steps are a newcomer's too ("new/played"). */
+/** A first visit (firstVisit: no save, or one begun within it): its steps are a newcomer's too ("new/played"). */
 let newcomer = false;
+/**
+ * Whether the save says this is still the player's first visit: none, or one
+ * first played within VISIT_MS (GoatCounter's same visit), so a newcomer who
+ * played and then reloaded is still one.
+ */
+const firstVisit = (p: Played | null, now: number) => !p || now - p.first < VISIT_MS;
 
 /**
  * A visit to the start page; not one come back to (cameBack). Then, once a
@@ -252,16 +262,25 @@ let newcomer = false;
  * whether and how long ago the player played (this device or a paired one) and the week
  * it first was (`save`, the game's own save, read only if the visit counts),
  * and whether it was opened as the app. A tagged link's tag (takeCampaign)
- * goes as the visit's campaign.
+ * goes as the visit's campaign. A load come back to still gives the save
+ * for its steps (countStep): a newcomer's reload is still their first visit.
  */
 export function countVisit(save: () => Played | null, campaign: string | null, idle: (f: () => void) => void = (f) => f()) {
-  if (!counting || toggledOnLoad || cameBack()) return;
-  const r = referrerOf(document.referrer, location.href);
-  send({ p: '/', t: document.title, ...(r ? { r } : {}), ...(campaign ? { q: `?utm_campaign=${campaign}` } : {}) }, true);
+  // Nothing read from the save where nothing may be counted (Global Privacy Control too), as the privacy page says.
+  if (!counting || toggledOnLoad || notCounted()) return;
   readPlayed = save;
+  const back = cameBack();
+  if (!back) {
+    const r = referrerOf(document.referrer, location.href);
+    send({ p: '/', t: document.title, ...(r ? { r } : {}), ...(campaign ? { q: `?utm_campaign=${campaign}` } : {}) }, true);
+  }
+  // (Read in the idle moment on a load come back to as well: a game picked up mid-way writes to the save before its next step.)
   idle(() => {
+    // (Nor if the privacy page was used to opt out meanwhile.)
+    if (notCounted()) return;
     const p = playedHere();
-    newcomer = !p;
+    newcomer = firstVisit(p, Date.now());
+    if (back) return;
     for (const e of [recencyEvent(p, Date.now()), cohortEvent(p)]) if (e) countReach(e);
     if (asApp()) countReach('visit/app');
   });
@@ -298,9 +317,9 @@ const NEWCOMER_STEPS = new Set(['reach/lobby', 'reach/played', 'reach/finished']
 /** A step reached in a game (Steps), and for a visit whose device had no save, as a newcomer's too. */
 export function countStep(name: string) {
   countReach(name);
-  if (!NEWCOMER_STEPS.has(name) || !counting) return;
+  if (!NEWCOMER_STEPS.has(name) || !counting || notCounted()) return;
   // (A first step before the idle moment reads the save now: nothing played here has written to it yet.)
-  if (readPlayed && played === undefined) newcomer = !playedHere();
+  if (readPlayed && played === undefined) newcomer = firstVisit(playedHere(), Date.now());
   if (newcomer) countReach(name.replace('reach/', 'new/'));
 }
 

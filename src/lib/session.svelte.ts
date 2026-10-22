@@ -2541,7 +2541,8 @@ class Session {
       for (const e of this.steps.events(prev, next)) {
         // One device's game shows no lobby (a Delve link's run starts straight away): it's entered as it starts.
         if (this.mode === 'local' && e === 'reach/lobby') continue;
-        if (this.mode === 'local' && e === 'reach/played') countStep('reach/lobby');
+        // So is a game a guest watched the lobby of, seated only as it starts (each step counts once a page load).
+        if (e === 'reach/played') countStep('reach/lobby');
         countStep(e);
       }
     if (this.mode !== 'local' && this.mode !== 'host') return;
