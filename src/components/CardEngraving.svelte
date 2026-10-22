@@ -46,15 +46,17 @@
       </svg>
     {/each}
     {#if motif.length}
-      <span class="glint">
-        <span class="through" style:--w="{box?.width ?? w}px">
-          <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
-            <svg viewBox="0 0 {w} {h}">
-              {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
-            </svg>
+      {#key box?.width}
+        <span class="glint">
+          <span class="through" style:--w="{box?.width ?? w}px">
+            <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+              <svg viewBox="0 0 {w} {h}">
+                {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+              </svg>
+            </span>
           </span>
         </span>
-      </span>
+      {/key}
     {/if}
   {:else if plate}
     {#if plate.window && plate.fade}
@@ -145,16 +147,21 @@
     {:else if motif.length}
       <!-- A glint: the motif again in pale light, seen through a band that
            runs across the card while the drawing inside it runs back, so the
-           light moves and the lines stay put. -->
-      <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
-        <span class="through" style:--w="{box?.width ?? w}px">
-          <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
-            <svg viewBox="0 0 {w} {h}">
-              {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
-            </svg>
+           light moves and the lines stay put. Built anew when the card's
+           width changes (a phone turned): Safari keeps a running animation's
+           distances from when it started, and the band's and the drawing's
+           fell out of step, the light's copy of the lines off the lines. -->
+      {#key box?.width}
+        <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
+          <span class="through" style:--w="{box?.width ?? w}px">
+            <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+              <svg viewBox="0 0 {w} {h}">
+                {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+              </svg>
+            </span>
           </span>
         </span>
-      </span>
+      {/key}
     {/if}
   {/if}
 </span>
