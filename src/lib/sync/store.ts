@@ -50,8 +50,6 @@ export interface Pairing {
   at?: number;
   /** Unmet: the code this device was synced under before it took this one (a new device's), so it brings that device home to the others rather than leaving them. */
   home?: string;
-  /** Unmet: made on starting over, so a synced device that takes it comes to it rather than bringing this one home to the group it left (pairingAnew). */
-  anew?: boolean;
 }
 
 /** How long a pairing that has met no device is kept: the other device has long come by then, or isn't coming. */
@@ -69,7 +67,7 @@ export function loadPairing(): Pairing | null {
       code: v.code,
       met: false,
       at: typeof v.at === 'number' ? v.at : 0,
-      ...(isCode(v.home) && v.home !== v.code ? { home: v.home } : v.anew === true ? { anew: true } : {}),
+      ...(isCode(v.home) && v.home !== v.code ? { home: v.home } : {}),
     };
   } catch {
     return null;
@@ -81,23 +79,19 @@ export interface Paired {
   code: string | null;
   met: boolean;
   home: string | null;
-  /** Its code was made on starting over (Pairing.anew). */
-  anew?: boolean;
 }
 
 /**
  * A pairing as it stands at `now`: one that met nobody in time goes back to
  * the code the device came from (or is let go of: null), and one stamped
- * ahead of the clock (set back since) counts from now. One started over
- * waits for good: the player's other devices may come days later, and let
- * go of it, the device would offer a plain new code, which a device of the
- * group it left would take it home to. The same pairing when nothing changed.
+ * ahead of the clock (set back since) counts from now. The same pairing when
+ * nothing changed.
  */
 export function pairingNow(p: Pairing | null, now: number): Pairing | null {
   if (!p || p.met) return p;
   const at = p.at ?? 0;
   if (at > now) return { ...p, at: now };
-  if (now - at > UNMET_MS && !p.anew) return p.home ? { code: p.home, met: true } : null;
+  if (now - at > UNMET_MS) return p.home ? { code: p.home, met: true } : null;
   return p;
 }
 
@@ -110,24 +104,17 @@ export function pairingNow(p: Pairing | null, now: number): Pairing | null {
 export const lapsed = (was: Pairing | null, now: Pairing | null, waitingSince: number | null, at: number): boolean =>
   !now && (!!was || (waitingSince !== null && at - waitingSince > UNMET_MS));
 
-/**
- * What a device says of itself as it meets another: that it brings a new
- * device home, or is new itself, with nowhere else to go (and, started over,
- * that it is new on purpose and goes nowhere else).
- */
-export const meeting = (me: Paired): { home: string } | { fresh: true; anew?: true } | Record<string, never> =>
-  me.home ? { home: me.home } : !me.met ? { fresh: true, ...(me.anew ? { anew: true as const } : {}) } : {};
+/** What a device says of itself as it meets another: that it brings a new device home, or is new itself, with nowhere else to go. */
+export const meeting = (me: Paired): { home: string } | { fresh: true } | Record<string, never> => (me.home ? { home: me.home } : !me.met ? { fresh: true } : {});
 
 /**
  * Where two devices go once they've met and given each other what they have
  * (each works it out alike): this one's home when it brings a new device, the
  * other's when it brings this new one; null to stay with the code they met by.
- * A device that started over is never taken home: the one that took its code
- * stays on it, and lets go of the group it came from.
  */
-export function homeOnMeeting(me: Paired, them: { home?: unknown; fresh?: unknown; anew?: unknown }): string | null {
-  if (me.home && them.fresh === true) return them.anew === true ? null : me.home;
-  return isCode(them.home) && !me.met && !me.home && !me.anew ? them.home : null;
+export function homeOnMeeting(me: Paired, them: { home?: unknown; fresh?: unknown }): string | null {
+  if (me.home && them.fresh === true) return me.home;
+  return isCode(them.home) && !me.met && !me.home ? them.home : null;
 }
 
 /**
@@ -141,14 +128,6 @@ export function pairingTaking(code: string, me: Paired, now: number): Pairing | 
   const home = me.met ? me.code : me.home;
   return { code, met: false, at: now, ...(home && home !== code ? { home } : {}) };
 }
-
-/**
- * The pairing a device starts over with: out of its group (nothing said to
- * it), on a new code of its own that every device it is to sync with again
- * takes, one by one, and comes to (homeOnMeeting). It waits for them however
- * long they take (pairingNow).
- */
-export const pairingAnew = (code: string, now: number): Pairing => ({ code, met: false, at: now, anew: true });
 
 /** The pairing left on unpairing: a code taken but not met yet goes back to the one before; otherwise none. */
 export const pairingAfterUnpair = (me: Paired): Pairing | null => (!me.met && me.home ? { code: me.home, met: true } : null);

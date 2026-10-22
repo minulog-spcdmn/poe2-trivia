@@ -292,10 +292,9 @@
       {/if}
     </p>
 
-    <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. (None started over:
-         the others come to this code, as a code taken from one of them would be the group's this device left.) -->
+    <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. -->
     <p class="routes">
-      {#if view === 'show' && !sync.anew}
+      {#if view === 'show'}
         {#if handheld && scans}<button class="route" onclick={startScan}>Scan a code</button><span class="sep bullet" aria-hidden="true">•</span>{/if}
         <button class="route" onclick={startTyping}>Enter a code</button>
       {:else if view === 'scan'}
