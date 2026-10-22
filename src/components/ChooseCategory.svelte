@@ -1100,12 +1100,16 @@
      (lib/iconFit) and by the item's own --e-k, and the image is placed so
      its visible part fills it. An item drawn larger grows upward, its foot
      where it was, and --e-up and --e-left move it. --e-s scales it all
-     down for a card in a row. */
+     down for a card in a row. (Moved by its position, not a translate:
+     WebKit, every browser on iOS, draws .lit's shadow filter only as far
+     as its contents are laid out, not as far as a translate carries them,
+     and cut the belt's straps off under Amulets & Belts.) */
   .glyph.fit {
     --e-k: var(--e-kin, 1);
     --u: calc(var(--e-s, 1) * var(--e-k) * 1px);
-    translate: calc(var(--e-left, 0) * var(--e-s, 1) * -1px)
-      calc(min(0px, (1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px) - var(--e-up, 0) * var(--e-s, 1) * 1px);
+    position: relative;
+    left: calc(var(--e-left, 0) * var(--e-s, 1) * -1px);
+    top: calc(min(0px, (1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px) - var(--e-up, 0) * var(--e-s, 1) * 1px);
     width: calc(var(--e-w) * var(--u));
     height: calc(var(--e-h) * var(--u));
     -webkit-mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
