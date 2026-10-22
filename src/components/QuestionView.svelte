@@ -1574,8 +1574,16 @@
     line-height: 1.1;
     color: #a9c3dc;
   }
+  /* Under a picture, never broken in two (ten to a row on a phone leave a
+     caption under 60px): it shrinks with its caption instead. The word is
+     about 5.75em wide in Cinzel, letter spacing and all, so 16% of the
+     caption's width for an em keeps it inside with room to spare. */
+  .caption {
+    container-type: inline-size;
+  }
   .caption .mirrored {
-    font-size: 0.8rem;
+    font-size: min(0.8rem, 16cqi);
+    white-space: nowrap;
   }
 
   .art {
@@ -3582,14 +3590,6 @@
       padding: 1rem 0.2rem 0.35rem;
       font-size: 0.72rem;
       overflow-wrap: anywhere;
-    }
-    /* Ten to a screen, five to a row: a tile on a 375px phone leaves its
-       caption about 58px, and Mirrored at full size broke in two. Smaller and
-       a little tighter it fits whole (about 56px). */
-    .tiles.ten .caption .mirrored {
-      font-size: 0.64rem;
-      letter-spacing: 0.03em;
-      overflow-wrap: normal;
     }
     /* The row under the answers: as tall as a result and Next from the
        start, so nothing moves when they come. The verdict is its disc alone
