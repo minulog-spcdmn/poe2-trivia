@@ -7,7 +7,7 @@
 import { MAX_PLAYERS, PRESETS, type Knobs, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
 import type { Control, Values } from '../bench.ts';
-import { longestNamed } from '../build/engine.ts';
+import { longestNamed, longestWord } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
@@ -28,7 +28,8 @@ const seated = (v: Values, by: number) => SEATED.slice(0, Number(v.players ?? by
 /**
  * A question's answers: how many (the game's default, six, as dealt), and
  * whether they are names or pictures, or the longest names there are (the
- * most a row has to fit). Set either and the game plays its default
+ * most a row has to fit), as names or under pictures (the most a caption
+ * has to fit at the reveal). Set either and the game plays its default
  * difficulty as custom, with that many and asked that way.
  */
 const ANSWERS: Control[] = [
@@ -49,13 +50,14 @@ const ANSWERS: Control[] = [
       { value: 'names', label: 'Names' },
       { value: 'art', label: 'Pictures' },
       { value: 'longest', label: 'Longest names' },
+      { value: 'art-longest', label: 'Pictures, longest names' },
     ],
   },
 ];
 /** A difficulty's knobs with the answers' controls set on them (as dealt, its own share of pictures). */
 const askedAs = (v: Values, base: Knobs): Knobs => {
   const as = v.asked ?? 'as';
-  return { ...base, options: Number(v.answers ?? 6), artChance: as === 'names' || as === 'longest' ? 0 : as === 'art' ? 1 : base.artChance };
+  return { ...base, options: Number(v.answers ?? 6), artChance: as === 'names' || as === 'longest' ? 0 : as === 'art' || as === 'art-longest' ? 1 : base.artChance };
 };
 const asked = (v: Values): Partial<Settings> => {
   if (Number(v.answers ?? 6) === 6 && (v.asked ?? 'as') === 'as') return {};
@@ -88,6 +90,29 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
         q.category = longest[at].category;
         q.groups = [...new Set(longest.map((it) => it.group))].sort();
         delete q.variant;
+      }
+      if (v.asked === 'art-longest' && q?.mode === 'art') {
+        // The same under pictures: the answer, where it was dealt, the
+        // longest name of all, each picture the new item's own art (mirrored
+        // as dealt), and an answer already given kept to its place.
+        const at = Math.max(0, q.options.indexOf(q.itemId));
+        const longest = longestNamed(q.options.length);
+        [longest[0], longest[at]] = [longest[at], longest[0]];
+        // A wrong pick's name the one with the longest word, which can't wrap.
+        const r = t.s.reveal;
+        const wrong = r && r.chosenIndex !== null && r.chosenIndex !== at ? r.chosenIndex : -1;
+        if (wrong >= 0) longest[wrong] = longestWord();
+        q.options = longest.map((it) => it.id);
+        q.itemId = q.options[at];
+        q.prompt = longest[at].name;
+        q.category = longest[at].category;
+        q.groups = [...new Set(longest.map((it) => it.group))].sort();
+        delete q.variant;
+        delete q.tall;
+        if (r) {
+          r.correctId = q.itemId;
+          if (r.chosenIndex !== null) r.chosenId = q.options[r.chosenIndex];
+        }
       }
       const at = t.s.phase === 'question' ? t.clock.now + INTO : t.clock.now;
       return { state: t.s, act: t.room, at } satisfies Built;

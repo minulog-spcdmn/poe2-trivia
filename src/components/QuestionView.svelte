@@ -91,6 +91,8 @@
    * side, where the plate has no height to spare).
    */
   function oneLine(node: HTMLElement, on = true) {
+    // (No transition, which reduced motion gives every property: a size set here has to be measured at once.)
+    node.style.transitionProperty = 'none';
     const run = () => {
       node.style.fontSize = '';
       node.style.whiteSpace = '';
@@ -145,6 +147,39 @@
         mo.disconnect();
       },
     };
+  }
+  /**
+   * Svelte action: a picture's name at the reveal wraps between words only.
+   * A word wider than the caption (Strugglescream under one of ten pictures
+   * on a phone) shrinks the name, down to three quarters of its size; only a
+   * word too wide even then breaks. A name kept to one line, cut short with
+   * an ellipsis, is left as it comes.
+   */
+  function wholeWords(node: HTMLElement) {
+    // (No transition, which reduced motion gives every property: a size set here has to be measured at once.)
+    node.style.transitionProperty = 'none';
+    const run = () => {
+      node.style.fontSize = '';
+      node.style.overflowWrap = '';
+      if (getComputedStyle(node).whiteSpace === 'nowrap') return;
+      node.style.overflowWrap = 'normal';
+      const full = parseFloat(getComputedStyle(node).fontSize);
+      const least = full * 0.75;
+      const over = () => node.scrollWidth > node.clientWidth + 0.5;
+      let size = full;
+      while (over() && size > least) {
+        size = Math.max(least, size - 0.5);
+        node.style.fontSize = `${size}px`;
+      }
+      if (over()) node.style.overflowWrap = '';
+    };
+    run();
+    // Again once the display font is in, and whenever the tile's width changes (a phone turned).
+    void document.fonts?.ready.then(run);
+    const ro = new ResizeObserver(run);
+    const tile = node.closest('.tile');
+    if (tile) ro.observe(tile);
+    return { destroy: () => ro.disconnect() };
   }
   /**
    * Delve together, while the question is open: teammates its wrong picks
@@ -1287,7 +1322,7 @@
             {/if}
             {#if reveal && named(i)}
               <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>
-                {optionName(i)}
+                <span class="cname" use:wholeWords>{optionName(i)}</span>
                 {#if mirrored(i)}{@render mirrorLine()}{/if}
               </span>
             {/if}
@@ -2610,6 +2645,9 @@
   .tile.right .caption {
     color: #d6e8c0;
   }
+  .cname {
+    display: block;
+  }
   /* The row under the answers: what there is to say (a tip, Detonate, the
      result and Next). Same height with a tip, a result or nothing, so the
      page doesn't jump at the reveal. */
@@ -3396,6 +3434,44 @@
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
       padding-top: 0.45rem;
+    }
+    /* The name at the reveal over a tile barely taller than its picture: as
+       small as upright, on a shorter shade and two lines at most, so the
+       picture still shows above it (it can't move or shrink: nothing jumps).
+       A name cut short is whole a tap away, in the item's details. */
+    .caption {
+      padding: 0.8rem 0.25rem 0.3rem;
+      font-size: 0.72rem;
+      line-height: 1.12;
+    }
+    .cname {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+    }
+    .caption .mirrored {
+      font-size: min(0.72rem, 16cqi);
+    }
+    /* Ten, two rows of tiles about 60px tall: one line, the name and
+       Mirrored side by side, the name giving way. */
+    .tiles.ten .caption {
+      display: flex;
+      justify-content: center;
+      align-items: baseline;
+      column-gap: 0.4em;
+      padding-top: 0.6rem;
+    }
+    .tiles.ten .cname {
+      display: block;
+      min-width: 0;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .tiles.ten .caption .mirrored {
+      flex: none;
+      font-size: 0.66rem;
     }
     .footer {
       margin-top: 0.45rem;
