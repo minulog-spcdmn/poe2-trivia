@@ -5,10 +5,12 @@
 // it speaks for the player rather than the device: one who moves from their
 // computer to their phone neither looks new there nor starts a cohort of
 // their own. (Copies are as fresh as the last sync: near enough by the day.)
+// Read as the start page reads it (loadCodex, its combining kept until the
+// copies change), so a paired player's costs nothing more; a whole codex at
+// its largest (every item, a full log: about 400 KB) takes a few ms to read.
 
 import type { Played } from './count.ts';
-import { ownCodexRaw, parseCodex, type Codex } from './codex.ts';
-import { copiesOf } from './sync/store.ts';
+import { loadCodex, type Codex } from './codex.ts';
 
 /** How far ahead a time may be and still count: a guest's entries carry the host's clock. */
 const AHEAD_MS = 3_600_000;
@@ -24,4 +26,4 @@ export function playedIn(codexes: (Codex | null)[], now: number): Played | null 
   return p;
 }
 
-export const lastPlayed = () => playedIn([parseCodex(ownCodexRaw()), ...copiesOf('codex', parseCodex)], Date.now());
+export const lastPlayed = () => playedIn([loadCodex()], Date.now());

@@ -16,6 +16,7 @@ import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
+import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 
@@ -204,17 +205,6 @@ export function recencyEvent(played: Played | null, now: number): string | null 
   if (ago < VISIT_MS) return null;
   const days = ago / 86_400_000;
   return days <= 1 ? 'visit/back-1d' : days <= 7 ? 'visit/back-7d' : days <= 30 ? 'visit/back-30d' : 'visit/back-later';
-}
-
-/** The ISO week a time falls in, UTC ("2026-W43"). */
-export function isoWeek(ms: number): string {
-  const d = new Date(ms);
-  const day = (d.getUTCDay() + 6) % 7;
-  // The week's Thursday decides its year.
-  const thursday = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day + 3);
-  const year = new Date(thursday).getUTCFullYear();
-  const week = 1 + Math.floor((thursday - Date.UTC(year, 0, 1)) / (7 * 86_400_000));
-  return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
 /** The week this device first played in ("cohort/2026-W43"), so the visitors of each week can be followed; none for no save. */

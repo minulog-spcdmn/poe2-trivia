@@ -76,25 +76,9 @@ export const RETURN_NAMES: Record<Return, string> = {
 export const VISIT_KINDS = ['new', ...RETURNS, 'app'] as const;
 export type VisitKind = (typeof VISIT_KINDS)[number];
 
-/** A day's ISO week ("2026-W43"). */
-export function isoWeek(day: string): string {
-  const d = new Date(`${day}T12:00:00Z`);
-  const thursday = new Date(d.getTime() + (3 - ((d.getUTCDay() + 6) % 7)) * 86_400_000);
-  const year = thursday.getUTCFullYear();
-  const week = 1 + Math.round((thursday.getTime() - firstThursday(year)) / (7 * 86_400_000));
-  return `${year}-W${String(week).padStart(2, '0')}`;
-}
-/** Noon of the year's first ISO Thursday (the one in the week of January 4th). */
-const firstThursday = (year: number) => {
-  const jan4 = Date.UTC(year, 0, 4, 12);
-  return jan4 + (3 - ((new Date(jan4).getUTCDay() + 6) % 7)) * 86_400_000;
-};
-/** The Monday an ISO week ("2026-W43") begins (YYYY-MM-DD), or null for a name that isn't one. */
-export function weekMonday(week: string): string | null {
-  const m = /^(\d{4})-W(\d{2})$/.exec(week);
-  if (!m || Number(m[2]) < 1 || Number(m[2]) > 53) return null;
-  return new Date(firstThursday(Number(m[1])) + ((Number(m[2]) - 1) * 7 - 3) * 86_400_000).toISOString().slice(0, 10);
-}
+// The weeks' rules are the game's own (lib/isoWeek.ts), so a cohort it names is read back to the same Monday.
+import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
+export { isoWeekOfDay as isoWeek, weekMonday };
 
 /**
  * Those who first played in one week ("cohort/2026-W43", sent with a visit
