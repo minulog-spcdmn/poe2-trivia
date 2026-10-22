@@ -149,25 +149,29 @@
   /**
    * Svelte action: a picture's name at the reveal wraps between words only.
    * A word wider than the caption (Strugglescream under one of ten pictures
-   * on a phone) shrinks the name, down to three quarters of its size; only a
-   * word too wide even then breaks. A name kept to one line, cut short with
-   * an ellipsis, is left as it comes.
+   * on a phone) shrinks the caption, the name and its Mirrored line together
+   * (sized from it), down to three quarters of its size; only a word too
+   * wide even then breaks. A name kept to one line, cut short with an
+   * ellipsis, is left as it comes.
    */
   function wholeWords(node: HTMLElement) {
-    // (No transition, which reduced motion gives every property: a size set here has to be measured at once.)
+    const caption = node.parentElement ?? node;
+    // (No transition, which reduced motion gives every property: a size set
+    // here has to be measured at once, in the name too, which inherits it.)
+    caption.style.transitionProperty = 'none';
     node.style.transitionProperty = 'none';
     const run = () => {
-      node.style.fontSize = '';
+      caption.style.fontSize = '';
       node.style.overflowWrap = '';
       if (getComputedStyle(node).whiteSpace === 'nowrap') return;
       node.style.overflowWrap = 'normal';
-      const full = parseFloat(getComputedStyle(node).fontSize);
+      const full = parseFloat(getComputedStyle(caption).fontSize);
       const least = full * 0.75;
       const over = () => node.scrollWidth > node.clientWidth + 0.5;
       let size = full;
       while (over() && size > least) {
         size = Math.max(least, size - 0.5);
-        node.style.fontSize = `${size}px`;
+        caption.style.fontSize = `${size}px`;
       }
       // (Broken anywhere outright: not every layout's caption does that for it, and a clipped name says less.)
       if (over()) node.style.overflowWrap = 'anywhere';
@@ -1616,15 +1620,17 @@
     line-height: 1.1;
     color: #a9c3dc;
   }
-  /* Under a picture, never broken in two (ten to a row on a phone leave a
-     caption under 60px): it shrinks with its caption instead. The word is
-     about 5.75em wide in Cinzel, letter spacing and all, so 16% of the
-     caption's width for an em keeps it inside with room to spare. */
+  /* Under a picture, a little smaller than the name above it (0.8rem under
+     0.85rem), at every size the caption takes, and never broken in two (ten
+     to a row on a phone leave a caption under 60px): it shrinks with its
+     caption instead. The word is about 5.75em wide in Cinzel, letter spacing
+     and all, so 16% of the caption's width for an em keeps it inside with
+     room to spare. */
   .caption {
     container-type: inline-size;
   }
   .caption .mirrored {
-    font-size: min(0.8rem, 16cqi);
+    font-size: min(0.94em, 16cqi);
     white-space: nowrap;
   }
 
@@ -3458,9 +3464,6 @@
       line-clamp: 2;
       overflow: hidden;
     }
-    .caption .mirrored {
-      font-size: min(0.72rem, 16cqi);
-    }
     /* Ten, two rows of tiles about 60px tall: one line, the name and
        Mirrored side by side, the name giving way. */
     .tiles.ten .caption {
@@ -3478,7 +3481,6 @@
     }
     .tiles.ten .caption .mirrored {
       flex: none;
-      font-size: 0.66rem;
     }
     .footer {
       margin-top: 0.45rem;
