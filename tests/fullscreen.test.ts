@@ -69,6 +69,10 @@ test('the Mac gets its own keys', () => {
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 const ANDROID_WEBVIEW = 'Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0 Mobile Safari/537.36';
 const INSTAGRAM = `${IPHONE} Instagram 350.0.0.0`;
+/** An app's WebView on an iPhone (TikTok's, Snapchat's): no Safari in its name. */
+const IOS_WEBVIEW = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+const IPAD_WEBVIEW = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)';
+const IOS_CHROME = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1';
 
 test('a phone or tablet is told how to add the game to its home screen, until it has', () => {
   assert.equal(installHow(env({ userAgent: ANDROID, media: [] })), 'android');
@@ -85,4 +89,10 @@ test("no home screen tip on a desktop, a Chromebook or an app's own browser", ()
   assert.equal(installHow(env({ userAgent: CHROMEBOOK })), null);
   assert.equal(installHow(env({ userAgent: ANDROID_WEBVIEW, media: [] })), null);
   assert.equal(installHow(env({ userAgent: INSTAGRAM, media: [] })), null);
+  assert.equal(installHow(env({ userAgent: IOS_WEBVIEW, media: [] })), null);
+  assert.equal(installHow(env({ userAgent: IPAD_WEBVIEW, maxTouchPoints: 5, media: [] })), null);
+});
+
+test('every iPhone browser keeps its tip: Chrome and Firefox there say Safari too', () => {
+  assert.equal(installHow(env({ userAgent: IOS_CHROME, media: [] })), 'ios');
 });

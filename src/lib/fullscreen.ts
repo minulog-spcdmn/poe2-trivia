@@ -74,8 +74,13 @@ export function isDesktop(e: Env): boolean {
 const installed = (e: Env) =>
   e.standalone === true || ['fullscreen', 'standalone', 'minimal-ui'].some((m) => e.matches(`(display-mode: ${m})`));
 
-/** An app's own view of a page (Instagram's, Facebook's, Android's WebView): it has no home screen to add it to. */
-const inAppBrowser = (e: Env) => /; wv\)|FBAN|FBAV|Instagram|Line\//.test(e.userAgent);
+/**
+ * An app's own view of a page (Instagram's, Facebook's, Android's WebView, or
+ * any app's on an iPhone or iPad, whose WebView leaves Safari out of its name
+ * where every browser there keeps it): it has no home screen to add it to.
+ */
+const inAppBrowser = (e: Env) =>
+  /; wv\)|FBAN|FBAV|Instagram|Line\//.test(e.userAgent) || (/iPhone|iPad|iPod|Macintosh/.test(e.userAgent) && !/Safari\//.test(e.userAgent));
 
 /**
  * How this phone or tablet adds the game to its home screen, to play it
@@ -120,7 +125,9 @@ export interface FullscreenState {
 }
 
 export function fullscreenStateOf(e: Env): FullscreenState {
-  return { desktop: isDesktop(e), fullscreen: isFullscreen(e), sure: surelyFullscreen(e), install: installHow(e) };
+  const desktop = isDesktop(e);
+  // (A desktop has no home screen tip: spared its media queries on every resize.)
+  return { desktop, fullscreen: isFullscreen(e), sure: surelyFullscreen(e), install: desktop ? null : installHow(e) };
 }
 
 let current: FullscreenState | null = null;
@@ -130,7 +137,7 @@ let frame = 0;
 /** The window as last seen (worked out now if nothing's watching it yet). */
 export const fullscreenNow = () => (current ??= fullscreenStateOf(browserEnv()));
 
-/** Calls back whenever the window goes in or out of fullscreen (watchFullscreen must be on). */
+/** Calls back whenever the window goes in or out of fullscreen, or onto the home screen (watchFullscreen must be on). */
 export function onFullscreenChange(cb: (s: FullscreenState) => void) {
   listeners.add(cb);
   return () => void listeners.delete(cb);

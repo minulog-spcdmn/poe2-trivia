@@ -1,5 +1,5 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -54,17 +54,22 @@ function csp(env: Record<string, string>): Plugin {
  */
 function betaPages(env: Record<string, string>): Plugin {
   let outDir = '';
+  let publicDir = '';
   return {
     name: 'beta-pages',
     apply: 'build',
     configResolved(config) {
       outDir = resolve(config.root, config.build.outDir);
+      publicDir = config.publicDir;
     },
-    // After the public folder is copied out.
+    // After the public folder is copied out. Read from the public folder, not
+    // the copy, so a second call (a watched build) never says Beta twice; and
+    // only where the copy is, so a failed build's own error isn't hidden.
     closeBundle() {
       if (env.VITE_CHANNEL !== 'beta') return;
       const file = join(outDir, 'manifest.webmanifest');
-      const manifest = JSON.parse(readFileSync(file, 'utf8'));
+      if (!existsSync(file)) return;
+      const manifest = JSON.parse(readFileSync(join(publicDir, 'manifest.webmanifest'), 'utf8'));
       manifest.name = `Beta • ${manifest.name}`;
       manifest.short_name = 'PoE2 Beta';
       writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
