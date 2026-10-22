@@ -10,7 +10,7 @@
 import { C, glints, puffs } from '../../lib/fx/effects';
 import { particle } from '../../lib/fx/core';
 import { Shape } from '../../lib/fx/particles';
-import { IN, sharp, soft, times, type FamilyMotion } from './family';
+import { IN, times, type FamilyMotion } from './family';
 import dither from '../../assets/dither.png';
 
 // The fog's mask. Its fade is a Gaussian, the falloff a blur leaves (the
@@ -70,11 +70,11 @@ export const fume: FamilyMotion = {
       c.play(
         c.inner[i],
         [
-          { opacity: 0, transform: `translateY(${odd ? 0.8 : 0.6}em) scaleY(1.12)`, ...soft(c.phone ? 5 : 8, c.ink, c.shadows), easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-          { offset: 0.55, opacity: 1, ...soft(1.5, c.ink, c.shadows) },
-          ...sharp(c.ink, c.shadows, { opacity: 1, transform: 'none' }),
+          { opacity: 0, transform: `translateY(${odd ? 0.8 : 0.6}em) scaleY(1.12)`, filter: `blur(${c.phone ? 5 : 8}px)`, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+          { offset: 0.55, opacity: 1, filter: 'blur(1.5px)' },
+          { opacity: 1, transform: 'none', filter: 'none' },
         ],
-        { at: c.tl.starts[i] + (odd ? 60 : 0), ms: c.tl.letterMs - (odd ? 60 : 0) },
+        { at: c.tl.starts[i] + (odd ? 60 : 0), ms: c.tl.letterMs - (odd ? 60 : 0), fill: 'backwards' },
       );
       // Bobbing on the fumes while it holds (rich screens).
       if (c.rich)

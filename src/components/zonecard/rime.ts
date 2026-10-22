@@ -30,7 +30,7 @@ export const rime: FamilyMotion = {
           { offset: 0.55, opacity: 1, filter: 'brightness(1.3) blur(0.6px)', easing: 'ease-out' },
           { opacity: 1, transform: 'none', filter: 'none' },
         ],
-        { at: at.get(i)!, ms: c.tl.letterMs },
+        { at: at.get(i)!, ms: c.tl.letterMs, fill: 'backwards' },
       );
       if (c.rich) c.at(at.get(i)! + c.tl.letterMs * 0.6, () => glints(c.inner[i], { count: 1, area: 'centre', size: [4, 7], color: ICE }));
     }

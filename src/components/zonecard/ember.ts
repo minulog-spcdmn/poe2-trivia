@@ -31,7 +31,7 @@ export const ember: FamilyMotion = {
           { offset: 0.5, opacity: 1, filter: 'brightness(1.8) blur(1px)', easing: 'ease-out' },
           { opacity: 1, transform: 'none', filter: 'none' },
         ],
-        { at: at.get(i)!, ms: c.tl.letterMs },
+        { at: at.get(i)!, ms: c.tl.letterMs, fill: 'backwards' },
       );
   },
 

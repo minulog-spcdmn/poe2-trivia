@@ -8,7 +8,7 @@
 // ends first, as the seal shrinks after them.
 
 import { C, flash, implode, ring } from '../../lib/fx/effects';
-import { IN, sharp, soft, type Ctx, type FamilyMotion } from './family';
+import { IN, type Ctx, type FamilyMotion } from './family';
 
 /** The ghosts' two colours: the zone's colour run toward red and toward cyan (an eclipse's, toward crimson and gold). */
 function ghosts(c: Ctx): [string, string] {
@@ -25,16 +25,14 @@ export const voidFamily: FamilyMotion = {
       const r = 1.2 + c.rnd() * 0.8;
       const [x, y] = [Math.cos(ang) * r, Math.sin(ang) * r * 0.6];
       const turn = (c.rnd() - 0.5) * 60;
-      const ease = 'cubic-bezier(0.7, 0, 0.2, 1)';
-      const timing = { at: c.tl.starts[i], ms: c.tl.letterMs };
       c.play(
         c.inner[i],
         [
-          { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${turn.toFixed(0)}deg) scale(0.6)`, ...soft(4, c.ink, c.shadows), easing: ease },
-          { offset: 0.5, opacity: 0.9, ...soft(1.5, c.ink, c.shadows) },
-          ...sharp(c.ink, c.shadows, { opacity: 1, transform: 'none' }),
+          { opacity: 0, transform: `translate(${x.toFixed(2)}em, ${y.toFixed(2)}em) rotate(${turn.toFixed(0)}deg) scale(0.6)`, filter: 'blur(4px)', easing: 'cubic-bezier(0.7, 0, 0.2, 1)' },
+          { offset: 0.5, opacity: 0.9, filter: 'blur(1.5px)' },
+          { opacity: 1, transform: 'none', filter: 'none' },
         ],
-        timing,
+        { at: c.tl.starts[i], ms: c.tl.letterMs, fill: 'backwards' },
       );
       // Its ghosts, in split colours, closing in on it as it comes and gone as the name locks.
       const ch = c.inner[i].textContent;
@@ -48,9 +46,6 @@ export const voidFamily: FamilyMotion = {
         g.style.cssText = `position:absolute;left:0;top:0;color:${colour};mix-blend-mode:screen;pointer-events:none`;
         c.inner[i].style.position = 'relative';
         c.inner[i].append(g);
-        // Soft as its letter is, in its own colour (inside the letter, it would otherwise take the letter's soft shadow).
-        const ink = getComputedStyle(g).color;
-        c.play(g, [{ ...soft(4, ink, c.shadows), easing: ease }, { offset: 0.5, ...soft(1.5, ink, c.shadows) }, ...sharp(ink, c.shadows)], timing);
         const from = c.tl.starts[i];
         c.play(g, [{ opacity: 0.45, transform: `translateX(${side * 0.18}em)` }, { opacity: 0.45, transform: `translateX(${side * 0.06}em)`, offset: 0.7 }, { opacity: 0, transform: 'none' }], {
           at: from,

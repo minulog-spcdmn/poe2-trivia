@@ -37,7 +37,7 @@ export const light: FamilyMotion = {
           { offset: 0.75, opacity: 1, filter: 'brightness(1.3)' },
           { opacity: 1, filter: 'none' },
         ],
-        { at: at.get(i)!, ms: c.tl.letterMs },
+        { at: at.get(i)!, ms: c.tl.letterMs, fill: 'backwards' },
       );
     // The shaft of light, crossing the name as it locks.
     const shaft = document.createElement('span');

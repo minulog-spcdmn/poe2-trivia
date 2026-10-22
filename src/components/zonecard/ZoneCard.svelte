@@ -171,7 +171,6 @@
       const tint = hdr(title.accent, 1);
       const main: Vec3 = [tint[0] * 2.7, tint[1] * 2.7, tint[2] * 2.7];
       const pale: Vec3 = [1.6 + tint[0] * 1.2, 1.6 + tint[1] * 1.2, 1.6 + tint[2] * 1.2];
-      const ls = getComputedStyle(letters);
       const c: Ctx = {
         play,
         at,
@@ -185,8 +184,6 @@
         glyphs: chars.flatMap((ch, i) => (ch.trim() ? [i] : [])),
         word,
         letters,
-        ink: ls.color,
-        shadows: ls.textShadow === 'none' ? '' : ls.textShadow,
         glow: glowCopy,
         flash: flashCopy,
         seal: seal!,
