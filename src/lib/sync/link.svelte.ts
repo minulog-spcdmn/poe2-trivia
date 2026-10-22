@@ -606,8 +606,11 @@ export function startSync() {
       run?.stop();
       run = null;
     });
-    // (How long ago it last synced, kept current.)
-    setInterval(() => (sync.clock = Date.now()), 30_000);
+    // How long ago it last synced, kept current; linked, now (so a page that dies without a pagehide keeps a fair time).
+    setInterval(() => {
+      if (sync.linked) stampLinked();
+      else if (sync.met) sync.clock = Date.now();
+    }, 30_000);
     // Paired or unpaired in another tab.
     addEventListener('storage', (e) => {
       if (e.key !== storeKey(PAIR_NAME) && e.key !== null) return;
