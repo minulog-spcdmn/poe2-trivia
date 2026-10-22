@@ -520,9 +520,15 @@
     display: inline-block;
     white-space: pre;
   }
+  /* A letter with a filter on it (its entrance) is drawn on a layer of its
+     own, and WebKit sizes that layer to the letter's box and its box
+     shadows, not its text's: the name's glow (.letters, 14px) was cut off at
+     the box. A shadow of nothing as far out as the glow reaches (and a
+     descender below the box) keeps it whole; it draws nothing. */
   .li {
     display: inline-block;
     opacity: 0;
+    box-shadow: 0 0 0 calc(14px + 0.25em) transparent;
   }
   .built .li,
   .still .li,
