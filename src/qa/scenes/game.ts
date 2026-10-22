@@ -134,12 +134,22 @@ export function gameScenes(): Scene[] {
     ),
     scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, (v) => turns(v).playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0), many),
     scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, (v) => turns(v).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null), many),
-    scene('turns-mirrored', 'Take turns', 'Answered right: the picture was mirrored', turnsSeats, () => {
-      const t = table(THREE, { difficulty: 'custom', custom: { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 1, lockout: 3 } })
-        .start()
-        .pick();
-      return t.answer(t.turn, true);
-    }),
+    scene(
+      'turns-mirrored',
+      'Take turns',
+      'Answered right: the picture was mirrored',
+      turnsSeats,
+      (v) => {
+        // Pictures as answers, ten of them, put the Mirrored line in the narrowest captions.
+        const as = v.asked ?? 'as';
+        const artChance = as === 'names' || as === 'longest' ? 0 : as === 'art' ? 1 : 0.5;
+        const t = table(THREE, { difficulty: 'custom', custom: { options: Number(v.answers ?? 6), similarNames: 1, fakes: 2, artChance, veil: 'slow', grayscale: 'art', mirror: 1, lockout: 3 } })
+          .start()
+          .pick();
+        return t.answer(t.turn, true);
+      },
+      { controls: ANSWERS },
+    ),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
     // Rog plays at Kalguur's screen: on his turn the host's screen answers, under his name.

@@ -3583,6 +3583,14 @@
       font-size: 0.72rem;
       overflow-wrap: anywhere;
     }
+    /* Ten to a screen, five to a row: a tile on a 375px phone leaves its
+       caption about 58px, and Mirrored at full size broke in two. Smaller and
+       a little tighter it fits whole (about 56px). */
+    .tiles.ten .caption .mirrored {
+      font-size: 0.64rem;
+      letter-spacing: 0.03em;
+      overflow-wrap: normal;
+    }
     /* The row under the answers: as tall as a result and Next from the
        start, so nothing moves when they come. The verdict is its disc alone
        (its word read out), the sentence beside it says the rest; a streak
