@@ -708,6 +708,28 @@ h3,
   initial-value: 16px;
 }
 
+/* A category card's emblem kindling as it is dealt (ChooseCategory's kindle):
+   its brightness, its fade and its glow's reach, animated as numbers that its
+   filter and opacity read. Registered, so they interpolate; and an animation
+   of them runs on the page's thread only, so on iOS the fade (which Safari
+   would otherwise hand to the compositor) can't run ahead of the brightness
+   in the filter, which stays behind: the emblem came up dark, then lit. */
+@property --kindle-lum {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@property --kindle-fade {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@property --kindle-glow {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 10px;
+}
+
 /* Banding: a soft gradient or glow over a large area steps through so few of
    8-bit's levels that each shows as a band (CLAUDE.md). Under a see-through
    dark layer laid over other content (a scrim, a veil), --dither, a tile of
