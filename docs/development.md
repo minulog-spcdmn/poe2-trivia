@@ -151,7 +151,10 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   Never answer a hitch by drawing less well: capping the WebGL layers at
   1440p made the backdrop blurry and stretched its dither, and only made the
   hitches smaller. Where the GPU can draw them (`src/lib/fx/gpuBudget.ts`),
-  the layers draw every device pixel; find what really holds the frame up.
+  the layers draw every device pixel, and their slow motion (the backdrop's
+  embers, a calm streak's fire) every frame at the display's refresh, down
+  to 30fps only where the GPU can't keep up; find what really holds the
+  frame up.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with

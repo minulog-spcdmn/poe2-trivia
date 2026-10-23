@@ -23,8 +23,11 @@ type Opts = {
   off?: boolean;
   /** The display's refresh (Hz): 60 by default. */
   hz?: number;
-  /** How long frames take; by default as long as the GPU's work needs, at 60Hz at best. */
+  /** How long frames take; by default as long as the GPU's work needs (and `over` ms more, 2 by default), at the display's refresh at best. */
   frameMs?: (level: number, t: number, gpuMs: number) => number;
+  over?: number;
+  /** Levels wanted aren't moved to (core.ts holds a climb for a moment with nothing drawn, which a streak's fire may never give). */
+  hold?: boolean;
   /** False: the GPU can't be timed. */
   timed?: boolean;
   px?: typeof UHD;
@@ -33,9 +36,11 @@ type Opts = {
 /**
  * Runs `seconds` of frames from `start` (s), the layers' draws costing
  * `cost(level, t)` ms per million pixels on the GPU, and moves to each level
- * wanted at once, as core.ts does while nothing is drawn. Frames take as long
- * as the GPU's work and a little more, at 60Hz at best. Returns the levels
- * moved to, with when (s).
+ * wanted at once, as core.ts does while nothing is drawn. The effects are
+ * drawn every frame while they play, the backdrop at the pace (gap(), as
+ * core.ts's fxSlowGap). Frames take as long as the GPU's work and a little
+ * more, at the display's refresh at best. Returns the levels moved to, with
+ * when (s).
  */
 function run(b: GpuBudget, seconds: number, cost: (level: number, t: number) => number, opts: Opts = {}) {
   const px = opts.px ?? UHD;
@@ -43,22 +48,27 @@ function run(b: GpuBudget, seconds: number, cost: (level: number, t: number) => 
   const went: [number, number][] = [];
   let t = opts.start ?? 0;
   let i = 0;
+  let backdropAt = -Infinity;
   const end = t + seconds;
   while (t < end) {
     const c = cost(b.level, t);
     const on = busy(t);
-    const gpuMs = (c * ((on ? px(b.level, 'fx') : 0) + px(b.level, 'backdrop'))) / 1e6;
-    const base = opts.frameMs ? opts.frameMs(b.level, t, gpuMs) : Math.max(1000 / (opts.hz ?? 60), gpuMs + 2);
+    const drawn = t * 1000 - backdropAt >= b.gap(on);
+    if (drawn) backdropAt = t * 1000;
+    const fxMs = on ? (c * px(b.level, 'fx')) / 1e6 : 0;
+    const backdropMs = drawn ? (c * px(b.level, 'backdrop')) / 1e6 : 0;
+    const gpuMs = fxMs + backdropMs;
+    const base = opts.frameMs ? opts.frameMs(b.level, t, gpuMs) : Math.max(1000 / (opts.hz ?? 60), gpuMs + (opts.over ?? 2));
     // (Every eighth frame half as long again: a page's frames are never even.)
     const ms = base * (++i % 8 === 0 ? 1.5 : 1);
     t += ms / 1000;
     if (opts.timed !== false) {
-      if (on) b.gpu('fx', (c * px(b.level, 'fx')) / 1e6, px(b.level, 'fx'));
-      b.gpu('backdrop', (c * px(b.level, 'backdrop')) / 1e6, px(b.level, 'backdrop'));
+      if (on) b.gpu('fx', fxMs, px(b.level, 'fx'), t * 1000);
+      if (drawn) b.gpu('backdrop', backdropMs, px(b.level, 'backdrop'), t * 1000);
     }
     b.frame(ms, t * 1000, on, !!opts.off);
     const want = b.next(t * 1000);
-    if (want !== b.level) {
+    if (want !== b.level && !opts.hold) {
       b.applied(want, t * 1000);
       went.push([want, Math.round(t)]);
     }
@@ -94,9 +104,12 @@ test('a GPU too weak for a 4K screen goes straight to the level that fits', () =
 });
 
 test('it drops within a few seconds of a GPU turning slow', () => {
-  const { went } = run(new GpuBudget(UHD), 60, (_, t) => (t < 30 ? 0.3 : 1.08));
+  // (Drawing the backdrop at 30fps is tried first, for two and a half seconds, and undone: the frames it draws are still late.)
+  const b = new GpuBudget(UHD);
+  const { went } = run(b, 60, (_, t) => (t < 30 ? 0.3 : 1.08));
   assert.equal(went.length, 1);
-  assert.ok(went[0][1] >= 30 && went[0][1] <= 34, `dropped at ${went[0][1]}s`);
+  assert.ok(went[0][1] >= 30 && went[0][1] <= 38, `dropped at ${went[0][1]}s`);
+  assert.equal(b.pace(true), 0);
 });
 
 test('a GPU clocked down while lightly loaded: its long timings alone move nothing, frames being on time', () => {
@@ -342,4 +355,134 @@ test('untimed, a climb is tried once frames are easy, and one that fails waits l
   // Always slow at 0: each climb fails, and the waits between them grow.
   const { went } = run(new GpuBudget(UHD), 1800, () => 0, { ...untimed, frameMs: (l) => (l === 0 ? 40 : 16.7) });
   assertWaitsGrow(climbsIn(went));
+});
+
+// The pace: how often slow motion (the backdrop's own, effects while calm) is
+// drawn. Every frame where the GPU keeps up with that at the display's
+// refresh; less often, down to 30fps, where it doesn't; and that before any
+// pixel goes.
+
+/**
+ * Frames as a GPU that works a frame or two ahead gives them, on the
+ * display's refresh: its work (and `over` ms more) past a frame carries over
+ * to the next, and a frame waits a whole refresh more for each one's worth of
+ * it. So frames come as quickly as its work takes on average, at the
+ * refresh at best, and the quickest of them show the refresh.
+ */
+function pipelined(hz: number, over: number) {
+  const refresh = 1000 / hz;
+  let behind = 0;
+  return (_l: number, _t: number, gpuMs: number) => {
+    behind = Math.max(0, behind + gpuMs + over - refresh);
+    const late = Math.floor(behind / refresh);
+    behind -= late * refresh;
+    return refresh * (1 + late);
+  };
+}
+
+/** The effects at 2M pixels, the backdrop at 10M, at every level (what only the pace changes). */
+const BIG_BACKDROP = (_level: number, layer: Layer) => (layer === 'fx' ? 2e6 : 10e6);
+
+test('a GPU that keeps up at 240Hz draws slow motion every frame, and every pixel', () => {
+  const b = new GpuBudget(UHD);
+  assert.deepEqual(run(b, 120, () => 0.1, { hz: 240, over: 0.5, busy: (t) => t % 10 < 7 }).levels, []);
+  assert.equal(b.pace(true), 0);
+  assert.equal(b.pace(false), 0);
+});
+
+test('at 240Hz, effects that leave no room for the backdrop every frame: it is drawn less often while they play, every frame between them', () => {
+  // 0.3 ms per million: the effects 0.6 ms, the backdrop 3; together over 60% of a 240Hz frame, the backdrop alone not.
+  const b = new GpuBudget(BIG_BACKDROP);
+  const { levels } = run(b, 120, () => 0.3, { hz: 240, px: BIG_BACKDROP, frameMs: pipelined(240, 1.5), busy: (t) => t % 10 < 7 });
+  assert.deepEqual(levels, []);
+  // (Down to the first pace that fits with room to spare, the backdrop in one
+  // frame of four, then back up to the best that fits: one of two.)
+  assert.equal(b.pace(true), 1000 / 120);
+  assert.equal(b.pace(false), 0);
+});
+
+test('at 240Hz, a backdrop too dear for every frame on its own is drawn less often, and every pixel kept', () => {
+  const b = new GpuBudget(BIG_BACKDROP);
+  const { levels } = run(b, 60, () => 0.4, { hz: 240, px: BIG_BACKDROP, frameMs: pipelined(240, 1.5), busy: () => false });
+  assert.deepEqual(levels, []);
+  assert.equal(b.pace(false), 1000 / 120);
+});
+
+test('the pace comes back to every frame once the GPU is free again', () => {
+  const b = new GpuBudget(BIG_BACKDROP);
+  run(b, 40, () => 0.3, { hz: 240, px: BIG_BACKDROP, frameMs: pipelined(240, 1.5) });
+  assert.equal(b.pace(true), 1000 / 120);
+  run(b, 120, () => 0.05, { start: 40, hz: 240, px: BIG_BACKDROP, frameMs: pipelined(240, 1.5) });
+  assert.equal(b.pace(true), 0);
+});
+
+test('at 60Hz, a GPU that keeps up with the backdrop at 30fps keeps every pixel: the pace comes down, not the level', () => {
+  // 0.99 ms per million: both layers at 4K take 16.4 ms, frames slow with the
+  // backdrop in every one, not with it in every other (as it always was before
+  // the pace).
+  const b = new GpuBudget(UHD);
+  assert.deepEqual(run(b, 120, () => 0.99).levels, []);
+  assert.equal(b.pace(true), 1000 / 30);
+});
+
+test('untimed, a climb back to every pixel that the backdrop every frame makes slow paces it rather than drop again', () => {
+  // 1.2 ms per million: at 4K, frames slow with the backdrop in every one, not
+  // with it in every other; at 1440p's worth, easy either way.
+  const b = new GpuBudget(UHD);
+  b.timable(false);
+  b.applied(b.next(0), 0);
+  assert.equal(b.level, 1);
+  const { went } = run(b, 400, () => 1.2, untimed);
+  assert.deepEqual(
+    went.map(([l]) => l),
+    [0],
+  );
+  assert.equal(b.pace(true), 1000 / 30);
+});
+
+test('at 240Hz too, climbing needs ten seconds of effects at this level, not a few seconds of many draws', () => {
+  const saved: Saved = { at: Date.now(), level: 1, px: 3840 * 2160, backoff: 20 };
+  const b = new GpuBudget(UHD, 0, saved);
+  b.applied(b.next(0), 0);
+  assert.equal(b.level, 1);
+  // The backdrop alone for a while, then effects for 3s: hundreds of draws of each, at 240Hz.
+  const quiet = run(b, 30, () => 0.1, { hz: 240, over: 0.5, busy: () => false });
+  const short = run(b, 60, () => 0.1, { start: quiet.t, hz: 240, over: 0.5, busy: (t) => t - quiet.t < 3 });
+  assert.deepEqual(short.levels, []);
+  assert.deepEqual(run(b, 60, () => 0.1, { start: short.t, hz: 240, over: 0.5 }).levels, [0]);
+});
+
+test('touch screens draw slow motion at 30fps always', () => {
+  const b = new GpuBudget(UHD, 1);
+  run(b, 120, () => 0.05, { hz: 120, over: 0.5, busy: (t) => t % 10 < 7 });
+  assert.equal(b.pace(true), 1000 / 30);
+  assert.equal(b.pace(false), 1000 / 30);
+});
+
+test('the paces that held are kept for the next visit, with the level', () => {
+  const b = new GpuBudget(BIG_BACKDROP);
+  run(b, 40, () => 0.3, { hz: 240, px: BIG_BACKDROP, frameMs: pipelined(240, 1.5) });
+  const saved = b.saved();
+  assert.deepEqual(saved?.pace, [1, 0]);
+  const next = new GpuBudget(BIG_BACKDROP, 0, saved);
+  next.next(0);
+  assert.equal(next.pace(true), 1000 / 120);
+  // Paces that aren't paces are let go, the level kept.
+  const odd = new GpuBudget(BIG_BACKDROP, 0, { ...saved!, pace: [9, -1] as [number, number] });
+  assert.equal(odd.next(0), saved!.level);
+  assert.equal(odd.pace(true), 0);
+});
+
+test('a climb held for a calm moment that never comes (a streak fire burning) does not hold the pace up', () => {
+  const saved: Saved = { at: Date.now(), level: 1, px: 3840 * 2160, backoff: 20 };
+  const b = new GpuBudget(UHD, 0, saved);
+  b.applied(b.next(0), 0);
+  // Cheap enough for every pixel: a climb is wanted, and held.
+  const cheap = run(b, 60, () => 0.1, { hz: 240, over: 0.5, hold: true });
+  assert.equal(b.next(cheap.t * 1000), 0);
+  assert.equal(b.level, 1);
+  // Then the GPU turns slow: the backdrop is drawn less often all the same.
+  run(b, 20, () => 0.5, { start: cheap.t, hz: 240, frameMs: pipelined(240, 1.5), hold: true });
+  assert.equal(b.level, 1);
+  assert.ok(b.pace(true) > 0, `pace ${b.pace(true)}`);
 });
