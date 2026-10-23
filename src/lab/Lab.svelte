@@ -17,6 +17,7 @@
   import { RUBY } from '../lib/palette';
   import { CREATOR, CREATOR_TITLE } from '../lib/site';
   import { showTip } from '../lib/fullscreenTip';
+  import { showSynced } from '../lib/sync/notice';
   import { ABLAZE_FROM, ABLAZE_FULL, BLUE_FROM, DELVE_ABLAZE_FULL, DELVE_FLAMES } from '../lib/fx/streaks';
   import DrawnMark from '../components/DrawnMark.svelte';
   import SpatialControls from './SpatialControls.svelte';
@@ -49,6 +50,8 @@
       show: () => toast(tier(t).title, 'info', { title: 'Achievement earned', seal: { sign: tier(t).sign, tier: t } }),
     })),
     { label: 'Several achievements', show: () => toast(ACHIEVEMENTS.slice(0, 3).map((a) => a.title).join(' • '), 'info', { title: '3 achievements earned', seal: { sign: tier(3).sign, tier: 3 } }) },
+    { label: 'Syncing with a device', show: () => showSynced(1) },
+    { label: 'Syncing with three', show: () => showSynced(3) },
   ];
   // As the game does: the same notice again restarts the one already up instead of stacking a copy.
   const toast = (message: string, kind: ToastKind, opts: ToastOptions = {}) => toasts.show(message, kind, opts);
