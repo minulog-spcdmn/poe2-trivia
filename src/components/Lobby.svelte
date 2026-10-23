@@ -1240,8 +1240,8 @@
   /* Its glow, drawn by the WebGL backdrop over the card's fill when it can
      (lib/backdropDropShadow.ts), dithered; CSS paints it otherwise. */
   .mode.on b {
-    --drop-shadow: drop-shadow(0 0 12px rgba(241, 217, 155, 0.45));
-    filter: var(--drop-shadow-paint, var(--drop-shadow));
+    --drop-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
+    text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
   }
   /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark;
      in the teal of skill gems, so it reads as fresh rather than unfinished. */

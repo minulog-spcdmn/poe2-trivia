@@ -1,4 +1,4 @@
-// `filter: drop-shadow()` drawn by the WebGL backdrop instead of CSS.
+// A text element's shadows, drawn by the WebGL backdrop instead of CSS.
 //
 // Drop shadows follow an element's shape (glyphs, image alpha), so unlike
 // box-shadows they can't be drawn in closed form. Instead each tagged element
@@ -8,20 +8,25 @@
 // and stored at 16-bit precision (two 8-bit channels) so the shadow's own
 // gradient can't band; the backdrop then samples it every frame through the
 // element's current position, rotation, scale and opacity, and dithers the
-// result.
+// result. Each shadow is cast by the shape alone, the first on top.
 //
 // Usage: tag the element with `use:backdropDropShadow`, declare its shadows
-// in `--drop-shadow` (at most two drop-shadow() functions), and paint them as
-// `filter: … var(--drop-shadow-paint, var(--drop-shadow))`. While the backdrop
-// draws the element it sets `data-bs-drop`, which (via app.css) swaps the
-// drop-shadow part of the filter for a no-op. Whenever it can't (3D turns,
-// fonts or image not ready, its shape still changing or its blur on its way,
-// over budget, no WebGL), the attribute stays off and CSS paints the shadow
-// as usual.
+// in `--drop-shadow` as a text-shadow list (at most two), and paint them as
+// `text-shadow: var(--drop-shadow-paint, var(--drop-shadow))`. While the
+// backdrop draws the element it sets `data-bs-drop`, which (via app.css)
+// swaps the CSS shadows for none. Whenever it can't (3D turns, fonts or image
+// not ready, its shape still changing or its blur on its way, over budget, no
+// WebGL, a phone), the attribute stays off and CSS paints them as usual.
+//
+// A text-shadow, not `filter: drop-shadow()`: filters chain, so a second
+// drop-shadow() is cast by the text and the first shadow together, a glow
+// twice as strong and wider than the one drawn here. Text painted by its
+// background (`background-clip: text`) is covered by its own text-shadow, so
+// it takes a copy underneath in transparent text to carry the shadows and
+// the tag (GameTitle.svelte).
 //
 // Only text and <img> content is masked: a text element's non-text children
-// (such as the title's thin decorative lines) cast no shadow here. Their CSS
-// shadow is faint enough not to matter.
+// (such as the title's thin decorative lines) cast no shadow, here or in CSS.
 
 import { backgroundPainter } from './backdropShadow';
 import { blurMask } from './dropBlur';
@@ -96,7 +101,7 @@ export function releaseAllDrops() {
 let probe: HTMLDivElement | null = null;
 const dropCache = new Map<string, Drop[]>();
 
-/** Resolves a `--drop-shadow` declaration to drop shadows, via the browser's own parser. */
+/** Resolves a `--drop-shadow` declaration (a text-shadow list) to drop shadows, via the browser's own parser. */
 function parseDrops(decl: string): Drop[] {
   const cached = dropCache.get(decl);
   if (cached) return cached;
@@ -105,12 +110,12 @@ function parseDrops(decl: string): Drop[] {
     probe.style.display = 'none';
     document.body.append(probe);
   }
-  probe.style.filter = '';
-  probe.style.filter = decl;
-  const computed = getComputedStyle(probe).filter; // e.g. drop-shadow(rgba(0, 0, 0, 0.9) 0px 4px 18px)
+  probe.style.textShadow = '';
+  probe.style.textShadow = decl;
+  const computed = getComputedStyle(probe).textShadow; // e.g. rgba(0, 0, 0, 0.9) 0px 4px 18px, rgb(…) 0px 0px 34px
   const drops: Drop[] = [];
-  for (const m of computed.matchAll(/drop-shadow\(((?:[^()]|\([^()]*\))*)\)/g)) {
-    const body = m[1];
+  for (const m of computed === 'none' ? [] : computed.matchAll(/(?:[^(),]|\([^()]*\))+/g)) {
+    const body = m[0];
     const colorMatch = body.match(/(?:rgba?|color)\([^)]*\)/);
     const nums = ((colorMatch ? colorMatch[0] : '').match(/-?[\d.]+(?:e-?\d+)?/g) ?? []).map(parseFloat);
     const [r = 0, g = 0, b = 0, alpha = 1] = nums;
@@ -434,7 +439,7 @@ export function measureDrops(
   const active: [HTMLElement, Mask, Lin, number, DOMRect, boolean][] = [];
   // Per-element style reads, shared by the tagged elements' common ancestors.
   // Nothing below changes a transform or an opacity (data-bs-drop only swaps
-  // the filter), so they hold for the whole pass.
+  // the text-shadow), so they hold for the whole pass.
   const linears = new Map<Element, Lin | null>();
   const opacities = new Map<Element, number>();
   const paintsAt = backgroundPainter();

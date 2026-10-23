@@ -28,7 +28,10 @@
 </script>
 
 <h1 class:lines use:glinting in:fly|global={calm({ y: 20, duration: 800 })}>
-  <span class="gold" use:backdropDropShadow
+  <span class="shade" aria-hidden="true" use:backdropDropShadow
+    >{#if lines}<span class="line"></span>{/if}PoE2.Quest{#if lines}<span class="line"></span>{/if}</span
+  >
+  <span class="gold"
     >{#if lines}<span class="line"></span>{/if}PoE2.Quest{#if lines}<span class="line"></span>{/if}</span
   >
   <span class="gleam" aria-hidden="true"
@@ -39,7 +42,7 @@
 <style>
   h1 {
     position: relative;
-    /* The gold and the gleam are two copies of the title, stacked. */
+    /* The shadows, the gold and the gleam are three copies of the title, stacked. */
     display: grid;
     font-family: var(--font-title);
     font-size: var(--title-size, 92px);
@@ -68,13 +71,18 @@
   .lines > span {
     justify-content: center;
   }
-  /* The gold and its shadow, painted once. The gleam is a separate copy: on
-     this one, every frame of the sweep would blur the shadow again. */
+  /* The gold's shadows, cast by a copy of its own in transparent text beneath
+     it: the gold is painted by its background, which its own text-shadow
+     would cover. Drawn by the WebGL backdrop when it can (see
+     lib/backdropDropShadow.ts). */
+  .shade {
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    --drop-shadow: 0 4px 18px rgba(0, 0, 0, 0.9), 0 0 34px rgba(224, 170, 90, 0.36);
+    text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
+  }
   .gold {
     background-image: linear-gradient(180deg, #fff1c9 0.1em, #d7b068 0.5em, #8b6526 0.95em);
-    /* Drawn by the WebGL backdrop when it can (see lib/backdropDropShadow.ts). */
-    --drop-shadow: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 34px rgba(224, 170, 90, 0.36));
-    filter: var(--drop-shadow-paint, var(--drop-shadow));
   }
   /* A band of light sweeps across the gold every few seconds, on a layer of
      its own so its repaints leave the gold and its shadow alone. */
@@ -86,6 +94,7 @@
     background-position: 160% 0;
     animation: gleam 7s ease-in-out 1.6s infinite;
   }
+  .shade .line,
   .gleam .line {
     visibility: hidden;
   }
