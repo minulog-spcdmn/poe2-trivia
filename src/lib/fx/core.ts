@@ -209,8 +209,8 @@ let resizeDueAt = 0;
  * Effects still advance every frame, so timing is unchanged. On every
  * device, the same goes while all that's alive is endless and calm (a
  * streak's fire burning between moments), which can last a whole game.
- * Only while the quality is down, though (fxScaledDown: always on phones):
- * a GPU that keeps up draws every frame, and a fast display shows the steps.
+ * Only where it's paced, though (fxPaced: phones, and while the quality is
+ * down): a GPU that keeps up draws every frame, and a fast display shows the steps.
  */
 let calm = false;
 let lastDraw = 0;
@@ -892,7 +892,7 @@ function frameUntimed(nowMs: number) {
   }
 
   // (25ms rather than 33: a frame that comes a little early isn't skipped too.)
-  const draw = !calm || !fxScaledDown() || nowMs - lastDraw >= 25;
+  const draw = !calm || !fxPaced() || nowMs - lastDraw >= 25;
   if (draw) lastDraw = nowMs;
   let busy = false;
   try {
@@ -1217,6 +1217,15 @@ const scaleListeners = new Set<() => void>();
  */
 export function fxScaledDown() {
   return quality > 0;
+}
+
+/**
+ * Whether slow motion is drawn at a pace of its own (the backdrop's at
+ * 30fps, calm effects at about 40): on a touch screen, as it is now, and
+ * while the quality is down. A GPU that keeps up draws every frame.
+ */
+export function fxPaced() {
+  return quality > 0 || !!coarse?.matches;
 }
 
 /** Calls `fn` when fxScaledDown() changes. */

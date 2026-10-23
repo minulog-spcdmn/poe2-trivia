@@ -12,7 +12,7 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { backdropFrame, fxActive, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
+import { backdropFrame, fxActive, fxPaced, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
 import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
@@ -2106,13 +2106,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // Shadows and fills must track their elements every frame (hover,
   // transitions, scrolling), and lights and a changing mood tint animate
   // quickly, so any of those draws at once. A GPU that keeps up draws the
-  // backdrop's own motion every frame too: at 30fps the embers step, and on
-  // a fast display the sparks thrown up skip 20px at a time. Where it's
-  // paced (paced(): phones and tablets, and a GPU found too slow for every
-  // pixel, see fx/gpuBudget.ts), 30fps does: its quickest cycle is a slow 9s
-  // breath and the embers drift a few pixels a frame. While calm() nothing
-  // is drawn until something changes.
-  const paced = () => fxScaledDown();
+  // backdrop's own motion every frame too: at 30fps the embers step, and the
+  // sparks thrown up skip 20px at a time, plain to see on a fast display.
+  // Where it's paced (fxPaced: phones and tablets, and a GPU found too slow
+  // for every pixel, see fx/gpuBudget.ts), 30fps does: its quickest cycle is
+  // a slow 9s breath and the embers drift a few pixels a frame. While calm()
+  // nothing is drawn until something changes.
   let dirty = false;
   /** A change held back for the 30fps pace (see frame()). */
   let owed = false;
@@ -2189,15 +2188,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const homeMoving = stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
     // A mood holding steady (the victory's gold, a deathmatch's red) changes
-    // nothing, so it is just drawn along with everything else: at 30fps, or
-    // while calm only when something changes. On phones, where this
+    // nothing, so it is just drawn along with everything else: every frame,
+    // at 30fps where paced, or while calm only when something changes. On phones, where this
     // full-screen shader is the costliest thing on screen and runs under the
     // effects overlay, lights and an easing mood need no more than 30fps
     // either.
     // Delve's depth eases in; holding still, it changes at once (it is game information).
     const descending = still ? snapDescent() : stepDescent(dt);
-    // The dark of a question's clock eases in and out by itself: drawn at
-    // 30fps with everything else, or, holding still, in steps of a fiftieth.
+    // The dark of a question's clock eases in and out by itself: drawn with
+    // everything else, or, holding still, in steps of a fiftieth.
     const p = pressureLevel(now);
     if (p !== pressure && (Math.abs(p - pressure) > (still ? 0.02 : 0.002) || p === 0)) {
       pressure = p;
@@ -2244,8 +2243,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;
-    // A depth easing in is a slow change of colour: 30fps is plenty. Holding
-    // still, the one frame it changes in must be drawn.
+    // A depth easing in is a slow change of colour: it waits for the pace
+    // where paced. Holding still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
     const soft = lights || moodState === 'moving';
     if (!still) embers.step(dt, canvasW, canvasH, !fxActive());
@@ -2262,18 +2261,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // What must be drawn now: the UI's shadows and fills moving with it, the
     // start page's scene, a dialog's dimming, the scene sinking or swinging,
     // Delve's parts coming in. Lights, a mood easing and colours changing
-    // under the UI are slow enough for 30fps on every screen: a right
-    // answer's reveal (its light, its fills and glows easing to green and
-    // gold) would otherwise redraw this pass every frame, along with the
-    // effects overlay's own.
+    // under the UI are slow enough for 30fps where paced: a right answer's
+    // reveal (its light, its fills and glows easing to green and gold) would
+    // otherwise redraw this pass every frame, along with the effects
+    // overlay's own. A GPU that keeps up draws them every frame.
     const measured = measure(uiNow());
     // A colour measured now isn't measured as changed again (measure() takes
     // it as drawn), and a light or mood easing may stop in a frame held back:
-    // either is owed a frame, at the 30fps pace.
+    // either is owed a frame (at the 30fps pace, where paced).
     if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
     const urgent = measured === 'now' || dirty || homeMoving || fading;
-    if (!urgent && ((still && !owed) || (paced() && now - last < 33))) return;
+    if (!urgent && ((still && !owed) || (fxPaced() && now - last < 33))) return;
     last = now;
     dirty = false;
     owed = false;
