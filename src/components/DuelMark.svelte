@@ -7,10 +7,10 @@
   // (docs/arcane-style.md), and a soft copy of the lines under them for the
   // glow. 32 unit viewBox, each sword drawn upright about the middle, then turned.
 
-  /** A sword, point up, its middle on the origin: blade, guard, grip and pommel. */
-  const SWORD = 'M0 -15.5V4.6M-5 4.6H5M0 4.6V10.2M1.6 11.8a1.6 1.6 0 1 1 -3.2 0a1.6 1.6 0 1 1 3.2 0Z';
+  /** A sword, point up, crossing the other halfway up its blade (on the origin): blade, guard, grip and pommel. */
+  const SWORD = 'M0 -16.5V7.5M-4.6 7.5H4.6M0 7.5V12.4M1.3 13.7a1.3 1.3 0 1 1 -2.6 0a1.3 1.3 0 1 1 2.6 0Z';
   /** What of the sword in front the one behind is cut short of: its blade and guard. */
-  const CUT = 'M0 -15.5V4.6M-5 4.6H5';
+  const CUT = 'M0 -16.5V7.5M-4.6 7.5H4.6';
 </script>
 
 <script lang="ts">
@@ -21,7 +21,7 @@
   <defs>
     <mask id="{uid}-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
       <rect width="32" height="32" fill="#fff" />
-      <path d={CUT} transform="translate(16 16) rotate(45)" stroke="#000" stroke-width="5" stroke-linecap="round" />
+      <path d={CUT} transform="translate(16 16) rotate(45)" stroke="#000" stroke-width="2.6" stroke-linecap="round" />
     </mask>
   </defs>
   <g mask="url(#{uid}-cut)">
@@ -51,12 +51,12 @@
     vector-effect: non-scaling-stroke;
   }
   .lines {
-    stroke-width: var(--mark-stroke, 1.1px);
+    stroke-width: var(--mark-stroke, 1.15px);
     stroke-linecap: round;
   }
   /* A soft copy of the lines under them: the glow, never on the lines themselves. */
   .glow {
-    stroke-width: calc(var(--mark-stroke, 1.1px) * 2.4);
+    stroke-width: calc(var(--mark-stroke, 1.15px) * 2.4);
     stroke-linecap: round;
     stroke-linejoin: round;
     opacity: var(--glow, 0.18);

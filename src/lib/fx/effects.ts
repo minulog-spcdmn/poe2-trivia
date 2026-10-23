@@ -670,9 +670,10 @@ const SIGIL_TURN = 0.045;
  * rings spread out, slowing; the band catches at its foot as they reach it,
  * and its fire runs round both ways to its head (SIGIL_MEET). Meanwhile it
  * settles from a little larger, the band turns slowly, and its glow swells
- * once all is drawn.
+ * once all is drawn. `behind`: it shines from behind the UI, hidden by the
+ * boxes cover() names (core.ts).
  */
-export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: number; intensity?: number; delay?: number }): Handle {
+export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: number; intensity?: number; delay?: number; behind?: boolean }): Handle {
   const art = duelPicture();
   if (!art) return { stop() {} };
   const R = o.radius;
@@ -684,9 +685,10 @@ export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: numb
     at,
     life,
     delay: o.delay,
+    behind: o.behind,
     color: o.color ?? C.crimson,
     update(f, t, age) {
-      const fout = Math.min(1, ((1 - t) * life) / 0.6);
+      const fout = Math.min(1, ((1 - t) * life) / 0.8);
       const scale = 1 + 0.05 * (1 - easeOut(Math.min(1, age / 1.2)));
       // Each part's front, on past 1 once drawn (slowly, so its heat lingers as it cools).
       const sword = age < SIGIL_STRIKE ? (age / SIGIL_STRIKE) ** 2 : 1 + (age - SIGIL_STRIKE) * 0.6;

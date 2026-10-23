@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, detached, fxActive, isLive, now, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, cover, detached, fxActive, isLive, now, shakeView, type Anchor, type CoverBox, type Handle, type Point, type Vec3 } from './core';
 import { duelArt } from './duelArt';
 import {
   C,
@@ -1120,13 +1120,38 @@ export function timerTick(timer: Element, secs: number, screen = true) {
 // ---------- deathmatch ----------
 
 /** The deathmatch intro card. */
+/** How long the deathmatch's intro card stays up (s): its sigil draws itself in the first 2, and holds to be read. */
+export const DEATHMATCH_INTRO = 4.4;
+/** The radius its sigil is drawn at, screen px: its card is laid out to it (Game.svelte). */
+export const deathmatchRadius = () => Math.min(innerWidth, innerHeight) * 0.42;
+
+/**
+ * What of the intro's card the sigil keeps behind (cover()): each line of its
+ * words, softly (the title only its letters' body, so the sigil shows above
+ * and below it), and its duelists' tokens, whole.
+ */
+function* introCovers(card: Element): Iterable<CoverBox> {
+  for (const el of card.querySelectorAll('.dm-kicker, h1, .face b, .vs, .dm-sub')) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    for (const r of range.getClientRects()) {
+      yield { box: el.tagName === 'H1' ? new DOMRect(r.x, r.y + r.height * 0.24, r.width, r.height * 0.58) : r, soft: true };
+    }
+  }
+  for (const el of card.querySelectorAll('.face .avatar')) {
+    const b = el.getBoundingClientRect();
+    const r = b.width / 2;
+    yield { box: b, radii: [r, r, r, r] };
+  }
+}
+
 export function deathmatchIntro(title: Element) {
   if (!fxActive()) return;
   const c = { x: innerWidth / 2, y: innerHeight / 2 };
   const D = Math.hypot(innerWidth, innerHeight);
   flash(c, { radius: D * 0.3, color: C.crimson, intensity: 0.14, life: 0.9 });
   // The lingering crimson glow behind the intro card (its backdrop is flat).
-  flash(c, { radius: D * 0.26, color: k3(C.crimson, 0.6), intensity: 0.12, life: 2.9 });
+  flash(c, { radius: D * 0.26, color: k3(C.crimson, 0.6), intensity: 0.12, life: DEATHMATCH_INTRO + 0.3 });
   ring(c, { radius: D * 0.6, thickness: 30, life: 1.3, color: C.crimson, breakup: 0.8, fill: 0.2 });
   ring(c, { radius: D * 0.35, thickness: 10, life: 1, color: C.ember, breakup: 0.6, delay: 0.15 });
   rays(title, { radius: D * 0.42, life: 2.6, intensity: 0.26, color: C.crimson, count: 18, sharp: 8, spin: 0.5 });
@@ -1136,12 +1161,16 @@ export function deathmatchIntro(title: Element) {
   const asked = now();
   void duelArt().then((picture) => {
     if (!picture || now() - asked > 0.6 || detached(title) || !fxActive()) return;
-    const R = Math.min(innerWidth, innerHeight) * 0.3;
+    const R = deathmatchRadius();
     const on = ([x, y]: readonly [number, number]): Point => {
       const b = boxOf(title);
       return { x: b.x + x * R, y: b.y + y * R };
     };
-    sigil(title, { radius: R, color: C.crimson, life: 3, intensity: 0.48 });
+    // (It fades as the card does, and keeps behind the card's words and tokens till then.)
+    sigil(title, { radius: R, color: C.crimson, life: DEATHMATCH_INTRO + 0.3, intensity: 0.48, behind: true });
+    const card = title.closest('.dm-intro-inner');
+    const kept = cover(() => (card && !detached(card) ? introCovers(card) : []));
+    after(DEATHMATCH_INTRO + 0.4, () => kept.stop());
     // The sword's point strikes home, and the band's two fires meet at its head.
     after(SIGIL_STRIKE, () => {
       flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
