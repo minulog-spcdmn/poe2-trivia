@@ -178,10 +178,10 @@ const DEAD_AFTER_MS = 15000;
  * a secure page (https, or localhost). Without it a guest couldn't open them
  * and a host couldn't seal them, so neither gets in.
  */
-const NO_SEAL_JOIN = "This page can't open the room's pictures: that needs a secure page. Open the game at its https:// address to join.";
-const NO_SEAL_HOST = "This page can't seal the room's pictures for guests: that needs a secure page. Open the game at its https:// address to host.";
+const NO_SEAL_JOIN = "This page can’t open the room’s pictures: that needs a secure page. Open the game at its https:// address to join.";
+const NO_SEAL_HOST = "This page can’t seal the room’s pictures for guests: that needs a secure page. Open the game at its https:// address to host.";
 /** What the host tells a guest whose hello doesn't say it can open sealed pictures. */
-const NO_SEAL_GUEST = "Your game can't open this room's pictures: it needs a secure page. Open the game at its https:// address to join.";
+const NO_SEAL_GUEST = "Your game can’t open this room’s pictures: it needs a secure page. Open the game at its https:// address to join.";
 /** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
 const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
 /** The held name without the owner key's signature (names.ts): turned down like any name that isn't allowed. */
@@ -816,7 +816,7 @@ class Session {
       // A room that couldn't be reopened stays saved, so a refresh tries again.
       if (err.type === 'unavailable-id' && resumeState)
         this.fail(
-          `Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window. Refresh to try again.`,
+          `Couldn’t reopen room ${code}: it still seems to be open, maybe in another tab or window. Refresh to try again.`,
           'Room not reopened',
           { reopening: code, failure: 'host-room-not-reopened' },
         );
@@ -827,7 +827,7 @@ class Session {
   /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
   private roomNotOpened(code: string, type: string, reopening: boolean) {
     if (reopening) this.fail(`${this.networkHint(type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-    else this.hostHere(`Couldn't connect to the matchmaking server (${type}), so nobody can join.`, 'host-no-connection');
+    else this.hostHere(`Couldn’t connect to the matchmaking server (${type}), so nobody can join.`, 'host-no-connection');
   }
 
   /**
@@ -1414,7 +1414,7 @@ class Session {
         this.artFailedFor = qid;
         // Its clock hasn't started (nobody has seen a thing of it): another question takes its place by itself.
         if (mayAutoReask(this.state, qid)) this.reaskLater(this.state);
-        else this.flash("Couldn't load the art for this question.", 'warn', { title: 'Art missing' });
+        else this.flash("Couldn’t load the art for this question.", 'warn', { title: 'Art missing' });
       }
       return;
     }
@@ -1706,9 +1706,9 @@ class Session {
     if (this.reaskFails.turn !== turn) this.reaskFails = { turn, n: 0 };
     const n = this.reaskFails.n++;
     const wait = reaskDelay(n);
-    if (n === 1) this.flash("The art keeps failing to load, so we're trying another question.", 'warn', { title: 'Art missing' });
+    if (n === 1) this.flash("The art keeps failing to load, so we’re trying another question.", 'warn', { title: 'Art missing' });
     if (wait === null) {
-      this.flash("The art won't load. Check your connection, then ask for another question. Nothing is lost while you wait.", 'warn', { title: 'Art missing' });
+      this.flash("The art won’t load. Check your connection, then ask for another question. Nothing is lost while you wait.", 'warn', { title: 'Art missing' });
       return;
     }
     this.mediaTimers.push(
@@ -1806,12 +1806,12 @@ class Session {
     this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
-      this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
+      this.fail(`“${this.code}” isn’t a valid room code.`, 'Invalid code');
       return;
     }
     // The room's pictures come sealed: a page that can't open them is told so now, not after the host turns it away.
     if (!sealAvailable()) {
-      this.fail(NO_SEAL_JOIN, "Can't join");
+      this.fail(NO_SEAL_JOIN, "Can’t join");
       return;
     }
     this.joinVia = via ?? null;
@@ -1901,7 +1901,7 @@ class Session {
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
     this.connectTimer = setTimeout(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
-      if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
+      if (this.peer?.open) this.fail(`Couldn’t reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
       else this.fail(this.networkHint('timeout'), 'No connection', { failure: this.joinFailure('join-no-connection') });
     }, wait);
   }
@@ -2034,7 +2034,7 @@ class Session {
   private guardHostFrames(conn: DataConnection) {
     const chunks = new ChunkGuard();
     const refuse = () => {
-      if (this.hostConn === conn) this.fail('The host sent something this game can\'t read, so you left the room.', 'Left the room');
+      if (this.hostConn === conn) this.fail('The host sent something this game can’t read, so you left the room.', 'Left the room');
       conn.close();
       return false;
     };
@@ -2136,7 +2136,7 @@ class Session {
             this.turnedDown = { askedAt: msg.askedAt };
           }
           if (this.status === 'connecting')
-            this.fail(versionRefusal(msg.message), "Couldn't join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
+            this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           else this.flash(msg.message, 'error');
           break;
         case 'kicked':
@@ -2178,7 +2178,7 @@ class Session {
       // Closed before the room let us in. A host that turns a link away
       // without a word does so every time (a dropped network link rarely
       // does, three times running): try again, then say so.
-      if (!heard && ++this.silentCloses >= 3) this.fail(`Room ${this.code} turned the connection away. Try again in a moment.`, "Couldn't join", { failure: this.joinFailure('join-turned-away') });
+      if (!heard && ++this.silentCloses >= 3) this.fail(`Room ${this.code} turned the connection away. Try again in a moment.`, "Couldn’t join", { failure: this.joinFailure('join-turned-away') });
       else this.planAttempt(RETRY_SOON_MS);
     });
     const secret = await this.helloSecret;
@@ -2306,7 +2306,7 @@ class Session {
   crashed(again: boolean) {
     if (this.mode !== 'client' && !(again && this.mode)) return;
     try {
-      if (this.mode === 'client') this.fail("The host's game sent something this page can't show, so you left the room.", 'Left the room');
+      if (this.mode === 'client') this.fail("The host’s game sent something this page can’t show, so you left the room.", 'Left the room');
       else {
         this.leave();
         this.flash('The game ran into a problem it could not get past, so it was closed.', 'error', { title: 'Game closed', sticky: true });
@@ -3104,7 +3104,7 @@ class Session {
   }
 
   private networkHint(type: string) {
-    return `Couldn't connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
+    return `Couldn’t connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
   }
 
   /**

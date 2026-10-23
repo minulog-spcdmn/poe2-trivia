@@ -57,7 +57,7 @@ test('steps with no effect say why, briefly', () => {
     (KNOB_TEXT.find((t) => t.key === key)!.off as (v: unknown, k: Knobs) => string | undefined)(step, k);
   for (const step of KNOB_STEPS.veil) assert.equal(off('veil', step, { ...PRESETS.eternal, artChance: 1 }), 'No name questions to cover');
   assert.equal(off('veil', 'slow', PRESETS.eternal), undefined);
-  assert.equal(off('grayscale', 'art', { ...PRESETS.eternal, artChance: 0 }), 'No "find the art" questions');
+  assert.equal(off('grayscale', 'art', { ...PRESETS.eternal, artChance: 0 }), 'No “find the art” questions');
   assert.equal(off('grayscale', 'all', { ...PRESETS.eternal, artChance: 0 }), undefined);
   assert.equal(off('fakes', 3, { ...PRESETS.eternal, options: 4 }), 'Needs 6 or more options');
 });
@@ -81,11 +81,11 @@ test('the notes under a find: its tagline, then one short line of what its item 
   assert.equal(line('flare'), 'Answer right for a flare. It adds six seconds when your time runs out. You get less time to answer.');
   assert.equal(line('dynamite'), 'Answer right for dynamite. It blasts a question away for a new one. A miss also blows up an item you carry.');
   assert.equal(findNote('azurite', { ...none, wards: 3 }), 'You can carry no more. A miss costs two lives and your haul.');
-  assert.equal(findNote('flare', { ...none, flares: 3 }), "You can carry no more. You get less time to answer. Your flares can't be used on it.");
+  assert.equal(findNote('flare', { ...none, flares: 3 }), "You can carry no more. You get less time to answer. Your flares can’t be used on it.");
   // What the player carries won't go off on a find's question, and the note says so.
-  assert.match(findNote('dynamite', { ...none, flares: 1 }), / Your flare can't be used on it\.$/);
-  assert.match(findNote('flare', { ...none, dynamite: 2 }), / Your dynamite can't be used on it\.$/);
-  assert.match(findNote('azurite', { ...none, flares: 2, dynamite: 1 }), / Your flares and dynamite can't be used on it\.$/);
+  assert.match(findNote('dynamite', { ...none, flares: 1 }), / Your flare can’t be used on it\.$/);
+  assert.match(findNote('flare', { ...none, dynamite: 2 }), / Your dynamite can’t be used on it\.$/);
+  assert.match(findNote('azurite', { ...none, flares: 2, dynamite: 1 }), / Your flares and dynamite can’t be used on it\.$/);
   assert.match(findNote('dynamite', { wards: 3, flares: 3, dynamite: 3 }), /^You can carry no more\./);
   assert.equal(teamFindNote('flare', false), 'It adds six seconds for everyone when time runs out. You get less time to answer.');
   assert.equal(FIND_TEXT.azurite.others, 'A right answer digs out a ward. A ward takes a lost life for you. A miss costs two lives and your haul.');
@@ -136,6 +136,6 @@ test("the lobby's finds: each in a line for someone who never played, what it gi
     "Dynamite lets you skip a question and get a new one at the same depth, up to twice per set of cards. If time runs out, it goes off on its own. A miss also blows up an item you carry.",
   );
   // And under them, in a line, why flares and dynamite never work on a find.
-  assert.equal(FINDS_UNSAFE, "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.");
+  assert.equal(FINDS_UNSAFE, "Flares and dynamite don’t work on finds. The rock there is too thick to blast, and the dark swallows a flare’s light.");
   for (const t of [...Object.values(FIND_RULES).flatMap((r) => Object.values(r)), FINDS_UNSAFE]) assert.ok(!t.includes(String.fromCharCode(0x2014)), t);
 });

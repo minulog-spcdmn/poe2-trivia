@@ -989,7 +989,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   const q = s.question;
   if (!s.delve || s.phase !== 'question' || !q) return 'There is no open question.';
   if (q.deadline === null) return 'Not yet.';
-  if (!itemsWorkOn(q)) return "Dynamite can't be used on a find.";
+  if (!itemsWorkOn(q)) return "Dynamite can’t be used on a find.";
   if (blastsLeft(s) === 0) return 'No more blasts on these cards.';
   if (isGroupRun(s)) {
     if (by === null) return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';
@@ -999,7 +999,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
     return dynamiteOf(s, by) > 0 ? null : 'You have no dynamite.';
   }
   const active = s.players[s.turn];
-  if (!active || (by !== null && by !== active.id)) return "It's not your turn.";
+  if (!active || (by !== null && by !== active.id)) return "It’s not your turn.";
   return dynamiteOf(s, active.id) > 0 ? null : 'You have no dynamite.';
 }
 

@@ -77,9 +77,9 @@
     <Avatar {name} hue={hue ?? picked} size={64} sigil={shown} />
     <p class="line">
       {#if ask && strip}
-        Unlock the {className(ask)}'s sigil for good?
+        Unlock the {className(ask)}’s sigil for good?
       {:else if ask}
-        Unlock the {className(ask)}'s sigil? It stays yours.
+        Unlock the {className(ask)}’s sigil? It stays yours.
       {:else if left}
         {left === 1 ? 'One sigil' : `${left} sigils`} to unlock: pick a class.
       {:else if toNext === null}
