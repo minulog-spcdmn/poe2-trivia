@@ -5,13 +5,14 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
   import { livesCost, type Codex, type Tally } from '../lib/codex';
   import { accuracy } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
   import { itemImage, itemThumb } from '../lib/ui';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { artRevealed } from '../lib/fx/moments';
   import { allArt, type DrawnItem, type Item } from '../lib/game';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
@@ -19,7 +20,7 @@
   import { circleOf } from './circles';
   import ItemDetails from './ItemDetails.svelte';
   import { readStored, writeStored } from '../lib/storage';
-  import { calm, motion } from '../lib/motion.svelte';
+  import { motion } from '../lib/motion.svelte';
 
   /** The circle behind it (lib/circlePlaces.ts). */
   const ItemCircle = circleOf('item');
@@ -141,7 +142,8 @@
     <div
       class="tooltip"
       bind:this={box}
-      transition:fly={calm({ y: 20, duration: 250 })}
+      in:dialogIn
+      out:dialogOut
       onclick={(e) => e.stopPropagation()}
       {onkeydown}
       role="dialog"

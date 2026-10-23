@@ -3,7 +3,8 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, detached, fxActive, isLive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, cover, detached, fxActive, isLive, now, shakeView, type Anchor, type CoverBox, type Handle, type Point, type Vec3 } from './core';
+import { deathmatchRadius, duelArt, duelPicture } from './duelArt';
 import {
   C,
   edgeGlow,
@@ -25,6 +26,10 @@ import {
   ring,
   shards,
   sigil,
+  sigilHead,
+  SIGIL_MEET,
+  SIGIL_POINT,
+  SIGIL_STRIKE,
   sparks,
 } from './effects';
 import { Shape } from './particles';
@@ -1114,6 +1119,34 @@ export function timerTick(timer: Element, secs: number, screen = true) {
 
 // ---------- deathmatch ----------
 
+/** How long the deathmatch's intro card stays up (s): its sigil draws itself in the first 2, and holds to be read. */
+export const DEATHMATCH_INTRO = 4.4;
+
+/**
+ * What of the intro's card the sigil keeps behind (cover()), measured each
+ * frame: each line of its words, softly (the title only its letters' body,
+ * so the sigil shows above and below it), and its duelists' tokens, whole.
+ */
+function introCovers(card: Element): () => Iterable<CoverBox> {
+  const words = [...card.querySelectorAll('.dm-kicker, h1, .face b, .vs, .dm-sub')];
+  const tokens = [...card.querySelectorAll('.face .avatar')];
+  const range = document.createRange();
+  return function* () {
+    if (detached(card)) return;
+    for (const el of words) {
+      range.selectNodeContents(el);
+      for (const r of range.getClientRects()) {
+        yield { box: el.tagName === 'H1' ? new DOMRect(r.x, r.y + r.height * 0.24, r.width, r.height * 0.58) : r, soft: true };
+      }
+    }
+    for (const el of tokens) {
+      const b = el.getBoundingClientRect();
+      const r = b.width / 2;
+      yield { box: b, radii: [r, r, r, r] };
+    }
+  };
+}
+
 /** The deathmatch intro card. */
 export function deathmatchIntro(title: Element) {
   if (!fxActive()) return;
@@ -1121,12 +1154,39 @@ export function deathmatchIntro(title: Element) {
   const D = Math.hypot(innerWidth, innerHeight);
   flash(c, { radius: D * 0.3, color: C.crimson, intensity: 0.14, life: 0.9 });
   // The lingering crimson glow behind the intro card (its backdrop is flat).
-  flash(c, { radius: D * 0.26, color: k3(C.crimson, 0.6), intensity: 0.12, life: 2.9 });
+  flash(c, { radius: D * 0.26, color: k3(C.crimson, 0.6), intensity: 0.12, life: DEATHMATCH_INTRO + 0.3 });
   ring(c, { radius: D * 0.6, thickness: 30, life: 1.3, color: C.crimson, breakup: 0.8, fill: 0.2 });
   ring(c, { radius: D * 0.35, thickness: 10, life: 1, color: C.ember, breakup: 0.6, delay: 0.15 });
   rays(title, { radius: D * 0.42, life: 2.6, intensity: 0.26, color: C.crimson, count: 18, sharp: 8, spin: 0.5 });
   flare(title, { size: 50, streak: innerWidth * 0.5, life: 1.2, color: C.crimson, delay: 0.2 });
-  sigil(title, { radius: Math.min(innerWidth, innerHeight) * 0.3, color: C.crimson, life: 2.6, draw: 0.9, intensity: 0.5, spin: 0.4 });
+  // The deathmatch's own sigil, once its picture is at hand (painted ahead:
+  // Game.svelte); one that comes too late for the card is left out. One kept
+  // already is drawn at once, though this screen may want a finer one (it
+  // grew since): that is painted meanwhile, and taken up as it comes.
+  const asked = now();
+  const ready = duelPicture();
+  const coming = duelArt();
+  void (ready ? Promise.resolve(ready) : coming).then((picture) => {
+    if (!picture || now() - asked > 0.6 || detached(title) || !fxActive()) return;
+    const R = deathmatchRadius();
+    const on = ([x, y]: readonly [number, number]): Point => {
+      const b = boxOf(title);
+      return { x: b.x + x * R, y: b.y + y * R };
+    };
+    // (It fades as the card does, and keeps behind the card's words and tokens till then.)
+    sigil(title, { radius: R, color: C.crimson, life: DEATHMATCH_INTRO + 0.3, intensity: 0.48, behind: true });
+    const card = title.closest('.dm-intro-inner');
+    if (card) {
+      const held = cover(introCovers(card));
+      after(DEATHMATCH_INTRO + 0.4, () => held.stop());
+    }
+    // The sword's point strikes home, and the band's two fires meet at its head.
+    after(SIGIL_STRIKE, () => {
+      flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
+      shakeView(0.35, 4);
+    });
+    after(SIGIL_MEET, () => flare(on(sigilHead(SIGIL_MEET)), { size: 24, streak: R * 0.8, life: 0.8, color: C.crimson }));
+  });
   const floor = new DOMRect(0, innerHeight - 4, innerWidth, 4);
   embers(floor, { count: 110, area: 'fill', colors: [C.crimson, C.ember, C.gold], rise: [180, 520], life: [1, 2.4], size: [1.2, 3], turbulence: 200 });
   edgeGlow({ color: C.crimson, intensity: 0.2, width: 100, life: 2.4, noise: 0.8 });
@@ -1199,7 +1259,7 @@ function coin(x: number, y: number, vx: number, vy: number, o: { life?: [number,
  * winner is SVG, in GameOver). A player who lost gets falling ash instead. Returns a handle that
  * stops the ongoing parts.
  */
-export function victory(avatar: Element, title: Element, color: string, lost: boolean, standings?: Element | null): Handle {
+export function victory(avatar: Element, title: Element, color: string, lost: boolean): Handle {
   if (!fxActive()) return { stop() {} };
   const pc = hdr(color, 2.4);
   const handles: Handle[] = [];
@@ -1217,15 +1277,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
     flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
     glints(title, { count: 5, size: [5, 10], delay: [0, 1] });
   });
-  if (standings) {
-    // The winner's row, as it flies in.
-    later(1.25, () => {
-      const first = standings.querySelector('li');
-      if (!first) return;
-      outline(first, { color: C.gold, width: 8, life: 1.4, intensity: 0.45, bleed: 0.12 });
-      glints(first, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.5] });
-    });
-  }
+  // (The winner's row lights up as it's set down: winnerIgnites, below.)
   moodOwner = 'victory';
   setMood(lost ? [0.6, 0.5, 0.4] : [1, 0.7, 0.3], lost ? 0.18 : 0.35);
   backdropEmbers.tint(lost ? CALM : [1, 0.62, 0.2]);
@@ -1327,6 +1379,19 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
       if (moodOwner === 'victory') calmScene();
     },
   };
+}
+
+/**
+ * The winner's row on the end screen ignites as it's set down (GameOver's
+ * .first, each of them when tied): gold runs round its edge and glints on
+ * it, and a soft glow swells round it with its flaring edge, and settles.
+ * The glow here, not in CSS, where one that soft would band.
+ */
+export function winnerIgnites(row: Element) {
+  if (!fxActive()) return;
+  outline(row, { color: C.gold, width: 8, life: 1.4, intensity: 0.45, bleed: 0.12 });
+  outline(row, { color: C.goldPale, width: 12, life: 1.2, fadeIn: 0.36, intensity: 0.5 });
+  glints(row, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.5] });
 }
 
 // ---------- lobby and home ----------

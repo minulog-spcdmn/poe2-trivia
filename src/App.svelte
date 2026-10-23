@@ -7,7 +7,10 @@
   import ZoneCard from './components/zonecard/ZoneCard.svelte';
   import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack, type Component } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, type TransitionConfig } from 'svelte/transition';
+  import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
+  import { light } from './lib/lights';
+  import { motion } from './lib/motion.svelte';
   import { session } from './lib/session.svelte';
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
   import { actionOf, keybinds, readLayout, typing } from './lib/keybinds.svelte';
@@ -17,6 +20,7 @@
   import { openPrivacy } from './lib/legalSheet.svelte';
   import LegalSheet from './components/LegalSheet.svelte';
   import { dialogBackdrop } from './lib/behindDialog';
+  import { dialogIn, dialogOut } from './lib/dialogIn';
   import { wantDelveBackdrop } from './lib/backdrop';
   import { inVein, setVein, veinStrike } from './lib/vein';
   import Background from './components/Background.svelte';
@@ -36,6 +40,7 @@
   import { watchGpuNotice } from './lib/gpuNotice';
   import { setCursorColor } from './lib/ownCursor';
   import PeerCursors from './components/PeerCursors.svelte';
+  import DuelMark from './components/DuelMark.svelte';
   import Recorder from './components/Recorder.svelte';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
@@ -210,31 +215,86 @@
     arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
   );
 
-  /** How long the outgoing screen takes to fade (the .screen transition below). */
-  const SCREEN_OUT_MS = 150;
+  /** How long the outgoing screen takes to go (the .screen transition below). */
+  const SCREEN_OUT_MS = 130;
+  /** And the incoming one to come in. */
+  const SCREEN_IN_MS = 380;
   /**
-   * While screens swap, the outgoing one fades over the incoming one in the
-   * same grid cell, and neither sizes the page: both fill the window (below
-   * the header, which comes or goes in the meantime) and what is longer is
-   * cut off there, out of sight anyway. Nor does a bar docked to the bottom
-   * (lib/layout.ts) pad the page meanwhile: the lobby's arrives as it
-   * mounts, and would lift the start page's centred content as it fades.
-   * So the swap never moves, stretches or scrolls either screen. Once in,
-   * the screen sizes the page again (screenIn's end).
+   * Screens swap as a step through a doorway: going deeper (into a page, a
+   * room, a game, its end) the screen there passes by, swelling a little
+   * as it fades, and the next comes up to meet the player from beyond; back
+   * out to the start page, the other way round. Between them a lamp's
+   * light swells behind the middle of the screen, in the WebGL backdrop
+   * (lib/lights.ts, dithered there), peaking as the next screen arrives.
+   *
+   * One screen at a time: the next mounts only once the last has gone
+   * (`shown` is null meanwhile), so its own entrance (the start page's
+   * staggered rows, the categories dealt, the end screen's reveal) plays
+   * from the moment it shows, not half under the one going. (A screen's
+   * entrance is `|global`: a local transition made with the block it is in
+   * never plays, and a screen's parts are made with it.)
+   */
+  let shown = $state<typeof screen | null>(untrack(() => screen));
+  let back = false;
+  $effect.pre(() => {
+    const s = screen;
+    untrack(() => {
+      if (shown === null || shown === s) return;
+      back = s === 'home';
+      shown = null;
+    });
+  });
+  /** The last screen has gone: the next one comes in (also from a timer, should its end never come). */
+  function arrive() {
+    if (shown !== null) return;
+    // (The way it comes in: the screen may have changed again while the last went.)
+    back = screen === 'home';
+    shown = screen;
+  }
+  $effect(() => {
+    if (shown !== null) return;
+    const t = setTimeout(arrive, SCREEN_OUT_MS + 400);
+    return () => clearTimeout(t);
+  });
+  /**
+   * While screens swap, neither sizes the page: each fills the window
+   * (below the header, which comes or goes in the meantime) and what is
+   * longer is cut off there, out of sight anyway. Nor does a bar docked to
+   * the bottom (lib/layout.ts) pad the page meanwhile: the lobby's arrives
+   * as it mounts, and would lift its content as it comes in. So the swap
+   * never stretches or scrolls either screen; it moves only as it means
+   * to, about the middle of the window. Once in, the screen sizes the page
+   * again (screenIn's end).
    */
   let swapping = $state(false);
   function hold(node: HTMLElement, on: boolean) {
     node.style.contain = on ? 'size' : '';
     node.style.overflow = on ? 'clip' : '';
   }
-  function screenOut(node: HTMLElement) {
+  /** The first screen comes in by itself, its own entrance alone: the swap is for moving between them. */
+  let swapped = false;
+  function screenOut(node: HTMLElement): TransitionConfig {
+    // (Going as the next comes: the empty one standing in.)
+    if (shown !== null) return {};
+    swapped = true;
     swapping = true;
     hold(node, true);
-    return fade(node, { duration: SCREEN_OUT_MS });
+    // Held still (lib/motion.svelte.ts): a plain fade, no light.
+    if (motion.still) return fade(node, { duration: 120 });
+    const grow = back ? -0.02 : 0.025;
+    light({ x: innerWidth / 2, y: innerHeight * 0.45 }, { color: [1, 0.64, 0.3], radius: Math.hypot(innerWidth, innerHeight) * 0.3, intensity: 0.2, attack: 0.24, hold: 0.04, decay: 0.9 });
+    return { duration: SCREEN_OUT_MS, easing: cubicIn, css: (t, u) => `opacity: ${t}; transform: scale(${1 + grow * u}); transform-origin: 50% 45%` };
   }
-  function screenIn(node: HTMLElement) {
+  function screenIn(node: HTMLElement): TransitionConfig {
+    // (Coming as the last goes: the empty one standing in.)
+    if (!swapped || shown === null) return {};
     hold(node, true);
-    return fade(node, { duration: 350, delay: SCREEN_OUT_MS });
+    if (motion.still) return fade(node, { duration: 200 });
+    const from = back ? 0.02 : -0.02;
+    return {
+      duration: SCREEN_IN_MS,
+      css: (t, u) => `opacity: ${cubicOut(Math.min(1, t * 2))}; transform: scale(${1 + from * (1 - quintOut(t))}); transform-origin: 50% 45%`,
+    };
   }
   /**
    * Every screen is scaled up alike on large windows (lib/stage.ts), header
@@ -336,7 +396,7 @@
         setTimeout(() => inRoom() && loadGamePages(), 1000);
       } else {
         gamePagesLost = true;
-        toasts.show("Part of the game couldn't be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
+        toasts.show("Part of the game couldn’t be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
       }
     }));
   onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
@@ -497,7 +557,7 @@
           {/if}
           {#if session.spectating}
             {#if !folded}<span class="dot">•</span>{/if}
-            <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
+            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
           {/if}
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
@@ -519,11 +579,11 @@
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
-            <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
+            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
             <span class="dot">•</span>
           {/if}
           {#if gs.deathmatch}
-            <span class="deathmatch">⚔ Deathmatch</span>
+            <span class="deathmatch"><DuelMark /> Deathmatch</span>
             <span class="dot">•</span>
             <span>Round {gs.deathmatch.round}</span>
           {:else}
@@ -564,36 +624,45 @@
     <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
     {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
     {#if recording}<Recorder onstop={() => (recording = false)} />{/if}
-    {#key screen}
+    <!-- While the last screen goes (shown null), an empty one stands in, coming and going at once: the next is made
+         by the {#key} itself, not by a block made with it, so its own (local) transitions play. -->
+    {#key shown}
+      <!-- The backdrop follows the swap (data-bs-follow, lib/backdropShadow.ts): the fills it draws stay with it,
+           rather than going to CSS and back, a jump in how they look as the screen starts to go or settles. -->
       <div
         class="screen"
+        data-bs-follow
         in:screenIn
         out:screenOut
         onintroend={(e) => {
+          if (!shown) return;
           hold(e.currentTarget, false);
           swapping = false;
         }}
-        onoutroend={showHeader}
+        onoutroend={() => {
+          showHeader();
+          arrive();
+        }}
       >
-        {#if screen === 'home'}
+        {#if shown === 'home'}
           <Home />
-        {:else if screen === 'lobby'}
+        {:else if shown === 'lobby'}
           <Lobby />
-        {:else if screen === 'game'}
+        {:else if shown === 'game'}
           {#if Game}<Game />{:else}{@render gamePagesWait()}{/if}
-        {:else if screen === 'codex'}
+        {:else if shown === 'codex'}
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
           {/await}
-        {:else if screen === 'settings'}
+        {:else if shown === 'settings'}
           <!-- Loaded when first opened, as the codex is. -->
           {#await import('./components/Settings.svelte') then { default: Settings }}
             <Settings />
           {/await}
-        {:else if GameOver}
+        {:else if shown && GameOver}
           <GameOver />
-        {:else}
+        {:else if shown}
           {@render gamePagesWait()}
         {/if}
       </div>
@@ -612,7 +681,7 @@
 {#snippet gamePagesWait()}
   <div class="pages-wait">
     {#if gamePagesLost}
-      <p>Part of the game couldn't be loaded.</p>
+      <p>Part of the game couldn’t be loaded.</p>
       <button class="btn primary" onclick={() => location.reload()}>Reload</button>
     {:else}
       <span class="spinner" aria-label="Loading"></span>
@@ -655,7 +724,7 @@
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="sheet panel" transition:fly={{ y: 20, duration: 250 }} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Settings" tabindex="-1">
+    <div class="sheet panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Settings" tabindex="-1">
       <div class="sheet-head">
         <h3>Settings</h3>
         <button class="icon-btn" onclick={closeSettings} title="Close the settings" aria-label="Close the settings">
@@ -684,7 +753,8 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       class="modal panel"
-      transition:fly={{ y: 20, duration: 250 }}
+      in:dialogIn
+      out:dialogOut
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -848,6 +918,7 @@
   .deathmatch {
     color: #ff7a5c;
     font-weight: 700;
+    white-space: nowrap;
     text-shadow: 0 0 12px rgba(224, 85, 63, 0.6);
     animation: pulse 1.6s ease-in-out infinite;
   }

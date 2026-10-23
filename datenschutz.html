@@ -63,12 +63,12 @@
           <strong>Vermittlungsserver:</strong> Damit sich Geräte finden, wird der öffentliche Vermittlungsserver des
           Open-Source-Projekts PeerJS (0.peerjs.com) genutzt. Dabei werden Ihre IP-Adresse, eine zufällige
           Verbindungskennung sowie Verbindungsdaten zum Aufbau der Verbindung verarbeitet. Die Spielinhalte selbst laufen
-          nicht über diesen Server.
+          nicht über diesen Server, wohl aber die Angaben offener Räume für die Liste offener Räume (siehe unten).
         </li>
         <li>
           <strong>STUN-Server von Google:</strong> Um eine direkte Verbindung zu ermöglichen, fragt Ihr Browser beim
           STUN-Server stun.l.google.com (Google LLC, USA) Ihre öffentliche IP-Adresse ab. Dabei wird Ihre IP-Adresse an
-          Google übermittelt.
+          Google übermittelt. Google LLC ist nach dem EU-US Data Privacy Framework zertifiziert.
         </li>
         <li>
           <strong>Relay-Server (TURN):</strong> Ist keine direkte Verbindung möglich, kann die Verbindung über
@@ -77,28 +77,42 @@
         </li>
         <li>
           <strong>Direkte Verbindung zum Host (WebRTC):</strong> Wer einem Raum beitritt, verbindet sich direkt mit dem
-          Gerät des Hosts; die Mitspielenden untereinander verbinden sich nicht. Die Liste offener Räume auf der
-          Startseite baut beim Aufruf der Seite, und danach in Abständen, solange sie geöffnet ist, kurz eine solche
-          Verbindung zu jedem gelisteten Host auf, um die Rauminformationen abzurufen, ohne dass Sie etwas anklicken
-          müssen; ebenso das Öffnen eines Einladungslinks zum Host dieses Raums.
-          <strong>Dadurch kann der Host Ihre IP-Adresse sehen und Sie die des Hosts</strong>, außer die Verbindung läuft
-          über einen Relay-Server; dann sieht die Gegenseite nur dessen Adresse.
+          Gerät des Hosts; die Mitspielenden untereinander verbinden sich nicht.
+          <strong>Dadurch kann der Host Ihre IP-Adresse sehen und Sie die des Hosts</strong>, auch wenn die Verbindung
+          am Ende über einen Relay-Server läuft: Beim Verbindungsaufbau tauschen beide Seiten ihre Adressen aus.
+        </li>
+        <li>
+          <strong>Liste offener Räume und Einladungslinks:</strong> Die Startseite fragt beim Aufruf, und danach in
+          Abständen, solange sie geöffnet ist, über den Vermittlungsserver bei jedem öffentlichen Raum nach, ohne dass Sie
+          etwas anklicken müssen; ebenso das Öffnen eines Einladungslinks bei diesem Raum. Der Raum antwortet über den
+          Vermittlungsserver mit seinen Angaben (siehe Abschnitt 5). Nur ein Raum, der darauf nicht antwortet (etwa eine
+          ältere Version des Spiels), wird stattdessen kurz direkt verbunden, wie oben beschrieben, mit dem Austausch
+          der IP-Adressen.
         </li>
         <li>
           <strong>Abgleich Ihrer Geräte (Sync):</strong> Wenn Sie in den Einstellungen Ihre Geräte koppeln (per QR-Code
           oder Kopplungscode), verbinden sich die gekoppelten Geräte auf dieselbe Weise direkt miteinander, sobald zwei
-          von ihnen die Seite geöffnet haben, und gleichen Ihren Codex, Ihre Delve-Läufe, Ihre Erfolge, Ihre
+          von ihnen die Seite geöffnet haben, und gleichen Ihren Codex, Ihre Übungsantworten, Ihre Delve-Läufe, Ihre
+          Erfolge, Ihre
           Klassensiegel, Ihre Antwort auf die tägliche Frage, Ihren Spielnamen und Ihre gewählte Farbe ab. Der Vermittlungsserver sieht dabei nur eine aus dem
           Kopplungscode errechnete Kennung, weder den Code noch diese Daten; da diese Kennung gleich bleibt, sieht er
           aber, von welchen IP-Adressen und wann sich Ihre gekoppelten Geräte melden. Ein angezeigter Code, mit dem sich
           binnen zehn Minuten kein Gerät koppelt, wird verworfen. Die Kopplung lässt sich in den Einstellungen jederzeit
           aufheben.
         </li>
+        <li>
+          <strong>Kamera beim Koppeln:</strong> Wenn Sie den QR-Code eines anderen Geräts scannen, fragt Ihr Browser um
+          Erlaubnis für die Kamera. Das Kamerabild wird nur auf Ihrem Gerät ausgewertet, um den Code zu lesen; es wird
+          weder gespeichert noch übertragen, und die Kamera wird abgeschaltet, sobald der Code gelesen ist oder Sie das
+          Scannen beenden.
+        </li>
       </ul>
       <p>
-        Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels) bzw.
-        lit. f DSGVO (berechtigtes Interesse an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten
-        kann eine Verarbeitung außerhalb der EU, insbesondere in den USA, stattfinden. Auch wenn alle an einem Gerät
+        Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels), für die
+        Liste offener Räume, die von selbst sucht, und das Abgleichen Ihrer Geräte lit. f DSGVO (berechtigtes Interesse
+        an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten kann eine Verarbeitung außerhalb der EU,
+        insbesondere in den USA, stattfinden. Die Verbindungsdaten speichere ich nicht; wie lange PeerJS und Google sie
+        aufbewahren, liegt bei diesen. Auch wenn alle an einem Gerät
         spielen, öffnet die Gastgeberin oder der Gastgeber dafür einen Raum, der den Vermittlungsserver kontaktiert. Nur
         ein Spiel ohne Raum (etwa wenn sich keiner öffnen lässt) baut keine Verbindung auf; die Suche nach offenen Räumen
         läuft aber, solange die Startseite geöffnet ist.
@@ -106,28 +120,57 @@
 
       <h2>5. Daten im Spiel</h2>
       <p>
-        Im Online-Spiel werden Ihr gewählter Spielname, Ihre Antworten und Punkte an den Host übertragen und von dort an
-        die Mitspielenden im Raum. Der Host erhält außerdem eine zufällige Gerätekennung (siehe Abschnitt 6), mit der Sie
-        nach einem Verbindungsabbruch wieder Ihren Platz einnehmen können; sie wird den übrigen Mitspielenden nicht
-        gezeigt. Diese Daten liegen nur in den Browsern der Beteiligten und werden nicht auf einem Server gespeichert.
+        Im Online-Spiel werden Ihr gewählter Spielname, Ihre gewählte Farbe und Ihr Klassensiegel, Ihre Antworten (samt
+        der Zeit, die Sie dafür brauchten) und Punkte an den Host übertragen und von dort an die Mitspielenden im Raum.
+        Ebenso die Position Ihres Mauszeigers oder Fingers im Spiel, samt Klicks, die die Mitspielenden live auf ihrem
+        Bildschirm sehen, und ob das Spiel bei Ihnen gerade im Vordergrund ist und genutzt wird: In der Lobby sehen die
+        anderen, wenn Sie abwesend oder untätig sind oder Ihre Verbindung langsam ist. Der Host erhält außerdem eine
+        Kennung, mit der Sie nach einem Verbindungsabbruch wieder Ihren Platz einnehmen können: Sie wird für jeden Raum
+        eigens aus Ihrer Gerätekennung (siehe Abschnitt 6) errechnet, sodass sich Ihre Gerätekennung daraus nicht
+        ablesen lässt und verschiedene Räume Sie nicht wiedererkennen; den übrigen Mitspielenden wird sie nicht gezeigt.
+        Diese Daten liegen nur in den Browsern der Beteiligten und werden nicht auf einem Server gespeichert.
       </p>
       <p>
-        Wenn ein Host seinen Raum „öffentlich“ stellt, sind in der Liste offener Räume der Name des Hosts, die Spielerzahl
-        und die Spieleinstellungen für alle sichtbar, die die Startseite aufrufen.
+        Ein Raum ist öffentlich („Public“), bis der Host ihn in der Lobby auf „Private“ stellt; das Spiel merkt sich die
+        zuletzt gewählte Einstellung für den nächsten Raum. Ein
+        öffentlicher Raum erscheint in der Liste offener Räume: Sein Raumcode, der Name des Hosts, die Zahl der
+        Mitspielenden und Zuschauenden, die Spieleinstellungen und wie weit das Spiel ist, sind dann für alle sichtbar,
+        die die Startseite aufrufen, und über den Vermittlungsserver übertragen (Abschnitt 4). Wer ihn in der Liste
+        sieht, kann ihm beitreten und sieht dann im Raum, was oben beschrieben ist.
       </p>
 
       <h2>6. Speicherung im Browser (Local Storage)</h2>
+      <p>Das Spiel speichert ausschließlich auf Ihrem Gerät, im Local Storage Ihres Browsers:</p>
+      <ul>
+        <li>
+          Ihren zuletzt verwendeten Spielnamen, Ihre gewählte Farbe und eine zufällig erzeugte Gerätekennung (zum
+          Wiedereintritt in ein laufendes Spiel);
+        </li>
+        <li>
+          Ihren Spielfortschritt: den Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig
+          erkannt haben und wie schnell; er lässt sich auf der Codex-Seite löschen), Ihre Übungsantworten, Ihre
+          Delve-Läufe, Ihre Erfolge, Ihre Klassensiegel und Ihre Antwort auf die tägliche Frage; an andere Geräte geht
+          davon nur etwas, wenn Sie Ihre eigenen koppeln (Abschnitt 4);
+        </li>
+        <li>
+          Ihre Einstellungen: Ton und Lautstärke, die Effekte (samt einer Messung, wie flüssig Ihr Gerät sie darstellt),
+          die Tastenbelegung, die zuletzt gewählten Raumeinstellungen (darunter „Raumcode verbergen“), wo das
+          Gegenstandsfenster zuletzt lag, welche Ansichten Sie zuletzt gewählt haben, welche Hinweise schon gezeigt
+          wurden und, falls Sie die Reichweitenmessung
+          abgeschaltet haben, diese Einstellung (Abschnitt 7);
+        </li>
+        <li>bei gekoppelten Geräten den Kopplungscode, eine Kennung dieses Geräts und den Stand der übrigen Geräte;</li>
+        <li>
+          kleine Merker für den Spielablauf, etwa den Raumcode eines Spiels, das Sie gerade verlassen haben, oder womit
+          der nächste Delve-Lauf beginnt.
+        </li>
+      </ul>
       <p>
-        Das Spiel speichert ausschließlich auf Ihrem Gerät: Ihren zuletzt verwendeten Spielnamen, eine zufällig erzeugte
-        Gerätekennung (zum Wiedereintritt in ein laufendes Spiel), die Einstellungen „Ton aus“ und „Raumcode verbergen“,
-        falls Sie die Reichweitenmessung abgeschaltet haben, diese Einstellung (Abschnitt 7),
-        Ihren Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig erkannt haben und wie
-        schnell; er wird nur an Ihre eigenen gekoppelten Geräte übertragen, falls Sie welche koppeln, siehe Abschnitt 4,
-        und lässt sich auf der Codex-Seite löschen), bei gekoppelten Geräten den Kopplungscode und den Stand der übrigen
-        Geräte, sowie im Session Storage den laufenden
-        Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet. Diese
-        Angaben sind für die von Ihnen gewünschten Funktionen unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG); es werden
-        keine Cookies gesetzt. Sie können die Daten jederzeit über die Einstellungen Ihres Browsers löschen.
+        Im Session Storage liegt der laufende Spielstand samt solcher Merker, damit ein Neuladen der Seite das Spiel
+        nicht beendet, und im Cache-Speicher des Browsers liegen Grafiken, die das Spiel selbst gezeichnet hat, damit es
+        sie nicht jedes Mal neu berechnen muss. Diese Angaben sind für die von Ihnen gewünschten Funktionen unbedingt
+        erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG); es werden keine Cookies gesetzt. Der Session Storage wird geleert, wenn
+        Sie den Tab schließen; alles andere bleibt, bis Sie es löschen, über die Einstellungen Ihres Browsers jederzeit.
       </p>
 
       <h2>7. Reichweitenmessung (GoatCounter)</h2>
@@ -136,13 +179,15 @@
         den Dienst GoatCounter (betrieben von Martin Tournoij, Irland; Server der Hetzner Online GmbH in Deutschland und
         Finnland). Beim Aufruf der Startseite sendet Ihr Browser eine Anfrage an poe2quest.goatcounter.com mit der
         aufgerufenen Seite (ohne Raumcode oder andere Angaben aus der Adresse), dem Seitentitel und der Website, von der
-        Sie kommen (Referrer; nur ihr Name, etwa „reddit.com“, ohne den Rest ihrer Adresse). Kommen Sie über einen
+        Sie kommen (Referrer; nur ihre Herkunft, etwa „https://www.reddit.com“, ohne den Rest ihrer Adresse). Das gilt
+        für jeden Aufruf der Startseite, auch über einen Einladungslink; ein Neuladen wird nur als Seitenaufruf gezählt,
+        nicht als neuer Besuch. Kommen Sie über einen
         gekennzeichneten Link (etwa poe2.quest/?ref=reddit), wird dessen Kennzeichen als Kampagne mitgesendet und danach
         aus der Adresse entfernt. Mit dem Besuch wird außerdem gezählt, ob das Spiel als App vom Startbildschirm geöffnet
         wurde, ob auf diesem oder einem damit gekoppelten Gerät schon einmal gespielt wurde, wie lange das ungefähr
-        her ist (etwa „vor 2 bis 7 Tagen“) und in welcher Kalenderwoche zum ersten Mal gespielt wurde. Dafür liest das Spiel seinen eigenen Spielstand
-        in Ihrem Browser aus (den Codex, samt dem, was gekoppelte Geräte dazu übertragen haben; § 25 TDDDG), speichert dafür nichts zusätzlich und sendet nur diese groben
-        Angaben; ist die Zählung abgeschaltet oder sendet Ihr Browser das Signal „Global Privacy Control“, wird nichts
+        her ist (etwa „vor 2 bis 7 Tagen“) und in welcher Kalenderwoche zum ersten Mal gespielt wurde. Dafür wertet das Spiel den Spielstand
+        aus, den es für das Spiel ohnehin in Ihrem Browser speichert und liest (den Codex, samt dem, was gekoppelte Geräte
+        dazu übertragen haben), speichert dafür nichts zusätzlich und sendet nur diese groben Angaben; ist die Zählung abgeschaltet oder sendet Ihr Browser das Signal „Global Privacy Control“, wird nichts
         gelesen. Außerdem werden einige Schritte und Spielereignisse gezählt: ob ein Spiel betreten, begonnen und beendet
         wurde (bei einem Besuch ohne bisherigen Spielstand diese drei noch einmal eigens), das zweite und fünfte Spiel
         eines Besuchs, wie lange auf der Seite gespielt wurde (ab 2, 10 und 30 Minuten), das Öffnen des Codex und der
@@ -180,8 +225,9 @@
         an PayPal übertragen. Erst wenn Sie den Link anklicken, verlassen Sie diese Website; für die Verarbeitung bei
         PayPal (PayPal (Europe) S.à r.l. et Cie, S.C.A., 22–24 Boulevard Royal, L-2449 Luxemburg) gilt deren
         Datenschutzerklärung. Bei einer Spende erhalte ich die Angaben, die PayPal an Empfänger übermittelt (z. B. Name,
-        E-Mail-Adresse, Betrag). Diese verwende ich nur zur Abwicklung und zur Erfüllung gesetzlicher, insbesondere
-        steuerlicher Aufbewahrungspflichten (Art. 6 Abs. 1 lit. c DSGVO).
+        E-Mail-Adresse, Betrag). Diese verwende ich nur zur Abwicklung der Spende (Art. 6 Abs. 1 lit. b DSGVO) und zur
+        Erfüllung gesetzlicher, insbesondere steuerlicher Aufbewahrungspflichten (Art. 6 Abs. 1 lit. c DSGVO), und nur so
+        lange, wie diese bestehen.
       </p>
 
       <h2>9. Kontakt per E-Mail</h2>
@@ -226,47 +272,62 @@
             to deliver the site.
           </li>
           <li>
-            <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com), Google's STUN server
+            <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com), Google’s STUN server
             (stun.l.google.com) and, if needed, PeerJS relay servers (TURN) process your IP address to connect players.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
-            the host's, unless the connection runs through a relay. <strong>The start page does this on its own:</strong>
-            to show the open rooms list, it briefly connects to every listed host as soon as it opens, and again every so
-            often while it stays open, without you clicking anything; so does opening an invite link, to that room's
-            host. Players at one screen still play in a room the host opens, which reaches the matchmaking server; only a
-            game without a room (when none can be opened) connects to nobody, though the start page's search runs while it is open.
+            the host’s, even when the connection ends up running through a relay, as both sides swap addresses while
+            connecting. <strong>The start page asks on its own:</strong> to show the open rooms list, it asks every
+            public room through the matchmaking server as soon as it opens, and again every so often while it stays
+            open, without you clicking anything, and the room answers the same way with its listing; so does opening an
+            invite link, of that room. Only a room that doesn’t answer (an older version of the game) is briefly
+            connected to directly instead, swapping IP addresses. Players at one screen still play in a room the host opens, which reaches the matchmaking server; only a
+            game without a room (when none can be opened) connects to nobody, though the start page’s search runs while it is open.
           </li>
           <li>
             <strong>Syncing your devices:</strong> if you pair your devices in the settings (by QR code or pairing code), they
-            connect to each other the same way whenever two of them have the site open, and keep your codex, Delve runs,
+            connect to each other the same way whenever two of them have the site open, and keep your codex, practice answers, Delve runs,
             achievements, class sigils, daily answer, name and chosen colour the same. The matchmaking server only sees a name worked out from the
             code, never the code or that progress; as that name stays the same, it does see from which IP addresses and
             when your paired devices come online. A code shown that no device pairs with within ten minutes is let go of.
-            You can unpair at any time in the settings.
+            You can unpair at any time in the settings. Scanning another device’s QR code asks for your camera; its picture
+            is read on your device only, to find the code, and is neither stored nor sent anywhere.
           </li>
           <li>
-            <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
-            room. A random device token lets you rejoin after a disconnect, and only the host sees it. Public rooms show the
-            host's name and settings in the room list.
+            <strong>In the game:</strong> your chosen name, colour and class sigil, your answers (with how long they took)
+            and scores go to the host and the other players in your room, and so do your pointer or finger on the game,
+            clicks included, which they see live, and whether your game is on screen and in use (the lobby shows when
+            you are away or idle, or your connection is slow). To let you rejoin after a disconnect, the host gets a key
+            worked out from your device token for that room alone, so it can’t be read back to the token and rooms can’t
+            recognise you across them; the other players never see it. <strong>Rooms are public</strong> until the host
+            switches theirs to Private in the lobby (the choice is kept for the next room): a public room’s code, host’s
+            name, player and spectator counts, settings and progress show in the open rooms list to anyone on the start
+            page, pass through the matchmaking server, and anyone can join it from there.
           </li>
           <li>
-            <strong>Your browser</strong> stores your name, the device token, your sound and hide-code settings, your choice not to be counted (if you made it), and your
-            codex (the items you have seen in games and how well you answered; it is sent only to your own paired devices, if you
-            pair any, and can be erased on the codex page), plus the running game in session storage. These are strictly necessary for the features you use, and you can clear
-            them at any time.
+            <strong>Your browser</strong> stores your name, colour and the device token; your progress (the codex of the
+            items you have seen in games and how well you answered, which can be erased on the codex page, your practice
+            answers, Delve runs, achievements, class sigils and daily answer; sent only to your own paired devices, if you
+            pair any); your settings (sound and volume, effects with a measure of how smoothly your device runs them, key
+            bindings, your last room settings including hide-code, where the item window was, the views you chose last,
+            which tips were shown, and your choice not to be counted, if you made it); and, with paired devices, the
+            pairing code, this device’s id and the others’ progress; plus small markers for the game’s flow, such as the
+            room code of a game you just left. Session storage holds the running game, and the browser’s cache the
+            pictures the game drew itself. These are strictly necessary for the features you use. Session storage goes
+            when you close the tab; the rest stays until you clear it, which you can do at any time.
           </li>
           <li>
             <strong>Visitor counts:</strong> GoatCounter (Martin Tournoij, Ireland; servers in Germany and Finland) counts
-            visits to the start page (the page, its title and the name of the referring site, without the rest of its address; a tagged link's tag, such as
+            visits to the start page, invite links included (the page, its title and the origin of the referring site, such as https://www.reddit.com, without the rest of its address; a tagged link’s tag, such as
             poe2.quest/?ref=reddit, as its campaign, then taken out of the address), with whether the game was opened as a home-screen app, whether it was
-            played on this device or one paired with it before, roughly how long ago (such as "2 to 7 days") and the calendar week it was first played. For
-            that the game reads its own save in your browser (the codex, with what paired devices passed on to it; § 25 TDDDG), stores nothing more for it and sends only those rough answers; with counting switched off or
+            played on this device or one paired with it before, roughly how long ago (such as “2 to 7 days”) and the calendar week it was first played. For
+            that the game looks at the save it keeps and reads in your browser for the game anyway (the codex, with what paired devices passed on to it), stores nothing more for it and sends only those rough answers; with counting switched off or
             Global Privacy Control sent, nothing is read. It also counts a few steps and game events: entering, starting and finishing a game (for a visit
-            with no save yet, those three again apart), a visit's second and fifth game, how long the page was played on (from 2, 10 and 30 minutes),
+            with no save yet, those three again apart), a visit’s second and fifth game, how long the page was played on (from 2, 10 and 30 minutes),
             opening the codex and the achievements, a game starting and ending on the device running it (its mode, how many play, whether some share one
             screen), the depth range a Delve run ended in, whether the daily unique was answered right, an invite or Delve link opened, how you join a room
             (code, invite link or open rooms list) and whether it works, pairing a device, connection failures, and that a script error happened (nothing
             about it). No names, answers, room codes or device tokens are sent. It works out your country, browser and system
-            from your IP address and browser but stores neither, sets no cookies and stores nothing on your
+            from your IP address and browser and stores only those, never the IP address or the full browser string; it sets no cookies and stores nothing on your
             device. Nothing is counted if your browser sends Global Privacy Control.
             <div class="count-toggle" data-count-toggle hidden>
               <p class="state"></p>
@@ -275,7 +336,8 @@
           </li>
           <li>
             <strong>PayPal:</strong> a plain link; nothing is sent to PayPal unless you click it. If you donate, I receive
-            the details PayPal passes on and keep them only as required, for example for tax records.
+            the details PayPal passes on, use them only to handle the donation and keep them only as long as the law
+            requires, for example for tax records.
           </li>
           <li>
             <strong>Your rights:</strong> access, rectification, erasure, restriction, portability, objection, and a

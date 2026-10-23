@@ -62,7 +62,9 @@ export const PROTOCOL_VERSION = 32;
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
 
 const GUEST_BEHIND = 'Your game is out of date. Reload the page to join.';
-const HOST_BEHIND = "The host's game is out of date. Ask them to reload the page.";
+const HOST_BEHIND = "The host’s game is out of date. Ask them to reload the page.";
+/** HOST_BEHIND as hosts before the curly apostrophe (and before the `version` flag) still word it. */
+const HOST_BEHIND_STRAIGHT = HOST_BEHIND.replace('’', "'");
 
 /** Why a guest on protocol `v` can't join this host, or null when it can. */
 export function versionProblem(v: number): string | null {
@@ -76,7 +78,7 @@ export function versionProblem(v: number): string | null {
  * the words it used (versionProblem's then, or LEGACY_VERSION_TEXT).
  */
 export const isVersionRefusal = (msg: { message: string; version?: true }) =>
-  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === LEGACY_VERSION_TEXT;
+  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === HOST_BEHIND_STRAIGHT || msg.message === LEGACY_VERSION_TEXT;
 
 /** The refusal a guest shows: an older host can't say which side is behind, so the guest says it for them. */
 export function versionRefusal(message: string): string {

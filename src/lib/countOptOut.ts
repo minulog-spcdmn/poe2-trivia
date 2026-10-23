@@ -53,7 +53,7 @@ const TEXT = {
     signal: 'Your visits are not counted: your browser sends Global Privacy Control.',
     stop: 'Stop counting',
     start: 'Count again',
-    failed: "Your browser doesn't let this page save anything, so counting can't be switched off here.",
+    failed: "Your browser doesn’t let this page save anything, so counting can’t be switched off here.",
   },
 };
 

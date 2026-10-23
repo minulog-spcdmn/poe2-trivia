@@ -15,7 +15,7 @@
 // hold up the first paint (see startFx). Effects asked for before it's ready
 // wait for it, and play once it is.
 
-import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, MAX_HIDES, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type HideLight, type Silhouette } from './renderer';
+import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, MAX_HIDES, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type HideLight, type SigilPicture, type Silhouette } from './renderer';
 import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
@@ -279,6 +279,9 @@ function blank() {
 export function fxStats() {
   return { particles: pool?.count ?? 0, shapes: shapes.length, tasks: tasks.length, running: raf !== 0, quality };
 }
+
+/** Device px per CSS px the effects are drawn at (fewer than the screen's where they're scaled down). */
+export const fxPixelRatio = () => dpr;
 
 /** Seconds of effect time since page load (for choreography that needs a clock). */
 export function now() {
@@ -587,6 +590,13 @@ function setCovers(r: FxRenderer) {
   r.setCover(coverNow(), [viewW, viewH]);
 }
 
+/** The deathmatch sigil's picture (lib/fx/duelArt.ts), handed to the renderer once painted, and to one made later. */
+let sigilPicture: SigilPicture | null = null;
+export function sigilArt(picture: SigilPicture) {
+  sigilPicture = picture;
+  renderer?.setSigil(picture);
+}
+
 /** Runs `fn` after `seconds` (effect time; skipped entirely while effects are off). */
 export function after(seconds: number, fn: () => void) {
   task((_, age) => {
@@ -623,9 +633,13 @@ export function shakeView(amount: number, px = 7) {
   wake();
 }
 
-/** Whether the view is shaking (moved by an inline translate, not an animation). */
+/**
+ * Whether the view is shaking (moved by an inline translate, not an
+ * animation) by as much as half a pixel. A small hit's shake goes no
+ * further (a room code's letter landing: 0.12 trauma at 3px, 0.04px).
+ */
 export function shaking() {
-  return shake.trauma > 0;
+  return shake.trauma * shake.trauma * shake.amp >= 0.5;
 }
 
 function applyShake(x: number, y: number) {
@@ -1355,6 +1369,7 @@ function build(c: HTMLCanvasElement) {
 function setup(c: HTMLCanvasElement, r: FxRenderer) {
   renderer = r;
   if (switchedOff('bloom')) r.bloom = false;
+  if (sigilPicture) r.setSigil(sigilPicture);
   pool ??= new ParticlePool(coarse?.matches ? 2000 : 5000);
   ro?.disconnect();
   ro = new ResizeObserver(([entry]) => {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { flushSync, onMount, tick } from 'svelte';
-  import { fade, fly, scale, slide } from 'svelte/transition';
+  import { fade, fly, scale, slide, type TransitionConfig } from 'svelte/transition';
+  import { quintOut } from 'svelte/easing';
+  import { calm } from '../lib/motion.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
@@ -18,7 +20,7 @@
   import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
-  import { victory } from '../lib/fx/moments';
+  import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
@@ -272,6 +274,30 @@
     });
   }
 
+  // ---- the standings' reveal ---------------------------------------------------
+  /**
+   * When the winner's row is set down (ms): the last of the ranking, as the
+   * headline's light first runs across it (.gold's gleam, 1.4 s). The
+   * effects light it as it ignites (lib/fx/moments.ts winnerIgnites).
+   */
+  const WINNER_IN_MS = 1000;
+  /**
+   * The ranking builds up from the last place: each row is set down in
+   * turn, rising into its place, a beat apart, faster the more there are,
+   * so the row above the winner is down before the winner's comes. Then
+   * the winner's (or the winners', tied) is stamped down from a little
+   * larger, and ignites (.first's styles).
+   */
+  function rankIn(node: Element, { i, n, top }: { i: number; n: number; top: boolean }): TransitionConfig {
+    if (top) return scale(node, calm({ start: 1.07, delay: WINNER_IN_MS, duration: 520, easing: quintOut }));
+    const step = n > 2 ? Math.min(70, 400 / (n - 1)) : 70;
+    return settle(node, { delay: 450 + (n - 1 - i) * step });
+  }
+  /** A part of the end screen set down into its place: risen a little, on the house's ease-out. */
+  function settle(node: Element, { delay = 0, y = 12 }: { delay?: number; y?: number } = {}): TransitionConfig {
+    return fly(node, calm({ y, delay, duration: 440, easing: quintOut }));
+  }
+
   // ---- the effects ------------------------------------------------------------
   let canvas: HTMLCanvasElement;
   let crown = $state<HTMLElement>();
@@ -465,7 +491,7 @@
     if (!crown || !title || !winner) return;
     const h = run
       ? fallen(crown, title, { best: deeper, standings: solo ? null : standingsEl })
-      : victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
+      : victory(crown, title, playerColor(winner.hue), iLost);
     return () => h.stop();
   });
 
@@ -746,7 +772,7 @@
     <p class="note spect" data-cursor="joining">
       <span class="ic"><span class="pulse"></span></span>
       <span
-        >{#if session.justWatching}You're watching; <b class="host">{host}</b> starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b
+        >{#if session.justWatching}You’re watching; <b class="host">{host}</b> starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b
             class="host">{host}</b
           > starts it.{:else}You play in the next game once <b class="host">{host}</b> starts it.{/if}</span
       >
@@ -774,7 +800,7 @@
   <div class="stage" bind:this={stageEl}>
     <div class="side" class:centred={!hasYours} class:tight={sideFit >= 1} class:close={sideFit >= 2} class:compact={sideFit >= 3} class:small={sideFit >= 4} bind:this={sideEl}>
       <div class="result">
-        <div class="plate" aria-hidden="true" in:scale={{ start: 0.85, duration: 900 }}>
+        <div class="plate" aria-hidden="true" in:scale|global={calm({ start: 0.85, duration: 900 })}>
           <div class="veil">
             <div class="inner">
               <!-- The eye or the monad, or after a Delve the moth, hollow round one avatar; a run short of your best in worn grey. -->
@@ -790,7 +816,7 @@
             data-cursor="art"
             style:width="{together ? ring.box : avatarSize}px"
             style:height="{together ? ring.box : avatarSize}px"
-            in:scale={{ start: 0.4, duration: 900, delay: 200 }}
+            in:scale|global={calm({ start: 0.4, duration: 900, delay: 200 })}
           >
             {#if together}
               <!-- Together: every delver round the heart, you ringed in your orange. -->
@@ -808,11 +834,11 @@
             {/if}
           </div>
           <div class="words">
-            <h1 data-cursor="headline" bind:this={title} use:fit={headline} in:fly={{ y: 20, duration: 700, delay: 500 }}>
+            <h1 data-cursor="headline" bind:this={title} use:fit={headline} in:fly|global={calm({ y: 20, duration: 700, delay: 500 })}>
               <span class="shade" aria-hidden="true">{headline}</span>
               <span class="gold">{headline}</span>
             </h1>
-            <p class="sub" data-cursor="sub" in:fly={{ y: 10, duration: 700, delay: 700 }}>{@render say(line)}</p>
+            <p class="sub" data-cursor="sub" in:fly|global={calm({ y: 10, duration: 700, delay: 700 })}>{@render say(line)}</p>
           </div>
         {/if}
       </div>
@@ -824,7 +850,7 @@
       {/if}
 
       {#if mine}
-        <section class="sec yours" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
+        <section class="sec yours" data-cursor="yours" in:fade|global={calm({ duration: 600, delay: 900 })}>
           <h3>Your game</h3>
           {#if mine.place}
             {@const p = s.players.find((x) => x.id === me)}
@@ -842,14 +868,14 @@
         </section>
         {#if earned.length}
           <!-- Judged as the game ends, it can come in after the screen: it opens out rather than jumping in. -->
-          <section class="sec yours earned-sec" in:slide={{ duration: 450 }}>
+          <section class="sec yours earned-sec" in:slide={calm({ duration: 450 })}>
             <h3>Earned this game</h3>
             {@render achievements(earned, sideFit, 'earned')}
           </section>
         {/if}
       {:else if hotMisses.length}
         {@const f = folded('hot', hotMisses)}
-        <section class="sec yours" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
+        <section class="sec yours" data-cursor="yours" in:fade|global={calm({ duration: 600, delay: 900 })}>
           <h3>Missed answers</h3>
           <p>Kept in this device’s codex.</p>
           <ul class="thumbs" data-fold="hot">
@@ -859,7 +885,7 @@
         </section>
       {:else if run && self && lives.length}
         {@const f = folded('lives', lives)}
-        <section class="sec yours lives-sec" data-cursor="yours" in:fade={{ duration: 600, delay: 900 }}>
+        <section class="sec yours lives-sec" data-cursor="yours" in:fade|global={calm({ duration: 600, delay: 900 })}>
           <h3>Where your lives went</h3>
           <ul class="lives" data-fold="lives" data-unit="line">
             {#each f.shown as l, i (i)}
@@ -906,13 +932,13 @@
       {/if}
     </div>
 
-    <section class="board panel" class:tight={boardFit >= 1} class:close={boardFit >= 2} class:compact={boardFit >= 3} class:small={boardFit >= 4} bind:this={boardEl} use:backdropShadow={{ fill: 'linear', off: phone.current }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
+    <section class="board panel" class:tight={boardFit >= 1} class:close={boardFit >= 2} class:compact={boardFit >= 3} class:small={boardFit >= 4} bind:this={boardEl} use:backdropShadow={{ fill: 'linear', off: phone.current }} in:fly|global={calm({ x: 30, duration: 500, delay: 200 })}>
       <div class="main">
         <header>
           <h2>{modeName}</h2>
           {#if canShare}
             <span class="share-wrap">
-              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team's depth" : 'Share your depth'}>
+              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team’s depth" : 'Share your depth'}>
                 {#if shared}
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
                   Copied
@@ -930,14 +956,18 @@
         </header>
 
         {#if !run}
-          <ol class="ranking" class:two={twoCols} style:--rows={Math.ceil(rows.length / 2)} data-cursor="standings" bind:this={standingsEl}>
+          <ol class="ranking" class:two={twoCols} style:--rows={Math.ceil(rows.length / 2)} style:--winner-in="{WINNER_IN_MS}ms" data-cursor="standings" bind:this={standingsEl}>
             {#each rows as x, i (x.p.id)}
+              {@const first = s.winners.includes(x.p.id) || (!s.winners.length && x.rank === 1)}
               <li
-                class:first={s.winners.includes(x.p.id) || (!s.winners.length && x.rank === 1)}
+                class:first
                 class:you={x.p.id === me}
                 class:gone={!local && !x.p.connected}
                 data-cursor="row:{s.players.indexOf(x.p)}"
-                in:fly={{ x: -16, duration: 400, delay: 500 + i * 70 }}
+                in:rankIn|global={{ i, n: rows.length, top: first }}
+                onanimationstart={(e) => {
+                  if (e.target === e.currentTarget && !e.pseudoElement && e.animationName.endsWith('ignite')) winnerIgnites(e.currentTarget);
+                }}
               >
                 {#if x.p.id === me && pinnable}<span class="anchor" bind:this={myRow}></span>{/if}
                 {@render rankRow(x)}
@@ -949,7 +979,7 @@
             {#each delvers as d, i (d.id)}
               {@const p = s.players.find((x) => x.id === d.id)}
               {#if p}
-                <li class:you={d.id === me} class:gone={!p.connected} data-cursor="row:{s.players.indexOf(p)}" in:fly={{ y: 8, duration: 400, delay: 500 + i * 60 }}>
+                <li class:you={d.id === me} class:gone={!p.connected} data-cursor="row:{s.players.indexOf(p)}" in:settle|global={{ delay: 450 + i * 60, y: 10 }}>
                   <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={plateAvatar} dim={!p.connected} />
                   <span class="who-col">
                     <span class="name"><PlayerName name={p.name} />{#if d.id === me}<em class="you">&nbsp;(you)</em>{/if}</span>
@@ -999,14 +1029,14 @@
 
       {#if run && earned.length}
         <!-- Every run that earns one (judged as it ends: it opens out rather than jumping in). -->
-        <section class="sec earned-sec" in:slide={{ duration: 450 }}>
+        <section class="sec earned-sec" in:slide={calm({ duration: 450 })}>
           <h3>Earned this run</h3>
           {@render achievements(earned, boardFit, 'earned')}
         </section>
       {/if}
 
       {#if lines.length}
-        <section class="sec highlights" data-cursor="highlights" in:fade={{ duration: 600, delay: 1000 }}>
+        <section class="sec highlights" data-cursor="highlights" in:settle|global={{ delay: run ? 1000 : WINNER_IN_MS + 450 }}>
           <h3>Highlights</h3>
           {@render lineList(lines, 'highlights', 'highlights')}
         </section>
@@ -1630,6 +1660,43 @@
   }
   .ranking li.first > * {
     image-rendering: auto;
+  }
+  /* Set down last (rankIn), the winner's row ignites: its edge flares and
+     settles, a soft glow swelling round it meanwhile (lib/fx/moments.ts
+     winnerIgnites, as it starts: in CSS it would band), and from then on the headline's light runs across it with the
+     headline's own, in step (.gold's gleam). */
+  .ranking li.first {
+    animation: ignite 1.2s calc(var(--winner-in) + 0.15s) var(--ease-out) backwards;
+  }
+  .ranking li.first::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    image-rendering: auto;
+    background: linear-gradient(100deg, transparent 42%, rgba(255, 244, 214, 0.2) 50%, transparent 58%) no-repeat;
+    background-size: 250% 100%;
+    background-position: 160% 0;
+    animation: gleam 5s ease-in-out 1.4s infinite;
+  }
+  @keyframes ignite {
+    0% {
+      border-color: var(--line);
+    }
+    30% {
+      border-color: #f6e3ad;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ranking li.first,
+    .ranking li.first::after {
+      animation: none;
+    }
+  }
+  :global(:root[data-still]) .ranking li.first,
+  :global(:root[data-still]) .ranking li.first::after {
+    animation: none;
   }
   .ranking li.you:not(.first),
   .ranking .row.you {

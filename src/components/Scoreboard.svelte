@@ -754,7 +754,7 @@
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
       {@const wide = !bare && (coop ? p.id === me : active)}
-      {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id)}
+      {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id) || (!!s.deathmatch && s.phase !== 'over' && s.deathmatch.results[p.id] === false)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
       {@const score = scoreOf(p.id, p.score)}
