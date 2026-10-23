@@ -161,7 +161,7 @@
           : `Depth ${shownDepth(depth)}`
         : !local && active.id === session.myPlayerId
           ? 'Your turn'
-          : `${active.name}'s turn`,
+          : `${active.name}’s turn`,
   );
 
   // The seconds the question's clock runs (Delve: a find's or the depth's),
@@ -434,7 +434,7 @@
           {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
             <p class="delve-line revive-hint" transition:fade>
               {revivable.length === 1
-                ? `Use the heart on ${revivable[0].name}'s entry to revive them with one of your lives.`
+                ? `Use the heart on ${revivable[0].name}’s entry to revive them with one of your lives.`
                 : 'Use the heart on an entry to revive that teammate with one of your lives.'}
             </p>
           {/if}
@@ -445,13 +445,13 @@
             </div>
           {:else if session.idle}
             <div class="skip" data-cursor="skip" transition:fade>
-              <span class="muted">{active.name} hasn't {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
+              <span class="muted">{active.name} hasn’t {s.phase === 'choosing' ? 'picked a category' : 'answered'} in a while.</span>
               <button class="btn small" onclick={() => skipTurn(session.idle)}>Skip their turn</button>
             </div>
           {/if}
           {#if session.artMissing}
             <div class="skip" data-cursor="skip" transition:fade>
-              <span class="muted">The art for this question couldn't be loaded.</span>
+              <span class="muted">The art for this question couldn’t be loaded.</span>
               <button class="btn small" onclick={() => session.dispatch({ type: 'reask' })}>Ask another question</button>
             </div>
           {/if}
@@ -465,7 +465,7 @@
   <!-- Behind a dialog the flat fill only darkens (a blur would thin its edges) and the words blur. -->
   <div class="dm-intro" use:portal={'dim'} transition:fade={{ duration: 400 }} aria-live="polite" style:--R="{introR}px" style:--face="{faceSize}px">
     <div class="dm-intro-inner" data-behind-dialog="blur" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
-      <p class="dm-kicker">It's a tie</p>
+      <p class="dm-kicker">It’s a tie</p>
       <h1 use:introFx>Deathmatch</h1>
       <div class="dm-below">
         <div class="dm-faces">

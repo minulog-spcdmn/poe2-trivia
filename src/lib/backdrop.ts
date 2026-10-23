@@ -1323,9 +1323,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let split = offered;
   /** Which of the UI's parts a main pass built now draws (see UiParts): the first frame's leaves the boxes to the UI pass, where it can (see begin). */
   const uiParts = (): UiParts => (!mayDrawUi() ? 'none' : 'all');
-  const mainSource = (ui: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, split, false, ui), label: "The backdrop's program" });
-  const smoothSources = (): ProgramSource[] => (split ? [{ vs: VERT, fs: smoothFrag(false), label: "The backdrop's soft light program" }] : []);
-  const uiSources = (ui: UiParts): ProgramSource[] => (ui === 'drops' ? [{ vs: VERT, fs: uiFrag(maxElements), label: "The backdrop's UI program" }] : []);
+  const mainSource = (ui: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, split, false, ui), label: "The backdrop’s program" });
+  const smoothSources = (): ProgramSource[] => (split ? [{ vs: VERT, fs: smoothFrag(false), label: "The backdrop’s soft light program" }] : []);
+  const uiSources = (ui: UiParts): ProgramSource[] => (ui === 'drops' ? [{ vs: VERT, fs: uiFrag(maxElements), label: "The backdrop’s UI program" }] : []);
   let first: Pending;
   /** Which of the UI's parts the first frame's main pass draws. */
   let firstUi = 'all' as UiParts;
@@ -1698,14 +1698,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let standIn = false;
   /** How far Delve's parts have come in (0 to 1) after the lean programs stood in for them. */
   let delveIn = 1;
-  const delveSource = (parts: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, !!smoothTex, true, parts), label: "Delve's backdrop program" });
+  const delveSource = (parts: UiParts): ProgramSource => ({ vs: VERT, fs: frag(maxElements, !!smoothTex, true, parts), label: "Delve’s backdrop program" });
   function buildDelve() {
     if (delve || !quiet(delveNext) || delveFailed || gl!.isContextLost()) return;
     // (Where the backdrop draws none of the UI's parts, Delve's has none
     // either, see uiNow.)
     const parts: UiParts = ui && uiParts() === 'all' ? 'drops' : uiParts();
     const sources = [delveSource(parts)];
-    if (smoothTex) sources.unshift({ vs: VERT, fs: smoothFrag(true), label: "Delve's backdrop soft light program" });
+    if (smoothTex) sources.unshift({ vs: VERT, fs: smoothFrag(true), label: "Delve’s backdrop soft light program" });
     succeed(
       delveNext,
       parts,

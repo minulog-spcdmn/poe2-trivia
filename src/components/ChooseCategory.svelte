@@ -839,7 +839,7 @@
         <span class="closes" aria-hidden="true">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
       {/if}
       <span class="live" aria-live="polite">
-        {#if closesIn !== null}<span class="sr">The vote's clock has started.</span>{/if}
+        {#if closesIn !== null}<span class="sr">The vote’s clock has started.</span>{/if}
         {#if anyVote && waitingFor.length}
           <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
         {:else if !anyVote}

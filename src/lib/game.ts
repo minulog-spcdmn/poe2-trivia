@@ -1712,8 +1712,8 @@ export class Engine {
         // Co-op: the team votes (a trusted pick, the host's own tooling, settles the vote at once).
         const coop = !!s.delve && isGroupRun(s);
         if (coop && from !== null) throw new ActionError('Vote for a card instead.');
-        if (s.phase !== 'choosing') throw new ActionError("It's not time to pick a category.");
-        if (!isActive) throw new ActionError("It's not your turn.");
+        if (s.phase !== 'choosing') throw new ActionError("It’s not time to pick a category.");
+        if (!isActive) throw new ActionError("It’s not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         // A new zone's cards are still on their way (no screen shows them yet): a pick sooner is dropped quietly
         // (not one a screen whose guess at this clock runs a little ahead showed them for).
@@ -1764,7 +1764,7 @@ export class Engine {
           if (action.askedAt !== undefined && action.askedAt === s.lastAskedAt) throw new ActionError('Too late!', true);
           throw new ActionError('There is no open question.');
         }
-        if (!isActive) throw new ActionError("It's not your turn.");
+        if (!isActive) throw new ActionError("It’s not your turn.");
         const q = s.question;
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
         // Nobody answers a question whose clock hasn't started (the host and a stray key in hot-seat included).
@@ -1884,14 +1884,14 @@ export class Engine {
           if (!isHost && !s.players.some((p) => p.id === from)) throw new ActionError('Only the team moves the run on.', true);
           this.advance(s);
         } else {
-          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
+          if (!isActive && !isHost) throw new ActionError("It’s not your turn.");
           this.advance(s);
         }
         break;
       }
       case 'skip': {
         // A skipped turn would cost a life, so nobody decides that by hand (the host's own id included).
-        if (s.delve) throw new ActionError("Turns can't be skipped in Delve.");
+        if (s.delve) throw new ActionError("Turns can’t be skipped in Delve.");
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
         if (race) this.advanceRace(s);

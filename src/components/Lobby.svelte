@@ -409,7 +409,7 @@
             <h2>{local || atScreen ? 'Add exiles' : 'On this device'}</h2>
           </header>
           {#if (local || atScreen) && s.players.length < MAX_PLAYERS}
-            {@render adder("Exile's name")}
+            {@render adder("Exile’s name")}
           {/if}
           <p class="vis-hint">
             {#if local || atScreen}

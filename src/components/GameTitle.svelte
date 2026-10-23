@@ -4,6 +4,7 @@
   // then, the backdrop's god rays and royal glow around it (lib/lights.ts),
   // and the odd glint. `lines`: a fine gold rule either side.
   import { fly } from 'svelte/transition';
+  import { calm } from '../lib/motion.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { titleGlints } from '../lib/fx/moments';
   import type { Handle } from '../lib/fx/core';
@@ -26,7 +27,7 @@
   }
 </script>
 
-<h1 class:lines use:glinting in:fly={{ y: 20, duration: 800, delay: 150 }}>
+<h1 class:lines use:glinting in:fly|global={calm({ y: 20, duration: 800 })}>
   <span class="gold" use:backdropDropShadow
     >{#if lines}<span class="line"></span>{/if}PoE2.Quest{#if lines}<span class="line"></span>{/if}</span
   >

@@ -116,8 +116,8 @@ export function nameProblem(name: string, others: string[]): string | null {
   if (offensive(name)) return 'That name is not allowed. Pick another name.';
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
-    return `"${name}" is reserved. Pick another name.`;
+    return `“${name}” is reserved. Pick another name.`;
   const clash = others.find((o) => nameSkeleton(o) === skel);
-  if (clash) return `"${name}" looks too much like "${clash}". Pick another name.`;
+  if (clash) return `“${name}” looks too much like “${clash}”. Pick another name.`;
   return null;
 }

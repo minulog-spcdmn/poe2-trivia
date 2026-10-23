@@ -30,7 +30,7 @@ export type TipFor = 'desktop' | 'android' | 'ios';
 
 const MESSAGE: Record<TipFor, () => string> = {
   desktop: () => `Press ${fullscreenKeys(browserEnv())} to play in fullscreen.`,
-  android: () => "Add PoE2.Quest to your home screen from the browser's menu to play in fullscreen.",
+  android: () => "Add PoE2.Quest to your home screen from the browser’s menu to play in fullscreen.",
   ios: () => 'Tap Share, then Add to Home Screen, to play in fullscreen.',
 };
 

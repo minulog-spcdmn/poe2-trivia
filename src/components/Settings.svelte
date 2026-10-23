@@ -11,6 +11,7 @@
   import { onMount } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fly } from 'svelte/transition';
+  import { calm } from '../lib/motion.svelte';
   import { getAmbience, getVolume, isMuted, onSoundChange, setAmbience, setMuted, setVolume, sfx } from '../lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
   import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
@@ -334,7 +335,7 @@
 
     <!-- Under both columns, the width of the page: the twelve in a row. -->
     {#if !over}
-      <section class="block sigil-row" in:fly={{ y: 20, duration: 500, delay: 260 }}>
+      <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 110 })}>
         <header>
           <h2>Class sigils</h2>
           <span class="count">{unlocked} / {CLASSES.length}</span>

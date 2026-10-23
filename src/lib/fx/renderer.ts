@@ -1026,7 +1026,7 @@ export class FxRenderer {
         ['composite', FULL_VS, COMPOSITE_FS],
         ['copy', FULL_VS, COPY_FS],
       ] as const
-    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program "${name}"` }));
+    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program “${name}”` }));
     // Whether it can draw to half floats: asked in a step of its own, a
     // frame after the context and once the GPU has caught up
     // (whenGpuCaughtUp), before the shaders start. (It waits on the GPU
