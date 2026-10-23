@@ -2077,12 +2077,15 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (atlases) {
       gl!.activeTexture(gl!.TEXTURE0);
       gl!.bindTexture(gl!.TEXTURE_2D, sharpTex);
-      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.sharp);
+      // (Into the textures as they are, where they're the same size: made anew only when they grow or shrink.)
+      if (atlasSize[0] === atlases.sharp.width && atlasSize[1] === atlases.sharp.height) gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.sharp);
+      else gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.sharp);
       atlasSize[0] = atlases.sharp.width;
       atlasSize[1] = atlases.sharp.height;
       gl!.activeTexture(gl!.TEXTURE1);
       gl!.bindTexture(gl!.TEXTURE_2D, blurTex);
-      gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
+      if (atlasSize[2] === atlases.blurW && atlasSize[3] === atlases.blurH) gl!.texSubImage2D(gl!.TEXTURE_2D, 0, 0, 0, atlases.blurW, atlases.blurH, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
+      else gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, atlases.blurW, atlases.blurH, 0, gl!.RGBA, gl!.UNSIGNED_BYTE, atlases.blur);
       atlasSize[2] = atlases.blurW;
       atlasSize[3] = atlases.blurH;
       frameEvent('backdrop: drop shadows upload');

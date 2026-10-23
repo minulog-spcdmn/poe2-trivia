@@ -1495,6 +1495,20 @@ function build(c: HTMLCanvasElement) {
   if (!building) teardown();
 }
 
+/**
+ * Draws `r`'s programs once each before an effect needs them (warmNext),
+ * each in an idle moment of its own while nothing is drawn: an effect
+ * drawing meanwhile draws them itself.
+ */
+function warm(r: FxRenderer) {
+  const next = () => {
+    if (renderer !== r) return;
+    if (!raf && !shown && !r.warmNext()) return;
+    whenIdle(next, { fallback: 50 });
+  };
+  whenIdle(next, { fallback: 50 });
+}
+
 /** Takes the renderer made on `c` and follows its size; whatever waited for it plays. */
 function setup(c: HTMLCanvasElement, r: FxRenderer) {
   renderer = r;
@@ -1537,6 +1551,7 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   resize();
   shown = true;
   show(false);
+  warm(r);
   for (const l of listeners) l(userOn);
   // (resize() woke the loop: anything asked for meanwhile plays from now.)
 }

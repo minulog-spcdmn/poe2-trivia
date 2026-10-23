@@ -118,7 +118,17 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   show before then, the lean programs stand in and Delve's parts come in over
   a moment once they're ready. The effects layer's renderer is made at the
   first idle moment after the first paint, or as soon as an effect is asked
-  for; effects asked for before it's ready wait for it. The game's own
+  for; effects asked for before it's ready wait for it. Its programs are
+  warmed too, one an idle moment while its canvas is hidden (`warmNext` in
+  `src/lib/fx/renderer.ts`), or the first effect of a visit (the first
+  press's ring) waited for the driver. Dynamite's smoke is made ready the
+  same way as a run nears it, a step of a ms or two an idle moment
+  (`prepareBlastSmoke`, through `stepwise` in `src/lib/idle.ts`), its
+  program drawn once before the first blast. A drop shadow's mask
+  (`src/lib/backdropDropShadow.ts`) is blurred in a worker
+  (`dropBlurWorker.ts`) once its shape holds still, CSS painting the
+  shadow meanwhile: the turn's banner, made afresh each turn, took 20 to
+  30 ms of blur on the main thread as the turn came in. The game's own
   screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
   a quarter of the script, fetched at the first idle moment or at once on the
   way into a room, so the start page loads and runs without them (tried once

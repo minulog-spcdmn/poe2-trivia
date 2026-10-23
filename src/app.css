@@ -863,14 +863,14 @@ h3,
 }
 
 /* While the WebGL backdrop draws an element's drop shadows (see
-   lib/backdropDropShadow.ts), swap the drop-shadow part of its filter for a
-   no-op. Registered as non-inheriting so it can't reach tagged descendants. */
+   lib/backdropDropShadow.ts), its CSS text-shadow is none. Registered as
+   non-inheriting so it can't reach tagged descendants. */
 @property --drop-shadow-paint {
   syntax: '*';
   inherits: false;
 }
 [data-bs-drop] {
-  --drop-shadow-paint: opacity(1);
+  --drop-shadow-paint: none;
 }
 
 /* Large gradient backgrounds the WebGL backdrop can draw without banding (see

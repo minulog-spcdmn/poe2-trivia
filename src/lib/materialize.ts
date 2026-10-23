@@ -10,6 +10,7 @@
 
 import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
+import { rankAscending } from './rank';
 import { zoomOf } from './stage';
 import type { PatchImage } from './veilCut';
 
@@ -200,14 +201,16 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     });
     // Sorted by when they burn in, so each frame only visits the pixels that
     // are changing: those settled are done, those far ahead stay clear.
-    const rank = Uint32Array.from({ length: n }, (_, j) => j).sort((a, b) => when[a] - when[b]);
+    // (A radix sort: a patch has tens of thousands of them.)
+    const rank = rankAscending(when);
     const span = hi - lo || 1;
     const lit = new Uint32Array(vis.length);
     const order = new Float32Array(vis.length);
-    rank.forEach((j, r) => {
+    for (let r = 0; r < n; r++) {
+      const j = rank[r];
       lit[r] = vis[j];
       order[r] = (when[j] - lo) / span;
-    });
+    }
     const spark = new Uint8Array(lit.length);
     for (let j = 0; j < lit.length; j++) if (Math.random() < SPARKLY) spark[j] = 1 + Math.floor(Math.random() * 255);
     for (const i of lit) px[i * 4 + 3] = 0;

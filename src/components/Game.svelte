@@ -669,8 +669,8 @@
     color: var(--gold-hi);
     /* Its glow, so wide and soft it bands in CSS, drawn by the WebGL backdrop
        when it can (lib/backdropDropShadow.ts), dithered; CSS paints it otherwise. */
-    --drop-shadow: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 24px color-mix(in srgb, var(--c), transparent 40%));
-    filter: var(--drop-shadow-paint, var(--drop-shadow));
+    --drop-shadow: 0 3px 12px rgba(0, 0, 0, 0.9), 0 0 24px color-mix(in srgb, var(--c), transparent 40%);
+    text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
     animation: arrive 0.9s var(--ease-out) both;
     text-align: center;
     white-space: nowrap;
@@ -687,14 +687,11 @@
   .rule:last-child {
     background: linear-gradient(270deg, transparent, var(--c));
   }
-  /* The blur comes after the h2's own filter, so the two lists match up to it
-     and it eases out (a blur in place of the drop shadows would only swap
-     halfway, not ease). */
   @keyframes arrive {
     from {
       opacity: 0;
       letter-spacing: 0.4em;
-      filter: var(--drop-shadow-paint, var(--drop-shadow)) blur(6px);
+      filter: blur(6px);
     }
   }
   /* A run's start line arrives as a depth does, its spacing opening less:
@@ -706,7 +703,7 @@
     from {
       opacity: 0;
       letter-spacing: 0.06em;
-      filter: var(--drop-shadow-paint, var(--drop-shadow)) blur(6px);
+      filter: blur(6px);
     }
   }
   @keyframes grow {
