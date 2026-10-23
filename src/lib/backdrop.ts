@@ -2105,10 +2105,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   // Shadows and fills must track their elements every frame (hover,
   // transitions, scrolling), and lights and a changing mood tint animate
-  // quickly, so any of those draws at once. Otherwise the backdrop's own
-  // motion only needs 30fps (its quickest cycle is a slow 9s breath and the
-  // embers drift a few pixels a frame), and while calm() nothing is drawn
-  // until something changes.
+  // quickly, so any of those draws at once. A GPU that keeps up draws the
+  // backdrop's own motion every frame too: at 30fps the embers step, and on
+  // a fast display the sparks thrown up skip 20px at a time. Where it's
+  // paced (paced(): phones and tablets, and a GPU found too slow for every
+  // pixel, see fx/gpuBudget.ts), 30fps does: its quickest cycle is a slow 9s
+  // breath and the embers drift a few pixels a frame. While calm() nothing
+  // is drawn until something changes.
+  const paced = () => fxScaledDown();
   let dirty = false;
   /** A change held back for the 30fps pace (see frame()). */
   let owed = false;
@@ -2269,7 +2273,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
     const urgent = measured === 'now' || dirty || homeMoving || fading;
-    if (!urgent && ((still && !owed) || now - last < 33)) return;
+    if (!urgent && ((still && !owed) || (paced() && now - last < 33))) return;
     last = now;
     dirty = false;
     owed = false;

@@ -209,6 +209,8 @@ let resizeDueAt = 0;
  * Effects still advance every frame, so timing is unchanged. On every
  * device, the same goes while all that's alive is endless and calm (a
  * streak's fire burning between moments), which can last a whole game.
+ * Only while the quality is down, though (fxScaledDown: always on phones):
+ * a GPU that keeps up draws every frame, and a fast display shows the steps.
  */
 let calm = false;
 let lastDraw = 0;
@@ -890,7 +892,7 @@ function frameUntimed(nowMs: number) {
   }
 
   // (25ms rather than 33: a frame that comes a little early isn't skipped too.)
-  const draw = !calm || nowMs - lastDraw >= 25;
+  const draw = !calm || !fxScaledDown() || nowMs - lastDraw >= 25;
   if (draw) lastDraw = nowMs;
   let busy = false;
   try {
