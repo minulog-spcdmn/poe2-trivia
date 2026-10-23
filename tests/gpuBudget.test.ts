@@ -26,6 +26,8 @@ type Opts = {
   /** How long frames take; by default as long as the GPU's work needs (and `over` ms more, 2 by default), at the display's refresh at best. */
   frameMs?: (level: number, t: number, gpuMs: number) => number;
   over?: number;
+  /** Levels wanted aren't moved to (core.ts holds a climb for a moment with nothing drawn, which a streak's fire may never give). */
+  hold?: boolean;
   /** False: the GPU can't be timed. */
   timed?: boolean;
   px?: typeof UHD;
@@ -66,7 +68,7 @@ function run(b: GpuBudget, seconds: number, cost: (level: number, t: number) => 
     }
     b.frame(ms, t * 1000, on, !!opts.off);
     const want = b.next(t * 1000);
-    if (want !== b.level) {
+    if (want !== b.level && !opts.hold) {
       b.applied(want, t * 1000);
       went.push([want, Math.round(t)]);
     }
@@ -469,4 +471,18 @@ test('the paces that held are kept for the next visit, with the level', () => {
   const odd = new GpuBudget(BIG_BACKDROP, 0, { ...saved!, pace: [9, -1] as [number, number] });
   assert.equal(odd.next(0), saved!.level);
   assert.equal(odd.pace(true), 0);
+});
+
+test('a climb held for a calm moment that never comes (a streak fire burning) does not hold the pace up', () => {
+  const saved: Saved = { at: Date.now(), level: 1, px: 3840 * 2160, backoff: 20 };
+  const b = new GpuBudget(UHD, 0, saved);
+  b.applied(b.next(0), 0);
+  // Cheap enough for every pixel: a climb is wanted, and held.
+  const cheap = run(b, 60, () => 0.1, { hz: 240, over: 0.5, hold: true });
+  assert.equal(b.next(cheap.t * 1000), 0);
+  assert.equal(b.level, 1);
+  // Then the GPU turns slow: the backdrop is drawn less often all the same.
+  run(b, 20, () => 0.5, { start: cheap.t, hz: 240, frameMs: pipelined(240, 1.5), hold: true });
+  assert.equal(b.level, 1);
+  assert.ok(b.pace(true) > 0, `pace ${b.pace(true)}`);
 });

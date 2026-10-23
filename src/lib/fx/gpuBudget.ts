@@ -242,9 +242,16 @@ class Ladder {
     return !this.phase && this.want === this.at;
   }
 
+  /** Whether frames are being timed around a drop. */
+  timing() {
+    return !!this.phase;
+  }
+
   /** Whether it's coming down, or would if let (frames slow, and the layers to blame): what's below waits for it. */
   acting() {
-    return !!this.phase || (this.slow() && this.toBlame(this.at));
+    if (this.phase) return true;
+    const blamed = this.toBlame(this.at);
+    return blamed && this.slow(blamed);
   }
 
   /** Whether frames `before` ms on average would bring it down, and frames `after` wouldn't. */
@@ -260,15 +267,15 @@ class Ladder {
     return p !== null && p > this.r.budget() && this.r.seen(at, FRESH_DROP_S, false);
   }
 
-  /** How long frames take (ms, on average) to count as slow: past slowMs, or where the layers are timed over budget, LATE. */
-  private slowMs() {
-    return this.r.timed() && this.toBlame(this.at) ? Math.min(this.r.slowMs(), this.r.frameMs() * LATE) : this.r.slowMs();
+  /** How long frames take (ms, on average) to count as slow: past slowMs, or where the layers are timed over budget (`blamed`), LATE. */
+  private slowMs(blamed = this.toBlame(this.at)) {
+    return this.r.timed() && blamed ? Math.min(this.r.slowMs(), this.r.frameMs() * LATE) : this.r.slowMs();
   }
 
   /** Frames slow here, with a step to drop to that hasn't already failed to help. */
-  private slow() {
+  private slow(blamed = this.toBlame(this.at)) {
     const failedAt = this.failed.get(this.at);
-    return this.frameAvg > this.slowMs() && (failedAt === undefined || this.frameAvg > failedAt * RETRY) && this.dropTo(this.at) !== null;
+    return this.frameAvg > this.slowMs(blamed) && (failedAt === undefined || this.frameAvg > failedAt * RETRY) && this.dropTo(this.at) !== null;
   }
 
   /** The step to drop to from `at`, or null: where timed, the first predicted to fit with room to spare; else the next that draws less. */
@@ -341,9 +348,10 @@ class Ladder {
       return;
     }
     // (Frames slow while it may not drop still add up: once it may, it's weighed at once.)
-    if (this.slow()) {
+    const blamed = this.toBlame(this.at);
+    if (this.slow(blamed)) {
       this.slowFor += dt;
-      if (mayDrop && this.slowFor > SLOW_FOR && this.toBlame(this.at)) this.phase = { kind: 'before', time: 0, sum: 0, frames: 0, before: 0, from: this.at };
+      if (mayDrop && this.slowFor > SLOW_FOR && blamed) this.phase = { kind: 'before', time: 0, sum: 0, frames: 0, before: 0, from: this.at };
     } else this.slowFor = Math.max(0, this.slowFor - dt * 0.5);
   }
 
@@ -633,15 +641,17 @@ export class GpuBudget {
    */
   frame(ms: number, nowMs: number, busy = true, off = false): number {
     // (Down at once to a quicker frame, up only slowly: the frames' quickest, a display's refresh.
-    // Up only on frames with no effect playing: the effects' own slow frames
-    // would teach it the display was as slow, until they no longer counted as slow.)
-    if (ms > 2 && ms < STALL_MS && (ms < this.refresh || !busy)) this.refresh += (ms - this.refresh) * (ms < this.refresh ? 0.3 : 0.002);
+    // Up only on frames with no effect playing, and not while the backdrop's
+    // own draws are what's slowing them: those slow frames would teach it the
+    // display was as slow, until they no longer counted as slow.)
+    if (ms > 2 && ms < STALL_MS && (ms < this.refresh || (!busy && !this.paces.idle.acting()))) this.refresh += (ms - this.refresh) * (ms < this.refresh ? 0.3 : 0.002);
     const m = Math.min(ms, STALL_MS);
     const dt = ms / 1000;
     const mode: Mode = busy ? 'busy' : 'idle';
     this.off = off;
     const pace = this.paces[mode];
-    pace.frame(m, dt, this.levels.settled());
+    // (Not while the level is timed around a drop; one waiting to be moved to, a climb held for a calm moment, doesn't hold a pace up.)
+    pace.frame(m, dt, !this.levels.timing());
     this.settle(pace, nowMs);
     // (The level waits for the pace to come down first, and to be timed after.)
     if (this.weighsLevel(mode)) this.levels.frame(m, dt, pace.settled() && !pace.acting());
