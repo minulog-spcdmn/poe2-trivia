@@ -6,7 +6,7 @@
   // keys reach the game's own handlers (stopped here, before the window).
   import { closeLegal, legalSheet } from '../lib/legalSheet.svelte';
   import { motion } from '../lib/motion.svelte';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
 
   let dialog = $state<HTMLDialogElement>();
   let back = $state<HTMLButtonElement>();
@@ -16,23 +16,25 @@
   let going = $state(false);
   /** How long it takes to go (its .going styles). */
   const GO_MS = 220;
+  let goTimer: ReturnType<typeof setTimeout> | undefined;
 
   // It rises over the game from just below, as the game's dialogs do
   // (lib/dialogIn.ts), and sinks back as it goes.
   $effect(() => {
     if (!dialog) return;
     if (legalSheet.url) {
+      clearTimeout(goTimer);
       shown = legalSheet.url;
       going = false;
       if (!dialog.open) {
         dialog.showModal();
-        back?.focus();
+        // (Once the bar it's in is drawn: `shown` was only just set.)
+        void tick().then(() => back?.focus());
       }
     } else if (dialog.open && !untrack(() => going)) {
       if (motion.still) return close();
       going = true;
-      // (Opened again meanwhile: it stays.)
-      setTimeout(() => legalSheet.url || close(), GO_MS);
+      goTimer = setTimeout(close, GO_MS);
     }
   });
   function close() {
@@ -114,7 +116,9 @@
     display: flex;
     animation: sheet-in 0.48s var(--ease-out);
   }
+  /* (Its rise let go of, should it go before it's up, so this shows.) */
   .sheet.going {
+    animation: none;
     opacity: 0;
     translate: 0 14px;
     transition:

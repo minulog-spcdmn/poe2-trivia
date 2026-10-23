@@ -245,7 +245,10 @@
   });
   /** The last screen has gone: the next one comes in (also from a timer, should its end never come). */
   function arrive() {
-    if (shown === null) shown = screen;
+    if (shown !== null) return;
+    // (The way it comes in: the screen may have changed again while the last went.)
+    back = screen === 'home';
+    shown = screen;
   }
   $effect(() => {
     if (shown !== null) return;

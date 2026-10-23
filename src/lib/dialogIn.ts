@@ -10,31 +10,26 @@ import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
 import type { TransitionConfig } from 'svelte/transition';
 import { motion } from './motion.svelte';
 
-/** The element's own transform, for the motion to go on top of (a dialog centred by one keeps its place). */
-function own(node: Element) {
-  const t = getComputedStyle(node).transform;
-  return t === 'none' ? '' : `${t} `;
-}
-
-export function dialogIn(node: Element, { delay = 0 }: { delay?: number } = {}): TransitionConfig {
+// (A dialog's own box takes no transform, so the motion sets it whole: read
+// back mid-entrance, it would be the entrance's, and a close then would
+// start from twice as far.)
+export function dialogIn(_: Element, { delay = 0 }: { delay?: number } = {}): TransitionConfig {
   if (motion.still) return { duration: 0 };
-  const base = own(node);
   return {
     delay,
     duration: 480,
     css: (t) => {
       const m = quintOut(t);
-      return `opacity: ${cubicOut(Math.min(1, t / 0.4))}; transform: ${base}translateY(${((1 - m) * 18).toFixed(2)}px) scale(${(0.965 + 0.035 * m).toFixed(4)})`;
+      return `opacity: ${cubicOut(Math.min(1, t / 0.4))}; transform: translateY(${((1 - m) * 18).toFixed(2)}px) scale(${(0.965 + 0.035 * m).toFixed(4)})`;
     },
   };
 }
 
-export function dialogOut(node: Element): TransitionConfig {
+export function dialogOut(_: Element): TransitionConfig {
   if (motion.still) return { duration: 0 };
-  const base = own(node);
   return {
     duration: 180,
     easing: cubicIn,
-    css: (t, u) => `opacity: ${t}; transform: ${base}translateY(${(u * 10).toFixed(2)}px) scale(${(1 - 0.02 * u).toFixed(4)})`,
+    css: (t, u) => `opacity: ${t}; transform: translateY(${(u * 10).toFixed(2)}px) scale(${(1 - 0.02 * u).toFixed(4)})`,
   };
 }

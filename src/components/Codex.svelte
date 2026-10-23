@@ -312,11 +312,10 @@
   let tab = $state<Tab>('items');
   /** A tab has been turned: its page's sections come in at once, not after the title's (the stagger in the styles). */
   let turned = $state(false);
-  let firstTab: Tab | null = null;
-  $effect.pre(() => {
-    if (firstTab === null) firstTab = tab;
-    else if (tab !== firstTab) turned = true;
-  });
+  function turn(to: Tab) {
+    if (to !== tab) turned = true;
+    tab = to;
+  }
   // Steps a visit reached (lib/count.ts): the codex opened, its achievements looked at.
   countReach('reach/codex');
   $effect(() => {
@@ -360,7 +359,7 @@
     if (!step) return;
     e.preventDefault();
     const i = TABS.findIndex((t) => t.key === tab);
-    tab = TABS[(i + step + TABS.length) % TABS.length].key;
+    turn(TABS[(i + step + TABS.length) % TABS.length].key);
     tabs.get(tab)?.focus();
   }
 </script>
@@ -415,7 +414,7 @@
           aria-selected={tab === t.key}
           aria-controls="codex-page"
           tabindex={tab === t.key ? 0 : -1}
-          onclick={() => (tab = t.key)}
+          onclick={() => turn(t.key)}
           onkeydown={tabKey}
         >
           <span class="tab-in">
