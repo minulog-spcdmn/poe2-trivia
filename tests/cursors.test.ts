@@ -7,6 +7,21 @@ import {
   CursorOutbox,
   moveOn,
   trailAt,
+  trailIndex,
+  leaned,
+  wayLeft,
+  LEAN_MS,
+  LANDING_SPEED,
+  handOn,
+  handAt,
+  type Lean,
+  paced,
+  BEHIND_MS,
+  closeOff,
+  closeMs,
+  entryMs,
+  STAMP,
+  type Pace,
   GAME_ANCHOR,
   GAME_DEPTH,
   fromAnchor,
@@ -33,6 +48,15 @@ import {
   parseCursorAt,
   parseCursorBatch,
   OFF,
+  BESIDE,
+  BLEND_PX,
+  MAX_BESIDE,
+  HELD_WEIGHT,
+  besideOf,
+  besideHops,
+  besideWeight,
+  blended,
+  fromBeside,
   type CursorAt,
   type CursorEntry,
 } from '../src/lib/cursors.ts';
@@ -260,6 +284,39 @@ test('a pointer on the game as a whole holds still while the game grows or shrin
   assert.equal(parseCursorAt([card, 10, 5 * SCALE + 1, 0]), undefined);
 });
 
+test('a pointer goes with the anchors beside it, the nearer the more, and is set by them where screens differ', () => {
+  const box = { left: 100, top: 50, width: 200, height: 40 };
+  // On it: where on it; off it: the nearest spot on it and how far off, in px, at most BLEND_PX.
+  assert.deepEqual(besideOf(200, 70, box), [500, 500]);
+  assert.deepEqual(besideOf(60, 70, box), [-40, 500]);
+  assert.deepEqual(besideOf(200, 190, box), [500, SCALE + 100]);
+  assert.deepEqual(besideOf(-500, 70, box), [-BLEND_PX, 500]);
+  // Read back on a box elsewhere and of another size: as far off it, beside the same spot on it.
+  const there = { left: 0, top: 0, width: 400, height: 80 };
+  assert.deepEqual(fromBeside(...besideOf(60, 70, box), there), { x: -40, y: 40, off: 40 });
+  assert.deepEqual(fromBeside(...besideOf(200, 70, box), there), { x: 200, y: 40, off: 0 });
+  // Counting less the further off, nothing at BLEND_PX; what holds it, as much as one well off.
+  assert.ok(besideWeight(0) > besideWeight(20) && besideWeight(20) > besideWeight(80) && besideWeight(80) > 0);
+  assert.equal(besideWeight(BLEND_PX), 0);
+  assert.ok(HELD_WEIGHT > 0 && HELD_WEIGHT < besideWeight(60));
+  assert.deepEqual(blended([{ x: 0, y: 0, w: 1 }, { x: 30, y: 60, w: 2 }]), [20, 40]);
+  assert.equal(blended([]), null);
+  // Sent after what holds it, and read back apart from it.
+  const card = anchorCode('card:1')!;
+  const opt = anchorCode('opt:2')!;
+  const at = cursorAt([[card, 500, 500], [GAME_ANCHOR, 10, 20]], MOUSE, [[opt, -40, 500], [card, SCALE + 10, 500]]);
+  assert.deepEqual(at, [card, 500, 500, MOUSE, GAME_ANCHOR, 10, 20, opt + BESIDE, -40, 500, card + BESIDE, SCALE + 10, 500]);
+  assert.deepEqual(parseCursorAt(at), at);
+  assert.deepEqual(hopsOf(at), [[card, 500, 500], [GAME_ANCHOR, 10, 20]]);
+  assert.deepEqual(besideHops(at), [[opt, -40, 500], [card, SCALE + 10, 500]]);
+  // Never before what holds it, never beside the game, never further off than BLEND_PX, never more than MAX_BESIDE.
+  assert.equal(parseCursorAt([card, 500, 500, MOUSE, opt + BESIDE, 0, 0, GAME_ANCHOR, 10, 20]), undefined);
+  assert.equal(parseCursorAt([card, 500, 500, MOUSE, GAME_ANCHOR + BESIDE, 0, 0]), undefined);
+  assert.equal(parseCursorAt([card, 500, 500, MOUSE, opt + BESIDE, -BLEND_PX - 1, 0]), undefined);
+  const many = Array.from({ length: MAX_BESIDE + 1 }, () => [opt + BESIDE, 0, 0]).flat();
+  assert.equal(parseCursorAt([card, 500, 500, MOUSE, ...many]), undefined);
+});
+
 test('a pointer is drawn along a curve through where it was heard to be, held at both ends', () => {
   const ps: [number, number][] = [[0, 0], [100, 0], [100, 100], [0, 100]];
   const ts = [0, 100, 200, 300];
@@ -271,6 +328,73 @@ test('a pointer is drawn along a curve through where it was heard to be, held at
   const [x] = trailAt(ps, ts, 150);
   assert.ok(x > 100, `${x}`);
   assert.deepEqual(trailAt([], [], 5), [0, 0]);
+});
+
+/** A hand heard every 50 ms, drawn 100 ms behind at sixty frames a second, and how far off its hand's path each frame is drawn (leaned). */
+function leaning(hand: (t: number) => [number, number], offAt: (t: number) => [number, number], exactAt: (t: number) => boolean, ms: number) {
+  const FRAME = 1000 / 60;
+  let lean: Lean = { x: 0, y: 0, ax: 0, ay: 0 };
+  let was: [number, number] | null = null;
+  const drawn: [number, number][] = [];
+  for (let now = 0; now < ms; now += FRAME) {
+    const ts = Array.from({ length: Math.floor(now / 50) + 1 }, (_, i) => i * 50);
+    const hs = ts.map(hand);
+    const t = now - 100;
+    const h = trailAt(hs, ts, t);
+    const n = ts.length;
+    const speed = n > 1 ? Math.hypot(hs[n - 1][0] - hs[n - 2][0], hs[n - 1][1] - hs[n - 2][1]) / 50 : 0;
+    const landing = exactAt(ts[n - 1]) && (speed < LANDING_SPEED || t >= ts[n - 1]);
+    const moved = was ? Math.hypot(h[0] - was[0], h[1] - was[1]) : 0;
+    lean = leaned(lean, offAt(ts[n - 1]), moved, wayLeft(hs, ts, t, h), FRAME, landing);
+    was = h;
+    drawn.push([h[0] + lean.x, h[1] + lean.y]);
+  }
+  return drawn;
+}
+
+test('a pointer moves as its hand did, and makes up where another screen sets things apart as it goes, there as its hand is', () => {
+  // Its hand going right at 0.8 px a ms for 400 ms, then still. Here, the answer it ends on lies 200 px lower than its hand's
+  // path, and the one it set off from on it: how far off its place lies jumps as it goes over, 160 ms in.
+  const FRAME = 1000 / 60;
+  const drawn = leaning((t) => [0.8 * Math.min(400, Math.max(0, t)), 0], (t) => [0, 0.8 * t > 128 ? 200 : 0], () => true, 900);
+  // Never a jump, a frame's step never far past its hand's (13 px a frame, at its fastest).
+  for (let i = 1; i < drawn.length; i++) assert.ok(Math.hypot(drawn[i][0] - drawn[i - 1][0], drawn[i][1] - drawn[i - 1][1]) < 40, `${i}`);
+  // Most of the way there as its hand stands still (drawn 100 ms behind, it does at 500 ms), and there a moment after.
+  const still = drawn[Math.ceil(510 / FRAME)];
+  assert.ok(Math.abs(still[0] - 320) < 4 && still[1] > 150, `${still}`);
+  const rested = drawn[Math.ceil(850 / FRAME)];
+  assert.ok(Math.abs(rested[1] - 200) < 5, `${rested}`);
+  // Landing, standing, the rest is made up in LEAN_MS or so; going, as far as there's way to go.
+  const at = { x: 0, y: 0, ax: 0, ay: 0 };
+  assert.ok(Math.abs(leaned(at, [100, 0], 0, 0, LEAN_MS, true).x - 100 * (1 - Math.exp(-1))) < 1e-9);
+  assert.equal(leaned(at, [100, 0], 10, 30, 0, true).x, 20);
+  assert.equal(leaned(at, [10, 0], 10, 30, 0, true).x, 2.5);
+  // Not landing, nothing as it stands; going, never more in a frame than half its hand's way here (a phone's small game:
+  // 40 px of a desktop's way is 10 here), so never pulled back against its hand.
+  assert.deepEqual(leaned(at, [100, 0], 0, 0, LEAN_MS, false), at);
+  const steered = leaned(at, [-300, 0], 40, 0, 0, false, 10);
+  assert.ok(Math.abs(Math.hypot(steered.x, steered.y) - 5) < 1e-9, `${steered.x}`);
+  assert.ok(Math.abs(leaned(at, [-300, 0], 40, 0, 0, false).x) > 5);
+  assert.equal(wayLeft([[0, 0], [30, 40], [30, 100]], [0, 50, 100], 25, [15, 20]), 25 + 60);
+  assert.equal(wayLeft([[0, 0], [30, 40]], [0, 50], 60, [30, 40]), 0);
+  // How far a hand goes is measured as on a desktop: on a phone's small game as far as on a big one.
+  assert.deepEqual(handOn(SCALE / 2, SCALE), [720, 900]);
+  // Off the game (the header over it), by the game's box all the same: as on it, beyond its edge.
+  const game = { left: 0, top: 60, width: 390, height: 2000 };
+  assert.deepEqual(handAt(195, 60 + 844, game, 844), handOn(...toAnchor(GAME_ANCHOR, 195, 60 + 844, game, 844)));
+  assert.deepEqual(handAt(195, 30, game, 844).map(Math.round), [720, -32]);
+});
+
+test('a pointer going straight over what this screen has not goes smoothly here, however its place swings about', () => {
+  // Its hand going right at 0.8 px a ms over a host's buttons, which this screen hasn't: set by what's round them here, its place
+  // swings 60 px up and down every 50 ms, about a line 100 px lower. Drawn, it bends smoothly toward that line, the swings
+  // coming to next to nothing.
+  const drawn = leaning((t) => [0.8 * t, 0], (t) => [0, 100 + ((t / 50) % 2 ? 60 : -60)], () => false, 1500);
+  // Never a step across: each frame's way down never more than its way along.
+  for (let i = 1; i < drawn.length; i++) assert.ok(Math.abs(drawn[i][1] - drawn[i - 1][1]) <= Math.abs(drawn[i][0] - drawn[i - 1][0]) + 1e-9, `${i}`);
+  // Come round to the line, the swings of 120 px come to a few px about it.
+  const late = drawn.slice(-40).map((p) => p[1]);
+  assert.ok(Math.min(...late) > 90 && Math.max(...late) < 110, `${late}`);
 });
 
 test("a pointer over something shows whether its player can click it: their answers, their cards, Next on their turn or in their room", () => {
@@ -339,4 +463,78 @@ test('a pointer drawn on another screen: a quick move is followed, a jump held',
   const fresh = { px: 500, py: 500, qx: 500, qy: 500, pdt: 0, code: 16 };
   assert.equal(moveOn({ ...fresh }, 570, 500, 17, FRAME), false);
   assert.equal(moveOn({ ...fresh }, 700, 500, 17, FRAME), true);
+});
+
+test("a pointer's places are drawn as far apart as they were sent, however unevenly they came", () => {
+  // Sent every 50 ms (the stamps going past STAMP on the way); heard through the host's batches and the link, 20 to 60 ms after.
+  const LEAD = SEND_EVERY_MS - BEHIND_MS;
+  const late = [40, 20, 60, 30, 55, 25, 60, 35, 50];
+  let pace: Pace | undefined;
+  const at = (ms: number, now: number) => {
+    const r = paced(pace, (ms + 65_400) % STAMP, now);
+    pace = r.pace;
+    return r.t;
+  };
+  const ts = late.map((l, i) => at(50 * i, 50 * i + l));
+  // Never drawn (BEHIND_MS after its time) sooner than SEND_EVERY_MS after it came: by then the next, which the curve looks ahead to, has come.
+  late.forEach((l, i) => assert.ok(ts[i] >= 50 * i + l + LEAD, `${ts}`));
+  // As far apart as sent, but where one came later than any yet (the third): the rest that much further behind, and kept there.
+  assert.deepEqual(ts.slice(1).map((t, i) => t - ts[i]), [50, 70, 50, 50, 50, 50, 50, 50]);
+  // A hitch (one 400 ms late): further behind by HITCH_MS at most; it stands a moment rather than all after it lagging that far.
+  const behind = ts.at(-1)! - 50 * 8;
+  let t = at(450, 850);
+  assert.equal(t - 450, behind + 150);
+  // Then, once it's long gone by, back as far behind as the places need, a little quicker meanwhile, never slower.
+  for (let i = 10; i < 200; i++) {
+    const next = at(50 * i, 50 * i + 40);
+    assert.ok(next - t <= 50 && next - t >= 50 * 0.95 - 1e-9, `${next - t}`);
+    t = next;
+  }
+  assert.equal(t - 50 * 199, 40 + LEAD);
+  // A stamp a moment before the last (its input timed before the last went): a moment before, not a whole STAMP on.
+  assert.ok(Math.abs(at(50 * 199 - 2, 50 * 199 + 38) - (t - 2)) < 1);
+  // Not heard from for a long while: afresh, as it comes.
+  assert.equal(paced(pace, 5, 70_000).t, 70_000 + LEAD);
+});
+
+test("a pointer that jumped bends over to its place from rest, without overshooting, as quick as a flick", () => {
+  const off = { x: 300, y: -200, vx: 0, vy: 0 };
+  const ms = closeMs(Math.hypot(off.x, off.y));
+  // About as quick as a flick of the hand: as soon as it’s still, it’s there.
+  assert.ok(ms > 50 && ms < 150, `${ms}`);
+  const FRAME = 1000 / 60;
+  const xs: number[] = [];
+  for (let t = 0; t < ms; t += FRAME) {
+    closeOff(off, FRAME, ms);
+    xs.push(off.x);
+    assert.ok(off.x >= 0 && off.y <= 0, 'never past its place');
+  }
+  // Nearer every frame, never back; most of the way by `ms`.
+  for (let i = 1; i < xs.length; i++) assert.ok(xs[i] < xs[i - 1], `${xs}`);
+  assert.ok(Math.abs(off.x) < 0.06 * 300 && Math.abs(off.y) < 0.06 * 200, `${off.x}, ${off.y}`);
+  // Nothing off yet (no jump, so no time to close in): it stays nothing, never not a number (a pointer drawn at NaN never moved).
+  const none = { x: 0, y: 0, vx: 0, vy: 0 };
+  closeOff(none, FRAME, 0);
+  assert.deepEqual(none, { x: 0, y: 0, vx: 0, vy: 0 });
+  const some = { x: 10, y: 0, vx: 0, vy: 0 };
+  closeOff(some, FRAME, 0);
+  assert.ok(Number.isFinite(some.x));
+  // Further takes longer, but not in proportion.
+  assert.ok(closeMs(800) > closeMs(200) && closeMs(800) < 2 * closeMs(200));
+});
+
+test("a pointer goes with when it was sent, from a guest and in the host's batches", () => {
+  assert.deepEqual(parseClientMsg({ t: 'cursor', at: [16, 1, 2, 0], ms: 1234 }), { t: 'cursor', at: [16, 1, 2, 0], ms: 1234 });
+  assert.equal(parseClientMsg({ t: 'cursor', at: [16, 1, 2, 0], ms: STAMP }), null);
+  assert.equal(parseClientMsg({ t: 'cursor', at: [16, 1, 2, 0], ms: 1.5 }), null);
+  const two = [16, 1, 2, 0, 0, 500, 500] as CursorAt;
+  const c: CursorEntry[] = [['a', 16, 1, 2, 0, 77], ['b', ...two, 9], ['c', 16, 1, 2, 0], ['d']];
+  assert.deepEqual(parseCursorBatch(c), c);
+  assert.deepEqual(c.map(entryAt), [[16, 1, 2, 0], two, [16, 1, 2, 0], null]);
+  assert.deepEqual(c.map(entryMs), [77, 9, undefined, undefined]);
+  assert.equal(parseCursorBatch([['a', 16, 1, 2, 0, STAMP]]), null);
+  // Still small: a room's batch.
+  const out = new CursorOutbox<string>();
+  out.put(['a', 16, 1, 2, 0, 77], ['g']);
+  assert.deepEqual(out.take('g'), [['a', 16, 1, 2, 0, 77]]);
 });

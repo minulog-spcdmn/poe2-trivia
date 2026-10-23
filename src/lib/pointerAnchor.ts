@@ -1,4 +1,4 @@
-import { LIT, MAX_HOPS, TAP, anchorCode, cursorAt, toAnchor, type CursorAt, type Hop, type PointerKind } from './cursors.ts';
+import { BLEND_PX, LIT, MAX_BESIDE, MAX_HOPS, TAP, anchorCode, besideOf, cursorAt, toAnchor, type CursorAt, type Hop, type PointerKind } from './cursors.ts';
 
 /**
  * The screen height the game anchor's positions go by (cursors.ts toAnchor):
@@ -21,13 +21,6 @@ export function clickableAt(px: number, py: number): boolean {
   const el = under(px, py);
   return !!el && /\b(?:pointer|zoom-in|grab|grabbing)$/.test(getComputedStyle(el).cursor.trim());
 }
-
-/**
- * Between anchors (the gap between two answers, the margin round a card), a
- * pointer this close to one (px) goes on it, beside it, so on every screen
- * it keeps its place beside that one rather than on what holds them.
- */
-const NEAR_PX = 48;
 
 interface Found {
   el: HTMLElement;
@@ -53,18 +46,22 @@ function ancestry(el: Element | null | undefined): Found[] {
   return out;
 }
 
-/** The innermost anchor in `scope` (one holding no other) nearest the spot, within NEAR_PX of it. */
-function nearest(scope: ParentNode, px: number, py: number): Found | null {
-  let best: Found | null = null;
-  let d = NEAR_PX;
-  for (const el of scope.querySelectorAll<HTMLElement>('[data-cursor]')) {
-    if (el.querySelector('[data-cursor]')) continue;
+/**
+ * The anchors holding no other (an answer, a button, a row) within BLEND_PX
+ * of the spot, but for `but` (the one it's on), nearest first, up to
+ * MAX_BESIDE: the spot beside each (cursors.ts besideOf).
+ */
+function besides(px: number, py: number, but?: HTMLElement): Hop[] {
+  const near: { f: Found; far: number }[] = [];
+  for (const el of document.querySelectorAll<HTMLElement>('[data-cursor]')) {
+    if (el === but || el.querySelector('[data-cursor]')) continue;
     const f = found(el);
     if (!f) continue;
     const far = Math.hypot(Math.max(f.r.left - px, 0, px - f.r.right), Math.max(f.r.top - py, 0, py - f.r.bottom));
-    if (far <= d) [best, d] = [f, far];
+    if (far < BLEND_PX) near.push({ f, far });
   }
-  return best;
+  near.sort((a, b) => a.far - b.far);
+  return near.slice(0, MAX_BESIDE).map(({ f }) => [f.code, ...besideOf(px, py, f.r)]);
 }
 
 /** The spot (px, py) on the anchors `chain` (innermost first): the innermost, what holds it, and the outermost, whatever a screen has of them, so it lands near where it is. */
@@ -105,22 +102,16 @@ export function keyTap(target: string | Element) {
 /**
  * Where a spot on this screen is, as the pointer sync sends it (cursors.ts):
  * on the anchor under it (data-cursor) and those round that one, innermost
- * first; between anchors, on the nearest and those round it; on the game as
- * a whole when near none. Null when outside the game.
+ * first, on the game as a whole when over none; and beside the anchors near
+ * it (besides). Null when outside the game.
  */
 export function anchorAt(px: number, py: number, kind: PointerKind): CursorAt | null {
   let chain = ancestry(under(px, py));
-  // Over an anchor that holds others (the game, a panel), but none of them: beside the nearest, if one is near.
-  const inner = chain[0]?.el;
-  if (!inner || inner.querySelector('[data-cursor]')) {
-    const near = nearest(inner ?? document, px, py);
-    if (near) chain = ancestry(near.el);
-  }
   if (!chain.length) {
     const game = document.querySelector<HTMLElement>('[data-cursor="game"]');
     const f = game && found(game);
     if (!f || px < f.r.left || px > f.r.right || py < f.r.top || py > f.r.bottom) return null;
     chain = [f];
   }
-  return cursorAt(hopsAt(chain, px, py), kind);
+  return cursorAt(hopsAt(chain, px, py), kind, besides(px, py, chain[0].el));
 }
