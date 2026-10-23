@@ -5,6 +5,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const { ago, sync, syncLine } = await import('../src/lib/sync/link.svelte.ts');
+const { QUIET_MS, tellsLink } = await import('../src/lib/sync/notice.ts');
+
+test('a link is told when it comes after a while away; not at a first pairing, nor back soon after it went', () => {
+  const now = 1_000_000_000_000;
+  assert.equal(tellsLink(0, now), false);
+  assert.equal(tellsLink(now - 60_000, now), false);
+  assert.equal(tellsLink(now - QUIET_MS, now), true);
+  assert.equal(tellsLink(now - 3 * 3600_000, now), true);
+});
 
 test('how long ago, in words', () => {
   const now = 1_000_000_000_000;

@@ -41,6 +41,7 @@ import { parseCodex, parsePractice } from '../codex.ts';
 import { parseRecords } from '../delveRecord.ts';
 import { keepOwnerKey, ownerKeyKept, ownerUnlocked } from '../ownerKey.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
+import { showSynced, tellsLink } from './notice.ts';
 import { OWN_NAMES, TAKEN_NAMES, ownNow, takeIn, takenNow } from './shared.ts';
 import {
   COPY_KINDS,
@@ -110,14 +111,19 @@ export function ago(at: number, now: number): string {
   return d === 1 ? 'yesterday' : `${d} days ago`;
 }
 
-/** How the pairing stands, in a line (the settings and the pairing dialog). */
-export function syncLine(): string {
+/** When it last synced, while paired and waiting for the other device ('' otherwise, or never since it paired). */
+export function lastSynced(): string {
+  return sync.met && sync.status === 'waiting' && sync.lastAt ? `Last synced ${ago(sync.lastAt, sync.clock)}.` : '';
+}
+
+/** How the pairing stands, in a line (the settings and the pairing dialog); `last`: false leaves out when it last synced (lastSynced), for a line of its own. */
+export function syncLine(last = true): string {
   if (sync.status === 'linked') return sync.linked > 1 ? `Syncing now with ${sync.linked} other devices.` : 'Syncing now with your other device.';
   if (sync.status === 'offline') return "Can’t reach the server. Trying again in a moment.";
   if (!sync.met) return 'Waiting for your other device.';
   if (sync.status !== 'waiting') return 'Connecting.';
-  const last = sync.lastAt ? `Last synced ${ago(sync.lastAt, sync.clock)}. ` : '';
-  return `${last}Syncs when your other device has the site open.`;
+  const since = last && lastSynced();
+  return `${since ? `${since} ` : ''}Syncs when your other device has the site open.`;
 }
 
 export const sync = new SyncState();
@@ -577,6 +583,9 @@ class Run {
   private report() {
     if (this.stopped) return;
     const n = new Set([...this.links].filter((l) => l.device && l.device !== this.me).map((l) => l.device)).size;
+    // Linked again after a while: said wherever the player is, not only in the settings. (Only once linked here before, as sync.lastAt is: the stamp
+    // kept may be another group's, from before a code lapsed or a device was brought home. Another tab's newer stamp counts too: it was linked there.)
+    if (n && !sync.linked && sync.lastAt && tellsLink(Math.max(sync.lastAt, Number(readStored(LAST)) || 0), Date.now())) showSynced(n);
     // (Linked, or a link just gone: when it last was.)
     if (n || sync.linked) stampLinked();
     sync.linked = n;
