@@ -1260,6 +1260,66 @@ export class FxRenderer {
     this.cleared = false;
   }
 
+  /** How many of its programs warmNext has drawn. */
+  private warmed = 0;
+
+  /**
+   * Draws the next of its programs once, a texel's worth, into the target it
+   * draws to (or one of the same kind), before an effect needs it; whether
+   * there are more. A program's first draw is when the browser has the GPU's
+   * driver finish it, which holds up the GPU's process, and every frame on
+   * the page with it (see warmUp in lib/backdrop.ts): undrawn, the shapes'
+   * program, by far the biggest, held up the first press's ring. Only while
+   * the canvas is hidden (fx/core.ts), so the texel it may leave there never
+   * shows; every target is cleared before it's next drawn into.
+   */
+  warmNext(): boolean {
+    const gl = this.gl;
+    const hdr = this.hdr;
+    if (!hdr || gl.isContextLost()) return false;
+    const mips = this.mips;
+    // Each: the program, the target it draws to (null: the canvas), what it reads on units 0 and 1, and whether it's instanced.
+    type Step = [Program, Target | null, WebGLTexture | null, boolean];
+    const steps: Step[] = [
+      [this.shapeProg, this.shapesT ?? hdr, this.noiseTex, true],
+      [this.particleProg, hdr, this.noiseTex, true],
+      ...(this.shapesT ? [[this.copyProg, hdr, this.shapesT.tex, false] satisfies Step] : []),
+      ...(mips.length ? [[this.downProg, mips[0], hdr.tex, false] satisfies Step] : []),
+      ...(mips.length > 1 ? [[this.upProg, mips[0], mips[1].tex, false] satisfies Step] : []),
+      [this.compProg, null, hdr.tex, false],
+    ];
+    if (this.warmed >= steps.length) return false;
+    const [p, into, src, instanced] = steps[this.warmed++];
+    gl.useProgram(p.prog);
+    // Its samplers on the units the frame puts them on (or, unset, they'd all read unit 0).
+    for (const [name, unit] of [['uSrc', 0], ['uHdr', 0], ['uBloom', 1], ['uSil', 2], ['uCover', 3], ['uSigil', 4]] as const) {
+      const at = p.u(name);
+      if (at) gl.uniform1i(at, unit);
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, into?.fbo ?? null);
+    gl.viewport(0, 0, 1, 1);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.disable(gl.BLEND);
+    if (instanced) {
+      gl.bindVertexArray(p === this.shapeProg ? this.shapeVao : this.particleVao);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1);
+    } else {
+      gl.bindVertexArray(this.fullVao);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    gl.bindVertexArray(null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.width, this.height);
+    this.cleared = false;
+    // (Sent at once, so it's finished in this idle moment, not with the next frame.)
+    gl.flush();
+    return this.warmed < steps.length;
+  }
+
   /** Clears the visible canvas once, then does nothing until there is something to draw. */
   clear() {
     if (this.cleared) return;
