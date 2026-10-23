@@ -3,7 +3,8 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, detached, fxActive, isLive, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, detached, fxActive, isLive, now, shakeView, type Anchor, type Handle, type Point, type Vec3 } from './core';
+import { duelArt } from './duelArt';
 import {
   C,
   edgeGlow,
@@ -25,6 +26,10 @@ import {
   ring,
   shards,
   sigil,
+  sigilHead,
+  SIGIL_MEET,
+  SIGIL_POINT,
+  SIGIL_STRIKE,
   sparks,
 } from './effects';
 import { Shape } from './particles';
@@ -1126,7 +1131,24 @@ export function deathmatchIntro(title: Element) {
   ring(c, { radius: D * 0.35, thickness: 10, life: 1, color: C.ember, breakup: 0.6, delay: 0.15 });
   rays(title, { radius: D * 0.42, life: 2.6, intensity: 0.26, color: C.crimson, count: 18, sharp: 8, spin: 0.5 });
   flare(title, { size: 50, streak: innerWidth * 0.5, life: 1.2, color: C.crimson, delay: 0.2 });
-  sigil(title, { radius: Math.min(innerWidth, innerHeight) * 0.3, color: C.crimson, life: 2.6, draw: 0.9, intensity: 0.5, spin: 0.4 });
+  // The deathmatch's own sigil, once its picture is at hand (painted ahead:
+  // Game.svelte); one that comes too late for the card is left out.
+  const asked = now();
+  void duelArt().then((picture) => {
+    if (!picture || now() - asked > 0.6 || detached(title) || !fxActive()) return;
+    const R = Math.min(innerWidth, innerHeight) * 0.3;
+    const on = ([x, y]: readonly [number, number]): Point => {
+      const b = boxOf(title);
+      return { x: b.x + x * R, y: b.y + y * R };
+    };
+    sigil(title, { radius: R, color: C.crimson, life: 3, intensity: 0.6 });
+    // The sword's point strikes home, and the band's two fires meet at its head.
+    after(SIGIL_STRIKE, () => {
+      flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
+      shakeView(0.35, 4);
+    });
+    after(SIGIL_MEET, () => flare(on(sigilHead(SIGIL_MEET)), { size: 24, streak: R * 0.8, life: 0.8, color: C.crimson }));
+  });
   const floor = new DOMRect(0, innerHeight - 4, innerWidth, 4);
   embers(floor, { count: 110, area: 'fill', colors: [C.crimson, C.ember, C.gold], rise: [180, 520], life: [1, 2.4], size: [1.2, 3], turbulence: 200 });
   edgeGlow({ color: C.crimson, intensity: 0.2, width: 100, life: 2.4, noise: 0.8 });

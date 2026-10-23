@@ -8,11 +8,14 @@
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
   import DrawnMark from './DrawnMark.svelte';
+  import DuelMark from './DuelMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
+  import { duelArt, warmDuelArt } from '../lib/fx/duelArt';
+  import { fxActive } from '../lib/fx/core';
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
   import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
@@ -30,6 +33,7 @@
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
+  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -84,12 +88,25 @@
     const start = dm?.startedAt;
     if (start === undefined || start === introFor) return;
     introFor = start;
-    showIntro = true;
-    sfx('deathmatch');
-    if (introTimer) clearTimeout(introTimer);
-    introTimer = setTimeout(() => (showIntro = false), 2600);
+    // (It waits a moment at most for its sigil, painted ahead in a game that
+    // could come to this, but not yet in one joined or opened mid-deathmatch.)
+    const ready = fxActive() ? Promise.race([duelArt(), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
+    void ready.then(() => {
+      if (introFor !== start) return;
+      showIntro = true;
+      sfx('deathmatch');
+      if (introTimer) clearTimeout(introTimer);
+      introTimer = setTimeout(() => {
+        showIntro = false;
+        stripFor = start;
+        stripEntering = !motion.still;
+      }, 2600);
+    });
   });
   let showIntro = $state(false);
+  // The duel's strip keeps its place while the intro shows, and comes in as it leaves.
+  let stripFor = $state<number | null>(null);
+  let stripEntering = $state(false);
   // A new game (or joining one): a wave of light.
   onMount(() => {
     gameStart();
@@ -97,6 +114,11 @@
       deathmatchMood(false);
       fireAmbience(false);
     };
+  });
+
+  // A game to a target can end in a tie, and a deathmatch: its sigil is painted ahead, away from the page.
+  $effect(() => {
+    if (!s.delve && fxActive()) warmDuelArt();
   });
 
   // The whole scene turns crimson, and a fire roars, for as long as a deathmatch lasts.
@@ -356,8 +378,14 @@
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
           {#if dm}
-            <div class="dm-strip" data-cursor="duel" in:fly={{ y: -10, duration: 400 }}>
-              <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
+            <div
+              class="dm-strip panel"
+              class:hold={stripFor !== dm.startedAt}
+              class:entering={stripEntering}
+              data-cursor="duel"
+              use:backdropShadow
+              onanimationend={(e) => e.animationName.endsWith('dm-unsheathe') && (stripEntering = false)}>
+              <span class="dm-title"><DuelMark strike={stripEntering} /> Deathmatch · round {dm.round}</span>
               <span class="dm-duelists">
                 {#each dm.alive as id (id)}
                   {@const p = nameOf(id)}
@@ -675,6 +703,9 @@
       transform: scaleX(0);
     }
   }
+  /* The duel's strip: the game's framed panel (app.css) forged in the duel's
+     red, its filigree gone to copper. Its glow is the backdrop's
+     (use:backdropShadow), dithered, and CSS's only where the backdrop can't. */
   .dm-strip {
     display: flex;
     flex-wrap: wrap;
@@ -682,18 +713,75 @@
     justify-content: center;
     gap: 0.5rem 1rem;
     margin: 0 auto 0.4rem;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 1.4rem;
     max-width: 760px;
-    border: 1px solid rgba(224, 85, 63, 0.45);
-    border-radius: 4px;
-    background: linear-gradient(90deg, rgba(60, 12, 8, 0.2), rgba(90, 18, 10, 0.55), rgba(60, 12, 8, 0.2));
-    box-shadow: 0 0 30px rgba(224, 85, 63, 0.12);
+    border-color: rgba(224, 85, 63, 0.5);
+    --bs-fill-a: rgba(50, 15, 11, 0.9);
+    --bs-fill-b: rgba(20, 8, 7, 0.92);
+    --bs1: 0px 26px;
+    --bs1-color: rgba(224, 85, 63, 0.14);
+    --bs2: 12px 34px;
+    --bs2-color: rgba(0, 0, 0, 0.5);
+  }
+  .dm-strip::before {
+    filter: hue-rotate(-28deg) saturate(1.3) drop-shadow(0 0 3px rgba(224, 85, 63, 0.45));
+  }
+  .dm-strip::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 156, 134, 0.55), transparent);
+  }
+  .dm-strip.hold {
+    visibility: hidden;
+  }
+  /* Its entrance: drawn out from the middle like a blade from its sheath, then
+     the swords cross, and the frame flares red where they meet before it settles. */
+  .dm-strip.entering {
+    animation: dm-unsheathe 1.2s both;
+  }
+  .dm-strip.entering > * {
+    animation: dm-rise 0.4s 0.12s both;
+  }
+  .dm-strip.entering .dm-title {
+    --strike-delay: 0.1s;
+    animation:
+      dm-rise 0.4s 0.12s both,
+      dm-taut 0.6s 0.12s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+  @keyframes dm-unsheathe {
+    0% {
+      transform: scaleX(0.03);
+      opacity: 0;
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    6% {
+      opacity: 1;
+    }
+    40% {
+      transform: scaleX(1);
+      border-color: rgba(224, 85, 63, 0.5);
+      --bs1-color: rgba(224, 85, 63, 0.14);
+    }
+    50% {
+      border-color: rgba(255, 176, 156, 0.95);
+      --bs1-color: rgba(255, 110, 80, 0.5);
+      animation-timing-function: ease-out;
+    }
+  }
+  @keyframes dm-rise {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes dm-taut {
+    from {
+      letter-spacing: 0.45em;
+    }
   }
   .dm-title {
     font-family: var(--font-display);
     font-weight: 900;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    white-space: nowrap;
     font-size: 0.85rem;
     color: #ff9c86;
   }
@@ -881,6 +969,9 @@
       margin-bottom: 0.2rem;
       padding: 0.2rem 0.8rem;
       max-width: none;
+    }
+    .dm-strip::before {
+      background-size: 16px 16px;
     }
     .dm-rule {
       flex-basis: auto;

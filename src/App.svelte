@@ -36,6 +36,7 @@
   import { watchGpuNotice } from './lib/gpuNotice';
   import { setCursorColor } from './lib/ownCursor';
   import PeerCursors from './components/PeerCursors.svelte';
+  import DuelMark from './components/DuelMark.svelte';
   import Recorder from './components/Recorder.svelte';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
@@ -523,7 +524,7 @@
             <span class="dot">•</span>
           {/if}
           {#if gs.deathmatch}
-            <span class="deathmatch">⚔ Deathmatch</span>
+            <span class="deathmatch"><DuelMark /> Deathmatch</span>
             <span class="dot">•</span>
             <span>Round {gs.deathmatch.round}</span>
           {:else}
@@ -848,6 +849,7 @@
   .deathmatch {
     color: #ff7a5c;
     font-weight: 700;
+    white-space: nowrap;
     text-shadow: 0 0 12px rgba(224, 85, 63, 0.6);
     animation: pulse 1.6s ease-in-out infinite;
   }

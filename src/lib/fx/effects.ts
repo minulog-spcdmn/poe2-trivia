@@ -6,8 +6,9 @@ import { Shape } from './particles';
 import { FIRE_REACH, ShapeType, type Silhouette } from './renderer';
 import { cornerOnScreen } from '../corner';
 import { opacityOf } from '../opacity';
-import { after, boxOf, budget, currentFrame, detached, fxActive, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
+import { after, boxOf, budget, currentFrame, detached, fxActive, fxPixelRatio, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
 import { zoomOf } from '../stage';
+import { duelPicture } from './duelArt';
 import { switchedOff } from '../switchedOff';
 
 // ---------- palette ----------
@@ -652,28 +653,66 @@ export function portal(at: Anchor, o: { radius?: number; color?: Vec3; intensity
   };
 }
 
-/** An arcane circle that draws itself around `at`. */
-export function sigil(at: Anchor, o: { radius?: number; color?: Vec3; life?: number; draw?: number; spin?: number; intensity?: number; width?: number; delay?: number } = {}): Handle {
-  const R = o.radius ?? 90;
-  const life = o.life ?? Infinity;
+/** When the deathmatch's sigil's sword strikes, and when the two fires round its band meet at its head (s from its start). */
+export const SIGIL_STRIKE = 0.5;
+export const SIGIL_MEET = 1.75;
+/** Where on the sigil, in its radii below its centre, the sword's point is, and above it the band's head (lib/plates/duel.ts). */
+export const SIGIL_POINT = 0.37;
+export const SIGIL_HEAD = 0.875;
+/** How fast the sigil's band turns, rad/s. */
+const SIGIL_TURN = 0.045;
+
+/**
+ * The deathmatch's sigil drawing itself around `at`, `radius` px for its
+ * plate's 100 (lib/plates/duel.ts, painted by duelArt.ts: nothing if it
+ * isn't at hand). Each part burns in white and cools: the sword falls into
+ * place, gathering speed, and strikes (SIGIL_STRIKE); from its point the
+ * rings spread out, slowing; the band catches at its foot as they reach it,
+ * and its fire runs round both ways to its head (SIGIL_MEET). Meanwhile it
+ * settles from a little larger, the band turns slowly, and its glow swells
+ * once all is drawn.
+ */
+export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: number; intensity?: number; delay?: number }): Handle {
+  const art = duelPicture();
+  if (!art) return { stop() {} };
+  const R = o.radius;
+  const life = o.life ?? 3;
+  // The band catches as the rings' spread reaches its foot (along their way, 0.37: renderer.ts).
+  const caught = SIGIL_STRIKE + 0.95 * (1 - Math.cbrt(1 - 0.37));
   return shape({
     type: ShapeType.Sigil,
     at,
     life,
     delay: o.delay,
-    color: o.color ?? C.gold,
+    color: o.color ?? C.crimson,
     update(f, t, age) {
-      const drawn = Math.min(1, age / (o.draw ?? 0.7));
-      const fout = Number.isFinite(life) ? Math.min(1, (1 - t) * 4) : 1;
-      f.hw = f.hh = R * 1.15;
-      f.k = (o.intensity ?? 0.6) * fout * (0.85 + 0.15 * Math.sin(age * 3));
+      const fout = Math.min(1, ((1 - t) * life) / 0.6);
+      const scale = 1 + 0.05 * (1 - easeOut(Math.min(1, age / 1.2)));
+      // Each part's front, on past 1 once drawn (slowly, so its heat lingers as it cools).
+      const sword = age < SIGIL_STRIKE ? (age / SIGIL_STRIKE) ** 2 : 1 + (age - SIGIL_STRIKE) * 0.6;
+      const r = (age - SIGIL_STRIKE) / 0.95;
+      const rings = r <= 0 ? 0 : r < 1 ? 1 - (1 - r) ** 3 : 1 + (r - 1) * 0.57;
+      const b = (age - caught) / (SIGIL_MEET - caught);
+      const band = b <= 0 ? 0 : b < 1 ? (1 - Math.cos(Math.PI * b)) / 2 : 1 + (age - SIGIL_MEET) * 0.6;
+      f.hw = f.hh = R * 1.45;
+      f.k = (o.intensity ?? 0.6) * fout;
       f.q[0] = R;
-      f.q[1] = o.width ?? 1.1;
-      f.q[2] = easeOut(drawn) * 1.02;
-      f.q[3] = o.spin ?? 0.35;
+      f.q[1] = sword;
+      f.q[2] = rings;
+      f.q[3] = band;
+      f.q[4] = age * SIGIL_TURN;
+      f.q[5] = 0.3 + 0.3 * smooth((age - 1.3) / 0.7) - 0.1 * smooth((age - 2) / 0.7);
+      f.q[6] = 2.2;
+      f.q[7] = scale;
+      const px = fxPixelRatio();
+      f.q[8] = Math.log2(art.size / (2 * R * scale * px));
+      f.q[9] = px;
     },
   });
 }
+const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+/** Where the sigil's band's head is at `age` (s), as it turns: x and y in its radii from its centre. */
+export const sigilHead = (age: number) => [SIGIL_HEAD * Math.sin(age * SIGIL_TURN), -SIGIL_HEAD * Math.cos(age * SIGIL_TURN)] as const;
 
 /** How much bigger the edge effects are drawn on this window: by its short side over 720 px, 0.7 to 2.2 times. */
 const edgeScale = () => Math.max(0.7, Math.min(2.2, Math.min(innerWidth, innerHeight) / 720));
