@@ -75,7 +75,7 @@
       case 'annul':
         return `The ${name} took a line away.`;
       case 'chaos':
-        return `The ${name} swapped something for another item's.`;
+        return `The ${name} swapped something for another item’s.`;
       case 'veil':
         return `The ${name} hid more of the picture.`;
       case 'chance':
@@ -214,7 +214,7 @@
               <div class="told">
                 <p class="told-line">
                   {#if k === 0}
-                    {#if right}You named {nameOf(p.maker)}'s item: <b class="good num">+{p.paid ?? 0}</b> gold
+                    {#if right}You named {nameOf(p.maker)}’s item: <b class="good num">+{p.paid ?? 0}</b> gold
                     {:else}{picked ? `You took it for ${picked.name}` : 'You named nothing in time'}; <b class="bad num">{p.paid ?? 0}</b> gold to {nameOf(p.maker)}{/if}
                   {:else if right}{nameOf(p.guesser)} named your item
                   {:else}{nameOf(p.guesser)} {picked ? `took it for ${picked.name}` : 'named nothing in time'}: <b class="good num">+{p.paid ?? 0}</b> gold to you{/if}
@@ -225,7 +225,7 @@
           {/each}
         </div>
       {:else}
-        <p class="muted watch">{playing ? "The round goes on without you; you're in from the next." : 'You are watching: only the players see their items until the reveal.'}</p>
+        <p class="muted watch">{playing ? "The round goes on without you; you’re in from the next." : 'You are watching: only the players see their items until the reveal.'}</p>
       {/if}
     </div>
   {/key}
@@ -519,7 +519,7 @@
   }
 
   /* A phone either way: the shop's tiles two by two, name and price, then what it does. */
-  @media (orientation: portrait) and (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: portrait) and (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .shelf h3 {
       margin-bottom: 0.3rem;
       font-size: 0.85rem;
@@ -674,7 +674,7 @@
     }
   }
   /* A phone on its side: item and choices side by side, everything tighter. */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .task {
       margin-bottom: 0.4rem;
     }

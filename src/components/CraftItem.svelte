@@ -191,7 +191,7 @@
     }
   }
   /* On a phone the picture gives way to the lines. */
-  @media (orientation: portrait) and (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: portrait) and (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .art {
       min-height: 40px;
     }
@@ -212,7 +212,7 @@
     }
   }
   /* A phone on its side: the picture beside the lines, under the name. */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .tooltip {
       display: grid;
       grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
