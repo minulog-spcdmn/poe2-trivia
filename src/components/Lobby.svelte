@@ -21,10 +21,11 @@
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { kickConfirm } from '../lib/kick';
   import { creatorArrived, playerArrived, refuse, twinkle } from '../lib/fx/moments';
+  import { overPage } from '../lib/fx/core';
   import { onMount } from 'svelte';
   import { categoryIcons, playerColor } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
-  import { dock, phone } from '../lib/layout';
+  import { FLAT, dock, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
   import WatchToggle from './WatchToggle.svelte';
   import { MediaQuery } from 'svelte/reactivity';
@@ -57,6 +58,8 @@
   const inviteLink = $derived(inviteUrl(session.code));
   /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
   const tall = new MediaQuery('(min-height: 860px)');
+  /** The start sticks to the foot of its panel, the rules passing under it (as its style has it, below). */
+  const stickyStart = new MediaQuery(`${FLAT} and (max-width: 1099px)`);
   /** The mode cards ease from one choice to the next (their mode-on and mode-off), but not as the lobby opens: only from a second in. */
   let modesLive = $state(false);
   $effect(() => {
@@ -643,9 +646,9 @@
            to the bottom of the screen like the reveal's Next bar (lib/layout's dock).
            A guest's waiting line has nothing to tap, so it stays in place. -->
       {#if phone.current && isHost}
-        <div class="dock" data-cursor="start" use:portal use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
+        <div class="dock" data-cursor="start" use:portal use:overPage use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
       {:else}
-        <div class="start" data-cursor="start">{@render startRow()}</div>
+        <div class="start" data-cursor="start" use:overPage={stickyStart.current}>{@render startRow()}</div>
       {/if}
     </section>
   </div>

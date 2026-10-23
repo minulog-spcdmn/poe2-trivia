@@ -14,7 +14,7 @@
   import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { stageZoom } from '../lib/stage';
   import { deathmatchRadius, duelArt, warmDuelArt } from '../lib/fx/duelArt';
-  import { fxActive, onFxChange } from '../lib/fx/core';
+  import { fxActive, onFxChange, overPage } from '../lib/fx/core';
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
   import { inVein } from '../lib/vein';
@@ -495,7 +495,7 @@
 
 {#if showIntro && dm}
   <!-- Behind a dialog the flat fill only darkens (a blur would thin its edges) and the words blur. -->
-  <div class="dm-intro" use:portal={'dim'} transition:fade={{ duration: 400 }} aria-live="polite" style:--R="{introR}px" style:--face="{faceSize}px">
+  <div class="dm-intro" use:portal={'dim'} use:overPage transition:fade={{ duration: 400 }} aria-live="polite" style:--R="{introR}px" style:--face="{faceSize}px">
     <div class="dm-intro-inner" data-behind-dialog="blur" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
       <p class="dm-kicker">It’s a tie</p>
       <h1 use:introFx>Deathmatch</h1>

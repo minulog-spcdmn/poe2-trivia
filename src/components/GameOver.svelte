@@ -19,7 +19,7 @@
   import SiteFooter from './SiteFooter.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
+  import { fxActive, fxUserOn, onFxChange, overPage } from '../lib/fx/core';
   import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
@@ -1061,7 +1061,7 @@
 
 {#if phone.current}
   <!-- Phones: the start row docked at the foot of the screen, where the thumb rests (lib/layout's dock). -->
-  <div class="dock" class:host={session.isHost} use:portal use:dock bind:offsetHeight={dockH} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+  <div class="dock" class:host={session.isHost} use:portal use:overPage use:dock bind:offsetHeight={dockH} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
     {#if pinned}
       {@const x = rows.find((r) => r.p.id === me)}
       {#if x}<div class="pinned"><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}

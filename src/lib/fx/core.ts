@@ -1121,11 +1121,14 @@ function inFront(a: Anchor): boolean {
  * light hides behind its box, as behind an open dialog's, and its own (from
  * effects on it, or made for it with lightOf) shows over it. Behind an open
  * dialog, its shapes hide with the page's; its particles, which live a
- * moment, keep showing for the rest of theirs.
+ * moment, keep showing for the rest of theirs. With `on` false it stands
+ * over nothing (a sticky bar, see-through till it sticks).
  */
-export function overPage(node: HTMLElement) {
-  fronts.add(node);
+export function overPage(node: HTMLElement, on = true) {
+  const set = (o: boolean) => (o ? fronts.add(node) : fronts.delete(node));
+  set(on);
   return {
+    update: set,
     destroy() {
       fronts.delete(node);
     },

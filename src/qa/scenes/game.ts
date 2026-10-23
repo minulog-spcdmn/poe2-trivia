@@ -273,6 +273,21 @@ export function gameScenes(): Scene[] {
     scene('delve-deep', 'Delve alone', 'Deep down', [ALONE], (v) => delveAlone().playTo((s) => s.round >= Number(v.depth ?? 30) && s.phase === 'choosing'), {
       controls: [{ kind: 'range', key: 'depth', label: 'Depth', min: 2, max: 120, default: 30 }],
     }),
+    // The game's own arrival: the run moves on into the zone while the screen
+    // watches, so the card plays over the header and the scoreboard, its bars
+    // over them (the zone card bench plays it alone).
+    {
+      ...scene('delve-zone', 'Delve alone', 'Into a new zone: its title card over the game', [ALONE], delveAlone),
+      controls: [{ kind: 'choice', key: 'zone', label: 'Zone', default: '31', options: [11, 21, 31, 41, 51, 61, 71].map((d) => ({ value: String(d), label: `Depth ${d}` })) }],
+      build: (v = {}) => {
+        const zone = Number(v.zone ?? 31);
+        const t = delveAlone().playTo((s) => s.round >= zone - 1 && s.phase === 'choosing');
+        const shown = t.s;
+        const at = t.clock.now;
+        t.playTo((s) => s.round >= zone && s.phase === 'choosing');
+        return { state: shown, act: t.room, at, steps: [{ wait: 1200 }, { then: t.s, at: t.clock.now }] } satisfies Built;
+      },
+    },
     scene(
       'delve-together-cards',
       'Delve together',

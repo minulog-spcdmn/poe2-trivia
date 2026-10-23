@@ -3,7 +3,7 @@
 // victory look like. Components call these with the elements involved; all
 // of them are no-ops while effects are off.
 
-import { after, boxOf, cover, detached, fxActive, isLive, now, shakeView, type Anchor, type CoverBox, type Handle, type Point, type Vec3 } from './core';
+import { after, boxOf, cover, detached, fxActive, isLive, lightOf, now, shakeView, type Anchor, type CoverBox, type Handle, type Point, type Vec3 } from './core';
 import { deathmatchRadius, duelArt, duelPicture } from './duelArt';
 import {
   C,
@@ -1140,9 +1140,17 @@ function introCovers(card: Element): () => Iterable<CoverBox> {
   };
 }
 
-/** The deathmatch intro card. */
+/**
+ * The deathmatch intro card. All of it is the card's light (lightOf), the
+ * flashes and embers set at points on the screen too: the card stands over
+ * the page (overPage, Game.svelte), whose light hides behind it.
+ */
 export function deathmatchIntro(title: Element) {
   if (!fxActive()) return;
+  lightOf(title, () => introLight(title));
+}
+
+function introLight(title: Element) {
   const c = { x: innerWidth / 2, y: innerHeight / 2 };
   const D = Math.hypot(innerWidth, innerHeight);
   flash(c, { radius: D * 0.3, color: C.crimson, intensity: 0.14, life: 0.9 });
@@ -1161,30 +1169,35 @@ export function deathmatchIntro(title: Element) {
   const coming = duelArt();
   void (ready ? Promise.resolve(ready) : coming).then((picture) => {
     if (!picture || now() - asked > 0.6 || detached(title) || !fxActive()) return;
-    const R = deathmatchRadius();
-    const on = ([x, y]: readonly [number, number]): Point => {
-      const b = boxOf(title);
-      return { x: b.x + x * R, y: b.y + y * R };
-    };
-    // (It fades as the card does, and keeps behind the card's words and tokens till then.)
-    sigil(title, { radius: R, color: C.crimson, life: DEATHMATCH_INTRO + 0.3, intensity: 0.48, behind: true });
-    const card = title.closest('.dm-intro-inner');
-    if (card) {
-      const held = cover(introCovers(card));
-      after(DEATHMATCH_INTRO + 0.4, () => held.stop());
-    }
-    // The sword's point strikes home, and the band's two fires meet at its head.
-    after(SIGIL_STRIKE, () => {
-      flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
-      shakeView(0.35, 3.5);
-    });
-    after(SIGIL_MEET, () => flare(on(sigilHead(SIGIL_MEET)), { size: 24, streak: R * 0.8, life: 0.8, color: C.crimson }));
+    lightOf(title, () => introSigil(title));
   });
   const floor = new DOMRect(0, innerHeight - 4, innerWidth, 4);
   embers(floor, { count: 110, area: 'fill', colors: [C.crimson, C.ember, C.gold], rise: [180, 520], life: [1, 2.4], size: [1.2, 3], turbulence: 200 });
   edgeGlow({ color: C.crimson, intensity: 0.2, width: 100, life: 2.4, noise: 0.8 });
   shakeView(0.85, 6.5);
   deathmatchMood(true);
+}
+
+/** The deathmatch's sigil on the intro card, its picture at hand. */
+function introSigil(title: Element) {
+  const R = deathmatchRadius();
+  const on = ([x, y]: readonly [number, number]): Point => {
+    const b = boxOf(title);
+    return { x: b.x + x * R, y: b.y + y * R };
+  };
+  // (It fades as the card does, and keeps behind the card's words and tokens till then.)
+  sigil(title, { radius: R, color: C.crimson, life: DEATHMATCH_INTRO + 0.3, intensity: 0.48, behind: true });
+  const card = title.closest('.dm-intro-inner');
+  if (card) {
+    const held = cover(introCovers(card));
+    after(DEATHMATCH_INTRO + 0.4, () => held.stop());
+  }
+  // The sword's point strikes home, and the band's two fires meet at its head.
+  after(SIGIL_STRIKE, () => {
+    flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
+    shakeView(0.35, 3.5);
+  });
+  after(SIGIL_MEET, () => flare(on(sigilHead(SIGIL_MEET)), { size: 24, streak: R * 0.8, life: 0.8, color: C.crimson }));
 }
 
 /**

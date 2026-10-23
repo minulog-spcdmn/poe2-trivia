@@ -30,7 +30,7 @@
   import { ownRect, zoomOf } from '../../lib/stage';
   import { holdLight } from '../../lib/lights';
   import { accentLight, fxDensity, hdr } from '../../lib/fx/moments';
-  import { fxActive, type Vec3 } from '../../lib/fx/core';
+  import { fxActive, overPage, type Vec3 } from '../../lib/fx/core';
   import { flare, glints } from '../../lib/fx/effects';
   import { line, star8 } from '../../lib/arcane';
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../../lib/alchemy';
@@ -306,8 +306,9 @@
   style:--track="{t.track}em"
 >
   <div class="scrim"></div>
-  <div class="bar top"><span class="hair"></span></div>
-  <div class="bar bottom"><span class="hair"></span></div>
+  <!-- Opaque, under the effects layer: the game's light (an aura, a streak's fire) hides behind them (overPage). -->
+  <div class="bar top" use:overPage><span class="hair"></span></div>
+  <div class="bar bottom" use:overPage><span class="hair"></span></div>
   <div class="plate" bind:this={plate}>
     <ZoneSeal sigil={title.sigil} {play} still={!full} {seed} bind:el={seal} />
     <div class="meta">
