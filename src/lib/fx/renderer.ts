@@ -1131,17 +1131,14 @@ export class FxRenderer {
     const begin = () => {
       float = !!gl.getExtension('EXT_color_buffer_float') || !!gl.getExtension('EXT_color_buffer_half_float');
       // What its textures hold is worked out while the shaders compile (off
-      // the page's thread), in an idle moment or soon anyway, so putting
-      // them in costs little even when the first effect wants them at once.
-      stopLookups = whenIdle(
-        () => {
-          stopLookups = null;
-          noiseTile();
-          shardAtlas();
-          curves();
-        },
-        { timeout: 30 },
-      );
+      // the page's thread), if the page is idle meanwhile: never at a cost
+      // to it (as it loads, say), so the first effect may have to.
+      stopLookups = whenIdle(() => {
+        stopLookups = null;
+        noiseTile();
+        shardAtlas();
+        curves();
+      });
       build = buildPrograms(gl, sources, (progs) => {
         let r: FxRenderer | null = null;
         try {
