@@ -331,6 +331,45 @@ input {
   background: linear-gradient(90deg, transparent, rgba(241, 217, 155, 0.5), transparent);
 }
 
+/* A framed panel's filigree unfurls from its four corners as the panel
+   appears, all four at once, wherever it is (a page's panels as their
+   screen comes in, a dialog's as it rises: lib/dialogIn.ts). A dialog's
+   top edge also has a light run along its highlight, left to right. */
+/* (A panel that comes in late itself, a beat into its page, says when in --rise-delay: Codex.svelte.) */
+.panel::before {
+  animation: filigree-in 0.5s calc(var(--rise-delay, 0s) + 0.05s) var(--ease-out) backwards;
+}
+.panel[role='dialog']::after {
+  background:
+    linear-gradient(90deg, transparent 42%, rgba(255, 238, 196, 0.95) 50%, transparent 58%) 0 0 / 300% 100% no-repeat,
+    linear-gradient(90deg, transparent, rgba(241, 217, 155, 0.5), transparent);
+  animation: edge-light 0.9s 0.12s var(--ease-out) backwards;
+  background-position-x: 0%;
+  background-position-y: 0;
+}
+:root[data-still] .panel::before,
+:root[data-still] .panel[role='dialog']::after {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel::before,
+  .panel[role='dialog']::after {
+    animation: none;
+  }
+}
+@keyframes filigree-in {
+  from {
+    background-size: 0 0;
+  }
+}
+/* The light's layer is three times the edge's width: at 100% its bright
+   middle sits off the left end, at 0% off the right. */
+@keyframes edge-light {
+  from {
+    background-position-x: 100%;
+  }
+}
+
 /* A bullet between words in the body font, set down to the middle of their small letters: EB Garamond sets it at
    half a capital's height, high beside lowercase words. */
 .bullet {
@@ -795,6 +834,22 @@ h3,
   initial-value: transparent;
 }
 @property --btn-lo {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+/* The lobby's chosen mode card's top light and inner glow (Lobby.svelte .mode), likewise. */
+@property --mode-top-light {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --mode-glow-blur {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --mode-glow-in {
   syntax: '<color>';
   inherits: false;
   initial-value: transparent;

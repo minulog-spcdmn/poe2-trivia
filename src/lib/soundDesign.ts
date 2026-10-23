@@ -162,13 +162,24 @@ export const CAVE_IN = { file: 'cave-in', seconds: 1.3, rumble: 6, stones: 4 };
  * place sounds as far behind. `muffles` (Hz): the cutoff at strikes 1, 2 and
  * 3, each 0.7 of the last (even steps to the ear), the zone further away the
  * deeper the dig. As picked on the vein sound board; the tunnel's echo is
- * the vein's own room (lib/acoustics.ts).
+ * the vein's own room (lib/acoustics.ts). `swell`: as a strike's clock runs
+ * out, the layer playing `file` (its rumble) rises by up to `db`, its filter
+ * as it is: the ground straining, which the view's tremor follows
+ * (lib/tremor.ts), shaking far more than the sound grows.
  */
-export const VEIN_AMBIENCE: { duck: number; muffles: readonly number[]; fadeIn: number; fadeOut: number; layers: readonly BedLayer[] } = {
+export const VEIN_AMBIENCE: {
+  duck: number;
+  muffles: readonly number[];
+  fadeIn: number;
+  fadeOut: number;
+  swell: { file: string; db: number };
+  layers: readonly BedLayer[];
+} = {
   duck: -8,
   muffles: [1200, 850, 600],
   fadeIn: 3,
   fadeOut: 1.5,
+  swell: { file: 'amb-vein-rumble', db: 3 },
   layers: [
     { file: 'amb-vein-ice', gain: -40, lp: 20000, rate: 1, send: 0.7 },
     { file: 'amb-vein-rumble', gain: -27, lp: 217, rate: 1, send: 0.2 },

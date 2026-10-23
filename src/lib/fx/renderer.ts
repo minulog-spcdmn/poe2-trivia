@@ -329,6 +329,8 @@ uniform float uSilOn; // the picture's opacity, 0 without one
 uniform vec4 uSilBox;
 uniform float uSilFlip;
 uniform vec2 uSilFit;
+// The deathmatch's plate, one part to a channel (lib/fx/duelPaint.ts): see the sigil.
+uniform sampler2D uSigil;
 // Where p (CSS px) falls on the picture's texture.
 vec2 silhouetteUv(vec2 p) {
   vec2 l = (p - uSilBox.xy) / uSilBox.zw;
@@ -357,19 +359,6 @@ vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x -
 float blurredLine(float x, float w, float blur) {
   float wb = w * w + 2.0 * blur * blur;
   return exp(-x * x / wb) * w * inversesqrt(wb);
-}
-// How much of a pattern repeating every period px a Gaussian blur leaves (of its fundamental).
-float blurKeeps(float period, float blur) {
-  return exp(-19.74 * blur * blur / max(period * period, 1e-4));
-}
-// Equilateral triangle SDF (Inigo Quilez), r = circumradius-ish size.
-float sdTri(vec2 p, float r) {
-  const float k = 1.7320508;
-  p.x = abs(p.x) - r;
-  p.y = p.y + r / k;
-  if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
-  p.x -= clamp(p.x, -2.0 * r, 0.0);
-  return -length(p) * sign(p.y);
 }
 // Signed distance to a convex or concave quad (Inigo Quilez's polygon SDF).
 float sdQuad(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d) {
@@ -771,39 +760,33 @@ void main() {
     col += crimson * exp(-sqrt(r2) / 3.5) * 0.18 * k;
     v = 1.0;
   } else {
-    // Sigil: an arcane circle that draws itself. q: radius, line width,
-    // drawn 0-1, spin (rad/s).
-    // Behind an open dialog its lines blur with the page (see blurredLine),
-    // and its ticks and dashes fade toward their average.
-    float R = vQ.x;
-    float lw = vQ.y;
+    // Sigil: the deathmatch's plate (lib/plates/duel.ts) in uSigil, one
+    // part to a channel (lib/fx/duelPaint.ts), each drawn in its own way:
+    // the sword (red) down from its pommel; the rings and all within the
+    // band (green) spreading out from the sword's point; the band (blue)
+    // round both ways from its foot to its head. Each burns white as it's
+    // drawn and cools behind; a glow (a far coarser level of the same
+    // lines) lies under them. q: radius (px: the plate's 100), how far each
+    // part is drawn (sword, rings, band: 0-1, and on past 1 as it cools);
+    // r: the band's turn (rad), glow, heat, scale; s: the texture's level
+    // for one device px, device px per CSS px. Behind an open dialog it
+    // blurs with the page: a coarser level still.
     float blur = vBehind * uBlur;
-    vec2 p = rot2(vP, time * vQ.w + seed);
-    float ang = atan(p.y, p.x);
-    float lines = 0.0;
-    lines += blurredLine(r - R, lw, blur);
-    lines += 0.8 * blurredLine(r - R * 0.86, lw * 0.8, blur);
-    lines += 0.5 * blurredLine(r - R * 0.44, lw * 0.7, blur);
-    // Tick marks between the two outer rings (72 round it; |cos|^90 averages 0.084).
-    float band = smoothstep(R * 0.87, R * 0.89, r) * (1.0 - smoothstep(R * 0.97, R * 0.99, r));
-    float ticks = mix(0.084, pow(abs(cos(ang * 36.0)), 90.0), blurKeeps(2.0 * PI * r / 72.0, blur));
-    lines += band * ticks * 1.2;
-    // Rune notches: each of 12 sectors gets its own pattern of dashes (half on, in its middle 64%).
-    float sector = floor((ang + PI) / (2.0 * PI) * 12.0);
-    float h = hash12(vec2(sector, seed));
-    float local = fract((ang + PI) / (2.0 * PI) * 12.0);
-    float n = 2.0 + floor(h * 3.0);
-    float dash = step(0.18, local) * step(local, 0.82) * mix(0.5, step(0.5, fract(local * n + h)), blurKeeps(2.0 * PI * r / 12.0 / n, blur));
-    float runeBand = blurredLine(r - R * 0.93, lw * 1.3, blur);
-    lines += dash * runeBand * 0.9;
-    // A hexagram inside.
-    float tri = min(abs(sdTri(p, R * 0.73)), abs(sdTri(vec2(p.x, -p.y), R * 0.73)));
-    lines += 0.75 * blurredLine(tri, lw * 0.8, blur);
-    // Draw on around the circle.
-    float at = fract((ang + PI) / (2.0 * PI) + 0.25);
-    float drawn = 1.0 - smoothstep(vQ.z - 0.02, vQ.z, at);
-    v = lines * drawn;
-    v += blurredLine(r - R, lw * 6.0, blur) * 0.15;
+    float lod = max(vS.x, 0.0) + log2(1.0 + 1.5 * blur * vS.y);
+    vec2 u = vP / (vQ.x * vR.w) * 100.0;
+    vec2 ub = rot2(u, -vR.x);
+    // (The picture is 220 units across, a margin round the plate: duelPaint.ts' DUEL_SPAN.)
+    vec2 ta = u / 220.0 + 0.5;
+    vec2 tb = ub / 220.0 + 0.5;
+    vec3 lit = vec3(textureLod(uSigil, ta, lod).rg, textureLod(uSigil, tb, lod).b);
+    vec3 halo = vec3(textureLod(uSigil, ta, lod + 3.5).rg, textureLod(uSigil, tb, lod + 3.5).b);
+    // How far along its part's drawing each pixel lies, 0 first to 1 last.
+    vec3 along = vec3((u.y + 39.0) / 76.0, length(u - vec2(0.0, 37.0)) / 118.0, 1.0 - abs(atan(ub.x, -ub.y)) / PI);
+    vec3 front = vQ.yzw;
+    vec3 drawn = 1.0 - smoothstep(front - 0.012, front, along);
+    vec3 heat = drawn * exp(-max(front - along, 0.0) / 0.1);
+    v = dot(lit + halo * vR.y, drawn);
+    hot = dot(lit, heat) * vR.z;
   }
   // Behind the picture: only a faint glow over it, none of the white heat,
   // and a little less light right around it.
@@ -936,6 +919,9 @@ void main() {
 
 export type RendererOptions = { maxParticles: number; maxShapes: number };
 
+/** The deathmatch's plate as painted for the sigil (lib/fx/duelArt.ts): `size` px square, RGBA. */
+export type SigilPicture = { size: number; pixels: Uint8Array };
+
 /**
  * A picture effects shine from behind, so they leave its own shape clear (an
  * item's outline, not its box): what it's drawn from (an image, or a canvas
@@ -1056,6 +1042,9 @@ export class FxRenderer {
   private coverOn = false;
   private coverView: [number, number] = [1, 1];
   private coverShift: [number, number] = [0, 0];
+  /** The deathmatch's plate (see setSigil), and the picture it was made from. */
+  private sigilTex: WebGLTexture | null = null;
+  private sigilOf: SigilPicture | null = null;
   /** Whether the 2D canvas can blur (older Safari can't): asked once, before the first `filter` is set. */
   private coverBlur: boolean | null = null;
 
@@ -1085,7 +1074,7 @@ export class FxRenderer {
         ['composite', FULL_VS, COMPOSITE_FS],
         ['copy', FULL_VS, COPY_FS],
       ] as const
-    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program "${name}"` }));
+    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program “${name}”` }));
     // Whether it can draw to half floats: asked in a step of its own, a
     // frame after the context and once the GPU has caught up
     // (whenGpuCaughtUp), before the shaders start. (It waits on the GPU
@@ -1158,7 +1147,7 @@ export class FxRenderer {
     // Smoke's noise and body: an even texel and an empty one until smoke is
     // first drawn (see bake). Only Delve's flares and dynamite make any.
     this.noiseTex = gl.createTexture()!;
-    gl.activeTexture(gl.TEXTURE4);
+    gl.activeTexture(gl.TEXTURE6);
     gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array([Math.round((0.44 / NOISE_MAX) * 255)]));
@@ -1177,7 +1166,7 @@ export class FxRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.activeTexture(gl.TEXTURE0);
     gl.useProgram(p.prog);
-    gl.uniform1i(p.u('uNoiseTile'), 4);
+    gl.uniform1i(p.u('uNoiseTile'), 6);
     gl.uniform1i(p.u('uSmokeBody'), 5);
     this.downProg = d;
     this.upProg = u;
@@ -1323,6 +1312,13 @@ export class FxRenderer {
       // Always on its own unit: left on unit 0, the sampler could point at
       // the target being drawn into, which WebGL refuses to draw.
       gl.uniform1i(p.u('uSil'), 2);
+      // The deathmatch's plate on unit 4 (see setSigil).
+      gl.uniform1i(p.u('uSigil'), 4);
+      if (this.sigilTex) {
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, this.sigilTex);
+        gl.activeTexture(gl.TEXTURE0);
+      }
       gl.uniform1f(p.u('uSilOn'), sil ? sil.alpha : 0);
       if (!sil) return;
       gl.activeTexture(gl.TEXTURE2);
@@ -1438,9 +1434,9 @@ export class FxRenderer {
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
       behindDialog(this.particleProg, true);
       cover(this.particleProg);
-      // Smoke's noise on unit 4, its body on 5: put in as smoke is first drawn.
+      // Smoke's noise on unit 6, its body on 5: put in as smoke is first drawn.
       if (!this.baked && hasSmoke(particles, nParticles)) this.bake();
-      gl.activeTexture(gl.TEXTURE4);
+      gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
       gl.activeTexture(gl.TEXTURE5);
       gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
@@ -1653,6 +1649,27 @@ export class FxRenderer {
     this.coverShift = [dx, dy];
   }
 
+  /**
+   * Makes `picture` (the deathmatch's plate, one part to a channel:
+   * lib/fx/duelArt.ts) the sigil's texture, with every level down, unless
+   * it is already. Done as soon as it's painted, well before it's drawn.
+   */
+  setSigil(picture: SigilPicture) {
+    if (picture === this.sigilOf) return;
+    const gl = this.gl;
+    this.sigilTex ??= gl.createTexture();
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.sigilTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, picture.size, picture.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, picture.pixels);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    this.sigilOf = picture;
+  }
+
   /** Makes the silhouette's picture the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
   private loadSilhouette({ pic, key }: Silhouette): boolean {
     const i = this.sils.findIndex((x) => x.key === key);
@@ -1724,7 +1741,7 @@ export class FxRenderer {
     if (this.baked || gl.isContextLost()) return;
     this.baked = true;
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.activeTexture(gl.TEXTURE4);
+    gl.activeTexture(gl.TEXTURE6);
     gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, NOISE_TILE, NOISE_TILE, 0, gl.RED, gl.UNSIGNED_BYTE, noiseTile());
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -1739,6 +1756,7 @@ export class FxRenderer {
     const gl = this.gl;
     for (const x of this.sils) gl.deleteTexture(x.tex);
     if (this.coverTex) gl.deleteTexture(this.coverTex);
+    if (this.sigilTex) gl.deleteTexture(this.sigilTex);
     gl.deleteTexture(this.noiseTex);
     gl.deleteTexture(this.smokeTex);
     dropTarget(gl, this.hdr);

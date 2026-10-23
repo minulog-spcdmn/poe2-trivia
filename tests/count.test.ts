@@ -97,6 +97,8 @@ test("a join turned down for the versions counts apart from one turned down by t
   // From hosts older than the flag, by the words they used.
   assert.ok(isVersionRefusal({ message: versionProblem(PROTOCOL_VERSION - 1)! }));
   assert.ok(isVersionRefusal({ message: versionProblem(PROTOCOL_VERSION + 1)! }));
+  // A host from before the curly apostrophe, and before the flag, words it straight.
+  assert.ok(isVersionRefusal({ message: "The host's game is out of date. Ask them to reload the page." }));
   assert.ok(isVersionRefusal({ message: LEGACY_VERSION_TEXT }));
   assert.ok(!isVersionRefusal({ message: 'The lobby is full.' }));
   // The flag goes through the guest's check of what a host sends.

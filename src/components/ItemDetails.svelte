@@ -87,7 +87,7 @@
 
 <div class="tooltip-body">
   {#if failed}
-    <p class="wait">Its details couldn't be loaded.</p>
+    <p class="wait">Its details couldn’t be loaded.</p>
   {:else if !sections}
     <p class="wait" aria-label="Loading">…</p>
   {:else}

@@ -55,6 +55,8 @@ export type Step =
 export interface Built {
   /** The room's state; null out of a game. */
   state: GameState | null;
+  /** Who this device is, where the scene's controls decide it (host or guest, watching); missing: the scene's seats. */
+  seat?: Seat;
   /**
    * A move by the room itself on a state of this game, through the engine
    * that played it (build/play.ts, Table.room), so what's set over it (who's
@@ -122,8 +124,9 @@ export interface Scene {
   build(v?: Values): Built;
 }
 
-/** The seats of `scene` whose player is in the room as built (all of them out of a room, or in hot-seat). */
+/** The seats of `scene` whose player is in the room as built (all of them out of a room, or in hot-seat); the one it was built for, if one. */
 export function seatsIn(scene: Scene, built: Built): Seat[] {
+  if (built.seat) return [built.seat];
   const s = built.state;
   if (!s) return scene.seats;
   const here = new Set([...s.players, ...(s.spectators ?? [])].map((p) => p.id));

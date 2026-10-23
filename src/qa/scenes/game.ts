@@ -163,6 +163,19 @@ export function gameScenes(): Scene[] {
       },
       manyAsked,
     ),
+    scene(
+      'turns-timeout',
+      'Take turns',
+      'Out of time',
+      turnsSeats,
+      (v) => {
+        // Nobody answered: the clock runs to its end and the host's timer sends the empty answer, from the room itself.
+        const t = turns(v).pick();
+        t.wait(Math.max(0, (t.q.deadline ?? t.clock.now) - t.clock.now));
+        return t.act({ type: 'answer', index: null }, null);
+      },
+      manyAsked,
+    ),
     scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, (v) => turns(v).playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0), many),
     scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, (v) => turns(v).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null), many),
     scene(
@@ -196,6 +209,21 @@ export function gameScenes(): Scene[] {
       table(['Kalguur', 'Doryani'], { targetScore: 1 })
         .start()
         .playTo((s) => !!s.deathmatch),
+    ),
+    // The first duelist missed: face down on the scoreboard till the round ends.
+    scene('deathmatch-miss', 'Deathmatch', 'A duelist missed, the next to answer', [host('Kalguur'), guest('Doryani'), WATCHER], () => {
+      const t = table(['Kalguur', 'Doryani'], { targetScore: 1 })
+        .start()
+        .playTo((s) => !!s.deathmatch)
+        .pick();
+      return t.answer(t.turn, false).wait(1000).next();
+    }),
+    // Three tied; Una of the Vaal missed while the others scored, and the next round says so.
+    scene('deathmatch-out', 'Deathmatch', 'Three in, one knocked out', [host('Kalguur'), guest('Doryani'), WATCHER], () =>
+      table(['Kalguur', 'Doryani', 'Una of the Vaal'], { targetScore: 1 })
+        .start()
+        .playTo((s) => !!s.deathmatch)
+        .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
     ),
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
     scene('delve-finds', 'Delve alone', 'The cards dealt: an Azurite Vein and a Flare Cache among them', [ALONE], () => {
@@ -253,6 +281,21 @@ export function gameScenes(): Scene[] {
       (v) => {
         const t = delveTogether(v);
         return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
+      },
+      { controls: [players(2, 3)] },
+    ),
+    scene(
+      'delve-together-dig',
+      'Delve together',
+      'A vein struck once, the team voting: dig deeper, or the way out',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      (v) => {
+        const t = delveTogether(v);
+        const vein = t.s.offered[0];
+        t.s.offered = [vein, WAY_OUT];
+        t.s.delve!.finds = [{ category: vein, kind: 'azurite' }];
+        t.s.delve!.dig = { strikes: 1, haul: [t.s.players[0].id], light: 6, struck: [] };
+        return t.act({ type: 'vote', category: vein }, 'Doryani');
       },
       { controls: [players(2, 3)] },
     ),
