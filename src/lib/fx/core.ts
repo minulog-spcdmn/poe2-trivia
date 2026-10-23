@@ -269,8 +269,7 @@ function clearAll() {
 /** No particles, no shake, nothing drawn. */
 function blank() {
   pool?.clear();
-  shake.trauma = 0;
-  applyShake(0, 0);
+  stopShake();
   renderer?.clear();
   show(false);
 }
@@ -582,7 +581,7 @@ let coverShake = { x: 0, y: 0 };
  * the shake's own write) and draw and upload the mask again each time.
  */
 function setCovers(r: FxRenderer) {
-  if (covers.size && shake.trauma > 0 && r.hasCover) {
+  if (covers.size && shaking() && r.hasCover) {
     r.shiftCover(shake.x - coverShake.x, shake.y - coverShake.y);
     return;
   }
@@ -608,8 +607,47 @@ export function after(seconds: number, fn: () => void) {
 
 // ---------- camera shake ----------
 
-/** x, y: the offset the view is moved by now (a target's own is k times it). */
-const shake = { trauma: 0, amp: 0, x: 0, y: 0, targets: [] as { el: HTMLElement; k: number }[] };
+/**
+ * A shake moves the view as a camera would: the UI (shakeTarget) and the
+ * backdrop's scene behind it (shakeOffset) by the same offset in the same
+ * frame, so neither slides on the other. Two things move it, added up:
+ * blows (shakeView) and a tremor (setTremor), the ground trembling for as
+ * long as its source says.
+ * A blow's offset is trauma² × amp, trauma wearing off JOLT_FADE a second;
+ * it sways along two noise curves, JOLT_RATE steps of them a second (`phase`
+ * the way along). kick: the direction it throws the view, weighed by w,
+ * which falls from 1 to 0 over KICK seconds as the sway takes over (so a
+ * blow never lands where the noise is near 0). The tremor shakes the view
+ * by what its source gives each frame (`tremorPx`), along two curves of its
+ * own, quicker: a shiver, not a sway. `at`: the frame (ms) the shake was
+ * last moved to (-1: start afresh, nothing to wear off).
+ */
+const shake = {
+  trauma: 0,
+  amp: 0,
+  phase: 0,
+  kick: { x: 0, y: 0, w: 0 },
+  tremor: null as Tremor | null,
+  tremorPx: 0,
+  tremorPhase: 0,
+  at: -1,
+  x: 0,
+  y: 0,
+  targets: [] as { el: HTMLElement; k: number }[],
+};
+const JOLT_FADE = 1.6;
+const JOLT_RATE = 26;
+const KICK = 0.08;
+const TREMOR_RATE = 30;
+/** Below this (px) a tremor isn't drawn: the view rests while its source is quiet. */
+const TREMOR_MIN = 0.05;
+
+/**
+ * A tremor's source: how far (px) it shakes the view at `nowMs` (up and
+ * down at most; across, 0.7 of it), 0 while still for now, or null once
+ * it's over (its source let go).
+ */
+export type Tremor = (nowMs: number) => number | null;
 
 /** Registers an element that moves with camera shake, `k` times as far. */
 export function shakeTarget(el: HTMLElement, k = 1) {
@@ -621,29 +659,99 @@ export function shakeTarget(el: HTMLElement, k = 1) {
 }
 
 /**
- * Shakes the view. `amount` 0-1 adds trauma (felt as its square, so small
- * hits stay gentle); `px` is the largest offset.
+ * Shakes the view with a blow. `amount` 0-1 adds trauma, which wears off at
+ * 1.6 a second, so it sets how long the shake lasts; `px` is the furthest
+ * this blow moves the view at once, easing off as the square of the trauma
+ * left. A blow on one still going adds to what's left of it.
  */
 export function shakeView(amount: number, px = 7) {
-  if (!fxActive() || hidden) return;
-  const was = shake.trauma;
-  shake.trauma = Math.min(1, was + amount);
-  shake.amp = was > 0.05 ? Math.max(shake.amp, px) : px;
+  if (!fxActive() || hidden || amount <= 0) return;
+  const left = shake.trauma ** 2 * shake.amp;
+  shake.trauma = Math.min(1, shake.trauma + amount);
+  shake.amp = Math.hypot(left, px) / shake.trauma ** 2;
+  const a = Math.random() * Math.PI * 2;
+  shake.kick = { x: Math.cos(a), y: Math.sin(a) * 0.8, w: 1 };
+  // (Still till now: nothing to wear off before its first frame.)
+  if (!shaking()) shake.at = -1;
   if (!renderer) shakenAt = performance.now();
   wake();
 }
 
-/** Whether the view is shaking (moved by an inline translate, not an animation). */
-export function shaking() {
-  return shake.trauma > 0;
+/** Sets the tremor's source (in place of any), or lets it go (null). */
+export function setTremor(fn: Tremor | null) {
+  shake.tremor = fn;
+  if (!fn) shake.tremorPx = 0;
+  else wake();
 }
 
+/** Whether the view is shaking (moved by an inline translate, not an animation). */
+export function shaking() {
+  return shake.trauma > 0 || shake.tremorPx > 0;
+}
+
+/** How far (CSS px) the view is moved now, for the backdrop to move its scene by. */
+export function shakeOffset(): Point {
+  return { x: shake.x, y: shake.y };
+}
+
+/** Stills the view at once (a tremor's source stays, to shake it again once effects play). */
+function stopShake() {
+  shake.trauma = 0;
+  shake.tremorPx = 0;
+  applyShake(0, 0);
+}
+
+/**
+ * Moves the shake to the frame at `nowMs`, once, by whichever loop gets
+ * there first: the backdrop's (before it measures the UI and draws) or the
+ * effects'. A display frame hands both the same time, so the view, the
+ * backdrop's scene and the UI's shadows on it move together. The offset is
+ * placed as things stand, then worn on to the next frame, so a blow's first
+ * frame lands at its full px.
+ */
+function advanceShake(nowMs: number) {
+  if (nowMs === shake.at) return;
+  const dt = shake.at < 0 ? 0 : Math.min(1 / 15, Math.max(0, (nowMs - shake.at) / 1000));
+  shake.at = nowMs;
+  if (shake.tremor) {
+    // (Asked even while effects are off: what follows the source goes on.)
+    const px = shake.tremor(nowMs);
+    if (px === null) shake.tremor = null;
+    shake.tremorPx = px !== null && px > TREMOR_MIN && fxActive() && !hidden ? px : 0;
+  }
+  if (!shaking()) {
+    if (shake.x || shake.y) applyShake(0, 0);
+    return;
+  }
+  let x = 0;
+  let y = 0;
+  if (shake.trauma > 0) {
+    const s = shake.trauma ** 2 * shake.amp;
+    const k = shake.kick;
+    x += s * (k.x * k.w + noise1(shake.phase, 1) * (1 - k.w));
+    y += s * (k.y * k.w + noise1(shake.phase, 2) * 0.8 * (1 - k.w));
+    wearJolt(dt);
+  }
+  if (shake.tremorPx > 0) {
+    x += shake.tremorPx * noise1(shake.tremorPhase, 5) * 0.7;
+    y += shake.tremorPx * noise1(shake.tremorPhase, 6);
+    shake.tremorPhase += dt * TREMOR_RATE;
+  }
+  applyShake(x, y);
+}
+
+/** Wears a blow `dt` seconds on: its kick handed over, its sway along, its trauma down. */
+function wearJolt(dt: number) {
+  shake.kick.w = Math.max(0, shake.kick.w - dt / KICK);
+  shake.phase += dt * JOLT_RATE;
+  shake.trauma = Math.max(0, shake.trauma - dt * JOLT_FADE);
+}
+
+/** Moves the view by (x, y). */
 function applyShake(x: number, y: number) {
   shake.x = x;
   shake.y = y;
-  for (const t of shake.targets) {
-    t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
-  }
+  for (const t of shake.targets) t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
 }
 
 // Smooth 1D noise for the shake path, so it rolls rather than jitters.
@@ -934,18 +1042,11 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // (A calm shape on an element that moves isn't calm: drawn at half the rate
   // while the page scrolls, or a phone's toolbars slide, it would trail its
   // element, jumping after it every other frame.)
-  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && !anchorsMoved && shake.trauma === 0 && pool.fastest < CALM_SPEED * CALM_SPEED;
+  calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && !anchorsMoved && !shaking() && pool.fastest < CALM_SPEED * CALM_SPEED;
 
-  // Shake: trauma decays; the offset follows two noise curves.
-  if (shake.trauma > 0) {
-    shake.trauma = Math.max(0, shake.trauma - dt * 1.6);
-    const s = shake.trauma * shake.trauma * shake.amp;
-    const tt = nowMs / 1000 * 26;
-    applyShake(noise1(tt, 1) * s, noise1(tt, 2) * s * 0.8);
-    if (shake.trauma === 0) applyShake(0, 0);
-  }
+  advanceShake(nowMs);
 
-  const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shake.trauma > 0 || shapes.length > 0 || pool.count > 0;
+  const busy = nParticles > 0 || nShapes > 0 || tasks.length > 0 || shaking() || shake.tremor !== null || shapes.length > 0 || pool.count > 0;
   // (Drawn now if it has just begun to move, rather than a frame behind.)
   if (!render && !(anchorsMoved && manualClock === null)) return busy;
   if (nParticles > 0 || nShapes > 0) {
@@ -1194,6 +1295,10 @@ export function backdropFrame(nowMs: number, draws: GpuDraw[] | null) {
   lastFrame = nowMs;
   if (ms > 0 && ms < 300) gpuBudget.frame(ms, nowMs, raf !== 0, !fxActive());
   steer(nowMs);
+  // The shake moved to this frame before the backdrop measures the UI and
+  // draws (advanceShake); on a clock of its own (fxStep), the effects' loop
+  // alone moves it.
+  if (manualClock === null) advanceShake(nowMs);
 }
 
 /**
@@ -1282,8 +1387,7 @@ function teardown() {
   // never start while the renderer is gone: left up, it would be asked every
   // frame from now on.)
   covers.clear();
-  shake.trauma = 0;
-  applyShake(0, 0);
+  stopShake();
   for (const l of listeners) l(userOn);
 }
 
@@ -1397,7 +1501,8 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
       return t.age < t.life;
     });
     for (let left = late; left > 0 && pool.count; left -= 1 / 15) pool.step(Math.min(left, 1 / 15));
-    shake.trauma = Math.max(0, shake.trauma - 1.6 * (performance.now() - shakenAt) / 1000);
+    const shaken = (performance.now() - shakenAt) / 1000;
+    wearJolt(shaken);
   }
   resize();
   shown = true;

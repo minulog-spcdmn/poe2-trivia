@@ -23,6 +23,7 @@
   import { dialogIn, dialogOut } from './lib/dialogIn';
   import { wantDelveBackdrop } from './lib/backdrop';
   import { inVein, setVein, veinStrike } from './lib/vein';
+  import { veinTremor } from './lib/tremor';
   import Background from './components/Background.svelte';
   import Darkness from './components/Darkness.svelte';
   import FxLayer from './components/FxLayer.svelte';
@@ -168,12 +169,14 @@
     setDescent(depth);
     depthAmbience(depth);
   });
-  // Delve: an Azurite Vein being dug has a scene of its own (lib/vein.ts), and
-  // a sound of its own: a tunnel off the zone, the zone behind it.
+  // Delve: an Azurite Vein being dug has a scene of its own (lib/vein.ts), a
+  // sound of its own (a tunnel off the zone, the zone behind it), and its
+  // ground trembles (lib/tremor.ts).
   $effect(() => {
     const dug = screen === 'game' && inVein(gs);
     setVein(dug);
     veinAmbience(dug ? veinStrike(gs) : 0);
+    veinTremor(dug);
   });
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve

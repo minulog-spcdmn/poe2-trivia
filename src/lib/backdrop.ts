@@ -12,14 +12,14 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { backdropFrame, fxActive, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels } from './fx/core';
+import { backdropFrame, fxActive, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
 import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
 import { ENV_GLSL } from './shaders/effects';
 import { FX_NOISE_GLSL, SHAFTS_GLSL, SPORES_GLSL } from './shaders/newEffects';
 import { CLOCK_PEAK, pressureLevel } from './darkness';
-import { onVein, veinLevel } from './vein';
+import { onVein, veinLevel, veinQuake } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, maxDrawSize, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
@@ -76,8 +76,9 @@ uniform vec4 uFx[${FX_SLOTS * 3}];
 uniform vec4 uFxK;
 uniform vec4 uEddy;
 uniform vec2 uDark;
-// How far an Azurite Vein's scene has come in (lib/vein.ts), 0 to 1.
-uniform float uVein;
+// An Azurite Vein's scene (lib/vein.ts): how far it has come in, and how
+// hard its ground shakes (veinQuake), each 0 to 1.
+uniform vec2 uVein;
 // 0, always: it is never set, and a uniform starts at 0 (were it not, the
 // loops below would run past the ends of what they read). A loop that runs
 // to its count plus this stays a loop. Direct3D's shader compiler, which
@@ -182,7 +183,7 @@ vec4 veinCells(vec2 x) {
 }
 
 vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float dark) {
-  float v = uVein;
+  float v = uVein.x;
   vec2 xy = p / vec2(W, H);
   // Cold and darker: the path's warm light is behind you.
   col = mix(col, col * vec3(0.42, 0.58, 0.95), 0.75 * v);
@@ -241,7 +242,11 @@ vec3 azuriteVein(vec3 col, vec2 p, float S, float W, float H, float tm, float da
   float run = 0.6 + 0.4 * sin(tm * 0.45 - 1.7 * (x.x + 0.6 * x.y));
   vec3 add = azure * (0.14 * halo * halo + 0.16 * body * swell) + pale * (0.55 * seam * run) +
     white * (0.85 * node + 0.12 * bloom * bloom * halo) * breathe;
-  return col + add * (ore * lit);
+  // The ground shaking: the seams flicker with it, unevenly along their
+  // length, faintly with the tunnel's rumble and flaring on a thump.
+  float quake = uVein.y * uVein.y;
+  float flick = 1.0 + quake * (1.6 + 1.2 * (vnoise(x * 0.8 + vec2(tm * 5.0, -tm * 3.0)) - 0.5));
+  return col + add * (ore * lit * flick);
 }
 
 // The slot environment i (its index in ENVIRONMENTS) is drawn from, or ${NO_SLOT}: none.
@@ -407,7 +412,7 @@ const DELVE_DARK = `  // The light about you drawing in (see closing()). What gl
   if (dark > 0.0) col *= 1.0 - 0.93 * dark;
   if (uShade.a > 0.0 || uMist.a > 0.0) col = environments(col, p, (p + vec2(uSlide, uSink)) / S, p / vec2(W, H), S, W, H, uHome.z, dark);
   // An Azurite Vein being dug.
-  if (uVein > 0.0) col = azuriteVein(col, p, S, W, H, uHome.z, dark);
+  if (uVein.x > 0.0) col = azuriteVein(col, p, S, W, H, uHome.z, dark);
   // As the clock runs out the light about you dims as it draws in, the
   // stratum's glow and all (and a right answer's light, a little under 0,
   // lifts it a touch). Never past black, however far it is pushed.
@@ -649,6 +654,9 @@ ${delve ? DELVE_DARK : ''}  // The start page: god rays falling from high above 
 }
 `;
 
+/** How hard (px/s, at the most) a vein's ground, rising from still to its hardest at once, knocks the embers (Embers.jolt). */
+const EMBER_JOLT = 260;
+
 /** CSS px per texel of the soft light's own target. */
 const SMOOTH_PX = 2;
 
@@ -667,13 +675,13 @@ void main() {
 
 /**
  * Fragment uniform vectors the main pass uses apart from the UI elements'
- * (counted unpacked, samplers apart, with one to spare: 172 as linked with
+ * (counted unpacked, samplers apart, with one to spare: 173 as linked with
  * the soft light worked out here, the effects' slots, 3 * FX_SLOTS, among
  * them), and each element's: its seven rows and its shadows' two each.
  * Recount when adding a uniform (the active uniforms of the program
  * frag(4, false, true) links to, less 4 elements' worth).
  */
-const FIXED_UNIFORMS = 173;
+const FIXED_UNIFORMS = 174;
 const ELEMENT_UNIFORMS = 7 + 2 * SHADOWS_PER_ELEMENT;
 
 /**
@@ -705,6 +713,7 @@ uniform vec2 uRes;   // drawing buffer size, device pixels
 ${smooth(delve)}
 uniform sampler2D uSmooth;
 uniform vec2 uVignette; // breathing (reach, strength)
+uniform vec2 uShake; // the camera shake's offset, CSS px: the scene moves with the view (lib/fx/core.ts shakeOffset)
 ${ui === 'all' ? BOX_UNIFORMS(MAX_ELEMENTS) : ''}
 // Event lights (x, y, radius, strength) and colours; the mood tint (r, g,
 // b, strength). See lights.ts.
@@ -729,7 +738,8 @@ ${delve ? DELVE_MAIN_UNIFORMS : ''}${ui === 'all' ? BOX_SHADOW_UNIFORMS(MAX_ELEM
 ${HASH}
 void main() {
   vec2 dev = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
-  vec2 p = dev / uRes * uSize; // CSS px, top-left origin
+  // CSS px, top-left origin, in the scene: it moves with the view as it shakes.
+  vec2 p = dev / uRes * uSize - uShake;
   float W = uSize.x;
   float H = uSize.y;
 
@@ -785,7 +795,11 @@ ${delve ? DELVE_MAIN : ''}  // Embers rising through the dark: a hot core and a 
     col = col * (1.0 + 1.5 * g) + uLightC[i].rgb * g * 0.22;
   }
 
-${ui !== 'none' ? DROPS : ''}${ui === 'drops' ? BOXES : ui === 'all' ? BOX_MAIN(MAX_ELEMENTS, false) : ''}${ui !== 'none' ? DROPS_OVER : ''}${FINISH}`;
+${ui !== 'none' ? UI_AT : ''}${ui !== 'none' ? DROPS : ''}${ui === 'drops' ? BOXES : ui === 'all' ? BOX_MAIN(MAX_ELEMENTS, false) : ''}${ui !== 'none' ? DROPS_OVER : ''}${FINISH}`;
+
+/** The UI's shadows and fills are measured where it is, already moved by the shake: back to the screen's own px. */
+const UI_AT = `  p += uShake;
+`;
 
 /** The end of the main pass. */
 const FINISH = `  // A dialog dims it all here, before the dither; CSS darkening the
@@ -1496,6 +1510,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       uSize: U('uSize'),
       uViewH: U('uViewH'),
       uVignette: U('uVignette'),
+      uShake: U('uShake'),
       uLightA: U('uLightA'),
       uLightC: U('uLightC'),
       uMood: U('uMood'),
@@ -1820,6 +1835,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
 
   /** The question's clock as the dark last drawn shows it (lib/darkness.ts). */
   let pressure = 0;
+  /** The camera shake's offset as last drawn (CSS px): the scene moves with the view. */
+  let shook = { x: 0, y: 0 };
+  /** How hard the vein's ground shakes, as last drawn (lib/vein.ts veinQuake). */
+  let quake = 0;
   /** How far an Azurite Vein's scene has come in (lib/vein.ts). */
   let vein = 0;
   /** Draws a frame, timed on the GPU where it can be. */
@@ -1878,7 +1897,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const k = v === lean ? 1 : delveIn;
     const dark = v === lean ? 0 : delveIn * look.dark;
     const { soft, prog, smoothProg, sRes, sSize, sViewH, uTop, uBottom, uGlow, uBaseStop, uBlobA, uBlobRot, uBeams, uHome, uTitle, uFloor, uHaze, uShade, uMist, uFx, uFxK, uEddy, uDark, uVein, uGlowCol, uScene, uBlobColor } = v;
-    const { uRes, uSize, uViewH, uVignette, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mVein, mDark, mScene, mHome, uDialog, uSharpSize, uBlurSize } = v;
+    const { uRes, uSize, uViewH, uVignette, uShake, uLightA, uLightC, uMood, uEmberHalo, uEmberCore, uEmberK, uCityA, uCityB, uCityC, uIce, mVein, mDark, mScene, mHome, uDialog, uSharpSize, uBlurSize } = v;
 
     // The soft light: into its own target first, or along with the rest.
     gl!.useProgram(soft);
@@ -1899,7 +1918,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     gl!.uniform4fv(uFxK, fxK);
     gl!.uniform4fv(uEddy, embers.eddies);
     gl!.uniform2f(uDark, close * k, pressure * k);
-    if (uVein) gl!.uniform1f(uVein, vein * k);
+    if (uVein) gl!.uniform2f(uVein, vein * k, quake * k);
     gl!.uniform3f(uGlowCol, look.glow[0] / 255, look.glow[1] / 255, look.glow[2] / 255);
     gl!.uniform4f(uScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform2f(uGlow, 1 + 0.08 * glow, (1 - 0.4 * glow) * look.lamp);
@@ -1951,6 +1970,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // Deep down the stratum's uneven dark takes over from the vignette, so
     // its ellipse never shows.
     gl!.uniform2f(uVignette, 1 - 0.06 * vignette, (1 + 0.07 * vignette) * (1 - 0.6 * dark));
+    gl!.uniform2f(uShake, shook.x, shook.y);
     gl!.uniform2f(uSharpSize, atlasSize[0], atlasSize[1]);
     gl!.uniform2f(uBlurSize, atlasSize[2], atlasSize[3]);
     // The UI's shadows and fills (those this pass draws).
@@ -1970,7 +1990,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     stopsFor(look, 'frost', stops);
     gl!.uniform3f(uIce, stops[0] + 0.35 * (1 - stops[0]), stops[1] + 0.35 * (1 - stops[1]), stops[2] + 0.35 * (1 - stops[2]));
     gl!.uniform2f(mDark, close * k, pressure * k);
-    if (mVein) gl!.uniform1f(mVein, vein * k);
+    if (mVein) gl!.uniform2f(mVein, vein * k, quake * k);
     gl!.uniform4f(mScene, scene.light * look.lightK, sink, scene.features, slide);
     gl!.uniform4fv(mHome, home);
     gl!.activeTexture(gl!.TEXTURE2);
@@ -2178,6 +2198,21 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (p !== pressure && (Math.abs(p - pressure) > (still ? 0.02 : 0.002) || p === 0)) {
       pressure = p;
       if (still) dirty = true;
+    }
+    // The view shaking (moved to this frame in backdropFrame, above): the
+    // scene with it, every frame it moves, or the UI would slide on it.
+    const o = shakeOffset();
+    if (o.x !== shook.x || o.y !== shook.y) {
+      shook = o;
+      dirty = true;
+    }
+    // The vein's ground shaking: the seams flicker with it, and each rise
+    // knocks the embers about (EMBER_JOLT). Holding still, neither.
+    const q = still ? 0 : veinQuake();
+    if (q !== quake) {
+      if (q > quake) embers.jolt((q - quake) * EMBER_JOLT);
+      quake = q;
+      dirty = true;
     }
     // An Azurite Vein's scene eases in and out by itself, as the dark does.
     const vn = veinLevel(now, still);
