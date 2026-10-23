@@ -11,9 +11,9 @@
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
-  import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, deathmatchRadius, gameStart, turnBanner } from '../lib/fx/moments';
+  import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { stageZoom } from '../lib/stage';
-  import { duelArt, warmDuelArt } from '../lib/fx/duelArt';
+  import { deathmatchRadius, duelArt, warmDuelArt } from '../lib/fx/duelArt';
   import { fxActive, onFxChange } from '../lib/fx/core';
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';

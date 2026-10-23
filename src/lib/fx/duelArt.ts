@@ -6,7 +6,7 @@
 // could end in a deathmatch: Game.svelte), so the intro finds it ready.
 
 import { sigilArt } from './core';
-import { paintDuel } from './duelPaint';
+import { DUEL_SPAN, paintDuel } from './duelPaint';
 import type { DuelAnswer, DuelJob } from './duelArtWorker';
 import type { SigilPicture } from './renderer';
 import type { DuelPlate } from '../plates/duel.ts';
@@ -20,7 +20,7 @@ export const deathmatchRadius = () => Math.min(innerWidth, innerHeight) * 0.42;
 
 /** The size it's painted at: a power of two at least as fine as the sigil is drawn on this screen, at most 2048. */
 function sizeFor() {
-  const across = 2 * deathmatchRadius() * (devicePixelRatio || 1);
+  const across = 2 * deathmatchRadius() * (DUEL_SPAN / 200) * (devicePixelRatio || 1);
   return Math.min(2048, Math.max(512, 2 ** Math.ceil(Math.log2(Math.max(1, across)))));
 }
 
@@ -63,7 +63,7 @@ async function paint(size: number): Promise<SigilPicture | null> {
   return { size, pixels: new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer) };
 }
 
-/** The worker's answer, or null where none can run (or it fails). */
+/** The worker's answer, or null where none can run (or it fails, or doesn't answer in time). */
 function fromWorker(size: number): Promise<DuelAnswer | null> {
   if (typeof Worker === 'undefined') return Promise.resolve(null);
   let w: Worker;
@@ -73,7 +73,9 @@ function fromWorker(size: number): Promise<DuelAnswer | null> {
     return Promise.resolve(null);
   }
   return new Promise((resolve) => {
+    const late = setTimeout(() => done(null), 6000);
     const done = (a: DuelAnswer | null) => {
+      clearTimeout(late);
       w.terminate();
       resolve(a && !a.error ? a : null);
     };

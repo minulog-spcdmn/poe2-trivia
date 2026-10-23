@@ -9,6 +9,12 @@ import type { DuelPlate } from '../plates/duel.ts';
 
 /** The stage's line weights (ArcaneStage), in the plate's units. */
 const WEIGHT: Record<string, number> = { '': 0.5, thin: 0.35, hair: 0.22, sign: 0.42, hatch: 0.2 };
+/**
+ * The plate's units across the picture: its 200, and a margin round them, so
+ * the coarse levels its glow is drawn from (renderer.ts) never hold its rim
+ * at their edge, which is smeared out past it where the sigil reaches.
+ */
+export const DUEL_SPAN = 220;
 /** Each part's channel. */
 const CHANNEL: [keyof DuelPlate, string][] = [
   ['sword', '#f00'],
@@ -16,13 +22,13 @@ const CHANNEL: [keyof DuelPlate, string][] = [
   ['band', '#00f'],
 ];
 
-/** Paints `plate` across a canvas `size` px square, its 200 units across filling it. */
+/** Paints `plate` on a canvas `size` px square, DUEL_SPAN units across. */
 export function paintDuel(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, size: number, plate: DuelPlate) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, size, size);
   ctx.save();
-  ctx.scale(size / 200, size / 200);
-  ctx.translate(100, 100);
+  ctx.scale(size / DUEL_SPAN, size / DUEL_SPAN);
+  ctx.translate(DUEL_SPAN / 2, DUEL_SPAN / 2);
   // (Opaque throughout, so the channels add without any of them touching the others.)
   ctx.globalCompositeOperation = 'lighter';
   ctx.miterLimit = 12;

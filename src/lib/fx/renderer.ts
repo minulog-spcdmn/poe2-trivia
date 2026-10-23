@@ -738,8 +738,9 @@ void main() {
     float lod = max(vS.x, 0.0) + log2(1.0 + 1.5 * blur * vS.y);
     vec2 u = vP / (vQ.x * vR.w) * 100.0;
     vec2 ub = rot2(u, -vR.x);
-    vec2 ta = u / 200.0 + 0.5;
-    vec2 tb = ub / 200.0 + 0.5;
+    // (The picture is 220 units across, a margin round the plate: duelPaint.ts' DUEL_SPAN.)
+    vec2 ta = u / 220.0 + 0.5;
+    vec2 tb = ub / 220.0 + 0.5;
     vec3 lit = vec3(textureLod(uSigil, ta, lod).rg, textureLod(uSigil, tb, lod).b);
     vec3 halo = vec3(textureLod(uSigil, ta, lod + 3.5).rg, textureLod(uSigil, tb, lod + 3.5).b);
     // How far along its part's drawing each pixel lies, 0 first to 1 last.

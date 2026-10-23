@@ -9,6 +9,7 @@ import { opacityOf } from '../opacity';
 import { after, boxOf, budget, currentFrame, detached, fxActive, fxPixelRatio, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
 import { zoomOf } from '../stage';
 import { duelPicture } from './duelArt';
+import { DUEL_SPAN } from './duelPaint';
 import { switchedOff } from '../switchedOff';
 
 // ---------- palette ----------
@@ -708,7 +709,7 @@ export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: numb
       f.q[7] = scale;
       const px = fxPixelRatio();
       // (A finer picture may take its place while it's drawn: the renderer's is the one kept now.)
-      f.q[8] = Math.log2((duelPicture() ?? art).size / (2 * R * scale * px));
+      f.q[8] = Math.log2((((duelPicture() ?? art).size / DUEL_SPAN) * 100) / (R * scale * px));
       f.q[9] = px;
     },
   });

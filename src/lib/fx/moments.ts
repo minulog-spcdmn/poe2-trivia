@@ -1121,7 +1121,6 @@ export function timerTick(timer: Element, secs: number, screen = true) {
 
 /** How long the deathmatch's intro card stays up (s): its sigil draws itself in the first 2, and holds to be read. */
 export const DEATHMATCH_INTRO = 4.4;
-export { deathmatchRadius };
 
 /**
  * What of the intro's card the sigil keeps behind (cover()), measured each
