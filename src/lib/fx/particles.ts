@@ -10,7 +10,7 @@ export const Shape = {
   Spark: 1,
   /** Hot core with a wide halo; flickers. */
   Ember: 2,
-  /** A shard of rock or crystal: an irregular sliver in three facets, glinting as one turns to the light. */
+  /** Diamond shard with bright edges. */
   Shard: 3,
   /** Four-point star glint. */
   Glint: 4,
@@ -306,11 +306,11 @@ export class ParticlePool {
       out[q + 2] = vx;
       out[q + 3] = vy;
       out[q + 4] = size;
-      // Coins pass their flip (the cosine of their turn) where streaks pass their length, shards their seed, and
-      // smoke its seed and how far through its life it is (the whole and the fraction).
+      // Coins pass their flip (the cosine of their turn) where streaks pass their length, and smoke its seed and
+      // how far through its life it is (the whole and the fraction).
       const shape = d[o + F.shape];
       out[q + 5] =
-        shape === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : shape === Shape.Shard ? seed : shape === Shape.Smoke ? Math.floor(seed) + Math.min(t, 0.999) : d[o + F.stretch];
+        shape === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : shape === Shape.Smoke ? Math.floor(seed) + Math.min(t, 0.999) : d[o + F.stretch];
       out[q + 6] = rot;
       out[q + 7] = shape;
       out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * ct) * env;

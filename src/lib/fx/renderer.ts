@@ -9,9 +9,7 @@
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
 import { INSTANCE_FLOATS } from './particles';
-import { NOISE_CELLS, NOISE_MAX, NOISE_TILE, noiseTile } from './noiseTile';
-import { SHARD_CELL, SHARD_KINDS, SHARD_REACH, shardAtlas, shardFaces } from './shardAtlas';
-import { CURVES, GLINT_PEAK, GLINT_REACH, curves } from './curves';
+import { NOISE_CELLS, NOISE_MAX, NOISE_TILE, SMOKE_BODY, SMOKE_REACH2, noiseTile, smokeBody } from './noiseTile';
 import { whenIdle } from '../idle';
 import { GpuTimer, type GpuDraw } from './gpuTimer';
 import { NOISE, buildPrograms, dropTarget, maxDrawSize, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
@@ -122,19 +120,15 @@ layout(location = 2) in vec4 iB; // size, stretch, rot, shape
 layout(location = 3) in vec4 iC; // r, g, b, page light (see BEHIND_DIALOG)
 uniform vec2 uView;     // CSS px
 uniform float uMinPx;   // smallest width in CSS px (about one device pixel)
-uniform vec4 uShardFaces[${SHARD_KINDS * 3}]; // shardAtlas.ts: each kind's faces, their middles and tilts
 out vec2 vL;            // px along (dir, normal)
 out vec2 vWorld;        // CSS px
 flat out vec3 vCol;
 flat out vec4 vP;       // shape, size, half length, page light
-flat out vec2 vLight;   // where its light comes from, in its own frame (along dir, normal)
-// What a shard or smoke works out once a particle rather than once a pixel
-// (each pixel's code is what makes a shader slow to compile, on D3D above
-// all): a shard's light on each face and its glint, and where the glint is
-// (in widths) and its kind (its layer in the atlas); smoke's noise, how
-// it's laid over it.
-flat out vec4 vA;
-flat out vec4 vB;
+flat out vec2 vLight;   // smoke's light: where it comes from, in its own frame (along dir, normal)
+// Smoke's noise, how it's laid over it: worked out once a particle rather
+// than once a pixel (each pixel's code is what makes a shader slow to
+// compile, on D3D above all).
+flat out vec3 vA;
 void main() {
   float shape = iB.w;
   float size = iB.x;
@@ -159,8 +153,7 @@ void main() {
   } else if (shape < 2.5) {     // ember
     ext = vec2(4.0 * w);
     energy *= energy;
-  } else if (shape < 3.5) {     // shard: the stretch slot carries its seed
-    halfLen = iB.y;
+  } else if (shape < 3.5) {     // shard
     ext = vec2(2.2 * w);
   } else if (shape < 4.5) {     // glint
     ext = vec2(4.5 * w);
@@ -176,27 +169,11 @@ void main() {
     energy *= energy;
   }
   vec2 nrm = vec2(-dir.y, dir.x);
-  // A shard is lit from above and a little left, as the page is; smoke from
-  // behind where it's going (the fire it came out of), or from below.
-  vec2 light = shape < 3.5 ? vec2(-0.5, -0.866) : speed > 1.0 ? -vel / speed : vec2(0.0, 1.0);
+  // Smoke is lit from behind where it's going (the fire it came out of), or from below.
+  vec2 light = speed > 1.0 ? -vel / speed : vec2(0.0, 1.0);
   vLight = vec2(dot(light, dir), dot(light, nrm));
-  vA = vec4(0.0);
-  vB = vec4(0.0);
-  if (shape > 2.5 && shape < 3.5) {
-    // A shard's faces each catch the light as they're tilted to it, and the
-    // one turned fullest to it flashes a glint.
-    float kind = mod(floor(iB.y), ${SHARD_KINDS}.0);
-    int k = int(kind) * 3;
-    vec3 L = normalize(vec3(vLight * 0.8, 0.6));
-    vec4 f0 = uShardFaces[k];
-    vec4 f1 = uShardFaces[k + 1];
-    vec4 f2 = uShardFaces[k + 2];
-    vA.xyz = max(vec3(dot(vec3(f0.zw, 0.6), L), dot(vec3(f1.zw, 0.6), L), dot(vec3(f2.zw, 0.6), L)), 0.0);
-    float best = max(vA.x, max(vA.y, vA.z));
-    vA.w = pow(best, 40.0) * ${1.3 * GLINT_PEAK};
-    vB.xy = (best == vA.x ? f0.xy : best == vA.y ? f1.xy : f2.xy) * vec2(1.0, 0.45);
-    vB.z = kind;
-  } else if (shape > 6.5) {
+  vA = vec3(0.0);
+  if (shape > 6.5) {
     // Smoke's noise is laid over it smaller as it spreads, so its lobes
     // swell with it rather than new ones sliding in, and it rolls a little
     // as it goes; each puff where its seed puts it.
@@ -221,12 +198,10 @@ in vec2 vWorld;
 flat in vec3 vCol;
 flat in vec4 vP;
 flat in vec2 vLight;
-flat in vec4 vA;
-flat in vec4 vB;
+flat in vec3 vA;
 out vec4 o;
 uniform sampler2D uNoiseTile; // noiseTile.ts: smoke's noise, read rather than worked out per pixel
-uniform mediump sampler2DArray uShards; // shardAtlas.ts: the shards' faces, baked, a layer a kind
-uniform sampler2D uCurves;    // curves.ts: curves looked up rather than worked out
+uniform sampler2D uSmokeBody; // noiseTile.ts: a puff by how far out and the noise, likewise
 ${BEHIND_DIALOG}
 ${COVER}
 void main() {
@@ -246,19 +221,10 @@ void main() {
     float r2 = dot(vL, vL) / (w * w);
     v = exp(-r2 * 7.0) * 1.4 + 0.22 * exp(-r2 * 0.45);
   } else if (shape < 3.5) {
-    // A sliver of one of the baked kinds (shardAtlas.ts): its faces' share
-    // of each texel, each lit as the vertex shader found, and the light it
-    // gives whichever way it's turned; and a glint off the face turned
-    // fullest to the light (curves.ts), fading out before the quad's edge.
-    vec2 q = vL / vec2(w, w * 0.45);
-    // (A level finer than its size asks for: its narrow way would blur it.
-    // Only its layer's square, which a small mip spreads it over.)
-    vec4 t = texture(uShards, vec3(0.5 + q * ${0.5 / SHARD_REACH}, vB.z), -1.0) * step(max(abs(q.x), abs(q.y)), ${SHARD_REACH});
-    float body = t.r + t.g + t.b;
-    float lit = dot(t.rgb, vA.xyz);
-    v = t.a + 1.2 * lit * lit / max(body, 1e-3) + 0.18 * exp(-dot(q, q) * 1.2);
-    vec2 g = abs(vL / w - vB.xy);
-    v += vA.w * textureLod(uCurves, g * ${(CURVES - 1) / CURVES / GLINT_REACH} + ${0.5 / CURVES}, 0.0).r * clamp(2.625 - 1.25 * length(vL) / w, 0.0, 1.0);
+    vec2 q = abs(vL) / vec2(w, w * 0.42);
+    float d = q.x + q.y;
+    float body = 1.0 - smoothstep(0.82, 1.0, d);
+    v = body * (0.3 + 0.9 * smoothstep(0.45, 0.95, d)) + 0.25 * exp(-d * d * 1.5);
   } else if (shape < 4.5) {
     vec2 a = abs(vL) / w;
     float core = exp(-dot(a, a) * 4.0);
@@ -288,16 +254,12 @@ void main() {
     v += facing * star * 1.3;
   } else {
     // Smoke: billows of noise over a soft round body, torn where they thin
-    // out, gone by the quad's edge however strong the noise there; lit on
-    // the side its light comes from.
+    // out (smokeBody, by how far out it is and the noise there), lit on the
+    // side its light comes from.
     vec2 q = vL / w;
-    float r2 = dot(q, q);
-    float n = texture(uNoiseTile, q * vA.x + vA.yz).r * ${NOISE_MAX};
-    // (The billows' edge is smoothstep(0.0, 0.55, ...), looked up: curves.ts.)
-    float edge = textureLod(uCurves, vec2((exp(-r2 * 0.55) - (0.62 - n) * 1.2) * ${(CURVES - 1) / CURVES / 0.55} + ${0.5 / CURVES}, 0.5), 0.0).g;
-    float dens = edge * clamp((3.9 - r2) * 0.53, 0.0, 1.0);
-    float lit = 0.45 + 0.55 * clamp(0.4 + 0.45 * dot(q, vLight) + 0.8 * (n - 0.44), 0.0, 1.0);
-    v = dens * lit * (0.4675 + 0.3825 * n);
+    float n = texture(uNoiseTile, q * vA.x + vA.yz).r;
+    float lit = 0.45 + 0.55 * clamp(0.4 + 0.45 * dot(q, vLight) + 0.8 * (n * ${NOISE_MAX} - 0.44), 0.0, 1.0);
+    v = textureLod(uSmokeBody, vec2(dot(q, q) * ${(SMOKE_BODY - 1) / SMOKE_BODY / SMOKE_REACH2}, n * ${(SMOKE_BODY - 1) / SMOKE_BODY}) + ${0.5 / SMOKE_BODY}, 0.0).r * lit;
   }
   float page = mod(vP.w, 2.0);
   float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);
@@ -1038,11 +1000,10 @@ const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 export class FxRenderer {
   private gl: WebGL2RenderingContext;
   private particleProg: Program;
-  /** Smoke's noise (noiseTile.ts), repeating; the shards' faces (shardAtlas.ts); the curves (curves.ts). */
+  /** Smoke's noise (noiseTile.ts), repeating, and its puffs' body. */
   private noiseTex: WebGLTexture;
-  private shardTex: WebGLTexture;
-  private curvesTex: WebGLTexture;
-  /** Whether the three are put in (see bake); and calling that off, should the renderer go first. */
+  private smokeTex: WebGLTexture;
+  /** Whether the two are put in (see bake); and calling that off, should the renderer go first. */
   private baked = false;
   private cancelBake: () => void;
   private shapeProg: Program;
@@ -1127,17 +1088,16 @@ export class FxRenderer {
     // read, it waited behind them too.)
     let float = false;
     let build: Build | null = null;
-    let stopLookups: (() => void) | null = null;
+    let stopNoise: (() => void) | null = null;
     const begin = () => {
       float = !!gl.getExtension('EXT_color_buffer_float') || !!gl.getExtension('EXT_color_buffer_half_float');
-      // What its textures hold is worked out while the shaders compile (off
-      // the page's thread), if the page is idle meanwhile: never at a cost
-      // to it (as it loads, say), so the first effect may have to.
-      stopLookups = whenIdle(() => {
-        stopLookups = null;
+      // What smoke's textures hold is worked out while the shaders compile
+      // (off the page's thread), if the page is idle meanwhile: never at a
+      // cost to it (as it loads, say), so the first effect may have to.
+      stopNoise = whenIdle(() => {
+        stopNoise = null;
         noiseTile();
-        shardAtlas();
-        curves();
+        smokeBody();
       });
       build = buildPrograms(gl, sources, (progs) => {
         let r: FxRenderer | null = null;
@@ -1170,7 +1130,7 @@ export class FxRenderer {
     return {
       cancel() {
         wait();
-        stopLookups?.();
+        stopNoise?.();
         build?.cancel();
       },
       now() {
@@ -1199,9 +1159,9 @@ export class FxRenderer {
     this.particleProg = p;
     this.shapeProg = s;
 
-    // Smoke's noise, the shards' faces and the curves: an even texel and
-    // empty ones while the page loads, put in once it's idle or something is
-    // drawn with them (see bake), off the loading path.
+    // Smoke's noise and body: an even texel and an empty one while the page
+    // loads, put in once it's idle or something is drawn with them (see
+    // bake), off the loading path.
     this.noiseTex = gl.createTexture()!;
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
@@ -1212,18 +1172,10 @@ export class FxRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    this.shardTex = gl.createTexture()!;
+    this.smokeTex = gl.createTexture()!;
     gl.activeTexture(gl.TEXTURE5);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.shardTex);
-    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.curvesTex = gl.createTexture()!;
-    gl.activeTexture(gl.TEXTURE6);
-    gl.bindTexture(gl.TEXTURE_2D, this.curvesTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, 1, 1, 0, gl.RG, gl.FLOAT, new Float32Array(2));
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array(1));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1231,10 +1183,8 @@ export class FxRenderer {
     gl.activeTexture(gl.TEXTURE0);
     this.cancelBake = whenIdle(() => this.bake(), { timeout: 6000, fallback: 3000 });
     gl.useProgram(p.prog);
-    gl.uniform4fv(p.u('uShardFaces'), shardFaces());
     gl.uniform1i(p.u('uNoiseTile'), 4);
-    gl.uniform1i(p.u('uShards'), 5);
-    gl.uniform1i(p.u('uCurves'), 6);
+    gl.uniform1i(p.u('uSmokeBody'), 5);
     this.downProg = d;
     this.upProg = u;
     this.compProg = c;
@@ -1494,15 +1444,12 @@ export class FxRenderer {
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
       behindDialog(this.particleProg, true);
       cover(this.particleProg);
-      // Smoke's noise on unit 4, the shards' faces on 5, the curves on 6:
-      // put in now if particles are drawn before the page was idle.
+      // Smoke's noise on unit 4, its body on 5: put in now if particles are drawn before the page was idle.
       if (!this.baked) this.bake();
       gl.activeTexture(gl.TEXTURE4);
       gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
       gl.activeTexture(gl.TEXTURE5);
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.shardTex);
-      gl.activeTexture(gl.TEXTURE6);
-      gl.bindTexture(gl.TEXTURE_2D, this.curvesTex);
+      gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, particles, 0, nParticles * INSTANCE_FLOATS);
@@ -1774,9 +1721,8 @@ export class FxRenderer {
   }
 
   /**
-   * Puts smoke's noise, the shards' faces and the curves in (see the
-   * constructor): worked out already as its shaders compiled (see start), or
-   * here if that moment never came.
+   * Puts smoke's noise and body in (see the constructor): worked out already
+   * as its shaders compiled (see start), or here if that moment never came.
    */
   private bake() {
     const gl = this.gl;
@@ -1790,12 +1736,8 @@ export class FxRenderer {
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     gl.activeTexture(gl.TEXTURE5);
-    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.shardTex);
-    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, SHARD_CELL, SHARD_CELL, SHARD_KINDS, 0, gl.RGBA, gl.UNSIGNED_BYTE, shardAtlas());
-    gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
-    gl.activeTexture(gl.TEXTURE6);
-    gl.bindTexture(gl.TEXTURE_2D, this.curvesTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, CURVES, CURVES, 0, gl.RG, gl.FLOAT, curves());
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, SMOKE_BODY, SMOKE_BODY, 0, gl.RED, gl.FLOAT, smokeBody());
     gl.activeTexture(gl.TEXTURE0);
   }
 
@@ -1805,8 +1747,7 @@ export class FxRenderer {
     for (const x of this.sils) gl.deleteTexture(x.tex);
     if (this.coverTex) gl.deleteTexture(this.coverTex);
     gl.deleteTexture(this.noiseTex);
-    gl.deleteTexture(this.shardTex);
-    gl.deleteTexture(this.curvesTex);
+    gl.deleteTexture(this.smokeTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);

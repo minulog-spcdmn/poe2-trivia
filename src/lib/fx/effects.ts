@@ -218,11 +218,8 @@ export function glints(at: Anchor, o: { count?: number; color?: Vec3; size?: [nu
   }
 }
 
-/**
- * Soft glow puffs (dust of light), mostly for impacts; or, `smoke`, puffs of
- * lit dust or smoke, billowing as they spread and stirred by the air (Shape.Smoke).
- */
-export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [number, number]; speed?: [number, number]; life?: [number, number]; area?: 'fill' | 'edge' | 'centre'; angle?: number; spread?: number; smoke?: boolean } = {}) {
+/** Soft glow puffs (dust of light), mostly for impacts. */
+export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [number, number]; speed?: [number, number]; life?: [number, number]; area?: 'fill' | 'edge' | 'centre'; angle?: number; spread?: number } = {}) {
   if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
   const n = budget(o.count ?? 8);
@@ -241,9 +238,8 @@ export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [num
       sizeEnd: rand(14, 30),
       color: o.color ?? scale(C.ember, 0.18),
       drag: 3,
-      shape: o.smoke ? Shape.Smoke : Shape.Glow,
+      shape: Shape.Glow,
       fadeIn: 0.1,
-      turbulence: o.smoke ? 40 : 0,
     });
   }
 }

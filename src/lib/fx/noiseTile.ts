@@ -59,6 +59,37 @@ export function noiseTile(): Uint8Array {
   return out;
 }
 
+/** Texels across smokeBody (by how far out) and down it (by the noise). */
+export const SMOKE_BODY = 64;
+/** How far out smokeBody reaches (squared, in widths): a puff is gone by then. */
+export const SMOKE_REACH2 = 4;
+
+let body: Float32Array | null = null;
+
+/**
+ * A puff of the effects' smoke (renderer.ts) by how far out a pixel is
+ * (squared, in widths: 0 to SMOKE_REACH2 across) and the noise there (0 to
+ * NOISE_MAX down): billows over a soft round body, torn where they thin out,
+ * gone by the quad's edge however strong the noise there. Looked up rather
+ * than worked out for every pixel, which made the particles' shader slower
+ * to compile. Row by row, a float a texel. Made once.
+ */
+export function smokeBody(): Float32Array {
+  if (body) return body;
+  const out = new Float32Array(SMOKE_BODY * SMOKE_BODY);
+  const clamp = (x: number) => Math.max(0, Math.min(1, x));
+  for (let j = 0; j < SMOKE_BODY; j++) {
+    const n = (j / (SMOKE_BODY - 1)) * NOISE_MAX;
+    for (let i = 0; i < SMOKE_BODY; i++) {
+      const r2 = (i / (SMOKE_BODY - 1)) * SMOKE_REACH2;
+      const e = clamp((Math.exp(-r2 * 0.55) - (0.62 - n) * 1.2) / 0.55);
+      out[j * SMOKE_BODY + i] = e * e * (3 - 2 * e) * clamp((3.9 - r2) * 0.53) * (0.4675 + 0.3825 * n);
+    }
+  }
+  body = out;
+  return out;
+}
+
 /** The noise at (x, y), in cells (it repeats every NOISE_CELLS), smoothly between the tile's pixels: 0 to NOISE_MAX. */
 export function noiseAt(x: number, y: number): number {
   const t = noiseTile();
