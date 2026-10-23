@@ -11,10 +11,17 @@ export type PrepRequest =
   /** Gets ready before the first question: a tiny picture through every step, so the first real one runs warm. */
   | { t: 'warm' }
   /** A picture no longer wanted (its question was thrown away): dropped where it is, unanswered. */
-  | { t: 'drop'; id: number };
+  | { t: 'drop'; id: number }
+  /** Still there? (The page is back from the background: prepPool.ts cameBack.) Answered at once. */
+  | { t: 'ping' };
 
-/** A picture prepared, or why it couldn't be here (the page then does it itself). */
-export type PrepAnswer = { id: number; prepped?: Prepped; error?: string };
+export type PrepAnswer =
+  /** A picture prepared, or why it couldn't be here (the page then does it itself). */
+  | { t: 'prep'; id: number; prepped?: Prepped; error?: string }
+  /** Warmed up. */
+  | { t: 'ready' }
+  /** Still here. */
+  | { t: 'pong' };
 
 const surface = (w: number, h: number) => new OffscreenCanvas(w, h);
 const encode = async (canvas: OffscreenCanvas, type: string, quality: number) => (await canvas.convertToBlob({ type, quality })).arrayBuffer();
@@ -29,14 +36,20 @@ self.onmessage = async ({ data: req }: MessageEvent<PrepRequest>) => {
     if (running.has(req.id)) dropped.add(req.id);
     return;
   }
+  if (req.t === 'ping') {
+    self.postMessage({ t: 'pong' } satisfies PrepAnswer);
+    return;
+  }
   if (req.t === 'warm') {
     const img = new OffscreenCanvas(8, 8);
     const ctx = img.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#c84';
-    ctx.fillRect(1, 1, 6, 6);
-    const plan = { ms: 4000, halfBy: 3000, endBy: 3500 };
-    await prepare(img, 8, { w: 4, h: 4, most: 2, grayscale: false, mirror: false, veil: { size: 3, seed: 1, plan } }, surface, encode).catch(() => {});
+    if (ctx) {
+      ctx.fillStyle = '#c84';
+      ctx.fillRect(1, 1, 6, 6);
+      const plan = { ms: 4000, halfBy: 3000, endBy: 3500 };
+      await prepare(img, 8, { w: 4, h: 4, most: 2, grayscale: false, mirror: false, veil: { size: 3, seed: 1, plan } }, surface, encode).catch(() => {});
+    }
+    self.postMessage({ t: 'ready' } satisfies PrepAnswer);
     return;
   }
   const { id } = req;
@@ -51,10 +64,10 @@ self.onmessage = async ({ data: req }: MessageEvent<PrepRequest>) => {
     // Encoding is the last and longest step: not begun for a picture dropped meanwhile.
     const prepped = await prepare(img, img.width, req.job, surface, (canvas, type, quality) => (check(), encode(canvas, type, quality)));
     check();
-    self.postMessage({ id, prepped } satisfies PrepAnswer, { transfer: transfers(prepped) });
+    self.postMessage({ t: 'prep', id, prepped } satisfies PrepAnswer, { transfer: transfers(prepped) });
   } catch (err) {
     // The page let go of a dropped one already.
-    if (!dropped.has(id)) self.postMessage({ id, error: String(err) } satisfies PrepAnswer);
+    if (!dropped.has(id)) self.postMessage({ t: 'prep', id, error: String(err) } satisfies PrepAnswer);
   } finally {
     img?.close();
     running.delete(id);
