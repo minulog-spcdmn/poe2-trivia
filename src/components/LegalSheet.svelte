@@ -5,17 +5,64 @@
   // everything, and the game behind it is inert: no focus, no clicks, and no
   // keys reach the game's own handlers (stopped here, before the window).
   import { closeLegal, legalSheet } from '../lib/legalSheet.svelte';
+  import { dialogIn, dialogOut, play } from '../lib/dialogIn';
+  import { tick, untrack } from 'svelte';
 
   let dialog = $state<HTMLDialogElement>();
   let back = $state<HTMLButtonElement>();
+  /** The page shown: kept while the sheet goes, so it doesn't empty first. */
+  let shown = $state<string | null>(null);
+  /** Going: the sheet sinks away before it closes. */
+  let going = $state(false);
+  /** Its rise or its fall, under way. */
+  let moving: Animation | null = null;
 
+  // It rises over the game from just below and sinks back as it goes, as
+  // the game's dialogs do (lib/dialogIn.ts, played here on the <dialog>).
   $effect(() => {
     if (!dialog) return;
-    if (legalSheet.url && !dialog.open) {
-      dialog.showModal();
-      back?.focus();
-    } else if (!legalSheet.url && dialog.open) dialog.close();
+    if (legalSheet.url) {
+      const was = untrack(() => going);
+      shown = legalSheet.url;
+      going = false;
+      if (!dialog.open) {
+        dialog.showModal();
+        untrack(rise);
+        // (Once the bar it's in is drawn: `shown` was only just set.)
+        void tick().then(() => back?.focus());
+      } else if (was && moving) {
+        // Called back as it went: it turns back from where it is.
+        moving.reverse();
+        letGo(moving);
+      }
+    } else if (dialog.open && !untrack(() => going)) {
+      going = true;
+      moving?.cancel();
+      const m = (moving = untrack(() => play(dialog!, dialogOut(), true)));
+      if (!m) return close();
+      m.finished.then(() => moving === m && going && close(), () => {});
+    }
   });
+  function rise() {
+    moving?.cancel();
+    moving = play(dialog!, dialogIn());
+    if (moving) letGo(moving);
+  }
+  /** Risen, it lets go of the sheet (no transform left on it). */
+  function letGo(m: Animation) {
+    m.finished.then(() => {
+      if (moving !== m || going) return;
+      m.cancel();
+      moving = null;
+    }, () => {});
+  }
+  function close() {
+    moving?.cancel();
+    moving = null;
+    going = false;
+    shown = null;
+    dialog?.close();
+  }
 
   /** Escape, wherever it is pressed: in the frame too, whose keys never reach this page. */
   const onKey = (e: KeyboardEvent) => {
@@ -49,6 +96,7 @@
 <dialog
   class="sheet"
   aria-label="Datenschutz"
+  class:going
   bind:this={dialog}
   oncancel={(e) => {
     e.preventDefault();
@@ -59,11 +107,14 @@
     e.stopPropagation();
   }}
 >
-  {#if legalSheet.url}
+  {#if shown}
     <div class="bar">
-      <button class="btn small" bind:this={back} onclick={closeLegal}>← Back to the game</button>
+      <button class="btn small back" bind:this={back} onclick={closeLegal}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6" /></svg>
+        Back to the game
+      </button>
     </div>
-    <iframe src={legalSheet.url} title="Datenschutz" onload={settle}></iframe>
+    <iframe src={shown} title="Datenschutz" onload={settle}></iframe>
   {/if}
 </dialog>
 
@@ -85,6 +136,29 @@
   .sheet[open] {
     display: flex;
   }
+  .sheet::backdrop {
+    animation: sheet-dark 0.3s ease-out;
+  }
+  /* As long as the sheet takes to go (dialogOut, lib/dialogIn.ts): written
+     out, as a custom property set on the sheet doesn't reach its backdrop
+     in Safari before 17.4. */
+  .sheet.going::backdrop {
+    opacity: 0;
+    transition: opacity 0.18s ease-in;
+  }
+  @keyframes sheet-dark {
+    from {
+      opacity: 0;
+    }
+  }
+  :global(:root[data-still]) .sheet::backdrop {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sheet::backdrop {
+      animation: none;
+    }
+  }
   /* Opaque over the whole page, so nothing shows through to band. */
   .sheet::backdrop {
     background: var(--bg);
@@ -93,8 +167,34 @@
     flex: none;
     display: flex;
     align-items: center;
+    position: relative;
     padding: calc(0.6rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right)) 0.6rem calc(1rem + env(safe-area-inset-left));
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid rgba(125, 99, 51, 0.22);
+  }
+  /* The game's header's hairline, brightest in the middle (App.svelte). */
+  .bar::after {
+    content: '';
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(224, 138, 68, 0.55), rgba(241, 217, 155, 0.7), rgba(224, 138, 68, 0.55), transparent);
+    pointer-events: none;
+  }
+  /* An engraved chevron before the words, as the header's marks are drawn. */
+  .back {
+    padding-left: 0.7em;
+    gap: 0.35em;
+  }
+  .back svg {
+    width: 1.35em;
+    height: 1.35em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   iframe {
     flex: 1;

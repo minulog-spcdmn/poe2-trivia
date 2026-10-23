@@ -15,8 +15,9 @@
   // - offered: a pairing link's code, taken only once the player says yes
   //   (a link can come from anyone).
   import { onDestroy, onMount, tick, untrack } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { circleOf, warmCircle } from './circles';
   import { calm } from '../lib/motion.svelte';
   import { codeInHash, codeLink, readCode, shownCode } from '../lib/sync/code';
@@ -222,7 +223,7 @@
 
 <div class="backdrop" use:dialogBackdrop transition:fade|global={{ duration: 150 }} onclick={close} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="sync panel" bind:this={panel} transition:fly|global={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
+  <div class="sync panel" bind:this={panel} in:dialogIn|global out:dialogOut|global onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
     <h3 id="sync-title">{title}</h3>
 
     <!-- The stage: the circle, and in its heart the code, the camera or the seal. -->

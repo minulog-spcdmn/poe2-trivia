@@ -32,6 +32,7 @@
   import DelveLastRun from './codex/DelveLastRun.svelte';
   import DelveRunLog from './codex/DelveRunLog.svelte';
   import CodexMedallion from './codex/CodexMedallion.svelte';
+  import EmptyPlate from './codex/EmptyPlate.svelte';
   import { circleOf } from './circles';
 
   /** The circle behind it (lib/circlePlaces.ts). */
@@ -240,13 +241,15 @@
 
 <div class="delve-page">
   {#if !anything}
-    <div class="empty">
-      <p>You have not delved yet.</p>
-      <p class="muted">
-        You start with three lives and go one depth deeper for every question you clear. Your runs show up here.
-      </p>
-      <button class="btn primary" onclick={onbegin}>Begin the descent</button>
-    </div>
+    <EmptyPlate circle={DelveCircle}>
+      <div class="empty">
+        <p>You have not delved yet.</p>
+        <p class="muted">
+          You start with three lives and go one depth deeper for every question you clear. Your runs show up here.
+        </p>
+        <button class="btn primary" onclick={onbegin}>Begin the descent</button>
+      </div>
+    </EmptyPlate>
   {:else}
     {#if current}
       <section class="summary">
@@ -387,11 +390,13 @@
         </div>
       {/if}
     {:else}
-      <div class="empty">
-        <p>No run under the current rules yet.</p>
-        <p class="muted">The descent has changed since your runs below, so their depths are kept apart and never compared with new ones.</p>
-        <button class="btn primary" onclick={onbegin}>Begin the descent</button>
-      </div>
+      <EmptyPlate circle={DelveCircle}>
+        <div class="empty">
+          <p>No run under the current rules yet.</p>
+          <p class="muted">The descent has changed since your runs below, so their depths are kept apart and never compared with new ones.</p>
+          <button class="btn primary" onclick={onbegin}>Begin the descent</button>
+        </div>
+      </EmptyPlate>
     {/if}
 
     <DelveRunLog {runs} {others} {byRun} total={allRuns} {onopen} />

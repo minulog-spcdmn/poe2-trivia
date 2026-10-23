@@ -120,5 +120,7 @@ export function homeScenes(): Scene[] {
       },
       'Invites',
     ),
+    // The swap between screens (App.svelte), deeper: the Codex opened from the start menu (on a phone, from its pair).
+    home('to-codex', 'Into the Codex', { build: () => returning({}, { steps: [{ wait: 1600 }, { click: ':is(.entry:nth-child(3 of .entry) .pick, .pair-pick)' }] }) }, 'Moving between screens'),
   ];
 }

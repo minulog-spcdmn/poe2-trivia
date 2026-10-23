@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogIn, dialogOut } from '../lib/dialogIn';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -54,7 +55,8 @@
   <div
     class="editor panel"
     bind:this={box}
-    transition:fly={{ y: 20, duration: 250 }}
+    in:dialogIn
+    out:dialogOut
     onclick={(e) => e.stopPropagation()}
     {onkeydown}
     role="dialog"

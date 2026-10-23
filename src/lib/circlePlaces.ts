@@ -40,7 +40,8 @@ export const PLACES = {
   item: { where: 'The item window (codex and game)', circles: ['eye'], how: '' },
   collection: { where: "The Codex’s collection", circles: ['moth'], how: '' },
   achievements: { where: "The Codex’s achievements", circles: ['monad'], how: '' },
-  codexDelve: { where: "The Codex’s Delve page", circles: ['blackSun'], how: '' },
+  codexDelve: { where: "The Codex’s Delve page", circles: ['blackSun'], how: 'dim behind its empty page too' },
+  codexEmpty: { where: "Behind the Codex’s collection while it’s empty", circles: ['rose'], how: 'dim and hollow, fading toward its band' },
   sync: { where: 'Pairing devices to sync', circles: ['monad'], how: 'hollow round the QR code, the camera or the seal' },
 } as const satisfies Record<string, Place>;
 
