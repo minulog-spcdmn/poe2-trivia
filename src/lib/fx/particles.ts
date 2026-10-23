@@ -125,6 +125,10 @@ const WAVES = (
   ] as const
 ).map(([a, len, drift, k]) => ({ dx: Math.cos(a), dy: Math.sin(a), f: (2 * Math.PI) / len, drift, k }));
 const flow: [number, number] = [0, 0];
+/** The air's clock (s): the effects' particles step it, and whatever else the air carries reads it (airNow). */
+let airTime = 0;
+/** Where the air's stir stands now, for flowAt: the effects' own clock, so the page's smoke moves with their particles. */
+export const airNow = () => airTime;
 
 /** The air's stir at (x, y) (CSS px) at time `t` (s), as an acceleration per unit of turbulence. The array is reused: read it at once. */
 export function flowAt(x: number, y: number, t: number): readonly [number, number] {
@@ -151,8 +155,6 @@ export class ParticlePool {
   count = 0;
   /** Squared speed of the fastest particle drawn in the last step, (px/s)². */
   fastest = 0;
-  /** Seconds stepped: the air's stir moves on with it (flowAt). */
-  private time = 0;
   private d: Float32Array;
   readonly instances: Float32Array;
   /**
@@ -240,7 +242,7 @@ export class ParticlePool {
     const out = this.instances;
     let n = 0;
     let fastest = 0;
-    const time = (this.time += dt);
+    const time = (airTime += dt);
     for (let i = 0; i < this.count; ) {
       const o = i * STRIDE;
       const age = d[o + F.age] + dt;

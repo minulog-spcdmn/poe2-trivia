@@ -18,7 +18,7 @@
 // it instead, plainer.
 
 import { fxActive } from './fx/core';
-import { flowAt } from './fx/particles';
+import { airNow, flowAt } from './fx/particles';
 import { noiseAt } from './fx/noiseTile';
 
 /** A billow's picture, px square, and how many different ones. */
@@ -144,6 +144,7 @@ function smokeGl(): SmokeGl | null {
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
     console.error('Blast smoke: WebGL program failed', gl.getProgramInfoLog(prog));
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
     return null;
   }
   // The pictures, side by side: light in red, density in alpha.
@@ -192,7 +193,8 @@ function smokeGl(): SmokeGl | null {
       const w = Math.max(1, Math.round(W * k));
       const h = Math.max(1, Math.round(H * k));
       if (cv.width !== w || cv.height !== h) Object.assign(cv, { width: w, height: h });
-      gl.viewport(0, 0, w, h);
+      // (The browser may give a very big canvas a smaller buffer than asked for.)
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!n) return;
       gl.uniform2f(uView, W, H);
@@ -375,11 +377,14 @@ export function blastSmoke(o: BlastSmoke) {
   }
   const R = Math.hypot(W, H) * 1.1;
 
+  // The air's stir is the effects' own, in the screen's px and on their clock, so the
+  // smoke rolls with the overlay's particles (its glow on it); without them, on its own.
+  const Z = o.Z;
   const move = (b: { x: number; y: number; vx: number; vy: number }, dt: number, drag: number, gravity: number, stir: number, t: number) => {
     if (stir) {
-      const f = flowAt(b.x, b.y, t);
-      b.vx += f[0] * stir * dt;
-      b.vy += f[1] * stir * dt;
+      const f = flowAt(b.x * Z, b.y * Z, o.whole ? t : airNow());
+      b.vx += (f[0] * stir * dt) / Z;
+      b.vy += (f[1] * stir * dt) / Z;
     }
     b.vy += gravity * dt;
     const keep = Math.exp(-drag * dt);
