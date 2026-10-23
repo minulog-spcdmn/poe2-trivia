@@ -31,6 +31,7 @@
   import { loadPlate } from '../lib/plateStore.svelte';
   import { PLACES } from '../lib/circlePlaces';
   import type { PlateName } from '../lib/plates/index.ts';
+  import AnswerMark from './AnswerMark.svelte';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -371,8 +372,8 @@
           {#if fake}<small class="made-up" in:slide={{ duration: 350 }}>made up</small>{/if}
         </span>
         <span class="cue" aria-hidden="true"></span>
-        {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
-        {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+        {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="check" /></span>{/if}
+        {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="cross" /></span>{/if}
       </button>
     {/each}
   </div>
@@ -773,7 +774,6 @@
     translate: 0 -50%;
     line-height: 1;
     font-size: 20px;
-    font-weight: 700;
   }
   .option.right {
     border-color: #5d8a50;
