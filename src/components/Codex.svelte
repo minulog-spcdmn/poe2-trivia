@@ -312,6 +312,14 @@
   let tab = $state<Tab>('items');
   /** A tab has been turned: its page's sections come in at once, not after the title's (the stagger in the styles). */
   let turned = $state(false);
+  /** The page coming in, as it opens or a tab is turned: its sections' panels wait for them (the styles). */
+  let rising = $state(true);
+  $effect(() => {
+    void tab;
+    rising = true;
+    const t = setTimeout(() => (rising = false), 1500);
+    return () => clearTimeout(t);
+  });
   function turn(to: Tab) {
     if (to !== tab) turned = true;
     tab = to;
@@ -390,7 +398,7 @@
   <span class="glyph" style:--src="url('{categoryGlyph(category)}')" aria-hidden="true"></span>
 {/snippet}
 
-<div class="codex">
+<div class="codex" class:rising>
   <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
@@ -752,15 +760,27 @@
      the last: the title's lines, the tabs, then the page's sections, and
      the footer last. A tab turned brings its page's sections in the same
      way, from the first at once (.turned). Only the sections move, never
-     the many tiles inside them. */
+     the many tiles inside them: the collection, as tall as all of them,
+     comes in by its bar and its first two categories (below them it's out
+     of sight by then), so no layer the height of the page is made to move
+     it. While the page comes in (.rising), a panel in a section waits for
+     it to rise before its filigree unfurls (app.css, --rise-delay); one
+     shown later unfurls at once. */
   .hero > *,
   .tabs,
-  .page > :global(:not(.delve-page)),
+  .page > :global(:not(.delve-page, .collection)),
   .page > :global(.delve-page > *),
+  .collection > .bar,
+  .collection > .cat-section:nth-child(-n + 3),
   .end {
-    --rise-delay: calc(var(--lead, 0s) + var(--n, 0) * 0.08s);
     animation: codex-rise 0.65s var(--ease-out) backwards;
-    animation-delay: var(--rise-delay);
+    animation-delay: calc(var(--lead, 0s) + (var(--n, 0) + var(--k, 0)) * 0.08s);
+  }
+  .rising :is(.hero > *, .tabs, .page > :global(*), .page > :global(.delve-page > *), .collection > *, .end) {
+    --rise-delay: calc(var(--lead, 0s) + (var(--n, 0) + var(--k, 0)) * 0.08s);
+  }
+  .collection > .cat-section {
+    --k: 1;
   }
   .hero > :nth-child(2) {
     --n: 1;
@@ -812,6 +832,7 @@
     .tabs,
     .page > :global(*),
     .page > :global(.delve-page > *),
+    .collection > *,
     .end {
       animation: none;
     }
@@ -820,6 +841,7 @@
   :global(:root[data-still]) .tabs,
   :global(:root[data-still]) .page > :global(*),
   :global(:root[data-still]) .page > :global(.delve-page > *),
+  :global(:root[data-still]) .collection > *,
   :global(:root[data-still]) .end {
     animation: none;
   }
