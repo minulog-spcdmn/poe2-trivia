@@ -1290,7 +1290,7 @@
             class:mine={mine && !reveal}
             class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
-            aria-label={shownItem ? `${shownItem.name}${st === 'right' ? ', right' : st === 'wrong' ? ', wrong' : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            aria-label={shownItem ? `${shownItem.name}${st === 'right' || st === 'wrong' ? `, ${st}` : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
             title={shownItem ? 'See its details' : undefined}
             disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
@@ -3162,7 +3162,7 @@
       left: 4px;
     }
     .tiles.snug .tile .mark {
-      top: 4px;
+      top: 7px;
       right: 6px;
       font-size: 1.05rem;
     }
@@ -3678,7 +3678,7 @@
     }
     .tiles .tile .mark,
     .tiles.snug .tile .mark {
-      top: 3px;
+      top: 6px;
       right: 6px;
       font-size: 1.05rem;
     }

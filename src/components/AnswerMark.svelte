@@ -1,8 +1,8 @@
 <!-- An answer's ✓ or ✕ at the reveal (QuestionView's rows and tiles, Today's
-     unique), drawn as the page's other icons are: round strokes in the
-     text's colour, the two of one weight and size, the ✓ upright with its long stroke
-     curving a little, as a pen makes it. The box is cut close round them, so
-     it takes no more room beside the answer than the glyph did. Sized by the
+     unique), drawn as the page's other icons are: round strokes in the text's
+     colour, the two of one weight and size, the ✓ upright with its long stroke
+     curving a little, as a pen makes it. The box is cut close round them, so it
+     takes no more room beside the answer than the glyph did. Sized by the
      parent's font: about as big as the glyph it stands for. Says "right" or
      "wrong" to a screen reader, as the glyph did. -->
 <script lang="ts">
