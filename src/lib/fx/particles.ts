@@ -111,7 +111,7 @@ const F = {
 const STRIDE = 37;
 
 // The air's own stir, shared by everything turbulence moves (and the page's
-// smoke, lib/blastAway.ts), so neighbours drift together as smoke and ash do:
+// smoke, lib/blastSmoke.ts), so neighbours drift together as smoke and ash do:
 // a few slow waves crossing the screen at odd angles, summed as a curl so it
 // neither gathers nor spreads what it carries, over a light wind veering
 // over seconds. About 1 at its strongest, on average.

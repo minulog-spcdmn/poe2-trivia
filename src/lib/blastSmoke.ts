@@ -17,6 +17,7 @@
 // idle. Without WebGL2 (and so without the overlay) a 2D canvas draws all of
 // it instead, plainer.
 
+import { fxActive } from './fx/core';
 import { flowAt } from './fx/particles';
 import { noiseAt } from './fx/noiseTile';
 
@@ -71,6 +72,8 @@ const canvas = (w: number, h: number) => Object.assign(document.createElement('c
 
 /** Floats per billow: x, y (layer px), size (px), picture; mirrored across, mirrored down, its soot's opacity, the fire's glow on it. */
 const BILLOW_FLOATS = 8;
+/** How hard the air's stir (flowAt) carries the smoke. */
+const SMOKE_STIR = 160;
 
 const SMOKE_VS = `#version 300 es
 layout(location = 0) in vec2 aCorner;
@@ -122,10 +125,9 @@ let gl2: SmokeGl | null | undefined;
 let glOwner: object | null = null;
 
 function smokeGl(): SmokeGl | null {
-  if (gl2 !== undefined) {
-    if (gl2?.lost()) gl2 = null;
-    return gl2;
-  }
+  // (Its context lost, a GPU reset say: made anew.)
+  if (gl2?.lost()) gl2 = undefined;
+  if (gl2 !== undefined) return gl2;
   gl2 = null;
   const cv = canvas(1, 1);
   const gl = cv.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'default' });
@@ -246,18 +248,21 @@ function sprites(): Sprites {
   return out;
 }
 
-/** Made while the page is idle, before the first blast needs them: the billows, and the smoke's WebGL. */
+/** Made while the page is idle, before the first blast needs them (once a Delve run is under way): the billows, and what draws them. */
+let prepared = false;
 export function prepareBlastSmoke() {
-  if (fields || typeof document === 'undefined') return;
+  if (prepared || typeof document === 'undefined') return;
+  prepared = true;
   const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
-  const make = () => void smokeGl();
+  // With the overlay, the WebGL the smoke is drawn with; without it, the 2D canvas's pictures.
+  const make = () => void (fxActive() ? smokeGl() : sprites());
   if (idle) idle(make, { timeout: 4000 });
   else setTimeout(make, 1500);
 }
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 
-type Billow = { x: number; y: number; vx: number; vy: number; s0: number; s1: number; age: number; life: number; v: number; flipY: number; drag: number; lift: number; stir: number };
+type Billow = { x: number; y: number; vx: number; vy: number; s0: number; s1: number; age: number; life: number; v: number; flipY: number; drag: number; lift: number };
 type Chip = { x: number; y: number; vx: number; vy: number; rot: number; spin: number; size: number; age: number; life: number; hot: boolean; pts: number[] };
 type Spark = { x: number; y: number; vx: number; vy: number; age: number; life: number };
 
@@ -325,7 +330,6 @@ export function blastSmoke(o: BlastSmoke) {
       flipY: Math.random() < 0.5 ? -1 : 1,
       drag,
       lift: rand(20, 60),
-      stir: 160,
     });
   }
   const billows = new Float32Array(smoke.length * BILLOW_FLOATS);
@@ -350,7 +354,6 @@ export function blastSmoke(o: BlastSmoke) {
         flipY: Math.random() < 0.5 ? -1 : 1,
         drag: 3,
         lift: 120,
-        stir: 0,
       });
     }
     for (let i = 0; i < (o.phone ? 10 : 16); i++) {
@@ -402,19 +405,28 @@ export function blastSmoke(o: BlastSmoke) {
   let t = 0;
   let last = performance.now();
   const frame = (now: number) => {
-    if (!(gl?.canvas ?? cv)?.isConnected || (gl && glOwner !== me)) return o.done();
+    const mine = !gl || glOwner === me;
+    if (!mine || !(gl?.canvas ?? cv)?.isConnected) return end(mine);
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     t += dt;
     for (const b of smoke) {
       b.age += dt;
-      if (b.age >= 0 && b.age <= b.life) move(b, dt, b.drag, -b.lift, b.stir, t);
+      if (b.age >= 0 && b.age <= b.life) move(b, dt, b.drag, -b.lift, SMOKE_STIR, t);
     }
     if (gl) {
       let n = 0;
       for (const b of smoke) {
         if (b.age < 0 || b.age > b.life) continue;
-        billows.set([b.x, b.y, sizeOf(b), b.v, side, b.flipY, sootOf(b), glowOf(b)], n++ * BILLOW_FLOATS);
+        const q = n++ * BILLOW_FLOATS;
+        billows[q] = b.x;
+        billows[q + 1] = b.y;
+        billows[q + 2] = sizeOf(b);
+        billows[q + 3] = b.v;
+        billows[q + 4] = side;
+        billows[q + 5] = b.flipY;
+        billows[q + 6] = sootOf(b);
+        billows[q + 7] = glowOf(b);
       }
       gl.draw(W, H, k, billows, n);
     } else if (ctx && sp) {
@@ -502,14 +514,17 @@ export function blastSmoke(o: BlastSmoke) {
       for (const b of smoke) if (b.age >= 0 && b.age <= b.life) drawBillow(b, sp.glow[b.v], Math.min(1, b.age / (b.life * 0.12)) * glowOf(b));
     }
     if (t < o.seconds) requestAnimationFrame(frame);
-    else {
-      // (The WebGL canvas is kept for the next blast, its drawing let go of meanwhile.)
-      if (gl) {
-        gl.draw(1, 1, 1, billows, 0);
-        gl.canvas.remove();
-      }
-      o.done();
+    else end(true);
+  };
+  const end = (mine: boolean) => {
+    // (The WebGL canvas is kept for the next blast, its drawing let go of meanwhile.)
+    if (gl && mine) {
+      gl.draw(1, 1, 1, billows, 0);
+      gl.canvas.remove();
     }
+    // A newer blast took the canvas over: this one's shards still fly to the end.
+    if (mine) o.done();
+    else setTimeout(o.done, Math.max(0, o.seconds - t) * 1000);
   };
   requestAnimationFrame(frame);
 }

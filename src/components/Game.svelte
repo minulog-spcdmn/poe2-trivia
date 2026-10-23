@@ -21,6 +21,7 @@
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { deeperThanEver, descended, zoneArrival } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
+  import { prepareBlastSmoke } from '../lib/blastSmoke';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
   import { motion } from '../lib/motion.svelte';
@@ -246,6 +247,10 @@
   // updates, so the old question is still there to blow apart.
   let swingSide = $state<-1 | 1 | null>(null);
   let askedSeen = 0;
+  // The blast's smoke made ready while the page is idle, once a run is under way.
+  $effect(() => {
+    if (run) prepareBlastSmoke();
+  });
   $effect.pre(() => {
     const asked = s.question?.askedAt ?? 0;
     const b = s.phase === 'question' ? s.question?.blast : undefined;

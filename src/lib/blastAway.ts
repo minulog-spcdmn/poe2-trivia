@@ -12,7 +12,7 @@
 // once; the smoke is one canvas.
 
 import dither from '../assets/dither.png';
-import { blastSmoke, prepareBlastSmoke } from './blastSmoke';
+import { blastSmoke } from './blastSmoke';
 import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
 import { unzoomRect, zoomOf } from './stage';
@@ -25,14 +25,13 @@ export const BLAST_IN_MS = 680;
 /** How long the whole of it lasts (ms), the last of the smoke included. */
 const BLAST_MS = 2300;
 
-prepareBlastSmoke();
-
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 /**
  * A soft light's gradient over the page, dithered under it (app.css,
  * --dither, imported: an inline style can't resolve the variable's url), so
  * its opacity rounds up or down from pixel to pixel instead of banding. Its
- * element wants image-rendering: pixelated.
+ * element wants image-rendering: pixelated, and a mask fading out with the
+ * gradient, so the dither goes where the light does and no further.
  */
 const glare = (gradient: string) => `${gradient}, url(${dither})`;
 const px = (n: number) => `${n.toFixed(1)}px`;
@@ -341,6 +340,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
       width: px(w),
       height: px(Math.min(rect.bottom, H) - Math.max(0, rect.top)),
       background: glare(`radial-gradient(ellipse farthest-side at ${side > 0 ? '100%' : '0%'} 50%, rgba(255, 226, 180, 0.7), rgba(255, 160, 75, 0.32) 35%, rgba(200, 90, 40, 0.08) 65%, rgba(0, 0, 0, 0) 92%)`),
+      maskImage: `radial-gradient(ellipse farthest-side at ${side > 0 ? '100%' : '0%'} 50%, #000 65%, transparent 92%)`,
       imageRendering: 'pixelated',
       opacity: '0',
     });
@@ -356,6 +356,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
       width: '100%',
       height: '100%',
       background: glare(`linear-gradient(${side > 0 ? 'to left' : 'to right'}, rgba(255, 244, 222, 0.95), rgba(255, 200, 120, 0.75) 16%, rgba(235, 130, 55, 0.4) 40%, rgba(120, 50, 20, 0) 78%)`),
+      maskImage: `linear-gradient(${side > 0 ? 'to left' : 'to right'}, #000 40%, transparent 78%)`,
       imageRendering: 'pixelated',
       opacity: '0',
     });
