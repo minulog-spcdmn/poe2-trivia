@@ -480,7 +480,7 @@
             {/if}
           {/each}
         </div>
-        <p class="dm-sub">Sudden death: miss while another duelist scores and you're out.</p>
+        <p class="dm-sub">Sudden death: miss while another duelist scores and you’re out.</p>
       </div>
     </div>
   </div>
