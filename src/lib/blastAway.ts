@@ -12,7 +12,7 @@
 // once; the smoke is one canvas.
 
 import dither from '../assets/dither.png';
-import { BLAST_SMOKE_S, blastSmoke } from './blastSmoke';
+import { blastSmoke } from './blastSmoke';
 import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
 import { unzoomRect, zoomOf } from './stage';
@@ -22,6 +22,8 @@ export const BLAST_IMPACT_MS = 110;
 /** When the new question starts coming in from the blast's side (ms after it goes off), and how long it takes. */
 export const BLAST_IN_DELAY_MS = 420;
 export const BLAST_IN_MS = 680;
+/** How long the whole of it lasts (ms), the last of the smoke included. */
+const BLAST_MS = 2300;
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 /**
@@ -362,7 +364,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
   }
   // The smoke rolling in after it (and, without the overlay, the fire, the
   // shockwave, the chips and the sparks), drawn as they move: lib/blastSmoke.ts.
-  blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, done: () => layer.remove() });
+  blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, done: () => layer.remove() });
 
   // The fire and light, and the screen shaking as the shockwave hits (the effects overlay's).
   if (fx) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine });
@@ -383,10 +385,5 @@ export function blastAway({ node, side, mine }: BlastAway) {
     );
   }
   // (Should its frames stop coming, a hidden tab say, it goes anyway.)
-  setTimeout(() => layer.remove(), BLAST_SMOKE_S * 1000 + 6000);
-}
-
-/** Clears what's left of any blast at once: its cloud hangs for seconds, and shouldn't over the next screen. */
-export function clearBlasts() {
-  for (const layer of document.querySelectorAll('.blast-layer')) layer.remove();
+  setTimeout(() => layer.remove(), BLAST_MS + 8000);
 }
