@@ -17,7 +17,8 @@
   import { fxActive, onFxChange } from '../lib/fx/core';
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
-  import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { inVein } from '../lib/vein';
+  import { REVIVE_FROM, WAY_OUT, delveDepth, digOf, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { startLine } from '../lib/delveStart';
   import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
@@ -167,7 +168,10 @@
   // The seconds the question's clock runs (Delve: a find's or the depth's),
   // known before it starts, so the ring stands full from the first; never
   // read off the deadline, which a burning flare moves on. 0: untimed turns.
-  const seconds = $derived(run ? questionTimer(s) : Math.round((clockMs(s) ?? 0) / 1000));
+  // Between a vein's strikes: the lamp's light, the next strike's clock.
+  /** Delve: the vein being dug while its two cards are up, or null. */
+  const between = $derived(s.phase === 'choosing' && inVein(s) ? digOf(s) : null);
+  const seconds = $derived(between ? between.light : run ? questionTimer(s) : Math.round((clockMs(s) ?? 0) / 1000));
   // Short timers only sound urgent near the end.
   const warnFrom = $derived(run ? Math.max(3, Math.min(5, Math.round(seconds * 0.35))) : 5);
 
@@ -203,6 +207,12 @@
     if (raffleTimer) clearTimeout(raffleTimer);
   });
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
+  /**
+   * Delve: between a vein's strikes, its two cards up (and the team's draw
+   * playing on them), the lamp stays in view, still at the light it has left
+   * for the next strike, where the strike's clock will run it.
+   */
+  const lampHeld = $derived(!!between || (drawing && inVein(s) && !!digOf(s)));
   /** Together: the vote drew a vein's way out, and its draw plays on the two cards before the team goes back to the light (Delve.leaving). */
   const leaving = $derived(!!run && group && s.phase === 'choosing' && s.delve?.leaving !== undefined);
 
@@ -361,9 +371,9 @@
 
 {#snippet timer()}
   <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
-  {#if !drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0))}
-    {#key q.askedAt}
-      <TimerRing deadline={q.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
+  {#if lampHeld || (!drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
+    {#key q?.askedAt}
+      <TimerRing deadline={lampHeld ? null : q!.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
   {/if}
 {/snippet}
@@ -403,7 +413,11 @@
           <div class="turn-body">
             {#if s.phase === 'choosing' || drawing}
               <div class="cards-slot" out:cardsOut>
-                <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null} ondrawn={() => (raffle = null)} />
+                <ChooseCategory
+                  drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
+                  ondrawn={() => (raffle = null)}
+                  timer={lampHeld && !slim ? timer : undefined}
+                />
               </div>
             {:else}
               <!-- A new question on the same turn (the host asked another, or dynamite
