@@ -156,9 +156,10 @@ export function gameScenes(): Scene[] {
       'Out of time',
       turnsSeats,
       (v) => {
-        // No answer by the time the clock ran out (as the host's timer sends it).
+        // Nobody answered: the clock runs to its end and the host's timer sends the empty answer, from the room itself.
         const t = turns(v).pick();
-        return t.answer(t.turn, -1);
+        t.wait(Math.max(0, (t.q.deadline ?? t.clock.now) - t.clock.now));
+        return t.act({ type: 'answer', index: null }, null);
       },
       manyAsked,
     ),

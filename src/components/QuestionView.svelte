@@ -38,6 +38,7 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -1289,7 +1290,7 @@
             class:mine={mine && !reveal}
             class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
-            aria-label={shownItem ? `${shownItem.name}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            aria-label={shownItem ? `${shownItem.name}${st === 'right' ? ', right' : st === 'wrong' ? ', wrong' : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
             title={shownItem ? 'See its details' : undefined}
             disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
@@ -1343,8 +1344,8 @@
                 {#if mirrored(i)}{@render mirrorLine()}{/if}
               </span>
             {/if}
-            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 13l4 4.5C12 13 15 8 19 4" /></svg></span>{/if}
-            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l15 15M19.5 4.5l-15 15" /></svg></span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="check" /></span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="cross" /></span>{/if}
             {@render who(i)}
           </button>
         {/each}
@@ -1447,8 +1448,8 @@
             <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
-            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 13l4 4.5C12 13 15 8 19 4" /></svg></span>{/if}
-            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l15 15M19.5 4.5l-15 15" /></svg></span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="check" /></span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="cross" /></span>{/if}
           </button>
         {/each}
       </div>
@@ -2395,17 +2396,6 @@
   .mark {
     font-size: 1.3rem;
   }
-  /* The ✓ and ✕ drawn as the page's other icons are (round strokes on a 24 grid), the two of one weight; the ✓ upright, its long stroke curving a little, as a pen makes it. */
-  .mark svg {
-    display: block;
-    width: 1.15em;
-    height: 1.15em;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
   /* The ✓/✕ sits in room kept free on the right, so it can't widen, heighten
      or rewrap the answer when it appears at the reveal. */
   .option .mark {
@@ -2567,10 +2557,11 @@
     top: 8px;
     left: 8px;
   }
+  /* Centred where the hover's diamond sits (.tile .cue: 20px in from the right, 22px down), its box 0.86em across (AnswerMark). */
   .tile .mark {
     position: absolute;
-    top: 8px;
-    right: 12px;
+    top: calc(22px - 0.43em);
+    right: calc(20px - 0.43em);
   }
   .tile.mine:not(:disabled) {
     cursor: pointer;
