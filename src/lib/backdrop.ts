@@ -12,7 +12,7 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { backdropFrame, fxActive, fxPaced, fxScaledDown, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
+import { backdropFrame, fxActive, fxScaledDown, fxSlowGap, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
 import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
@@ -1429,7 +1429,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     col: new Float32Array(MAX_MASKS * DROPS_PER_MASK * 4),
   };
   const shadowArrays = [...Object.values(el), ...Object.values(mk)];
-  /** What only colours the elements' shadows and fills (see measure): their changes can wait for a 30fps frame. */
+  /** What only colours the elements' shadows and fills (see measure): their changes can wait for the pace (fxSlowGap). */
   const colourArrays = new Set<Float32Array>([el.c, el.d, el.e, el.col]);
   const prev = new Float32Array(shadowArrays.reduce((n, arr) => n + arr.length, 0));
   /** The drop-shadow atlases' sizes (uSharpSize, uBlurSize). */
@@ -2051,7 +2051,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // or changed size, or a shadow or fill was handed between CSS and the
   // backdrop, which CSS stops or starts painting this frame), 'paced' when
   // only colours changed (a fill or shadow easing to another colour), which
-  // 30fps draws as well, or false. On phones and tablets there's nothing to
+  // the pace draws as well, or false. On phones and tablets there's nothing to
   // measure: everything is let go to CSS once, and nothing changes until the
   // pointer does. `parts` is which of the UI's parts the backdrop can draw
   // (see uiNow): none, and they're let go to CSS too.
@@ -2108,12 +2108,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // quickly, so any of those draws at once. A GPU that keeps up draws the
   // backdrop's own motion every frame too: at 30fps the embers step, and the
   // sparks thrown up skip 20px at a time, plain to see on a fast display.
-  // Where it's paced (fxPaced: phones and tablets, and a GPU found too slow
-  // for every pixel, see fx/gpuBudget.ts), 30fps does: its quickest cycle is
-  // a slow 9s breath and the embers drift a few pixels a frame. While calm()
-  // nothing is drawn until something changes.
+  // Where it doesn't, it's drawn less often (fxSlowGap: the pace, see
+  // fx/gpuBudget.ts), down to 30fps (always, on phones and tablets): its
+  // quickest cycle is a slow 9s breath and the embers drift a few pixels a
+  // frame. While calm() nothing is drawn until something changes.
   let dirty = false;
-  /** A change held back for the 30fps pace (see frame()). */
+  /** A change held back for the pace (see frame()). */
   let owed = false;
   let wasDescending = false;
   // Calls that wait on the GPU process (whenGpuCaughtUp in fx/gl.ts), and
@@ -2188,8 +2188,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     const homeMoving = stepHomeScene(dt, home, title);
     // Lights and mood step once per animation frame; draw() uses the latest values.
     // A mood holding steady (the victory's gold, a deathmatch's red) changes
-    // nothing, so it is just drawn along with everything else: every frame,
-    // at 30fps where paced, or while calm only when something changes. On phones, where this
+    // nothing, so it is just drawn along with everything else: at the pace,
+    // or while calm only when something changes. On phones, where this
     // full-screen shader is the costliest thing on screen and runs under the
     // effects overlay, lights and an easing mood need no more than 30fps
     // either.
@@ -2243,8 +2243,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;
-    // A depth easing in is a slow change of colour: it waits for the pace
-    // where paced. Holding still, the one frame it changes in must be drawn.
+    // A depth easing in is a slow change of colour: it waits for the pace.
+    // Holding still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
     const soft = lights || moodState === 'moving';
     if (!still) embers.step(dt, canvasW, canvasH, !fxActive());
@@ -2261,18 +2261,19 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     // What must be drawn now: the UI's shadows and fills moving with it, the
     // start page's scene, a dialog's dimming, the scene sinking or swinging,
     // Delve's parts coming in. Lights, a mood easing and colours changing
-    // under the UI are slow enough for 30fps where paced: a right answer's
-    // reveal (its light, its fills and glows easing to green and gold) would
-    // otherwise redraw this pass every frame, along with the effects
-    // overlay's own. A GPU that keeps up draws them every frame.
+    // under the UI are slow enough for the pace: where the GPU has no room
+    // to spare, a right answer's reveal (its light, its fills and glows
+    // easing to green and gold) would otherwise redraw this pass every
+    // frame, along with the effects overlay's own. A GPU that keeps up draws
+    // them every frame.
     const measured = measure(uiNow());
     // A colour measured now isn't measured as changed again (measure() takes
     // it as drawn), and a light or mood easing may stop in a frame held back:
-    // either is owed a frame (at the 30fps pace, where paced).
+    // either is owed a frame, at the pace.
     if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
     const urgent = measured === 'now' || dirty || homeMoving || fading;
-    if (!urgent && ((still && !owed) || (fxPaced() && now - last < 33))) return;
+    if (!urgent && ((still && !owed) || now - last < fxSlowGap())) return;
     last = now;
     dirty = false;
     owed = false;

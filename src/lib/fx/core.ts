@@ -192,7 +192,8 @@ const awayListeners = new Set<(away: boolean) => void>();
 
 /**
  * Quality: 0 full resolution, 1 lower, 2 lowest, as the GPU keeps up
- * (lib/fx/gpuBudget.ts weighs it; touch screens start, and stay, at 1). The
+ * (lib/fx/gpuBudget.ts weighs it, after the pace, fxSlowGap; touch screens
+ * start, and stay, at 1). The
  * backdrop follows it (fxScaledDown). Bloom stays on at every level:
  * switching it off mid-effect would dim everything at once.
  */
@@ -208,9 +209,8 @@ let resizeDueAt = 0;
  * little is in it, and drifting light looks the same at half the rate.
  * Effects still advance every frame, so timing is unchanged. On every
  * device, the same goes while all that's alive is endless and calm (a
- * streak's fire burning between moments), which can last a whole game.
- * Only where it's paced, though (fxPaced: phones, and while the quality is
- * down): a GPU that keeps up draws every frame, and a fast display shows the steps.
+ * streak's fire burning between moments), which can last a whole game: at
+ * the pace the GPU keeps up with (fxSlowGap), every frame where it can.
  */
 let calm = false;
 let lastDraw = 0;
@@ -883,7 +883,7 @@ function frameUntimed(nowMs: number) {
   // (Not timed on touch screens: a phone's GPU draws in tiles, later than its
   // timer sees, and some report next to nothing. There frames alone tell.)
   const draws = coarse?.matches ? null : renderer.gpuDraws();
-  if (draws) for (const d of draws) gpuBudget.gpu('fx', d.ms, d.px);
+  if (draws) for (const d of draws) gpuBudget.gpu('fx', d.ms, d.px, nowMs);
   // (No backdrop to tell the frames, its context lost for good, or none
   // beside the effects at all: the effects' own frames tell instead.)
   if (!backdropPixels) {
@@ -891,8 +891,7 @@ function frameUntimed(nowMs: number) {
     steer(nowMs);
   }
 
-  // (25ms rather than 33: a frame that comes a little early isn't skipped too.)
-  const draw = !calm || !fxPaced() || nowMs - lastDraw >= 25;
+  const draw = !calm || nowMs - lastDraw >= fxSlowGap();
   if (draw) lastDraw = nowMs;
   let busy = false;
   try {
@@ -1220,12 +1219,13 @@ export function fxScaledDown() {
 }
 
 /**
- * Whether slow motion is drawn at a pace of its own (the backdrop's at
- * 30fps, calm effects at about 40): on a touch screen, as it is now, and
- * while the quality is down. A GPU that keeps up draws every frame.
+ * How long (ms) since slow motion (the backdrop's own, effects while calm)
+ * was last drawn before it's drawn again: at the pace the GPU keeps up with
+ * while effects play, or while none do (gpuBudget.ts), every frame where it
+ * can; on a touch screen, as it is now, 30fps's always.
  */
-export function fxPaced() {
-  return quality > 0 || !!coarse?.matches;
+export function fxSlowGap() {
+  return gpuBudget.gap(raf !== 0, !!coarse?.matches);
 }
 
 /** Calls `fn` when fxScaledDown() changes. */
@@ -1301,7 +1301,7 @@ let lastFrame = 0;
  * whether they're off. (Gaps over 300ms are a background tab or a stall.)
  */
 export function backdropFrame(nowMs: number, draws: GpuDraw[] | null) {
-  if (draws) for (const d of draws) gpuBudget.gpu('backdrop', d.ms, d.px);
+  if (draws) for (const d of draws) gpuBudget.gpu('backdrop', d.ms, d.px, nowMs);
   const ms = nowMs - lastFrame;
   lastFrame = nowMs;
   if (ms > 0 && ms < 300) gpuBudget.frame(ms, nowMs, raf !== 0, !fxActive());
