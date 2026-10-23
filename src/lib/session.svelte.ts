@@ -1448,20 +1448,32 @@ class Session {
    * Prepares a question's art (media.svelte.ts) and seals it, both within
    * MEDIA_TIMEOUT_MS (a step that never settles, as after a phone kept the
    * page in the background, can't hold the question up for good); `signal`
-   * stops it partway.
+   * stops it partway, as running out of time does (what was left of it
+   * holds up no question asked in its place).
    */
   private async prepareArt(s: GameState, signal?: AbortSignal): Promise<PreparedArt> {
     const q = s.question!;
+    const stop = new AbortController();
+    const quit = () => stop.abort(signal?.reason);
+    signal?.addEventListener('abort', quit, { once: true });
+    if (signal?.aborted) quit();
     const art = async () => {
-      const media = await prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, signal);
+      const media = await prepareMedia(q, this.grayscaleOf(s), veilClock(s), engine.byId, stop.signal);
       const plain = picturesOf(media);
       return { media, plain, sealing: await this.sealMedia(q.askedAt, plain) };
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Preparing the art timed out')), MEDIA_TIMEOUT_MS);
+      timer = setTimeout(() => {
+        const err = new Error('Preparing the art timed out');
+        stop.abort(err);
+        reject(err);
+      }, MEDIA_TIMEOUT_MS);
     });
-    return Promise.race([art(), timeout]).finally(() => clearTimeout(timer));
+    return Promise.race([art(), timeout]).finally(() => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', quit);
+    });
   }
 
   /**

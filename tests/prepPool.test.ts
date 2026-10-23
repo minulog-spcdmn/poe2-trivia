@@ -53,9 +53,9 @@ const job = { w: 1, h: 1, most: 2, grayscale: false, mirror: false } as PrepJob;
 const file = new Blob([]);
 const onPage = { data: new ArrayBuffer(1), w: 1, h: 1, page: true } as unknown as Prepped;
 const inWorker = { data: new ArrayBuffer(1), w: 1, h: 1 } as unknown as Prepped;
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test('every worker warms up as it starts, and a picture it answers comes from it', async () => {
+test('every worker warms up as it starts, and a picture it answers comes from it', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(2);
   assert.ok(made.every((w) => w.got('warm') === 1));
   made.forEach((w) => w.ready());
@@ -64,15 +64,16 @@ test('every worker warms up as it starts, and a picture it answers comes from it
   w.answer(w.jobs[0], inWorker);
   assert.equal(await got, inWorker);
   // Nothing in hand: nothing watched, so it isn't let go for idling.
-  await wait(60);
+  t.mock.timers.tick(60);
   assert.ok(made.every((x) => !x.terminated));
 });
 
-test('a worker that stops answering is replaced, and what it had goes to the fresh one', async () => {
+test('a worker that stops answering is replaced, and what it had goes to the fresh one', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(1);
   made[0].ready();
   const got = p.prep(file, job, async () => onPage)!;
-  await wait(60);
+  t.mock.timers.tick(60);
   assert.equal(made[0].terminated, true);
   assert.equal(made.length, 2);
   assert.equal(p.count, 1);
@@ -82,23 +83,26 @@ test('a worker that stops answering is replaced, and what it had goes to the fre
   assert.equal(await got, inWorker);
 });
 
-test('a picture two workers in a row sat on is prepared on the page', async () => {
+test('a picture two workers in a row sat on is prepared on the page', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(1);
   made[0].ready();
   let page = 0;
   const got = p.prep(file, job, async () => (page++, onPage))!;
-  await wait(40);
+  t.mock.timers.tick(40);
   // The fresh one starts, then goes quiet too.
   made[1].ready();
+  t.mock.timers.tick(30);
   assert.equal(await got, onPage);
   assert.equal(page, 1);
   assert.equal(made[1].terminated, true);
 });
 
-test('a worker still starting (its script on a slow link) is given longer than the stall', async () => {
+test('a worker still starting (its script on a slow link) is given longer than the stall', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(1, 30);
   const got = p.prep(file, job, async () => onPage)!;
-  await wait(80);
+  t.mock.timers.tick(80);
   assert.equal(made[0].terminated, false);
   // Once it speaks, the usual watch applies to what it still has.
   made[0].ready();
@@ -106,15 +110,16 @@ test('a worker still starting (its script on a slow link) is given longer than t
   assert.equal(await got, inWorker);
 });
 
-test('a worker busy with several is watched from its last answer, not from when each went in', async () => {
+test('a worker busy with several is watched from its last answer, not from when each went in', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(1, 50);
   const w = made[0];
   w.ready();
   const a = p.prep(file, job, async () => onPage)!;
   const b = p.prep(file, job, async () => onPage)!;
-  await wait(35);
+  t.mock.timers.tick(35);
   w.answer(w.jobs[0], inWorker);
-  await wait(35);
+  t.mock.timers.tick(35);
   // 70 ms since b went in, 35 since the last answer: still in hand.
   assert.equal(w.terminated, false);
   w.answer(w.jobs[1], inWorker);
@@ -122,7 +127,8 @@ test('a worker busy with several is watched from its last answer, not from when 
   assert.equal(await b, inWorker);
 });
 
-test('back after a long while hidden, each worker is asked; only one that keeps quiet is replaced', async () => {
+test('back after a long while hidden, each worker is asked; only one that keeps quiet is replaced', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(2, 30);
   made.forEach((w) => w.ready());
   p.cameBack(HIDDEN_CHECK_MS - 1);
@@ -130,14 +136,28 @@ test('back after a long while hidden, each worker is asked; only one that keeps 
   p.cameBack(HIDDEN_CHECK_MS);
   assert.ok(made.every((w) => w.got('ping') === 1));
   made[0].say({ t: 'pong' });
-  await wait(60);
+  t.mock.timers.tick(60);
   assert.equal(made[0].terminated, false);
   assert.equal(made[1].terminated, true);
   assert.equal(made.length, 3);
   assert.equal(p.count, 2);
 });
 
-test("one that won't start is not replaced; what it had goes to another", async () => {
+test('back from the background, one busy with a picture (answering only between its steps) has the full stall to answer', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { p, made } = pool(1, 5000);
+  made[0].ready();
+  const got = p.prep(file, job, async () => onPage)!;
+  p.cameBack(HIDDEN_CHECK_MS);
+  t.mock.timers.tick(4000);
+  assert.equal(made[0].terminated, false);
+  made[0].say({ t: 'pong' });
+  made[0].answer(made[0].jobs[0], inWorker);
+  assert.equal(await got, inWorker);
+});
+
+test("one that won't start is not replaced; what it had goes to another", async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(2, 10_000);
   const got = p.prep(file, job, async () => onPage)!;
   const busy = made.find((w) => w.jobs.length)!;
@@ -158,7 +178,8 @@ test('one that ran and then died is replaced', () => {
   assert.equal(made.length, 2);
 });
 
-test('a dropped picture is let go at once, and its worker no longer watched for it', async () => {
+test('a dropped picture is let go at once, and its worker no longer watched for it', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { p, made } = pool(1);
   made[0].ready();
   const stop = new AbortController();
@@ -166,7 +187,7 @@ test('a dropped picture is let go at once, and its worker no longer watched for 
   stop.abort(new Error('gone'));
   await assert.rejects(got, /gone/);
   assert.deepEqual(made[0].sent.at(-1), { t: 'drop', id: made[0].jobs[0] });
-  await wait(60);
+  t.mock.timers.tick(60);
   assert.equal(made[0].terminated, false);
 });
 

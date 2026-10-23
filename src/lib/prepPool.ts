@@ -17,7 +17,7 @@ import type { PrepAnswer, PrepRequest } from './prepWorker';
 export const PREP_STALL_MS = 5000;
 /** The same for a worker that hasn't said a word yet (ms): its script may still be on its way over a slow link. */
 export const START_MS = 20_000;
-/** A worker asked whether it is still there (cameBack) answers within this (ms), between the steps of whatever it has in hand. */
+/** An idle worker asked whether it is still there (cameBack) answers within this (ms); one with pictures in hand, which answers only between their steps, has PREP_STALL_MS. */
 export const PING_MS = 1500;
 /** Back after this long in the background (ms), the workers are asked whether they are still there: the phone may have stopped them meanwhile. */
 export const HIDDEN_CHECK_MS = 30_000;
@@ -150,12 +150,12 @@ export class PrepPool {
     p.jobs.clear();
   }
 
-  /** The stall watch, from now, while the worker owes an answer: longer while it hasn't said a word, shorter for a question it should answer at once. */
+  /** The stall watch, from now, while the worker owes an answer: longer while it hasn't said a word, shorter for a question an idle one should answer at once. */
   private rewatch(p: Preparer) {
     clearTimeout(p.stall);
     delete p.stall;
     if (!p.jobs.size && !p.pinged) return;
-    const ms = !p.started ? Math.max(START_MS, this.stallMs) : p.pinged ? Math.min(PING_MS, this.stallMs) : this.stallMs;
+    const ms = !p.started ? Math.max(START_MS, this.stallMs) : p.pinged && !p.jobs.size ? Math.min(PING_MS, this.stallMs) : this.stallMs;
     p.stall = setTimeout(() => this.retire(p, true), ms);
   }
 }
