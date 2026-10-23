@@ -7,12 +7,14 @@
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
-  import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
-  import { deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
+  import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
+  import { stageZoom } from '../lib/stage';
+  import { deathmatchRadius, duelArt, warmDuelArt } from '../lib/fx/duelArt';
+  import { fxActive, onFxChange } from '../lib/fx/core';
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
   import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
@@ -80,23 +82,48 @@
   // Play the deathmatch intro once per deathmatch, on every device.
   let introFor = $state<number | null>(null);
   let introTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The game screen has gone (an intro still waiting for its sigil then never shows). */
+  let left = false;
   $effect(() => {
     const start = dm?.startedAt;
     if (start === undefined || start === introFor) return;
     introFor = start;
-    showIntro = true;
-    sfx('deathmatch');
-    if (introTimer) clearTimeout(introTimer);
-    introTimer = setTimeout(() => (showIntro = false), 2600);
+    // (It waits a moment at most for its sigil, painted ahead in a game that
+    // could come to this, but not yet in one joined or opened mid-deathmatch.)
+    const ready = fxActive() ? Promise.race([duelArt(), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
+    void ready.then(() => {
+      if (left || introFor !== start) return;
+      introR = deathmatchRadius() / stageZoom(innerWidth, innerHeight);
+      showIntro = true;
+      sfx('deathmatch');
+      if (introTimer) clearTimeout(introTimer);
+      introTimer = setTimeout(() => (showIntro = false), DEATHMATCH_INTRO * 1000);
+    });
   });
   let showIntro = $state(false);
+  // Its card is laid out to its sigil's radius, in the card's own px (under the stage's zoom), its title on the sigil's centre.
+  let introR = $state(0);
+  const faceSize = $derived(Math.round(Math.max(40, Math.min(72, introR * 0.2))));
   // A new game (or joining one): a wave of light.
   onMount(() => {
     gameStart();
     return () => {
+      left = true;
+      if (introTimer) clearTimeout(introTimer);
       deathmatchMood(false);
       fireAmbience(false);
     };
+  });
+
+  // A game to a target with more than one player can end in a tie, and a
+  // deathmatch: its sigil is painted ahead, away from the page (once the
+  // effects are on, and again should they come on later).
+  const canTie = $derived(!s.delve && s.players.length > 1);
+  $effect(() => {
+    if (!canTie) return;
+    const warm = () => fxActive() && warmDuelArt();
+    warm();
+    return onFxChange(warm);
   });
 
   // The whole scene turns crimson, and a fire roars, for as long as a deathmatch lasts.
@@ -355,28 +382,6 @@
         {#if held}
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
-          {#if dm}
-            <div class="dm-strip" data-cursor="duel" in:fly={{ y: -10, duration: 400 }}>
-              <span class="dm-title">⚔ Deathmatch · round {dm.round}</span>
-              <span class="dm-duelists">
-                {#each dm.alive as id (id)}
-                  {@const p = nameOf(id)}
-                  {#if p}
-                    <span class="duelist" class:done={id in dm.results} title={p.name}>
-                      <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={24} />
-                      {#if id in dm.results}<i class:ok={dm.results[id]}><DrawnMark shape={dm.results[id] ? 'check' : 'cross'} /></i>{/if}
-                    </span>
-                  {/if}
-                {/each}
-              </span>
-              <span class="dm-rule">
-                {#if dm.eliminated.length}
-                  <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
-                {/if}
-                Answer right to survive. Anyone who misses while another duelist scores is out.
-              </span>
-            </div>
-          {/if}
           <div class="head" data-cursor="banner">
             {#if run && pastBest && pastBest.turn === s.turnCount}
               <!-- Over the banner, alone, one past your best says so (in the room
@@ -458,23 +463,25 @@
 
 {#if showIntro && dm}
   <!-- Behind a dialog the flat fill only darkens (a blur would thin its edges) and the words blur. -->
-  <div class="dm-intro" use:portal={'dim'} transition:fade={{ duration: 400 }} aria-live="polite">
+  <div class="dm-intro" use:portal={'dim'} transition:fade={{ duration: 400 }} aria-live="polite" style:--R="{introR}px" style:--face="{faceSize}px">
     <div class="dm-intro-inner" data-behind-dialog="blur" in:scale={{ start: 1.6, duration: 600, opacity: 0 }}>
       <p class="dm-kicker">It’s a tie</p>
       <h1 use:introFx>Deathmatch</h1>
-      <div class="dm-faces">
-        {#each dm.entrants as id, i (id)}
-          {@const p = nameOf(id)}
-          {#if p}
-            {#if i > 0}<span class="vs">vs</span>{/if}
-            <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
-              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={56} />
-              <b><PlayerName name={p.name} /></b>
-            </span>
-          {/if}
-        {/each}
+      <div class="dm-below">
+        <div class="dm-faces">
+          {#each dm.entrants as id, i (id)}
+            {@const p = nameOf(id)}
+            {#if p}
+              {#if i > 0}<span class="vs">vs</span>{/if}
+              <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
+                <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={faceSize} />
+                <b><PlayerName name={p.name} /></b>
+              </span>
+            {/if}
+          {/each}
+        </div>
+        <p class="dm-sub">Sudden death: miss while another duelist scores and you’re out.</p>
       </div>
-      <p class="dm-sub">Sudden death. Random categories, harder questions.</p>
     </div>
   </div>
 {/if}
@@ -675,67 +682,6 @@
       transform: scaleX(0);
     }
   }
-  .dm-strip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem 1rem;
-    margin: 0 auto 0.4rem;
-    padding: 0.5rem 1rem;
-    max-width: 760px;
-    border: 1px solid rgba(224, 85, 63, 0.45);
-    border-radius: 4px;
-    background: linear-gradient(90deg, rgba(60, 12, 8, 0.2), rgba(90, 18, 10, 0.55), rgba(60, 12, 8, 0.2));
-    box-shadow: 0 0 30px rgba(224, 85, 63, 0.12);
-  }
-  .dm-title {
-    font-family: var(--font-display);
-    font-weight: 900;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-size: 0.85rem;
-    color: #ff9c86;
-  }
-  .dm-duelists {
-    display: inline-flex;
-    gap: 0.35rem;
-  }
-  .duelist {
-    position: relative;
-  }
-  .duelist.done :global(.avatar) {
-    opacity: 0.6;
-  }
-  .duelist i {
-    position: absolute;
-    right: -4px;
-    bottom: -4px;
-    width: 14px;
-    height: 14px;
-    display: grid;
-    place-items: center;
-    --mark-size: 6px;
-    --mark-stroke: 1.3px;
-    color: #fff;
-    background: var(--bad);
-    border-radius: 50%;
-  }
-  .duelist i.ok {
-    background: #3f8f43;
-  }
-  .dm-rule {
-    flex-basis: 100%;
-    text-align: center;
-    font-size: 0.9rem;
-    font-style: italic;
-    color: #d9b3a8;
-  }
-  .dm-rule b {
-    font-style: normal;
-    color: #ff9c86;
-    margin-right: 0.3em;
-  }
   .banner.dm h2 {
     color: #ffd7c9;
   }
@@ -746,59 +692,102 @@
     inset: 0;
     z-index: 70;
     display: grid;
-    place-items: center;
+    justify-items: center;
     padding: 1rem;
     /* Flat, so it can't band; the crimson glow in the middle is light from
        the effects layer (lib/fx/moments.ts), or this flat red without it. */
     background: rgba(14, 3, 2, 0.88);
     pointer-events: none;
   }
+  /* Laid out to the sigil's radius (--R): the title across its middle, inside
+     its band, on the screen's centre where the sigil is drawn; above it the
+     kicker, below it the duelists and the rule, all within the band. The
+     sigil keeps behind every word and token (moments.ts' introCovers), and a
+     dark halo close round each line's letters parts them from its glow. */
   .dm-intro-inner {
+    --knockout:
+      0 0 2px rgb(14, 3, 2), 0 0 5px rgba(14, 3, 2, 0.95), 0 0 10px rgba(14, 3, 2, 0.9), 0 0 20px rgba(14, 3, 2, 0.75);
+    display: grid;
+    grid-template-rows: 1fr auto 1fr;
+    justify-items: center;
+    height: 100%;
     text-align: center;
   }
+  .dm-kicker,
+  .face b,
+  .vs,
+  .dm-sub {
+    text-shadow: var(--knockout);
+  }
   .dm-kicker {
-    margin: 0;
+    align-self: end;
+    margin: 0 0 calc(var(--R) * 0.02);
     font-family: var(--font-display);
+    font-size: max(0.75rem, calc(var(--R) * 0.052));
     letter-spacing: 0.5em;
     padding-left: 0.5em;
     text-transform: uppercase;
-    color: #ff9c86;
+    font-weight: 700;
+    color: #ffc4b4;
   }
   .dm-intro h1 {
-    font-size: clamp(3.1rem, 13.5vw, 6.7rem);
+    margin: 0;
+    font-size: calc(var(--R) * 0.27);
+    line-height: 1.1;
     font-weight: 900;
     letter-spacing: 0.08em;
     background: linear-gradient(180deg, #ffe0d4 10%, #ff6a45 55%, #7a1408 95%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0 0 30px rgba(224, 85, 63, 0.55));
+    /* (Its letters' own glow, round a dark edge that parts them from the sigil.) */
+    filter: drop-shadow(0 0 3px rgba(14, 3, 2, 0.95)) drop-shadow(0 0 30px rgba(224, 85, 63, 0.55));
   }
-  .dm-faces {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 0.8rem 1.2rem;
-    margin: 1.2rem 0 0.6rem;
-  }
-  .face {
+  .dm-below {
+    align-self: start;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: calc(var(--R) * 0.045);
+    margin-top: calc(var(--R) * 0.05);
+  }
+  /* Each duelist as wide as the others, so "vs" stands on the middle, level with their tokens. */
+  .dm-faces {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.4rem calc(var(--R) * 0.03);
+  }
+  .face {
+    width: calc(var(--face) * 2.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--face) * 0.12);
   }
   .face b {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-family: var(--font-display);
+    font-size: max(0.85rem, calc(var(--R) * 0.055));
     color: #ffe0d4;
   }
   .vs {
+    height: var(--face);
+    display: grid;
+    place-items: center;
     font-family: var(--font-display);
+    font-size: max(0.9rem, calc(var(--R) * 0.06));
     font-style: italic;
     color: #ff7a5c;
   }
   .dm-sub {
+    max-width: calc(var(--R) * 1.3);
     margin: 0;
+    font-size: max(0.8rem, calc(var(--R) * 0.05));
     font-style: italic;
     color: #e6b8aa;
   }
@@ -871,20 +860,6 @@
       bottom: 100%;
       font-size: 0.64rem;
       line-height: 1.2;
-    }
-    /* The duel's strip on one line: its title is the header's already. */
-    .dm-title {
-      display: none;
-    }
-    .dm-strip {
-      gap: 0.1rem 0.8rem;
-      margin-bottom: 0.2rem;
-      padding: 0.2rem 0.8rem;
-      max-width: none;
-    }
-    .dm-rule {
-      flex-basis: auto;
-      font-size: 0.8rem;
     }
     .skip {
       margin-top: 0.6rem;

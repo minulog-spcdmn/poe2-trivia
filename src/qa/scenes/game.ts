@@ -197,6 +197,21 @@ export function gameScenes(): Scene[] {
         .start()
         .playTo((s) => !!s.deathmatch),
     ),
+    // The first duelist missed: face down on the scoreboard till the round ends.
+    scene('deathmatch-miss', 'Deathmatch', 'A duelist missed, the next to answer', [host('Kalguur'), guest('Doryani'), WATCHER], () => {
+      const t = table(['Kalguur', 'Doryani'], { targetScore: 1 })
+        .start()
+        .playTo((s) => !!s.deathmatch)
+        .pick();
+      return t.answer(t.turn, false).wait(1000).next();
+    }),
+    // Three tied; Una of the Vaal missed while the others scored, and the next round says so.
+    scene('deathmatch-out', 'Deathmatch', 'Three in, one knocked out', [host('Kalguur'), guest('Doryani'), WATCHER], () =>
+      table(['Kalguur', 'Doryani', 'Una of the Vaal'], { targetScore: 1 })
+        .start()
+        .playTo((s) => !!s.deathmatch)
+        .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
+    ),
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
     scene('delve-finds', 'Delve alone', 'The cards dealt: an Azurite Vein and a Flare Cache among them', [ALONE], () => {
       const t = delveAlone();

@@ -40,6 +40,10 @@
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
+  /** Who the last round of a deathmatch knocked out, said as the next one starts. */
+  const knockedOut = $derived(
+    s.deathmatch && !Object.keys(s.deathmatch.results).length ? s.deathmatch.eliminated.map((id) => s.players.find((p) => p.id === id)?.name ?? '?') : [],
+  );
   const me = $derived(session.myPlayerId);
   /** Delve together: nobody has a turn; everyone standing votes for a card. */
   const coop = $derived(!!s.delve && isGroupRun(s));
@@ -668,7 +672,8 @@
   <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
   <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
-      {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+      {#if knockedOut.length}{knockedOut.join(', ')} {knockedOut.length === 1 ? 'is' : 'are'} out;{' '}{/if}
+      {#if mine}{knockedOut.length ? 'your' : 'Sudden death: your'} category is drawn at random.{:else}<span class="muted">{knockedOut.length ? 'sudden' : 'Sudden'} death for</span> {active.name}<span class="muted">…</span>{/if}
     {:else if dig}
       {#if coop ? canVote && !drawn : mine}
         {coop && myVote ? 'Your vote is in' : 'Dig deeper, or get out?'}
