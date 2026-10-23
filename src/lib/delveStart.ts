@@ -4,11 +4,12 @@
 // slow, Azurite is a find) or to the alchemist's work the descent is drawn
 // as. No zone names (nothing spoiled), no digits (they would set in Cinzel).
 //
-// Each device deals the lines like a shuffled deck: a line comes back only
-// once all the others have been seen. So teammates in one run may each read
-// a different line; a reload keeps the run's own.
+// The host picks a run's line as it starts (game.ts) and every screen shows
+// that one (Delve.line). It weighs the lines each player's device has shown,
+// most recent first (delveStartSeen.ts, sent in a guest's hello): a line none
+// of them has seen if there is one, else one the group saw longest ago.
 
-import { readStored, writeStored } from './storage.ts';
+import { seededRandom } from './patches.ts';
 
 /** The lines a run can start with. */
 export const START_LINES: readonly string[] = [
@@ -75,72 +76,40 @@ export const START_LINES: readonly string[] = [
   'Calcine your doubts',
 ];
 
-/** What a device remembers: the deck's order, how far it is dealt, and the lines its recent runs drew. */
-export interface Deck {
-  order: number[];
-  next: number;
-  runs: [startedAt: number, line: number][];
+/** How many lines a list of seen lines keeps: more than the pool, so a newer build's longer pool fits in a hello. */
+export const MAX_SEEN = 96;
+
+/** A list of seen lines as it arrives (from storage, in a hello): lines of this pool, each once, at most MAX_SEEN; anything else dropped. */
+export function cleanSeen(v: unknown, n = START_LINES.length): number[] {
+  if (!Array.isArray(v)) return [];
+  const out: number[] = [];
+  for (const i of v.slice(0, MAX_SEEN)) if (Number.isInteger(i) && i >= 0 && i < n && !out.includes(i)) out.push(i);
+  return out;
 }
 
-/** How many recent runs keep their line (a reload or a resume of one of them shows it again). */
-const KEEP = 4;
-
-/** A fresh shuffle of the whole pool (Fisher-Yates), not starting with `avoid` so no line shows twice running. */
-export function shuffle(n: number, random: () => number, avoid = -1): number[] {
-  const order = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  if (n > 1 && order[0] === avoid) [order[0], order[n - 1]] = [order[n - 1], order[0]];
-  return order;
-}
-
-function valid(deck: unknown, n: number): deck is Deck {
-  const d = deck as Deck;
-  return (
-    !!d &&
-    Array.isArray(d.order) &&
-    d.order.length === n &&
-    new Set(d.order).size === n &&
-    d.order.every((i) => Number.isInteger(i) && i >= 0 && i < n) &&
-    Number.isInteger(d.next) &&
-    Array.isArray(d.runs) &&
-    d.runs.every((r) => Array.isArray(r) && Number.isInteger(r[1]) && r[1] >= 0 && r[1] < n)
-  );
-}
+/** A list of seen lines after `line` is shown: it moves to the front. */
+export const sawLine = (seen: readonly number[], line: number): number[] => [line, ...seen.filter((i) => i !== line)].slice(0, MAX_SEEN);
 
 /**
- * The line (an index into the pool) for the run that began at `startedAt`, and
- * the deck after it: a run already dealt keeps its line; a new one takes the
- * next card, and a spent deck (or one for another pool) is shuffled anew.
+ * The line (an index into the pool) for the run that began at `startedAt`,
+ * given what each player's device has shown, most recent first. A line counts
+ * as fresh as it is for whoever saw it last. One nobody has seen comes first;
+ * once there is none, it is one of the stalest half, so a line never comes
+ * back within half the pool's runs and the order differs each time round.
+ * A player with nothing seen (new, or a bot) weighs nothing.
  */
-export function deal(deck: Deck | null, startedAt: number, n: number, random: () => number): { line: number; deck: Deck } {
-  const ok = deck && valid(deck, n) ? deck : null;
-  const kept = ok?.runs.find(([at]) => at === startedAt);
-  if (ok && kept) return { line: kept[1], deck: ok };
-  let order = ok?.order;
-  let next = ok?.next ?? 0;
-  if (!order || next >= n) {
-    order = shuffle(n, random, ok?.runs[0]?.[1] ?? -1);
-    next = 0;
+export function pickLine(seen: readonly (readonly number[])[], startedAt: number, n = START_LINES.length): number {
+  const ago = Array.from({ length: n }, () => Infinity);
+  for (const list of seen) list.forEach((line, at) => line < n && at < ago[line] && (ago[line] = at));
+  const unseen = ago.flatMap((a, i) => (a === Infinity ? [i] : []));
+  let band = unseen;
+  if (!band.length) {
+    const floor = [...ago].sort((a, b) => b - a)[Math.ceil(n / 2) - 1];
+    band = ago.flatMap((a, i) => (a >= floor ? [i] : []));
   }
-  const line = order[next];
-  const runs: Deck['runs'] = [[startedAt, line] as [number, number], ...(ok?.runs ?? [])].slice(0, KEEP);
-  return { line, deck: { order, next: next + 1, runs } };
+  // Seeded by the run's id: the same pick on every call, and nothing drawn from the engine's random.
+  return band[Math.floor(seededRandom(startedAt)() * band.length)];
 }
 
-const STORE_NAME = 'delveStartDeck';
-
-/** The start line of the run that began at `startedAt` (the run's id, the same after a reload or resume). */
-export function startLine(startedAt: number): string {
-  let stored: Deck | null = null;
-  try {
-    stored = JSON.parse(readStored(STORE_NAME) ?? 'null');
-  } catch {
-    stored = null;
-  }
-  const { line, deck } = deal(stored, startedAt, START_LINES.length, Math.random);
-  if (deck !== stored) writeStored(STORE_NAME, JSON.stringify(deck));
-  return START_LINES[line];
-}
+/** The start line a run shows: the host's pick, or (a save from before it picked) one from the run's id alone. */
+export const lineOf = (run: { line?: string; startedAt: number }) => run.line ?? START_LINES[pickLine([], run.startedAt)];

@@ -82,6 +82,10 @@ test('rejects anything a real client would never send', () => {
   assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, lane: true }), { t: 'hello', secret, name: 'Dori', v: 3, lane: true });
   assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, lane: false }), { t: 'hello', secret, name: 'Dori', v: 3 });
   assert.equal(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, lane: 1 }), null);
+  // The Delve start lines a guest's device has shown: anything off is dropped, never the guest (a newer build's pool may be longer).
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, lines: [4, 1] }), { t: 'hello', secret, name: 'Dori', v: 3, lines: [4, 1] });
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, lines: [4, 4, 9999, 'x'] }), { t: 'hello', secret, name: 'Dori', v: 3, lines: [4] });
+  assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, lines: 'x' }), { t: 'hello', secret, name: 'Dori', v: 3 });
   // A guest that can open sealed pictures says so (the host lets in nobody else); again, only a flag.
   assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, seal: true }), { t: 'hello', secret, name: 'Dori', v: 3, seal: true });
   assert.deepEqual(parseClientMsg({ t: 'hello', secret, name: 'Dori', v: 3, seal: false }), { t: 'hello', secret, name: 'Dori', v: 3 });
