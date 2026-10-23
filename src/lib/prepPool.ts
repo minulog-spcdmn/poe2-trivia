@@ -4,35 +4,50 @@
 // workers without a word (iOS): no error, no answer, so the picture handed to
 // one never came back and every question after it waited for art that never
 // came. A worker that answers nothing for PREP_STALL_MS while it has pictures
-// in hand has stalled: it is let go, what it had is prepared on the page
-// (`again`), and a fresh one takes its place. Back from that long in the
-// background, they are all started afresh before anything waits on them.
+// in hand has stalled: it is let go, a fresh one takes its place, and what it
+// had goes to another worker once (then to the page). One still starting (its
+// script on its way, on a slow link) has START_MS. Back from a long while in
+// the background, each is asked whether it is still there, and one that
+// doesn't answer within PING_MS is replaced before anything waits on it.
 
 import type { PrepJob, Prepped } from './prepArt';
 import type { PrepAnswer, PrepRequest } from './prepWorker';
 
 /** A worker with pictures in hand that answers none for this long has stalled (ms): a picture takes it well under a second, even on a phone. */
 export const PREP_STALL_MS = 5000;
-/** Back after this long in the background (ms), the workers are started afresh: the phone may have stopped them meanwhile. */
-export const HIDDEN_RESTART_MS = 30_000;
+/** The same for a worker that hasn't said a word yet (ms): its script may still be on its way over a slow link. */
+export const START_MS = 20_000;
+/** A worker asked whether it is still there (cameBack) answers within this (ms), between the steps of whatever it has in hand. */
+export const PING_MS = 1500;
+/** Back after this long in the background (ms), the workers are asked whether they are still there: the phone may have stopped them meanwhile. */
+export const HIDDEN_CHECK_MS = 30_000;
 
-/** A picture handed to a worker: what to do with its answer, or to prepare it on the page instead. */
+/** A picture handed to a worker: its file and job (to hand it on), how many workers have had it, and what to do with its answer, or to prepare it on the page instead. */
 interface Job {
+  id: number;
+  file: Blob;
+  job: PrepJob;
+  tries: number;
   resolve: (p: Prepped) => void;
-  again: () => Promise<void>;
+  again: () => void;
 }
 
-/** A preparing worker, the pictures it hasn't answered yet, by job, and its stall watch while it has any. */
+/** A preparing worker: whether it has said anything yet, the pictures it hasn't answered, by job, a question still out (ping), and its stall watch while it owes an answer. */
 interface Preparer {
   worker: Worker;
+  started: boolean;
   jobs: Map<number, Job>;
+  pinged: boolean;
   stall?: ReturnType<typeof setTimeout>;
 }
+
+/** How many workers a picture is handed to before the page prepares it itself. */
+const TRIES = 2;
 
 export class PrepPool {
   private all: Preparer[] = [];
   private jobs = 0;
-  /** How many there should be: one that won't start (or dies with an error) is given no more, nor a replacement. */
+  /** How many there should be: one that won't start is given no more, nor a replacement. */
   private size: number;
   private make: () => Worker | null;
   private stallMs: number;
@@ -49,29 +64,24 @@ export class PrepPool {
     return this.all.length;
   }
 
-  /** Every worker readies itself for the first picture (prepWorker's 'warm'). */
-  warm() {
-    for (const p of this.all) p.worker.postMessage({ t: 'warm' } satisfies PrepRequest);
-  }
-
   /**
    * Hands a picture's file to the worker with the fewest in hand; null if
    * none runs. `again` prepares it on the page instead, should the worker
-   * turn it down or stall. `signal` drops it where it is.
+   * turn it down, or stall and no other take it. `signal` drops it where it is.
    */
   prep(file: Blob, job: PrepJob, again: () => Promise<Prepped>, signal?: AbortSignal): Promise<Prepped> | null {
-    const p = this.all.reduce<Preparer | null>((a, b) => (!a || b.jobs.size < a.jobs.size ? b : a), null);
-    if (!p) return null;
+    if (!this.all.length) return null;
     const id = ++this.jobs;
     return new Promise<Prepped>((resolve, reject) => {
-      p.jobs.set(id, { resolve, again: () => again().then(resolve, reject) });
-      this.watch(p);
-      p.worker.postMessage({ t: 'prep', id, file, job } satisfies PrepRequest);
+      const j: Job = { id, file, job, tries: 0, resolve, again: () => void again().then(resolve, reject) };
+      this.send(j);
       signal?.addEventListener(
         'abort',
         () => {
-          if (!p.jobs.delete(id)) return;
-          if (!p.jobs.size) this.unwatch(p);
+          const p = this.all.find((q) => q.jobs.has(id));
+          if (!p) return;
+          p.jobs.delete(id);
+          this.rewatch(p);
           p.worker.postMessage({ t: 'drop', id } satisfies PrepRequest);
           reject(signal.reason);
         },
@@ -80,53 +90,87 @@ export class PrepPool {
     });
   }
 
-  /** The page is back after `hiddenMs` in the background: after long enough, every worker is started afresh. */
+  /** The page is back after `hiddenMs` in the background: after long enough, a worker that doesn't say it's still there is replaced. */
   cameBack(hiddenMs: number) {
-    if (hiddenMs < HIDDEN_RESTART_MS) return;
-    for (const p of [...this.all]) this.retire(p, true);
+    if (hiddenMs < HIDDEN_CHECK_MS) return;
+    for (const p of this.all) {
+      if (!p.started || p.pinged) continue;
+      p.pinged = true;
+      this.rewatch(p);
+      p.worker.postMessage({ t: 'ping' } satisfies PrepRequest);
+    }
+  }
+
+  /** A picture to the worker with the fewest in hand, or to the page once it has been to TRIES of them (or none is left). */
+  private send(j: Job) {
+    const p = this.all.reduce<Preparer | null>((a, b) => (!a || b.jobs.size < a.jobs.size ? b : a), null);
+    if (!p || j.tries >= TRIES) return j.again();
+    j.tries++;
+    p.jobs.set(j.id, j);
+    this.rewatch(p);
+    p.worker.postMessage({ t: 'prep', id: j.id, file: j.file, job: j.job } satisfies PrepRequest);
   }
 
   private add(): Preparer | null {
     const worker = this.make();
     if (!worker) return null;
-    const p: Preparer = { worker, jobs: new Map() };
+    const p: Preparer = { worker, started: false, jobs: new Map(), pinged: false };
     worker.onmessage = ({ data }: MessageEvent<PrepAnswer>) => {
-      const job = p.jobs.get(data.id);
-      p.jobs.delete(data.id);
-      // It answers: the watch starts over for what it still has, if anything.
-      this.unwatch(p);
-      if (p.jobs.size) this.watch(p);
-      if (data.prepped) job?.resolve(data.prepped);
-      else void job?.again();
+      // Any word from it: it runs, and the watch starts over for what it still owes.
+      p.started = true;
+      p.pinged = false;
+      const job = data.t === 'prep' ? p.jobs.get(data.id) : undefined;
+      if (job) p.jobs.delete(job.id);
+      this.rewatch(p);
+      if (!job) return;
+      if (data.t === 'prep' && data.prepped) job.resolve(data.prepped);
+      else job.again();
     };
-    // A worker that won't start (or dies): what it had is prepared here, and it is given no more.
+    // A worker that won't start is given no more; one that ran and died is replaced. What it had goes on either way.
     worker.onerror = () => {
-      this.size--;
-      this.retire(p, false);
+      if (!p.started) this.size--;
+      this.retire(p, p.started);
     };
     this.all.push(p);
+    // Ready before the first question needs it: its encoder started on a tiny picture (prepWorker's 'warm').
+    worker.postMessage({ t: 'warm' } satisfies PrepRequest);
     return p;
   }
 
-  /** Lets a worker go, what it had prepared on the page; `replace`: a fresh one, warmed, takes its place. */
+  /** Lets a worker go, `replace`d by a fresh one; what it had goes to another worker. */
   private retire(p: Preparer, replace: boolean) {
     const at = this.all.indexOf(p);
     if (at < 0) return;
     this.all.splice(at, 1);
-    this.unwatch(p);
+    clearTimeout(p.stall);
     p.worker.onmessage = p.worker.onerror = null;
     p.worker.terminate();
-    for (const job of p.jobs.values()) void job.again();
+    if (replace && this.all.length < this.size) this.add();
+    for (const j of p.jobs.values()) this.send(j);
     p.jobs.clear();
-    if (replace && this.all.length < this.size) this.add()?.worker.postMessage({ t: 'warm' } satisfies PrepRequest);
   }
 
-  private watch(p: Preparer) {
-    if (p.stall === undefined) p.stall = setTimeout(() => this.retire(p, true), this.stallMs);
-  }
-
-  private unwatch(p: Preparer) {
+  /** The stall watch, from now, while the worker owes an answer: longer while it hasn't said a word, shorter for a question it should answer at once. */
+  private rewatch(p: Preparer) {
     clearTimeout(p.stall);
     delete p.stall;
+    if (!p.jobs.size && !p.pinged) return;
+    const ms = !p.started ? Math.max(START_MS, this.stallMs) : p.pinged ? Math.min(PING_MS, this.stallMs) : this.stallMs;
+    p.stall = setTimeout(() => this.retire(p, true), ms);
   }
+}
+
+/**
+ * Calls `back` with how long the page was hidden (ms), each time it shows
+ * again (`doc`: the page's document).
+ */
+export function onShownAgain(doc: Pick<Document, 'hidden' | 'addEventListener'>, back: (hiddenMs: number) => void, now = Date.now) {
+  let hiddenAt: number | null = null;
+  doc.addEventListener('visibilitychange', () => {
+    if (doc.hidden) hiddenAt = now();
+    else if (hiddenAt !== null) {
+      back(now() - hiddenAt);
+      hiddenAt = null;
+    }
+  });
 }

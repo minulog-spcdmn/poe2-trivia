@@ -15,7 +15,7 @@ import type { MediaMsg } from './protocol';
 import { drawnAs, type Grayscale, type Item, type Question, type Veil } from './game';
 import { veilPlan } from './delve';
 import { loadOnce } from './loadOnce';
-import { PrepPool } from './prepPool';
+import { onShownAgain, PrepPool } from './prepPool';
 
 /** A patch as the host lets it out: which one it is (its index in the cut, patchShapes). */
 export interface Patch {
@@ -201,12 +201,8 @@ function preparers(): PrepPool | null {
     }
   };
   pool = new PrepPool(make, Math.max(1, Math.min(PREPARERS, cores - 1)));
-  // Back from a long while in the background, they start afresh (prepPool.ts).
-  let hiddenAt = 0;
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) hiddenAt = Date.now();
-    else if (hiddenAt) pool?.cameBack(Date.now() - hiddenAt);
-  });
+  // Back from a long while in the background, any the phone stopped meanwhile are replaced (prepPool.ts).
+  onShownAgain(document, (ms) => pool?.cameBack(ms));
   return pool;
 }
 
@@ -218,8 +214,7 @@ function preparers(): PrepPool | null {
  * nothing more.
  */
 export function warmMedia() {
-  if (pool !== undefined) return;
-  preparers()?.warm();
+  preparers();
 }
 
 /**

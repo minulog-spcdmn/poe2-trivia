@@ -1,11 +1,12 @@
 // The workers that prepare the host's pictures (lib/prepPool.ts): a worker
-// the phone stopped in the background answers nothing, so what it had is
-// prepared on the page and a fresh one takes its place; back from a long
-// while hidden they all start afresh; one that dies with an error isn't
-// replaced.
+// the phone stopped in the background answers nothing, so a fresh one takes
+// its place and what it had goes on to another (then to the page); one whose
+// script is still on its way is given longer; back from a long while hidden,
+// each is asked whether it is still there and only the silent ones replaced;
+// one that won't start isn't replaced.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PrepPool, HIDDEN_RESTART_MS } from '../src/lib/prepPool.ts';
+import { PrepPool, HIDDEN_CHECK_MS, onShownAgain } from '../src/lib/prepPool.ts';
 import type { PrepJob, Prepped } from '../src/lib/prepArt.ts';
 
 /** A worker that keeps what it is sent, answers when told, and notes being let go. */
@@ -20,11 +21,21 @@ class FakeWorker {
   terminate() {
     this.terminated = true;
   }
+  say(data: unknown) {
+    this.onmessage?.({ data });
+  }
+  /** Warmed up: it has said a word. */
+  ready() {
+    this.say({ t: 'ready' });
+  }
   answer(id: number, prepped: unknown) {
-    this.onmessage?.({ data: { id, prepped } });
+    this.say({ t: 'prep', id, prepped });
   }
   get jobs() {
     return this.sent.filter((m) => m.t === 'prep').map((m) => m.id!);
+  }
+  got(t: string) {
+    return this.sent.filter((m) => m.t === t).length;
   }
 }
 
@@ -44,35 +55,61 @@ const onPage = { data: new ArrayBuffer(1), w: 1, h: 1, page: true } as unknown a
 const inWorker = { data: new ArrayBuffer(1), w: 1, h: 1 } as unknown as Prepped;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test('a picture the worker answers comes from the worker', async () => {
-  const { p, made } = pool(1);
+test('every worker warms up as it starts, and a picture it answers comes from it', async () => {
+  const { p, made } = pool(2);
+  assert.ok(made.every((w) => w.got('warm') === 1));
+  made.forEach((w) => w.ready());
   const got = p.prep(file, job, async () => onPage)!;
-  made[0].answer(made[0].jobs[0], inWorker);
+  const w = made.find((x) => x.jobs.length)!;
+  w.answer(w.jobs[0], inWorker);
   assert.equal(await got, inWorker);
   // Nothing in hand: nothing watched, so it isn't let go for idling.
   await wait(60);
-  assert.equal(made[0].terminated, false);
+  assert.ok(made.every((x) => !x.terminated));
 });
 
-test("a worker that never answers is let go: its pictures are prepared on the page, and a fresh one takes its place", async () => {
+test('a worker that stops answering is replaced, and what it had goes to the fresh one', async () => {
   const { p, made } = pool(1);
-  let page = 0;
-  const got = p.prep(file, job, async () => (page++, onPage))!;
-  assert.equal(await got, onPage);
-  assert.equal(page, 1);
+  made[0].ready();
+  const got = p.prep(file, job, async () => onPage)!;
+  await wait(60);
   assert.equal(made[0].terminated, true);
   assert.equal(made.length, 2);
   assert.equal(p.count, 1);
-  // The fresh one is warmed, and the next picture goes to it.
-  assert.deepEqual(made[1].sent, [{ t: 'warm' }]);
-  const next = p.prep(file, job, async () => onPage)!;
+  assert.equal(made[1].got('warm'), 1);
+  assert.equal(made[1].jobs.length, 1);
   made[1].answer(made[1].jobs[0], inWorker);
-  assert.equal(await next, inWorker);
+  assert.equal(await got, inWorker);
+});
+
+test('a picture two workers in a row sat on is prepared on the page', async () => {
+  const { p, made } = pool(1);
+  made[0].ready();
+  let page = 0;
+  const got = p.prep(file, job, async () => (page++, onPage))!;
+  await wait(40);
+  // The fresh one starts, then goes quiet too.
+  made[1].ready();
+  assert.equal(await got, onPage);
+  assert.equal(page, 1);
+  assert.equal(made[1].terminated, true);
+});
+
+test('a worker still starting (its script on a slow link) is given longer than the stall', async () => {
+  const { p, made } = pool(1, 30);
+  const got = p.prep(file, job, async () => onPage)!;
+  await wait(80);
+  assert.equal(made[0].terminated, false);
+  // Once it speaks, the usual watch applies to what it still has.
+  made[0].ready();
+  made[0].answer(made[0].jobs[0], inWorker);
+  assert.equal(await got, inWorker);
 });
 
 test('a worker busy with several is watched from its last answer, not from when each went in', async () => {
   const { p, made } = pool(1, 50);
   const w = made[0];
+  w.ready();
   const a = p.prep(file, job, async () => onPage)!;
   const b = p.prep(file, job, async () => onPage)!;
   await wait(35);
@@ -85,37 +122,45 @@ test('a worker busy with several is watched from its last answer, not from when 
   assert.equal(await b, inWorker);
 });
 
-test('back after a long while hidden, every worker starts afresh; a short look away changes nothing', async () => {
-  const { p, made } = pool(2, 10_000);
-  const got = p.prep(file, job, async () => onPage)!;
-  p.cameBack(HIDDEN_RESTART_MS - 1);
-  assert.equal(made.length, 2);
-  p.cameBack(HIDDEN_RESTART_MS);
-  assert.ok(made.slice(0, 2).every((w) => w.terminated));
-  assert.equal(made.length, 4);
+test('back after a long while hidden, each worker is asked; only one that keeps quiet is replaced', async () => {
+  const { p, made } = pool(2, 30);
+  made.forEach((w) => w.ready());
+  p.cameBack(HIDDEN_CHECK_MS - 1);
+  assert.ok(made.every((w) => w.got('ping') === 0));
+  p.cameBack(HIDDEN_CHECK_MS);
+  assert.ok(made.every((w) => w.got('ping') === 1));
+  made[0].say({ t: 'pong' });
+  await wait(60);
+  assert.equal(made[0].terminated, false);
+  assert.equal(made[1].terminated, true);
+  assert.equal(made.length, 3);
   assert.equal(p.count, 2);
-  // What one had in hand is prepared on the page.
-  assert.equal(await got, onPage);
 });
 
-test('a worker that dies with an error is not replaced', async () => {
-  const { p, made } = pool(2);
+test("one that won't start is not replaced; what it had goes to another", async () => {
+  const { p, made } = pool(2, 10_000);
   const got = p.prep(file, job, async () => onPage)!;
   const busy = made.find((w) => w.jobs.length)!;
+  const other = made.find((w) => w !== busy)!;
   busy.onerror?.();
-  assert.equal(await got, onPage);
   assert.equal(p.count, 1);
   assert.equal(made.length, 2);
-  // One that stalls later is still replaced, up to the one left.
-  const other = made.find((w) => w !== busy)!;
-  const next = p.prep(file, job, async () => onPage)!;
-  assert.equal(await next, onPage);
-  assert.equal(other.terminated, true);
+  other.ready();
+  other.answer(other.jobs[0], inWorker);
+  assert.equal(await got, inWorker);
+});
+
+test('one that ran and then died is replaced', () => {
+  const { p, made } = pool(1);
+  made[0].ready();
+  made[0].onerror?.();
   assert.equal(p.count, 1);
+  assert.equal(made.length, 2);
 });
 
 test('a dropped picture is let go at once, and its worker no longer watched for it', async () => {
   const { p, made } = pool(1);
+  made[0].ready();
   const stop = new AbortController();
   const got = p.prep(file, job, async () => onPage, stop.signal)!;
   stop.abort(new Error('gone'));
@@ -123,4 +168,26 @@ test('a dropped picture is let go at once, and its worker no longer watched for 
   assert.deepEqual(made[0].sent.at(-1), { t: 'drop', id: made[0].jobs[0] });
   await wait(60);
   assert.equal(made[0].terminated, false);
+});
+
+test('the page shown again says how long it was hidden, once for each time', () => {
+  const doc = new EventTarget() as EventTarget & { hidden: boolean };
+  doc.hidden = false;
+  let t = 1000;
+  const backs: number[] = [];
+  onShownAgain(doc as unknown as Document, (ms) => backs.push(ms), () => t);
+  const flip = (hidden: boolean) => {
+    doc.hidden = hidden;
+    doc.dispatchEvent(new Event('visibilitychange'));
+  };
+  // Shown without having been hidden (as the page first shows): nothing.
+  flip(false);
+  flip(true);
+  t += 45_000;
+  flip(false);
+  flip(false);
+  flip(true);
+  t += 2000;
+  flip(false);
+  assert.deepEqual(backs, [45_000, 2000]);
 });
