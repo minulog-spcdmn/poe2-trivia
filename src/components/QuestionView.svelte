@@ -16,6 +16,7 @@
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
+  import { keyTap } from '../lib/pointerAnchor';
   import { motion } from '../lib/motion.svelte';
   import {
     FILL_START,
@@ -907,13 +908,19 @@
     // The player's keys (settings page): an option's, Next's, Detonate's.
     const action = actionOf(e);
     const n = optionIndex(action);
+    // Each shown to the others as a tap on what it did (keyTap).
     if (n !== null) {
-      if (!reveal && !waiting && n < count) answer(n);
+      if (reveal || waiting || n >= count) return;
+      const was = chosen;
+      answer(n);
+      if (chosen !== was) keyTap(`opt:${n}`);
     } else if (action === 'next' && reveal && canNext) {
       e.preventDefault();
+      keyTap('next');
       next();
     } else if (action === 'detonate' && blastSlot && canBlast) {
       e.preventDefault();
+      if (!blasting) keyTap('blast');
       blastThrough();
     }
   }

@@ -5,6 +5,9 @@
   // screen, or, where this screen hasn't that one, on the next one round it
   // that it has; and glides between the updates (twenty a second) so it moves
   // smoothly. A tap on a phone shows where it landed, as the dart pressed, for a moment.
+  // A key that answers or picks shows as the hand clicking there, then fading (lib/pointerAnchor.ts
+  // keyTap), so a player on the keyboard is seen playing too; that player's pointer steps aside
+  // meanwhile, so they're never shown twice, and comes back where their mouse is.
   // While a new zone's cards are on their way (its title card over the game,
   // lib/dealing.svelte.ts) nobody points: this one isn't sent, and the
   // others' fade out, to come back where they are as the cards are dealt.
@@ -12,11 +15,11 @@
   import { RateLimit } from '../lib/protocol';
   import { session } from '../lib/session.svelte';
   import { dealing } from '../lib/dealing.svelte';
-  import { peerCursors } from '../lib/peerCursors.svelte';
+  import { KEY_HOLD_MS, KEY_TAP_MS, peerCursors } from '../lib/peerCursors.svelte';
   import { LIT, MOUSE, POINTER_BURST, POINTER_RATE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, moveOn, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portalToPage } from '../lib/portal';
-  import { anchorAt, clickableAt, screenHeight } from '../lib/pointerAnchor';
+  import { anchorAt, clickableAt, keyTap, onKeyTap, screenHeight } from '../lib/pointerAnchor';
   import { scrollFollow } from '../lib/scrollFollow';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
@@ -38,8 +41,13 @@
    */
   const FADE_PX = 180;
   const FADE_MS = 2500;
-  /** A pointer that hasn't moved for this long dims (ms); it's only hidden once its player leaves the page. */
+  /**
+   * A pointer that hasn't moved for this long dims (ms), and this long is
+   * gone, fading slowly (a mouse left where it was isn't where its player is
+   * looking): back as it moves. Held down, it stays.
+   */
   const IDLE_MS = 5000;
+  const GONE_MS = 10000;
   /** How long a tap shows (ms). */
   const TAP_MS = 1100;
   /** A press shows at least this long (ms), so a quick click is still seen (presses and releases are sent at once). */
@@ -55,14 +63,14 @@
   const live = $derived(session.status === 'ready' && cursorsLive(s));
   /** Only players point (a spectator could hint the answer), and nobody while a new zone's cards are on their way. */
   const pointing = $derived(live && !!me && s.players.some((p) => p.id === me) && !dealing.held);
-  const shown = $derived(
-    live
-      ? peerCursors.keys.flatMap((key) => {
-          const p = s.players.find((o) => o.id !== me && cursorKey(o.id) === key);
-          return p ? [{ key, name: p.name, color: playerColor(p.hue) }] : [];
-        })
-      : [],
-  );
+  /** The player another pointer (`key`, cursorKey) is, as it's drawn: their name and colour; nothing for this one's or a stranger's. */
+  function lookOf(key: string) {
+    const p = s.players.find((o) => o.id !== me && cursorKey(o.id) === key);
+    return p ? [{ name: p.name, color: playerColor(p.hue) }] : [];
+  }
+  const shown = $derived(live ? peerCursors.keys.flatMap((key) => lookOf(key).map((look) => ({ key, ...look }))) : []);
+  /** The keys' clicks showing (keyTap), each with its player's look. */
+  const keyTaps = $derived(live ? peerCursors.taps.flatMap((t) => lookOf(t.key).map((look) => ({ ...t, id: `${t.key}:${t.t}`, ...look }))) : []);
 
   $effect(() => {
     if (!live) peerCursors.clear();
@@ -83,6 +91,8 @@
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** What was sent last, so a pointer that stays put isn't sent again. */
   let sent = 'null';
+  /** When the mouse last moved (not the page under it) or pressed. */
+  let movedAt = -Infinity;
 
   function flush() {
     timer = null;
@@ -91,7 +101,10 @@
     // Over something this player can click, it goes as the hand, as their own cursor is.
     const at = pointing && over ? anchorAt(x, y, ((held || clicked ? PRESSED : MOUSE) + (clickableAt(x, y) ? LIT : 0)) as PointerKind) : null;
     const key = JSON.stringify(at);
-    if (key !== sent) {
+    // Still a while (the mouse, not what's under it), it isn't sent anew: it goes on the others' screens (GONE_MS),
+    // rather than coming back as the page changes under it. Leaving the page still goes.
+    const still = !!at && performance.now() - movedAt > IDLE_MS;
+    if (key !== sent && !still) {
       if (!budget.take()) {
         // Clicking faster than the host takes: this goes once it does.
         dirty = true;
@@ -122,9 +135,19 @@
     poke();
   });
 
+  /**
+   * A key's click (lib/pointerAnchor.ts keyTap), a tap, lit: sent, for the
+   * others to show as the hand clicking there, a mark of its own beside this
+   * player's pointer (lib/peerCursors.svelte.ts), which stays with the mouse.
+   */
+  function keyed(at: CursorAt) {
+    if (pointing && budget.take()) session.pointAt(at);
+  }
+
   onMount(() => {
     const move = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return;
+      if (e.movementX || e.movementY) movedAt = performance.now();
       if (held && !(e.buttons & 1)) held = false;
       x = e.clientX;
       y = e.clientY;
@@ -135,6 +158,7 @@
     const press = (e: PointerEvent, on: boolean) => {
       if (e.pointerType !== 'mouse' || e.button !== 0 || held === on) return;
       held = on;
+      movedAt = performance.now();
       // Where it is, though it hasn't moved since it came back to the page.
       x = e.clientX;
       y = e.clientY;
@@ -167,6 +191,16 @@
     };
     const recheck = () => over && poke();
     const every = setInterval(recheck, RECHECK_MS);
+    // A button pressed by Enter or Space (a real click with no pointer in it) is a key's click too: on an anchor
+    // of its own (an answer, a card, a setting), not on what merely holds it (the game as a whole).
+    const keyClick = (e: MouseEvent) => {
+      if (!e.isTrusted || e.detail !== 0 || !(e.target instanceof Element)) return;
+      const control = e.target.closest('button, a[href], [role="button"], [role="radio"], [role="checkbox"]');
+      const anchor = control?.closest('[data-cursor]');
+      if (anchor && (anchor === control || !anchor.querySelector('[data-cursor]'))) keyTap(anchor);
+    };
+    const stopKeys = onKeyTap(keyed);
+    addEventListener('click', keyClick, { capture: true });
     addEventListener('pointermove', move, { passive: true });
     addEventListener('pointerdown', tap, { passive: true });
     addEventListener('pointerdown', down, { passive: true, capture: true });
@@ -176,6 +210,8 @@
     addEventListener('scroll', recheck, { passive: true, capture: true });
     return () => {
       clearInterval(every);
+      stopKeys();
+      removeEventListener('click', keyClick, { capture: true });
       if (timer) clearTimeout(timer);
       removeEventListener('pointermove', move);
       removeEventListener('pointerdown', tap);
@@ -397,8 +433,11 @@
         const lit = litOf(dueKind);
         // Held down, it isn't idle, however still.
         const idle = !touch && actionOf(kind) !== PRESSED && age > IDLE_MS;
+        const gone = idle && age > GONE_MS;
         const tapped = touch && d.tap !== p.moved;
         if (tapped) d.tap = p.moved;
+        // Stepped aside while a key's click of theirs is held (the click is them, there); back as it fades.
+        const away = peerCursors.taps.some((o) => o.key === c.key && now - o.t < KEY_HOLD_MS);
         writes.push(() => {
           if (el.style.position !== position) el.style.position = position;
           el.style.transform = transform;
@@ -406,6 +445,8 @@
           el.classList.toggle('pressed', pressed);
           el.classList.toggle('lit', lit);
           el.classList.toggle('idle', idle);
+          el.classList.toggle('gone', gone);
+          el.classList.toggle('away', away);
           // Struck, held a moment, then fading.
           if (tapped) el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0 }], { duration: TAP_MS, easing: 'ease-in' });
         });
@@ -416,36 +457,83 @@
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
   });
+
+  // ---- the keys' clicks -----------------------------------------------
+
+  const tapEls: Record<string, HTMLElement> = {};
+
+  /** Each key's click on its own copy of what it clicked, as the hand pressed a moment, then let go, held, and fading (KEY_HOLD_MS). */
+  $effect(() => {
+    const list = keyTaps;
+    // (Each click's element bound by its own id: those gone go with it.)
+    for (const id of Object.keys(tapEls)) if (!list.some((t) => t.id === id)) delete tapEls[id];
+    if (!list.length) return;
+    let raf = 0;
+    const frame = (now: number) => {
+      const boxes = new Map<number, Found | null>();
+      const screenH = screenHeight();
+      const writes: (() => void)[] = [];
+      for (const t of list) {
+        const el = tapEls[t.id];
+        if (!el) continue;
+        const place = placeOf(t.at, boxes, screenH);
+        const age = now - t.t;
+        // Held, then fading evenly as the pointer fades back in.
+        const u = Math.max(0, (age - KEY_HOLD_MS) / (KEY_TAP_MS - KEY_HOLD_MS));
+        const opacity = place ? String(Math.max(0, 1 - u)) : '0';
+        const transform = place ? `translate3d(${Math.min(innerWidth - 16, Math.max(2, place.x))}px, ${Math.min(innerHeight - 20, Math.max(2, place.y))}px, 0)` : '';
+        writes.push(() => {
+          el.style.opacity = opacity;
+          if (transform) el.style.transform = transform;
+          el.classList.toggle('pressed', age < PRESS_SHOW_MS);
+        });
+      }
+      for (const write of writes) write();
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  });
 </script>
+
+{#snippet art()}
+  <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
+       Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little, its hatched side struck solid,
+       and the hand pushes its finger into the page, foreshortened and struck solid. -->
+  <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
+    <g class="body">
+      <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
+      <path class="glow" d={POINTER.outline} />
+      <path class="wash" d={POINTER.outline} />
+      <path class="side" d={POINTER.side} />
+      <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
+      <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
+      <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
+    </g>
+    <!-- The hand is drawn plain (lib/pointerArt.ts Art): fine lines, no glow, its talon struck solid. -->
+    {#each [HAND, HAND_PRESSED] as h, i (i)}
+      <g class="hand" class:down={i === 1}>
+        <path class="ground" d={h.outline} stroke-width="2.4" />
+        <path class="talon" d={i === 1 ? h.finger : h.talon} />
+        <path class="line" d={h.outline} stroke-width="0.8" />
+        <path class="line" d={h.creases} stroke-width="0.6" />
+        <path class="line hatch" d={h.shade} stroke-width="0.45" />
+      </g>
+    {/each}
+  </svg>
+{/snippet}
 
 <div class="cursors" class:veiled={dealing.held} use:portalToPage aria-hidden="true" style:--pad-x={PAD_X} style:--pad-y={PAD_Y} style:--w={SIZE[0]} style:--h={SIZE[1]} style:--sink={PRESS_SINK}>
   {#each shown as c (c.key)}
     <div class="cursor" bind:this={els[c.key]} style:--c={c.color} data-behind-dialog>
-      <!-- The dart (lib/pointerArt.ts) with its tip on the spot: a dark rim and ground, a glow under the lines.
-           Over a button, the hand pointing instead; pressed (or a tap), the dart sinks a little, its hatched side struck solid,
-           and the hand pushes its finger into the page, foreshortened and struck solid. -->
-      <svg class="dart" viewBox="{-PAD_X} {-PAD_Y} {SIZE[0]} {SIZE[1]}" width={SIZE[0]} height={SIZE[1]}>
-        <g class="body">
-          <path class="ground" d={POINTER.outline} stroke-width={WEIGHT.rim} />
-          <path class="glow" d={POINTER.outline} />
-          <path class="wash" d={POINTER.outline} />
-          <path class="side" d={POINTER.side} />
-          <path class="line" d={POINTER.outline} stroke-width={WEIGHT.outline} />
-          <path class="line ridge" d={POINTER.ridge} stroke-width={WEIGHT.ridge} />
-          <path class="line hatch" d={POINTER.hatch} stroke-width={WEIGHT.hatch} />
-        </g>
-        <!-- The hand is drawn plain (lib/pointerArt.ts Art): fine lines, no glow, its talon struck solid. -->
-        {#each [HAND, HAND_PRESSED] as h, i (i)}
-          <g class="hand" class:down={i === 1}>
-            <path class="ground" d={h.outline} stroke-width="2.4" />
-            <path class="talon" d={i === 1 ? h.finger : h.talon} />
-            <path class="line" d={h.outline} stroke-width="0.8" />
-            <path class="line" d={h.creases} stroke-width="0.6" />
-            <path class="line hatch" d={h.shade} stroke-width="0.45" />
-          </g>
-        {/each}
-      </svg>
+      {@render art()}
       <span class="name">{c.name}</span>
+    </div>
+  {/each}
+  {#each keyTaps as t (t.id)}
+    <div class="cursor keytap lit" bind:this={tapEls[t.id]} style:--c={t.color} data-behind-dialog>
+      {@render art()}
+      <span class="name">{t.name}</span>
     </div>
   {/each}
 </div>
@@ -480,6 +568,21 @@
   }
   .cursor:global(.lost) {
     opacity: 0;
+  }
+  .cursor:global(.gone) {
+    opacity: 0;
+    transition-duration: 1s;
+  }
+  /* A key's click of theirs held: out of sight quickly, back (0.4s, as the click fades) once it's let go. */
+  .cursor:global(.away) {
+    opacity: 0;
+    transition-duration: 0.1s;
+  }
+  /* A key's click: on the screen, its fading drawn frame by frame. */
+  .keytap {
+    position: fixed;
+    opacity: 0;
+    transition: none;
   }
   .dart {
     display: block;

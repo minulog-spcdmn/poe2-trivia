@@ -1,4 +1,4 @@
-import { MAX_HOPS, anchorCode, cursorAt, toAnchor, type CursorAt, type Hop, type PointerKind } from './cursors.ts';
+import { LIT, MAX_HOPS, TAP, anchorCode, cursorAt, toAnchor, type CursorAt, type Hop, type PointerKind } from './cursors.ts';
 
 /**
  * The screen height the game anchor's positions go by (cursors.ts toAnchor):
@@ -67,6 +67,41 @@ function nearest(scope: ParentNode, px: number, py: number): Found | null {
   return best;
 }
 
+/** The spot (px, py) on the anchors `chain` (innermost first): the innermost, what holds it, and the outermost, whatever a screen has of them, so it lands near where it is. */
+function hopsAt(chain: Found[], px: number, py: number): Hop[] {
+  if (chain.length > MAX_HOPS) chain = [...chain.slice(0, MAX_HOPS - 1), chain.at(-1)!];
+  return chain.map(({ code, r }): Hop => [code, ...toAnchor(code, px, py, r, screenHeight())]);
+}
+
+/** Told of a key's click (keyTap), a tap, lit: PeerCursors.svelte, which sends it to the others. */
+let keyedTo: ((at: CursorAt) => void) | null = null;
+
+/** Hears keys' clicks; returns how to stop. */
+export function onKeyTap(fn: (at: CursorAt) => void) {
+  keyedTo = fn;
+  return () => {
+    if (keyedTo === fn) keyedTo = null;
+  };
+}
+
+/**
+ * A key did what a click on an anchor would (an answer, a card, Next; by
+ * its name, or the element itself): the others see the hand click it, so a
+ * player on the keyboard is seen playing. On its middle, or the middle of
+ * what of it is on the screen; nothing when none of it is. Placed on the
+ * element itself, whatever is drawn over it.
+ */
+export function keyTap(target: string | Element) {
+  if (!keyedTo) return;
+  const el = typeof target === 'string' ? [...document.querySelectorAll<HTMLElement>(`[data-cursor="${target}"]`)].find((n) => found(n)) : target;
+  const chain = ancestry(el);
+  const f = chain[0];
+  if (!f) return;
+  const [l, r] = [Math.max(0, f.r.left), Math.min(innerWidth, f.r.right)];
+  const [t, b] = [Math.max(0, f.r.top), Math.min(innerHeight, f.r.bottom)];
+  if (l < r && t < b) keyedTo(cursorAt(hopsAt(chain, (l + r) / 2, (t + b) / 2), (TAP + LIT) as PointerKind));
+}
+
 /**
  * Where a spot on this screen is, as the pointer sync sends it (cursors.ts):
  * on the anchor under it (data-cursor) and those round that one, innermost
@@ -87,8 +122,5 @@ export function anchorAt(px: number, py: number, kind: PointerKind): CursorAt | 
     if (!f || px < f.r.left || px > f.r.right || py < f.r.top || py > f.r.bottom) return null;
     chain = [f];
   }
-  // The innermost, what holds it, and the outermost: whatever a screen has of them, the pointer lands near where it is.
-  if (chain.length > MAX_HOPS) chain = [...chain.slice(0, MAX_HOPS - 1), chain.at(-1)!];
-  const hops = chain.map(({ code, r }): Hop => [code, ...toAnchor(code, px, py, r, screenHeight())]);
-  return cursorAt(hops, kind);
+  return cursorAt(hopsAt(chain, px, py), kind);
 }
