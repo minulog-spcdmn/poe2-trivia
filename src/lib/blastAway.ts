@@ -12,18 +12,32 @@
 // once; the smoke is one canvas.
 
 import dither from '../assets/dither.png';
-import { blastSmoke } from './blastSmoke';
 import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
 import { unzoomRect, zoomOf } from './stage';
+import { BLAST_IMPACT_MS } from './blastTiming';
 
-/** When the shockwave reaches the question (ms after it goes off): its shards fly, the screen shakes, the scene swings. */
-export const BLAST_IMPACT_MS = 110;
-/** When the new question starts coming in from the blast's side (ms after it goes off), and how long it takes. */
-export const BLAST_IN_DELAY_MS = 420;
-export const BLAST_IN_MS = 680;
+export { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS } from './blastTiming';
 /** How long the whole of it lasts (ms), the last of the smoke included. */
 const BLAST_MS = 2300;
+
+/**
+ * The page's smoke (lib/blastSmoke.ts): not loaded with the game (this file
+ * is), but once a Delve run is under way, or at the latest by the blast.
+ */
+let smoke: Promise<typeof import('./blastSmoke')> | null = null;
+const loadSmoke = () =>
+  (smoke ??= import('./blastSmoke').catch((err) => {
+    smoke = null;
+    throw err;
+  }));
+/** Gets the blast's smoke ready, while the page is idle: once a Delve run is under way. */
+export function prepareBlast() {
+  loadSmoke().then(
+    (m) => m.prepareBlastSmoke(),
+    () => {},
+  );
+}
 
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 /**
@@ -364,7 +378,11 @@ export function blastAway({ node, side, mine }: BlastAway) {
   }
   // The smoke rolling in after it (and, without the overlay, the fire, the
   // shockwave, the chips and the sparks), drawn as they move: lib/blastSmoke.ts.
-  blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, done: () => layer.remove() });
+  // (Should it fail to load, the layer still goes, below.)
+  loadSmoke().then(
+    (m) => m.blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, done: () => layer.remove() }),
+    (err) => console.error("The blast's smoke couldn't load", err),
+  );
 
   // The fire and light, and the screen shaking as the shockwave hits (the effects overlay's).
   if (fx) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine, size: S * Z });

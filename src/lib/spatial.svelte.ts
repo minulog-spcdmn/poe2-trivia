@@ -20,7 +20,7 @@
 import { HALL_SECONDS, VEIN_NEAR, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
 import { hoverDuck, roomPlan, screenX, travel, type HoverMemory } from './spatialPlan';
 import { whenIdle } from './idle';
-import { BLAST_IN_DELAY_MS } from './blastAway';
+import { BLAST_IN_DELAY_MS } from './blastTiming';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
 
 /**
