@@ -22,6 +22,8 @@ export type EdgeBlast = {
   impact: number;
   /** The player who set it off: their screen shakes harder. */
   mine: boolean;
+  /** The fireball's size (viewport px), the page's smoke sized from the same (lib/blastAway.ts). */
+  size: number;
 };
 
 /**
@@ -56,7 +58,7 @@ export function edgeBlast(b: EdgeBlast) {
   // off the edge, swelling as the air slows them, rising on their own heat
   // and cooling from white through orange to a dull red as they burn out.
   // The heart of it first and hottest, the rest a beat behind, flung wider.
-  const S = Math.min(Math.max(Math.min(W, H) * 1.05, 380), 980);
+  const S = b.size;
   const nFire = budget(16);
   for (let i = 0; i < nFire; i++) {
     const core = i < nFire * 0.35;

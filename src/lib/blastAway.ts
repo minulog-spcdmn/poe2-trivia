@@ -367,7 +367,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
   blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, done: () => layer.remove() });
 
   // The fire and light, and the screen shaking as the shockwave hits (the effects overlay's).
-  if (fx) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine });
+  if (fx) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine, size: S * Z });
   else {
     // Without it, the page shakes by itself (the shell, as the effects' shake moves it).
     const shell = document.querySelector<HTMLElement>('.shell');

@@ -156,7 +156,7 @@ export function cardPicked(card: Element, base: Element, others: Element[], dm: 
   shakeView(0.3, 5);
   for (const o of others) {
     embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
-    puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
+    puffs(o, { smoke: true, count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
   }
 }
 
@@ -381,7 +381,7 @@ export function reveal(t: RevealTargets) {
         const top = new DOMRect(b.x - b.w / 2, b.y - b.h / 2, b.w, 10);
         embers(top, { count: 34, area: 'fill', colors: [C.ash, k3(C.ash, 0.6)], rise: [-80, -20], gravity: 60, life: [1.2, 2.4], turbulence: 80 });
       } else {
-        puffs(t.art, { count: 8, area: 'fill', color: [0.25, 0.04, 0.02], size: [20, 40] });
+        puffs(t.art, { smoke: true, count: 8, area: 'fill', color: [0.25, 0.04, 0.02], size: [20, 40] });
       }
     }
     if (!t.warded) {
@@ -473,7 +473,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
     }
     return k < arrivals.length;
   }, { life: arrivals.at(-1)?.t ?? 0 });
-  puffs(answer, { count: 5, area: 'fill', color: [0.16, 0.12, 0.04], speed: [20, 80] });
+  puffs(answer, { smoke: true, count: 5, area: 'fill', color: [0.16, 0.12, 0.04], speed: [20, 80] });
 }
 
 /** A point lands on a scoreboard entry. */
@@ -551,7 +551,7 @@ export function newFlame(row: Element, color: Vec3) {
 /** A streak ends: the fire on a player's entry goes out in a puff of smoke. */
 export function doused(row: Element) {
   if (!fxActive()) return;
-  puffs(row, { count: 10, area: 'edge', color: [0.16, 0.13, 0.11], size: [14, 26], speed: [20, 70], life: [0.8, 1.6], angle: -Math.PI / 2, spread: 1.2 });
+  puffs(row, { smoke: true, count: 10, area: 'edge', color: [0.16, 0.13, 0.11], size: [14, 26], speed: [20, 70], life: [0.8, 1.6], angle: -Math.PI / 2, spread: 1.2 });
   sparks(row, { count: 8, area: 'edge', colors: [C.ember, C.emberDeep], speed: [40, 140], gravity: 200, life: [0.3, 0.6] });
 }
 
@@ -896,7 +896,7 @@ export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'flares' 
   ring(at, { radius: big * 0.9 + 14, from: 3, thickness: 4, life: 0.45, color: C.ember, breakup: 0.55, fill: 0.15, intensity: 0.75 });
   sparks(at, { count: crystal ? 26 : 22, speed: [140, 480], life: [0.25, 0.6], gravity: 520, colors: [C.whiteHot, C.ember, C.gold] });
   shards(at, { count: crystal ? 12 : 9, colors: chips, cool: k3(crystal ? C.azurite : C.ash, 0.35), speed: [80, 300], size: [1.4, 3.2] });
-  puffs(at, { count: 4, area: 'centre', color: [0.09, 0.07, 0.055], size: [8, 16], speed: [20, 90], life: [0.6, 1.1] });
+  puffs(at, { smoke: true, count: 4, area: 'centre', color: [0.09, 0.07, 0.055], size: [8, 16], speed: [20, 90], life: [0.6, 1.1] });
   after(0.1, () => embers(at, { count: 6, area: 'fill', colors: [C.ember, C.gold], rise: [30, 90], life: [0.5, 1.1] }));
   light(at, { color: [1, 0.55, 0.25], radius: 150, intensity: 0.32, decay: 0.7 });
   if (!detached(pill)) outline(pill, { color: k3(C.ember, 0.75), width: 8, life: 0.75, intensity: 0.45 });
@@ -1336,7 +1336,7 @@ export function glyphLanded(glyph: Element) {
   if (!fxActive()) return;
   const r = glyph.getBoundingClientRect();
   sparks(new DOMRect(r.left, r.bottom - 2, r.width, 2), { count: 9, area: 'fill', angle: -Math.PI / 2, spread: 2.2, speed: [100, 320], life: [0.25, 0.55] });
-  puffs(glyph, { count: 3, area: 'edge', color: [0.3, 0.2, 0.08], size: [10, 18] });
+  puffs(glyph, { smoke: true, count: 3, area: 'edge', color: [0.3, 0.2, 0.08], size: [10, 18] });
   ring(glyph, { radius: 48, thickness: 4, life: 0.4, color: C.gold, intensity: 0.7 });
   shakeView(0.12, 3);
 }
@@ -1453,7 +1453,7 @@ export function dynamiteBlast(t: BlastTargets) {
     ring(t.art, { radius: r * 0.6, from: 6, thickness: 5, life: 0.4, color: C.whiteHot, breakup: 0.3, fill: 0, intensity: 0.6, delay: 0.04 });
     sparks(t.art, { count: 70, speed: [220, 900], life: [0.3, 0.9], gravity: 600, colors: [C.whiteHot, C.gold, C.ember] });
     shards(t.art, { count: 26, area: 'fill', colors: [[0.9, 0.72, 0.55], [0.55, 0.45, 0.38], C.ember], cool: k3(C.ash, 0.4), speed: [140, 520], size: [2, 5] });
-    puffs(t.art, { count: 12, area: 'centre', color: [0.1, 0.075, 0.06], size: [16, 34], speed: [60, 240], life: [0.8, 1.6] });
+    puffs(t.art, { smoke: true, count: 12, area: 'centre', color: [0.1, 0.075, 0.06], size: [16, 34], speed: [60, 240], life: [0.8, 1.6] });
     after(0.12, () => embers(t.art!, { count: 20, area: 'fill', colors: [C.ember, C.gold], rise: [40, 140], life: [0.8, 1.8] }));
     after(0.3, () => glints(t.art!, { count: 5, size: [4, 9], color: C.goldPale, delay: [0, 0.4] }));
     light(t.art, { color: [1, 0.62, 0.3], radius: 460, intensity: 0.6, hold: 0.08, decay: 1.1 });
@@ -1464,7 +1464,7 @@ export function dynamiteBlast(t: BlastTargets) {
       flash(el, { radius: 40, color: C.ember, intensity: 0.4, life: 0.3 });
       sparks(el, { count: 18, area: 'fill', speed: [120, 460], life: [0.25, 0.6], gravity: 500, colors: [C.whiteHot, C.ember, C.gold] });
       shards(el, { count: 10, colors: [[0.85, 0.68, 0.5], [0.5, 0.4, 0.33], C.ember], cool: k3(C.ash, 0.4), speed: [100, 380], size: [1.6, 3.6] });
-      puffs(el, { count: 5, area: 'fill', color: [0.09, 0.07, 0.055], size: [10, 22], speed: [30, 120], life: [0.6, 1.2] });
+      puffs(el, { smoke: true, count: 5, area: 'fill', color: [0.09, 0.07, 0.055], size: [10, 22], speed: [30, 120], life: [0.6, 1.2] });
     });
   });
   pulseMood(0.22, [1, 0.5, 0.2]);
