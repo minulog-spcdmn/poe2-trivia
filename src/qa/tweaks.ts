@@ -55,6 +55,8 @@ export function tweaksFor(built: Built, seen: string[] = []): Control[] {
         { value: 'long', label: 'Long' },
         { value: 'scripts', label: 'Other scripts, digits' },
         { value: 'creator', label: 'The creator first' },
+        // (At the foot of lists: under a dock, past the fold.)
+        { value: 'creator-last', label: 'The creator last' },
       ],
     },
     // Every player wears a class's sigil, by their name (lib/classSigils.ts; the frame sets it as it starts).
@@ -125,14 +127,28 @@ export function applyTweaks(built: Built, v: Values, seen: string[]): Built {
     s.spectators = [...some(had.filter((o) => !o.stay), joining, false), ...some(had.filter((o) => o.stay), watching, true)];
   }
 
-  if (v.names === 'long' || v.names === 'scripts') {
-    const names = v.names === 'long' ? LONG : SCRIPTS;
-    [...s.players, ...(s.spectators ?? [])].forEach((p, i) => (p.name = names[i % names.length]));
-  } else if (v.names === 'creator' && s.players[0]) {
-    s.players[0].name = CREATOR;
-    s.players[0].hue = RUBY;
+  rename(s, v.names);
+  // The states the room moves on to keep the names (the run played on into a zone).
+  const steps = built.steps?.map((st) => {
+    if (!('then' in st)) return st;
+    const then = structuredClone(st.then);
+    rename(then, v.names);
+    return { ...st, then };
+  });
+  return { ...built, state: s, ...(steps ? { steps } : {}) };
+}
+
+/** The players' (and watchers') names as `names` has them, in place. */
+function rename(s: GameState, names: Value | undefined) {
+  if (names === 'long' || names === 'scripts') {
+    const list = names === 'long' ? LONG : SCRIPTS;
+    [...s.players, ...(s.spectators ?? [])].forEach((p, i) => (p.name = list[i % list.length]));
+  } else if (names === 'creator' || names === 'creator-last') {
+    const p = names === 'creator' ? s.players[0] : s.players.at(-1);
+    if (!p) return;
+    p.name = CREATOR;
+    p.hue = RUBY;
   }
-  return { ...built, state: s };
 }
 
 /** The players a scene is seen from (its seats', or the one it was built for). */
