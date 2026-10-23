@@ -67,6 +67,8 @@ test("every control's ends and choices build, its own and any game's, and its de
       assert.deepEqual(valuesOf([c], { [c.key]: c.default }), { [c.key]: c.default }, `${s.key}: ${c.key} starts at ${c.default}, which it can't be`);
       const tried = c.kind === 'range' ? [c.min, c.max] : c.kind === 'toggle' ? [true, false] : c.options.map((o) => o.value);
       for (const x of tried) builds(s, { [c.key]: x }, `${c.key}=${x}`);
+      // A seat a scene's own choice picks (watching, say) stays in the room whoever else watches or drops out.
+      if (c.kind === 'choice' && own.includes(c.key)) for (const x of tried) builds(s, { [c.key]: x, joining: 0, watching: 0, offline: '*' }, `${c.key}=${x}, nobody else`);
     }
   }
 });
@@ -108,6 +110,17 @@ test('the controls every game has change only what they say, and leave who is se
   // A spectator seen from stays, however few watch.
   const spec = catalog().find((s) => s.key === 'over/n-spec')!;
   assert.ok(buildScene(spec, { joining: 0 }).built.state!.spectators!.some((o) => o.id === spec.seats[0].me));
+});
+
+test('a game set by its controls seen by a watcher holds nothing of this device: no result, codex log, runs or achievements', () => {
+  for (const key of ['over/game', 'over/alone', 'over/together']) {
+    const s = catalog().find((x) => x.key === key)!;
+    const you = key === 'over/game' ? { place: 'joins' } : { you: 'watching' };
+    const { built } = buildScene(s, you);
+    assert.equal(built.seat?.mode, 'client', `${key} isn't seen by a watcher`);
+    for (const k of ['delveResult', 'log', 'runs'] as const) assert.equal(built[k], undefined, `${key} seen by a watcher has a ${k}`);
+    assert.ok(!built.earned?.length, `${key} seen by a watcher earned something`);
+  }
 });
 
 test("Offline on a game played through the engine goes the engine's way: a race's state is the one the room reaches", () => {
