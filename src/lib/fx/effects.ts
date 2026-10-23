@@ -3,7 +3,7 @@
 // big beats. Colours are HDR: values above 1 bloom and burn toward white.
 
 import { Shape } from './particles';
-import { FIRE_REACH, ShapeType, type Silhouette } from './renderer';
+import { FIRE_REACH, FIRE_SIDE, ShapeType, type Silhouette } from './renderer';
 import { cornerOnScreen } from '../corner';
 import { opacityOf } from '../opacity';
 import { after, boxOf, budget, currentFrame, detached, fxActive, fxPixelRatio, particle, shape, task, type Anchor, type Box, type Handle, type Point, type ShapeHandle, type Vec3 } from './core';
@@ -957,8 +957,8 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
   // On screen it is drawn at the stage's zoom (lib/stage.ts), as the element
   // is: its corner, its flames and the room around them alike.
   const lookOf = stageLook(el);
-  // The quad must hold the tallest tongue (FIRE_REACH times H, above the top
-  // and out from the top corners) and the halo, inside the 72% where the
+  // The quad must hold the tallest tongue (FIRE_REACH times H above the top,
+  // FIRE_SIDE times less out past the ends) and the halo, inside the 72% where the
   // shader's fade toward the quad's border begins. Flames barely reach below
   // the element, so the quad is shifted up over them rather than centred.
   const room = (r: number, z: number) => (r + 16 * z) / 0.72;
@@ -978,7 +978,7 @@ export function fire(el: Element, o: { height?: number; intensity?: number; blue
       const above = b.h / 2 + FIRE_REACH * H;
       const below = b.h / 2 + 8 * z;
       const shift = (below - above) / 2;
-      f.hw = room(b.w / 2 + FIRE_REACH * H, z);
+      f.hw = room(b.w / 2 + (FIRE_REACH / FIRE_SIDE) * H, z);
       f.hh = room((above + below) / 2, z);
       f.k = (o.intensity ?? 1) * Math.min(1, age / (o.fadeIn ?? 0.5));
       f.q[0] = b.w / 2;

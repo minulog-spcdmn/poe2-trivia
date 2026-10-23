@@ -53,6 +53,12 @@ export const PARTICLE_BEHIND_UI = 2;
 
 /** How far the fire's tallest tongue reaches, in flame heights: the shader stops there and effects.ts sizes the quad to it. */
 export const FIRE_REACH = 1.8;
+/**
+ * Flames rise: out past the element's ends a tongue reaches this many times
+ * less far than it rises, so the ones off the top corners lean upward
+ * instead of shooting out sideways.
+ */
+export const FIRE_SIDE = 3.0;
 
 /** The most boxes the page's light hides behind at once (see BEHIND_DIALOG). */
 export const MAX_HIDES = 8;
@@ -672,9 +678,12 @@ void main() {
     // Flames reach highest above the top, a little way up the ends, barely below.
     float up = 1.0 - smoothstep(-hb.y, hb.y, lp.y);
     float reach = H * (0.06 + 0.94 * up * up * up);
+    // Out past the ends a flame reaches FIRE_SIDE times less far than it
+    // rises; dl is the distance its tongues are measured along.
+    float dl = d + ${(FIRE_SIDE - 1).toFixed(3)} * max(abs(lp.x) - hb.x, 0.0);
     // Past the tallest tongue (FIRE_REACH) or inside the element there's no
     // flame: skip the noise, and only the halo below is left.
-    if (d < ${FIRE_REACH.toFixed(3)} * reach + 2.0 && d > -5.0) {
+    if (dl < ${FIRE_REACH.toFixed(3)} * reach + 2.0 && d > -5.0) {
       // Turbulence scrolling upward, domain-warped so the tongues sway and split.
       vec2 p = lp * vec2(0.05, 0.028);
       vec2 warp = vec2(fbm(p * 0.8 + vec2(seed, time * 0.9)), fbm(p * 0.8 + vec2(seed + 4.1, time * 1.15)));
@@ -682,7 +691,7 @@ void main() {
       float lick = vnoise(vec2(lp.x * 0.11 + seed * 3.0, lp.y * 0.04 + time * 3.2));
       float tongue = n * 0.8 + lick * 0.45;
       // 1 at the surface, falling to 0 at each tongue's tip.
-      float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
+      float f = clamp(1.0 - max(dl, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
       // The roots burn unevenly (hotter under a tongue) and dimmer along the bottom.
       float T = f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
       if (T > 0.002) {
