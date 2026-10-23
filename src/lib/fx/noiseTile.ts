@@ -37,9 +37,10 @@ function periodic(x: number, y: number, period: number, s: number): number {
   return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
 }
 
-/** The tile, row by row, one byte a pixel. */
-export function noiseTile(): Uint8Array {
-  if (tile) return tile;
+/** The tile being made, a few rows a step (noiseTileSteps), and what finishes it. */
+let making: Generator<void, Uint8Array> | null = null;
+
+function* makeTile(): Generator<void, Uint8Array> {
   const out = new Uint8Array(NOISE_TILE * NOISE_TILE);
   const k = NOISE_CELLS / NOISE_TILE;
   for (let y = 0; y < NOISE_TILE; y++) {
@@ -54,9 +55,24 @@ export function noiseTile(): Uint8Array {
       }
       out[y * NOISE_TILE + x] = Math.round((v / NOISE_MAX) * 255);
     }
+    if (y % 16 === 15) yield;
   }
   tile = out;
   return out;
+}
+
+/** The tile, row by row, one byte a pixel. */
+export function noiseTile(): Uint8Array {
+  if (tile) return tile;
+  making ??= makeTile();
+  for (let r = making.next(); ; r = making.next()) if (r.done) return r.value;
+}
+
+/** Makes the tile a few rows a step (a ms or two each), for the page's idle moments (lib/blastSmoke.ts). */
+export function* noiseTileSteps(): Generator<void> {
+  if (tile) return;
+  making ??= makeTile();
+  while (!making.next().done) yield;
 }
 
 /** Texels across smokeBody (by how far out) and down it (by the noise). */
