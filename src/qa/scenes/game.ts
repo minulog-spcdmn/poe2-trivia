@@ -150,6 +150,18 @@ export function gameScenes(): Scene[] {
       },
       manyAsked,
     ),
+    scene(
+      'turns-timeout',
+      'Take turns',
+      'Out of time',
+      turnsSeats,
+      (v) => {
+        // No answer by the time the clock ran out (as the host's timer sends it).
+        const t = turns(v).pick();
+        return t.answer(t.turn, -1);
+      },
+      manyAsked,
+    ),
     scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, (v) => turns(v).playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0), many),
     scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, (v) => turns(v).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null), many),
     scene(
