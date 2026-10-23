@@ -38,7 +38,6 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
-  import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -1344,8 +1343,8 @@
                 {#if mirrored(i)}{@render mirrorLine()}{/if}
               </span>
             {/if}
-            {#if st === 'right'}<span class="mark"><AnswerMark shape="check" /></span>{/if}
-            {#if st === 'wrong'}<span class="mark"><AnswerMark shape="cross" /></span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
             {@render who(i)}
           </button>
         {/each}
@@ -1448,8 +1447,8 @@
             <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
-            {#if st === 'right'}<span class="mark"><AnswerMark shape="check" /></span>{/if}
-            {#if st === 'wrong'}<span class="mark"><AnswerMark shape="cross" /></span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
           </button>
         {/each}
       </div>
@@ -2000,9 +1999,9 @@
     }
   }
   /* The verdict at the reveal: a dark chip in the display type, small
-     capitals and tracking, pill shaped. Its colour lives in its sign: a small
-     engraved seal (VerdictSign) whose light spills a little way into the pill.
-     It settles in, the seal flares as its sign is cut, its word wipes in, a faint gold
+     capitals and tracking, pill shaped. Its colour lives in its icon: a lit
+     disc whose light spills a little way into the pill. It settles in, the
+     disc flares as its icon draws itself, its word wipes in, a faint gold
      ring spreads off it and a sheen crosses it; a right answer's disc keeps
      glowing softly. Green and red as the answers' ✓ and ✕, violet for time. */
   .verdict {
@@ -2393,9 +2392,9 @@
       color 0.25s,
       text-shadow 0.25s;
   }
-  /* The engraved ✓/✕ (AnswerMark), sized by the font. */
   .mark {
     font-size: 1.3rem;
+    font-weight: 700;
   }
   /* The ✓/✕ sits in room kept free on the right, so it can't widen, heighten
      or rewrap the answer when it appears at the reveal. */
@@ -2430,7 +2429,6 @@
     box-shadow:
       inset 0 1px 0 rgba(220, 240, 190, 0.1),
       0 0 16px rgba(150, 190, 110, 0.12);
-    animation: answered-right 0.8s var(--ease-out) 0.3s;
   }
   .option.right .text,
   .option.right .mark {
@@ -2445,9 +2443,7 @@
     --bs-fill-a: rgba(78, 32, 22, 0.9);
     --bs-fill-b: rgba(34, 15, 11, 0.92);
     box-shadow: 0 0 14px rgba(200, 90, 60, 0.1);
-    animation:
-      shake 0.5s 0.12s,
-      answered-wrong 0.7s var(--ease-out) 0.12s;
+    animation: shake 0.5s;
   }
   .option.wrong .text,
   .option.wrong .mark {
@@ -2630,7 +2626,6 @@
     border-color: #5d8a50;
     background: radial-gradient(ellipse at center, rgba(150, 185, 105, 0.14), rgba(14, 20, 11, 0.95) 75%);
     box-shadow: inset 0 0 0 1px #5d8a50;
-    animation: answered-right 0.8s var(--ease-out) 0.3s;
   }
   .tile.right .mark {
     color: #a9cf8f;
@@ -2638,9 +2633,7 @@
   .tile.wrong {
     border-color: #8e4434;
     background: radial-gradient(ellipse at center, rgba(200, 90, 60, 0.12), rgba(24, 10, 7, 0.95) 75%);
-    animation:
-      shake 0.5s 0.12s,
-      answered-wrong 0.7s var(--ease-out) 0.12s;
+    animation: shake 0.5s;
   }
   .tile.wrong .mark {
     color: #d98a6e;
@@ -2898,17 +2891,6 @@
     50% {
       --bs1: 0px 32px;
       --bs1-color: rgba(241, 190, 110, 0.36);
-    }
-  }
-  /* The tile answers its mark: its border brightening as the tick lands, or as the cross's first cut strikes (AnswerMark). */
-  @keyframes answered-right {
-    from {
-      border-color: #a8d08a;
-    }
-  }
-  @keyframes answered-wrong {
-    from {
-      border-color: #d47a62;
     }
   }
   @keyframes shake {

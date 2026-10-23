@@ -7,7 +7,7 @@
   // found (its answer isn't counted) and a practice answer only into a
   // practice accuracy of its own (see pick).
   import { onMount, untrack, type Component } from 'svelte';
-  import { fade, fly, slide } from 'svelte/transition';
+  import { fade, fly, scale, slide } from 'svelte/transition';
   import itemData from '../data/items.json';
   import fakeNames from '../data/fakes.json';
   import { engine, session } from '../lib/session.svelte';
@@ -31,7 +31,6 @@
   import { loadPlate } from '../lib/plateStore.svelte';
   import { PLACES } from '../lib/circlePlaces';
   import type { PlateName } from '../lib/plates/index.ts';
-  import AnswerMark from './AnswerMark.svelte';
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
@@ -372,8 +371,8 @@
           {#if fake}<small class="made-up" in:slide={{ duration: 350 }}>made up</small>{/if}
         </span>
         <span class="cue" aria-hidden="true"></span>
-        {#if st === 'right'}<span class="mark"><AnswerMark shape="check" /></span>{/if}
-        {#if st === 'wrong'}<span class="mark"><AnswerMark shape="cross" /></span>{/if}
+        {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
+        {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
       </button>
     {/each}
   </div>
@@ -774,6 +773,7 @@
     translate: 0 -50%;
     line-height: 1;
     font-size: 20px;
+    font-weight: 700;
   }
   .option.right {
     border-color: #5d8a50;
@@ -782,7 +782,6 @@
     --top-light: rgba(220, 240, 190, 0.1);
     --bs1: 0px 16px;
     --bs1-color: rgba(150, 190, 110, 0.12);
-    animation: answered-right 0.8s var(--ease-out) 0.3s;
   }
   .option.right .text,
   .option.right .mark {
@@ -799,9 +798,7 @@
     --top-light: transparent;
     --bs1: 0px 14px;
     --bs1-color: rgba(200, 90, 60, 0.1);
-    animation:
-      shake 0.5s 0.12s,
-      answered-wrong 0.7s var(--ease-out) 0.12s;
+    animation: shake 0.5s;
   }
   .option.wrong .text,
   .option.wrong .mark {
@@ -815,17 +812,6 @@
   .option.dim:global([data-bs-fill]) {
     --bs-fill-a: rgba(36, 32, 27, 0.95);
     --bs-fill-b: rgba(18, 16, 14, 0.95);
-  }
-  /* The answer answers its mark: its border brightening as the tick lands, or as the cross's first cut strikes (AnswerMark). */
-  @keyframes answered-right {
-    from {
-      border-color: #a8d08a;
-    }
-  }
-  @keyframes answered-wrong {
-    from {
-      border-color: #d47a62;
-    }
   }
   @keyframes shake {
     20%,
