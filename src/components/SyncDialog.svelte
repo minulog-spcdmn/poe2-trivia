@@ -134,7 +134,7 @@
         if (!current()) return true;
         const c = codeFrom(text);
         if (!c || c === 'elsewhere') {
-          scanError = c ? "That code is for another version of the site. Open it with your phone's camera app instead." : "That isn't a sync code.";
+          scanError = c ? "That code is for another version of the site. Open it with your phone’s camera app instead." : "That isn’t a sync code.";
           return false;
         }
         stopScan = null;
@@ -144,7 +144,7 @@
       if (current()) stopScan = stop;
       else stop();
     } catch {
-      if (current()) scanError = "The camera couldn't be opened. Allow it for this site, or enter the code instead.";
+      if (current()) scanError = "The camera couldn’t be opened. Allow it for this site, or enter the code instead.";
     }
   }
   function endScan() {
@@ -182,7 +182,7 @@
     e.preventDefault();
     const c = readCode(typed);
     if (!c) {
-      typeError = "That isn't a sync code: it has sixteen letters and digits.";
+      typeError = "That isn’t a sync code: it has sixteen letters and digits.";
       return;
     }
     take(c);
@@ -233,7 +233,7 @@
       </div>
       {#if view === 'show' && qr}
         <div class="heart plate" in:fade={calm({ duration: 300 })}>
-          <svg class="qr" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label="QR code of this device's sync link">
+          <svg class="qr" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label="QR code of this device’s sync link">
             <path d={qr.eyes} />
             <path d={qr.dots} />
             {#if qr.heart}
@@ -272,7 +272,7 @@
           />
         </form>
       {:else if view === 'scan'}
-        <p class="how">Point the camera at your other device's code.</p>
+        <p class="how">Point the camera at your other device’s code.</p>
       {:else if code || offered}
         <p class="code" aria-label="Sync code">{shownCode((view === 'offered' ? offered : code)!)}</p>
       {/if}
@@ -287,7 +287,7 @@
       {:else if view === 'type'}
         {typeError || 'The code under the QR code on your other device.'}
       {:else if view === 'show' && !linked && sync.status !== 'offline'}
-        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone's camera. Playing from its home screen? Pair a device in its settings."}
+        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone’s camera. Playing from its home screen? Pair a device in its settings."}
       {:else}
         {statusLine}
       {/if}

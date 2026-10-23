@@ -395,7 +395,7 @@
         setTimeout(() => inRoom() && loadGamePages(), 1000);
       } else {
         gamePagesLost = true;
-        toasts.show("Part of the game couldn't be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
+        toasts.show("Part of the game couldn’t be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
       }
     }));
   onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
@@ -556,7 +556,7 @@
           {/if}
           {#if session.spectating}
             {#if !folded}<span class="dot">•</span>{/if}
-            <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
+            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
           {/if}
           <!-- The depth as players count it (shownDepth). A run under way at 0
                names none here: the banner below has its start line (Game.svelte),
@@ -578,7 +578,7 @@
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
-            <span class="spectating" title={session.justWatching ? "You're watching without playing." : "You'll play in the next game."}>Spectating</span>
+            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
             <span class="dot">•</span>
           {/if}
           {#if gs.deathmatch}
@@ -677,7 +677,7 @@
 {#snippet gamePagesWait()}
   <div class="pages-wait">
     {#if gamePagesLost}
-      <p>Part of the game couldn't be loaded.</p>
+      <p>Part of the game couldn’t be loaded.</p>
       <button class="btn primary" onclick={() => location.reload()}>Reload</button>
     {:else}
       <span class="spinner" aria-label="Loading"></span>

@@ -151,7 +151,7 @@ test('a veiled picture goes out whole with its labels, and a patch only says whi
 test('a version mismatch says which side has to reload', () => {
   assert.equal(versionProblem(PROTOCOL_VERSION), null);
   assert.match(versionProblem(PROTOCOL_VERSION - 1)!, /^Your game is out of date/);
-  assert.match(versionProblem(PROTOCOL_VERSION + 1)!, /host's game is out of date/);
+  assert.match(versionProblem(PROTOCOL_VERSION + 1)!, /host’s game is out of date/);
   // What hosts before version 10 send, whichever side is behind.
   assert.equal(LEGACY_VERSION_TEXT, 'Your game version is out of date. Please reload the page.');
   assert.match(versionRefusal(LEGACY_VERSION_TEXT), /different versions/);

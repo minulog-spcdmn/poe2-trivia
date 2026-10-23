@@ -431,9 +431,9 @@
     <h1>Codex</h1>
     <p class="tagline">
       {tab === 'delve'
-        ? 'Every descent you have made, the depths you have named, and what they cost you.'
+        ? 'Every run you have made, and what it cost you.'
         : tab === 'feats'
-          ? 'Feats of knowledge, victory and daring, and how close you are to the rest.'
+          ? 'What you have earned, and how close you are to the rest.'
           : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
     </p>
   </header>
@@ -742,9 +742,9 @@
   {#if kept}
     <footer class="end">
       {#if sync.code && sync.met}
-        <p>Your codex, your Delve runs and your achievements live in this browser and on the devices it syncs with; clearing the site's data erases them here.</p>
+        <p>Your codex, your Delve runs and your achievements live in this browser and on the devices it syncs with; clearing the site’s data erases them here.</p>
       {:else}
-        <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site's data erases them.</p>
+        <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site’s data erases them.</p>
       {/if}
       <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>
@@ -763,7 +763,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can't be undone.</p>
+      <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can’t be undone.</p>
       {#if sync.code && sync.met}<p class="muted">This browser stops syncing too; your other devices keep theirs.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>

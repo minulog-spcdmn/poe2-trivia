@@ -21,9 +21,9 @@ export const PLACES = {
     circles: ['eye', 'monad', 'rose', 'moth'],
     how: 'a different one from question to question, never the same twice running, the same for every player',
   },
-  find: { where: "Behind a Delve find's question", circles: ['blackSun'], how: '' },
+  find: { where: "Behind a Delve find’s question", circles: ['blackSun'], how: '' },
   daily: {
-    where: "Behind today's unique",
+    where: "Behind today’s unique",
     circles: ['eye', 'monad', 'rose', 'moth'],
     how: 'a different one from day to day, never the same two days running',
   },
@@ -33,15 +33,15 @@ export const PLACES = {
     how: 'one or the other by the game, the same for every player; hollow round one avatar',
   },
   perished: {
-    where: "A Delve's end, where everyone perished",
+    where: "A Delve’s end, where everyone perished",
     circles: ['moth'],
     how: 'hollow round one avatar, whole where several share the heart',
   },
   item: { where: 'The item window (codex and game)', circles: ['eye'], how: '' },
-  collection: { where: "The Codex's collection", circles: ['moth'], how: '' },
-  achievements: { where: "The Codex's achievements", circles: ['monad'], how: '' },
-  codexDelve: { where: "The Codex's Delve page", circles: ['blackSun'], how: 'dim behind its empty page too' },
-  codexEmpty: { where: "Behind the Codex's collection while it's empty", circles: ['rose'], how: 'dim and hollow, fading toward its band' },
+  collection: { where: "The Codex’s collection", circles: ['moth'], how: '' },
+  achievements: { where: "The Codex’s achievements", circles: ['monad'], how: '' },
+  codexDelve: { where: "The Codex’s Delve page", circles: ['blackSun'], how: 'dim behind its empty page too' },
+  codexEmpty: { where: "Behind the Codex’s collection while it’s empty", circles: ['rose'], how: 'dim and hollow, fading toward its band' },
   sync: { where: 'Pairing devices to sync', circles: ['monad'], how: 'hollow round the QR code, the camera or the seal' },
 } as const satisfies Record<string, Place>;
 

@@ -517,7 +517,7 @@
     <p class="note spect" data-cursor="joining">
       <span class="ic"><span class="pulse"></span></span>
       <span
-        >{#if session.justWatching}You're watching; <b class="host">{host}</b> starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b
+        >{#if session.justWatching}You’re watching; <b class="host">{host}</b> starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b
             class="host">{host}</b
           > starts it.{:else}You play in the next game once <b class="host">{host}</b> starts it.{/if}</span
       >
@@ -673,7 +673,7 @@
           <h2>{modeName}</h2>
           {#if canShare}
             <span class="share-wrap">
-              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team's depth" : 'Share your depth'}>
+              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team’s depth" : 'Share your depth'}>
                 {#if shared}
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
                   Copied
