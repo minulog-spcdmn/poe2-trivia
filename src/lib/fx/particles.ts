@@ -49,7 +49,7 @@ export type ParticleSpec = {
   flicker?: number;
   /** Fraction of the life spent fading in. */
   fadeIn?: number;
-  /** Wandering acceleration, px/s²: how hard the air's own stir (flowAt) pushes it, so neighbours wander together. */
+  /** Wandering acceleration, px/s²: how hard the air's own stir (flowAt, or for all but smoke its eddies) pushes it, so neighbours wander together. */
   turbulence?: number;
   /** Seconds before the particle appears. */
   delay?: number;
@@ -110,31 +110,32 @@ const F = {
 } as const;
 const STRIDE = 37;
 
-// The air's own stir, shared by everything turbulence moves (and the page's
-// smoke, lib/blastSmoke.ts), so neighbours drift together as smoke and ash do:
-// a few slow waves crossing the screen at odd angles, summed as a curl so it
-// neither gathers nor spreads what it carries, over a light wind veering
-// over seconds. About 1 at its strongest, on average.
-const WAVES = (
-  [
-    // direction (rad), wavelength (px), drift (rad/s), weight
-    [0.3, 420, 0.7, 0.85],
-    [1.9, 260, -1.1, 0.68],
-    [3.4, 170, 1.6, 0.55],
-    [4.7, 610, -0.45, 0.6],
-  ] as const
-).map(([a, len, drift, k]) => ({ dx: Math.cos(a), dy: Math.sin(a), f: (2 * Math.PI) / len, drift, k }));
+// The air's own stir, so neighbours drift together as smoke and ash do: a
+// few slow waves crossing the screen at odd angles, summed as a curl so it
+// neither gathers nor spreads what it carries. Smoke rides all of it (and
+// the page's smoke, lib/blastSmoke.ts): broad waves and a light wind veering
+// over seconds, which carry a billow off as a whole. Everything else only
+// its eddies (EDDIES, eddyAt), smaller than a burst: its sparks and embers
+// swirl together but the burst stays where it was made, however the wind
+// blows. Each about 1 at its strongest, on average.
+const waves = (list: readonly (readonly [number, number, number, number])[]) =>
+  list.map(([a, len, drift, k]) => ({ dx: Math.cos(a), dy: Math.sin(a), f: (2 * Math.PI) / len, drift, k }));
+const WAVES = waves([
+  // direction (rad), wavelength (px), drift (rad/s), weight
+  [0.3, 420, 0.7, 0.85],
+  [1.9, 260, -1.1, 0.68],
+  [3.4, 170, 1.6, 0.55],
+  [4.7, 610, -0.45, 0.6],
+]);
+const EDDIES = waves([
+  [0.8, 150, 1.3, 0.8],
+  [2.6, 110, -1.7, 0.7],
+  [4.1, 190, 1.1, 0.75],
+]);
 const flow: [number, number] = [0, 0];
-/** The air's clock (s): the effects' particles step it, and whatever else the air carries reads it (airNow). */
-let airTime = 0;
-/** Where the air's stir stands now, for flowAt: the effects' own clock, so the page's smoke moves with their particles. */
-export const airNow = () => airTime;
 
-/** The air's stir at (x, y) (CSS px) at time `t` (s), as an acceleration per unit of turbulence. The array is reused: read it at once. */
-export function flowAt(x: number, y: number, t: number): readonly [number, number] {
-  let fx = 0.3 * Math.sin(t * 0.23);
-  let fy = 0.18 * Math.sin(t * 0.31 + 1);
-  for (const w of WAVES) {
+function curl(list: typeof WAVES, x: number, y: number, t: number, fx: number, fy: number): readonly [number, number] {
+  for (const w of list) {
     const c = w.k * Math.cos((x * w.dx + y * w.dy) * w.f + t * w.drift);
     fx += c * w.dy;
     fy -= c * w.dx;
@@ -143,6 +144,18 @@ export function flowAt(x: number, y: number, t: number): readonly [number, numbe
   flow[1] = fy;
   return flow;
 }
+/** The air's clock (s): the effects' particles step it, and whatever else the air carries reads it (airNow). */
+let airTime = 0;
+/** Where the air's stir stands now, for flowAt: the effects' own clock, so the page's smoke moves with their particles. */
+export const airNow = () => airTime;
+
+/** The air's stir at (x, y) (CSS px) at time `t` (s), as an acceleration per unit of turbulence. The array is reused: read it at once. */
+export function flowAt(x: number, y: number, t: number): readonly [number, number] {
+  return curl(WAVES, x, y, t, 0.3 * Math.sin(t * 0.23), 0.18 * Math.sin(t * 0.31 + 1));
+}
+
+/** The air's eddies alone at (x, y) at time `t`, as flowAt: what moves everything but smoke. */
+const eddyAt = (x: number, y: number, t: number) => curl(EDDIES, x, y, t, 0, 0);
 
 /** How many moving elements seeking particles can follow at once (slots are reused in turn). */
 export const FOLLOW_SLOTS = 64;
@@ -272,7 +285,7 @@ export class ParticlePool {
       let vy = d[o + F.vy];
       const turb = d[o + F.turb];
       if (turb) {
-        const f = flowAt(d[o + F.x], d[o + F.y], time);
+        const f = (d[o + F.shape] === Shape.Smoke ? flowAt : eddyAt)(d[o + F.x], d[o + F.y], time);
         vx += turb * f[0] * dt;
         vy += turb * f[1] * dt;
       }
