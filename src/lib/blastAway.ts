@@ -23,7 +23,7 @@ const BLAST_MS = 2300;
 
 /**
  * The page's smoke (lib/blastSmoke.ts): not loaded with the game (this file
- * is), but once a Delve run is under way, or at the latest by the blast.
+ * is), but as a run nears dynamite (Game.svelte), or at the latest by the blast.
  */
 let smoke: Promise<typeof import('./blastSmoke')> | null = null;
 const loadSmoke = () =>
@@ -31,7 +31,7 @@ const loadSmoke = () =>
     smoke = null;
     throw err;
   }));
-/** Gets the blast's smoke ready, while the page is idle: once a Delve run is under way. */
+/** Gets the blast's smoke ready, while the page is idle: as a run nears dynamite (Game.svelte). */
 export function prepareBlast() {
   loadSmoke().then(
     (m) => m.prepareBlastSmoke(),

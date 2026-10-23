@@ -19,7 +19,7 @@
 
 import { fxActive } from './fx/core';
 import { airNow, flowAt } from './fx/particles';
-import { noiseAt } from './fx/noiseTile';
+import { noiseAt, smokeBody } from './fx/noiseTile';
 
 /** A billow's picture, px square, and how many different ones. */
 const SPRITE = 192;
@@ -250,14 +250,18 @@ function sprites(): Sprites {
   return out;
 }
 
-/** Made while the page is idle, before the first blast needs them (once a Delve run is under way): the billows, and what draws them. */
+/**
+ * Made while the page is idle, before the first blast needs them (as a run
+ * nears dynamite): the billows, and what draws them; with the overlay, its
+ * smoke's body too (fx/renderer.ts, which puts it in as it's first drawn).
+ */
 let prepared = false;
 export function prepareBlastSmoke() {
   if (prepared || typeof document === 'undefined') return;
   prepared = true;
   const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
   // With the overlay, the WebGL the smoke is drawn with; without it, the 2D canvas's pictures.
-  const make = () => void (fxActive() ? smokeGl() : sprites());
+  const make = () => void (fxActive() ? (smokeGl(), smokeBody()) : sprites());
   if (idle) idle(make, { timeout: 4000 });
   else setTimeout(make, 1500);
 }
