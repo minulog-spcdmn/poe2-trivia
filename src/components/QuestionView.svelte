@@ -2900,21 +2900,15 @@
       --bs1-color: rgba(241, 190, 110, 0.36);
     }
   }
-  /* The tile answers its mark: lit as the tick's long stroke lands, struck as the cross's first cut does (AnswerMark). */
+  /* The tile answers its mark: its border brightening as the tick lands, or as the cross's first cut strikes (AnswerMark). */
   @keyframes answered-right {
     from {
-      border-color: #b4dc94;
-      box-shadow:
-        inset 0 0 0 1px rgba(180, 220, 148, 0.55),
-        0 0 20px rgba(150, 200, 110, 0.3);
+      border-color: #a8d08a;
     }
   }
   @keyframes answered-wrong {
     from {
-      border-color: #e0806a;
-      box-shadow:
-        inset 0 0 0 1px rgba(224, 128, 106, 0.5),
-        0 0 18px rgba(220, 100, 70, 0.28);
+      border-color: #d47a62;
     }
   }
   @keyframes shake {

@@ -816,19 +816,15 @@
     --bs-fill-a: rgba(36, 32, 27, 0.95);
     --bs-fill-b: rgba(18, 16, 14, 0.95);
   }
-  /* The answer answers its mark: lit as the tick's long stroke lands, struck as the cross's first cut does (AnswerMark). */
+  /* The answer answers its mark: its border brightening as the tick lands, or as the cross's first cut strikes (AnswerMark). */
   @keyframes answered-right {
     from {
-      border-color: #b4dc94;
-      --bs1: 0px 22px;
-      --bs1-color: rgba(150, 200, 110, 0.3);
+      border-color: #a8d08a;
     }
   }
   @keyframes answered-wrong {
     from {
-      border-color: #e0806a;
-      --bs1: 0px 20px;
-      --bs1-color: rgba(220, 100, 70, 0.28);
+      border-color: #d47a62;
     }
   }
   @keyframes shake {
