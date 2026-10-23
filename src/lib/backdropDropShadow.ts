@@ -509,7 +509,8 @@ export function measureDrops(
 
   let atlases: Atlases | null = null;
   if (atlasDirty) {
-    atlases = buildAtlases([...masks.values()]);
+    // (Once each: elements of a kind with the same shape share a mask, see recent.)
+    atlases = buildAtlases([...new Set(masks.values())]);
     atlasDirty = false;
   }
 
