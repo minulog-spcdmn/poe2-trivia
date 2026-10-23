@@ -19,7 +19,8 @@
   import { flat, phone } from '../lib/layout';
   import { inVein } from '../lib/vein';
   import { REVIVE_FROM, WAY_OUT, delveDepth, digOf, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
-  import { startLine } from '../lib/delveStart';
+  import { lineOf } from '../lib/delveStart';
+  import { noteLine } from '../lib/delveStartSeen';
   import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { deeperThanEver, descended, zoneArrival } from '../lib/fx/moments';
@@ -149,16 +150,22 @@
     return { destroy: () => clearTimeout(t) };
   }
 
-  // Delve: where the depth would read 0, the run's start line (dealt from a
-  // shuffled deck on this device, delveStart.ts); it gives way to "Depth 1" as the stage
+  // Delve: where the depth would read 0, the run's start line (the host's pick,
+  // the same on every screen, delveStart.ts); it gives way to "Depth 1" as the stage
   // crosses to the next turn, as one depth gives way to the next.
   const startsRun = $derived(!!run && shownDepth(depth) <= 0);
+  // Shown here, so the host weighs it for this device's next runs (delveStartSeen.ts):
+  // noted as it changes, not on every state that comes in meanwhile.
+  const shownLine = $derived(startsRun ? run?.line : undefined);
+  $effect(() => {
+    if (shownLine) noteLine(shownLine);
+  });
   const bannerTitle = $derived(
     race
       ? `Question ${s.turnCount + 1}`
       : run
         ? startsRun
-          ? startLine(run.startedAt)
+          ? lineOf(run)
           : `Depth ${shownDepth(depth)}`
         : !local && active.id === session.myPlayerId
           ? 'Your turn'

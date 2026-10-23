@@ -66,6 +66,7 @@ import {
   type Inventory,
   type ItemKind,
 } from './delve.ts';
+import { pickLine, START_LINES } from './delveStart.ts';
 
 export interface Item {
   id: string;
@@ -497,6 +498,8 @@ export interface Delve {
   fellLeft?: number;
   /** Host clock when the run started (the run's id in records). */
   startedAt: number;
+  /** The line its depth banner starts with (delveStart.ts), the same on every screen. Missing in older saves (delveStart.ts lineOf). */
+  line?: string;
   /** Standing players the host's reload cut off who haven't come back since. */
   excused: string[];
   /** A vote waits for the excused at most until then (host clock). */
@@ -1396,6 +1399,8 @@ export class Engine {
   private readonly twins: { items: Item[]; depth: number; colour?: true }[];
   /** Every question's clock starts as it is asked (see the constructor). */
   private readonly autoClock: boolean;
+  /** What each player's device has shown of Delve's start lines (see setStartLines). */
+  private seenLines: ((ids: string[]) => number[][]) | null = null;
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1435,6 +1440,15 @@ export class Engine {
    */
   setLooks(looks: Looks | null) {
     this.looks = looks;
+  }
+
+  /**
+   * Hands over where to ask, as a Delve run starts, which start lines each
+   * of its players' devices has shown (delveStart.ts pickLine). Without it
+   * (tests, tools, the bot) a run's line comes from its id alone.
+   */
+  setStartLines(seen: ((ids: string[]) => number[][]) | null) {
+    this.seenLines = seen;
   }
 
   /**
@@ -1690,11 +1704,14 @@ export class Engine {
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
           s.used = [];
+          const startedAt = this.now();
+          const entrants = s.players.map((p) => p.id);
           s.delve = {
-            entrants: s.players.map((p) => p.id),
+            entrants,
             losses: {},
             ruleset: DELVE_RULESET,
-            startedAt: this.now(),
+            startedAt,
+            line: START_LINES[pickLine(this.seenLines?.(entrants) ?? [], startedAt)],
             excused: [],
             graceUntil: 0,
             inventory: {},

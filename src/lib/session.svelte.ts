@@ -91,6 +91,8 @@ import { SIGILS_KEY, loadSigils } from './sigils';
 import { COLOUR_KEY, loadColour } from './colour';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
+import { sawLine, START_LINES } from './delveStart';
+import { seenLines } from './delveStartSeen';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -267,6 +269,8 @@ interface Guest {
   sigil?: PlayerClass;
   /** The colour its hello says it would like. */
   colour?: number;
+  /** The Delve start lines its hello says its device has shown, most recent first, kept up as runs start (delveStartSeen.ts). */
+  lines?: number[];
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
@@ -966,6 +970,7 @@ class Session {
           guest.laneWanted = !!msg.lane;
           guest.sigil = msg.sigil;
           guest.colour = msg.colour;
+          guest.lines = msg.lines;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -2184,7 +2189,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour(), lines: seenLines() });
     this.watchOwnPresence();
   }
 
@@ -2398,6 +2403,19 @@ class Session {
     return bench ? Object.entries(bench).map(([category, kind]) => ({ category, kind })) : findOffers(s);
   }
 
+  /**
+   * Delve: which start lines each of `ids`' devices has shown (Engine.setStartLines):
+   * a guest's as its hello said and runs since added, this device's for anyone playing at it.
+   */
+  startLinesSeen(ids: string[]): number[][] {
+    const here = seenLines();
+    const guests = [...this.guests.values()];
+    return ids.map((id) => {
+      const guest = guests.find((g) => g.playerId === id);
+      return guest ? (guest.lines ?? []) : here;
+    });
+  }
+
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
     return this.labGrayscale ?? grayscaleFor(s);
@@ -2415,6 +2433,11 @@ class Session {
     this.noteChange(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
+    // A run's line counts as shown on every screen in the room from now, a watcher's too; a guest's hello isn't sent again.
+    if (this.isHost && next.delve?.line && next.delve.startedAt !== prev?.delve?.startedAt) {
+      const line = START_LINES.indexOf(next.delve.line);
+      if (line >= 0) for (const g of this.guests.values()) if (g.playerId) g.lines = sawLine(g.lines ?? [], line);
+    }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
     if (this.isHost && next.phase !== 'lobby') warmMedia();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -3335,6 +3358,7 @@ function writeSaved(saved: Saved | null) {
 }
 
 export const session = new Session();
+engine.setStartLines((ids) => session.startLinesSeen(ids));
 
 if (typeof window !== 'undefined') {
   // A run abandoned by closing the tab (or going elsewhere) is still recorded, and so is a game against others left losing.
