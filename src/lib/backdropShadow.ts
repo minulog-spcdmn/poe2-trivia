@@ -28,10 +28,11 @@
 // `data-bs-fill` turns transparent while the backdrop draws it. Unlike a soft
 // shadow, a fill has a crisp edge, so it goes back to CSS whenever it could
 // lag behind the element: while the page scrolls, while a transform animation
-// moves the element or an ancestor, or when an ancestor paints a background
-// of its own (which would cover the backdrop). (Not for the camera shake: it
-// moves the view before the backdrop measures it, in the same frame; see
-// advanceShake in lib/fx/core.ts.)
+// (but a screen's swap: data-bs-follow, below) moves the element or an
+// ancestor, or when an ancestor paints a background of its own (which would
+// cover the backdrop). (Not for the camera shake: it moves the view before
+// the backdrop measures it, in the same frame; see advanceShake in
+// lib/fx/core.ts.)
 //
 // What is under a tagged element counts for its shadows too. Inside a fill
 // the backdrop draws (a button in the lobby's settings panel), its shadows
@@ -155,12 +156,16 @@ function keyframesMove(effect: KeyframeEffect): boolean {
  * measuring's writes (data-bs-fill) brought the styles up to date again
  * each time, which in a reveal, with its many animations, took tens of ms.
  * `asked` and `moved` carry over between calls in one frame, so each
- * element is asked once however many fills share it.
+ * element is asked once however many fills share it. One marked
+ * `data-bs-follow` moves so little, mostly while nearly see-through (a
+ * screen coming in or going: App.svelte), that the backdrop follows it:
+ * its own motion keeps the fills in it.
  */
 function movedAmong(nodes: Iterable<Element>, asked = new Set<Element>(), moved = new Set<Element>()): Set<Element> {
   for (const node of nodes)
     for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
       asked.add(el);
+      if (el.hasAttribute('data-bs-follow')) continue;
       for (const anim of el.getAnimations()) {
         if (anim.playState !== 'running') continue;
         const effect = anim.effect as KeyframeEffect | null;

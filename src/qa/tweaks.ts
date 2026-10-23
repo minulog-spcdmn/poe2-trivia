@@ -135,14 +135,14 @@ export function applyTweaks(built: Built, v: Values, seen: string[]): Built {
   return { ...built, state: s };
 }
 
-/** The players a scene is seen from (its seats'). */
-export const seenFrom = (scene: Scene) => scene.seats.map((seat) => seat.me).filter((id): id is string => !!id);
+/** The players a scene is seen from (its seats', or the one it was built for). */
+export const seenFrom = (scene: Scene, built?: Built) => (built?.seat ? [built.seat] : scene.seats).map((seat) => seat.me).filter((id): id is string => !!id);
 
 /** Everything that can be set in `scene`: its own controls, and every game's as the scene, built with `own`, has them. */
 export function buildScene(scene: Scene, given: Record<string, Value | string | null | undefined> = {}): { built: Built; controls: Control[]; values: Values } {
   const own = valuesOf(scene.controls ?? [], given);
   const base = scene.build(own);
-  const seen = seenFrom(scene);
+  const seen = seenFrom(scene, base);
   const tweaks = tweaksFor(base, seen);
   const set = valuesOf(tweaks, given);
   const built = applyTweaks(base, set, seen);

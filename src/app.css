@@ -838,6 +838,22 @@ h3,
   inherits: false;
   initial-value: transparent;
 }
+/* The lobby's chosen mode card's top light and inner glow (Lobby.svelte .mode), likewise. */
+@property --mode-top-light {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --mode-glow-blur {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --mode-glow-in {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
 @property --bs-soft-paint {
   syntax: '*';
   inherits: false;

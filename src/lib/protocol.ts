@@ -9,6 +9,7 @@ import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { isChoosableHue } from './palette.ts';
+import { cleanSeen } from './delveStart.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
@@ -93,8 +94,9 @@ export type ClientMsg =
    * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
    * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
+   * `lines`: the Delve start lines its device has shown, most recent first (delveStartSeen.ts), for the host's pick of a run's line.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number; lines?: number[] }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -194,6 +196,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // (One this build doesn't know, a newer one's, is left out: they come in without it.)
         ...(isPlayerClass(raw.sigil) ? { sigil: raw.sigil } : {}),
         ...(isChoosableHue(raw.colour) ? { colour: raw.colour } : {}),
+        // Lines this build's pool doesn't have (a newer one's) are left out the same way.
+        ...(Array.isArray(raw.lines) ? { lines: cleanSeen(raw.lines) } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

@@ -8,7 +8,7 @@
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { scale } from 'svelte/transition';
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
@@ -31,11 +31,19 @@
   let {
     drawn = null,
     ondrawn,
+    timer,
   }: {
     /** Delve together: the card the closed vote drew, while the draw plays out on the cards. */
     drawn?: string | null;
     /** Called once the draw has landed and held (Game.svelte then shows the question). */
     ondrawn?: () => void;
+    /**
+     * A vein's lamp, held still between its strikes, at the prompt's right
+     * end, where the question's task line has its clock (QuestionView), so
+     * it stays put as the strike takes the cards' place. Not on a phone
+     * upright, where the scoreboard's row has it (Game.svelte).
+     */
+    timer?: Snippet;
   } = $props();
 
   const s = $derived(session.state!);
@@ -668,7 +676,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
+{#snippet prompt()}
   <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
   <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
@@ -698,6 +706,18 @@
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
   </p>
+{/snippet}
+
+<div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
+  {#if timer}
+    <!-- The prompt's line as wide as the question's task line, its clock at the right end. -->
+    <div class="line">
+      {@render prompt()}
+      <div class="clock">{@render timer()}</div>
+    </div>
+  {:else}
+    {@render prompt()}
+  {/if}
 
   <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
@@ -874,6 +894,32 @@
     margin: 0;
     font-size: 1.2rem;
     text-align: center;
+  }
+  /* A vein's lamp at the prompt's right end: the line and the clock as the
+     question's task line has them (QuestionView's .task and .clock, its
+     sizes below too), so the ring stays put as the strike comes in. */
+  .line {
+    position: relative;
+    justify-self: center;
+    width: min(980px, 100%);
+  }
+  .line .prompt {
+    padding-inline: 60px;
+  }
+  .line .clock {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+  }
+  .line .clock :global(.timer) {
+    width: 52px;
+    height: 52px;
+  }
+  .line .clock :global(.timer span) {
+    font-size: 1.15rem;
   }
   /* The way out: its design's colours (lib/wayOut, set on the card), as a find's are. */
   /* Its lantern hangs in the engraving, gilded: the emblem's place is kept, so a row's name keeps clear of it. */
@@ -2028,6 +2074,17 @@
     .choose {
       gap: 1rem;
     }
+    /* A vein's lamp a little smaller, as on the question's task line. */
+    .line .prompt {
+      padding-inline: 54px;
+    }
+    .line .clock :global(.timer) {
+      width: 46px;
+      height: 46px;
+    }
+    .line .clock :global(.timer span) {
+      font-size: 1.05rem;
+    }
   }
   /* A phone on its side (lib/layout.ts `flat`, from 561 wide; see the rows
      above): the tall cards in a row,
@@ -2049,6 +2106,22 @@
     }
     .prompt {
       font-size: 1.05rem;
+    }
+    /* A vein's lamp as on the question's task line: smaller, lifted toward
+       the banner's row, the line as tall as that one, so the ring centres where it does there. */
+    .line .prompt {
+      padding-inline: 44px;
+      line-height: 1.3;
+    }
+    .line .clock {
+      translate: 0 calc(-50% - 7px);
+    }
+    .line .clock :global(.timer) {
+      width: 34px;
+      height: 34px;
+    }
+    .line .clock :global(.timer span) {
+      font-size: 0.85rem;
     }
     .note {
       font-size: 0.85rem;
@@ -2114,7 +2187,8 @@
     .choose.delve.beside {
       column-gap: 2.6rem;
     }
-    .choose.beside .prompt {
+    .choose.beside .prompt,
+    .choose.beside .line {
       grid-area: prompt;
     }
     .choose.beside .cards {

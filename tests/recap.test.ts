@@ -10,6 +10,7 @@ import {
   livesLost,
   median,
   missedAnswers,
+  newInCodex,
   ordinal,
   partyHighlights,
   plain,
@@ -272,10 +273,23 @@ test("the run's facts: zones reached, and what its finds gave", () => {
 
 test('alone, the highlights are your own; the first run tells fewer', () => {
   const s = run([20], { fastest: { by: 'p0', id: '0935a2ea4b46', ms: 1900 }, closest: { by: 'p0', id: '6c868f3fcde4', left: 420, depth: 17 } });
-  const lines = soloHighlights(s, 'p0', { met: 9, fresh: 3 }, false).map((l) => plain(l.parts, text(s)));
-  assert.deepEqual(lines, ['Your fastest answer: 1.9s on Headhunter.', 'Your closest call: Ingenuity at depth 16, right with 0.4s left.', 'You met 3 new uniques, now kept in your codex.']);
-  const firstRun = soloHighlights(s, 'p0', { met: 23, fresh: 23 }, true).map((l) => plain(l.parts, text(s)));
-  assert.deepEqual(firstRun, ['Your fastest answer: 1.9s on Headhunter.', 'All 23 uniques you met are now kept in your codex.']);
+  const lines = soloHighlights(s, 'p0', false).map((l) => plain(l.parts, text(s)));
+  assert.deepEqual(lines, ['Your fastest answer: 1.9s on Headhunter.', 'Your closest call: Ingenuity at depth 16, right with 0.4s left.']);
+  const firstRun = soloHighlights(s, 'p0', true).map((l) => plain(l.parts, text(s)));
+  assert.deepEqual(firstRun, ['Your fastest answer: 1.9s on Headhunter.']);
+});
+
+test('alone, the uniques met for the first time get their own words, from one up', () => {
+  const said = (met: number, n: number) => {
+    const parts = newInCodex({ met, fresh: items.slice(0, n).map((it) => it.id) });
+    return parts && plain(parts);
+  };
+  assert.equal(said(9, 0), null);
+  assert.equal(said(9, 1), 'One met for the first time');
+  // One met, and it new: still "One", never "All 1".
+  assert.equal(said(1, 1), 'One met for the first time');
+  assert.equal(said(9, 3), '3 met for the first time');
+  assert.equal(said(23, 23), 'All 23 met for the first time');
 });
 
 test('the runs chart: the runs of the kind up to this one, and columns that fit', () => {

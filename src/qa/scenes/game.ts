@@ -250,6 +250,21 @@ export function gameScenes(): Scene[] {
       { controls: [players(2, 3)] },
     ),
     scene(
+      'delve-together-dig',
+      'Delve together',
+      'A vein struck once, the team voting: dig deeper, or the way out',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      (v) => {
+        const t = delveTogether(v);
+        const vein = t.s.offered[0];
+        t.s.offered = [vein, WAY_OUT];
+        t.s.delve!.finds = [{ category: vein, kind: 'azurite' }];
+        t.s.delve!.dig = { strikes: 1, haul: [t.s.players[0].id], light: 6, struck: [] };
+        return t.act({ type: 'vote', category: vein }, 'Doryani');
+      },
+      { controls: [players(2, 3)] },
+    ),
+    scene(
       'delve-together-question',
       'Delve together',
       'A question, after the vote',
