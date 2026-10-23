@@ -25,8 +25,13 @@ import { noiseAt } from './fx/noiseTile';
 const SPRITE = 192;
 const VARIANTS = 3;
 
-/** Each billow's picture, as numbers: its density, its light (lit from +x) and, for fire, its heat; 0 to 1, row by row. */
-type Field = { dens: Float32Array; lum: Float32Array; heat: Float32Array };
+/**
+ * Each billow's picture, as numbers: its density, its light (lit from +x),
+ * how long each part of it holds as it clears (its thin edges and the hollows
+ * between its lobes soonest, the thick of each lobe last) and, for fire, its
+ * heat; 0 to 1, row by row.
+ */
+type Field = { dens: Float32Array; lum: Float32Array; hold: Float32Array; heat: Float32Array };
 let fields: Field[] | null = null;
 
 const smooth = (a: number, b: number, x: number) => {
@@ -39,7 +44,7 @@ function billowFields(): Field[] {
   const n = SPRITE * SPRITE;
   fields = [];
   for (let v = 0; v < VARIANTS; v++) {
-    const f: Field = { dens: new Float32Array(n), lum: new Float32Array(n), heat: new Float32Array(n) };
+    const f: Field = { dens: new Float32Array(n), lum: new Float32Array(n), hold: new Float32Array(n), heat: new Float32Array(n) };
     // Each its own stretch of the noise.
     const ox = v * 2.7;
     const oy = v * 1.9;
@@ -53,8 +58,13 @@ function billowFields(): Field[] {
       const ny = qy * 0.85 + oy;
       const nz = noiseAt(nx, ny);
       const body = Math.exp(-r * r * 0.55);
-      const dens = smooth(0, 0.3, body - (0.62 - nz) * 1.3) * (1 - smooth(1.3, 1.95, r));
+      const thick = body - (0.62 - nz) * 1.3;
+      const rim = 1 - smooth(1.3, 1.95, r);
+      const dens = smooth(0, 0.3, thick) * rim;
       if (dens <= 0) continue;
+      // A finer noise frays where it gives way, into wisps.
+      const fray = noiseAt(nx * 2.6 + 5.3, ny * 2.6 + 1.7) - 0.44;
+      f.hold[i] = Math.min(1, Math.max(0, ((thick + 0.3 * fray) / 0.85) * rim));
       // Lit from +x: its side toward the light, and each lobe's face that rises toward it.
       const rise = noiseAt(nx + 0.12, ny - 0.06) - nz;
       f.dens[i] = dens;
@@ -70,7 +80,7 @@ const canvas = (w: number, h: number) => Object.assign(document.createElement('c
 
 // ---- the smoke, in WebGL ----
 
-/** Floats per billow: x, y (layer px), size (px), picture; mirrored across, mirrored down, its soot's opacity, the fire's glow on it. */
+/** Floats per billow: x, y (layer px), size (px), picture; mirrored down, its soot's opacity, the fire's glow on it, how far it has cleared. */
 const BILLOW_FLOATS = 8;
 /** How hard the air's stir (flowAt) carries the smoke. */
 const SMOKE_STIR = 160;
@@ -80,13 +90,14 @@ layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec4 iA;
 layout(location = 2) in vec4 iB;
 uniform vec2 uView;
+uniform float uSide; // mirrored across for a blast from the left, so it's lit from the fire's side
 out vec2 vUv;
-flat out vec3 vK;
+flat out vec4 vK;
 void main() {
   vec2 c = aCorner * 0.5;
   vec2 p = iA.xy + c * iA.z;
-  vUv = c * iB.xy + 0.5;
-  vK = vec3(iA.w, iB.zw);
+  vUv = c * vec2(uSide, iB.x) + 0.5;
+  vK = vec4(iA.w, iB.yzw);
   vec2 clip = p / uView * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
 }`;
@@ -94,8 +105,8 @@ void main() {
 const SMOKE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
-flat in vec3 vK; // picture, opacity, glow
-uniform sampler2D uBillows; // the pictures side by side: r their light, a their density
+flat in vec4 vK; // picture, opacity, glow, how far it has cleared
+uniform sampler2D uBillows; // the pictures side by side: r their light, g how long they hold, a their density
 out vec4 o;
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -104,11 +115,13 @@ float hash12(vec2 p) {
 }
 void main() {
   vec4 t = texture(uBillows, vec2((vK.x + clamp(vUv.x, 0.003, 0.997)) / ${VARIANTS}.0, vUv.y));
-  float a = t.a * vK.y;
+  // Clearing, it gives way where it holds least: frays at its edges, opens
+  // between its lobes, the thick of each lobe thinning last.
+  float a = t.a * smoothstep(vK.w, vK.w + 0.2, t.g) * vK.y;
   if (a <= 0.0) discard;
   // Soot from its shadowed side to its lit one, warmed by the fire's glow while it's near.
   float lum = t.r;
-  vec3 soot = lum < 0.55 ? mix(vec3(20.0, 16.0, 14.0), vec3(58.0, 47.0, 39.0), lum / 0.55) : mix(vec3(58.0, 47.0, 39.0), vec3(118.0, 95.0, 76.0), (lum - 0.55) / 0.45);
+  vec3 soot = lum < 0.55 ? mix(vec3(14.0, 11.0, 10.0), vec3(40.0, 33.0, 28.0), lum / 0.55) : mix(vec3(40.0, 33.0, 28.0), vec3(84.0, 68.0, 55.0), (lum - 0.55) / 0.45);
   float l2 = lum * lum;
   vec3 glow = vec3(1.0, 0.5 + 0.24 * l2, 0.2 + 0.16 * l2);
   vec3 col = mix(soot / 255.0, glow, clamp(vK.z * l2, 0.0, 1.0));
@@ -118,7 +131,7 @@ void main() {
   o = max(vec4(col * a, a) + d, 0.0);
 }`;
 
-type SmokeGl = { canvas: HTMLCanvasElement; draw: (W: number, H: number, k: number, billows: Float32Array, n: number) => void; lost: () => boolean };
+type SmokeGl = { canvas: HTMLCanvasElement; draw: (W: number, H: number, k: number, side: number, billows: Float32Array, n: number) => void; lost: () => boolean };
 /** Undefined until tried; null where WebGL2 isn't there. */
 let gl2: SmokeGl | null | undefined;
 /** The blast drawing in it now: a newer one takes it over. */
@@ -154,6 +167,7 @@ function smokeGl(): SmokeGl | null {
     for (let i = 0; i < SPRITE * SPRITE; i++) {
       const o = ((Math.floor(i / SPRITE) * VARIANTS + v) * SPRITE + (i % SPRITE)) * 4;
       atlas[o] = Math.round(f[v].lum[i] * 255);
+      atlas[o + 1] = Math.round(f[v].hold[i] * 255);
       atlas[o + 3] = Math.round(f[v].dens[i] * 255);
     }
   }
@@ -182,6 +196,7 @@ function smokeGl(): SmokeGl | null {
   gl.useProgram(prog);
   gl.uniform1i(gl.getUniformLocation(prog, 'uBillows'), 0);
   const uView = gl.getUniformLocation(prog, 'uView');
+  const uSide = gl.getUniformLocation(prog, 'uSide');
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.clearColor(0, 0, 0, 0);
@@ -189,7 +204,7 @@ function smokeGl(): SmokeGl | null {
   gl2 = {
     canvas: cv,
     lost: () => gl.isContextLost(),
-    draw(W, H, k, billows, n) {
+    draw(W, H, k, side, billows, n) {
       const w = Math.max(1, Math.round(W * k));
       const h = Math.max(1, Math.round(H * k));
       if (cv.width !== w || cv.height !== h) Object.assign(cv, { width: w, height: h });
@@ -198,6 +213,7 @@ function smokeGl(): SmokeGl | null {
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!n) return;
       gl.uniform2f(uView, W, H);
+      gl.uniform1f(uSide, side);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, billows.subarray(0, n * BILLOW_FLOATS), gl.STREAM_DRAW);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
@@ -233,7 +249,7 @@ function sprites(): Sprites {
       if (dens <= 0) continue;
       const lum = f.lum[i];
       const o = i * 4;
-      const [sr, sg, sb] = mixRgb([[0, 20, 16, 14], [0.55, 58, 47, 39], [1, 118, 95, 76]], lum);
+      const [sr, sg, sb] = mixRgb([[0, 14, 11, 10], [0.55, 40, 33, 28], [1, 84, 68, 55]], lum);
       soot.data.set([sr, sg, sb, 255 * dens], o);
       const l2 = lum * lum;
       glow.data.set([255, 128 + 60 * l2, 50 + 40 * l2, 255 * dens * l2], o);
@@ -325,9 +341,9 @@ export function blastSmoke(o: BlastSmoke) {
       vx: inward * W * rand(0.3, 0.8) * drag,
       vy: rand(-80, 30),
       s0,
-      s1: s0 * rand(1.6, 2.3),
-      age: -rand(0.05, 0.22),
-      life: rand(1.4, 2),
+      s1: s0 * rand(2, 2.8),
+      age: -rand(0.05, 0.2),
+      life: rand(1.2, 1.8),
       v: Math.floor(Math.random() * VARIANTS),
       flipY: Math.random() < 0.5 ? -1 : 1,
       drag,
@@ -395,8 +411,15 @@ export function blastSmoke(o: BlastSmoke) {
   };
   // A billow grows fast as it bursts out and slower as it slows, by its life's end s1.
   const sizeOf = (b: Billow) => b.s0 + (b.s1 - b.s0) * ((1 - Math.exp(-2.4 * b.age)) / (1 - Math.exp(-2.4 * b.life)));
-  // How thick a billow of smoke is, and how much of the fire's glow is on it.
-  const sootOf = (b: Billow) => Math.min(1, b.age / (b.life * 0.12)) * Math.pow(1 - b.age / b.life, 1.1) * 0.7;
+  // How thick a billow of smoke is: thinner as it spreads (the same soot over
+  // more of the screen), and as it clears (with WebGL, it breaks up as it
+  // does, so it needn't fade much besides). And how much of the fire's glow is on it.
+  const sootOf = (b: Billow) => {
+    const u = b.age / b.life;
+    return Math.min(1, u / 0.1) * Math.pow(b.s0 / sizeOf(b), 0.6) * Math.pow(1 - u, gl ? 0.35 : 1.1) * 0.42;
+  };
+  // How far it has cleared: slowly at first, then all of it.
+  const clearOf = (b: Billow) => Math.pow(b.age / b.life, 1.15) * 0.95;
   const glowOf = (b: Billow) => Math.exp(-b.age * 3.2) * 0.75;
   const drawBillow = (b: Billow, img: HTMLCanvasElement, alpha: number) => {
     if (!ctx || alpha <= 0.002) return;
@@ -428,12 +451,12 @@ export function blastSmoke(o: BlastSmoke) {
         billows[q + 1] = b.y;
         billows[q + 2] = sizeOf(b);
         billows[q + 3] = b.v;
-        billows[q + 4] = side;
-        billows[q + 5] = b.flipY;
-        billows[q + 6] = sootOf(b);
-        billows[q + 7] = glowOf(b);
+        billows[q + 4] = b.flipY;
+        billows[q + 5] = sootOf(b);
+        billows[q + 6] = glowOf(b);
+        billows[q + 7] = clearOf(b);
       }
-      gl.draw(W, H, k, billows, n);
+      gl.draw(W, H, k, side, billows, n);
     } else if (ctx && sp) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = 1;
@@ -524,7 +547,7 @@ export function blastSmoke(o: BlastSmoke) {
   const end = (mine: boolean) => {
     // (The WebGL canvas is kept for the next blast, its drawing let go of meanwhile.)
     if (gl && mine) {
-      gl.draw(1, 1, 1, billows, 0);
+      gl.draw(1, 1, 1, side, billows, 0);
       gl.canvas.remove();
     }
     // A newer blast took the canvas over: this one's shards still fly to the end.
