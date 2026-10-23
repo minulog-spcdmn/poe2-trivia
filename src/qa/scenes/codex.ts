@@ -19,5 +19,8 @@ export function codexScenes(): Scene[] {
     codex('item', 'An item open', () => filled([{ click: '.tile' }])),
     codex('delve', 'The Delve page', () => filled([{ click: '#codex-tab-delve' }])),
     codex('feats', 'The Achievements page', () => filled([{ click: '#codex-tab-feats' }])),
+    codex('delve-empty', 'The Delve page, no run yet', () => ({ state: null, hash: '#codex', met: 40, steps: [{ click: '#codex-tab-delve' }] })),
+    // The swap between screens (App.svelte), back out: the Codex closed.
+    { ...codex('to-home', 'Closed: back to the start page', () => filled([{ wait: 1600 }, { click: 'button[aria-label="Close the codex"]' }])), group: 'Moving between screens' },
   ];
 }

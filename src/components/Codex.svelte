@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { fade, fly } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
@@ -12,13 +12,14 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
-  import { calm } from '../lib/motion.svelte';
+  import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { whenIdle } from '../lib/idle';
   import { savingData } from '../lib/saveData';
   import { canWrap, gridHeight, type GridMeasure } from '../lib/heldGrid';
   import { ownRect } from '../lib/stage';
   import type { Difficulty, Item } from '../lib/game';
   import CodexMedallion from './codex/CodexMedallion.svelte';
+  import EmptyPlate from './codex/EmptyPlate.svelte';
   import { circleOf } from './circles';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { warmPlate } from '../lib/plateStore.svelte';
@@ -309,6 +310,13 @@
   ];
   const earnedCount = $derived(ACHIEVEMENTS.filter((a) => achievements.earned[a.id] !== undefined).length);
   let tab = $state<Tab>('items');
+  /** A tab has been turned: its page's sections come in at once, not after the title's (the stagger in the styles). */
+  let turned = $state(false);
+  let firstTab: Tab | null = null;
+  $effect.pre(() => {
+    if (firstTab === null) firstTab = tab;
+    else if (tab !== firstTab) turned = true;
+  });
   // Steps a visit reached (lib/count.ts): the codex opened, its achievements looked at.
   countReach('reach/codex');
   $effect(() => {
@@ -419,7 +427,7 @@
     </div>
   {/if}
 
-  <div class="page" id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
+  <div class="page" class:turned id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
   {#if tab === 'delve' && kept}
     <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={beginDelve} />
   {:else if tab === 'feats' && kept}
@@ -465,18 +473,20 @@
   </section>
 
   {#if !stats.seen}
-    <div class="empty">
-      <!-- With practice answers kept, there is something to erase: not "blank". -->
-      <p>{practice.n ? 'No item is written in your codex yet.' : 'Your codex is still blank.'}</p>
-      <p class="muted">
-        Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ' only'}.
-      </p>
-      <!-- Practice finds nothing, so it can be all there is: its accuracy still shows. -->
-      {#if practice.n}
-        <p class="muted">Practice on the start page: {pct(practice)} right of {practice.n}.</p>
-      {/if}
-      <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
-    </div>
+    <EmptyPlate circle={circleOf('codexEmpty')}>
+      <div class="empty">
+        <!-- With practice answers kept, there is something to erase: not "blank". -->
+        <p>{practice.n ? 'No item is written in your codex yet.' : 'Your codex is still blank.'}</p>
+        <p class="muted">
+          Every item revealed in your games is written into it, with how often you named it right. It is kept in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ' only'}.
+        </p>
+        <!-- Practice finds nothing, so it can be all there is: its accuracy still shows. -->
+        {#if practice.n}
+          <p class="muted">Practice on the start page: {pct(practice)} right of {practice.n}.</p>
+        {/if}
+        <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
+      </div>
+    </EmptyPlate>
   {:else}
     <div class="split">
       <section class="panel" use:backdropShadow={{ fill: 'linear' }}>
@@ -717,7 +727,7 @@
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="confirm panel" transition:fly={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
       <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can't be undone.</p>
       {#if sync.code && sync.met}<p class="muted">This browser stops syncing too; your other devices keep theirs.</p>{/if}
@@ -737,6 +747,81 @@
     display: flex;
     flex-direction: column;
     gap: 1.4rem;
+  }
+
+  /* The page comes in part by part, each rising into place a beat after
+     the last: the title's lines, the tabs, then the page's sections, and
+     the footer last. A tab turned brings its page's sections in the same
+     way, from the first at once (.turned). Only the sections move, never
+     the many tiles inside them. */
+  .hero > *,
+  .tabs,
+  .page > :global(:not(.delve-page)),
+  .page > :global(.delve-page > *),
+  .end {
+    animation: codex-rise 0.65s var(--ease-out) backwards;
+    animation-delay: calc(var(--lead, 0s) + var(--n, 0) * 0.08s);
+  }
+  .hero > :nth-child(2) {
+    --n: 1;
+  }
+  .hero > :nth-child(3) {
+    --n: 2;
+  }
+  .tabs {
+    --n: 3;
+  }
+  .page {
+    --lead: 0.32s;
+  }
+  .page.turned {
+    --lead: 0s;
+  }
+  .page > :global(*),
+  .page > :global(.delve-page > *) {
+    --n: 0;
+  }
+  .page > :global(:nth-child(2)),
+  .page > :global(.delve-page > :nth-child(2)) {
+    --n: 1;
+  }
+  .page > :global(:nth-child(3)),
+  .page > :global(.delve-page > :nth-child(3)) {
+    --n: 2;
+  }
+  .page > :global(:nth-child(4)),
+  .page > :global(.delve-page > :nth-child(4)) {
+    --n: 3;
+  }
+  .page > :global(:nth-child(n + 5)),
+  .page > :global(.delve-page > :nth-child(n + 5)) {
+    --n: 4;
+  }
+  .end {
+    --lead: 0.32s;
+    --n: 5;
+  }
+  @keyframes codex-rise {
+    from {
+      opacity: 0;
+      translate: 0 14px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero > *,
+    .tabs,
+    .page > :global(*),
+    .page > :global(.delve-page > *),
+    .end {
+      animation: none;
+    }
+  }
+  :global(:root[data-still]) .hero > *,
+  :global(:root[data-still]) .tabs,
+  :global(:root[data-still]) .page > :global(*),
+  :global(:root[data-still]) .page > :global(.delve-page > *),
+  :global(:root[data-still]) .end {
+    animation: none;
   }
 
   /* ---- title ---- */
