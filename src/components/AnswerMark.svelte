@@ -10,7 +10,7 @@
 </script>
 
 <svg viewBox="3 3 18 18" aria-hidden="true"
-  ><path d={shape === 'check' ? 'M5.5 13l4 4.5C12 13 15 8 19 4' : 'M6.25 6.25l11.5 11.5M17.75 6.25l-11.5 11.5'} /></svg
+  ><path d={shape === 'check' ? 'M5.5 13l4 4.5C12 13 15 8 19 4' : 'M5.5 5.5l13 13M18.5 5.5l-13 13'} /></svg
 ><span class="sr-only">{shape === 'check' ? 'right' : 'wrong'}</span>
 
 <style>
