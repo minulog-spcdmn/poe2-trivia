@@ -8,7 +8,8 @@
 // dithered once, at the 8-bit conversion, so no glow can band. Empty pixels
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
-import { INSTANCE_FLOATS } from './particles';
+import { INSTANCE_FLOATS, Shape } from './particles';
+import { NOISE_CELLS, NOISE_MAX, NOISE_TILE, SMOKE_BODY, SMOKE_REACH2, noiseTile, smokeBody } from './noiseTile';
 import { GpuTimer, type GpuDraw } from './gpuTimer';
 import { NOISE, buildPrograms, dropTarget, maxDrawSize, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
@@ -52,6 +53,12 @@ export const PARTICLE_BEHIND_UI = 2;
 
 /** How far the fire's tallest tongue reaches, in flame heights: the shader stops there and effects.ts sizes the quad to it. */
 export const FIRE_REACH = 1.8;
+/**
+ * Flames rise: out past the element's ends a tongue reaches this many times
+ * less far than it rises, so the ones off the top corners lean upward
+ * instead of shooting out sideways.
+ */
+export const FIRE_SIDE = 3.0;
 
 /** The most boxes the page's light hides behind at once (see BEHIND_DIALOG). */
 export const MAX_HIDES = 8;
@@ -122,6 +129,12 @@ out vec2 vL;            // px along (dir, normal)
 out vec2 vWorld;        // CSS px
 flat out vec3 vCol;
 flat out vec4 vP;       // shape, size, half length, page light
+// Smoke's light, where it comes from in its own frame (along dir, normal),
+// and its noise, how it's laid over it: worked out once a particle rather
+// than once a pixel (each pixel's code is what makes a shader slow to
+// compile, on D3D above all).
+flat out vec2 vLight;
+flat out vec3 vA;
 void main() {
   float shape = iB.w;
   float size = iB.x;
@@ -153,11 +166,29 @@ void main() {
   } else if (shape < 5.5) {     // mote
     ext = vec2(1.25 * w);
     energy *= energy;
-  } else {                      // coin: the stretch slot carries its flip
+  } else if (shape < 6.5) {     // coin: the stretch slot carries its flip
     halfLen = iB.y;
     ext = vec2(2.0 * w);
+  } else {                      // smoke: the stretch slot carries its seed and how far through its life it is
+    halfLen = iB.y;
+    ext = vec2(2.0 * w);
+    energy *= energy;
   }
   vec2 nrm = vec2(-dir.y, dir.x);
+  vLight = vec2(0.0);
+  vA = vec3(0.0);
+  if (shape > 6.5) {
+    // Lit from behind where it's going (the fire it came out of), or from below.
+    vec2 light = speed > 1.0 ? -vel / speed : vec2(0.0, 1.0);
+    vLight = vec2(dot(light, dir), dot(light, nrm));
+    // Smoke's noise is laid over it smaller as it spreads, so its lobes
+    // swell with it rather than new ones sliding in, and it rolls a little
+    // as it goes; each puff where its seed puts it.
+    float seed = floor(iB.y);
+    float t = fract(iB.y);
+    vA.x = (0.8 - 0.25 * t) / ${NOISE_CELLS}.0;
+    vA.yz = vec2(0.35, -0.5) * (t / ${NOISE_CELLS}.0) + fract(seed * vec2(0.1031, 0.1197));
+  }
   vL = aCorner * ext;
   vec2 p = iA.xy + dir * vL.x + nrm * vL.y;
   vWorld = p;
@@ -173,7 +204,11 @@ in vec2 vL;
 in vec2 vWorld;
 flat in vec3 vCol;
 flat in vec4 vP;
+flat in vec2 vLight;
+flat in vec3 vA;
 out vec4 o;
+uniform sampler2D uNoiseTile; // noiseTile.ts: smoke's noise, read rather than worked out per pixel
+uniform sampler2D uSmokeBody; // noiseTile.ts: a puff by how far out and the noise, likewise
 ${BEHIND_DIALOG}
 ${COVER}
 void main() {
@@ -206,7 +241,7 @@ void main() {
   } else if (shape < 5.5) {
     float r = length(vL) / w;
     v = (1.0 - smoothstep(0.86, 1.0, r)) * (0.55 + 0.45 * smoothstep(0.3, 1.0, r));
-  } else {
+  } else if (shape < 6.5) {
     // A coin turning end over end: a disc squashed across by its flip, with
     // a raised rim and an inner ring, darker edge-on, and a star glint as it
     // turns to face you.
@@ -224,6 +259,14 @@ void main() {
     vec2 a = abs(vL) / w;
     float star = exp(-a.y * a.y * 120.0) * exp(-a.x * 1.1) + exp(-a.x * a.x * 120.0) * exp(-a.y * 1.1);
     v += facing * star * 1.3;
+  } else {
+    // Smoke: billows of noise over a soft round body, torn where they thin
+    // out (smokeBody, by how far out it is and the noise there), lit on the
+    // side its light comes from.
+    vec2 q = vL / w;
+    float n = texture(uNoiseTile, q * vA.x + vA.yz).r;
+    float lit = 0.45 + 0.55 * clamp(0.4 + 0.45 * dot(q, vLight) + 0.8 * (n * ${NOISE_MAX} - 0.44), 0.0, 1.0);
+    v = textureLod(uSmokeBody, vec2(dot(q, q) * ${(SMOKE_BODY - 1) / SMOKE_BODY / SMOKE_REACH2}, n * ${(SMOKE_BODY - 1) / SMOKE_BODY}) + ${0.5 / SMOKE_BODY}, 0.0).r * lit;
   }
   float page = mod(vP.w, 2.0);
   float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);
@@ -292,6 +335,8 @@ uniform float uSilOn; // the picture's opacity, 0 without one
 uniform vec4 uSilBox;
 uniform float uSilFlip;
 uniform vec2 uSilFit;
+// The deathmatch's plate, one part to a channel (lib/fx/duelPaint.ts): see the sigil.
+uniform sampler2D uSigil;
 // Where p (CSS px) falls on the picture's texture.
 vec2 silhouetteUv(vec2 p) {
   vec2 l = (p - uSilBox.xy) / uSilBox.zw;
@@ -320,19 +365,6 @@ vec2 rot2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x -
 float blurredLine(float x, float w, float blur) {
   float wb = w * w + 2.0 * blur * blur;
   return exp(-x * x / wb) * w * inversesqrt(wb);
-}
-// How much of a pattern repeating every period px a Gaussian blur leaves (of its fundamental).
-float blurKeeps(float period, float blur) {
-  return exp(-19.74 * blur * blur / max(period * period, 1e-4));
-}
-// Equilateral triangle SDF (Inigo Quilez), r = circumradius-ish size.
-float sdTri(vec2 p, float r) {
-  const float k = 1.7320508;
-  p.x = abs(p.x) - r;
-  p.y = p.y + r / k;
-  if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
-  p.x -= clamp(p.x, -2.0 * r, 0.0);
-  return -length(p) * sign(p.y);
 }
 // Signed distance to a convex or concave quad (Inigo Quilez's polygon SDF).
 float sdQuad(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d) {
@@ -646,9 +678,12 @@ void main() {
     // Flames reach highest above the top, a little way up the ends, barely below.
     float up = 1.0 - smoothstep(-hb.y, hb.y, lp.y);
     float reach = H * (0.06 + 0.94 * up * up * up);
+    // Out past the ends a flame reaches FIRE_SIDE times less far than it
+    // rises; dl is the distance its tongues are measured along.
+    float dl = d + ${(FIRE_SIDE - 1).toFixed(3)} * max(abs(lp.x) - hb.x, 0.0);
     // Past the tallest tongue (FIRE_REACH) or inside the element there's no
     // flame: skip the noise, and only the halo below is left.
-    if (d < ${FIRE_REACH.toFixed(3)} * reach + 2.0 && d > -5.0) {
+    if (dl < ${FIRE_REACH.toFixed(3)} * reach + 2.0 && d > -5.0) {
       // Turbulence scrolling upward, domain-warped so the tongues sway and split.
       vec2 p = lp * vec2(0.05, 0.028);
       vec2 warp = vec2(fbm(p * 0.8 + vec2(seed, time * 0.9)), fbm(p * 0.8 + vec2(seed + 4.1, time * 1.15)));
@@ -656,7 +691,7 @@ void main() {
       float lick = vnoise(vec2(lp.x * 0.11 + seed * 3.0, lp.y * 0.04 + time * 3.2));
       float tongue = n * 0.8 + lick * 0.45;
       // 1 at the surface, falling to 0 at each tongue's tip.
-      float f = clamp(1.0 - max(d, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
+      float f = clamp(1.0 - max(dl, 0.0) / (reach * (0.15 + 1.25 * tongue * tongue) + 2.0), 0.0, 1.0);
       // The roots burn unevenly (hotter under a tongue) and dimmer along the bottom.
       float T = f * smoothstep(-5.0, 0.0, d) * mix(0.3, 1.0, up) * (0.45 + 0.75 * tongue);
       if (T > 0.002) {
@@ -734,39 +769,33 @@ void main() {
     col += crimson * exp(-sqrt(r2) / 3.5) * 0.18 * k;
     v = 1.0;
   } else {
-    // Sigil: an arcane circle that draws itself. q: radius, line width,
-    // drawn 0-1, spin (rad/s).
-    // Behind an open dialog its lines blur with the page (see blurredLine),
-    // and its ticks and dashes fade toward their average.
-    float R = vQ.x;
-    float lw = vQ.y;
+    // Sigil: the deathmatch's plate (lib/plates/duel.ts) in uSigil, one
+    // part to a channel (lib/fx/duelPaint.ts), each drawn in its own way:
+    // the sword (red) down from its pommel; the rings and all within the
+    // band (green) spreading out from the sword's point; the band (blue)
+    // round both ways from its foot to its head. Each burns white as it's
+    // drawn and cools behind; a glow (a far coarser level of the same
+    // lines) lies under them. q: radius (px: the plate's 100), how far each
+    // part is drawn (sword, rings, band: 0-1, and on past 1 as it cools);
+    // r: the band's turn (rad), glow, heat, scale; s: the texture's level
+    // for one device px, device px per CSS px. Behind an open dialog it
+    // blurs with the page: a coarser level still.
     float blur = vBehind * uBlur;
-    vec2 p = rot2(vP, time * vQ.w + seed);
-    float ang = atan(p.y, p.x);
-    float lines = 0.0;
-    lines += blurredLine(r - R, lw, blur);
-    lines += 0.8 * blurredLine(r - R * 0.86, lw * 0.8, blur);
-    lines += 0.5 * blurredLine(r - R * 0.44, lw * 0.7, blur);
-    // Tick marks between the two outer rings (72 round it; |cos|^90 averages 0.084).
-    float band = smoothstep(R * 0.87, R * 0.89, r) * (1.0 - smoothstep(R * 0.97, R * 0.99, r));
-    float ticks = mix(0.084, pow(abs(cos(ang * 36.0)), 90.0), blurKeeps(2.0 * PI * r / 72.0, blur));
-    lines += band * ticks * 1.2;
-    // Rune notches: each of 12 sectors gets its own pattern of dashes (half on, in its middle 64%).
-    float sector = floor((ang + PI) / (2.0 * PI) * 12.0);
-    float h = hash12(vec2(sector, seed));
-    float local = fract((ang + PI) / (2.0 * PI) * 12.0);
-    float n = 2.0 + floor(h * 3.0);
-    float dash = step(0.18, local) * step(local, 0.82) * mix(0.5, step(0.5, fract(local * n + h)), blurKeeps(2.0 * PI * r / 12.0 / n, blur));
-    float runeBand = blurredLine(r - R * 0.93, lw * 1.3, blur);
-    lines += dash * runeBand * 0.9;
-    // A hexagram inside.
-    float tri = min(abs(sdTri(p, R * 0.73)), abs(sdTri(vec2(p.x, -p.y), R * 0.73)));
-    lines += 0.75 * blurredLine(tri, lw * 0.8, blur);
-    // Draw on around the circle.
-    float at = fract((ang + PI) / (2.0 * PI) + 0.25);
-    float drawn = 1.0 - smoothstep(vQ.z - 0.02, vQ.z, at);
-    v = lines * drawn;
-    v += blurredLine(r - R, lw * 6.0, blur) * 0.15;
+    float lod = max(vS.x, 0.0) + log2(1.0 + 1.5 * blur * vS.y);
+    vec2 u = vP / (vQ.x * vR.w) * 100.0;
+    vec2 ub = rot2(u, -vR.x);
+    // (The picture is 220 units across, a margin round the plate: duelPaint.ts' DUEL_SPAN.)
+    vec2 ta = u / 220.0 + 0.5;
+    vec2 tb = ub / 220.0 + 0.5;
+    vec3 lit = vec3(textureLod(uSigil, ta, lod).rg, textureLod(uSigil, tb, lod).b);
+    vec3 halo = vec3(textureLod(uSigil, ta, lod + 3.5).rg, textureLod(uSigil, tb, lod + 3.5).b);
+    // How far along its part's drawing each pixel lies, 0 first to 1 last.
+    vec3 along = vec3((u.y + 39.0) / 76.0, length(u - vec2(0.0, 37.0)) / 118.0, 1.0 - abs(atan(ub.x, -ub.y)) / PI);
+    vec3 front = vQ.yzw;
+    vec3 drawn = 1.0 - smoothstep(front - 0.012, front, along);
+    vec3 heat = drawn * exp(-max(front - along, 0.0) / 0.1);
+    v = dot(lit + halo * vR.y, drawn);
+    hot = dot(lit, heat) * vR.z;
   }
   // Behind the picture: only a faint glow over it, none of the white heat,
   // and a little less light right around it.
@@ -899,6 +928,9 @@ void main() {
 
 export type RendererOptions = { maxParticles: number; maxShapes: number };
 
+/** The deathmatch's plate as painted for the sigil (lib/fx/duelArt.ts): `size` px square, RGBA. */
+export type SigilPicture = { size: number; pixels: Uint8Array };
+
 /**
  * A picture effects shine from behind, so they leave its own shape clear (an
  * item's outline, not its box): what it's drawn from (an image, or a canvas
@@ -961,9 +993,20 @@ export type HideLight = { box: DOMRect; radius: number; amount: number };
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hides?: readonly HideLight[] };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 
+/** Whether any of the first `n` particles is smoke (its shape, the eighth of each instance's floats). */
+function hasSmoke(particles: Float32Array, n: number) {
+  for (let q = 7; q < n * INSTANCE_FLOATS; q += INSTANCE_FLOATS) if (particles[q] === Shape.Smoke) return true;
+  return false;
+}
+
 export class FxRenderer {
   private gl: WebGL2RenderingContext;
   private particleProg: Program;
+  /** Smoke's noise (noiseTile.ts), repeating, and its puffs' body. */
+  private noiseTex: WebGLTexture;
+  private smokeTex: WebGLTexture;
+  /** Whether the two are put in (see bake). */
+  private baked = false;
   private shapeProg: Program;
   private downProg: Program;
   private upProg: Program;
@@ -1008,6 +1051,9 @@ export class FxRenderer {
   private coverOn = false;
   private coverView: [number, number] = [1, 1];
   private coverShift: [number, number] = [0, 0];
+  /** The deathmatch's plate (see setSigil), and the picture it was made from. */
+  private sigilTex: WebGLTexture | null = null;
+  private sigilOf: SigilPicture | null = null;
   /** Whether the 2D canvas can blur (older Safari can't): asked once, before the first `filter` is set. */
   private coverBlur: boolean | null = null;
 
@@ -1037,7 +1083,7 @@ export class FxRenderer {
         ['composite', FULL_VS, COMPOSITE_FS],
         ['copy', FULL_VS, COPY_FS],
       ] as const
-    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program "${name}"` }));
+    ).map(([name, vs, fs]) => ({ vs, fs, label: `FX program “${name}”` }));
     // Whether it can draw to half floats: asked in a step of its own, a
     // frame after the context and once the GPU has caught up
     // (whenGpuCaughtUp), before the shaders start. (It waits on the GPU
@@ -1106,6 +1152,31 @@ export class FxRenderer {
     this.copyProg = k;
     this.particleProg = p;
     this.shapeProg = s;
+
+    // Smoke's noise and body: an even texel and an empty one until smoke is
+    // first drawn (see bake). Only Delve's flares and dynamite make any.
+    this.noiseTex = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array([Math.round((0.44 / NOISE_MAX) * 255)]));
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    this.smokeTex = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array(1));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.useProgram(p.prog);
+    gl.uniform1i(p.u('uNoiseTile'), 6);
+    gl.uniform1i(p.u('uSmokeBody'), 5);
     this.downProg = d;
     this.upProg = u;
     this.compProg = c;
@@ -1250,6 +1321,13 @@ export class FxRenderer {
       // Always on its own unit: left on unit 0, the sampler could point at
       // the target being drawn into, which WebGL refuses to draw.
       gl.uniform1i(p.u('uSil'), 2);
+      // The deathmatch's plate on unit 4 (see setSigil).
+      gl.uniform1i(p.u('uSigil'), 4);
+      if (this.sigilTex) {
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, this.sigilTex);
+        gl.activeTexture(gl.TEXTURE0);
+      }
       gl.uniform1f(p.u('uSilOn'), sil ? sil.alpha : 0);
       if (!sil) return;
       gl.activeTexture(gl.TEXTURE2);
@@ -1365,6 +1443,13 @@ export class FxRenderer {
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
       behindDialog(this.particleProg, true);
       cover(this.particleProg);
+      // Smoke's noise on unit 6, its body on 5: put in as smoke is first drawn.
+      if (!this.baked && hasSmoke(particles, nParticles)) this.bake();
+      gl.activeTexture(gl.TEXTURE6);
+      gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, particles, 0, nParticles * INSTANCE_FLOATS);
       gl.bindVertexArray(this.particleVao);
@@ -1573,6 +1658,27 @@ export class FxRenderer {
     this.coverShift = [dx, dy];
   }
 
+  /**
+   * Makes `picture` (the deathmatch's plate, one part to a channel:
+   * lib/fx/duelArt.ts) the sigil's texture, with every level down, unless
+   * it is already. Done as soon as it's painted, well before it's drawn.
+   */
+  setSigil(picture: SigilPicture) {
+    if (picture === this.sigilOf) return;
+    const gl = this.gl;
+    this.sigilTex ??= gl.createTexture();
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.sigilTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, picture.size, picture.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, picture.pixels);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    this.sigilOf = picture;
+  }
+
   /** Makes the silhouette's picture the silhouette texture, unless it is already. Returns whether it's ready (loaded, and readable). */
   private loadSilhouette({ pic, key }: Silhouette): boolean {
     const i = this.sils.findIndex((x) => x.key === key);
@@ -1634,10 +1740,34 @@ export class FxRenderer {
     return [w / c.width, h / c.height];
   }
 
+  /**
+   * Puts smoke's noise and body in (see the constructor), as smoke is first
+   * drawn: worked out by then if the blast's smoke was made ready
+   * (lib/blastSmoke.ts, prepareBlastSmoke), here if not.
+   */
+  private bake() {
+    const gl = this.gl;
+    if (this.baked || gl.isContextLost()) return;
+    this.baked = true;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, NOISE_TILE, NOISE_TILE, 0, gl.RED, gl.UNSIGNED_BYTE, noiseTile());
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, SMOKE_BODY, SMOKE_BODY, 0, gl.RED, gl.FLOAT, smokeBody());
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
   destroy() {
     const gl = this.gl;
     for (const x of this.sils) gl.deleteTexture(x.tex);
     if (this.coverTex) gl.deleteTexture(this.coverTex);
+    if (this.sigilTex) gl.deleteTexture(this.sigilTex);
+    gl.deleteTexture(this.noiseTex);
+    gl.deleteTexture(this.smokeTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);

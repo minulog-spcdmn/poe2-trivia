@@ -1,10 +1,11 @@
 // Delve: dynamite blasts the question away for a new one at the same depth.
 // The fire and light of the explosion (the effects overlay); the question
 // breaking apart and the smoke the new one comes in through are the page's
-// own (lib/blastAway.ts), which calls this at the moment it goes off.
+// own (lib/blastAway.ts, lib/blastSmoke.ts), which calls this at the moment
+// it goes off.
 
 import { after, budget, fxActive, particle, shakeView, type Point, type Vec3 } from './core';
-import { C, embers, flare, flash, puffs, rand, ring, sparks } from './effects';
+import { C, embers, flare, flash, rand, ring, sparks } from './effects';
 import { Shape } from './particles';
 import { light, pulseMood } from '../lights';
 
@@ -21,14 +22,16 @@ export type EdgeBlast = {
   impact: number;
   /** The player who set it off: their screen shakes harder. */
   mine: boolean;
+  /** The fireball's size (viewport px), the page's smoke sized from the same (lib/blastAway.ts). */
+  size: number;
 };
 
 /**
  * The explosion bursting in from a screen edge: a white-hot flash and a
  * fireball just off the edge, a shockwave running across, a spray of sparks
- * and rock chips flying over the screen toward the far side, fire and smoke
- * billowing in, embers left drifting where the question stood, and the
- * screen shaking as the shockwave hits.
+ * and rock chips flying over the screen toward the far side, the fire
+ * billowing in and its glow on the smoke behind it, embers left drifting
+ * where the question stood, and the screen shaking as the shockwave hits.
  */
 export function edgeBlast(b: EdgeBlast) {
   if (!fxActive()) return;
@@ -51,9 +54,59 @@ export function edgeBlast(b: EdgeBlast) {
 
   // Sparks thrown across the screen.
   sparks(rim, { count: 90, angle: inward, spread: 1.3, speed: [520, 1600], life: [0.35, 1.0], gravity: 420, drag: 1.3, stretch: 0.05, colors: [C.whiteHot, C.gold, C.ember] });
-  // Fire billowing in off the edge, cooling to soot.
-  puffs(rim, { count: 14, angle: inward, spread: 1.4, color: k3(C.ember, 0.5), size: [40, 90], speed: [260, 720], life: [0.3, 0.6] });
-  puffs(rim, { count: 12, angle: inward, spread: 1.2, color: [0.1, 0.075, 0.06], size: [40, 80], speed: [180, 520], life: [1.0, 1.8] });
+  // The fireball: billows of fire torn by noise (Shape.Smoke), bursting in
+  // off the edge, swelling as the air slows them, rising on their own heat
+  // and cooling from white through orange to a dull red as they burn out.
+  // The heart of it first and hottest, the rest a beat behind, flung wider.
+  const S = b.size;
+  const nFire = budget(16);
+  for (let i = 0; i < nFire; i++) {
+    const core = i < nFire * 0.35;
+    const a = inward + (Math.random() - 0.5) * (core ? 0.6 : 1.5);
+    const v = S * (core ? rand(0.9, 1.6) : rand(1.2, 2.6));
+    const size = S * (core ? rand(0.12, 0.16) : rand(0.07, 0.12));
+    particle({
+      x: rim.x + b.side * size * 0.6,
+      y: b.y + rand(-0.12, 0.12) * S,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v,
+      life: core ? rand(0.55, 0.8) : rand(0.4, 0.7),
+      size,
+      sizeEnd: size * rand(1.6, 2),
+      color: core ? k3(C.whiteHot, 0.55) : k3(C.ember, 0.5),
+      colorEnd: core ? k3(C.emberDeep, 0.45) : [0.3, 0.045, 0.015],
+      gravity: -140,
+      drag: 3.2,
+      shape: Shape.Smoke,
+      fadeIn: 0.06,
+      delay: core ? 0 : rand(0.02, 0.09),
+    });
+  }
+  // The smoke after it (the page's own, lib/blastSmoke.ts, darkens; this is
+  // the fire's glow on it), lit from within, dimming as it rolls away from the fire.
+  const nSmoke = budget(10);
+  for (let i = 0; i < nSmoke; i++) {
+    const a = inward + (Math.random() - 0.5) * 1.1;
+    const v = W * rand(0.5, 1.4);
+    const size = S * rand(0.08, 0.14);
+    particle({
+      x: rim.x + b.side * size,
+      y: b.y + rand(-0.3, 0.3) * S,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v - rand(0, 60),
+      life: rand(0.7, 1.2),
+      size,
+      sizeEnd: size * rand(2, 2.8),
+      color: k3(C.ember, 0.07),
+      colorEnd: [0, 0, 0],
+      gravity: -40,
+      drag: 1.8,
+      turbulence: 160,
+      shape: Shape.Smoke,
+      fadeIn: 0.15,
+      delay: rand(0.06, 0.2),
+    });
+  }
   // Rock chips: the wall the blast came through, flung across with a spin.
   const n = budget(26);
   for (let i = 0; i < n; i++) {
@@ -66,8 +119,8 @@ export function edgeBlast(b: EdgeBlast) {
       vx: Math.cos(a) * v,
       vy: Math.sin(a) * v - rand(60, 220),
       life: rand(0.7, 1.4),
-      size: rand(2.5, 6.5),
-      sizeEnd: 1.4,
+      size: rand(2.5, 7.5),
+      sizeEnd: 1.6,
       color: hot ? C.ember : [0.85, 0.66, 0.5],
       colorEnd: k3(C.ash, 0.35),
       gravity: 950,
@@ -81,7 +134,7 @@ export function edgeBlast(b: EdgeBlast) {
   // The shockwave strikes the question: it shakes, and where it stood is left smouldering.
   const t = b.target;
   after(b.impact, () => {
-    shakeView(b.mine ? 0.7 : 0.55, b.mine ? 13 : 10);
+    shakeView(b.mine ? 0.7 : 0.55, b.mine ? 6.5 : 4);
     const near = new DOMRect(b.side > 0 ? t.right - t.width * 0.3 : t.left, t.top, t.width * 0.3, t.height);
     sparks(near, { count: 40, area: 'fill', angle: inward, spread: 1.6, speed: [240, 900], life: [0.25, 0.7], gravity: 520, colors: [C.whiteHot, C.ember, C.gold] });
     flash(near, { radius: Math.max(t.width, t.height) * 0.5, color: C.gold, intensity: 0.45, life: 0.35 });

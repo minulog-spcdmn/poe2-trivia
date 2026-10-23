@@ -32,6 +32,15 @@ export function longestNamed(n: number): Item[] {
   return items.sort((a, b) => b.name.length - a.name.length || a.name.localeCompare(b.name)).slice(0, n);
 }
 
+/** The item whose name has the longest word, the most a line of a name ever has to fit unbroken (none named as one `besides`). */
+export function longestWord(besides: Item[] = []): Item {
+  const taken = new Set(besides.map((it) => it.name));
+  const word = (it: Item) => Math.max(...it.name.split(' ').map((w) => w.length));
+  return given()
+    .items.filter((it) => !taken.has(it.name))
+    .reduce((a, b) => (word(b) > word(a) ? b : a));
+}
+
 /** An engine to look items up in. */
 export function sceneEngine(): Engine {
   return (shared ??= new Engine(given().items, { fakes: given().fakes }));

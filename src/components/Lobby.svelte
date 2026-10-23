@@ -416,7 +416,7 @@
             <h2>{local || atScreen ? 'Add exiles' : 'On this device'}</h2>
           </header>
           {#if (local || atScreen) && s.players.length < MAX_PLAYERS}
-            {@render adder("Exile's name")}
+            {@render adder("Exile’s name")}
           {/if}
           <p class="vis-hint">
             {#if local || atScreen}
@@ -1187,13 +1187,21 @@
        box-shadow from none would. */
     --bs1: 0px 0px;
     box-shadow:
-      inset 0 1px 0 var(--top-light, transparent),
+      inset 0 1px 0 var(--mode-top-light, transparent),
       inset 0 0 var(--mode-glow-blur, 0px) var(--mode-glow-in, transparent),
       var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent));
     cursor: pointer;
-    /* (`all` leaves out custom properties.) */
+    /* Its glows ease by their parts (registered in app.css), never as a whole
+       box-shadow: that would fade the CSS copy of the soft glow out slowly as
+       the backdrop takes it over, both showing at once, a flash. */
     transition:
-      all 0.2s,
+      color 0.2s,
+      border-color 0.2s,
+      opacity 0.2s,
+      transform 0.2s,
+      --mode-top-light 0.2s,
+      --mode-glow-blur 0.2s,
+      --mode-glow-in 0.2s,
       --bs1 0.2s,
       --bs1-color 0.2s;
     /* Its fill eases too (mode-on, mode-off), once the lobby is open (.live). */
@@ -1237,7 +1245,7 @@
     --bs-fill-a: rgba(122, 79, 29, 0.55);
     --bs-fill-b: rgba(69, 42, 14, 0.55);
     border-color: var(--gold);
-    --top-light: rgba(255, 230, 170, 0.2);
+    --mode-top-light: rgba(255, 230, 170, 0.2);
     --mode-glow-blur: 18px;
     --mode-glow-in: rgba(255, 150, 60, 0.12);
     --bs1: 0px 18px;
@@ -1752,7 +1760,7 @@
   }
   /* A phone on its side (lib/layout.ts `flat`): closer to the screen's
      edges (clear of the notch). */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .lobby {
       padding: 0.8rem max(1rem, env(safe-area-inset-right)) 1.5rem max(1rem, env(safe-area-inset-left));
     }
@@ -1762,7 +1770,7 @@
      stays at the foot of the screen while the panel, twice the screen's
      height, scrolls under it; a bar across the whole of so short a screen
      would take too much of it. */
-  @media (orientation: landscape) and (max-height: 500px) and (max-width: 1099px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) and (max-width: 1099px) {
     .cols {
       grid-template-columns: 1fr 1.33fr;
     }

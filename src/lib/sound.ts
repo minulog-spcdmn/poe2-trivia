@@ -274,6 +274,57 @@ function audio(): Bus | null {
 }
 
 /**
+ * When (performance ms) the speakers play the context's time `t` (s): by
+ * the context's own stamp of what it's playing when, or else by its clock
+ * and latency.
+ */
+function heardAt(ac: AudioContext, t: number): number {
+  const ts = ac.getOutputTimestamp?.();
+  if (ts?.performanceTime && ts.contextTime !== undefined) return ts.performanceTime + (t - ts.contextTime) * 1000;
+  return performance.now() + (t - ac.currentTime + (ac.outputLatency || ac.baseLatency || 0)) * 1000;
+}
+
+/** The context's time (s) the speakers play at `now` (performance ms): heardAt the other way. */
+function heardTime(ac: AudioContext, now: number): number {
+  const ts = ac.getOutputTimestamp?.();
+  if (ts?.performanceTime && ts.contextTime !== undefined) return ts.contextTime + (now - ts.performanceTime) / 1000;
+  return ac.currentTime - (ac.outputLatency || ac.baseLatency || 0) + (now - performance.now()) / 1000;
+}
+
+/**
+ * A moment's sound, as it goes: which, when it's heard from (performance
+ * ms), and its level against the moment's own (dB, as varied). Told heard
+ * or not: muted, it's when it would have been (lib/bassCurves.ts, for the
+ * view's tremor, shakes it all the same).
+ */
+export type Sounded = { name: Sfx; at: number; gainDb: number };
+const soundedListeners = new Set<(s: Sounded) => void>();
+/** Calls `fn` for each moment's sound as it goes (see Sounded); returns the way to stop. */
+export function onSounded(fn: (s: Sounded) => void) {
+  soundedListeners.add(fn);
+  return () => void soundedListeners.delete(fn);
+}
+const sounded = (s: Sounded) => soundedListeners.forEach((fn) => fn(s));
+
+/**
+ * How far round its loop (0 to 1) the loop playing `file` is heard at `now`
+ * (performance ms), or null while none plays it (muted, or not wanted). (A
+ * share, not seconds: decoded at another rate, a file can come out a few ms
+ * longer or shorter.)
+ */
+export function loopHeard(file: string, now = performance.now()): number | null {
+  if (!bus) return null;
+  for (const [l, p] of playing) {
+    if (l.file !== file) continue;
+    const d = p.takes[0].buffer?.duration ?? 0;
+    if (!(d > 0)) return null;
+    const into = p.from + (heardTime(bus.ac, now) - p.startedAt) * p.takes[0].playbackRate.value;
+    return (((into % d) + d) % d) / d;
+  }
+  return null;
+}
+
+/**
  * The bus, made if it isn't yet. Making it needs no gesture: made before one,
  * its context waits, suspended, until audio() wakes it. (Making the context is
  * the slow part, some 25 ms: see installUiSounds.) What it plays is loaded
@@ -716,7 +767,9 @@ const lastPlayed = new Map<Sfx, number>();
 export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: SoundPlace } = {}): (() => void) | undefined {
   // Out of sight (a co-op tab in the background) nothing plays: a sound
   // would wake the audio context that rest() put to sleep, and keep it running.
-  if (muted || (typeof document !== 'undefined' && document.hidden)) return undefined;
+  if (typeof document !== 'undefined' && document.hidden) return undefined;
+  // (Muted, it's still told as it would sound: see Sounded.)
+  if (muted) return void sounded({ name, at: performance.now() + Math.max(0, opts.inMs ?? 0), gainDb: 0 });
   const gap = MIN_GAP[name];
   if (gap) {
     const now = performance.now();
@@ -731,6 +784,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   const gainDb = (Math.random() * 2 - 1) * m.varyGain + (trims[name] ?? 0);
   const layers: { src: AudioBufferSourceNode; gain: GainNode }[] = [];
   const inS = Math.max(0, opts.inMs ?? 0) / 1000;
+  sounded({ name, at: heardAt(b.ac, b.ac.currentTime + inS), gainDb });
   // In a vein, its own moments ring in its room (Bus veinWet).
   const wetTo = inTunnel() && VEIN_MOMENTS.has(name) ? b.veinWet : undefined;
   const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from, wetTo) : null;
@@ -769,7 +823,8 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
 /** A looping sound: AMBIENCE, FIRE, RUMBLE or a layer of a Delve place's bed (which has a rate and a send of its own). */
 type Loop = { file: string; gain: number; lp: number; rate?: number; send?: number };
 /** `takes`: the loop, and a second take of it when the placer spreads it (Placer.widen). */
-type Playing = { takes: AudioBufferSourceNode[]; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void };
+/** A loop playing: its sources, nodes, and where in its file (`from`, s) it started at the context's `startedAt`. */
+type Playing = { takes: AudioBufferSourceNode[]; gain: GainNode; lp: BiquadFilterNode; send: GainNode; stop: () => void; from: number; startedAt: number };
 
 /** Delve's depth (0 outside it), and how fast (s) the sound follows it: about the backdrop's two seconds a depth. */
 let depth = 0;
@@ -807,6 +862,23 @@ export const VEIN_NEAR = 20;
 let vein = 0;
 /** In a vein's tunnel, in Delve. */
 const inTunnel = () => vein > 0 && depth > 0;
+/** The tunnel's loop that swells as the clock runs out (VEIN_AMBIENCE.swell), and how far it has, 0 to 1 (veinStrain). */
+const SWELLS = VEIN_AMBIENCE.layers.find((l) => l.file === VEIN_AMBIENCE.swell.file);
+let strain = 0;
+
+/**
+ * How far a vein's strike has strained, 0 to 1 (its clock run down, as the
+ * dark has it): the tunnel's rumble swells with it (VEIN_AMBIENCE.swell), a
+ * quarter of a second behind. Called each frame; moves only on a step worth
+ * hearing.
+ */
+export function veinStrain(v: number) {
+  const next = Math.min(1, Math.max(0, v));
+  if (Math.abs(next - strain) < 0.02 && (next > 0 || strain === 0)) return;
+  strain = next;
+  const p = SWELLS && playing.get(SWELLS);
+  if (p && bus) shape(SWELLS, p, bus.ac.currentTime, 0.25);
+}
 const playing = new Map<Loop, Playing>();
 const starting = new Set<Loop>();
 let fire = false;
@@ -1026,7 +1098,7 @@ function mixTarget(l: Loop) {
     };
   }
   if (l === RUMBLE) return { gain: db(l.gain + RUMBLE.abyss * descent(depth).abyss), lp: l.lp, rate: 1, send: 0.3 };
-  if (VEIN_LAYERS.has(l)) return { gain: db(l.gain), lp: l.lp, rate: l.rate ?? 1, send: l.send ?? 0 };
+  if (VEIN_LAYERS.has(l)) return { gain: db(l.gain + (l === SWELLS ? VEIN_AMBIENCE.swell.db * strain : 0)), lp: l.lp, rate: l.rate ?? 1, send: l.send ?? 0 };
   // The fire, or a bed's layer as much as its place sounds.
   return { gain: (l === FIRE ? 1 : (beds.get(l) ?? 0)) * db(l.gain), lp: l.lp, rate: l.rate ?? 1, send: l.send ?? 0 };
 }
@@ -1155,7 +1227,7 @@ function updateLoop(l: Loop) {
         lfo.start();
         nodes.push(lfo);
       }
-      const p: Playing = { takes, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()) };
+      const p: Playing = { takes, gain, lp, send, stop: () => nodes.forEach((n) => n.stop()), from: 0, startedAt: ac.currentTime };
       // In place at once, then the level fades up to where the depth wants it.
       shape(l, p, ac.currentTime, 0.001);
       gain.gain.cancelScheduledValues(ac.currentTime);
@@ -1164,6 +1236,8 @@ function updateLoop(l: Loop) {
       // The rumble and the beds start anywhere in their loop, so no two runs sound alike.
       const from = l === AMBIENCE || l === FIRE ? 0 : Math.random() * buf.duration;
       src.start(0, from);
+      p.from = from;
+      p.startedAt = ac.currentTime;
       wide?.take?.start(0, (from + buf.duration / 2) % buf.duration);
       playing.set(l, p);
     })

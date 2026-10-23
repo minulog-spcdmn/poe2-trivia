@@ -20,7 +20,8 @@ import type { Sfx } from './sound.ts';
  * is pulled together out of fragments (void), is lit like lamps (light), or
  * rises out of fumes (fume).
  */
-export type Family = 'ember' | 'rime' | 'spore' | 'void' | 'light' | 'fume';
+export const FAMILY_NAMES = ['ember', 'rime', 'spore', 'void', 'light', 'fume'] as const;
+export type Family = (typeof FAMILY_NAMES)[number];
 
 /**
  * A family's variations, each a few parameters rather than a motion of its

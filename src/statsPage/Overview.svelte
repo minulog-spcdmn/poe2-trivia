@@ -13,7 +13,7 @@
   import { average, fmt, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { spikesOf, troubleOf } from './insights';
+  import { backShare, comersOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
   import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
@@ -34,9 +34,11 @@
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
 
-  /** Joining worse than usual (insights.ts troubleOf), and what failed most. */
+  /** Joining worse than usual (insights.ts troubleOf), and what failed most there (the scripts' errors aren't joining's). */
   const trouble = $derived(troubleOf(L, B));
-  const worst = $derived(L.failures[0]);
+  const worst = $derived(L.failures.find((f) => !f.script));
+  /** Of the visits that found a save or none, those that found one (insights.ts backShare). */
+  const back = $derived(backShare(comersOf(L)));
 
   const METRICS = [
     { value: 'visitors', name: 'Visitors' },
@@ -159,8 +161,11 @@
     <Section title="Where they are">
       {#snippet aside()}<a class="to-view" href="#visitors">Visitors ›</a>{/snippet}
       <Bars bars={countries} top={5} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
-      {#if phones.all}
-        <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.</p>
+      {#if phones.all || back !== null}
+        <p class="line">
+          {#if phones.all}<b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.{/if}
+          {#if back !== null}<b>{Math.round(back)}%</b> came back to a save.{/if}
+        </p>
       {/if}
     </Section>
 

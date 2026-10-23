@@ -18,6 +18,8 @@ export const Shape = {
   Mote: 5,
   /** A gold coin flipping end over end, glinting when it faces you. */
   Coin: 6,
+  /** A billow of smoke: noise over a soft body, its lobes swelling as it spreads, lit from where it came from. */
+  Smoke: 7,
 } as const;
 export type Shape = (typeof Shape)[keyof typeof Shape];
 
@@ -47,7 +49,7 @@ export type ParticleSpec = {
   flicker?: number;
   /** Fraction of the life spent fading in. */
   fadeIn?: number;
-  /** Wandering acceleration, px/s². */
+  /** Wandering acceleration, px/s²: how hard the air's own stir (flowAt, or for all but smoke its eddies) pushes it, so neighbours wander together. */
   turbulence?: number;
   /** Seconds before the particle appears. */
   delay?: number;
@@ -107,6 +109,53 @@ const F = {
   outTotal: 36,
 } as const;
 const STRIDE = 37;
+
+// The air's own stir, so neighbours drift together as smoke and ash do: a
+// few slow waves crossing the screen at odd angles, summed as a curl so it
+// neither gathers nor spreads what it carries. Smoke rides all of it (and
+// the page's smoke, lib/blastSmoke.ts): broad waves and a light wind veering
+// over seconds, which carry a billow off as a whole. Everything else only
+// its eddies (EDDIES, eddyAt), smaller than a burst: its sparks and embers
+// swirl together but the burst stays where it was made, however the wind
+// blows. Each about 1 at its strongest, on average.
+const waves = (list: readonly (readonly [number, number, number, number])[]) =>
+  list.map(([a, len, drift, k]) => ({ dx: Math.cos(a), dy: Math.sin(a), f: (2 * Math.PI) / len, drift, k }));
+const WAVES = waves([
+  // direction (rad), wavelength (px), drift (rad/s), weight
+  [0.3, 420, 0.7, 0.85],
+  [1.9, 260, -1.1, 0.68],
+  [3.4, 170, 1.6, 0.55],
+  [4.7, 610, -0.45, 0.6],
+]);
+const EDDIES = waves([
+  [0.8, 150, 1.3, 0.8],
+  [2.6, 110, -1.7, 0.7],
+  [4.1, 190, 1.1, 0.75],
+]);
+const flow: [number, number] = [0, 0];
+
+function curl(list: typeof WAVES, x: number, y: number, t: number, fx: number, fy: number): readonly [number, number] {
+  for (const w of list) {
+    const c = w.k * Math.cos((x * w.dx + y * w.dy) * w.f + t * w.drift);
+    fx += c * w.dy;
+    fy -= c * w.dx;
+  }
+  flow[0] = fx;
+  flow[1] = fy;
+  return flow;
+}
+/** The air's clock (s): the effects' particles step it, and whatever else the air carries reads it (airNow). */
+let airTime = 0;
+/** Where the air's stir stands now, for flowAt: the effects' own clock, so the page's smoke moves with their particles. */
+export const airNow = () => airTime;
+
+/** The air's stir at (x, y) (CSS px) at time `t` (s), as an acceleration per unit of turbulence. The array is reused: read it at once. */
+export function flowAt(x: number, y: number, t: number): readonly [number, number] {
+  return curl(WAVES, x, y, t, 0.3 * Math.sin(t * 0.23), 0.18 * Math.sin(t * 0.31 + 1));
+}
+
+/** The air's eddies alone at (x, y) at time `t`, as flowAt: what moves everything but smoke. */
+const eddyAt = (x: number, y: number, t: number) => curl(EDDIES, x, y, t, 0, 0);
 
 /** How many moving elements seeking particles can follow at once (slots are reused in turn). */
 export const FOLLOW_SLOTS = 64;
@@ -206,6 +255,7 @@ export class ParticlePool {
     const out = this.instances;
     let n = 0;
     let fastest = 0;
+    const time = (airTime += dt);
     for (let i = 0; i < this.count; ) {
       const o = i * STRIDE;
       const age = d[o + F.age] + dt;
@@ -235,10 +285,9 @@ export class ParticlePool {
       let vy = d[o + F.vy];
       const turb = d[o + F.turb];
       if (turb) {
-        const x = d[o + F.x];
-        const y = d[o + F.y];
-        vx += turb * Math.sin(y * 0.021 + age * 2.3 + seed) * dt;
-        vy += turb * Math.cos(x * 0.017 + age * 1.9 + seed * 1.3) * dt;
+        const f = (d[o + F.shape] === Shape.Smoke ? flowAt : eddyAt)(d[o + F.x], d[o + F.y], time);
+        vx += turb * f[0] * dt;
+        vy += turb * f[1] * dt;
       }
       vy += d[o + F.grav] * dt;
       const drag = d[o + F.drag];
@@ -270,10 +319,13 @@ export class ParticlePool {
       out[q + 2] = vx;
       out[q + 3] = vy;
       out[q + 4] = size;
-      // Coins pass their flip (the cosine of their turn) where streaks pass their length.
-      out[q + 5] = d[o + F.shape] === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : d[o + F.stretch];
+      // Coins pass their flip (the cosine of their turn) where streaks pass their length, and smoke its seed and
+      // how far through its life it is (the whole and the fraction).
+      const shape = d[o + F.shape];
+      out[q + 5] =
+        shape === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : shape === Shape.Smoke ? Math.floor(seed) + Math.min(t, 0.999) : d[o + F.stretch];
       out[q + 6] = rot;
-      out[q + 7] = d[o + F.shape];
+      out[q + 7] = shape;
       out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * ct) * env;
       out[q + 9] = (d[o + F.g0] + (d[o + F.g1] - d[o + F.g0]) * ct) * env;
       out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * ct) * env;

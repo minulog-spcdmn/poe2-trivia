@@ -16,7 +16,8 @@ import { CHANNEL, type Channel } from './channel.ts';
 import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
-import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
+import { isoWeek } from './isoWeek.ts';
+import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
@@ -49,15 +50,15 @@ export function flipSkip(store: SkipStore): Toggled {
 /** The page counts where it is: the live game's own page, no robot. Settled as it loads (its address changes only in its query and hash after). */
 const countsHere = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
 
-/** Whether this page counts: where it counts, in a browser that hasn't opted out. A toggle changes it. */
-export let counting = countsHere && !browserSkip.skipped();
+/** Whether this page counts: where it counts, in a browser that hasn't opted out or sent Global Privacy Control. A toggle changes it. */
+export let counting = countsHere && !browserSkip.skipped() && !privacySignal();
 
 /** Takes a toggle hash from the address, if there is one where it means something, and flips the opt-out. */
 function takeToggle(): Toggled | null {
   if (!countsHere || !isToggleHash(location.hash)) return null;
   history.replaceState(history.state, '', location.pathname + location.search);
   const out = flipSkip(browserSkip);
-  counting = !browserSkip.skipped();
+  counting = !browserSkip.skipped() && !privacySignal();
   return out;
 }
 
@@ -88,27 +89,62 @@ function beacon(url: string) {
   new Image().src = url;
 }
 
+/**
+ * GoatCounter takes at most four counts a second from one address, and turns
+ * the rest away unseen (a beacon never hears). So counts go out one at a
+ * time, GAP_MS apart, the first after a random wait (JITTER_MS): a game's
+ * start sends several at once, on every device at one router at the same
+ * moment. The visit goes at once. What waits goes all at once as the page
+ * is left: better a few turned away than all of them lost.
+ */
+const GAP_MS = 600;
+const JITTER_MS = 2_000;
+const queue: string[] = [];
+let drainTimer: ReturnType<typeof setTimeout> | null = null;
+function drain() {
+  drainTimer = null;
+  const url = queue.shift();
+  // Not if the privacy page was used to opt out meanwhile.
+  if (url && !notCounted()) beacon(url);
+  if (queue.length) drainTimer = setTimeout(drain, GAP_MS);
+}
+function release(url: string, now: boolean) {
+  if (now && !queue.length && !drainTimer) return beacon(url);
+  if (now) queue.unshift(url);
+  else queue.push(url);
+  drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
+}
+// (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
+if (countsHere && typeof addEventListener !== 'undefined')
+  addEventListener('pagehide', () => {
+    if (drainTimer) clearTimeout(drainTimer);
+    drainTimer = null;
+    if (!notCounted()) for (const url of queue.splice(0)) beacon(url);
+  });
+
 /** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
 let seen = typeof document === 'undefined' || document.visibilityState === 'visible';
-const waiting: string[] = [];
-if (counting && !seen) {
+const waiting: { url: string; now: boolean }[] = [];
+if (countsHere && !seen) {
   const look = () => {
     if (document.visibilityState !== 'visible') return;
     document.removeEventListener('visibilitychange', look);
     seen = true;
     const held = waiting.splice(0);
     // Not if the privacy page was used to opt out while this page waited unseen.
-    if (!notCounted()) for (const url of held) beacon(url);
+    if (!notCounted()) for (const w of held) release(w.url, w.now);
   };
   document.addEventListener('visibilitychange', look);
 }
 
-function send(params: Record<string, string>) {
+/** Sends a count: in turn (release), or `now`, the visit, ahead of the rest. */
+function send(params: Record<string, string>, now = false) {
   // Asked each time: the privacy page can set it while this page waits in the back-forward cache.
-  if (!counting || notCounted()) return;
+  // (Nor the load that switched counting: it counts nothing either way.)
+  if (!counting || toggledOnLoad || notCounted()) return;
   const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
-  if (seen) beacon(url);
-  else waiting.push(url);
+  if (seen) release(url, now);
+  else waiting.push({ url, now });
 }
 
 const sameSite = (referrer: string, here: string) => {
@@ -149,11 +185,105 @@ export function referrerOf(referrer: string, here: string): string {
   }
 }
 
-/** A visit to the start page; not one come back to (cameBack). */
-export function countVisit() {
-  if (!counting || toggledOnLoad || cameBack()) return;
-  const r = referrerOf(document.referrer, location.href);
-  send({ p: '/', t: document.title, ...(r ? { r } : {}) });
+/** What the game's save says (this device's and its paired devices'), as a visit is counted with it (lib/lastPlayed.ts): when it first and last had a question answered, null for no save. */
+export interface Played {
+  first: number;
+  last: number;
+}
+
+/** GoatCounter's visit: a visitor's counts within eight hours of the last are one visit's. */
+const VISIT_MS = 8 * 3_600_000;
+
+/**
+ * How long ago the player last played (this device or a paired one), as a visit is marked
+ * ("visit/back-7d"); "visit/new" for no save. None (null) within VISIT_MS:
+ * GoatCounter is still in the visit that played, which was marked then.
+ */
+export function recencyEvent(played: Played | null, now: number): string | null {
+  if (!played) return 'visit/new';
+  const ago = Math.max(0, now - played.last);
+  if (ago < VISIT_MS) return null;
+  const days = ago / 86_400_000;
+  return days <= 1 ? 'visit/back-1d' : days <= 7 ? 'visit/back-7d' : days <= 30 ? 'visit/back-30d' : 'visit/back-later';
+}
+
+/** The week this device first played in ("cohort/2026-W43"), so the visitors of each week can be followed; none for no save. */
+export const cohortEvent = (played: Played | null) => (played ? `cohort/${isoWeek(played.first)}` : null);
+
+/** The tag of a link made to be counted apart (poe2.quest/?ref=reddit-oct), sent as its campaign; null for none or one that isn't a plain short word. */
+export function campaignOf(search: string): string | null {
+  const tag = new URLSearchParams(search).get('ref');
+  return tag && /^[\w-]{1,40}$/.test(tag) ? tag : null;
+}
+
+/**
+ * A tagged link's tag, taken out of the address whether or not anything
+ * counts: a bookmark or a copied address would file every later visit under
+ * it. Read once, before the page reads its address for anything else.
+ */
+export function takeCampaign(): string | null {
+  if (typeof location === 'undefined' || !new URLSearchParams(location.search).has('ref')) return null;
+  const tag = campaignOf(location.search);
+  const url = new URL(location.href);
+  url.searchParams.delete('ref');
+  history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+  return tag;
+}
+
+/**
+ * Opened as the app on a home screen, not in a browser's tab: iOS says so,
+ * Android's opens fullscreen (the manifest's display). A desktop browser in
+ * F11 is fullscreen too, so that counts on a phone or tablet only.
+ */
+export function openedAsApp(e: { standalone?: boolean; userAgent: string; matches: (q: string) => boolean }): boolean {
+  if (e.standalone === true || e.matches('(display-mode: standalone)')) return true;
+  return e.matches('(display-mode: fullscreen)') && /Android|iPhone|iPad|iPod|Mobile/.test(e.userAgent);
+}
+const asApp = () =>
+  typeof matchMedia !== 'undefined' &&
+  openedAsApp({ standalone: (navigator as { standalone?: boolean }).standalone, userAgent: navigator.userAgent, matches: (q) => matchMedia(q).matches });
+
+/** The save as this page found it, read once (`save`, given with the visit), before anything played here writes to it. */
+let readPlayed: (() => Played | null) | null = null;
+let played: Played | null | undefined;
+const playedHere = () => (played === undefined && readPlayed ? (played = readPlayed()) : played) ?? null;
+/** A first visit (firstVisit: no save, or one begun within it): its steps are a newcomer's too ("new/played"). */
+let newcomer = false;
+/**
+ * Whether the save says this is still the player's first visit: none, or one
+ * first played within VISIT_MS (GoatCounter's same visit), so a newcomer who
+ * played and then reloaded is still one.
+ */
+const firstVisit = (p: Played | null, now: number) => !p || now - p.first < VISIT_MS;
+
+/**
+ * A visit to the start page; not one come back to (cameBack). Then, once a
+ * visitor like the steps (countReach) and in an idle moment (`idle`):
+ * whether and how long ago the player played (this device or a paired one) and the week
+ * it first was (`save`, the game's own save, read only if the visit counts),
+ * and whether it was opened as the app. A tagged link's tag (takeCampaign)
+ * goes as the visit's campaign. A load come back to still gives the save
+ * for its steps (countStep): a newcomer's reload is still their first visit.
+ */
+export function countVisit(save: () => Played | null, campaign: string | null, idle: (f: () => void) => void = (f) => f()) {
+  // Nothing read from the save where nothing may be counted (Global Privacy Control too), as the privacy page says.
+  if (!counting || toggledOnLoad || notCounted()) return;
+  readPlayed = save;
+  const back = cameBack();
+  if (!back) {
+    const r = referrerOf(document.referrer, location.href);
+    send({ p: '/', t: document.title, ...(r ? { r } : {}), ...(campaign ? { q: `?utm_campaign=${campaign}` } : {}) }, true);
+  }
+  // (Read in the idle moment on a load come back to as well: a game picked up mid-way writes to the save before its next step.)
+  idle(() => {
+    // (Nor if the privacy page was used to opt out meanwhile.)
+    if (notCounted()) return;
+    const p = playedHere();
+    newcomer = firstVisit(p, Date.now());
+    if (back) return;
+    for (const e of [recencyEvent(p, Date.now()), cohortEvent(p)]) if (e) countReach(e);
+    if (asApp()) countReach('visit/app');
+  });
 }
 
 /**
@@ -166,13 +296,90 @@ export function countEvent(name: string) {
   send({ p: name, t: name, e: 'true', ns: 'true' });
 }
 
+const reached = new Set<string>();
 /**
  * A step a visit reached ("reach/played", "reach/finished"): counted the way
  * visits are, once a visitor in eight hours (no `ns`), so set against the
- * visits it says what share of visitors got that far.
+ * page loads ("reach/page", countPage) it says what share got that far. Sent
+ * once a page load.
  */
 export function countReach(name: string) {
+  if (reached.has(name) || !counting) return;
+  reached.add(name);
   send({ p: name, t: name, e: 'true' });
+}
+
+/** A page load that counts, reloads and coming back too: what the steps are set against, as they're counted on every load as well. */
+export const countPage = () => countReach('reach/page');
+
+/** The steps a newcomer's are counted apart too ("new/played"). */
+const NEWCOMER_STEPS = new Set(['reach/lobby', 'reach/played', 'reach/finished']);
+/** A step reached in a game (Steps), and for a visit whose device had no save, as a newcomer's too. */
+export function countStep(name: string) {
+  countReach(name);
+  if (!NEWCOMER_STEPS.has(name) || !counting || notCounted()) return;
+  // (A first step before the idle moment reads the save now: nothing played here has written to it yet.)
+  if (readPlayed && played === undefined) newcomer = firstVisit(playedHere(), Date.now());
+  if (newcomer) countReach(name.replace('reach/', 'new/'));
+}
+
+/** The marks for time on the page, in minutes ("reach/time-10m"). */
+export const TIME_MARKS = [2, 10, 30] as const;
+/** The marks passed going from `before` to `after` milliseconds spent. */
+export const timeMarksPassed = (before: number, after: number) => TIME_MARKS.filter((m) => before < m * 60_000 && after >= m * 60_000).map((m) => `reach/time-${m}m`);
+
+/** How long after the last sign of life (input, a game moving: markActive) time still counts as spent. */
+export const ACTIVE_MS = 90_000;
+let activeAt = 0;
+/** A sign that someone is there: a game moving on this device (session.svelte.ts), as input is. */
+export const markActive = () => void (activeAt = Date.now());
+const INPUT = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
+
+/** Counts the time spent on this page, as steps at TIME_MARKS: while it's seen and someone is there (ACTIVE_MS), not a tab left open. */
+export function countTime() {
+  if (!counting || typeof document === 'undefined') return;
+  for (const type of INPUT) addEventListener(type, markActive, { capture: true, passive: true });
+  markActive();
+  const TICK = 5_000;
+  let ms = 0;
+  const timer = setInterval(() => {
+    if (document.visibilityState !== 'visible' || Date.now() - activeAt > ACTIVE_MS) return;
+    for (const e of timeMarksPassed(ms, ms + TICK)) countReach(e);
+    ms += TICK;
+    if (ms < TIME_MARKS[TIME_MARKS.length - 1] * 60_000) return;
+    clearInterval(timer);
+    for (const type of INPUT) removeEventListener(type, markActive, { capture: true });
+  }, TICK);
+}
+
+/** Whether an error's file or stack is the game's own built scripts (`assets`, its assets/ folder), not an extension's or a userscript's put into the page. */
+export const ownScript = (where: string, assets: string) => where.includes(assets);
+/** A module that failed to load: a page left open across an update asking for one the update removed. */
+export const failedImport = (message: string) => /dynamically imported module|Importing a module script failed/i.test(message);
+
+/**
+ * An uncaught error in the game's own scripts ("error/script"), thrown or
+ * rejected, or a module of the game's that failed to load; once a page load.
+ * Installed first thing (lib/countErrors.ts), so a start that fails is
+ * mostly caught too.
+ */
+export function countScriptErrors() {
+  if (!counting || typeof addEventListener === 'undefined') return;
+  const assets = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
+  const done = () => {
+    removeEventListener('error', onError);
+    removeEventListener('unhandledrejection', onRejection);
+    countEvent('error/script');
+  };
+  const onError = (e: ErrorEvent) => {
+    if (ownScript(e.filename ?? '', assets) || ownScript((e.error as Error | undefined)?.stack ?? '', assets)) done();
+  };
+  const onRejection = (e: PromiseRejectionEvent) => {
+    const err = e.reason as { stack?: unknown; message?: unknown } | null;
+    if (ownScript(typeof err?.stack === 'string' ? err.stack : '', assets) || failedImport(typeof err?.message === 'string' ? err.message : '')) done();
+  };
+  addEventListener('error', onError);
+  addEventListener('unhandledrejection', onRejection);
 }
 
 const arrivals = new Set<string>();
@@ -190,9 +397,6 @@ function partySize(s: GameState): string {
   return `${Math.max(1, s.delve?.entrants.length ?? s.players.length)}p`;
 }
 
-/** A game's key: its mode, and on one device or online ("race-online", "turns-hotseat"). */
-export const gameKey = (s: GameState, hotSeat: boolean) => `${s.settings.mode ?? 'turns'}-${hotSeat ? 'hotseat' : 'online'}`;
-
 const playing = (s: GameState) => s.phase !== 'lobby' && s.phase !== 'over';
 
 /** A game decided: over, or a Delve run nobody stands in any more (alone, as they perish; before anyone looks at the results). */
@@ -205,39 +409,56 @@ export function delveEndEvent(depth: number): string {
 }
 
 /**
- * What a state change counts, on the device that runs the game (the host, or
- * hot-seat): a game starting, from the lobby or the last one's end
- * ("play/race-online", with "size/race-online-3p" for how many play), and
- * a game decided ("end/race-online", a Delve run with its depths). The two
- * keys side by side say how many games are left unfinished. Nothing for a
- * game picked up after a reload (no `prev`): what it had reached was counted
- * before.
+ * What a state change counts, on the device that runs the game (the host's,
+ * or a room's that never went online): a game starting, from the lobby or
+ * the last one's end ("play/race", with "size/race-3p" for how many play,
+ * and "screen/turns" if some sit at the host's screen), and a game decided
+ * ("end/race", a Delve run with its depths). The two side by side say how
+ * many games are left unfinished. Nothing for a game picked up after a
+ * reload (no `prev`): what it had reached was counted before.
  */
-export function gameEvents(prev: GameState | null, next: GameState, hotSeat: boolean): string[] {
+export function gameEvents(prev: GameState | null, next: GameState): string[] {
   if (!prev) return [];
-  const key = gameKey(next, hotSeat);
-  if (!playing(prev) && playing(next)) return [`play/${key}`, `size/${key}-${partySize(next)}`];
+  const mode = next.settings.mode ?? 'turns';
+  if (!playing(prev) && playing(next)) return [`play/${mode}`, `size/${mode}-${partySize(next)}`, ...(next.players.some((p) => p.local) ? [`screen/${mode}`] : [])];
   if (!decided(next) || (decided(prev) && prev.delve?.startedAt === next.delve?.startedAt)) return [];
-  return next.delve ? [`end/${key}`, delveEndEvent(shownDepth(teamDepth(next)))] : [`end/${key}`];
+  return next.delve ? [`end/${mode}`, delveEndEvent(shownDepth(teamDepth(next)))] : [`end/${mode}`];
 }
 
 /**
- * The steps a state change reaches on any device in the game, host, guest
- * or hot-seat (countReach): a game starting ("reach/played") and one
- * decided ("reach/finished"). Nothing for a game picked up after a reload.
+ * The steps a state change reaches on any device in the game, host or guest
+ * (countReach): a lobby seen ("reach/lobby", a room's made or joined, picked
+ * up after a reload too), a game starting ("reach/played") and one decided
+ * ("reach/finished"). Nothing else for a game picked up after a reload.
  */
 export function reachEvents(prev: GameState | null, next: GameState): string[] {
+  if (next.phase === 'lobby' && prev?.phase !== 'lobby') return ['reach/lobby'];
   if (!prev) return [];
   if (!playing(prev) && playing(next)) return ['reach/played'];
   return decided(next) && !decided(prev) ? ['reach/finished'] : [];
+}
+
+/** The games started in a page load that are marked as steps: a second, a fifth ("reach/games-2"). */
+export const GAMES_MARKS = [2, 5] as const;
+
+/** reachEvents for one page's games, with the marks for how many it started. */
+export class Steps {
+  private played = 0;
+
+  events(prev: GameState | null, next: GameState): string[] {
+    const out = reachEvents(prev, next);
+    if (!out.includes('reach/played')) return out;
+    this.played++;
+    return (GAMES_MARKS as readonly number[]).includes(this.played) ? [...out, `reach/games-${this.played}`] : out;
+  }
 }
 
 /** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after. */
 export class GameCounts {
   private ended: number | null = null;
 
-  events(prev: GameState | null, next: GameState, hotSeat: boolean): string[] {
-    const out = gameEvents(prev, next, hotSeat);
+  events(prev: GameState | null, next: GameState): string[] {
+    const out = gameEvents(prev, next);
     const run = next.delve?.startedAt;
     if (run === undefined || !out.some((e) => e.startsWith('end/'))) return out;
     if (this.ended === run) return [];

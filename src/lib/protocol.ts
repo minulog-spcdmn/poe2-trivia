@@ -9,6 +9,7 @@ import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { isChoosableHue } from './palette.ts';
+import { cleanSeen } from './delveStart.ts';
 import { isOrb, type Orb } from './craft.ts';
 
 /**
@@ -65,7 +66,9 @@ export const PROTOCOL_VERSION = 33;
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
 
 const GUEST_BEHIND = 'Your game is out of date. Reload the page to join.';
-const HOST_BEHIND = "The host's game is out of date. Ask them to reload the page.";
+const HOST_BEHIND = "The host’s game is out of date. Ask them to reload the page.";
+/** HOST_BEHIND as hosts before the curly apostrophe (and before the `version` flag) still word it. */
+const HOST_BEHIND_STRAIGHT = HOST_BEHIND.replace('’', "'");
 
 /** Why a guest on protocol `v` can't join this host, or null when it can. */
 export function versionProblem(v: number): string | null {
@@ -79,7 +82,7 @@ export function versionProblem(v: number): string | null {
  * the words it used (versionProblem's then, or LEGACY_VERSION_TEXT).
  */
 export const isVersionRefusal = (msg: { message: string; version?: true }) =>
-  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === LEGACY_VERSION_TEXT;
+  msg.version === true || msg.message === GUEST_BEHIND || msg.message === HOST_BEHIND || msg.message === HOST_BEHIND_STRAIGHT || msg.message === LEGACY_VERSION_TEXT;
 
 /** The refusal a guest shows: an older host can't say which side is behind, so the guest says it for them. */
 export function versionRefusal(message: string): string {
@@ -94,8 +97,9 @@ export type ClientMsg =
    * `lane`: it opened its end of the art lane (artLane.ts), so the pictures may come down that.
    * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
+   * `lines`: the Delve start lines its device has shown, most recent first (delveStartSeen.ts), for the host's pick of a run's line.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number; lines?: number[] }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page. */
@@ -203,6 +207,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // (One this build doesn't know, a newer one's, is left out: they come in without it.)
         ...(isPlayerClass(raw.sigil) ? { sigil: raw.sigil } : {}),
         ...(isChoosableHue(raw.colour) ? { colour: raw.colour } : {}),
+        // Lines this build's pool doesn't have (a newer one's) are left out the same way.
+        ...(Array.isArray(raw.lines) ? { lines: cleanSeen(raw.lines) } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

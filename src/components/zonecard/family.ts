@@ -15,7 +15,11 @@ export type PlayOpts = {
   at: number;
   ms: number;
   easing?: string;
-  /** 'both' (the default) for an entrance, which holds its first frame until it starts; 'forwards' for an exit, which must not. */
+  /**
+   * 'both' (the default) holds its first frame until it starts and its last
+   * once it is done; 'forwards' for an exit, which must not hold its first
+   * (a letter's entrance is `enter`'s, 'backwards').
+   */
   fill?: FillMode;
   composite?: CompositeOperation;
 };
@@ -79,13 +83,22 @@ export const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 export const IN = 'cubic-bezier(0.5, 0, 0.75, 0)';
 
 /**
+ * A letter's entrance (every family's comes in through this). It ends on the
+ * letter's own style, so it fills only backwards: done, it lets go, leaving
+ * the letter no filter at all (held, its last frame, a blur of nothing, left
+ * some letters soft on iOS Safari).
+ */
+export const enter = (c: Ctx, el: Element, frames: Keyframe[], o: Omit<PlayOpts, 'fill'>) => c.play(el, frames, { ...o, fill: 'backwards' });
+
+/**
  * The default entrance: each letter rises 0.32em into place out of a blur,
  * pulled in toward the middle at first so the name spreads as it comes (its
  * tracking widens without the text reflowing), overshooting a touch.
  */
 export function enterDefault(c: Ctx, blur = c.phone ? 4 : 6) {
   for (const i of c.glyphs)
-    c.play(
+    enter(
+      c,
       c.inner[i],
       [
         { opacity: 0, transform: `translate(${(-0.22 * c.dx[i]).toFixed(1)}px, 0.32em) scale(0.94)`, filter: `blur(${blur}px)`, easing: OUT },

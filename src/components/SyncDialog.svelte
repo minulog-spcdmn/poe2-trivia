@@ -15,8 +15,9 @@
   // - offered: a pairing link's code, taken only once the player says yes
   //   (a link can come from anyone).
   import { onDestroy, onMount, tick, untrack } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
   import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { circleOf, warmCircle } from './circles';
   import { calm } from '../lib/motion.svelte';
   import { codeInHash, codeLink, readCode, shownCode } from '../lib/sync/code';
@@ -133,7 +134,7 @@
         if (!current()) return true;
         const c = codeFrom(text);
         if (!c || c === 'elsewhere') {
-          scanError = c ? "That code is for another version of the site. Open it with your phone's camera app instead." : "That isn't a sync code.";
+          scanError = c ? "That code is for another version of the site. Open it with your phone’s camera app instead." : "That isn’t a sync code.";
           return false;
         }
         stopScan = null;
@@ -143,7 +144,7 @@
       if (current()) stopScan = stop;
       else stop();
     } catch {
-      if (current()) scanError = "The camera couldn't be opened. Allow it for this site, or enter the code instead.";
+      if (current()) scanError = "The camera couldn’t be opened. Allow it for this site, or enter the code instead.";
     }
   }
   function endScan() {
@@ -181,7 +182,7 @@
     e.preventDefault();
     const c = readCode(typed);
     if (!c) {
-      typeError = "That isn't a sync code: it has sixteen letters and digits.";
+      typeError = "That isn’t a sync code: it has sixteen letters and digits.";
       return;
     }
     take(c);
@@ -222,7 +223,7 @@
 
 <div class="backdrop" use:dialogBackdrop transition:fade|global={{ duration: 150 }} onclick={close} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="sync panel" bind:this={panel} transition:fly|global={calm({ y: 20, duration: 250 })} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
+  <div class="sync panel" bind:this={panel} in:dialogIn|global out:dialogOut|global onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
     <h3 id="sync-title">{title}</h3>
 
     <!-- The stage: the circle, and in its heart the code, the camera or the seal. -->
@@ -232,7 +233,7 @@
       </div>
       {#if view === 'show' && qr}
         <div class="heart plate" in:fade={calm({ duration: 300 })}>
-          <svg class="qr" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label="QR code of this device's sync link">
+          <svg class="qr" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label="QR code of this device’s sync link">
             <path d={qr.eyes} />
             <path d={qr.dots} />
             {#if qr.heart}
@@ -271,7 +272,7 @@
           />
         </form>
       {:else if view === 'scan'}
-        <p class="how">Point the camera at your other device's code.</p>
+        <p class="how">Point the camera at your other device’s code.</p>
       {:else if code || offered}
         <p class="code" aria-label="Sync code">{shownCode((view === 'offered' ? offered : code)!)}</p>
       {/if}
@@ -286,16 +287,15 @@
       {:else if view === 'type'}
         {typeError || 'The code under the QR code on your other device.'}
       {:else if view === 'show' && !linked && sync.status !== 'offline'}
-        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone's camera. Playing from its home screen? Pair a device in its settings."}
+        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone’s camera. Playing from its home screen? Pair a device in its settings."}
       {:else}
         {statusLine}
       {/if}
     </p>
 
-    <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. (None started over:
-         the others come to this code, as a code taken from one of them would be the group's this device left.) -->
+    <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. -->
     <p class="routes">
-      {#if view === 'show' && !sync.anew}
+      {#if view === 'show'}
         {#if handheld && scans}<button class="route" onclick={startScan}>Scan a code</button><span class="sep bullet" aria-hidden="true">•</span>{/if}
         <button class="route" onclick={startTyping}>Enter a code</button>
       {:else if view === 'scan'}
@@ -357,7 +357,7 @@
     }
   }
   /* A phone on its side: the stage at the left, the full height, and the rest beside it. */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .sync {
       grid-template-areas: 'stage title' 'stage under' 'stage line' 'stage routes' 'stage actions';
       grid-template-columns: auto minmax(0, 1fr);

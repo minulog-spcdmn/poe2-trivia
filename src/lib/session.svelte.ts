@@ -58,7 +58,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
-import { GameCounts, countEvent, countFailure, countReach, counting, reachEvents, type Failure, type JoinVia } from './count';
+import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -88,7 +88,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
-import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
+import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
@@ -96,6 +96,8 @@ import { SIGILS_KEY, loadSigils } from './sigils';
 import { COLOUR_KEY, loadColour } from './colour';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
+import { sawLine, START_LINES } from './delveStart';
+import { seenLines } from './delveStartSeen';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -183,10 +185,10 @@ const DEAD_AFTER_MS = 15000;
  * a secure page (https, or localhost). Without it a guest couldn't open them
  * and a host couldn't seal them, so neither gets in.
  */
-const NO_SEAL_JOIN = "This page can't open the room's pictures: that needs a secure page. Open the game at its https:// address to join.";
-const NO_SEAL_HOST = "This page can't seal the room's pictures for guests: that needs a secure page. Open the game at its https:// address to host.";
+const NO_SEAL_JOIN = "This page can’t open the room’s pictures: that needs a secure page. Open the game at its https:// address to join.";
+const NO_SEAL_HOST = "This page can’t seal the room’s pictures for guests: that needs a secure page. Open the game at its https:// address to host.";
 /** What the host tells a guest whose hello doesn't say it can open sealed pictures. */
-const NO_SEAL_GUEST = "Your game can't open this room's pictures: it needs a secure page. Open the game at its https:// address to join.";
+const NO_SEAL_GUEST = "Your game can’t open this room’s pictures: it needs a secure page. Open the game at its https:// address to join.";
 /** What a guest is told when their answer came faster than that: it doesn't count, and they may answer again. */
 const TOO_QUICK = 'Too quick to count: the question had only just reached you. Answer again.';
 /** The held name without the owner key's signature (names.ts): turned down like any name that isn't allowed. */
@@ -274,6 +276,8 @@ interface Guest {
   sigil?: PlayerClass;
   /** The colour its hello says it would like. */
   colour?: number;
+  /** The Delve start lines its hello says its device has shown, most recent first, kept up as runs start (delveStartSeen.ts). */
+  lines?: number[];
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
@@ -833,7 +837,7 @@ class Session {
       // A room that couldn't be reopened stays saved, so a refresh tries again.
       if (err.type === 'unavailable-id' && resumeState)
         this.fail(
-          `Couldn't reopen room ${code}: it still seems to be open, maybe in another tab or window. Refresh to try again.`,
+          `Couldn’t reopen room ${code}: it still seems to be open, maybe in another tab or window. Refresh to try again.`,
           'Room not reopened',
           { reopening: code, failure: 'host-room-not-reopened' },
         );
@@ -844,7 +848,7 @@ class Session {
   /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
   private roomNotOpened(code: string, type: string, reopening: boolean) {
     if (reopening) this.fail(`${this.networkHint(type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-    else this.hostHere(`Couldn't connect to the matchmaking server (${type}), so nobody can join.`, 'host-no-connection');
+    else this.hostHere(`Couldn’t connect to the matchmaking server (${type}), so nobody can join.`, 'host-no-connection');
   }
 
   /**
@@ -983,6 +987,7 @@ class Session {
           guest.laneWanted = !!msg.lane;
           guest.sigil = msg.sigil;
           guest.colour = msg.colour;
+          guest.lines = msg.lines;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -1323,12 +1328,12 @@ class Session {
     const entry: CursorEntry = at ? [key, ...at] : [key];
     this.cursorOut.put(entry, [...this.guests].flatMap(([c, g]) => (g.playerId && g.playerId !== from ? [c] : [])));
     if (from !== this.myPlayerId) peerCursors.set(key, at);
-    // A click is quicker than a batch: a press or its release goes at once.
+    // A click is quicker than a batch: a press or its release goes at once, and a tap.
     const pressed = !!at && actionOf(at[3]) === PRESSED;
     const changed = pressed !== (this.cursorPressed.get(key) ?? false);
     if (at) this.cursorPressed.set(key, pressed);
     else this.cursorPressed.delete(key);
-    this.planCursors(changed);
+    this.planCursors(changed || (!!at && actionOf(at[3]) === TAP));
   }
 
   /**
@@ -1431,7 +1436,7 @@ class Session {
         this.artFailedFor = qid;
         // Its clock hasn't started (nobody has seen a thing of it): another question takes its place by itself.
         if (mayAutoReask(this.state, qid)) this.reaskLater(this.state);
-        else this.flash("Couldn't load the art for this question.", 'warn', { title: 'Art missing' });
+        else this.flash("Couldn’t load the art for this question.", 'warn', { title: 'Art missing' });
       }
       return;
     }
@@ -1723,9 +1728,9 @@ class Session {
     if (this.reaskFails.turn !== turn) this.reaskFails = { turn, n: 0 };
     const n = this.reaskFails.n++;
     const wait = reaskDelay(n);
-    if (n === 1) this.flash("The art keeps failing to load, so we're trying another question.", 'warn', { title: 'Art missing' });
+    if (n === 1) this.flash("The art keeps failing to load, so we’re trying another question.", 'warn', { title: 'Art missing' });
     if (wait === null) {
-      this.flash("The art won't load. Check your connection, then ask for another question. Nothing is lost while you wait.", 'warn', { title: 'Art missing' });
+      this.flash("The art won’t load. Check your connection, then ask for another question. Nothing is lost while you wait.", 'warn', { title: 'Art missing' });
       return;
     }
     this.mediaTimers.push(
@@ -1823,12 +1828,12 @@ class Session {
     this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
-      this.fail(`"${this.code}" isn't a valid room code.`, 'Invalid code');
+      this.fail(`“${this.code}” isn’t a valid room code.`, 'Invalid code');
       return;
     }
     // The room's pictures come sealed: a page that can't open them is told so now, not after the host turns it away.
     if (!sealAvailable()) {
-      this.fail(NO_SEAL_JOIN, "Can't join");
+      this.fail(NO_SEAL_JOIN, "Can’t join");
       return;
     }
     this.joinVia = via ?? null;
@@ -1918,7 +1923,7 @@ class Session {
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
     this.connectTimer = setTimeout(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
-      if (this.peer?.open) this.fail(`Couldn't reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
+      if (this.peer?.open) this.fail(`Couldn’t reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
       else this.fail(this.networkHint('timeout'), 'No connection', { failure: this.joinFailure('join-no-connection') });
     }, wait);
   }
@@ -2051,7 +2056,7 @@ class Session {
   private guardHostFrames(conn: DataConnection) {
     const chunks = new ChunkGuard();
     const refuse = () => {
-      if (this.hostConn === conn) this.fail('The host sent something this game can\'t read, so you left the room.', 'Left the room');
+      if (this.hostConn === conn) this.fail('The host sent something this game can’t read, so you left the room.', 'Left the room');
       conn.close();
       return false;
     };
@@ -2154,7 +2159,7 @@ class Session {
             this.turnedDown = { askedAt: msg.askedAt };
           }
           if (this.status === 'connecting')
-            this.fail(versionRefusal(msg.message), "Couldn't join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
+            this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           else this.flash(msg.message, 'error');
           break;
         case 'kicked':
@@ -2199,13 +2204,13 @@ class Session {
       // Closed before the room let us in. A host that turns a link away
       // without a word does so every time (a dropped network link rarely
       // does, three times running): try again, then say so.
-      if (!heard && ++this.silentCloses >= 3) this.fail(`Room ${this.code} turned the connection away. Try again in a moment.`, "Couldn't join", { failure: this.joinFailure('join-turned-away') });
+      if (!heard && ++this.silentCloses >= 3) this.fail(`Room ${this.code} turned the connection away. Try again in a moment.`, "Couldn’t join", { failure: this.joinFailure('join-turned-away') });
       else this.planAttempt(RETRY_SOON_MS);
     });
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour(), lines: seenLines() });
     this.watchOwnPresence();
   }
 
@@ -2327,7 +2332,7 @@ class Session {
   crashed(again: boolean) {
     if (this.mode !== 'client' && !(again && this.mode)) return;
     try {
-      if (this.mode === 'client') this.fail("The host's game sent something this page can't show, so you left the room.", 'Left the room');
+      if (this.mode === 'client') this.fail("The host’s game sent something this page can’t show, so you left the room.", 'Left the room');
       else {
         this.leave();
         this.flash('The game ran into a problem it could not get past, so it was closed.', 'error', { title: 'Game closed', sticky: true });
@@ -2419,6 +2424,19 @@ class Session {
     return bench ? Object.entries(bench).map(([category, kind]) => ({ category, kind })) : findOffers(s);
   }
 
+  /**
+   * Delve: which start lines each of `ids`' devices has shown (Engine.setStartLines):
+   * a guest's as its hello said and runs since added, this device's for anyone playing at it.
+   */
+  startLinesSeen(ids: string[]): number[][] {
+    const here = seenLines();
+    const guests = [...this.guests.values()];
+    return ids.map((id) => {
+      const guest = guests.find((g) => g.playerId === id);
+      return guest ? (guest.lines ?? []) : here;
+    });
+  }
+
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
     return this.labGrayscale ?? grayscaleFor(s);
@@ -2436,6 +2454,11 @@ class Session {
     this.noteChange(prev, next);
     this.state = next;
     if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
+    // A run's line counts as shown on every screen in the room from now, a watcher's too; a guest's hello isn't sent again.
+    if (this.isHost && next.delve?.line && next.delve.startedAt !== prev?.delve?.startedAt) {
+      const line = START_LINES.indexOf(next.delve.line);
+      if (line >= 0) for (const g of this.guests.values()) if (g.playerId) g.lines = sawLine(g.lines ?? [], line);
+    }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
     if (this.isHost && next.phase !== 'lobby') warmMedia();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -2601,17 +2624,28 @@ class Session {
   }
 
   private gameCounts = new GameCounts();
+  private steps = new Steps();
   /**
-   * A game starting or decided: on every device as a step its visitor
-   * reached (count.ts reachEvents), and once a game by the device that runs
-   * it (gameEvents). Nothing to work out where nothing counts.
+   * A lobby seen, a game starting or decided: as a step its visitor reached
+   * (count.ts Steps) on every device with a seat in it, not one watching,
+   * and once a game by the device that runs it (gameEvents). A game moving
+   * is a sign someone is there (markActive). Nothing to work out where
+   * nothing counts.
    */
   private notePlay(prev: GameState | null, next: GameState) {
     if (!counting) return;
-    for (const e of reachEvents(prev, next)) countReach(e);
+    markActive();
+    const seated = this.mode === 'local' || next.players.some((p) => p.id === this.myPlayerId);
+    if (seated)
+      for (const e of this.steps.events(prev, next)) {
+        // One device's game shows no lobby (a Delve link's run starts straight away): it's entered as it starts.
+        if (this.mode === 'local' && e === 'reach/lobby') continue;
+        // So is a game a guest watched the lobby of, seated only as it starts (each step counts once a page load).
+        if (e === 'reach/played') countStep('reach/lobby');
+        countStep(e);
+      }
     if (this.mode !== 'local' && this.mode !== 'host') return;
-    // Counted as on one device: hot-seat, or a room that never went online.
-    for (const e of this.gameCounts.events(prev, next, this.mode === 'local' || this.hereOnly)) countEvent(e);
+    for (const e of this.gameCounts.events(prev, next)) countEvent(e);
   }
 
   /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
@@ -3182,7 +3216,7 @@ class Session {
   }
 
   private networkHint(type: string) {
-    return `Couldn't connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
+    return `Couldn’t connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
   }
 
   /**
@@ -3413,6 +3447,7 @@ function writeSaved(saved: Saved | null) {
 }
 
 export const session = new Session();
+engine.setStartLines((ids) => session.startLinesSeen(ids));
 
 if (typeof window !== 'undefined') {
   // A run abandoned by closing the tab (or going elsewhere) is still recorded, and so is a game against others left losing.

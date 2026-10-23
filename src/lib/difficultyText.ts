@@ -118,7 +118,7 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   {
     key: 'fakes',
     name: 'Made-up names',
-    hint: "Wrong answers that aren't real items",
+    hint: "Wrong answers that aren’t real items",
     label: (v) => (v ? String(v) : 'None'),
     // Each copies a real name that stays on screen.
     off: (v, k) => (v > maxFakes(k.options) ? `Needs ${v * 2} or more options` : undefined),
@@ -137,7 +137,7 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
     name: 'Grayscale',
     hint: 'Art shown without colour',
     label: (v) => (v === 'off' ? 'Off' : v === 'art' ? 'Find the art' : 'All art'),
-    off: (v, k) => (v === 'art' && k.artChance === 0 ? 'No "find the art" questions' : undefined),
+    off: (v, k) => (v === 'art' && k.artChance === 0 ? 'No “find the art” questions' : undefined),
   },
   { key: 'mirror', name: 'Mirrored art', hint: 'Art flipped left to right', label: often },
   { key: 'lockout', name: 'Category lockout', hint: 'Turns until a picked category returns', label: (v) => (v ? String(v) : 'None') },
@@ -213,12 +213,12 @@ export const FIND_RULES: Record<FindKind, { gives: string; miss: string }> = {
 
 /** Over a flare or a stick of dynamite in a player's pack, on hover: how it works. */
 export const ITEM_TIPS = {
-  flares: { name: 'Flare', text: `When your time runs out, it burns and gives you ${words(FLARE_MS / 1000)} more seconds. It doesn't work on finds.` },
-  dynamite: { name: 'Dynamite', text: `Swap a question for a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per set of cards. If time runs out, it goes off on its own. It doesn't work on finds.` },
+  flares: { name: 'Flare', text: `When your time runs out, it burns and gives you ${words(FLARE_MS / 1000)} more seconds. It doesn’t work on finds.` },
+  dynamite: { name: 'Dynamite', text: `Swap a question for a new one at the same depth, up to ${timesWord(DELVE_MAX_BLASTS)} per set of cards. If time runs out, it goes off on its own. It doesn’t work on finds.` },
 } as const;
 
 /** Under the finds in the lobby's rules: why flares and dynamite never work on a find's question. */
-export const FINDS_UNSAFE = "Flares and dynamite don't work on finds. The rock there is too thick to blast, and the dark swallows a flare's light.";
+export const FINDS_UNSAFE = "Flares and dynamite don’t work on finds. The rock there is too thick to blast, and the dark swallows a flare’s light.";
 
 /**
  * The finds: the card's name, the tagline under the cards (what to do, in
@@ -236,11 +236,11 @@ export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: st
 export function unused(inv: Inventory, on = 'it'): string {
   const held = [inv.flares ? (inv.flares > 1 ? 'flares' : 'flare') : '', inv.dynamite ? 'dynamite' : ''].filter(Boolean);
   if (!held.length) return '';
-  return ` Your ${held.join(' and ')} can't be used on ${on}.`;
+  return ` Your ${held.join(' and ')} can’t be used on ${on}.`;
 }
 
 /** Together: flares and dynamite won't go off on a find's question (`on`: "it", or "a find"). */
-export const teamUnused = (on = 'it') => ` Flares and dynamite can't be used on ${on}.`;
+export const teamUnused = (on = 'it') => ` Flares and dynamite can’t be used on ${on}.`;
 
 /** An item by its plain name, for what a blast destroyed ("your ward"). */
 const ITEM_NAME: Record<ItemKind, string> = { wards: 'ward', flares: 'flare', dynamite: 'dynamite' };
@@ -279,7 +279,7 @@ export function namesOf(ids: string[], nameOf: (id: string) => string, me: strin
 }
 
 /** "your" or "Ash's". */
-const whose = (id: string, nameOf: (id: string) => string, me: string | null) => (id === me ? 'your' : `${nameOf(id)}'s`);
+const whose = (id: string, nameOf: (id: string) => string, me: string | null) => (id === me ? 'your' : `${nameOf(id)}’s`);
 
 /** A verb for a subject of `ids`: plural for you or for several ("you lose", "Ash loses", "Ash and Brea lose"). */
 const verb = (ids: string[], me: string | null, one: string, many: string) => (ids.length > 1 || ids[0] === me ? many : one);
@@ -337,7 +337,7 @@ export function coopRevealText(r: {
   const list = (ids: string[]) => namesOf(ids, nameOf, me);
   const out: string[] = [];
   if (r.winner) out.push(clearedText(r.winner, r.gain, nameOf, me) + (r.banked ? ` ${bankedText(r.banked)}` : r.inHand ? ` ${inHandText(r.inHand)}` : ''));
-  else out.push(r.timedOut ? "Time's up; nobody found it." : 'Every answer was wrong.');
+  else out.push(r.timedOut ? "Time’s up; nobody found it." : 'Every answer was wrong.');
   if (r.buried) out.push(buriedText(r.buried, 'the team'));
   const wrong = hits.filter((h) => !h.timedOut).map((h) => h.playerId);
   const late = hits.filter((h) => h.timedOut).map((h) => h.playerId);
@@ -389,7 +389,7 @@ export const lightText = (secs: number) => (secs >= 10 ? String(Math.floor(secs)
  * for it, and what a cave-in would cost (`team`: the team's haul).
  */
 export function digNote(next: number, light: number, haul: number, team = false): string {
-  const whose = team ? "the team's" : 'your';
+  const whose = team ? "the team’s" : 'your';
   const buries = haul ? ` and buries ${whose} ${haul === 1 ? 'ward' : `${words(haul)} wards`}` : '';
   const secs = lightText(light);
   return `Strike ${next} of ${VEIN_MAX_STRIKES}, with ${secs} ${secs === '1' ? 'second' : 'seconds'} of light. A miss costs ${caveInText('azurite')}${buries}.`;

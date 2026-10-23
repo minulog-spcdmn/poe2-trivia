@@ -1,3 +1,5 @@
+// First: the game's script errors are counted from here on (lib/countErrors.ts).
+import './lib/countErrors';
 import { mount } from 'svelte';
 import './app.css';
 import Root from './Root.svelte';
@@ -13,7 +15,9 @@ import { installCursor } from './lib/ownCursor';
 import { installAutoscroll } from './lib/autoscroll';
 import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
-import { countVisit, onCountToggle, type Toggled } from './lib/count';
+import { countPage, countTime, countVisit, onCountToggle, takeCampaign, type Toggled } from './lib/count';
+import { whenIdle } from './lib/idle';
+import { lastPlayed } from './lib/lastPlayed';
 import { toasts } from './lib/toasts.svelte';
 import { preloadPeerJs } from './lib/peer';
 import { preloadEd25519 } from './lib/ownerKey';
@@ -28,11 +32,13 @@ watchFullscreen();
 if (!switchedOff('cursor')) installCursor();
 installAutoscroll();
 if (fpsMeterOn()) installFpsMeter();
-countVisit();
+countVisit(lastPlayed, takeCampaign(), (f) => whenIdle(f, { timeout: 3_000 }));
+countPage();
+countTime();
 const TOGGLED: Record<Toggled, string> = {
   skipped: 'Visits from this browser are no longer counted. Open poe2.quest/#toggle-goatcounter again to count them.',
   counted: 'Visits from this browser are counted again.',
-  unsaved: "This browser can't change the setting: its site storage is blocked or full.",
+  unsaved: "This browser can’t change the setting: its site storage is blocked or full.",
 };
 onCountToggle((t) => toasts.show(TOGGLED[t], t === 'unsaved' ? 'error' : 'info', { title: 'Visit counts' }));
 // No browser menu on a right click: it brings the system's cursor, and the

@@ -11,6 +11,7 @@
   import { onMount } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fly } from 'svelte/transition';
+  import { calm } from '../lib/motion.svelte';
   import { getAmbience, getVolume, isMuted, onSoundChange, setAmbience, setMuted, setVolume, sfx } from '../lib/sound';
   import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
   import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
@@ -26,8 +27,7 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { passOwnerKey, startOver, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
-  import { ownerUnlocked } from '../lib/ownerKey';
+  import { startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -117,25 +117,13 @@
   onMount(startSync);
   /** Unpair asked for, waiting for a yes (as the codex's erase does). */
   let unpairing = $state(false);
-  /** Starting over asked for, waiting for a yes. */
-  let leaving = $state(false);
   /** Paired: a code kept, and another device met under it. */
   const paired = $derived(!!sync.code && sync.met);
   /** A code kept that has met no device yet (let go of in a while if none comes). */
   const waiting = $derived(!!sync.code && !sync.met);
   // (Let go of meanwhile, here or in another tab: neither asks again once paired again.)
   $effect(() => {
-    if (!paired) unpairing = leaving = false;
-  });
-  /** The owner's device, linked: it may pass the owner key on (never with the rest: only when asked). */
-  const owner = ownerUnlocked();
-  /** How many devices the owner key went to just now (null: not passed on). */
-  let passed = $state<number | null>(null);
-  /** Passing it on asked for, to be confirmed: whoever holds it can sign as the owner. */
-  let passing = $state(false);
-  // (The link gone meanwhile: not asked again once it is back.)
-  $effect(() => {
-    if (sync.status !== 'linked') passing = false;
+    if (!paired) unpairing = false;
   });
 
   // ---- class sigils ----
@@ -327,28 +315,10 @@
                 >Stop syncing here? What came from your other devices stays.
                 <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
-            {:else if paired && leaving}
-              <span
-                >Start over on a new code? Pair your other devices again.
-                <button class="reset" onclick={() => ((leaving = false), startOver(), (pairing = true))}>Start over</button><span class="sep bullet" aria-hidden="true">•</span><button
-                  class="reset"
-                  onclick={() => (leaving = false)}>Keep it</button
-                ></span
-              >
-            {:else if paired && passing && owner && sync.status === 'linked'}
-              <span
-                >Give the owner key to {sync.linked === 1 ? 'the device' : `the ${sync.linked} devices`} linked now? Only to your own.
-                <button class="reset" onclick={() => ((passing = false), (passed = passOwnerKey()))}>Pass it on</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (passing = false)}>Keep it</button></span
-              >
             {:else if paired}
               <span
-                >{syncLine()} <button class="reset" onclick={() => (unpairing = true)}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button
-                  class="reset anew"
-                  onclick={() => (leaving = true)}>Start over</button
-                >{#if owner && sync.status === 'linked'}<span class="sep bullet" aria-hidden="true">•</span>{#if passed}<span class="done">Owner key passed on</span>{:else}<button
-                      class="reset"
-                      onclick={() => (passing = true)}>Pass on the owner key</button
-                    >{/if}{/if}</span
+                ><span class="light" class:on={sync.status === 'linked'} aria-hidden="true"></span>{syncLine()}
+                <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span
               >
             {/if}
           </p>
@@ -365,7 +335,7 @@
 
     <!-- Under both columns, the width of the page: the twelve in a row. -->
     {#if !over}
-      <section class="block sigil-row" in:fly={{ y: 20, duration: 500, delay: 260 }}>
+      <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 110 })}>
         <header>
           <h2>Class sigils</h2>
           <span class="count">{unlocked} / {CLASSES.length}</span>
@@ -667,8 +637,20 @@
   .sync-row .reset {
     margin-left: 0.3rem;
   }
-  .sync-row .done {
-    margin-left: 0.3rem;
+  /* Lit while another device is linked; an empty ring while it isn't. */
+  .sync-row .light {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-right: 0.45em;
+    border-radius: 50%;
+    border: 1px solid var(--gold-lo);
+    vertical-align: 0.08em;
+  }
+  .sync-row .light.on {
+    border-color: transparent;
+    background: currentColor;
+    box-shadow: 0 0 0.35em currentColor;
   }
   .sync-row .sep {
     margin-left: 0.4rem;

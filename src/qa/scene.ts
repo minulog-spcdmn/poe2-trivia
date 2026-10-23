@@ -43,12 +43,20 @@ export type Step =
   /** The room turns this device out, as the host's word for it would (session.labFail). */
   | { fail: 'kicked' | 'closed' | 'replaced' }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
-  | { crash: 1 | 2 };
+  | { crash: 1 | 2 }
+  /**
+   * The room moves on to `state` (the scene's game played on: dynamite going
+   * off, an answer given), its clock standing still at `at` (host clock, ms),
+   * as the host would send it: to see what happens as it does.
+   */
+  | { then: GameState; at?: number };
 
 /** Everything a seat's device holds for the scene, beyond the room's state. */
 export interface Built {
   /** The room's state; null out of a game. */
   state: GameState | null;
+  /** Who this device is, where the scene's controls decide it (host or guest, watching); missing: the scene's seats. */
+  seat?: Seat;
   /**
    * A move by the room itself on a state of this game, through the engine
    * that played it (build/play.ts, Table.room), so what's set over it (who's
@@ -92,7 +100,7 @@ export interface Built {
   /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
   circle?: PlateName | null;
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
-  sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number };
+  sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
 }
 
 export interface Scene {
@@ -116,8 +124,9 @@ export interface Scene {
   build(v?: Values): Built;
 }
 
-/** The seats of `scene` whose player is in the room as built (all of them out of a room, or in hot-seat). */
+/** The seats of `scene` whose player is in the room as built (all of them out of a room, or in hot-seat); the one it was built for, if one. */
 export function seatsIn(scene: Scene, built: Built): Seat[] {
+  if (built.seat) return [built.seat];
   const s = built.state;
   if (!s) return scene.seats;
   const here = new Set([...s.players, ...(s.spectators ?? [])].map((p) => p.id));

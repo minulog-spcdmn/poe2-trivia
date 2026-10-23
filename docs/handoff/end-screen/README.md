@@ -86,7 +86,46 @@ Short windows are Home's (`max-height: 859px` and `min-width: 1081px`).
 Between 641 and 1080 px wide, stack the two columns at 600 px, centred, with
 the circle first. Phones are below.
 
-| | 1440 x 900 | short window |
+**Fitting the window.** With two columns, each fits the window on its own,
+step by step, measured as it will stand once everything has come in (never
+guessed from how many rows or achievements there are). The whole page fits,
+footer included, so it never scrolls:
+
+1. Roomy (the 900 column below).
+2. A tighter rhythm (the short window's spacing, below). A short window
+   starts here.
+3. Closer: the rows of lives and the thumbs of your misses closer and
+   smaller, the finds' lines closer. Nothing is lost yet.
+4. Compact lists: achievements side by side (seal 36 and title, what each
+   asks on hover), the finds without their rules.
+5. Smaller: the circle and the runs chart at 80%, the rows of lives and the
+   thumbs smaller still.
+6. Folded: the column's longest list gives up a row (the lower of two as
+   long), again and again, until the page fits. A row of thumbs or
+   achievements ends in a "+N" place, a list of lines (highlights, lives, the
+   run's facts) in a line saying how many more; either opens the list in
+   place. A row of thumbs or achievements folds down to one row, a list of
+   lines down to one line. Once a list is opened, the others in its column
+   stay folded as they were, even if the page no longer fits: opening one
+   never opens the rest.
+
+If even that won't fit, the footer closes up (less space above and below its
+links) and the steps go again. Only where that won't do either the same
+steps go again for the column alone, the footer left below; and if not even
+the column fits, nothing folds: the page scrolls with everything shown rather
+than hide things and scroll anyway. From 900 tall up, every game fits. Below
+it a party of twelve may scroll (a 13- or 14-inch laptop, 725 and 790 tall,
+and the fullest run alone at 725): the team's plates never fold, so everyone
+who delved stays on the screen.
+
+Each column takes the first step that fits it, so a full panel never squeezes
+the column beside it. Phones and windows under 1081 px wide scroll instead.
+On the QA desk, "Any game, as set", "Any run alone, as set" and "Any run
+together, as set" have every count as a control (players, misses,
+achievements, new uniques, finds, runs before, lives given and brought back),
+and their named states hold the most each kind of game shows.
+
+| | 1440 x 900 | short window (its spacing is the tighter rhythm) |
 | --- | --- | --- |
 | Circle (the ring's diameter) | 470 | 380 |
 | Winner's avatar in the circle | 108 | 86 |
@@ -144,12 +183,15 @@ Cinzel bold gold:
   the third."
 - The uniques they missed: "The two you missed, kept in your codex:" (or
   "The one you missed…"; Race "The one you guessed wrong…"; deathmatch "The
-  deathmatch question you missed…"), then the codex item thumbs (60 px, 50 on
-  short windows, 64 on phones; the item's name under each in the display
-  font, 14 px, `#f3c37e`), opening the item window on click as the codex does.
-- The winner: "Earned this game:" and the achievements earned in it, as the
-  codex lists them: the seal (50 px, 42 short), the title in the display font
-  and what it asks under it.
+  deathmatch question you missed…"), then the codex item thumbs (60 px; 50,
+  44 and 40 as the column closes up; 64 on phones; 10 px apart). No name
+  under them: it shows on hover, and a click opens the item window as the
+  codex does.
+- **Earned this game**, a section of its own under it (as every set of
+  achievements earned is, in every mode: heading and hairline): the
+  achievements earned in it, as the codex lists them: the seal (50 px, 42 in
+  the tighter rhythm), the title in the display font and what it asks under
+  it; compact, side by side.
 - **Hot-seat** (one device, no "you"): the section is "Missed answers", "Kept
   in this device's codex.", and every miss of the game with the missing
   player's avatar (20 px) as a badge in the thumb's bottom-right corner.
@@ -187,12 +229,12 @@ Cinzel bold gold:
 ### Left column: Where your lives went
 
 Under the circle, "Where your lives went": one row per life lost, oldest
-first. Each row: the codex thumb of the unique that took it (46 px alone, 42
-together when there are 4 rows or more; 42 and 36 on short windows), then the
+first. Each row: the codex thumb of the unique that took it (46 px; 42, 34 and 28 as the
+column closes up), then the
 item's name (display font, `#f3c37e`) over the depth and zone (italic,
 muted: "Depth 18, Magma Fissure"), and on the right the run's phial
 (`Phial.svelte`, 50 px wide) as it stood after that life, so it drains row by
-row. Rows 10 px apart (6 with four or more rows).
+row. Rows 10 px apart (5 compact, 3 smaller).
 
 - **A cave-in:** the title is the cause in the reveal's words, "The vein
   caved in"; under it the unique and what it cost: "Kaom's Heart at depth 44:
@@ -227,9 +269,10 @@ One order everywhere; together only adds the party on top.
 - **Your runs:** a caption in italic ("Your runs alone, oldest first", "Your
   runs together, oldest first"), then the chart (236 px wide including its
   label) and beside it, 16 px on, this run's facts.
-- **Highlights** (as in normal games), then the start row with "Delve again".
-- **The very first run** (no chart yet): "Earned this run" with the
-  achievement (the same row as Your game's, 50 px seal), then "Finds": "None
+- **Earned this run**, a section of its own on every run that earns one
+  (as Earned this game), then **Highlights** (as in normal games), then the
+  start row with "Delve again".
+- **The very first run** (no chart yet): "Finds": "None
   turned up on this run. What you can find:" and the lobby's finds list
   (`DelveRules.svelte`: the find's glyph in the 30 px column, its name in
   capitals in its colour, what it gives, and its risk on its own line in the
@@ -280,10 +323,16 @@ already shows, since in Delve every miss costs a life):
 - "Your fastest answer: 1.9s on Headhunter." (the item's thumb)
 - "Your closest call: Ingenuity at depth 16, right with 0.4s left." (the right
   answer with the least time left on its clock)
-- "You met 3 new uniques, now kept in your codex." (first run: "All 23
-  uniques you met are now kept in your codex.")
 
-The first run shows the first and the last only.
+The first run shows the first only.
+
+New in your codex (alone, under the highlights): the uniques met for the
+first time this run, less those the lives list already shows. The count sits
+on the heading's line, in the body font ("One met for the first time", "3 met
+for the first time", "All 23 met for the first time"); under it, one row of
+thumbs in the order met (40 px, 34, 30 and 26 as the panel closes up), each opening its codex page, as many as fit
+with the last place a "+N" that shows them all in place. No section when
+there are none.
 
 ## The start row
 

@@ -89,6 +89,7 @@ import {
   type Inventory,
   type ItemKind,
 } from './delve.ts';
+import { pickLine, START_LINES } from './delveStart.ts';
 
 export interface Item {
   id: string;
@@ -520,6 +521,8 @@ export interface Delve {
   fellLeft?: number;
   /** Host clock when the run started (the run's id in records). */
   startedAt: number;
+  /** The line its depth banner starts with (delveStart.ts), the same on every screen. Missing in older saves (delveStart.ts lineOf). */
+  line?: string;
   /** Standing players the host's reload cut off who haven't come back since. */
   excused: string[];
   /** A vote waits for the excused at most until then (host clock). */
@@ -1468,6 +1471,8 @@ export class Engine {
   private readonly twins: { items: Item[]; depth: number; colour?: true }[];
   /** Every question's clock starts as it is asked (see the constructor). */
   private readonly autoClock: boolean;
+  /** What each player's device has shown of Delve's start lines (see setStartLines). */
+  private seenLines: ((ids: string[]) => number[][]) | null = null;
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1517,6 +1522,15 @@ export class Engine {
   /** Whether Craft's mod lines are here. */
   get craftReady() {
     return !!this.craftLines;
+  }
+
+  /**
+   * Hands over where to ask, as a Delve run starts, which start lines each
+   * of its players' devices has shown (delveStart.ts pickLine). Without it
+   * (tests, tools, the bot) a run's line comes from its id alone.
+   */
+  setStartLines(seen: ((ids: string[]) => number[][]) | null) {
+    this.seenLines = seen;
   }
 
   /**
@@ -1782,11 +1796,14 @@ export class Engine {
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
           s.used = [];
+          const startedAt = this.now();
+          const entrants = s.players.map((p) => p.id);
           s.delve = {
-            entrants: s.players.map((p) => p.id),
+            entrants,
             losses: {},
             ruleset: DELVE_RULESET,
-            startedAt: this.now(),
+            startedAt,
+            line: START_LINES[pickLine(this.seenLines?.(entrants) ?? [], startedAt)],
             excused: [],
             graceUntil: 0,
             inventory: {},
@@ -1805,8 +1822,8 @@ export class Engine {
         // Co-op: the team votes (a trusted pick, the host's own tooling, settles the vote at once).
         const coop = !!s.delve && isGroupRun(s);
         if (coop && from !== null) throw new ActionError('Vote for a card instead.');
-        if (s.phase !== 'choosing') throw new ActionError("It's not time to pick a category.");
-        if (!isActive) throw new ActionError("It's not your turn.");
+        if (s.phase !== 'choosing') throw new ActionError("It’s not time to pick a category.");
+        if (!isActive) throw new ActionError("It’s not your turn.");
         if (!s.offered.includes(action.category)) throw new ActionError('That category is not on offer.');
         // A new zone's cards are still on their way (no screen shows them yet): a pick sooner is dropped quietly
         // (not one a screen whose guess at this clock runs a little ahead showed them for).
@@ -1857,7 +1874,7 @@ export class Engine {
           if (action.askedAt !== undefined && action.askedAt === s.lastAskedAt) throw new ActionError('Too late!', true);
           throw new ActionError('There is no open question.');
         }
-        if (!isActive) throw new ActionError("It's not your turn.");
+        if (!isActive) throw new ActionError("It’s not your turn.");
         const q = s.question;
         if (action.askedAt !== undefined && action.askedAt !== q.askedAt) throw new ActionError('Too late!', true);
         // Nobody answers a question whose clock hasn't started (the host and a stray key in hot-seat included).
@@ -1977,14 +1994,14 @@ export class Engine {
           if (!isHost && !s.players.some((p) => p.id === from)) throw new ActionError('Only the team moves the run on.', true);
           this.advance(s);
         } else {
-          if (!isActive && !isHost) throw new ActionError("It's not your turn.");
+          if (!isActive && !isHost) throw new ActionError("It’s not your turn.");
           this.advance(s);
         }
         break;
       }
       case 'skip': {
         // A skipped turn would cost a life, so nobody decides that by hand (the host's own id included).
-        if (s.delve) throw new ActionError("Turns can't be skipped in Delve.");
+        if (s.delve) throw new ActionError("Turns can’t be skipped in Delve.");
         if (!isHost) throw new ActionError('Only the host can skip a turn.');
         if (s.phase !== 'choosing' && s.phase !== 'question') throw new ActionError('Nothing to skip.');
         if (race) this.advanceRace(s);

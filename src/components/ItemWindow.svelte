@@ -216,10 +216,10 @@
     background:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.025'/%3E%3C/svg%3E"),
       #030201;
-    box-shadow:
-      0 0 0 1px #000,
-      0 0 40px rgba(175, 96, 37, 0.12),
-      0 14px 44px rgba(0, 0, 0, 0.8);
+    /* A hard black edge, and no soft glow or shadow around it, as the
+       codex's item card (CodexItem): over the game, under which the
+       backdrop can't draw for it, a wide soft one in CSS would band. */
+    box-shadow: 0 0 0 1px #000;
     outline: none;
   }
   .head {

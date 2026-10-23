@@ -243,11 +243,10 @@ export function partyHighlights(s: GameState): Line[] {
 
 /**
  * Delve alone: this device's own moments (none the lives already tell):
- * the fastest answer, the closest call, and the uniques met for the first
- * time (`met`: items asked this run, `fresh`: of those, new to the codex).
- * The very first run tells only the first and the last.
+ * the fastest answer and the closest call. The very first run tells only
+ * the first.
  */
-export function soloHighlights(s: GameState, me: string, met: { met: number; fresh: number; newest?: string }, first: boolean): Line[] {
+export function soloHighlights(s: GameState, me: string, first: boolean): Line[] {
   const r = s.recap;
   const out: Line[] = [];
   if (r?.fastest?.by === me) out.push({ icon: { item: r.fastest.id }, parts: ['Your fastest answer: ', { n: secs(r.fastest.ms) }, 's on ', { item: r.fastest.id }, '.'] });
@@ -256,12 +255,20 @@ export function soloHighlights(s: GameState, me: string, met: { met: number; fre
       icon: { item: r.closest.id },
       parts: ['Your closest call: ', { item: r.closest.id }, ' at depth ', { n: shownDepth(r.closest.depth) }, ', right with ', { n: secs(r.closest.left) }, 's left.'],
     });
-  // Its mark: the last of them met (the run's own depth's emblem, should the codex not say which).
-  const icon: Icon = met.newest ? { item: met.newest } : { zone: s.round };
-  if (met.fresh > 0 && met.fresh === met.met && met.met > 1) out.push({ icon, parts: ['All ', { n: met.fresh }, ' uniques you met are now kept in your codex.'] });
-  else if (met.fresh === 1) out.push({ icon, parts: ['You met one new unique, now kept in your codex.'] });
-  else if (met.fresh > 1) out.push({ icon, parts: ['You met ', { n: met.fresh }, ' new uniques, now kept in your codex.'] });
   return out;
+}
+
+/**
+ * Delve alone: the uniques met for the first time this run, for the section
+ * "New in your codex" (`met`: how many were asked this run, `fresh`: those
+ * of them new to the codex, in the order met; both without those the lives
+ * list shows): how many, beside its heading, or null for none.
+ */
+export function newInCodex(met: { met: number; fresh: string[] }): Part[] | null {
+  const n = met.fresh.length;
+  if (!n) return null;
+  if (n > 1 && n === met.met) return ['All ', { n }, ' met for the first time'];
+  return n === 1 ? ['One met for the first time'] : [{ n }, ' met for the first time'];
 }
 
 // ---- Delve: where your lives went -----------------------------------------

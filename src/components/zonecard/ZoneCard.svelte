@@ -89,9 +89,12 @@
 
   const play: Ctx['play'] = (el, frames, o) => {
     const an = el.animate(frames, { duration: Math.max(1, o.ms), delay: o.at, easing: o.easing ?? 'linear', fill: o.fill ?? 'both', composite: o.composite ?? 'replace' });
+    // Paused as it was made (the QA desk's Freeze): setting its start would set it going again.
+    const held = an.playState === 'paused';
     // On the card's clock: started as the plunge did, so one mounted late lands part-way.
     const doc = document.timeline.currentTime;
     if (typeof doc === 'number') an.startTime = doc - (performance.now() - a.t0);
+    if (held) an.pause();
     // Kept once finished, though a later one (an exit) takes its place: stopped
     // at an earlier moment (zones.html), the card still shows what it did then.
     an.persist?.();
@@ -520,9 +523,18 @@
     display: inline-block;
     white-space: pre;
   }
+  /* A letter with a filter on it (its entrance) is drawn on a layer of its
+     own, and WebKit sizes that layer to the letter's box and its box
+     shadows, not its text's: the name's glow (.letters, 14px) was cut off at
+     the box. A shadow of nothing as far out as the glow reaches (and a
+     descender below the box) keeps it whole; it draws nothing. (A card held
+     still puts no filter on its letters.) */
   .li {
     display: inline-block;
     opacity: 0;
+  }
+  .zc:not(.still) .li {
+    box-shadow: 0 0 0 calc(14px + 0.25em) transparent;
   }
   .built .li,
   .still .li,

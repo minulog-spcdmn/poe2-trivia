@@ -1,12 +1,14 @@
 <script module lang="ts">
-  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows) rather than sideways. The card bench turns them the same way. */
-  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
+  /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows; always a phone's width, though, too narrow for three tall cards) rather than sideways. The card bench turns them the same way. */
+  /** Whether this browser registers custom properties (@property, app.css): without, the kindle animates the emblem's filter and opacity themselves (see .plain below). */
+  const registered = typeof CSS !== 'undefined' && 'registerProperty' in CSS;
+  export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
 </script>
 
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { scale } from 'svelte/transition';
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
@@ -25,19 +27,32 @@
   import Avatar from './Avatar.svelte';
   import { actionOf, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
+  import { keyTap } from '../lib/pointerAnchor';
 
   let {
     drawn = null,
     ondrawn,
+    timer,
   }: {
     /** Delve together: the card the closed vote drew, while the draw plays out on the cards. */
     drawn?: string | null;
     /** Called once the draw has landed and held (Game.svelte then shows the question). */
     ondrawn?: () => void;
+    /**
+     * A vein's lamp, held still between its strikes, at the prompt's right
+     * end, where the question's task line has its clock (QuestionView), so
+     * it stays put as the strike takes the cards' place. Not on a phone
+     * upright, where the scoreboard's row has it (Game.svelte).
+     */
+    timer?: Snippet;
   } = $props();
 
   const s = $derived(session.state!);
   const active = $derived(s.players[s.turn]);
+  /** Who the last round of a deathmatch knocked out, said as the next one starts. */
+  const knockedOut = $derived(
+    s.deathmatch && !Object.keys(s.deathmatch.results).length ? s.deathmatch.eliminated.map((id) => s.players.find((p) => p.id === id)?.name ?? '?') : [],
+  );
   const me = $derived(session.myPlayerId);
   /** Delve together: nobody has a turn; everyone standing votes for a card. */
   const coop = $derived(!!s.delve && isGroupRun(s));
@@ -177,9 +192,10 @@
     return n === 0 ? 'no votes' : `${n} ${n === 1 ? 'vote' : 'votes'}${yours}`;
   }
 
+  /** Votes for `category`; whether it did. */
   function vote(category: string) {
     const i = s.offered.indexOf(category);
-    if (!canVote || !faceUp(i) || myVote === category) return;
+    if (!canVote || !faceUp(i) || myVote === category) return false;
     sfx('vote', { from: { from: cardEls[i] } });
     // The card's hover fire goes out: it stands lit as yours now (.voted).
     burning?.stop();
@@ -187,6 +203,7 @@
     const frame = cardEls[i]?.querySelector('.frame');
     if (frame && fxActive()) onCards(() => outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 }));
     session.dispatch({ type: 'vote', category });
+    return true;
   }
 
   /** Svelte action: a vote's mark lands on its card (not the ones already there as the screen opens). */
@@ -531,8 +548,18 @@
   function deal(node: Element, { i, n }: { i: number; n: number }) {
     if (motion.still) return {};
     dealtAt ??= performance.now();
-    // The face's own entrance (see .dealt below) plays with the deal only.
-    node.classList.add('dealt');
+    // The face's own entrance (see .dealt below) plays with the deal only;
+    // the emblem reads the kindle's numbers while it kindles, and no longer.
+    node.classList.add('dealt', 'kindling');
+    if (!registered) node.classList.add('plain');
+    const kindled = (e: Event) => {
+      if (!(e.target as Element).matches('.icon, .gilt')) return;
+      node.classList.remove('kindling');
+      node.removeEventListener('animationend', kindled);
+      node.removeEventListener('animationcancel', kindled);
+    };
+    node.addEventListener('animationend', kindled);
+    node.addEventListener('animationcancel', kindled);
     // Face down until it turns halfway (see .down below).
     const card = node.parentElement;
     card?.classList.add('down');
@@ -617,10 +644,11 @@
   }
   $effect(() => () => burning?.stop());
 
+  /** Picks `category` (votes for it, together); whether it did. */
   function pick(category: string) {
     if (coop) return vote(category);
     const i = s.offered.indexOf(category);
-    if (!mine || picked || !faceUp(i)) return;
+    if (!mine || picked || !faceUp(i)) return false;
     picked = category;
     burning?.stop();
     burning = null;
@@ -634,6 +662,7 @@
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
+    return true;
   }
 
   /** An option's key (settings page) picks its card, or votes for it, as a click would. */
@@ -646,17 +675,19 @@
     const cat = n === null ? undefined : s.offered[n];
     if (cat === undefined || !mine) return;
     e.preventDefault();
-    pick(cat);
+    // Shown to the others as a tap on the card (keyTap).
+    if (pick(cat)) keyTap(`card:${n}`);
   }
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-<div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
+{#snippet prompt()}
   <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
   <p class="prompt" data-cursor="prompt">
     {#if s.deathmatch}
-      {#if mine}Sudden death: your category is drawn at random.{:else}<span class="muted">Sudden death for</span> {active.name}<span class="muted">…</span>{/if}
+      {#if knockedOut.length}{knockedOut.join(', ')} {knockedOut.length === 1 ? 'is' : 'are'} out;{' '}{/if}
+      {#if mine}{knockedOut.length ? 'your' : 'Sudden death: your'} category is drawn at random.{:else}<span class="muted">{knockedOut.length ? 'sudden' : 'Sudden'} death for</span> {active.name}<span class="muted">…</span>{/if}
     {:else if dig}
       {#if coop ? canVote && !drawn : mine}
         {coop && myVote ? 'Your vote is in' : 'Dig deeper, or get out?'}
@@ -681,6 +712,18 @@
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
   </p>
+{/snippet}
+
+<div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
+  {#if timer}
+    <!-- The prompt's line as wide as the question's task line, its clock at the right end. -->
+    <div class="line">
+      {@render prompt()}
+      <div class="clock">{@render timer()}</div>
+    </div>
+  {:else}
+    {@render prompt()}
+  {/if}
 
   <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
@@ -822,7 +865,7 @@
         <span class="closes" aria-hidden="true">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
       {/if}
       <span class="live" aria-live="polite">
-        {#if closesIn !== null}<span class="sr">The vote's clock has started.</span>{/if}
+        {#if closesIn !== null}<span class="sr">The vote’s clock has started.</span>{/if}
         {#if anyVote && waitingFor.length}
           <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
         {:else if !anyVote}
@@ -858,10 +901,38 @@
     font-size: 1.2rem;
     text-align: center;
   }
+  /* A vein's lamp at the prompt's right end: the line and the clock as the
+     question's task line has them (QuestionView's .task and .clock, its
+     sizes below too), so the ring stays put as the strike comes in. */
+  .line {
+    position: relative;
+    justify-self: center;
+    width: min(980px, 100%);
+  }
+  .line .prompt {
+    padding-inline: 60px;
+  }
+  .line .clock {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    translate: 0 -50%;
+    display: grid;
+    place-items: center;
+  }
+  .line .clock :global(.timer) {
+    width: 52px;
+    height: 52px;
+  }
+  .line .clock :global(.timer span) {
+    font-size: 1.15rem;
+  }
   /* The way out: its design's colours (lib/wayOut, set on the card), as a find's are. */
   /* Its lantern hangs in the engraving, gilded: the emblem's place is kept, so a row's name keeps clear of it. */
   .card.out .icon.none {
     visibility: hidden;
+    /* (Hidden, it needn't kindle: the kindle runs on the page's thread.) */
+    animation: none;
   }
   .find-tag.out-tag {
     color: var(--f-hi);
@@ -1100,12 +1171,16 @@
      (lib/iconFit) and by the item's own --e-k, and the image is placed so
      its visible part fills it. An item drawn larger grows upward, its foot
      where it was, and --e-up and --e-left move it. --e-s scales it all
-     down for a card in a row. */
+     down for a card in a row. (Moved by its position, not a translate:
+     WebKit, every browser on iOS, draws .lit's shadow filter only as far
+     as its contents are laid out, not as far as a translate carries them,
+     and cut the belt's straps off under Amulets & Belts.) */
   .glyph.fit {
     --e-k: var(--e-kin, 1);
     --u: calc(var(--e-s, 1) * var(--e-k) * 1px);
-    translate: calc(var(--e-left, 0) * var(--e-s, 1) * -1px)
-      calc(min(0px, (1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px) - var(--e-up, 0) * var(--e-s, 1) * 1px);
+    position: relative;
+    left: calc(var(--e-left, 0) * var(--e-s, 1) * -1px);
+    top: calc(min(0px, (1 - var(--e-k)) * var(--e-h) * var(--e-s, 1) * 0.5px) - var(--e-up, 0) * var(--e-s, 1) * 1px);
     width: calc(var(--e-w) * var(--u));
     height: calc(var(--e-h) * var(--u));
     -webkit-mask-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
@@ -1116,9 +1191,24 @@
   /* As the face turns up in the deal, its emblem kindles and light runs across it.
      (Kindled as a whole, with its glow and shadow, on the layer that holds
      them: iOS Safari draws a filter animated inside other filters out of
-     step with them, the emblem dimming apart from its own glow.) */
+     step with them, the emblem dimming apart from its own glow. And
+     through --kindle-lum and --kindle-fade, which its filter and opacity
+     read, rather than those themselves: Safari runs an opacity animation
+     on the compositor but this filter's on the page's thread, which the
+     deal keeps busy, so on iOS the emblem came up whole but dark, and only
+     then lit; see app.css.) */
   .turn:global(.dealt) .icon {
     animation: kindle 0.9s ease-out var(--face, 0ms) backwards;
+  }
+  /* (While it kindles only, so that at rest it is just its glow.) */
+  .turn:global(.kindling) .icon {
+    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    opacity: var(--kindle-fade, 1);
+  }
+  /* (A browser that can't register them would step the numbers, not ease
+     them: there, the filter and opacity themselves.) */
+  .turn:global(.kindling.plain) .icon {
+    animation-name: kindle-plain;
   }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
@@ -1128,8 +1218,16 @@
   .card.out .sheen {
     display: none;
   }
+  /* (CardEngraving's .gilt reads the kindle's numbers while it kindles, as .icon does.) */
   .card.out .turn:global(.dealt) :global(.gilt) {
     animation: kindle-gilt 1.1s ease-out var(--face, 0ms) backwards;
+  }
+  .card.out .turn:global(.kindling) :global(.gilt) {
+    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 var(--kindle-glow, 10px) var(--f-pulse, rgba(224, 138, 68, 0.45)));
+    opacity: var(--kindle-fade, 1);
+  }
+  .card.out .turn:global(.kindling.plain) :global(.gilt) {
+    animation-name: kindle-gilt-plain;
   }
   /* (The swell on the engraving's still layers, beside the gilt rather
      than round it: a filter animated inside another runs out of step with
@@ -1139,15 +1237,33 @@
   }
   @keyframes kindle-gilt {
     from {
+      --kindle-fade: 0.2;
+      --kindle-lum: 0.4;
+      --kindle-glow: 10px;
+    }
+    40% {
+      --kindle-fade: 1;
+      --kindle-lum: 1.5;
+      --kindle-glow: 18px;
+    }
+    to {
+      --kindle-fade: 1;
+      --kindle-lum: 1;
+      --kindle-glow: 10px;
+    }
+  }
+  @keyframes kindle-gilt-plain {
+    from {
       opacity: 0.2;
-      filter: brightness(0.4) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+      filter: brightness(0.4) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
     }
     40% {
       opacity: 1;
-      filter: brightness(1.5) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 18px var(--f-pulse));
+      filter: brightness(1.5) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 18px var(--f-pulse, rgba(224, 138, 68, 0.45)));
     }
     to {
-      filter: brightness(1) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse));
+      opacity: 1;
+      filter: brightness(1) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 10px var(--f-pulse, rgba(224, 138, 68, 0.45)));
     }
   }
   @keyframes swell {
@@ -1158,8 +1274,21 @@
       filter: brightness(1.35);
     }
   }
-  /* (.icon's glow written out in each step: its filter runs through them, the glow kept.) */
   @keyframes kindle {
+    from {
+      --kindle-fade: 0.2;
+      --kindle-lum: 0.4;
+    }
+    40% {
+      --kindle-fade: 1;
+      --kindle-lum: 1.45;
+    }
+    to {
+      --kindle-fade: 1;
+      --kindle-lum: 1;
+    }
+  }
+  @keyframes kindle-plain {
     from {
       opacity: 0.2;
       filter: brightness(0.4) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
@@ -1169,6 +1298,7 @@
       filter: brightness(1.45) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
     to {
+      opacity: 1;
       filter: brightness(1) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
     }
   }
@@ -1220,7 +1350,7 @@
       text-shadow 0.3s;
   }
 
-  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .cards.single {
       grid-template-columns: minmax(0, 220px);
     }
@@ -1323,7 +1453,7 @@
      staying in its shade, and in the window (as far as heapOf finds they
      can); only the emblem grows and brightens, so it still leads. Only on
      the tall cards: the window it's worked out for isn't the rows'. */
-  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .card.mine:not(:global(.down)):hover .moon {
       --far: var(--spread, 1);
     }
@@ -1433,7 +1563,7 @@
     gap: 0.35rem;
   }
   /* Wide screens: the notes in the cards' columns, each under its card. */
-  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) {
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .find-notes {
       display: grid;
       /* The cards' own tracks (shrinking with them on a narrow tablet). */
@@ -1807,8 +1937,11 @@
 
   /* Narrow screens: the cards stacked as wide rows. Not on a phone on its
      side (lib/layout.ts `flat`), too short for three: there they stand in a
-     row as on wider screens, smaller (below). */
-  @media (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px) {
+     row as on wider screens, smaller (below). Always at a phone's width,
+     though (560 and under, short or not: no phone on its side is that
+     narrow, the smallest 568), where three tall cards would be squeezed
+     narrower than their emblems (the card bench's frame on a phone). */
+  @media (max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px) {
     .cards {
       grid-template-columns: 1fr;
       width: min(360px, 100%);
@@ -1947,8 +2080,20 @@
     .choose {
       gap: 1rem;
     }
+    /* A vein's lamp a little smaller, as on the question's task line. */
+    .line .prompt {
+      padding-inline: 54px;
+    }
+    .line .clock :global(.timer) {
+      width: 46px;
+      height: 46px;
+    }
+    .line .clock :global(.timer span) {
+      font-size: 1.05rem;
+    }
   }
-  /* A phone on its side (lib/layout.ts `flat`): the tall cards in a row,
+  /* A phone on its side (lib/layout.ts `flat`, from 561 wide; see the rows
+     above): the tall cards in a row,
      scaled to the height left under the banner, step by step (zoom takes no
      length), one size for every turn at a height (a find, the team's vote
      or a duel never shrinks them) and never so small that their names stop
@@ -1958,7 +2103,7 @@
      every depth, what the finds give beside them where there's room (under
      them where not) and the vote's state under them. (.coop too, to
      outweigh the short windows' own size for it above.) */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .choose,
     .choose.coop {
       gap: 0.5rem;
@@ -1967,6 +2112,22 @@
     }
     .prompt {
       font-size: 1.05rem;
+    }
+    /* A vein's lamp as on the question's task line: smaller, lifted toward
+       the banner's row, the line as tall as that one, so the ring centres where it does there. */
+    .line .prompt {
+      padding-inline: 44px;
+      line-height: 1.3;
+    }
+    .line .clock {
+      translate: 0 calc(-50% - 7px);
+    }
+    .line .clock :global(.timer) {
+      width: 34px;
+      height: 34px;
+    }
+    .line .clock :global(.timer span) {
+      font-size: 0.85rem;
     }
     .note {
       font-size: 0.85rem;
@@ -2032,7 +2193,8 @@
     .choose.delve.beside {
       column-gap: 2.6rem;
     }
-    .choose.beside .prompt {
+    .choose.beside .prompt,
+    .choose.beside .line {
       grid-area: prompt;
     }
     .choose.beside .cards {
@@ -2065,7 +2227,7 @@
       display: block;
     }
   }
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     /* A duel's one card: what is going on and its note beside it, as Delve's
        column is, so the duel's strip over the banner takes no size from it. */
     .choose.duel {
@@ -2092,13 +2254,13 @@
       text-align: left;
     }
   }
-  @media (orientation: landscape) and (max-height: 440px) {
+  @media (orientation: landscape) and (max-height: 440px) and (min-width: 561px) {
     .choose,
     .choose.coop {
       --z: 0.82;
     }
   }
-  @media (orientation: landscape) and (max-height: 400px) {
+  @media (orientation: landscape) and (max-height: 400px) and (min-width: 561px) {
     .choose,
     .choose.coop {
       --z: 0.74;
@@ -2112,14 +2274,14 @@
       --z: 0.66;
     }
   }
-  @media (orientation: landscape) and (max-height: 370px) {
+  @media (orientation: landscape) and (max-height: 370px) and (min-width: 561px) {
     .choose,
     .choose.coop,
     .choose.delve {
       --z: 0.7;
     }
   }
-  @media (orientation: landscape) and (max-height: 350px) {
+  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
     .choose,
     .choose.coop,
     .choose.delve {

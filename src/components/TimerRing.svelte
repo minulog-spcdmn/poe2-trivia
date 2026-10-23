@@ -3,7 +3,8 @@
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerGone, timerTick } from '../lib/fx/moments';
-  import { FLARE_MS, clockLeft, delveTimer, findDepth, questionTimer } from '../lib/delve';
+  import { FLARE_MS, clockLeft, delveTimer, digOf, findDepth, questionTimer } from '../lib/delve';
+  import { inVein } from '../lib/vein';
   import { FLARE_IGNITE_MS, flareBurning, onFlareLands, type FlareBurn } from '../lib/flareBurn';
   import { claimPressure, endHold, flareEase, flarePressure, pressureOf, resolveDark, type Pressure } from '../lib/darkness';
   import { darkOutcome } from '../lib/delveSession';
@@ -27,12 +28,26 @@
   const st = $derived(session.state);
   const q = $derived(st?.delve ? st.question : null);
   /**
+   * Between a vein's strikes (its two cards up), the lamp stands still at
+   * the light it has left for the next one, out of that strike's whole clock,
+   * as the strike will start it.
+   */
+  const dig = $derived(st?.phase === 'choosing' && inVein(st) ? digOf(st) : null);
+  /**
    * An Azurite Vein's strike runs on the dig's lamp (delve.ts, the dig): the
    * ring is its light, out of the strike's whole deeper clock, so a lamp
    * burnt low by the strikes before starts short of full.
    */
-  const lamp = $derived(q?.find === 'azurite');
-  const span = $derived(st?.delve && q ? (lamp ? Math.max(questionTimer(st), delveTimer(findDepth('azurite', st.round, q.strike ?? 1))) : questionTimer(st)) : total);
+  const lamp = $derived(q?.find === 'azurite' || !!dig);
+  const span = $derived(
+    dig
+      ? delveTimer(findDepth('azurite', st!.round, dig.strikes + 1))
+      : st?.delve && q
+        ? lamp
+          ? Math.max(questionTimer(st), delveTimer(findDepth('azurite', st.round, q.strike ?? 1)))
+          : questionTimer(st)
+        : total,
+  );
 
   let remaining = $state(Infinity);
 
@@ -179,8 +194,8 @@
 
   $effect(() => {
     if (deadline === null) {
-      // Held still by the host's reload: the time it had left; not started yet: all of it.
-      remaining = pausedLeft ?? (st?.delve && q ? questionTimer(st) : total) * 1000;
+      // Held still by the host's reload: the time it had left; not started yet: all of it; between a vein's strikes: the lamp's light.
+      remaining = pausedLeft ?? (dig ? dig.light : st?.delve && q ? questionTimer(st) : total) * 1000;
       // The dark as at that time, not as this screen's clock ran on while the host was away (a flare's light aside).
       if (pausedLeft !== null && litAt === null) {
         shownDark = pressureOf(pausedLeft, span * 1000, warnFrom);

@@ -1,8 +1,12 @@
 // count.ts in a browser at the live game's address (globals set before it
 // loads, as `counting` is settled then): with the privacy page's opt-out set,
 // nothing goes out, the counts held for an unseen page included.
-import { beforeEach, test } from 'node:test';
+import { beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+
+// Counts go out in turn, the first after a random wait of at most 2 s (count.ts release): the clock is moved on by hand.
+mock.timers.enable({ apis: ['setTimeout'] });
+const later = () => mock.timers.tick(2_000);
 
 const sent: string[] = [];
 const held = new Map<string, string>();
@@ -38,10 +42,11 @@ beforeEach(() => {
 
 test('counts held while unseen are dropped if the opt-out was set meanwhile', () => {
   // (First: count.ts was loaded with the page unseen.)
-  countEvent('play/race-online');
+  countEvent('play/race');
   assert.equal(sent.length, 0);
   setCountOptedOut(true);
   show();
+  later();
   assert.equal(sent.length, 0);
 });
 
@@ -50,18 +55,20 @@ test('counts held while unseen go out once the page is seen, when not opted out'
   // A page of its own, loaded unseen (the query makes it a module of its own).
   const unseen = '../src/lib/count.ts?unseen';
   const { countEvent: count } = (await import(unseen)) as typeof import('../src/lib/count.ts');
-  count('play/race-online');
+  count('play/race');
   assert.equal(sent.length, 0, 'held');
   show();
+  later();
   assert.equal(sent.length, 1);
-  assert.match(sent[0], /p=play%2Frace-online/);
+  assert.match(sent[0], /p=play%2Frace/);
 });
 
 test('nothing is sent while the browser sends Global Privacy Control', () => {
   show();
   const nav = globalThis.navigator as unknown as { globalPrivacyControl?: boolean };
   nav.globalPrivacyControl = true;
-  countEvent('play/race-online');
+  countEvent('play/race');
+  later();
   delete nav.globalPrivacyControl;
   assert.equal(sent.length, 0);
 });
@@ -69,10 +76,23 @@ test('nothing is sent while the browser sends Global Privacy Control', () => {
 test('nothing is sent while opted out, and counting resumes once taken back', () => {
   show();
   setCountOptedOut(true);
-  countEvent('play/race-online');
+  countEvent('play/race');
   assert.equal(sent.length, 0);
+  later();
   setCountOptedOut(false);
-  countEvent('play/race-online');
+  countEvent('play/race');
+  later();
   assert.equal(sent.length, 1);
-  assert.match(sent[0], /p=play%2Frace-online/);
+  assert.match(sent[0], /p=play%2Frace/);
+});
+
+test('counts go out one at a time, apart, however many come at once', () => {
+  show();
+  for (const n of ['play/race', 'size/race-4p', 'reach/played']) countEvent(n);
+  later();
+  assert.equal(sent.length, 1);
+  mock.timers.tick(600);
+  assert.equal(sent.length, 2);
+  mock.timers.tick(600);
+  assert.equal(sent.length, 3);
 });

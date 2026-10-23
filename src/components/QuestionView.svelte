@@ -16,6 +16,7 @@
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
+  import { keyTap } from '../lib/pointerAnchor';
   import { motion } from '../lib/motion.svelte';
   import {
     FILL_START,
@@ -38,6 +39,7 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
@@ -147,6 +149,58 @@
     };
   }
   /**
+   * Svelte action: a picture's name at the reveal wraps between words only.
+   * A word wider than the caption (Strugglescream under one of ten pictures
+   * on a phone) shrinks the caption, the name and its Mirrored line together
+   * (sized from it), down to three quarters of its size; only a word too
+   * wide even then breaks. A name kept to one line, cut short with an
+   * ellipsis, is left as it comes.
+   */
+  function wholeWords(node: HTMLElement) {
+    const caption = node.parentElement ?? node;
+    // (No transition, which reduced motion gives every property: a size set
+    // here has to be measured at once, in the name too, which inherits it.)
+    caption.style.transitionProperty = 'none';
+    node.style.transitionProperty = 'none';
+    const run = () => {
+      caption.style.fontSize = '';
+      node.style.overflowWrap = '';
+      if (getComputedStyle(node).whiteSpace === 'nowrap') return;
+      node.style.overflowWrap = 'normal';
+      const full = parseFloat(getComputedStyle(caption).fontSize);
+      const least = full * 0.75;
+      const over = () => node.scrollWidth > node.clientWidth + 0.5;
+      let size = full;
+      // The widest word grows with the size: one step most of the way, then half pixels for what rounding leaves.
+      if (over()) {
+        size = Math.max(least, Math.floor((full * node.clientWidth * 2) / node.scrollWidth) / 2);
+        caption.style.fontSize = `${size}px`;
+      }
+      while (over() && size > least) {
+        size = Math.max(least, size - 0.5);
+        caption.style.fontSize = `${size}px`;
+      }
+      // (Broken anywhere outright: not every layout's caption does that for it, and a clipped name says less.)
+      if (over()) node.style.overflowWrap = 'anywhere';
+    };
+    // Once the tile is laid out (its first observation, before the first paint), again once the
+    // display font is in, and whenever the tile's width changes (a phone turned).
+    const ro = new ResizeObserver(run);
+    const tile = node.closest('.tile');
+    if (tile) ro.observe(tile);
+    else run();
+    void document.fonts?.ready.then(run);
+    // And when the name changes: once its new words are in (before the next paint).
+    const mo = new MutationObserver(run);
+    mo.observe(node, { characterData: true, childList: true, subtree: true });
+    return {
+      destroy: () => {
+        ro.disconnect();
+        mo.disconnect();
+      },
+    };
+  }
+  /**
    * Delve together, while the question is open: teammates its wrong picks
    * left with no lives (their entries grey, easy to miss mid-question), and
    * a flare burning from someone's pack, said under the answers. A wrong
@@ -234,13 +288,13 @@
     if (coop) {
       // The team's verdict: cleared (by you: Correct), out of time, or every answer wrong.
       if (reveal.winnerId) return { word: reveal.winnerId === me ? 'Correct' : 'Cleared', icon: 'check', tone: 'good' };
-      if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
+      if (reveal.timedOut) return { word: "Time’s up", icon: 'clock', tone: 'late' };
       return { word: 'Wrong', icon: 'cross', tone: 'bad' };
     }
     if (iWon) return { word: 'Correct', icon: 'check', tone: 'good' };
     if (race && winner) return session.spectating ? { word: 'Solved', icon: 'check', tone: 'neutral' } : { word: 'Too slow', icon: 'clock', tone: 'late' };
     if (fallsNow) return { word: 'Perished', icon: 'cross', tone: 'bad' };
-    if (reveal.timedOut) return { word: "Time's up", icon: 'clock', tone: 'late' };
+    if (reveal.timedOut) return { word: "Time’s up", icon: 'clock', tone: 'late' };
     return { word: race ? 'No one' : 'Wrong', icon: 'cross', tone: 'bad' };
   });
   // Online, the reveal moves on by itself. The bar follows the host's clock
@@ -359,10 +413,10 @@
   });
   /** Whose dynamite the fuse burns on: alone the player's; together the one holder's, or with several the team's (one of theirs is drawn as it goes off). */
   const fuseOwner = $derived.by(() => {
-    if (!coop) return delveYou ? 'your' : `${active.name}'s`;
+    if (!coop) return delveYou ? 'your' : `${active.name}’s`;
     const ids = holdersOf(s, 'dynamite');
-    if (ids.length !== 1) return "the team's";
-    return ids[0] === me ? 'your' : `${nameOf(ids[0])}'s`;
+    if (ids.length !== 1) return "the team’s";
+    return ids[0] === me ? 'your' : `${nameOf(ids[0])}’s`;
   });
   /** Whether this device can blast the question away now (delve.ts blastProblem; on one device, for the player): while its clock runs, its fuse to the end. */
   const canBlast = $derived(
@@ -397,7 +451,7 @@
     const b = q.blast;
     if (!s.delve || !b || reveal) return null;
     const you = session.mode === 'local' || b.stick === me;
-    if (!b.by) return `Time ran out, so ${you ? 'your' : `${nameOf(b.stick)}'s`} dynamite went off and blasted the last question away.`;
+    if (!b.by) return `Time ran out, so ${you ? 'your' : `${nameOf(b.stick)}’s`} dynamite went off and blasted the last question away.`;
     return `${b.by === me || session.mode === 'local' ? 'You' : nameOf(b.by)} blasted the last question away.`;
   });
 
@@ -854,13 +908,19 @@
     // The player's keys (settings page): an option's, Next's, Detonate's.
     const action = actionOf(e);
     const n = optionIndex(action);
+    // Each shown to the others as a tap on what it did (keyTap).
     if (n !== null) {
-      if (!reveal && !waiting && n < count) answer(n);
+      if (reveal || waiting || n >= count) return;
+      const was = chosen;
+      answer(n);
+      if (chosen !== was) keyTap(`opt:${n}`);
     } else if (action === 'next' && reveal && canNext) {
       e.preventDefault();
+      keyTap('next');
       next();
     } else if (action === 'detonate' && blastSlot && canBlast) {
       e.preventDefault();
+      if (!blasting) keyTap('blast');
       blastThrough();
     }
   }
@@ -932,7 +992,7 @@
         <b class="good">+1</b> {winner.id === me ? 'You were' : `${winner.name} was`} fastest!
         {@render streakWords()}
       {:else if reveal.timedOut}
-        Time's up; nobody got it.
+        Time’s up; nobody got it.
       {:else}
         Nobody got it.
       {/if}
@@ -1004,7 +1064,7 @@
         {#if reveal.timedOut}The darkness took {whom}.{/if}
         The vein caves in{you ? '' : ` on ${active.name}`}.
         {#if reveal.lost.wards >= 2}
-          <span class="held">{wardText(you ? 'your' : `${active.name}'s`, 2)}</span>
+          <span class="held">{wardText(you ? 'your' : `${active.name}’s`, 2)}</span>
         {:else if reveal.lost.wards === 1}
           {who} {you ? 'lose' : 'loses'} a ward and a life.
         {:else}
@@ -1017,7 +1077,7 @@
           ><span class="piece l"><ItemGlyph kind="ward" piece="left" /></span><span class="piece r"><ItemGlyph kind="ward" piece="right" /></span></span
         >
         {#if reveal.timedOut}The darkness took {whom}.{/if}
-        <span class="held">{wardText(you ? 'your' : `${active.name}'s`)}</span>
+        <span class="held">{wardText(you ? 'your' : `${active.name}’s`)}</span>
       {:else}
         <!-- The life that went: a chamber of the phial, its light pouring out of the tip. -->
         <span class="lost-vial" class:last={left <= 1} aria-hidden="true"
@@ -1036,7 +1096,7 @@
         {/if}
       {/if}
       <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
-      {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}'s`)}{/if}
+      {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}’s`)}{/if}
     {:else if reveal.correct}
       <b class="good">+1</b> for {active.name}!
       {@render streakWords()}
@@ -1045,7 +1105,7 @@
     {:else}
       No point for {active.name}{fellFor ? ';' : '.'}
     {/if}
-    {#if fellFor}{fellFor} isn't a real item.{/if}
+    {#if fellFor}{fellFor} isn’t a real item.{/if}
   {/if}
 {/snippet}
 
@@ -1131,7 +1191,7 @@
     {:else if blastLine}
       <p class="spectate blast-line" in:fade={{ duration: 300, delay: 300 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="dynamite" /></span>{blastLine}</p>
     {:else if session.spectating}
-      <p class="spectate muted">{session.justWatching ? "You're watching." : "You're watching. You'll play in the next game."}</p>
+      <p class="spectate muted">{session.justWatching ? "You’re watching." : "You’re watching. You’ll play in the next game."}</p>
     {:else if coop && !mine}
       <p class="spectate muted">Your team is answering…</p>
     {:else if coop}
@@ -1139,7 +1199,7 @@
         The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press {optionKeys(count)}.</span>
       </p>
     {:else if race && myMiss}
-      <p class="spectate out">Wrong: −1. You're out until the next question.</p>
+      <p class="spectate out">Wrong: −1. You’re out until the next question.</p>
     {:else if race}
       <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press {optionKeys(count)}.</span></p>
     {:else if !mine}
@@ -1237,7 +1297,7 @@
             class:mine={mine && !reveal}
             class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
-            aria-label={shownItem ? `${shownItem.name}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it's wrong` : undefined}
+            aria-label={shownItem ? `${shownItem.name}${st === 'right' || st === 'wrong' ? `, ${st}` : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it’s wrong` : undefined}
             title={shownItem ? 'See its details' : undefined}
             disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
             onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
@@ -1287,12 +1347,12 @@
             {/if}
             {#if reveal && named(i)}
               <span class="caption" in:fly={{ y: 6, duration: 300, delay: 150 }}>
-                {optionName(i)}
+                <span class="cname" use:wholeWords>{optionName(i)}</span>
                 {#if mirrored(i)}{@render mirrorLine()}{/if}
               </span>
             {/if}
-            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
-            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="check" /></span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="cross" /></span>{/if}
             {@render who(i)}
           </button>
         {/each}
@@ -1395,8 +1455,8 @@
             <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
-            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
-            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="check" /></span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><AnswerMark shape="cross" /></span>{/if}
           </button>
         {/each}
       </div>
@@ -1425,7 +1485,7 @@
   </div>
   <!-- The verdict, read out as it lands. -->
   <p class="sr" aria-live="polite">
-    {verdict ? (chipHeat > 0 ? `${verdict.word}, ${streak} in a row` : chipOut ? `${verdict.word}, the team's streak of ${streakLost} lost` : verdict.word) : ''}
+    {verdict ? (chipHeat > 0 ? `${verdict.word}, ${streak} in a row` : chipOut ? `${verdict.word}, the team’s streak of ${streakLost} lost` : verdict.word) : ''}
   </p>
 </div>
 
@@ -1574,8 +1634,15 @@
     line-height: 1.1;
     color: #a9c3dc;
   }
+  /* Under a picture, a little smaller than the name above it (0.8rem under
+     0.85rem), at every size the caption takes, and never broken in two (ten
+     to a row on a phone leave a caption under 60px): it shrinks with its
+     caption instead. The word is about 5.75em wide in Cinzel, letter spacing
+     and all, so 16% of the caption's width for an em keeps it inside with
+     room to spare. */
   .caption .mirrored {
-    font-size: 0.8rem;
+    font-size: min(0.94em, 16cqi);
+    white-space: nowrap;
   }
 
   .art {
@@ -2335,7 +2402,6 @@
   }
   .mark {
     font-size: 1.3rem;
-    font-weight: 700;
   }
   /* The ✓/✕ sits in room kept free on the right, so it can't widen, heighten
      or rewrap the answer when it appears at the reveal. */
@@ -2498,10 +2564,11 @@
     top: 8px;
     left: 8px;
   }
+  /* Centred where the hover's diamond sits (.tile .cue: 20px in from the right, 22px down), its box 0.86em across (AnswerMark). */
   .tile .mark {
     position: absolute;
-    top: 8px;
-    right: 12px;
+    top: calc(22px - 0.43em);
+    right: calc(20px - 0.43em);
   }
   .tile.mine:not(:disabled) {
     cursor: pointer;
@@ -2598,9 +2665,14 @@
     text-align: center;
     color: #e9c8a2;
     line-height: 1.2;
+    /* For its Mirrored line's size (see .caption .mirrored). */
+    container-type: inline-size;
   }
   .tile.right .caption {
     color: #d6e8c0;
+  }
+  .cname {
+    display: block;
   }
   /* The row under the answers: what there is to say (a tip, Detonate, the
      result and Next). Same height with a tip, a result or nothing, so the
@@ -3097,7 +3169,7 @@
       left: 4px;
     }
     .tiles.snug .tile .mark {
-      top: 4px;
+      top: 7px;
       right: 6px;
       font-size: 1.05rem;
     }
@@ -3248,7 +3320,7 @@
      header (the slim scoreboard in its row), the banner and the task line
      (the timer at its right end), with the row under them, so the whole question is in view at once.
      (After the 760px and short-window blocks, which it overrides.) */
-  @media (orientation: landscape) and (max-height: 500px) {
+  @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
     .question {
       /* The height the art and answers share: the window's, less what stands above and below them
          (the header, the scoreboard in its row; the banner, the task line, the row under them, the home indicator's strip). */
@@ -3388,6 +3460,45 @@
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
       padding-top: 0.45rem;
+    }
+    /* The name at the reveal over a tile barely taller than its picture: as
+       small as upright, on a shorter shade and two lines at most, so the
+       picture still shows above it (it can't move or shrink: nothing jumps).
+       A name cut short is whole a tap away, in the item's details. */
+    .caption {
+      padding: 0.8rem 0.25rem 0.3rem;
+      font-size: 0.72rem;
+      line-height: 1.12;
+    }
+    .cname {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+    }
+    /* Ten, two rows of tiles about 60px tall: one line, the name and
+       Mirrored side by side, the name giving way, down to about 5.5em; on a
+       narrower phone (667px across: tiles under 125px, but taller, about
+       80px) Mirrored goes under it rather than leave the name a stub. */
+    .tiles.ten .caption {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: baseline;
+      column-gap: 0.4em;
+      padding-top: 0.6rem;
+    }
+    .tiles.ten .cname {
+      display: block;
+      flex: 1 1 5.5em;
+      min-width: 0;
+      max-width: max-content;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .tiles.ten .caption .mirrored {
+      flex: none;
     }
     .footer {
       margin-top: 0.45rem;
@@ -3574,7 +3685,7 @@
     }
     .tiles .tile .mark,
     .tiles.snug .tile .mark {
-      top: 3px;
+      top: 6px;
       right: 6px;
       font-size: 1.05rem;
     }

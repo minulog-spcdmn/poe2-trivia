@@ -1,7 +1,8 @@
 <script lang="ts">
   // Games: how many, of which mode, how many played each, and how deep
   // Delve's runs get. A game is counted once, on the device that runs it
-  // (the host, or the one passed around for hot-seat).
+  // (the host's), games once counted online and hot-seat apart as one
+  // (model.ts currentName).
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
@@ -17,6 +18,8 @@
   /** The most played first, as everywhere else. */
   const modes = $derived(modesOf(L.games.rows).sort((a, b) => b.started - a.started));
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
+  /** Games with players at the host's own screen, every mode. */
+  const screen = $derived(modes.reduce((n, m) => n + m.screen, 0));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));
@@ -37,7 +40,7 @@
 <svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
-  <Section title="Games a day" says="Games started, every mode, online and hot-seat.">
+  <Section title="Games a day" says="Games started, every mode.">
     {#snippet aside()}
       <div class="total">
         <b>{fmt(L.games.started)}</b>
@@ -47,7 +50,7 @@
     <TrendChart days={L.days} now={L.games.perDay} before={read.before.games.perDay} {weekly} what="Games" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chart.height} />
   </Section>
 
-  <Section title="Modes" says="Played to the end: the game reached its results, or a Delve run its last life.">
+  <Section title="Modes" says="Played to the end: the game reached its results, or a Delve run its last life. At one screen: with players seated at the host's own screen, hot-seat games before that was counted.">
     <div class="scroll-x">
       <table class="table" aria-label="Games by mode">
         <thead>
@@ -57,34 +60,31 @@
             <th scope="col" class="n opt">Share</th>
             <th scope="col" class="n">To the end</th>
             <th scope="col" class="n opt">Players a game</th>
-            <th scope="col" class="n opt">Online</th>
-            <th scope="col" class="n opt">Hot-seat</th>
+            <th scope="col" class="n opt">At one screen</th>
             <th scope="col" class="bar"><span class="sr">Against the most played</span></th>
           </tr>
         </thead>
         <tbody>
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
-              <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each; {fmt(m.online)} online, {fmt(m.hotseat)} hot-seat</span></th>
+              <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each{#if m.screen}; {fmt(m.screen)} at one screen{/if}</span></th>
               <td class="n strong">{fmt(m.started)}</td>
               <td class="n opt">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
               <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
-              <td class="n opt">{fmt(m.online)}</td>
-              <td class="n opt">{fmt(m.hotseat)}</td>
+              <td class="n opt" class:soft={!m.screen}>{m.screen ? fmt(m.screen) : '–'}</td>
               <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
             </tr>
           {/each}
         </tbody>
         <tfoot>
           <tr>
-            <th scope="row">All<span class="on-phone">{perGame(L.games.rows)} players each; {fmt(modes.reduce((n, m) => n + m.online, 0))} online, {fmt(modes.reduce((n, m) => n + m.hotseat, 0))} hot-seat</span></th>
+            <th scope="row">All<span class="on-phone">{perGame(L.games.rows)} players each{#if screen}; {fmt(screen)} at one screen{/if}</span></th>
             <td class="n">{fmt(L.games.started)}</td>
             <td class="n opt">{L.games.started ? '100%' : '–'}</td>
             <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
             <td class="n opt">{perGame(L.games.rows)}</td>
-            <td class="n opt">{fmt(modes.reduce((n, m) => n + m.online, 0))}</td>
-            <td class="n opt">{fmt(modes.reduce((n, m) => n + m.hotseat, 0))}</td>
+            <td class="n opt">{fmt(screen)}</td>
             <td></td>
           </tr>
         </tfoot>

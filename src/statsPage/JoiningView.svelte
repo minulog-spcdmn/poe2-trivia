@@ -1,7 +1,8 @@
 <script lang="ts">
   // Joining: whether getting into a room works. Tries to join by where they
   // started, how many got in, every failure by its cause (opening a room's
-  // too), and the links that bring players in.
+  // too), the game's own scripts' errors in a line of their own (they have
+  // nothing to do with joining), and the links that bring players in.
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
@@ -15,9 +16,12 @@
   const B = $derived(read.before);
   const tried = $derived(L.joins.reduce((n, j) => n + j.tried, 0));
   const joined = $derived(L.joins.reduce((n, j) => n + j.joined, 0));
-  const failures = $derived(L.failures.map((f) => ({ label: f.host ? `Opening a room: ${f.label.toLowerCase()}` : f.label, count: f.count })));
-  const failed = $derived(L.failures.reduce((n, f) => n + f.count, 0));
-  const failedBefore = $derived(B.failures.reduce((n, f) => n + f.count, 0));
+  const failures = $derived(L.failures.filter((f) => !f.script).map((f) => ({ label: f.host ? `Opening a room: ${f.label.toLowerCase()}` : f.label, count: f.count })));
+  const failedOf = (c: typeof L, script: boolean) => c.failures.reduce((n, f) => n + (f.script === script ? f.count : 0), 0);
+  const failed = $derived(failedOf(L, false));
+  const failedBefore = $derived(failedOf(B, false));
+  const scripts = $derived(failedOf(L, true));
+  const scriptsBefore = $derived(failedOf(B, true));
 </script>
 
 <div class="stack">
@@ -62,7 +66,7 @@
       {/if}
     </Section>
 
-    <Section title="What went wrong" says="Every failure, joining a room or opening one, by its cause.">
+    <Section title="What went wrong" says="Every failure joining a room or opening one, by its cause; below, the errors in the game's own scripts.">
       {#snippet aside()}
         <div class="total">
           <b class:bad={failed > 0}>{fmt(failed)}</b>
@@ -70,6 +74,9 @@
         </div>
       {/snippet}
       <Bars bars={failures} top={10} tone="down" empty="Nothing went wrong." />
+      {#if scripts || scriptsBefore}
+        <p class="line"><b class:bad={scripts > 0}>{fmt(scripts)}</b> errors in the game's own scripts, once a page load at most. <Delta now={scripts} before={scriptsBefore} worse="up" period={period.before} /></p>
+      {/if}
     </Section>
   </div>
 
@@ -102,8 +109,19 @@
     line-height: 1;
     color: var(--a-ink);
   }
-  .total b.bad {
+  .total b.bad,
+  .line b.bad {
     color: var(--a-down);
+  }
+  .line {
+    margin: 1.2rem 0 0;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--a-rule);
+    color: var(--a-text);
+  }
+  .line b {
+    font-weight: 650;
+    color: var(--a-ink);
   }
   .strong {
     font-weight: 650;

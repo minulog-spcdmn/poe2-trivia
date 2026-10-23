@@ -67,6 +67,9 @@ type Ember = {
   gate: number;
 };
 
+/** How long (s) a knock from the ground (Embers.jolt) takes to die away to a third. */
+const JOLT_S = 0.35;
+
 let r: () => number = Math.random;
 /** Tests: the embers' random source (seeded there, so what a statistical check sees is the same every run). */
 export function setEmberRandom(rng: () => number = Math.random) {
@@ -161,6 +164,9 @@ export class Embers {
   private bx = new Float32Array(EMBERS);
   private by = new Float32Array(EMBERS);
   private u = new Float32Array(EMBERS);
+  /** A knock it took (px/s, see jolt), on top of its own motion, dying away over JOLT_S. */
+  private kx = new Float32Array(EMBERS);
+  private ky = new Float32Array(EMBERS);
   /** Seconds it rests, dark, before its life starts (a lamp spark now and then). */
   private wait = new Float32Array(EMBERS);
   /** Each life's own draws (0 to 1): its drift (or vent), its curl's size, its curl's phase, and its life's length. */
@@ -311,6 +317,22 @@ export class Embers {
       if (x < -MARGIN) x += wide;
       else if (x > w + MARGIN) x -= wide;
       this.bx[i] = x;
+    }
+  }
+
+  /**
+   * The ground shook (an Azurite Vein's, lib/tremor.ts): each ember is
+   * knocked its own way, up to `speed` px/s, the nearer (larger) harder,
+   * and drifts back into its own motion as the knock dies away (JOLT_S).
+   */
+  jolt(speed: number) {
+    for (let i = 0; i < EMBERS; i++) {
+      // (One resting dark is knocked as it starts, if at all, by the next.)
+      if (this.wait[i] > 0) continue;
+      const a = r() * Math.PI * 2;
+      const k = speed * (0.3 + 0.7 * r()) * (0.5 + 0.25 * this.list[i].size);
+      this.kx[i] += Math.cos(a) * k;
+      this.ky[i] += Math.sin(a) * k;
     }
   }
 
@@ -541,6 +563,8 @@ export class Embers {
     const flaring = this.flareUntil > 0;
     // Eased in by `dt` at these rates (written out, not a call: a number a call hands back may be boxed).
     const ease1 = snap ? 1 : 1 - Math.exp(-dt);
+    // What's left of a knock (jolt) after this step.
+    const knock = Math.exp(-dt / JOLT_S);
     const ease15 = snap ? 1 : 1 - Math.exp(-dt * 1.5);
     this.restless += ((calm ? 0.5 : 1) - this.restless) * ease15;
     this.agit += ((calm ? 0 : look.agit) - this.agit) * ease15;
@@ -654,8 +678,10 @@ export class Embers {
         this.mgone = gone;
         this.mix[i] = Math.min(1, this.mix[i] + dt / TURN_S);
       }
-      this.bx[i] += this.mvx * dt;
-      this.by[i] += this.mvy * dt;
+      this.bx[i] += (this.mvx + this.kx[i]) * dt;
+      this.by[i] += (this.mvy + this.ky[i]) * dt;
+      this.kx[i] *= knock;
+      this.ky[i] *= knock;
       // Through its life: by the clock where it hangs, by the way it has come where it crosses the screen.
       const ahead =
         m.spawn === 'anywhere'

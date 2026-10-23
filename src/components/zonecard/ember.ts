@@ -7,7 +7,7 @@
 // and rising off as ash and embers.
 
 import { C, embers, emitter, puffs, sparks } from '../../lib/fx/effects';
-import { IN, OUT, startsIn, times, topOf, type Ctx, type FamilyMotion } from './family';
+import { IN, OUT, enter, startsIn, times, topOf, type Ctx, type FamilyMotion } from './family';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -24,7 +24,8 @@ export const ember: FamilyMotion = {
     c.play(c.letters, [{ clipPath: 'inset(-1em -0.6em 0 -0.6em)' }, { clipPath: 'inset(-1em -0.6em 0 -0.6em)' }], { at: 0, ms: c.tl.lock, fill: 'backwards' });
     const at = startsIn(c, c.glyphs);
     for (const i of c.glyphs)
-      c.play(
+      enter(
+        c,
         c.inner[i],
         [
           { opacity: 0, transform: 'translateY(0.45em)', filter: 'brightness(2.4) blur(3px)', easing: OUT },

@@ -186,8 +186,8 @@ export interface Named {
   count: number;
 }
 
-/** Visitors of the start page (visits, not game events) by system, country or referrer. */
-export async function visitorsBy(key: string, span: Span, page: 'systems' | 'locations' | 'toprefs', signal: AbortSignal): Promise<Named[]> {
+/** Visitors of the start page (visits, not game events) by system, country, referrer or the tag of the link they came by (campaigns). */
+export async function visitorsBy(key: string, span: Span, page: 'systems' | 'locations' | 'toprefs' | 'campaigns', signal: AbortSignal): Promise<Named[]> {
   const r = await get<{ stats: { name: string; count: number }[] }>(
     key,
     `/stats/${page}`,

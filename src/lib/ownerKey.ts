@@ -108,11 +108,7 @@ export async function unlockOwner(words: string, key = OWNER_PUBLIC_KEY): Promis
   }
 }
 
-/**
- * The owner key as this device keeps it, to pass on to the player's own
- * paired devices (lib/sync passOwnerKey, only when the owner asks it to,
- * never with the rest); null unless it holds it.
- */
+/** The owner key as this device keeps it, to pass on to the player's own paired devices (lib/sync); null unless it holds it. */
 export const ownerKeyKept = (key = OWNER_PUBLIC_KEY) => (ownerUnlocked(key) ? readKey(STORED) : null);
 
 /** Keeps an owner key passed on by another of the player's devices, when it is the owner's (its seed makes the public half). */

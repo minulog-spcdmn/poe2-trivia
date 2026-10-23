@@ -1,13 +1,14 @@
 <script lang="ts">
   // A block of a view: its question as a heading, a line on how to read it,
   // and what answers it. `aside`: something at the heading's end (a choice,
-  // a link to more).
+  // a link to more). `area`: its name where a view lays its sections out by
+  // name (a big monitor's two columns).
   import type { Snippet } from 'svelte';
 
-  let { title, says = '', aside, children, wide = false }: { title: string; says?: string; aside?: Snippet; children: Snippet; wide?: boolean } = $props();
+  let { title, says = '', aside, children, wide = false, area }: { title: string; says?: string; aside?: Snippet; children: Snippet; wide?: boolean; area?: string } = $props();
 </script>
 
-<section class="section" class:wide>
+<section class="section" class:wide data-area={area}>
   <header>
     <div>
       <h2>{title}</h2>
