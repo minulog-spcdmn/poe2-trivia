@@ -122,6 +122,7 @@ out vec2 vL;            // px along (dir, normal)
 out vec2 vWorld;        // CSS px
 flat out vec3 vCol;
 flat out vec4 vP;       // shape, size, half length, page light
+flat out vec2 vLight;   // where its light comes from, in its own frame (along dir, normal)
 void main() {
   float shape = iB.w;
   float size = iB.x;
@@ -146,18 +147,27 @@ void main() {
   } else if (shape < 2.5) {     // ember
     ext = vec2(4.0 * w);
     energy *= energy;
-  } else if (shape < 3.5) {     // shard
+  } else if (shape < 3.5) {     // shard: the stretch slot carries its seed
+    halfLen = iB.y;
     ext = vec2(2.2 * w);
   } else if (shape < 4.5) {     // glint
     ext = vec2(4.5 * w);
   } else if (shape < 5.5) {     // mote
     ext = vec2(1.25 * w);
     energy *= energy;
-  } else {                      // coin: the stretch slot carries its flip
+  } else if (shape < 6.5) {     // coin: the stretch slot carries its flip
     halfLen = iB.y;
     ext = vec2(2.0 * w);
+  } else {                      // smoke: the stretch slot carries its seed and how far through its life it is
+    halfLen = iB.y;
+    ext = vec2(2.6 * w);
+    energy *= energy;
   }
   vec2 nrm = vec2(-dir.y, dir.x);
+  // A shard is lit from above and a little left, as the page is; smoke from
+  // behind where it's going (the fire it came out of), or from below.
+  vec2 light = shape < 3.5 ? vec2(-0.5, -0.866) : speed > 1.0 ? -vel / speed : vec2(0.0, 1.0);
+  vLight = vec2(dot(light, dir), dot(light, nrm));
   vL = aCorner * ext;
   vec2 p = iA.xy + dir * vL.x + nrm * vL.y;
   vWorld = p;
@@ -173,9 +183,17 @@ in vec2 vL;
 in vec2 vWorld;
 flat in vec3 vCol;
 flat in vec4 vP;
+flat in vec2 vLight;
 out vec4 o;
+${NOISE}
 ${BEHIND_DIALOG}
 ${COVER}
+// A shard's corner i (of five, the sixth the first again), jittered by its seed.
+vec2 shardCorner(float seed, float i) {
+  float k = mod(i, 5.0);
+  float a = (i + 0.7 * (hash12(vec2(seed, k)) - 0.5)) * 1.2566371;
+  return vec2(cos(a), sin(a)) * (0.62 + 0.38 * hash12(vec2(k, seed + 7.3)));
+}
 void main() {
   float shape = vP.x;
   float w = vP.y;
@@ -193,10 +211,43 @@ void main() {
     float r2 = dot(vL, vL) / (w * w);
     v = exp(-r2 * 7.0) * 1.4 + 0.22 * exp(-r2 * 0.45);
   } else if (shape < 3.5) {
-    vec2 q = abs(vL) / vec2(w, w * 0.42);
-    float d = q.x + q.y;
-    float body = 1.0 - smoothstep(0.82, 1.0, d);
-    v = body * (0.3 + 0.9 * smoothstep(0.45, 0.95, d)) + 0.25 * exp(-d * d * 1.5);
+    // A sliver with five corners jittered by its seed, so no two break alike,
+    // cut in three facets by ridges that meet off its middle, each tilted its
+    // own way. As it spins the light catches one facet, then the next, and
+    // one turned full to the light flashes a glint.
+    float seed = vP.z;
+    vec2 q = vL / vec2(w, w * 0.45);
+    float d = -1e3;
+    vec2 prev = shardCorner(seed, 0.0);
+    for (int i = 1; i <= 5; i++) {
+      vec2 next = shardCorner(seed, float(i));
+      vec2 e = next - prev;
+      d = max(d, dot(q - prev, normalize(vec2(e.y, -e.x))));
+      prev = next;
+    }
+    float body = clamp(0.5 - d / max(fwidth(d), 1e-4), 0.0, 1.0);
+    vec3 L = normalize(vec3(vLight * 0.8, 0.6));
+    float d1 = 1e3, d2 = 1e3, s1 = 0.0, s2 = 0.0, best = 0.0;
+    vec2 bestAt = vec2(0.0);
+    for (int j = 0; j < 3; j++) {
+      float fj = float(j);
+      float b = seed + fj * 2.0944 + 1.2 * (hash12(vec2(seed + 3.1, fj)) - 0.5);
+      vec2 f = vec2(cos(b), sin(b)) * 0.42;
+      float tb = b + 0.9 * (hash12(vec2(fj, seed + 8.7)) - 0.5);
+      float s = max(dot(normalize(vec3(cos(tb) * 0.8, sin(tb) * 0.8, 0.6)), L), 0.0);
+      float dd = length(q - f);
+      if (dd < d1) { d2 = d1; s2 = s1; d1 = dd; s1 = s; } else if (dd < d2) { d2 = dd; s2 = s; }
+      if (s > best) { best = s; bestAt = f; }
+    }
+    // The ridge between two facets catches a little of both.
+    float apart = d2 - d1;
+    float k = smoothstep(0.0, 1.5 * max(fwidth(apart), 1e-4), apart);
+    float shade = mix(0.5 * (s1 + s2), s1, k);
+    float rim = smoothstep(-0.25, 0.0, d);
+    v = body * (0.16 + 1.2 * shade * shade + 0.3 * rim + 0.25 * (1.0 - k)) + 0.18 * exp(-dot(q, q) * 1.2);
+    vec2 g = vL / w - bestAt * vec2(1.0, 0.45);
+    float star = exp(-g.y * g.y * 70.0) * exp(-abs(g.x) * 2.4) + exp(-g.x * g.x * 70.0) * exp(-abs(g.y) * 2.4);
+    v += pow(best, 40.0) * (star + 1.5 * exp(-dot(g, g) * 8.0)) * (1.0 - smoothstep(1.3, 2.1, length(vL) / w)) * 1.3;
   } else if (shape < 4.5) {
     vec2 a = abs(vL) / w;
     float core = exp(-dot(a, a) * 4.0);
@@ -206,7 +257,7 @@ void main() {
   } else if (shape < 5.5) {
     float r = length(vL) / w;
     v = (1.0 - smoothstep(0.86, 1.0, r)) * (0.55 + 0.45 * smoothstep(0.3, 1.0, r));
-  } else {
+  } else if (shape < 6.5) {
     // A coin turning end over end: a disc squashed across by its flip, with
     // a raised rim and an inner ring, darker edge-on, and a star glint as it
     // turns to face you.
@@ -224,6 +275,20 @@ void main() {
     vec2 a = abs(vL) / w;
     float star = exp(-a.y * a.y * 120.0) * exp(-a.x * 1.1) + exp(-a.x * a.x * 120.0) * exp(-a.y * 1.1);
     v += facing * star * 1.3;
+  } else {
+    // Smoke: billows of noise over a soft round body, torn where they thin
+    // out. The noise is laid over it smaller as it spreads, so its lobes
+    // swell with it rather than new ones sliding in, and it rolls a little
+    // as it goes; lit on the side its light comes from.
+    float seed = floor(vP.z);
+    float t = fract(vP.z);
+    vec2 q = vL / w;
+    vec2 nq = q * (0.8 - 0.25 * t) + vec2(0.35, -0.5) * t + vec2(hash12(vec2(seed, 1.7)), hash12(vec2(4.1, seed))) * 61.0;
+    float n = fbm(nq);
+    float body = exp(-dot(q, q) * 0.55);
+    float dens = smoothstep(0.0, 0.55, body - (0.62 - n) * 1.2);
+    float lit = 0.45 + 0.55 * clamp(0.4 + 0.45 * dot(q, vLight) + 0.8 * (n - 0.44), 0.0, 1.0);
+    v = dens * lit * (0.55 + 0.45 * n) * 0.85;
   }
   float page = mod(vP.w, 2.0);
   float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);

@@ -43,7 +43,13 @@ export type Step =
   /** The room turns this device out, as the host's word for it would (session.labFail). */
   | { fail: 'kicked' | 'closed' | 'replaced' }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
-  | { crash: 1 | 2 };
+  | { crash: 1 | 2 }
+  /**
+   * The room moves on to `state` (the scene's game played on: dynamite going
+   * off, an answer given), its clock standing still at `at` (host clock, ms),
+   * as the host would send it: to see what happens as it does.
+   */
+  | { then: GameState; at?: number };
 
 /** Everything a seat's device holds for the scene, beyond the room's state. */
 export interface Built {

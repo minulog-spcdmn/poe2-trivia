@@ -218,7 +218,7 @@ export function glints(at: Anchor, o: { count?: number; color?: Vec3; size?: [nu
   }
 }
 
-/** Soft glow puffs (dust of light), mostly for impacts. */
+/** Puffs of lit dust or smoke, billowing as they spread (Shape.Smoke), mostly for impacts. */
 export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [number, number]; speed?: [number, number]; life?: [number, number]; area?: 'fill' | 'edge' | 'centre'; angle?: number; spread?: number } = {}) {
   if (!fxActive() || detached(at)) return;
   const b = boxOf(at);
@@ -238,8 +238,9 @@ export function puffs(at: Anchor, o: { count?: number; color?: Vec3; size?: [num
       sizeEnd: rand(14, 30),
       color: o.color ?? scale(C.ember, 0.18),
       drag: 3,
-      shape: Shape.Glow,
+      shape: Shape.Smoke,
       fadeIn: 0.1,
+      turbulence: 40,
     });
   }
 }

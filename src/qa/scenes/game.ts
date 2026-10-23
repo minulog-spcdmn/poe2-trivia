@@ -66,6 +66,19 @@ const asked = (v: Values): Partial<Settings> => {
 
 /** How far into a question its scene stands (ms). */
 const INTO = 3000;
+/** How long a scene played on from a question shows it before it moves on (ms). */
+const BLOW_AFTER = 1200;
+const BLOWS: Control = {
+  kind: 'choice',
+  key: 'blow',
+  label: 'What happens',
+  default: 'blast',
+  options: [
+    { value: 'blast', label: 'Dynamite goes off' },
+    { value: 'miss', label: 'A miss' },
+    { value: 'ward', label: 'A ward takes a miss' },
+  ],
+};
 
 function scene(key: string, group: string, label: string, seats: Seat[], play: (v: Values) => Table, more: Partial<Scene> = {}): Scene {
   return {
@@ -207,6 +220,28 @@ export function gameScenes(): Scene[] {
       const t = delveAlone().pick();
       return t.answer(null, false);
     }),
+    {
+      ...scene('delve-blow', 'Delve alone', 'Played on from a question: dynamite going off, a miss, or a ward taking it', [ALONE], delveAlone),
+      controls: [BLOWS],
+      states: [
+        { label: 'Dynamite goes off', values: {} },
+        { label: 'A miss costs a life', values: { blow: 'miss' } },
+        { label: 'A ward takes the miss', values: { blow: 'ward' } },
+      ],
+      build: (v = {}) => {
+        // Kalguur holds what the blow takes: a stick of dynamite, or a ward.
+        const blow = String(v.blow ?? 'blast');
+        const t = delveAlone();
+        const me = pid('Kalguur');
+        t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [me]: { wards: blow === 'ward' ? 1 : 0, flares: 0, dynamite: blow === 'blast' ? 1 : 0 } } } };
+        t.pick();
+        const shown = t.s;
+        const at = t.clock.now + INTO;
+        if (blow === 'blast') t.wait(INTO + BLOW_AFTER).act({ type: 'blast', askedAt: t.q.askedAt }, null);
+        else t.answer(null, false, INTO + BLOW_AFTER);
+        return { state: shown, act: t.room, at, steps: [{ wait: BLOW_AFTER }, { then: t.s, at: t.clock.now }] } satisfies Built;
+      },
+    },
     scene('delve-deep', 'Delve alone', 'Deep down', [ALONE], (v) => delveAlone().playTo((s) => s.round >= Number(v.depth ?? 30) && s.phase === 'choosing'), {
       controls: [{ kind: 'range', key: 'depth', label: 'Depth', min: 2, max: 120, default: 30 }],
     }),

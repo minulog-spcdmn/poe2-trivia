@@ -10,7 +10,7 @@ export const Shape = {
   Spark: 1,
   /** Hot core with a wide halo; flickers. */
   Ember: 2,
-  /** Diamond shard with bright edges. */
+  /** A shard of rock or crystal: an irregular sliver in three facets, glinting as one turns to the light. */
   Shard: 3,
   /** Four-point star glint. */
   Glint: 4,
@@ -18,6 +18,8 @@ export const Shape = {
   Mote: 5,
   /** A gold coin flipping end over end, glinting when it faces you. */
   Coin: 6,
+  /** A billow of smoke: noise over a soft body, its lobes swelling as it spreads, lit from where it came from. */
+  Smoke: 7,
 } as const;
 export type Shape = (typeof Shape)[keyof typeof Shape];
 
@@ -47,7 +49,7 @@ export type ParticleSpec = {
   flicker?: number;
   /** Fraction of the life spent fading in. */
   fadeIn?: number;
-  /** Wandering acceleration, px/s². */
+  /** Wandering acceleration, px/s²: how hard the air's own stir (flowAt) pushes it, so neighbours wander together. */
   turbulence?: number;
   /** Seconds before the particle appears. */
   delay?: number;
@@ -108,6 +110,36 @@ const F = {
 } as const;
 const STRIDE = 37;
 
+// The air's own stir, shared by everything turbulence moves (and the page's
+// smoke, lib/blastAway.ts), so neighbours drift together as smoke and ash do:
+// a few slow waves crossing the screen at odd angles, summed as a curl so it
+// neither gathers nor spreads what it carries, over a light wind veering
+// over seconds. About 1 at its strongest, on average.
+const WAVES = (
+  [
+    // direction (rad), wavelength (px), drift (rad/s), weight
+    [0.3, 420, 0.7, 0.85],
+    [1.9, 260, -1.1, 0.68],
+    [3.4, 170, 1.6, 0.55],
+    [4.7, 610, -0.45, 0.6],
+  ] as const
+).map(([a, len, drift, k]) => ({ dx: Math.cos(a), dy: Math.sin(a), f: (2 * Math.PI) / len, drift, k }));
+const flow: [number, number] = [0, 0];
+
+/** The air's stir at (x, y) (CSS px) at time `t` (s), as an acceleration per unit of turbulence. The array is reused: read it at once. */
+export function flowAt(x: number, y: number, t: number): readonly [number, number] {
+  let fx = 0.3 * Math.sin(t * 0.23);
+  let fy = 0.18 * Math.sin(t * 0.31 + 1);
+  for (const w of WAVES) {
+    const c = w.k * Math.cos((x * w.dx + y * w.dy) * w.f + t * w.drift);
+    fx += c * w.dy;
+    fy -= c * w.dx;
+  }
+  flow[0] = fx;
+  flow[1] = fy;
+  return flow;
+}
+
 /** How many moving elements seeking particles can follow at once (slots are reused in turn). */
 export const FOLLOW_SLOTS = 64;
 
@@ -119,6 +151,8 @@ export class ParticlePool {
   count = 0;
   /** Squared speed of the fastest particle drawn in the last step, (px/s)². */
   fastest = 0;
+  /** Seconds stepped: the air's stir moves on with it (flowAt). */
+  private time = 0;
   private d: Float32Array;
   readonly instances: Float32Array;
   /**
@@ -206,6 +240,7 @@ export class ParticlePool {
     const out = this.instances;
     let n = 0;
     let fastest = 0;
+    const time = (this.time += dt);
     for (let i = 0; i < this.count; ) {
       const o = i * STRIDE;
       const age = d[o + F.age] + dt;
@@ -235,10 +270,9 @@ export class ParticlePool {
       let vy = d[o + F.vy];
       const turb = d[o + F.turb];
       if (turb) {
-        const x = d[o + F.x];
-        const y = d[o + F.y];
-        vx += turb * Math.sin(y * 0.021 + age * 2.3 + seed) * dt;
-        vy += turb * Math.cos(x * 0.017 + age * 1.9 + seed * 1.3) * dt;
+        const f = flowAt(d[o + F.x], d[o + F.y], time);
+        vx += turb * f[0] * dt;
+        vy += turb * f[1] * dt;
       }
       vy += d[o + F.grav] * dt;
       const drag = d[o + F.drag];
@@ -270,10 +304,13 @@ export class ParticlePool {
       out[q + 2] = vx;
       out[q + 3] = vy;
       out[q + 4] = size;
-      // Coins pass their flip (the cosine of their turn) where streaks pass their length.
-      out[q + 5] = d[o + F.shape] === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : d[o + F.stretch];
+      // Coins pass their flip (the cosine of their turn) where streaks pass their length, shards their seed, and
+      // smoke its seed and how far through its life it is (the whole and the fraction).
+      const shape = d[o + F.shape];
+      out[q + 5] =
+        shape === Shape.Coin ? Math.cos(age * (4 + (seed % 7)) + seed) : shape === Shape.Shard ? seed : shape === Shape.Smoke ? Math.floor(seed) + Math.min(t, 0.999) : d[o + F.stretch];
       out[q + 6] = rot;
-      out[q + 7] = d[o + F.shape];
+      out[q + 7] = shape;
       out[q + 8] = (d[o + F.r0] + (d[o + F.r1] - d[o + F.r0]) * ct) * env;
       out[q + 9] = (d[o + F.g0] + (d[o + F.g1] - d[o + F.g0]) * ct) * env;
       out[q + 10] = (d[o + F.b0] + (d[o + F.b1] - d[o + F.b0]) * ct) * env;
