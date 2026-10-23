@@ -335,7 +335,7 @@
 
     <!-- Under both columns, the width of the page: the twelve in a row. -->
     {#if !over}
-      <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 260 })}>
+      <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 110 })}>
         <header>
           <h2>Class sigils</h2>
           <span class="count">{unlocked} / {CLASSES.length}</span>

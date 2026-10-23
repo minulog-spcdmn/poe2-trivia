@@ -215,9 +215,9 @@
   );
 
   /** How long the outgoing screen takes to go (the .screen transition below). */
-  const SCREEN_OUT_MS = 200;
+  const SCREEN_OUT_MS = 130;
   /** And the incoming one to come in. */
-  const SCREEN_IN_MS = 560;
+  const SCREEN_IN_MS = 380;
   /**
    * Screens swap as a step through a doorway: going deeper (into a page, a
    * room, a game, its end) the screen there passes by, swelling a little
@@ -277,8 +277,8 @@
     hold(node, true);
     // Held still (lib/motion.svelte.ts): a plain fade, no light.
     if (motion.still) return fade(node, { duration: 120 });
-    const grow = back ? -0.03 : 0.035;
-    light({ x: innerWidth / 2, y: innerHeight * 0.45 }, { color: [1, 0.64, 0.3], radius: Math.hypot(innerWidth, innerHeight) * 0.3, intensity: 0.42, attack: 0.36, hold: 0.06, decay: 1.2 });
+    const grow = back ? -0.02 : 0.025;
+    light({ x: innerWidth / 2, y: innerHeight * 0.45 }, { color: [1, 0.64, 0.3], radius: Math.hypot(innerWidth, innerHeight) * 0.3, intensity: 0.2, attack: 0.24, hold: 0.04, decay: 0.9 });
     return { duration: SCREEN_OUT_MS, easing: cubicIn, css: (t, u) => `opacity: ${t}; transform: scale(${1 + grow * u}); transform-origin: 50% 45%` };
   }
   function screenIn(node: HTMLElement): TransitionConfig {
@@ -286,10 +286,10 @@
     if (!swapped || shown === null) return {};
     hold(node, true);
     if (motion.still) return fade(node, { duration: 200 });
-    const from = back ? 0.025 : -0.03;
+    const from = back ? 0.02 : -0.02;
     return {
       duration: SCREEN_IN_MS,
-      css: (t, u) => `opacity: ${cubicOut(Math.min(1, t * 1.6))}; transform: scale(${1 + from * (1 - quintOut(t))}); transform-origin: 50% 45%`,
+      css: (t, u) => `opacity: ${cubicOut(Math.min(1, t * 2))}; transform: scale(${1 + from * (1 - quintOut(t))}); transform-origin: 50% 45%`,
     };
   }
   /**

@@ -592,15 +592,15 @@
   <div class="intro">
     <div class="title">
       <GameTitle />
-      {#if BETA || LOCAL}<span class="beta" in:fade|global={calm({ duration: 600, delay: 100 })}>{BETA ? 'Beta' : 'Local'}</span>{/if}
+      {#if BETA || LOCAL}<span class="beta" in:fade|global={calm({ duration: 600 })}>{BETA ? 'Beta' : 'Local'}</span>{/if}
     </div>
-    <p class="kicker" in:fade|global={calm({ duration: 700, delay: 350 })}>Unique item trivia</p>
-    <p class="blurb" in:fade|global={calm({ duration: 700, delay: 450 })}>
+    <p class="kicker" in:fade|global={calm({ duration: 700, delay: 200 })}>Unique item trivia</p>
+    <p class="blurb" in:fade|global={calm({ duration: 700, delay: 300 })}>
       Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
     </p>
 
     <!-- The greeting: the name is asked once, then greeted (and changed here). -->
-    <div class="greeting" in:fade|global={calm({ duration: 600, delay: 500 })}>
+    <div class="greeting" in:fade|global={calm({ duration: 600, delay: 350 })}>
       {#if renaming}
         <form class="row" onsubmit={saveRename}>
           <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself. -->
@@ -644,26 +644,26 @@
       {#if !compact.current}<MenuCursor at={cursor} {lit} />{/if}
       {#if invite && compact.current}
         <!-- An invite in the actions layout: its join as Join's row is set, with the name, and the way to everything else as the pair's entries are. -->
-        <div class="act" in:fly|global={calm({ y: 12, duration: 500, delay: 450 })}>
+        <div class="act" in:fly|global={calm({ y: 12, duration: 500, delay: 300 })}>
           <div class="act-top">
             <h2 class="act-head" id="invite-label">{inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}</h2>
           </div>
           {@render inviteJoin(true)}
         </div>
-        <div class="pair" class:dimmed={connecting} inert={connecting} in:fly|global={calm({ y: 12, duration: 500, delay: 520 })}>
+        <div class="pair" class:dimmed={connecting} inert={connecting} in:fly|global={calm({ y: 12, duration: 500, delay: 370 })}>
           <button class="pair-pick" onclick={leaveInvite}>
             <span class="pair-name">Something else<span class="go"><DrawnMark shape="chevron" /></span></span>
             <span class="pair-line">Start a new game, or open the Codex or the settings.</span>
           </button>
         </div>
       {:else if invite}
-        <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly|global={calm({ y: 12, duration: 500, delay: 450 })}>
+        <div class="entry" role="presentation" class:cur={cursor === 0} onpointerenter={(ev) => hover(ev, 0)} onpointerleave={leave} in:fly|global={calm({ y: 12, duration: 500, delay: 300 })}>
           <button class="pick" bind:this={entryEls[0]} onclick={() => inviteField?.focus()} onfocus={() => (cursor = 0)}>
             {inviteHost ? `Join ${inviteHost}’s room` : 'Join the room'}
           </button>
           {@render inviteJoin(false)}
         </div>
-        <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly|global={calm({ y: 12, duration: 500, delay: 520 })}>
+        <div class="entry" role="presentation" class:cur={cursor === 1} class:dimmed={connecting} inert={connecting} onpointerenter={(ev) => hover(ev, 1)} onpointerleave={leave} in:fly|global={calm({ y: 12, duration: 500, delay: 370 })}>
           <button class="pick" bind:this={entryEls[1]} onclick={leaveInvite} onfocus={() => (cursor = 1)}>Something else</button>
           <div class="under"><p class="about">Start a new game, or open the Codex or the settings.</p></div>
         </div>
@@ -671,7 +671,7 @@
         <!-- New game: the page's one big button, and its gold one until Join's code is whole
              (then Join holds the gold and this goes plain), unless Create's own row is the one open.
              On a first visit its row asks the name. -->
-        <div class="act" bind:this={boxes[0]} class:dimmed={connecting && busyEntry !== 'create'} inert={connecting && busyEntry !== 'create'} in:fly|global={calm({ y: 12, duration: 500, delay: 450 })}>
+        <div class="act" bind:this={boxes[0]} class:dimmed={connecting && busyEntry !== 'create'} inert={connecting && busyEntry !== 'create'} in:fly|global={calm({ y: 12, duration: 500, delay: 300 })}>
           <!-- On a first visit the button gives way to the name and its own Create, in its place. -->
           <div class="under">
             {#if open === 'create' && !connecting}
@@ -692,7 +692,7 @@
           </div>
         </div>
         <!-- Join a room: the code field is always out; a first visit's name joins it when it's needed. -->
-        <div class="act" bind:this={boxes[1]} class:dimmed={connecting && busyEntry !== 'join'} inert={connecting && busyEntry !== 'join'} in:fly|global={calm({ y: 12, duration: 500, delay: 520 })}>
+        <div class="act" bind:this={boxes[1]} class:dimmed={connecting && busyEntry !== 'join'} inert={connecting && busyEntry !== 'join'} in:fly|global={calm({ y: 12, duration: 500, delay: 370 })}>
           <div class="act-top">
             <h2 class="act-head" id="join-label">Join a room</h2>
             <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
@@ -722,7 +722,7 @@
           </div>
         </div>
         <!-- The Codex and Settings: set as the list's entries are, side by side. -->
-        <div class="pair two" class:dimmed={connecting} inert={connecting} in:fly|global={calm({ y: 12, duration: 500, delay: 590 })}>
+        <div class="pair two" class:dimmed={connecting} inert={connecting} in:fly|global={calm({ y: 12, duration: 500, delay: 440 })}>
           {#each PAIR as { e, name } (e)}
             <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => warmCodex(e)} onfocus={() => warmCodex(e)}>
               <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
@@ -743,7 +743,7 @@
             inert={connecting && !isBusy}
             onpointerenter={(ev) => hover(ev, i)}
             onpointerleave={leave}
-            in:fly|global={calm({ y: 12, duration: 500, delay: 450 + i * 70 })}
+            in:fly|global={calm({ y: 12, duration: 500, delay: 300 + i * 70 })}
           >
             <button class="pick" bind:this={entryEls[i]} onclick={() => choose(e)} onfocus={() => (cursor = i)} aria-expanded={e === 'create' || e === 'join' ? isOpen : undefined}>
               {MENU[e]}
@@ -775,7 +775,7 @@
     </nav>
   </div>
 
-  <div class="today" in:fade|global={calm({ duration: 900, delay: 300 })}>
+  <div class="today" in:fade|global={calm({ duration: 900, delay: 150 })}>
     {#if invite}
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
     {:else}
@@ -784,7 +784,7 @@
   </div>
 
   {#if !invite}
-    <div class="rooms" class:dimmed={connecting && busyEntry !== 'rooms'} inert={connecting && busyEntry !== 'rooms'} in:fly|global={calm({ y: 20, duration: 600, delay: 600 })}>
+    <div class="rooms" class:dimmed={connecting && busyEntry !== 'rooms'} inert={connecting && busyEntry !== 'rooms'} in:fly|global={calm({ y: 20, duration: 600, delay: 450 })}>
       <OpenRooms onJoin={joinListed} disabled={connecting} joining={busyEntry === 'rooms' ? session.code : null} bind:count={roomCount} bind:seats={roomSeats} />
     </div>
   {/if}

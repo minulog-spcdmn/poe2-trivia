@@ -759,8 +759,9 @@
   .page > :global(:not(.delve-page)),
   .page > :global(.delve-page > *),
   .end {
+    --rise-delay: calc(var(--lead, 0s) + var(--n, 0) * 0.08s);
     animation: codex-rise 0.65s var(--ease-out) backwards;
-    animation-delay: calc(var(--lead, 0s) + var(--n, 0) * 0.08s);
+    animation-delay: var(--rise-delay);
   }
   .hero > :nth-child(2) {
     --n: 1;
