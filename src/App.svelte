@@ -626,8 +626,11 @@
     <!-- While the last screen goes (shown null), an empty one stands in, coming and going at once: the next is made
          by the {#key} itself, not by a block made with it, so its own (local) transitions play. -->
     {#key shown}
+      <!-- The backdrop follows the swap (data-bs-follow, lib/backdropShadow.ts): the fills it draws stay with it,
+           rather than going to CSS and back, a jump in how they look as the screen starts to go or settles. -->
       <div
         class="screen"
+        data-bs-follow
         in:screenIn
         out:screenOut
         onintroend={(e) => {
