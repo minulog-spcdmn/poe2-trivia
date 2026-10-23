@@ -1,28 +1,53 @@
 // Delve: dynamite blasts the question away for a new one at the same depth,
 // the explosion bursting in from the screen edge the new question comes
 // from (Question.blast.side). The page's part of it, over everything but the
-// effects overlay: a hard flash and a fireball from that edge, a shockwave
-// front running across, rock chips and sparks flying over, the old question
-// broken into shards flung to the far side, the screen shaking, and smoke
-// rolling in for the new question to come through as it clears. The fire
-// and light are the effects overlay's (fx/blast.ts edgeBlast).
+// effects overlay: the old question broken into shards flung to the far
+// side, the screen shaking, and smoke rolling in for the new question to
+// come through as it clears (lib/blastSmoke.ts, which darkens what it rolls
+// over, as the overlay's light can't). The fire and light, the shockwave,
+// the sparks and the rock chips are the effects overlay's (fx/blast.ts
+// edgeBlast); without it, the page draws them itself, plainer.
 //
-// Only transform and opacity move, each piece painted once: one burst that
-// a phone composites without a hitch.
+// The question's shards move by transform and opacity alone, each painted
+// once; the smoke is one canvas.
 
+import dither from '../assets/dither.png';
 import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
 import { unzoomRect, zoomOf } from './stage';
+import { BLAST_IMPACT_MS } from './blastTiming';
 
-/** When the shockwave reaches the question (ms after it goes off): its shards fly, the screen shakes, the scene swings. */
-export const BLAST_IMPACT_MS = 110;
-/** When the new question starts coming in from the blast's side (ms after it goes off), and how long it takes. */
-export const BLAST_IN_DELAY_MS = 420;
-export const BLAST_IN_MS = 680;
+export { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS } from './blastTiming';
 /** How long the whole of it lasts (ms), the last of the smoke included. */
 const BLAST_MS = 2300;
 
+/**
+ * The page's smoke (lib/blastSmoke.ts): not loaded with the game (this file
+ * is), but as a run nears dynamite (Game.svelte), or at the latest by the blast.
+ */
+let smoke: Promise<typeof import('./blastSmoke')> | null = null;
+const loadSmoke = () =>
+  (smoke ??= import('./blastSmoke').catch((err) => {
+    smoke = null;
+    throw err;
+  }));
+/** Gets the blast's smoke ready, while the page is idle: as a run nears dynamite (Game.svelte). */
+export function prepareBlast() {
+  loadSmoke().then(
+    (m) => m.prepareBlastSmoke(),
+    () => {},
+  );
+}
+
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+/**
+ * A soft light's gradient over the page, dithered under it (app.css,
+ * --dither, imported: an inline style can't resolve the variable's url), so
+ * its opacity rounds up or down from pixel to pixel instead of banding. Its
+ * element wants image-rendering: pixelated, and a mask fading out with the
+ * gradient, so the dither goes where the light does and no further.
+ */
+const glare = (gradient: string) => `${gradient}, url(${dither})`;
 const px = (n: number) => `${n.toFixed(1)}px`;
 
 type Pt = { x: number; y: number };
@@ -246,11 +271,11 @@ export function blastAway({ node, side, mine }: BlastAway) {
     ? { rect: unzoomRect(bigParent.getBoundingClientRect(), Z), static: getComputedStyle(bigParent).position === 'static', border: [bigParent.clientLeft, bigParent.clientTop] as [number, number] }
     : null;
   const phone = W < 600;
+  const fx = fxActive();
   // The blast's height: the question's middle, as far as it is on screen.
   const top = Math.max(0, rect.top);
   const bottom = Math.min(H, rect.bottom);
   const y = bottom > top ? Math.min(top + (bottom - top) * 0.45, top + H * 0.35) : H * 0.4;
-  const edgeX = side > 0 ? W : 0;
   const inward = -side;
 
   shardStyle();
@@ -301,7 +326,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
       const near = 1 - Math.min(1, Math.abs(cx - blastX) / W);
       const small = Math.min(1, 60000 / Math.max(1, r.width * r.height));
       const reach = W * rand(0.8, 1.3) * (0.7 + 0.3 * near);
-      const fx = inward * reach;
+      const dx = inward * reach;
       const fy = ((cy - y) / H) * rand(160, 420) + rand(40, 220);
       const spin = (cy >= y ? 1 : -1) * inward * rand(12, 34) * (1 + small * 1.4);
       // The nearer the blast, the sooner it goes.
@@ -313,7 +338,7 @@ export function blastAway({ node, side, mine }: BlastAway) {
           { transform: 'translate(0, 0) rotate(0deg) scale(1)', opacity: 1 },
           { transform: `translate(${px(inward * 10)}, ${px(-3)}) rotate(${(spin * 0.08).toFixed(2)}deg) scale(1.02)`, opacity: 1, offset: 0.05 },
           { opacity: 0.95, offset: 0.4 },
-          { transform: `translate(${px(fx)}, ${px(fy)}) rotate(${spin.toFixed(1)}deg) scale(0.85)`, opacity: 0 },
+          { transform: `translate(${px(dx)}, ${px(fy)}) rotate(${spin.toFixed(1)}deg) scale(0.85)`, opacity: 0 },
         ],
         { delay, duration: rand(620, 880), easing: 'cubic-bezier(0.12, 0.7, 0.3, 1)' },
       );
@@ -322,148 +347,50 @@ export function blastAway({ node, side, mine }: BlastAway) {
     setTimeout(() => {
       for (const el of hollow) Object.assign(el.style, { background: 'none', borderColor: 'transparent', boxShadow: 'none', outlineColor: 'transparent' });
     }, BLAST_IMPACT_MS);
-    // The blast's heat over it as the shockwave hits, from the near side.
-    const heat = piece(layer, {
+    // Without the effects overlay, the blast's heat over it as the shockwave hits, from the near side.
+    const heat = !fx && piece(layer, {
       left: px(rect.left),
       top: px(Math.max(0, rect.top)),
       width: px(w),
       height: px(Math.min(rect.bottom, H) - Math.max(0, rect.top)),
-      background: `radial-gradient(ellipse farthest-side at ${side > 0 ? '100%' : '0%'} 50%, rgba(255, 226, 180, 0.7), rgba(255, 160, 75, 0.32) 35%, rgba(200, 90, 40, 0.08) 65%, rgba(0, 0, 0, 0) 92%)`,
+      background: glare(`radial-gradient(ellipse farthest-side at ${side > 0 ? '100%' : '0%'} 50%, rgba(255, 226, 180, 0.7), rgba(255, 160, 75, 0.32) 35%, rgba(200, 90, 40, 0.08) 65%, rgba(0, 0, 0, 0) 92%)`),
+      maskImage: `radial-gradient(ellipse farthest-side at ${side > 0 ? '100%' : '0%'} 50%, #000 65%, transparent 92%)`,
+      imageRendering: 'pixelated',
       opacity: '0',
     });
-    anim(heat, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }], { delay: BLAST_IMPACT_MS - 60, duration: 360, easing: 'ease-out' });
+    if (heat) anim(heat, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }], { delay: BLAST_IMPACT_MS - 60, duration: 360, easing: 'ease-out' });
   }
 
   // ---- the explosion, from the edge ----
   const S = Math.min(Math.max(Math.min(W, H) * 1.05, 380), 980);
-  // The hard flash, washing in from that side.
-  const flash = piece(layer, {
-    inset: '0',
-    width: '100%',
-    height: '100%',
-    background: `linear-gradient(${side > 0 ? 'to left' : 'to right'}, rgba(255, 244, 222, 0.95), rgba(255, 200, 120, 0.75) 16%, rgba(235, 130, 55, 0.4) 40%, rgba(120, 50, 20, 0) 78%)`,
-    opacity: '0',
-  });
-  anim(flash, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 0.5, offset: 0.35 }, { opacity: 0 }], { duration: 560, easing: 'ease-out' });
-  // The shockwave: the front of a ring far bigger than the screen, running across from the edge.
-  const R = Math.hypot(W, H) * 1.1;
-  const ring = piece(layer, {
-    left: px(edgeX - R),
-    top: px(y - R),
-    width: px(2 * R),
-    height: px(2 * R),
-    borderRadius: '50%',
-    boxShadow: '0 0 0 2px rgba(255, 238, 205, 0.85), 0 0 26px 8px rgba(255, 170, 80, 0.5), inset 0 0 40px 10px rgba(255, 190, 110, 0.4)',
-  });
-  anim(ring, [{ transform: 'scale(0.02)', opacity: 1 }, { opacity: 0.85, offset: 0.4 }, { transform: 'scale(1)', opacity: 0 }], {
-    duration: 760,
-    easing: 'cubic-bezier(0.15, 0.6, 0.35, 1)',
-  });
-  // The fireball, billowing in from off screen.
-  for (let i = 0; i < 3; i++) {
-    const size = S * rand(0.9, 1.2) * (i ? 0.8 : 1);
-    const oy = i ? rand(-0.32, 0.32) * size : 0;
-    const ball = piece(layer, {
-      left: px(edgeX - size / 2),
-      top: px(y + oy - size / 2),
-      width: px(size),
-      height: px(size),
-      borderRadius: '50%',
-      background:
-        'radial-gradient(circle, rgba(255, 249, 228, 1) 0%, rgba(255, 218, 140, 0.95) 15%, rgba(255, 155, 62, 0.8) 33%, rgba(196, 74, 26, 0.45) 51%, rgba(90, 32, 14, 0) 68%)',
+  if (!fx) {
+    // Without the effects overlay, the hard flash, washing in from that side.
+    const flash = piece(layer, {
+      inset: '0',
+      width: '100%',
+      height: '100%',
+      background: glare(`linear-gradient(${side > 0 ? 'to left' : 'to right'}, rgba(255, 244, 222, 0.95), rgba(255, 200, 120, 0.75) 16%, rgba(235, 130, 55, 0.4) 40%, rgba(120, 50, 20, 0) 78%)`),
+      maskImage: `linear-gradient(${side > 0 ? 'to left' : 'to right'}, #000 40%, transparent 78%)`,
+      imageRendering: 'pixelated',
       opacity: '0',
     });
-    const go = inward * size * rand(0.28, 0.5);
-    anim(
-      ball,
-      [
-        { transform: `translate(${px(-inward * size * 0.22)}, 0) scale(0.25)`, opacity: 0 },
-        { opacity: 1, offset: 0.12 },
-        { opacity: 0.85, offset: 0.4 },
-        { transform: `translate(${px(go)}, ${px(-size * rand(0.04, 0.14))}) scale(${rand(1.05, 1.3).toFixed(2)})`, opacity: 0 },
-      ],
-      { delay: i * 45, duration: rand(620, 820), easing: 'cubic-bezier(0.2, 0.75, 0.3, 1)' },
-    );
+    anim(flash, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 0.5, offset: 0.35 }, { opacity: 0 }], { duration: 560, easing: 'ease-out' });
   }
-  // Rock chips and sparks flying across.
-  for (let i = 0; i < (phone ? 10 : 16); i++) {
-    const size = rand(5, phone ? 11 : 14);
-    const pts = Array.from({ length: 5 }, (_, k) => {
-      const a = (k / 5) * Math.PI * 2 + rand(-0.4, 0.4);
-      const r = rand(0.55, 1) * 50;
-      return `${(50 + Math.cos(a) * r).toFixed(0)}% ${(50 + Math.sin(a) * r).toFixed(0)}%`;
-    });
-    const chip = piece(layer, {
-      left: px(edgeX - size / 2),
-      top: px(y + rand(-0.25, 0.25) * S - size / 2),
-      width: px(size),
-      height: px(size),
-      background: Math.random() < 0.3 ? 'linear-gradient(135deg, #ffd9a0, #e2793a 55%, #5a2a14)' : 'linear-gradient(135deg, #8a6c52, #3b2b20 60%, #1c140f)',
-      clipPath: `polygon(${pts.join(',')})`,
-    });
-    const dist = W * rand(0.6, 1.25);
-    const lift = rand(-0.45, 0.25) * H * 0.4;
-    const turn = rand(-540, 540);
-    anim(
-      chip,
-      [
-        { transform: 'translate(0, 0) rotate(0deg)', opacity: 1 },
-        { transform: `translate(${px(inward * dist * 0.6)}, ${px(lift)}) rotate(${(turn * 0.6).toFixed(0)}deg)`, opacity: 1, offset: 0.55 },
-        { transform: `translate(${px(inward * dist)}, ${px(lift + rand(120, 320))}) rotate(${turn.toFixed(0)}deg)`, opacity: 0 },
-      ],
-      { delay: rand(0, 70), duration: rand(700, 1100), easing: 'cubic-bezier(0.1, 0.6, 0.4, 1)' },
-    );
-  }
-  for (let i = 0; i < (phone ? 10 : 16); i++) {
-    const a = (side > 0 ? Math.PI : 0) + rand(-0.45, 0.45);
-    const len = rand(40, 110);
-    const streak = piece(layer, {
-      left: px(edgeX),
-      top: px(y + rand(-0.2, 0.2) * S),
-      width: px(len),
-      height: '2px',
-      borderRadius: '1px',
-      transformOrigin: '0 50%',
-      background: 'linear-gradient(to right, rgba(255, 150, 60, 0), rgba(255, 190, 100, 0.85) 60%, rgba(255, 248, 225, 1))',
-    });
-    const deg = ((a * 180) / Math.PI).toFixed(1);
-    const dist = W * rand(0.45, 1.1);
-    anim(streak, [{ transform: `rotate(${deg}deg) translateX(0)`, opacity: 1 }, { transform: `rotate(${deg}deg) translateX(${px(dist)})`, opacity: 0 }], {
-      delay: rand(0, 90),
-      duration: rand(320, 560),
-      easing: 'cubic-bezier(0.2, 0.6, 0.4, 1)',
-    });
-  }
-  // Smoke rolling in after it, for the new question to come through as it clears.
-  for (let i = 0; i < (phone ? 8 : 11); i++) {
-    const size = S * rand(0.4, 0.8);
-    const puff = piece(layer, {
-      left: px(edgeX - size / 2),
-      top: px(y + rand(-0.55, 0.55) * Math.min(H * 0.45, S * 0.6) - size / 2),
-      width: px(size),
-      height: px(size),
-      borderRadius: '50%',
-      background:
-        i % 3 === 0
-          ? 'radial-gradient(circle, rgba(128, 92, 64, 0.62) 0%, rgba(100, 74, 54, 0.42) 32%, rgba(70, 52, 40, 0.18) 52%, rgba(40, 30, 23, 0) 70%)'
-          : 'radial-gradient(circle, rgba(92, 76, 64, 0.62) 0%, rgba(76, 63, 53, 0.44) 30%, rgba(56, 46, 39, 0.2) 52%, rgba(36, 29, 24, 0) 70%)',
-      opacity: '0',
-    });
-    const go = inward * W * rand(0.3, 0.75);
-    anim(
-      puff,
-      [
-        { transform: `translate(${px(-inward * size * 0.15)}, 0) scale(0.3)`, opacity: 0 },
-        { opacity: 0.85, offset: 0.14 },
-        { opacity: 0.5, offset: 0.5 },
-        { transform: `translate(${px(go)}, ${px(rand(-90, 30))}) scale(${rand(1.4, 2).toFixed(2)})`, opacity: 0 },
-      ],
-      { delay: rand(50, 200), duration: rand(1300, 1900), easing: 'cubic-bezier(0.15, 0.75, 0.3, 1)' },
-    );
-  }
+  // The smoke rolling in after it (and, without the overlay, the fire, the
+  // shockwave, the chips and the sparks), drawn as they move: lib/blastSmoke.ts.
+  // (Should it load late, it catches up; should it fail to, the layer goes
+  // when the blast would have ended.)
+  const start = performance.now();
+  loadSmoke().then(
+    (m) => m.blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, start, done: () => layer.remove() }),
+    (err) => {
+      console.error("The blast's smoke couldn't load", err);
+      setTimeout(() => layer.remove(), Math.max(0, BLAST_MS - (performance.now() - start)));
+    },
+  );
 
   // The fire and light, and the screen shaking as the shockwave hits (the effects overlay's).
-  if (fxActive()) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine });
+  if (fx) edgeBlast({ side, y: y * Z, target: onScreen, impact: BLAST_IMPACT_MS / 1000, mine, size: S * Z });
   else {
     // Without it, the page shakes by itself (the shell, as the effects' shake moves it).
     const shell = document.querySelector<HTMLElement>('.shell');
@@ -480,5 +407,6 @@ export function blastAway({ node, side, mine }: BlastAway) {
       { delay: BLAST_IMPACT_MS, duration: 340, easing: 'ease-out' },
     );
   }
-  setTimeout(() => layer.remove(), BLAST_MS);
+  // (Should its frames stop coming, a hidden tab say, it goes anyway.)
+  setTimeout(() => layer.remove(), BLAST_MS + 8000);
 }

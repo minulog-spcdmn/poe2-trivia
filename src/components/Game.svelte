@@ -18,13 +18,13 @@
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
   import { inVein } from '../lib/vein';
-  import { REVIVE_FROM, WAY_OUT, delveDepth, digOf, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { REVIVE_FROM, WAY_OUT, delveDepth, digOf, fellAt, findFor, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
   import { lineOf } from '../lib/delveStart';
   import { noteLine } from '../lib/delveStartSeen';
   import { revivedText } from '../lib/difficultyText';
   import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
   import { deeperThanEver, descended, zoneArrival } from '../lib/fx/moments';
-  import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway } from '../lib/blastAway';
+  import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
   import { motion } from '../lib/motion.svelte';
@@ -290,6 +290,17 @@
   // updates, so the old question is still there to blow apart.
   let swingSide = $state<-1 | 1 | null>(null);
   let askedSeen = 0;
+  // The blast's smoke (its code, its WebGL) made ready while the page is
+  // idle, a couple of depths before the first Dynamite Cache can turn up (or
+  // once someone holds a stick): not before, so a run that never gets there
+  // never loads it.
+  const dynamite = findFor('dynamite');
+  const blastNear = $derived(
+    !!run && dynamite.cap > 0 && (depth >= dynamite.from - 2 || Object.values(run.inventory ?? {}).some((i) => (i?.dynamite ?? 0) > 0)),
+  );
+  $effect(() => {
+    if (blastNear) prepareBlast();
+  });
   $effect.pre(() => {
     const asked = s.question?.askedAt ?? 0;
     const b = s.phase === 'question' ? s.question?.blast : undefined;

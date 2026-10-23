@@ -23,6 +23,7 @@
 // no sparks, no flicker, a still light behind the UI in the middle dimming
 // where it is.
 
+import dither from '../assets/dither.png';
 import { currentFrame, fxActive, type CoverBox, type Point } from './fx/core';
 import { cornerOnScreen } from './corner';
 import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
@@ -562,7 +563,12 @@ export function flareBurning(timer: HTMLElement): FlareBurn {
       pointerEvents: 'none',
       opacity: '0',
       transition: 'opacity 0.8s ease',
-      background: `radial-gradient(circle max(30vmax, 260px) at var(--x, 50%) var(--y, 50%), rgba(${HOT}, 0.3), rgba(${PINK}, 0.2) 18%, rgba(${RED}, 0.12) 45%, rgba(${RED}, 0.04) 75%, rgba(${RED}, 0))`,
+      // So soft a glow over so much of the screen bands: dithered (app.css,
+      // --dither, imported: an inline style can't resolve the variable's
+      // url), the dither faded out with the glow.
+      background: `radial-gradient(circle max(30vmax, 260px) at var(--x, 50%) var(--y, 50%), rgba(${HOT}, 0.3), rgba(${PINK}, 0.2) 18%, rgba(${RED}, 0.12) 45%, rgba(${RED}, 0.04) 75%, rgba(${RED}, 0)), url(${dither})`,
+      maskImage: 'radial-gradient(circle max(30vmax, 260px) at var(--x, 50%) var(--y, 50%), #000 75%, transparent)',
+      imageRendering: 'pixelated',
     });
     document.body.append(glowLayer);
     // (Its starting opacity laid down, so set() below fades it in.)

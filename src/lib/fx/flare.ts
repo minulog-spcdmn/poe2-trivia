@@ -350,6 +350,7 @@ export function flareLit(o: FlareLit): Handle {
         gravity: -10,
         drag: 0.3,
         turbulence: 90,
+        shape: Shape.Smoke,
         fadeIn: 0.25,
         behind: true,
       });

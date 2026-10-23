@@ -8,7 +8,8 @@
 // dithered once, at the 8-bit conversion, so no glow can band. Empty pixels
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
-import { INSTANCE_FLOATS } from './particles';
+import { INSTANCE_FLOATS, Shape } from './particles';
+import { NOISE_CELLS, NOISE_MAX, NOISE_TILE, SMOKE_BODY, SMOKE_REACH2, noiseTile, smokeBody } from './noiseTile';
 import { GpuTimer, type GpuDraw } from './gpuTimer';
 import { NOISE, buildPrograms, dropTarget, maxDrawSize, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
@@ -122,6 +123,12 @@ out vec2 vL;            // px along (dir, normal)
 out vec2 vWorld;        // CSS px
 flat out vec3 vCol;
 flat out vec4 vP;       // shape, size, half length, page light
+// Smoke's light, where it comes from in its own frame (along dir, normal),
+// and its noise, how it's laid over it: worked out once a particle rather
+// than once a pixel (each pixel's code is what makes a shader slow to
+// compile, on D3D above all).
+flat out vec2 vLight;
+flat out vec3 vA;
 void main() {
   float shape = iB.w;
   float size = iB.x;
@@ -153,11 +160,29 @@ void main() {
   } else if (shape < 5.5) {     // mote
     ext = vec2(1.25 * w);
     energy *= energy;
-  } else {                      // coin: the stretch slot carries its flip
+  } else if (shape < 6.5) {     // coin: the stretch slot carries its flip
     halfLen = iB.y;
     ext = vec2(2.0 * w);
+  } else {                      // smoke: the stretch slot carries its seed and how far through its life it is
+    halfLen = iB.y;
+    ext = vec2(2.0 * w);
+    energy *= energy;
   }
   vec2 nrm = vec2(-dir.y, dir.x);
+  vLight = vec2(0.0);
+  vA = vec3(0.0);
+  if (shape > 6.5) {
+    // Lit from behind where it's going (the fire it came out of), or from below.
+    vec2 light = speed > 1.0 ? -vel / speed : vec2(0.0, 1.0);
+    vLight = vec2(dot(light, dir), dot(light, nrm));
+    // Smoke's noise is laid over it smaller as it spreads, so its lobes
+    // swell with it rather than new ones sliding in, and it rolls a little
+    // as it goes; each puff where its seed puts it.
+    float seed = floor(iB.y);
+    float t = fract(iB.y);
+    vA.x = (0.8 - 0.25 * t) / ${NOISE_CELLS}.0;
+    vA.yz = vec2(0.35, -0.5) * (t / ${NOISE_CELLS}.0) + fract(seed * vec2(0.1031, 0.1197));
+  }
   vL = aCorner * ext;
   vec2 p = iA.xy + dir * vL.x + nrm * vL.y;
   vWorld = p;
@@ -173,7 +198,11 @@ in vec2 vL;
 in vec2 vWorld;
 flat in vec3 vCol;
 flat in vec4 vP;
+flat in vec2 vLight;
+flat in vec3 vA;
 out vec4 o;
+uniform sampler2D uNoiseTile; // noiseTile.ts: smoke's noise, read rather than worked out per pixel
+uniform sampler2D uSmokeBody; // noiseTile.ts: a puff by how far out and the noise, likewise
 ${BEHIND_DIALOG}
 ${COVER}
 void main() {
@@ -206,7 +235,7 @@ void main() {
   } else if (shape < 5.5) {
     float r = length(vL) / w;
     v = (1.0 - smoothstep(0.86, 1.0, r)) * (0.55 + 0.45 * smoothstep(0.3, 1.0, r));
-  } else {
+  } else if (shape < 6.5) {
     // A coin turning end over end: a disc squashed across by its flip, with
     // a raised rim and an inner ring, darker edge-on, and a star glint as it
     // turns to face you.
@@ -224,6 +253,14 @@ void main() {
     vec2 a = abs(vL) / w;
     float star = exp(-a.y * a.y * 120.0) * exp(-a.x * 1.1) + exp(-a.x * a.x * 120.0) * exp(-a.y * 1.1);
     v += facing * star * 1.3;
+  } else {
+    // Smoke: billows of noise over a soft round body, torn where they thin
+    // out (smokeBody, by how far out it is and the noise there), lit on the
+    // side its light comes from.
+    vec2 q = vL / w;
+    float n = texture(uNoiseTile, q * vA.x + vA.yz).r;
+    float lit = 0.45 + 0.55 * clamp(0.4 + 0.45 * dot(q, vLight) + 0.8 * (n * ${NOISE_MAX} - 0.44), 0.0, 1.0);
+    v = textureLod(uSmokeBody, vec2(dot(q, q) * ${(SMOKE_BODY - 1) / SMOKE_BODY / SMOKE_REACH2}, n * ${(SMOKE_BODY - 1) / SMOKE_BODY}) + ${0.5 / SMOKE_BODY}, 0.0).r * lit;
   }
   float page = mod(vP.w, 2.0);
   float behindUi = step(${PARTICLE_BEHIND_UI}.0, vP.w);
@@ -947,9 +984,20 @@ export type HideLight = { box: DOMRect; radius: number; amount: number };
 export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hides?: readonly HideLight[] };
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 
+/** Whether any of the first `n` particles is smoke (its shape, the eighth of each instance's floats). */
+function hasSmoke(particles: Float32Array, n: number) {
+  for (let q = 7; q < n * INSTANCE_FLOATS; q += INSTANCE_FLOATS) if (particles[q] === Shape.Smoke) return true;
+  return false;
+}
+
 export class FxRenderer {
   private gl: WebGL2RenderingContext;
   private particleProg: Program;
+  /** Smoke's noise (noiseTile.ts), repeating, and its puffs' body. */
+  private noiseTex: WebGLTexture;
+  private smokeTex: WebGLTexture;
+  /** Whether the two are put in (see bake). */
+  private baked = false;
   private shapeProg: Program;
   private downProg: Program;
   private upProg: Program;
@@ -1095,6 +1143,31 @@ export class FxRenderer {
     this.copyProg = k;
     this.particleProg = p;
     this.shapeProg = s;
+
+    // Smoke's noise and body: an even texel and an empty one until smoke is
+    // first drawn (see bake). Only Delve's flares and dynamite make any.
+    this.noiseTex = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array([Math.round((0.44 / NOISE_MAX) * 255)]));
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    this.smokeTex = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array(1));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.useProgram(p.prog);
+    gl.uniform1i(p.u('uNoiseTile'), 6);
+    gl.uniform1i(p.u('uSmokeBody'), 5);
     this.downProg = d;
     this.upProg = u;
     this.compProg = c;
@@ -1361,6 +1434,13 @@ export class FxRenderer {
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
       behindDialog(this.particleProg, true);
       cover(this.particleProg);
+      // Smoke's noise on unit 6, its body on 5: put in as smoke is first drawn.
+      if (!this.baked && hasSmoke(particles, nParticles)) this.bake();
+      gl.activeTexture(gl.TEXTURE6);
+      gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, particles, 0, nParticles * INSTANCE_FLOATS);
       gl.bindVertexArray(this.particleVao);
@@ -1651,11 +1731,34 @@ export class FxRenderer {
     return [w / c.width, h / c.height];
   }
 
+  /**
+   * Puts smoke's noise and body in (see the constructor), as smoke is first
+   * drawn: worked out by then if the blast's smoke was made ready
+   * (lib/blastSmoke.ts, prepareBlastSmoke), here if not.
+   */
+  private bake() {
+    const gl = this.gl;
+    if (this.baked || gl.isContextLost()) return;
+    this.baked = true;
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, NOISE_TILE, NOISE_TILE, 0, gl.RED, gl.UNSIGNED_BYTE, noiseTile());
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, this.smokeTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, SMOKE_BODY, SMOKE_BODY, 0, gl.RED, gl.FLOAT, smokeBody());
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
   destroy() {
     const gl = this.gl;
     for (const x of this.sils) gl.deleteTexture(x.tex);
     if (this.coverTex) gl.deleteTexture(this.coverTex);
     if (this.sigilTex) gl.deleteTexture(this.sigilTex);
+    gl.deleteTexture(this.noiseTex);
+    gl.deleteTexture(this.smokeTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);

@@ -259,13 +259,19 @@
       linear-gradient(to top, var(--edge));
   }
   /* A billow of the dark's smoke, rolling in from the edge it sits on: more
-     of it, and nearer, as the dark comes in. */
+     of it, and nearer, as the dark comes in. So soft a shade this big bands,
+     so it's dithered (app.css), the dither faded out with it. */
   .billow {
     position: absolute;
     translate: -50% -50%;
     scale: calc(0.6 + 0.4 * var(--reach));
     border-radius: 50%;
-    background: radial-gradient(closest-side, rgba(var(--smoke), 0.38), rgba(var(--smoke), 0.24) 40%, rgba(var(--smoke), 0.08) 72%, transparent);
+    image-rendering: pixelated;
+    background:
+      radial-gradient(closest-side, rgba(var(--smoke), 0.38), rgba(var(--smoke), 0.24) 40%, rgba(var(--smoke), 0.08) 72%, transparent),
+      var(--dither);
+    -webkit-mask-image: radial-gradient(closest-side, #000 72%, transparent);
+    mask-image: radial-gradient(closest-side, #000 72%, transparent);
     will-change: transform, scale;
     animation: billow ease-in-out infinite alternate;
   }

@@ -13,6 +13,7 @@ import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
 import { seatsIn } from '../scene.ts';
+import type { GameState } from '../../lib/game.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
 const RECHECK_MS = 600;
@@ -170,21 +171,32 @@ export async function boot(asked: URLSearchParams) {
 
   // A question's pictures, made as the host makes them and taken in as each
   // device takes them in, sealed or not (lib/media.svelte.ts).
-  const q = state?.question;
-  if (state && q && (state.phase === 'question' || state.phase === 'reveal')) {
+  const pictures = async (state: GameState | null) => {
+    const q = state?.question;
+    if (!state || !q || (state.phase !== 'question' && state.phase !== 'reveal')) return;
     try {
       const made = await media.prepareMedia(q, game.grayscaleFor(state), veilClock(state), engine.byId);
       for (const m of picturesOf(made)) media.shown.receive(m);
     } catch (err) {
       console.error("The scene's art couldn't be made", err);
     }
-  }
+  };
+  await pictures(state);
 
   // What the scene does once it shows.
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
     else if ('fail' in step) session.labFail(step.fail);
-    else if ('crash' in step) {
+    else if ('then' in step) {
+      // The room moves on: a new question's pictures first, as the host sends them before it.
+      if (step.then.question?.askedAt !== session.state?.question?.askedAt) await pictures(step.then);
+      if (step.at !== undefined) {
+        const now = step.at;
+        session.clockOffset = now - Date.now();
+        session.hostNow = () => now;
+      }
+      session.state = seat.mode === 'client' ? game.publicView(step.then) : step.then;
+    } else if ('crash' in step) {
       // One crash, and (twice) another once the boundary has put the app back.
       crash.left = 1;
       if (step.crash === 2) {
