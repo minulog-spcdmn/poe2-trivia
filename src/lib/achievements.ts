@@ -339,7 +339,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     title: 'Fully Laden',
     text: `In a run alone, carry ${DELVE_MAX_WARDS} Azurite Wards, ${DELVE_MAX_FLARES} flares and ${DELVE_MAX_DYNAMITE} sticks of dynamite at once.`,
   },
-  { id: 'chain-reaction', group: 'delve', tier: 1, sign: 'sulphur', title: 'Chain Reaction', text: "Have a Dynamite Cache's blast destroy a stick of dynamite you carried." },
+  { id: 'chain-reaction', group: 'delve', tier: 1, sign: 'sulphur', title: 'Chain Reaction', text: "Have a Dynamite Cache’s blast destroy a stick of dynamite you carried." },
 
   // ---- together ----
   {

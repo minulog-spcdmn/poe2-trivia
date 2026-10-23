@@ -186,7 +186,7 @@
     if (!practice && (utcDay(clock.now()) !== shown || today !== shown)) {
       now = clock.now();
       mendClockAhead();
-      toasts.show("That question was another day's. Here is today's.", 'info', { title: "Today's unique" });
+      toasts.show("That question was another day’s. Here is today’s.", 'info', { title: "Today’s unique" });
       return;
     }
     // Another tab may have answered today's meanwhile: that answer stands.
@@ -208,7 +208,7 @@
     const next = practice ? null : answerDaily(rec, today, i, good);
     // (Only while the server hasn't said: once it has, such a record is mended, mendClockAhead.)
     if (next && next === rec) {
-      toasts.show("This device's clock is behind the day you last answered on. Set it right to play today's unique.", 'info', { title: 'Clock behind' });
+      toasts.show("This device’s clock is behind the day you last answered on. Set it right to play today’s unique.", 'info', { title: 'Clock behind' });
       return;
     }
     // (The codex's time by the same clock as the day.)
@@ -306,7 +306,7 @@
 
 <svelte:window onkeydown={keys} />
 
-<section class="daily" aria-label="Today's unique">
+<section class="daily" aria-label="Today’s unique">
   <!-- The circle, and under it (pinned to the stage's foot) the legend: a
        title or line taking two lines grows the legend up over the faded
        circle, never down into the answers. -->

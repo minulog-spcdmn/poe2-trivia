@@ -113,7 +113,7 @@ export function ago(at: number, now: number): string {
 /** How the pairing stands, in a line (the settings and the pairing dialog). */
 export function syncLine(): string {
   if (sync.status === 'linked') return sync.linked > 1 ? `Syncing now with ${sync.linked} other devices.` : 'Syncing now with your other device.';
-  if (sync.status === 'offline') return "Can't reach the server. Trying again in a moment.";
+  if (sync.status === 'offline') return "Can’t reach the server. Trying again in a moment.";
   if (!sync.met) return 'Waiting for your other device.';
   if (sync.status !== 'waiting') return 'Connecting.';
   const last = sync.lastAt ? `Last synced ${ago(sync.lastAt, sync.clock)}. ` : '';

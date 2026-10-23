@@ -52,10 +52,10 @@ export const markOf = (connected: boolean, standing: Standing | undefined): Mark
 
 /** What each mark says on a player's chip, and when pointed at. */
 export const MARK_TEXT: Record<Mark, { tag: string; title: string }> = {
-  away: { tag: 'Away', title: "The game isn't on their screen: another tab, a minimised window, or the screen is off." },
+  away: { tag: 'Away', title: "The game isn’t on their screen: another tab, a minimised window, or the screen is off." },
   idle: { tag: 'Idle', title: 'No sign of them for a couple of minutes.' },
   slow: { tag: 'Lagging', title: 'Their game is slow to answer the host (a slow connection, or a busy device), so the art may reach them late.' },
-  offline: { tag: 'Offline', title: "Reconnecting. Their seat is let go if they're not back when the game starts." },
+  offline: { tag: 'Offline', title: "Reconnecting. Their seat is let go if they’re not back when the game starts." },
 };
 
 /** Why a player isn't ready to play (one lagging is still there, only late). */
