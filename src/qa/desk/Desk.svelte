@@ -286,7 +286,8 @@
   const frames = $derived.by((): Shown[] => {
     if (!comparing || !own.length) return own;
     const now = own[0];
-    const areas = compared?.state === 'done' ? compared.got!.diff.areas : undefined;
+    // (O hides the marks with the outlines.)
+    const areas = compared?.state === 'done' && outlines ? compared.got!.diff.areas : undefined;
     const base = before && 'base' in before && before.base ? ` (main at ${before.base.slice(0, 7)})` : '';
     const note = !before || before.state === 'preparing' ? `Getting the code before this change ready${before?.state === 'preparing' && before.step ? `: ${before.step}` : ''}…` : before.state === 'ready' ? undefined : 'No code from before here';
     return [
@@ -296,7 +297,7 @@
   });
   // Shot and compared a moment after what's shown stops changing: the view, a piece's controls, the frames' size.
   // (The frame's address as shot, without its outlines: O doesn't call for new shots.)
-  const shotKey = $derived(comparing && beforeOrigin && box && own[0] ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${shotSrc(own[0].src)}` : '');
+  const shotKey = $derived(comparing && beforeOrigin && box && own[0] && !piece?.moves ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${shotSrc(own[0].src)}` : '');
   $effect(() => {
     const key = shotKey;
     closeup = -1;
@@ -346,9 +347,10 @@
     closeup = -1;
   }
 
-  /** To every frame up (a piece's, or each seat's), on its own origin (the code before's is another). */
-  function tellFrames(m: DeskMessage) {
-    for (const f of document.querySelectorAll<HTMLIFrameElement>('.middle > .stage-box iframe, .middle > .grid iframe')) f.contentWindow?.postMessage(m, new URL(f.src, location.href).origin);
+  /** To every frame up (a piece's, or each seat's), on its own origin (the code before's is another); but the `but`th. */
+  function tellFrames(m: DeskMessage, but = -1) {
+    let i = 0;
+    for (const f of document.querySelectorAll<HTMLIFrameElement>('.middle > .stage-box iframe, .middle > .grid iframe')) if (i++ !== but) f.contentWindow?.postMessage(m, new URL(f.src, location.href).origin);
   }
   $effect(() => tellFrames({ qa: 'outlines', on: outlines }));
   $effect(() => tellFrames({ qa: 'freeze', on: frozen }));
@@ -380,6 +382,8 @@
     else if (m.qa === 'set' && piece) values[piece.key] = { ...v, ...m.values };
     else if (m.qa === 'pick') goState(m.index);
     else if (m.qa === 'key') press(m.key, m.up, m.repeat);
+    // The mouse over one side of before and after: the other side's hand moves the same (the pointers bench).
+    else if (m.qa === 'hand') tellFrames(m, i);
   }
 
   /** Play from here: the scene as a live room, while one is up. */
@@ -532,12 +536,13 @@
         <p class="compare" role="status">
           {#if !before || before.state === 'preparing'}Getting the code before this change ready…
           {:else if before.state !== 'ready'}No code from before this change here{#if before.state === 'failed'}: <span class="example">{before.error}</span>{/if}
+          {:else if piece?.moves}It moves on its own<span class="sep">•</span>watch the two side by side
           {:else if !compared || compared.state === 'checking'}Comparing…
           {:else if compared.cantShow === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{compared.error}</span>
           {:else if compared.cantShow === 'now'}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{compared.error}</span>
           {:else if compared.state === 'failed'}Couldn't compare: <span class="example">{compared.error}</span>
           {:else if !compared.got!.diff.areas.length}<span class="same">Looks the same</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}
-          {:else}<span class="differs">Differs in {compared.got!.diff.areas.length} {compared.got!.diff.areas.length === 1 ? 'place' : 'places'}</span><span class="sep">•</span><span><span class="num">{(compared.got!.diff.share * 100).toFixed(compared.got!.diff.share < 0.01 ? 2 : 1)}%</span> of it</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}<span class="hint">click a mark to see it close up • <kbd>D</kbd> {layered ? 'hides' : 'lays'} what differs over now</span>{/if}
+          {:else}<span class="differs">Differs in {compared.got!.diff.areas.length} {compared.got!.diff.areas.length === 1 ? 'place' : 'places'}</span><span class="sep">•</span><span><span class="num">{(compared.got!.diff.share * 100).toFixed(compared.got!.diff.share < 0.01 ? 2 : 1)}%</span> of it</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}<span class="hint">click a mark to see it close up • <kbd>D</kbd> {layered ? 'hides' : 'lays'} what differs over now • <kbd>O</kbd> {outlines ? 'hides' : 'shows'} the marks</span>{/if}
           <button class="off" onclick={() => compareOn(false)}>Done <kbd>B</kbd></button>
         </p>
       {/if}
