@@ -30,21 +30,28 @@
         untrack(rise);
         // (Once the bar it's in is drawn: `shown` was only just set.)
         void tick().then(() => back?.focus());
-      } else if (was) untrack(rise);
+      } else if (was && moving) {
+        // Called back as it went: it turns back from where it is.
+        moving.reverse();
+        letGo(moving);
+      }
     } else if (dialog.open && !untrack(() => going)) {
       going = true;
       moving?.cancel();
       const m = (moving = untrack(() => play(dialog!, dialogOut(), true)));
       if (!m) return close();
-      m.finished.then(() => moving === m && close(), () => {});
+      m.finished.then(() => moving === m && going && close(), () => {});
     }
   });
   function rise() {
     moving?.cancel();
-    const m = (moving = play(dialog!, dialogIn()));
-    // Risen, it lets go of the sheet (no transform left on it).
-    m?.finished.then(() => {
-      if (moving !== m) return;
+    moving = play(dialog!, dialogIn());
+    if (moving) letGo(moving);
+  }
+  /** Risen, it lets go of the sheet (no transform left on it). */
+  function letGo(m: Animation) {
+    m.finished.then(() => {
+      if (moving !== m || going) return;
       m.cancel();
       moving = null;
     }, () => {});
@@ -90,7 +97,6 @@
   class="sheet"
   aria-label="Datenschutz"
   class:going
-  style:--go={going ? `${dialogOut().duration}ms` : null}
   bind:this={dialog}
   oncancel={(e) => {
     e.preventDefault();
@@ -133,10 +139,12 @@
   .sheet::backdrop {
     animation: sheet-dark 0.3s ease-out;
   }
-  /* (As long as the sheet takes to go: --go.) */
+  /* As long as the sheet takes to go (dialogOut, lib/dialogIn.ts): written
+     out, as a custom property set on the sheet doesn't reach its backdrop
+     in Safari before 17.4. */
   .sheet.going::backdrop {
     opacity: 0;
-    transition: opacity var(--go) ease-in;
+    transition: opacity 0.18s ease-in;
   }
   @keyframes sheet-dark {
     from {
