@@ -9,13 +9,13 @@
 import { itemImage } from './ui-paths';
 import { patchCount, patchWork } from './patches';
 import { prepare, type PrepJob, type Prepped } from './prepArt';
-import type { PrepAnswer, PrepRequest } from './prepWorker';
 import type { OwnVeil, PatchImage } from './veilCut';
 import { forgetCuts, startCut, type CutHandle } from './veilCutter';
 import type { MediaMsg } from './protocol';
 import { drawnAs, type Grayscale, type Item, type Question, type Veil } from './game';
 import { veilPlan } from './delve';
 import { loadOnce } from './loadOnce';
+import { PrepPool } from './prepPool';
 
 /** A patch as the host lets it out: which one it is (its index in the cut, patchShapes). */
 export interface Patch {
@@ -159,26 +159,11 @@ async function prepPicture(art: { art: string; w: number; h: number }, job: Omit
     return prepare(img, img.naturalWidth, full, canvasOnPage, encodeHere);
   };
   signal?.throwIfAborted();
-  if (!preparers()?.length) return here();
+  if (!preparers()?.count) return here();
   const file = await loadFile(src).catch(() => null);
   signal?.throwIfAborted();
-  // (Picked only now: one may have failed meanwhile.)
-  const p = leastBusy();
-  if (!file || !p) return here();
-  const id = ++prepJobs;
-  return new Promise<Prepped>((resolve, reject) => {
-    p.jobs.set(id, { resolve, again: () => here().then(resolve, reject) });
-    p.worker.postMessage({ t: 'prep', id, file, job: full } satisfies PrepRequest);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        if (!p.jobs.delete(id)) return;
-        p.worker.postMessage({ t: 'drop', id } satisfies PrepRequest);
-        reject(signal.reason);
-      },
-      { once: true },
-    );
-  });
+  // (Handed over only now: one may have failed meanwhile.)
+  return (file && preparers()?.prep(file, full, here, signal)) || here();
 }
 
 const canvasOnPage = (w: number, h: number) => {
@@ -201,49 +186,28 @@ function encodeHere(canvas: HTMLCanvasElement, type: string, quality: number): P
  */
 const PREPARERS = 3;
 
-/** A preparing worker and the pictures it hasn't answered yet, by job. */
-interface Preparer {
-  worker: Worker;
-  jobs: Map<number, { resolve: (p: Prepped) => void; again: () => Promise<void> }>;
-}
+let pool: PrepPool | null | undefined;
 
-let pool: Preparer[] | null | undefined;
-let prepJobs = 0;
-
-/** The preparing workers, started on first use (or by warmMedia); null (or none left) where they can't run. */
-function preparers(): Preparer[] | null {
+/** The preparing workers (prepPool.ts), started on first use (or by warmMedia); null where they can't run. */
+function preparers(): PrepPool | null {
   if (pool !== undefined) return pool;
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return (pool = null);
   const cores = typeof navigator === 'undefined' ? 2 : navigator.hardwareConcurrency || 2;
-  pool = [];
-  for (let k = 0; k < Math.max(1, Math.min(PREPARERS, cores - 1)); k++) {
-    let worker: Worker;
+  const make = () => {
     try {
-      worker = new Worker(new URL('./prepWorker.ts', import.meta.url), { type: 'module' });
+      return new Worker(new URL('./prepWorker.ts', import.meta.url), { type: 'module' });
     } catch {
-      break;
+      return null;
     }
-    const p: Preparer = { worker, jobs: new Map() };
-    worker.onmessage = ({ data }: MessageEvent<PrepAnswer>) => {
-      const job = p.jobs.get(data.id);
-      p.jobs.delete(data.id);
-      if (data.prepped) job?.resolve(data.prepped);
-      else job?.again();
-    };
-    // A worker that won't start (or dies): what it had is prepared here, and it is given no more.
-    worker.onerror = () => {
-      pool = pool?.filter((q) => q !== p) ?? null;
-      for (const job of p.jobs.values()) job.again();
-      p.jobs.clear();
-    };
-    pool.push(p);
-  }
+  };
+  pool = new PrepPool(make, Math.max(1, Math.min(PREPARERS, cores - 1)));
+  // Back from a long while in the background, they start afresh (prepPool.ts).
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else if (hiddenAt) pool?.cameBack(Date.now() - hiddenAt);
+  });
   return pool;
-}
-
-/** The worker with the fewest pictures in hand; null if none can run. */
-function leastBusy(): Preparer | null {
-  return (preparers() ?? []).reduce<Preparer | null>((a, b) => (!a || b.jobs.size < a.jobs.size ? b : a), null);
 }
 
 /**
@@ -255,7 +219,7 @@ function leastBusy(): Preparer | null {
  */
 export function warmMedia() {
   if (pool !== undefined) return;
-  for (const p of preparers() ?? []) p.worker.postMessage({ t: 'warm' } satisfies PrepRequest);
+  preparers()?.warm();
 }
 
 /**
