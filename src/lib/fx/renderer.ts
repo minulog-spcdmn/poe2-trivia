@@ -9,6 +9,7 @@
 // stay exactly zero: the overlay never tints or noises the page when idle.
 
 import { INSTANCE_FLOATS } from './particles';
+import { NOISE_CELLS, NOISE_MAX, NOISE_TILE, noiseTile } from './noiseTile';
 import { GpuTimer, type GpuDraw } from './gpuTimer';
 import { NOISE, buildPrograms, dropTarget, maxDrawSize, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
@@ -160,7 +161,7 @@ void main() {
     ext = vec2(2.0 * w);
   } else {                      // smoke: the stretch slot carries its seed and how far through its life it is
     halfLen = iB.y;
-    ext = vec2(2.6 * w);
+    ext = vec2(2.0 * w);
     energy *= energy;
   }
   vec2 nrm = vec2(-dir.y, dir.x);
@@ -185,6 +186,7 @@ flat in vec3 vCol;
 flat in vec4 vP;
 flat in vec2 vLight;
 out vec4 o;
+uniform sampler2D uNoiseTile; // noiseTile.ts: smoke's noise, read rather than worked out per pixel
 ${NOISE}
 ${BEHIND_DIALOG}
 ${COVER}
@@ -283,10 +285,12 @@ void main() {
     float seed = floor(vP.z);
     float t = fract(vP.z);
     vec2 q = vL / w;
-    vec2 nq = q * (0.8 - 0.25 * t) + vec2(0.35, -0.5) * t + vec2(hash12(vec2(seed, 1.7)), hash12(vec2(4.1, seed))) * 61.0;
-    float n = fbm(nq);
-    float body = exp(-dot(q, q) * 0.55);
-    float dens = smoothstep(0.0, 0.55, body - (0.62 - n) * 1.2);
+    float r2 = dot(q, q);
+    vec2 nq = q * (0.8 - 0.25 * t) + vec2(0.35, -0.5) * t + vec2(fract(seed * 0.1031), fract(seed * 0.1197)) * ${NOISE_CELLS}.0;
+    float n = texture(uNoiseTile, nq / ${NOISE_CELLS}.0).r * ${NOISE_MAX};
+    float body = exp(-r2 * 0.55);
+    // (Gone by the quad's edge, however strong the noise there.)
+    float dens = smoothstep(0.0, 0.55, body - (0.62 - n) * 1.2) * (1.0 - smoothstep(2.0, 3.9, r2));
     float lit = 0.45 + 0.55 * clamp(0.4 + 0.45 * dot(q, vLight) + 0.8 * (n - 0.44), 0.0, 1.0);
     v = dens * lit * (0.55 + 0.45 * n) * 0.85;
   }
@@ -1029,6 +1033,8 @@ const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
 export class FxRenderer {
   private gl: WebGL2RenderingContext;
   private particleProg: Program;
+  /** Smoke's noise (noiseTile.ts), repeating. */
+  private noiseTex: WebGLTexture;
   private shapeProg: Program;
   private downProg: Program;
   private upProg: Program;
@@ -1171,6 +1177,19 @@ export class FxRenderer {
     this.copyProg = k;
     this.particleProg = p;
     this.shapeProg = s;
+
+    this.noiseTex = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, NOISE_TILE, NOISE_TILE, 0, gl.RED, gl.UNSIGNED_BYTE, noiseTile());
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.activeTexture(gl.TEXTURE0);
     this.downProg = d;
     this.upProg = u;
     this.compProg = c;
@@ -1430,6 +1449,11 @@ export class FxRenderer {
       gl.uniform1f(this.particleProg.u('uMinPx'), 0.85 / dpr);
       behindDialog(this.particleProg, true);
       cover(this.particleProg);
+      // Smoke's noise, on unit 4.
+      gl.uniform1i(this.particleProg.u('uNoiseTile'), 4);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.particleBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, particles, 0, nParticles * INSTANCE_FLOATS);
       gl.bindVertexArray(this.particleVao);
@@ -1703,6 +1727,7 @@ export class FxRenderer {
     const gl = this.gl;
     for (const x of this.sils) gl.deleteTexture(x.tex);
     if (this.coverTex) gl.deleteTexture(this.coverTex);
+    gl.deleteTexture(this.noiseTex);
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
