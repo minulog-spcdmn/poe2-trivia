@@ -279,7 +279,8 @@ function jobsFor(scenes) {
 if (values.map) {
   const served = await serveDev();
   values.sizes = 'desktop';
-  const scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
+  const every = await listScenes(served.base);
+  const scenes = every.filter((s) => !only || only.test(s.key));
   const jobs = jobsFor(scenes);
   // The dev server builds each module as a page first asks for it: more than a few pages at once and they time out waiting.
   const at = Math.min(concurrency, 4);
@@ -296,12 +297,14 @@ if (values.map) {
   let files = {};
   for (const f of [...counts.keys()].filter((f) => !global.includes(f)).sort()) files[f] = [...byScene].filter(([, fs]) => fs.has(f)).map(([k]) => k);
   // With --only, a few scenes mapped again (new ones, say): merged into the
-  // map as it was, every other scene's files kept, its global files too.
+  // map as it was, every other scene's files kept, its global files too
+  // (those of scenes no longer there go).
   if (only) {
     const was = JSON.parse(readFileSync(path.join(ROOT, 'src', 'data', 'sceneFiles.json'), 'utf8'));
     global = was.global;
     const merged = {};
-    for (const [f, ks] of Object.entries(was.files)) merged[f] = ks.filter((k) => !byScene.has(k));
+    const there = new Set(every.map((s) => s.key));
+    for (const [f, ks] of Object.entries(was.files)) merged[f] = ks.filter((k) => !byScene.has(k) && there.has(k));
     for (const [k, fs] of byScene) for (const f of fs) if (!global.includes(f)) (merged[f] ??= []).push(k);
     files = Object.fromEntries(Object.entries(merged).filter(([, ks]) => ks.length).sort(([a], [b]) => (a < b ? -1 : 1)));
   }
