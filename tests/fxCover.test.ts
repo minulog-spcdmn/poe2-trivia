@@ -199,6 +199,60 @@ test('while the view shakes, the mask moves with it rather than being measured',
   fx.fxStep(0.1);
 });
 
+/** An element the shake can move: its translate. */
+function shakeable() {
+  return { style: { translate: '' } };
+}
+
+test('a shake lands at its full px, and a hit on one still going adds to it', () => {
+  const el = shakeable();
+  const undo = fx.shakeTarget(el as unknown as HTMLElement);
+  const moved = () => Math.hypot(...el.style.translate.split(' ').map(parseFloat));
+  fx.shakeView(0.2, 2);
+  fx.fxStep(1 / 60);
+  // (The kick's y is 0.8 of its x, as the noise's is; the translate is rounded to 0.01px.)
+  assert.ok(moved() >= 1.59 && moved() <= 2.01, `moved ${moved()}px, not 2`);
+  fx.shakeView(0.2, 2);
+  fx.fxStep(1 / 60);
+  assert.ok(moved() > 2, `moved ${moved()}px, no further than one hit`);
+  fx.fxStep(1);
+  assert.ok(!fx.shaking());
+  assert.equal(el.style.translate, '');
+  undo();
+});
+
+test('a tremor shakes the view by what its source gives, as a shiver, until it lets go', () => {
+  const el = shakeable();
+  const undo = fx.shakeTarget(el as unknown as HTMLElement);
+  const moved = () => (el.style.translate ? Math.hypot(...el.style.translate.split(' ').map(parseFloat)) : 0);
+  let px: number | null = 3;
+  fx.setTremor(() => px);
+  let most = 0;
+  let turns = 0;
+  let last = 0;
+  for (let i = 0; i < 60; i++) {
+    fx.fxStep(1 / 60);
+    const x = parseFloat(el.style.translate) || 0;
+    most = Math.max(most, moved());
+    if (Math.sign(x) !== Math.sign(last)) turns++;
+    last = x;
+  }
+  // (3 px up and down at most, 0.7 of that across.)
+  assert.ok(most > 1 && most <= 3 * Math.hypot(1, 0.7), `at most ${most}px of 3`);
+  assert.ok(turns >= 8, `turned ${turns} times in a second: a sway, not a shiver`);
+  // Quiet for now: the view rests, and the source still counts.
+  px = 0;
+  fx.fxStep(1 / 60);
+  assert.equal(el.style.translate, '');
+  assert.ok(!fx.shaking());
+  px = null;
+  fx.fxStep(1 / 60);
+  px = 3;
+  fx.fxStep(0.2);
+  assert.equal(el.style.translate, '', 'shook again after its source let go');
+  undo();
+});
+
 test('turning the effects off drops every cover', () => {
   let asked = 0;
   fx.cover(() => {

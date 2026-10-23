@@ -81,7 +81,7 @@ export function edgeBlast(b: EdgeBlast) {
   // The shockwave strikes the question: it shakes, and where it stood is left smouldering.
   const t = b.target;
   after(b.impact, () => {
-    shakeView(b.mine ? 0.7 : 0.55, b.mine ? 13 : 10);
+    shakeView(b.mine ? 0.7 : 0.55, b.mine ? 6.5 : 4);
     const near = new DOMRect(b.side > 0 ? t.right - t.width * 0.3 : t.left, t.top, t.width * 0.3, t.height);
     sparks(near, { count: 40, area: 'fill', angle: inward, spread: 1.6, speed: [240, 900], life: [0.25, 0.7], gravity: 520, colors: [C.whiteHot, C.ember, C.gold] });
     flash(near, { radius: Math.max(t.width, t.height) * 0.5, color: C.gold, intensity: 0.45, life: 0.35 });

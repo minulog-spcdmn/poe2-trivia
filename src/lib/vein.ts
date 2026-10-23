@@ -57,6 +57,17 @@ export function onVein(f: (on: boolean) => void): () => void {
 export const veinOn = () => target === 1;
 
 /**
+ * How hard the vein's ground shakes now, 0 to 1 (its sounds' low end as
+ * felt, lib/tremor.ts): the backdrop's seams flicker and its embers are
+ * knocked about with it.
+ */
+let quake = 0;
+export const veinQuake = () => quake;
+export function setVeinQuake(v: number) {
+  quake = v;
+}
+
+/**
  * How far the vein has come in at `now` (ms), 0 to 1, eased; `still`
  * (reduced motion, the effects off): at once.
  */

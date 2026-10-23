@@ -95,7 +95,6 @@ export function gameStart() {
   ring(c, { radius: Math.hypot(innerWidth, innerHeight) * 0.55, thickness: 40, life: 1.1, color: C.gold, breakup: 0.85, fill: 0.1, intensity: 0.55 });
   sparks(c, { count: 70, speed: [300, 1100], life: [0.5, 1.2], gravity: 300 });
   backdropEmbers.flare(0.7, 1.6);
-  shakeView(0.35, 6);
 }
 
 /** A new turn: light runs along the banner's rules into the title. */
@@ -158,7 +157,6 @@ export function cardPicked(card: Element, base: Element, others: Element[], dm: 
   flare(card, { size: 40, streak: 380, life: 0.7, color: main });
   glints(card, { count: 5, size: [5, 11] });
   light(card, { color: dm ? [1, 0.2, 0.08] : [1, 0.65, 0.3], radius: 360, intensity: 0.7, decay: 1.2 });
-  shakeView(0.3, 5);
   for (const o of others) {
     embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
     puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
@@ -395,7 +393,6 @@ export function reveal(t: RevealTargets) {
       edgeHit({ color: C.wrong });
       pulseMood(0.16, [0.9, 0.3, 0.15]);
     }
-    shakeView(0.45, 6);
   }
 
   if (t.verdict && t.verdictTone === 'good') {
@@ -637,7 +634,7 @@ export function lifeLost(pill: Element, chamber: Element, left: number, mine: bo
     return true;
   }, { life: span });
   outline(pill, { color: C.wrong, width: 8, life: 0.9, intensity: 0.4 });
-  if (mine && last) shakeView(0.3, 4);
+  if (mine && last) shakeView(0.3, 3);
 }
 
 /** Delve: a question survived. The phial (`phial`) catches the light for a moment as a wave runs through it. */
@@ -843,10 +840,7 @@ export function wardBlocked(barrier: Element, pip: Element | null, pill: Element
   }
   glints(hit, { count: 1, area: 'centre', size: [5 * k + 3, 8 * k + 3], color: C.azuritePale, life: [0.25, 0.4], delay: [0, 0.03] });
   light(at, { color: [0.4, 0.65, 1], radius: 200 * k + 60, intensity: 0.34 * k, hold: 0.15, decay: 0.8 });
-  if (mine) {
-    wardedEdge();
-    shakeView(0.15, 3);
-  }
+  if (mine) wardedEdge();
   after(WARD_BREAK, () => {
     if (detached(barrier)) return;
     const c = boxOf(rectOf(barrier));
@@ -905,7 +899,7 @@ export function itemBlown(pip: Element, pill: Element, item: 'wards' | 'flares' 
   after(0.1, () => embers(at, { count: 6, area: 'fill', colors: [C.ember, C.gold], rise: [30, 90], life: [0.5, 1.1] }));
   light(at, { color: [1, 0.55, 0.25], radius: 150, intensity: 0.32, decay: 0.7 });
   if (!detached(pill)) outline(pill, { color: k3(C.ember, 0.75), width: 8, life: 0.75, intensity: 0.45 });
-  if (mine) shakeView(0.2, 4);
+  if (mine) shakeView(0.3, 4);
 }
 
 /** Seconds from a reveal until a find's sparks start landing on its item, and how long they take to (see findGained). */
@@ -1052,7 +1046,6 @@ export function raceMiss(option: Element, mine: boolean, warded = false) {
       edgeHit({ color: C.wrong });
       pulseMood(0.16, [0.9, 0.3, 0.15]);
     }
-    shakeView(0.4, 6);
   }
 }
 
@@ -1183,14 +1176,14 @@ export function deathmatchIntro(title: Element) {
     // The sword's point strikes home, and the band's two fires meet at its head.
     after(SIGIL_STRIKE, () => {
       flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
-      shakeView(0.35, 4);
+      shakeView(0.35, 3.5);
     });
     after(SIGIL_MEET, () => flare(on(sigilHead(SIGIL_MEET)), { size: 24, streak: R * 0.8, life: 0.8, color: C.crimson }));
   });
   const floor = new DOMRect(0, innerHeight - 4, innerWidth, 4);
   embers(floor, { count: 110, area: 'fill', colors: [C.crimson, C.ember, C.gold], rise: [180, 520], life: [1, 2.4], size: [1.2, 3], turbulence: 200 });
   edgeGlow({ color: C.crimson, intensity: 0.2, width: 100, life: 2.4, noise: 0.8 });
-  shakeView(0.85, 9);
+  shakeView(0.85, 6.5);
   deathmatchMood(true);
 }
 
@@ -1351,7 +1344,6 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
         }, 8),
       );
     });
-    shakeView(0.3, 5);
   } else {
     // Ash settles instead.
     handles.push(
@@ -1403,7 +1395,6 @@ export function glyphLanded(glyph: Element) {
   sparks(new DOMRect(r.left, r.bottom - 2, r.width, 2), { count: 9, area: 'fill', angle: -Math.PI / 2, spread: 2.2, speed: [100, 320], life: [0.25, 0.55] });
   puffs(glyph, { count: 3, area: 'edge', color: [0.3, 0.2, 0.08], size: [10, 18] });
   ring(glyph, { radius: 48, thickness: 4, life: 0.4, color: C.gold, intensity: 0.7 });
-  shakeView(0.12, 3);
 }
 
 /** Someone walks into the lobby (through a portal, naturally). */
@@ -1533,5 +1524,5 @@ export function dynamiteBlast(t: BlastTargets) {
     });
   });
   pulseMood(0.22, [1, 0.5, 0.2]);
-  shakeView(t.mine ? 0.6 : 0.4, t.mine ? 10 : 7);
+  shakeView(t.mine ? 0.6 : 0.4, t.mine ? 4 : 3);
 }
