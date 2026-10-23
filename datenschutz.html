@@ -94,6 +94,12 @@
           binnen zehn Minuten kein Gerät koppelt, wird verworfen. Die Kopplung lässt sich in den Einstellungen jederzeit
           aufheben.
         </li>
+        <li>
+          <strong>Kamera beim Koppeln:</strong> Wenn Sie den QR-Code eines anderen Geräts scannen, fragt Ihr Browser um
+          Erlaubnis für die Kamera. Das Kamerabild wird nur auf Ihrem Gerät ausgewertet, um den Code zu lesen; es wird
+          weder gespeichert noch übertragen, und die Kamera wird abgeschaltet, sobald der Code gelesen ist oder Sie das
+          Scannen beenden.
+        </li>
       </ul>
       <p>
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels) bzw.
@@ -106,8 +112,11 @@
 
       <h2>5. Daten im Spiel</h2>
       <p>
-        Im Online-Spiel werden Ihr gewählter Spielname, Ihre Antworten und Punkte an den Host übertragen und von dort an
-        die Mitspielenden im Raum. Der Host erhält außerdem eine zufällige Gerätekennung (siehe Abschnitt 6), mit der Sie
+        Im Online-Spiel werden Ihr gewählter Spielname, Ihre gewählte Farbe und Ihr Klassensiegel, Ihre Antworten (samt
+        der Zeit, die Sie dafür brauchten) und Punkte an den Host übertragen und von dort an die Mitspielenden im Raum.
+        Ebenso die Position Ihres Mauszeigers oder Fingers im Spiel, samt Klicks, die die Mitspielenden live auf ihrem
+        Bildschirm sehen, und ob das Spiel bei Ihnen gerade im Vordergrund ist und genutzt wird: In der Lobby sehen die
+        anderen, wenn Sie abwesend oder untätig sind oder Ihre Verbindung langsam ist. Der Host erhält außerdem eine zufällige Gerätekennung (siehe Abschnitt 6), mit der Sie
         nach einem Verbindungsabbruch wieder Ihren Platz einnehmen können; sie wird den übrigen Mitspielenden nicht
         gezeigt. Diese Daten liegen nur in den Browsern der Beteiligten und werden nicht auf einem Server gespeichert.
       </p>
@@ -117,17 +126,33 @@
       </p>
 
       <h2>6. Speicherung im Browser (Local Storage)</h2>
+      <p>Das Spiel speichert ausschließlich auf Ihrem Gerät, im Local Storage Ihres Browsers:</p>
+      <ul>
+        <li>
+          Ihren zuletzt verwendeten Spielnamen, Ihre gewählte Farbe und eine zufällig erzeugte Gerätekennung (zum
+          Wiedereintritt in ein laufendes Spiel);
+        </li>
+        <li>
+          Ihren Spielfortschritt: den Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig
+          erkannt haben und wie schnell; er lässt sich auf der Codex-Seite löschen), Ihre Übungsantworten, Ihre
+          Delve-Läufe, Ihre Erfolge, Ihre Klassensiegel und Ihre Antwort auf die tägliche Frage; an andere Geräte geht
+          davon nur etwas, wenn Sie Ihre eigenen koppeln (Abschnitt 4);
+        </li>
+        <li>
+          Ihre Einstellungen: Ton und Lautstärke, die Effekte (samt einer Messung, wie flüssig Ihr Gerät sie darstellt),
+          die Tastenbelegung, die zuletzt gewählten Raumeinstellungen (darunter „Raumcode verbergen“), wo das
+          Gegenstandsfenster zuletzt lag, welche Ansichten Sie zuletzt gewählt haben, welche Hinweise schon gezeigt
+          wurden und, falls Sie die Reichweitenmessung
+          abgeschaltet haben, diese Einstellung (Abschnitt 7);
+        </li>
+        <li>bei gekoppelten Geräten den Kopplungscode, eine Kennung dieses Geräts und den Stand der übrigen Geräte.</li>
+      </ul>
       <p>
-        Das Spiel speichert ausschließlich auf Ihrem Gerät: Ihren zuletzt verwendeten Spielnamen, eine zufällig erzeugte
-        Gerätekennung (zum Wiedereintritt in ein laufendes Spiel), die Einstellungen „Ton aus“ und „Raumcode verbergen“,
-        falls Sie die Reichweitenmessung abgeschaltet haben, diese Einstellung (Abschnitt 7),
-        Ihren Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig erkannt haben und wie
-        schnell; er wird nur an Ihre eigenen gekoppelten Geräte übertragen, falls Sie welche koppeln, siehe Abschnitt 4,
-        und lässt sich auf der Codex-Seite löschen), bei gekoppelten Geräten den Kopplungscode und den Stand der übrigen
-        Geräte, sowie im Session Storage den laufenden
-        Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet. Diese
-        Angaben sind für die von Ihnen gewünschten Funktionen unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG); es werden
-        keine Cookies gesetzt. Sie können die Daten jederzeit über die Einstellungen Ihres Browsers löschen.
+        Im Session Storage liegt der laufende Spielstand, damit ein Neuladen der Seite das Spiel nicht beendet, und im
+        Cache-Speicher des Browsers liegen Grafiken, die das Spiel selbst gezeichnet hat, damit es sie nicht jedes Mal neu
+        berechnen muss. Diese Angaben sind für die von Ihnen gewünschten Funktionen unbedingt erforderlich (§ 25 Abs. 2
+        Nr. 2 TDDDG); es werden keine Cookies gesetzt. Sie können die Daten jederzeit über die Einstellungen Ihres
+        Browsers löschen.
       </p>
 
       <h2>7. Reichweitenmessung (GoatCounter)</h2>
@@ -241,18 +266,26 @@
             achievements, class sigils, daily answer, name and chosen colour the same. The matchmaking server only sees a name worked out from the
             code, never the code or that progress; as that name stays the same, it does see from which IP addresses and
             when your paired devices come online. A code shown that no device pairs with within ten minutes is let go of.
-            You can unpair at any time in the settings.
+            You can unpair at any time in the settings. Scanning another device's QR code asks for your camera; its picture
+            is read on your device only, to find the code, and is neither stored nor sent anywhere.
           </li>
           <li>
-            <strong>In the game:</strong> your chosen name, answers and scores go to the host and the other players in your
-            room. A random device token lets you rejoin after a disconnect, and only the host sees it. Public rooms show the
+            <strong>In the game:</strong> your chosen name, colour and class sigil, your answers (with how long they took)
+            and scores go to the host and the other players in your room, and so do your pointer or finger on the game,
+            clicks included, which they see live, and whether your game is on screen and in use (the lobby shows when
+            you are away or idle, or your connection is slow). A random device token lets you rejoin after a disconnect, and only the host sees it. Public rooms show the
             host's name and settings in the room list.
           </li>
           <li>
-            <strong>Your browser</strong> stores your name, the device token, your sound and hide-code settings, your choice not to be counted (if you made it), and your
-            codex (the items you have seen in games and how well you answered; it is sent only to your own paired devices, if you
-            pair any, and can be erased on the codex page), plus the running game in session storage. These are strictly necessary for the features you use, and you can clear
-            them at any time.
+            <strong>Your browser</strong> stores your name, colour and the device token; your progress (the codex of the
+            items you have seen in games and how well you answered, which can be erased on the codex page, your practice
+            answers, Delve runs, achievements, class sigils and daily answer; sent only to your own paired devices, if you
+            pair any); your settings (sound and volume, effects with a measure of how smoothly your device runs them, key
+            bindings, your last room settings including hide-code, where the item window was, the views you chose last,
+            which tips were shown, and your choice not to be counted, if you made it); and, with paired devices, the
+            pairing code, this device's id and the others' progress. Session storage holds the running game, and the
+            browser's cache the pictures the game drew itself. These are strictly necessary for the features you use,
+            and you can clear them at any time.
           </li>
           <li>
             <strong>Visitor counts:</strong> GoatCounter (Martin Tournoij, Ireland; servers in Germany and Finland) counts
