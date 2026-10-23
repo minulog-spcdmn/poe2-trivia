@@ -35,6 +35,46 @@ same time, in a random category (never one of the last 2, 3 or 4, by difficulty,
 - The host's own answers reach the game instantly, while guests' answers
   travel over the network, so the host has a small speed edge.
 
+## Craft
+
+**Craft** (online only, two players or more): each player scrambles a unique
+item for another to name. Everyone starts with 20 gold; gold is the score
+(`src/lib/craft.ts`, `CRAFT` and `ORBS`, holds every number below).
+
+Each round has four steps, each on a clock; a step ends early once everyone
+is done:
+
+1. **Shop** (30 s): buy currency with your gold. What you buy, and how much
+   gold you have now, nobody else sees: the others' gold shows as it was when
+   the round began.
+   - To scramble your item: Orb of Annulment (3 gold) takes a random mod line
+     away; Chaos Orb (4) swaps a random mod line, or the picture, for another
+     item's of the same kind; Veil Orb (2) hides a quarter of the picture
+     (four hide it all); Orb of Chance (2) trades your item for a fresh one,
+     and what you used on the old one is lost.
+   - To unscramble the one passed to you: Exalted Orb (3) brings back a line
+     that was taken away; Divine Orb (4) puts back a line, or the picture,
+     that was swapped; Unveil Orb (2) uncovers a quarter of what was hidden.
+2. **Scramble** (40 s): everyone is dealt a unique item with at least three
+   mod lines, and each item goes to the next player round the table. You
+   pick the orb, the game picks what it hits, as in Path of Exile. You see
+   your item as it is and what you did to it; an orb that would do nothing
+   more can't be used.
+3. **Name it** (45 s): you see the item passed to you as it now looks: its
+   picture, its mod lines and the kind of item it is, never its name, nor
+   which orbs were used or how many, nor what a Chaos Orb changed. Your
+   undos find their own target, and one with nothing to undo is spent all
+   the same. Then pick its name from six, its lookalikes among them.
+4. **Reveal** (12 s): both items are shown as they were. A right name earns
+   10 gold from the bank; a wrong one, or none in time, costs the guesser 6
+   gold (or all they have, if less), paid to the item's maker.
+
+The game ends after the eighth round, or after the first round in which
+someone reaches 80 gold. The most gold wins; a tie shares the win. There are
+no catch-up rules: the prices and payouts are the balance. Someone who joins
+mid-game watches until the next one; a step never waits for a player who
+left, and if fewer than two are left the game ends.
+
 ## Delve
 
 **Delve** (alone, online or on one device; or together, online): no
@@ -672,7 +712,7 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     for them then, under their name), so two or more at one device can play
     with others online, or alone together without anyone joining. They're
     guests: no codex, records or achievements of their own, and their turns
-    count for nobody. Race and Delve set them aside (they need a device
+    count for nobody. Race, Delve and Craft set them aside (they need a device
     each, or are played alone or as a team online), and Turns brings them
     back, so looking at another mode loses nobody. Removing one takes one
     click (there's no device to bar). See `Player.local` and `aside` in

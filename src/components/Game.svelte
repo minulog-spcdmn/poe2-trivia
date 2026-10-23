@@ -6,6 +6,8 @@
   import Scoreboard from './Scoreboard.svelte';
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
+  import CraftView from './CraftView.svelte';
+  import { CRAFT, stepMs } from '../lib/craft';
   import Avatar from './Avatar.svelte';
   import DrawnMark from './DrawnMark.svelte';
   import PlayerName from './PlayerName.svelte';
@@ -42,6 +44,8 @@
 
 
   const race = $derived(s.settings.mode === 'race');
+  /** A Craft game's round under way (its steps are its own: CraftView). */
+  const craft = $derived(s.phase === 'craft' && s.craft ? s.craft : null);
   const run = $derived(s.delve ?? null);
   const depth = $derived(delveDepth(s));
   const group = $derived(isGroupRun(s));
@@ -106,8 +110,8 @@
   // One colour for the banner's rules and glow and for its effects, which can't
   // read CSS variables (so the race colour is --unique-hi written out).
   // Delve together has no player on turn: the banner takes the depth's colour.
-  const bannerColor = $derived(dm ? '#e0553f' : race ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
-  const bannerBig = $derived(race || mine || group);
+  const bannerColor = $derived(dm ? '#e0553f' : race || craft ? '#e08a44' : run && group ? accentAt(depth) : playerColor(active.hue));
+  const bannerBig = $derived(race || mine || group || !!craft);
 
   /** Svelte action: the turn banner's entrance. Runs once per turn (the stage is keyed). */
   function bannerFx(node: HTMLElement, o: { color: string; big: boolean }) {
@@ -126,7 +130,9 @@
   // crosses to the next turn, as one depth gives way to the next.
   const startsRun = $derived(!!run && shownDepth(depth) <= 0);
   const bannerTitle = $derived(
-    race
+    craft
+      ? `Round ${craft.round} of ${CRAFT.rounds}`
+      : race
       ? `Question ${s.turnCount + 1}`
       : run
         ? startsRun
@@ -185,7 +191,7 @@
   // the depth and its cards come in together.
   const held = $derived(dealing.held);
   /** The stage in play: the turn's, or an empty one while its cards are on their way. */
-  const stageKey = $derived(held ? `held:${s.turnCount}` : `${s.turnCount}`);
+  const stageKey = $derived(craft ? `craft:${craft.round}` : held ? `held:${s.turnCount}` : `${s.turnCount}`);
 
   // Delve: each depth, once, as its cards are dealt. A new zone's name has its
   // title card, in the plunge into it (components/zonecard); here the
@@ -333,8 +339,13 @@
 </script>
 
 {#snippet timer()}
+  {#if craft}
+    <!-- Craft: each step's own clock. -->
+    {#key `${craft.round}:${craft.step}`}
+      <TimerRing deadline={craft.until} total={stepMs(craft.step) / 1000} {warnFrom} />
+    {/key}
   <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
-  {#if !drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0))}
+  {:else if !drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0))}
     {#key q.askedAt}
       <TimerRing deadline={q.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
@@ -396,7 +407,9 @@
 
           <!-- The cards fade out over the question that takes their place (see cardsOut). -->
           <div class="turn-body">
-            {#if s.phase === 'choosing' || drawing}
+            {#if craft}
+              <CraftView timer={slim ? undefined : timer} />
+            {:else if s.phase === 'choosing' || drawing}
               <div class="cards-slot" out:cardsOut>
                 <ChooseCategory drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null} ondrawn={() => (raffle = null)} />
               </div>
@@ -433,7 +446,7 @@
                 : 'Use the heart on an entry to revive that teammate with one of your lives.'}
             </p>
           {/if}
-          {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
+          {#if session.isHost && !local && !race && !run && !craft && !active.connected && s.phase !== 'reveal'}
             <div class="skip" data-cursor="skip" transition:fade>
               <span class="muted">{active.name} is disconnected{skipIn ? `; skipping in ${skipIn}s` : ''}.</span>
               <button class="btn small" onclick={() => skipTurn(session.skipAt)}>Skip their turn</button>

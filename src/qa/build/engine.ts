@@ -5,13 +5,18 @@
 // read from src/data.
 
 import { Engine, type Item } from '../../lib/game.ts';
+import { linesFrom } from '../../lib/craftLines.ts';
+import type { ModLines } from '../../lib/craft.ts';
 
-let data: { items: Item[]; fakes: Record<string, string[]> } | null = null;
+let data: { items: Item[]; fakes: Record<string, string[]>; lines: ModLines | null } | null = null;
 let shared: Engine | null = null;
 
-/** The items (and made-up names) scenes are built from, from now on. */
-export function useItems(items: Item[], fakes: Record<string, string[]>) {
-  data = { items, fakes };
+/**
+ * The items (and made-up names) scenes are built from, from now on, and
+ * their tooltips (itemStats.json), which Craft's scenes deal from.
+ */
+export function useItems(items: Item[], fakes: Record<string, string[]>, stats?: Record<string, [string, string][][]>) {
+  data = { items, fakes, lines: stats ? linesFrom(stats) : null };
   shared = null;
 }
 
@@ -43,5 +48,7 @@ export function playEngine(seed: number, clock: { now: number }): Engine {
     x = (x * 1664525 + 1013904223) >>> 0;
     return x / 2 ** 32;
   };
-  return new Engine(given().items, { fakes: given().fakes, rng, now: () => clock.now, autoClock: true });
+  const engine = new Engine(given().items, { fakes: given().fakes, rng, now: () => clock.now, autoClock: true });
+  if (given().lines) engine.setCraftLines(given().lines!);
+  return engine;
 }

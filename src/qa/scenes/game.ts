@@ -11,6 +11,7 @@ import { longestNamed } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
+import type { Orb } from '../../lib/craft.ts';
 
 /** Who sits down, in order: any game's players are the first so many. */
 const SEATED = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -101,6 +102,36 @@ export function gameScenes(): Scene[] {
   const race = (v: Values) => table(seated(v, 5), { mode: 'race', ...asked(v) }).start();
   const delveAlone = () => table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
   const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
+  // Craft: Kalguur hosting, Doryani's item passed to him and his to her (with two).
+  const craft = (v: Values) => table(seated(v, 2), { mode: 'craft' }).start();
+  const craftSeats = [host('Kalguur'), guest('Doryani'), WATCHER];
+  const craftMany = { controls: [players(2, 2)] };
+  const buy = (t: Table, name: string, orbs: Orb[]) => {
+    for (const orb of orbs) t.act({ type: 'craft', do: 'buy', orb }, name);
+    return t;
+  };
+  const use = (t: Table, name: string, orbs: Orb[]) => {
+    for (const orb of orbs) t.act({ type: 'craft', do: 'use', orb }, name);
+    return t;
+  };
+  const allReady = (t: Table) => {
+    for (const p of t.s.players) t.act({ type: 'craft', do: 'ready' }, p.name);
+    return t;
+  };
+  // The shop done: Kalguur with two of each scramble, Doryani with undos too.
+  const craftShopped = (v: Values) => {
+    const t = craft(v);
+    buy(t, 'Kalguur', ['annul', 'annul', 'chaos', 'veil', 'veil']);
+    buy(t, 'Doryani', ['annul', 'chaos', 'veil', 'exalt', 'divine', 'unveil']);
+    return allReady(t);
+  };
+  // Both items scrambled and passed on.
+  const craftScrambled = (v: Values) => {
+    const t = craftShopped(v);
+    use(t, 'Kalguur', ['annul', 'annul', 'chaos', 'veil', 'veil']);
+    use(t, 'Doryani', ['annul', 'chaos', 'veil']);
+    return allReady(t);
+  };
   const turnsSeats = [guest('Doryani'), host('Kalguur'), WATCHER];
   // Una of the Vaal is in every take-turns scene's moves; the race's answer Doryani's and hers.
   const many = { controls: [players(3, 3)] };
@@ -158,6 +189,40 @@ export function gameScenes(): Scene[] {
         .start()
         .playTo((s) => !!s.deathmatch),
     ),
+    scene('craft-shop', 'Craft', 'The shop, Kalguur part way through', craftSeats, (v) => buy(craft(v), 'Kalguur', ['annul', 'chaos']), craftMany),
+    scene(
+      'craft-scramble',
+      'Craft',
+      'Scrambling: a line taken, one swapped, the picture veiled',
+      craftSeats,
+      (v) => use(craftShopped(v), 'Kalguur', ['annul', 'chaos', 'veil']),
+      craftMany,
+    ),
+    scene('craft-guess', 'Craft', 'Naming a scrambled item, an undo used', craftSeats, (v) => use(craftScrambled(v), 'Doryani', ['exalt']), craftMany),
+    scene(
+      'craft-reveal',
+      'Craft',
+      'The reveal: Doryani named it, Kalguur missed',
+      craftSeats,
+      (v) => {
+        const t = craftScrambled(v);
+        for (const p of t.s.players) {
+          const piece = t.s.craft!.pieces.find((x) => x.guesser === p.id);
+          if (!piece) continue;
+          const right = piece.options.indexOf(piece.item);
+          t.act({ type: 'craft', do: 'guess', index: p.name === 'Kalguur' ? (right + 1) % piece.options.length : right }, p.name);
+        }
+        return t;
+      },
+      craftMany,
+    ),
+    scene('craft-late', 'Craft', 'The last round: gold near the cap', craftSeats, (v) => {
+      const t = craft(v);
+      for (const p of t.s.players) p.score = p.name === 'Kalguur' ? 72 : 58;
+      t.s.craft!.opening = Object.fromEntries(t.s.players.map((p) => [p.id, p.score]));
+      t.s.craft!.round = t.s.round = 8;
+      return t;
+    }, craftMany),
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
     scene('delve-finds', 'Delve alone', 'The cards dealt: an Azurite Vein and a Flare Cache among them', [ALONE], () => {
       const t = delveAlone();

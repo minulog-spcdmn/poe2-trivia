@@ -41,6 +41,7 @@
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
   import { landing } from './lib/sync/boot.svelte';
+  import { CRAFT } from './lib/craft';
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
@@ -525,6 +526,10 @@
             <span class="deathmatch">⚔ Deathmatch</span>
             <span class="dot">•</span>
             <span>Round {gs.deathmatch.round}</span>
+          {:else if gs.craft}
+            <span>Round {gs.craft.round} of {CRAFT.rounds}</span>
+            <span class="dot target">•</span>
+            <span class="target">Gold cap <b>{CRAFT.goldCap}</b></span>
           {:else}
             <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
             <span class="dot target">•</span>

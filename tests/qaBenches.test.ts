@@ -5,9 +5,9 @@ import { useItems } from '../src/qa/build/engine.ts';
 import { PIECES } from '../src/qa/benches/pieces.ts';
 import { stateAt, stateValues, valuesOf, valuesQuery, type Control } from '../src/qa/bench.ts';
 import { benchesTouched, type Touched } from '../src/qa/change.ts';
-import { fakes, items } from './helpers.ts';
+import { fakes, items, stats } from './helpers.ts';
 
-useItems(items, fakes);
+useItems(items, fakes, stats);
 const { benches } = await import('../src/qa/benches/index.ts');
 const { catalog } = await import('../src/qa/scenes/index.ts');
 

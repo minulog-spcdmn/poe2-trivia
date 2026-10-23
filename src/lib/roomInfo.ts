@@ -39,13 +39,15 @@ const CODE = CODE_PATTERN;
 const int = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
 /**
- * The listing as it goes out. A Delve room says it plays turns, with a flag
- * on top, so scanners from before Delve still list it (as turns) instead of
- * dropping it, which would end their scan early.
+ * The listing as it goes out. A Delve or Craft room says it plays turns,
+ * with a flag on top, so scanners from before it still list it (as turns)
+ * instead of dropping it, which would end their scan early; a Craft game
+ * under way says it is at a question, for the same reason.
  */
 export function wireRoomInfo(info: RoomInfo): Record<string, unknown> {
-  const { mode, ...rest } = info;
-  return { ...rest, mode: mode === 'delve' ? 'turns' : mode, ...(mode === 'delve' ? { delve: true } : {}), v: PROTOCOL_VERSION };
+  const { mode, phase, ...rest } = info;
+  const flag = mode === 'delve' ? { delve: true } : mode === 'craft' ? { craft: true } : {};
+  return { ...rest, mode: mode === 'delve' || mode === 'craft' ? 'turns' : mode, phase: phase === 'craft' ? 'question' : phase, ...flag, v: PROTOCOL_VERSION };
 }
 
 /** Listings come from strangers: accept only well-formed ones. */
@@ -63,6 +65,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
   if (!isDifficulty(r.difficulty)) return null;
   if (typeof r.phase !== 'string' || !PHASES.includes(r.phase)) return null;
   const delve = r.delve === true || r.mode === 'delve';
+  const craft = !delve && r.craft === true;
   return {
     code: r.code,
     host,
@@ -70,7 +73,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
     maxPlayers: r.maxPlayers,
     spectators: r.spectators,
     maxSpectators: r.maxSpectators,
-    mode: delve ? 'delve' : r.mode,
+    mode: delve ? 'delve' : craft ? 'craft' : r.mode,
     difficulty: r.difficulty as Difficulty,
     target: r.target,
     phase: r.phase as RoomInfo['phase'],
@@ -82,7 +85,7 @@ export function parseRoomInfo(raw: unknown): RoomInfo | null {
   };
 }
 
-const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve' } as const;
+const MODE_NAMES = { turns: 'Turns', race: 'Race', delve: 'Delve', craft: 'Craft' } as const;
 
 /**
  * A listed room's line under its host: "Turns · Cruel · 3/12" while it
@@ -97,7 +100,7 @@ export function roomMeta(r: RoomInfo): string {
   if (r.mode === 'delve' && r.depth && r.phase !== 'lobby') {
     // A finished run that never left the entrance still reads as its depth, not as one waiting there.
     how = shownDepth(r.depth) > 0 || r.phase === 'over' ? `depth ${Math.max(0, shownDepth(r.depth))}` : 'at the entrance';
-  } else if (gathering) how = r.mode === 'delve' ? null : DIFFICULTY_NAMES[r.difficulty];
+  } else if (gathering) how = r.mode === 'delve' || r.mode === 'craft' ? null : DIFFICULTY_NAMES[r.difficulty];
   else how = 'in a game';
   return [MODE_NAMES[r.mode], how, `${r.players}/${r.maxPlayers}`].filter(Boolean).join(' · ');
 }

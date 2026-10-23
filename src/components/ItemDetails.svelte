@@ -10,6 +10,13 @@
    */
   type Kind = 'p' | 'r' | 'i' | 'e' | 'd' | 'c' | 'f' | 't';
   type Line = [kind: Kind, text: string];
+
+  /**
+   * Craft: a mod line as it stands, in place of the item's own tooltip:
+   * `gone`, one taken away (its maker sees it struck out), `swapped`, one
+   * from another item.
+   */
+  export type ModShown = { text: string; mark?: 'gone' | 'swapped' };
   type Stats = Record<string, Line[][]>;
 
   // Loaded the first time an item's details are opened: most games never do.
@@ -75,18 +82,25 @@
 <script lang="ts">
   // An item's tooltip as the game shows it: its properties, requirements,
   // mods and flavour text, in sections parted by the game's plain rule.
-  let { item }: { item: DrawnItem } = $props();
+  // `mods` (Craft): only these mod lines, as they stand, in place of the item's tooltip.
+  let { item, mods }: { item?: DrawnItem; mods?: ModShown[] } = $props();
 
   let all = $state<Stats | null>(loaded);
   let failed = $state(false);
   if (!loaded) loadStats().then((s) => (all = s), () => (failed = true));
-  const sections = $derived(all ? sectionsOf(item, all) : null);
+  const sections = $derived(all && item && !mods ? sectionsOf(item, all) : null);
 </script>
 
 {#snippet text(t: string)}{#each runs(t) as r, k (k)}{#if r.c}<span class={r.c}>{r.t}</span>{:else}{r.t}{/if}{/each}{/snippet}
 
 <div class="tooltip-body">
-  {#if failed}
+  {#if mods && all}
+    <div class="section">
+      {#each mods as m, j (j)}
+        <p class="line e" class:gone={m.mark === 'gone'} class:swapped={m.mark === 'swapped'}>{@render text(m.text)}</p>
+      {/each}
+    </div>
+  {:else if failed}
     <p class="wait">Its details couldn't be loaded.</p>
   {:else if !sections}
     <p class="wait" aria-label="Loading">…</p>
@@ -187,6 +201,16 @@
   .wait {
     margin: 0;
     color: var(--muted);
+  }
+  /* Craft, as its maker sees it: a line taken away, struck through and faint; one swapped in, in another item's colour. */
+  .gone {
+    opacity: 0.4;
+    text-decoration: line-through;
+    text-decoration-color: rgba(217, 138, 110, 0.8);
+  }
+  .swapped,
+  .swapped :global(span) {
+    color: #d98a6e;
   }
   /* The game's rule between sections: a plain line fading out at both ends, in the unique's colour. */
   .rule {

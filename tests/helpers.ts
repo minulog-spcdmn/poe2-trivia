@@ -143,3 +143,6 @@ export function room(o: RunOpts = {}) {
   };
   return h;
 }
+
+/** Every item's tooltip (itemStats.json), as Craft deals from it. */
+export const stats: Record<string, [string, string][][]> = JSON.parse(readFileSync(new URL('../src/data/itemStats.json', import.meta.url), 'utf8'));

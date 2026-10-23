@@ -56,15 +56,16 @@ export async function boot(asked: URLSearchParams) {
   // The scene first: what it puts in the address has to be there before the
   // app's modules read it (the codex's #codex, an invite's ?room=).
   // (Its screen's scenes only, scenes/one.ts: the code before this change may lack what another screen's use.)
-  const [{ session, engine, picturesOf, veilClock }, { useItems }, { sceneOf }, { default: fakeNames }, { useCaptured }, { buildScene }] = await Promise.all([
+  const [{ session, engine, picturesOf, veilClock }, { useItems }, { sceneOf }, { default: fakeNames }, { useCaptured }, { buildScene }, { default: itemStats }] = await Promise.all([
     import('../../lib/session.svelte.ts'),
     import('../build/engine.ts'),
     import('../scenes/one.ts'),
     import('../../data/fakes.json'),
     import('../scenes/captured.ts'),
     import('../tweaks.ts'),
+    import('../../data/itemStats.json'),
   ]);
-  useItems(engine.items, fakeNames);
+  useItems(engine.items, fakeNames, itemStats as unknown as Record<string, [string, string][][]>);
   useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
   const key = asked.get('s');
   const scene = await sceneOf(key);
@@ -147,7 +148,7 @@ export async function boot(asked: URLSearchParams) {
   session.bestAtStart = built.bestAtStart ?? null;
   session.earned = built.earned && state?.startedAt !== undefined ? { game: state.startedAt, ids: built.earned } : null;
   // A guest or a spectator holds the room as the host sends it: what's still to guess left out.
-  session.state = state && seat.mode === 'client' ? game.publicView(state) : state;
+  session.state = state && seat.mode === 'client' ? game.publicView(state, seat.me) : state;
   // Its clocks stand still at the scene's moment.
   if (built.at !== undefined) {
     const now = built.at;
@@ -177,6 +178,21 @@ export async function boot(asked: URLSearchParams) {
       for (const m of picturesOf(made)) media.shown.receive(m);
     } catch (err) {
       console.error("The scene's art couldn't be made", err);
+    }
+  }
+
+  // Craft: the pictures this seat may see, drawn as the host draws them (lib/craftLooks.svelte.ts).
+  if (state?.craft && seat.me) {
+    const [{ wantedLooks }, { looks }] = await Promise.all([import('../../lib/craft.ts'), import('../../lib/craftLooks.svelte.ts')]);
+    for (const w of wantedLooks(state)) {
+      const it = engine.byId.get(w.art);
+      if (!it || !w.to.includes(seat.me)) continue;
+      try {
+        const p = await media.prepLook({ art: it.id, w: it.w, h: it.h }, w.hide);
+        looks.take(w.key, p.w, p.h, p.data);
+      } catch (err) {
+        console.error("The scene's art couldn't be made", err);
+      }
     }
   }
 

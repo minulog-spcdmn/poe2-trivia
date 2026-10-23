@@ -4,6 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_SPECTATORS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
   import { DIFFICULTY_NAMES, MODE_NAMES, describe } from '../lib/difficultyText';
+  import { CRAFT } from '../lib/craft';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
@@ -39,6 +40,7 @@
     { id: 'turns', name: MODE_NAMES.turns },
     { id: 'race', name: MODE_NAMES.race },
     { id: 'delve', name: MODE_NAMES.delve, isNew: true },
+    { id: 'craft', name: MODE_NAMES.craft, isNew: true },
   ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
@@ -169,20 +171,20 @@
   function setMode(mode: GameMode) {
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: RACE_DEFAULT_TIMER } : { mode } });
   }
-  /** Hot-seat: Race can't be played here, so tapping it only says why (for a few seconds, in the mode's description). */
-  let peek = $state(false);
+  /** Hot-seat: Race and Craft can't be played here, so tapping one only says why (for a few seconds, in the mode's description). */
+  let peek = $state<GameMode | null>(null);
   let peekTimer: ReturnType<typeof setTimeout> | undefined;
   onMount(() => () => clearTimeout(peekTimer));
-  const offline = (m: GameMode) => m === 'race' && local;
+  const offline = (m: GameMode) => (m === 'race' || m === 'craft') && local;
   function pickMode(m: GameMode, node: HTMLElement) {
     if (offline(m)) {
       refuse(node);
-      peek = true;
+      peek = m;
       clearTimeout(peekTimer);
-      peekTimer = setTimeout(() => (peek = false), 3500);
+      peekTimer = setTimeout(() => (peek = null), 3500);
       return;
     }
-    peek = false;
+    peek = null;
     if (m !== s.settings.mode) setMode(m);
   }
   /** The modes are a radio group: the arrow keys move the choice along it (skipping Race in hot-seat). */
@@ -235,7 +237,10 @@
   const alone = $derived(s.players.length < 2);
   /** Nobody new can come in: locked, or every seat taken and no room left to watch from (a full room lets them in to watch, and take the first seat freed). */
   const closed = $derived(!!s.settings.locked || (full && (s.spectators?.length ?? 0) >= MAX_SPECTATORS));
-  const canStart = $derived(s.players.length >= 1 && !delveCrowded);
+  const craft = $derived(s.settings.mode === 'craft');
+  /** Craft is played against each other: two or more, online. */
+  const craftAlone = $derived(craft && s.players.length < 2);
+  const canStart = $derived(s.players.length >= 1 && !delveCrowded && !craftAlone);
   /** Spectators waiting for a seat: left over when the last game filled every seat, or come in while it was full. */
   const waiting = $derived((s.spectators ?? []).filter((o) => !o.stay));
   /** Spectators who chose to watch rather than play. */
@@ -265,6 +270,8 @@
       <p class="go-note warn">Delve on one device is for one player. Remove the others, or host a room.</p>
     {:else if local && !s.players.length}
       <p class="go-note">Add the first exile to begin.</p>
+    {:else if craftAlone}
+      <p class="go-note">{hereOnly ? 'Craft is played online, by two or more.' : 'Craft needs a second exile. Send your party the code or the link.'}</p>
     {:else if hereOnly && s.players.length < 2}
       <p class="go-note">{atScreen ? 'Begin alone, or add the players at your screen.' : 'You can begin alone.'}</p>
     {:else if !local && s.players.length < 2}
@@ -526,7 +533,7 @@
               data-mode={m.id}
               aria-label={m.isNew ? `${m.name}, new` : undefined}
               disabled={!isHost && !on}
-              title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
+              title={offline(m.id) ? `${m.name} needs every player on their own device` : undefined}
               onclick={(e) => isHost && pickMode(m.id, e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
@@ -536,12 +543,16 @@
           {/each}
         </div>
         <!-- The chosen mode's description, under a notch that points up at it. -->
-        <div class="about" data-cursor="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
+        <div class="about" data-cursor="about" id="mode-blurb" style:--at={MODES.findIndex((m) => m.id === (peek ?? s.settings.mode))} class:peek={!!peek}>
           <span class="about-frame" aria-hidden="true"></span>
           {#key peek ? 'peek' : s.settings.mode}
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
-              {#if peek}
+              {#if peek === 'craft'}
+                <p>Craft is online only: everyone scrambles and names on their own device. Host a room to craft.</p>
+              {:else if peek}
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
+              {:else if craft}
+                <p>Scramble an item with currency for the next exile to name, and name the one passed to you. Gold buys the currency, and the most gold wins. Online only.</p>
               {:else if delve}
                 <!-- Several on one device can't delve; the line under Begin says what to do instead. -->
                 <p>{together ? 'How deep can your team go, on three lives each?' : 'How deep can you go on three lives?'} Questions increase in difficulty.</p>
@@ -555,7 +566,14 @@
         </div>
       </div>
 
-      {#if delve}
+      {#if craft}
+        <!-- Craft has no settings: everyone plays it by the same numbers (craft.ts CRAFT). -->
+        <ul class="rules" data-cursor="rules">
+          <li>{@render key('Rounds', CRAFT.rounds)}<span>Or until someone holds <span class="num">{CRAFT.goldCap}</span> gold; the most gold wins.</span></li>
+          <li>{@render key('Right names')}<span>Earn <span class="num">{CRAFT.rightPay}</span> gold from the bank.</span></li>
+          <li>{@render key('Wrong names')}<span>Pay <span class="num">{CRAFT.wrongCost}</span> gold to the exile who scrambled the item.</span></li>
+        </ul>
+      {:else if delve}
         <!-- The descent is Delve's progress: it is never cut. -->
         <!-- On a desktop the descent takes the height the panel has spare, at its own width:
              the gap to the finds is only what its leader lines need. -->
@@ -1143,7 +1161,7 @@
   }
   .modes {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.5rem;
   }
   /* Icon and name side by side: the same buttons, half as tall. */
@@ -1289,8 +1307,8 @@
     position: absolute;
     /* One pixel into the border, so the two always touch. */
     top: calc(-1 * var(--notch));
-    /* Under the middle of the chosen button: three columns, two gaps of 0.5rem. */
-    left: calc((100% - 1rem) / 6 + var(--at, 0) * ((100% - 1rem) / 3 + 0.5rem) - var(--notch) - 1px);
+    /* Under the middle of the chosen button: four columns, three gaps of 0.5rem. */
+    left: calc((100% - 1.5rem) / 8 + var(--at, 0) * ((100% - 1.5rem) / 4 + 0.5rem) - var(--notch) - 1px);
     width: calc(2 * var(--notch));
     height: var(--notch);
     background: var(--line);

@@ -5,7 +5,7 @@
 // worker can: done on the page, the alteration's per-pixel noise and the
 // veil's cut held it up for a second or more as each question began.
 
-import { labelPatches, litMask, packLabels, patchShapes, spreadOrder, veilSchedule, visibleBox, type PatchShape, type VeilPlan } from './patches.ts';
+import { labelPatches, litMask, packLabels, patchShapes, seededRandom, spreadOrder, veilSchedule, visibleBox, type PatchShape, type VeilPlan } from './patches.ts';
 
 /** One picture to prepare: the item's art and how to draw it. */
 export interface PrepJob {
@@ -19,6 +19,13 @@ export interface PrepJob {
   mirror: boolean;
   /** Veiled: cut into `size` × `size`-ish patches on `seed`, paced as `plan` has it (cutArt). */
   veil?: { size: number; seed: number; plan: VeilPlan };
+  /**
+   * Craft: drawn the same way every time for `seed` (so its patches fall in
+   * the same places from one look to the next), and with `share` of its
+   * patches cut out (the ones a veil would uncover last), before it is
+   * encoded: what is hidden never leaves the host.
+   */
+  hide?: { size: number; seed: number; share: number };
 }
 
 /** A veiled picture's cut (cutArt), in art pixels. */
@@ -50,7 +57,6 @@ export interface Prepped {
   cut?: ArtCut & { pixels: ImageData };
 }
 
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 /** How many pixels per art pixel a picture goes out with: as many as its file has (its width over the art's), but no more than `most`. */
 export const artScale = (fileWidth: number, artWidth: number, most: number) => Math.max(1, Math.min(most, Math.round(fileWidth / artWidth)));
@@ -136,6 +142,9 @@ export async function prepare<S extends Surface>(
   encode: (canvas: S, type: string, quality: number) => Promise<ArrayBuffer>,
 ): Promise<Prepped> {
   const S = artScale(fileWidth, job.w, job.most);
+  // Craft's pictures are drawn alike on their seed; every other one by chance.
+  const random = job.hide ? seededRandom(job.hide.seed ^ 0x2f6b) : Math.random;
+  const rand = (min: number, max: number) => min + random() * (max - min);
   const scale = rand(0.9, 1.0);
   const w = Math.round(job.w * scale);
   const h = Math.round(job.h * scale);
@@ -155,6 +164,23 @@ export async function prepare<S extends Surface>(
   ctx.putImageData(pixels, 0, 0);
   const W = canvas.width / S;
   const H = canvas.height / S;
+  if (job.hide && job.hide.share > 0) {
+    const small = surface(W, H);
+    const sg = context(small);
+    sg.imageSmoothingQuality = 'high';
+    sg.drawImage(canvas, 0, 0, W, H);
+    const label = labelPatches(W, H, job.hide.size, job.hide.seed, litMask(sg.getImageData(0, 0, W, H).data, W, H));
+    const order = spreadOrder(patchShapes(label, W, H), job.hide.seed);
+    const hidden = new Set(order.slice(order.length - Math.round(order.length * Math.min(1, job.hide.share))));
+    const d = pixels.data;
+    const row = canvas.width * 4;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!hidden.has(label[y * W + x])) continue;
+        for (let yy = y * S; yy < (y + 1) * S; yy++) for (let xx = x * S; xx < (x + 1) * S; xx++) d[yy * row + xx * 4 + 3] = 0;
+      }
+    ctx.putImageData(pixels, 0, 0);
+  }
   // A quality that keeps the upscaled art's detail.
   const data = await encode(canvas, 'image/webp', rand(0.92, 0.95));
   if (!job.veil) return { w: W, h: H, data };

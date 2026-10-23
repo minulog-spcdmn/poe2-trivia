@@ -252,7 +252,8 @@ export const cursorKey = (id: string) => id.slice(0, 8);
  * (whatever the mode: there's nothing to give away there), and in a game, but never while players race
  * for the same answer (race mode, a deathmatch's question), where one
  * hovering an answer would give it away. Delve together races for the
- * answer too, but as one team, so it shows them.
+ * answer too, but as one team, so it shows them. Never in Craft: which
+ * orbs a player reaches for is what the one naming their item mustn't see.
  */
 export function cursorsLive(s: GameState | null): boolean {
   // The lobby has nothing to give away, nor the end of a game.

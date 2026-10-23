@@ -73,6 +73,7 @@ export function zoneOf(depth: number) {
 export function scoreLine(s: GameState, winner: { id: string; score: number } | undefined): Part[] {
   if (!winner) return [];
   if (s.deathmatch && s.deathmatch.entrants.includes(winner.id)) return ['Tied on ', { n: winner.score }, ', won the deathmatch in round ', { n: s.deathmatch.round }];
+  if (s.settings.mode === 'craft') return [{ n: winner.score }, ' gold after ', { n: s.round }, ` ${s.round === 1 ? 'round' : 'rounds'}`];
   const race = s.settings.mode === 'race';
   const unit = race ? (s.round === 1 ? 'question' : 'questions') : s.round === 1 ? 'round' : 'rounds';
   return [{ n: winner.score }, ` ${winner.score === 1 ? 'point' : 'points'} after `, { n: s.round }, ` ${unit}`];

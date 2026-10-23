@@ -104,7 +104,31 @@
     };
   }
 
-  const ICONS: Record<GameMode, Icon> = { turns: hourglass(), race: bolt(), delve: shaft() };
+  /** Craft: a currency orb, its dark side hatched beyond the line where the light gives way. */
+  function orb(): Icon {
+    const c: Pt = [16, 16.5];
+    const r = 11;
+    // The terminator, an ellipse through the orb's top and bottom, bulging toward the dark.
+    const rx = 4.6;
+    const shade: string[] = [];
+    for (let y = c[1] - r + 1.6; y <= c[1] + r - 1.6; y += 1.05) {
+      const k = 1 - ((y - c[1]) / r) ** 2;
+      const x0 = c[0] + rx * Math.sqrt(k) + 0.55;
+      const x1 = c[0] + r * Math.sqrt(k) - 0.55;
+      if (x1 - x0 > 0.4) shade.push(line([x0, y], [x1, y]));
+    }
+    return {
+      lines: join(
+        arc(c, r, 0, 360),
+        `M${f(c[0])} ${f(c[1] - r)}A${f(rx)} ${f(r)} 0 0 1 ${f(c[0])} ${f(c[1] + r)}`,
+        // A glint where the light is.
+        arc([11.6, 12.4], 2.6, 270, 360),
+      ),
+      hair: shade.join(''),
+    };
+  }
+
+  const ICONS: Record<GameMode, Icon> = { turns: hourglass(), race: bolt(), delve: shaft(), craft: orb() };
 </script>
 
 <script lang="ts">

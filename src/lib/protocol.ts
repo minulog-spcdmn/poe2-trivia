@@ -9,10 +9,13 @@ import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { isChoosableHue } from './palette.ts';
+import { isOrb, type Orb } from './craft.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
  * each other. What each version changed, newest first:
+ * - 33: Craft (game.ts GameMode, craft.ts): its actions ('craft'), its
+ *   phase, each guest's own view of the state, and its pictures (look)
  * - 32: a question's pictures come down an art lane of their own
  *   (artLane.ts), the hello saying the guest opened it (lane); a question
  *   waits for its clock in every mode, as Delve's did (no deadline nor
@@ -56,7 +59,7 @@ import { isChoosableHue } from './palette.ts';
  * - 14: dynamite lit at 0 (Question.fuse); 13: a question blasted away (the
  *   blast action); 12: the frozen Delve rules; 11: the co-op vote and revive.
  */
-export const PROTOCOL_VERSION = 32;
+export const PROTOCOL_VERSION = 33;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -130,7 +133,15 @@ export type HostMsg =
   | SealedMsg
   /** The key to a question's sealed pictures, on the main channel to everyone as its clock starts, before the state that starts it. */
   | KeyMsg
-  | MediaMsg;
+  | MediaMsg
+  | LookMsg;
+
+/**
+ * Craft: an item's picture as it looks now, to the one player meant to see
+ * it (its maker, or its guesser), on the art lane. `key`: which piece and
+ * look it is (craftLooks.ts lookKey), saying nothing of the item.
+ */
+export type LookMsg = { t: 'look'; key: string; w: number; h: number; data: ArrayBuffer };
 
 export type MediaMsg =
   | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
@@ -226,6 +237,16 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // Delve: a stick of dynamite blasts the question asked at `askedAt` away (the host checks it against the run).
         case 'blast':
           return isInt(a.askedAt, 0, Number.MAX_SAFE_INTEGER) ? { t: 'action', action: { type: 'blast', askedAt: a.askedAt } } : null;
+        // Craft: a move of the sender's own (the host checks it against the game).
+        case 'craft': {
+          if (a.do !== 'buy' && a.do !== 'use' && a.do !== 'ready' && a.do !== 'guess') return null;
+          if ((a.do === 'buy' || a.do === 'use') && !isOrb(a.orb)) return null;
+          if (a.do === 'guess' && !isInt(a.index, 0, 16)) return null;
+          return {
+            t: 'action',
+            action: { type: 'craft', do: a.do, ...(a.do === 'buy' || a.do === 'use' ? { orb: a.orb as Orb } : {}), ...(a.do === 'guess' ? { index: a.index as number } : {}) },
+          };
+        }
         // Watch rather than play (or take a seat again): only ever the sender's own choice.
         case 'watch':
           return typeof a.watch === 'boolean' ? { t: 'action', action: { type: 'watch', watch: a.watch } } : null;
@@ -302,6 +323,8 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return qid && tile && isInt(raw.i, 0, 254) ? (raw as HostMsg) : null;
     case 'option':
       return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+    case 'look':
+      return isStr(raw.key, 160) && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
     // What's inside is checked as it opens (it goes through here again then).
     case 'sealed':
       return parseSealed(raw);

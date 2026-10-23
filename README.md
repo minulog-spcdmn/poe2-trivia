@@ -14,6 +14,10 @@ GitHub Pages. No server needed.
   goes to a sudden-death **deathmatch**.
 - **Race** (online only): everyone gets the same question at once. The first
   right answer scores +1; a wrong one costs −1.
+- **Craft** (online only, two or more): each round, buy currency in a shop,
+  scramble a unique item with it and pass it on; the next player unscrambles
+  what they can and names it from six. A right name is paid by the bank, a
+  wrong one pays the item's maker. Eight rounds, or until someone has 80 gold.
 - **Delve** (alone or together): no settings, the same rules for everyone. Each
   question cleared goes one depth deeper, every depth a little harder, with
   three lives, finds that give items (wards, flares, dynamite) and a new zone
@@ -51,7 +55,7 @@ The full rules are in [docs/gameplay.md](docs/gameplay.md).
   a room that can't go online opens on the host's device only.
 - **At one screen:** in a Turns lobby the host adds players by name, who
   play their turns at the host's screen, with others online or alone
-  together. Race and Delve set them aside until Turns is picked again.
+  together. Race, Delve and Craft set them aside until Turns is picked again.
 
 ## Fair play and privacy
 

@@ -124,14 +124,14 @@ const DIFFICULTIES = ['cruel', 'merciless', 'eternal'];
  * How much a room appeals to someone looking to join (about 0 to 1.3): the
  * rules, by how far they are from their own and how much they mind (a
  * different mode more than a different difficulty, Delve against the others
- * most); the company, a busy room for the sociable and a host on their own
+ * most, then Craft); the company, a busy room for the sociable and a host on their own
  * for the rest; and how they got on with the host before (`warmth`, -1 to 1).
  */
 export function appeal(p: Pick<Persona, 'sociable' | 'picky'>, taste: Pick<RoomPrefs, 'mode' | 'difficulty'>, room: Pick<RoomInfo, 'mode' | 'difficulty' | 'players' | 'here'>, warmth = 0): number {
-  const mode = room.mode === taste.mode ? 1 : room.mode === 'delve' || taste.mode === 'delve' ? 0.4 : 0.65;
+  const mode = room.mode === taste.mode ? 1 : room.mode === 'delve' || taste.mode === 'delve' ? 0.4 : room.mode === 'craft' || taste.mode === 'craft' ? 0.5 : 0.65;
   // Delve has no difficulty to pick; a custom room's is anyone's guess.
   const step = DIFFICULTIES.indexOf(room.difficulty);
-  const difficulty = room.mode === 'delve' ? 1 : step < 0 ? 0.75 : 1 - 0.2 * Math.abs(step - DIFFICULTIES.indexOf(taste.difficulty));
+  const difficulty = room.mode === 'delve' || room.mode === 'craft' ? 1 : step < 0 ? 0.75 : 1 - 0.2 * Math.abs(step - DIFFICULTIES.indexOf(taste.difficulty));
   const rules = 1 - p.picky * (1 - mode * difficulty);
   const company = 1 + 0.15 * (2 * p.sociable - 1) * (playersHere(room) > 1 ? 1 : -1);
   return clamp(rules * company + 0.3 * warmth, 0, 1.5);

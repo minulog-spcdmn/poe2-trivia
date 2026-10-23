@@ -6,7 +6,7 @@
 // is hosting and the room's save, so it comes back as the same player in
 // the same room.
 //
-//   npm run bot -- [--bots 4] [--rooms N | --watch] [--mode turns,race,delve] [--per-room N] [--beta | --localhost] [--wind-down 10] [--headed] [--no-build]
+//   npm run bot -- [--bots 4] [--rooms N | --watch] [--mode turns,race,delve,craft] [--per-room N] [--beta | --localhost] [--wind-down 10] [--headed] [--no-build]
 //   (or node scripts/room-bot.mjs --bots 4; from PowerShell npm run bot bots=4 rooms=2 delve beta (or localhost),
 //   or npm run bot 2, work too)
 //
@@ -18,7 +18,8 @@
 // (src/bot/wanted.ts). --rooms N: at most N of them open at once (no limit
 // by default; 0 to only join people).
 // --mode: the game modes the hosts may pick, each by their own taste (all
-// three by default); --mode delve makes every room a Delve room.
+// four by default); --mode delve makes every room a Delve room, --mode craft
+// a Craft room (two or more play it: a bot's room starts once someone joins).
 // --per-room N: at most N of them in one room (any number by default);
 // they arrive in a room 5 to 20 s apart.
 // --joiners N (or --join, for 1): N seats more (--bots 1+N, or --rooms+N).
@@ -78,7 +79,7 @@ const { values: args, positionals } = parseArgs({
 // the flags as its own settings (npm_config_*) and hands on only the `2`: so
 // those count too, a bare number is the number of rooms, bare mode names
 // are the modes, and a bare `join`, `beta` or `localhost` (or `local`) is that flag.
-const MODES = ['turns', 'race', 'delve'];
+const MODES = ['turns', 'race', 'delve', 'craft'];
 // `--rooms=2 --joiners=3` (with =) reach us from PowerShell as npm settings
 // with their values, and `rooms=2 joiners=3` as words.
 const env = process.env;
@@ -88,7 +89,7 @@ const numberOf = (name) =>
 const opts = {
   bots: numberOf('bots'),
   rooms: numberOf('rooms') ?? positionals.find((p) => /^\d+$/.test(p)),
-  mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || 'turns,race,delve'),
+  mode: args.mode ?? (words.filter((w) => MODES.includes(w)).join(',') || MODES.join(',')),
   join: args.join ?? (words.includes('join') || env.npm_config_join === 'true'),
   joiners: numberOf('joiners'),
   perRoom: numberOf('per-room'),

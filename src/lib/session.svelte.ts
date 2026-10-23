@@ -19,6 +19,7 @@ import {
   MAX_PLAYERS,
   MAX_SPECTATORS,
   publicView,
+  craftView,
   grayscaleFor,
   ANSWER_GRACE_MS,
   autoNextLeft,
@@ -36,13 +37,17 @@ import {
 import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow, type PeerJs } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
-import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
+import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type LookMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { NAME_STORED, cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
-import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
+import { prepareMedia, prepLook, shown, warmMedia, type PreparedMedia } from './media.svelte';
+import { looks } from './craftLooks.svelte';
+import { wantedLooks } from './craft';
+import { loadCraftLines } from './craftLines';
+import type { Prepped } from './prepArt';
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
 import { drawAhead, takeAhead, type Ahead } from './drawAhead';
 import { sfx } from './sound';
@@ -259,6 +264,8 @@ interface Guest {
   /** Its art lane (artLane.ts), and whether it said it opened its end (hello's `lane`); without both, media go on the main channel. */
   lane: LaneSender | null;
   laneWanted: boolean;
+  /** Craft: the looks (craftLooks.ts) sent to it already, by key. */
+  looksSent?: Set<string>;
   /** When this guest was sent the key to the current question's pictures (page clock): its too-quick check counts from then. */
   mediaAt: { qid: number; at: number } | null;
   /** Which page load the connection comes from (older clients don't say). */
@@ -547,6 +554,16 @@ class Session {
   get race() {
     return this.state?.settings.mode === 'race';
   }
+
+  /**
+   * The state as this device shows it: in Craft only what is this player's
+   * to see (game.ts craftView), on the host's screen as on a guest's (a
+   * guest is sent no more than that); otherwise the state itself.
+   */
+  readonly mine = $derived.by(() => {
+    const s = this.state;
+    return s?.craft && this.mode === 'host' ? craftView(s, this.myPlayerId) : s;
+  });
 
   /** Online Delve: this device's player perished (out of lives) and watches the rest of the run, unless a teammate brings them back. */
   get perished() {
@@ -1773,7 +1790,7 @@ class Session {
     for (const [conn, g] of this.guests) if (g.playerId) this.sendMedia(conn, g, m);
   }
 
-  private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg | SealedMsg) {
+  private sendMedia(conn: DataConnection, g: Guest, m: MediaMsg | SealedMsg | LookMsg) {
     // On its own lane, so the art never holds up what the main channel carries.
     if (g.laneWanted && g.lane?.usable) g.lane.send({ ...m });
     else this.send(conn, m);
@@ -2078,6 +2095,7 @@ class Session {
         if (!msg || this.hostConn !== conn) return;
         // Sealed until the clock starts (seal.ts); the patches come plain, after the key.
         if (msg.t === 'sealed') this.sealedArt.take(msg);
+        else if (msg.t === 'look') looks.take(msg.key, msg.w, msg.h, msg.data);
         else if (isMedia(msg)) shown.receive(msg);
       });
       lane.addEventListener('message', (e) => {
@@ -2164,6 +2182,9 @@ class Session {
         case 'cursors':
           if (!cursorsLive(this.state)) break;
           for (const e of msg.c) if (e[0] !== cursorKey(this.myPlayerId ?? '')) peerCursors.set(e[0], entryAt(e));
+          break;
+        case 'look':
+          looks.take(msg.key, msg.w, msg.h, msg.data);
           break;
         default:
           shown.receive(msg);
@@ -2436,18 +2457,73 @@ class Session {
     } else if (next.phase !== 'question') {
       this.stopMedia();
     }
+    // Craft: the earlier rounds' pictures are done with, and all of them once the game is.
+    if (next.craft && next.phase === 'craft') looks.keepRound(next.craft.round);
+    else if (next.phase === 'lobby' || !next.craft) looks.clear();
     if (this.mode === 'host') {
       // The next room this browser opens starts with these settings.
       savePrefs(prefsFrom(next.settings));
-      const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
-      for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
+      // Craft's rules deal from the items' mod lines: loaded as soon as the room picks it.
+      if (next.settings.mode === 'craft' && !engine.craftReady) void loadCraftLines().then((l) => engine.setCraftLines(l));
+      if (next.craft) {
+        // Each sees only what is theirs to see (game.ts craftView).
+        const now = Date.now();
+        for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, { t: 'state', state: publicView(next, g.playerId), now });
+      } else {
+        const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
+        for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
+      }
     }
+    if (this.mode === 'host') this.sendLooks(next);
     // Race: the next question is known as the reveal starts, so it's drawn now (once the reveal has gone
     // out), and its art goes out while the reveal plays, after the reveal's own last patches.
     if (patchesOut) this.drawAhead(next, patchesOut);
     this.scheduleTimers(next);
     this.syncBeacon(next);
     this.save();
+  }
+
+  /** Host: Craft's pictures, by look key, drawn once each. */
+  private lookArt = new Map<string, Promise<Prepped>>();
+
+  /**
+   * Host: every Craft picture the game wants out (craftLooks.ts wantedLooks)
+   * drawn and sent to whoever may see it and hasn't got it yet; the host's
+   * own straight onto its screen.
+   */
+  private sendLooks(s: GameState) {
+    const wanted = wantedLooks(s);
+    if (!wanted.length) {
+      if (!s.craft || s.phase !== 'craft') this.lookArt.clear();
+      return;
+    }
+    const keys = new Set(wanted.map((w) => w.key));
+    for (const k of this.lookArt.keys()) if (!keys.has(k)) this.lookArt.delete(k);
+    for (const w of wanted) {
+      const item = engine.byId.get(w.art);
+      if (!item) continue;
+      let art = this.lookArt.get(w.key);
+      if (!art) {
+        art = prepLook({ art: item.id, w: item.w, h: item.h }, w.hide);
+        this.lookArt.set(w.key, art);
+        // A picture that couldn't be drawn is tried again with the next change.
+        art.catch(() => this.lookArt.delete(w.key));
+      }
+      void art.then(
+        (p) => {
+          if (!this.lookArt.has(w.key)) return;
+          if (this.myPlayerId && w.to.includes(this.myPlayerId)) looks.take(w.key, p.w, p.h, p.data);
+          for (const [conn, g] of this.guests) {
+            if (!g.playerId || !w.to.includes(g.playerId)) continue;
+            const sent = (g.looksSent ??= new Set());
+            if (sent.has(w.key)) continue;
+            sent.add(w.key);
+            this.sendMedia(conn, g, { t: 'look', key: w.key, w: p.w, h: p.h, data: p.data });
+          }
+        },
+        () => {},
+      );
+    }
   }
 
   /** Saves in a moment (at most once a second), for changes that can come in bursts. */
@@ -2900,6 +2976,19 @@ class Session {
     // Delve: with no flare to burn, a stick of dynamite goes off by itself
     // in place of the time-out (its fuse has hissed over the clock's last
     // seconds already).
+    // Craft: each step ends by itself when its time is up.
+    if (s.phase === 'craft' && s.craft && this.mode !== 'client') {
+      const { round, step, until } = s.craft;
+      this.armAt(
+        until,
+        () => {
+          const cur = this.state;
+          if (cur?.craft?.round !== round || cur.craft.step !== step) return;
+          this.setState(engine.apply(cur, { type: 'craftTime', round, step }, null));
+        },
+        (t) => (this.timer = t),
+      );
+    }
     if (s.phase === 'question' && s.question?.deadline) {
       const version = s.version;
       // Answers sent in time may still be on their way.

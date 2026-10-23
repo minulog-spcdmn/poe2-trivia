@@ -20,6 +20,7 @@
 import { PLAIN_HAND, type HandStyle } from './motion.ts';
 import { seededBy } from './util.ts';
 import { nameSimilarity, type DifficultyRules, type GameState } from '../lib/game.ts';
+import { CRAFT } from '../lib/craft.ts';
 
 export type Rng = () => number;
 
@@ -490,7 +491,9 @@ export function moodOf(s: GameState, me: string): Mood {
   const scores = s.players.map((p) => p.score);
   const mine = s.players.find((p) => p.id === me)!.score;
   const behind = Math.max(...scores) - mine;
-  return mine === Math.min(...scores) && behind >= Math.max(2, s.settings.targetScore * 0.4) ? 'lost' : 'even';
+  // (Craft's score is gold, its target the cap.)
+  const target = s.settings.mode === 'craft' ? CRAFT.goldCap : s.settings.targetScore;
+  return mine === Math.min(...scores) && behind >= Math.max(2, target * 0.4) ? 'lost' : 'even';
 }
 
 /** Whether it stays on after a game: one more after a win now and then, early off after a heavy loss now and then. */

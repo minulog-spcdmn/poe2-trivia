@@ -115,7 +115,7 @@
   /** Something of yours under the circle (otherwise it stands centred against the panel): your game, hot-seat's misses, or where your lives went. */
   const hasYours = $derived(run ? !!self : !!mine || hotMisses.length > 0);
 
-  const modeName = $derived(run ? `${MODE_NAMES.delve} ${solo ? 'alone' : 'together'}` : MODE_NAMES[s.settings.mode === 'race' ? 'race' : 'turns']);
+  const modeName = $derived(run ? `${MODE_NAMES.delve} ${solo ? 'alone' : 'together'}` : MODE_NAMES[s.settings.mode === 'race' || s.settings.mode === 'craft' ? s.settings.mode : 'turns']);
   const headline = $derived(run ? `Depth ${shownDepth(endDepth)}` : iWon ? 'You are victorious!' : `${winner?.name} wins!`);
   const line = $derived(run ? delveLine(endDepth, together, measured, !!run.mixed) : scoreLine(s, winner));
 

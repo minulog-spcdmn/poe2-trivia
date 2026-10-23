@@ -11,9 +11,9 @@ import { sceneStateAt, valuesOf, type Values } from '../src/qa/bench.ts';
 import { TWEAK_KEYS, applyTweaks, buildScene } from '../src/qa/tweaks.ts';
 import { matches, sizesFor } from '../src/qa/desk/walk.ts';
 import { answered } from '../src/qa/frame/emulate.ts';
-import { fakes, items } from './helpers.ts';
+import { fakes, items, stats } from './helpers.ts';
 
-useItems(items, fakes);
+useItems(items, fakes, stats);
 // The scenes saved from live rooms, as the desk has them (src/qa/captured).
 const capturedDir = new URL('../src/qa/captured/', import.meta.url);
 useCaptured(Object.fromEntries((existsSync(capturedDir) ? readdirSync(capturedDir) : []).filter((f) => f.endsWith('.json')).map((f) => [f, JSON.parse(readFileSync(new URL(f, capturedDir), 'utf8'))])));

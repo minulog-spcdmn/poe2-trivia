@@ -44,6 +44,7 @@
   import { CASINGS, WARD_BREAK, WARD_NEXT, momentOf, type InventoryMoment } from '../lib/inventoryArt';
   import { MOMENTS } from '../lib/soundDesign';
   import type { GameState, Revive } from '../lib/game';
+  import { CRAFT } from '../lib/craft';
   import Gallery from './Gallery.svelte';
   import KickButton from './KickButton.svelte';
   import { zoomOf } from '../lib/stage';
@@ -57,7 +58,8 @@
   /** Shown at the end of the row (the timer, on phones). */
   let { aside }: { aside?: Snippet } = $props();
 
-  const s = $derived(session.state!);
+  // Craft: only what is this player's to see (the others' gold as their shop opened).
+  const s = $derived(session.mine!);
   /**
    * A full room in the header's row (a phone on its side): every entry its
    * avatar alone, whoever's turn it is too (the banner names them), in one
@@ -112,7 +114,8 @@
       board.style.removeProperty('--board-zoom');
     };
   });
-  const target = $derived(s.settings.targetScore);
+  /** Craft: the gold that ends the game. */
+  const target = $derived(s.craft ? CRAFT.goldCap : s.settings.targetScore);
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
   const canKick = $derived(session.mode === 'host');
@@ -586,7 +589,7 @@
   let barShown = $state<Record<string, number>>({});
   let filling = $state<Record<string, boolean>>({});
   const awards = new Map<string, Landing>();
-  const latest = (id: string, fallback: number) => session.state?.players.find((x) => x.id === id)?.score ?? fallback;
+  const latest = (id: string, fallback: number) => session.mine?.players.find((x) => x.id === id)?.score ?? fallback;
   $effect(() => {
     for (const p of s.players) {
       const score = p.score;
@@ -596,7 +599,7 @@
         continue;
       }
       if (awards.get(p.id)?.to === score) continue;
-      if (score > was && fxActive() && s.phase === 'reveal') {
+      if (score > was && fxActive() && (s.phase === 'reveal' || s.craft?.step === 'reveal')) {
         land(awards, p.id, score, [
           [
             FILL_START,
@@ -611,7 +614,7 @@
               filling[p.id] = false;
               shown[p.id] = barShown[p.id] = latest(p.id, score);
               // A streak's fire grows as the number ticks up.
-              burning[p.id] = streakOf(session.state?.players.find((x) => x.id === p.id));
+              burning[p.id] = streakOf(session.mine?.players.find((x) => x.id === p.id));
             },
           ],
         ]);
@@ -752,7 +755,7 @@
 <div class="strip" data-cursor="board" class:stuck bind:this={strip}>
   <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
-      {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
+      {@const active = s.craft ? false : race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
       {@const wide = !bare && (coop ? p.id === me : active)}
       {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}

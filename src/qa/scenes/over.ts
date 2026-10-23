@@ -455,6 +455,15 @@ export function endScenes(): EndScene[] {
       me: K,
       state: game([['Kalguur', 10]], { rounds: 12, recap: { fastest: { by: K, id: id('Mageblood'), ms: 2900 }, answers: { [K]: { n: 12, ok: 10, ms: 2900 } }, cats: { Rings: [4, 3], Helmets: [3, 3] }, misses: misses('Kalguur', ['Headhunter', 'Death Rush']) } }),
     },
+    {
+      key: 'e-craft',
+      group: NG,
+      label: 'Craft: the most gold after eight rounds',
+      view: D,
+      mode: 'client',
+      me: doryani,
+      state: game([['Kalguur', 64], ['Doryani', 51], ['Una of the Vaal', 38]], { rounds: 8, extra: { settings: { ...DEFAULT_SETTINGS, mode: 'craft' } } }),
+    },
     { key: 'e-hot-clean', group: NG, label: 'Hot-seat, not one missed', view: D, mode: 'local', me: null, state: game([['Doryani', 10], ['Kalguur', 9]], { host: null, recap: turnsRecap('Kalguur', 'Headhunter') }) },
     { key: 'e-no-recap', group: NG, label: 'No highlights (a host from before the recap)', view: D, mode: 'client', me: una(), state: game(FIVE, { recap: null }) },
     {

@@ -6,6 +6,29 @@ import { RUBY, isChoosableHue } from './palette.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import type { Looks } from './looks.ts';
 import {
+  CRAFT,
+  canScramble,
+  craftOver,
+  deal,
+  guessedBy,
+  holds,
+  isOrb,
+  madeBy,
+  ORBS,
+  rightGuess,
+  scramble,
+  settle,
+  stepMs,
+  undo,
+  type Craft,
+  type CraftItem,
+  type CraftStep,
+  type ModLines,
+  type Orb,
+  type Piece,
+  type Table,
+} from './craft.ts';
+import {
   DELVE_MAX_LOCKOUT,
   DELVE_RESUME_GRACE_MS,
   DELVE_RESUME_MIN_MS,
@@ -590,7 +613,8 @@ export interface Revive {
 /** Deathmatch questions are one tier harder (Eternal goes one step up on each knob). */
 const HARDER: Record<Exclude<Preset, 'eternal'>, Preset> = { cruel: 'merciless', merciless: 'eternal' };
 
-export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over';
+/** `craft`: a Craft game under way, its own steps in GameState.craft. */
+export type Phase = 'lobby' | 'choosing' | 'question' | 'reveal' | 'over' | 'craft';
 
 export interface Player {
   id: string;
@@ -624,11 +648,14 @@ export interface Player {
  * delve: three lives and no settings, one depth deeper each question cleared (see
  * delve.ts). Alone, a player's own turns; together (online), co-op: the team
  * votes for a card and answers one question, and nobody wins.
+ * craft: online, two or more: each round everyone scrambles an item with
+ * currency bought with gold and passes it on, and names the one passed to
+ * them (craft.ts). The gold is the score.
  */
-export type GameMode = 'turns' | 'race' | 'delve';
+export type GameMode = 'turns' | 'race' | 'delve' | 'craft';
 
 /** A known game mode. */
-export const isGameMode = (m: unknown): m is GameMode => m === 'turns' || m === 'race' || m === 'delve';
+export const isGameMode = (m: unknown): m is GameMode => m === 'turns' || m === 'race' || m === 'delve' || m === 'craft';
 
 export interface Settings {
   targetScore: number;
@@ -1045,6 +1072,8 @@ export interface GameState {
   recentCategories: string[];
   /** The Delve run in progress (or just over); null otherwise, missing in older saves. */
   delve?: Delve | null;
+  /** The Craft game in progress (or just over); missing otherwise. */
+  craft?: Craft | null;
   /**
    * How many art questions each player is behind the difficulty's share
    * (negative: ahead), by player id; race mode keeps one for the room under
@@ -1118,7 +1147,15 @@ export type Action =
    * for a new one at the same depth (alone the player's own; co-op the own
    * of a player standing who hasn't answered it and holds one).
    */
-  | { type: 'blast'; askedAt: number };
+  | { type: 'blast'; askedAt: number }
+  /**
+   * Craft: buy an orb in the shop, use one (a scramble on your own item, an
+   * undo on the one you name), be done with the step, or name the item
+   * (`index` into its options).
+   */
+  | { type: 'craft'; do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number }
+  /** Host only (Craft): the step's time is up. */
+  | { type: 'craftTime'; round: number; step: CraftStep };
 
 export const OFFER_COUNT = 3;
 export const MAX_PLAYERS = 12;
@@ -1257,6 +1294,12 @@ function settleHue(s: GameState, p: Player) {
 }
 
 /** Adds a player with the first free avatar colour (or their reserved one). */
+/** Whoever has the most gold (all of them on a tie). */
+function craftLeaders(s: GameState): string[] {
+  const best = Math.max(...s.players.map((p) => p.score));
+  return s.players.filter((p) => p.score === best).map((p) => p.id);
+}
+
 function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; colour?: number } = {}) {
   const p: Player = {
     id,
@@ -1285,11 +1328,38 @@ function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigi
  * the game is over: only the end screen reads it, and it grows with every
  * answer, so it would ride along on every change for nothing.
  */
-export function publicView(s: GameState): GameState {
-  const v = guestView(s);
+export function publicView(s: GameState, viewer?: string | null): GameState {
+  const v = s.craft ? craftView(guestView(s), viewer ?? null) : guestView(s);
   if (s.phase === 'over' || !v.recap) return v;
   const { recap: _, ...rest } = v;
   return rest;
+}
+
+/**
+ * What `viewer` may see of a Craft game: their own currency and nothing of
+ * anyone else's; until the reveal, the others' gold as their shop opened
+ * (what they bought would show in it) and of the items only their own, in
+ * full, and the one passed to them as it now looks (not what it is, nor
+ * what was done to it). At the reveal everything comes out.
+ */
+export function craftView(s: GameState, viewer: string | null): GameState {
+  const c = s.craft!;
+  const open = s.phase === 'over' || c.step === 'reveal';
+  const stash = viewer && c.stash[viewer] ? { [viewer]: c.stash[viewer] } : {};
+  const players = open ? s.players : s.players.map((p) => (p.id === viewer ? p : { ...p, score: c.opening[p.id] ?? p.score }));
+  const pieces = open
+    ? c.pieces
+    : c.pieces.map((p): Piece => {
+        if (p.maker === viewer) return p;
+        const hidden: Piece = { maker: p.maker, guesser: p.guesser, item: '', slots: [], picture: null, veil: 0, seed: 0, options: [], shown: [], look: 0 };
+        if (p.guesser === viewer && c.step === 'guess') {
+          const { item: _, slots: __, picture: ___, veil: ____, seed: _____, ...seen } = p;
+          return { ...hidden, ...seen };
+        }
+        // Whether they have named theirs yet, but not what: -1.
+        return p.guess === undefined ? hidden : { ...hidden, guess: -1 };
+      });
+  return { ...s, players, craft: { ...c, stash, pieces } };
 }
 
 function guestView(s: GameState): GameState {
@@ -1392,6 +1462,8 @@ export class Engine {
   private now: () => number;
   /** Which items' art looks alike (src/lib/looks.ts), once it has been fetched. */
   private looks: Looks | null;
+  /** The items' mod lines, for Craft (setCraftLines). */
+  private craftLines: ModLines | null = null;
   /** TWINS, as items (sets with fewer than two of them left out). */
   private readonly twins: { items: Item[]; depth: number; colour?: true }[];
   /** Every question's clock starts as it is asked (see the constructor). */
@@ -1435,6 +1507,16 @@ export class Engine {
    */
   setLooks(looks: Looks | null) {
     this.looks = looks;
+  }
+
+  /** Hands over the items' mod lines (itemStats.json), which Craft deals and scrambles from; the host loads them before a Craft game starts. */
+  setCraftLines(lines: ModLines) {
+    this.craftLines = lines;
+  }
+
+  /** Whether Craft's mod lines are here. */
+  get craftReady() {
+    return !!this.craftLines;
   }
 
   /**
@@ -1588,7 +1670,10 @@ export class Engine {
           placeLocals(fresh);
           return fresh;
         }
-        if (race) {
+        if (s.craft) {
+          s.turn = 0;
+          this.craftLeaves(s, action.playerId);
+        } else if (race) {
           s.turn = 0;
           this.checkRaceDone(s);
         } else if (s.deathmatch) {
@@ -1635,6 +1720,7 @@ export class Engine {
         const p = s.players.find((p) => p.id === action.playerId);
         if (p) p.connected = action.connected;
         if (race) this.checkRaceDone(s);
+        if (s.craft && s.phase === 'craft') this.craftCarryOn(s);
         if (p && action.connected && s.delve) s.delve.excused = s.delve.excused.filter((id) => id !== p.id);
         // Co-op: a vote doesn't wait for someone who has just gone.
         if (s.delve && isGroupRun(s)) this.coopCarryOn(s);
@@ -1672,6 +1758,11 @@ export class Engine {
         // Delve together is co-op, played online: on one device it's a run alone (the lobby says so too).
         if (s.settings.mode === 'delve' && s.hostId === null && s.players.length > 1)
           throw new ActionError('Delve together is played online. On one device, Delve is for one player.');
+        if (s.settings.mode === 'craft') {
+          if (s.hostId === null) throw new ActionError('Craft is played online.');
+          if (s.players.length < 2) throw new ActionError('Craft needs at least two players.');
+          if (!this.craftLines) throw new ActionError('The items are still loading. Try again in a moment.');
+        }
         s.players = shuffle(s.players, this.rng);
         for (const p of s.players) {
           p.score = 0;
@@ -1685,6 +1776,7 @@ export class Engine {
         s.recentCategories = [];
         s.artLean = {};
         s.delve = null;
+        delete s.craft;
         s.startedAt = this.now();
         s.recap = { answers: {}, misses: [] };
         if (s.settings.mode === 'delve') {
@@ -1704,7 +1796,8 @@ export class Engine {
         }
         // The first turn goes to someone who is actually here.
         s.turn = Math.max(0, s.players.findIndex((p) => p.connected));
-        if (race) this.beginRaceQuestion(s, true);
+        if (s.settings.mode === 'craft') this.beginCraft(s);
+        else if (race) this.beginRaceQuestion(s, true);
         else this.beginTurn(s, true);
         break;
       }
@@ -2070,6 +2163,15 @@ export class Engine {
         // itself. While its fuse hisses before 0, Detonate sets it off at once.
         if (this.now() > q.deadline! + ANSWER_GRACE_MS) throw new ActionError('Too late!', true);
         this.blast(s, coop ? (by ?? this.anyHolder(s, 'dynamite')) : active!.id, by);
+        break;
+      }
+      case 'craft':
+        this.craftAct(s, action, from);
+        break;
+      case 'craftTime': {
+        if (from !== null) throw new ActionError('Not allowed.');
+        const c = s.craft;
+        if (s.phase === 'craft' && c && c.round === action.round && c.step === action.step) this.craftNext(s);
         break;
       }
     }
@@ -2874,7 +2976,177 @@ export class Engine {
     }
   }
 
+  // ---- craft ------------------------------------------------------------
+
+  /** What Craft's rules work with (craft.ts Table). */
+  private craftTable(): Table {
+    if (!this.craftLines) throw new ActionError('The items are still loading.');
+    return { items: this.items, lines: this.craftLines, rng: this.rng };
+  }
+
+  /** Five names for a Craft item: half of them look alike (as on Merciless), the rest from the pool at random. */
+  private craftDecoys = (answer: CraftItem, pool: CraftItem[], count: number): CraftItem[] => {
+    const items = pool as Item[];
+    const alike = this.lookalikes(answer as Item, items, Math.round(count * PRESETS.merciless.similarNames), CRAFT.options, false, (it) => [it.id]);
+    const rest = sample(
+      items.filter((it) => !alike.includes(it)),
+      count - alike.length,
+      this.rng,
+    );
+    return [...alike, ...rest];
+  };
+
+  /** A Craft game starts: everyone's gold, and the first shop. */
+  private beginCraft(s: GameState) {
+    s.phase = 'craft';
+    for (const p of s.players) p.score = CRAFT.startGold;
+    s.craft = { round: 1, step: 'shop', until: this.now() + CRAFT.shopMs, stash: {}, ready: [], pieces: [], opening: this.goldOf(s) };
+  }
+
+  private goldOf(s: GameState): Record<string, number> {
+    return Object.fromEntries(s.players.map((p) => [p.id, p.score]));
+  }
+
+  /** Whom the step waits for: everyone here in the shop and at the reveal, makers while they scramble, guessers yet to name theirs. */
+  private craftWaitsFor(s: GameState): string[] {
+    const c = s.craft!;
+    const here = s.players.filter((p) => p.connected).map((p) => p.id);
+    if (c.step === 'craft') return here.filter((id) => madeBy(c, id) && !c.ready.includes(id));
+    if (c.step === 'guess') return here.filter((id) => guessedBy(c, id)?.guess === undefined);
+    return here.filter((id) => !c.ready.includes(id));
+  }
+
+  /** The step ends early once nobody is left to wait for. */
+  private craftCarryOn(s: GameState) {
+    if (s.phase === 'craft' && s.craft && !this.craftWaitsFor(s).length) this.craftNext(s);
+  }
+
+  /** On to the next step: deal, pass the items on, settle the names, then the next round (or the end). */
+  private craftNext(s: GameState) {
+    const c = s.craft!;
+    if (c.step === 'shop') {
+      const t = this.craftTable();
+      // Everyone here is dealt in; with fewer than two here, everyone seated.
+      let ids = s.players.filter((p) => p.connected).map((p) => p.id);
+      if (ids.length < 2) ids = s.players.map((p) => p.id);
+      const used = new Set(s.used);
+      c.pieces = ids.map((id, i) => {
+        const p = deal(t, id, ids[(i + 1) % ids.length], used, this.craftDecoys);
+        used.add(p.item);
+        s.used.push(p.item);
+        return p;
+      });
+      c.step = 'craft';
+    } else if (c.step === 'craft') {
+      c.step = 'guess';
+    } else if (c.step === 'guess') {
+      const byId = new Map(s.players.map((p) => [p.id, p]));
+      // A guesser who left has nothing to pay or be paid; their item's maker gets nothing for it.
+      c.pieces = c.pieces.filter((p) => byId.has(p.guesser));
+      settle(
+        c,
+        (id) => byId.get(id)?.score ?? 0,
+        (id, n) => {
+          const p = byId.get(id);
+          if (p) p.score += n;
+        },
+      );
+      for (const p of c.pieces) {
+        const by = byId.get(p.guesser);
+        if (by) by.streak = rightGuess(p) ? (by.streak ?? 0) + 1 : 0;
+      }
+      c.step = 'reveal';
+    } else {
+      if (craftOver(c.round, s.players.map((p) => p.score))) {
+        this.finish(s, craftLeaders(s));
+        return;
+      }
+      c.round++;
+      s.round = c.round;
+      c.pieces = [];
+      c.opening = this.goldOf(s);
+      c.step = 'shop';
+    }
+    c.ready = [];
+    c.until = this.now() + stepMs(c.step);
+  }
+
+  /** Someone left the game: with one player left, it's over. */
+  private craftLeaves(s: GameState, id: string) {
+    const c = s.craft!;
+    delete c.stash[id];
+    c.ready = c.ready.filter((r) => r !== id);
+    if (s.phase !== 'craft') return;
+    if (s.players.length < 2) {
+      this.finish(s, craftLeaders(s));
+      return;
+    }
+    // Their own item still goes to its guesser; the one passed to them is put back.
+    if (c.step === 'craft' || c.step === 'guess') c.pieces = c.pieces.filter((p) => p.guesser !== id);
+    this.craftCarryOn(s);
+  }
+
+  /** A player's move in Craft. */
+  private craftAct(s: GameState, a: Extract<Action, { type: 'craft' }>, from: string | null) {
+    const c = s.craft;
+    if (s.phase !== 'craft' || !c) throw new ActionError('Too late!', true);
+    const me = s.players.find((p) => p.id === from);
+    if (!me) throw new ActionError('Not allowed.');
+    const step = c.step;
+    switch (a.do) {
+      case 'buy': {
+        if (step !== 'shop' || c.ready.includes(me.id)) throw new ActionError('The shop is closed.', true);
+        if (!isOrb(a.orb)) throw new ActionError('Not allowed.');
+        const price = ORBS[a.orb].price;
+        if (me.score < price) throw new ActionError('Not enough gold.', true);
+        me.score -= price;
+        const mine = (c.stash[me.id] ??= {});
+        mine[a.orb] = (mine[a.orb] ?? 0) + 1;
+        break;
+      }
+      case 'use': {
+        if (!isOrb(a.orb)) throw new ActionError('Not allowed.');
+        if (holds(c, me.id, a.orb) < 1) throw new ActionError('You have none of those.', true);
+        const t = this.craftTable();
+        let piece: Piece | null;
+        if (ORBS[a.orb].side === 'scramble') {
+          piece = madeBy(c, me.id);
+          if (step !== 'craft' || !piece || c.ready.includes(me.id)) throw new ActionError('Too late!', true);
+          if (!canScramble(piece, a.orb)) throw new ActionError('That would do nothing more.', true);
+          if (a.orb === 'chance') {
+            const used = new Set([...s.used, ...c.pieces.map((p) => p.item)]);
+            const fresh = deal(t, piece.maker, piece.guesser, used, this.craftDecoys);
+            fresh.look = piece.look + 1;
+            s.used.push(fresh.item);
+            c.pieces[c.pieces.indexOf(piece)] = piece = fresh;
+            piece.last = { orb: a.orb, hit: true };
+          } else piece.last = { orb: a.orb, hit: scramble(t, piece, a.orb) };
+        } else {
+          piece = guessedBy(c, me.id);
+          if (step !== 'guess' || !piece || piece.guess !== undefined) throw new ActionError('Too late!', true);
+          piece.last = { orb: a.orb, hit: undo(t, piece, a.orb) };
+        }
+        c.stash[me.id]![a.orb]! -= 1;
+        break;
+      }
+      case 'ready': {
+        if (step === 'guess') throw new ActionError('Name the item first.', true);
+        if (!c.ready.includes(me.id)) c.ready.push(me.id);
+        break;
+      }
+      case 'guess': {
+        const piece = guessedBy(c, me.id);
+        if (step !== 'guess' || !piece || piece.guess !== undefined) throw new ActionError('Too late!', true);
+        if (typeof a.index !== 'number' || !Number.isInteger(a.index) || a.index < 0 || a.index >= piece.options.length) throw new ActionError('Not allowed.');
+        piece.guess = a.index;
+        break;
+      }
+    }
+    this.craftCarryOn(s);
+  }
+
   private finish(s: GameState, winners: string[]) {
+    if (s.craft) s.craft.ready = [];
     if (s.delve) {
       delete s.delve.dig;
       delete s.delve.leaving;

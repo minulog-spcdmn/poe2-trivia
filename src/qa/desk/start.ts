@@ -7,6 +7,7 @@ import '../../app.css';
 import './desk.css';
 import itemData from '../../data/items.json';
 import fakeNames from '../../data/fakes.json';
+import itemStats from '../../data/itemStats.json';
 import type { Item } from '../../lib/game.ts';
 import { useItems } from '../build/engine.ts';
 import { catalog } from '../scenes/index.ts';
@@ -18,7 +19,7 @@ import { seatsIn } from '../scene.ts';
 import { buildScene } from '../tweaks.ts';
 import Desk from './Desk.svelte';
 
-useItems(itemData as Item[], fakeNames);
+useItems(itemData as Item[], fakeNames, itemStats as unknown as Record<string, [string, string][][]>);
 useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
 mount(Desk, { target: document.getElementById('app')! });
 

@@ -6,7 +6,12 @@
 // clicks would, and its timing runs on the host's clock.
 
 import { engine, session } from '../lib/session.svelte';
-import { activeRules, clockRuns, grayscaleFor, type GameState, type Question } from '../lib/game';
+import { activeRules, clockRuns, craftView, grayscaleFor, type GameState, type Question } from '../lib/game';
+import { canScramble, guessedBy, madeBy, type Craft, type Orb, type Piece } from '../lib/craft';
+import { loadCraftLines } from '../lib/craftLines';
+import { looks } from '../lib/craftLooks.svelte';
+import { knowsLine, lookTime, naming, scrambling, shopping, unscrambling, weigh, type Clues } from './craftBrain';
+import { likenessTo } from './sight';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady, voteClosesAt } from '../lib/delve';
 import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, thinkTime, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
 import { inView, watchVeil } from './glimpse';
@@ -154,7 +159,8 @@ export class Player {
       this.planMoveOn(s);
     }
     if (s.phase !== 'lobby' && s.phase !== 'over' && s.players.some((p) => p.id === session.myPlayerId)) {
-      if (s.delve) this.delve(s);
+      if (s.craft) this.craft();
+      else if (s.delve) this.delve(s);
       else if (s.settings.mode === 'race') this.race(s);
       else this.turns(s);
     }
@@ -347,6 +353,133 @@ export class Player {
    * Flares burn by themselves (as everyone's do); dynamite it detonates
    * itself alone, on questions it isn't sure of (planAnswer).
    */
+  /** Craft as this player sees it (a host has everything in its state; it plays by its own screen's share). */
+  private craftNow(): GameState | null {
+    const s = session.state;
+    if (!s?.craft) return null;
+    return session.mode === 'host' ? craftView(s, session.myPlayerId) : s;
+  }
+
+  /**
+   * Craft (craftBrain.ts): in the shop it buys what it will, a moment
+   * apart, and is done; dealt an item, it looks it over and uses its
+   * scrambles on it, then passes it on; passed one, it looks it over,
+   * unscrambles while unsure and names it; at the reveal the impatient
+   * move on. Everything on the step's own clock, done well inside it.
+   */
+  private craft() {
+    const v = this.craftNow();
+    const me = session.myPlayerId;
+    if (!v?.craft || !me) return;
+    const c = v.craft;
+    const key = `craft:${c.round}:${c.step}`;
+    if (this.decided.has(key)) return;
+    this.decided.add(key);
+    const now = session.hostNow();
+    const pace = this.persona.pace;
+    /** At the latest (host clock), for anything of its own this step. */
+    const by = c.until - between(1500, 3000);
+    const still = () => {
+      const cur = session.state?.craft;
+      return !!cur && cur.round === c.round && cur.step === c.step;
+    };
+    const send = (a: { do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number }) => {
+      if (still()) session.dispatch({ type: 'craft', ...a });
+    };
+    const held = c.stash[me] ?? {};
+    let at = now;
+    switch (c.step) {
+      case 'shop': {
+        const gold = v.players.find((p) => p.id === me)?.score ?? 0;
+        const list = shopping(this.persona, gold, held, Math.random);
+        at += between(2000, 5000) * pace;
+        list.forEach((orb, i) => {
+          this.plans.set(`${key}:buy${i}`, { at: Math.min(at, by - 500), run: () => send({ do: 'buy', orb }) });
+          at += between(700, 2200) * pace;
+        });
+        log(`shops: ${list.join(', ') || 'nothing'}`);
+        this.plans.set(`${key}:done`, { at: Math.min(at + between(800, 3000) * pace, by), run: () => send({ do: 'ready' }) });
+        return;
+      }
+      case 'craft': {
+        if (!madeBy(c, me)) return;
+        const list = scrambling(held, Math.random);
+        // It looks the item over first, and again after trading it for another.
+        at += between(2500, 6000) * pace;
+        list.forEach((orb, i) => {
+          this.plans.set(`${key}:use${i}`, {
+            at: Math.min(at, by - 500),
+            run: () => {
+              const mine = madeBy(this.craftNow()?.craft ?? c, me);
+              if (mine && canScramble(mine, orb)) send({ do: 'use', orb });
+            },
+          });
+          at += (orb === 'chance' ? between(2500, 5000) : between(1000, 3000)) * pace;
+        });
+        this.plans.set(`${key}:done`, { at: Math.min(at + between(1000, 4000) * pace, by), run: () => send({ do: 'ready' }) });
+        return;
+      }
+      case 'guess': {
+        if (!guessedBy(c, me)) return;
+        this.plans.set(`${key}:look0`, { at: at + between(1500, 3000) * pace, run: () => this.lookOver(key, 0, by) });
+        // Out of time all but: whatever it makes of it then.
+        this.plans.set(`${key}:last`, { at: by, run: () => this.nameNow(key, by, true) });
+        return;
+      }
+      case 'reveal':
+        if (Math.random() < this.persona.impatience) this.plans.set(`${key}:done`, { at: at + between(3000, 9000) * pace, run: () => send({ do: 'ready' }) });
+        return;
+    }
+  }
+
+  /** What it makes of the piece passed to it, from its screen: the lines shown that are each option's own, and the picture against each. */
+  private async cluesFor(c: Craft, p: Piece): Promise<Clues> {
+    const lines = await loadCraftLines();
+    const shown = new Set(p.shown);
+    const look = looks.of(c.round, p.maker, p.look);
+    const picture = look ? await likenessTo(look.url, p.options).catch(() => null) : null;
+    return { lines: p.options.map((id) => lines(id).filter((l) => shown.has(l) && knowsLine(this.persona, id, l)).length), picture, shown: p.shown.length };
+  }
+
+  /** Craft: a first look at the piece to name (its picture here), then, a while later, a decision. */
+  private async lookOver(key: string, n: number, by: number) {
+    const v = this.craftNow();
+    const p = v?.craft && guessedBy(v.craft, session.myPlayerId!);
+    if (!v?.craft || !p || p.guess !== undefined || `craft:${v.craft.round}:${v.craft.step}` !== key) return;
+    const clues = await this.cluesFor(v.craft, p);
+    // The picture not here yet: a moment more.
+    if (!clues.picture && n < 15) {
+      this.plans.set(`${key}:look${n + 1}`, { at: Math.min(session.hostNow() + 700, by), run: () => this.lookOver(key, n + 1, by) });
+      return;
+    }
+    const at = session.hostNow() + lookTime(this.persona, weigh(clues), Math.random);
+    this.plans.set(`${key}:name`, { at: Math.min(at, by), run: () => this.nameNow(key, by, false) });
+  }
+
+  /** Craft: unscrambles some more while unsure (and looks again), or names it. `last`: no more time for undos. */
+  private async nameNow(key: string, by: number, last: boolean) {
+    const v = this.craftNow();
+    const me = session.myPlayerId!;
+    const p = v?.craft && guessedBy(v.craft, me);
+    if (!v?.craft || !p || p.guess !== undefined || `craft:${v.craft.round}:${v.craft.step}` !== key) return;
+    const clues = await this.cluesFor(v.craft, p);
+    const scores = weigh(clues);
+    const still = () => session.state?.craft?.step === 'guess' && `craft:${session.state.craft.round}:guess` === key;
+    const undo = last || session.hostNow() > by - 3000 ? null : unscrambling(this.persona, scores, clues, v.craft.stash[me] ?? {}, Math.random);
+    if (undo) {
+      if (!still()) return;
+      log(`uses an ${undo} on the item to name`);
+      session.dispatch({ type: 'craft', do: 'use', orb: undo });
+      // Time to see what it did (a new picture comes from the host).
+      this.plans.set(`${key}:name`, { at: Math.min(session.hostNow() + between(1800, 3500) * this.persona.pace, by), run: () => this.nameNow(key, by, false) });
+      return;
+    }
+    const index = naming(this.persona, scores, Math.random);
+    if (!still()) return;
+    log(`names it ${engine.byId.get(p.options[index])?.name ?? p.options[index]} (clues ${scores.map((x) => x.toFixed(1)).join(' ')})`);
+    session.dispatch({ type: 'craft', do: 'guess', index });
+  }
+
   private delve(s: GameState) {
     const me = session.myPlayerId!;
     const together = isGroupRun(s);

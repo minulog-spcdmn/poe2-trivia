@@ -137,10 +137,12 @@ export const NAMES = [
 ];
 
 /** The game modes a bot may host. */
-export const MODES = ['turns', 'race', 'delve'] as const;
+export const MODES = ['turns', 'race', 'delve', 'craft'] as const;
 export type Mode = (typeof MODES)[number];
 /** How often people host each (out of the modes allowed). */
-const MODE_WEIGHTS: Record<Mode, number> = { turns: 4, race: 2, delve: 6 };
+const MODE_WEIGHTS: Record<Mode, number> = { turns: 4, race: 2, delve: 6, craft: 3 };
+/** A mode whose rules are the same for everyone (no difficulty, target or timer to pick). */
+export const fixedRules = (m: Mode) => m === 'delve' || m === 'craft';
 /** How likely a host keeps the game's own rules for a mode (difficulty, target, timer: lib/game.ts DEFAULT_SETTINGS), as most people do. */
 const KEEPS_DEFAULTS = 0.55;
 
@@ -193,14 +195,15 @@ export const DEFAULT_RULES: Omit<RoomPrefs, 'mode'> = {
 
 /**
  * Other rules than `now`, among the modes allowed: a host who waited in vain
- * trying something else (another mode, or another difficulty outside Delve).
- * Null when there is nothing else to try (Delve the only mode allowed).
+ * trying something else (another mode, or another difficulty outside Delve
+ * and Craft). Null when there is nothing else to try (Delve or Craft the
+ * only mode allowed).
  */
 export function otherPrefs(now: RoomPrefs, rng: Rng, modes: readonly Mode[] = MODES): RoomPrefs | null {
-  if (modes.length === 1 && modes[0] === 'delve') return null;
+  if (modes.length === 1 && fixedRules(modes[0])) return null;
   for (;;) {
     const next = rollPrefs(rng, modes);
-    if (next.mode !== now.mode || (next.mode !== 'delve' && next.difficulty !== now.difficulty)) return next;
+    if (next.mode !== now.mode || (!fixedRules(next.mode) && next.difficulty !== now.difficulty)) return next;
   }
 }
 

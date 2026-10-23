@@ -168,6 +168,16 @@ function idsNamed(name: string | null): string[] {
   return name ? (byName.get(name) ?? []) : [];
 }
 
+/**
+ * Craft: how alike a picture (one of lib/craftLooks.svelte.ts', what a veil
+ * hides cut away and so counting as nothing there) is to each of the items
+ * `ids` (-1 to 1).
+ */
+export async function likenessTo(url: string, ids: string[]): Promise<number[]> {
+  const seen = await seenWhole(url);
+  return Promise.all(ids.map((id) => match(seen, id, false).catch(() => -1)));
+}
+
 /** The eyes' last reading: which option, by how much it beat the next best (for the log), and how alike each option came out (-1 to 1). */
 export let lastReading: { qid: number; index: number; margin: number; scores: number[] } | null = null;
 

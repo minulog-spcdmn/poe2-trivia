@@ -181,6 +181,10 @@ async function prepPicture(art: { art: string; w: number; h: number }, job: Omit
   });
 }
 
+/** Craft: an item's picture as it looks now (craftLooks.ts), the patches its veil hides cut out before it is encoded. */
+export const prepLook = (art: { art: string; w: number; h: number }, hide: NonNullable<PrepJob['hide']>) =>
+  prepPicture(art, { most: SHARP, grayscale: false, mirror: false, hide });
+
 const canvasOnPage = (w: number, h: number) => {
   const canvas = document.createElement('canvas');
   canvas.width = w;

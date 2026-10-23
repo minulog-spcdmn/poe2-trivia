@@ -19,7 +19,7 @@ import { knobsOf, maxFakes, type Difficulty, type GameMode, type Knobs, type Set
 
 /** Display names, in the order the lobby offers them. */
 /** The modes by name, as the lobby offers them and the end screen heads its panel. */
-export const MODE_NAMES: Record<GameMode, string> = { turns: 'Take turns', race: 'Race', delve: 'Delve' };
+export const MODE_NAMES: Record<GameMode, string> = { turns: 'Take turns', race: 'Race', delve: 'Delve', craft: 'Craft' };
 
 export const DIFFICULTY_NAMES: Record<Difficulty, string> = {
   cruel: 'Cruel',
