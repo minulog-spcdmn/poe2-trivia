@@ -1,6 +1,6 @@
 <!-- An answer's ✓ or ✕ at the reveal (QuestionView's rows and tiles, Today's
      unique), drawn as the page's other icons are: round strokes in the
-     text's colour, the two of one weight, the ✓ upright with its long stroke
+     text's colour, the two of one weight and size, the ✓ upright with its long stroke
      curving a little, as a pen makes it. The box is cut close round them, so
      it takes no more room beside the answer than the glyph did. Sized by the
      parent's font: about as big as the glyph it stands for. Says "right" or
@@ -10,7 +10,7 @@
 </script>
 
 <svg viewBox="3 3 18 18" aria-hidden="true"
-  ><path d={shape === 'check' ? 'M5.5 13l4 4.5C12 13 15 8 19 4' : 'M4.5 4.5l15 15M19.5 4.5l-15 15'} /></svg
+  ><path d={shape === 'check' ? 'M5.5 13l4 4.5C12 13 15 8 19 4' : 'M6.25 6.25l11.5 11.5M17.75 6.25l-11.5 11.5'} /></svg
 ><span class="sr-only">{shape === 'check' ? 'right' : 'wrong'}</span>
 
 <style>
