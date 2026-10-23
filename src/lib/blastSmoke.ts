@@ -20,7 +20,7 @@
 import { fxActive } from './fx/core';
 import { airNow, flowAt } from './fx/particles';
 import { noiseAt, noiseTileSteps, smokeBody } from './fx/noiseTile';
-import { whenIdle, type Deadline } from './idle';
+import { stepwise, whenIdle, type Deadline } from './idle';
 
 /** Another step of making it ready is taken in an idle moment while it has at least this long left (ms). */
 const STEP_ROOM_MS = 4;
@@ -31,15 +31,11 @@ const VARIANTS = 3;
 
 /** Each billow's picture, as numbers: its density, its light (lit from +x) and, for fire, its heat; 0 to 1, row by row. */
 type Field = { dens: Float32Array; lum: Float32Array; heat: Float32Array };
-let fields: Field[] | null = null;
 
 const smooth = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
-
-/** The pictures being worked out, a few rows a step (fieldSteps), and what finishes them. */
-let makingFields: Generator<void, Field[]> | null = null;
 
 function* makeFields(): Generator<void, Field[]> {
   const n = SPRITE * SPRITE;
@@ -71,22 +67,12 @@ function* makeFields(): Generator<void, Field[]> {
     }
     made.push(f);
   }
-  fields = made;
   return made;
 }
 
-function billowFields(): Field[] {
-  if (fields) return fields;
-  makingFields ??= makeFields();
-  for (let r = makingFields.next(); ; r = makingFields.next()) if (r.done) return r.value;
-}
-
-/** Works the pictures out a few rows a step (see prepareBlastSmoke). */
-function* fieldSteps(): Generator<void> {
-  if (fields) return;
-  makingFields ??= makeFields();
-  while (!makingFields.next().done) yield;
-}
+/** The pictures, worked out a few rows a step (prepareBlastSmoke), or at once. */
+const fields = stepwise(makeFields);
+const billowFields = () => fields.now();
 
 const canvas = (w: number, h: number) => Object.assign(document.createElement('canvas'), { width: w, height: h });
 
@@ -143,47 +129,27 @@ void main() {
 type SmokeGl = { canvas: HTMLCanvasElement; draw: (W: number, H: number, k: number, billows: Float32Array, n: number) => void; lost: () => boolean };
 /** A step of making the smoke ready: 'wait' when it's waiting on the GPU (nothing more to do in this idle moment). */
 type Step = 'wait' | void;
-/** Undefined until tried; null where WebGL2 isn't there. */
-let gl2: SmokeGl | null | undefined;
 /** The blast drawing in it now: a newer one takes it over. */
 let glOwner: object | null = null;
 
-/** The WebGL being made, a step at a time (see prepareBlastSmoke), and what finishes it. */
-let makingGl: Generator<Step, SmokeGl | null> | null = null;
 /** A blast wants it now: what's left is done at once, the shaders waited for. */
 let hurry = false;
+/** Null where WebGL2 isn't there; made anew once its context is lost (a GPU reset, say). */
+const smoke = stepwise(makeGl, (made) => !!made?.lost());
 
 function smokeGl(): SmokeGl | null {
-  // (Its context lost, a GPU reset say: made anew.)
-  if (gl2?.lost()) {
-    gl2 = undefined;
-    makingGl = null;
-  }
-  if (gl2 !== undefined) return gl2;
-  makingGl ??= makeGl();
   hurry = true;
   try {
-    for (let r = makingGl.next(); ; r = makingGl.next()) if (r.done) return r.value;
+    return smoke.now();
   } finally {
     hurry = false;
   }
 }
 
-/** Makes it a step at a time (see prepareBlastSmoke). */
-function* glSteps(): Generator<Step> {
-  if (gl2?.lost()) {
-    gl2 = undefined;
-    makingGl = null;
-  }
-  if (gl2 !== undefined) return;
-  const making = (makingGl ??= makeGl());
-  for (let r = making.next(); !r.done; r = making.next()) yield r.value;
-}
-
 function* makeGl(): Generator<Step, SmokeGl | null> {
   const cv = canvas(1, 1);
   const gl = cv.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'default' });
-  if (!gl) return (gl2 = null);
+  if (!gl) return null;
   yield;
   const shader = (type: number, src: string) => {
     const s = gl.createShader(type)!;
@@ -199,7 +165,7 @@ function* makeGl(): Generator<Step, SmokeGl | null> {
   // only once it's done (KHR_parallel_shader_compile), as asking waits for it.
   const parallel = gl.getExtension('KHR_parallel_shader_compile');
   // The pictures, side by side: light in red, density in alpha.
-  yield* fieldSteps();
+  yield* fields.steps();
   const f = billowFields();
   const atlas = new Uint8Array(SPRITE * VARIANTS * SPRITE * 4);
   for (let v = 0; v < VARIANTS; v++) {
@@ -210,11 +176,13 @@ function* makeGl(): Generator<Step, SmokeGl | null> {
       if (i % (SPRITE * 32) === SPRITE * 32 - 1) yield;
     }
   }
-  while (parallel && !hurry && !gl.getProgramParameter(prog, parallel.COMPLETION_STATUS_KHR)) yield 'wait';
+  while (parallel && !hurry && !gl.isContextLost() && !gl.getProgramParameter(prog, parallel.COMPLETION_STATUS_KHR)) yield 'wait';
+  // (Lost meanwhile: made anew when it's next wanted.)
+  if (gl.isContextLost()) return { canvas: cv, lost: () => true, draw: () => {} };
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
     console.error('Blast smoke: WebGL program failed', gl.getProgramInfoLog(prog));
     gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return (gl2 = null);
+    return null;
   }
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -245,7 +213,7 @@ function* makeGl(): Generator<Step, SmokeGl | null> {
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.clearColor(0, 0, 0, 0);
 
-  gl2 = {
+  const made: SmokeGl = {
     canvas: cv,
     lost: () => gl.isContextLost(),
     draw(W, H, k, billows, n) {
@@ -265,9 +233,9 @@ function* makeGl(): Generator<Step, SmokeGl | null> {
   // Drawn once, an unseen billow in its 1 px canvas: a program's first draw
   // is when the driver finishes it, holding up the GPU's process (see
   // Loading in docs/development.md), which the blast shouldn't wait for.
-  gl2.draw(1, 1, 1, new Float32Array([0.5, 0.5, 1, 0, 1, 1, 0, 0]), 1);
-  gl2.draw(1, 1, 1, new Float32Array(0), 0);
-  return gl2;
+  made.draw(1, 1, 1, new Float32Array([0.5, 0.5, 1, 0, 1, 1, 0, 0]), 1);
+  made.draw(1, 1, 1, new Float32Array(0), 0);
+  return made;
 }
 
 // ---- without WebGL2: a 2D canvas ----
@@ -330,10 +298,10 @@ export function prepareBlastSmoke() {
     yield* noiseTileSteps();
     // With the overlay, the WebGL the smoke is drawn with; without it, the 2D canvas's pictures.
     if (fxActive()) {
-      yield* glSteps();
+      yield* smoke.steps();
       smokeBody();
     } else {
-      yield* fieldSteps();
+      yield* fields.steps();
       sprites();
     }
   })();

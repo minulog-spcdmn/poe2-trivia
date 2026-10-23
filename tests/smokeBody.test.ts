@@ -4,7 +4,9 @@
 // and thicker where the noise is.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SMOKE_BODY, smokeBody } from '../src/lib/fx/noiseTile.ts';
+import './asVite.ts';
+
+const { SMOKE_BODY, smokeBody } = await import('../src/lib/fx/noiseTile.ts');
 
 test("a puff's body is gone by the lookup's edge and thickens with the noise", () => {
   const b = smokeBody();

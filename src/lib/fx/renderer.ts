@@ -1260,8 +1260,8 @@ export class FxRenderer {
     this.cleared = false;
   }
 
-  /** How many of its programs warmNext has drawn. */
-  private warmed = 0;
+  /** The programs warmNext has drawn. */
+  private warmed = new Set<Program>();
 
   /**
    * Draws the next of its programs once, a texel's worth, into the target it
@@ -1288,8 +1288,11 @@ export class FxRenderer {
       ...(mips.length > 1 ? [[this.upProg, mips[0], mips[1].tex, false] satisfies Step] : []),
       [this.compProg, null, hdr.tex, false],
     ];
-    if (this.warmed >= steps.length) return false;
-    const [p, into, src, instanced] = steps[this.warmed++];
+    // (Its targets as they are now: a resize between steps may have made or dropped some.)
+    const left = steps.filter(([p]) => !this.warmed.has(p));
+    if (!left.length) return false;
+    const [p, into, src, instanced] = left[0];
+    this.warmed.add(p);
     gl.useProgram(p.prog);
     // Its samplers on the units the frame puts them on (or, unset, they'd all read unit 0).
     for (const [name, unit] of [['uSrc', 0], ['uHdr', 0], ['uBloom', 1], ['uSil', 2], ['uCover', 3], ['uSigil', 4]] as const) {
@@ -1317,7 +1320,7 @@ export class FxRenderer {
     this.cleared = false;
     // (Sent at once, so it's finished in this idle moment, not with the next frame.)
     gl.flush();
-    return this.warmed < steps.length;
+    return left.length > 1;
   }
 
   /** Clears the visible canvas once, then does nothing until there is something to draw. */

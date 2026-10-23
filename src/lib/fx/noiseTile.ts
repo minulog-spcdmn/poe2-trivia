@@ -5,12 +5,12 @@
 // every pixel it covers, and the page's smoke pictures are drawn from it
 // (lib/blastSmoke.ts).
 
+import { stepwise } from '../idle';
+
 export const NOISE_TILE = 128;
 export const NOISE_CELLS = 8;
 /** The noise's range: stored as 0 to 255 for 0 to this, about 0.44 on average. */
 export const NOISE_MAX = 0.875;
-
-let tile: Uint8Array | null = null;
 
 function hash(x: number, y: number, s: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 1442695041);
@@ -37,9 +37,6 @@ function periodic(x: number, y: number, period: number, s: number): number {
   return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
 }
 
-/** The tile being made, a few rows a step (noiseTileSteps), and what finishes it. */
-let making: Generator<void, Uint8Array> | null = null;
-
 function* makeTile(): Generator<void, Uint8Array> {
   const out = new Uint8Array(NOISE_TILE * NOISE_TILE);
   const k = NOISE_CELLS / NOISE_TILE;
@@ -57,23 +54,16 @@ function* makeTile(): Generator<void, Uint8Array> {
     }
     if (y % 16 === 15) yield;
   }
-  tile = out;
   return out;
 }
 
+const tile = stepwise(makeTile);
+
 /** The tile, row by row, one byte a pixel. */
-export function noiseTile(): Uint8Array {
-  if (tile) return tile;
-  making ??= makeTile();
-  for (let r = making.next(); ; r = making.next()) if (r.done) return r.value;
-}
+export const noiseTile = (): Uint8Array => tile.now();
 
 /** Makes the tile a few rows a step (a ms or two each), for the page's idle moments (lib/blastSmoke.ts). */
-export function* noiseTileSteps(): Generator<void> {
-  if (tile) return;
-  making ??= makeTile();
-  while (!making.next().done) yield;
-}
+export const noiseTileSteps = () => tile.steps();
 
 /** Texels across smokeBody (by how far out) and down it (by the noise). */
 export const SMOKE_BODY = 64;

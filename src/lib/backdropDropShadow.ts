@@ -268,6 +268,16 @@ function shapeOf(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drops:
   return { key, drops, x, y, w: mw, h: mh, sharp, q, bw, bh, alpha, sx: 0, sy: 0, bx: 0, by: 0 };
 }
 
+/** How many masks made lately are kept (recent). */
+const RECENT = 8;
+/**
+ * Masks made lately, by the kind of element and its shape: one that comes
+ * back (a turn's banner, made afresh each turn, naming the same player a
+ * round later) takes its mask again at once.
+ */
+const recent = new Map<string, Mask>();
+const recentKey = (node: HTMLElement, key: string) => `${node.tagName}|${node.className}|${key}`;
+
 let worker: Worker | null | undefined;
 let lastJob = 0;
 /** What each blur sent to the worker does with its answer. */
@@ -304,6 +314,13 @@ function blurWorker(): Worker | null {
  * comes in a few frames later, CSS painting the shadow meanwhile.
  */
 function startMask(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drops: Drop[], lin: Lin) {
+  const kept = recentKey(node, key);
+  const known = recent.get(kept);
+  if (known) {
+    masks.set(node, known);
+    atlasDirty = true;
+    return;
+  }
   const shape = shapeOf(node, cs, key, drops, lin);
   if (!shape) {
     masks.delete(node);
@@ -314,8 +331,12 @@ function startMask(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drop
   const { alpha, ...rest } = shape;
   const sigmas = drops.slice(0, DROPS_PER_MASK).map((d) => d.sigma * shape.q);
   const done = (blur: Uint8Array) => {
-    masks.set(node, { ...rest, blur });
+    const mask = { ...rest, blur };
+    masks.set(node, mask);
     atlasDirty = true;
+    recent.delete(kept);
+    recent.set(kept, mask);
+    if (recent.size > RECENT) recent.delete(recent.keys().next().value!);
   };
   const w = blurWorker();
   if (!w) return done(blurMask(alpha, shape.bw, shape.bh, sigmas));
@@ -357,16 +378,19 @@ function shelfPack(items: { w: number; h: number; place: (x: number, y: number) 
   return y + row + 1;
 }
 
+/** The sharp atlas's canvas, kept from one build to the next (a new one each time is a new buffer in the GPU's process): only ever made taller. */
+let sharpAtlas: HTMLCanvasElement | null = null;
+
 function buildAtlases(list: Mask[]): Atlases {
   const sh = shelfPack(
     list.map((m) => ({ w: m.w, h: m.h, place: (x, y) => ((m.sx = x), (m.sy = y)) })),
     SHARP_ATLAS_W,
   );
-  const sharp = document.createElement('canvas');
-  sharp.width = SHARP_ATLAS_W;
-  sharp.height = Math.max(1, sh);
-  const ctx = sharp.getContext('2d')!;
-  for (const m of list) ctx.drawImage(m.sharp, m.sx, m.sy);
+  const sharp = (sharpAtlas ??= Object.assign(document.createElement('canvas'), { width: SHARP_ATLAS_W, height: 1 }));
+  if (sharp.height < sh) sharp.height = sh;
+  const ctx = sharp.getContext('2d');
+  ctx?.clearRect(0, 0, sharp.width, sharp.height);
+  for (const m of list) ctx?.drawImage(m.sharp, m.sx, m.sy);
 
   const bh = Math.max(
     1,
@@ -458,7 +482,9 @@ export function measureDrops(
         decl,
         fontsGeneration,
       ].join('|');
-      if (mask?.key !== key && blurring.get(node)?.key !== key && unmaskable.get(node) !== key) {
+      // (Back to the shape its mask has: a blur on its way for another is let go.)
+      if (mask?.key === key) blurring.delete(node);
+      else if (blurring.get(node)?.key !== key && unmaskable.get(node) !== key) {
         if (unsettled.get(node) !== key) {
           // A new shape (a new element's, or one changed since its mask was
           // made), which may go on changing every frame (an entrance opening
