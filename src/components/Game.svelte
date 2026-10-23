@@ -7,8 +7,6 @@
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
-  import DrawnMark from './DrawnMark.svelte';
-  import DuelMark from './DuelMark.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
   import { fireAmbience, sfx } from '../lib/sound';
@@ -33,7 +31,6 @@
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
-  import { backdropShadow } from '../lib/backdropShadow';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -96,17 +93,10 @@
       showIntro = true;
       sfx('deathmatch');
       if (introTimer) clearTimeout(introTimer);
-      introTimer = setTimeout(() => {
-        showIntro = false;
-        stripFor = start;
-        stripEntering = !motion.still;
-      }, 2600);
+      introTimer = setTimeout(() => (showIntro = false), 2600);
     });
   });
   let showIntro = $state(false);
-  // The duel's strip keeps its place while the intro shows, and comes in as it leaves.
-  let stripFor = $state<number | null>(null);
-  let stripEntering = $state(false);
   // A new game (or joining one): a wave of light.
   onMount(() => {
     gameStart();
@@ -377,34 +367,6 @@
         {#if held}
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
-          {#if dm}
-            <div
-              class="dm-strip panel"
-              class:hold={stripFor !== dm.startedAt}
-              class:entering={stripEntering}
-              data-cursor="duel"
-              use:backdropShadow
-              onanimationend={(e) => e.animationName.endsWith('dm-unsheathe') && (stripEntering = false)}>
-              <span class="dm-title"><DuelMark strike={stripEntering} /> Deathmatch · round {dm.round}</span>
-              <span class="dm-duelists">
-                {#each dm.alive as id (id)}
-                  {@const p = nameOf(id)}
-                  {#if p}
-                    <span class="duelist" class:done={id in dm.results} title={p.name}>
-                      <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={24} />
-                      {#if id in dm.results}<i class:ok={dm.results[id]}><DrawnMark shape={dm.results[id] ? 'check' : 'cross'} /></i>{/if}
-                    </span>
-                  {/if}
-                {/each}
-              </span>
-              <span class="dm-rule">
-                {#if dm.eliminated.length}
-                  <b>{dm.eliminated.map((id) => nameOf(id)?.name).join(', ')} {dm.eliminated.length === 1 ? 'is' : 'are'} out.</b>
-                {/if}
-                Answer right to survive. Anyone who misses while another duelist scores is out.
-              </span>
-            </div>
-          {/if}
           <div class="head" data-cursor="banner">
             {#if run && pastBest && pastBest.turn === s.turnCount}
               <!-- Over the banner, alone, one past your best says so (in the room
@@ -502,7 +464,7 @@
           {/if}
         {/each}
       </div>
-      <p class="dm-sub">Sudden death. Random categories, harder questions.</p>
+      <p class="dm-sub">Sudden death: miss while another duelist scores and you're out.<br />Random categories, harder questions.</p>
     </div>
   </div>
 {/if}
@@ -703,127 +665,6 @@
       transform: scaleX(0);
     }
   }
-  /* The duel's strip: the game's framed panel (app.css) forged in the duel's
-     red, its filigree gone to copper. Its glow is the backdrop's
-     (use:backdropShadow), dithered, and CSS's only where the backdrop can't. */
-  .dm-strip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem 1rem;
-    margin: 0 auto 0.4rem;
-    padding: 0.5rem 1.4rem;
-    max-width: 760px;
-    border-color: rgba(224, 85, 63, 0.5);
-    --bs-fill-a: rgba(50, 15, 11, 0.9);
-    --bs-fill-b: rgba(20, 8, 7, 0.92);
-    --bs1: 0px 26px;
-    --bs1-color: rgba(224, 85, 63, 0.14);
-    --bs2: 12px 34px;
-    --bs2-color: rgba(0, 0, 0, 0.5);
-  }
-  .dm-strip::before {
-    filter: hue-rotate(-28deg) saturate(1.3) drop-shadow(0 0 3px rgba(224, 85, 63, 0.45));
-  }
-  .dm-strip::after {
-    background: linear-gradient(90deg, transparent, rgba(255, 156, 134, 0.55), transparent);
-  }
-  .dm-strip.hold {
-    visibility: hidden;
-  }
-  /* Its entrance: drawn out from the middle like a blade from its sheath, then
-     the swords cross, and the frame flares red where they meet before it settles. */
-  .dm-strip.entering {
-    animation: dm-unsheathe 1.2s both;
-  }
-  .dm-strip.entering > * {
-    animation: dm-rise 0.4s 0.12s both;
-  }
-  .dm-strip.entering .dm-title {
-    --strike-delay: 0.1s;
-    animation:
-      dm-rise 0.4s 0.12s both,
-      dm-taut 0.6s 0.12s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-  }
-  @keyframes dm-unsheathe {
-    0% {
-      transform: scaleX(0.03);
-      opacity: 0;
-      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-    }
-    6% {
-      opacity: 1;
-    }
-    40% {
-      transform: scaleX(1);
-      border-color: rgba(224, 85, 63, 0.5);
-      --bs1-color: rgba(224, 85, 63, 0.14);
-    }
-    50% {
-      border-color: rgba(255, 176, 156, 0.95);
-      --bs1-color: rgba(255, 110, 80, 0.5);
-      animation-timing-function: ease-out;
-    }
-  }
-  @keyframes dm-rise {
-    from {
-      opacity: 0;
-    }
-  }
-  @keyframes dm-taut {
-    from {
-      letter-spacing: 0.45em;
-    }
-  }
-  .dm-title {
-    font-family: var(--font-display);
-    font-weight: 900;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    font-size: 0.85rem;
-    color: #ff9c86;
-  }
-  .dm-duelists {
-    display: inline-flex;
-    gap: 0.35rem;
-  }
-  .duelist {
-    position: relative;
-  }
-  .duelist.done :global(.avatar) {
-    opacity: 0.6;
-  }
-  .duelist i {
-    position: absolute;
-    right: -4px;
-    bottom: -4px;
-    width: 14px;
-    height: 14px;
-    display: grid;
-    place-items: center;
-    --mark-size: 6px;
-    --mark-stroke: 1.3px;
-    color: #fff;
-    background: var(--bad);
-    border-radius: 50%;
-  }
-  .duelist i.ok {
-    background: #3f8f43;
-  }
-  .dm-rule {
-    flex-basis: 100%;
-    text-align: center;
-    font-size: 0.9rem;
-    font-style: italic;
-    color: #d9b3a8;
-  }
-  .dm-rule b {
-    font-style: normal;
-    color: #ff9c86;
-    margin-right: 0.3em;
-  }
   .banner.dm h2 {
     color: #ffd7c9;
   }
@@ -841,8 +682,18 @@
     background: rgba(14, 3, 2, 0.88);
     pointer-events: none;
   }
+  /* The sigil burns behind the words (lib/fx/moments.ts): each line is cut
+     out of it by a dark halo of its own, close round its letters. */
   .dm-intro-inner {
+    --knockout:
+      0 0 2px rgb(14, 3, 2), 0 0 5px rgba(14, 3, 2, 0.95), 0 0 10px rgba(14, 3, 2, 0.9), 0 0 20px rgba(14, 3, 2, 0.75);
     text-align: center;
+  }
+  .dm-kicker,
+  .face b,
+  .vs,
+  .dm-sub {
+    text-shadow: var(--knockout);
   }
   .dm-kicker {
     margin: 0;
@@ -850,7 +701,8 @@
     letter-spacing: 0.5em;
     padding-left: 0.5em;
     text-transform: uppercase;
-    color: #ff9c86;
+    font-weight: 700;
+    color: #ffc4b4;
   }
   .dm-intro h1 {
     font-size: clamp(3.1rem, 13.5vw, 6.7rem);
@@ -860,7 +712,8 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0 0 30px rgba(224, 85, 63, 0.55));
+    /* (Its letters' own glow, round a dark edge that parts them from the sigil.) */
+    filter: drop-shadow(0 0 3px rgba(14, 3, 2, 0.95)) drop-shadow(0 0 30px rgba(224, 85, 63, 0.55));
   }
   .dm-faces {
     display: flex;
@@ -959,23 +812,6 @@
       bottom: 100%;
       font-size: 0.64rem;
       line-height: 1.2;
-    }
-    /* The duel's strip on one line: its title is the header's already. */
-    .dm-title {
-      display: none;
-    }
-    .dm-strip {
-      gap: 0.1rem 0.8rem;
-      margin-bottom: 0.2rem;
-      padding: 0.2rem 0.8rem;
-      max-width: none;
-    }
-    .dm-strip::before {
-      background-size: 16px 16px;
-    }
-    .dm-rule {
-      flex-basis: auto;
-      font-size: 0.8rem;
     }
     .skip {
       margin-top: 0.6rem;

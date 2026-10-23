@@ -701,7 +701,7 @@ export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: numb
       f.q[2] = rings;
       f.q[3] = band;
       f.q[4] = age * SIGIL_TURN;
-      f.q[5] = 0.3 + 0.3 * smooth((age - 1.3) / 0.7) - 0.1 * smooth((age - 2) / 0.7);
+      f.q[5] = 0.3 + 0.15 * smooth((age - 1.3) / 0.7) - 0.05 * smooth((age - 2) / 0.7);
       f.q[6] = 2.2;
       f.q[7] = scale;
       const px = fxPixelRatio();

@@ -1141,7 +1141,7 @@ export function deathmatchIntro(title: Element) {
       const b = boxOf(title);
       return { x: b.x + x * R, y: b.y + y * R };
     };
-    sigil(title, { radius: R, color: C.crimson, life: 3, intensity: 0.6 });
+    sigil(title, { radius: R, color: C.crimson, life: 3, intensity: 0.48 });
     // The sword's point strikes home, and the band's two fires meet at its head.
     after(SIGIL_STRIKE, () => {
       flash(on([0, SIGIL_POINT]), { radius: R * 0.4, color: C.ember, intensity: 0.35, life: 0.5 });
