@@ -10,12 +10,12 @@ import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { isChoosableHue } from './palette.ts';
 import { cleanSeen } from './delveStart.ts';
-import { isOrb, type Orb } from './craft.ts';
+import { isOrb, type Aim, type Orb } from './craft.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
  * each other. What each version changed, newest first:
- * - 33: Craft (game.ts GameMode, craft.ts): its actions ('craft'), its
+ * - 33: Craft (game.ts GameMode, craft.ts): its actions ('craft', a scramble with where it is put), its
  *   phase, each guest's own view of the state, and its pictures (look)
  * - 32: a question's pictures come down an art lane of their own
  *   (artLane.ts), the hello saying the guest opened it (lane); a question
@@ -248,9 +248,25 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
           if (a.do !== 'buy' && a.do !== 'use' && a.do !== 'ready' && a.do !== 'guess') return null;
           if ((a.do === 'buy' || a.do === 'use') && !isOrb(a.orb)) return null;
           if (a.do === 'guess' && !isInt(a.index, 0, 16)) return null;
+          // Where a scramble is put (craft.ts Aim): a line, the picture, or a place on it; anything else, nowhere.
+          let aim: Aim | undefined;
+          if (a.do === 'use' && a.aim !== undefined) {
+            const m = a.aim as Record<string, unknown> | null;
+            if (!m || typeof m !== 'object') return null;
+            if (isInt(m.line, 0, 64)) aim = { line: m.line as number };
+            else if (m.picture === true) aim = { picture: true };
+            else if (Array.isArray(m.at) && m.at.length === 2 && m.at.every((v) => typeof v === 'number' && v >= 0 && v <= 1)) aim = { at: [m.at[0], m.at[1]] };
+            else return null;
+          }
           return {
             t: 'action',
-            action: { type: 'craft', do: a.do, ...(a.do === 'buy' || a.do === 'use' ? { orb: a.orb as Orb } : {}), ...(a.do === 'guess' ? { index: a.index as number } : {}) },
+            action: {
+              type: 'craft',
+              do: a.do,
+              ...(a.do === 'buy' || a.do === 'use' ? { orb: a.orb as Orb } : {}),
+              ...(a.do === 'guess' ? { index: a.index as number } : {}),
+              ...(aim ? { aim } : {}),
+            },
           };
         }
         // Watch rather than play (or take a seat again): only ever the sender's own choice.

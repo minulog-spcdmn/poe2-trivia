@@ -1,5 +1,6 @@
 // How the room bot's players play Craft (lib/craft.ts), as people might:
-// what they buy with their gold, how they scramble the item dealt them, and
+// what they buy with their gold, how they scramble the item dealt them (and
+// where they put each scramble), and
 // what they make of the one passed to them. A player naming an item goes by
 // what is on their screen, nothing more: the mod lines they know as one of
 // the options' own (most of them, not all: knowsLine), and the
@@ -9,11 +10,14 @@
 // and look again. Pure functions of their inputs and a random source, so
 // tests can pin them.
 
-import { CRAFT, ORBS, SCRAMBLES, UNDOS, type Orb } from '../lib/craft.ts';
+import { CRAFT, ORBS, SCRAMBLES, UNDOS, canAim, type Aim, type ModLines, type Orb, type Piece } from '../lib/craft.ts';
 import { gauss, weighted, type Persona, type Rng } from './brain.ts';
 import { seededBy } from './util.ts';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** An orb used on one's own item. */
+export type Scramble = Exclude<Orb, 'exalt' | 'divine' | 'unveil'>;
 
 /** How keen people are on each orb, in the shop. */
 const LIKES: Record<Orb, number> = { annul: 3, chaos: 3, veil: 2.5, chance: 0.4, exalt: 3, divine: 2.5, unveil: 2.5 };
@@ -56,8 +60,8 @@ export function shopping(p: Persona, gold: number, held: Partial<Record<Orb, num
  * the rest), then everything else they hold, in a shuffled order: an item
  * is only this round's, so nothing is kept back for the next.
  */
-export function scrambling(held: Partial<Record<Orb, number>>, rng: Rng): Orb[] {
-  const out: Orb[] = [];
+export function scrambling(held: Partial<Record<Orb, number>>, rng: Rng): Scramble[] {
+  const out: Scramble[] = [];
   if ((held.chance ?? 0) > 0 && rng() < 0.45) out.push('chance');
   const rest = (['annul', 'chaos', 'veil'] as const).flatMap((o) => Array.from({ length: held[o] ?? 0 }, () => o));
   for (let i = rest.length - 1; i > 0; i--) {
@@ -65,6 +69,36 @@ export function scrambling(held: Partial<Record<Orb, number>>, rng: Rng): Orb[] 
     [rest[i], rest[j]] = [rest[j], rest[i]];
   }
   return [...out, ...rest];
+}
+
+/**
+ * Where a player puts a scramble on their item, or null where it can't go
+ * anywhere. Annulment and Chaos go on a line, the better players' on one
+ * that gives the item away (no other of its six names has it), the rest's
+ * on any; Chaos goes on the picture now and then, while it is still the
+ * item's own; a Veil Orb near the middle, where the item is, away from the
+ * veils already on it. Chance goes on the item.
+ */
+export function aiming(p: Persona, piece: Piece, orb: Scramble, lines: ModLines, rng: Rng): Aim | null {
+  if (orb === 'chance') return {};
+  if (orb === 'veil') {
+    let best: [number, number] | null = null;
+    let far = -1;
+    for (let i = 0; i < 6; i++) {
+      const at: [number, number] = [clamp(0.5 + 0.2 * gauss(rng), 0.15, 0.85), clamp(0.5 + 0.2 * gauss(rng), 0.15, 0.85)];
+      const d = Math.min(9, ...piece.veils.map(([x, y]) => (x - at[0]) ** 2 + (y - at[1]) ** 2));
+      if (d > far) [best, far] = [at, d];
+    }
+    return best && canAim(piece, 'veil', { at: best }) ? { at: best } : null;
+  }
+  if (orb === 'chaos' && piece.picture === null && rng() < 0.3) return { picture: true };
+  const own = lines(piece.item);
+  const others = new Set(piece.options.filter((o) => o !== piece.item).flatMap((o) => lines(o)));
+  const standing = piece.slots.flatMap((s, i) => (s === 'gone' ? [] : [i]));
+  const telling = standing.filter((i) => piece.slots[i] === 'kept' && !others.has(own[i]));
+  const from = telling.length && rng() < clamp(0.55 + 5 * p.skill + 0.25 * (p.sense - 0.5), 0.2, 0.95) ? telling : standing;
+  if (!from.length) return orb === 'chaos' ? { picture: true } : null;
+  return { line: from[Math.floor(rng() * from.length)] };
 }
 
 /**

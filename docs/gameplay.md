@@ -47,26 +47,29 @@ is done:
 1. **Shop** (30 s): buy currency with your gold. What you buy, and how much
    gold you have now, nobody else sees: the others' gold shows as it was when
    the round began.
-   - To scramble your item: Orb of Annulment (3 gold) takes a random mod line
-     away; Chaos Orb (4) swaps a random mod line, or the picture, for another
-     item's of the same kind; Veil Orb (2) hides a quarter of the picture
-     (four hide it all); Orb of Chance (2) trades your item for a fresh one,
-     and what you used on the old one is lost.
+   - To scramble your item: Orb of Annulment (2 gold) takes away the mod line
+     you put it on; Chaos Orb (4) swaps the mod line you put it on, or the
+     picture, for another item's of the same kind; Veil Orb (2) hides about a
+     quarter of the picture, round where you put it (four at most); Orb of
+     Chance (2) trades your item for a fresh one, and what you used on the old
+     one is lost.
    - To unscramble the one passed to you: Exalted Orb (3) brings back a line
      that was taken away; Divine Orb (4) puts back a line, or the picture,
      that was swapped; Unveil Orb (2) uncovers a quarter of what was hidden.
 2. **Scramble** (40 s): everyone is dealt a unique item with at least three
-   mod lines, and each item goes to the next player round the table. You
-   pick the orb, the game picks what it hits, as in Path of Exile. You see
-   your item as it is and what you did to it; an orb that would do nothing
-   more can't be used.
+   mod lines, and each item goes to the next player round the table. Currency
+   is used as in Path of Exile 2: pick it up (a click, or a right click), then
+   click where it goes: a mod line, the picture, or a place on the picture.
+   Shift keeps it in hand for another; Esc or a right click puts it back.
+   What a Chaos Orb swaps in is up to chance. You see your item as it is and
+   what you did to it; an orb that would do nothing more can't be used.
 3. **Name it** (45 s): you see the item passed to you as it now looks: its
    picture, its mod lines and the kind of item it is, never its name, nor
    which orbs were used or how many, nor what a Chaos Orb changed. Your
-   undos find their own target, and one with nothing to undo is spent all
-   the same. Then pick its name from six, its lookalikes among them.
+   undos are put on the item and find their own target, and one with nothing
+   to undo is spent all the same. Then pick its name from six, its lookalikes among them.
 4. **Reveal** (12 s): both items are shown as they were. A right name earns
-   10 gold from the bank; a wrong one, or none in time, costs the guesser 6
+   10 gold from the bank; a wrong one, or none in time, costs the guesser 10
    gold (or all they have, if less), paid to the item's maker.
 
 The game ends after the eighth round, or after the first round in which

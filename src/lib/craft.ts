@@ -1,5 +1,6 @@
 // Craft: every round each player is dealt a unique, scrambles it with
-// currency and passes it on; the next player un-scrambles what they can
+// currency (aimed, as currency is used in Path of Exile 2: picked up, then
+// put on the line or the part of the picture it is for) and passes it on; the next player un-scrambles what they can
 // and names it from six. A right name earns gold from the bank, a wrong one
 // pays the item's maker. Gold buys the currency between rounds, and it is
 // the score: the most after the last round wins, or the first to the cap.
@@ -25,9 +26,9 @@ export interface OrbKind {
 }
 
 export const ORBS: Record<Orb, OrbKind> = {
-  annul: { name: 'Orb of Annulment', price: 3, side: 'scramble', does: 'Takes a random mod line away.' },
-  chaos: { name: 'Chaos Orb', price: 4, side: 'scramble', does: 'Swaps a random line, or the picture, for another item’s.' },
-  veil: { name: 'Veil Orb', price: 2, side: 'scramble', does: 'Hides a part of the picture.' },
+  annul: { name: 'Orb of Annulment', price: 2, side: 'scramble', does: 'Takes away the mod line you put it on.' },
+  chaos: { name: 'Chaos Orb', price: 4, side: 'scramble', does: 'Swaps the line you put it on, or the picture, for another item’s.' },
+  veil: { name: 'Veil Orb', price: 2, side: 'scramble', does: 'Hides the part of the picture you put it on.' },
   chance: { name: 'Orb of Chance', price: 2, side: 'scramble', does: 'Trades your item for a fresh one.' },
   exalt: { name: 'Exalted Orb', price: 3, side: 'undo', does: 'Brings back a line that was taken away.' },
   divine: { name: 'Divine Orb', price: 4, side: 'undo', does: 'Puts back a line, or the picture, that was swapped.' },
@@ -46,7 +47,7 @@ export const CRAFT = {
   /** A right name: from the bank to the guesser. */
   rightPay: 10,
   /** A wrong name (or none in time): from the guesser to the maker, as much of it as they have. */
-  wrongCost: 6,
+  wrongCost: 10,
   /** The game ends after this round… */
   rounds: 8,
   /** …or after the round someone reaches this much gold. */
@@ -59,7 +60,7 @@ export const CRAFT = {
   options: 6,
   /** Only items with at least this many mod lines are dealt. */
   minLines: 3,
-  /** Each Veil Orb hides this share of the picture's patches, up to all of them. */
+  /** Each Veil Orb hides about one in this many of the picture's patches (those nearest where it was put), and a picture takes this many at most. */
   veilLayers: 4,
   /** The picture's patches are about the size of a grid this many across (patches.ts labelPatches). */
   veilSize: 7,
@@ -83,9 +84,9 @@ export interface Piece {
   slots: Slot[];
   /** The art a Chaos Orb swapped in for its own (an item id), or null. Hidden from the guesser. */
   picture: string | null;
-  /** How many Veil Orbs hide its picture (0 to CRAFT.veilLayers). Hidden from the guesser. */
-  veil: number;
-  /** Which of the picture's patches a veil hides (patches.ts). */
+  /** Where Veil Orbs were put on its picture (each 0 to 1 across and down it), at most CRAFT.veilLayers. Hidden from the guesser. */
+  veils: [number, number][];
+  /** How its picture is cut into patches, and drawn (patches.ts, prepArt.ts). */
   seed: number;
   /** The names to pick from, as item ids, in the order shown. */
   options: string[];
@@ -156,14 +157,33 @@ export function shownOf(p: Pick<Piece, 'item' | 'slots'>, lines: ModLines): stri
   return p.slots.flatMap((s, i) => (s === 'kept' ? [own[i]] : s === 'gone' ? [] : [lines(s.art)[s.line] ?? '']));
 }
 
-/** Which share of the picture's patches its veil hides, 0 to 1. */
-export const veilShare = (veil: number) => Math.min(1, veil / CRAFT.veilLayers);
+/**
+ * Where a scramble is put: on a mod line (its slot, as the maker's tooltip
+ * lists them, those taken away included), on the picture, or at a place on
+ * the picture (0 to 1 across and down it). Chance needs none: it is put on
+ * the item.
+ */
+export interface Aim {
+  line?: number;
+  picture?: boolean;
+  at?: [number, number];
+}
 
-/** Whether an orb would do anything to the piece, as its maker knows it (they never waste a scramble on purpose). */
+/** Whether an orb would do anything to the piece anywhere, as its maker knows it. */
 export function canScramble(p: Piece, orb: Orb): boolean {
   if (orb === 'annul') return p.slots.some((s) => s !== 'gone');
-  if (orb === 'veil') return p.veil < CRAFT.veilLayers;
+  if (orb === 'veil') return p.veils.length < CRAFT.veilLayers;
   return orb === 'chaos' || orb === 'chance';
+}
+
+/** Whether an orb can be put there: Annulment on a line still there, Chaos on one or on the picture, a Veil Orb on a place on the picture, Chance on the item. */
+export function canAim(p: Piece, orb: Orb, aim: Aim): boolean {
+  const line = aim.line;
+  const onLine = typeof line === 'number' && Number.isInteger(line) && line >= 0 && line < p.slots.length && p.slots[line] !== 'gone';
+  if (orb === 'annul') return onLine;
+  if (orb === 'chaos') return onLine || aim.picture === true;
+  if (orb === 'veil') return canScramble(p, 'veil') && !!aim.at && aim.at.length === 2 && aim.at.every((v) => Number.isFinite(v) && v >= 0 && v <= 1);
+  return orb === 'chance';
 }
 
 /** What the rules need to scramble: the items, their lines, a random source. */
@@ -190,27 +210,24 @@ function strangeLine(t: Table, p: Piece, item: CraftItem, replacing: string): { 
 }
 
 /**
- * Uses a scramble on the maker's piece (Chance is the engine's: it deals a
- * new item). Annulment takes a random line that's still there away; Chaos
- * swaps a random line that's still there, or the picture, for another
- * item's; a Veil Orb hides another share of the picture.
+ * Uses a scramble on the maker's piece where they put it (Chance is the
+ * engine's: it deals a new item). Annulment takes the line away; Chaos
+ * swaps the line, or the picture, for another item's (what it swaps in is
+ * up to chance); a Veil Orb hides the part of the picture round where it
+ * was put. False where it can't be put, or with nothing to swap in.
  */
-export function scramble(t: Table, p: Piece, orb: Exclude<Orb, 'chance'>): boolean {
+export function scramble(t: Table, p: Piece, orb: Exclude<Orb, 'chance'>, aim: Aim): boolean {
+  if (!canAim(p, orb, aim)) return false;
   const item = t.items.find((it) => it.id === p.item)!;
-  const standing = p.slots.flatMap((s, i) => (s === 'gone' ? [] : [i]));
-  if (orb === 'annul') {
-    if (!standing.length) return false;
-    p.slots[pick(standing, t.rng)] = 'gone';
-  } else if (orb === 'chaos') {
-    // Each line still there, and the picture, as likely as the others.
-    const at = Math.floor(t.rng() * (standing.length + 1));
-    if (at === standing.length) {
+  if (orb === 'annul') p.slots[aim.line!] = 'gone';
+  else if (orb === 'chaos') {
+    if (aim.picture) {
       const others = kin(t, item).filter((o) => o.id !== p.picture);
       if (!others.length) return false;
       p.picture = pick(others, t.rng).id;
       p.look++;
     } else {
-      const i = standing[at];
+      const i = aim.line!;
       const s = p.slots[i];
       const now = s === 'kept' ? t.lines(p.item)[i] : t.lines((s as { art: string }).art)[(s as { line: number }).line];
       const line = strangeLine(t, p, item, now);
@@ -218,8 +235,7 @@ export function scramble(t: Table, p: Piece, orb: Exclude<Orb, 'chance'>): boole
       p.slots[i] = line;
     }
   } else if (orb === 'veil') {
-    if (p.veil >= CRAFT.veilLayers) return false;
-    p.veil++;
+    p.veils.push([aim.at![0], aim.at![1]]);
     p.look++;
   } else return false;
   p.shown = shownOf(p, t.lines);
@@ -229,7 +245,7 @@ export function scramble(t: Table, p: Piece, orb: Exclude<Orb, 'chance'>): boole
 /**
  * Uses an undo on the guesser's piece, aimed by chance: Exalted brings back
  * a random line that was taken away, Divine puts back a random line or the
- * picture that Chaos swapped, Unveil uncovers a share of the picture. With
+ * picture that Chaos swapped, Unveil takes one of its veils off. With
  * nothing of its kind to undo, it does nothing (and is spent all the same).
  */
 export function undo(t: Table, p: Piece, orb: Orb): boolean {
@@ -246,8 +262,8 @@ export function undo(t: Table, p: Piece, orb: Orb): boolean {
       p.look++;
     } else return false;
   } else if (orb === 'unveil') {
-    if (p.veil <= 0) return false;
-    p.veil--;
+    if (!p.veils.length) return false;
+    p.veils.splice(Math.floor(t.rng() * p.veils.length), 1);
     p.look++;
   } else return false;
   p.shown = shownOf(p, t.lines);
@@ -275,7 +291,7 @@ export function deal(
     item: item.id,
     slots: t.lines(item.id).map(() => 'kept' as const),
     picture: null,
-    veil: 0,
+    veils: [],
     seed: Math.floor(t.rng() * 2 ** 31),
     options: optionsFor(t, item, decoys),
     shown: [...t.lines(item.id)],
@@ -327,10 +343,26 @@ export function settle(c: Craft, gold: (id: string) => number, give: (id: string
 /** Whether the game is over once round `round` has been played: the last round, or someone at the cap. */
 export const craftOver = (round: number, golds: readonly number[]) => round >= CRAFT.rounds || golds.some((g) => g >= CRAFT.goldCap);
 
-/** Which patches of a picture cut into `count` (in the order a veil would uncover them, last first) a veil of `veil` hides. */
-export function hiddenPatches(order: readonly number[], veil: number): number[] {
-  const n = Math.round(order.length * veilShare(veil));
-  return n ? order.slice(order.length - n) : [];
+/**
+ * The patches a picture's veils hide (by index): for each veil, the patches
+ * nearest where it was put (by their middles), as many as make up one in
+ * CRAFT.veilLayers of the picture. `patches`: each one's middle (in the
+ * picture's pixels) and size; `w`, `h`: the picture's.
+ */
+export function veiledPatches(patches: readonly { x: number; y: number; area: number }[], veils: readonly (readonly [number, number])[], w: number, h: number): Set<number> {
+  const hidden = new Set<number>();
+  const total = patches.reduce((sum, p) => sum + p.area, 0);
+  for (const [vx, vy] of veils) {
+    const [x, y] = [vx * w, vy * h];
+    const near = patches.map((p, i) => [i, (p.x - x) ** 2 + (p.y - y) ** 2] as const).sort((a, b) => a[1] - b[1]);
+    let covered = 0;
+    for (const [i] of near) {
+      if (covered >= total / CRAFT.veilLayers) break;
+      hidden.add(i);
+      covered += patches[i].area;
+    }
+  }
+  return hidden;
 }
 
 /** Which piece (by its maker) and which of its looks a picture is, in a round. */
@@ -342,7 +374,7 @@ export interface WantedLook {
   to: string[];
   /** The art to draw (an item id: the piece's own, or the one swapped in). */
   art: string;
-  hide: { size: number; seed: number; share: number };
+  hide: { size: number; seed: number; veils: [number, number][] };
 }
 
 /** The looks the game wants out now: each piece's to its maker while it is in play, and to its guesser while they name it. */
@@ -353,6 +385,6 @@ export function wantedLooks(s: { phase: string; craft?: Craft | null }): WantedL
     key: lookKey(c.round, p.maker, p.look),
     to: c.step === 'guess' ? [p.maker, p.guesser] : [p.maker],
     art: p.picture ?? p.item,
-    hide: { size: CRAFT.veilSize, seed: p.seed, share: veilShare(p.veil) },
+    hide: { size: CRAFT.veilSize, seed: p.seed, veils: p.veils },
   }));
 }

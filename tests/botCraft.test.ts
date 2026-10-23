@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Engine, createGame, craftView, DEFAULT_SETTINGS, type GameState } from '../src/lib/game.ts';
-import { CRAFT, ORBS, SCRAMBLES, UNDOS, canScramble, guessedBy, holds, madeBy, veilShare, type Orb } from '../src/lib/craft.ts';
+import { CRAFT, ORBS, SCRAMBLES, UNDOS, canAim, canScramble, guessedBy, holds, madeBy, type Orb } from '../src/lib/craft.ts';
 import { linesFrom } from '../src/lib/craftLines.ts';
 import { makePersona, type Persona } from '../src/bot/brain.ts';
-import { knowsLine, naming, scrambling, shopping, sureness, unscrambling, weigh, type Clues } from '../src/bot/craftBrain.ts';
+import { aiming, knowsLine, naming, scrambling, shopping, sureness, unscrambling, weigh, type Clues } from '../src/bot/craftBrain.ts';
 import { items, seeded } from './helpers.ts';
 
 const lines = linesFrom(JSON.parse(readFileSync(new URL('../src/data/itemStats.json', import.meta.url), 'utf8')));
@@ -83,6 +83,29 @@ test('craft bot: unsure, it unscrambles with what it holds; sure, or holding non
  * their screens show (the lines; the picture as eyes would make it out: the
  * art shown, the less alike the more of it a veil hides, against the rest).
  */
+test('craft bot: puts each scramble where it can go, the better players on the lines that give the item away', () => {
+  const engine = new Engine(items, { rng: seeded(5) });
+  engine.setCraftLines(lines);
+  let s: GameState = createGame('a', { ...DEFAULT_SETTINGS, mode: 'craft' });
+  for (const id of ['a', 'b']) s = engine.apply(s, { type: 'join', playerId: id, name: `Bot ${id}` }, id);
+  s = engine.apply(s, { type: 'start' }, 'a');
+  s = engine.apply(s, { type: 'craft', do: 'ready' }, 'a');
+  s = engine.apply(s, { type: 'craft', do: 'ready' }, 'b');
+  const piece = madeBy(s.craft!, 'a')!;
+  const others = new Set(piece.options.filter((o) => o !== piece.item).flatMap((o) => lines(o)));
+  const telling = lines(piece.item).flatMap((l, i) => (others.has(l) ? [] : [i]));
+  const good = { ...persona(1), skill: 0.015, sense: 1 };
+  let onTelling = 0;
+  for (let seed = 1; seed <= 200; seed++) {
+    for (const orb of ['annul', 'chaos', 'veil', 'chance'] as const) {
+      const aim = aiming(good, piece, orb, lines, seeded(seed));
+      assert.ok(aim && canAim(piece, orb, aim), `${orb} ${JSON.stringify(aim)}`);
+      if (orb === 'annul' && telling.includes(aim.line!)) onTelling++;
+    }
+  }
+  if (telling.length && telling.length < piece.slots.length) assert.ok(onTelling > 150, `${onTelling} of 200`);
+});
+
 test('craft bot: two bots play a whole game to its end, naming a fair share right', () => {
   const clock = { now: 1_000_000 };
   const engine = new Engine(items, { rng: seeded(21), now: () => clock.now });
@@ -114,7 +137,8 @@ test('craft bot: two bots play a whole game to its end, naming a fair share righ
       for (const id of ids) {
         for (const orb of scrambling(craftView(s, id).craft!.stash[id] ?? {}, rng)) {
           const mine = madeBy(s.craft!, id);
-          if (mine && canScramble(mine, orb) && holds(s.craft!, id, orb) > 0) act({ type: 'craft', do: 'use', orb }, id);
+          const aim = mine && canScramble(mine, orb) ? aiming(personas[id], mine, orb, lines, rng) : null;
+          if (aim && holds(s.craft!, id, orb) > 0) act({ type: 'craft', do: 'use', orb, aim }, id);
         }
         act({ type: 'craft', do: 'ready' }, id);
       }
@@ -125,7 +149,7 @@ test('craft bot: two bots play a whole game to its end, naming a fair share righ
           const p = guessedBy(v.craft!, id)!;
           const full = guessedBy(s.craft!, id)!;
           const art = full.picture ?? full.item;
-          const visible = 1 - veilShare(full.veil);
+          const visible = 1 - Math.min(1, full.veils.length / CRAFT.veilLayers);
           const shown = new Set(p.shown);
           const clues: Clues = {
             lines: p.options.map((o) => lines(o).filter((l) => shown.has(l) && knowsLine(personas[id], o, l)).length),

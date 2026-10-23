@@ -2,11 +2,14 @@
   // A Craft item as a player sees it: the game's tooltip, its name (or
   // "Unidentified" for the one to name), its picture, and its mod lines as
   // they stand (ItemDetails), its maker's with what was done to them marked.
+  // With currency in hand (CraftView), what it can go on: its lines (each
+  // ModShown's `aimable`), its picture or a place on it, or the whole item.
   import NamePlate from './NamePlate.svelte';
   import ArtImage from './ArtImage.svelte';
   import ItemDetails, { type ModShown } from './ItemDetails.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import type { Look } from '../lib/craftLooks.svelte';
+  import type { Aim } from '../lib/craft';
 
   let {
     name,
@@ -14,6 +17,8 @@
     art,
     mods,
     verdict = null,
+    target = null,
+    onaim,
   }: {
     /** Null until it is known: "Unidentified". */
     name: string | null;
@@ -23,10 +28,39 @@
     art: Look | null;
     mods: ModShown[];
     verdict?: 'good' | 'bad' | null;
+    /** What else the held currency can go on: the picture (`whole`), a place on it (`spot`), or the item itself. */
+    target?: 'whole' | 'spot' | 'item' | null;
+    /** Where it was put, and the click (shift keeps it in hand). */
+    onaim?: (aim: Aim, e: MouseEvent) => void;
   } = $props();
+
+  let artEl = $state<HTMLElement>();
+  /** Where a veil would go, under the mouse (px in the art's box), and how big across. */
+  let ring = $state<{ x: number; y: number; d: number } | null>(null);
+
+  /** A place on the picture, 0 to 1 across and down it (the picture's own box, padding and all, as prepArt.ts drew it). */
+  function spotAt(e: MouseEvent): [number, number] {
+    const box = (artEl?.querySelector('img') ?? artEl?.querySelector('.frame'))?.getBoundingClientRect();
+    // (From the keyboard: its middle.)
+    if (!box || !box.width || !box.height || e.detail === 0) return [0.5, 0.5];
+    const clamp = (v: number) => Math.min(1, Math.max(0, v));
+    return [clamp((e.clientX - box.left) / box.width), clamp((e.clientY - box.top) / box.height)];
+  }
+
+  function moved(e: PointerEvent) {
+    if (target !== 'spot' || e.pointerType !== 'mouse' || !artEl) return (ring = null);
+    const at = artEl.getBoundingClientRect();
+    const img = artEl.querySelector('img')?.getBoundingClientRect();
+    // About as big as the quarter of the picture a veil hides.
+    const d = img ? Math.sqrt(img.width * img.height) * 0.5 : 0;
+    ring = { x: e.clientX - at.left, y: e.clientY - at.top, d };
+  }
+  $effect(() => {
+    if (target !== 'spot') ring = null;
+  });
 </script>
 
-<div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={verdict === 'good'} class:bad={verdict === 'bad'}>
+<div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={verdict === 'good'} class:bad={verdict === 'bad'} class:targeted={target === 'item'}>
   <div class="head">
     <NamePlate fit lit={!!name} />
     <div class="head-text">
@@ -34,7 +68,7 @@
       <span class="ibase">{sub}</span>
     </div>
   </div>
-  <div class="art" data-cursor="art" use:backdropShadow={{ fill: 'stage' }}>
+  <div class="art" data-cursor="art" use:backdropShadow={{ fill: 'stage' }} bind:this={artEl}>
     <div class="frame">
       {#if art}
         <ArtImage src={art.url} alt={name ?? 'The item to name'} w={art.w} h={art.h} float />
@@ -42,19 +76,36 @@
         <span class="loading" aria-label="Loading"></span>
       {/if}
     </div>
+    {#if target === 'whole' || target === 'spot'}
+      <button
+        class="aim"
+        class:spot={target === 'spot'}
+        aria-label={target === 'spot' ? 'Put it here on the picture' : 'Put it on the picture'}
+        onclick={(e) => onaim?.(target === 'spot' ? { at: spotAt(e) } : { picture: true }, e)}
+        onpointermove={moved}
+        onpointerleave={() => (ring = null)}
+      ></button>
+      {#if ring && ring.d}
+        <span class="ring" style:left="{ring.x}px" style:top="{ring.y}px" style:width="{ring.d}px" style:height="{ring.d}px"></span>
+      {/if}
+    {/if}
   </div>
   <div class="mods">
     {#if mods.length}
-      <ItemDetails {mods} />
+      <ItemDetails {mods} onaim={(line, e) => onaim?.({ line }, e)} />
     {:else}
       <p class="none">No mod lines left</p>
     {/if}
   </div>
+  {#if target === 'item'}
+    <button class="aim whole" aria-label="Put it on the item" onclick={(e) => onaim?.({}, e)}></button>
+  {/if}
 </div>
 
 <style>
   /* The game's tooltip, as a question shows it (QuestionView), with the mod lines under the art. */
   .tooltip {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
@@ -163,6 +214,42 @@
   .frame > :global(.art-slot) {
     position: absolute;
     inset: 0;
+  }
+  /* What the held currency can go on: lit at its edge, brighter under the pointer, as the game lights it. */
+  .aim {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(136, 136, 255, 0.25);
+    transition: box-shadow 0.12s;
+  }
+  .aim:hover,
+  .aim:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgba(136, 136, 255, 0.7);
+  }
+  .aim.spot:hover {
+    box-shadow: inset 0 0 0 1px rgba(136, 136, 255, 0.35);
+  }
+  .tooltip.targeted {
+    border-color: #6a6ac0;
+  }
+  .aim.whole {
+    z-index: 2;
+  }
+  /* Where a Veil Orb would go: a faint ring the size of what it hides. */
+  .ring {
+    position: absolute;
+    z-index: 1;
+    translate: -50% -50%;
+    border-radius: 50%;
+    border: 1px dashed rgba(170, 170, 255, 0.75);
+    background: rgba(20, 20, 40, 0.25);
+    pointer-events: none;
   }
   .mods {
     flex: none;

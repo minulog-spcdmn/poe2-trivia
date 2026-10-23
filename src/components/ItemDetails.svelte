@@ -14,9 +14,10 @@
   /**
    * Craft: a mod line as it stands, in place of the item's own tooltip:
    * `gone`, one taken away (its maker sees it struck out), `swapped`, one
-   * from another item.
+   * from another item; `aimable`, one the currency its maker holds can be
+   * put on (a button, onaim).
    */
-  export type ModShown = { text: string; mark?: 'gone' | 'swapped' };
+  export type ModShown = { text: string; mark?: 'gone' | 'swapped'; aimable?: boolean };
   type Stats = Record<string, Line[][]>;
 
   // Loaded the first time an item's details are opened: most games never do.
@@ -83,7 +84,8 @@
   // An item's tooltip as the game shows it: its properties, requirements,
   // mods and flavour text, in sections parted by the game's plain rule.
   // `mods` (Craft): only these mod lines, as they stand, in place of the item's tooltip.
-  let { item, mods }: { item?: DrawnItem; mods?: ModShown[] } = $props();
+  // `onaim`: a click on an aimable line, by its place in `mods`.
+  let { item, mods, onaim }: { item?: DrawnItem; mods?: ModShown[]; onaim?: (line: number, e: MouseEvent) => void } = $props();
 
   let all = $state<Stats | null>(loaded);
   let failed = $state(false);
@@ -97,7 +99,11 @@
   {#if mods && all}
     <div class="section">
       {#each mods as m, j (j)}
-        <p class="line e" class:gone={m.mark === 'gone'} class:swapped={m.mark === 'swapped'}>{@render text(m.text)}</p>
+        {#if m.aimable}
+          <button class="line e aimable" class:swapped={m.mark === 'swapped'} onclick={(e) => onaim?.(j, e)}>{@render text(m.text)}</button>
+        {:else}
+          <p class="line e" class:gone={m.mark === 'gone'} class:swapped={m.mark === 'swapped'}>{@render text(m.text)}</p>
+        {/if}
       {/each}
     </div>
   {:else if failed}
@@ -211,6 +217,28 @@
   .swapped,
   .swapped :global(span) {
     color: #d98a6e;
+  }
+  /* A line the held currency can go on: the line itself, lit under the pointer as the game lights what a currency would go on. */
+  .aimable {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: none;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(136, 136, 255, 0.18);
+    transition:
+      background-color 0.12s,
+      box-shadow 0.12s;
+  }
+  .aimable:hover,
+  .aimable:focus-visible {
+    outline: none;
+    background-color: rgba(136, 136, 255, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(136, 136, 255, 0.6);
   }
   /* The game's rule between sections: a plain line fading out at both ends, in the unique's colour. */
   .rule {

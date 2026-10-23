@@ -15,9 +15,10 @@ GitHub Pages. No server needed.
 - **Race** (online only): everyone gets the same question at once. The first
   right answer scores +1; a wrong one costs −1.
 - **Craft** (online only, two or more): each round, buy currency in a shop,
-  scramble a unique item with it and pass it on; the next player unscrambles
-  what they can and names it from six. A right name is paid by the bank, a
-  wrong one pays the item's maker. Eight rounds, or until someone has 80 gold.
+  scramble a unique item with it (each orb put on the line or the part of the
+  picture you aim it at, as in PoE2) and pass it on; the next player
+  unscrambles what they can and names it from six. A right name is paid by the
+  bank, a wrong one pays the item's maker. Eight rounds, or until someone has 80 gold.
 - **Delve** (alone or together): no settings, the same rules for everyone. Each
   question cleared goes one depth deeper, every depth a little harder, with
   three lives, finds that give items (wards, flares, dynamite) and a new zone

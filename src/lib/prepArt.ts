@@ -6,6 +6,7 @@
 // veil's cut held it up for a second or more as each question began.
 
 import { labelPatches, litMask, packLabels, patchShapes, seededRandom, spreadOrder, veilSchedule, visibleBox, type PatchShape, type VeilPlan } from './patches.ts';
+import { veiledPatches } from './craft.ts';
 
 /** One picture to prepare: the item's art and how to draw it. */
 export interface PrepJob {
@@ -25,7 +26,7 @@ export interface PrepJob {
    * patches cut out (the ones a veil would uncover last), before it is
    * encoded: what is hidden never leaves the host.
    */
-  hide?: { size: number; seed: number; share: number };
+  hide?: { size: number; seed: number; veils: [number, number][] };
 }
 
 /** A veiled picture's cut (cutArt), in art pixels. */
@@ -164,14 +165,27 @@ export async function prepare<S extends Surface>(
   ctx.putImageData(pixels, 0, 0);
   const W = canvas.width / S;
   const H = canvas.height / S;
-  if (job.hide && job.hide.share > 0) {
+  if (job.hide && job.hide.veils.length) {
     const small = surface(W, H);
     const sg = context(small);
     sg.imageSmoothingQuality = 'high';
     sg.drawImage(canvas, 0, 0, W, H);
     const label = labelPatches(W, H, job.hide.size, job.hide.seed, litMask(sg.getImageData(0, 0, W, H).data, W, H));
-    const order = spreadOrder(patchShapes(label, W, H), job.hide.seed);
-    const hidden = new Set(order.slice(order.length - Math.round(order.length * Math.min(1, job.hide.share))));
+    // Each patch's middle and size, for the veils to take those nearest where they were put (craft.ts veiledPatches).
+    const patches: { x: number; y: number; area: number }[] = [];
+    for (let i = 0; i < W * H; i++) {
+      const k = label[i];
+      if (k < 0) continue;
+      const p = (patches[k] ??= { x: 0, y: 0, area: 0 });
+      p.x += i % W;
+      p.y += (i / W) | 0;
+      p.area++;
+    }
+    for (let k = 0; k < patches.length; k++) {
+      const p = (patches[k] ??= { x: 0, y: 0, area: 0 });
+      if (p.area) [p.x, p.y] = [p.x / p.area, p.y / p.area];
+    }
+    const hidden = veiledPatches(patches, job.hide.veils, W, H);
     const d = pixels.data;
     const row = canvas.width * 4;
     for (let y = 0; y < H; y++)

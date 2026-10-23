@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Engine, createGame, publicView, DEFAULT_SETTINGS, type GameState } from '../src/lib/game.ts';
-import { CRAFT, ORBS, dealable, madeBy, guessedBy, holds, rightGuess, shownOf, wantedLooks, type Orb } from '../src/lib/craft.ts';
+import { CRAFT, ORBS, canAim, dealable, madeBy, guessedBy, holds, rightGuess, shownOf, veiledPatches, wantedLooks, type Aim, type Orb } from '../src/lib/craft.ts';
 import { linesFrom } from '../src/lib/craftLines.ts';
 
 import { parseClientMsg } from '../src/lib/protocol.ts';
@@ -41,8 +41,12 @@ function craftRoom(n = 2, seed = 7) {
     buy(id: string, orb: Orb, times = 1) {
       for (let i = 0; i < times; i++) r.act({ type: 'craft', do: 'buy', orb }, id);
     },
-    use(id: string, orb: Orb) {
-      return r.act({ type: 'craft', do: 'use', orb }, id);
+    /** Uses an orb, put where it is given (a scramble with none: on the first line still there, or a Veil Orb in the middle of the picture). */
+    use(id: string, orb: Orb, aim?: Aim) {
+      const mine = madeBy(r.s.craft!, id);
+      const first = mine ? mine.slots.findIndex((s) => s !== 'gone') : -1;
+      aim ??= orb === 'annul' || orb === 'chaos' ? { line: first } : orb === 'veil' ? { at: [0.5, 0.5] } : undefined;
+      return r.act({ type: 'craft', do: 'use', orb, ...(aim ? { aim } : {}) }, id);
     },
     /** Names the piece passed to `id`, right or wrong. */
     guess(id: string, right: boolean) {
@@ -115,25 +119,32 @@ test('craft: scrambles change the item as its maker watches', () => {
   r.allReady();
   const before = madeBy(r.s.craft!, 'p0')!;
   const n = before.shown.length;
-  r.use('p0', 'annul');
+  // Each where it was put: Annulment takes that line away.
+  r.use('p0', 'annul', { line: 1 });
   let p = madeBy(r.s.craft!, 'p0')!;
   assert.equal(p.shown.length, n - 1);
-  assert.equal(p.slots.filter((s) => s === 'gone').length, 1);
+  assert.deepEqual(p.slots.map((s) => s === 'gone'), p.slots.map((_, i) => i === 1));
   assert.equal(holds(r.s.craft!, 'p0', 'annul'), 0);
   silently(() => r.use('p0', 'annul'), /none/);
-  r.use('p0', 'veil');
+  // Not on a line already gone, nor anywhere it can't go: nothing is spent.
+  silently(() => r.use('p0', 'chaos', { line: 1 }), /go there/);
+  silently(() => r.use('p0', 'chaos', {}), /go there/);
+  silently(() => r.use('p0', 'veil', { line: 0 }), /go there/);
+  assert.equal(holds(r.s.craft!, 'p0', 'chaos'), 1);
+  r.use('p0', 'veil', { at: [0.3, 0.6] });
   p = madeBy(r.s.craft!, 'p0')!;
-  assert.equal(p.veil, 1);
+  assert.deepEqual(p.veils, [[0.3, 0.6]]);
   assert.equal(p.look, 1);
-  r.use('p0', 'chaos');
+  r.use('p0', 'chaos', { line: 0 });
   p = madeBy(r.s.craft!, 'p0')!;
-  assert.ok(p.picture !== null || p.slots.some((s) => typeof s === 'object'), 'a line or the picture swapped');
+  assert.equal(typeof p.slots[0], 'object', 'that line swapped for another item’s');
+  assert.equal(p.picture, null);
   assert.deepEqual(p.shown, shownOf(p, lines));
   // Chance: a new item altogether, what was done to the old one lost.
   r.use('p0', 'chance');
   const fresh = madeBy(r.s.craft!, 'p0')!;
   assert.notEqual(fresh.item, p.item);
-  assert.equal(fresh.veil, 0);
+  assert.deepEqual(fresh.veils, []);
   assert.ok(fresh.slots.every((s) => s === 'kept'));
   assert.ok(fresh.look > p.look, 'its picture goes out again');
 });
@@ -158,7 +169,7 @@ test('craft: the guesser sees the item as it looks, never what it is or what was
   assert.equal(seen.item, '');
   assert.deepEqual(seen.slots, []);
   assert.equal(seen.picture, null);
-  assert.equal(seen.veil, 0);
+  assert.deepEqual(seen.veils, []);
   assert.deepEqual(seen.shown, mine.shown);
   assert.deepEqual(seen.options, mine.options);
   assert.ok(!JSON.stringify(publicView(r.s, guesser)).includes(`"item":"${mine.item}"`), 'the item only as one of the six');
@@ -272,6 +283,39 @@ test('craft: guests may only send their own moves, well formed', () => {
   assert.equal(parseClientMsg({ t: 'action', action: { type: 'craftTime', round: 1, step: 'shop' } }), null);
   const guess = parseClientMsg({ t: 'action', action: { type: 'craft', do: 'guess', index: 2, orb: 'chaos' } });
   assert.deepEqual(guess, { t: 'action', action: { type: 'craft', do: 'guess', index: 2 } });
+  // Where a scramble is put: a line, the picture, or a place on it, and nothing else with it.
+  const use = (aim: unknown) => parseClientMsg({ t: 'action', action: { type: 'craft', do: 'use', orb: 'chaos', aim } });
+  assert.deepEqual(use({ line: 2, picture: true }), { t: 'action', action: { type: 'craft', do: 'use', orb: 'chaos', aim: { line: 2 } } });
+  assert.deepEqual(use({ picture: true }), { t: 'action', action: { type: 'craft', do: 'use', orb: 'chaos', aim: { picture: true } } });
+  assert.deepEqual(use({ at: [0.25, 1], x: 1 }), { t: 'action', action: { type: 'craft', do: 'use', orb: 'chaos', aim: { at: [0.25, 1] } } });
+  for (const bad of [null, 3, { line: -1 }, { line: 1.5 }, { at: [0.5] }, { at: [0.5, 2] }, { at: ['0.5', 0.5] }, { picture: 1 }]) assert.equal(use(bad), null, JSON.stringify(bad));
+});
+
+test('craft: a scramble goes only where it does something', () => {
+  const r = craftRoom(2);
+  r.allReady();
+  const p = madeBy(r.s.craft!, 'p0')!;
+  p.slots[0] = 'gone';
+  assert.ok(!canAim(p, 'annul', { line: 0 }) && canAim(p, 'annul', { line: 1 }));
+  assert.ok(!canAim(p, 'annul', { line: p.slots.length }) && !canAim(p, 'annul', { picture: true }));
+  assert.ok(canAim(p, 'chaos', { picture: true }) && canAim(p, 'chaos', { line: 1 }) && !canAim(p, 'chaos', {}));
+  assert.ok(canAim(p, 'veil', { at: [0, 1] }) && !canAim(p, 'veil', { at: [1.2, 0] }) && !canAim(p, 'veil', {}));
+  p.veils = Array.from({ length: CRAFT.veilLayers }, () => [0.5, 0.5] as [number, number]);
+  assert.ok(!canAim(p, 'veil', { at: [0.2, 0.2] }), 'no more veils than a picture takes');
+  assert.ok(canAim(p, 'chance', {}));
+});
+
+test('craft: a veil hides about a quarter of the picture, round where it was put', () => {
+  // A picture of 10 x 10 patches, each one pixel.
+  const patches = Array.from({ length: 100 }, (_, i) => ({ x: i % 10, y: Math.floor(i / 10), area: 1 }));
+  const hid = veiledPatches(patches, [[0, 0]], 10, 10);
+  assert.equal(hid.size, 100 / CRAFT.veilLayers);
+  for (const i of hid) assert.ok(patches[i].x <= 6 && patches[i].y <= 6, 'near its top left corner');
+  assert.ok(!hid.has(99));
+  // Two apart hide twice as much; two in one place, no more than one.
+  assert.equal(veiledPatches(patches, [[0, 0], [1, 1]], 10, 10).size, 50);
+  assert.equal(veiledPatches(patches, [[0.5, 0.5], [0.5, 0.5]], 10, 10).size, 25);
+  assert.equal(veiledPatches(patches, [], 10, 10).size, 0);
 });
 
 test('craft: every dealable item has six names from its kind to go with it', () => {

@@ -1,11 +1,13 @@
 <script lang="ts">
   // A Craft round, step by step (craft.ts): the shop, scrambling your own
   // item, naming the one passed to you, and the reveal of both. What it
-  // shows is only this player's to see (session.mine).
+  // shows is only this player's to see (session.mine). Currency is used as
+  // in Path of Exile 2: picked up (a click, or a right click), then put on
+  // what it is for; shift keeps it in hand, Esc or a right click puts it back.
   import { fade } from 'svelte/transition';
   import type { Snippet } from 'svelte';
   import { engine, session } from '../lib/session.svelte';
-  import { CRAFT, ORBS, SCRAMBLES, UNDOS, canScramble, guessedBy, holds, madeBy, rightGuess, type Orb, type Piece } from '../lib/craft';
+  import { CRAFT, ORBS, SCRAMBLES, UNDOS, canScramble, guessedBy, holds, madeBy, rightGuess, type Aim, type Orb, type Piece } from '../lib/craft';
   import { loadCraftLines } from '../lib/craftLines';
   import type { ModLines } from '../lib/craft';
   import { looks } from '../lib/craftLooks.svelte';
@@ -54,7 +56,56 @@
     return it ? { url: itemImage(it.id), w: it.w, h: it.h } : null;
   };
 
-  const act = (a: { do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number }) => session.dispatch({ type: 'craft', ...a });
+  const act = (a: { do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number; aim?: Aim }) => session.dispatch({ type: 'craft', ...a });
+
+  /** The currency in hand, picked up from its tile. */
+  let held = $state<Orb | null>(null);
+  /** Whether it can still be used this step: one left, and something for it to do. */
+  const usable = (orb: Orb) =>
+    playing &&
+    holds(c, me, orb) > 0 &&
+    (ORBS[orb].side === 'scramble' ? c.step === 'craft' && !done && !!mine && canScramble(mine, orb) : c.step === 'guess' && !!theirs && theirs.guess === undefined);
+  /** What is in hand, while it can still go somewhere (the last one used, or the step over, it is gone). */
+  const hand = $derived(held && usable(held) ? held : null);
+  // A new step starts empty-handed.
+  $effect(() => {
+    void `${c.round}:${c.step}`;
+    held = null;
+  });
+
+  const pickUp = (orb: Orb) => (held = held === orb ? null : orb);
+  /** Puts what is in hand there; shift keeps it in hand for another. */
+  function putOn(aim: Aim, e: MouseEvent) {
+    if (!hand) return;
+    act({ do: 'use', orb: hand, aim });
+    if (!e.shiftKey) held = null;
+  }
+
+  /** What the held currency goes on, as a line under the tiles. */
+  const HINT: Record<Orb, string> = {
+    annul: 'Click the mod line to take away',
+    chaos: 'Click a mod line, or the picture, to swap',
+    veil: 'Click where on the picture to hide',
+    chance: 'Click the item to trade it for another',
+    exalt: 'Click the item to bring a line back',
+    divine: 'Click the item to put back what was swapped',
+    unveil: 'Click the item to uncover some of its picture',
+  };
+  /** The maker's lines, those the currency in hand can go on aimable (only once its own lines are here: before that, they don't line up with its slots). */
+  const makerMods = $derived(
+    mine ? marked(mine, lines).map((m) => ({ ...m, aimable: !!lines && (hand === 'annul' || hand === 'chaos') && m.mark !== 'gone' })) : [],
+  );
+  const makerTarget = $derived(hand === 'chaos' ? 'whole' : hand === 'veil' ? 'spot' : hand === 'chance' ? 'item' : null);
+
+  /** The pointer, for the currency in hand to follow it (a mouse's only). */
+  let pointer = $state<{ x: number; y: number } | null>(null);
+  function onmove(e: PointerEvent) {
+    pointer = e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null;
+  }
+  // A right click puts it back, unless it is on a tile (that picks one up).
+  function oncontext(e: MouseEvent) {
+    if (held && !(e.target as Element | null)?.closest('.orb')) held = null;
+  }
 
   /** Who the step still waits for (by name), those here. */
   const waitingOn = $derived(
@@ -105,6 +156,10 @@
 
   // Keys 1 to 6 name the item, as in a question.
   function onkey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && held) {
+      held = null;
+      return;
+    }
     if (c.step !== 'guess' || !theirs || theirs.guess !== undefined || e.ctrlKey || e.metaKey || e.altKey) return;
     const n = Number(e.key);
     if (Number.isInteger(n) && n >= 1 && n <= theirs.options.length) {
@@ -114,19 +169,22 @@
   }
 </script>
 
-<svelte:window onkeydown={onkey} />
+<svelte:window onkeydown={onkey} onpointermove={onmove} oncontextmenu={oncontext} />
 
 {#snippet orbTile(orb: Orb, mode: 'buy' | 'use', usable: boolean)}
   {@const n = holds(c, me, orb)}
   <button
     class="orb"
     class:mine={usable}
+    class:held={mode === 'use' && hand === orb}
+    aria-pressed={mode === 'use' ? hand === orb : undefined}
     data-cursor="card:{[...SCRAMBLES, ...UNDOS].indexOf(orb)}"
     data-fx="hover"
     use:backdropShadow={{ fill: 'linear' }}
     disabled={!usable}
     title={ORBS[orb].does}
-    onclick={() => act({ do: mode, orb })}
+    onclick={() => (mode === 'buy' ? act({ do: 'buy', orb }) : pickUp(orb))}
+    oncontextmenu={() => mode === 'use' && usable && pickUp(orb)}
   >
     <span class="orb-name">{ORBS[orb].name}</span>
     {#if mode === 'buy'}
@@ -167,25 +225,25 @@
       {:else if c.step === 'craft' && mine}
         <div class="play">
           <div class="item">
-            <CraftItem name={itemOf(mine.item)?.name ?? null} sub={itemOf(mine.item)?.base ?? ''} art={look(mine)} mods={marked(mine, lines)} />
+            <CraftItem name={itemOf(mine.item)?.name ?? null} sub={itemOf(mine.item)?.base ?? ''} art={look(mine)} mods={makerMods} target={makerTarget} onaim={putOn} />
           </div>
           <div class="side">
             <div class="orbs column">
-              {#each SCRAMBLES as orb (orb)}{@render orbTile(orb, 'use', !done && holds(c, me, orb) > 0 && canScramble(mine, orb))}{/each}
+              {#each SCRAMBLES as orb (orb)}{@render orbTile(orb, 'use', usable(orb))}{/each}
             </div>
-            <p class="last">{lastLine(mine, 'scramble')}</p>
+            <p class="last" class:hint={!!hand}>{hand ? HINT[hand] : lastLine(mine, 'scramble')}</p>
           </div>
         </div>
       {:else if c.step === 'guess' && theirs}
         <div class="play">
           <div class="item">
-            <CraftItem name={null} sub={kindOf(theirs)} art={look(theirs)} mods={theirs.shown.map((text) => ({ text }))} />
+            <CraftItem name={null} sub={kindOf(theirs)} art={look(theirs)} mods={theirs.shown.map((text) => ({ text }))} target={hand ? 'item' : null} onaim={putOn} />
           </div>
           <div class="side">
             <div class="orbs row">
-              {#each UNDOS as orb (orb)}{@render orbTile(orb, 'use', theirs.guess === undefined && holds(c, me, orb) > 0)}{/each}
+              {#each UNDOS as orb (orb)}{@render orbTile(orb, 'use', usable(orb))}{/each}
             </div>
-            <p class="last">{lastLine(theirs, 'undo')}</p>
+            <p class="last" class:hint={!!hand}>{hand ? HINT[hand] : lastLine(theirs, 'undo')}</p>
             <div class="names">
               {#each theirs.options as id, i (id)}
                 <button
@@ -229,6 +287,10 @@
       {/if}
     </div>
   {/key}
+
+  {#if hand && pointer}
+    <span class="in-hand" style:left="{pointer.x}px" style:top="{pointer.y}px" aria-hidden="true">{ORBS[hand].name}</span>
+  {/if}
 
   <div class="footer">
     {#if c.step === 'guess' ? theirs?.guess !== undefined : done}
@@ -360,6 +422,34 @@
   .orb.mine:active,
   .name.mine:active {
     transform: scale(0.985);
+  }
+  /* The one in hand: lit as the game lights currency picked up. */
+  .orb.held,
+  .orb.held:hover {
+    border-color: #9a9aff;
+    --bs-ring: rgba(136, 136, 255, 0.45);
+    --bs-fill-a: rgba(42, 40, 84, 0.96);
+    --bs-fill-b: rgba(20, 19, 40, 0.95);
+    --bs1: 0px 26px;
+    --bs1-color: rgba(136, 136, 255, 0.2);
+  }
+  .last.hint {
+    color: #b4b4ff;
+  }
+  /* The currency in hand, beside the pointer. */
+  .in-hand {
+    position: fixed;
+    z-index: 50;
+    translate: 14px 10px;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid #6a6ac0;
+    border-radius: 3px;
+    background: rgba(8, 8, 16, 0.92);
+    font-family: var(--font-tooltip);
+    font-size: 0.82rem;
+    color: #d0d0ff;
+    white-space: nowrap;
+    pointer-events: none;
   }
   .orb {
     grid-template-columns: 1fr auto;

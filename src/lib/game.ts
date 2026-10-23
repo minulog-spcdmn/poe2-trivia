@@ -7,6 +7,7 @@ import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import type { Looks } from './looks.ts';
 import {
   CRAFT,
+  canAim,
   canScramble,
   craftOver,
   deal,
@@ -20,6 +21,7 @@ import {
   settle,
   stepMs,
   undo,
+  type Aim,
   type Craft,
   type CraftItem,
   type CraftStep,
@@ -1156,7 +1158,7 @@ export type Action =
    * undo on the one you name), be done with the step, or name the item
    * (`index` into its options).
    */
-  | { type: 'craft'; do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number }
+  | { type: 'craft'; do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number; aim?: Aim }
   /** Host only (Craft): the step's time is up. */
   | { type: 'craftTime'; round: number; step: CraftStep };
 
@@ -1354,9 +1356,9 @@ export function craftView(s: GameState, viewer: string | null): GameState {
     ? c.pieces
     : c.pieces.map((p): Piece => {
         if (p.maker === viewer) return p;
-        const hidden: Piece = { maker: p.maker, guesser: p.guesser, item: '', slots: [], picture: null, veil: 0, seed: 0, options: [], shown: [], look: 0 };
+        const hidden: Piece = { maker: p.maker, guesser: p.guesser, item: '', slots: [], picture: null, veils: [], seed: 0, options: [], shown: [], look: 0 };
         if (p.guesser === viewer && c.step === 'guess') {
-          const { item: _, slots: __, picture: ___, veil: ____, seed: _____, ...seen } = p;
+          const { item: _, slots: __, picture: ___, veils: ____, seed: _____, ...seen } = p;
           return { ...hidden, ...seen };
         }
         // Whether they have named theirs yet, but not what: -1.
@@ -3130,6 +3132,7 @@ export class Engine {
           piece = madeBy(c, me.id);
           if (step !== 'craft' || !piece || c.ready.includes(me.id)) throw new ActionError('Too late!', true);
           if (!canScramble(piece, a.orb)) throw new ActionError('That would do nothing more.', true);
+          if (!canAim(piece, a.orb, a.aim ?? {})) throw new ActionError('That can’t go there.', true);
           if (a.orb === 'chance') {
             const used = new Set([...s.used, ...c.pieces.map((p) => p.item)]);
             const fresh = deal(t, piece.maker, piece.guesser, used, this.craftDecoys);
@@ -3137,7 +3140,11 @@ export class Engine {
             s.used.push(fresh.item);
             c.pieces[c.pieces.indexOf(piece)] = piece = fresh;
             piece.last = { orb: a.orb, hit: true };
-          } else piece.last = { orb: a.orb, hit: scramble(t, piece, a.orb) };
+          } else {
+            // (Nothing of its kind to swap in, rarely: kept, as if it had never been put there.)
+            if (!scramble(t, piece, a.orb, a.aim!)) throw new ActionError('Nothing to swap in there.', true);
+            piece.last = { orb: a.orb, hit: true };
+          }
         } else {
           piece = guessedBy(c, me.id);
           if (step !== 'guess' || !piece || piece.guess !== undefined) throw new ActionError('Too late!', true);

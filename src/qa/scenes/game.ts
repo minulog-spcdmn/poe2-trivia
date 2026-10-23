@@ -11,7 +11,7 @@ import { longestNamed, longestWord } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
-import type { Orb } from '../../lib/craft.ts';
+import type { Aim, Orb } from '../../lib/craft.ts';
 
 /** Who sits down, in order: any game's players are the first so many. */
 const SEATED = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -141,8 +141,12 @@ export function gameScenes(): Scene[] {
     for (const orb of orbs) t.act({ type: 'craft', do: 'buy', orb }, name);
     return t;
   };
-  const use = (t: Table, name: string, orbs: Orb[]) => {
-    for (const orb of orbs) t.act({ type: 'craft', do: 'use', orb }, name);
+  /** Uses orbs, each where it is given (a scramble on a line, the picture, or a place on it; an undo on the item). */
+  const use = (t: Table, name: string, orbs: (Orb | [Orb, Aim])[]) => {
+    for (const o of orbs) {
+      const [orb, aim] = typeof o === 'string' ? [o] : o;
+      t.act({ type: 'craft', do: 'use', orb, ...(aim ? { aim } : {}) }, name);
+    }
     return t;
   };
   const allReady = (t: Table) => {
@@ -159,8 +163,8 @@ export function gameScenes(): Scene[] {
   // Both items scrambled and passed on.
   const craftScrambled = (v: Values) => {
     const t = craftShopped(v);
-    use(t, 'Kalguur', ['annul', 'annul', 'chaos', 'veil', 'veil']);
-    use(t, 'Doryani', ['annul', 'chaos', 'veil']);
+    use(t, 'Kalguur', [['annul', { line: 0 }], ['annul', { line: 2 }], ['chaos', { line: 1 }], ['veil', { at: [0.4, 0.35] }], ['veil', { at: [0.6, 0.7] }]]);
+    use(t, 'Doryani', [['annul', { line: 1 }], ['chaos', { picture: true }], ['veil', { at: [0.5, 0.45] }]]);
     return allReady(t);
   };
   const turnsSeats = [guest('Doryani'), host('Kalguur'), WATCHER];
@@ -247,7 +251,7 @@ export function gameScenes(): Scene[] {
       'Craft',
       'Scrambling: a line taken, one swapped, the picture veiled',
       craftSeats,
-      (v) => use(craftShopped(v), 'Kalguur', ['annul', 'chaos', 'veil']),
+      (v) => use(craftShopped(v), 'Kalguur', [['annul', { line: 1 }], ['chaos', { line: 0 }], ['veil', { at: [0.5, 0.4] }]]),
       craftMany,
     ),
     scene('craft-guess', 'Craft', 'Naming a scrambled item, an undo used', craftSeats, (v) => use(craftScrambled(v), 'Doryani', ['exalt']), craftMany),

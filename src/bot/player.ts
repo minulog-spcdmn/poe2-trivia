@@ -7,10 +7,10 @@
 
 import { engine, session } from '../lib/session.svelte';
 import { activeRules, clockRuns, craftView, grayscaleFor, type GameState, type Question } from '../lib/game';
-import { canScramble, guessedBy, madeBy, type Craft, type Orb, type Piece } from '../lib/craft';
+import { canScramble, guessedBy, madeBy, type Aim, type Craft, type Orb, type Piece } from '../lib/craft';
 import { loadCraftLines } from '../lib/craftLines';
 import { looks } from '../lib/craftLooks.svelte';
-import { knowsLine, lookTime, naming, scrambling, shopping, unscrambling, weigh, type Clues } from './craftBrain';
+import { aiming, knowsLine, lookTime, naming, scrambling, shopping, unscrambling, weigh, type Clues } from './craftBrain';
 import { likenessTo } from './sight';
 import { WAY_OUT, blastProblem, dealIn, digOf, findLosses, fuseDue, inventoryOf, isGroupRun, livesOf, reviveProblem, shownDepth, standingIds, teamItemReady, voteClosesAt } from '../lib/delve';
 import { FADING, afterSeeing, answerDelay, carryCap, glanceTime, inspects, readingTime, revives, skillShown, type Showing, blasts, chooseAnswer, chooseCard, digsOn, findAppetite, itemDraw, knowChance, knowsIt, misclicks, movesOn, panic, pickCategory, pickDelay, rethinks, sightNeeded, thinkTime, tiredness, withTheHerd, wrongPick, type Ask, type Persona } from './brain';
@@ -383,7 +383,7 @@ export class Player {
       const cur = session.state?.craft;
       return !!cur && cur.round === c.round && cur.step === c.step;
     };
-    const send = (a: { do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number }) => {
+    const send = (a: { do: 'buy' | 'use' | 'ready' | 'guess'; orb?: Orb; index?: number; aim?: Aim }) => {
       if (still()) session.dispatch({ type: 'craft', ...a });
     };
     const held = c.stash[me] ?? {};
@@ -411,7 +411,13 @@ export class Player {
             at: Math.min(at, by - 500),
             run: () => {
               const mine = madeBy(this.craftNow()?.craft ?? c, me);
-              if (mine && canScramble(mine, orb)) send({ do: 'use', orb });
+              if (!mine || !canScramble(mine, orb)) return;
+              // Where it goes, by the item's lines (here long before the round is).
+              void loadCraftLines().then((lines) => {
+                const now = madeBy(this.craftNow()?.craft ?? c, me);
+                const aim = now && canScramble(now, orb) ? aiming(this.persona, now, orb, lines, Math.random) : null;
+                if (aim) send({ do: 'use', orb, aim });
+              });
             },
           });
           at += (orb === 'chance' ? between(2500, 5000) : between(1000, 3000)) * pace;
