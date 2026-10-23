@@ -633,9 +633,13 @@ export function shakeView(amount: number, px = 7) {
   wake();
 }
 
-/** Whether the view is shaking (moved by an inline translate, not an animation). */
+/**
+ * Whether the view is shaking (moved by an inline translate, not an
+ * animation) by as much as half a pixel. A small hit's shake goes no
+ * further (a room code's letter landing: 0.12 trauma at 3px, 0.04px).
+ */
 export function shaking() {
-  return shake.trauma > 0;
+  return shake.trauma * shake.trauma * shake.amp >= 0.5;
 }
 
 function applyShake(x: number, y: number) {

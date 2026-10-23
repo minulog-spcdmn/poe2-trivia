@@ -28,7 +28,8 @@
 // `data-bs-fill` turns transparent while the backdrop draws it. Unlike a soft
 // shadow, a fill has a crisp edge, so it goes back to CSS whenever it could
 // lag behind the element: while the page scrolls, while a transform animation
-// or the camera shake (lib/fx/core.ts) moves the element or an ancestor, or
+// (but a screen's swap: data-bs-follow, below) or the camera shake
+// (lib/fx/core.ts) moves the element or an ancestor, or
 // when an ancestor paints a background of its own (which would cover the
 // backdrop).
 //
@@ -114,6 +115,13 @@ if (typeof window !== 'undefined') {
   addEventListener('touchmove', mark, { passive: true });
 }
 
+/**
+ * When the view last shook. Fills stay with CSS a moment after, as after a
+ * scroll: shakes in quick succession can leave a frame's still between
+ * them, and a fill taken back for it and handed over again flickers.
+ */
+let lastShake = -Infinity;
+
 const MOVING = /transform|translate|scale|rotate/;
 
 /**
@@ -155,12 +163,16 @@ function keyframesMove(effect: KeyframeEffect): boolean {
  * measuring's writes (data-bs-fill) brought the styles up to date again
  * each time, which in a reveal, with its many animations, took tens of ms.
  * `asked` and `moved` carry over between calls in one frame, so each
- * element is asked once however many fills share it.
+ * element is asked once however many fills share it. One marked
+ * `data-bs-follow` moves so little, mostly while nearly see-through (a
+ * screen coming in or going: App.svelte), that the backdrop follows it:
+ * its own motion keeps the fills in it.
  */
 function movedAmong(nodes: Iterable<Element>, asked = new Set<Element>(), moved = new Set<Element>()): Set<Element> {
   for (const node of nodes)
     for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
       asked.add(el);
+      if (el.hasAttribute('data-bs-follow')) continue;
       for (const anim of el.getAnimations()) {
         if (anim.playState !== 'running') continue;
         const effect = anim.effect as KeyframeEffect | null;
@@ -322,10 +334,12 @@ export function measureShadows(
 ) {
   for (const arr of [elX, elY, elA, elB, elC, elD, elE, geo, col]) arr.fill(0);
 
-  const scrolling = performance.now() - lastScroll < 220;
+  const now = performance.now();
+  const scrolling = now - lastScroll < 220;
   // The shake moves the whole view with an inline translate, which the effects
   // loop updates after this frame's backdrop is drawn.
-  const shook = shaking();
+  if (shaking()) lastShake = now;
+  const shook = now - lastShake < 150;
   // What moves: `node` or the ancestor of it that moves, if any. Asked
   // only for the fills that get this far (on screen, flat), each element once.
   const asked = new Set<Element>();
