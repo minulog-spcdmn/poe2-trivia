@@ -1343,8 +1343,8 @@
                 {#if mirrored(i)}{@render mirrorLine()}{/if}
               </span>
             {/if}
-            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
-            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 13l5.5 6L21 3.5" /></svg></span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l15 15M19.5 4.5l-15 15" /></svg></span>{/if}
             {@render who(i)}
           </button>
         {/each}
@@ -1447,8 +1447,8 @@
             <span class="text" class:veiled={waiting}>{waiting ? '\u00a0' : (label ?? optionName(i))}</span>
             <span class="cue" aria-hidden="true"></span>
             {@render who(i)}
-            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}>✓</span>{/if}
-            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}>✕</span>{/if}
+            {#if st === 'right'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 13l5.5 6L21 3.5" /></svg></span>{/if}
+            {#if st === 'wrong'}<span class="mark" in:scale={{ duration: 300 }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l15 15M19.5 4.5l-15 15" /></svg></span>{/if}
           </button>
         {/each}
       </div>
@@ -2394,7 +2394,17 @@
   }
   .mark {
     font-size: 1.3rem;
-    font-weight: 700;
+  }
+  /* The ✓ and ✕ drawn as the page's other icons are (round strokes on a 24 grid), the two of one weight. */
+  .mark svg {
+    display: block;
+    width: 1.15em;
+    height: 1.15em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   /* The ✓/✕ sits in room kept free on the right, so it can't widen, heighten
      or rewrap the answer when it appears at the reveal. */
