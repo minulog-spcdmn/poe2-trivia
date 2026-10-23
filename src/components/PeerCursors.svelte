@@ -16,7 +16,7 @@
   import { session } from '../lib/session.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { KEY_HOLD_MS, KEY_TAP_MS, peerCursors } from '../lib/peerCursors.svelte';
-  import { LIT, MOUSE, POINTER_BURST, POINTER_RATE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, cursorKey, cursorsLive, fromAnchor, hopsOf, litOf, moveOn, trailAt, type CursorAt, type PointerKind } from '../lib/cursors';
+  import { BEHIND_MS, GAME_ANCHOR, HELD_WEIGHT, LANDING_SPEED, LIT, MOUSE, POINTER_BURST, POINTER_RATE, PRESSED, SEND_EVERY_MS, TAP, actionOf, anchorName, besideHops, besideWeight, blended, cursorKey, cursorsLive, fromAnchor, fromBeside, handAt, handOn, hopsOf, litOf, leaned, moveOn, trailAt, trailIndex, wayLeft, closeMs, closeOff, type CursorAt, type Lean, type Off, type PointerKind } from '../lib/cursors';
   import { playerColor } from '../lib/ui';
   import { portalToPage } from '../lib/portal';
   import { anchorAt, clickableAt, keyTap, onKeyTap, screenHeight } from '../lib/pointerAnchor';
@@ -24,23 +24,31 @@
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
   /**
-   * A pointer is drawn this far behind where it was last heard to be (ms),
-   * along a curve through its last few places (cursors.ts trailAt): it is
-   * heard twenty times a second, and drawn from one place straight to the next
-   * it would move from corner to corner. Then it catches up with that this
-   * quickly (ms to cover about 2/3 of the way), smoothing what's left.
+   * A pointer is drawn a little behind (cursors.ts BEHIND_MS), along a curve
+   * through its last few places (cursors.ts trailAt), and then catches up
+   * with that this quickly (ms to cover about 2/3 of the way), smoothing
+   * what's left.
    */
-  const BEHIND_MS = 90;
-  const GLIDE_MS = 35;
+  const GLIDE_MS = 20;
+  /**
+   * It moves as its player's hand moved, on the game as a whole (its
+   * outermost anchor), wherever its place lies here: how far its place lies
+   * off that is made up smoothly as its hand goes, and, as its hand comes to
+   * rest on something, evenly along the way it still goes there, so it's there
+   * as its hand is (cursors.ts leaned). Where the two screens set things alike,
+   * that's nothing; where they set them apart (the winner's end screen and a
+   * loser's, a host's lobby and a guest's), it doesn't jerk about over what
+   * only one has, nor swoop or creep on as its hand stops.
+   */
   /**
    * A pointer that jumped (cursors.ts moveOn: placed on another element far
    * from where it was going, the two screens placing things apart, or leaping
-   * on the same one) doesn't jump here: it stays where it's drawn, and the
-   * difference fades as it moves (the further it goes, the more of it; this
-   * many px for most of it), and, more slowly, as time goes by (ms).
+   * on the same one) doesn't jump here: it goes on from where it was going,
+   * and bends over to its place as a hand reaching there would (cursors.ts
+   * closeOff, closeMs), quickly, its hand at rest or not. Going on beside it
+   * for long (or creeping there once its hand stood still), it pointed at
+   * what its player wasn't on; lunging at it, it looked thrown.
    */
-  const FADE_PX = 180;
-  const FADE_MS = 2500;
   /**
    * A pointer that hasn't moved for this long dims (ms), and this long is
    * gone, fading slowly (a mouse left where it was isn't where its player is
@@ -80,6 +88,13 @@
 
   let x = 0;
   let y = 0;
+  /**
+   * When it was there (its event's time), if it moved since it was last
+   * sent: sent with it, not the time it goes. It goes on a timer of its own,
+   * up to a frame after the move, and a place timed by when it went was
+   * drawn that much off its time, the pointer surging and stalling.
+   */
+  let placedAt: number | null = null;
   /** The mouse is over the page; its main button is held. */
   let over = false;
   let held = false;
@@ -101,6 +116,8 @@
     // Over something this player can click, it goes as the hand, as their own cursor is.
     const at = pointing && over ? anchorAt(x, y, ((held || clicked ? PRESSED : MOUSE) + (clickableAt(x, y) ? LIT : 0)) as PointerKind) : null;
     const key = JSON.stringify(at);
+    // (Not moved since: where it is now, a recheck's or a press's.)
+    const when = placedAt ?? performance.now();
     // Still a while (the mouse, not what's under it), it isn't sent anew: it goes on the others' screens (GONE_MS),
     // rather than coming back as the page changes under it. Leaving the page still goes.
     const still = !!at && performance.now() - movedAt > IDLE_MS;
@@ -112,7 +129,8 @@
         return;
       }
       sent = key;
-      session.pointAt(at);
+      placedAt = null;
+      session.pointAt(at, when);
     }
     // Pressed and let go before this went: the release goes with the next one.
     if (clicked && !held) dirty = true;
@@ -151,6 +169,7 @@
       if (held && !(e.buttons & 1)) held = false;
       x = e.clientX;
       y = e.clientY;
+      placedAt = e.timeStamp;
       over = true;
       poke();
     };
@@ -162,6 +181,7 @@
       // Where it is, though it hasn't moved since it came back to the page.
       x = e.clientX;
       y = e.clientY;
+      placedAt = e.timeStamp;
       over = true;
       if (on) clicked = true;
       poke(true);
@@ -229,7 +249,7 @@
   const els: Record<string, HTMLElement> = {};
   /** Where each pointer is drawn now, gliding toward where it was heard to be. */
   /**
-   * Where each is drawn; its element; how far it's drawn off its place here, fading (JUMP_PX); where its place was last frame, the one
+   * Where each is drawn; what its place drawn is on, and what its newest place is on; how far it's drawn off its place here after a jump, closing, and in how long (JUMP_PX); where its place was last frame, the one
    * before, and the time between them; its press shown until;
    * whether it's set in the page (stuck: its places are then the page's, not the screen's), and whether its element scrolls with the page;
    * its element's top and the page's scroll last frame.
@@ -241,8 +261,9 @@
       y: number;
       tap: number;
       code: number;
-      ox: number;
-      oy: number;
+      box: number;
+      off: Off;
+      offMs: number;
       px: number;
       py: number;
       qx: number;
@@ -255,6 +276,8 @@
       scroll: number;
     }
   >();
+  /** How far each is drawn off its hand's own path (cursors.ts leaned), and where that path was last frame. */
+  const leaning = new Map<string, Lean & { hu: [number, number]; hx: number; hy: number }>();
 
   /**
    * A phone scrolls the page on its own, ahead of the frames drawn here, so
@@ -276,7 +299,8 @@
     return false;
   }
 
-  type Found = { box: DOMRect; el: HTMLElement };
+  /** An anchor's copy on this screen, its box, and whether it holds no other anchor. */
+  type Found = { box: DOMRect; el: HTMLElement; leaf: boolean };
 
   /** Where the anchor `code` is on this screen (its first copy not on its way out, with a size), and that copy, or null when it isn't; once a frame. */
   function boxOf(code: number, cache: Map<number, Found | null>) {
@@ -287,7 +311,7 @@
       if (n.closest('[inert]')) continue;
       const r = n.getBoundingClientRect();
       if (r.width && r.height) {
-        found = { box: r, el: n };
+        found = { box: r, el: n, leaf: !n.querySelector('[data-cursor]') };
         break;
       }
     }
@@ -295,26 +319,63 @@
     return found;
   }
 
-  /** Where a pointer at `at` is on this screen: on the first of its anchors this screen has (cursors.ts); null when it has none. */
-  function placeOf(at: CursorAt, cache: Map<number, Found | null>, screenH: number): { code: number; x: number; y: number; on: Found } | null {
-    for (const [code, x, y] of hopsOf(at)) {
+  /** Where a pointer is here, what it's on, and whether that's the very thing it's on there (its own anchor, holding no other). */
+  type Place = { code: number; x: number; y: number; on: Found; exact?: boolean };
+
+  /**
+   * Where its hand is here on the game as a whole (leaned), and as a
+   * desktop's (cursors.ts handOn); off the game (the header over it), where
+   * its place `q` is, measured by the game all the same, so its way is
+   * measured alike on it and off it. Null when this screen has no game.
+   */
+  function handOf(at: CursorAt, q: Place, cache: Map<number, Found | null>, screenH: number): { here: [number, number]; on: [number, number] } | null {
+    const game = boxOf(GAME_ANCHOR, cache);
+    if (!game) return null;
+    const hop = hopsOf(at).find(([code]) => code === GAME_ANCHOR);
+    if (!hop) return { here: [q.x, q.y], on: handAt(q.x, q.y, game.box, screenH) };
+    return { here: fromAnchor(GAME_ANCHOR, hop[1], hop[2], game.box, screenH), on: handOn(hop[1], hop[2]) };
+  }
+
+  /**
+   * Where a pointer at `at` is on this screen (cursors.ts): on its own
+   * anchor, where this screen has it and it holds no other; otherwise set by
+   * the anchors beside it and the first of those round it this screen has
+   * (blended), and on whichever counts most. Null when it has none.
+   */
+  function placeOf(at: CursorAt, cache: Map<number, Found | null>, screenH: number): Place | null {
+    let round: Place | null = null;
+    for (const [i, [code, x, y]] of hopsOf(at).entries()) {
       const on = boxOf(code, cache);
-      if (on) {
-        const [px, py] = fromAnchor(code, x, y, on.box, screenH);
-        return { code, x: px, y: py, on };
-      }
+      if (!on) continue;
+      const [px, py] = fromAnchor(code, x, y, on.box, screenH);
+      round = { code, x: px, y: py, on };
+      if (i === 0 && on.leaf) return { ...round, exact: true };
+      break;
     }
-    return null;
+    const by: (Place & { w: number })[] = round ? [{ ...round, w: HELD_WEIGHT }] : [];
+    for (const [code, x, y] of besideHops(at)) {
+      const on = boxOf(code, cache);
+      if (!on) continue;
+      const b = fromBeside(x, y, on.box);
+      const w = besideWeight(b.off);
+      if (w > 0) by.push({ code, x: b.x, y: b.y, on, w });
+    }
+    const spot = blended(by);
+    if (!spot) return round;
+    const most = by.reduce((a, b) => (b.w > a.w ? b : a));
+    return { code: most.code, x: spot[0], y: spot[1], on: most.on };
   }
 
   $effect(() => {
     const list = shown;
     if (!list.length) {
       drawn.clear();
+      leaning.clear();
       pressSeen.clear();
       return;
     }
     for (const k of drawn.keys()) if (!list.some((c) => c.key === k)) drawn.delete(k);
+    for (const k of leaning.keys()) if (!list.some((c) => c.key === k)) leaning.delete(k);
     for (const k of pressSeen.keys()) if (!list.some((c) => c.key === k)) pressSeen.delete(k);
     let raf = 0;
     let last = performance.now();
@@ -368,17 +429,48 @@
         // once after it, often in the same frame, and the place a little behind is where it was before the click).
         const clicking = pressing || (!!prev && now < prev.pressUntil);
         writes.push(() => el.classList.remove('lost'));
-        const code = place.code;
-        // Its trail on this screen (each place on its own elements, where they're still here), drawn a little behind.
+        const box = place.code;
+        // Its trail on this screen (each place on its own elements, where they're still here), and its hand's, drawn a little behind.
         const ps: [number, number][] = [];
+        const hs: [number, number][] = [];
+        const hu: [number, number][] = [];
         const ts: number[] = [];
+        const on: number[] = [];
+        let exact = false;
         for (const { at, t } of p.trail) {
           const q = placeOf(at, boxes, screenH);
           if (!q) continue;
+          exact = !!q.exact;
           ps.push([q.x, q.y]);
+          const h = handOf(at, q, boxes, screenH);
+          hs.push(h?.here ?? [q.x, q.y]);
+          hu.push(h?.on ?? [q.x, q.y]);
           ts.push(t);
+          on.push(q.code);
         }
-        const [rx, ry] = touch || clicking || !ps.length ? [place.x, place.y] : trailAt(ps, ts, now - BEHIND_MS);
+        const atOnce = touch || clicking || !ps.length;
+        // Moving as its hand did, and making up how far its place lies off that as it goes (cursors.ts leaned).
+        const hand = atOnce ? handOf(p.at, place, boxes, screenH) : null;
+        const [hx, hy] = atOnce ? (hand?.here ?? [place.x, place.y]) : trailAt(hs, ts, now - BEHIND_MS);
+        const ux = atOnce ? (hand?.on ?? [place.x, place.y]) : trailAt(hu, ts, now - BEHIND_MS);
+        let lean = leaning.get(c.key);
+        // How far its newest place lies off its hand's path (where it's drawn now, at a press or a tap).
+        const off: [number, number] = atOnce ? [place.x - hx, place.y - hy] : [ps.at(-1)![0] - hs.at(-1)![0], ps.at(-1)![1] - hs.at(-1)![1]];
+        if (!lean || atOnce) leaning.set(c.key, (lean = { x: off[0], y: off[1], ax: off[0], ay: off[1], hu: ux, hx, hy }));
+        else {
+          const moved = Math.hypot(ux[0] - lean.hu[0], ux[1] - lean.hu[1]);
+          // Landing: its newest place on the very thing it's on there, its hand slowing there or come to rest (none
+          // heard for two sends: one merely late, mid-way, isn't its hand stopping).
+          const n = hu.length;
+          const speed = n > 1 ? Math.hypot(hu[n - 1][0] - hu[n - 2][0], hu[n - 1][1] - hu[n - 2][1]) / Math.max(1, ts[n - 1] - ts[n - 2]) : 0;
+          const landing = exact && (speed < LANDING_SPEED || now - p.moved > 2 * SEND_EVERY_MS);
+          const step = Math.hypot(hx - lean.hx, hy - lean.hy);
+          leaning.set(c.key, (lean = { ...leaned(lean, off, moved, wayLeft(hu, ts, now - BEHIND_MS, ux), dt, landing, step), hu: ux, hx, hy }));
+        }
+        const rx = hx + lean.x;
+        const ry = hy + lean.y;
+        // What the place drawn is on: whether it went over to another is told as it's drawn there, not as it's heard.
+        const code = atOnce ? box : on[trailIndex(ts, now - BEHIND_MS)];
         let d = drawn.get(c.key);
         // Never off this screen, however far off the others' place lands here.
         const cx = Math.min(innerWidth - 16, Math.max(2, rx));
@@ -386,8 +478,8 @@
         // In the page or on the screen (stuck): whether its element scrolls with the page, by how it moved as the
         // page scrolled, or, new to it, by where it is; on the screen while held at its edge.
         const top = place.on.box.top;
-        let follows = d && d.code === code ? d.follows : !stuck(place.on.el);
-        const went = d && d.code === code ? scrollFollow(top - d.top, scrollY - d.scroll) : null;
+        let follows = d && d.box === box ? d.follows : !stuck(place.on.el);
+        const went = d && d.box === box ? scrollFollow(top - d.top, scrollY - d.scroll) : null;
         if (went) follows = went === 'page';
         const page = follows && cx === rx && cy === ry;
         const [sx, sy] = page ? [scrollX, scrollY] : [0, 0];
@@ -405,23 +497,26 @@
         const ty = cy + sy;
         // A tap lands where it is; a pointer just come in starts where it is.
         if (!d || touch)
-          drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, ox: 0, oy: 0, px: tx, py: ty, qx: tx, qy: ty, pdt: 0, pressUntil: d?.pressUntil ?? 0, page, follows, top, scroll: scrollY }));
+          drawn.set(c.key, (d = { x: tx, y: ty, tap: d?.tap ?? 0, code, box, off: { x: 0, y: 0, vx: 0, vy: 0 }, offMs: 0, px: tx, py: ty, qx: tx, qy: ty, pdt: 0, pressUntil: d?.pressUntil ?? 0, page, follows, top, scroll: scrollY }));
         else {
-          // Placed on another element far from where it was going, or leaping: it stays where it's drawn (cursors.ts moveOn).
-          const moved = Math.hypot(tx - d.px, ty - d.py);
+          // Where its place was going, had it gone on as it went (cursors.ts moveOn's measure).
+          const k = d.pdt > 0 ? Math.min(2, dt / d.pdt) : 0;
+          const ex = d.px + (d.px - d.qx) * k;
+          const ey = d.py + (d.py - d.qy) * k;
+          // Placed on another element far from where it was going, or leaping: it goes on from there (cursors.ts moveOn).
           if (moveOn(d, tx, ty, code, dt, !clicking)) {
-            d.ox = d.x - tx;
-            d.oy = d.y - ty;
-          } else {
-            // The difference fades as it moves, and slowly as time goes by; gone at a press, so the click lands where it is.
-            const fade = clicking ? 0 : Math.exp(-moved / FADE_PX - dt / FADE_MS);
-            d.ox *= fade;
-            d.oy *= fade;
-          }
-          d.x += (tx + d.ox - d.x) * step;
-          d.y += (ty + d.oy - d.y) * step;
+            d.off.x += ex - tx;
+            d.off.y += ey - ty;
+            d.offMs = closeMs(Math.hypot(d.off.x, d.off.y));
+          } else if (clicking) {
+            // Gone at a press, so the click lands where it is.
+            d.off = { x: 0, y: 0, vx: 0, vy: 0 };
+          } else closeOff(d.off, dt, d.offMs);
+          d.x += (tx + d.off.x - d.x) * step;
+          d.y += (ty + d.off.y - d.y) * step;
         }
         d.page = page;
+        d.box = box;
         d.follows = follows;
         d.top = top;
         d.scroll = scrollY;

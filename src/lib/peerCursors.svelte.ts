@@ -5,14 +5,16 @@
 // player's pointer, which stays with their mouse: a mark of its own, for a moment,
 // while the pointer steps aside.
 
-import { SEND_EVERY_MS, TAP, actionOf, litOf, type CursorAt } from './cursors.ts';
+import { SEND_EVERY_MS, TAP, actionOf, litOf, paced, type CursorAt, type Pace } from './cursors.ts';
 
 export interface PeerCursor {
   at: CursorAt;
   /** When it last moved (performance.now). */
   moved: number;
-  /** The last few places it was heard to be, and when, oldest first: drawn along a curve through them (cursors.ts trailAt). */
+  /** The last few places it was heard to be, and when each was sent (on this clock: cursors.ts paced), oldest first: drawn along a curve through them (cursors.ts trailAt). */
   trail: { at: CursorAt; t: number }[];
+  /** Its sender's clock, as this screen keeps it (cursors.ts paced); none while its places come unstamped. */
+  pace?: Pace;
 }
 
 /** How many places a pointer's trail keeps (more than BEHIND_MS's worth, PeerCursors.svelte, with clicks among them); heard again after this long (ms), it had been resting. */
@@ -49,7 +51,8 @@ class PeerCursors {
     return () => void this.listeners.delete(fn);
   }
 
-  set(key: string, at: CursorAt | null) {
+  /** Where the pointer `key` is now, sent at `ms` on its sender's clock (its stamp, cursors.ts STAMP), if it says; null when it's gone. */
+  set(key: string, at: CursorAt | null, ms?: number) {
     for (const fn of this.listeners) fn(key, at);
     if (at && actionOf(at[3]) === TAP && litOf(at[3])) {
       const tap = { key, at, t: performance.now() };
@@ -65,12 +68,16 @@ class PeerCursors {
     }
     if (!this.at.has(key)) this.keys = [...this.keys, key];
     const now = performance.now();
-    const before = this.at.get(key)?.trail ?? [];
+    const was = this.at.get(key);
+    const before = was?.trail ?? [];
     const last = before.at(-1);
+    // When it was sent, by its stamp; never before the place before it (the link at its quickest just got quicker).
+    const sent = ms === undefined ? null : paced(was?.pace, ms, now);
+    const t = Math.max(sent?.t ?? now, (last?.t ?? -Infinity) + 1);
     // After a rest, it stood where it was until just before this: it sets off now, not slowly all the while.
-    const rested = last && now - last.t > REST_MS ? [{ at: last.at, t: now - SEND_EVERY_MS }] : [];
-    const trail = [...before, ...rested, { at, t: now }].slice(-TRAIL);
-    this.at.set(key, { at, moved: now, trail });
+    const rested = last && was && now - was.moved > REST_MS && t - SEND_EVERY_MS > last.t ? [{ at: last.at, t: t - SEND_EVERY_MS }] : [];
+    const trail = [...before, ...rested, { at, t }].slice(-TRAIL);
+    this.at.set(key, { at, moved: now, trail, pace: sent?.pace });
   }
 
   clear() {

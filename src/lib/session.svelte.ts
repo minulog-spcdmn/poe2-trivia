@@ -83,7 +83,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
-import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, type CursorAt, type CursorEntry } from './cursors';
+import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
@@ -250,6 +250,8 @@ interface Guest {
   pointer: RateLimit;
   /** Its newest pointer past `pointer`, waiting until it may go (undefined when none is), and when it's looked at again. */
   pointerLate?: CursorAt | null;
+  /** When that was sent, on the guest's clock (cursors.ts STAMP), if it said. */
+  pointerMs?: number;
   pointerTimer?: ReturnType<typeof setTimeout> | null;
   /** Round-trip time estimate (ms), from its pongs: whether its link shows as slow (slowLink). */
   rtt: number;
@@ -945,7 +947,7 @@ class Session {
       // A pointer beyond what a real client sends only waits (frames are
       // capped all the same, guard.ts).
       if (msg.t === 'cursor') {
-        if (guest.playerId) this.cursorFrom(conn, guest, msg.at);
+        if (guest.playerId) this.cursorFrom(conn, guest, msg.at, msg.ms);
         return;
       }
       // Presence is sent only when it changes, so one dropped would stand
@@ -1286,8 +1288,9 @@ class Session {
    * its newest waits until it may go. None is lost for good, so a release
    * never is, which would leave that pointer pressed on every screen.
    */
-  private cursorFrom(conn: DataConnection, guest: Guest, at: CursorAt | null) {
+  private cursorFrom(conn: DataConnection, guest: Guest, at: CursorAt | null, ms?: number) {
     guest.pointerLate = at;
+    guest.pointerMs = ms;
     if (guest.pointerTimer) return;
     const pass = () => {
       guest.pointerTimer = null;
@@ -1298,19 +1301,19 @@ class Session {
       }
       const late = guest.pointerLate;
       guest.pointerLate = undefined;
-      this.relayCursor(guest.playerId, late);
+      this.relayCursor(guest.playerId, late, guest.pointerMs);
     };
     pass();
   }
 
-  /** Host: passes a player's pointer on to everyone else in the room, in the next batch (cursors.ts). */
-  private relayCursor(from: string, at: CursorAt | null) {
+  /** Host: passes a player's pointer on to everyone else in the room, in the next batch, with when it was sent (`ms`, cursors.ts STAMP). */
+  private relayCursor(from: string, at: CursorAt | null, ms?: number) {
     const s = this.state;
     if (at && !(cursorsLive(s) && s!.players.some((p) => p.id === from))) return;
     const key = cursorKey(from);
-    const entry: CursorEntry = at ? [key, ...at] : [key];
+    const entry: CursorEntry = at ? (ms === undefined ? [key, ...at] : [key, ...at, ms]) : [key];
     this.cursorOut.put(entry, [...this.guests].flatMap(([c, g]) => (g.playerId && g.playerId !== from ? [c] : [])));
-    if (from !== this.myPlayerId) peerCursors.set(key, at);
+    if (from !== this.myPlayerId) peerCursors.set(key, at, ms);
     // A click is quicker than a batch: a press or its release goes at once, and a tap.
     const pressed = !!at && actionOf(at[3]) === PRESSED;
     const changed = pressed !== (this.cursorPressed.get(key) ?? false);
@@ -1359,14 +1362,14 @@ class Session {
     if (this.cursorOut.waiting) this.planCursors();
   }
 
-  /** This device's pointer (PeerCursors.svelte), for the other players to see; null when it left the page. */
-  pointAt(at: CursorAt | null) {
+  /** This device's pointer (PeerCursors.svelte), for the other players to see, where it was at `ms` (performance.now's clock); null when it left the page. */
+  pointAt(at: CursorAt | null, ms = performance.now()) {
     const me = this.myPlayerId;
     if (!me || this.status !== 'ready') return;
     if (at) noteInput();
     if (this.mode === 'client') {
-      if (this.hostConn?.open) this.hostConn.send({ t: 'cursor', at });
-    } else if (this.mode === 'host' && !this.roomless) this.relayCursor(me, at);
+      if (this.hostConn?.open) this.hostConn.send({ t: 'cursor', at, ms: stampOf(ms) });
+    } else if (this.mode === 'host' && !this.roomless) this.relayCursor(me, at, stampOf(ms));
   }
 
   private send(conn: DataConnection, msg: HostMsg) {
@@ -2168,7 +2171,7 @@ class Session {
           break;
         case 'cursors':
           if (!cursorsLive(this.state)) break;
-          for (const e of msg.c) if (e[0] !== cursorKey(this.myPlayerId ?? '')) peerCursors.set(e[0], entryAt(e));
+          for (const e of msg.c) if (e[0] !== cursorKey(this.myPlayerId ?? '')) peerCursors.set(e[0], entryAt(e), entryMs(e));
           break;
         default:
           shown.receive(msg);

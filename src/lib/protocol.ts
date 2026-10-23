@@ -3,7 +3,7 @@
 // sender disconnected: a real client never sends malformed messages.
 
 import { answerMs, type Action, type GameState } from './game.ts';
-import { parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
+import { STAMP, parseCursorAt, parseCursorBatch, type CursorAt, type CursorEntry } from './cursors.ts';
 import type { Presence, Standing } from './presence.ts';
 import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
@@ -38,6 +38,9 @@ import { cleanSeen } from './delveStart.ts';
  *   each certain on its first depth.
  * - 25: the Delve rules are ruleset 2, twins kept apart down to their depth
  *   (game.ts TWINS).
+ * - 33: a pointer's places go with when each was sent (cursor's ms, the
+ *   stamp at the end of a batch's entry), and are drawn by it; and with
+ *   the anchors beside it (cursors.ts BESIDE).
  * - 24: a pointer goes with the anchors round its own, and many more parts
  *   of the screen are anchors (cursors.ts).
  * - 23: Delve together counts the team's streak (depths cleared in a row
@@ -57,7 +60,7 @@ import { cleanSeen } from './delveStart.ts';
  * - 14: dynamite lit at 0 (Question.fuse); 13: a question blasted away (the
  *   blast action); 12: the frozen Delve rules; 11: the co-op vote and revive.
  */
-export const PROTOCOL_VERSION = 32;
+export const PROTOCOL_VERSION = 33;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -99,8 +102,8 @@ export type ClientMsg =
   | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number; lines?: number[] }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
-  /** Where this player's pointer is (cursors.ts), or null when it left the page. */
-  | { t: 'cursor'; at: CursorAt | null }
+  /** Where this player's pointer is (cursors.ts), or null when it left the page; when it was sent, on its clock (cursors.ts STAMP). */
+  | { t: 'cursor'; at: CursorAt | null; ms?: number }
   /** Whether this player's game is on screen and in use (presence.ts), sent when it changes. */
   | { t: 'presence'; p: Presence };
 
@@ -203,7 +206,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;
     case 'cursor': {
       const at = parseCursorAt(raw.at);
-      return at === undefined ? null : { t: 'cursor', at };
+      if (at === undefined || (raw.ms !== undefined && !isInt(raw.ms, 0, STAMP - 1))) return null;
+      return raw.ms === undefined ? { t: 'cursor', at } : { t: 'cursor', at, ms: raw.ms };
     }
     case 'presence':
       return raw.p === 'here' || raw.p === 'idle' || raw.p === 'away' ? { t: 'presence', p: raw.p } : null;

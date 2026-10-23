@@ -3,6 +3,7 @@
 // server of its own on the dev server's machine; see deskOrigin).
 
 import type { GameState } from '../lib/game.ts';
+import type { CursorAt } from '../lib/cursors.ts';
 import type { Problem } from './frame/checks.ts';
 import type { Values } from './bench.ts';
 
@@ -18,7 +19,9 @@ export type FrameMessage =
   /** A piece moved its own controls, as an action played out (the panel follows). */
   | { qa: 'set'; values: Values }
   /** One of the states side by side was clicked: show it alone. */
-  | { qa: 'pick'; index: number };
+  | { qa: 'pick'; index: number }
+  /** The pointers bench (benches/pointers.ts): where the mouse is over its moving player's screen, for the other side of before and after to move the same. */
+  | HandMessage;
 
 export type DeskMessage =
   /** Outline the elements at fault, or don't. */
@@ -32,7 +35,25 @@ export type DeskMessage =
   /** Draw it in again, as it first came. */
   | { qa: 'replay' }
   /** The UI's shadows and fills left to CSS, or drawn by the backdrop (S). */
-  | { qa: 'css'; on: boolean };
+  | { qa: 'css'; on: boolean }
+  /** Where the mouse is over the moving player's screen on the other side of before and after (the pointers bench). */
+  | HandMessage;
+
+/** A hand at a spot on the moving player's screen (its own CSS px), or gone from it. */
+export type HandMessage = { qa: 'hand'; x: number; y: number } | { qa: 'hand'; gone: true };
+
+/**
+ * Between the pointers bench and the two seats it shows (frame/pointerRelay.ts):
+ * the moving player's pointer as their game sends it (`ms`: its stamp), and
+ * the mouse really over their screen; to the other seat, that pointer as the
+ * room passes it on (`key`: whose); and to the moving one, a hand to move by.
+ */
+export type RelayMessage =
+  | { qa: 'pointer'; at: CursorAt | null; ms: number }
+  | { qa: 'mouse'; x: number; y: number }
+  | { qa: 'mouse'; gone: true }
+  | { qa: 'pointer-in'; key: string; at: CursorAt | null; ms: number }
+  | HandMessage;
 
 /** How a live seat stands, as it tells the desk every second. */
 export interface SeatLook {
@@ -70,5 +91,6 @@ export function deskOrigin(asked: URLSearchParams): string {
 }
 
 const isQa = (m: unknown): m is { qa: string } => typeof m === 'object' && m !== null && 'qa' in m && typeof (m as { qa: unknown }).qa === 'string';
-export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'failed', 'checked', 'key', 'set', 'pick'].includes(m.qa);
-export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && ['outlines', 'freeze', 'values', 'action', 'replay', 'css'].includes(m.qa);
+export const isFrameMessage = (m: unknown): m is FrameMessage => isQa(m) && ['ready', 'failed', 'checked', 'key', 'set', 'pick', 'hand'].includes(m.qa);
+export const isDeskMessage = (m: unknown): m is DeskMessage => isQa(m) && ['outlines', 'freeze', 'values', 'action', 'replay', 'css', 'hand'].includes(m.qa);
+export const isRelayMessage = (m: unknown): m is RelayMessage => isQa(m) && ['pointer', 'mouse', 'pointer-in', 'hand'].includes(m.qa);

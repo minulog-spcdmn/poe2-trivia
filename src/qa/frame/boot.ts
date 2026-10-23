@@ -12,7 +12,7 @@ import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
-import { seatsIn } from '../scene.ts';
+import { seatsIn, type Seat } from '../scene.ts';
 import type { GameState } from '../../lib/game.ts';
 
 /** How long the page stays still after a change before it's checked again (ms). */
@@ -75,7 +75,9 @@ export async function boot(asked: URLSearchParams) {
   if (given.sigils === '1' || given.sigils === 'true') (await import('../../lib/sigilTrial.svelte.ts')).sigilTrial.on = true;
   // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
   const seats = scene && built ? seatsIn(scene, built) : [];
-  const seat = seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];
+  // Or (&as=<player id>&role=host|client) any player in the room, as the pointers bench sees one scene from two of them.
+  const as = asked.get('as');
+  const seat: Seat | undefined = as ? { mode: asked.get('role') === 'host' ? 'host' : 'client', me: as } : seats[Math.min(Number(asked.get('seat') ?? 0), seats.length - 1)];
   if (!scene || !built || !seat) throw new Error(`No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`);
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
@@ -168,6 +170,8 @@ export async function boot(asked: URLSearchParams) {
   autoscroll.installAutoscroll();
   const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crashCue.svelte.ts')]);
   mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
+  // The pointers bench's seats: this one's pointer to the bench, or another's from it (./pointerRelay.ts).
+  if (asked.has('pointers')) await (await import('./pointerRelay.ts')).relayPointers(asked, { session });
 
   // A question's pictures, made as the host makes them and taken in as each
   // device takes them in, sealed or not (lib/media.svelte.ts).

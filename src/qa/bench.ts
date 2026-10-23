@@ -71,6 +71,12 @@ export interface PieceBench {
   actions?: Action[];
   /** How wide each state is at least in All states (CSS px; missing: 200). */
   cell?: number;
+  /**
+   * It moves on its own (a hand going round): before and after (B) are
+   * watched side by side, never shot and compared, as two shots of it differ
+   * wherever it happened to be.
+   */
+  moves?: true;
   view: () => Promise<{ default: Component<PieceProps> }>;
 }
 

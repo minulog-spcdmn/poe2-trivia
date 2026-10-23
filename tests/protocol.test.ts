@@ -183,7 +183,7 @@ test('an answer turned down names its question, so the guest can answer it again
 });
 
 test('the protocol version moves only on purpose (its note in protocol.ts says what each changed)', () => {
-  assert.equal(PROTOCOL_VERSION, 32);
+  assert.equal(PROTOCOL_VERSION, 33);
 });
 
 test("an option's picture comes with its size in art pixels", () => {
