@@ -14,7 +14,7 @@
   import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, deathmatchRadius, gameStart, turnBanner } from '../lib/fx/moments';
   import { stageZoom } from '../lib/stage';
   import { duelArt, warmDuelArt } from '../lib/fx/duelArt';
-  import { fxActive } from '../lib/fx/core';
+  import { fxActive, onFxChange } from '../lib/fx/core';
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
   import { REVIVE_FROM, WAY_OUT, delveDepth, fellAt, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
@@ -82,6 +82,8 @@
   // Play the deathmatch intro once per deathmatch, on every device.
   let introFor = $state<number | null>(null);
   let introTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The game screen has gone (an intro still waiting for its sigil then never shows). */
+  let left = false;
   $effect(() => {
     const start = dm?.startedAt;
     if (start === undefined || start === introFor) return;
@@ -90,7 +92,7 @@
     // could come to this, but not yet in one joined or opened mid-deathmatch.)
     const ready = fxActive() ? Promise.race([duelArt(), new Promise((r) => setTimeout(r, 1500))]) : Promise.resolve();
     void ready.then(() => {
-      if (introFor !== start) return;
+      if (left || introFor !== start) return;
       introR = deathmatchRadius() / stageZoom(innerWidth, innerHeight);
       showIntro = true;
       sfx('deathmatch');
@@ -106,14 +108,22 @@
   onMount(() => {
     gameStart();
     return () => {
+      left = true;
+      if (introTimer) clearTimeout(introTimer);
       deathmatchMood(false);
       fireAmbience(false);
     };
   });
 
-  // A game to a target can end in a tie, and a deathmatch: its sigil is painted ahead, away from the page.
+  // A game to a target with more than one player can end in a tie, and a
+  // deathmatch: its sigil is painted ahead, away from the page (once the
+  // effects are on, and again should they come on later).
+  const canTie = $derived(!s.delve && s.players.length > 1);
   $effect(() => {
-    if (!s.delve && fxActive()) warmDuelArt();
+    if (!canTie) return;
+    const warm = () => fxActive() && warmDuelArt();
+    warm();
+    return onFxChange(warm);
   });
 
   // The whole scene turns crimson, and a fire roars, for as long as a deathmatch lasts.

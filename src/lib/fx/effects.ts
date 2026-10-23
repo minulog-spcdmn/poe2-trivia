@@ -707,7 +707,8 @@ export function sigil(at: Anchor, o: { radius: number; color?: Vec3; life?: numb
       f.q[6] = 2.2;
       f.q[7] = scale;
       const px = fxPixelRatio();
-      f.q[8] = Math.log2(art.size / (2 * R * scale * px));
+      // (A finer picture may take its place while it's drawn: the renderer's is the one kept now.)
+      f.q[8] = Math.log2((duelPicture() ?? art).size / (2 * R * scale * px));
       f.q[9] = px;
     },
   });

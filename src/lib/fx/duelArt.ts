@@ -15,13 +15,12 @@ import type { DuelPlate } from '../plates/duel.ts';
 let kept: SigilPicture | null = null;
 let coming: { size: number; done: Promise<SigilPicture | null> } | null = null;
 
-/**
- * The size it's painted at: a power of two at least as fine as the sigil
- * is drawn on this screen (lib/fx/moments.ts: 0.3 of the screen's short
- * side either way of its centre), at most 2048.
- */
+/** The radius the sigil is drawn at on this screen, CSS px (moments.ts' deathmatchIntro; the card is laid out to it: Game.svelte). */
+export const deathmatchRadius = () => Math.min(innerWidth, innerHeight) * 0.42;
+
+/** The size it's painted at: a power of two at least as fine as the sigil is drawn on this screen, at most 2048. */
 function sizeFor() {
-  const across = 0.6 * Math.min(innerWidth, innerHeight) * (devicePixelRatio || 1);
+  const across = 2 * deathmatchRadius() * (devicePixelRatio || 1);
   return Math.min(2048, Math.max(512, 2 ** Math.ceil(Math.log2(Math.max(1, across)))));
 }
 
