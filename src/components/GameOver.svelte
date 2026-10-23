@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade, fly, scale, slide, type TransitionConfig } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { calm, motion } from '../lib/motion.svelte';
+  import { calm } from '../lib/motion.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
@@ -250,15 +250,13 @@
    * larger, and ignites (.first's styles).
    */
   function rankIn(node: Element, { i, n, top }: { i: number; n: number; top: boolean }): TransitionConfig {
-    if (motion.still) return { duration: 0 };
-    if (top) return { delay: WINNER_IN_MS, duration: 520, css: (t) => `opacity: ${Math.min(1, t * 3)}; transform: scale(${(1.07 - 0.07 * quintOut(t)).toFixed(4)})` };
+    if (top) return scale(node, calm({ start: 1.07, delay: WINNER_IN_MS, duration: 520, easing: quintOut }));
     const step = n > 2 ? Math.min(70, 400 / (n - 1)) : 70;
     return settle(node, { delay: 450 + (n - 1 - i) * step });
   }
   /** A part of the end screen set down into its place: risen a little, on the house's ease-out. */
-  function settle(_: Element, { delay = 0, y = 12 }: { delay?: number; y?: number } = {}): TransitionConfig {
-    if (motion.still) return { duration: 0 };
-    return { delay, duration: 440, css: (t, u) => `opacity: ${Math.min(1, t * 1.8)}; transform: translateY(${(y * (1 - quintOut(t))).toFixed(2)}px)` };
+  function settle(node: Element, { delay = 0, y = 12 }: { delay?: number; y?: number } = {}): TransitionConfig {
+    return fly(node, calm({ y, delay, duration: 440, easing: quintOut }));
   }
 
   // ---- the effects ------------------------------------------------------------
@@ -695,12 +693,13 @@
         {#if !run}
           <ol class="ranking" class:two={twoCols} style:--rows={Math.ceil(rows.length / 2)} style:--winner-in="{WINNER_IN_MS}ms" data-cursor="standings" bind:this={standingsEl}>
             {#each rows as x, i (x.p.id)}
+              {@const first = s.winners.includes(x.p.id) || (!s.winners.length && x.rank === 1)}
               <li
-                class:first={s.winners.includes(x.p.id) || (!s.winners.length && x.rank === 1)}
+                class:first
                 class:you={x.p.id === me}
                 class:gone={!local && !x.p.connected}
                 data-cursor="row:{s.players.indexOf(x.p)}"
-                in:rankIn|global={{ i, n: rows.length, top: s.winners.includes(x.p.id) || (!s.winners.length && x.rank === 1) }}
+                in:rankIn|global={{ i, n: rows.length, top: first }}
               >
                 {#if x.p.id === me && pinnable}<span class="anchor" bind:this={myRow}></span>{/if}
                 {@render rankRow(x)}
@@ -1383,7 +1382,8 @@
     image-rendering: auto;
   }
   /* Set down last (rankIn), the winner's row ignites: its edge flares and
-     settles, and from then on the headline's light runs across it with the
+     settles (the effects' outline round it is its glow: a soft one in CSS
+     would band), and from then on the headline's light runs across it with the
      headline's own, in step (.gold's gleam). */
   .ranking li.first {
     animation: ignite 1.2s calc(var(--winner-in) + 0.15s) var(--ease-out) backwards;
@@ -1403,11 +1403,9 @@
   @keyframes ignite {
     0% {
       border-color: var(--line);
-      box-shadow: 0 0 0 rgba(241, 217, 155, 0);
     }
     30% {
       border-color: #f6e3ad;
-      box-shadow: 0 0 20px rgba(241, 217, 155, 0.4);
     }
   }
   @media (prefers-reduced-motion: reduce) {

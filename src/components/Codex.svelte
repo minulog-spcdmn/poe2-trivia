@@ -312,16 +312,38 @@
   let tab = $state<Tab>('items');
   /** A tab has been turned: its page's sections come in at once, not after the title's (the stagger in the styles). */
   let turned = $state(false);
-  /** The page coming in, as it opens or a tab is turned: its sections' panels wait for them (the styles). */
+  /**
+   * The page coming in, as it opens or a tab is turned: its sections rise,
+   * and their panels' filigree waits for them (the styles). Over once all
+   * of it is in place, so a section made again later (the search cleared,
+   * the grid back) and a panel shown later are simply there.
+   */
   let rising = $state(true);
+  let codexEl = $state<HTMLElement>();
+  /** The motions that are the page coming in (the styles here, and app.css's filigree). */
+  const RISING = /codex-rise$|^filigree-in$/;
   $effect(() => {
-    void tab;
-    rising = true;
-    const t = setTimeout(() => (rising = false), 1500);
-    return () => clearTimeout(t);
+    if (!rising || !codexEl) return;
+    const el = codexEl;
+    let live = true;
+    void (async () => {
+      await tick();
+      for (;;) {
+        const going = el.getAnimations({ subtree: true }).filter((a) => a instanceof CSSAnimation && RISING.test(a.animationName) && a.playState !== 'finished');
+        if (!going.length) break;
+        await Promise.allSettled(going.map((a) => a.finished));
+        if (!live) return;
+      }
+      if (live) rising = false;
+    })();
+    return () => {
+      live = false;
+    };
   });
   function turn(to: Tab) {
-    if (to !== tab) turned = true;
+    if (to === tab) return;
+    turned = true;
+    rising = true;
     tab = to;
   }
   // Steps a visit reached (lib/count.ts): the codex opened, its achievements looked at.
@@ -398,7 +420,7 @@
   <span class="glyph" style:--src="url('{categoryGlyph(category)}')" aria-hidden="true"></span>
 {/snippet}
 
-<div class="codex" class:rising>
+<div class="codex" class:rising bind:this={codexEl}>
   <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
@@ -763,16 +785,15 @@
      the many tiles inside them: the collection, as tall as all of them,
      comes in by its bar and its first two categories (below them it's out
      of sight by then), so no layer the height of the page is made to move
-     it. While the page comes in (.rising), a panel in a section waits for
-     it to rise before its filigree unfurls (app.css, --rise-delay); one
-     shown later unfurls at once. */
+     it. The page's sections rise only while it comes in (.rising): one
+     made again later (the search cleared, the grid back) is just there.
+     Meanwhile a panel in a section waits for it to rise before its
+     filigree unfurls (app.css, --rise-delay); one shown later unfurls at
+     once. */
   .hero > *,
   .tabs,
-  .page > :global(:not(.delve-page, .collection)),
-  .page > :global(.delve-page > *),
-  .collection > .bar,
-  .collection > .cat-section:nth-child(-n + 3),
-  .end {
+  .end,
+  .rising :is(.page > :global(:not(.delve-page, .collection)), .page > :global(.delve-page > *), .collection > .bar, .collection > .cat-section:nth-child(-n + 3)) {
     animation: codex-rise 0.65s var(--ease-out) backwards;
     animation-delay: calc(var(--lead, 0s) + (var(--n, 0) + var(--k, 0)) * 0.08s);
   }
@@ -830,19 +851,13 @@
   @media (prefers-reduced-motion: reduce) {
     .hero > *,
     .tabs,
-    .page > :global(*),
-    .page > :global(.delve-page > *),
-    .collection > *,
-    .end {
+    .end,
+    .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
       animation: none;
     }
   }
-  :global(:root[data-still]) .hero > *,
-  :global(:root[data-still]) .tabs,
-  :global(:root[data-still]) .page > :global(*),
-  :global(:root[data-still]) .page > :global(.delve-page > *),
-  :global(:root[data-still]) .collection > *,
-  :global(:root[data-still]) .end {
+  :global(:root[data-still]) :is(.hero > *, .tabs, .end),
+  :global(:root[data-still]) .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
     animation: none;
   }
 

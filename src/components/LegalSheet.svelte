@@ -5,7 +5,7 @@
   // everything, and the game behind it is inert: no focus, no clicks, and no
   // keys reach the game's own handlers (stopped here, before the window).
   import { closeLegal, legalSheet } from '../lib/legalSheet.svelte';
-  import { motion } from '../lib/motion.svelte';
+  import { dialogIn, dialogOut, play } from '../lib/dialogIn';
   import { tick, untrack } from 'svelte';
 
   let dialog = $state<HTMLDialogElement>();
@@ -14,30 +14,44 @@
   let shown = $state<string | null>(null);
   /** Going: the sheet sinks away before it closes. */
   let going = $state(false);
-  /** How long it takes to go (its .going styles). */
-  const GO_MS = 220;
-  let goTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Its rise or its fall, under way. */
+  let moving: Animation | null = null;
 
-  // It rises over the game from just below, as the game's dialogs do
-  // (lib/dialogIn.ts), and sinks back as it goes.
+  // It rises over the game from just below and sinks back as it goes, as
+  // the game's dialogs do (lib/dialogIn.ts, played here on the <dialog>).
   $effect(() => {
     if (!dialog) return;
     if (legalSheet.url) {
-      clearTimeout(goTimer);
+      const was = untrack(() => going);
       shown = legalSheet.url;
       going = false;
       if (!dialog.open) {
         dialog.showModal();
+        untrack(rise);
         // (Once the bar it's in is drawn: `shown` was only just set.)
         void tick().then(() => back?.focus());
-      }
+      } else if (was) untrack(rise);
     } else if (dialog.open && !untrack(() => going)) {
-      if (motion.still) return close();
       going = true;
-      goTimer = setTimeout(close, GO_MS);
+      moving?.cancel();
+      const m = (moving = untrack(() => play(dialog!, dialogOut(), true)));
+      if (!m) return close();
+      m.finished.then(() => moving === m && close(), () => {});
     }
   });
+  function rise() {
+    moving?.cancel();
+    const m = (moving = play(dialog!, dialogIn()));
+    // Risen, it lets go of the sheet (no transform left on it).
+    m?.finished.then(() => {
+      if (moving !== m) return;
+      m.cancel();
+      moving = null;
+    }, () => {});
+  }
   function close() {
+    moving?.cancel();
+    moving = null;
     going = false;
     shown = null;
     dialog?.close();
@@ -76,6 +90,7 @@
   class="sheet"
   aria-label="Datenschutz"
   class:going
+  style:--go={going ? `${dialogOut().duration}ms` : null}
   bind:this={dialog}
   oncancel={(e) => {
     e.preventDefault();
@@ -114,44 +129,24 @@
   }
   .sheet[open] {
     display: flex;
-    animation: sheet-in 0.48s var(--ease-out);
-  }
-  /* (Its rise let go of, should it go before it's up, so this shows.) */
-  .sheet.going {
-    animation: none;
-    opacity: 0;
-    translate: 0 14px;
-    transition:
-      opacity 0.22s ease-in,
-      translate 0.22s ease-in;
-  }
-  @keyframes sheet-in {
-    from {
-      opacity: 0;
-      translate: 0 18px;
-    }
-    40% {
-      opacity: 1;
-    }
   }
   .sheet::backdrop {
     animation: sheet-dark 0.3s ease-out;
   }
+  /* (As long as the sheet takes to go: --go.) */
   .sheet.going::backdrop {
     opacity: 0;
-    transition: opacity 0.22s ease-in;
+    transition: opacity var(--go) ease-in;
   }
   @keyframes sheet-dark {
     from {
       opacity: 0;
     }
   }
-  :global(:root[data-still]) .sheet[open],
   :global(:root[data-still]) .sheet::backdrop {
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    .sheet[open],
     .sheet::backdrop {
       animation: none;
     }
