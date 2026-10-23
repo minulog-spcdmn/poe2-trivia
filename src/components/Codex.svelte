@@ -329,7 +329,8 @@
     void (async () => {
       await tick();
       for (;;) {
-        const going = el.getAnimations({ subtree: true }).filter((a) => a instanceof CSSAnimation && RISING.test(a.animationName) && a.playState !== 'finished');
+        // (The document's running animations, a handful: not a walk through the codex's every tile.)
+        const going = document.getAnimations().filter((a) => a instanceof CSSAnimation && RISING.test(a.animationName) && a.playState !== 'finished' && within(el, a));
         if (!going.length) break;
         await Promise.allSettled(going.map((a) => a.finished));
         if (!live) return;
@@ -340,6 +341,10 @@
       live = false;
     };
   });
+  const within = (el: Element, a: Animation) => {
+    const target = (a.effect as KeyframeEffect | null)?.target;
+    return !!target && el.contains(target);
+  };
   function turn(to: Tab) {
     if (to === tab) return;
     turned = true;

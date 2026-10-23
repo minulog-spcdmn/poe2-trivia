@@ -1199,7 +1199,7 @@ function coin(x: number, y: number, vx: number, vy: number, o: { life?: [number,
  * winner is SVG, in GameOver). A player who lost gets falling ash instead. Returns a handle that
  * stops the ongoing parts.
  */
-export function victory(avatar: Element, title: Element, color: string, lost: boolean, standings?: Element | null): Handle {
+export function victory(avatar: Element, title: Element, color: string, lost: boolean): Handle {
   if (!fxActive()) return { stop() {} };
   const pc = hdr(color, 2.4);
   const handles: Handle[] = [];
@@ -1217,15 +1217,7 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
     flare(title, { size: 36, streak: innerWidth * 0.4, life: 1, color: C.goldPale, intensity: 0.7 });
     glints(title, { count: 5, size: [5, 10], delay: [0, 1] });
   });
-  if (standings) {
-    // The winner's row, as it flies in.
-    later(1.25, () => {
-      const first = standings.querySelector('li');
-      if (!first) return;
-      outline(first, { color: C.gold, width: 8, life: 1.4, intensity: 0.45, bleed: 0.12 });
-      glints(first, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.5] });
-    });
-  }
+  // (The winner's row lights up as it's set down: winnerIgnites, below.)
   moodOwner = 'victory';
   setMood(lost ? [0.6, 0.5, 0.4] : [1, 0.7, 0.3], lost ? 0.18 : 0.35);
   backdropEmbers.tint(lost ? CALM : [1, 0.62, 0.2]);
@@ -1331,12 +1323,15 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
 
 /**
  * The winner's row on the end screen ignites as it's set down (GameOver's
- * .first): a soft gold glow swells round it with its flaring edge, and
- * settles. Here, not in CSS, where a glow that soft would band.
+ * .first, each of them when tied): gold runs round its edge and glints on
+ * it, and a soft glow swells round it with its flaring edge, and settles.
+ * The glow here, not in CSS, where one that soft would band.
  */
 export function winnerIgnites(row: Element) {
   if (!fxActive()) return;
+  outline(row, { color: C.gold, width: 8, life: 1.4, intensity: 0.45, bleed: 0.12 });
   outline(row, { color: C.goldPale, width: 12, life: 1.2, fadeIn: 0.36, intensity: 0.5 });
+  glints(row, { count: 3, area: 'edge', size: [4, 8], delay: [0, 0.5] });
 }
 
 // ---------- lobby and home ----------

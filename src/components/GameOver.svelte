@@ -238,8 +238,8 @@
   // ---- the standings' reveal ---------------------------------------------------
   /**
    * When the winner's row is set down (ms): the last of the ranking, as the
-   * headline's light first runs across it (.gold's gleam, 1.4 s) and the
-   * effects outline the row (lib/fx/moments.ts victory, 1.25 s).
+   * headline's light first runs across it (.gold's gleam, 1.4 s). The
+   * effects light it as it ignites (lib/fx/moments.ts winnerIgnites).
    */
   const WINNER_IN_MS = 1000;
   /**
@@ -271,7 +271,7 @@
     if (!crown || !title || !winner) return;
     const h = run
       ? fallen(crown, title, { best: deeper, standings: solo ? null : standingsEl })
-      : victory(crown, title, playerColor(winner.hue), iLost, standingsEl);
+      : victory(crown, title, playerColor(winner.hue), iLost);
     return () => h.stop();
   });
 
