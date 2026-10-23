@@ -55,6 +55,8 @@ export function tweaksFor(built: Built, seen: string[] = []): Control[] {
         { value: 'long', label: 'Long' },
         { value: 'scripts', label: 'Other scripts, digits' },
         { value: 'creator', label: 'The creator first' },
+        // (At the foot of lists: under a dock, past the fold.)
+        { value: 'creator-last', label: 'The creator last' },
       ],
     },
     // Every player wears a class's sigil, by their name (lib/classSigils.ts; the frame sets it as it starts).
@@ -92,47 +94,61 @@ export function applyTweaks(built: Built, v: Values, seen: string[]): Built {
   if (!s0) return built;
   const as = valuesOf(tweaksFor(built), {});
   if (TWEAK_KEYS.every((k) => v[k] === undefined || v[k] === as[k])) return built;
-  // (A scene may hand out the same state each time it's built: never change it in place.)
-  let s: GameState = structuredClone(s0);
   const kept = new Set(seen);
+  /** `from` with `v` set over it. */
+  function tweak(from: GameState): GameState {
+    // (A scene may hand out the same state each time it's built: never change it in place.)
+    let s: GameState = structuredClone(from);
 
-  // Who drops or comes back goes through the engine where the game was played
-  // on one (a race ends when only one is left, Delve together moves on
-  // without them), so it shows only what the game would; a game built by hand
-  // just has its flags set.
-  const off = v.offline;
-  if (typeof off === 'string' && off !== '' && s.hostId !== null) {
-    for (const p of s0.players) {
-      const connected = kept.has(p.id) || (off === '-' ? true : off === '*' ? false : p.name === off ? false : p.connected);
-      if (connected === p.connected) continue;
-      if (built.act) s = built.act(s, { type: 'connection', playerId: p.id, connected });
-      else s.players.find((q) => q.id === p.id)!.connected = connected;
+    // Who drops or comes back goes through the engine where the game was played
+    // on one (a race ends when only one is left, Delve together moves on
+    // without them), so it shows only what the game would; a game built by hand
+    // just has its flags set.
+    const off = v.offline;
+    if (typeof off === 'string' && off !== '' && s.hostId !== null) {
+      for (const p of from.players) {
+        const connected = kept.has(p.id) || (off === '-' ? true : off === '*' ? false : p.name === off ? false : p.connected);
+        if (connected === p.connected) continue;
+        if (built.act) s = built.act(s, { type: 'connection', playerId: p.id, connected });
+        else s.players.find((q) => q.id === p.id)!.connected = connected;
+      }
     }
+
+    if (s.hostId !== null && (v.joining !== as.joining || v.watching !== as.watching)) {
+      const joining = Math.max(0, Math.min(MAX_SPECTATORS, Number(v.joining ?? as.joining)));
+      const watching = Math.max(0, Math.min(MAX_SPECTATORS - joining, Number(v.watching ?? as.watching)));
+      const taken = new Set([...s.players, ...(s.spectators ?? [])].map((p) => p.id));
+      const fresh = WATCHERS.filter((n) => !taken.has(pid(n)));
+      /** `n` of `had` (those seen from first, and always), topped up with newcomers. */
+      const some = (had: Spectator[], n: number, stay: boolean) => {
+        const out = [...had.filter((o) => kept.has(o.id)), ...had.filter((o) => !kept.has(o.id))].slice(0, Math.max(n, had.filter((o) => kept.has(o.id)).length));
+        while (out.length < n && fresh.length) out.push(spectator(fresh.shift()!, stay));
+        return out;
+      };
+      const had = s.spectators ?? [];
+      s.spectators = [...some(had.filter((o) => !o.stay), joining, false), ...some(had.filter((o) => o.stay), watching, true)];
+    }
+
+    rename(s, v.names);
+    return s;
   }
 
-  if (s.hostId !== null && (v.joining !== as.joining || v.watching !== as.watching)) {
-    const joining = Math.max(0, Math.min(MAX_SPECTATORS, Number(v.joining ?? as.joining)));
-    const watching = Math.max(0, Math.min(MAX_SPECTATORS - joining, Number(v.watching ?? as.watching)));
-    const taken = new Set([...s.players, ...(s.spectators ?? [])].map((p) => p.id));
-    const fresh = WATCHERS.filter((n) => !taken.has(pid(n)));
-    /** `n` of `had` (those seen from first, and always), topped up with newcomers. */
-    const some = (had: Spectator[], n: number, stay: boolean) => {
-      const out = [...had.filter((o) => kept.has(o.id)), ...had.filter((o) => !kept.has(o.id))].slice(0, Math.max(n, had.filter((o) => kept.has(o.id)).length));
-      while (out.length < n && fresh.length) out.push(spectator(fresh.shift()!, stay));
-      return out;
-    };
-    const had = s.spectators ?? [];
-    s.spectators = [...some(had.filter((o) => !o.stay), joining, false), ...some(had.filter((o) => o.stay), watching, true)];
-  }
+  // The states the room moves on to are set the same way (the run played on into a zone).
+  const steps = built.steps?.map((st) => ('then' in st ? { ...st, then: tweak(st.then) } : st));
+  return { ...built, state: tweak(s0), ...(steps ? { steps } : {}) };
+}
 
-  if (v.names === 'long' || v.names === 'scripts') {
-    const names = v.names === 'long' ? LONG : SCRIPTS;
-    [...s.players, ...(s.spectators ?? [])].forEach((p, i) => (p.name = names[i % names.length]));
-  } else if (v.names === 'creator' && s.players[0]) {
-    s.players[0].name = CREATOR;
-    s.players[0].hue = RUBY;
+/** The players' (and watchers') names as `names` has them, in place. */
+function rename(s: GameState, names: Value | undefined) {
+  if (names === 'long' || names === 'scripts') {
+    const list = names === 'long' ? LONG : SCRIPTS;
+    [...s.players, ...(s.spectators ?? [])].forEach((p, i) => (p.name = list[i % list.length]));
+  } else if (names === 'creator' || names === 'creator-last') {
+    const p = names === 'creator' ? s.players[0] : s.players.at(-1);
+    if (!p) return;
+    p.name = CREATOR;
+    p.hue = RUBY;
   }
-  return { ...built, state: s };
 }
 
 /** The players a scene is seen from (its seats', or the one it was built for). */

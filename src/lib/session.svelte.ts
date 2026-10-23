@@ -83,7 +83,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
-import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
+import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenIdle } from './idle';
 import { frameEvent } from './fpsMeter';
@@ -1314,12 +1314,12 @@ class Session {
     const entry: CursorEntry = at ? (ms === undefined ? [key, ...at] : [key, ...at, ms]) : [key];
     this.cursorOut.put(entry, [...this.guests].flatMap(([c, g]) => (g.playerId && g.playerId !== from ? [c] : [])));
     if (from !== this.myPlayerId) peerCursors.set(key, at, ms);
-    // A click is quicker than a batch: a press or its release goes at once.
+    // A click is quicker than a batch: a press or its release goes at once, and a tap.
     const pressed = !!at && actionOf(at[3]) === PRESSED;
     const changed = pressed !== (this.cursorPressed.get(key) ?? false);
     if (at) this.cursorPressed.set(key, pressed);
     else this.cursorPressed.delete(key);
-    this.planCursors(changed);
+    this.planCursors(changed || (!!at && actionOf(at[3]) === TAP));
   }
 
   /**

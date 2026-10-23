@@ -27,7 +27,7 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { lastSynced, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -316,8 +316,10 @@
                 <button class="reset" onclick={() => ((unpairing = false), unpair())}>Unpair</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (unpairing = false)}>Keep it</button></span
               >
             {:else if paired}
-              <span
-                ><span class="light" class:on={sync.status === 'linked'} aria-hidden="true"></span>{syncLine()}
+              <!-- When it last synced on a line of its own, by the light: the two sentences never break mid-way into each other. -->
+              {@const since = lastSynced()}
+              <span class="paired"
+                ><span class="light" class:on={sync.status === 'linked'} aria-hidden="true"></span>{#if since}{since}<br />{/if}{syncLine(false)}
                 <button class="reset" onclick={() => (unpairing = true)}>Unpair</button></span
               >
             {/if}
@@ -646,6 +648,15 @@
     border-radius: 50%;
     border: 1px solid var(--gold-lo);
     vertical-align: 0.08em;
+  }
+  /* Every line after the light's in line with the words beside it, the light hung out in front. */
+  .sync-row .paired {
+    padding-left: calc(0.95em + 2px);
+    text-indent: calc(-0.95em - 2px);
+  }
+  /* (Inherited: Unpair, a box of its own, keeps its words where it is.) */
+  .sync-row .paired > * {
+    text-indent: 0;
   }
   .sync-row .light.on {
     border-color: transparent;

@@ -27,6 +27,7 @@
   import Avatar from './Avatar.svelte';
   import { actionOf, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
+  import { keyTap } from '../lib/pointerAnchor';
 
   let {
     drawn = null,
@@ -191,9 +192,10 @@
     return n === 0 ? 'no votes' : `${n} ${n === 1 ? 'vote' : 'votes'}${yours}`;
   }
 
+  /** Votes for `category`; whether it did. */
   function vote(category: string) {
     const i = s.offered.indexOf(category);
-    if (!canVote || !faceUp(i) || myVote === category) return;
+    if (!canVote || !faceUp(i) || myVote === category) return false;
     sfx('vote', { from: { from: cardEls[i] } });
     // The card's hover fire goes out: it stands lit as yours now (.voted).
     burning?.stop();
@@ -201,6 +203,7 @@
     const frame = cardEls[i]?.querySelector('.frame');
     if (frame && fxActive()) onCards(() => outline(frame, { color: [2.2, 1.6, 0.7], width: 10, intensity: 0.6, life: 0.45, fadeIn: 0.04 }));
     session.dispatch({ type: 'vote', category });
+    return true;
   }
 
   /** Svelte action: a vote's mark lands on its card (not the ones already there as the screen opens). */
@@ -641,10 +644,11 @@
   }
   $effect(() => () => burning?.stop());
 
+  /** Picks `category` (votes for it, together); whether it did. */
   function pick(category: string) {
     if (coop) return vote(category);
     const i = s.offered.indexOf(category);
-    if (!mine || picked || !faceUp(i)) return;
+    if (!mine || picked || !faceUp(i)) return false;
     picked = category;
     burning?.stop();
     burning = null;
@@ -658,6 +662,7 @@
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
     setTimeout(() => (picked = null), 2500);
+    return true;
   }
 
   /** An option's key (settings page) picks its card, or votes for it, as a click would. */
@@ -670,7 +675,8 @@
     const cat = n === null ? undefined : s.offered[n];
     if (cat === undefined || !mine) return;
     e.preventDefault();
-    pick(cat);
+    // Shown to the others as a tap on the card (keyTap).
+    if (pick(cat)) keyTap(`card:${n}`);
   }
 </script>
 

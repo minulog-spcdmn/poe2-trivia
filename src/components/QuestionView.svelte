@@ -16,6 +16,7 @@
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
   import { untrack, type Snippet } from 'svelte';
+  import { keyTap } from '../lib/pointerAnchor';
   import { motion } from '../lib/motion.svelte';
   import {
     FILL_START,
@@ -32,7 +33,7 @@
   import { FILL_LEAD } from '../lib/soundDesign';
   import { flameOf, heatOf, streakOf, type Flame } from '../lib/fx/streaks';
   import { scoreRowOf } from '../lib/scoreRows';
-  import { fxActive, type Handle } from '../lib/fx/core';
+  import { fxActive, overPage, type Handle } from '../lib/fx/core';
   import { dock, flat, phone, short, sideBySide, upright } from '../lib/layout';
   import { portal } from '../lib/portal';
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
@@ -907,13 +908,19 @@
     // The player's keys (settings page): an option's, Next's, Detonate's.
     const action = actionOf(e);
     const n = optionIndex(action);
+    // Each shown to the others as a tap on what it did (keyTap).
     if (n !== null) {
-      if (!reveal && !waiting && n < count) answer(n);
+      if (reveal || waiting || n >= count) return;
+      const was = chosen;
+      answer(n);
+      if (chosen !== was) keyTap(`opt:${n}`);
     } else if (action === 'next' && reveal && canNext) {
       e.preventDefault();
+      keyTap('next');
       next();
     } else if (action === 'detonate' && blastSlot && canBlast) {
       e.preventDefault();
+      if (!blasting) keyTap('blast');
       blastThrough();
     }
   }
@@ -1468,7 +1475,7 @@
            button goes and the bar stays, so nothing under it moves). A new dock at the reveal, so it lifts the answers to keep
            in view above itself. -->
       {#key !!reveal}
-        <div class="dock" data-cursor="footer" use:portal use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
+        <div class="dock" data-cursor="footer" use:portal use:overPage use:dock={keepInView} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
           {@render footer()}
         </div>
       {/key}

@@ -122,6 +122,8 @@ type LiveShape = ShapeSpec & {
   page: boolean;
   /** Light of what stands over the page (a toast: overPage), which is the page's again while a dialog is open over both. */
   front: boolean;
+  /** Whose light it is (lightOf's element, or its anchor), for a front that comes or goes while it plays (see overPage). */
+  owner: Anchor;
   f: ShapeFrame;
 };
 
@@ -421,6 +423,7 @@ export function shape(spec: ShapeSpec): ShapeHandle {
     opacity: 1,
     page: onPage(ownerNow ?? spec.at),
     front: !openDialog().backdrop && inFront(ownerNow ?? spec.at),
+    owner: ownerNow ?? spec.at,
     f: { hw: 0, hh: 0, k: 1, q: new Array(12).fill(0) },
   };
   shapes.push(s);
@@ -1121,11 +1124,27 @@ function inFront(a: Anchor): boolean {
  * light hides behind its box, as behind an open dialog's, and its own (from
  * effects on it, or made for it with lightOf) shows over it. Behind an open
  * dialog, its shapes hide with the page's; its particles, which live a
- * moment, keep showing for the rest of theirs.
+ * moment, keep showing for the rest of theirs. With `on` false it stands
+ * over nothing (a sticky bar, see-through till it sticks); as it comes and
+ * goes, the light already playing on it goes with it, its own or the page's.
  */
-export function overPage(node: HTMLElement) {
-  fronts.add(node);
+export function overPage(node: HTMLElement, on = true) {
+  const set = (o: boolean) => {
+    if (o === fronts.has(node)) return;
+    if (o) fronts.add(node);
+    else fronts.delete(node);
+    // (Behind an open dialog it's all the page's either way.)
+    if (openDialog().backdrop) return;
+    for (const s of shapes) {
+      if (s.owner instanceof Element && node.contains(s.owner)) {
+        s.front = o;
+        s.page = !o;
+      }
+    }
+  };
+  set(on);
   return {
+    update: set,
     destroy() {
       fronts.delete(node);
     },

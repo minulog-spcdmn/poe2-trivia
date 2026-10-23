@@ -10,7 +10,7 @@
   import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { onDestroy, tick, untrack, type Snippet } from 'svelte';
-  import { fxActive, onFxChange, type Handle } from '../lib/fx/core';
+  import { fxActive, onFxChange, overPage, type Handle } from '../lib/fx/core';
   import {
     FILL_SPAN,
     FILL_START,
@@ -749,7 +749,7 @@
 <!-- On phones the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
-<div class="strip" data-cursor="board" class:stuck bind:this={strip}>
+<div class="strip" data-cursor="board" class:stuck use:overPage={stuck} bind:this={strip}>
   <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
