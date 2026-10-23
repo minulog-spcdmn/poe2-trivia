@@ -17,9 +17,12 @@ export function glintAt(x: number, y: number): number {
   return Math.exp(-y * y * 70 - x * 2.4) + Math.exp(-x * x * 70 - y * 2.4) + 1.5 * Math.exp(-(x * x + y * y) * 8);
 }
 
-/** The texture, row by row, two floats a texel. */
+let made: Float32Array | null = null;
+
+/** The texture, row by row, two floats a texel. Made once. */
 export function curves(): Float32Array {
-  const out = new Float32Array(CURVES * CURVES * 2);
+  if (made) return made;
+  const out = (made = new Float32Array(CURVES * CURVES * 2));
   for (let j = 0; j < CURVES; j++) {
     for (let i = 0; i < CURVES; i++) {
       const o = (j * CURVES + i) * 2;

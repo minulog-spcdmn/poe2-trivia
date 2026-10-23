@@ -285,6 +285,8 @@ export type BlastSmoke = {
   phone: boolean;
   /** Seconds it runs: then it calls `done`. */
   seconds: number;
+  /** When the blast went off (performance.now()): a smoke started late (its code still loading) catches up to it. */
+  start: number;
   done: () => void;
 };
 
@@ -308,7 +310,7 @@ export function blastSmoke(o: BlastSmoke) {
     Object.assign(cv.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%' });
     o.layer.append(cv);
     ctx.imageSmoothingQuality = 'high';
-  } else if (!gl) return void setTimeout(o.done, o.seconds * 1000);
+  } else if (!gl) return void setTimeout(o.done, Math.max(0, o.seconds * 1000 - (performance.now() - o.start)));
   const sp = ctx ? sprites() : null;
   const edgeX = side > 0 ? W : 0;
   const inward = -side;
@@ -409,16 +411,40 @@ export function blastSmoke(o: BlastSmoke) {
 
   let t = 0;
   let last = performance.now();
-  const frame = (now: number) => {
-    const mine = !gl || glOwner === me;
-    if (!mine || !(gl?.canvas ?? cv)?.isConnected) return end(mine);
-    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
-    last = now;
+  /** How far behind the blast it starts (s): made up on the first frame. */
+  let behind = Math.min(o.seconds, Math.max(0, (last - o.start) / 1000));
+  /** Moves it all on by dt (s). */
+  const advance = (dt: number) => {
     t += dt;
     for (const b of smoke) {
       b.age += dt;
       if (b.age >= 0 && b.age <= b.life) move(b, dt, b.drag, -b.lift, SMOKE_STIR, t);
     }
+    for (const b of fire) {
+      b.age += dt;
+      if (b.age >= 0 && b.age <= b.life) move(b, dt, b.drag, -b.lift, 0, t);
+    }
+    for (const p of sparks) {
+      p.age += dt;
+      if (p.age >= 0 && p.age <= p.life) move(p, dt, 1.3, 420, 0, t);
+    }
+    for (const c of chips) {
+      c.age += dt;
+      if (c.age < 0 || c.age > c.life) continue;
+      move(c, dt, 1.1, 950, 0, t);
+      c.rot += c.spin * dt;
+    }
+  };
+  const frame = (now: number) => {
+    const mine = !gl || glOwner === me;
+    if (!mine || !(gl?.canvas ?? cv)?.isConnected) return end(mine);
+    // (A long gap, a hidden tab say, counts as one frame's step; how far
+    // behind the blast it started is made up in steps of that size.)
+    let dt = Math.min(0.05, Math.max(0, (now - last) / 1000)) + behind;
+    behind = 0;
+    last = now;
+    for (; dt > 0.05; dt -= 0.05) advance(0.05);
+    advance(dt);
     if (gl) {
       let n = 0;
       for (const b of smoke) {
@@ -442,9 +468,7 @@ export function blastSmoke(o: BlastSmoke) {
       // The fire, its light added.
       ctx.globalCompositeOperation = 'lighter';
       for (const b of fire) {
-        b.age += dt;
         if (b.age < 0 || b.age > b.life) continue;
-        move(b, dt, b.drag, -b.lift, 0, t);
         const u = b.age / b.life;
         drawBillow(b, sp.fire[b.v], Math.min(1, u / 0.08) * Math.pow(1 - u, 1.5));
       }
@@ -467,9 +491,7 @@ export function blastSmoke(o: BlastSmoke) {
       ctx.setTransform(k2, 0, 0, k2, 0, 0);
       ctx.lineCap = 'round';
       for (const p of sparks) {
-        p.age += dt;
         if (p.age < 0 || p.age > p.life) continue;
-        move(p, dt, 1.3, 420, 0, t);
         ctx.globalAlpha = Math.pow(1 - p.age / p.life, 1.2);
         ctx.lineWidth = 1.6;
         ctx.strokeStyle = 'rgb(255, 170, 80)';
@@ -486,10 +508,7 @@ export function blastSmoke(o: BlastSmoke) {
       // Rock chips, tumbling: a face of each catches the light as it turns.
       ctx.globalCompositeOperation = 'source-over';
       for (const c of chips) {
-        c.age += dt;
         if (c.age < 0 || c.age > c.life) continue;
-        move(c, dt, 1.1, 950, 0, t);
-        c.rot += c.spin * dt;
         const u = c.age / c.life;
         ctx.globalAlpha = u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3;
         const cos = Math.cos(c.rot);

@@ -378,10 +378,15 @@ export function blastAway({ node, side, mine }: BlastAway) {
   }
   // The smoke rolling in after it (and, without the overlay, the fire, the
   // shockwave, the chips and the sparks), drawn as they move: lib/blastSmoke.ts.
-  // (Should it fail to load, the layer still goes, below.)
+  // (Should it load late, it catches up; should it fail to, the layer goes
+  // when the blast would have ended.)
+  const start = performance.now();
   loadSmoke().then(
-    (m) => m.blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, done: () => layer.remove() }),
-    (err) => console.error("The blast's smoke couldn't load", err),
+    (m) => m.blastSmoke({ layer, W, H, Z, side, y, S, whole: !fx, phone, seconds: BLAST_MS / 1000, start, done: () => layer.remove() }),
+    (err) => {
+      console.error("The blast's smoke couldn't load", err);
+      setTimeout(() => layer.remove(), Math.max(0, BLAST_MS - (performance.now() - start)));
+    },
   );
 
   // The fire and light, and the screen shaking as the shockwave hits (the effects overlay's).

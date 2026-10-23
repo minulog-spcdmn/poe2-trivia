@@ -2,7 +2,8 @@
 // slivers, each with five corners jittered its own way and cut in three
 // faces by ridges that meet off its middle, baked into a texture rather than
 // worked out for every pixel a shard covers (which made the particles'
-// shader twice as slow to compile). Each texel holds how much of it each
+// shader twice as slow to compile): a layer each, so however small a shard
+// is drawn (a small mip), it never takes in another's. Each texel holds how much of it each
 // face covers (red, green, blue: their sum the sliver's own cover), and in
 // alpha the light it gives whichever way it's turned (SHARD_GLOW: a little
 // over all of it, more on its rim and along the ridges where its faces
@@ -11,12 +12,9 @@
 // the light each face catches is worked out once a shard, not once a pixel.
 
 export const SHARD_KINDS = 16;
-/** Cells across the atlas (and down). */
-export const SHARD_GRID = 4;
-/** A cell's side, in texels. */
+/** A layer's side, in texels. */
 export const SHARD_CELL = 32;
-export const SHARD_ATLAS = SHARD_GRID * SHARD_CELL;
-/** How far a cell reaches from its middle in the sliver's own units (its corners within 1), so a margin is left empty. */
+/** How far a layer reaches from its middle in the sliver's own units (its corners within 1), so a margin is left empty. */
 export const SHARD_REACH = 1.15;
 
 /** Samples a texel takes across (and down). */
@@ -70,11 +68,14 @@ export function shardFaces(): Float32Array {
   return new Float32Array(allKinds().flatMap((k) => k.faces.flat()));
 }
 
-/** The atlas, row by row, four bytes a texel (see the top of the file). */
+let atlas: Uint8Array | null = null;
+
+/** The atlas, layer by layer and row by row, four bytes a texel (see the top of the file). Made once. */
 export function shardAtlas(): Uint8Array {
-  const out = new Uint8Array(SHARD_ATLAS * SHARD_ATLAS * 4);
+  if (atlas) return atlas;
+  const out = (atlas = new Uint8Array(SHARD_KINDS * SHARD_CELL * SHARD_CELL * 4));
   const n = SAMPLES * SAMPLES;
-  /** A sample's place in its cell, in the sliver's units, by its column (or row) of samples across the cell (the middle one a texel's middle). */
+  /** A sample's place in its layer, in the sliver's units, by its column (or row) of samples across it (the middle one a texel's middle). */
   const at = new Float64Array(SHARD_CELL * SAMPLES);
   for (let i = 0; i < at.length; i++) at[i] = (((i + 0.5) / (SHARD_CELL * SAMPLES)) * 2 - 1) * SHARD_REACH;
   /** Half a texel's diagonal, in the sliver's units: nothing in a texel is further than that from its middle. */
@@ -96,8 +97,6 @@ export function shardAtlas(): Uint8Array {
   allKinds().forEach(({ edges, faces }, k) => {
     for (let i = 0; i < 5; i++) e.set(edges[i], i * 3);
     for (let j = 0; j < 3; j++) f.set(faces[j].slice(0, 2), j * 2);
-    const cx = (k % SHARD_GRID) * SHARD_CELL;
-    const cy = Math.floor(k / SHARD_GRID) * SHARD_CELL;
     for (let ty = 0; ty < SHARD_CELL; ty++) {
       for (let tx = 0; tx < SHARD_CELL; tx++) {
         const mx = at[tx * SAMPLES + (SAMPLES >> 1)];
@@ -131,7 +130,7 @@ export function shardAtlas(): Uint8Array {
             }
           }
         }
-        const o = ((cy + ty) * SHARD_ATLAS + cx + tx) * 4;
+        const o = ((k * SHARD_CELL + ty) * SHARD_CELL + tx) * 4;
         out[o] = Math.round((cover[0] / n) * 255);
         out[o + 1] = Math.round((cover[1] / n) * 255);
         out[o + 2] = Math.round((cover[2] / n) * 255);
