@@ -105,7 +105,7 @@
                 Rules changed mid-run<small>: resumed after an update, so never counted</small>
               {:else}
                 Other rules<small
-                  >: kept apart from today's{#if g.solo !== null}{' • '}deepest alone <span class="n">{shownDepth(g.solo)}</span>{/if}{#if g.together !== null}{' • '}together <span
+                  >: kept apart from today’s{#if g.solo !== null}{' • '}deepest alone <span class="n">{shownDepth(g.solo)}</span>{/if}{#if g.together !== null}{' • '}together <span
                       class="n">{shownDepth(g.together)}</span
                     >{/if}</small
                 >

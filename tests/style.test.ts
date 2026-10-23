@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
+import { playerText, straightApostrophe, straightQuotes } from './playerText.ts';
 
 const root = join(import.meta.dirname, '..');
 const text = new Set(['.ts', '.mjs', '.js', '.svelte', '.css', '.html', '.md', '.json', '.yml', '.svg', '.py', '.txt']);
@@ -50,6 +51,25 @@ test('no em dashes anywhere in the project (use • or ; instead)', () => {
       .forEach((line, i) => {
         if (emDash.test(line)) bad.push(`${f}:${i + 1}`);
       });
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('player text uses curly apostrophes and quotes (’ “ ”), never straight ones', () => {
+  const texts = playerText();
+  assert.ok(texts.some((t) => t.file === 'src/components/Lobby.svelte') && texts.some((t) => t.file === 'index.html'), 'the player text is found');
+  const bad: string[] = [];
+  for (const { file, src, pieces } of texts) {
+    const at = (i: number) => `${file}:${src.slice(0, i).split('\n').length}`;
+    const quoted = new Set<string>();
+    for (const p of pieces) {
+      const raw = src.slice(p.start, p.end);
+      if (straightApostrophe(raw, p.afterExpr)) bad.push(`${at(p.start)} ' → ’: ${raw.trim().slice(0, 80)}`);
+      if (!quoted.has(p.whole) && straightQuotes(p.whole)) {
+        quoted.add(p.whole);
+        bad.push(`${at(p.start)} " → “ ”: ${p.whole.trim().slice(0, 80)}`);
+      }
+    }
   }
   assert.deepEqual(bad, []);
 });

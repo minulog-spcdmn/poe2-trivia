@@ -53,7 +53,7 @@ export const START_LINES: readonly string[] = [
   'Wraeclast is hollow beneath',
   'Wraeclast dreams below',
   'Even gods fear the deep',
-  "Orbs won't save you here",
+  "Orbs won’t save you here",
   'Keep your flask full, exile',
   // The alchemist's work.
   'Solve et coagula',

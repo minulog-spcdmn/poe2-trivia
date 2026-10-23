@@ -38,7 +38,7 @@ countTime();
 const TOGGLED: Record<Toggled, string> = {
   skipped: 'Visits from this browser are no longer counted. Open poe2.quest/#toggle-goatcounter again to count them.',
   counted: 'Visits from this browser are counted again.',
-  unsaved: "This browser can't change the setting: its site storage is blocked or full.",
+  unsaved: "This browser can’t change the setting: its site storage is blocked or full.",
 };
 onCountToggle((t) => toasts.show(TOGGLED[t], t === 'unsaved' ? 'error' : 'info', { title: 'Visit counts' }));
 // No browser menu on a right click: it brings the system's cursor, and the

@@ -15,7 +15,7 @@ export const WAY_OUT_CARD: WayOutDesign = {
   tag: (haul) => (haul ? `Keep ${haul} ${haul === 1 ? 'Ward' : 'Wards'}` : 'Leave'),
   note: (haul, team) =>
     haul
-      ? `Carry ${team ? "the team's" : 'your'} ${haul === 1 ? 'ward' : `${words[haul]} wards`} back to the light and bank ${haul === 1 ? 'it' : 'them'}; then go a depth deeper.`
+      ? `Carry ${team ? "the team’s" : 'your'} ${haul === 1 ? 'ward' : `${words[haul]} wards`} back to the light and bank ${haul === 1 ? 'it' : 'them'}; then go a depth deeper.`
       : 'Climb back to the light and go a depth deeper.',
   ink: {
     '--ink': '#f2c46a',
