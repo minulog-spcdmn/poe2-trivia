@@ -1,8 +1,8 @@
 // What the effects' particle shader looks up rather than works out
-// (lib/fx/shardAtlas.ts, lib/fx/curves.ts). A shard's layer is read out to
-// its edge and held there, so the edge is left empty (else a shard would
-// streak out across its quad); its faces share each texel, never more than
-// all of it; and the curves end where the shader takes them to.
+// (lib/fx/shardAtlas.ts, lib/fx/curves.ts). Every sliver fits inside its
+// layer, its edge left empty (the shader reads nothing past it, so one that
+// ran up to it would be cut off there); its faces share each texel, never
+// more than all of it; and the curves end where the shader takes them to.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SHARD_CELL, SHARD_KINDS, shardAtlas, shardFaces } from '../src/lib/fx/shardAtlas.ts';

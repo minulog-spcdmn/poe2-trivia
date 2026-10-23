@@ -384,7 +384,7 @@ export function blastSmoke(o: BlastSmoke) {
   const Z = o.Z;
   const move = (b: { x: number; y: number; vx: number; vy: number }, dt: number, drag: number, gravity: number, stir: number, t: number) => {
     if (stir) {
-      const f = flowAt(b.x * Z, b.y * Z, o.whole ? t : airNow());
+      const f = flowAt(b.x * Z, b.y * Z, o.whole ? t : airNow() - lag);
       b.vx += (f[0] * stir * dt) / Z;
       b.vy += (f[1] * stir * dt) / Z;
     }
@@ -413,6 +413,8 @@ export function blastSmoke(o: BlastSmoke) {
   let last = performance.now();
   /** How far behind the blast it starts (s): made up on the first frame. */
   let behind = Math.min(o.seconds, Math.max(0, (last - o.start) / 1000));
+  /** While making that up, how far behind now the step being made is (s): the effects' air as it was then. */
+  let lag = 0;
   /** Moves it all on by dt (s). */
   const advance = (dt: number) => {
     t += dt;
@@ -443,7 +445,11 @@ export function blastSmoke(o: BlastSmoke) {
     let dt = Math.min(0.05, Math.max(0, (now - last) / 1000)) + behind;
     behind = 0;
     last = now;
-    for (; dt > 0.05; dt -= 0.05) advance(0.05);
+    for (; dt > 0.05; dt -= 0.05) {
+      lag = dt - 0.05;
+      advance(0.05);
+    }
+    lag = 0;
     advance(dt);
     if (gl) {
       let n = 0;
