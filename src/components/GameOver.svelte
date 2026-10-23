@@ -20,7 +20,7 @@
   import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { fxActive, fxUserOn, onFxChange } from '../lib/fx/core';
-  import { victory } from '../lib/fx/moments';
+  import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
   import { portal } from '../lib/portal';
@@ -700,6 +700,9 @@
                 class:gone={!local && !x.p.connected}
                 data-cursor="row:{s.players.indexOf(x.p)}"
                 in:rankIn|global={{ i, n: rows.length, top: first }}
+                onanimationstart={(e) => {
+                  if (e.target === e.currentTarget && !e.pseudoElement && e.animationName.endsWith('ignite')) winnerIgnites(e.currentTarget);
+                }}
               >
                 {#if x.p.id === me && pinnable}<span class="anchor" bind:this={myRow}></span>{/if}
                 {@render rankRow(x)}
@@ -1382,8 +1385,8 @@
     image-rendering: auto;
   }
   /* Set down last (rankIn), the winner's row ignites: its edge flares and
-     settles (the effects' outline round it is its glow: a soft one in CSS
-     would band), and from then on the headline's light runs across it with the
+     settles, a soft glow swelling round it meanwhile (lib/fx/moments.ts
+     winnerIgnites, as it starts: in CSS it would band), and from then on the headline's light runs across it with the
      headline's own, in step (.gold's gleam). */
   .ranking li.first {
     animation: ignite 1.2s calc(var(--winner-in) + 0.15s) var(--ease-out) backwards;

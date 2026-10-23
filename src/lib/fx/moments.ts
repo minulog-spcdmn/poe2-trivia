@@ -1329,6 +1329,16 @@ export function victory(avatar: Element, title: Element, color: string, lost: bo
   };
 }
 
+/**
+ * The winner's row on the end screen ignites as it's set down (GameOver's
+ * .first): a soft gold glow swells round it with its flaring edge, and
+ * settles. Here, not in CSS, where a glow that soft would band.
+ */
+export function winnerIgnites(row: Element) {
+  if (!fxActive()) return;
+  outline(row, { color: C.goldPale, width: 12, life: 1.2, fadeIn: 0.36, intensity: 0.5 });
+}
+
 // ---------- lobby and home ----------
 
 /** A room-code letter slams into place. */
