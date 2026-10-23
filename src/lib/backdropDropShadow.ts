@@ -4,24 +4,28 @@
 // box-shadows they can't be drawn in closed form. Instead each tagged element
 // gets an alpha mask of its shape: its image drawn as `object-fit` does, or
 // its text drawn glyph by glyph at the positions the browser laid them out.
-// The mask is blurred once, on the CPU in floating point, and stored at
-// 16-bit precision (two 8-bit channels) so the shadow's own gradient can't
-// band; the backdrop then samples it every frame through the element's
-// current position, rotation, scale and opacity, and dithers the result.
+// The mask is blurred once, in floating point in a worker (dropBlur.ts),
+// and stored at 16-bit precision (two 8-bit channels) so the shadow's own
+// gradient can't band; the backdrop then samples it every frame through the
+// element's current position, rotation, scale and opacity, and dithers the
+// result.
 //
 // Usage: tag the element with `use:backdropDropShadow`, declare its shadows
 // in `--drop-shadow` (at most two drop-shadow() functions), and paint them as
 // `filter: … var(--drop-shadow-paint, var(--drop-shadow))`. While the backdrop
 // draws the element it sets `data-bs-drop`, which (via app.css) swaps the
 // drop-shadow part of the filter for a no-op. Whenever it can't (3D turns,
-// fonts or image not ready, its shape still changing, over budget, no WebGL), the attribute
-// stays off and CSS paints the shadow as usual.
+// fonts or image not ready, its shape still changing or its blur on its way,
+// over budget, no WebGL), the attribute stays off and CSS paints the shadow
+// as usual.
 //
 // Only text and <img> content is masked: a text element's non-text children
 // (such as the title's thin decorative lines) cast no shadow here. Their CSS
 // shadow is faint enough not to matter.
 
 import { backgroundPainter } from './backdropShadow';
+import { blurMask } from './dropBlur';
+import type { BlurAnswer, BlurJob } from './dropBlurWorker';
 import { linearOf, type Lin } from './linear';
 import { opacityOf } from './opacity';
 
@@ -36,6 +40,8 @@ export function backdropDropShadow(node: HTMLElement) {
       node.removeAttribute('data-bs-drop');
       masks.delete(node);
       unsettled.delete(node);
+      blurring.delete(node);
+      unmaskable.delete(node);
       atlasDirty = true;
     },
   };
@@ -71,6 +77,10 @@ type Mask = {
 const masks = new Map<HTMLElement, Mask>();
 /** Per element, the shape (mask key) it last changed to that has no mask yet (see measureDrops). */
 const unsettled = new Map<HTMLElement, string>();
+/** Per element, the shape whose mask is being blurred in the worker, and the job's id. */
+const blurring = new Map<HTMLElement, { id: number; key: string }>();
+/** Per element, the shape it can't have a mask for (too wide, no glyphs): not tried again until it changes. */
+const unmaskable = new Map<HTMLElement, string>();
 let atlasDirty = true;
 let fontsGeneration = 0;
 if (typeof document !== 'undefined' && document.fonts) {
@@ -196,39 +206,10 @@ function drawContent(
   }
 }
 
-/** Separable Gaussian blur of `src` (w x h), in floating point. */
-function gaussianBlur(src: Float32Array, w: number, h: number, sigma: number): Float32Array {
-  const r = Math.ceil(sigma * 3);
-  const k = new Float32Array(2 * r + 1);
-  let sum = 0;
-  for (let i = -r; i <= r; i++) sum += k[i + r] = Math.exp((-i * i) / (2 * sigma * sigma));
-  for (let i = 0; i < k.length; i++) k[i] /= sum;
-  const tmp = new Float32Array(w * h);
-  const out = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let i = -r; i <= r; i++) {
-        const xx = x + i;
-        if (xx >= 0 && xx < w) v += src[y * w + xx] * k[i + r];
-      }
-      tmp[y * w + x] = v;
-    }
-  }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let i = -r; i <= r; i++) {
-        const yy = y + i;
-        if (yy >= 0 && yy < h) v += tmp[yy * w + x] * k[i + r];
-      }
-      out[y * w + x] = v;
-    }
-  }
-  return out;
-}
+/** The mask's shape: everything but its blur, with the alpha to blur. */
+type Shape = Omit<Mask, 'blur'> & { alpha: Float32Array };
 
-function buildMask(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drops: Drop[], lin: Lin): Mask | null {
+function shapeOf(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drops: Drop[], lin: Lin): Shape | null {
   const w = node.offsetWidth;
   const h = node.offsetHeight;
   const rect = node.getBoundingClientRect();
@@ -284,18 +265,69 @@ function buildMask(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drop
   const px = sctx.getImageData(0, 0, bw, bh).data;
   const alpha = new Float32Array(bw * bh);
   for (let i = 0; i < alpha.length; i++) alpha[i] = px[i * 4 + 3] / 255;
+  return { key, drops, x, y, w: mw, h: mh, sharp, q, bw, bh, alpha, sx: 0, sy: 0, bx: 0, by: 0 };
+}
 
-  const blur = new Uint8Array(bw * bh * 4);
-  drops.slice(0, DROPS_PER_MASK).forEach((d, k) => {
-    const b = gaussianBlur(alpha, bw, bh, d.sigma * q);
-    for (let i = 0; i < b.length; i++) {
-      const v = Math.min(1, Math.max(0, b[i])) * 255;
-      const hi = Math.floor(v);
-      blur[i * 4 + k * 2] = hi;
-      blur[i * 4 + k * 2 + 1] = Math.round((v - hi) * 255);
-    }
+let worker: Worker | null | undefined;
+let lastJob = 0;
+/** What each blur sent to the worker does with its answer. */
+const answers = new Map<number, (blur: Uint8Array) => void>();
+
+/** The worker the masks are blurred in; null where there's none (the blur is done here then). */
+function blurWorker(): Worker | null {
+  if (worker !== undefined) return worker;
+  worker = null;
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const w = new Worker(new URL('./dropBlurWorker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = ({ data }: MessageEvent<BlurAnswer>) => {
+      answers.get(data.id)?.(data.blur);
+      answers.delete(data.id);
+    };
+    // (Failed to load, say: the masks are blurred here from now on, those it had made again.)
+    w.onerror = () => {
+      w.terminate();
+      worker = null;
+      answers.clear();
+      blurring.clear();
+    };
+    worker = w;
+  } catch {
+    worker = null;
+  }
+  return worker;
+}
+
+/**
+ * Makes `node`'s mask for its shape `key`: its shape here, as it must be
+ * (the browser's own layout of it), and its blur in the worker. The mask
+ * comes in a few frames later, CSS painting the shadow meanwhile.
+ */
+function startMask(node: HTMLElement, cs: CSSStyleDeclaration, key: string, drops: Drop[], lin: Lin) {
+  const shape = shapeOf(node, cs, key, drops, lin);
+  if (!shape) {
+    masks.delete(node);
+    unmaskable.set(node, key);
+    atlasDirty = true;
+    return;
+  }
+  const { alpha, ...rest } = shape;
+  const sigmas = drops.slice(0, DROPS_PER_MASK).map((d) => d.sigma * shape.q);
+  const done = (blur: Uint8Array) => {
+    masks.set(node, { ...rest, blur });
+    atlasDirty = true;
+  };
+  const w = blurWorker();
+  if (!w) return done(blurMask(alpha, shape.bw, shape.bh, sigmas));
+  const id = ++lastJob;
+  blurring.set(node, { id, key });
+  answers.set(id, (blur) => {
+    // (Not if its shape changed again meanwhile, or it's gone.)
+    if (blurring.get(node)?.id !== id) return;
+    blurring.delete(node);
+    done(blur);
   });
-  return { key, drops, x, y, w: mw, h: mh, sharp, q, bw, bh, blur, sx: 0, sy: 0, bx: 0, by: 0 };
+  w.postMessage({ id, alpha, bw: shape.bw, bh: shape.bh, sigmas } satisfies BlurJob, [alpha.buffer]);
 }
 
 // ---------- per-frame measurement ----------
@@ -426,21 +458,20 @@ export function measureDrops(
         decl,
         fontsGeneration,
       ].join('|');
-      if (mask && mask.key !== key && unsettled.get(node) !== key) {
-        // Its shape changed since its mask was made, and may go on changing
-        // every frame (an entrance opening its letter-spacing): CSS paints it
-        // until it holds still for a frame, rather than a mask blurred anew
-        // each frame.
-        unsettled.set(node, key);
-        ok = false;
-      } else if (!mask || mask.key !== key) {
-        unsettled.delete(node);
-        mask = buildMask(node, cs!, key, drops, lin!) ?? undefined;
-        if (mask) masks.set(node, mask);
-        else masks.delete(node);
-        atlasDirty = true;
+      if (mask?.key !== key && blurring.get(node)?.key !== key && unmaskable.get(node) !== key) {
+        if (unsettled.get(node) !== key) {
+          // A new shape (a new element's, or one changed since its mask was
+          // made), which may go on changing every frame (an entrance opening
+          // its letter-spacing): CSS paints it until it holds still for a
+          // frame, rather than a mask made anew each frame.
+          unsettled.set(node, key);
+        } else {
+          unsettled.delete(node);
+          startMask(node, cs!, key, drops, lin!);
+          mask = masks.get(node);
+        }
       }
-      ok &&= !!mask;
+      ok &&= mask?.key === key;
     }
     if (!ok) {
       node.removeAttribute('data-bs-drop');
