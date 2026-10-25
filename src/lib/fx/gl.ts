@@ -109,9 +109,12 @@ function drop(gl: WebGL2RenderingContext, started: readonly Started[]) {
 /**
  * Programs started at once (see startPrograms). `read` gives them, in order,
  * or null if one failed (a warning says why) or the context was lost,
- * waiting for them if need be; `cancel` drops them.
+ * waiting for them if need be; `done` is whether it would give them without
+ * waiting (asked without waiting: COMPLETION_STATUS_KHR; without
+ * KHR_parallel_shader_compile there's no asking, and it says so, `read`
+ * waiting as ever); `cancel` drops them.
  */
-export type Pending = { read(): WebGLProgram[] | null; cancel(): void };
+export type Pending = { read(): WebGLProgram[] | null; done(): boolean; cancel(): void };
 
 /**
  * Starts compiling and linking `sources` at once, for what's drawn at once
@@ -121,10 +124,13 @@ export type Pending = { read(): WebGLProgram[] | null; cancel(): void };
  * only whether each linked is asked (see linked).
  */
 export function startPrograms(gl: WebGL2RenderingContext, sources: readonly ProgramSource[]): Pending {
-  gl.getExtension('KHR_parallel_shader_compile');
+  const ext = gl.getExtension('KHR_parallel_shader_compile');
   const started = sources.map((src) => begin(gl, src));
   let over = false;
   return {
+    done() {
+      return over || !ext || gl.isContextLost() || started.every((p) => gl.getProgramParameter(p.prog, ext.COMPLETION_STATUS_KHR));
+    },
     read() {
       if (over) return null;
       over = true;

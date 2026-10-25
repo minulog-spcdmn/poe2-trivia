@@ -200,9 +200,10 @@ function fakeCanvas(gl: object) {
 }
 
 /** Starts the backdrop on a fresh fake context: its logs, and how to step and stop it. */
-function start(parallel = true, fails: string[] = [], floats = true) {
+function start(parallel = true, fails: string[] = [], floats = true, done = false) {
   const { gl, log, state, draws, deleted } = fakeGl(parallel, floats);
   for (const f of fails) state.fails.add(f);
+  state.done = done;
   const canvas = fakeCanvas(gl);
   let lost = false;
   queued = new Map();
@@ -225,11 +226,44 @@ const settle = () => {
 test('the main pass, the soft light and the UI pass all start at once, and are read for the first frame; nothing more is built until the page is idle', () => {
   const b = start();
   assert.ok(b.stop, 'started');
+  assert.deepEqual(b.log, ['link main', 'link smooth', 'link ui']);
+  frame();
   assert.deepEqual(b.log, ['link main', 'link smooth', 'link ui', 'read main', 'read smooth', 'read ui']);
   b.state.done = true;
   frames();
   assert.equal(b.log.length, 6);
   b.stop!();
+});
+
+test('still being built as the page is set up, they are read in its first frame, not before, and that frame is drawn', () => {
+  const b = start();
+  assert.equal(b.draws.length, 0, 'nothing drawn yet');
+  assert.ok(!b.log.some((l) => l.startsWith('read')), 'nothing read yet');
+  frame();
+  assert.ok(b.log.includes('read ui'));
+  assert.ok(
+    b.draws.some((d) => d.kind === 'main' && d.into === 'canvas'),
+    'drawn in that frame',
+  );
+  assert.ok(!b.lost());
+  b.stop!();
+});
+
+test('built already (a warm cache), they are read at once and the first frame drawn before the page is', () => {
+  const b = start(true, [], true, true);
+  assert.deepEqual(b.log, ['link main', 'link smooth', 'link ui', 'read main', 'read smooth', 'read ui']);
+  assert.ok(b.draws.some((d) => d.kind === 'main' && d.into === 'canvas'));
+  b.stop!();
+});
+
+test('stopped before its first frame, the programs are let go unread and nothing is drawn', () => {
+  const b = start();
+  b.stop!();
+  for (const k of ['main', 'smooth', 'ui']) assert.ok(b.deleted.includes(k), b.deleted.join());
+  frames();
+  assert.ok(!b.log.some((l) => l.startsWith('read')));
+  assert.equal(b.draws.length, 0);
+  assert.ok(!b.lost());
 });
 
 test('once the page is idle, one main pass with all the UI parts is built, warmed off the frame, and takes over from the two', () => {
@@ -279,7 +313,7 @@ test('stopped while the merged pass is warmed, it is let go and never shows', ()
 test('on a touch screen the main pass has none of the UI parts, and there is no UI pass', () => {
   coarse = true;
   try {
-    const b = start();
+    const b = start(true, [], true, true);
     assert.deepEqual(b.log, ['link bare', 'link smooth', 'read bare', 'read smooth']);
     b.state.done = true;
     frames();
@@ -292,7 +326,7 @@ test('on a touch screen the main pass has none of the UI parts, and there is no 
 });
 
 test('without a float target to draw into, it is all one main pass, the soft light worked out in it', () => {
-  const b = start(true, [], false);
+  const b = start(true, [], false, true);
   assert.deepEqual(b.log, ['link full', 'read full']);
   b.state.done = true;
   settle();
@@ -310,8 +344,14 @@ test('one failing to build leaves the page to the CSS backdrop', () => {
   const warn = console.warn;
   console.warn = () => {};
   try {
-    const b = start(true, ['ui']);
+    const b = start(true, ['ui'], true, true);
     assert.equal(b.stop, null);
+    // Read in the first frame, the CSS backdrop takes over then.
+    const later = start(true, ['ui']);
+    assert.ok(later.stop);
+    frame();
+    assert.ok(later.lost());
+    later.stop!();
   } finally {
     console.warn = warn;
   }

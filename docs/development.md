@@ -67,7 +67,11 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   The backdrop's lean programs start building before anything else it sets
   up, all at once, so with `KHR_parallel_shader_compile` the driver builds
   them side by side and the first paint waits for the slowest, not their
-  sum. The UI's box shadows and fills are the slowest part to build, so
+  sum. Not yet built once the rest of the page is set up (a cold shader
+  cache), they're read in the frame the page is first painted in, its first
+  call, so the page is set up meanwhile rather than waiting on the driver
+  (asked how a link went, the page's main thread and the GPU process's wait
+  for it: 150 ms of a 278 ms task in a trace). The UI's box shadows and fills are the slowest part to build, so
   they're a pass of their own (`uiFrag`), drawn first into a layer of their
   own (a half-float target, as the soft light is), which the main pass lays
   over the scene before its drop shadows, the dialog's dimming and the
