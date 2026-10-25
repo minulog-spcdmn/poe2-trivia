@@ -324,14 +324,15 @@ export function countStep(name: string) {
 }
 
 /**
- * The save written to on a newcomer's visit (codex.ts): their first item met,
+ * The save written to on a newcomer's visit (codex.ts onSaved): their first item met,
  * in a game or Today's unique, which puts them in that week's cohort
  * ("cohort/…"). Counted as a step is ("new/saved"), so a week's cohort is
  * set against how many joined it.
  */
 export function countSaved() {
   if (!counting || notCounted()) return;
-  if (readPlayed && played === undefined) newcomer = firstVisit(playedHere(), Date.now());
+  // (Read without keeping it: it's just been written to, and the visit's own read, still to come, would take a newcomer's for a save.)
+  if (readPlayed && played === undefined) newcomer = firstVisit(readPlayed(), Date.now());
   if (newcomer) countReach('new/saved');
 }
 

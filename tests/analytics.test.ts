@@ -94,6 +94,10 @@ test('a day with more Delve depths than runs ended is left out of the depths', (
   assert.deepEqual(l.delve.leftOut, ['2026-10-15']);
   assert.equal(l.delve.total, 3);
   assert.deepEqual(l.delve.ranges, [{ from: 0, count: 3 }]);
+  // A run ended just before midnight, its depth counted just after: the day after keeps its depths.
+  const late = countsOf([path('end/delve', [2, 1, 0]), path('delve/depth-0-9', [1, 2, 0])], DAYS);
+  assert.deepEqual(late.delve.leftOut, []);
+  assert.equal(late.delve.total, 3);
 });
 
 test('a total is of the days asked for alone, not all the call read', () => {

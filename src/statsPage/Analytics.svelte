@@ -993,8 +993,10 @@
     animation: wait 1.6s ease-in-out infinite;
   }
   .waiting .chart {
-    grid-area: chart;
     min-height: 450px;
+  }
+  .waiting.ov .chart {
+    grid-area: chart;
   }
   .waiting .table {
     min-height: 320px;

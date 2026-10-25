@@ -367,8 +367,8 @@ export function utcPerDay(p: PathCount | undefined, days: string[], zone?: strin
  */
 export function countsOf(counted: PathCount[], days: string[], zone?: string, until: number | null = null): Counts {
   // Each path's total over these days alone, not all the call asked for: a period held at where counting began starts after it (countedSpan). GoatCounter's total is its days' sum.
-  const within = (p: PathCount): PathCount => ({ ...p, count: days.reduce((n, d) => n + (p.days[d] ?? 0), 0) });
-  const paths = underNamesNow(counted.map(within));
+  const windowed = counted.map((p): PathCount => ({ ...p, count: days.reduce((n, d) => n + (p.days[d] ?? 0), 0) }));
+  const paths = underNamesNow(windowed);
   const hour = until === null ? null : Math.floor(until);
   const byPath = new Map(paths.map((p) => [p.path, p]));
   const count = (path: string) => byPath.get(path)?.count ?? 0;
@@ -393,7 +393,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       const m = /^(\d+)(?:-(\d+))?p$/.exec(p.path.slice(`size/${mode}-`.length));
       if (m) sizes.push({ from: Number(m[1]), to: Number(m[2] ?? m[1]), count: p.count });
     }
-    const names = counted.filter((p) => within(p).count > 0 && currentName(p.path) === `play/${mode}`).map((p) => p.path);
+    const names = windowed.filter((p) => p.count > 0 && currentName(p.path) === `play/${mode}`).map((p) => p.path);
     const row = { mode, started: count(`play/${mode}`), finished: count(`end/${mode}`), screen: count(`screen/${mode}`) + hotSeat(mode), sizes: sizes.sort(bySize), paths: names };
     if (row.started || row.finished) rows.push(row);
   }
@@ -403,8 +403,10 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     const m = /^delve\/depth-(\d+)-\d+$/.exec(p.path);
     return m ? [{ from: Number(m[1]), p }] : [];
   });
-  const delveEnds = byPath.get('end/delve');
-  const leftOut = days.filter((d) => depthPaths.reduce((n, { p }) => n + (p.days[d] ?? 0), 0) > (delveEnds?.days[d] ?? 0));
+  const depthsOn = (d: string) => depthPaths.reduce((n, { p }) => n + (p.days[d] ?? 0), 0);
+  const endsOn = (d: string) => byPath.get('end/delve')?.days[d] ?? 0;
+  // (The depth goes a moment after the end: a run that ended just before midnight has it the day after, made up for by the day before's ends without one.)
+  const leftOut = days.filter((d) => depthsOn(d) > endsOn(d) + Math.max(0, endsOn(addDays(d, -1)) - depthsOn(addDays(d, -1))));
   const ranges = new Map<number, number>();
   for (const { from, p } of depthPaths) {
     const n = days.reduce((k, d) => k + (leftOut.includes(d) ? 0 : (p.days[d] ?? 0)), 0);
@@ -451,7 +453,8 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
     visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,
     firsts: Object.fromEntries(FIRSTS.map((s) => [s, perDay((p) => p === `new/${s}`)])) as Record<First, number[]>,
-    cohorts: cohortsOf(paths, days, perDay((p) => p === 'new/saved')),
+    // (By UTC days, as a cohort's week is of its first answer's UTC time, where the hours came to sort them.)
+    cohorts: cohortsOf(paths, days, utcPerDay(byPath.get('new/saved'), days, zone)),
     sync: { paired: count('sync/paired') },
     week: {
       visitors: weekHours(paths.filter((p) => p.path === '/'), days, hour),
