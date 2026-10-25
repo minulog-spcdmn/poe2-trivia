@@ -16,6 +16,7 @@ The cards a player picks a category from (`src/components/ChooseCategory.svelte`
 3. **Each image on a card stands alone on its element, written out.** Chrome repaints a card's whole face on every frame it tilts if an image on it comes through `var()`, or shares an element's background with gradients: five times the GPU's time a frame. Nothing looks wrong; it only costs. The grain is `.grain`, written out in the CSS; the corner filigree is `.corners`, its images written on it from the script (`corners`). Gradients alone may use `var()`. (Tested.)
 4. **The corner filigree comes from `--filigree` in `app.css`**, its four images in the order top left, top right, bottom left, bottom right, each 30px. Change that order or size there and `.corners` must follow. (Tested.)
 5. **A transition on the face goes in the frame's one list** (`.frame`'s `transition`); while it tilts only its transform's part changes (`--tilt-transition`).
+6. **The face's shrink (`scale: 0.5`) stays in a rule of its own** (`.sharp .turn > .frame`), apart from every rule that sets its `transform`. The build's minifier (Lightning CSS) folds a `scale` beside a `transform` into it, or drops it, and the live cards come out twice their size while the dev server shows them right. (Tested, in `tests/minifiedTransforms.test.ts`, for every component.)
 
 ## Checking a change
 

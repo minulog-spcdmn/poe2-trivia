@@ -2,15 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import postcss, { type Declaration, type Rule } from 'postcss';
+import postcss from 'postcss';
 import { transform } from 'lightningcss';
 
 // Lightning CSS, which minifies the build, folds a scale, rotate or translate
-// written plainly beside a transform in one rule into that transform, and
-// where it can't, drops it: the dev server keeps it, the live site doesn't.
-// (The category cards' shrink went so, and the live cards came out twice
-// their size.) Through var() it is left alone. Each rule that sets one beside
-// a transform is minified here and must keep it.
+// written plainly beside a transform (in one rule, or in rules of the same
+// selector) into that transform, and where it can't, drops it: the dev server
+// keeps it, the live site doesn't. (The category cards' shrink went so, and
+// the live cards came out twice their size; upstream, lightningcss#426.)
+// Each stylesheet is minified here as the build does and must keep every one.
 const INDIVIDUAL = /^(scale|rotate|translate)$/;
 
 const styles = (): [string, string][] => {
@@ -30,20 +30,27 @@ const styles = (): [string, string][] => {
   walk('src');
   return out;
 };
+const count = (css: string) => {
+  const n: Record<string, number> = { scale: 0, rotate: 0, translate: 0 };
+  postcss.parse(css).walkDecls(INDIVIDUAL, (d) => void n[d.prop]++);
+  return n;
+};
 
-test('a scale, rotate or translate beside a transform survives the build', () => {
+test('every scale, rotate and translate survives the build', () => {
   let checked = 0;
   for (const [path, css] of styles()) {
-    postcss.parse(css).walkRules((r: Rule) => {
-      const own = r.nodes.filter((n): n is Declaration => n.type === 'decl');
-      if (!own.some((d) => d.prop === 'transform')) return;
-      for (const d of own.filter((d) => INDIVIDUAL.test(d.prop))) {
-        checked++;
-        const body = own.map((o) => `${o.prop}:${o.value}`).join(';');
-        const out = transform({ filename: 'rule.css', code: Buffer.from(`.x{${body}}`), minify: true }).code.toString();
-        assert.match(out, new RegExp(`[{;]${d.prop}:`), `${path}, ${r.selector}: its ${d.prop} is dropped by the minifier; write it through var()`);
-      }
-    });
+    const before = count(css);
+    if (!before.scale && !before.rotate && !before.translate) continue;
+    // (Svelte's :global() written out, as the build has it.)
+    const plain = css.replace(/:global\(((?:[^()]|\([^()]*\))*)\)/g, '$1');
+    const after = count(transform({ filename: path, code: Buffer.from(plain), minify: true, errorRecovery: true }).code.toString());
+    for (const prop of ['scale', 'rotate', 'translate']) {
+      checked += before[prop];
+      assert.ok(
+        after[prop] >= before[prop],
+        `${path}: ${before[prop] - after[prop]} ${prop} dropped by the minifier. Beside a transform, move it to a rule of its own (another selector) or write it through var()`,
+      );
+    }
   }
-  assert.ok(checked >= 3, 'found the rules that set one beside a transform');
+  assert.ok(checked > 100, 'found the scale, rotate and translate declarations');
 });
