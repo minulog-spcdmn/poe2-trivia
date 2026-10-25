@@ -16,7 +16,7 @@
 
 import { zoomOf } from './stage';
 
-/** Room over the drawn size: a hovered card's emblem grows 1.1, its card 1.04. */
+/** Room over the drawn size: a hovered card's emblem grows 1.1 (the card's own growth is in its zoom). */
 const HEADROOM = 1.15;
 /** Steps between sizes, per octave. */
 const STEPS = 4;

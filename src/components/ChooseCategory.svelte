@@ -1016,7 +1016,8 @@
   }
   .turn {
     position: relative;
-    display: block;
+    /* (flow-root: the face's margins, below, stay inside it.) */
+    display: flow-root;
     transform-style: preserve-3d;
   }
   /* The card's two sides: the deal turns it from its back to its face. */
@@ -1057,6 +1058,18 @@
     position: relative;
     display: block;
     height: 300px;
+    /* Laid out as large as it grows on hover and shrunk back, so the tilted
+       card is drawn at the size it's shown. Chrome draws anything turned in
+       perspective at the page's own scale and stretches that onto the
+       screen; a card grown by its transform came out 4% stretched, its fine
+       lines soft and its hatching banded where they fell between pixels.
+       Grown by zoom, it's drawn large to begin with. The zoom's 4% is
+       taken back by the width and margins, so the card takes the room it
+       did, and by its scale, which its hover lets go of. */
+    zoom: 1.04;
+    scale: calc(1 / 1.04);
+    width: 104%;
+    margin: calc(-6px / 1.04) -2%;
     overflow: clip;
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
@@ -1074,6 +1087,7 @@
       var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
     transition:
       transform 0.35s var(--ease-out),
+      scale 0.35s var(--ease-out),
       --bs-shade 0.35s,
       --bs-ring 0.35s,
       --bs1 0.35s,
@@ -1429,7 +1443,8 @@
   }
   .card.mine:not(:global(.down)):hover .frame,
   .card.mine:not(:global(.down)):focus-visible .frame {
-    transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);
+    transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px);
+    scale: 1;
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
     --bs1: 0px 40px;
@@ -1506,6 +1521,7 @@
     transform: translateY(-4px) scale(1.05);
     transition:
       transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      scale 0.55s var(--ease-out),
       --bs-shade 0.35s,
       --bs-ring 0.35s,
       --bs1 0.35s,
@@ -1533,6 +1549,7 @@
     transform: scale(0.92) translateY(8px);
     transition:
       transform 0.5s var(--ease-out),
+      scale 0.5s var(--ease-out),
       opacity 0.45s ease-out;
   }
   .card .votes {
@@ -1953,6 +1970,11 @@
       display: flex;
       align-items: center;
       height: auto;
+      /* (Never tilted in a row: drawn at its size.) */
+      zoom: 1;
+      scale: none;
+      width: auto;
+      margin: 0;
       /* The emblem 62 in and the divider halfway to the name (ROW). */
       padding: 15px 22px;
       gap: 32px;

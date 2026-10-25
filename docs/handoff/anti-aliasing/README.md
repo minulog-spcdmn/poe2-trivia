@@ -13,7 +13,8 @@ and doesn't repeat them.
 ## Where it stands
 
 - **The cards: fixed where it can be** (a second session, the same day,
-  `lib/fineMask`; see “What is known about the cards”).
+  `lib/fineMask`; a third, the hovered card drawn at its size; see “What is
+  known about the cards”).
 - **The circles:** the cause is measured (below); every cheap fix tried falls
   short, a real repaint every frame is worse, and the one fix left (drawing
   the turning on the GPU) would land on the ideal by construction; it's
@@ -137,6 +138,19 @@ averaged down.
   emblem fixed, 0.0025 ideal; at dpr 2 it's 0.0043 against 0.0038. No CSS
   reaches it: `will-change: transform` and the hover without its 1.04 scale
   measured the same. A per-card canvas would be resampled the same way.
+- **The hovered card was drawn 4% too small and stretched** (a third
+  session, looking at still frames at 4K 150%, 1080p and 125% instead of the
+  flicker number). Chrome rasterises anything with perspective in its
+  transform at the page's own scale, whatever scale the transform adds, so
+  the hover's `scale(1.04)` stretched that raster: soft lines, and hatching
+  banded where its lines fell between pixels. Fixed in `ChooseCategory`: the
+  face is laid out at `zoom: 1.04` (the width and margins give the room back)
+  and shrunk by `scale: 1/1.04`, which the hover lets go of, so the tilted
+  card is rasterised at the size it's shown. Still frames then match the 4x
+  render about as well as the resting card does. Pixel-snapping the plate's
+  lines (`snap.js` in that session's scratchpad) changed little. (The tilt
+  flicker number, run again, was swamped by the backdrop's own animation,
+  0.024 either way; it can't tell this apart.)
 - **The hover's start and the deal's flip move too fast to shimmer**: the
   hover's start measured the same as the ideal; the flip is over in half a
   second.
