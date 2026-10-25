@@ -205,7 +205,8 @@ test('every device in a game marks the steps its visitor reached: played, then f
   assert.deepEqual(reachEvents(started, { ...started, phase: 'question' }), []);
   assert.deepEqual(reachEvents(started, over), ['reach/finished']);
   assert.deepEqual(reachEvents(over, over), []);
-  assert.deepEqual(reachEvents(over, { ...over, phase: 'choosing' }), ['reach/played']);
+  // The next game, not from a lobby: entered too (sent once a page load), so a page that picked a game up after a reload enters with its next one.
+  assert.deepEqual(reachEvents(over, { ...over, phase: 'choosing' }), ['reach/lobby', 'reach/played']);
   // A game picked up after a reload was counted before.
   assert.deepEqual(reachEvents(null, started), []);
 });

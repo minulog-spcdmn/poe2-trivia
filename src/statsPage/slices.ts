@@ -8,7 +8,7 @@
 // together. Pure, so the tests can feed it.
 
 import type { Named } from './api.ts';
-import { reachedOf } from './insights.ts';
+import { beyondChanceOf, rateBeyondChance, reachedOf } from './insights.ts';
 import { DAILY_FROM, MODES, MODE_NAMES, RETURNS, deviceOf, type Counts, type Mode } from './model.ts';
 
 /**
@@ -330,13 +330,58 @@ export interface Standout {
   score: number;
 }
 
+/** Each figure a group is set against everyone by: whether it's apart from the rest's by more than chance. */
+export interface Apart {
+  played: boolean;
+  games: boolean;
+  daily: boolean;
+  back: boolean;
+  app: boolean;
+  joins: boolean;
+  failures: boolean;
+  /** A mode's part of the group's games, and its games for their visits. */
+  part: Record<Mode, boolean>;
+  rate: Record<Mode, boolean>;
+}
+
+/**
+ * Whether `who`'s figures are apart from the rest of their list's (everyone
+ * less them: a country's against the other countries') by more than chance
+ * makes: a share by how many it's of (insights.ts rateBeyondChance), a
+ * count for the visits (games, failures) by its size against the group's
+ * part of everyone's. With a few dozen visits a group's figures swing far
+ * by chance alone.
+ */
+export function apartFrom(s: Slices, who: Who): Apart {
+  const c = countsIn(s, who);
+  const t = countsIn(s, null, dimOf(who.kind));
+  /** The group's `k` of `n` against the rest's, `K` of `N` being everyone's. */
+  const share = (k: number, n: number, K: number, N: number) => n > 0 && N > n && rateBeyondChance((100 * k) / n, n, (100 * (K - k)) / (N - n), N - n);
+  /** The group's count against its visits' part of everyone's. */
+  const count = (k: number, K: number) => t.visit > 0 && beyondChanceOf(k, (K * c.visit) / t.visit);
+  const games = (n: Record<Group, number>) => MODES.reduce((g, m) => g + n[m], 0);
+  return {
+    played: share(c.played, c.loads, t.played, t.loads),
+    games: count(games(c), games(t)),
+    daily: share(c.daily, c.asked, t.daily, t.asked),
+    back: share(c.back, c.new + c.back, t.back, t.new + t.back),
+    app: share(c.app, c.visit, t.app, t.visit),
+    joins: share(c.joined, c.join, t.joined, t.join),
+    failures: count(c.failed, t.failed),
+    part: Object.fromEntries(MODES.map((m) => [m, share(c[m], games(c), t[m], games(t))])) as Record<Mode, boolean>,
+    rate: Object.fromEntries(MODES.map((m) => [m, count(c[m], t[m])])) as Record<Mode, boolean>,
+  };
+}
+
 /**
  * What stands out among the groups, most first: a mode far more of their
  * games, more or fewer playing at all, many more or fewer games started,
  * Today's unique answered more or less, more or fewer coming back (of those
  * told new or back), joins that fail more, far more
  * failures met. Only groups big enough that a handful of players can't make it up
- * (`min` visitors, and enough games or tries behind the figure).
+ * (`min` visitors, and enough games or tries behind the figure), and only
+ * a difference from the rest of everyone that chance couldn't have made
+ * (a share by how many it's of, a count for the visits by its size).
  */
 export function standouts(s: Slices, top = 6, min = 30): Standout[] {
   const floor = Math.max(min, profileIn(s, null).visitors * 0.03);
@@ -346,31 +391,32 @@ export function standouts(s: Slices, top = 6, min = 30): Standout[] {
     if (p.visitors < floor) continue;
     // Set against everyone in the same list: a system's against all systems'.
     const all = profileIn(s, null, dimOf(who.kind));
+    const sure = apartFrom(s, who);
     for (const m of p.modes) {
       const a = all.modes.find((x) => x.mode === m.mode)!;
-      if (p.games >= 20 && a.share >= 5 && m.share >= a.share * 1.3) out.push({ who, what: 'mode', mode: m.mode, mine: m.share, all: a.share, tone: 'flat', score: weigh(m.share, a.share, m.count) });
+      if (p.games >= 20 && a.share >= 5 && m.share >= a.share * 1.3 && sure.part[m.mode]) out.push({ who, what: 'mode', mode: m.mode, mine: m.share, all: a.share, tone: 'flat', score: weigh(m.share, a.share, m.count) });
     }
     if (p.played !== null && all.played && p.played > 0) {
       const r = p.played / all.played;
-      if (r >= 1.2 || r <= 0.83) out.push({ who, what: 'played', mine: p.played, all: all.played, tone: r > 1 ? 'up' : 'down', score: weigh(p.played, all.played, p.visitors) });
+      if ((r >= 1.2 || r <= 0.83) && sure.played) out.push({ who, what: 'played', mine: p.played, all: all.played, tone: r > 1 ? 'up' : 'down', score: weigh(p.played, all.played, p.visitors) });
     }
     const games = (g: Profile) => (100 * g.games) / g.visitors;
     if (all.visitors && p.games >= 20) {
       const r = games(p) / games(all);
-      if (r >= 1.25 || r <= 0.8) out.push({ who, what: 'games', mine: games(p), all: games(all), tone: r > 1 ? 'up' : 'down', score: weigh(games(p), games(all), p.games) });
+      if ((r >= 1.25 || r <= 0.8) && sure.games) out.push({ who, what: 'games', mine: games(p), all: games(all), tone: r > 1 ? 'up' : 'down', score: weigh(games(p), games(all), p.games) });
     }
     if (p.daily !== null && all.daily && p.daily > 0) {
       const r = p.daily / all.daily;
-      if (r >= 1.25 || r <= 0.8) out.push({ who, what: 'daily', mine: p.daily, all: all.daily, tone: r > 1 ? 'up' : 'down', score: weigh(p.daily, all.daily, p.visitors) });
+      if ((r >= 1.25 || r <= 0.8) && sure.daily) out.push({ who, what: 'daily', mine: p.daily, all: all.daily, tone: r > 1 ? 'up' : 'down', score: weigh(p.daily, all.daily, p.visitors) });
     }
     if (p.back !== null && all.back && p.back > 0 && p.told >= floor) {
       const r = p.back / all.back;
-      if (r >= 1.2 || r <= 0.83) out.push({ who, what: 'back', mine: p.back, all: all.back, tone: r > 1 ? 'up' : 'down', score: weigh(p.back, all.back, p.told) });
+      if ((r >= 1.2 || r <= 0.83) && sure.back) out.push({ who, what: 'back', mine: p.back, all: all.back, tone: r > 1 ? 'up' : 'down', score: weigh(p.back, all.back, p.told) });
     }
-    if (p.joins !== null && all.joins !== null && p.tried >= 20 && Math.abs(p.joins - all.joins) >= 8)
+    if (p.joins !== null && all.joins !== null && p.tried >= 20 && Math.abs(p.joins - all.joins) >= 8 && sure.joins)
       out.push({ who, what: 'joins', mine: p.joins, all: all.joins, tone: p.joins > all.joins ? 'up' : 'down', score: weigh(Math.max(1, 100 - p.joins), Math.max(1, 100 - all.joins), p.tried) });
     // Only more: a group meeting fewer failures is no news.
-    if (p.failures !== null && all.failures && p.failed >= 10 && p.failures / all.failures >= 1.4)
+    if (p.failures !== null && all.failures && p.failed >= 10 && p.failures / all.failures >= 1.4 && sure.failures)
       out.push({ who, what: 'failures', mine: p.failures, all: all.failures, tone: 'down', score: weigh(p.failures, all.failures, p.failed) });
   }
   // A mix of findings: at most two of a kind, and two about one group; but

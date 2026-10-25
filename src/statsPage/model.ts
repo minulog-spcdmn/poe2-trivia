@@ -460,11 +460,11 @@ function cohortsOf(paths: PathCount[], days: string[], started: number[], fresh:
     if (!monday || p.count <= 0) continue;
     const from = Date.parse(`${monday}T12:00:00Z`);
     const weekOf = (d: string) => Math.floor((Date.parse(`${d}T12:00:00Z`) - from) / (7 * 86_400_000));
-    // Up to the period's last week; a week the period holds none of, null.
+    // Up to the period's last week; a week the period holds none of, or one over before visits were told apart (none of it counted), null.
     const weeks: (number | null)[] = Array.from({ length: Math.max(0, weekOf(days[days.length - 1]) + 1) }, () => null);
-    for (const d of days) {
+    for (const [i, d] of days.entries()) {
       const k = weekOf(d);
-      if (k >= 0) weeks[k] = (weeks[k] ?? 0) + (p.days[d] ?? 0);
+      if (k >= 0 && counting >= 0 && i >= counting) weeks[k] = (weeks[k] ?? 0) + (p.days[d] ?? 0);
     }
     // Only a week the period holds from its Monday, counted from then: one cut short would look small, its cells far over 100%.
     const at = days.indexOf(monday);

@@ -428,13 +428,16 @@ export function gameEvents(prev: GameState | null, next: GameState): string[] {
 /**
  * The steps a state change reaches on any device in the game, host or guest
  * (countReach): a lobby seen ("reach/lobby", a room's made or joined, picked
- * up after a reload too), a game starting ("reach/played") and one decided
- * ("reach/finished"). Nothing else for a game picked up after a reload.
+ * up after a reload too), a game starting ("reach/played", entered too
+ * where it began without a lobby: a page load that picked a game up after
+ * a reload, then started the next, entered it all the same) and one
+ * decided ("reach/finished"). Nothing else for a game picked up after a
+ * reload. (Each is sent once a page load, countReach.)
  */
 export function reachEvents(prev: GameState | null, next: GameState): string[] {
   if (next.phase === 'lobby' && prev?.phase !== 'lobby') return ['reach/lobby'];
   if (!prev) return [];
-  if (!playing(prev) && playing(next)) return ['reach/played'];
+  if (!playing(prev) && playing(next)) return prev.phase === 'lobby' ? ['reach/played'] : ['reach/lobby', 'reach/played'];
   return decided(next) && !decided(prev) ? ['reach/finished'] : [];
 }
 

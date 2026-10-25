@@ -309,7 +309,7 @@ const TILTS: Record<string, Partial<Record<Group | 'success', number>>> = {
   Germany: { delve: 1.7, race: 0.8, daily: 1.25, back: 1.35, new: 0.8 },
   'United Kingdom': { turns: 1.3 },
   Poland: { delve: 1.4, join: 1.3 },
-  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2, played: 0.75, back: 0.6, new: 1.2 },
+  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 3, played: 0.75, back: 0.6, new: 1.2 },
   France: { race: 0.6, daily: 1.4 },
   Russia: { race: 1.4, success: 0.85, failed: 1.6 },
   'Korea, Republic of': { race: 1.7, daily: 1.5, played: 1.3 },

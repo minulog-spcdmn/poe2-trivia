@@ -17,7 +17,7 @@
   import { toldFromStart } from './insights';
   import { MODES, MODE_NAMES, deviceOf, finishedShare, modesOf, seatsOf, type Mode } from './model';
   import type { Period, Read } from './read';
-  import { countsIn, depthsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
+  import { apartFrom, countsIn, depthsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
 
   let {
     read,
@@ -55,6 +55,8 @@
   const mine = $derived(slices && who ? countsIn(slices, who) : null);
   const everyone = $derived(slices ? profileIn(slices, null, who ? dimOf(who.kind) : 'locations') : null);
   const picked = $derived(slices && who ? profileIn(slices, who) : null);
+  /** Which of the group's figures are apart from the rest's by more than chance: the others are said, not coloured. */
+  const sure = $derived(slices && who ? apartFrom(slices, who) : null);
   const found = $derived(slices && !who && !mode ? standouts(slices) : []);
   /** The installed app's share is of every visitor in the period: only shown where visits were told apart from its first day. */
   const appKnown = $derived(toldFromStart(read.now));
@@ -101,18 +103,18 @@
 
   type Tone = 'up' | 'down' | 'flat';
   /** Against everyone (or `whom`) in a few words: about the same, or how far above or below; `lower`: less is better. */
-  function against(mine: number | null, all: number | null, points = false, lower = false, whom = 'everyone'): { says: string; tone: Tone } {
+  function against(mine: number | null, all: number | null, points = false, lower = false, whom = 'everyone'): { says: string; tone: Tone; differs?: boolean } {
     if (mine === null || all === null || !all) return { says: '', tone: 'flat' };
     const tone = (above: boolean): Tone => (above !== lower ? 'up' : 'down');
     if (points) {
       const d = Math.round(mine - all);
-      return Math.abs(d) < 4 ? { says: `about the same as ${whom}`, tone: 'flat' } : { says: `${Math.abs(d)} points ${d > 0 ? 'above' : 'below'} ${whom}`, tone: tone(d > 0) };
+      return Math.abs(d) < 4 ? { says: `about the same as ${whom}`, tone: 'flat' } : { says: `${Math.abs(d)} points ${d > 0 ? 'above' : 'below'} ${whom}`, tone: tone(d > 0), differs: true };
     }
     const r = mine / all;
-    return Math.abs(r - 1) < 0.12 ? { says: `about the same as ${whom}`, tone: 'flat' } : { says: `${times(r)} ${whom}`, tone: tone(r > 1) };
+    return Math.abs(r - 1) < 0.12 ? { says: `about the same as ${whom}`, tone: 'flat' } : { says: `${times(r)} ${whom}`, tone: tone(r > 1), differs: true };
   }
   /** Said, not coloured: more of a mode is neither better nor worse. */
-  const plain = (a: { says: string }) => ({ says: a.says, tone: 'flat' as Tone });
+  const plain = (a: { says: string; differs?: boolean }) => ({ ...a, tone: 'flat' as Tone });
 
   // ---- where a chip leads: the same picks with one changed, the lit one let go ----
   const to = (w: Who | null, m: Mode | null = mode) => hashOf({ who: w, mode: m });
@@ -153,15 +155,18 @@
     all: string;
     says: string;
     tone: Tone;
+    /** A difference chance alone could have made: said, not coloured (as Delta does). */
+    chance?: boolean;
   }
-  const row = (name: string, unit: string, mine: number | null, all: number | null, show: (v: number) => string, a: { says: string; tone: Tone }, few: boolean, href?: string): Row => ({
+  const row = (name: string, unit: string, mine: number | null, all: number | null, show: (v: number) => string, a: { says: string; tone: Tone; differs?: boolean }, few: boolean, sure = true, href?: string): Row => ({
     name,
     unit,
     href,
     mine: mine === null ? '–' : show(mine),
     all: all === null ? '–' : show(all),
     says: few ? '' : a.says,
-    tone: few ? 'flat' : a.tone,
+    tone: few || !sure ? 'flat' : a.tone,
+    chance: !few && !sure && !!a.differs,
   });
 
   /** A group's figures beside everyone's. */
@@ -172,20 +177,20 @@
     const gAll = per100(everyone.games, everyone.visitors);
     return [
       { name: 'Visits', unit: 'in the period', mine: fmt(picked.visitors), all: fmt(everyone.visitors), says: `${pct(share(picked.visitors, everyone.visitors))} of everyone`, tone: 'flat' },
-      ...(picked.played !== null && everyone.played !== null ? [row('Played a game', 'share of visits', picked.played, everyone.played, pct, against(picked.played, everyone.played, true), few)] : []),
-      row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few),
-      row("Answered Today's unique", 'share of visits, on days it asked', picked.daily, everyone.daily, pct, against(picked.daily, everyone.daily), few),
-      ...(picked.back !== null && everyone.back !== null ? [row('Came back to a save', 'share of visits new or back', picked.back, everyone.back, pct, against(picked.back, everyone.back, true), few)] : []),
-      ...(picked.app !== null && everyone.app !== null && appKnown ? [row('Opened the installed app', 'share of visits', picked.app, everyone.app, pct, plain(against(picked.app, everyone.app, true)), few)] : []),
-      row('Joins that worked', `share of ${fmt(picked.tried)} tries`, picked.joins, everyone.joins, pct, against(picked.joins, everyone.joins, true), few || picked.tried < 20),
-      row('Failures met', 'for every 100 visits', picked.failures, everyone.failures, rate, against(picked.failures, everyone.failures, false, true), few),
+      ...(picked.played !== null && everyone.played !== null ? [row('Played a game', 'share of visits', picked.played, everyone.played, pct, against(picked.played, everyone.played, true), few, sure?.played)] : []),
+      row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few, sure?.games),
+      row("Answered Today's unique", 'share of visits, on days it asked', picked.daily, everyone.daily, pct, against(picked.daily, everyone.daily), few, sure?.daily),
+      ...(picked.back !== null && everyone.back !== null ? [row('Came back to a save', 'share of visits new or back', picked.back, everyone.back, pct, against(picked.back, everyone.back, true), few, sure?.back)] : []),
+      ...(picked.app !== null && everyone.app !== null && appKnown ? [row('Opened the installed app', 'share of visits', picked.app, everyone.app, pct, plain(against(picked.app, everyone.app, true)), few, sure?.app)] : []),
+      row('Joins that worked', `share of ${fmt(picked.tried)} tries`, picked.joins, everyone.joins, pct, against(picked.joins, everyone.joins, true), few || picked.tried < 20, sure?.joins),
+      row('Failures met', 'for every 100 visits', picked.failures, everyone.failures, rate, against(picked.failures, everyone.failures, false, true), few, sure?.failures),
     ];
   });
   /** A group's games by mode, beside everyone's: a mode a bigger or smaller part is neither better nor worse. */
   const groupModes = $derived.by((): Row[] => {
     if (!picked || !everyone) return [];
     const few = picked.games < 20;
-    return picked.modes.map((m, i) => row(MODE_NAMES[m.mode], 'share of their games', m.share, everyone.modes[i].share, pct, plain(against(m.share, everyone.modes[i].share, true)), few, to(who, m.mode)));
+    return picked.modes.map((m, i) => row(MODE_NAMES[m.mode], 'share of their games', m.share, everyone.modes[i].share, pct, plain(against(m.share, everyone.modes[i].share, true)), few, sure?.part[m.mode], to(who, m.mode)));
   });
 
   /** A mode's own figures, as the Games view counts them. */
@@ -205,8 +210,8 @@
     const partAll = share(all[mode], everyone.games);
     return [
       { name: `${MODE_NAMES[mode]} games`, unit: 'started in the period', mine: fmt(mine[mode]), all: fmt(all[mode]), says: `${pct(share(mine[mode], all[mode]))} of everyone's`, tone: 'flat' },
-      row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few),
-      row('Part of their games', 'share of all they started', part, partAll, pct, plain(against(part, partAll, true)), picked.games < 20),
+      row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few, sure?.rate[mode]),
+      row('Part of their games', 'share of all they started', part, partAll, pct, plain(against(part, partAll, true)), picked.games < 20, sure?.part[mode]),
     ];
   });
   /** Delve's depths for the picked group and for everyone in its list; null where they weren't read. */
@@ -231,7 +236,7 @@
             <th scope="row">{#if r.href}<a class="pick" href={r.href}>{r.name}</a>{:else}{r.name}{/if}<span class="unit">{r.unit}</span></th>
             <td class="n strong">{r.mine}</td>
             <td class="n soft">{r.all}</td>
-            <td class="says {r.tone}">{r.says}</td>
+            <td class="says {r.tone}" title={r.chance ? 'Within what chance alone makes of groups this size' : undefined}>{r.says}</td>
           </tr>
         {/each}
       </tbody>

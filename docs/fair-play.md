@@ -113,7 +113,8 @@ joins, failures (`error/script` among them) and `sync/paired`. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
 page load): `reach/page` on every counted load, what the others are set
 against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
-device (not one watching); `reach/games-2|5` and `reach/time-2m|10m|30m`
+device (not one watching), a game started without a lobby entered too
+(from late October 2026); `reach/games-2|5` and `reach/time-2m|10m|30m`
 (active time) within one page load; `reach/codex`, `reach/achievements`;
 and `new/lobby|played|finished` for a load whose visit had no save. With a
 visit, read from the codex with its paired devices' copies when the page is idle

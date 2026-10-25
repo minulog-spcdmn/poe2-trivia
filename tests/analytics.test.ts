@@ -6,7 +6,7 @@ import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
-import { countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
+import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
@@ -715,6 +715,26 @@ test('made-up groups add up to the made-up totals', () => {
   assert.ok(sum('joined') <= sum('join'));
 });
 
+test("a group's figure is apart from the rest's only beyond chance", () => {
+  const of = (us: [number, number], de: [number, number]): Slices => ({
+    v: 4,
+    span: 30,
+    from: '2026-10-16',
+    at: 0,
+    locations: {
+      visit: [{ name: 'United States', count: us[0] * 4 }, { name: 'Germany', count: de[0] * 4 }],
+      loads: [{ name: 'United States', count: us[0] }, { name: 'Germany', count: de[0] }],
+      played: [{ name: 'United States', count: us[1] }, { name: 'Germany', count: de[1] }],
+    },
+    systems: {},
+  });
+  const us = { kind: 'place', name: 'United States' } as const;
+  // 2 of 10 who loaded it played, against 3 of 9: what chance does with so few.
+  assert.equal(apartFrom(of([10, 2], [9, 3]), us).played, false);
+  // 100 of 500 against 300 of 500 is no chance.
+  assert.equal(apartFrom(of([500, 100], [500, 300]), us).played, true);
+});
+
 test('what stands out among the groups: big enough to tell, a mix, the largest first', () => {
   const s = demoSlices(demoRead(30, new Date('2026-10-16T18:30:00Z')));
   const found = standouts(s);
@@ -968,6 +988,15 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
     days,
   );
   assert.equal(late.cohorts[0].started, null);
+  // A week over before visits were told apart has nothing counted: not none.
+  const later = countsOf(
+    [
+      { ...at({ '2026-10-21': 30 }), path: 'visit/new' },
+      { ...at({ '2026-10-22': 1 }), path: 'cohort/2026-W41' },
+    ],
+    days,
+  );
+  assert.deepEqual(later.cohorts[0].weeks, [null, null, 1, 0]);
   // The table's rows: the weeks its columns reach, none after the period (a clock years off).
   const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [] }];
   assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43']);

@@ -175,7 +175,7 @@
 
   {#if cohorts.length}
     <!-- The whole width: a column for each of eight weeks. -->
-    <Section title="By the week they first played" says="Visits each week after, for every 100 who first played that week." area="cohorts">
+    <Section title="By the week they first played" says={cohorts.some((c) => c.started !== null) ? 'Visits each week after, for every 100 who first played that week.' : 'Their visits each week since. Once a week is counted from its Monday, its figures are for every 100 who first played then.'} area="cohorts">
       <Cohorts cohorts={cohorts} />
     </Section>
   {/if}
