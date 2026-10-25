@@ -13,8 +13,9 @@ and doesn't repeat them.
 ## Where it stands
 
 - **The cards: fixed where it can be** (a second session, the same day,
-  `lib/fineMask`; a third, the hovered card drawn at its size; see “What is
-  known about the cards”).
+  `lib/fineMask`; see “What is known about the cards”). The hatching still
+  shimmers as the card tilts: the compositor's resample, which no CSS tried
+  reaches.
 - **The circles:** the cause is measured (below); every cheap fix tried falls
   short, a real repaint every frame is worse, and the one fix left (drawing
   the turning on the GPU) would land on the ideal by construction; it's
@@ -147,7 +148,12 @@ averaged down.
   face is laid out at `zoom: 1.04` (the width and margins give the room back)
   and shrunk by `scale: 1/1.04`, which the hover lets go of, so the tilted
   card is rasterised at the size it's shown. Still frames then match the 4x
-  render about as well as the resting card does. Pixel-snapping the plate's
+  render about as well as the resting card does. **Taken out again:** it
+  broke the hover fire (`projectedCorners` in `lib/fx/effects.ts` rebuilds
+  the tilted card from its `transform` alone, so the fire came out 4%
+  small and shifted in), and the owner saw no less shimmer for it.
+  Redoing it needs that function to read the `scale` property and the
+  face's offset in its card. Pixel-snapping the plate's
   lines (`snap.js` in that session's scratchpad) changed little. (The tilt
   flicker number, run again, was swamped by the backdrop's own animation,
   0.024 either way; it can't tell this apart.)
