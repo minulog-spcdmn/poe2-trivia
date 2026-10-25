@@ -1485,10 +1485,10 @@
     object-fit: contain;
     filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
   }
-  /* Behind an item window, dimmed to a third and blurred (lib/behindDialog.ts),
-     without their shadows: Safari on a phone drew every shadow on screen again
-     on each frame the window drew in above them, and the window opened at
-     36fps on an iPhone (58 without). */
+  /* Behind a dialog all the way in (an item window, say), dimmed to a third
+     and blurred (lib/behindDialog.ts), without their shadows: Safari on a
+     phone drew every shadow on screen again on each frame an item window drew
+     in above them, and it opened at 36fps on an iPhone (58 without). */
   :global(:root[data-dialog-up]) button.tile .art img {
     filter: none;
   }

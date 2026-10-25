@@ -7,13 +7,17 @@ import { alphaOf, shrunk } from './shrinkMask';
 /** An image to read (its file), or a copy of one read before to make, `q` steps smaller. */
 export type MaskAsk = { url: string } & ({ image: Blob } | { q: number });
 export type MaskJob = MaskAsk & { id: number };
-/** The image's size once read, or the copy as a PNG; nothing if it couldn't be done here. */
-export type MaskAnswer = { id: number; w?: number; h?: number; png?: Blob };
+/** The image's size once read, or the copy as a PNG; nothing if it couldn't be done here, and `cant` if nothing can (no OffscreenCanvas). */
+export type MaskAnswer = { id: number; w?: number; h?: number; png?: Blob; cant?: boolean };
 
 const read = new Map<string, { w: number; h: number; alpha: Uint8Array }>();
 
 self.onmessage = async ({ data: job }: MessageEvent<MaskJob>) => {
   const answer: MaskAnswer = { id: job.id };
+  if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') {
+    self.postMessage({ ...answer, cant: true } satisfies MaskAnswer);
+    return;
+  }
   try {
     if ('image' in job) {
       const img = await createImageBitmap(job.image);

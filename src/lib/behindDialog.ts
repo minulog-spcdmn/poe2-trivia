@@ -143,10 +143,11 @@ function filterLayers(v: number) {
 }
 
 let up = false;
-/** <html>'s data-dialog-up, for the page dimmed `v` of the way: only on a dialog all the way in. */
-function markUp(v: number) {
-  if (v >= 1 === up) return;
-  up = v >= 1;
+/** <html>'s data-dialog-up: on while any dialog is all the way in (one over another fading in or out too). */
+function markUp() {
+  const now = backdrops.some((b) => b.isConnected && opacityOf(b) >= 1);
+  if (now === up) return;
+  up = now;
   document.documentElement.toggleAttribute('data-dialog-up', up);
 }
 
@@ -163,7 +164,7 @@ function changed() {
       applied = v;
       filterLayers(v);
     }
-    markUp(v);
+    markUp();
     if (backdrops.length || applied > 0) raf = requestAnimationFrame(step);
   };
   raf = requestAnimationFrame(step);

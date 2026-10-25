@@ -56,8 +56,10 @@ function maskWorker(): Worker | null {
   return worker;
 }
 
+/** `job` sent to `w`, its answer back: an empty one at once if `w` has stopped meanwhile. */
 function ask(w: Worker, job: MaskAsk): Promise<MaskAnswer> {
   const id = ++lastJob;
+  if (w !== worker) return Promise.resolve({ id });
   return new Promise((done) => {
     answers.set(id, done);
     w.postMessage({ ...job, id });
@@ -70,12 +72,18 @@ async function readThere(url: string): Promise<Source | null> {
   if (!w) return null;
   try {
     const image = await (await fetch(url)).blob();
-    const { w: iw, h: ih } = await ask(w, { url, image });
+    const { w: iw, h: ih, cant } = await ask(w, { url, image });
+    // (A worker that can't read images at all isn't asked again.)
+    if (cant && worker === w) {
+      w.terminate();
+      worker = null;
+    }
     if (!iw || !ih) return null;
+    // A copy the worker couldn't make (or stopped making) is made here, from the image read here.
+    let here: Promise<Source> | undefined;
     const shrink = async (q: number) => {
       const { png } = await ask(w, { url, q });
-      if (!png) throw new Error('not shrunk');
-      return png;
+      return png ?? (await (here ??= readHere(url))).shrink(q);
     };
     return { w: iw, h: ih, sizes: new Map([[0, Promise.resolve(url)]]), shrink };
   } catch {
