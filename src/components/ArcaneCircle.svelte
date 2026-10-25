@@ -25,11 +25,8 @@
 
 {#snippet eye()}
   <div class="layer eye" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:transform-origin={at.origin}>
-    <!-- (Both blink as one, on the compositor: an svg's own scale is run by the page.) -->
-    <div class="lids" style:transform-origin={at.origin}>
-      <div class="glowing"><svg class="glow" viewBox={at.viewBox}>{@html eyeGlow}</svg></div>
-      <svg viewBox={at.viewBox}>{@html eyeLines}</svg>
-    </div>
+    <svg class="glow" viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeGlow}</svg>
+    <svg viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeLines}</svg>
   </div>
 {/snippet}
 
@@ -72,10 +69,14 @@
   .eye {
     animation: open 0.8s 1.55s cubic-bezier(0.3, 1.35, 0.5, 1) both;
   }
-  .lids {
-    position: absolute;
-    inset: 0;
+  .eye svg {
     animation: blink 9s 5s infinite;
+  }
+  .eye .glow {
+    animation:
+      arcane-glow-in 1.4s 0.8s ease-out both,
+      arcane-breathe 6s 2.2s ease-in-out infinite alternate,
+      blink 9s 5s infinite;
   }
 
   @keyframes open {

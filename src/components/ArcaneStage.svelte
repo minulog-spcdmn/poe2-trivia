@@ -150,7 +150,7 @@
         style:transform-origin={at.origin}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
       >
-        <div class="glowing"><svg class="glow" viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.glow, l.name)}</svg></div>
+        <svg class="glow" viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.glow, l.name)}</svg>
         <svg viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.lines, l.name)}</svg>
         {#each layers.filter((c) => c.within === l.name) as child (child.name)}
           {@render layer(child, box)}
@@ -203,7 +203,7 @@
       {@const reach = point.r * 2.4 + 1.5}
       {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
       <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
-        <div class="glowing"><svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg></div>
+        <svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
         <svg viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
       </div>
     {/if}
@@ -243,7 +243,6 @@
   .summon,
   .summon :global(.layer),
   .summon :global(svg),
-  .summon :global(.glowing),
   .bloom,
   .wave {
     position: absolute;
@@ -365,18 +364,12 @@
   }
 
   /* The glow: the same strokes, wide and faint, on their own layer so it
-     can breathe without repainting. It swells up as the circle is drawn
-     (on its box), then breathes between 0.28 and 0.1 (the svg, dimming that
-     0.28 down to 0.1). Two opacity animations on the one element would
-     both be run by the page, every frame, and the layer repainted with
-     them; one on each runs on the compositor, and they multiply to the
-     same light. */
-  .arcane :global(.glowing) {
-    opacity: 0.28;
-    animation: arcane-glow-in 1.4s 0.8s ease-out backwards;
-  }
+     can breathe without repainting. It swells up as the circle is drawn. */
   .arcane :global(.glow) {
-    animation: arcane-dim 6s 2.2s ease-in-out infinite alternate;
+    opacity: 0.22;
+    animation:
+      arcane-glow-in 1.4s 0.8s ease-out both,
+      arcane-breathe 6s 2.2s ease-in-out infinite alternate;
   }
   .arcane .summon :global(.glow *) {
     stroke-width: 2;
@@ -443,7 +436,8 @@
   }
   .arcane .point .glow {
     animation:
-      arcane-dim 6s 2.2s ease-in-out infinite alternate,
+      arcane-glow-in 1.4s 0.8s ease-out both,
+      arcane-breathe 6s 2.2s ease-in-out infinite alternate,
       beat 9s 5s infinite;
   }
 
@@ -575,15 +569,6 @@
     }
     to {
       opacity: 0.1;
-    }
-  }
-  /* arcane-breathe under a box at 0.28: 1 to 0.1 / 0.28. */
-  @keyframes -global-arcane-dim {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0.3571428571;
     }
   }
   @keyframes set {

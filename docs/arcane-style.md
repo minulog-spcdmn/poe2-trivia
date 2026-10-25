@@ -83,7 +83,7 @@ Each layer is a separate absolutely positioned element holding two SVGs (glow an
 | Sun rings, compass star | 100 s | clockwise | -70° |
 | Glory, eye | still | | |
 
-Use the `rotate` property for the endless turn and `transform` for the entrance wind, so the two animations combine. Never animate inside a layer while it idles; the glow breathes by changing the glow SVG's opacity (and swells in on a box round it: two opacity animations on one element are both run by the page, never by the compositor). For the same reason a part that blinks or beats as a whole moves on a box round its SVGs, as the eye's lids do: the compositor can't scale an `<svg>` of its own.
+Use the `rotate` property for the endless turn and `transform` for the entrance wind, so the two animations combine. Never animate inside a layer while it idles; the glow breathes by changing the glow SVG's opacity. Chrome applies that without painting again, though the page runs it (a 4K trace: once a circle is drawn, its SVGs paint less than once a frame), so there's nothing to win by moving the glow onto a box of its own for the compositor.
 
 ### Entrance: a summoning in about 2.3 s
 
