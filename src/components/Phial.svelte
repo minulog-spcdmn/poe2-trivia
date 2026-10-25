@@ -399,7 +399,9 @@
     top: 50%;
     width: 130%;
     aspect-ratio: 1;
-    translate: -50% -50%;
+    /* (Through var(), as the build keeps it beside a transform: tests/minifiedTransforms.) */
+    --wisp-shift: -50% -50%;
+    translate: var(--wisp-shift);
     transform: scaleY(0.42);
   }
   .c1 .wisp::before {
