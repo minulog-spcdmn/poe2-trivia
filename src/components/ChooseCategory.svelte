@@ -99,8 +99,11 @@
         node.style.fontSize = `${size}px`;
       }
     };
-    run();
-    void document.fonts?.ready.then(run);
+    // First fitted as the observer first reports it, in the frame it's laid
+    // out in, before that is painted: not at once as it mounts (nor as the
+    // fonts, already in, say so), which had the page laid out again for each
+    // card as the hand came in. (Fonts still coming: fitted again once in.)
+    if (document.fonts && document.fonts.status !== 'loaded') void document.fonts.ready.then(run);
     const ro = new ResizeObserver(run);
     ro.observe(node);
     const mo = new MutationObserver(run);

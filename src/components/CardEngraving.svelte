@@ -1,3 +1,22 @@
+<script module lang="ts">
+  // One observer for every engraving's size: its reports all read before any
+  // engraving is drawn (what they set is drawn once they're all in).
+  const reports = new Map<Element, (rect: DOMRectReadOnly) => void>();
+  let observer: ResizeObserver | undefined;
+  /** Calls `report` with `node`'s content box as it's laid out and whenever that changes; returns what stops it. */
+  function sizes(node: Element, report: (rect: DOMRectReadOnly) => void) {
+    observer ??= new ResizeObserver((entries) => {
+      for (const e of entries) reports.get(e.target)?.(e.contentRect);
+    });
+    reports.set(node, report);
+    observer.observe(node);
+    return () => {
+      reports.delete(node);
+      observer?.unobserve(node);
+    };
+  }
+</script>
+
 <script lang="ts">
   // One side of a category card, engraved (see lib/cardEngraving): drawn
   // for the card's size as it is laid out, the lines over a soft glow of
@@ -20,6 +39,22 @@
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
   let box = $state<DOMRectReadOnly>();
+  /**
+   * Svelte action: its size, as the browser reports it (sizes, below), not
+   * read at once as it mounts (bind:clientWidth does): read then, a hand of
+   * cards coming in had the page laid out again for each engraving, between
+   * one's drawing and the next one's read. The first report comes in the
+   * frame it is laid out in, before that is painted.
+   */
+  function sized(node: HTMLElement) {
+    return {
+      destroy: sizes(node, (rect) => {
+        w = node.clientWidth;
+        h = node.clientHeight;
+        box = rect;
+      }),
+    };
+  }
   // (custom: a card of its own, the way out of a vein: lib/wayOut.)
   const variant = $derived(custom ?? (find ? findVariant(find) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
@@ -54,7 +89,7 @@
   {/key}
 {/snippet}
 
-<span class="engraving" class:front data-find={find ?? undefined} bind:clientWidth={w} bind:clientHeight={h} bind:contentRect={box} aria-hidden="true">
+<span class="engraving" class:front data-find={find ?? undefined} use:sized aria-hidden="true">
   {#if plate && front}
     {#if plate.solid}
       <!-- Solid: whatever lies behind (the item, the plate) is hidden, the crystal's body faintly its colour. -->
