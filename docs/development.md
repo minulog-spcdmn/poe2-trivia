@@ -133,7 +133,13 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   a quarter of the script, fetched at the first idle moment or at once on the
   way into a room, so the start page loads and runs without them (tried once
   more if the fetch fails; after that the game screen offers a reload, as
-  some browsers won't fetch a module that failed again). The host decodes
+  some browsers won't fetch a module that failed again). The sheets of the
+  screens fetched later (the game's, the Codex's, the dialogs') come without
+  their @keyframes, which the build moves into the sheet the page starts
+  with (`keyframesFirst.ts`): Chrome restyles every animated element on the
+  page, or all of it, whenever a sheet with @keyframes is added, and the
+  Codex's, fetched while the start page shows, held a frame up by 40 ms in
+  a trace (the game's screens' by 13 to 20). The host decodes
   a question's pictures off the main thread (all of a "find the art"
   question's at once), and every device cuts a veiled picture's patches in
   a worker (`src/lib/veilWorker.ts`): their shapes as the question starts,

@@ -11,6 +11,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { glslMinify } from './glslMinify.ts';
+import { keyframesFirst } from './keyframesFirst.ts';
 import { polyfillsFirst, polyfillsScript } from './polyfillsFirst.ts';
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
@@ -333,7 +334,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
