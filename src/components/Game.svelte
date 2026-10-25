@@ -2,6 +2,7 @@
   import { fade, fly, scale, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
+  import { pageScroll } from '../lib/pageScroll';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
   import ChooseCategory from './ChooseCategory.svelte';
@@ -322,7 +323,7 @@
       if (!still && old) blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
       // A fresh question, as on a new turn: back up to its art (on phones the
       // button was often pressed scrolled down, under the answers).
-      if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (pageScroll()[1] > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
       setTimeout(() => swing(b.side), still ? 0 : BLAST_IMPACT_MS);
     });
   });
