@@ -384,7 +384,9 @@ const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
   const MID = w / 2;
   const [x0, y0, x1, y1] = [16, 16, w - 16, TALL.panelFoot];
   const inner: Box = [x0 + 2.5, y0 + 2.5, x1 - 2.5, y1 - 2.5];
-  const plate: Box = [16, TALL.plateTop, w - 16, h - 14];
+  // As far in from the foot as the panel from the top, so the filigree's
+  // corners sit in the plate's as they do in the panel's.
+  const plate: Box = [16, TALL.plateTop, w - 16, h - 16];
   const plateMid = (plate[1] + plate[3]) / 2;
   p.frame(x0, y0, x1, y1);
   p.frame(...plate, [

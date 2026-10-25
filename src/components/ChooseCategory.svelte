@@ -926,7 +926,7 @@
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
               {/if}
-              <span class="title" use:fitPlate
+              <span class="title" class:long={cardName(cat).length > 30} use:fitPlate
                 >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
                   >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
               >
@@ -1484,19 +1484,19 @@
       translate: 420% 0;
     }
   }
-  /* In the nameplate (TALL.plateTop down to 14 from the foot). */
+  /* In the nameplate (TALL.plateTop down to 16 from the foot). */
   .title {
     position: absolute;
     left: 22px;
     right: 22px;
     top: 238px;
-    height: 46px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 1.05rem;
+    font-size: calc(1.05rem * var(--name-k, 1));
     letter-spacing: 0.04em;
     color: var(--gold-hi);
     text-align: center;
@@ -1504,6 +1504,13 @@
     transition:
       color 0.3s,
       text-shadow 0.3s;
+  }
+  /* A long name (Flasks, Charms, Jewels, Relics & Tablets) set smaller, its
+     two lines evened out, so they sit in the plate with room round them. */
+  .title.long {
+    --name-k: 0.86;
+    letter-spacing: 0.02em;
+    text-wrap: balance;
   }
 
   @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
@@ -2246,6 +2253,11 @@
       height: auto;
       flex: 1;
       text-align: left;
+    }
+    /* No plate to fit in a row: a long name at the size of the others. */
+    .title.long {
+      --name-k: 1;
+      letter-spacing: 0.04em;
     }
     .filigree {
       --at: 0.5px;
