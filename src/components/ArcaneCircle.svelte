@@ -25,7 +25,7 @@
 
 {#snippet eye()}
   <div class="layer eye" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:transform-origin={at.origin}>
-    <svg class="glow" viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeGlow}</svg>
+    <div class="glowing"><svg class="glow" viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeGlow}</svg></div>
     <svg viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeLines}</svg>
   </div>
 {/snippet}
@@ -72,10 +72,10 @@
   .eye svg {
     animation: blink 9s 5s infinite;
   }
+  /* (Its glow swells up on its box, as the stage's does.) */
   .eye .glow {
     animation:
-      arcane-glow-in 1.4s 0.8s ease-out both,
-      arcane-breathe 6s 2.2s ease-in-out infinite alternate,
+      arcane-dim 6s 2.2s ease-in-out infinite alternate,
       blink 9s 5s infinite;
   }
 
