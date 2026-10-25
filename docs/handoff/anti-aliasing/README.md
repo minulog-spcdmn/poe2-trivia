@@ -12,10 +12,11 @@ and doesn't repeat them.
 
 ## Where it stands
 
-- **The cards: fixed where it can be** (a second session, the same day,
-  `lib/fineMask`; see “What is known about the cards”). The hatching still
-  shimmers as the card tilts: the compositor's resample, which no CSS tried
-  reaches.
+- **The cards: fixed** (a fourth session, the same day; “The sharp faces”,
+  below). In Chromium each face is drawn at twice its size and filtered down
+  to the screen's own limit, at rest and tilted alike: the tilt's shimmer
+  measures at the 4x ideal, and tilting costs the GPU less than it did
+  before. Firefox and Safari draw the cards as they were.
 - **The circles:** the cause is measured (below); every cheap fix tried falls
   short, a real repaint every frame is worse, and the one fix left (drawing
   the turning on the GPU) would land on the ideal by construction; it's
@@ -161,8 +162,64 @@ averaged down.
   hover's start measured the same as the ideal; the flip is over in half a
   second.
 
+## The sharp faces (built)
+
+What the fourth session built, in `ChooseCategory` (`.sharp`), measured with
+`harness/motion.mjs` and `harness/unwarp.py` (below): the tilting card's
+frames warped back flat, then how much each point still changes, in linear
+light. Runs at the same speed (`GLARE=1 STEP=2`, 32 frames); an earlier run
+compared a faster tilt with a slower one and overstated a gain 3.7 times
+where it was 1.4, which is why the owner saw only “a bit better”.
+
+| Shimmer | 1080p | 4K at 150% |
+| --- | --- | --- |
+| As it was | 0.0133 | 0.0093 |
+| Built (cut 0.23, radius 5) | 0.0078 | |
+| Steadied, not chosen (cut 0.2, radius 6) | 0.0070 | 0.0074 |
+| Drawn at 4x, averaged down (the ideal) | 0.0081 | |
+
+- **How:** the face is laid out at `zoom: 2` and shrunk by `scale: .5`, and
+  Chrome rasterises a layer at its zoom, so the face is drawn at twice its
+  size; a separable windowed sinc (`feConvolveMatrix`, in the doubled
+  pixels) cuts what the screen can't hold before Chrome shrinks it. The
+  owner compared three cuts on a page beside the game and chose the
+  crisper one.
+- **It needs a 3D transform, always.** With a flat one Chrome rasterises
+  at the final size and the filter only blurs, so every state's transform
+  starts `perspective(900px) rotateX(0.01deg)`; at rest and hovered then
+  look the same (the owner's complaint about the first try). `lib/linear`
+  still counts that as flat, so the backdrop's shadow keeps working, and
+  `lib/stage` reads the face's zoom through `data-sharp`, so the hover
+  fire lands where it did.
+- **Chromium only** (`'userAgentData' in navigator`). Firefox runs the
+  filter at the screen's pixels and blurs the card; WebKit can't say an
+  element's zoom (`currentCSSZoom`).
+- **The dim moved** onto a wrapper (`.sides`): a `filter` list with a
+  `url()` in it doesn't animate, so the dim's fade needs its own element.
+- **Tilting was costly, and found why** (traces at 60 fps, 4K at 150%,
+  GPU ms a frame: 5.4 at first, 1.95 for the cards as they were, now
+  1.0). Three causes:
+  - The tilt's 0.35 s transition restarted on every pointer move. It now
+    eases in script (`tiltTo`, a 0.12 s time constant) after the lift.
+  - The tilt's angles were custom properties inherited by the whole card,
+    restyling it all each move. They're now registered and not inherited
+    (`--tilt-x`, `--tilt-y`), and the glare's on the glare.
+  - Above all, Chrome repaints the whole face every frame it moves if an
+    image on it comes through `var()`, or shares an element's background
+    with gradients (in a clean page as well as the game; registering the
+    property doesn't help, and a bitmap copy of the SVG repaints the
+    same). The grain and the filigree did both. Each is now alone on an
+    element of its own (`.grain`, `.corners`), written out. Keep it so: a
+    `var()` image on a card brings the cost back.
+  - What's left is the glare following the pointer (about 0.9 ms). Moving
+    it by transform on a layer of its own would take that off too.
+
 ## The harness
 
+`harness/motion.mjs` and `harness/unwarp.py` are the sharp faces' measure:
+the card bench's stage, a card's tilt stepped frame by frame
+(`node docs/handoff/anti-aliasing/harness/motion.mjs http://localhost:5173/ out fhd:now:tilt 32`,
+with `GLARE=1 STEP=2`), then `BLUR=1 python docs/handoff/anti-aliasing/harness/unwarp.py out.png out/fhd-now-tilt`.
 `harness/shoot.mjs` steps a circle on the QA desk's circle bench frame by
 frame and saves each frame at device pixels (`repaint`: turned from script,
 nothing composited); `harness/cards.mjs` does the same for a card on the

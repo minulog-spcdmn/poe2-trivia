@@ -334,6 +334,32 @@
   /** What a card is: a find of some kind, or plain. */
   const kindOf = (cat: string): FindKind | null => findsShown[cat] ?? null;
   const uid = $props.id();
+  /**
+   * Whether the faces are drawn sharp (.sharp, below): only in Chromium (it
+   * alone has userAgentData), which draws them as that CSS reckons; Firefox
+   * runs the filter at the screen's pixels, blurring the card, and Safari
+   * can't say the zoom it's drawn at (lib/stage).
+   */
+  const sharp = typeof navigator !== 'undefined' && 'userAgentData' in navigator;
+  /**
+   * The sharp face's filter, one pass across and one down, in the pixels of
+   * its twice-size drawing: a windowed sinc (Lanczos, radius 5) cut at 0.23
+   * cycles a pixel, just under the screen's own limit (0.25), so detail the
+   * screen can't hold is gone before Chrome shrinks it, and what it can is
+   * kept. (A lower cut held the hatching stiller still but softer.)
+   */
+  const SHARP_KERNEL = '-0.00903 -0.05011 0.03016 0.29743 0.46311 0.29743 0.03016 -0.05011 -0.00903';
+
+  /**
+   * The corner filigree's four images (app.css, --filigree), written on each
+   * card's corners rather than reached through var(). Chrome repaints a
+   * card's whole face on every frame it tilts while an image on it comes
+   * through var(), or shares an element's background with gradients: the
+   * grain and the filigree, drawn so, cost the GPU four fifths of a tilting
+   * frame (measured, 4K at 150%). So each image on a card has an element of
+   * its own (.grain, .corners), written out.
+   */
+  const corners = typeof document === 'undefined' ? '' : (getComputedStyle(document.documentElement).getPropertyValue('--filigree').match(/url\("[^"]*"\)/g) ?? []).join(', ');
 
   // ---- finds --------------------------------------------------------------
   // A find is the ordinary card, its plate engraved by the same hand with
@@ -627,8 +653,65 @@
     burning?.stop();
     burning = null;
     const frame = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.frame');
-    frame?.style.removeProperty('--rx');
-    frame?.style.removeProperty('--ry');
+    if (!frame) return;
+    tilts.get(frame)?.stop();
+    tilts.delete(frame);
+    frame.style.removeProperty('--tilt-x');
+    frame.style.removeProperty('--tilt-y');
+  }
+  /**
+   * The tilt eases after the pointer in script, a frame at a time, once the
+   * hover's own lift is over (.tilting): a CSS transition begun afresh on
+   * every move had Chrome draw the whole card again each frame, as each one
+   * started. Its time constant matches the transition it stands in for
+   * (0.35 s, ease-out).
+   */
+  const TILT_EASE = 0.12;
+  const LIFT = 350;
+  type Tilt = { since: number; rx: number; ry: number; to: [number, number]; frame: number; stop: () => void };
+  const tilts = new Map<HTMLElement, Tilt>();
+  function tiltTo(frame: HTMLElement, rx: number, ry: number) {
+    const put = (t: Tilt) => {
+      frame.style.setProperty('--tilt-x', `${t.rx.toFixed(3)}deg`);
+      frame.style.setProperty('--tilt-y', `${t.ry.toFixed(3)}deg`);
+    };
+    let t = tilts.get(frame);
+    if (!t) {
+      const made: Tilt = {
+        since: performance.now(),
+        rx,
+        ry,
+        to: [rx, ry],
+        frame: 0,
+        stop: () => {
+          cancelAnimationFrame(made.frame);
+          made.frame = 0;
+          frame.classList.remove('tilting');
+        },
+      };
+      tilts.set(frame, (t = made));
+    }
+    t.to = [rx, ry];
+    // During the lift the hover's transition carries it there.
+    if (performance.now() - t.since < LIFT) {
+      [t.rx, t.ry] = t.to;
+      put(t);
+      return;
+    }
+    frame.classList.add('tilting');
+    if (t.frame) return;
+    const ease = t;
+    let last = performance.now();
+    const step = (now: number) => {
+      const k = 1 - Math.exp(-(now - last) / 1000 / TILT_EASE);
+      last = now;
+      ease.rx += (ease.to[0] - ease.rx) * k;
+      ease.ry += (ease.to[1] - ease.ry) * k;
+      put(ease);
+      const settled = Math.abs(ease.to[0] - ease.rx) < 0.005 && Math.abs(ease.to[1] - ease.ry) < 0.005;
+      ease.frame = settled ? 0 : requestAnimationFrame(step);
+    };
+    ease.frame = requestAnimationFrame(step);
   }
   /** Tilts the card toward the pointer, and moves the glare with it. */
   function tilt(e: PointerEvent) {
@@ -638,11 +721,16 @@
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
-    frame.style.setProperty('--rx', `${((0.5 - y) * 20).toFixed(2)}deg`);
-    frame.style.setProperty('--ry', `${((x - 0.5) * 24).toFixed(2)}deg`);
-    frame.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
-    frame.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
+    tiltTo(frame, (0.5 - y) * 20, (x - 0.5) * 24);
+    // (On the glare itself: set on the frame, every part of the card would be restyled with it.)
+    const glare = frame.querySelector<HTMLElement>('.glare');
+    glare?.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
+    glare?.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
   }
+  $effect(() => () => {
+    for (const t of tilts.values()) t.stop();
+    tilts.clear();
+  });
   $effect(() => () => burning?.stop());
 
   /** Picks `category` (votes for it, together); whether it did. */
@@ -715,7 +803,28 @@
   </p>
 {/snippet}
 
-<div class="choose" class:coop class:delve={!!s.delve} class:beside={beside} class:duel={!!s.deathmatch} style:--n={s.offered.length}>
+<div
+  class="choose"
+  class:coop
+  class:delve={!!s.delve}
+  class:beside={beside}
+  class:duel={!!s.deathmatch}
+  class:sharp
+  style:--n={s.offered.length}
+  style:--sharp={sharp ? `url(#${uid}-sharp)` : undefined}
+  style:--sharp-wide={sharp ? `url(#${uid}-sharp-wide)` : undefined}
+>
+  {#if sharp}
+    <!-- The sharp face's filter (SHARP_KERNEL); the wide one leaves room for its shadow while CSS paints it. -->
+    <svg class="sharp-filters" aria-hidden="true" width="0" height="0">
+      {#each [['sharp', 5], ['sharp-wide', 40]] as [name, room] (name)}
+        <filter id="{uid}-{name}" x="-{room}%" y="-{room}%" width="{100 + 2 * Number(room)}%" height="{100 + 2 * Number(room)}%" color-interpolation-filters="sRGB">
+          <feConvolveMatrix order="9 1" kernelMatrix={SHARP_KERNEL} divisor="1" edgeMode="none" />
+          <feConvolveMatrix order="1 9" kernelMatrix={SHARP_KERNEL} divisor="1" edgeMode="none" />
+        </filter>
+      {/each}
+    </svg>
+  {/if}
   {#if timer}
     <!-- The prompt's line as wide as the question's task line, its clock at the right end. -->
     <div class="line">
@@ -726,6 +835,13 @@
     {@render prompt()}
   {/if}
 
+  <!-- The filigree: its rules (::before) and its corners, each image alone on its element (see `corners`). -->
+  {#snippet filigree()}
+    <span class="filigree"
+      ><span class="corners" style:background-image={s.deathmatch ? undefined : corners} style:-webkit-mask-image={s.deathmatch ? corners : undefined} style:mask-image={s.deathmatch ? corners : undefined}></span
+      ></span
+    >
+  {/snippet}
   <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       {@const heap = heapOf(cat)}
@@ -758,51 +874,56 @@
         use:revealed={i}
         in:appear|global={{ i }}
       >
-        <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
-          <span class="back" aria-hidden="true">
-            <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
-            <span class="filigree"></span>
-          </span>
-          <span class="frame" use:backdropShadow>
-            <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
-            <span class="glare"></span>
-            <span class="sheen"></span>
-            <span class="filigree"></span>
-            {#if kindOf(cat)}
-              {@const kind = kindOf(cat)!}
-              <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
-            {:else if isWayOut(cat)}
-              <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
-            {/if}
-            <span class="icon" class:none={isWayOut(cat)}>
-              {#if heap}
-                {@const at = heap.at}
-                <span class="lit moons" style:--spread={heap.spread}>
-                  {#each categoryCompanions(cat) as c (c.url)}
-                    {#if at[c.kind]}
-                      {@const [x, y, k, turn] = at[c.kind]}
-                      <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
-                        ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
-                      >
-                    {/if}
-                  {/each}
-                </span>
-              {/if}
-              <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
+        <!-- (The card's two sides together: what a dim card's filter goes on when its face is sharp.) -->
+        <span class="sides">
+          <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
+            <span class="back" aria-hidden="true">
+              <span class="grain"></span>
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              {@render filigree()}
             </span>
-            {#if kindOf(cat) === 'azurite'}
-              <!-- The vein's crystals in the corner stand in front of the item. -->
-              <CardEngraving side="face" find="azurite" front />
+            <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
+              <span class="grain"></span>
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <span class="glare"></span>
+              <span class="sheen"></span>
+              {@render filigree()}
+              {#if kindOf(cat)}
+                {@const kind = kindOf(cat)!}
+                <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+              {:else if isWayOut(cat)}
+                <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+              {/if}
+              <span class="icon" class:none={isWayOut(cat)}>
+                {#if heap}
+                  {@const at = heap.at}
+                  <span class="lit moons" style:--spread={heap.spread}>
+                    {#each categoryCompanions(cat) as c (c.url)}
+                      {#if at[c.kind]}
+                        {@const [x, y, k, turn] = at[c.kind]}
+                        <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
+                          ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
+                        >
+                      {/if}
+                    {/each}
+                  </span>
+                {/if}
+                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
+              </span>
+              {#if kindOf(cat) === 'azurite'}
+                <!-- The vein's crystals in the corner stand in front of the item. -->
+                <CardEngraving side="face" find="azurite" front />
+              {/if}
+              <span class="title" use:fitPlate
+                >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
+                  >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
+              >
+            </span>
+            {#if coop}
+              <!-- The draw's light on this card (see the draw above). -->
+              <span class="glow" aria-hidden="true"></span>
             {/if}
-            <span class="title" use:fitPlate
-              >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
-                >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
-            >
           </span>
-          {#if coop}
-            <!-- The draw's light on this card (see the draw above). -->
-            <span class="glow" aria-hidden="true"></span>
-          {/if}
         </span>
         {#if coop}
           <!-- Who voted for it, your own mark ringed: on the card's foot from 701px
@@ -1006,9 +1127,6 @@
     /* The engraving's gold, and the warm glow in the face's window. */
     --ink: #c9a05a;
     --warm: #c8682a;
-    /* A faint grain over both sides, so they read as worked plates rather than flat fills. */
-    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")
-      0 0 / 180px;
     padding: 0;
     border: 0;
     background: none;
@@ -1024,6 +1142,17 @@
   .back {
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
+    isolation: isolate;
+  }
+  /* A faint grain over both sides, so they read as worked plates rather than
+     flat fills: under all else on the side, an element of its own (see
+     `corners`, in the script). */
+  .grain {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") 0 0 / 180px;
+    pointer-events: none;
   }
   .back {
     position: absolute;
@@ -1032,7 +1161,6 @@
     overflow: clip;
     border: 1px solid var(--gold-lo);
     background:
-      var(--grain),
       radial-gradient(circle at 50% 50%, rgba(175, 96, 37, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
@@ -1061,7 +1189,6 @@
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
-      var(--grain),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #211912, #0d0a07 70%);
     --bs1: 16px 40px;
@@ -1084,8 +1211,9 @@
       opacity 0.4s,
       filter 0.4s;
   }
-  /* The same gold filigree as the panels, on all four corners, joined by a
-     fine rule along the outer line of each. */
+  /* The same gold filigree as the panels, on all four corners (.corners,
+     from the script's `corners`), joined by a fine rule along the outer line
+     of each (::before). */
   .filigree {
     --at: 1px;
     --end: 30px;
@@ -1097,13 +1225,26 @@
       var(--rule) calc(100% - var(--at)) var(--end) / 1px calc(100% - 2 * var(--end)) no-repeat;
     position: absolute;
     inset: 5px;
-    background: var(--filigree), var(--rules);
     opacity: 0.8;
     filter: drop-shadow(0 0 3px rgba(224, 138, 68, 0.35));
     pointer-events: none;
     transition:
       opacity 0.3s,
       filter 0.3s;
+  }
+  .filigree::before,
+  .corners {
+    position: absolute;
+    inset: 0;
+  }
+  .filigree::before {
+    content: '';
+    background: var(--rules);
+  }
+  .corners {
+    background-position: top left, top right, bottom left, bottom right;
+    background-size: 30px 30px;
+    background-repeat: no-repeat;
   }
   .icon {
     position: absolute;
@@ -1361,17 +1502,29 @@
     border-color: #8c3a2c;
     --bs-ring: rgba(140, 58, 44, 0.45);
     background:
-      var(--grain),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
   }
   /* The filigree in red: its gold can't be filtered to a clean red, so its
      shapes mask a red of their own. */
   .card.dm .filigree {
-    background: linear-gradient(135deg, #f0a08a, #c8503a 60%, #9a3424);
-    -webkit-mask: var(--filigree), var(--rules);
-    mask: var(--filigree), var(--rules);
     filter: none;
+  }
+  .card.dm .filigree::before,
+  .card.dm .corners {
+    background: linear-gradient(135deg, #f0a08a, #c8503a 60%, #9a3424);
+  }
+  .card.dm .filigree::before {
+    -webkit-mask: var(--rules);
+    mask: var(--rules);
+  }
+  .card.dm .corners {
+    -webkit-mask-position: top left, top right, bottom left, bottom right;
+    mask-position: top left, top right, bottom left, bottom right;
+    -webkit-mask-size: 30px 30px;
+    mask-size: 30px 30px;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
   }
   .card.dm .title {
     color: #f3cfc2;
@@ -1387,7 +1540,6 @@
     border-color: #8c3a2c;
     --ring: rgba(140, 58, 44, 0.45);
     background:
-      var(--grain),
       radial-gradient(circle at 50% 50%, rgba(224, 85, 63, 0.2), transparent 90px),
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
@@ -1429,13 +1581,39 @@
   }
   .card.mine:not(:global(.down)):hover .frame,
   .card.mine:not(:global(.down)):focus-visible .frame {
-    transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(-10px) scale(1.04);
+    transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-10px) scale(1.04);
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
     --bs1: 0px 40px;
     --bs1-color: rgba(224, 138, 68, 0.3);
     --bs2: 24px 50px;
     --bs2-color: rgba(0, 0, 0, 0.7);
+  }
+  /* The tilt (tiltTo), the frame's own: an inherited one would restyle every
+     part of the card, each line of its engraving, on every frame it moves. */
+  @property --tilt-x {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+  @property --tilt-y {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+  /* Lifted, it tilts by script (tiltTo): its own transform takes no transition. */
+  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting) {
+    transition:
+      transform 0s,
+      --bs-shade 0.35s,
+      --bs-ring 0.35s,
+      --bs1 0.35s,
+      --bs1-color 0.35s,
+      --bs2 0.35s,
+      --bs2-color 0.35s,
+      border-color 0.35s,
+      opacity 0.4s,
+      filter 0.4s;
   }
   .card.dm.mine:not(:global(.down)):hover .frame,
   .card.dm.mine:not(:global(.down)):focus-visible .frame {
@@ -1547,6 +1725,75 @@
     will-change: transform, opacity;
   }
 
+  /* ---- sharp faces (Chromium) -----------------------------------------------
+     Chrome draws a card's face once and resamples that picture onto the
+     screen every frame it tilts; the engraving's fine hatching, a few px
+     apart, came out as lines in one frame and grey in the next, and at rest
+     the arch's close lines stepped. Here the face is laid out at twice its
+     size (the width and margins give the room back, the scale its size; to
+     the code it's no zoom: lib/stage, data-sharp), filtered down to what
+     the screen can hold (SHARP_KERNEL) and only then shrunk, at rest and
+     tilted alike, so it looks the same either way. Every transform the face
+     takes is a 3D one, turned a hair (0.01deg): a flat one, Chrome draws at
+     the screen's own size, and the filter would blur it. Only the tall
+     cards: a row never tilts. */
+  .sharp-filters {
+    position: absolute;
+  }
+  .sides {
+    display: block;
+  }
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
+    .sharp .turn {
+      /* (flow-root: the face's margins stay inside it.) */
+      display: flow-root;
+    }
+    .sharp .frame {
+      zoom: 2;
+      scale: 0.5;
+      width: 200%;
+      margin: -75px -50%;
+      transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(0) scale(1);
+      --face-filter: var(--sharp-wide);
+    }
+    /* (Its soft shadow drawn by the backdrop, not round it: the filter needs no room for it.) */
+    .sharp .frame:global([data-bs-on]) {
+      --face-filter: var(--sharp);
+    }
+    /* A filter that holds a url() can't fade, so a dim card is dimmed round both its sides instead. */
+    .sharp .frame,
+    .sharp .card.dim .frame,
+    .sharp .card.dim.chosen .frame {
+      filter: var(--face-filter);
+    }
+    .sharp .card.dim .back {
+      filter: none;
+    }
+    .sharp .sides {
+      transition: filter 0.4s;
+    }
+    .sharp .card.dim .sides {
+      filter: saturate(0.6) brightness(0.8);
+    }
+    .sharp .card.dim.chosen .sides {
+      filter: none;
+    }
+    .sharp .card.mine:not(:global(.down)):hover .frame,
+    .sharp .card.mine:not(:global(.down)):focus-visible .frame {
+      transform: perspective(900px) rotateX(calc(var(--tilt-x) + 0.01deg)) rotateY(var(--tilt-y)) translateY(-10px) scale(1.04);
+    }
+    .sharp .card.chosen .frame {
+      transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(-4px) scale(1.05);
+    }
+    .sharp .card.faded .frame {
+      /* (scale(0.92) translateY(8px), in this order.) */
+      transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(7.36px) scale(0.92);
+    }
+    .sharp .card.voted .frame {
+      transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(-8px) scale(1);
+    }
+  }
+
   .note {
     margin: 0;
     font-style: italic;
@@ -1652,7 +1899,6 @@
   }
   .card[data-find='flare'] .frame {
     background:
-      var(--grain),
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #26110f, #0e0607 70%);
   }
@@ -1958,21 +2204,18 @@
       gap: 32px;
       /* No window in a row: the warm glow sits round the emblem instead. */
       background:
-        var(--grain),
         radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #211912, #0d0a07 70%);
     }
     .card[data-find='flare'] .frame {
       background:
-        var(--grain),
         radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 32%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #26110f, #0e0607 70%);
     }
     .card.dm .frame {
       background:
-        var(--grain),
         radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #22110d, #0d0706 70%);
@@ -2005,36 +2248,13 @@
       --at: 0.5px;
       --end: 20px;
       inset: 3px;
-      background-size:
-        20px 20px,
-        20px 20px,
-        20px 20px,
-        20px 20px,
-        calc(100% - 2 * var(--end)) 1px,
-        calc(100% - 2 * var(--end)) 1px,
-        1px calc(100% - 2 * var(--end)),
-        1px calc(100% - 2 * var(--end));
     }
-    .card.dm .filigree {
-      background-size: auto;
-      -webkit-mask-size:
-        20px 20px,
-        20px 20px,
-        20px 20px,
-        20px 20px,
-        calc(100% - 2 * var(--end)) 1px,
-        calc(100% - 2 * var(--end)) 1px,
-        1px calc(100% - 2 * var(--end)),
-        1px calc(100% - 2 * var(--end));
-      mask-size:
-        20px 20px,
-        20px 20px,
-        20px 20px,
-        20px 20px,
-        calc(100% - 2 * var(--end)) 1px,
-        calc(100% - 2 * var(--end)) 1px,
-        1px calc(100% - 2 * var(--end)),
-        1px calc(100% - 2 * var(--end));
+    .corners {
+      background-size: 20px 20px;
+    }
+    .card.dm .corners {
+      -webkit-mask-size: 20px 20px;
+      mask-size: 20px 20px;
     }
     /* The vein's crystals rise at the row's far end: the name keeps clear of them. */
     .card[data-find='azurite'] .title {

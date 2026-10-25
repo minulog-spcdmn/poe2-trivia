@@ -31,7 +31,32 @@ const ZOOMED = '.shell, .dm-intro, .zc, .toasts, [style*="zoom"], [data-zoom]';
  */
 export function zoomOf(el: Element): number {
   const said = (el as Element & { currentCSSZoom?: number }).currentCSSZoom;
-  return said ?? measuredZoom(el);
+  return said === undefined ? measuredZoom(el) : said / sharpness(el);
+}
+
+/**
+ * What's laid out large and drawn back down to size (marked data-sharp: the
+ * category cards' faces, drawn at twice their size so they stay sharp as
+ * they tilt): by how much. Its zoom is taken back by its `scale`, so it
+ * isn't zoom on screen, and zoomOf leaves it out.
+ */
+function sharpness(el: Element): number {
+  const s = el.closest?.('[data-sharp]') as (Element & { currentCSSZoom?: number }) | null | undefined;
+  const up = s?.parentElement as (Element & { currentCSSZoom?: number }) | null | undefined;
+  return s?.currentCSSZoom && up?.currentCSSZoom ? s.currentCSSZoom / up.currentCSSZoom : 1;
+}
+
+/**
+ * The CSS zoom an element is laid out at, all of it: zoomOf's, and a
+ * data-sharp element's that its scale takes back. For what reads its
+ * transforms (lib/linear) or draws at its full detail (lib/fineMask).
+ */
+export function layoutZoomOf(el: Element): number {
+  const said = (el as Element & { currentCSSZoom?: number }).currentCSSZoom;
+  if (said !== undefined) return said;
+  // (A browser that doesn't say: the stage's zoom measured, times the sharp one's own.)
+  const s = el.closest('[data-sharp]');
+  return measuredZoom(el) * (s ? parseFloat(getComputedStyle(s).zoom) || 1 : 1);
 }
 
 const measured = new WeakMap<Element, { key: string; z: number }>();

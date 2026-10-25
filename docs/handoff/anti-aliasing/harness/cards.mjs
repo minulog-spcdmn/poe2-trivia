@@ -2,7 +2,7 @@
 // node cards.mjs <base> <outDir> <jobs: size:variant:mode,...> [frames]
 // mode: rest, tilt (a slow pointer's tilt), enter (the hover's start), flip.
 // Variants in cards.json (k: density multiplier, the ideal at 4).
-// Steps a card's hover tilt (--rx/--ry a little each frame, as a slow pointer
+// Steps a card's hover tilt (--tilt-x/--tilt-y a little each frame, as a slow pointer
 // moves it) or its turn over (1/60 s a frame), saving each frame at device
 // pixels, clipped to the card. Everything else is paused.
 import { createRequire } from 'node:module';
@@ -64,8 +64,8 @@ try {
           for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.currentTime = (k * 1000) / 60;
         } else if (mode === 'tilt') {
           const f = card.querySelector('.frame');
-          f.style.setProperty('--rx', `${(3 + k * 0.06).toFixed(3)}deg`);
-          f.style.setProperty('--ry', `${(5 + k * 0.08).toFixed(3)}deg`);
+          f.style.setProperty('--tilt-x', `${(3 + k * 0.06).toFixed(3)}deg`);
+          f.style.setProperty('--tilt-y', `${(5 + k * 0.08).toFixed(3)}deg`);
         } else {
           card.classList.remove('down'); for (const a of card.querySelector('.turn').getAnimations()) if (a.id === 'bench-turn') a.currentTime = 150 + (k * 1000) / 60 / 4;
         }
