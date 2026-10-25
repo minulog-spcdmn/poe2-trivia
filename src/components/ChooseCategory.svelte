@@ -1760,7 +1760,10 @@
     }
     .sharp .frame {
       zoom: 2;
-      scale: 0.5;
+      /* (Through var(), as the build keeps it beside a transform: without,
+         the live cards came out twice their size. tests/minifiedTransforms.) */
+      --sharp-scale: 0.5;
+      scale: var(--sharp-scale);
       width: 200%;
       margin: -75px -50%;
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(0) scale(1);
