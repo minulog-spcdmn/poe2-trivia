@@ -42,6 +42,8 @@ function source(url: string): Promise<Source> {
       return { w, h, alpha, sizes: new Map([[0, Promise.resolve(url)]]) };
     })();
     sources.set(url, s);
+    // (Not kept if it fails: tried again on the next look.)
+    s.catch(() => sources.delete(url));
   }
   return s;
 }

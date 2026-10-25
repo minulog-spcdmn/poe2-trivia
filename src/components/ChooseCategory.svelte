@@ -359,7 +359,7 @@
    * frame (measured, 4K at 150%). So each image on a card has an element of
    * its own (.grain, .corners), written out.
    */
-  const corners = typeof document === 'undefined' ? '' : (getComputedStyle(document.documentElement).getPropertyValue('--filigree').match(/url\("[^"]*"\)/g) ?? []).join(', ');
+  const corners = typeof document === 'undefined' ? '' : (getComputedStyle(document.documentElement).getPropertyValue('--filigree').match(/url\((?:"[^"]*"|'[^']*'|[^)]*)\)/g) ?? []).join(', ');
 
   // ---- finds --------------------------------------------------------------
   // A find is the ordinary card, its plate engraved by the same hand with
@@ -677,8 +677,10 @@
     };
     let t = tilts.get(frame);
     if (!t) {
+      // The lift began with the hover, not this move: timed from its transition (none left, it's over).
+      const lift = frame.getAnimations().find((a) => a instanceof CSSTransition && a.transitionProperty === 'transform');
       const made: Tilt = {
-        since: performance.now(),
+        since: lift ? performance.now() - Number(lift.currentTime ?? 0) : -Infinity,
         rx,
         ry,
         to: [rx, ry],
@@ -698,7 +700,14 @@
       put(t);
       return;
     }
-    frame.classList.add('tilting');
+    if (!frame.classList.contains('tilting')) {
+      // Taken over from where the lift's transition has it on screen, so it doesn't jump: the
+      // angles out of its matrix (perspective leaves the top three rows alone; the scale is even).
+      const m = new DOMMatrix(getComputedStyle(frame).transform);
+      t.rx = (Math.atan2(m.m23, m.m22) * 180) / Math.PI;
+      t.ry = (Math.atan2(m.m31, m.m11) * 180) / Math.PI;
+      frame.classList.add('tilting');
+    }
     if (t.frame) return;
     const ease = t;
     let last = performance.now();
@@ -1199,8 +1208,9 @@
       inset 0 0 0 4px var(--bs-shade),
       inset 0 0 0 5px var(--bs-ring),
       var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+    /* (--tilt-transition: its transform instant while it tilts by script, .tilting below.) */
     transition:
-      transform 0.35s var(--ease-out),
+      var(--tilt-transition, transform 0.35s var(--ease-out)),
       --bs-shade 0.35s,
       --bs-ring 0.35s,
       --bs1 0.35s,
@@ -1603,17 +1613,7 @@
   }
   /* Lifted, it tilts by script (tiltTo): its own transform takes no transition. */
   .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting) {
-    transition:
-      transform 0s,
-      --bs-shade 0.35s,
-      --bs-ring 0.35s,
-      --bs1 0.35s,
-      --bs1-color 0.35s,
-      --bs2 0.35s,
-      --bs2-color 0.35s,
-      border-color 0.35s,
-      opacity 0.4s,
-      filter 0.4s;
+    --tilt-transition: transform 0s;
   }
   .card.dm.mine:not(:global(.down)):hover .frame,
   .card.dm.mine:not(:global(.down)):focus-visible .frame {
