@@ -1736,7 +1736,7 @@
      tilted alike, so it looks the same either way. Every transform the face
      takes is a 3D one, turned a hair (0.01deg): a flat one, Chrome draws at
      the screen's own size, and the filter would blur it. Only the tall
-     cards: a row never tilts. */
+     cards: a row never tilts. Changing a card: docs/category-cards.md. */
   .sharp-filters {
     position: absolute;
   }
