@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stageZoom, unzoomPin, zoomOf } from '../src/lib/stage.ts';
+import { layoutZoomOf, stageZoom, unzoomPin, zoomOf } from '../src/lib/stage.ts';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
@@ -21,6 +21,17 @@ test('larger windows scale by the smaller of width / 1440 and height / 980', () 
 
 test('the scale stops at 2.2', () => {
   assert.equal(stageZoom(7680, 4320), 2.2);
+});
+
+test("a card's face drawn at twice its size and scaled back is no zoom on screen, but all of its zoom to what reads its transforms", () => {
+  const cards = { currentCSSZoom: 1.36 };
+  const face = { currentCSSZoom: 2.72, parentElement: cards, closest: () => face };
+  const inFace = { currentCSSZoom: 2.72, closest: () => face } as unknown as Element;
+  assert.equal(zoomOf(inFace), 1.36);
+  assert.equal(layoutZoomOf(inFace), 2.72);
+  const plain = { currentCSSZoom: 1.36, closest: () => null } as unknown as Element;
+  assert.equal(zoomOf(plain), 1.36);
+  assert.equal(layoutZoomOf(plain), 1.36);
 });
 
 test("a leaving list item's pin, measured on screen, is scaled back to its own px under zoom", () => {

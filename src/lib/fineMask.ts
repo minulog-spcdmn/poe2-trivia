@@ -14,7 +14,7 @@
 // each image and size, and the element keeps its own mask until its copy
 // is ready, or if one can't be made.
 
-import { zoomOf } from './stage';
+import { layoutZoomOf } from './stage';
 
 /** Room over the drawn size: a hovered card's emblem grows 1.1, its card 1.04. */
 const HEADROOM = 1.15;
@@ -90,13 +90,13 @@ function sizeAt(s: Source, q: number): Promise<string> {
   return made;
 }
 
-/** How many device pixels tall the element's mask image is drawn: its mask-size (px, or contain in its box), zoomed, at the screen's density. */
+/** How many device pixels tall the element's mask image is drawn: its mask-size (px, or contain in its box), zoomed (all of it: a sharp card is drawn at its full zoom, lib/stage), at the screen's density. */
 function drawnHeight(node: HTMLElement, s: Source): number {
   const cs = getComputedStyle(node);
   const size = cs.maskSize || cs.getPropertyValue('-webkit-mask-size');
   const px = size.split(' ').map((v) => (v.endsWith('px') ? parseFloat(v) : NaN));
   const h = px.length === 2 && px[1]! > 0 ? px[1]! : Math.min(node.offsetWidth / s.w, node.offsetHeight / s.h) * s.h;
-  return h * zoomOf(node) * devicePixelRatio;
+  return h * layoutZoomOf(node) * devicePixelRatio;
 }
 
 /**

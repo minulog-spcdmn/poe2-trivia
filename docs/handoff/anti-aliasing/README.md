@@ -13,9 +13,8 @@ and doesn't repeat them.
 ## Where it stands
 
 - **The cards: fixed where it can be** (a second session, the same day,
-  `lib/fineMask`; see “What is known about the cards”). The hatching still
-  shimmers as the card tilts: the compositor's resample, which no CSS tried
-  reaches.
+  `lib/fineMask`; and the hatching's shimmer as it tilts, the face drawn at
+  2x, `data-sharp`; see “What is known about the cards”).
 - **The circles:** the cause is measured (below); every cheap fix tried falls
   short, a real repaint every frame is worse, and the one fix left (drawing
   the turning on the GPU) would land on the ideal by construction; it's
@@ -157,6 +156,19 @@ averaged down.
   lines (`snap.js` in that session's scratchpad) changed little. (The tilt
   flicker number, run again, was swamped by the backdrop's own animation,
   0.024 either way; it can't tell this apart.)
+- **The hatching's shimmer as the card tilts: fixed by drawing the face at
+  2x** (`data-sharp` in `ChooseCategory`, `zoom: 2` and `scale: 0.5`, where
+  a pointer hovers). Earlier tilt runs stepped the tilt about 10 times
+  slower than a pointer moves it, which hid it; at a pointer's speed
+  (`STEP=10` in that session's harness) the 45° hatching, some 3 device px
+  apart, was lines in one frame and grey in the next. Bilinear resampling
+  at that pitch swings its contrast by half with the phase; drawn down
+  from twice the pixels it holds. 3x was crisper again but began to alias.
+  Effects and the backdrop see no zoom from it: `zoomOf` (lib/stage)
+  leaves a data-sharp element's own zoom out, and `layoutZoomOf` keeps it
+  for what reads transforms (lib/linear) or draws at full detail
+  (lib/fineMask). The zoom without that split is what broke the hover fire
+  in the 4% try above.
 - **The hover's start and the deal's flip move too fast to shimmer**: the
   hover's start measured the same as the ideal; the flip is over in half a
   second.

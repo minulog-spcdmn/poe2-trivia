@@ -763,7 +763,7 @@
             <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="filigree"></span>
           </span>
-          <span class="frame" use:backdropShadow>
+          <span class="frame" data-sharp use:backdropShadow>
             <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
             <span class="glare"></span>
             <span class="sheen"></span>
@@ -1016,7 +1016,8 @@
   }
   .turn {
     position: relative;
-    display: block;
+    /* (flow-root: the face's margins, below, stay inside it.) */
+    display: flow-root;
     transform-style: preserve-3d;
   }
   /* The card's two sides: the deal turns it from its back to its face. */
@@ -1058,6 +1059,25 @@
     display: block;
     height: 300px;
     overflow: clip;
+  }
+  /* Drawn at twice its size and scaled back down, so it stays sharp as it
+     tilts. Chrome draws a layer turned in perspective at the page's scale
+     and resamples that onto the screen every frame: the engraving's fine
+     hatching, some 3 px apart, came out as lines in one frame and grey in
+     the next as the card turned, and its moulding ran together. From twice
+     the pixels each frame is drawn down, not resampled across, and they
+     hold. The zoom's room is given back by the width and margins, and its
+     size by the scale; to the code it's no zoom (lib/stage, data-sharp).
+     Only where the card tilts: a pointer that hovers. */
+  @media (hover: hover) {
+    .frame {
+      zoom: 2;
+      scale: 0.5;
+      width: 200%;
+      margin: -75px -50%;
+    }
+  }
+  .frame {
     border-radius: 8px;
     border: 1px solid var(--gold-lo);
     background:
@@ -1953,6 +1973,11 @@
       display: flex;
       align-items: center;
       height: auto;
+      /* (Never tilted in a row: drawn at its size.) */
+      zoom: 1;
+      scale: none;
+      width: auto;
+      margin: 0;
       /* The emblem 62 in and the divider halfway to the name (ROW). */
       padding: 15px 22px;
       gap: 32px;
