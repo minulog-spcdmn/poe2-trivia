@@ -4,7 +4,7 @@
 
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DAILY_KEY, DAYS_KEY, GRACE_DAYS, GRACE_SINCE, absorbDaily, absorbDays, answerDaily, answerLog, daysOf, graceOn, loadDaily, loadLog, mergeLogs, ownDaysRaw, parseLog, replay, saveLog, settleDays, streakOn, upTo, type DailyLog, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_KEY, DAYS_KEY, GRACE_DAYS, GRACE_SINCE, absorbDaily, absorbDays, answerDaily, answerLog, daysOf, dropAhead, graceOn, loadLog, mergeLogs, ownDaysRaw, parseLog, replay, saveLog, settleDays, streakOn, upTo, type DailyLog, type DailyRecord } from '../src/lib/daily.ts';
 import { memoryStorage, seeded } from './helpers.ts';
 
 const store = new Map<string, string>();
@@ -14,6 +14,8 @@ beforeEach(() => store.clear());
 const D = GRACE_SINCE + 1000;
 /** Where an older build's record is noted as taken into the days (lib/daily settleDays). */
 const TAKEN_KEY = `${DAILY_KEY}.taken`;
+/** The record this device's days come to, every day held counted. */
+const loadDaily = () => replay(loadLog());
 /** A run of right answers on each day from `from` to `to`, as a device answering them makes it. */
 function rightDays(from: number, to: number, log: DailyLog | null = null): DailyLog | null {
   for (let day = from; day <= to; day++) log = answerLog(log, day, 0, true);
@@ -40,6 +42,36 @@ test('on one device the days come to what answering each in turn made', () => {
         assert.equal(graceOn(replay(log), later), graceOn(rec, later));
       }
       day = Math.max(day, rec.day);
+    }
+  }
+});
+
+test("once the server has said the day, today's is answered beside days still to come, each counted on its own day", () => {
+  for (let trial = 0; trial < 300; trial++) {
+    const rng = seeded(9000 + trial);
+    let log: DailyLog | null = null;
+    /** Each day's answer, as given, to count in day order. */
+    const given = new Map<number, [number, boolean]>();
+    const answer = (on: number, sure: boolean, step: string) => {
+      const picked = Math.floor(rng() * 4);
+      const ok = rng() < 0.85;
+      const next = answerLog(log, on, picked, ok, sure);
+      // A day takes an answer while it has none, and on the device's own clock only while no later day has one.
+      const open = !given.has(on) && (sure || ![...given.keys()].some((day) => day > on));
+      assert.equal(next !== log, open, `trial ${trial}, ${step}`);
+      if (open) given.set(on, [picked, ok]);
+      log = next;
+    };
+    for (let day = D; day < D + 60; day++) {
+      // Tomorrow's now and then on a clock a day ahead (before or after today's, with the server's day known), today's mostly.
+      const ahead = rng() < 0.2;
+      const first = rng() < 0.5;
+      if (ahead && first) answer(day + 1, false, `${day} ahead first`);
+      if (rng() < 0.8) answer(day, true, `${day}`);
+      if (ahead && !first) answer(day + 1, false, `${day} ahead after`);
+      let rec: DailyRecord | null = null;
+      for (const d of [...given.keys()].sort((a, b) => a - b)) if (d <= day) rec = answerDaily(rec, d, ...given.get(d)!);
+      assert.deepEqual(replay(log, day), rec, `trial ${trial}, day ${day}`);
     }
   }
 });
@@ -157,6 +189,24 @@ test("before the days were kept, the record stands for its run: it comes out the
   store.set(DAILY_KEY, JSON.stringify({ day: D + 3, picked: 0, ok: true, streak: 1, ended: 0 }));
   assert.ok(settleDays());
   assert.equal(loadDaily()?.streak, 32);
+});
+
+test('a record taken in stands for its run again once the days it went into are damaged', () => {
+  store.set(DAILY_KEY, JSON.stringify({ day: D, picked: 2, ok: true, streak: 30, ended: 0 }));
+  settleDays();
+  store.set(DAYS_KEY, '{"from":');
+  assert.equal(loadDaily()?.streak, 30);
+  // Kept again, the damaged days aside.
+  assert.ok(settleDays());
+  assert.equal(store.get(`${DAYS_KEY}.unread`), '{"from":');
+  assert.equal(loadDaily()?.streak, 30);
+});
+
+test('the days more than a day ahead go from what is stored, and nothing else', () => {
+  saveLog(answerLog(answerLog(rightDays(D - 3, D - 1), D + 1, 0, true), D + 4, 0, true));
+  assert.ok(dropAhead(D));
+  assert.deepEqual(loadLog(), answerLog(rightDays(D - 3, D - 1), D + 1, 0, true));
+  assert.ok(!dropAhead(D), 'once');
 });
 
 test('the record stays, not noted as taken in, until the days could be kept (storage full)', () => {

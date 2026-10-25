@@ -20,7 +20,7 @@
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { countEvent } from '../lib/count';
-  import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, dailyEngine, dailyGame, dailyQuestion, aTopic, graceOn, loadLog, mergeLogs, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, upTo, utcDay } from '../lib/daily';
+  import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, dailyEngine, dailyGame, dailyQuestion, aTopic, dropAhead, graceOn, loadLog, mergeLogs, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, upTo, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -178,10 +178,11 @@
    */
   function dropFarAhead() {
     if (!clock.trusted()) return;
-    const kept = upTo(log, utcDay(clock.now()));
-    if (kept === log) return;
-    log = kept;
-    saveLog(kept);
+    const day = utcDay(clock.now());
+    if (upTo(log, day) === log) return;
+    // (From what's stored, not this tab's copy alone: another tab may have answered since.)
+    dropAhead(day);
+    log = upTo(stored(), day);
   }
 
   /** An answer to today's held until the server has said what day it is (or not for long): the option picked, the last one tapped. */
@@ -220,7 +221,7 @@
     // loaded (another tab may have answered a day since).
     if (!practice) {
       log = stored();
-      if (answeredOn(replay(log, today), today)) return;
+      if (todays) return;
     }
     const good = i === rightIdx;
     // Days from a later day, while the server hasn't said what day it is

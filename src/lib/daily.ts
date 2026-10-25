@@ -351,9 +351,11 @@ const serialize = (log: DailyLog) => JSON.stringify({ v: LOG_VERSION, from: log.
  * in as it is (settleDays).
  */
 export function loadLog(): DailyLog | null {
+  const days = parseLog(readStored(DAYS));
   const raw = readStored(KEY);
-  const rec = raw === readStored(TAKEN) ? null : parseDaily(raw);
-  return mergeLogs(parseLog(readStored(DAYS)), rec && daysOf(rec));
+  // (Taken in already, unless the days it went into can't be read any more.)
+  const rec = days && raw === readStored(TAKEN) ? null : parseDaily(raw);
+  return mergeLogs(days, rec && daysOf(rec));
 }
 
 /** Keeps the days, never over a newer build's (lib/keepAside.ts); whether that changed what was kept. */
@@ -361,11 +363,8 @@ export function saveLog(log: DailyLog | null): boolean {
   if (!log) return false;
   const raw = serialize(log);
   // (Never days that couldn't be read back: they would be lost on the next load.)
-  return !!parseLog(raw) && readStored(DAYS) !== raw && !!openStored(DAYS, LOG_VERSION, parseLog) && writeStored(DAYS, raw);
+  return readStored(DAYS) !== raw && !!parseLog(raw) && !!openStored(DAYS, LOG_VERSION, parseLog) && writeStored(DAYS, raw);
 }
-
-/** The record this device's days come to. */
-export const loadDaily = () => replay(loadLog());
 
 /** This device's days for sync to pass on (lib/sync/shared.ts), with an older build's record not yet taken in; null for none. */
 export function ownDaysRaw(): string | null {
@@ -404,6 +403,12 @@ export function upTo(log: DailyLog | null, today: number): DailyLog | null {
   const marks = marksOf(log);
   for (const day of [...marks.keys()]) if (day > today + 1) marks.delete(day);
   return logOf(marks);
+}
+
+/** Lets go of this device's days, as stored, more than a day after `today` (upTo; by the server's clock, once it has said). Whether that changed anything. */
+export function dropAhead(today: number): boolean {
+  const mine = loadLog();
+  return keep(mine, upTo(mine, today));
 }
 
 /** Takes in another of the player's devices' days (up to a day after `today`, by the server's clock where it has said). Whether it changed anything. */

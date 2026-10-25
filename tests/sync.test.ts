@@ -25,7 +25,7 @@ import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEn
 import { DELVE_RECORD_KEY, addRun, bestOf, combineRecords, emptyRecords, loadRecords, recordRun, serializeRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
 import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, absorbAchievements, absorbWins, loadAchievements, loadWins, serializeStore, serializeWins } from '../src/lib/achievements.ts';
 import { SIGILS_KEY, absorbSigils, loadSigils, serializeSigils } from '../src/lib/sigils.ts';
-import { DAILY_KEY, absorbDaily, loadDaily, utcDay } from '../src/lib/daily.ts';
+import { DAILY_KEY, absorbDaily, loadLog, replay, utcDay } from '../src/lib/daily.ts';
 import { DELVE_RULESET } from '../src/lib/delve.ts';
 import { readStored, storeKey, writeStored } from '../src/lib/storage.ts';
 import { chosenNow, stampChoices, takeChosen } from '../src/lib/sync/chosen.ts';
@@ -373,10 +373,10 @@ test("today's unique: another device's days are sent and taken in, an older buil
   assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
   assert.equal(loadDaily()?.ok, false);
   // Through sync, by this device's day (the server's where it has said): days more than a day ahead aren't taken in,
-  // and an older build's record is taken in as days.
+  // and an older build's record is taken in as days. (Days far enough out that midnight passing meanwhile changes nothing.)
   store.clear();
   const now = utcDay(Date.now());
-  assert.deepEqual(takeIn({ dailyDays: takenNowOf(now + 2) }), []);
+  assert.deepEqual(takeIn({ dailyDays: takenNowOf(now + 3) }), []);
   assert.deepEqual(takeIn({ dailyDays: takenNowOf(now + 1) }), ['daily.days']);
   assert.deepEqual(takeIn({ daily: JSON.stringify({ day: now, picked: 1, ok: true, streak: 3, ended: 0 }) }), ['daily']);
   assert.equal(loadDaily()?.streak, 4);
@@ -385,6 +385,8 @@ test("today's unique: another device's days are sent and taken in, an older buil
 
 /** Days as another device would send them: today's answered right. */
 const takenNowOf = (today: number) => JSON.stringify({ from: today, days: '0' });
+/** The record this device's days come to, every day held counted. */
+const loadDaily = () => replay(loadLog());
 
 test('what is sent to be taken in is what is stored; what comes in is checked', () => {
   store.set(ACHIEVEMENTS_KEY, serializeStore({ earned: { [ACHIEVEMENTS[0].id]: 1 } }));
