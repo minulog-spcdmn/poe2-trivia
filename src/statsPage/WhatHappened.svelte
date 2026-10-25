@@ -2,7 +2,9 @@
   // What happened: what the numbers bear out by themselves, a line each
   // (insights.ts). The days far busier than usual and the site behind each;
   // the site and the country that brought far more, or far fewer, than the
-  // period before. Nothing said that chance could have done.
+  // period before, beyond how all of them moved together (insights.ts
+  // moversOf), where the period before was counted in full (read.compare).
+  // Nothing said that chance could have done.
   import { fmt, longDay, siteName } from './chart';
   import { moversOf, spikeSource, spikesOf } from './insights';
   import type { Period, Read } from './read';
@@ -14,32 +16,33 @@
   const spikes = $derived(
     spikesOf(read.now.days, read.now.visitors.perDay, top).map((s) => ({ ...s, from: spikeSource(read.spikeRefs?.[s.day] ?? [], read.refs) })),
   );
-  const refs = $derived(moversOf(read.refs, read.refsBefore ?? []));
-  const places = $derived(moversOf(read.countries, read.countriesBefore ?? []));
+  const still = { up: null, down: null };
+  const refs = $derived(read.compare ? moversOf(read.refs, read.refsBefore ?? []) : still);
+  const places = $derived(read.compare ? moversOf(read.countries, read.countriesBefore ?? []) : still);
   const none = $derived(!spikes.length && !refs.up && !refs.down && !places.up && !places.down);
 </script>
 
 {#if none}
-  <p class="quiet">Nothing out of the ordinary: no day far busier than usual, and no site or country bringing far more or fewer than {period.before}.</p>
+  <p class="quiet">Nothing out of the ordinary: no day far busier than usual{#if read.compare}, and no site or country bringing far more or fewer than {period.before}, beyond how they all moved{/if}.</p>
 {:else}
   <ul class="happened">
     {#each spikes as s (s.day)}
       <li class="rise">
         <span class="when">{longDay(s.day)}{s.day === read.to ? ', so far' : ''}</span>
-        <span><b>{fmt(s.value)} visitors</b>, {times(s.value / s.usual)} a usual day{#if s.from}; <b>{Math.round(s.from.share)}%</b> came from <b>{siteName(s.from.name)}</b>{/if}.</span>
+        <span><b>{fmt(s.value)} visits</b>, {times(s.value / s.usual)} a usual day's {fmt(Math.round(s.usual))}{#if s.from}; <b>{Math.round(s.from.share)}%</b> came from <b>{siteName(s.from.name)}</b>{/if}.</span>
       </li>
     {/each}
     {#if refs.up}
-      <li class="rise"><span><b>{siteName(refs.up.name)}</b> brought <b>{fmt(refs.up.now)}</b> visitors, against {fmt(refs.up.before)} in {period.before}.</span></li>
+      <li class="rise"><span><b>{siteName(refs.up.name)}</b> brought <b>{fmt(refs.up.now)}</b> visits, against {fmt(refs.up.before)} in {period.before}.</span></li>
     {/if}
     {#if places.up}
-      <li class="rise"><span><b>{places.up.name}</b>: <b>{fmt(places.up.now)}</b> visitors, against {fmt(places.up.before)} in {period.before}.</span></li>
+      <li class="rise"><span><b>{places.up.name}</b>: <b>{fmt(places.up.now)}</b> visits, against {fmt(places.up.before)} in {period.before}.</span></li>
     {/if}
     {#if refs.down}
-      <li class="fall"><span><b>{siteName(refs.down.name)}</b> brought <b>{fmt(refs.down.now)}</b> visitors, against {fmt(refs.down.before)} in {period.before}.</span></li>
+      <li class="fall"><span><b>{siteName(refs.down.name)}</b> brought <b>{fmt(refs.down.now)}</b> visits, against {fmt(refs.down.before)} in {period.before}.</span></li>
     {/if}
     {#if places.down}
-      <li class="fall"><span><b>{places.down.name}</b>: <b>{fmt(places.down.now)}</b> visitors, against {fmt(places.down.before)} in {period.before}.</span></li>
+      <li class="fall"><span><b>{places.down.name}</b>: <b>{fmt(places.down.now)}</b> visits, against {fmt(places.down.before)} in {period.before}.</span></li>
     {/if}
   </ul>
 {/if}

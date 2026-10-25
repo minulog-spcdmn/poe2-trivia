@@ -10,12 +10,12 @@
   // The monitor button shows it full screen, kept awake.
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { average, fmt, shortDay } from './chart';
+  import { average, fmt, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { backShare, comersOf, spikesOf, troubleOf } from './insights';
+  import { backShare, beyondChanceOf, comersOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dayAverageHours, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -31,34 +31,59 @@
 
   const L = $derived(read.now);
   const B = $derived(read.before);
+  /** Visits and games a day on average, over the whole days, against the period before's: a day's swings average out. */
+  const visitsAvg = $derived(dayAverages(L.visitors.perDay, B.visitors.perDay));
+  const gamesAvg = $derived(dayAverages(L.games.perDay, B.games.perDay));
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
+  /** The whole days the average is over: its answers, and the period before's brought to as many days, weigh its change (Delta). */
+  const dailyDays = $derived(L.days.slice(0, -1).filter(asked).length);
 
   /** Joining worse than usual (insights.ts troubleOf), and what failed most there (the scripts' errors aren't joining's). */
   const trouble = $derived(troubleOf(L, B));
   const worst = $derived(L.failures.find((f) => !f.script));
   /** Of the visits that found a save or none, those that found one (insights.ts backShare). */
-  const back = $derived(backShare(comersOf(L)));
+  const comers = $derived(comersOf(L));
+  const back = $derived(backShare(comers));
 
   const METRICS = [
-    { value: 'visitors', name: 'Visitors' },
+    { value: 'visitors', name: 'Visits' },
     { value: 'games', name: 'Games' },
     { value: 'daily', name: 'Daily players' },
   ] as const;
   let metric = $state<(typeof METRICS)[number]['value']>('visitors');
   const series = (c: Counts) => (metric === 'visitors' ? c.visitors.perDay : metric === 'games' ? c.games.perDay : answersPerDay(c));
+  /** Today's unique drawn from the first day it asked, and against only the days before that it asked too (null where it hadn't begun). */
+  const drawnFrom = $derived(metric === 'daily' ? Math.max(0, L.days.findIndex(asked)) : 0);
+  const drawn = $derived({
+    days: L.days.slice(drawnFrom),
+    now: series(L).slice(drawnFrom),
+    before: series(B)
+      .slice(drawnFrom)
+      .map((v, i) => (metric !== 'daily' || asked(B.days[i + drawnFrom] ?? '') ? v : null)),
+  });
 
   const WEEK = [
-    { value: 'visitors', name: 'Visitors' },
+    { value: 'visitors', name: 'Visits' },
     { value: 'games', name: 'Games' },
   ] as const;
   let weekOf = $state<(typeof WEEK)[number]['value']>('visitors');
   const week = $derived(L.week[weekOf]);
+  /** By weekday once there are four weeks to average each over, and enough counted that an hour of a weekday holds a few (four on average); before, one or two of a weekday are only those days' chance, so every day is taken together. */
+  const inHours = $derived(week ? week.flat().reduce((n, v) => n + v, 0) : 0);
+  const byDay = $derived(L.days.length >= 28 && inHours >= 7 * 24 * 4);
+  /** Whether the busiest hour (of the cells drawn) is busier than chance makes of the usual one: only then is it named. */
+  const sureBusiest = $derived.by(() => {
+    if (!week) return false;
+    const cells = byDay ? week.flat() : Array.from({ length: 24 }, (_, h) => week.reduce((n, row) => n + row[h], 0));
+    return beyondChanceOf(Math.max(...cells), cells.reduce((n, v) => n + v, 0) / cells.length);
+  });
+  const hours = $derived(week && (byDay ? weekAverage(week, L.days, L.week.until) : [dayAverageHours(week, L.days, L.week.until)]));
 
   let innerHeight = $state(900);
   let innerWidth = $state(1400);
   /** A monitor on its side (taller than wide, wider than a phone): the overview fitted to it as to a big one. */
-  const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900);
+  const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500);
   const oneScreen = $derived(innerWidth > 1500 || sideways);
   /** A big monitor the usual way round: what happened joins the short answers below, so the chart has the height beside today's box. */
   const big = $derived(innerWidth >= 1900 && !sideways);
@@ -116,31 +141,31 @@
 
 <div class="ov">
   <div class="kpis">
-    <Kpi label="Visitors" value={fmt(L.visitors.total)} means="people who opened the game" href="#visitors">
-      {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visitors a day" />{/snippet}
-      {#snippet change()}<Delta now={L.visitors.total} before={B.visitors.total} period={before} />{/snippet}
+    <Kpi label="Visits a day" value={visitsAvg.now === null ? '–' : average(visitsAvg.now)} means="on average; {fmt(L.visitors.total)} in {period.now.toLowerCase()}" href="#visitors">
+      {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visits a day" />{/snippet}
+      {#snippet change()}<Delta now={visitsAvg.now} before={visitsAvg.before} digits={1} of={visitsAvg.of} period={before} />{/snippet}
     </Kpi>
-    <Kpi label="Games played" value={fmt(L.games.started)} means="games started, every mode" href="#games">
+    <Kpi label="Games a day" value={gamesAvg.now === null ? '–' : average(gamesAvg.now)} means="started on average; {fmt(L.games.started)} in {period.now.toLowerCase()}" href="#games">
       {#snippet spark()}<Spark days={L.days} values={L.games.perDay} {weekly} label="Games a day" />{/snippet}
-      {#snippet change()}<Delta now={L.games.started} before={B.games.started} period={before} />{/snippet}
+      {#snippet change()}<Delta now={gamesAvg.now} before={gamesAvg.before} digits={1} of={gamesAvg.of} period={before} />{/snippet}
     </Kpi>
-    <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="a day, answering Today's unique" href="#daily">
+    <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="answered Today's unique a day, on average" href="#daily">
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answersPerDay(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
-      {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} period={before} />{/if}{/snippet}
+      {#snippet change()}{#if read.compare && dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} of={dailyNow !== null && dailyBefore !== null ? { now: dailyNow * dailyDays, before: dailyBefore * dailyDays } : undefined} period={before} />{/if}{/snippet}
     </Kpi>
     <Steps {read} period={{ ...period, before }} />
   </div>
   <div class="chart">
-    <Section title="How busy it was" says={oneScreen ? '' : 'Each day against the same day of the period before.'}>
+    <Section title="How busy it was" says={oneScreen ? '' : !read.compare ? `Each ${weekly ? 'week' : 'day'}, the dashed line its average.` : weekly ? 'Each week against the same week of the period before.' : 'Each day against the same day of the period before.'}>
       {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
       <div class="fill" bind:this={fillEl} bind:clientHeight={fillH} style:min-height="{chart.height + legendH}px">
-        <TrendChart days={L.days} now={series(L)} before={series(B)} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={drawnH} marks={spikes} />
+        <TrendChart days={drawn.days} now={drawn.now} before={drawn.before} back={L.days.length} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={drawnH} marks={spikes} />
       </div>
     </Section>
   </div>
   {#snippet happened()}
     <div class="happened">
-      <Section title="What happened" says={oneScreen ? '' : 'What the numbers bear out by themselves.'}>
+      <Section title="What happened" says={oneScreen ? '' : "Only what chance can't explain."}>
         <WhatHappened {read} {period} />
       </Section>
     </div>
@@ -151,8 +176,8 @@
     {#if big}{@render happened()}{/if}
     <Section title="When they come">
       {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
-      {#if week}
-        <WeekHours grid={weekAverage(week, L.days)} what={weekOf === 'visitors' ? 'Visitors' : 'Games'} zone={read.zone} />
+      {#if hours}
+        <WeekHours grid={hours} {byDay} sure={sureBusiest} what={weekOf === 'visitors' ? 'Visits' : 'Games'} zone={read.zone} once={byDay ? L.days.length <= 7 : L.days.length <= 1} />
       {:else}
         <p class="soft">GoatCounter gave no hours for these days.</p>
       {/if}
@@ -164,7 +189,7 @@
       {#if phones.all || back !== null}
         <p class="line">
           {#if phones.all}<b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.{/if}
-          {#if back !== null}<b>{Math.round(back)}%</b> came back to a save.{/if}
+          {#if back !== null}Of the visits told new or back, <b>{Math.round(back)}%</b> came back to a save{restsOn(comers.returned, comers.fresh + comers.returned, comers.from && comers.from > read.from ? comers.from : null)}.{/if}
         </p>
       {/if}
     </Section>
@@ -309,7 +334,8 @@
       display: none;
     }
   }
-  @media (max-width: 1500px) {
+  /* (A laptop keeps today beside the chart, so the chart is on screen.) */
+  @media (max-width: 1100px) {
     .ov {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       grid-template-rows: none;
@@ -366,7 +392,7 @@
     }
   }
   /* A monitor on its side: everything stacked in the screen's height, the four figures in a row, the short answers two by two. */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     .problem,
     .ov {
       --gap: 1.4rem;

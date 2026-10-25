@@ -85,7 +85,7 @@
   .iname {
     display: block;
     font-weight: 600;
-    color: var(--gold-hi);
+    color: var(--unique-hi);
   }
   .kind {
     display: block;
@@ -123,12 +123,5 @@
   .bar {
     width: 22%;
     min-width: 5rem;
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
   }
 </style>

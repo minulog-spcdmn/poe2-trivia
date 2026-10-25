@@ -37,7 +37,8 @@ function gained(was: Named[], now: Named[]): Named[] {
 
 /** What `now` added to `was`, or null where they aren't the same period (another span, or read on another day). */
 export function changesOf(was: Read, now: Read): Changes | null {
-  if (was.span !== now.span || was.from !== now.from || was.at >= now.at) return null;
+  // (Another day, by its last: a period held at where counting began keeps its first day across midnight.)
+  if (was.span !== now.span || was.from !== now.from || was.to !== now.to || was.at >= now.at) return null;
   const a = was.now;
   const b = now.now;
   const playedWas = new Map(modesOf(a.games.rows).map((m) => [m.mode, m.started]));
@@ -72,5 +73,5 @@ export function keptChanges(was: Read | null, now: Read): Changes | null {
   if (!was) return null;
   const fresh = changesOf(was, now);
   if (anyNew(fresh)) return fresh;
-  return was.changes && was.from === now.from && was.span === now.span ? was.changes : null;
+  return was.changes && was.from === now.from && was.to === now.to && was.span === now.span ? was.changes : null;
 }
