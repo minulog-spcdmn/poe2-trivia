@@ -13,6 +13,7 @@
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
+  import { fineMask } from '../lib/fineMask';
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
@@ -781,13 +782,13 @@
                     {#if at[c.kind]}
                       {@const [x, y, k, turn] = at[c.kind]}
                       <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
-                        ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')"></span></span
+                        ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
                       >
                     {/if}
                   {/each}
                 </span>
               {/if}
-              <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')"></span></span>
+              <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
             </span>
             {#if kindOf(cat) === 'azurite'}
               <!-- The vein's crystals in the corner stand in front of the item. -->
@@ -1135,8 +1136,9 @@
     height: 150px;
     /* The original card's gold, opaque so the glory's rays stay behind it. */
     background: linear-gradient(180deg, #fbe6b0 0%, #c9a45c 45%, #6d4a1c 100%);
-    -webkit-mask: var(--src) center / contain no-repeat;
-    mask: var(--src) center / contain no-repeat;
+    /* (--fine: the mask at about the size it's drawn, see lib/fineMask.) */
+    -webkit-mask: var(--fine, var(--src)) center / contain no-repeat;
+    mask: var(--fine, var(--src)) center / contain no-repeat;
     transition:
       transform 0.5s var(--ease-out),
       opacity 0.4s;
