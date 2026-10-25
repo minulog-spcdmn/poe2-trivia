@@ -3,7 +3,7 @@
 // tests can feed it.
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
-import { midnight } from './zone.ts';
+import { addDays, midnight } from './zone.ts';
 import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
 /** One path as GoatCounter's /stats/hits gives it: how often it was counted, all told and per day. */
@@ -308,6 +308,19 @@ export function firstCounted(paths: PathCount[]): string | null {
   return first;
 }
 
+/**
+ * Where a period's counts start, and whether it's compared with the period
+ * before, from the day counting began (firstCounted). The days before it
+ * weren't counted, so they aren't zeros; and it was counted only from when
+ * counting began, part of the day, so a period starts on the day after,
+ * the first whole one (today at the latest), and compares only with a
+ * period before that whole days fill from its first.
+ */
+export function countedSpan(began: string | null, from: string, fromBefore: string, today: string): { start: string; compare: boolean } {
+  const whole = began === null ? null : addDays(began, 1) > today ? today : addDays(began, 1);
+  return { start: whole !== null && whole > from ? whole : from, compare: whole !== null && whole <= fromBefore };
+}
+
 /** Every day from `from` to `to` (YYYY-MM-DD, both included). */
 export function daysBetween(from: string, to: string): string[] {
   const out: string[] = [];
@@ -453,6 +466,8 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
  */
 function cohortsOf(paths: PathCount[], days: string[], started: number[], fresh: number[]): Cohort[] {
   const counting = fresh.findIndex((n) => n > 0);
+  // The first day visits were told apart: any visit told new or back, or a cohort's (sent with them), so a quiet start of new visitors isn't taken for none counted.
+  const told = days.findIndex((d) => paths.some((p) => (p.path.startsWith('visit/') || p.path.startsWith('cohort/')) && (p.days[d] ?? 0) > 0));
   const out: Cohort[] = [];
   for (const p of paths) {
     const week = p.path.startsWith('cohort/') ? p.path.slice('cohort/'.length) : '';
@@ -464,7 +479,7 @@ function cohortsOf(paths: PathCount[], days: string[], started: number[], fresh:
     const weeks: (number | null)[] = Array.from({ length: Math.max(0, weekOf(days[days.length - 1]) + 1) }, () => null);
     for (const [i, d] of days.entries()) {
       const k = weekOf(d);
-      if (k >= 0 && counting >= 0 && i >= counting) weeks[k] = (weeks[k] ?? 0) + (p.days[d] ?? 0);
+      if (k >= 0 && told >= 0 && i >= told) weeks[k] = (weeks[k] ?? 0) + (p.days[d] ?? 0);
     }
     // Only a week the period holds from its Monday, counted from then: one cut short would look small, its cells far over 100%.
     const at = days.indexOf(monday);

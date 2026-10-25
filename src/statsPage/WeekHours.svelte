@@ -7,12 +7,22 @@
   // an average. A line below reads the busiest hour, or the one pointed at;
   // it sits over its longest wording, kept hidden, so pointing never changes
   // its height and moves what's below.
-  // Without `byDay`, the grid is a single row: every day's hours together,
-  // where there are too few weeks to tell the weekdays apart.
+  // Without `byDay`, the grid is a single row, every day's hours together
+  // (too few counted to tell the weekdays apart), drawn as bars in the room
+  // the seven rows take, so the panel keeps its height either way. `sure`:
+  // the busiest hour is busier than chance would make it; if not, the line
+  // says no hour stands out yet (pointing still reads any).
   import { average } from './chart';
   import { busiest } from './model';
 
-  let { grid, what, zone, once = false, byDay = true }: { grid: (number | null)[][]; what: string; zone: string; once?: boolean; byDay?: boolean } = $props();
+  let {
+    grid,
+    what,
+    zone,
+    once = false,
+    byDay = true,
+    sure = true,
+  }: { grid: (number | null)[][]; what: string; zone: string; once?: boolean; byDay?: boolean; sure?: boolean } = $props();
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const top = $derived(busiest(grid));
@@ -44,9 +54,13 @@
     onpointerleave={() => (at = null)}
   >
     {#each grid as row, d (d)}
-      <span class="day" aria-hidden="true">{byDay ? DAYS[d].slice(0, 3) : 'Day'}</span>
+      <span class="day" aria-hidden="true">{byDay ? DAYS[d].slice(0, 3) : 'Every day'}</span>
       {#each row as v, h (h)}
-        <i data-d={d} data-h={h} class:on={at?.day === d && at.hour === h} class:yet={v === null} style:--l="{level(v)}%"></i>
+        {#if byDay}
+          <i data-d={d} data-h={h} class:on={at?.day === d && at.hour === h} class:yet={v === null} style:--l="{level(v)}%"></i>
+        {:else}
+          <i class="bar" data-d={d} data-h={h} class:on={at?.hour === h} class:yet={v === null}><b style:height="{Math.max(level(v), v ? 4 : 0)}%"></b></i>
+        {/if}
       {/each}
     {/each}
     <span></span>
@@ -58,6 +72,8 @@
     <span aria-live="polite">
       {#if shown && shown.value === null}
         <b>{when(shown.day, shown.hour)}</b>: not yet in these days.
+      {:else if !at && top && !sure}
+        No hour stands out beyond what chance makes of so few yet.
       {:else if shown && shown.value !== null && shown.value > 0}
         <b>{when(shown.day, shown.hour)}</b>: {average(shown.value)} {what.toLowerCase()} {per}{at ? '' : ', the busiest'}.
       {:else if shown}
@@ -93,6 +109,20 @@
     background: none;
     box-shadow: inset 0 0 0 1px var(--a-rule);
   }
+  /* Every day's hours as bars, in the height seven rows of cells take. */
+  .grid i.bar {
+    display: flex;
+    align-items: flex-end;
+    aspect-ratio: 1 / 7.6;
+    min-height: 6.6rem;
+    background: var(--a-track);
+  }
+  .grid i.bar b {
+    display: block;
+    width: 100%;
+    border-radius: 2px 2px 0 0;
+    background: var(--a-now);
+  }
   .grid i.on {
     outline: 2px solid var(--a-ink);
     outline-offset: 1px;
@@ -105,6 +135,10 @@
   }
   .day {
     align-self: center;
+  }
+  .grid:has(.bar) .day {
+    align-self: end;
+    line-height: 1.15;
   }
   .hour {
     padding-top: 0.35rem;

@@ -42,9 +42,10 @@
     <tbody>
       {#each rows as r (r.name)}
         <tr class:none={r.share === null}>
-          <th scope="row">{r.name}</th>
+          <th scope="row">{r.name}{#if r.count !== null && r.of}<span class="on-phone">{fmt(r.count)} of {fmt(r.of.now)}</span>{/if}</th>
           <td class="n opt">{r.count === null ? '–' : fmt(r.count)}</td>
-          <td class="n strong">{pct(r.share)}</td>
+          <!-- (Faded where it's of a handful: 2 of 3 is 67%, and says little.) -->
+          <td class="n strong" class:few={r.of !== undefined && r.of.now < 20} title={r.count !== null && r.of ? `${fmt(r.count)} of ${fmt(r.of.now)}` : undefined}>{pct(r.share)}</td>
           <td class="bar">
             <span class="meter held">
               <i style:width="{r.share ?? 0}%"></i>
@@ -59,6 +60,10 @@
 </div>
 
 <style>
+  .strong.few {
+    font-weight: 500;
+    color: var(--a-muted);
+  }
   .strong {
     font-weight: 650;
     color: var(--a-ink);

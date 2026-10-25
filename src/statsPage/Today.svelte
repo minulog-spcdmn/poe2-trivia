@@ -83,8 +83,11 @@
       </div>
     {/each}
   </div>
+  <!-- Always there, one line (the whole of it in its title): what arrives with an update never moves what's below. -->
   {#if changes && parts.length}
-    <p class="new"><span class="when">{lit ? `New since ${time(changes.since)}:` : `Last new, ${time(changes.since)} to ${time(changes.at)}:`}</span> {parts.join('; ')}</p>
+    <p class="new" title={parts.join('; ')}><span class="when">{lit ? `New since ${time(changes.since)}:` : `Last new, ${time(changes.since)} to ${time(changes.at)}:`}</span> {parts.join('; ')}</p>
+  {:else}
+    <p class="new"><span class="when">Nothing new yet</span> since {time(read.at)}.</p>
   {/if}
 </section>
 
@@ -97,7 +100,7 @@
     padding: 1.3rem 1.6rem 1.4rem;
     background: var(--a-surface);
     border: 1px solid var(--line);
-    border-left: 4px solid var(--a-before);
+    border-left: 4px solid var(--line);
     border-radius: 4px;
     container-type: inline-size;
   }
@@ -160,7 +163,10 @@
     margin: auto 0 0;
     padding-top: 0.9rem;
     border-top: 1px solid var(--a-rule);
+    overflow: hidden;
     color: var(--a-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .when {
     font-weight: 600;

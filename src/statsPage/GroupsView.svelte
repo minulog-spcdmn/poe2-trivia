@@ -62,13 +62,19 @@
   const appKnown = $derived(toldFromStart(read.now));
 
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
-  /** The chips of a kind: its biggest groups, and the picked one even where it isn't among them (opened from a list). */
+  /** The chips of a kind: its biggest groups, and the picked one even where it isn't among them (opened from a list). Those too small to tell apart only once "More" is open, the picked one always. */
+  let more = $state(false);
   const chipsOf = (rows: SegmentRow[]) => {
     const ws = rows.filter(known).map((r) => r.who);
-    return who && who.kind === rows[0]?.who.kind && !ws.some(isWho) ? [...ws, who] : ws;
+    const all = who && who.kind === rows[0]?.who.kind && !ws.some(isWho) ? [...ws, who] : ws;
+    const big = (w: Who) => isWho(w) || (rows.find((r) => r.who.kind === w.kind && r.who.name === w.name)?.profile.visitors ?? 0) >= FEW;
+    return { shown: more ? all : all.filter(big), small: all.filter((w) => !big(w)).length };
   };
-  const places = $derived(slices ? chipsOf(segments(slices, 'place', 8)) : []);
-  const systems = $derived(slices ? chipsOf(segments(slices, 'system', 4)) : []);
+  const placeChips = $derived(slices ? chipsOf(segments(slices, 'place', 8)) : { shown: [], small: 0 });
+  const systemChips = $derived(slices ? chipsOf(segments(slices, 'system', 4)) : { shown: [], small: 0 });
+  const places = $derived(placeChips.shown);
+  const systems = $derived(systemChips.shown);
+  const small = $derived(placeChips.small + systemChips.small);
 
   // ---- words ----
   const DEVICE: Record<string, string> = { 'Phone or tablet': 'phones and tablets', Computer: 'computers' };
@@ -177,10 +183,10 @@
     const gAll = per100(everyone.games, everyone.visitors);
     return [
       { name: 'Visits', unit: 'in the period', mine: fmt(picked.visitors), all: fmt(everyone.visitors), says: `${pct(share(picked.visitors, everyone.visitors))} of everyone`, tone: 'flat' },
-      ...(picked.played !== null && everyone.played !== null ? [row('Played a game', 'share of visits', picked.played, everyone.played, pct, against(picked.played, everyone.played, true), few, sure?.played)] : []),
+      ...(picked.played !== null && everyone.played !== null ? [row('Played a game', `share of ${fmt(mine?.loads ?? 0)} page ${mine?.loads === 1 ? 'load' : 'loads'}`, picked.played, everyone.played, pct, against(picked.played, everyone.played, true), few || (mine?.loads ?? 0) < 10, sure?.played)] : []),
       row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few, sure?.games),
       row("Answered Today's unique", 'share of visits, on days it asked', picked.daily, everyone.daily, pct, against(picked.daily, everyone.daily), few, sure?.daily),
-      ...(picked.back !== null && everyone.back !== null ? [row('Came back to a save', 'share of visits new or back', picked.back, everyone.back, pct, against(picked.back, everyone.back, true), few, sure?.back)] : []),
+      ...(picked.back !== null && everyone.back !== null ? [row('Came back to a save', `share of ${fmt(picked.told)} ${picked.told === 1 ? 'visit' : 'visits'} new or back`, picked.back, everyone.back, pct, against(picked.back, everyone.back, true), few || picked.told < 10, sure?.back)] : []),
       ...(picked.app !== null && everyone.app !== null && appKnown ? [row('Opened the installed app', 'share of visits', picked.app, everyone.app, pct, plain(against(picked.app, everyone.app, true)), few, sure?.app)] : []),
       row('Joins that worked', `share of ${fmt(picked.tried)} tries`, picked.joins, everyone.joins, pct, against(picked.joins, everyone.joins, true), few || picked.tried < 20, sure?.joins),
       row('Failures met', 'for every 100 visits', picked.failures, everyone.failures, rate, against(picked.failures, everyone.failures, false, true), few, sure?.failures),
@@ -254,7 +260,8 @@
 {/snippet}
 
 {#snippet keenList(m: Mode)}
-  {#if keen.length}
+  <!-- (A ranking of one says nothing: only once two are big enough to set side by side.) -->
+  {#if keen.filter((r) => !r.few).length >= 2}
     <div class="tile wide">
       <h3>Where {MODE_NAMES[m]} is played most: games for every 100 visits</h3>
       <ol class="from">
@@ -295,6 +302,9 @@
     <a class="chip" class:on={!mode} aria-current={!mode ? 'true' : undefined} href={to(who, null)}>All games</a>
     {#each MODES as m (m)}<a class="chip" class:on={mode === m} aria-current={mode === m ? 'true' : undefined} href={modeChip(m)}>{MODE_NAMES[m]}</a>{/each}
   </div>
+  {#if small}
+    <button type="button" class="chip more" aria-expanded={more} onclick={() => (more = !more)}>{more ? 'Fewer groups' : `${small} more, under ${FEW} visits`}</button>
+  {/if}
 </nav>
 
 {#if !slices}
@@ -481,8 +491,16 @@
     text-decoration: none;
     background: var(--a-surface);
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: 3px;
     cursor: pointer;
+  }
+  .chip.more {
+    justify-self: start;
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--a-muted);
+    background: none;
+    border-style: dashed;
   }
   .chip:hover {
     color: var(--a-ink);

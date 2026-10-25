@@ -41,3 +41,13 @@ export function labelled(n: number, width: number, room = 66): number[] {
   if (out[0] > 0 && out[0] >= every * 0.75) out.unshift(0);
   return out;
 }
+
+/**
+ * What a share rests on, said after it where that's little: " (5 of 19,
+ * since Oct 22)" under 50, the days only where its counting began inside
+ * the period (`since`), nothing for a share of many over the whole period.
+ */
+export function restsOn(part: number, whole: number, since: string | null = null): string {
+  const what = [whole < 50 ? `${fmt(part)} of ${fmt(whole)}` : '', since ? `since ${shortDay(since)}` : ''].filter(Boolean).join(', ');
+  return what ? ` (${what})` : '';
+}

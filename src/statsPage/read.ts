@@ -8,7 +8,7 @@ import { addDays } from './zone';
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 9;
+  v: 10;
   /** The period's length; `from` is later where counting began inside it (counted). */
   span: number;
   from: string;
@@ -33,6 +33,8 @@ export interface Read {
   complete: boolean;
   /** Whether the period before was counted from its first day: if not, nothing is compared with it (COMPARE). */
   compare: boolean;
+  /** The first day anything was counted on (model.ts firstCounted): counted only partway, so the period starts the day after where it's inside it. */
+  began: string | null;
   /** What came in since the read before it (changes.ts keptChanges). */
   changes?: Changes | null;
 }

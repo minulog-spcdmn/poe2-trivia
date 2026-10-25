@@ -266,7 +266,7 @@ export function demoRead(days: number, at = new Date()): Read {
   const now = countsOf(nowPaths, daysBetween(from, today), ZONE, until);
   const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE, until);
   return {
-    v: 9,
+    v: 10,
     span: days,
     from,
     to: today,
@@ -294,6 +294,7 @@ export function demoRead(days: number, at = new Date()): Read {
     complete: true,
     // (Made up as though counted from long before the longest period.)
     compare: true,
+    began: null,
   };
 }
 

@@ -9,6 +9,8 @@
  *   green   better than before
  *   red     worse than before, or a problem
  *   ink     everything else, in two strengths
+ *
+ * Item names keep the game's own colour for them, as in its tooltips.
  */
 :root {
   --a-ink: #efe6d6;

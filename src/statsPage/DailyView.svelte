@@ -28,7 +28,7 @@
   let innerWidth = $state(1400);
   let innerHeight = $state(900);
   /** A big monitor, or one on its side, fits the view on one screen: three of each, and the chart gives up what runs past it. */
-  const big = $derived(innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900));
+  const big = $derived(innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500));
   const chart = fitChart({ on: () => big, base: () => (big ? 236 : 340), least: 160 });
   const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
@@ -204,7 +204,7 @@
     }
   }
   /* A monitor on its side: the two side by side, so the view is one screen. */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     .two {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

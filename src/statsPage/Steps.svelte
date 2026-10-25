@@ -1,9 +1,9 @@
 <script lang="ts">
   // From visit to game, as one of the overview's figures: the share of the
   // people who opened the game that played a game, then, each a bar as long
-  // as its share, those who finished one, those who started two in one page
-  // load (once counted) and those who answered Today's unique (insights.ts
-  // stepsOf, journeyOf), against the period before. Steps are a share of
+  // as its share, those who saw one to its end and those who started two in
+  // one page load (once counted), all of the same page loads (insights.ts
+  // stepsOf, journeyOf), against the period before; how many, where few. Steps are a share of
   // page loads once those were counted (visits before), all counted once a
   // person in eight hours, so these are shares of people, not of games. The
   // whole journey is in Visitors.
@@ -21,25 +21,27 @@
   const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
   /** Two games in one page load: read over the same days as the rest (insights.ts reachedOf), so the date marked below is theirs too. */
   const second = $derived(reachedShare(journeyOf(read.now), 'games-2'));
+  // The journey's own steps only, each of the same page loads over the same days (Today's unique has its own figure, of other days and visits).
   const rows = $derived([
-    { name: 'Finished a game', share: now.from ? share(now.finished, now.visitors) : null },
+    { name: 'Saw one to its end', share: now.from ? share(now.finished, now.visitors) : null },
     ...(second === null ? [] : [{ name: '2+ games in one page load', share: second }]),
-    { name: "Answered Today's unique", share: share(now.answered, now.askedVisitors) },
   ]);
+  /** What the shares are of, said with how many where they're few. */
+  const base = $derived(`of ${now.paged ? 'page loads' : 'visits'}${now.visitors < 50 ? ` (${now.played} of ${now.visitors})` : ''}`);
   /** Marked only from a day inside the period: the shares cover the days since. */
   const late = $derived(now.from && now.from > read.from ? now.from : null);
 </script>
 
-<div class="steps">
-  <span class="name">From visit to game</span>
+<a class="steps" href="#visitors">
+  <span class="name">From visit to game<span class="more" aria-hidden="true">›</span></span>
   <b class="value">{now.from ? pct(played) : '–'}</b>
   <span class="change">
     {#if now.from}
       <!-- Only against a period whose share is of the same (page loads, or visits before those were counted). -->
-      <Delta now={played} before={was.from && was.paged === now.paged ? share(was.played, was.visitors) : null} rate of={{ now: now.visitors, before: was.visitors }} period={period.before} />
+      <Delta now={played} before={was.from === read.before.days[0] && was.paged === now.paged ? share(was.played, was.visitors) : null} rate of={{ now: now.visitors, before: was.visitors }} period={period.before} />
     {/if}
   </span>
-  <span class="means">{now.from ? `of visits led to a game${late ? `, since ${shortDay(late)}` : ''}` : 'played a game: counted from the next release'}</span>
+  <span class="means">{now.from ? `${base} led to a game${late ? `, since ${shortDay(late)}` : ''}` : 'played a game: counted from the next release'}</span>
   {#each rows as r (r.name)}
     <div class="row">
       <span class="step">{r.name}</span>
@@ -47,7 +49,7 @@
       <b>{pct(r.share)}</b>
     </div>
   {/each}
-</div>
+</a>
 
 <style>
   .steps {
@@ -59,12 +61,33 @@
     background: var(--a-surface);
     border: 1px solid var(--line);
     border-radius: 4px;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
     container-type: inline-size;
   }
+  /* Into Visitors, where the whole journey is: a link like the figures beside it (Kpi). */
+  .steps:hover {
+    border-color: var(--gold-lo);
+  }
+  .steps:hover .more {
+    color: var(--gold-hi);
+    translate: 3px 0;
+  }
   .name {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--a-ink);
+  }
+  .more {
+    color: var(--a-muted);
+    transition:
+      color 0.2s,
+      translate 0.2s;
   }
   .value {
     font-size: clamp(2.6rem, 3.4vw, 4rem);

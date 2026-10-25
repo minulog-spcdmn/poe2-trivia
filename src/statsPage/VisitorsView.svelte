@@ -8,7 +8,7 @@
   // period before, a line on its bar.
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { average, fmt, shortDay, siteName } from './chart';
+  import { average, fmt, restsOn, shortDay, siteName } from './chart';
   import Delta from './Delta.svelte';
   import Cohorts from './Cohorts.svelte';
   import { FIRST_JOURNEY, JOURNEY, OPENED, STAY, appShare, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, recentCohorts, reachedShare, shareOf, type FirstSteps, type Reached } from './insights';
@@ -27,6 +27,11 @@
   const countries = $derived(read.countries.map((c) => ({ label: c.name || 'Unknown', count: c.count })));
   const refs = $derived(read.refs.map((r) => ({ label: !r.name || r.name === '(unknown)' ? 'Typed in, or unknown' : siteName(r.name), count: r.count })));
   const campaigns = $derived((read.campaigns ?? []).map((c) => ({ label: c.name || 'Unknown', count: c.count })));
+  /** The share of visits that came with no site. */
+  const unsourced = $derived.by(() => {
+    const all = read.refs.reduce((n, r) => n + r.count, 0);
+    return all ? read.refs.filter((r) => !r.name || r.name === '(unknown)').reduce((n, r) => n + r.count, 0) / all : 0;
+  });
   /** Visits a day over the whole days (today's left out), against the period before's. */
   const perDay = $derived(dayAverages(L.visitors.perDay, B.visitors.perDay));
   const systems = $derived(read.systems.map((s) => ({ label: s.name || 'Unknown', count: s.count })));
@@ -39,9 +44,11 @@
     return { ...by, all: by.computer + by.phone + by.other };
   });
 
-  /** Each step's share, against the period before's where that was a share of the same (beforeShare). */
+  /** Whether the period before's share was counted from its first day: one counted only from a later day rests on those days alone, and isn't set against. */
+  const whole = (r: { from: string | null }) => r.from !== null && r.from === B.days[0];
+  /** Each step's share, against the period before's where that was a share of the same (beforeShare), over all its days. */
   const rowsOf = (steps: readonly { step: Reach; name: string }[], now: Reached, was: Reached): ShareRow[] =>
-    steps.map((s) => ({ name: s.name, count: now.counts[s.step] ?? null, share: reachedShare(now, s.step), before: beforeShare(now, was, s.step), of: { now: now.visitors, before: was.visitors } }));
+    steps.map((s) => ({ name: s.name, count: now.counts[s.step] ?? null, share: reachedShare(now, s.step), before: whole(was) ? beforeShare(now, was, s.step) : null, of: { now: now.visitors, before: was.visitors } }));
   /** " Counted since Oct 17." where a step was first counted inside the period. */
   const since = (r: { from: string | null }) => (r.from && r.from > read.from ? ` Counted since ${shortDay(r.from)}.` : '');
 
@@ -52,7 +59,7 @@
   const firstRows = $derived.by((): ShareRow[] => {
     const was = firstStepsOf(B);
     const of = (f: FirstSteps, step: (typeof FIRST_JOURNEY)[number]['step']) => (f.from ? shareOf(f.counts[step], f.visits) : null);
-    return FIRST_JOURNEY.map((s) => ({ name: s.name, count: firsts.from ? firsts.counts[s.step] : null, share: of(firsts, s.step), before: of(was, s.step), of: { now: firsts.visits, before: was.visits } }));
+    return FIRST_JOURNEY.map((s) => ({ name: s.name, count: firsts.from ? firsts.counts[s.step] : null, share: of(firsts, s.step), before: whole(was) ? of(was, s.step) : null, of: { now: firsts.visits, before: was.visits } }));
   });
   const stay = $derived(reachedOf(L, STAY.map((s) => s.step)));
   const stayRows = $derived(rowsOf(STAY, stay, reachedOf(B, STAY.map((s) => s.step))));
@@ -60,6 +67,8 @@
   const openedRows = $derived(rowsOf(OPENED, opened, reachedOf(B, OPENED.map((s) => s.step))));
 
   const cohorts = $derived(recentCohorts(L.cohorts, read.to));
+  /** Weeks only once one was counted from its Monday: before that a row is visits without the 100 they're for. */
+  const countable = $derived(cohorts.some((c) => c.started !== null));
   const comers = $derived(comersOf(L));
   const comersWas = $derived(comersOf(B));
   const back = $derived(backShare(comers));
@@ -71,7 +80,7 @@
       name,
       count: comers.from ? n(comers) : null,
       share: comers.from ? shareOf(n(comers), told(comers)) : null,
-      before: comersWas.from ? shareOf(n(comersWas), told(comersWas)) : null,
+      before: whole(comersWas) ? shareOf(n(comersWas), told(comersWas)) : null,
       of: { now: told(comers), before: told(comersWas) },
     });
     return [row('No save, here or paired', (w) => w.fresh), ...RETURNS.map((r) => row(RETURN_NAMES[r], (w) => w.back[r]))];
@@ -128,6 +137,9 @@
     </Section>
     <Section title="How they found the game" says="Visits by the site they came from." area="found">
       <Bars bars={refs} top={10} empty="No visitors in these days." />
+      {#if unsourced > 0.5}
+        <p class="hint">Most came with no site: a chat app's link or a bookmark has none. A link tagged poe2.quest/?ref=… says where it was posted.</p>
+      {/if}
       {#if campaigns.length}
         <h3>Tagged links</h3>
         <p class="hint">Visits by the tag of their link (poe2.quest/?ref=…).</p>
@@ -142,7 +154,7 @@
         <div class="total left">
           <b>{percent(comers.returned, comers.fresh + comers.returned)}</b>
           <span class="soft">came back to their save</span>
-          <Delta now={back} before={backShare(comersWas)} rate of={{ now: comers.fresh + comers.returned, before: comersWas.fresh + comersWas.returned }} period={period.before} />
+          <Delta now={back} before={whole(comersWas) ? backShare(comersWas) : null} rate of={{ now: comers.fresh + comers.returned, before: comersWas.fresh + comersWas.returned }} period={period.before} />
         </div>
         <Shares rows={comerRows} head="Who" label="Visits with no save, and back to one" />
       {:else}
@@ -163,7 +175,7 @@
           {#if devices.other}<div><dt><i class="other"></i>Other</dt><dd><b>{percent(devices.other, devices.all)}</b> {fmt(devices.other)}</dd></div>{/if}
         </dl>
         {#if app !== null}
-          <p class="line app"><b>{Math.round(app)}%</b> opened it as the installed app, from a home screen; the rest in a browser. <Delta now={app} before={appShare(comersWas)} rate of={{ now: comers.visitors, before: comersWas.visitors }} period={period.before} /></p>
+          <p class="line app"><b>{Math.round(app)}%</b> opened it as the installed app, from a home screen{restsOn(comers.app, comers.visitors, comers.from && comers.from > read.from ? comers.from : null)}; the rest in a browser. <Delta now={app} before={whole(comersWas) ? appShare(comersWas) : null} rate of={{ now: comers.visitors, before: comersWas.visitors }} period={period.before} /></p>
         {/if}
         <h3>By system</h3>
         <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
@@ -173,9 +185,9 @@
     </Section>
   </div>
 
-  {#if cohorts.length}
+  {#if countable}
     <!-- The whole width: a column for each of eight weeks. -->
-    <Section title="By the week they first played" says={cohorts.some((c) => c.started !== null) ? 'Visits each week after, for every 100 who first played that week.' : 'Their visits each week since. Once a week is counted from its Monday, its figures are for every 100 who first played then.'} area="cohorts">
+    <Section title="By the week they first played" says="Visits each week after, for every 100 who first played that week." area="cohorts">
       <Cohorts cohorts={cohorts} />
     </Section>
   {/if}
@@ -187,7 +199,8 @@
       'New or back: a visit within 8 hours of the last play is neither, so those shares are of the visits that are one or the other. A save counts with what paired devices synced to it.',
       "Safari on iPhone and iPad clears a save after about a week away, so iOS can't show anyone coming back after a week.",
       'A link in a chat app or a bookmark has no site, so it shows as typed in.',
-      cohorts.length > 0 && 'By the week they first played: not a percent, as a keen player visits several times a week. A week begun before the period has its visits alone, in grey italics. Weeks are cut in UTC.',
+      cohorts.length > 0 && !countable && 'Visits by the week players first played show once a week has been counted from its Monday (weeks are cut in UTC).',
+      countable && 'By the week they first played: not a percent, as a keen player visits several times a week. A week begun before the period has its visits alone, in grey italics. Weeks are cut in UTC.',
     ]}
   />
 </div>

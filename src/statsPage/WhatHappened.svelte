@@ -29,7 +29,7 @@
     {#each spikes as s (s.day)}
       <li class="rise">
         <span class="when">{longDay(s.day)}{s.day === read.to ? ', so far' : ''}</span>
-        <span><b>{fmt(s.value)} visits</b>, {times(s.value / s.usual)} a usual day{#if s.from}; <b>{Math.round(s.from.share)}%</b> came from <b>{siteName(s.from.name)}</b>{/if}.</span>
+        <span><b>{fmt(s.value)} visits</b>, {times(s.value / s.usual)} a usual day's {fmt(Math.round(s.usual))}{#if s.from}; <b>{Math.round(s.from.share)}%</b> came from <b>{siteName(s.from.name)}</b>{/if}.</span>
       </li>
     {/each}
     {#if refs.up}

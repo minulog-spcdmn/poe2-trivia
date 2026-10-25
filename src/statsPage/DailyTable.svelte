@@ -85,7 +85,7 @@
   .iname {
     display: block;
     font-weight: 600;
-    color: var(--gold-hi);
+    color: var(--unique-hi);
   }
   .kind {
     display: block;

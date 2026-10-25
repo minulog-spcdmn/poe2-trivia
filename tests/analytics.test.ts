@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
-import { axis, labelled } from '../src/statsPage/chart.ts';
+import { addDays, dayIn, hoursIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
+import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -688,6 +688,8 @@ test('an update keeps what it brought in, and where from', () => {
   // Another period, or one read the day before, isn't compared.
   assert.equal(changesOf(demoRead(30, at), now), null);
   assert.equal(changesOf(demoRead(7, new Date(at.getTime() - 86_400_000)), now), null);
+  // A period held at where counting began keeps its first day across midnight, but its last moves on.
+  assert.equal(changesOf({ ...was, to: addDays(was.to, -1) }, now), null);
   // Nothing new: the last update that brought something stays, lit no more.
   const kept = { ...now, changes: c };
   const later = { ...now, at: now.at + 60_000 };
@@ -1019,6 +1021,24 @@ test('a site listed twice, its referrer once cleaned and once not, is one', () =
       { name: '', count: 2 },
     ],
   );
+  // A site's subdomains are the site; a country's two labels and an app's name stay.
+  assert.deepEqual(
+    sameSites([
+      { name: 'reddit.com', count: 15 },
+      { name: 'out.reddit.com', count: 1 },
+      { name: 'dashboard.twitch.tv', count: 1 },
+      { name: 'https://www.bbc.co.uk', count: 1 },
+      { name: 'android-app://com.reddit.frontpage', count: 1 },
+      { name: 'Slack Chat', count: 1 },
+    ]).map((r) => [r.name, r.count]),
+    [
+      ['reddit.com', 16],
+      ['twitch.tv', 1],
+      ['bbc.co.uk', 1],
+      ['com.reddit.frontpage', 1],
+      ['Slack Chat', 1],
+    ],
+  );
   // The made-up referrers have one too.
   const refs = demoRead(30, new Date('2026-10-18T15:30:00Z')).refs;
   assert.equal(refs.filter((r) => r.name === 'reddit.com').length, 1);
@@ -1033,6 +1053,8 @@ test('a change is called sure only beyond what chance would make: counts by them
   // One against one, all against none: still chance. Of nothing, never sure.
   assert.equal(rateBeyondChance(100, 1, 0, 1), false);
   assert.equal(rateBeyondChance(50, 0, 40, 10), false);
+  // All of two against none of two: under three people apart, never sure, however far the shares.
+  assert.equal(rateBeyondChance(100, 2, 0, 2), false);
 });
 
 test("a usual day by now: the whole days' counts up to the hour it is, on average", () => {
@@ -1124,4 +1146,30 @@ test('a percent past 100, as failures for every 100 games can run, is still weig
 test('a day on average now and before, with the counts behind both over as many days', () => {
   assert.deepEqual(dayAverages([4, 6, 100], [2, 2, 9]), { now: 5, before: 2, of: { now: 10, before: 4 } });
   assert.deepEqual(dayAverages([3], [1]), { now: null, before: null });
+});
+
+test("the hours into a day are the clock's, on the day the clocks go back too", () => {
+  // Berlin, Oct 25 2026: 03:00 summer time became 02:00, so 14:30 UTC is 15:30 on the clock (16.5 hours gone).
+  assert.equal(hoursIn('Europe/Berlin', '2026-10-25', new Date('2026-10-25T14:30:00Z')), 15.5);
+  assert.equal(hoursIn('Europe/Berlin', '2026-10-26', new Date('2026-10-25T14:30:00Z')), 0);
+  assert.equal(hoursIn('Europe/Berlin', '2026-10-24', new Date('2026-10-25T14:30:00Z')), 24);
+});
+
+test('a period starts at the first whole day counted, and is compared only once the period before was counted whole', () => {
+  // Counting began partway through Oct 16: Oct 17 is the first whole day.
+  assert.deepEqual(countedSpan('2026-10-16', '2026-10-19', '2026-10-12', '2026-10-25'), { start: '2026-10-19', compare: false });
+  assert.deepEqual(countedSpan('2026-10-16', '2026-09-26', '2026-08-27', '2026-10-25'), { start: '2026-10-17', compare: false });
+  assert.deepEqual(countedSpan('2026-01-01', '2026-10-19', '2026-10-12', '2026-10-25'), { start: '2026-10-19', compare: true });
+  assert.deepEqual(countedSpan('2026-10-17', '2026-10-19', '2026-10-12', '2026-10-25').compare, false);
+  // Begun today: today, part though it is, as there's nothing else yet.
+  assert.deepEqual(countedSpan('2026-10-25', '2026-10-19', '2026-10-12', '2026-10-25'), { start: '2026-10-25', compare: false });
+  // Not known when counting began: the period as asked, compared with nothing.
+  assert.deepEqual(countedSpan(null, '2026-10-19', '2026-10-12', '2026-10-25'), { start: '2026-10-19', compare: false });
+});
+
+test('a share says what it rests on while that is little', () => {
+  assert.equal(restsOn(3, 10), ' (3 of 10)');
+  assert.equal(restsOn(30, 100), '');
+  assert.equal(restsOn(30, 100, '2026-10-22'), ' (since Oct 22)');
+  assert.equal(restsOn(3, 10, '2026-10-22'), ' (3 of 10, since Oct 22)');
 });

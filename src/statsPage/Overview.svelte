@@ -10,10 +10,10 @@
   // The monitor button shows it full screen, kept awake.
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { average, fmt, shortDay } from './chart';
+  import { average, fmt, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { backShare, comersOf, spikesOf, troubleOf } from './insights';
+  import { backShare, beyondChanceOf, comersOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
   import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dayAverageHours, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
@@ -43,7 +43,8 @@
   const trouble = $derived(troubleOf(L, B));
   const worst = $derived(L.failures.find((f) => !f.script));
   /** Of the visits that found a save or none, those that found one (insights.ts backShare). */
-  const back = $derived(backShare(comersOf(L)));
+  const comers = $derived(comersOf(L));
+  const back = $derived(backShare(comers));
 
   const METRICS = [
     { value: 'visitors', name: 'Visits' },
@@ -68,14 +69,21 @@
   ] as const;
   let weekOf = $state<(typeof WEEK)[number]['value']>('visitors');
   const week = $derived(L.week[weekOf]);
-  /** By weekday once there are four weeks to average each over; before, one or two of a weekday are only those days' chance, so every day is taken together. */
-  const byDay = $derived(L.days.length >= 28);
+  /** By weekday once there are four weeks to average each over, and enough counted that an hour of a weekday holds a few (four on average); before, one or two of a weekday are only those days' chance, so every day is taken together. */
+  const inHours = $derived(week ? week.flat().reduce((n, v) => n + v, 0) : 0);
+  const byDay = $derived(L.days.length >= 28 && inHours >= 7 * 24 * 4);
+  /** Whether the busiest hour (of the cells drawn) is busier than chance makes of the usual one: only then is it named. */
+  const sureBusiest = $derived.by(() => {
+    if (!week) return false;
+    const cells = byDay ? week.flat() : Array.from({ length: 24 }, (_, h) => week.reduce((n, row) => n + row[h], 0));
+    return beyondChanceOf(Math.max(...cells), cells.reduce((n, v) => n + v, 0) / cells.length);
+  });
   const hours = $derived(week && (byDay ? weekAverage(week, L.days, L.week.until) : [dayAverageHours(week, L.days, L.week.until)]));
 
   let innerHeight = $state(900);
   let innerWidth = $state(1400);
   /** A monitor on its side (taller than wide, wider than a phone): the overview fitted to it as to a big one. */
-  const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900);
+  const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500);
   const oneScreen = $derived(innerWidth > 1500 || sideways);
   /** A big monitor the usual way round: what happened joins the short answers below, so the chart has the height beside today's box. */
   const big = $derived(innerWidth >= 1900 && !sideways);
@@ -169,7 +177,7 @@
     <Section title="When they come">
       {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
       {#if hours}
-        <WeekHours grid={hours} {byDay} what={weekOf === 'visitors' ? 'Visits' : 'Games'} zone={read.zone} once={byDay ? L.days.length <= 7 : L.days.length <= 1} />
+        <WeekHours grid={hours} {byDay} sure={sureBusiest} what={weekOf === 'visitors' ? 'Visits' : 'Games'} zone={read.zone} once={byDay ? L.days.length <= 7 : L.days.length <= 1} />
       {:else}
         <p class="soft">GoatCounter gave no hours for these days.</p>
       {/if}
@@ -181,7 +189,7 @@
       {#if phones.all || back !== null}
         <p class="line">
           {#if phones.all}<b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.{/if}
-          {#if back !== null}Of the visits told new or back, <b>{Math.round(back)}%</b> came back to a save.{/if}
+          {#if back !== null}Of the visits told new or back, <b>{Math.round(back)}%</b> came back to a save{restsOn(comers.returned, comers.fresh + comers.returned, comers.from && comers.from > read.from ? comers.from : null)}.{/if}
         </p>
       {/if}
     </Section>
@@ -326,7 +334,8 @@
       display: none;
     }
   }
-  @media (max-width: 1500px) {
+  /* (A laptop keeps today beside the chart, so the chart is on screen.) */
+  @media (max-width: 1100px) {
     .ov {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       grid-template-rows: none;
@@ -383,7 +392,7 @@
     }
   }
   /* A monitor on its side: everything stacked in the screen's height, the four figures in a row, the short answers two by two. */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     .problem,
     .ov {
       --gap: 1.4rem;

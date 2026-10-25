@@ -174,6 +174,8 @@ export function reachedOf(c: Counts, steps: readonly Reach[]): Reached {
   if (first < 0) return { from: null, visitors: 0, paged: false, counts: {} };
   const out: Reached = { from: c.days[first], visitors: sumFrom(paged >= 0 ? c.reach.page : c.visitors.perDay, first), paged: paged >= 0, counts: {} };
   for (const s of paged >= 0 ? steps : old) out.counts[s] = sumFrom(c.reach[s], first);
+  // Every game started was entered: before entering was counted (late October 2026) only starting was, so entering is never fewer.
+  if (out.counts.lobby !== undefined && out.counts.played !== undefined) out.counts.lobby = Math.max(out.counts.lobby, out.counts.played);
   return out;
 }
 
@@ -222,6 +224,8 @@ export interface FirstSteps {
 export function firstStepsOf(c: Counts): FirstSteps {
   const first = firstDay(c.days, (i) => (c.visits.new[i] ?? 0) > 0);
   const counts = Object.fromEntries(FIRSTS.map((s) => [s, first < 0 ? 0 : sumFrom(c.firsts[s], first)])) as Record<First, number>;
+  // (Entered, as reachedOf: never fewer than started.)
+  counts.lobby = Math.max(counts.lobby, counts.played);
   return { from: first < 0 ? null : c.days[first], visits: first < 0 ? 0 : sumFrom(c.visits.new, first), counts };
 }
 
@@ -290,17 +294,27 @@ export function recentCohorts(cohorts: Cohort[], to: string, weeks = 8, rows = 8
   return cohorts.filter((c) => since(c) >= 0 && since(c) < weeks).slice(-rows);
 }
 
+/** A site by its own name, its subdomains with it ("out.reddit.com" is reddit.com): the last two labels, three where those are a country's (co.uk). A name that's no host ("Slack Chat") stays. */
+function siteRoot(name: string): string {
+  if (/[\s/]/.test(name)) return name;
+  const l = name.split('.');
+  if (l.length <= 2) return name;
+  return l.slice(l[l.length - 1].length === 2 && l[l.length - 2].length <= 3 ? -3 : -2).join('.');
+}
+
 /**
  * A list of referrers with each site once: a visit by a tagged link comes
  * without GoatCounter's cleaning of its referrer, so one site can be listed
- * twice ("https://www.reddit.com" and "www.reddit.com"). Each is named as
+ * twice ("https://www.reddit.com" and "www.reddit.com"), and a site's
+ * subdomains are the site (siteRoot). Each is named as
  * people say it (chart.ts siteName), most first; none ('' or "(unknown)")
  * stays as it is.
  */
 export function sameSites(list: Named[]): Named[] {
   const out = new Map<string, number>();
   for (const r of list) {
-    const name = typedIn(r.name) ? r.name : siteName(r.name);
+    // (An app's, "android-app://com.reddit.frontpage", is no host to fold.)
+    const name = typedIn(r.name) ? r.name : /^(?![a-z-]+:\/\/)|^https?:\/\//.test(r.name) ? siteRoot(siteName(r.name)) : siteName(r.name);
     out.set(name, (out.get(name) ?? 0) + r.count);
   }
   return [...out].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
@@ -337,10 +351,12 @@ export const beyondChanceOf = (now: number, before: number) => beyondChance(now 
 /**
  * Whether two percents differ by more than chance would make, each of `n`
  * and `nBefore` (twice the spread of their difference; a share near 0 or
- * 100 is taken a little in from the edge, so a handful never counts as sure).
+ * 100 is taken a little in from the edge), and by at least 3 of the
+ * smaller side's: 3 of 3 against 0 of 3 is a handful, never sure.
  */
 export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number): boolean {
   if (n <= 0 || nBefore <= 0) return false;
+  if ((Math.abs(pct - pctBefore) * Math.min(n, nBefore)) / 100 < 3) return false;
   // (A rate of more than one each, as failures can run to, spreads at least as a share at the edge would.)
   const edge = (v: number) => Math.min(100, Math.max(0, v));
   const p = (edge(pct) * n + 100) / (n + 2) / 100;

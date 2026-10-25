@@ -39,7 +39,7 @@
   let innerWidth = $state(1400);
   let innerHeight = $state(900);
   /** A big monitor, or one on its side, has the view on one screen: the chart gives up what runs past it. */
-  const chart = fitChart({ on: () => innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900), base: () => 340, least: 180 });
+  const chart = fitChart({ on: () => innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500), base: () => 340, least: 180 });
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
@@ -78,7 +78,7 @@
               <td class="n opt">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
               <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
-              <td class="n opt" class:soft={!m.screen}>{m.screen ? fmt(m.screen) : '–'}</td>
+              <td class="n opt" class:soft={!m.screen}>{fmt(m.screen)}</td>
               <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
             </tr>
           {/each}
@@ -115,7 +115,7 @@
               {#each sizes as s (sizeName(s))}
                 <tr>
                   <th scope="row">{sizeName(s)}{#if s.from !== s.to}<sup>*</sup>{/if}</th>
-                  {#each MODES as m (m)}<td class="n" class:soft={!s.modes[m]}>{s.modes[m] ? fmt(s.modes[m]) : '–'}</td>{/each}
+                  {#each MODES as m (m)}<td class="n" class:soft={!s.modes[m]}>{fmt(s.modes[m] ?? 0)}</td>{/each}
                   <td class="n strong">{fmt(s.total)}</td>
                   <td class="bar"><span class="meter"><i style:width="{(100 * s.total) / topSize}%"></i></span></td>
                 </tr>
@@ -199,7 +199,7 @@
     }
   }
   /* A monitor on its side: the two side by side, so the view is one screen. */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     .two {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
