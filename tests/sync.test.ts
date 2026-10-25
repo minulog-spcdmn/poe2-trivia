@@ -362,6 +362,10 @@ test("today's unique is taken in from a device that answered later; never from t
   assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
   store.set(DAILY_KEY, JSON.stringify({ day: today, picked: 2, ok: true, streak: 1, ended: 0 }));
   assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0 }), today), 'the longer run, the same verdict');
+  // The same run, its grace for a skipped day spent on one device and not on the other (an older build keeps no grace): spent wins.
+  assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0, grace: 4 }), today));
+  assert.equal(loadDaily()?.grace, 4);
+  assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0 }), today));
 });
 
 test('what is sent to be taken in is what is stored; what comes in is checked', () => {

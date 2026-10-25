@@ -193,8 +193,9 @@ export function parseDaily(raw: string | null): DailyRecord | null {
     const r = JSON.parse(raw) as Record<string, unknown>;
     // (A record from before the grace has none: it's there.)
     const grace = r.grace ?? 0;
-    if (!isInt(r.day) || !isInt(r.picked) || r.picked > 3 || typeof r.ok !== 'boolean' || !isInt(r.streak) || !isInt(r.ended) || !isInt(grace) || grace >= GRACE_DAYS) return null;
-    return { day: r.day, picked: r.picked, ok: r.ok, streak: r.streak, ended: r.ended, grace };
+    if (!isInt(r.day) || !isInt(r.picked) || r.picked > 3 || typeof r.ok !== 'boolean' || !isInt(r.streak) || !isInt(r.ended) || !isInt(grace)) return null;
+    // (Held to GRACE_DAYS, so making it shorter never costs a stored run.)
+    return { day: r.day, picked: r.picked, ok: r.ok, streak: r.streak, ended: r.ended, grace: Math.min(grace, GRACE_DAYS - 1) };
   } catch {
     return null;
   }
@@ -211,13 +212,19 @@ export const ownDailyRaw = () => readStored(KEY);
  * day: the player's answer, wherever it was given. The same day, only one
  * further into a run with the same verdict (each device had its own run
  * going), never a right answer over a wrong one: answered on two devices,
- * the day isn't two guesses. Not one from more than a day ahead of this
- * device's clock, which can't be yet. Whether it changed anything.
+ * the day isn't two guesses. The same run, the one with its grace spent
+ * longer ago, still earning it back (an older build writes records without
+ * it). Not one from more than a day ahead of this device's clock, which
+ * can't be yet. Whether it changed anything.
  */
 export function absorbDaily(raw: string, today = utcDay(Date.now())): boolean {
   const theirs = parseDaily(raw);
   if (!theirs || theirs.day > today + 1) return false;
   const mine = loadDaily();
-  if (mine && (mine.day > theirs.day || (mine.day === theirs.day && (mine.ok !== theirs.ok || mine.streak >= theirs.streak)))) return false;
+  if (mine && mine.day > theirs.day) return false;
+  if (mine && mine.day === theirs.day) {
+    if (mine.ok !== theirs.ok) return false;
+    if (mine.streak > theirs.streak || (mine.streak === theirs.streak && mine.grace >= theirs.grace)) return false;
+  }
   return writeStored(KEY, JSON.stringify(theirs));
 }

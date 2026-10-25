@@ -384,8 +384,8 @@
         <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
         <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
       {:else if graceOn(rec, today)}
-        <!-- Yesterday was forgotten and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
-        <p class="caption">You missed a day; answer right and your streak goes on.</p>
+        <!-- Yesterday went unanswered and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
+        <p class="caption">You skipped a day; answer right to keep your streak.</p>
       {:else}
         <p class="caption">Watch for look-alikes: one name may be made up.</p>
       {/if}

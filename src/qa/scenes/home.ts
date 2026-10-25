@@ -29,6 +29,8 @@ function today(days: number, how: string): NonNullable<Built['daily']> {
   if (how === 'missed') return { daysAgo: 0, picked: 3, ok: false, streak: 0, ended: days, grace: 0 };
   if (how === 'waiting') return { daysAgo: 1, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 0 };
   if (how === 'forgiven') return { daysAgo: 2, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 0 };
+  // A day skipped while the grace is still being earned back: the run is gone, and nothing says so until it starts over.
+  if (how === 'lapsed') return { daysAgo: 2, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 3 };
   return { daysAgo: 0, picked: 2, ok: days > 0, streak: days, ended: 0, grace: 0 };
 }
 
@@ -57,7 +59,8 @@ const BACK: Control[] = [
     options: [
       { value: 'right', label: 'Answered right' },
       { value: 'waiting', label: 'Not answered yet' },
-      { value: 'forgiven', label: 'Not yet, a day missed' },
+      { value: 'forgiven', label: 'Not yet, a day skipped' },
+      { value: 'lapsed', label: 'Not yet, skipped, no grace' },
       { value: 'missed', label: 'Missed' },
     ],
   },
@@ -100,6 +103,7 @@ export function homeScenes(): Scene[] {
         { label: 'The most rooms the list shows (60)', values: { rooms: 60 } },
         { label: "Today's unique, not answered yet, a streak of 7 waiting", values: { today: 'waiting' }, group: "Today's unique" },
         { label: "Today's unique after a forgotten day, a streak of 7 kept by the grace", values: { today: 'forgiven' }, group: "Today's unique" },
+        { label: "Today's unique after a forgotten day, the grace not back yet: the streak is gone", values: { today: 'lapsed' }, group: "Today's unique" },
         { label: "Today's unique answered, a streak of a year", values: { days: 365 }, group: "Today's unique" },
         { label: "Today's unique missed, a streak of 30 ended", values: { today: 'missed', days: 30 }, group: "Today's unique" },
       ],

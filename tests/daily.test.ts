@@ -180,7 +180,8 @@ test('stored records are checked before use', () => {
   assert.equal(parseDaily(JSON.stringify({ ...rec, picked: 7 })), null);
   assert.equal(parseDaily(JSON.stringify({ ...rec, streak: -1 })), null);
   assert.equal(parseDaily(JSON.stringify({ ...rec, ok: 'yes' })), null);
-  assert.equal(parseDaily(JSON.stringify({ ...rec, grace: GRACE_DAYS })), null);
+  assert.equal(parseDaily(JSON.stringify({ ...rec, grace: -1 })), null);
+  assert.equal(parseDaily(JSON.stringify({ ...rec, grace: GRACE_DAYS + 5 }))?.grace, GRACE_DAYS - 1, 'held to GRACE_DAYS, the run kept');
   // A record from before the grace has it there.
   const { grace: _, ...older } = rec;
   assert.deepEqual(parseDaily(JSON.stringify(older)), { ...rec, grace: 0 });
