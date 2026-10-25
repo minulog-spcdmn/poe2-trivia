@@ -51,6 +51,7 @@ import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, typ
 import { clearAside, openStored } from './keepAside.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 import { copiesOf } from './sync/store.ts';
+import { countSaved } from './count.ts';
 
 export interface Tally {
   /** Answers given. */
@@ -690,7 +691,7 @@ function update(change: (c: Codex) => Codex) {
   if (!opened) return;
   const prev = opened.was ?? emptyCodex();
   const next = change(prev);
-  if (next !== prev) write(next);
+  if (next !== prev && write(next)) countSaved();
 }
 
 /** Adds an encounter to the stored codex. */

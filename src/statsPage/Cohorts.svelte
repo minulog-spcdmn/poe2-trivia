@@ -4,7 +4,7 @@
   // (insights.ts recentCohorts), a column for each week after it. A cell is that week's visits from them for each 100 who first
   // played then: a count, not a percent (a keen player visits several times
   // a week, so it can pass 100). A week that began before the period has no
-  // count of those who started, so its visits alone, set in grey and unlit
+  // count of those new then, so its visits alone, set in grey and unlit
   // so they never read as one of the rest; a week the period holds none of
   // says "–". Shaded by the figure, so the fall from week to week shows at a
   // glance.
@@ -23,7 +23,7 @@
     <thead>
       <tr>
         <th scope="col">First played</th>
-        <th scope="col" class="n">Started</th>
+        <th scope="col" class="n" title="New players whose first item was met that week">New</th>
         {#each Array.from({ length: span }, (_, k) => k) as k (k)}<th scope="col" class="n">{k === 0 ? 'Same week' : `+${k}`}</th>{/each}
       </tr>
     </thead>

@@ -3,7 +3,7 @@
   // Delve's runs get. A game is counted once, on the device that runs it
   // (the host's), games once counted online and hot-seat apart as one
   // (model.ts currentName).
-  import { average, fmt } from './chart';
+  import { average, fmt, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
   import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages } from './model';
@@ -144,6 +144,7 @@
       "Shared a screen: games with a player seated at the host's own screen (before that was counted, the hot-seat games).",
       'Players a game: seats taken, or in Delve those who set out.',
       'A Delve run left mid-run (the tab closed) never says how deep it got, so the depths are of the runs that ended.',
+      L.delve.leftOut.length > 0 && `The depths leave out ${L.delve.leftOut.map(shortDay).join(', ')}, when an early build counted some depths twice.`,
     ]}
   />
 </div>

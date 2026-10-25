@@ -7,7 +7,7 @@ import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -78,7 +78,7 @@ test('the counts land where the page shows them', () => {
 });
 
 test('Delve ranges run from the top to the deepest one reached, gaps as zero', () => {
-  const l = countsOf([path('delve/depth-0-9', [5, 0, 0]), path('delve/depth-20-29', [1, 0, 0]), path('delve/depth-40-49', [0, 0, 0])], DAYS);
+  const l = countsOf([path('end/delve', [6, 0, 0]), path('delve/depth-0-9', [5, 0, 0]), path('delve/depth-20-29', [1, 0, 0]), path('delve/depth-40-49', [0, 0, 0])], DAYS);
   assert.deepEqual(l.delve.ranges, [
     { from: 0, count: 5 },
     { from: 10, count: 0 },
@@ -86,6 +86,22 @@ test('Delve ranges run from the top to the deepest one reached, gaps as zero', (
   ]);
   assert.equal(l.delve.total, 6);
   assert.deepEqual(countsOf([], DAYS).delve.ranges, []);
+});
+
+test('a day with more Delve depths than runs ended is left out of the depths', () => {
+  // Oct 15: three ended, five depths (some counted twice). Old names count as ends too.
+  const l = countsOf([path('end/delve-online', [2, 3, 0]), path('end/delve', [0, 0, 1]), path('delve/depth-0-9', [2, 4, 1]), path('delve/depth-60-69', [0, 1, 0])], DAYS);
+  assert.deepEqual(l.delve.leftOut, ['2026-10-15']);
+  assert.equal(l.delve.total, 3);
+  assert.deepEqual(l.delve.ranges, [{ from: 0, count: 3 }]);
+});
+
+test('a total is of the days asked for alone, not all the call read', () => {
+  // The call read from Oct 14; counting's first whole day, Oct 15, starts the period.
+  const l = countsOf([path('/', [5, 7, 9]), path('play/race', [6, 1, 2]), path('end/race', [6, 1, 1])], DAYS.slice(1));
+  assert.equal(l.visitors.total, 16);
+  assert.equal(l.games.started, 3);
+  assert.equal(l.games.finished, 2);
 });
 
 test('half the runs end by the median range', () => {
@@ -489,7 +505,11 @@ test('a day far busier than usual stands out, a day chance could make does not',
   const days = daysBetween('2026-10-01', '2026-10-10');
   const values = [40, 42, 38, 41, 95, 39, 44, 52, 40, 30];
   assert.deepEqual(spikesOf(days, values).map((s) => s.day), ['2026-10-05']);
-  assert.equal(spikesOf(days, values)[0].usual, 41);
+  // The median of the other whole days: the day itself, and today (still going), left out.
+  assert.equal(spikesOf(days, values)[0].usual, 40.5);
+  // A game that grows: its latest days are busy against the quarter, not against the weeks around them.
+  const quarter = daysBetween('2026-07-28', '2026-10-25');
+  assert.deepEqual(spikesOf(quarter, quarter.map((_, i) => 10 + i * 2)), []);
   // At a handful a day, even double is chance.
   assert.deepEqual(spikesOf(days.slice(0, 5), [2, 3, 2, 6, 2]), []);
   assert.deepEqual(spikesOf(days, days.map(() => 0)), []);
@@ -963,7 +983,9 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
   const c = countsOf(
     [
       { ...at({ '2026-10-12': 30, '2026-10-20': 20 }), path: 'visit/new' },
-      { ...at({ '2026-10-13': 10, '2026-10-20': 2 }), path: 'new/played' },
+      // Who first met an item each week (a game's, or Today's unique's), not who started a game.
+      { ...at({ '2026-10-12': 10, '2026-10-20': 2, '2026-10-26': 3 }), path: 'new/saved' },
+      { ...at({ '2026-10-13': 6, '2026-10-20': 1 }), path: 'new/played' },
       { ...at({ '2026-10-14': 4, '2026-10-21': 3, '2026-10-27': 1 }), path: 'cohort/2026-W42' },
       { ...at({ '2026-10-22': 2 }), path: 'cohort/2026-W43' },
       // A week begun long before the period: no count of who started, its first weeks not in it.
@@ -978,13 +1000,15 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
       ['2026-W40', null, [null, null, 1, 0, 0]],
       ['2026-W42', 10, [4, 3, 1]],
       ['2026-W43', 2, [2, 0]],
+      // Three new that week and none back since: noughts, not no row.
+      ['2026-W44', 3, [0]],
     ],
   );
   // Counting began after a week's Monday: who started that week isn't known, rather than far too few.
   const late = countsOf(
     [
       { ...at({ '2026-10-14': 30 }), path: 'visit/new' },
-      { ...at({ '2026-10-14': 10 }), path: 'new/played' },
+      { ...at({ '2026-10-14': 10 }), path: 'new/saved' },
       { ...at({ '2026-10-15': 4 }), path: 'cohort/2026-W42' },
     ],
     days,
@@ -1001,8 +1025,8 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
   assert.deepEqual(later.cohorts[0].weeks, [null, null, 1, 0]);
   // The table's rows: the weeks its columns reach, none after the period (a clock years off).
   const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [] }];
-  assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43']);
-  assert.deepEqual(recentCohorts(odd, '2026-10-28').map((x) => x.week), ['2026-W40', '2026-W42', '2026-W43']);
+  assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43', '2026-W44']);
+  assert.deepEqual(recentCohorts(odd, '2026-10-28').map((x) => x.week), ['2026-W40', '2026-W42', '2026-W43', '2026-W44']);
 });
 
 test('a site listed twice, its referrer once cleaned and once not, is one', () => {
@@ -1073,6 +1097,22 @@ test("a usual day by now: the whole days' counts up to the hour it is, on averag
   assert.equal(usualByNow([visits], DAYS, null), null);
   // A path counted without its hours can't be cut at an hour.
   assert.equal(usualByNow([visits, path('play/race', [1, 1, 1])], DAYS, 9), null);
+});
+
+test('a usual day is of the last four weeks, not a whole quarter', () => {
+  // A launch's 100 a day a month and more ago, 10 a day since.
+  const days = daysBetween('2026-09-01', '2026-10-25');
+  const each = (d: string) => (d < '2026-09-20' ? 100 : 10);
+  const hoursOf = (n: number) => Array.from({ length: 24 }, (_, h) => (h === 0 ? n : 0));
+  const visits: PathCount = {
+    path: '/',
+    event: false,
+    count: days.reduce((n, d) => n + each(d), 0),
+    days: Object.fromEntries(days.map((d) => [d, each(d)])),
+    hours: Object.fromEntries(days.map((d) => [d, hoursOf(each(d))])),
+  };
+  assert.equal(USUAL_DAYS, 28);
+  assert.equal(countsOf([visits], days, 'UTC', 12).usual.visitors, 10);
 });
 
 test("a usual day by now in UTC days, as Today's unique counts them", () => {

@@ -159,7 +159,8 @@ export interface Counts {
   visitors: { total: number; perDay: number[] };
   games: { started: number; finished: number; perDay: number[]; finishedPerDay: number[]; rows: ModeRow[] };
   /** Delve runs by where they ended: every ten depths from 0 up to the deepest reached, as players see them. */
-  delve: { total: number; ranges: { from: number; count: number }[] };
+  /** `leftOut`: days whose depths didn't add up with the runs that ended, left out of them. */
+  delve: { total: number; ranges: { from: number; count: number }[]; leftOut: string[] };
   /** Today's unique's answers, named and missed, by the game's (UTC) days when the hours were there to sort them (utcPerDay). */
   daily: { right: number; wrong: number; rightPerDay: number[]; wrongPerDay: number[] };
   links: { invite: number; delve: number };
@@ -223,6 +224,9 @@ export function weekHours(paths: PathCount[], days: string[], until: number | nu
 
 /** How much of an hour that began `start` hours in has passed by `until` hours in: its share of what the hour brought. */
 const hadOf = (start: number, until: number) => Math.min(1, Math.max(0, until - start));
+
+/** The whole days a usual day is the average of (countsOf), the latest: four of each weekday. */
+export const USUAL_DAYS = 28;
 
 /**
  * What `paths` had on a usual day of `days` by `until` hours in (the time
@@ -362,7 +366,9 @@ export function utcPerDay(p: PathCount | undefined, days: string[], zone?: strin
  * and a usual day is had to then (usualByNow).
  */
 export function countsOf(counted: PathCount[], days: string[], zone?: string, until: number | null = null): Counts {
-  const paths = underNamesNow(counted);
+  // Each path's total over these days alone, not all the call asked for: a period held at where counting began starts after it (countedSpan). GoatCounter's total is its days' sum.
+  const within = (p: PathCount): PathCount => ({ ...p, count: days.reduce((n, d) => n + (p.days[d] ?? 0), 0) });
+  const paths = underNamesNow(counted.map(within));
   const hour = until === null ? null : Math.floor(until);
   const byPath = new Map(paths.map((p) => [p.path, p]));
   const count = (path: string) => byPath.get(path)?.count ?? 0;
@@ -387,15 +393,22 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       const m = /^(\d+)(?:-(\d+))?p$/.exec(p.path.slice(`size/${mode}-`.length));
       if (m) sizes.push({ from: Number(m[1]), to: Number(m[2] ?? m[1]), count: p.count });
     }
-    const names = counted.filter((p) => p.count > 0 && currentName(p.path) === `play/${mode}`).map((p) => p.path);
+    const names = counted.filter((p) => within(p).count > 0 && currentName(p.path) === `play/${mode}`).map((p) => p.path);
     const row = { mode, started: count(`play/${mode}`), finished: count(`end/${mode}`), screen: count(`screen/${mode}`) + hotSeat(mode), sizes: sizes.sort(bySize), paths: names };
     if (row.started || row.finished) rows.push(row);
   }
 
-  const ranges = new Map<number, number>();
-  for (const p of paths) {
+  // A run's end and its depth go out together, so a day with more depths than Delve's ends had some counted twice (an early build, Oct 17 2026): its depths are left out.
+  const depthPaths = paths.flatMap((p) => {
     const m = /^delve\/depth-(\d+)-\d+$/.exec(p.path);
-    if (m && p.count > 0) ranges.set(Number(m[1]), (ranges.get(Number(m[1])) ?? 0) + p.count);
+    return m ? [{ from: Number(m[1]), p }] : [];
+  });
+  const delveEnds = byPath.get('end/delve');
+  const leftOut = days.filter((d) => depthPaths.reduce((n, { p }) => n + (p.days[d] ?? 0), 0) > (delveEnds?.days[d] ?? 0));
+  const ranges = new Map<number, number>();
+  for (const { from, p } of depthPaths) {
+    const n = days.reduce((k, d) => k + (leftOut.includes(d) ? 0 : (p.days[d] ?? 0)), 0);
+    if (n > 0) ranges.set(from, (ranges.get(from) ?? 0) + n);
   }
   const deepest = Math.max(-1, ...ranges.keys());
   const delveRanges = deepest < 0 ? [] : Array.from({ length: deepest / 10 + 1 }, (_, i) => ({ from: i * 10, count: ranges.get(i * 10) ?? 0 }));
@@ -420,7 +433,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       finishedPerDay: perDay((p) => p.startsWith('end/') && played.has(`play/${p.slice('end/'.length)}`)),
       rows,
     },
-    delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges },
+    delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges, leftOut },
     daily: (() => {
       const rightPerDay = utcPerDay(byPath.get('daily/right'), days, zone);
       const wrongPerDay = utcPerDay(byPath.get('daily/wrong'), days, zone);
@@ -438,7 +451,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
     visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,
     firsts: Object.fromEntries(FIRSTS.map((s) => [s, perDay((p) => p === `new/${s}`)])) as Record<First, number[]>,
-    cohorts: cohortsOf(paths, days, perDay((p) => p === 'new/played'), perDay((p) => p === 'visit/new')),
+    cohorts: cohortsOf(paths, days, perDay((p) => p === 'new/saved')),
     sync: { paired: count('sync/paired') },
     week: {
       visitors: weekHours(paths.filter((p) => p.path === '/'), days, hour),
@@ -446,12 +459,14 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       until: hour,
     },
     usual: (() => {
-      const answers = (p: PathCount | undefined) => (zone ? usualByNowUtc(p, days, zone, until, DAILY_FROM) : null);
+      // The last USUAL_DAYS whole days, not the whole period: on a quarter or a year, a game that grows would be busier than usual every day.
+      const recent = days.slice(-(USUAL_DAYS + 1));
+      const answers = (p: PathCount | undefined) => (zone ? usualByNowUtc(p, recent, zone, until, DAILY_FROM) : null);
       const right = answers(byPath.get('daily/right'));
       const wrong = answers(byPath.get('daily/wrong'));
       return {
-        visitors: usualByNow(paths.filter((p) => p.path === '/'), days, until),
-        games: usualByNow(paths.filter((p) => played.has(p.path)), days, until),
+        visitors: usualByNow(paths.filter((p) => p.path === '/'), recent, until),
+        games: usualByNow(paths.filter((p) => played.has(p.path)), recent, until),
         answers: right === null || wrong === null ? null : right + wrong,
       };
     })(),
@@ -461,32 +476,41 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
 
 /**
  * The weeks' cohorts counted over `days` ("cohort/…"), oldest first;
- * `started`: those who first played each day ("new/played"), counted from
- * the first day of `fresh` ("visit/new", which came with it).
+ * `joined`: the newcomers whose save got its first item each day
+ * ("new/saved", what puts them in a week), counted from its first day. A
+ * week that had newcomers and none back since is a row of noughts.
  */
-function cohortsOf(paths: PathCount[], days: string[], started: number[], fresh: number[]): Cohort[] {
-  const counting = fresh.findIndex((n) => n > 0);
+function cohortsOf(paths: PathCount[], days: string[], joined: number[]): Cohort[] {
+  const counting = joined.findIndex((n) => n > 0);
   // The first day visits were told apart: any visit told new or back, or a cohort's (sent with them), so a quiet start of new visitors isn't taken for none counted.
   const told = days.findIndex((d) => paths.some((p) => (p.path.startsWith('visit/') || p.path.startsWith('cohort/')) && (p.days[d] ?? 0) > 0));
-  const out: Cohort[] = [];
-  for (const p of paths) {
-    const week = p.path.startsWith('cohort/') ? p.path.slice('cohort/'.length) : '';
-    const monday = weekMonday(week);
-    if (!monday || p.count <= 0) continue;
+  const rowOf = (week: string, monday: string, p: PathCount | null): Cohort => {
     const from = Date.parse(`${monday}T12:00:00Z`);
     const weekOf = (d: string) => Math.floor((Date.parse(`${d}T12:00:00Z`) - from) / (7 * 86_400_000));
     // Up to the period's last week; a week the period holds none of, or one over before visits were told apart (none of it counted), null.
     const weeks: (number | null)[] = Array.from({ length: Math.max(0, weekOf(days[days.length - 1]) + 1) }, () => null);
     for (const [i, d] of days.entries()) {
       const k = weekOf(d);
-      if (k >= 0 && told >= 0 && i >= told) weeks[k] = (weeks[k] ?? 0) + (p.days[d] ?? 0);
+      if (k >= 0 && told >= 0 && i >= told) weeks[k] = (weeks[k] ?? 0) + (p?.days[d] ?? 0);
     }
     // Only a week the period holds from its Monday, counted from then: one cut short would look small, its cells far over 100%.
     const at = days.indexOf(monday);
-    const sum = at < 0 || counting < 0 || counting > at ? null : started.slice(at, at + 7).reduce((n, v) => n + v, 0);
-    out.push({ week, monday, started: sum, weeks });
+    const started = at < 0 || counting < 0 || counting > at ? null : joined.slice(at, at + 7).reduce((n, v) => n + v, 0);
+    return { week, monday, started, weeks };
+  };
+  const out = new Map<string, Cohort>();
+  for (const p of paths) {
+    const week = p.path.startsWith('cohort/') ? p.path.slice('cohort/'.length) : '';
+    const monday = weekMonday(week);
+    if (monday && p.count > 0) out.set(week, rowOf(week, monday, p));
   }
-  return out.sort((a, b) => a.monday.localeCompare(b.monday));
+  for (const [i, d] of days.entries()) {
+    const week = isoWeekOfDay(d);
+    if (i < counting || counting < 0 || weekMonday(week) !== d || out.has(week)) continue;
+    const row = rowOf(week, d, null);
+    if (row.started) out.set(week, row);
+  }
+  return [...out.values()].sort((a, b) => a.monday.localeCompare(b.monday));
 }
 
 /**

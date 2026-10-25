@@ -16,6 +16,7 @@ import {
   countVisit,
   countPage,
   countStep,
+  countSaved,
   cohortEvent,
   failedImport,
   openedAsApp,
@@ -65,6 +66,7 @@ test('outside a browser nothing is counted, and nothing throws', () => {
     countVisit(() => null, 'reddit');
     countPage();
     countStep('reach/played');
+    countSaved();
     assert.equal(takeCampaign(), null);
     countEvent('play/race');
     countArrival('open/invite-link');

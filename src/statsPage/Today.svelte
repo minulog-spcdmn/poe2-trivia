@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Today so far, against what a usual day of the period had by this hour
+  // Today so far, against what a usual day of the last four weeks had by this hour
   // (model.ts usualByNow): one day a period ago swings with every few visits,
   // the usual day says whether today is busy. Busier or quieter is said only
   // beyond what chance moves a count that size by (insights.ts

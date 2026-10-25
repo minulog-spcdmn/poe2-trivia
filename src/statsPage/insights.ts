@@ -24,21 +24,27 @@ const median = (vs: number[]) => {
 export interface Spike {
   day: string;
   value: number;
-  /** The period's median day. */
+  /** The median day around it (SPIKE_REACH). */
   usual: number;
 }
 
+/** How far either side of a day its usual one is found: a game that grows, or a launch, then moves its usual along with it. */
+export const SPIKE_REACH = 14;
+
 /**
- * The days far busier than usual (at least 1.6 times the median day, and
- * beyond chance), busiest against usual first, at most `top`. The last day
- * isn't over, so it's never the usual one, but it can be a spike already.
+ * The days far busier than usual (at least 1.6 times the median of the
+ * other whole days within SPIKE_REACH of it, and beyond chance), busiest
+ * against usual first, at most `top`. The last day isn't over, so it's
+ * never part of a usual one, but it can be a spike already.
  */
 export function spikesOf(days: string[], values: number[], top = 3): Spike[] {
-  const usual = median(values.slice(0, -1));
-  if (usual <= 0) return [];
+  const whole = values.length - 1;
   return days
-    .map((day, i) => ({ day, value: values[i] ?? 0, usual }))
-    .filter((s) => s.value >= usual * 1.6 && beyondChance(s.value - usual, usual))
+    .map((day, i) => {
+      const around = values.filter((_, k) => k !== i && k < whole && Math.abs(k - i) <= SPIKE_REACH);
+      return { day, value: values[i] ?? 0, usual: median(around) };
+    })
+    .filter((s) => s.usual > 0 && s.value >= s.usual * 1.6 && beyondChance(s.value - s.usual, s.usual))
     .sort((a, b) => b.value - a.value)
     .slice(0, top);
 }

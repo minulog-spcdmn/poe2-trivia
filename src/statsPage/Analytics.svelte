@@ -204,22 +204,24 @@
       const now: Span = { start: midnight(tz, from), end: at };
       // (By the clock: on a day the clocks change, the time gone since midnight is an hour off it.)
       const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + hoursIn(tz, today, at) * 3_600_000) };
-      const [n, b, systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
-        step(pathCounts(k, now, signal)),
-        step(pathCounts(k, before, signal)),
-        step(visitorsBy(k, now, 'systems', signal)),
-        step(visitorsBy(k, now, 'locations', signal)),
-        step(visitorsBy(k, now, 'toprefs', signal)),
-        step(visitorsBy(k, now, 'campaigns', signal)),
-        step(visitorsBy(k, before, 'locations', signal)),
-        step(visitorsBy(k, before, 'toprefs', signal)),
-      ]);
+      const [n, b] = await Promise.all([step(pathCounts(k, now, signal)), step(pathCounts(k, before, signal))]);
       if (ask !== asked) return;
       // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
       const until = hoursIn(tz, today, at);
-      // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back.
+      // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back; who the visitors were is read from there too.
       const first = firstCounted([...b.paths, ...n.paths]);
       const { start, compare } = countedSpan(first, from, fromBefore, today);
+      const shown: Span = { start: midnight(tz, start), end: at };
+      const shownBefore: Span = { ...before, start: midnight(tz, addDays(start, -days)) };
+      const [systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
+        step(visitorsBy(k, shown, 'systems', signal)),
+        step(visitorsBy(k, shown, 'locations', signal)),
+        step(visitorsBy(k, shown, 'toprefs', signal)),
+        step(visitorsBy(k, shown, 'campaigns', signal)),
+        step(visitorsBy(k, shownBefore, 'locations', signal)),
+        step(visitorsBy(k, shownBefore, 'toprefs', signal)),
+      ]);
+      if (ask !== asked) return;
       const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
       // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
       const spikeRefs: Record<string, Named[]> = {};
@@ -611,6 +613,9 @@
       <p class="dates">
         <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
       </p>
+    {:else if loading}
+      <!-- (Its line's room kept, so the view doesn't move down as it arrives.) -->
+      <p class="dates" aria-hidden="true">&nbsp;</p>
     {/if}
     {#if demo}
       <p class="note made-up" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
@@ -623,9 +628,14 @@
     {/if}
 
     {#if !read && loading}
-      <div class="waiting" aria-busy="true" aria-label="Reading">
-        <div class="ghost kpis">{#each [0, 1, 2, 3] as i (i)}<i></i>{/each}</div>
-        <div class="ghost chart"></div>
+      <!-- The view's outline, in the overview's grid where it's that, so nothing jumps as it arrives. -->
+      <div class="waiting" class:ov={board || view === 'overview'} aria-busy="true" aria-label="Reading">
+        {#if board || view === 'overview'}
+          <div class="kpis">{#each [0, 1, 2, 3] as i (i)}<i></i>{/each}</div>
+          <i class="today"></i>
+        {/if}
+        <i class="chart"></i>
+        {#if !board && view !== 'overview'}<i class="table"></i>{/if}
       </div>
     {:else if read}
       {#if board || view === 'overview'}
@@ -969,24 +979,42 @@
     cursor: none;
   }
 
-  /* ---- first read: the overview's outline, waiting ---- */
-  .ghost i,
-  .ghost.chart {
+  /* ---- first read: the view's outline, waiting (Overview.svelte's grid at each width) ---- */
+  .waiting {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .waiting i {
     display: block;
-    height: 220px;
+    min-height: 320px;
     background: var(--a-surface);
     border: 1px solid var(--line);
     border-radius: 4px;
     animation: wait 1.6s ease-in-out infinite;
   }
-  .ghost.kpis {
+  .waiting .chart {
+    grid-area: chart;
+    min-height: 450px;
+  }
+  .waiting .table {
+    min-height: 320px;
+  }
+  .waiting.ov {
+    --gap: 1.75rem;
+    grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr);
+    grid-template-areas:
+      'kpis kpis'
+      'chart today';
+    gap: var(--gap);
+  }
+  .waiting .kpis {
+    grid-area: kpis;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.25rem;
-    margin-bottom: 1.25rem;
+    gap: var(--gap);
   }
-  .ghost.chart {
-    height: 480px;
+  .waiting .today {
+    grid-area: today;
   }
   @keyframes wait {
     50% {
@@ -995,9 +1023,66 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .spin svg,
-    .ghost i,
-    .ghost.chart {
+    .waiting i {
       animation: none;
+    }
+  }
+  /* (Each height near the real one's at that width: the demo's, measured.) */
+  @media (min-width: 1900px) {
+    .waiting .kpis i {
+      min-height: 266px;
+    }
+    .waiting .chart {
+      min-height: 340px;
+    }
+  }
+  @media (max-width: 1200px) {
+    .waiting.ov {
+      --gap: 1.25rem;
+    }
+    .waiting .kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 1100px) {
+    .waiting.ov {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'today'
+        'kpis'
+        'chart';
+    }
+    .waiting .today {
+      min-height: 290px;
+    }
+    .waiting .kpis i {
+      min-height: 244px;
+    }
+  }
+  @media (max-width: 600px) {
+    .waiting.ov {
+      --gap: 1rem;
+    }
+    .waiting .today {
+      min-height: 460px;
+    }
+    .waiting .kpis i {
+      min-height: 290px;
+    }
+    .waiting .chart {
+      min-height: 560px;
+    }
+  }
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
+    .waiting.ov {
+      --gap: 1.4rem;
+      grid-template-areas:
+        'today'
+        'kpis'
+        'chart';
+    }
+    .waiting .kpis {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
@@ -1008,9 +1093,6 @@
     }
     main {
       padding: 1.2rem 16px 3rem;
-    }
-    .ghost.kpis {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   /* A phone: the bar scrolls away with the page, so it doesn't take a third of the screen. */

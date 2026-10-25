@@ -116,7 +116,9 @@ against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
 device (not one watching), a game started without a lobby entering it too;
 `reach/games-2|5` and `reach/time-2m|10m|30m` (active time) within one page
 load; `reach/codex`, `reach/achievements`;
-and `new/lobby|played|finished` for a load whose visit had no save. With a
+and `new/lobby|played|finished` for a load whose visit had no save, with
+`new/saved` as that save gets its first item (a game's or Today's unique's),
+what a cohort is set against. With a
 visit, read from the codex with its paired devices' copies when the page is idle
 (so it speaks for the player, not the device):
 `visit/new` or `visit/back-1d|7d|30d|later` (nothing within eight hours of
@@ -131,8 +133,9 @@ owner's read-only GoatCounter API key, which stays in that browser until
 overview answers "how is it going?" and keeps to what's worth a glance,
 with room around it: four figures for the period (visits and games a day
 on average, over the whole days), today's visits, games and answers
-against a usual day by the same hour (the whole days' average up to then,
-`model.ts` usualByNow; each with what the last update added), how busy
+against a usual day by the same hour (the last 28 whole days' average up
+to then, `model.ts` usualByNow, so a game that grows isn't busier than
+usual every day; each with what the last update added), how busy
 each day was against its average line, what happened, when they
 come, where they are and what they play; the rest is in the views
 behind it. Joining only shows there when its failures run well above the
@@ -145,7 +148,7 @@ by itself; leaving full screen leaves it. On a monitor on its side
 sized from it. On a big monitor (1440p, 4K) every view fits one screen, a chart giving up what runs past it or
 taking what's left (`fitChart.svelte.ts`), its labels sized with the
 type; "What happened" reads out the days far busier
-than usual and the site behind each, and the sites and countries that
+than usual (the median of the days within two weeks of it) and the site behind each, and the sites and countries that
 brought far more or fewer than the period before, beyond how they all
 moved (`insights.ts`, only what's beyond chance). A change against the
 period before is coloured only when chance couldn't have made it
@@ -169,8 +172,9 @@ and systems the new visitors came from and on, lit on the overview.
 Visitors (`#visitors`) also has how far a visit gets (a game entered,
 started, finished, two and five in one page load) and a first visit's
 own steps, how long it stays and what else it opens, who comes back to a
-save and how long after, by the week they first played too (once a week
-has been counted from its Monday), the installed app's share, and the
+save and how long after, by the week they first played too (for every
+100 whose save began that week, `new/saved`, once a week has been counted
+from its Monday; a week none came back from a row of noughts), the installed app's share, and the
 tagged links (`?ref=`) beside the referrers (a site's subdomains as one); each
 share is of page loads (`reach/page`) from the day those were first
 counted, against the period before only where that was a share of page
