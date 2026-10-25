@@ -174,10 +174,12 @@
    * Once the server has said what day it is, answers more than a day ahead
    * of it go: a clock ran ahead (a day ahead may be a device already past
    * midnight, and waits for its day, lib/daily replay). By the server's time
-   * now, not the page's, which a tab in the background moves on seldom.
+   * now, not the page's, which a tab in the background moves on seldom; and
+   * not while the device's clock has jumped since the server said it (set
+   * back, real days would look ahead), until it is asked again.
    */
   function dropFarAhead() {
-    if (!clock.trusted()) return;
+    if (!clock.sure()) return;
     const day = utcDay(clock.now());
     if (upTo(log, day) === log) return;
     // (From what's stored, not this tab's copy alone: another tab may have answered since.)
@@ -185,7 +187,7 @@
     log = upTo(stored(), day);
   }
 
-  /** An answer to today's held until the server has said what day it is (or not for long): the option picked, the last one tapped. */
+  /** An answer to today's held until the server has said what day it is, or said it again after the device's clock was set (or not for long): the option picked, the last one tapped. */
   let held = $state<number | null>(null);
   async function pick(i: number) {
     if (answered || disabled) return;
@@ -224,11 +226,12 @@
       if (todays) return;
     }
     const good = i === rightIdx;
-    // Days from a later day, while the server hasn't said what day it is
-    // (this device's clock may have been put back), take no answer today:
-    // nothing is recorded, so nothing plays as if it were, and the tap says
-    // why. Once it has, they wait for their day (lib/daily answerLog).
-    const next = practice ? null : answerLog(log, today, i, good, clock.trusted());
+    // Days from a later day, while the server's time doesn't hold (not said
+    // yet, or this device's clock set since: it may have been put back),
+    // take no answer today: nothing is recorded, so nothing plays as if it
+    // were, and the tap says why. Once it does, they wait for their day
+    // (lib/daily answerLog).
+    const next = practice ? null : answerLog(log, today, i, good, clock.sure());
     if (next && next === log) {
       toasts.show("Your answers reach a day still to come: a clock is off, this device’s or a paired one’s. Today’s unique opens once this device has the right time.", 'info', { title: 'Clock off' });
       return;

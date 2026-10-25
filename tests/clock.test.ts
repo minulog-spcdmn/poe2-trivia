@@ -106,9 +106,12 @@ test('asked once at a time, and again only when the device clock jumps (set by h
   // Time passing as it does: nothing to ask.
   pass(5 * HOUR);
   assert.equal(clock.refresh(), undefined);
-  // Its clock set right meanwhile: the error known is wrong now, and asked again.
+  // Its clock set right meanwhile: the error known is wrong now, so the server's time doesn't hold until asked again.
+  assert.ok(clock.sure());
   dev.wall += 10 * HOUR;
+  assert.ok(clock.trusted() && !clock.sure());
   await clock.refresh();
+  assert.ok(clock.sure());
   assert.equal(dev.asked, 2);
   assert.ok(Math.abs(clock.now() - dev.server) <= 1000);
   // Asleep for the night (its steady clock stood): asked again too.
